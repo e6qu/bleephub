@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // OAuth applications token management endpoints.
@@ -217,7 +219,7 @@ func (s *Server) handleScopeOAuthToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if (body.Target == "" && body.TargetID == 0) || (body.Repositories != nil && body.RepositoryIDs != nil) {
-		writeGHValidationError(w, "Authorization", "target", "invalid")
+		store.WriteGHValidationError(w, "Authorization", "target", "invalid")
 		return
 	}
 	inst := s.resolveScopeTargetInstallation(tok, body.Target, body.TargetID)
@@ -304,7 +306,7 @@ func appendOptionalInts(values []int) []int {
 	return append([]int{}, values...)
 }
 
-func (s *Server) scopeTargetAccessibleToUser(userID int, inst *Installation) bool {
+func (s *Server) scopeTargetAccessibleToUser(userID int, inst *store.Installation) bool {
 	user := s.store.GetUserByID(userID)
 	if user == nil || inst == nil {
 		return false
@@ -321,7 +323,7 @@ func (s *Server) scopeTargetAccessibleToUser(userID int, inst *Installation) boo
 	}
 }
 
-func (s *Server) resolveScopedUserTokenRepositories(inst *Installation, source *UserToServerToken, names []string, ids []int) ([]int, bool) {
+func (s *Server) resolveScopedUserTokenRepositories(inst *store.Installation, source *store.UserToServerToken, names []string, ids []int) ([]int, bool) {
 	if names == nil && ids == nil {
 		return nil, true
 	}
@@ -353,7 +355,7 @@ func (s *Server) resolveScopedUserTokenRepositories(inst *Installation, source *
 
 // resolveScopeTargetInstallation finds the installation a scoped-token request
 // targets, by target login or target id, among the app's installations.
-func (s *Server) resolveScopeTargetInstallation(tok *UserToServerToken, targetLogin string, targetID int) *Installation {
+func (s *Server) resolveScopeTargetInstallation(tok *store.UserToServerToken, targetLogin string, targetID int) *store.Installation {
 	if tok.AppID == 0 {
 		return nil
 	}
@@ -456,31 +458,31 @@ func decodeOAuthAppSettingsRequest(w http.ResponseWriter, r *http.Request) (oaut
 	}
 	req.Name = strings.TrimSpace(req.Name)
 	if req.Name == "" {
-		writeGHValidationError(w, "OAuthApp", "name", "missing_field")
+		store.WriteGHValidationError(w, "OAuthApp", "name", "missing_field")
 		return req, false
 	}
 	req.URL = strings.TrimSpace(req.URL)
 	if req.URL == "" {
-		writeGHValidationError(w, "OAuthApp", "url", "missing_field")
+		store.WriteGHValidationError(w, "OAuthApp", "url", "missing_field")
 		return req, false
 	}
-	if err := validateClientCallbackURL(req.URL); err != nil {
-		writeGHValidationError(w, "OAuthApp", "url", "invalid")
+	if err := store.ValidateClientCallbackURL(req.URL); err != nil {
+		store.WriteGHValidationError(w, "OAuthApp", "url", "invalid")
 		return req, false
 	}
 	req.CallbackURL = strings.TrimSpace(req.CallbackURL)
 	if req.CallbackURL == "" {
-		writeGHValidationError(w, "OAuthApp", "callback_url", "missing_field")
+		store.WriteGHValidationError(w, "OAuthApp", "callback_url", "missing_field")
 		return req, false
 	}
-	if err := validateClientCallbackURL(req.CallbackURL); err != nil {
-		writeGHValidationError(w, "OAuthApp", "callback_url", "invalid")
+	if err := store.ValidateClientCallbackURL(req.CallbackURL); err != nil {
+		store.WriteGHValidationError(w, "OAuthApp", "callback_url", "invalid")
 		return req, false
 	}
 	return req, true
 }
 
-func tokenMatchesClient(tok *UserToServerToken, clientID string, st *Store) bool {
+func tokenMatchesClient(tok *store.UserToServerToken, clientID string, st *store.Store) bool {
 	if tok.OAuthAppClientID != "" {
 		return tok.OAuthAppClientID == clientID
 	}
@@ -492,13 +494,13 @@ func tokenMatchesClient(tok *UserToServerToken, clientID string, st *Store) bool
 	return false
 }
 
-func (s *Server) userByID(id int) *User {
+func (s *Server) userByID(id int) *store.User {
 	s.store.Mu.RLock()
 	defer s.store.Mu.RUnlock()
 	return s.store.Users[id]
 }
 
-func oauthTokenInspectionJSON(st *Store, tok *UserToServerToken, user *User) map[string]interface{} {
+func oauthTokenInspectionJSON(st *store.Store, tok *store.UserToServerToken, user *store.User) map[string]interface{} {
 	// app: the OAuth App / GitHub App the token was issued for, with the real
 	// client_id, name and url.
 	app := map[string]interface{}{
@@ -556,7 +558,7 @@ func oauthTokenInspectionJSON(st *Store, tok *UserToServerToken, user *User) map
 		"installation":     installation,
 	}
 	if user != nil {
-		out["user"] = userToJSON(user)
+		out["user"] = store.UserToJSON(user)
 	}
 	return out
 }
@@ -564,7 +566,7 @@ func oauthTokenInspectionJSON(st *Store, tok *UserToServerToken, user *User) map
 // firstInstallationForToken resolves the installation a GitHub-App
 // user-to-server token is scoped to. Prefers an explicit InstallationIDs
 // entry, falling back to the (user, app) installation.
-func firstInstallationForToken(st *Store, tok *UserToServerToken) *Installation {
+func firstInstallationForToken(st *store.Store, tok *store.UserToServerToken) *store.Installation {
 	for _, id := range tok.InstallationIDs {
 		if inst := st.GetInstallation(id); inst != nil {
 			return inst
@@ -620,7 +622,7 @@ func splitScopes(s string) []string {
 	return out
 }
 
-func oauthAppToJSON(a *OAuthApp, includeSecret bool) map[string]interface{} {
+func oauthAppToJSON(a *store.OAuthApp, includeSecret bool) map[string]interface{} {
 	out := map[string]interface{}{
 		"client_id":    a.ClientID,
 		"name":         a.Name,

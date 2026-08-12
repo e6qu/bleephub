@@ -8,6 +8,8 @@ import (
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func (s *Server) registerGHPackagesRoutes() {
@@ -57,10 +59,10 @@ func (s *Server) registerGHPackagesRoutes() {
 // ─── Internal upload endpoint ───────────────────────────────────────────
 
 type packageVersionCreateBody struct {
-	Version     string                 `json:"version"`
-	Description string                 `json:"description"`
-	Metadata    map[string]interface{} `json:"metadata"`
-	Files       []PackageFileInput     `json:"files"`
+	Version     string                   `json:"version"`
+	Description string                   `json:"description"`
+	Metadata    map[string]interface{}   `json:"metadata"`
+	Files       []store.PackageFileInput `json:"files"`
 }
 
 func (s *Server) handleInternalCreatePackageVersion(w http.ResponseWriter, r *http.Request) {
@@ -72,12 +74,12 @@ func (s *Server) handleInternalCreatePackageVersion(w http.ResponseWriter, r *ht
 	pkgType := r.PathValue("package_type")
 	pkgName := r.PathValue("package_name")
 
-	if !isPackageType(pkgType) {
-		writeGHValidationError(w, "Package", "package_type", "invalid")
+	if !store.IsPackageType(pkgType) {
+		store.WriteGHValidationError(w, "Package", "package_type", "invalid")
 		return
 	}
 	if pkgType == "container" {
-		writeGHValidationError(w, "Package", "package_type", "use_registry_data_plane")
+		store.WriteGHValidationError(w, "Package", "package_type", "use_registry_data_plane")
 		return
 	}
 
@@ -86,7 +88,7 @@ func (s *Server) handleInternalCreatePackageVersion(w http.ResponseWriter, r *ht
 		return
 	}
 	if body.Version == "" {
-		writeGHValidationError(w, "PackageVersion", "version", "missing_field")
+		store.WriteGHValidationError(w, "PackageVersion", "version", "missing_field")
 		return
 	}
 
@@ -114,7 +116,7 @@ func (s *Server) handleInternalCreatePackageVersion(w http.ResponseWriter, r *ht
 		}
 		resolvedOwnerKey = repo.FullName
 	default:
-		writeGHValidationError(w, "Package", "owner_type", "invalid")
+		store.WriteGHValidationError(w, "Package", "owner_type", "invalid")
 		return
 	}
 
@@ -138,7 +140,7 @@ func (s *Server) handleInternalCreatePackageVersion(w http.ResponseWriter, r *ht
 				"action":           "published",
 				"registry_package": map[string]interface{}{"name": pkgName, "package_type": pkgType},
 				"repository":       repoPayload(repo),
-				"sender":           userToJSON(repo.Owner),
+				"sender":           store.UserToJSON(repo.Owner),
 			})
 		}
 	}
@@ -331,7 +333,7 @@ func packageListFilters(w http.ResponseWriter, r *http.Request) (pkgType, visibi
 		writeGHError(w, http.StatusBadRequest, "Invalid request.\n\n\"package_type\" wasn't supplied.")
 		return "", "", false
 	}
-	if !isPackageType(pkgType) {
+	if !store.IsPackageType(pkgType) {
 		writeGHError(w, http.StatusBadRequest, "Invalid request.\n\n\"package_type\" isn't a valid package type.")
 		return "", "", false
 	}
@@ -340,7 +342,7 @@ func packageListFilters(w http.ResponseWriter, r *http.Request) (pkgType, visibi
 
 // listOwnerPackagesJSON renders the packages of one owner scope filtered
 // by type, visibility, and viewer access.
-func (s *Server) listOwnerPackagesJSON(r *http.Request, user *User, ownerKey, pkgType, visibility string) []map[string]interface{} {
+func (s *Server) listOwnerPackagesJSON(r *http.Request, user *store.User, ownerKey, pkgType, visibility string) []map[string]interface{} {
 	pkgs := s.store.ListPackages(ownerKey)
 	baseURL := s.baseURL(r)
 	out := make([]map[string]interface{}, 0, len(pkgs))
@@ -373,10 +375,10 @@ func (s *Server) handleListAuthUserPackages(w http.ResponseWriter, r *http.Reque
 
 // resolveAuthUserPackage resolves {package_type}/{package_name} within
 // the authenticated user's own package namespace.
-func (s *Server) resolveAuthUserPackage(w http.ResponseWriter, r *http.Request, user *User) (*Package, bool) {
+func (s *Server) resolveAuthUserPackage(w http.ResponseWriter, r *http.Request, user *store.User) (*store.Package, bool) {
 	pkgType := r.PathValue("package_type")
 	pkgName := r.PathValue("package_name")
-	if !isPackageType(pkgType) {
+	if !store.IsPackageType(pkgType) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil, false
 	}
@@ -436,7 +438,7 @@ func (s *Server) handleListAuthUserPackageVersions(w http.ResponseWriter, r *htt
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, s.listVersionsJSON(p, r)))
 }
 
-func (s *Server) resolveAuthUserPackageVersion(w http.ResponseWriter, r *http.Request, user *User) (*Package, *PackageVersion, bool) {
+func (s *Server) resolveAuthUserPackageVersion(w http.ResponseWriter, r *http.Request, user *store.User) (*store.Package, *store.PackageVersion, bool) {
 	p, ok := s.resolveAuthUserPackage(w, r, user)
 	if !ok {
 		return nil, nil, false
@@ -496,10 +498,10 @@ func (s *Server) handleRestoreAuthUserPackageVersion(w http.ResponseWriter, r *h
 
 // restorePackageForOwner restores a soft-deleted package in an owner
 // namespace after checking the caller may administer it.
-func (s *Server) restorePackageForOwner(w http.ResponseWriter, r *http.Request, user *User, ownerKey string) {
+func (s *Server) restorePackageForOwner(w http.ResponseWriter, r *http.Request, user *store.User, ownerKey string) {
 	pkgType := r.PathValue("package_type")
 	pkgName := r.PathValue("package_name")
-	if !isPackageType(pkgType) {
+	if !store.IsPackageType(pkgType) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -928,11 +930,11 @@ func (s *Server) handleDownloadRepoPackageFile(w http.ResponseWriter, r *http.Re
 
 // ─── Resolvers ──────────────────────────────────────────────────────────
 
-func (s *Server) resolveUserPackage(w http.ResponseWriter, r *http.Request) (*Package, bool) {
+func (s *Server) resolveUserPackage(w http.ResponseWriter, r *http.Request) (*store.Package, bool) {
 	owner := r.PathValue("username")
 	pkgType := r.PathValue("package_type")
 	pkgName := r.PathValue("package_name")
-	if !isPackageType(pkgType) {
+	if !store.IsPackageType(pkgType) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil, false
 	}
@@ -949,7 +951,7 @@ func (s *Server) resolveUserPackage(w http.ResponseWriter, r *http.Request) (*Pa
 	return p, true
 }
 
-func (s *Server) resolveUserPackageVersion(w http.ResponseWriter, r *http.Request) (*Package, *PackageVersion, bool) {
+func (s *Server) resolveUserPackageVersion(w http.ResponseWriter, r *http.Request) (*store.Package, *store.PackageVersion, bool) {
 	p, ok := s.resolveUserPackage(w, r)
 	if !ok {
 		return nil, nil, false
@@ -961,7 +963,7 @@ func (s *Server) resolveUserPackageVersion(w http.ResponseWriter, r *http.Reques
 	return p, v, true
 }
 
-func (s *Server) resolveUserPackageFile(w http.ResponseWriter, r *http.Request) (*Package, *PackageVersion, *PackageFile, bool) {
+func (s *Server) resolveUserPackageFile(w http.ResponseWriter, r *http.Request) (*store.Package, *store.PackageVersion, *store.PackageFile, bool) {
 	p, v, ok := s.resolveUserPackageVersion(w, r)
 	if !ok {
 		return nil, nil, nil, false
@@ -973,11 +975,11 @@ func (s *Server) resolveUserPackageFile(w http.ResponseWriter, r *http.Request) 
 	return p, v, f, true
 }
 
-func (s *Server) resolveOrgPackage(w http.ResponseWriter, r *http.Request) (*Package, bool) {
+func (s *Server) resolveOrgPackage(w http.ResponseWriter, r *http.Request) (*store.Package, bool) {
 	orgLogin := r.PathValue("org")
 	pkgType := r.PathValue("package_type")
 	pkgName := r.PathValue("package_name")
-	if !isPackageType(pkgType) {
+	if !store.IsPackageType(pkgType) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil, false
 	}
@@ -994,7 +996,7 @@ func (s *Server) resolveOrgPackage(w http.ResponseWriter, r *http.Request) (*Pac
 	return p, true
 }
 
-func (s *Server) resolveOrgPackageVersion(w http.ResponseWriter, r *http.Request) (*Package, *PackageVersion, bool) {
+func (s *Server) resolveOrgPackageVersion(w http.ResponseWriter, r *http.Request) (*store.Package, *store.PackageVersion, bool) {
 	p, ok := s.resolveOrgPackage(w, r)
 	if !ok {
 		return nil, nil, false
@@ -1006,7 +1008,7 @@ func (s *Server) resolveOrgPackageVersion(w http.ResponseWriter, r *http.Request
 	return p, v, true
 }
 
-func (s *Server) resolveOrgPackageFile(w http.ResponseWriter, r *http.Request) (*Package, *PackageVersion, *PackageFile, bool) {
+func (s *Server) resolveOrgPackageFile(w http.ResponseWriter, r *http.Request) (*store.Package, *store.PackageVersion, *store.PackageFile, bool) {
 	p, v, ok := s.resolveOrgPackageVersion(w, r)
 	if !ok {
 		return nil, nil, nil, false
@@ -1018,7 +1020,7 @@ func (s *Server) resolveOrgPackageFile(w http.ResponseWriter, r *http.Request) (
 	return p, v, f, true
 }
 
-func (s *Server) resolveRepoForPackages(w http.ResponseWriter, r *http.Request) (*Repo, bool) {
+func (s *Server) resolveRepoForPackages(w http.ResponseWriter, r *http.Request) (*store.Repo, bool) {
 	owner := r.PathValue("owner")
 	name := r.PathValue("repo")
 	repo := s.store.GetRepo(owner, name)
@@ -1029,12 +1031,12 @@ func (s *Server) resolveRepoForPackages(w http.ResponseWriter, r *http.Request) 
 	return repo, true
 }
 
-func (s *Server) resolveRepoPackage(w http.ResponseWriter, r *http.Request) (*Package, bool) {
+func (s *Server) resolveRepoPackage(w http.ResponseWriter, r *http.Request) (*store.Package, bool) {
 	owner := r.PathValue("owner")
 	name := r.PathValue("repo")
 	pkgType := r.PathValue("package_type")
 	pkgName := r.PathValue("package_name")
-	if !isPackageType(pkgType) {
+	if !store.IsPackageType(pkgType) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil, false
 	}
@@ -1051,7 +1053,7 @@ func (s *Server) resolveRepoPackage(w http.ResponseWriter, r *http.Request) (*Pa
 	return p, true
 }
 
-func (s *Server) resolveRepoPackageVersion(w http.ResponseWriter, r *http.Request) (*Package, *PackageVersion, bool) {
+func (s *Server) resolveRepoPackageVersion(w http.ResponseWriter, r *http.Request) (*store.Package, *store.PackageVersion, bool) {
 	p, ok := s.resolveRepoPackage(w, r)
 	if !ok {
 		return nil, nil, false
@@ -1063,7 +1065,7 @@ func (s *Server) resolveRepoPackageVersion(w http.ResponseWriter, r *http.Reques
 	return p, v, true
 }
 
-func (s *Server) resolveRepoPackageFile(w http.ResponseWriter, r *http.Request) (*Package, *PackageVersion, *PackageFile, bool) {
+func (s *Server) resolveRepoPackageFile(w http.ResponseWriter, r *http.Request) (*store.Package, *store.PackageVersion, *store.PackageFile, bool) {
 	p, v, ok := s.resolveRepoPackageVersion(w, r)
 	if !ok {
 		return nil, nil, nil, false
@@ -1075,7 +1077,7 @@ func (s *Server) resolveRepoPackageFile(w http.ResponseWriter, r *http.Request) 
 	return p, v, f, true
 }
 
-func (s *Server) resolveVersion(w http.ResponseWriter, r *http.Request) (*PackageVersion, bool) {
+func (s *Server) resolveVersion(w http.ResponseWriter, r *http.Request) (*store.PackageVersion, bool) {
 	id, err := strconv.Atoi(r.PathValue("package_version_id"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -1089,7 +1091,7 @@ func (s *Server) resolveVersion(w http.ResponseWriter, r *http.Request) (*Packag
 	return v, true
 }
 
-func (s *Server) resolveFile(w http.ResponseWriter, r *http.Request) (*PackageFile, bool) {
+func (s *Server) resolveFile(w http.ResponseWriter, r *http.Request) (*store.PackageFile, bool) {
 	id, err := strconv.Atoi(r.PathValue("file_id"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -1105,7 +1107,7 @@ func (s *Server) resolveFile(w http.ResponseWriter, r *http.Request) (*PackageFi
 
 // ─── Authorization helpers ──────────────────────────────────────────────
 
-func (s *Server) requireUser(w http.ResponseWriter, r *http.Request) *User {
+func (s *Server) requireUser(w http.ResponseWriter, r *http.Request) *store.User {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "Requires authentication")
@@ -1114,7 +1116,7 @@ func (s *Server) requireUser(w http.ResponseWriter, r *http.Request) *User {
 	return user
 }
 
-func (s *Server) canViewPackage(ctx context.Context, user *User, p *Package) bool {
+func (s *Server) canViewPackage(ctx context.Context, user *store.User, p *store.Package) bool {
 	ctx = contextWithUser(ctx, user)
 	if p.Visibility == "public" {
 		return true
@@ -1122,7 +1124,7 @@ func (s *Server) canViewPackage(ctx context.Context, user *User, p *Package) boo
 	return s.canAdminPackage(ctx, user, p)
 }
 
-func (s *Server) canAdminPackage(ctx context.Context, user *User, p *Package) bool {
+func (s *Server) canAdminPackage(ctx context.Context, user *store.User, p *store.Package) bool {
 	ctx = contextWithUser(ctx, user)
 	if user == nil {
 		return false
@@ -1146,7 +1148,7 @@ func (s *Server) canAdminPackage(ctx context.Context, user *User, p *Package) bo
 
 // ─── JSON serialization ─────────────────────────────────────────────────
 
-func (s *Server) packageToJSON(p *Package, baseURL string) map[string]interface{} {
+func (s *Server) packageToJSON(p *store.Package, baseURL string) map[string]interface{} {
 	out := map[string]interface{}{
 		"id":            p.ID,
 		"name":          p.Name,
@@ -1161,14 +1163,14 @@ func (s *Server) packageToJSON(p *Package, baseURL string) map[string]interface{
 	switch p.OwnerType {
 	case "User":
 		if u := s.store.LookupUserByLogin(p.OwnerKey); u != nil {
-			out["owner"] = userToJSON(u)
+			out["owner"] = store.UserToJSON(u)
 		} else {
 			out["owner"] = nil
 		}
 		out["repository"] = nil
 	case "Organization":
 		if org := s.store.GetOrg(p.OwnerKey); org != nil {
-			out["owner"] = orgAsSimpleUserJSON(org)
+			out["owner"] = store.OrgAsSimpleUserJSON(org)
 		} else {
 			out["owner"] = nil
 		}
@@ -1184,7 +1186,7 @@ func (s *Server) packageToJSON(p *Package, baseURL string) map[string]interface{
 	return out
 }
 
-func (s *Server) packageVersionToJSON(v *PackageVersion, p *Package, baseURL, scopePath string) map[string]interface{} {
+func (s *Server) packageVersionToJSON(v *store.PackageVersion, p *store.Package, baseURL, scopePath string) map[string]interface{} {
 	out := map[string]interface{}{
 		"id":               v.ID,
 		"name":             v.Version,
@@ -1202,7 +1204,7 @@ func (s *Server) packageVersionToJSON(v *PackageVersion, p *Package, baseURL, sc
 	return out
 }
 
-func (s *Server) packageFileToJSON(f *PackageFile, p *Package, v *PackageVersion, baseURL, scopePath string) map[string]interface{} {
+func (s *Server) packageFileToJSON(f *store.PackageFile, p *store.Package, v *store.PackageVersion, baseURL, scopePath string) map[string]interface{} {
 	return map[string]interface{}{
 		"id":           f.ID,
 		"node_id":      f.NodeID,
@@ -1215,7 +1217,7 @@ func (s *Server) packageFileToJSON(f *PackageFile, p *Package, v *PackageVersion
 	}
 }
 
-func (s *Server) packageHTMLURL(baseURL string, p *Package) string {
+func (s *Server) packageHTMLURL(baseURL string, p *store.Package) string {
 	var path string
 	switch p.OwnerType {
 	case "User":
@@ -1228,11 +1230,11 @@ func (s *Server) packageHTMLURL(baseURL string, p *Package) string {
 	return baseURL + path
 }
 
-func (s *Server) packageVersionHTMLURL(baseURL string, p *Package, v *PackageVersion) string {
+func (s *Server) packageVersionHTMLURL(baseURL string, p *store.Package, v *store.PackageVersion) string {
 	return s.packageHTMLURL(baseURL, p) + "/" + strconv.Itoa(v.ID)
 }
 
-func (s *Server) listVersionsJSON(p *Package, r *http.Request) []map[string]interface{} {
+func (s *Server) listVersionsJSON(p *store.Package, r *http.Request) []map[string]interface{} {
 	baseURL := s.baseURL(r)
 	scopePath := packageScopePath(p.OwnerType, p.OwnerKey)
 	versions := s.store.ListPackageVersions(p.ID, false)
@@ -1243,7 +1245,7 @@ func (s *Server) listVersionsJSON(p *Package, r *http.Request) []map[string]inte
 	return out
 }
 
-func (s *Server) listFilesJSON(v *PackageVersion, p *Package, r *http.Request) []map[string]interface{} {
+func (s *Server) listFilesJSON(v *store.PackageVersion, p *store.Package, r *http.Request) []map[string]interface{} {
 	baseURL := s.baseURL(r)
 	scopePath := packageScopePath(p.OwnerType, p.OwnerKey)
 	files := s.store.ListPackageFiles(v.ID)
@@ -1256,8 +1258,8 @@ func (s *Server) listFilesJSON(v *PackageVersion, p *Package, r *http.Request) [
 
 // minimalRepoJSON returns the subset of repository fields that matches
 // GitHub's minimal-repository schema, used for the package.repository block.
-func minimalRepoJSON(repo *Repo, st *Store, baseURL string) map[string]interface{} {
-	full := repoToJSON(repo, st, baseURL)
+func minimalRepoJSON(repo *store.Repo, st *store.Store, baseURL string) map[string]interface{} {
+	full := store.RepoToJSON(repo, st, baseURL)
 	allowed := map[string]bool{
 		"id": true, "node_id": true, "name": true, "full_name": true, "owner": true,
 		"private": true, "html_url": true, "description": true, "fork": true, "url": true,
@@ -1282,7 +1284,7 @@ func minimalRepoJSON(repo *Repo, st *Store, baseURL string) map[string]interface
 
 // ─── File serving ───────────────────────────────────────────────────────
 
-func (s *Server) servePackageFile(w http.ResponseWriter, r *http.Request, f *PackageFile) {
+func (s *Server) servePackageFile(w http.ResponseWriter, r *http.Request, f *store.PackageFile) {
 	// Stream the file straight from the object store to the client — a large
 	// package download must not first materialize in the process heap
 	// (STORE-019). Content-Length comes from the recorded file size.
@@ -1310,11 +1312,11 @@ func (s *Server) servePackageFile(w http.ResponseWriter, r *http.Request, f *Pac
 }
 
 // PackageVersionURL returns the public API URL for a package version.
-func (s *Server) packageVersionURL(baseURL, scopePath string, p *Package, v *PackageVersion) string {
+func (s *Server) packageVersionURL(baseURL, scopePath string, p *store.Package, v *store.PackageVersion) string {
 	return baseURL + "/api/v3" + scopePath + "/" + url.PathEscape(p.PackageType) + "/" + url.PathEscape(p.Name) + "/versions/" + strconv.Itoa(v.ID)
 }
 
 // packageURL returns the public API URL for a package.
-func (s *Server) packageURL(baseURL, scopePath string, p *Package) string {
+func (s *Server) packageURL(baseURL, scopePath string, p *store.Package) string {
 	return baseURL + "/api/v3" + scopePath + "/" + url.PathEscape(p.PackageType) + "/" + url.PathEscape(p.Name)
 }

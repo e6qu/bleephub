@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // A user-to-server (`ghu_`) token is the intersection of two things: what its
@@ -24,14 +26,14 @@ import (
 // does hold access, must still be served.
 
 type ghuFixture struct {
-	victim      *User
-	victimRepo  *Repo
-	bearer      *User
+	victim      *store.User
+	victimRepo  *store.Repo
+	bearer      *store.User
 	bearerToken string
-	org         *Org
+	org         *store.Org
 
 	// outsideApp holds no permissions and has no installation anywhere.
-	outsideApp *App
+	outsideApp *store.App
 	outsideGhu string
 	outsideGhs string
 
@@ -42,16 +44,16 @@ type ghuFixture struct {
 
 func (s *isolatedServer) newGhuFixture(t *testing.T, tag string) *ghuFixture {
 	t.Helper()
-	store := s.store
+	st := s.store
 	now := fixedTestTime.UTC()
 
-	mkUser := func(login string) *User {
-		store.Mu.Lock()
-		defer store.Mu.Unlock()
-		u := &User{ID: store.NextUser, Login: login, Type: "User", CreatedAt: now, UpdatedAt: now}
-		store.Users[u.ID] = u
-		store.UsersByLogin[u.Login] = u
-		store.NextUser++
+	mkUser := func(login string) *store.User {
+		st.Mu.Lock()
+		defer st.Mu.Unlock()
+		u := &store.User{ID: st.NextUser, Login: login, Type: "User", CreatedAt: now, UpdatedAt: now}
+		st.Users[u.ID] = u
+		st.UsersByLogin[u.Login] = u
+		st.NextUser++
 		return u
 	}
 
@@ -60,43 +62,43 @@ func (s *isolatedServer) newGhuFixture(t *testing.T, tag string) *ghuFixture {
 		bearer: mkUser("ghu-bearer-" + tag),
 	}
 
-	f.victimRepo = store.CreateRepo(f.victim, "ghu-private", "private fixture", true)
+	f.victimRepo = st.CreateRepo(f.victim, "ghu-private", "private fixture", true)
 	if f.victimRepo == nil || !f.victimRepo.Private {
 		t.Fatalf("could not create the victim's private repository")
 	}
 	// The bearer legitimately holds pull on the victim's private repository.
 	// That is what makes the borrowed access plausible: the user really can
 	// read it, the app really cannot.
-	if !store.AddRepoCollaborator(f.victim.Login, "ghu-private", f.bearer.Login, "pull") {
+	if !st.AddRepoCollaborator(f.victim.Login, "ghu-private", f.bearer.Login, "pull") {
 		t.Fatalf("could not make the bearer a collaborator")
 	}
-	if tok := store.CreateToken(f.bearer.ID, "repo, admin:org, admin:org_hook"); tok != nil {
+	if tok := st.CreateToken(f.bearer.ID, "repo, admin:org, admin:org_hook"); tok != nil {
 		f.bearerToken = tok.Value
 	} else {
 		t.Fatalf("could not mint the bearer's PAT")
 	}
 
-	f.org = store.CreateOrg(f.bearer, "ghu-org-"+tag, "Ghu Org", "")
+	f.org = st.CreateOrg(f.bearer, "ghu-org-"+tag, "Ghu Org", "")
 	if f.org == nil {
 		t.Fatalf("could not create the organization")
 	}
 
-	outside := store.CreateApp(f.bearer.ID, "Ghu Outside "+tag, "", nil, nil)
+	outside := st.CreateApp(f.bearer.ID, "Ghu Outside "+tag, "", nil, nil)
 	if outside == nil {
 		t.Fatalf("could not create the zero-permission app")
 	}
-	if insts := store.ListAppInstallations(outside.ID); len(insts) != 0 {
+	if insts := st.ListAppInstallations(outside.ID); len(insts) != 0 {
 		t.Fatalf("the fixture app must have no installations, got %d", len(insts))
 	}
 	f.outsideApp = outside
-	outsideGhu, _ := store.CreateUserToServerToken(f.bearer.ID, outside.ID, "", "", time.Hour, false)
+	outsideGhu, _ := st.CreateUserToServerToken(f.bearer.ID, outside.ID, "", "", time.Hour, false)
 	if outsideGhu == nil {
 		t.Fatalf("could not mint the outside ghu_ token")
 	}
 	f.outsideGhu = outsideGhu.Token
 	// A ghs_ for an app with no installation: installation id 0 resolves to
 	// nothing, which is exactly the "installed nowhere" shape.
-	f.outsideGhs = store.CreateInstallationToken(0, outside.ID, nil, nil).Token
+	f.outsideGhs = st.CreateInstallationToken(0, outside.ID, nil, nil).Token
 
 	perms := map[string]string{
 		"metadata":                    "read",
@@ -105,21 +107,21 @@ func (s *isolatedServer) newGhuFixture(t *testing.T, tag string) *ghuFixture {
 		"organization_administration": "admin",
 		"organization_hooks":          "admin",
 	}
-	inside := store.CreateApp(f.bearer.ID, "Ghu Inside "+tag, "", perms, nil)
+	inside := st.CreateApp(f.bearer.ID, "Ghu Inside "+tag, "", perms, nil)
 	if inside == nil {
 		t.Fatalf("could not create the installed app")
 	}
-	victimInst := store.CreateInstallation(inside.ID, "User", f.victim.ID, f.victim.Login, perms, nil)
-	orgInst := store.CreateInstallation(inside.ID, "Organization", f.org.ID, f.org.Login, perms, nil)
+	victimInst := st.CreateInstallation(inside.ID, "User", f.victim.ID, f.victim.Login, perms, nil)
+	orgInst := st.CreateInstallation(inside.ID, "Organization", f.org.ID, f.org.Login, perms, nil)
 	if victimInst == nil || orgInst == nil {
 		t.Fatalf("could not install the app on the fixture accounts")
 	}
-	insideGhu, _ := store.CreateUserToServerToken(f.bearer.ID, inside.ID, "", "", time.Hour, false)
+	insideGhu, _ := st.CreateUserToServerToken(f.bearer.ID, inside.ID, "", "", time.Hour, false)
 	if insideGhu == nil {
 		t.Fatalf("could not mint the inside ghu_ token")
 	}
 	f.insideGhu = insideGhu.Token
-	f.insideGhs = store.CreateInstallationToken(victimInst.ID, inside.ID, perms, nil).Token
+	f.insideGhs = st.CreateInstallationToken(victimInst.ID, inside.ID, perms, nil).Token
 
 	return f
 }

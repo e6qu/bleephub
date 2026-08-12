@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func (s *Server) registerGHProjectsClassicRoutes() {
@@ -135,7 +137,7 @@ func (s *Server) handleCreateProjectClassic(w http.ResponseWriter, r *http.Reque
 	if repo == nil {
 		return
 	}
-	if !s.viewerHasRepoPermission(r.Context(), repo, scopeProjects, permWrite) {
+	if !s.viewerHasRepoPermission(r.Context(), repo, store.ScopeProjects, store.PermWrite) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -149,7 +151,7 @@ func (s *Server) handleCreateProjectClassic(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if body.Name == "" {
-		writeGHValidationError(w, "Project", "name", "missing_field")
+		store.WriteGHValidationError(w, "Project", "name", "missing_field")
 		return
 	}
 	proj := s.store.CreateProjectClassic(repo, user.ID, body.Name, body.Body, body.State)
@@ -160,7 +162,7 @@ func (s *Server) handleCreateProjectClassic(w http.ResponseWriter, r *http.Reque
 		"action":     "created",
 		"project":    projJSON,
 		"repository": repoPayload(repo),
-		"sender":     userToJSON(user),
+		"sender":     store.UserToJSON(user),
 	})
 	writeJSONCreated(w, jsonStringField(projJSON, "url"), projJSON)
 }
@@ -192,7 +194,7 @@ func (s *Server) handleUpdateProjectClassic(w http.ResponseWriter, r *http.Reque
 	if proj == nil {
 		return
 	}
-	if !s.viewerHasRepoPermission(r.Context(), repo, scopeProjects, permWrite) {
+	if !s.viewerHasRepoPermission(r.Context(), repo, store.ScopeProjects, store.PermWrite) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -219,7 +221,7 @@ func (s *Server) handleDeleteProjectClassic(w http.ResponseWriter, r *http.Reque
 	if proj == nil {
 		return
 	}
-	if !s.viewerHasRepoPermission(r.Context(), repo, scopeProjects, permWrite) {
+	if !s.viewerHasRepoPermission(r.Context(), repo, store.ScopeProjects, store.PermWrite) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -262,7 +264,7 @@ func (s *Server) handleCreateProjectColumn(w http.ResponseWriter, r *http.Reques
 	if proj == nil {
 		return
 	}
-	if !s.viewerHasRepoPermission(r.Context(), repo, scopeProjects, permWrite) {
+	if !s.viewerHasRepoPermission(r.Context(), repo, store.ScopeProjects, store.PermWrite) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -274,7 +276,7 @@ func (s *Server) handleCreateProjectColumn(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if body.Name == "" {
-		writeGHValidationError(w, "ProjectColumn", "name", "missing_field")
+		store.WriteGHValidationError(w, "ProjectColumn", "name", "missing_field")
 		return
 	}
 	col := s.store.CreateProjectColumn(proj.ID, body.Name)
@@ -283,7 +285,7 @@ func (s *Server) handleCreateProjectColumn(w http.ResponseWriter, r *http.Reques
 		"action":         "created",
 		"project_column": colJSON,
 		"repository":     repoPayload(repo),
-		"sender":         userToJSON(user),
+		"sender":         store.UserToJSON(user),
 	})
 	writeJSONCreated(w, jsonStringField(colJSON, "url"), colJSON)
 }
@@ -315,7 +317,7 @@ func (s *Server) handleUpdateProjectColumn(w http.ResponseWriter, r *http.Reques
 	if col == nil {
 		return
 	}
-	if !s.viewerHasRepoPermission(r.Context(), repo, scopeProjects, permWrite) {
+	if !s.viewerHasRepoPermission(r.Context(), repo, store.ScopeProjects, store.PermWrite) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -327,7 +329,7 @@ func (s *Server) handleUpdateProjectColumn(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if body.Name == "" {
-		writeGHValidationError(w, "ProjectColumn", "name", "missing_field")
+		store.WriteGHValidationError(w, "ProjectColumn", "name", "missing_field")
 		return
 	}
 	updated := s.store.UpdateProjectColumn(col, body.Name)
@@ -344,7 +346,7 @@ func (s *Server) handleDeleteProjectColumn(w http.ResponseWriter, r *http.Reques
 	if col == nil {
 		return
 	}
-	if !s.viewerHasRepoPermission(r.Context(), repo, scopeProjects, permWrite) {
+	if !s.viewerHasRepoPermission(r.Context(), repo, store.ScopeProjects, store.PermWrite) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -363,7 +365,7 @@ func (s *Server) handleMoveProjectColumn(w http.ResponseWriter, r *http.Request)
 	if col == nil {
 		return
 	}
-	if !s.viewerHasRepoPermission(r.Context(), repo, scopeProjects, permWrite) {
+	if !s.viewerHasRepoPermission(r.Context(), repo, store.ScopeProjects, store.PermWrite) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -375,7 +377,7 @@ func (s *Server) handleMoveProjectColumn(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if err := s.store.MoveProjectColumn(col, body.Position); err != nil {
-		writeGHValidationError(w, "ProjectColumn", "position", "invalid")
+		store.WriteGHValidationError(w, "ProjectColumn", "position", "invalid")
 		return
 	}
 	colMoveURL := projectColumnURL(col, s.baseURL(r))
@@ -419,7 +421,7 @@ func (s *Server) handleCreateProjectCard(w http.ResponseWriter, r *http.Request)
 	if col == nil {
 		return
 	}
-	if !s.viewerHasRepoPermission(r.Context(), repo, scopeProjects, permWrite) {
+	if !s.viewerHasRepoPermission(r.Context(), repo, store.ScopeProjects, store.PermWrite) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -438,17 +440,17 @@ func (s *Server) handleCreateProjectCard(w http.ResponseWriter, r *http.Request)
 		if strings.EqualFold(body.ContentType, "Issue") {
 			issue := s.store.GetIssue(body.ContentID)
 			if issue == nil || issue.RepoID != repo.ID {
-				writeGHValidationError(w, "ProjectCard", "content_id", "invalid")
+				store.WriteGHValidationError(w, "ProjectCard", "content_id", "invalid")
 				return
 			}
 			issueID = issue.ID
 		} else {
-			writeGHValidationError(w, "ProjectCard", "content_type", "invalid")
+			store.WriteGHValidationError(w, "ProjectCard", "content_type", "invalid")
 			return
 		}
 	}
 	if issueID == 0 && body.Note == "" {
-		writeGHValidationError(w, "ProjectCard", "note", "missing_field")
+		store.WriteGHValidationError(w, "ProjectCard", "note", "missing_field")
 		return
 	}
 
@@ -462,7 +464,7 @@ func (s *Server) handleCreateProjectCard(w http.ResponseWriter, r *http.Request)
 		"action":       "created",
 		"project_card": item,
 		"repository":   repoPayload(repo),
-		"sender":       userToJSON(user),
+		"sender":       store.UserToJSON(user),
 	})
 	writeJSONCreated(w, jsonStringField(item, "url"), item)
 }
@@ -499,7 +501,7 @@ func (s *Server) handleUpdateProjectCard(w http.ResponseWriter, r *http.Request)
 	if card == nil {
 		return
 	}
-	if !s.viewerHasRepoPermission(r.Context(), repo, scopeProjects, permWrite) {
+	if !s.viewerHasRepoPermission(r.Context(), repo, store.ScopeProjects, store.PermWrite) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -529,7 +531,7 @@ func (s *Server) handleDeleteProjectCard(w http.ResponseWriter, r *http.Request)
 	if card == nil {
 		return
 	}
-	if !s.viewerHasRepoPermission(r.Context(), repo, scopeProjects, permWrite) {
+	if !s.viewerHasRepoPermission(r.Context(), repo, store.ScopeProjects, store.PermWrite) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -548,7 +550,7 @@ func (s *Server) handleMoveProjectCard(w http.ResponseWriter, r *http.Request) {
 	if card == nil {
 		return
 	}
-	if !s.viewerHasRepoPermission(r.Context(), repo, scopeProjects, permWrite) {
+	if !s.viewerHasRepoPermission(r.Context(), repo, store.ScopeProjects, store.PermWrite) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -565,7 +567,7 @@ func (s *Server) handleMoveProjectCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.store.MoveProjectCard(card, body.ColumnID, body.Position); err != nil {
-		writeGHValidationError(w, "ProjectCard", "position", "invalid")
+		store.WriteGHValidationError(w, "ProjectCard", "position", "invalid")
 		return
 	}
 	cardMoveURL := projectCardURL(card, s.baseURL(r))
@@ -573,12 +575,12 @@ func (s *Server) handleMoveProjectCard(w http.ResponseWriter, r *http.Request) {
 		"action":       "moved",
 		"project_card": map[string]interface{}{"id": card.ID, "url": cardMoveURL},
 		"repository":   repoPayload(repo),
-		"sender":       userToJSON(user),
+		"sender":       store.UserToJSON(user),
 	})
 	writeJSONCreated(w, cardMoveURL, map[string]interface{}{"id": card.ID, "url": cardMoveURL})
 }
 
-func (s *Server) resolveProjectClassic(w http.ResponseWriter, r *http.Request) (*ProjectClassic, *Repo) {
+func (s *Server) resolveProjectClassic(w http.ResponseWriter, r *http.Request) (*store.ProjectClassic, *store.Repo) {
 	idStr := r.PathValue("project_id")
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
@@ -598,7 +600,7 @@ func (s *Server) resolveProjectClassic(w http.ResponseWriter, r *http.Request) (
 	return proj, repo
 }
 
-func (s *Server) resolveProjectColumn(w http.ResponseWriter, r *http.Request) (*ProjectColumn, *Repo) {
+func (s *Server) resolveProjectColumn(w http.ResponseWriter, r *http.Request) (*store.ProjectColumn, *store.Repo) {
 	idStr := r.PathValue("column_id")
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
@@ -623,7 +625,7 @@ func (s *Server) resolveProjectColumn(w http.ResponseWriter, r *http.Request) (*
 	return col, repo
 }
 
-func (s *Server) resolveProjectCard(w http.ResponseWriter, r *http.Request) (*ProjectCard, *Repo) {
+func (s *Server) resolveProjectCard(w http.ResponseWriter, r *http.Request) (*store.ProjectCard, *store.Repo) {
 	idStr := r.PathValue("card_id")
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
@@ -653,11 +655,11 @@ func (s *Server) resolveProjectCard(w http.ResponseWriter, r *http.Request) (*Pr
 	return card, repo
 }
 
-func projectClassicToJSON(p *ProjectClassic, st *Store, baseURL, repoFullName string) map[string]interface{} {
+func projectClassicToJSON(p *store.ProjectClassic, st *store.Store, baseURL, repoFullName string) map[string]interface{} {
 	var creator map[string]interface{}
 	st.Mu.RLock()
 	if u := st.Users[p.CreatorID]; u != nil {
-		creator = userToJSON(u)
+		creator = store.UserToJSON(u)
 	}
 	st.Mu.RUnlock()
 
@@ -679,7 +681,7 @@ func projectClassicToJSON(p *ProjectClassic, st *Store, baseURL, repoFullName st
 	}
 }
 
-func projectColumnToJSON(c *ProjectColumn, st *Store, baseURL string) map[string]interface{} {
+func projectColumnToJSON(c *store.ProjectColumn, st *store.Store, baseURL string) map[string]interface{} {
 	api := projectColumnURL(c, baseURL)
 	return map[string]interface{}{
 		"id":          c.ID,
@@ -693,7 +695,7 @@ func projectColumnToJSON(c *ProjectColumn, st *Store, baseURL string) map[string
 	}
 }
 
-func projectColumnURL(c *ProjectColumn, baseURL string) string {
+func projectColumnURL(c *store.ProjectColumn, baseURL string) string {
 	return baseURL + "/api/v3/projects/columns/" + strconv.Itoa(c.ID)
 }
 
@@ -701,15 +703,15 @@ func projectColumnURL(c *ProjectColumn, baseURL string) string {
 // card's column has been deleted concurrently: deleting a column cascades to
 // its cards, so such a card has left the URL space and has no column_url or
 // project_url to report.
-func projectCardToJSON(c *ProjectCard, st *Store, baseURL string) (map[string]interface{}, bool) {
+func projectCardToJSON(c *store.ProjectCard, st *store.Store, baseURL string) (map[string]interface{}, bool) {
 	var creator map[string]interface{}
 	var contentURL interface{}
 	st.Mu.RLock()
 	if u := st.Users[c.CreatorID]; u != nil {
-		creator = userToJSON(u)
+		creator = store.UserToJSON(u)
 	}
 	col := st.ProjectColumns[c.ColumnID]
-	var proj *ProjectClassic
+	var proj *store.ProjectClassic
 	if col != nil {
 		proj = st.ProjectClassic[col.ProjectID]
 	}
@@ -739,7 +741,7 @@ func projectCardToJSON(c *ProjectCard, st *Store, baseURL string) (map[string]in
 	}, true
 }
 
-func projectCardURL(c *ProjectCard, baseURL string) string {
+func projectCardURL(c *store.ProjectCard, baseURL string) string {
 	return baseURL + "/api/v3/projects/columns/cards/" + strconv.Itoa(c.ID)
 }
 

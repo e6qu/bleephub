@@ -15,14 +15,16 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func (s *Server) registerGHPagesDeploymentRoutes() {
 	s.route("POST /api/v3/repos/{owner}/{repo}/pages/deployments",
-		s.requirePerm(scopePages, permWrite, s.handlePagesDeploymentCreate))
+		s.requirePerm(store.ScopePages, store.PermWrite, s.handlePagesDeploymentCreate))
 	s.route("GET /api/v3/repos/{owner}/{repo}/pages/deployments/{pages_deployment_id}", s.requirePagesRead(s.handlePagesDeploymentStatus))
 	s.route("POST /api/v3/repos/{owner}/{repo}/pages/deployments/{pages_deployment_id}/cancel",
-		s.requirePerm(scopePages, permWrite, s.handlePagesDeploymentCancel))
+		s.requirePerm(store.ScopePages, store.PermWrite, s.handlePagesDeploymentCancel))
 	s.route("GET /api/v3/repos/{owner}/{repo}/pages/health", s.requirePagesRead(s.handlePagesHealthCheck))
 }
 
@@ -38,7 +40,7 @@ func (s *Server) requirePagesRead(next http.HandlerFunc) http.HandlerFunc {
 				return
 			}
 		}
-		s.requirePerm(scopePages, permRead, next)(w, r)
+		s.requirePerm(store.ScopePages, store.PermRead, next)(w, r)
 	}
 }
 
@@ -72,11 +74,11 @@ func (s *Server) handlePagesDeploymentCreate(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if req.PagesBuildVersion == "" {
-		writeGHValidationError(w, "PageDeployment", "pages_build_version", "missing_field")
+		store.WriteGHValidationError(w, "PageDeployment", "pages_build_version", "missing_field")
 		return
 	}
 	if req.OIDCToken == "" {
-		writeGHValidationError(w, "PageDeployment", "oidc_token", "missing_field")
+		store.WriteGHValidationError(w, "PageDeployment", "oidc_token", "missing_field")
 		return
 	}
 	if req.ArtifactID == nil && req.ArtifactURL == "" {
@@ -89,7 +91,7 @@ func (s *Server) handlePagesDeploymentCreate(w http.ResponseWriter, r *http.Requ
 			return
 		}
 	}
-	environment := coalesceStr(req.Environment, "github-pages")
+	environment := store.CoalesceStr(req.Environment, "github-pages")
 	if err := s.verifyPagesOIDCToken(r, req.OIDCToken, repo, environment, req.PagesBuildVersion, site); err != nil {
 		writeGHError(w, http.StatusBadRequest, "Invalid OIDC token: "+err.Error())
 		return
@@ -146,7 +148,7 @@ type pagesOIDCClaims struct {
 	SHA          string `json:"sha"`
 }
 
-func (s *Server) verifyPagesOIDCToken(r *http.Request, token string, repo *Repo, environment, buildVersion string, site *PagesSite) error {
+func (s *Server) verifyPagesOIDCToken(r *http.Request, token string, repo *store.Repo, environment, buildVersion string, site *store.PagesSite) error {
 	parts := strings.Split(token, ".")
 	if len(parts) != 3 {
 		return errors.New("token is not a three-part JWT")
@@ -230,7 +232,7 @@ func (s *Server) readPagesDeploymentArtifact(ctx context.Context, repoFullName s
 				return nil, fmt.Errorf("pages deployment artifact %d bytes require configured object storage", art.ID)
 			}
 			var err error
-			data, err = s.artifactStore.ByteStore.Get(ctx, artifactDataKey(art.ID))
+			data, err = s.artifactStore.ByteStore.Get(ctx, store.ArtifactDataKey(art.ID))
 			if err != nil {
 				return nil, fmt.Errorf("read Pages deployment artifact %d: %w", art.ID, err)
 			}

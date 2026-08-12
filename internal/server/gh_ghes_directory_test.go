@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func TestGHESDirectoryMappingsOrganizationRenameAndReplicaCaches(t *testing.T) {
@@ -15,7 +17,7 @@ func TestGHESDirectoryMappingsOrganizationRenameAndReplicaCaches(t *testing.T) {
 	replaceStoreClockNow(s.store, func() time.Time { return fixed })
 	admin := s.store.LookupUserByLogin("admin")
 	org := s.store.CreateOrg(admin, "directory-old", "Directory", "")
-	team := s.store.CreateTeam(org.Login, "Platform", TeamOptions{})
+	team := s.store.CreateTeam(org.Login, "Platform", store.TeamOptions{})
 	repo := s.store.CreateOrgRepo(org, admin, "service", "", false)
 	if team == nil || repo == nil {
 		t.Fatal("seed directory fixtures")
@@ -77,11 +79,11 @@ func TestGHESLDAPMappingsPersist(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("BLEEPHUB_PERSIST", "true")
 	t.Setenv("BLEEPHUB_DATA_DIR", dir)
-	p1, err := NewPersistence()
+	p1, err := store.NewPersistence()
 	if err != nil {
 		t.Fatal(err)
 	}
-	st1 := NewStore()
+	st1 := store.NewStore()
 	if err := st1.SetPersistence(p1); err != nil {
 		t.Fatal(err)
 	}
@@ -93,12 +95,12 @@ func TestGHESLDAPMappingsPersist(t *testing.T) {
 	if err := p1.Close(); err != nil {
 		t.Fatal(err)
 	}
-	p2, err := NewPersistence()
+	p2, err := store.NewPersistence()
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer p2.Close()
-	st2 := NewStore()
+	st2 := store.NewStore()
 	if err := st2.SetPersistence(p2); err != nil {
 		t.Fatal(err)
 	}

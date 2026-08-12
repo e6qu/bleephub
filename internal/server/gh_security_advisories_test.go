@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func TestSecurityAdvisory_CRUD(t *testing.T) {
@@ -109,7 +111,7 @@ func TestSecurityAdvisoryReadsReturnDetachedSnapshots(t *testing.T) {
 	srv := newIsolatedServer(t)
 	admin := srv.store.UsersByLogin["admin"]
 	repo := srv.store.CreateRepo(admin, "sa-detach", "", false)
-	adv := srv.store.CreateSecurityAdvisory(repo.ID, admin.ID, CreateAdvisoryReq{
+	adv := srv.store.CreateSecurityAdvisory(repo.ID, admin.ID, store.CreateAdvisoryReq{
 		Summary:  "detach advisory",
 		Severity: "medium",
 		CWEs:     []string{"CWE-79"},
@@ -140,7 +142,7 @@ func TestSecurityAdvisoryReadsReturnDetachedSnapshots(t *testing.T) {
 	}
 
 	// The keyed update still reaches the live row.
-	if !srv.store.UpdateSecurityAdvisory(adv.ID, func(a *SecurityAdvisory) { a.Summary = "updated" }) {
+	if !srv.store.UpdateSecurityAdvisory(adv.ID, func(a *store.SecurityAdvisory) { a.Summary = "updated" }) {
 		t.Fatal("update returned false")
 	}
 	if reread := srv.store.GetSecurityAdvisoryByGHSA(repo.ID, adv.GHSAID); reread.Summary != "updated" {
@@ -157,7 +159,7 @@ func TestSecurityAdvisory_RequestCVE(t *testing.T) {
 		t.Fatal("create repo failed")
 	}
 
-	adv := srv.store.CreateSecurityAdvisory(repo.ID, admin.ID, CreateAdvisoryReq{
+	adv := srv.store.CreateSecurityAdvisory(repo.ID, admin.ID, store.CreateAdvisoryReq{
 		Summary:  "CVE advisory",
 		Severity: "medium",
 	})
@@ -242,7 +244,7 @@ func TestSecurityAdvisory_TemporaryFork(t *testing.T) {
 		t.Fatal("create repo failed")
 	}
 
-	adv := srv.store.CreateSecurityAdvisory(repo.ID, admin.ID, CreateAdvisoryReq{
+	adv := srv.store.CreateSecurityAdvisory(repo.ID, admin.ID, store.CreateAdvisoryReq{
 		Summary:  "Fork advisory",
 		Severity: "high",
 	})

@@ -8,13 +8,14 @@ import (
 	"testing"
 
 	"github.com/e6qu/bleephub/internal/actions"
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func TestWorkflowRunNumbersArePerWorkflowAndRerunsReuseNumber(t *testing.T) {
 	s := newTestServer()
-	definition := func(name string) *WorkflowDef {
-		return &WorkflowDef{Name: name, Jobs: map[string]*JobDef{
-			"build": {Steps: []StepDef{{Run: "echo ok"}}},
+	definition := func(name string) *store.WorkflowDef {
+		return &store.WorkflowDef{Name: name, Jobs: map[string]*store.JobDef{
+			"build": {Steps: []store.StepDef{{Run: "echo ok"}}},
 		}}
 	}
 	first, err := s.actions.SubmitWorkflow(t.Context(), "http://localhost", definition("ci"), "")
@@ -50,7 +51,7 @@ func TestJobMessageCarriesStepExecutionOptionsAndTypedMatrix(t *testing.T) {
 	if s.store.GetRepo(admin.Login, "step-options") == nil {
 		s.store.CreateRepo(admin, "step-options", "", false)
 	}
-	def := &JobDef{Steps: []StepDef{{
+	def := &store.JobDef{Steps: []store.StepDef{{
 		Name:             "configured",
 		Run:              "echo ok",
 		If:               "github.ref == 'refs/heads/main'",
@@ -60,11 +61,11 @@ func TestJobMessageCarriesStepExecutionOptionsAndTypedMatrix(t *testing.T) {
 		ContinueOnError:  true,
 		TimeoutMinutes:   5,
 	}}}
-	wf := &Workflow{
+	wf := &store.Workflow{
 		ID: "run", Name: "ci", RunID: 1, RunNumber: 1, RepoFullName: "admin/step-options",
-		Ref: "refs/heads/main", Jobs: map[string]*WorkflowJob{},
+		Ref: "refs/heads/main", Jobs: map[string]*store.WorkflowJob{},
 	}
-	job := &WorkflowJob{
+	job := &store.WorkflowJob{
 		Key: "build", JobID: "job", DisplayName: "build", Def: def,
 		MatrixValues: map[string]interface{}{"attempt": 2, "experimental": true},
 	}
@@ -105,7 +106,7 @@ func TestJobMessageCarriesStepExecutionOptionsAndTypedMatrix(t *testing.T) {
 
 func TestTimelineSummaryPersistsOnWorkflowJob(t *testing.T) {
 	s := newTestServer()
-	wf := &Workflow{ID: "summary-run", Jobs: map[string]*WorkflowJob{
+	wf := &store.Workflow{ID: "summary-run", Jobs: map[string]*store.WorkflowJob{
 		"build": {JobID: "job", PlanID: "plan", Summary: ""},
 	}}
 	s.store.Mu.Lock()
@@ -128,11 +129,11 @@ func TestTimelineSummaryPersistsOnWorkflowJob(t *testing.T) {
 
 func TestConcurrencyKeepsOnlyNewestPendingRun(t *testing.T) {
 	s := newTestServer()
-	makeDef := func(name string) *WorkflowDef {
-		return &WorkflowDef{
-			Name: name, Concurrency: &ConcurrencyDef{Group: "deploy"},
+	makeDef := func(name string) *store.WorkflowDef {
+		return &store.WorkflowDef{
+			Name: name, Concurrency: &store.ConcurrencyDef{Group: "deploy"},
 			Env:  map[string]string{"__serverURL": "http://localhost"},
-			Jobs: map[string]*JobDef{"build": {Steps: []StepDef{{Run: "echo ok"}}}},
+			Jobs: map[string]*store.JobDef{"build": {Steps: []store.StepDef{{Run: "echo ok"}}}},
 		}
 	}
 	holder, err := s.actions.SubmitWorkflow(context.Background(), "http://localhost", makeDef("holder"), "")
@@ -147,16 +148,16 @@ func TestConcurrencyKeepsOnlyNewestPendingRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stale.Status != WorkflowStatusCompleted || stale.Result != ResultCancelled {
+	if stale.Status != store.WorkflowStatusCompleted || stale.Result != store.ResultCancelled {
 		t.Fatalf("stale pending run = %s/%s, want completed/cancelled", stale.Status, stale.Result)
 	}
-	if newest.Status != WorkflowStatusPendingConcurrency {
+	if newest.Status != store.WorkflowStatusPendingConcurrency {
 		t.Fatalf("newest run = %s, want pending", newest.Status)
 	}
 	for _, job := range holder.Jobs {
 		s.actions.OnJobCompleted(context.Background(), job.JobID, "Succeeded")
 	}
-	if newest.Status != WorkflowStatusRunning {
+	if newest.Status != store.WorkflowStatusRunning {
 		t.Fatalf("newest run after holder completed = %s, want running", newest.Status)
 	}
 }

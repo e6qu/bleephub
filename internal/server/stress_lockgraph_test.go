@@ -6,6 +6,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // TestStressPRSerializerRace drives the REST pull-request serializers
@@ -39,7 +41,7 @@ func TestStressPRSerializerRace(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for i := 0; !stop.Load(); i++ {
-			st.UpdatePullRequest(pr.ID, func(p *PullRequest) {
+			st.UpdatePullRequest(pr.ID, func(p *store.PullRequest) {
 				p.Title = fmt.Sprintf("t%d", i)
 				p.Body = fmt.Sprintf("b%d", i)
 				p.State = []string{"OPEN", "CLOSED", "MERGED"}[i%3]

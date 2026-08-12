@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // seedDispatchedJob registers a job the broker has already handed to agentID,
@@ -14,7 +16,7 @@ import (
 // together with the plan scope identifier its runtime token is minted for.
 // An empty repoFullName is the operator-submitted shape (/internal/exec/submit):
 // a real plan that names no repository.
-func seedDispatchedJob(t *testing.T, s *Server, repoFullName string, agentID int, requestID int64) (*Job, string) {
+func seedDispatchedJob(t *testing.T, s *Server, repoFullName string, agentID int, requestID int64) (*store.Job, string) {
 	t.Helper()
 	if repoFullName != "" {
 		owner, name, ok := strings.Cut(repoFullName, "/")
@@ -29,7 +31,7 @@ func seedDispatchedJob(t *testing.T, s *Server, repoFullName string, agentID int
 	message := fmt.Sprintf(
 		`{"plan":{"scopeIdentifier":%q,"planId":%q},"contextData":{"github":{"t":2,"d":[{"k":"repository","v":%q}]}}}`,
 		scopeID, planID, repoFullName)
-	job := &Job{
+	job := &store.Job{
 		ID:        "job-" + scopeID,
 		RequestID: requestID,
 		PlanID:    planID,
@@ -86,8 +88,8 @@ func TestAgentRequestRefusesAnotherRunnersJob(t *testing.T) {
 	s := newTestServer()
 	s.registerRoutes()
 
-	tokenA, _ := testAgentSession(t, s, runnerScope{Repo: "octo/a"})
-	_, agentB := testAgentSession(t, s, runnerScope{Repo: "octo/b"})
+	tokenA, _ := testAgentSession(t, s, store.RunnerScope{Repo: "octo/a"})
+	_, agentB := testAgentSession(t, s, store.RunnerScope{Repo: "octo/b"})
 	job, _ := seedDispatchedJob(t, s, "octo/b", agentB.ID, 77)
 
 	for _, method := range []string{"GET", "PATCH", "PUT", "DELETE"} {
@@ -110,8 +112,8 @@ func TestAgentRequestRefusesAnUnassignedRunnerAndAJobToken(t *testing.T) {
 
 	// Same repository scope, but the broker handed the job to a different
 	// agent: scope alone is not ownership.
-	_, assigned := testAgentSession(t, s, runnerScope{Repo: "octo/a"})
-	sameScope, _ := testAgentSession(t, s, runnerScope{Repo: "octo/a"})
+	_, assigned := testAgentSession(t, s, store.RunnerScope{Repo: "octo/a"})
+	sameScope, _ := testAgentSession(t, s, store.RunnerScope{Repo: "octo/a"})
 	job, scopeID := seedDispatchedJob(t, s, "octo/a", assigned.ID, 78)
 
 	if w := runnerRequest(s, "DELETE", "/_apis/v1/AgentRequest/1/78", sameScope, ""); w.Code != http.StatusForbidden {
@@ -133,7 +135,7 @@ func TestAgentRequestServesTheAssignedRunner(t *testing.T) {
 	s := newTestServer()
 	s.registerRoutes()
 
-	token, agent := testAgentSession(t, s, runnerScope{Repo: "octo/a"})
+	token, agent := testAgentSession(t, s, store.RunnerScope{Repo: "octo/a"})
 	job, scopeID := seedDispatchedJob(t, s, "octo/a", agent.ID, 79)
 
 	w := runnerRequest(s, "GET", "/_apis/v1/AgentRequest/1/79", token, "")
@@ -165,8 +167,8 @@ func TestPlanRoutesRefuseAnotherJobsRuntimeToken(t *testing.T) {
 	s := newTestServer()
 	s.registerRoutes()
 
-	_, agentA := testAgentSession(t, s, runnerScope{Repo: "octo/a"})
-	_, agentB := testAgentSession(t, s, runnerScope{Repo: "octo/b"})
+	_, agentA := testAgentSession(t, s, store.RunnerScope{Repo: "octo/a"})
+	_, agentB := testAgentSession(t, s, store.RunnerScope{Repo: "octo/b"})
 	_, scopeA := seedDispatchedJob(t, s, "octo/a", agentA.ID, 81)
 	victim, scopeB := seedDispatchedJob(t, s, "octo/b", agentB.ID, 82)
 	tokenA := makeJWT(scopeA, runnerAudJob)
@@ -201,7 +203,7 @@ func TestPlanEventsServeTheOwningJob(t *testing.T) {
 	s := newTestServer()
 	s.registerRoutes()
 
-	_, agent := testAgentSession(t, s, runnerScope{Repo: "octo/a"})
+	_, agent := testAgentSession(t, s, store.RunnerScope{Repo: "octo/a"})
 	job, scopeID := seedDispatchedJob(t, s, "octo/a", agent.ID, 83)
 
 	w := runnerRequest(s, "PUT", "/_apis/v1/plans/"+job.PlanID+"/events",
@@ -220,8 +222,8 @@ func TestFinishJobRefusesABodySuppliedJobID(t *testing.T) {
 	s := newTestServer()
 	s.registerRoutes()
 
-	_, agentA := testAgentSession(t, s, runnerScope{Repo: "octo/a"})
-	_, agentB := testAgentSession(t, s, runnerScope{Repo: "octo/b"})
+	_, agentA := testAgentSession(t, s, store.RunnerScope{Repo: "octo/a"})
+	_, agentB := testAgentSession(t, s, store.RunnerScope{Repo: "octo/b"})
 	own, scopeA := seedDispatchedJob(t, s, "octo/a", agentA.ID, 84)
 	victim, _ := seedDispatchedJob(t, s, "octo/b", agentB.ID, 85)
 
@@ -241,8 +243,8 @@ func TestActionDownloadInfoRequiresThePlansJobToken(t *testing.T) {
 	s := newTestServer()
 	s.registerRoutes()
 
-	_, agentA := testAgentSession(t, s, runnerScope{Repo: "octo/a"})
-	_, agentB := testAgentSession(t, s, runnerScope{Repo: "octo/b"})
+	_, agentA := testAgentSession(t, s, store.RunnerScope{Repo: "octo/a"})
+	_, agentB := testAgentSession(t, s, store.RunnerScope{Repo: "octo/b"})
 	own, scopeA := seedDispatchedJob(t, s, "octo/a", agentA.ID, 86)
 	other, scopeB := seedDispatchedJob(t, s, "octo/b", agentB.ID, 87)
 
@@ -251,7 +253,7 @@ func TestActionDownloadInfoRequiresThePlansJobToken(t *testing.T) {
 		t.Fatalf("ActionDownloadInfo under another plan's scope = %d, want 403; body=%s", w.Code, w.Body.String())
 	}
 	// An agent session token is not a job runtime token here either.
-	sessionToken, _ := testAgentSession(t, s, runnerScope{Repo: "octo/a"})
+	sessionToken, _ := testAgentSession(t, s, store.RunnerScope{Repo: "octo/a"})
 	if w := runnerRequest(s, "POST", "/_apis/v1/ActionDownloadInfo/"+scopeA+"/free/"+own.PlanID,
 		sessionToken, `{"actions":[]}`); w.Code != http.StatusForbidden {
 		t.Fatalf("ActionDownloadInfo with an agent session token = %d, want 403; body=%s", w.Code, w.Body.String())
@@ -269,7 +271,7 @@ func TestTaskRoutesAcceptEitherRunnerAudience(t *testing.T) {
 	s := newTestServer()
 	s.registerRoutes()
 
-	sessionToken, agent := testAgentSession(t, s, runnerScope{Repo: "octo/a"})
+	sessionToken, agent := testAgentSession(t, s, store.RunnerScope{Repo: "octo/a"})
 	_, scopeID := seedDispatchedJob(t, s, "octo/a", agent.ID, 88)
 	jobToken := makeJWT(scopeID, runnerAudJob)
 
@@ -289,8 +291,8 @@ func TestTimelineRoutesRefuseAnotherJobsPlan(t *testing.T) {
 	s := newTestServer()
 	s.registerRoutes()
 
-	_, agentA := testAgentSession(t, s, runnerScope{Repo: "octo/a"})
-	_, agentB := testAgentSession(t, s, runnerScope{Repo: "octo/b"})
+	_, agentA := testAgentSession(t, s, store.RunnerScope{Repo: "octo/a"})
+	_, agentB := testAgentSession(t, s, store.RunnerScope{Repo: "octo/b"})
 	own, scopeA := seedDispatchedJob(t, s, "octo/a", agentA.ID, 91)
 	victim, _ := seedDispatchedJob(t, s, "octo/b", agentB.ID, 92)
 	tokenA := makeJWT(scopeA, runnerAudJob)
@@ -343,8 +345,8 @@ func TestLogUploadRefusesAnotherPlansContainer(t *testing.T) {
 	s := newTestServer()
 	s.registerRoutes()
 
-	_, agentA := testAgentSession(t, s, runnerScope{Repo: "octo/a"})
-	_, agentB := testAgentSession(t, s, runnerScope{Repo: "octo/b"})
+	_, agentA := testAgentSession(t, s, store.RunnerScope{Repo: "octo/a"})
+	_, agentB := testAgentSession(t, s, store.RunnerScope{Repo: "octo/b"})
 	own, scopeA := seedDispatchedJob(t, s, "octo/a", agentA.ID, 93)
 	victim, scopeB := seedDispatchedJob(t, s, "octo/b", agentB.ID, 94)
 	tokenA, tokenB := makeJWT(scopeA, runnerAudJob), makeJWT(scopeB, runnerAudJob)
@@ -395,7 +397,7 @@ func TestOperatorSubmittedJobTokenReportsItsOwnPlanOnly(t *testing.T) {
 	s := newTestServer()
 	s.registerRoutes()
 
-	_, agent := testAgentSession(t, s, runnerScope{Repo: "octo/a"})
+	_, agent := testAgentSession(t, s, store.RunnerScope{Repo: "octo/a"})
 	operatorJob, operatorScope := seedDispatchedJob(t, s, "", agent.ID, 95)
 	repoJob, _ := seedDispatchedJob(t, s, "octo/a", agent.ID, 96)
 	token := makeJWT(operatorScope, runnerAudJob)
@@ -427,7 +429,7 @@ func TestOperatorSubmittedJobTokenReportsItsOwnPlanOnly(t *testing.T) {
 		t.Fatalf("operator job token reserving a cache = %d, want 401; body=%s", w.Code, w.Body.String())
 	}
 	s.artifactStore.Mu.Lock()
-	s.artifactStore.Artifacts[1] = &Artifact{ID: 1, Name: "build", Data: []byte("secret"), Size: 6, Finalized: true, RepoFullName: "octo/a"}
+	s.artifactStore.Artifacts[1] = &store.Artifact{ID: 1, Name: "build", Data: []byte("secret"), Size: 6, Finalized: true, RepoFullName: "octo/a"}
 	s.artifactStore.Mu.Unlock()
 	if w := runnerRequest(s, "GET", "/_apis/v1/artifacts/1/download", token, ""); w.Code != http.StatusNotFound {
 		t.Fatalf("operator job token downloading a repository artifact = %d, want 404; body=%s", w.Code, w.Body.String())
@@ -440,13 +442,13 @@ func TestEphemeralRunnerFinishesItsOwnTeardown(t *testing.T) {
 	s := newTestServer()
 	s.registerRoutes()
 
-	sessionToken, agent := testAgentSession(t, s, runnerScope{Repo: "octo/a"})
+	sessionToken, agent := testAgentSession(t, s, store.RunnerScope{Repo: "octo/a"})
 	s.store.Mu.Lock()
 	agent.Ephemeral = true
 	s.store.Mu.Unlock()
 	job, scopeID := seedDispatchedJob(t, s, "octo/a", agent.ID, 97)
 
-	session := &Session{SessionID: "eph-session", Agent: agent, MsgCh: make(chan *TaskAgentMessage, 1)}
+	session := &store.Session{SessionID: "eph-session", Agent: agent, MsgCh: make(chan *store.TaskAgentMessage, 1)}
 	s.store.Mu.Lock()
 	s.store.Sessions[session.SessionID] = session
 	s.store.Mu.Unlock()
@@ -481,9 +483,9 @@ func TestEphemeralRunnerTakesExactlyOneJob(t *testing.T) {
 	queue := func(jobID, repo string) {
 		message := fmt.Sprintf(`{"plan":{"scopeIdentifier":%q},"contextData":{"github":{"t":2,"d":[{"k":"repository","v":%q}]}}}`, "scope-"+jobID, repo)
 		s.store.Mu.Lock()
-		s.store.Jobs[jobID] = &Job{ID: jobID, Status: "queued", Message: message}
+		s.store.Jobs[jobID] = &store.Job{ID: jobID, Status: "queued", Message: message}
 		s.store.PendingMessages = append(s.store.PendingMessages,
-			&TaskAgentMessage{MessageID: 1, MessageType: "PipelineAgentJobRequest", Body: message, JobID: jobID})
+			&store.TaskAgentMessage{MessageID: 1, MessageType: "PipelineAgentJobRequest", Body: message, JobID: jobID})
 		s.store.Mu.Unlock()
 	}
 
@@ -491,26 +493,26 @@ func TestEphemeralRunnerTakesExactlyOneJob(t *testing.T) {
 	// the post-delivery bookkeeping recordJobAgentLocked writes: EverAssigned
 	// is what disqualifies a used ephemeral runner, and it must keep doing so
 	// even after the completed job's stub is garbage-collected.
-	_, ephemeral := testAgentSession(t, s, runnerScope{Repo: "octo/a"})
+	_, ephemeral := testAgentSession(t, s, store.RunnerScope{Repo: "octo/a"})
 	s.store.Mu.Lock()
 	ephemeral.Ephemeral = true
-	s.store.Jobs["done-eph"] = &Job{ID: "done-eph", Status: "completed", AgentID: ephemeral.ID}
+	s.store.Jobs["done-eph"] = &store.Job{ID: "done-eph", Status: "completed", AgentID: ephemeral.ID}
 	ephemeral.AssignedJobID = "done-eph"
 	ephemeral.EverAssigned = true
 	s.store.Mu.Unlock()
 	queue("next-eph", "octo/a")
-	ephSession := &Session{SessionID: "s-eph", Agent: ephemeral, MsgCh: make(chan *TaskAgentMessage, 1)}
-	if msg := s.actions.PullPendingMessage(ephSession, runnerScope{Repo: "octo/a"}); msg != nil {
+	ephSession := &store.Session{SessionID: "s-eph", Agent: ephemeral, MsgCh: make(chan *store.TaskAgentMessage, 1)}
+	if msg := s.actions.PullPendingMessage(ephSession, store.RunnerScope{Repo: "octo/a"}); msg != nil {
 		t.Fatal("an ephemeral runner was handed a second job")
 	}
 
 	// A resident runner that finished one takes the next.
-	_, resident := testAgentSession(t, s, runnerScope{Repo: "octo/a"})
+	_, resident := testAgentSession(t, s, store.RunnerScope{Repo: "octo/a"})
 	s.store.Mu.Lock()
-	s.store.Jobs["done-res"] = &Job{ID: "done-res", Status: "completed", AgentID: resident.ID}
+	s.store.Jobs["done-res"] = &store.Job{ID: "done-res", Status: "completed", AgentID: resident.ID}
 	s.store.Mu.Unlock()
-	resSession := &Session{SessionID: "s-res", Agent: resident, MsgCh: make(chan *TaskAgentMessage, 1)}
-	if msg := s.actions.PullPendingMessage(resSession, runnerScope{Repo: "octo/a"}); msg == nil {
+	resSession := &store.Session{SessionID: "s-res", Agent: resident, MsgCh: make(chan *store.TaskAgentMessage, 1)}
+	if msg := s.actions.PullPendingMessage(resSession, store.RunnerScope{Repo: "octo/a"}); msg == nil {
 		t.Fatal("a resident runner that finished a job was not handed the next one")
 	}
 }

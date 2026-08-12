@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/google/uuid"
 )
 
@@ -115,7 +116,7 @@ func (s *Engine) acquireConcurrencyAdmissionLock(name string) (release func()) {
 // replaces its map entry with a detached copy. This process is actively
 // driving wf, so its object identity is restored before the dispatch loop
 // mutates it.
-func (s *Engine) acquireJobConcurrencyAdmissionLock(wf *Workflow) (release func()) {
+func (s *Engine) acquireJobConcurrencyAdmissionLock(wf *store.Workflow) (release func()) {
 	s.store.Mu.RLock()
 	persist := s.store.Persist
 	s.store.Mu.RUnlock()
@@ -139,7 +140,7 @@ func (s *Engine) acquireJobConcurrencyAdmissionLock(wf *Workflow) (release func(
 // cross-replica serialization. Only the immutable Def is consulted — a
 // resolved ConcurrencyGroup implies Def.Concurrency != nil, and Def is never
 // written after submit, so this needs no lock.
-func workflowHasJobConcurrency(wf *Workflow) bool {
+func workflowHasJobConcurrency(wf *store.Workflow) bool {
 	for _, wfJob := range wf.Jobs {
 		if wfJob.Def != nil && wfJob.Def.Concurrency != nil {
 			return true

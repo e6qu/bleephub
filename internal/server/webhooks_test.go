@@ -27,6 +27,7 @@ import (
 
 	"github.com/e6qu/bleephub/internal/actions"
 	"github.com/e6qu/bleephub/internal/server/testutil"
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func (s *isolatedServer) createWebhookTestRepo(t *testing.T, name string) {
@@ -1569,7 +1570,7 @@ func TestInstallationNodeID(t *testing.T) {
 // TestAttachInstallationBlockNodeID confirms the installation block carries the
 // valid base64 node_id (not the old malformed concatenated form).
 func TestAttachInstallationBlockNodeID(t *testing.T) {
-	out := attachInstallationBlock(map[string]interface{}{}, &Installation{ID: 7})
+	out := attachInstallationBlock(map[string]interface{}{}, &store.Installation{ID: 7})
 	inst, ok := out["installation"].(map[string]interface{})
 	if !ok {
 		t.Fatal("installation block missing")
@@ -1583,9 +1584,9 @@ func TestAttachInstallationBlockNodeID(t *testing.T) {
 // TestInstallationEventHasNoTopLevelAppID verifies GitHub's installation event
 // shape: action/installation/repositories/sender, with NO top-level app_id.
 func TestInstallationEventHasNoTopLevelAppID(t *testing.T) {
-	app := &App{ID: 99}
-	inst := &Installation{ID: 7, AppID: 99}
-	payload := buildInstallationEventPayload(app, "created", inst, &User{Login: "octocat", ID: 5, Type: "User"})
+	app := &store.App{ID: 99}
+	inst := &store.Installation{ID: 7, AppID: 99}
+	payload := buildInstallationEventPayload(app, "created", inst, &store.User{Login: "octocat", ID: 5, Type: "User"})
 	if _, ok := payload["app_id"]; ok {
 		t.Error("installation event must NOT have a top-level app_id")
 	}
@@ -1611,7 +1612,7 @@ func TestSenderPayloadNeverNil(t *testing.T) {
 	}
 
 	// A real user is rendered faithfully.
-	u := senderPayload(&User{Login: "octocat", ID: 5, Type: "User", AvatarURL: "http://a"})
+	u := senderPayload(&store.User{Login: "octocat", ID: 5, Type: "User", AvatarURL: "http://a"})
 	if u["login"] != "octocat" || u["id"] != 5 {
 		t.Errorf("user sender = %v", u)
 	}

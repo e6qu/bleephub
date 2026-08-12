@@ -15,6 +15,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // artifactRetentionMaximumDays is the ceiling GitHub reports beside the
@@ -26,9 +28,9 @@ const artifactRetentionMaximumDays = 90
 // read-all / write-all): the repo's default workflow-permission level applies
 // across all of them. These are the permScopes the REST gate can check for a
 // repository-scoped token.
-var githubTokenDefaultScopes = []permScope{
-	scopeActions, scopeChecks, scopeContents, scopeDeployments, scopeDiscussions,
-	scopeIssues, scopePages, scopePullRequests, scopeSecurityEvents, scopeMetadata,
+var githubTokenDefaultScopes = []store.PermScope{
+	store.ScopeActions, store.ScopeChecks, store.ScopeContents, store.ScopeDeployments, store.ScopeDiscussions,
+	store.ScopeIssues, store.ScopePages, store.ScopePullRequests, store.ScopeSecurityEvents, store.ScopeMetadata,
 }
 
 // resolveJobTokenPermissions computes the least-privilege GITHUB_TOKEN API
@@ -40,8 +42,8 @@ var githubTokenDefaultScopes = []permScope{
 // block grants exactly the listed scopes (a `none` value drops the scope). A
 // declared-but-empty block (`permissions: {}`) yields metadata:read only, which
 // is always granted regardless.
-func (s *Server) resolveJobTokenPermissions(wf *Workflow, jd *JobDef) map[string]string {
-	var declared PermissionDef
+func (s *Server) resolveJobTokenPermissions(wf *store.Workflow, jd *store.JobDef) map[string]string {
+	var declared store.PermissionDef
 	switch {
 	case jd != nil && jd.Permissions != nil:
 		declared = jd.Permissions
@@ -78,8 +80,8 @@ func (s *Server) resolveJobTokenPermissions(wf *Workflow, jd *JobDef) map[string
 		}
 	}
 	// metadata:read is always available to a workflow token.
-	if _, ok := perms[string(scopeMetadata)]; !ok {
-		perms[string(scopeMetadata)] = "read"
+	if _, ok := perms[string(store.ScopeMetadata)]; !ok {
+		perms[string(store.ScopeMetadata)] = "read"
 	}
 	return perms
 }
@@ -91,132 +93,132 @@ const orgArtifactAndLogRetentionMaxDays = 400
 func (s *Server) registerGHActionsPermissionsRoutes() {
 	// Org permissions.
 	s.route("GET /api/v3/orgs/{org}/actions/permissions",
-		s.requirePerm(scopeAdministration, permRead, s.orgGated(s.handleGetOrgActionsPermissions)))
+		s.requirePerm(store.ScopeAdministration, store.PermRead, s.orgGated(s.handleGetOrgActionsPermissions)))
 	s.route("PUT /api/v3/orgs/{org}/actions/permissions",
-		s.requirePerm(scopeAdministration, permWrite, s.orgGated(s.handleSetOrgActionsPermissions)))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.orgGated(s.handleSetOrgActionsPermissions)))
 	s.route("GET /api/v3/orgs/{org}/actions/permissions/repositories",
-		s.requirePerm(scopeAdministration, permRead, s.orgGated(s.handleListOrgSelectedRepos)))
+		s.requirePerm(store.ScopeAdministration, store.PermRead, s.orgGated(s.handleListOrgSelectedRepos)))
 	s.route("PUT /api/v3/orgs/{org}/actions/permissions/repositories",
-		s.requirePerm(scopeAdministration, permWrite, s.orgGated(s.handleSetOrgSelectedRepos)))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.orgGated(s.handleSetOrgSelectedRepos)))
 	s.route("PUT /api/v3/orgs/{org}/actions/permissions/repositories/{repository_id}",
-		s.requirePerm(scopeAdministration, permWrite, s.orgGated(s.handleAddOrgSelectedRepo)))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.orgGated(s.handleAddOrgSelectedRepo)))
 	s.route("DELETE /api/v3/orgs/{org}/actions/permissions/repositories/{repository_id}",
-		s.requirePerm(scopeAdministration, permWrite, s.orgGated(s.handleRemoveOrgSelectedRepo)))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.orgGated(s.handleRemoveOrgSelectedRepo)))
 	s.route("GET /api/v3/orgs/{org}/actions/permissions/selected-actions",
-		s.requirePerm(scopeAdministration, permRead, s.orgGated(s.handleGetOrgAllowedActions)))
+		s.requirePerm(store.ScopeAdministration, store.PermRead, s.orgGated(s.handleGetOrgAllowedActions)))
 	s.route("PUT /api/v3/orgs/{org}/actions/permissions/selected-actions",
-		s.requirePerm(scopeAdministration, permWrite, s.orgGated(s.handleSetOrgAllowedActions)))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.orgGated(s.handleSetOrgAllowedActions)))
 	s.route("GET /api/v3/orgs/{org}/actions/permissions/workflow",
-		s.requirePerm(scopeAdministration, permRead, s.orgGated(s.handleGetOrgWorkflowPermissions)))
+		s.requirePerm(store.ScopeAdministration, store.PermRead, s.orgGated(s.handleGetOrgWorkflowPermissions)))
 	s.route("PUT /api/v3/orgs/{org}/actions/permissions/workflow",
-		s.requirePerm(scopeAdministration, permWrite, s.orgGated(s.handleSetOrgWorkflowPermissions)))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.orgGated(s.handleSetOrgWorkflowPermissions)))
 	s.route("GET /api/v3/orgs/{org}/actions/permissions/artifact-and-log-retention",
-		s.requirePerm(scopeOrgAdministration, permRead, s.orgGated(s.handleGetOrgArtifactAndLogRetention)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.orgGated(s.handleGetOrgArtifactAndLogRetention)))
 	s.route("PUT /api/v3/orgs/{org}/actions/permissions/artifact-and-log-retention",
-		s.requirePerm(scopeOrgAdministration, permWrite, s.orgGated(s.handleSetOrgArtifactAndLogRetention)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.orgGated(s.handleSetOrgArtifactAndLogRetention)))
 	s.route("GET /api/v3/orgs/{org}/actions/permissions/fork-pr-contributor-approval",
-		s.requirePerm(scopeOrgAdministration, permRead, s.orgGated(s.handleGetOrgForkPRContributorApproval)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.orgGated(s.handleGetOrgForkPRContributorApproval)))
 	s.route("PUT /api/v3/orgs/{org}/actions/permissions/fork-pr-contributor-approval",
-		s.requirePerm(scopeOrgAdministration, permWrite, s.orgGated(s.handleSetOrgForkPRContributorApproval)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.orgGated(s.handleSetOrgForkPRContributorApproval)))
 	s.route("GET /api/v3/orgs/{org}/actions/permissions/fork-pr-workflows-private-repos",
-		s.requirePerm(scopeOrgAdministration, permRead, s.orgGated(s.handleGetOrgForkPRWorkflowsPrivateRepos)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.orgGated(s.handleGetOrgForkPRWorkflowsPrivateRepos)))
 	s.route("PUT /api/v3/orgs/{org}/actions/permissions/fork-pr-workflows-private-repos",
-		s.requirePerm(scopeOrgAdministration, permWrite, s.orgGated(s.handleSetOrgForkPRWorkflowsPrivateRepos)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.orgGated(s.handleSetOrgForkPRWorkflowsPrivateRepos)))
 	s.route("GET /api/v3/orgs/{org}/actions/permissions/self-hosted-runners",
-		s.requirePerm(scopeOrgAdministration, permRead, s.orgGated(s.handleGetOrgSelfHostedRunnersSettings)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.orgGated(s.handleGetOrgSelfHostedRunnersSettings)))
 	s.route("PUT /api/v3/orgs/{org}/actions/permissions/self-hosted-runners",
-		s.requirePerm(scopeOrgAdministration, permWrite, s.orgGated(s.handleSetOrgSelfHostedRunnersSettings)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.orgGated(s.handleSetOrgSelfHostedRunnersSettings)))
 	s.route("GET /api/v3/orgs/{org}/actions/permissions/self-hosted-runners/repositories",
-		s.requirePerm(scopeOrgAdministration, permRead, s.orgGated(s.handleListOrgSelfHostedRunnerRepos)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.orgGated(s.handleListOrgSelfHostedRunnerRepos)))
 	s.route("PUT /api/v3/orgs/{org}/actions/permissions/self-hosted-runners/repositories",
-		s.requirePerm(scopeOrgAdministration, permWrite, s.orgGated(s.handleSetOrgSelfHostedRunnerRepos)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.orgGated(s.handleSetOrgSelfHostedRunnerRepos)))
 	s.route("PUT /api/v3/orgs/{org}/actions/permissions/self-hosted-runners/repositories/{repository_id}",
-		s.requirePerm(scopeOrgAdministration, permWrite, s.orgGated(s.handleAddOrgSelfHostedRunnerRepo)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.orgGated(s.handleAddOrgSelfHostedRunnerRepo)))
 	s.route("DELETE /api/v3/orgs/{org}/actions/permissions/self-hosted-runners/repositories/{repository_id}",
-		s.requirePerm(scopeOrgAdministration, permWrite, s.orgGated(s.handleRemoveOrgSelfHostedRunnerRepo)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.orgGated(s.handleRemoveOrgSelfHostedRunnerRepo)))
 	s.route("GET /api/v3/orgs/{org}/actions/cache/usage",
-		s.requirePerm(scopeOrgAdministration, permRead, s.orgGated(s.handleOrgCacheUsage)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.orgGated(s.handleOrgCacheUsage)))
 	s.route("GET /api/v3/orgs/{org}/actions/cache/usage-by-repository",
-		s.requirePerm(scopeOrgAdministration, permRead, s.orgGated(s.handleOrgCacheUsageByRepository)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.orgGated(s.handleOrgCacheUsageByRepository)))
 
 	// Org cache policy limits at the /organizations/{org_id} path (the
 	// dotcom REST description's path for these settings).
 	s.route("GET /api/v3/organizations/{org_id}/actions/cache/retention-limit",
-		s.requirePerm(scopeOrgAdministration, permRead, s.orgIDGated(s.handleGetOrgMaxCacheRetention)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.orgIDGated(s.handleGetOrgMaxCacheRetention)))
 	s.route("PUT /api/v3/organizations/{org_id}/actions/cache/retention-limit",
-		s.requirePerm(scopeOrgAdministration, permWrite, s.orgIDGated(s.handleSetOrgMaxCacheRetention)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.orgIDGated(s.handleSetOrgMaxCacheRetention)))
 	s.route("GET /api/v3/organizations/{org_id}/actions/cache/storage-limit",
-		s.requirePerm(scopeOrgAdministration, permRead, s.orgIDGated(s.handleGetOrgMaxCacheSize)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.orgIDGated(s.handleGetOrgMaxCacheSize)))
 	s.route("PUT /api/v3/organizations/{org_id}/actions/cache/storage-limit",
-		s.requirePerm(scopeOrgAdministration, permWrite, s.orgIDGated(s.handleSetOrgMaxCacheSize)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.orgIDGated(s.handleSetOrgMaxCacheSize)))
 
 	// Repo permissions.
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/permissions",
-		s.requirePerm(scopeActions, permRead, s.handleGetRepoActionsPermissions))
+		s.requirePerm(store.ScopeActions, store.PermRead, s.handleGetRepoActionsPermissions))
 	s.route("PUT /api/v3/repos/{owner}/{repo}/actions/permissions",
-		s.requirePerm(scopeActions, permWrite, s.handleSetRepoActionsPermissions))
+		s.requirePerm(store.ScopeActions, store.PermWrite, s.handleSetRepoActionsPermissions))
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/permissions/access",
-		s.requirePerm(scopeActions, permRead, s.handleGetRepoActionsAccessLevel))
+		s.requirePerm(store.ScopeActions, store.PermRead, s.handleGetRepoActionsAccessLevel))
 	s.route("PUT /api/v3/repos/{owner}/{repo}/actions/permissions/access",
-		s.requirePerm(scopeActions, permWrite, s.handleSetRepoActionsAccessLevel))
+		s.requirePerm(store.ScopeActions, store.PermWrite, s.handleSetRepoActionsAccessLevel))
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/permissions/selected-actions",
-		s.requirePerm(scopeActions, permRead, s.handleGetRepoAllowedActions))
+		s.requirePerm(store.ScopeActions, store.PermRead, s.handleGetRepoAllowedActions))
 	s.route("PUT /api/v3/repos/{owner}/{repo}/actions/permissions/selected-actions",
-		s.requirePerm(scopeActions, permWrite, s.handleSetRepoAllowedActions))
+		s.requirePerm(store.ScopeActions, store.PermWrite, s.handleSetRepoAllowedActions))
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/permissions/workflow",
-		s.requirePerm(scopeActions, permRead, s.handleGetRepoWorkflowPermissions))
+		s.requirePerm(store.ScopeActions, store.PermRead, s.handleGetRepoWorkflowPermissions))
 	s.route("PUT /api/v3/repos/{owner}/{repo}/actions/permissions/workflow",
-		s.requirePerm(scopeActions, permWrite, s.handleSetRepoWorkflowPermissions))
+		s.requirePerm(store.ScopeActions, store.PermWrite, s.handleSetRepoWorkflowPermissions))
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/permissions/fork-pr-contributor-approval",
-		s.requirePerm(scopeActions, permRead, s.handleGetRepoForkPRContributorApproval))
+		s.requirePerm(store.ScopeActions, store.PermRead, s.handleGetRepoForkPRContributorApproval))
 	s.route("PUT /api/v3/repos/{owner}/{repo}/actions/permissions/fork-pr-contributor-approval",
-		s.requirePerm(scopeActions, permWrite, s.handleSetRepoForkPRContributorApproval))
+		s.requirePerm(store.ScopeActions, store.PermWrite, s.handleSetRepoForkPRContributorApproval))
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/permissions/fork-pr-workflows-private-repos",
-		s.requirePerm(scopeActions, permRead, s.handleGetRepoForkPRWorkflowsPrivateRepos))
+		s.requirePerm(store.ScopeActions, store.PermRead, s.handleGetRepoForkPRWorkflowsPrivateRepos))
 	s.route("PUT /api/v3/repos/{owner}/{repo}/actions/permissions/fork-pr-workflows-private-repos",
-		s.requirePerm(scopeActions, permWrite, s.handleSetRepoForkPRWorkflowsPrivateRepos))
+		s.requirePerm(store.ScopeActions, store.PermWrite, s.handleSetRepoForkPRWorkflowsPrivateRepos))
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/permissions/artifact-and-log-retention",
-		s.requirePerm(scopeActions, permRead, s.handleGetRepoArtifactAndLogRetention))
+		s.requirePerm(store.ScopeActions, store.PermRead, s.handleGetRepoArtifactAndLogRetention))
 	s.route("PUT /api/v3/repos/{owner}/{repo}/actions/permissions/artifact-and-log-retention",
-		s.requirePerm(scopeActions, permWrite, s.handleSetRepoArtifactAndLogRetention))
+		s.requirePerm(store.ScopeActions, store.PermWrite, s.handleSetRepoArtifactAndLogRetention))
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/cache/retention-limit",
-		s.requirePerm(scopeActions, permRead, s.handleGetRepoCacheRetentionLimit))
+		s.requirePerm(store.ScopeActions, store.PermRead, s.handleGetRepoCacheRetentionLimit))
 	s.route("PUT /api/v3/repos/{owner}/{repo}/actions/cache/retention-limit",
-		s.requirePerm(scopeActions, permWrite, s.handleSetRepoCacheRetentionLimit))
+		s.requirePerm(store.ScopeActions, store.PermWrite, s.handleSetRepoCacheRetentionLimit))
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/cache/storage-limit",
-		s.requirePerm(scopeActions, permRead, s.handleGetRepoCacheStorageLimit))
+		s.requirePerm(store.ScopeActions, store.PermRead, s.handleGetRepoCacheStorageLimit))
 	s.route("PUT /api/v3/repos/{owner}/{repo}/actions/cache/storage-limit",
-		s.requirePerm(scopeActions, permWrite, s.handleSetRepoCacheStorageLimit))
+		s.requirePerm(store.ScopeActions, store.PermWrite, s.handleSetRepoCacheStorageLimit))
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/cache/usage-policy",
-		s.requirePerm(scopeActions, permRead, s.handleGetRepoCacheUsagePolicy))
+		s.requirePerm(store.ScopeActions, store.PermRead, s.handleGetRepoCacheUsagePolicy))
 	s.route("PATCH /api/v3/repos/{owner}/{repo}/actions/cache/usage-policy",
-		s.requirePerm(scopeActions, permWrite, s.handleUpdateRepoCacheUsagePolicy))
+		s.requirePerm(store.ScopeActions, store.PermWrite, s.handleUpdateRepoCacheUsagePolicy))
 
 	// Run logs delete.
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/logs",
-		s.requirePerm(scopeActions, permWrite, s.handleDeleteRunLogs))
+		s.requirePerm(store.ScopeActions, store.PermWrite, s.handleDeleteRunLogs))
 
 	// Runner labels.
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/runners/{runner_id}/labels",
-		s.requirePerm(scopeAdministration, permRead, s.handleListRunnerLabels))
+		s.requirePerm(store.ScopeAdministration, store.PermRead, s.handleListRunnerLabels))
 	s.route("PUT /api/v3/repos/{owner}/{repo}/actions/runners/{runner_id}/labels",
-		s.requirePerm(scopeAdministration, permWrite, s.handleSetRunnerLabels))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleSetRunnerLabels))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/actions/runners/{runner_id}/labels",
-		s.requirePerm(scopeAdministration, permWrite, s.handleRemoveAllRunnerLabels))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleRemoveAllRunnerLabels))
 	s.route("GET /api/v3/orgs/{org}/actions/runners/{runner_id}/labels",
-		s.requirePerm(scopeAdministration, permRead, s.orgGated(s.handleListRunnerLabels)))
+		s.requirePerm(store.ScopeAdministration, store.PermRead, s.orgGated(s.handleListRunnerLabels)))
 	s.route("PUT /api/v3/orgs/{org}/actions/runners/{runner_id}/labels",
-		s.requirePerm(scopeAdministration, permWrite, s.orgGated(s.handleSetRunnerLabels)))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.orgGated(s.handleSetRunnerLabels)))
 	s.route("DELETE /api/v3/orgs/{org}/actions/runners/{runner_id}/labels",
-		s.requirePerm(scopeAdministration, permWrite, s.orgGated(s.handleRemoveAllRunnerLabels)))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.orgGated(s.handleRemoveAllRunnerLabels)))
 	s.route("POST /api/v3/repos/{owner}/{repo}/actions/runners/{runner_id}/labels",
-		s.requirePerm(scopeAdministration, permWrite, s.handleAddRunnerLabels))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleAddRunnerLabels))
 	s.route("POST /api/v3/orgs/{org}/actions/runners/{runner_id}/labels",
-		s.requirePerm(scopeAdministration, permWrite, s.orgGated(s.handleAddRunnerLabels)))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.orgGated(s.handleAddRunnerLabels)))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/actions/runners/{runner_id}/labels/{name}",
-		s.requirePerm(scopeAdministration, permWrite, s.handleRemoveRunnerLabel))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleRemoveRunnerLabel))
 	s.route("DELETE /api/v3/orgs/{org}/actions/runners/{runner_id}/labels/{name}",
-		s.requirePerm(scopeAdministration, permWrite, s.orgGated(s.handleRemoveRunnerLabel)))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.orgGated(s.handleRemoveRunnerLabel)))
 }
 
 // --- Org permissions handlers ---
@@ -257,7 +259,7 @@ func (s *Server) handleListOrgSelectedRepos(w http.ResponseWriter, r *http.Reque
 		repo := s.store.Repos[id]
 		s.store.Mu.RUnlock()
 		if repo != nil {
-			repos = append(repos, repoToJSON(repo, s.store, base))
+			repos = append(repos, store.RepoToJSON(repo, s.store, base))
 		}
 	}
 	paged := paginateAndLink(w, r, repos)
@@ -315,7 +317,7 @@ func (s *Server) handleGetOrgAllowedActions(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *Server) handleSetOrgAllowedActions(w http.ResponseWriter, r *http.Request) {
-	var req ActionsAllowed
+	var req store.ActionsAllowed
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
@@ -334,7 +336,7 @@ func (s *Server) handleGetOrgWorkflowPermissions(w http.ResponseWriter, r *http.
 }
 
 func (s *Server) handleSetOrgWorkflowPermissions(w http.ResponseWriter, r *http.Request) {
-	var req WorkflowPermissions
+	var req store.WorkflowPermissions
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
@@ -366,7 +368,7 @@ func (s *Server) handleSetOrgArtifactAndLogRetention(w http.ResponseWriter, r *h
 		return
 	}
 	if req.Days == nil || *req.Days < 1 || *req.Days > orgArtifactAndLogRetentionMaxDays {
-		writeGHValidationError(w, "ActionsArtifactAndLogRetention", "days", "invalid")
+		store.WriteGHValidationError(w, "ActionsArtifactAndLogRetention", "days", "invalid")
 		return
 	}
 	org := r.PathValue("org")
@@ -399,7 +401,7 @@ func (s *Server) handleSetOrgForkPRContributorApproval(w http.ResponseWriter, r 
 		return
 	}
 	if !forkPRApprovalPolicies[req.ApprovalPolicy] {
-		writeGHValidationError(w, "ActionsForkPRContributorApproval", "approval_policy", "invalid")
+		store.WriteGHValidationError(w, "ActionsForkPRContributorApproval", "approval_policy", "invalid")
 		return
 	}
 	org := r.PathValue("org")
@@ -413,7 +415,7 @@ func (s *Server) handleGetOrgForkPRWorkflowsPrivateRepos(w http.ResponseWriter, 
 	p := s.store.GetOrgActionsPermissions(r.PathValue("org"))
 	settings := p.ForkPRWorkflowsPrivateRepos
 	if settings == nil {
-		settings = &ForkPRWorkflowsPrivateRepos{}
+		settings = &store.ForkPRWorkflowsPrivateRepos{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"run_workflows_from_fork_pull_requests":  settings.RunWorkflowsFromForkPullRequests,
@@ -434,14 +436,14 @@ func (s *Server) handleSetOrgForkPRWorkflowsPrivateRepos(w http.ResponseWriter, 
 		return
 	}
 	if req.RunWorkflowsFromForkPullRequests == nil {
-		writeGHValidationError(w, "ActionsForkPRWorkflowsPrivateRepos", "run_workflows_from_fork_pull_requests", "missing_field")
+		store.WriteGHValidationError(w, "ActionsForkPRWorkflowsPrivateRepos", "run_workflows_from_fork_pull_requests", "missing_field")
 		return
 	}
 	org := r.PathValue("org")
 	p := s.store.GetOrgActionsPermissions(org)
 	settings := p.ForkPRWorkflowsPrivateRepos
 	if settings == nil {
-		settings = &ForkPRWorkflowsPrivateRepos{}
+		settings = &store.ForkPRWorkflowsPrivateRepos{}
 		p.ForkPRWorkflowsPrivateRepos = settings
 	}
 	settings.RunWorkflowsFromForkPullRequests = *req.RunWorkflowsFromForkPullRequests
@@ -481,7 +483,7 @@ func (s *Server) handleSetOrgSelfHostedRunnersSettings(w http.ResponseWriter, r 
 	switch req.EnabledRepositories {
 	case "all", "selected", "none":
 	default:
-		writeGHValidationError(w, "SelfHostedRunnersSettings", "enabled_repositories", "invalid")
+		store.WriteGHValidationError(w, "SelfHostedRunnersSettings", "enabled_repositories", "invalid")
 		return
 	}
 	org := r.PathValue("org")
@@ -501,7 +503,7 @@ func (s *Server) handleListOrgSelfHostedRunnerRepos(w http.ResponseWriter, r *ht
 		repo := s.store.Repos[id]
 		s.store.Mu.RUnlock()
 		if repo != nil {
-			repos = append(repos, repoToJSON(repo, s.store, base))
+			repos = append(repos, store.RepoToJSON(repo, s.store, base))
 		}
 	}
 	paged := paginateAndLink(w, r, repos)
@@ -519,7 +521,7 @@ func (s *Server) handleSetOrgSelfHostedRunnerRepos(w http.ResponseWriter, r *htt
 		return
 	}
 	if req.SelectedRepositoryIDs == nil {
-		writeGHValidationError(w, "SelfHostedRunnersSettings", "selected_repository_ids", "missing_field")
+		store.WriteGHValidationError(w, "SelfHostedRunnersSettings", "selected_repository_ids", "missing_field")
 		return
 	}
 	org := r.PathValue("org")
@@ -705,7 +707,7 @@ func (s *Server) handleSetRepoActionsPermissions(w http.ResponseWriter, r *http.
 		return
 	}
 	if req.Enabled == nil {
-		writeGHValidationError(w, "ActionsPermissions", "enabled", "missing_field")
+		store.WriteGHValidationError(w, "ActionsPermissions", "enabled", "missing_field")
 		return
 	}
 	repo := repoFullName(r)
@@ -747,7 +749,7 @@ func (s *Server) handleGetRepoAllowedActions(w http.ResponseWriter, r *http.Requ
 }
 
 func (s *Server) handleSetRepoAllowedActions(w http.ResponseWriter, r *http.Request) {
-	var req ActionsAllowed
+	var req store.ActionsAllowed
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
@@ -766,7 +768,7 @@ func (s *Server) handleGetRepoWorkflowPermissions(w http.ResponseWriter, r *http
 }
 
 func (s *Server) handleSetRepoWorkflowPermissions(w http.ResponseWriter, r *http.Request) {
-	var req WorkflowPermissions
+	var req store.WorkflowPermissions
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
@@ -807,7 +809,7 @@ func (s *Server) handleGetRepoForkPRWorkflowsPrivateRepos(w http.ResponseWriter,
 	p := s.store.GetRepoActionsPermissions(repo)
 	settings := p.ForkPRWorkflowsPrivateRepos
 	if settings == nil {
-		settings = &ForkPRWorkflowsPrivateRepos{}
+		settings = &store.ForkPRWorkflowsPrivateRepos{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"run_workflows_from_fork_pull_requests":  settings.RunWorkflowsFromForkPullRequests,
@@ -831,7 +833,7 @@ func (s *Server) handleSetRepoForkPRWorkflowsPrivateRepos(w http.ResponseWriter,
 	p := s.store.GetRepoActionsPermissions(repo)
 	settings := p.ForkPRWorkflowsPrivateRepos
 	if settings == nil {
-		settings = &ForkPRWorkflowsPrivateRepos{}
+		settings = &store.ForkPRWorkflowsPrivateRepos{}
 	}
 	if req.RunWorkflowsFromForkPullRequests != nil {
 		settings.RunWorkflowsFromForkPullRequests = *req.RunWorkflowsFromForkPullRequests
@@ -1174,7 +1176,7 @@ func (s *Server) handleRemoveRunnerLabel(w http.ResponseWriter, r *http.Request)
 
 // --- JSON helpers ---
 
-func orgActionsPermissionsJSON(p *OrgActionsPermissions, baseURL, org string) map[string]any {
+func orgActionsPermissionsJSON(p *store.OrgActionsPermissions, baseURL, org string) map[string]any {
 	apiBase := fmt.Sprintf("%s/api/v3/orgs/%s/actions/permissions", baseURL, org)
 	out := map[string]any{
 		"enabled_repositories": p.EnabledRepositories,
@@ -1189,7 +1191,7 @@ func orgActionsPermissionsJSON(p *OrgActionsPermissions, baseURL, org string) ma
 	return out
 }
 
-func repoActionsPermissionsJSON(p *RepoActionsPermissions, baseURL, repo string) map[string]any {
+func repoActionsPermissionsJSON(p *store.RepoActionsPermissions, baseURL, repo string) map[string]any {
 	owner, name, _ := strings.Cut(repo, "/")
 	apiBase := fmt.Sprintf("%s/api/v3/repos/%s/%s/actions/permissions", baseURL, owner, name)
 	out := map[string]any{
@@ -1202,7 +1204,7 @@ func repoActionsPermissionsJSON(p *RepoActionsPermissions, baseURL, repo string)
 	return out
 }
 
-func allowedActionsJSON(a *ActionsAllowed) map[string]any {
+func allowedActionsJSON(a *store.ActionsAllowed) map[string]any {
 	if a == nil {
 		return map[string]any{
 			"github_owned_allowed": true,
@@ -1221,7 +1223,7 @@ func allowedActionsJSON(a *ActionsAllowed) map[string]any {
 	}
 }
 
-func workflowPermissionsJSON(w *WorkflowPermissions) map[string]any {
+func workflowPermissionsJSON(w *store.WorkflowPermissions) map[string]any {
 	if w == nil {
 		return map[string]any{
 			"default_workflow_permissions":     "read",
@@ -1234,7 +1236,7 @@ func workflowPermissionsJSON(w *WorkflowPermissions) map[string]any {
 	}
 }
 
-func runnerLabelsJSON(labels []Label) map[string]any {
+func runnerLabelsJSON(labels []store.Label) map[string]any {
 	out := make([]map[string]any, 0, len(labels))
 	for _, l := range labels {
 		labelType := "custom"

@@ -6,12 +6,14 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func TestPersistenceRevisionAdvancesOncePerTransaction(t *testing.T) {
 	t.Setenv("BLEEPHUB_PERSIST", "true")
 	t.Setenv("BLEEPHUB_DATA_DIR", t.TempDir())
-	p, err := NewPersistence()
+	p, err := store.NewPersistence()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -21,8 +23,8 @@ func TestPersistenceRevisionAdvancesOncePerTransaction(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := p.PutBatch(
-		persistencePut{Bucket: "replica_test", Key: "one", Value: map[string]int{"value": 1}},
-		persistencePut{Bucket: "replica_test", Key: "two", Value: map[string]int{"value": 2}},
+		store.PersistencePut{Bucket: "replica_test", Key: "one", Value: map[string]int{"value": 1}},
+		store.PersistencePut{Bucket: "replica_test", Key: "two", Value: map[string]int{"value": 2}},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -34,8 +36,8 @@ func TestPersistenceRevisionAdvancesOncePerTransaction(t *testing.T) {
 		t.Fatalf("batch revision = %d, want %d", afterBatch, before+1)
 	}
 	if err := p.DeleteBatch(
-		persistencePut{Bucket: "replica_test", Key: "one"},
-		persistencePut{Bucket: "replica_test", Key: "two"},
+		store.PersistencePut{Bucket: "replica_test", Key: "one"},
+		store.PersistencePut{Bucket: "replica_test", Key: "two"},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -51,12 +53,12 @@ func TestPersistenceRevisionAdvancesOncePerTransaction(t *testing.T) {
 func TestScheduleClaimIsDurableAndExclusiveAcrossReplicas(t *testing.T) {
 	t.Setenv("BLEEPHUB_PERSIST", "true")
 	t.Setenv("BLEEPHUB_DATA_DIR", t.TempDir())
-	first, err := NewPersistence()
+	first, err := store.NewPersistence()
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer first.Close()
-	second, err := NewPersistence()
+	second, err := store.NewPersistence()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,8 +72,8 @@ func TestScheduleClaimIsDurableAndExclusiveAcrossReplicas(t *testing.T) {
 	start := make(chan struct{})
 	var ready sync.WaitGroup
 	ready.Add(2)
-	for _, persistence := range []*Persistence{first, second} {
-		go func(persistence *Persistence) {
+	for _, persistence := range []*store.Persistence{first, second} {
+		go func(persistence *store.Persistence) {
 			ready.Done()
 			<-start
 			claimed, err := persistence.ClaimScheduleFiring("owner/repo\x00workflow.yml\x000 12 * * *", minute)
@@ -106,7 +108,7 @@ func TestScheduleClaimIsDurableAndExclusiveAcrossReplicas(t *testing.T) {
 func TestReleasedScheduleClaimCanBeRetaken(t *testing.T) {
 	t.Setenv("BLEEPHUB_PERSIST", "true")
 	t.Setenv("BLEEPHUB_DATA_DIR", t.TempDir())
-	p, err := NewPersistence()
+	p, err := store.NewPersistence()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,29 +133,29 @@ func TestReleasedScheduleClaimCanBeRetaken(t *testing.T) {
 func TestStoreRefreshPropagatesPeerWritesAndPreservesRuntimeState(t *testing.T) {
 	t.Setenv("BLEEPHUB_PERSIST", "true")
 	t.Setenv("BLEEPHUB_DATA_DIR", t.TempDir())
-	firstPersistence, err := NewPersistence()
+	firstPersistence, err := store.NewPersistence()
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer firstPersistence.Close()
 	firstPersistence.Dialect.Name = "dqlite"
-	first := NewStore()
+	first := store.NewStore()
 	if err := first.SetPersistence(firstPersistence); err != nil {
 		t.Fatal(err)
 	}
 	first.SeedDefaultUser()
 
-	secondPersistence, err := NewPersistence()
+	secondPersistence, err := store.NewPersistence()
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer secondPersistence.Close()
 	secondPersistence.Dialect.Name = "dqlite"
-	second := NewStore()
+	second := store.NewStore()
 	if err := second.SetPersistence(secondPersistence); err != nil {
 		t.Fatal(err)
 	}
-	second.Agents[77] = &Agent{ID: 77, Name: "local-runner"}
+	second.Agents[77] = &store.Agent{ID: 77, Name: "local-runner"}
 
 	admin := first.LookupUserByLogin("admin")
 	org := first.CreateOrg(admin, "peer-org", "Peer Org", "created on another replica")
@@ -178,34 +180,34 @@ func TestStoreRefreshPropagatesPeerWritesAndPreservesRuntimeState(t *testing.T) 
 func TestArtifactStoreRefreshPropagatesPeerMetadataAndPreservesUploads(t *testing.T) {
 	t.Setenv("BLEEPHUB_PERSIST", "true")
 	t.Setenv("BLEEPHUB_DATA_DIR", t.TempDir())
-	firstPersistence, err := NewPersistence()
+	firstPersistence, err := store.NewPersistence()
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer firstPersistence.Close()
 	firstPersistence.Dialect.Name = "dqlite"
-	first := NewArtifactStoreWithByteStore("", nil)
+	first := store.NewArtifactStoreWithByteStore("", nil)
 	if err := first.SetPersistence(firstPersistence); err != nil {
 		t.Fatal(err)
 	}
 
-	secondPersistence, err := NewPersistence()
+	secondPersistence, err := store.NewPersistence()
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer secondPersistence.Close()
 	secondPersistence.Dialect.Name = "dqlite"
-	second := NewArtifactStoreWithByteStore("", nil)
+	second := store.NewArtifactStoreWithByteStore("", nil)
 	if err := second.SetPersistence(secondPersistence); err != nil {
 		t.Fatal(err)
 	}
-	second.Artifacts[99] = &Artifact{ID: 99, Name: "uploading", Finalized: false}
+	second.Artifacts[99] = &store.Artifact{ID: 99, Name: "uploading", Finalized: false}
 
-	peer := &Artifact{
+	peer := &store.Artifact{
 		ID: 1, Name: "peer", Finalized: true, RepoFullName: "admin/repo",
 		CreatedAt: fixedTestTime,
 	}
-	if err := firstPersistence.Put(actionsArtifactsBucket, "1", peer); err != nil {
+	if err := firstPersistence.Put(store.ActionsArtifactsBucket, "1", peer); err != nil {
 		t.Fatalf("persist peer artifact: %v", err)
 	}
 	if _, ok := second.ArtifactByID(peer.ID); ok {
@@ -228,28 +230,28 @@ func TestArtifactStoreRefreshPropagatesPeerMetadataAndPreservesUploads(t *testin
 func TestStoreReloadRollsBackUnpersistedMemoryMutation(t *testing.T) {
 	t.Setenv("BLEEPHUB_PERSIST", "true")
 	t.Setenv("BLEEPHUB_DATA_DIR", t.TempDir())
-	persistence, err := NewPersistence()
+	persistence, err := store.NewPersistence()
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer persistence.Close()
-	store := NewStore()
-	if err := store.SetPersistence(persistence); err != nil {
+	st := store.NewStore()
+	if err := st.SetPersistence(persistence); err != nil {
 		t.Fatal(err)
 	}
-	store.SeedDefaultUser()
-	store.Agents[91] = &Agent{ID: 91, Name: "must-survive"}
-	store.Mu.Lock()
-	store.UsersByLogin["admin"].Name = "half-applied mutation"
-	store.Mu.Unlock()
+	st.SeedDefaultUser()
+	st.Agents[91] = &store.Agent{ID: 91, Name: "must-survive"}
+	st.Mu.Lock()
+	st.UsersByLogin["admin"].Name = "half-applied mutation"
+	st.Mu.Unlock()
 
-	if err := store.ReloadFromPersistence(); err != nil {
+	if err := st.ReloadFromPersistence(); err != nil {
 		t.Fatal(err)
 	}
-	if got := store.LookupUserByLogin("admin"); got == nil || got.Name != "Admin" {
+	if got := st.LookupUserByLogin("admin"); got == nil || got.Name != "Admin" {
 		t.Fatalf("durable state was not restored: %+v", got)
 	}
-	if got := store.Agents[91]; got == nil || got.Name != "must-survive" {
+	if got := st.Agents[91]; got == nil || got.Name != "must-survive" {
 		t.Fatalf("rollback discarded process-local state: %+v", got)
 	}
 }
@@ -257,25 +259,25 @@ func TestStoreReloadRollsBackUnpersistedMemoryMutation(t *testing.T) {
 func TestStoreRefreshCannotOverwriteCommitBetweenSnapshotAndApply(t *testing.T) {
 	t.Setenv("BLEEPHUB_PERSIST", "true")
 	t.Setenv("BLEEPHUB_DATA_DIR", t.TempDir())
-	firstPersistence, err := NewPersistence()
+	firstPersistence, err := store.NewPersistence()
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer firstPersistence.Close()
 	firstPersistence.Dialect.Name = "dqlite"
-	first := NewStore()
+	first := store.NewStore()
 	if err := first.SetPersistence(firstPersistence); err != nil {
 		t.Fatal(err)
 	}
 	first.SeedDefaultUser()
 
-	secondPersistence, err := NewPersistence()
+	secondPersistence, err := store.NewPersistence()
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer secondPersistence.Close()
 	secondPersistence.Dialect.Name = "dqlite"
-	second := NewStore()
+	second := store.NewStore()
 	if err := second.SetPersistence(secondPersistence); err != nil {
 		t.Fatal(err)
 	}
@@ -312,41 +314,41 @@ func TestStoreRefreshCannotOverwriteCommitBetweenSnapshotAndApply(t *testing.T) 
 func TestFailedRollbackPoisonsRequestsUntilPersistenceRecovers(t *testing.T) {
 	t.Setenv("BLEEPHUB_PERSIST", "true")
 	t.Setenv("BLEEPHUB_DATA_DIR", t.TempDir())
-	persistence, err := NewPersistence()
+	persistence, err := store.NewPersistence()
 	if err != nil {
 		t.Fatal(err)
 	}
-	store := NewStore()
-	if err := store.SetPersistence(persistence); err != nil {
+	st := store.NewStore()
+	if err := st.SetPersistence(persistence); err != nil {
 		t.Fatal(err)
 	}
-	store.SeedDefaultUser()
-	store.Mu.Lock()
-	store.UsersByLogin["admin"].Name = "uncommitted mutation"
-	store.Mu.Unlock()
+	st.SeedDefaultUser()
+	st.Mu.Lock()
+	st.UsersByLogin["admin"].Name = "uncommitted mutation"
+	st.Mu.Unlock()
 	if err := persistence.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.ReloadFromPersistence(); err == nil {
+	if err := st.ReloadFromPersistence(); err == nil {
 		t.Fatal("reload with a closed database unexpectedly succeeded")
 	}
-	store.Mu.RLock()
-	recoveryRequired := store.PersistenceRecoveryRequired
-	store.Mu.RUnlock()
+	st.Mu.RLock()
+	recoveryRequired := st.PersistenceRecoveryRequired
+	st.Mu.RUnlock()
 	if !recoveryRequired {
 		t.Fatal("failed rollback did not mark the live store as requiring recovery")
 	}
-	if err := store.RefreshFromPersistenceIfStale(); err == nil {
+	if err := st.RefreshFromPersistenceIfStale(); err == nil {
 		t.Fatal("request refresh served state after rollback failed")
 	}
 }
 
 func TestReplicaRefreshFieldClassificationsAreValid(t *testing.T) {
-	storeType := reflect.TypeOf(Store{})
+	storeType := reflect.TypeOf(store.Store{})
 	for category, fields := range map[string]map[string]struct{}{
-		"local":          replicaLocalStoreFields,
-		"infrastructure": replicaInfrastructureStoreFields,
-		"server-access":  replicaServerAccessStoreFields,
+		"local":          store.ReplicaLocalStoreFields,
+		"infrastructure": store.ReplicaInfrastructureStoreFields,
+		"server-access":  store.ReplicaServerAccessStoreFields,
 	} {
 		for name := range fields {
 			field, ok := storeType.FieldByName(name)
@@ -357,8 +359,8 @@ func TestReplicaRefreshFieldClassificationsAreValid(t *testing.T) {
 			if field.PkgPath != "" {
 				t.Errorf("%s replica field %q is unexported and cannot be copied by the snapshot reconciler", category, name)
 			}
-			if _, duplicated := replicaLocalStoreFields[name]; duplicated {
-				if _, alsoInfrastructure := replicaInfrastructureStoreFields[name]; alsoInfrastructure {
+			if _, duplicated := store.ReplicaLocalStoreFields[name]; duplicated {
+				if _, alsoInfrastructure := store.ReplicaInfrastructureStoreFields[name]; alsoInfrastructure {
 					t.Errorf("replica field %q is both local and infrastructure", name)
 				}
 			}
@@ -380,7 +382,7 @@ func TestReplicaRefreshFieldClassificationsAreValid(t *testing.T) {
 // reconciler exists to copy and is deliberately NOT required to be
 // classified.
 func TestReplicaRefreshClassificationsCoverDangerousKinds(t *testing.T) {
-	storeType := reflect.TypeOf(Store{})
+	storeType := reflect.TypeOf(store.Store{})
 	for i := 0; i < storeType.NumField(); i++ {
 		field := storeType.Field(i)
 		if field.PkgPath != "" {
@@ -388,13 +390,13 @@ func TestReplicaRefreshClassificationsCoverDangerousKinds(t *testing.T) {
 			// handled explicitly and cannot be clobbered by the reflect copy.
 			continue
 		}
-		if _, ok := replicaLocalStoreFields[field.Name]; ok {
+		if _, ok := store.ReplicaLocalStoreFields[field.Name]; ok {
 			continue
 		}
-		if _, ok := replicaInfrastructureStoreFields[field.Name]; ok {
+		if _, ok := store.ReplicaInfrastructureStoreFields[field.Name]; ok {
 			continue
 		}
-		if _, ok := replicaServerAccessStoreFields[field.Name]; ok {
+		if _, ok := store.ReplicaServerAccessStoreFields[field.Name]; ok {
 			continue
 		}
 		if reason := replicaDangerousKind(field.Type, map[reflect.Type]bool{}); reason != "" {
@@ -422,7 +424,7 @@ func replicaDangerousKind(t reflect.Type, seen map[reflect.Type]bool) string {
 		return ""
 	}
 	seen[t] = true
-	persistenceType := reflect.TypeOf(Persistence{})
+	persistenceType := reflect.TypeOf(store.Persistence{})
 	if t == persistenceType {
 		return "the Persistence handle"
 	}

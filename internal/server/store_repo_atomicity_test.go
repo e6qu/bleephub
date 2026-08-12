@@ -1,16 +1,20 @@
 package bleephub
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
+)
 
 func TestUpdateRepoPublishesOnlyAfterPersistence(t *testing.T) {
 	persistence := openTestPersistence(t, t.TempDir())
-	store := NewStore()
-	if err := store.SetPersistence(persistence); err != nil {
+	st := store.NewStore()
+	if err := st.SetPersistence(persistence); err != nil {
 		t.Fatalf("set persistence: %v", err)
 	}
-	store.SeedDefaultUser()
-	owner := store.UsersByLogin["admin"]
-	repo := store.CreateRepo(owner, "atomic-update", "before", false)
+	st.SeedDefaultUser()
+	owner := st.UsersByLogin["admin"]
+	repo := st.CreateRepo(owner, "atomic-update", "before", false)
 	if repo == nil {
 		t.Fatal("create repository")
 	}
@@ -21,15 +25,15 @@ func TestUpdateRepoPublishesOnlyAfterPersistence(t *testing.T) {
 	var recovered any
 	func() {
 		defer func() { recovered = recover() }()
-		store.UpdateRepo(owner.Login, repo.Name, func(candidate *Repo) {
+		st.UpdateRepo(owner.Login, repo.Name, func(candidate *store.Repo) {
 			candidate.Description = "after"
 			candidate.Topics = append(candidate.Topics, "not-durable")
 		})
 	}()
-	if _, ok := recovered.(*persistenceFailure); !ok {
+	if _, ok := recovered.(*store.PersistenceFailure); !ok {
 		t.Fatalf("update raised %T, want *persistenceFailure", recovered)
 	}
-	got := store.GetRepo(owner.Login, repo.Name)
+	got := st.GetRepo(owner.Login, repo.Name)
 	if got.Description != "before" || len(got.Topics) != 0 {
 		t.Fatalf("failed persistence leaked repository mutation: %#v", got)
 	}

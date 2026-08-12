@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/e6qu/bleephub/internal/server/testutil"
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // createPATGrantRequest files a pending fine-grained personal access token
@@ -37,7 +38,7 @@ func (s *isolatedServer) createPATGrantRequest(t *testing.T, orgLogin, ownerToke
 	return decodeJSON(t, resp)
 }
 
-func (s *isolatedServer) orgPATAdminAppToken(t *testing.T, org *Org) string {
+func (s *isolatedServer) orgPATAdminAppToken(t *testing.T, org *store.Org) string {
 	t.Helper()
 	admin := s.store.UsersByLogin["admin"]
 	permissions := map[string]string{"organization_personal_access_token_requests": "write", "organization_personal_access_tokens": "write"}
@@ -61,7 +62,7 @@ func TestOrgPATGrantRequests_ApproveRevokeLifecycle(t *testing.T) {
 		t.Fatal("create org failed")
 	}
 	owner := s.createTestUser(t, ownerLogin)
-	s.store.SetMembership(org.Login, owner.ID, OrgRoleMember, MembershipStateActive)
+	s.store.SetMembership(org.Login, owner.ID, store.OrgRoleMember, store.MembershipStateActive)
 	ownerToken := s.store.CreateToken(owner.ID, "repo").Value
 	appToken := s.orgPATAdminAppToken(t, org)
 	repo := s.store.CreateOrgRepo(org, admin, repoName, "", true)
@@ -249,7 +250,7 @@ func TestOrgPATGrantRequests_BulkReviewAndBulkRevoke(t *testing.T) {
 		t.Fatal("create org failed")
 	}
 	owner := s.createTestUser(t, ownerLogin)
-	s.store.SetMembership(org.Login, owner.ID, OrgRoleMember, MembershipStateActive)
+	s.store.SetMembership(org.Login, owner.ID, store.OrgRoleMember, store.MembershipStateActive)
 	ownerToken := s.store.CreateToken(owner.ID, "repo").Value
 	appToken := s.orgPATAdminAppToken(t, org)
 
@@ -419,7 +420,7 @@ func TestFineGrainedPATExpirationStopsAuthentication(t *testing.T) {
 	s := newIsolatedServer(t)
 	user := s.createTestUser(t, "pat-expiration-owner")
 	expiresAt := fixedTestTime.UTC().Add(time.Hour)
-	token, err := s.store.CreateUserFineGrainedPAT(user.ID, createPersonalAccessTokenWebRequest{
+	token, err := s.store.CreateUserFineGrainedPAT(user.ID, store.CreatePersonalAccessTokenWebRequest{
 		Name: "expiring token", ResourceOwner: user.Login, RepositorySelection: "none", ExpiresAt: &expiresAt,
 	})
 	if err != nil {

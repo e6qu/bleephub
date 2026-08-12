@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // TestStressCounterIntegrity hammers the store's monotonic ID allocators and
@@ -141,7 +143,7 @@ func TestStressCounterIntegrity(t *testing.T) {
 		if org == nil {
 			t.Fatal("CreateOrg nil")
 		}
-		member := &User{ID: st.NextUser, Login: "cnt-member", Type: "User"}
+		member := &store.User{ID: st.NextUser, Login: "cnt-member", Type: "User"}
 		st.Mu.Lock()
 		st.Users[member.ID] = member
 		st.UsersByLogin[member.Login] = member
@@ -154,11 +156,11 @@ func TestStressCounterIntegrity(t *testing.T) {
 			go func(n int) {
 				defer wg.Done()
 				for i := 0; i < perWorker; i++ {
-					role := OrgRoleMember
+					role := store.OrgRoleMember
 					if (n+i)%2 == 0 {
-						role = OrgRoleAdmin
+						role = store.OrgRoleAdmin
 					}
-					if st.SetMembership(org.Login, member.ID, role, MembershipStateActive) == nil {
+					if st.SetMembership(org.Login, member.ID, role, store.MembershipStateActive) == nil {
 						t.Error("SetMembership returned nil under contention")
 						return
 					}
@@ -171,7 +173,7 @@ func TestStressCounterIntegrity(t *testing.T) {
 		// create duplicates under contention.
 		st.Mu.RLock()
 		count := len(st.Memberships)
-		m := st.Memberships[membershipKey(org.Login, member.ID)]
+		m := st.Memberships[store.MembershipKey(org.Login, member.ID)]
 		st.Mu.RUnlock()
 		if m == nil {
 			t.Fatal("membership missing after upsert storm")

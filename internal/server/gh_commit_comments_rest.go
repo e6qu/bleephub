@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // Commit Comments API.
@@ -20,7 +22,7 @@ func (s *Server) registerGHCommitCommentsRoutes() {
 	s.route("GET /api/v3/repos/{owner}/{repo}/comments", s.handleListRepoCommitComments)
 	s.route("GET /api/v3/repos/{owner}/{repo}/commits/{commit_sha}/comments", s.handleListCommitComments)
 	s.route("POST /api/v3/repos/{owner}/{repo}/commits/{commit_sha}/comments",
-		s.requirePerm(scopeContents, permWrite, s.handleCreateCommitComment))
+		s.requirePerm(store.ScopeContents, store.PermWrite, s.handleCreateCommitComment))
 	s.route("GET /api/v3/repos/{owner}/{repo}/comments/{comment_id}", s.handleGetCommitComment)
 	s.route("PATCH /api/v3/repos/{owner}/{repo}/comments/{comment_id}", s.handleUpdateCommitComment)
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/comments/{comment_id}", s.handleDeleteCommitComment)
@@ -32,7 +34,7 @@ func (s *Server) handleListRepoCommitComments(w http.ResponseWriter, r *http.Req
 		return
 	}
 	comments := s.store.CommitComments.ListForRepo(repo.ID)
-	comments, ok := filterSince(w, r, "CommitComment", comments, func(comment *CommitComment) time.Time {
+	comments, ok := filterSince(w, r, "CommitComment", comments, func(comment *store.CommitComment) time.Time {
 		return comment.UpdatedAt
 	})
 	if !ok {
@@ -53,7 +55,7 @@ func (s *Server) handleListCommitComments(w http.ResponseWriter, r *http.Request
 	}
 	sha := r.PathValue("commit_sha")
 	comments := s.store.CommitComments.ListForCommit(repo.ID, sha)
-	comments, ok := filterSince(w, r, "CommitComment", comments, func(comment *CommitComment) time.Time {
+	comments, ok := filterSince(w, r, "CommitComment", comments, func(comment *store.CommitComment) time.Time {
 		return comment.UpdatedAt
 	})
 	if !ok {
@@ -88,7 +90,7 @@ func (s *Server) handleCreateCommitComment(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if req.Body == "" {
-		writeGHValidationError(w, "CommitComment", "body", "missing_field")
+		store.WriteGHValidationError(w, "CommitComment", "body", "missing_field")
 		return
 	}
 	sha := r.PathValue("commit_sha")
@@ -99,7 +101,7 @@ func (s *Server) handleCreateCommitComment(w http.ResponseWriter, r *http.Reques
 		"action":     "created",
 		"comment":    commitCommentJSON,
 		"repository": repoPayload(repo),
-		"sender":     userToJSON(user),
+		"sender":     store.UserToJSON(user),
 	})
 	writeJSONCreated(w, jsonStringField(commitCommentJSON, "url"), commitCommentJSON)
 }
@@ -149,7 +151,7 @@ func (s *Server) handleUpdateCommitComment(w http.ResponseWriter, r *http.Reques
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if c.AuthorID != user.ID && !s.viewerMayActOnRepo(r.Context(), repo, scopeContents, permWrite, permAdmin) {
+	if c.AuthorID != user.ID && !s.viewerMayActOnRepo(r.Context(), repo, store.ScopeContents, store.PermWrite, store.PermAdmin) {
 		writeGHError(w, http.StatusForbidden, "Must have push access")
 		return
 	}
@@ -182,7 +184,7 @@ func (s *Server) handleDeleteCommitComment(w http.ResponseWriter, r *http.Reques
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if c.AuthorID != user.ID && !s.viewerMayActOnRepo(r.Context(), repo, scopeContents, permWrite, permAdmin) {
+	if c.AuthorID != user.ID && !s.viewerMayActOnRepo(r.Context(), repo, store.ScopeContents, store.PermWrite, store.PermAdmin) {
 		writeGHError(w, http.StatusForbidden, "Must have push access")
 		return
 	}
@@ -193,14 +195,14 @@ func (s *Server) handleDeleteCommitComment(w http.ResponseWriter, r *http.Reques
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func commitCommentToJSON(c *CommitComment, st *Store, baseURL string, repo *Repo) map[string]interface{} {
+func commitCommentToJSON(c *store.CommitComment, st *store.Store, baseURL string, repo *store.Repo) map[string]interface{} {
 	if c == nil {
 		return nil
 	}
 	var author map[string]interface{}
 	st.Mu.RLock()
 	if u := st.Users[c.AuthorID]; u != nil {
-		author = userToJSON(u)
+		author = store.UserToJSON(u)
 	}
 	st.Mu.RUnlock()
 	out := map[string]interface{}{
@@ -213,7 +215,7 @@ func commitCommentToJSON(c *CommitComment, st *Store, baseURL string, repo *Repo
 		"updated_at":         c.UpdatedAt.UTC().Format(time.RFC3339),
 		"url":                fmt.Sprintf("%s/api/v3/repos/%s/comments/%d", baseURL, repo.FullName, c.ID),
 		"html_url":           fmt.Sprintf("%s/%s/commit/%s#commitcomment-%d", baseURL, repo.FullName, c.CommitID, c.ID),
-		"author_association": authorAssociation(st, c.AuthorID, repo),
+		"author_association": store.AuthorAssociation(st, c.AuthorID, repo),
 	}
 	// path/position/line are required-but-nullable on GitHub's commit-comment
 	// schema: a commit-level comment carries them as null rather than omitting

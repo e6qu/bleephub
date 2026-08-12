@@ -1,6 +1,10 @@
 package bleephub
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
+)
 
 // TestListDeploymentsDeterministicOrder covers the STORE pagination fix (P7).
 // The reload path repopulates DeploymentStore.byRepo in arbitrary
@@ -23,7 +27,7 @@ func TestListDeploymentsDeterministicOrder(t *testing.T) {
 	ds.Mu.Lock()
 	src := ds.ByRepo[repoID]
 	perm := []int{2, 5, 0, 3, 1, 4}
-	scrambled := make([]*Deployment, len(src))
+	scrambled := make([]*store.Deployment, len(src))
 	for i, p := range perm {
 		scrambled[i] = src[p]
 	}

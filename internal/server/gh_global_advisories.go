@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // Global security advisories (GET /advisories and GET /advisories/{ghsa_id}).
@@ -192,7 +194,7 @@ func (s *Server) handleGetGlobalAdvisory(w http.ResponseWriter, r *http.Request)
 	writeGHError(w, http.StatusNotFound, "Not Found")
 }
 
-func advisoryHasAnyCWE(a *SecurityAdvisory, wanted []string) bool {
+func advisoryHasAnyCWE(a *store.SecurityAdvisory, wanted []string) bool {
 	for _, w := range wanted {
 		w = strings.TrimSpace(w)
 		for _, c := range a.CWEs {
@@ -222,7 +224,7 @@ func decodeAdvisoryCursor(cursor string) (int, bool) {
 
 // globalAdvisoryToJSON renders the spec `global-advisory` shape from a
 // published repository advisory.
-func (s *Server) globalAdvisoryToJSON(a *SecurityAdvisory, baseURL string) map[string]interface{} {
+func (s *Server) globalAdvisoryToJSON(a *store.SecurityAdvisory, baseURL string) map[string]interface{} {
 	repo := s.store.GetRepoByID(a.RepoID)
 
 	identifiers := []map[string]interface{}{
@@ -276,7 +278,7 @@ func (s *Server) globalAdvisoryToJSON(a *SecurityAdvisory, baseURL string) map[s
 	credits := []map[string]interface{}{}
 	if u := s.store.GetUserByID(a.AuthorID); u != nil {
 		credits = append(credits, map[string]interface{}{
-			"user": userToJSON(u),
+			"user": store.UserToJSON(u),
 			"type": "reporter",
 		})
 	}

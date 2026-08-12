@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/e6qu/bleephub/internal/server/testutil"
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // TestWebhookFormContentTypeSigning verifies that a content_type=form hook
@@ -39,7 +40,7 @@ func TestWebhookFormContentTypeSigning(t *testing.T) {
 	defer ln.Close()
 
 	s := newTestServer()
-	hook := &Webhook{
+	hook := &store.Webhook{
 		ID:          1,
 		URL:         ln.URL,
 		Secret:      secret,
@@ -102,7 +103,7 @@ func TestWebhookJSONContentTypeSigning(t *testing.T) {
 	defer ln.Close()
 
 	s := newTestServer()
-	hook := &Webhook{ID: 2, URL: ln.URL, Secret: secret, ContentType: "json", Active: true, Events: []string{"push"}}
+	hook := &store.Webhook{ID: 2, URL: ln.URL, Secret: secret, ContentType: "json", Active: true, Events: []string{"push"}}
 	payload := []byte(`{"ref":"refs/heads/main"}`)
 	s.deliverWebhook(hook, "push", "", payload)
 
@@ -158,7 +159,7 @@ func TestListArtifactsScopedToRun(t *testing.T) {
 
 	add := func(id int64, name, backendID string) {
 		s.artifactStore.Mu.Lock()
-		s.artifactStore.Artifacts[id] = &Artifact{
+		s.artifactStore.Artifacts[id] = &store.Artifact{
 			ID: id, Name: name, Finalized: true,
 			WorkflowRunBackendID: backendID, CreatedAt: fixedTestTime,
 		}

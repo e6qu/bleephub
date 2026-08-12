@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func TestContainerRegistryPublishCreatesPackageVersion(t *testing.T) {
@@ -90,10 +92,10 @@ func TestPackageAndRegistryBytesUseObjectStore(t *testing.T) {
 	fs := newS3FSForTest(t)
 	objectFS := deriveS3FSForTest(t, fs.Bucket(), "objects")
 	s := newTestServer()
-	s.store.ObjectByteStore = &s3ActionsByteStore{Fs: objectFS}
+	s.store.ObjectByteStore = &store.S3ActionsByteStore{Fs: objectFS}
 	admin := s.store.UsersByLogin["admin"]
 	pkg, _ := s.store.CreatePackage("User", admin.Login, "container", "object-package", "public")
-	version, err := s.store.CreatePackageVersion("User", admin.Login, "container", pkg.Name, "1.0.0", "", nil, []PackageFileInput{{
+	version, err := s.store.CreatePackageVersion("User", admin.Login, "container", pkg.Name, "1.0.0", "", nil, []store.PackageFileInput{{
 		Name:          "manifest.json",
 		ContentType:   "application/vnd.oci.image.manifest.v1+json",
 		ContentBase64: "cGFja2FnZSBvYmplY3QgYnl0ZXM=",
@@ -105,7 +107,7 @@ func TestPackageAndRegistryBytesUseObjectStore(t *testing.T) {
 	if len(files) != 1 {
 		t.Fatalf("package files len = %d, want 1", len(files))
 	}
-	got := readS3TestFile(t, objectFS, packageFileDataKey(files[0].ID))
+	got := readS3TestFile(t, objectFS, store.PackageFileDataKey(files[0].ID))
 	if string(got) != "package object bytes" {
 		t.Fatalf("package object bytes = %q", string(got))
 	}
@@ -131,7 +133,7 @@ func TestPackageAndRegistryBytesUseObjectStore(t *testing.T) {
 	if err := s.writeRegistryBlob(digest, []byte("registry object bytes")); err != nil {
 		t.Fatalf("write registry blob: %v", err)
 	}
-	registryGot := readS3TestFile(t, objectFS, packageRegistryBlobDataKey(digest))
+	registryGot := readS3TestFile(t, objectFS, store.PackageRegistryBlobDataKey(digest))
 	if string(registryGot) != "registry object bytes" {
 		t.Fatalf("registry object bytes = %q", string(registryGot))
 	}
@@ -148,11 +150,11 @@ func TestDeleteRepoPurgesRepositoryPackageObjectBytes(t *testing.T) {
 	fs := newS3FSForTest(t)
 	objectFS := deriveS3FSForTest(t, fs.Bucket(), "objects")
 	s := newTestServer()
-	s.store.ObjectByteStore = &s3ActionsByteStore{Fs: objectFS}
+	s.store.ObjectByteStore = &store.S3ActionsByteStore{Fs: objectFS}
 	admin := s.store.UsersByLogin["admin"]
 	repo := s.store.CreateRepo(admin, "repo-package-objects", "", false)
 	pkg, _ := s.store.CreatePackage("Repository", repo.FullName, "container", "image", "private")
-	version, err := s.store.CreatePackageVersion("Repository", repo.FullName, "container", pkg.Name, "1.0.0", "", nil, []PackageFileInput{{
+	version, err := s.store.CreatePackageVersion("Repository", repo.FullName, "container", pkg.Name, "1.0.0", "", nil, []store.PackageFileInput{{
 		Name:          "manifest.json",
 		ContentType:   "application/vnd.oci.image.manifest.v1+json",
 		ContentBase64: "cmVwbyBwYWNrYWdlIGJ5dGVz",

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/graphql-go/graphql"
 )
 
@@ -198,7 +199,7 @@ func graphqlToRESTLockReason(enum string) string {
 // selection, and activeLockReason serializes through the LockReason enum).
 // The bool indicates whether a target was found.
 func (s *Resolver) lockByNodeID(nodeID string, locked bool, reason string) (map[string]interface{}, bool) {
-	if issue := findIssueByNodeID(s.store, nodeID); issue != nil {
+	if issue := store.FindIssueByNodeID(s.store, nodeID); issue != nil {
 		s.store.SetIssueOrPRLock(issue.RepoID, issue.Number, locked, reason)
 		refreshed := s.store.GetIssue(issue.ID)
 		if refreshed == nil {
@@ -206,7 +207,7 @@ func (s *Resolver) lockByNodeID(nodeID string, locked bool, reason string) (map[
 		}
 		return issueToGQL(refreshed, s.store), true
 	}
-	if pr := findPullRequestByNodeID(s.store, nodeID); pr != nil {
+	if pr := store.FindPullRequestByNodeID(s.store, nodeID); pr != nil {
 		s.store.SetIssueOrPRLock(pr.RepoID, pr.Number, locked, reason)
 		refreshed := s.store.GetPullRequest(pr.ID)
 		if refreshed == nil {

@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 var testRateLimitReset = time.Date(9999, time.December, 31, 23, 59, 59, 0, time.UTC)
@@ -209,7 +211,7 @@ func TestAnonymousRateBucketIgnoresForwardedHeaderFromPublicPeer(t *testing.T) {
 
 func TestBrowserSessionGetsAuthenticatedUserBudget(t *testing.T) {
 	server := &Server{rateLimits: map[string]*apiRateWindow{}}
-	user := &User{ID: 42, Login: "browser-user"}
+	user := &store.User{ID: 42, Login: "browser-user"}
 	first := httptest.NewRequest(http.MethodGet, "/api/v3/user", nil)
 	first = first.WithContext(contextWithUser(first.Context(), user))
 	second := httptest.NewRequest(http.MethodGet, "/api/v3/notifications", nil)

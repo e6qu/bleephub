@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/e6qu/bleephub/internal/actions"
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func (s *Server) registerJobRoutes() {
@@ -68,7 +69,7 @@ func (s *Server) handleSubmitJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	job := &Job{
+	job := &store.Job{
 		ID:          jobID,
 		RequestID:   requestID,
 		PlanID:      planID,
@@ -87,7 +88,7 @@ func (s *Server) handleSubmitJob(w http.ResponseWriter, r *http.Request) {
 	s.store.Mu.Unlock()
 
 	// Build the envelope message
-	envelope := &TaskAgentMessage{
+	envelope := &store.TaskAgentMessage{
 		MessageID:   s.actions.NextMessageID(),
 		MessageType: "PipelineAgentJobRequest",
 		Body:        string(msgJSON),
@@ -145,7 +146,7 @@ func (s *Server) handleSubmitWorkflow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	wfDef, err := ParseWorkflow([]byte(req.Workflow))
+	wfDef, err := store.ParseWorkflow([]byte(req.Workflow))
 	if err != nil {
 		http.Error(w, "parse workflow: "+err.Error(), http.StatusBadRequest)
 		return

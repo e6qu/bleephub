@@ -18,18 +18,19 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/google/uuid"
 )
 
 // linkJobToPlan installs the broker-side Job entry that ties a WorkflowJob
 // to its plan, mirroring what dispatchWorkflowJob records when it sends
 // the job to a runner.
-func linkJobToPlan(t *testing.T, s *Server, wfJob *WorkflowJob) (planID, timelineID string) {
+func linkJobToPlan(t *testing.T, s *Server, wfJob *store.WorkflowJob) (planID, timelineID string) {
 	t.Helper()
 	planID = uuid.New().String()
 	timelineID = uuid.New().String()
 	s.store.Mu.Lock()
-	s.store.Jobs[wfJob.JobID] = &Job{
+	s.store.Jobs[wfJob.JobID] = &store.Job{
 		ID:         wfJob.JobID,
 		PlanID:     planID,
 		TimelineID: timelineID,
@@ -130,10 +131,10 @@ func newTimelineTestServer() *Server {
 	return s
 }
 
-func storedRecords(s *Server, planID string) []TimelineRecord {
+func storedRecords(s *Server, planID string) []store.TimelineRecord {
 	s.store.Mu.RLock()
 	defer s.store.Mu.RUnlock()
-	out := make([]TimelineRecord, 0, len(s.store.TimelineRecords[planID]))
+	out := make([]store.TimelineRecord, 0, len(s.store.TimelineRecords[planID]))
 	for _, rec := range s.store.TimelineRecords[planID] {
 		out = append(out, *rec)
 	}
@@ -151,8 +152,8 @@ func TestTimelineRecords_WrapperBodyStored(t *testing.T) {
 	})
 
 	var resp struct {
-		Count int               `json:"count"`
-		Value []*TimelineRecord `json:"value"`
+		Count int                     `json:"count"`
+		Value []*store.TimelineRecord `json:"value"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode response: %v", err)
@@ -383,7 +384,7 @@ func TestJobSteps_NoRecordsMeansEmptyArray(t *testing.T) {
 	// Step definitions exist, but the runner never reported records —
 	// the steps array must be empty, never fabricated from the defs.
 	s.store.Mu.Lock()
-	wfJob.Def = &JobDef{Steps: []StepDef{
+	wfJob.Def = &store.JobDef{Steps: []store.StepDef{
 		{Name: "Checkout", Uses: "actions/checkout@v4"},
 		{Run: "go test ./..."},
 	}}
@@ -427,7 +428,7 @@ func TestLogfilesUpload_WritesObjectStore(t *testing.T) {
 	fs := newS3FSForTest(t)
 	objectFS := deriveS3FSForTest(t, fs.Bucket(), "objects")
 	s := newTimelineTestServer()
-	s.setArtifactStore(NewArtifactStoreWithByteStore("", &s3ActionsByteStore{Fs: objectFS}))
+	s.setArtifactStore(store.NewArtifactStoreWithByteStore("", &store.S3ActionsByteStore{Fs: objectFS}))
 	planID := uuid.New().String()
 	logID := createLogFile(t, s, planID)
 
@@ -443,7 +444,7 @@ func TestLogfilesUpload_ObjectStoreFailurePreservesState(t *testing.T) {
 	newS3FSForTest(t)
 	objectFS := deriveS3FSForTest(t, "missing-bucket", "objects")
 	s := newTimelineTestServer()
-	s.setArtifactStore(NewArtifactStoreWithByteStore("", &s3ActionsByteStore{Fs: objectFS}))
+	s.setArtifactStore(store.NewArtifactStoreWithByteStore("", &store.S3ActionsByteStore{Fs: objectFS}))
 	planID := uuid.New().String()
 	logID := createLogFile(t, s, planID)
 
@@ -473,7 +474,7 @@ func TestJobLogs_ReadsUploadedLogFilesFromObjectStore(t *testing.T) {
 	fs := newS3FSForTest(t)
 	objectFS := deriveS3FSForTest(t, fs.Bucket(), "objects")
 	s := newTimelineTestServer()
-	s.setArtifactStore(NewArtifactStoreWithByteStore("", &s3ActionsByteStore{Fs: objectFS}))
+	s.setArtifactStore(store.NewArtifactStoreWithByteStore("", &store.S3ActionsByteStore{Fs: objectFS}))
 	_, wfJob := seedRun(t, s, "octo/repo", "completed", "success")
 	planID, timelineID := linkJobToPlan(t, s, wfJob)
 
@@ -500,11 +501,11 @@ func TestJobLogs_ReadsUploadedLogFilesFromObjectStore(t *testing.T) {
 func TestJobLogs_SurviveServiceReloadWithObjectStore(t *testing.T) {
 	fs := newS3FSForTest(t)
 	objectFS := deriveS3FSForTest(t, fs.Bucket(), "objects")
-	byteStore := &s3ActionsByteStore{Fs: objectFS}
+	byteStore := &store.S3ActionsByteStore{Fs: objectFS}
 	t.Setenv("BLEEPHUB_PERSIST", "true")
 	t.Setenv("BLEEPHUB_DATA_DIR", t.TempDir())
 
-	p1, err := NewPersistence()
+	p1, err := store.NewPersistence()
 	if err != nil {
 		t.Fatalf("open first persistence: %v", err)
 	}
@@ -512,7 +513,7 @@ func TestJobLogs_SurviveServiceReloadWithObjectStore(t *testing.T) {
 	if err := s1.store.SetPersistence(p1); err != nil {
 		t.Fatalf("attach first persistence: %v", err)
 	}
-	s1.setArtifactStore(NewArtifactStoreWithByteStore("", byteStore))
+	s1.setArtifactStore(store.NewArtifactStoreWithByteStore("", byteStore))
 	wf, wfJob := seedRun(t, s1, "octo/repo", "completed", "success")
 	planID, timelineID := linkJobToPlan(t, s1, wfJob)
 	s1.store.PersistWorkflowRecord(wf)
@@ -527,17 +528,17 @@ func TestJobLogs_SurviveServiceReloadWithObjectStore(t *testing.T) {
 		t.Fatalf("close first persistence: %v", err)
 	}
 
-	p2, err := NewPersistence()
+	p2, err := store.NewPersistence()
 	if err != nil {
 		t.Fatalf("open reloaded persistence: %v", err)
 	}
 	t.Cleanup(func() { _ = p2.Close() })
 	s2 := newTimelineTestServer()
-	s2.store = NewStore()
+	s2.store = store.NewStore()
 	if err := s2.store.SetPersistence(p2); err != nil {
 		t.Fatalf("reload persistence: %v", err)
 	}
-	s2.setArtifactStore(NewArtifactStoreWithByteStore("", byteStore))
+	s2.setArtifactStore(store.NewArtifactStoreWithByteStore("", byteStore))
 
 	w := runRequest(s2, "GET", fmt.Sprintf("/api/v3/repos/octo/repo/actions/jobs/%d/logs", stableJobID(wfJob.JobID)))
 	if w.Code != http.StatusOK {
@@ -553,7 +554,7 @@ func TestRunLogsDelete_ObjectStoreFailurePreservesState(t *testing.T) {
 	objectFS := deriveS3FSForTest(t, "missing-bucket", "objects")
 	s := newTimelineTestServer()
 	s.registerGHActionsPermissionsRoutes()
-	s.setArtifactStore(NewArtifactStoreWithByteStore("", &s3ActionsByteStore{Fs: objectFS}))
+	s.setArtifactStore(store.NewArtifactStoreWithByteStore("", &store.S3ActionsByteStore{Fs: objectFS}))
 	wf, wfJob := seedRun(t, s, "octo/repo", "completed", "success")
 	planID, timelineID := linkJobToPlan(t, s, wfJob)
 

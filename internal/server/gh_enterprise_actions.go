@@ -2,6 +2,8 @@ package bleephub
 
 import (
 	"net/http"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func (s *Server) registerGHEnterpriseActionsRoutes() {
@@ -221,11 +223,11 @@ func (s *Server) handleCreateEnterpriseOIDCCustomProperty(w http.ResponseWriter,
 		return
 	}
 	if req.CustomPropertyName == "" {
-		writeGHValidationError(w, "OIDCCustomPropertyInclusion", "custom_property_name", "missing_field")
+		store.WriteGHValidationError(w, "OIDCCustomPropertyInclusion", "custom_property_name", "missing_field")
 		return
 	}
 	if !s.store.AddEnterpriseOIDCCustomProperty(req.CustomPropertyName) {
-		writeGHValidationError(w, "OIDCCustomPropertyInclusion", "custom_property_name", "already_exists")
+		store.WriteGHValidationError(w, "OIDCCustomPropertyInclusion", "custom_property_name", "already_exists")
 		return
 	}
 	writeJSON(w, http.StatusCreated, enterpriseOIDCCustomPropertyJSON(req.CustomPropertyName))

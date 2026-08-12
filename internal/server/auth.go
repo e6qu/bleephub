@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/google/uuid"
 )
 
@@ -312,13 +313,13 @@ func writeOAuthError(w http.ResponseWriter, status int, code, desc string) {
 // registered private key. Current runners use PS256 while older supported
 // runners use RS256. The JWT's iss claim must match a known agent ClientID;
 // the signature is verified against that agent's public key.
-func (s *Server) verifyAgentClientAssertion(token string) (*Agent, error) {
+func (s *Server) verifyAgentClientAssertion(token string) (*store.Agent, error) {
 	parts := strings.SplitN(token, ".", 3)
 	if len(parts) != 3 {
 		return nil, fmt.Errorf("malformed JWT: expected 3 parts")
 	}
 
-	headerBytes, err := base64urlDecode(parts[0])
+	headerBytes, err := store.Base64urlDecode(parts[0])
 	if err != nil {
 		return nil, fmt.Errorf("decode JWT header: %w", err)
 	}
@@ -332,7 +333,7 @@ func (s *Server) verifyAgentClientAssertion(token string) (*Agent, error) {
 		return nil, fmt.Errorf("unsupported JWT algorithm %q (expected RS256 or PS256)", header.Alg)
 	}
 
-	payloadBytes, err := base64urlDecode(parts[1])
+	payloadBytes, err := store.Base64urlDecode(parts[1])
 	if err != nil {
 		return nil, fmt.Errorf("decode JWT payload: %w", err)
 	}
@@ -362,7 +363,7 @@ func (s *Server) verifyAgentClientAssertion(token string) (*Agent, error) {
 		return nil, fmt.Errorf("build agent public key: %w", err)
 	}
 
-	sigBytes, err := base64urlDecode(parts[2])
+	sigBytes, err := store.Base64urlDecode(parts[2])
 	if err != nil {
 		return nil, fmt.Errorf("decode JWT signature: %w", err)
 	}
@@ -384,7 +385,7 @@ func (s *Server) verifyAgentClientAssertion(token string) (*Agent, error) {
 // agentRSAPublicKey reconstructs an *rsa.PublicKey from the modulus+exponent
 // pair the runner sent during agent registration. The runner encodes both as
 // standard base64, per the Azure DevOps agent protocol.
-func agentRSAPublicKey(pk *AgentPublicKey) (*rsa.PublicKey, error) {
+func agentRSAPublicKey(pk *store.AgentPublicKey) (*rsa.PublicKey, error) {
 	modBytes, err := base64.StdEncoding.DecodeString(pk.Modulus)
 	if err != nil {
 		return nil, fmt.Errorf("decode modulus: %w", err)
@@ -512,28 +513,28 @@ func runnerMAC(data string) []byte {
 // for the organization surface, or {enterprise} for the enterprise surface.
 // The named target must exist — a runner credential for a target that is not
 // there would be a credential for nothing, and real GitHub answers 404.
-func (s *Server) runnerScopeFromRequest(r *http.Request) (runnerScope, error) {
+func (s *Server) runnerScopeFromRequest(r *http.Request) (store.RunnerScope, error) {
 	owner, repo := r.PathValue("owner"), r.PathValue("repo")
 	if owner != "" && repo != "" {
 		found := s.store.GetRepo(owner, repo)
 		if found == nil {
-			return runnerScope{}, fmt.Errorf("repository %s/%s not found", owner, repo)
+			return store.RunnerScope{}, fmt.Errorf("repository %s/%s not found", owner, repo)
 		}
-		return runnerScope{Repo: found.FullName}, nil
+		return store.RunnerScope{Repo: found.FullName}, nil
 	}
 	if org := r.PathValue("org"); org != "" {
 		if s.store.GetOrg(org) == nil {
-			return runnerScope{}, fmt.Errorf("organization %s not found", org)
+			return store.RunnerScope{}, fmt.Errorf("organization %s not found", org)
 		}
-		return runnerScope{Org: org}, nil
+		return store.RunnerScope{Org: org}, nil
 	}
 	if enterprise := r.PathValue("enterprise"); enterprise != "" {
 		if enterprise != s.enterpriseSlug() {
-			return runnerScope{}, fmt.Errorf("enterprise %s not found", enterprise)
+			return store.RunnerScope{}, fmt.Errorf("enterprise %s not found", enterprise)
 		}
-		return runnerScope{Enterprise: enterprise}, nil
+		return store.RunnerScope{Enterprise: enterprise}, nil
 	}
-	return runnerScope{}, fmt.Errorf("request path names neither a repository, organization, nor enterprise")
+	return store.RunnerScope{}, fmt.Errorf("request path names neither a repository, organization, nor enterprise")
 }
 
 // signedBlob encodes payload and appends its MAC, producing an opaque
@@ -558,14 +559,14 @@ func parseSignedBlob(prefix, token string, out any) error {
 	if !ok {
 		return fmt.Errorf("malformed runner credential: missing signature")
 	}
-	sig, err := base64urlDecode(sigPart)
+	sig, err := store.Base64urlDecode(sigPart)
 	if err != nil {
 		return fmt.Errorf("decode runner credential signature: %w", err)
 	}
 	if !hmac.Equal(sig, runnerMAC(encoded)) {
 		return fmt.Errorf("invalid runner credential signature")
 	}
-	body, err := base64urlDecode(encoded)
+	body, err := store.Base64urlDecode(encoded)
 	if err != nil {
 		return fmt.Errorf("decode runner credential payload: %w", err)
 	}
@@ -580,13 +581,13 @@ func parseSignedBlob(prefix, token string, out any) error {
 // that shape and carries its own scope and expiry so registration needs no
 // server-side token registry.
 type runnerRegistrationClaims struct {
-	Scope   runnerScope `json:"scope"`
-	Purpose string      `json:"purpose"`
-	Exp     int64       `json:"exp"`
-	Nonce   string      `json:"nonce"`
+	Scope   store.RunnerScope `json:"scope"`
+	Purpose string            `json:"purpose"`
+	Exp     int64             `json:"exp"`
+	Nonce   string            `json:"nonce"`
 }
 
-func newRunnerRegistrationToken(scope runnerScope, purpose string) (string, error) {
+func newRunnerRegistrationToken(scope store.RunnerScope, purpose string) (string, error) {
 	if scope.Empty() {
 		return "", fmt.Errorf("runner registration token needs a repository, organization, or enterprise scope")
 	}
@@ -634,7 +635,7 @@ func parseRunnerRegistrationToken(token string, purposes []string) (runnerRegist
 // the clientId only names which agent's public key to verify against. What
 // authenticates is the RSA signature over the assertion, which an attacker
 // cannot produce without the runner's private key.
-func newAgentClientID(scope runnerScope) (string, error) {
+func newAgentClientID(scope store.RunnerScope) (string, error) {
 	if scope.Empty() {
 		return "", fmt.Errorf("agent clientId needs a repository, organization, or enterprise scope")
 	}
@@ -710,7 +711,7 @@ func parseRunnerToken(token string) (*runnerTokenClaims, error) {
 	if len(parts) != 3 {
 		return nil, fmt.Errorf("malformed runner token: expected 3 parts")
 	}
-	headerBytes, err := base64urlDecode(parts[0])
+	headerBytes, err := store.Base64urlDecode(parts[0])
 	if err != nil {
 		return nil, fmt.Errorf("decode runner token header: %w", err)
 	}
@@ -723,14 +724,14 @@ func parseRunnerToken(token string) (*runnerTokenClaims, error) {
 	if header.Alg != "HS256" {
 		return nil, fmt.Errorf("unsupported runner token algorithm %q (expected HS256)", header.Alg)
 	}
-	sig, err := base64urlDecode(parts[2])
+	sig, err := store.Base64urlDecode(parts[2])
 	if err != nil {
 		return nil, fmt.Errorf("decode runner token signature: %w", err)
 	}
 	if !hmac.Equal(sig, runnerMAC(parts[0]+"."+parts[1])) {
 		return nil, fmt.Errorf("invalid runner token signature")
 	}
-	payloadBytes, err := base64urlDecode(parts[1])
+	payloadBytes, err := store.Base64urlDecode(parts[1])
 	if err != nil {
 		return nil, fmt.Errorf("decode runner token payload: %w", err)
 	}
@@ -754,8 +755,8 @@ func parseRunnerToken(token string) (*runnerTokenClaims, error) {
 // runnerPrincipal is the verified identity behind a runner protocol call.
 type runnerPrincipal struct {
 	Claims *runnerTokenClaims // nil for a config-time setup credential
-	Agent  *Agent             // set for an agent session token
-	Scope  runnerScope        // repository/organization the credential may act for
+	Agent  *store.Agent       // set for an agent session token
+	Scope  store.RunnerScope  // repository/organization the credential may act for
 	Setup  bool               // the registration/removal token config.sh holds
 }
 
@@ -860,7 +861,7 @@ func (s *Server) runnerPrincipalForToken(token string) (*runnerPrincipal, error)
 		if err != nil {
 			return nil, err
 		}
-		return &runnerPrincipal{Claims: claims, Scope: runnerScope{Repo: repo}}, nil
+		return &runnerPrincipal{Claims: claims, Scope: store.RunnerScope{Repo: repo}}, nil
 	default:
 		return nil, fmt.Errorf("unsupported runner token audience %q", claims.Aud)
 	}

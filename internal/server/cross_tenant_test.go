@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strconv"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func itoa64(i int64) string { return strconv.FormatInt(i, 10) }
@@ -22,26 +24,26 @@ func itoa64(i int64) string { return strconv.FormatInt(i, 10) }
 // not 403, which would confirm the id exists.
 
 type crossTenantFixture struct {
-	victim       *User
-	victimRepo   *Repo
+	victim       *store.User
+	victimRepo   *store.Repo
 	victimToken  string
-	attacker     *User
-	attackerRepo *Repo
+	attacker     *store.User
+	attackerRepo *store.Repo
 	attackerTok  string
 }
 
 func (s *isolatedServer) newCrossTenantFixture(t *testing.T, tag string) *crossTenantFixture {
 	t.Helper()
-	store := s.store
+	st := s.store
 	now := fixedTestTime.UTC()
 
-	mkUser := func(login string) *User {
-		store.Mu.Lock()
-		defer store.Mu.Unlock()
-		u := &User{ID: store.NextUser, Login: login, Type: "User", CreatedAt: now, UpdatedAt: now}
-		store.Users[u.ID] = u
-		store.UsersByLogin[u.Login] = u
-		store.NextUser++
+	mkUser := func(login string) *store.User {
+		st.Mu.Lock()
+		defer st.Mu.Unlock()
+		u := &store.User{ID: st.NextUser, Login: login, Type: "User", CreatedAt: now, UpdatedAt: now}
+		st.Users[u.ID] = u
+		st.UsersByLogin[u.Login] = u
+		st.NextUser++
 		return u
 	}
 
@@ -49,16 +51,16 @@ func (s *isolatedServer) newCrossTenantFixture(t *testing.T, tag string) *crossT
 		victim:   mkUser("xtenant-victim-" + tag),
 		attacker: mkUser("xtenant-attacker-" + tag),
 	}
-	f.victimRepo = store.CreateRepo(f.victim, "xtenant-victim-repo", "private fixture", true)
+	f.victimRepo = st.CreateRepo(f.victim, "xtenant-victim-repo", "private fixture", true)
 	if f.victimRepo == nil {
 		t.Fatalf("could not create the victim repository")
 	}
-	f.attackerRepo = store.CreateRepo(f.attacker, "xtenant-attacker-repo", "attacker's own repository", false)
+	f.attackerRepo = st.CreateRepo(f.attacker, "xtenant-attacker-repo", "attacker's own repository", false)
 	if f.attackerRepo == nil {
 		t.Fatalf("could not create the attacker repository")
 	}
-	victimTok := store.CreateToken(f.victim.ID, "repo, workflow, admin:org")
-	attackerTok := store.CreateToken(f.attacker.ID, "repo, workflow, admin:org")
+	victimTok := st.CreateToken(f.victim.ID, "repo, workflow, admin:org")
+	attackerTok := st.CreateToken(f.attacker.ID, "repo, workflow, admin:org")
 	if victimTok == nil || attackerTok == nil {
 		t.Fatalf("could not mint fixture tokens")
 	}
@@ -80,13 +82,13 @@ func TestCrossTenantCheckRunsAndSuitesAreNotReachableByID(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
 	f := s.newCrossTenantFixture(t, "checks")
-	store := s.store
+	st := s.store
 
-	suite := store.CreateCheckSuite(f.victimRepo.FullName, "main", "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", 0)
+	suite := st.CreateCheckSuite(f.victimRepo.FullName, "main", "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", 0)
 	if suite == nil {
 		t.Fatal("could not create the victim's check suite fixture")
 	}
-	run := store.CreateCheckRun(f.victimRepo.FullName, "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", "victim-only", 0, suite.ID)
+	run := st.CreateCheckRun(f.victimRepo.FullName, "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", "victim-only", 0, suite.ID)
 	if run == nil {
 		t.Fatalf("could not create the victim's check fixtures")
 	}
@@ -111,7 +113,7 @@ func TestCrossTenantCheckRunsAndSuitesAreNotReachableByID(t *testing.T) {
 	assertStatus(t, s.get(t, suitePath(attackerBase)+"/check-runs", f.attackerTok),
 		http.StatusNotFound, "cross-tenant GET check suite runs")
 
-	if got := store.GetCheckRun(run.ID); got == nil || got.Name != "victim-only" {
+	if got := st.GetCheckRun(run.ID); got == nil || got.Name != "victim-only" {
 		t.Errorf("check run name = %q, want it untouched by the cross-tenant PATCH", got.Name)
 	}
 }
@@ -149,14 +151,14 @@ func TestCrossTenantPRReviewCommentIsNotReachableByID(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
 	f := s.newCrossTenantFixture(t, "prcomments")
-	store := s.store
+	st := s.store
 
-	seedStorePullRequestBranches(t, store, f.victimRepo, "feature")
-	pr := store.CreatePullRequest(f.victimRepo.ID, f.victim.ID, "victim pr", "", "feature", "main", false, nil, nil, 0)
+	seedStorePullRequestBranches(t, st, f.victimRepo, "feature")
+	pr := st.CreatePullRequest(f.victimRepo.ID, f.victim.ID, "victim pr", "", "feature", "main", false, nil, nil, 0)
 	if pr == nil {
 		t.Fatalf("could not create the victim pull request")
 	}
-	comment := store.PRReviewComments.CreateRootComment(pr.ID, f.victim.ID, "a.txt", "victim-only", "sha", "RIGHT", 1, 0)
+	comment := st.PRReviewComments.CreateRootComment(pr.ID, f.victim.ID, "a.txt", "victim-only", "sha", "RIGHT", 1, 0)
 	if comment == nil {
 		t.Fatalf("could not create the victim review comment")
 	}
@@ -173,7 +175,7 @@ func TestCrossTenantPRReviewCommentIsNotReachableByID(t *testing.T) {
 	assertStatus(t, s.delete(t, attackerPath, f.attackerTok),
 		http.StatusNotFound, "cross-tenant DELETE review comment")
 
-	got := store.PRReviewComments.Get(comment.ID)
+	got := st.PRReviewComments.Get(comment.ID)
 	if got == nil {
 		t.Fatalf("the victim's review comment was deleted through another repository")
 	}
@@ -186,14 +188,14 @@ func TestCrossTenantIssueCommentIsNotReachableByID(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
 	f := s.newCrossTenantFixture(t, "issuecomments")
-	store := s.store
+	st := s.store
 
-	issue := store.CreateIssue(f.victimRepo.ID, f.victim.ID, "victim issue", "", nil, nil, 0)
+	issue := st.CreateIssue(f.victimRepo.ID, f.victim.ID, "victim issue", "", nil, nil, 0)
 	if issue == nil {
 		t.Fatalf("could not create the victim issue")
 	}
-	comment := store.CreateComment(issue.ID, f.victim.ID, "victim-only")
-	doomed := store.CreateComment(issue.ID, f.victim.ID, "delete-probe")
+	comment := st.CreateComment(issue.ID, f.victim.ID, "victim-only")
+	doomed := st.CreateComment(issue.ID, f.victim.ID, "delete-probe")
 	if comment == nil || doomed == nil {
 		t.Fatalf("could not create the victim comments")
 	}
@@ -209,10 +211,10 @@ func TestCrossTenantIssueCommentIsNotReachableByID(t *testing.T) {
 	assertStatus(t, s.delete(t, "/api/v3/repos/"+f.attackerRepo.FullName+"/issues/comments/"+itoa(doomed.ID), f.attackerTok),
 		http.StatusNotFound, "cross-tenant DELETE issue comment")
 
-	if got := store.GetComment(comment.ID); got == nil || got.Body != "owner edit" {
+	if got := st.GetComment(comment.ID); got == nil || got.Body != "owner edit" {
 		t.Errorf("issue comment body = %q, want it untouched by the cross-tenant PATCH", got.Body)
 	}
-	if store.GetComment(doomed.ID) == nil {
+	if st.GetComment(doomed.ID) == nil {
 		t.Errorf("the victim's issue comment was deleted through another repository")
 	}
 

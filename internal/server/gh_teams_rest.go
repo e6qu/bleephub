@@ -6,27 +6,29 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func (s *Server) registerGHTeamRoutes() {
 	s.route("GET /api/v3/user/teams", s.handleListAuthUserTeams)
-	s.route("POST /api/v3/orgs/{org}/teams", s.requirePerm(scopeMembers, permWrite, s.handleCreateTeam))
-	s.route("GET /api/v3/orgs/{org}/teams", s.requirePerm(scopeMembers, permRead, s.handleListTeams))
-	s.route("GET /api/v3/orgs/{org}/teams/{team_slug}", s.requirePerm(scopeMembers, permRead, s.handleGetTeam))
-	s.route("PATCH /api/v3/orgs/{org}/teams/{team_slug}", s.requirePerm(scopeMembers, permWrite, s.handleUpdateTeam))
-	s.route("DELETE /api/v3/orgs/{org}/teams/{team_slug}", s.requirePerm(scopeMembers, permWrite, s.handleDeleteTeam))
-	s.route("GET /api/v3/orgs/{org}/teams/{team_slug}/teams", s.requirePerm(scopeMembers, permRead, s.handleListChildTeams))
+	s.route("POST /api/v3/orgs/{org}/teams", s.requirePerm(store.ScopeMembers, store.PermWrite, s.handleCreateTeam))
+	s.route("GET /api/v3/orgs/{org}/teams", s.requirePerm(store.ScopeMembers, store.PermRead, s.handleListTeams))
+	s.route("GET /api/v3/orgs/{org}/teams/{team_slug}", s.requirePerm(store.ScopeMembers, store.PermRead, s.handleGetTeam))
+	s.route("PATCH /api/v3/orgs/{org}/teams/{team_slug}", s.requirePerm(store.ScopeMembers, store.PermWrite, s.handleUpdateTeam))
+	s.route("DELETE /api/v3/orgs/{org}/teams/{team_slug}", s.requirePerm(store.ScopeMembers, store.PermWrite, s.handleDeleteTeam))
+	s.route("GET /api/v3/orgs/{org}/teams/{team_slug}/teams", s.requirePerm(store.ScopeMembers, store.PermRead, s.handleListChildTeams))
 
-	s.route("GET /api/v3/orgs/{org}/teams/{team_slug}/members", s.requirePerm(scopeMembers, permRead, s.handleListTeamMembers))
-	s.route("GET /api/v3/orgs/{org}/teams/{team_slug}/memberships/{username}", s.requirePerm(scopeMembers, permRead, s.handleGetTeamMembership))
-	s.route("PUT /api/v3/orgs/{org}/teams/{team_slug}/memberships/{username}", s.requirePerm(scopeMembers, permWrite, s.handleAddTeamMember))
-	s.route("DELETE /api/v3/orgs/{org}/teams/{team_slug}/memberships/{username}", s.requirePerm(scopeMembers, permWrite, s.handleRemoveTeamMember))
+	s.route("GET /api/v3/orgs/{org}/teams/{team_slug}/members", s.requirePerm(store.ScopeMembers, store.PermRead, s.handleListTeamMembers))
+	s.route("GET /api/v3/orgs/{org}/teams/{team_slug}/memberships/{username}", s.requirePerm(store.ScopeMembers, store.PermRead, s.handleGetTeamMembership))
+	s.route("PUT /api/v3/orgs/{org}/teams/{team_slug}/memberships/{username}", s.requirePerm(store.ScopeMembers, store.PermWrite, s.handleAddTeamMember))
+	s.route("DELETE /api/v3/orgs/{org}/teams/{team_slug}/memberships/{username}", s.requirePerm(store.ScopeMembers, store.PermWrite, s.handleRemoveTeamMember))
 
-	s.route("GET /api/v3/orgs/{org}/teams/{team_slug}/repos", s.requirePerm(scopeMembers, permRead, s.handleListTeamRepos))
-	s.route("GET /api/v3/orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}", s.requirePerm(scopeMembers, permRead, s.handleCheckTeamRepo))
+	s.route("GET /api/v3/orgs/{org}/teams/{team_slug}/repos", s.requirePerm(store.ScopeMembers, store.PermRead, s.handleListTeamRepos))
+	s.route("GET /api/v3/orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}", s.requirePerm(store.ScopeMembers, store.PermRead, s.handleCheckTeamRepo))
 	teamRepoWrite := []permissionGrant{
-		{scope: scopeMembers, level: permRead},
-		{scope: scopeAdministration, level: permWrite},
+		{scope: store.ScopeMembers, level: store.PermRead},
+		{scope: store.ScopeAdministration, level: store.PermWrite},
 	}
 	s.route("PUT /api/v3/orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}", s.requirePerms(teamRepoWrite, s.handleAddTeamRepo))
 	s.route("DELETE /api/v3/orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}", s.requirePerms(teamRepoWrite, s.handleRemoveTeamRepo))
@@ -35,18 +37,18 @@ func (s *Server) registerGHTeamRoutes() {
 // validTeamEnums checks the privacy / permission / notification_setting
 // enum values a create/update body may carry ("" = absent, allowed).
 func validTeamEnums(privacy, permission, notification string) (string, bool) {
-	switch TeamPrivacy(privacy) {
-	case "", TeamPrivacyClosed, TeamPrivacySecret:
+	switch store.TeamPrivacy(privacy) {
+	case "", store.TeamPrivacyClosed, store.TeamPrivacySecret:
 	default:
 		return "privacy", false
 	}
-	switch TeamPermission(permission) {
-	case "", TeamPermissionPull, TeamPermissionPush, TeamPermissionAdmin:
+	switch store.TeamPermission(permission) {
+	case "", store.TeamPermissionPull, store.TeamPermissionPush, store.TeamPermissionAdmin:
 	default:
 		return "permission", false
 	}
-	switch TeamNotificationSetting(notification) {
-	case "", TeamNotificationsEnabled, TeamNotificationsDisabled:
+	switch store.TeamNotificationSetting(notification) {
+	case "", store.TeamNotificationsEnabled, store.TeamNotificationsDisabled:
 	default:
 		return "notification_setting", false
 	}
@@ -90,13 +92,13 @@ func (s *Server) handleCreateTeam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if field, ok := validTeamEnums(req.Privacy, req.Permission, req.NotificationSetting); !ok {
-		writeGHValidationError(w, "Team", field, "invalid")
+		store.WriteGHValidationError(w, "Team", field, "invalid")
 		return
 	}
 	if req.ParentTeamID != 0 {
 		parent := s.store.GetTeamByID(int(req.ParentTeamID))
 		if parent == nil || parent.OrgID != org.ID {
-			writeGHValidationError(w, "Team", "parent_team_id", "invalid")
+			store.WriteGHValidationError(w, "Team", "parent_team_id", "invalid")
 			return
 		}
 	}
@@ -109,7 +111,7 @@ func (s *Server) handleCreateTeam(w http.ResponseWriter, r *http.Request) {
 	for _, login := range req.Maintainers {
 		maintainer := s.store.LookupUserByLogin(login)
 		if maintainer == nil {
-			writeGHValidationError(w, "Team", "maintainers", "invalid")
+			store.WriteGHValidationError(w, "Team", "maintainers", "invalid")
 			return
 		}
 		maintainerIDs = append(maintainerIDs, maintainer.ID)
@@ -117,16 +119,16 @@ func (s *Server) handleCreateTeam(w http.ResponseWriter, r *http.Request) {
 	for _, fullName := range req.RepoNames {
 		owner, name, found := strings.Cut(fullName, "/")
 		if !found || s.store.GetRepo(owner, name) == nil {
-			writeGHValidationError(w, "Team", "repo_names", "invalid")
+			store.WriteGHValidationError(w, "Team", "repo_names", "invalid")
 			return
 		}
 	}
 
-	team := s.store.CreateTeam(orgLogin, req.Name, TeamOptions{
+	team := s.store.CreateTeam(orgLogin, req.Name, store.TeamOptions{
 		Description:         req.Description,
-		Privacy:             TeamPrivacy(req.Privacy),
-		Permission:          TeamPermission(req.Permission),
-		NotificationSetting: TeamNotificationSetting(req.NotificationSetting),
+		Privacy:             store.TeamPrivacy(req.Privacy),
+		Permission:          store.TeamPermission(req.Permission),
+		NotificationSetting: store.TeamNotificationSetting(req.NotificationSetting),
 		ParentID:            int(req.ParentTeamID),
 	})
 	if team == nil {
@@ -136,11 +138,11 @@ func (s *Server) handleCreateTeam(w http.ResponseWriter, r *http.Request) {
 	// Real GitHub makes the authenticated creator a team maintainer
 	// automatically, even when the request omits them from maintainers.
 	if ghInstallationTokenFromContext(r.Context()) == nil {
-		s.store.SetTeamMembership(orgLogin, team.Slug, user.ID, TeamRoleMaintainer)
+		s.store.SetTeamMembership(orgLogin, team.Slug, user.ID, store.TeamRoleMaintainer)
 	}
 	for _, id := range maintainerIDs {
 		if id != user.ID {
-			s.store.SetTeamMembership(orgLogin, team.Slug, id, TeamRoleMaintainer)
+			s.store.SetTeamMembership(orgLogin, team.Slug, id, store.TeamRoleMaintainer)
 		}
 	}
 	for _, fullName := range req.RepoNames {
@@ -239,7 +241,7 @@ func (s *Server) handleUpdateTeam(w http.ResponseWriter, r *http.Request) {
 // already-resolved team, writing the team-full response (or a
 // validation error). Shared by the slug-addressed and the legacy
 // ID-addressed update endpoints so both surfaces stay identical.
-func (s *Server) applyTeamUpdate(w http.ResponseWriter, r *http.Request, org *Org, team *Team) {
+func (s *Server) applyTeamUpdate(w http.ResponseWriter, r *http.Request, org *store.Org, team *store.Team) {
 	orgLogin := org.Login
 	slug := team.Slug
 
@@ -252,7 +254,7 @@ func (s *Server) applyTeamUpdate(w http.ResponseWriter, r *http.Request, org *Or
 	permission, _ := req["permission"].(string)
 	notification, _ := req["notification_setting"].(string)
 	if field, ok := validTeamEnums(privacy, permission, notification); !ok {
-		writeGHValidationError(w, "Team", field, "invalid")
+		store.WriteGHValidationError(w, "Team", field, "invalid")
 		return
 	}
 
@@ -265,45 +267,45 @@ func (s *Server) applyTeamUpdate(w http.ResponseWriter, r *http.Request, org *Or
 		case float64:
 			parentID = int(v)
 		default:
-			writeGHValidationError(w, "Team", "parent_team_id", "invalid")
+			store.WriteGHValidationError(w, "Team", "parent_team_id", "invalid")
 			return
 		}
 	}
 	if parentID > 0 {
 		parent := s.store.GetTeamByID(parentID)
 		if parent == nil || parent.OrgID != org.ID {
-			writeGHValidationError(w, "Team", "parent_team_id", "invalid")
+			store.WriteGHValidationError(w, "Team", "parent_team_id", "invalid")
 			return
 		}
 		if parentID == team.ID || s.store.TeamParentWouldCycle(team.ID, parentID) {
-			writeGHValidationError(w, "Team", "parent_team_id", "invalid")
+			store.WriteGHValidationError(w, "Team", "parent_team_id", "invalid")
 			return
 		}
 	}
 
-	err := s.store.UpdateTeamChecked(orgLogin, slug, func(t *Team) {
+	err := s.store.UpdateTeamChecked(orgLogin, slug, func(t *store.Team) {
 		if v, ok := req["name"].(string); ok {
 			t.Name = v
-			t.Slug = slugify(v)
+			t.Slug = store.Slugify(v)
 		}
 		if v, ok := req["description"].(string); ok {
 			t.Description = v
 		}
 		if privacy != "" {
-			t.Privacy = TeamPrivacy(privacy)
+			t.Privacy = store.TeamPrivacy(privacy)
 		}
 		if permission != "" {
-			t.Permission = TeamPermission(permission)
+			t.Permission = store.TeamPermission(permission)
 		}
 		if notification != "" {
-			t.NotificationSetting = TeamNotificationSetting(notification)
+			t.NotificationSetting = store.TeamNotificationSetting(notification)
 		}
 		if parentID >= 0 {
 			t.ParentID = parentID
 		}
 	})
-	if errors.Is(err, ErrTeamSlugConflict) {
-		writeGHValidationError(w, "Team", "name", "already_exists")
+	if errors.Is(err, store.ErrTeamSlugConflict) {
+		store.WriteGHValidationError(w, "Team", "name", "already_exists")
 		return
 	}
 	if err != nil {
@@ -417,7 +419,7 @@ func (s *Server) handleListAuthUserTeams(w http.ResponseWriter, r *http.Request)
 // the complete standing GitHub requires for the team API.
 func (s *Server) viewerCanReadOrgTeams(ctx context.Context, orgLogin string) bool {
 	if ghInstallationTokenFromContext(ctx) != nil {
-		return s.credentialGrantsAccount(ctx, organizationAccount, orgLogin, scopeMembers, permRead)
+		return s.credentialGrantsAccount(ctx, store.OrganizationAccount, orgLogin, store.ScopeMembers, store.PermRead)
 	}
 	return s.viewerIsOrgMember(ctx, orgLogin)
 }
@@ -427,7 +429,7 @@ func (s *Server) viewerCanReadOrgTeams(ctx context.Context, orgLogin string) boo
 // are not made into a synthetic team membership after creation.
 func (s *Server) viewerCanCreateTeam(ctx context.Context, orgLogin string) bool {
 	if ghInstallationTokenFromContext(ctx) != nil {
-		return s.credentialGrantsAccount(ctx, organizationAccount, orgLogin, scopeMembers, permWrite)
+		return s.credentialGrantsAccount(ctx, store.OrganizationAccount, orgLogin, store.ScopeMembers, store.PermWrite)
 	}
 	return s.viewerIsOrgMember(ctx, orgLogin)
 }
@@ -437,28 +439,28 @@ func (s *Server) viewerCanCreateTeam(ctx context.Context, orgLogin string) bool 
 // Members:write grant over the organization; human credentials retain the
 // owner/maintainer rules, including the rule that only owners promote another
 // human to maintainer.
-func (s *Server) canManageTeam(ctx context.Context, user *User, org *Org, team *Team, addingMaintainer bool) bool {
+func (s *Server) canManageTeam(ctx context.Context, user *store.User, org *store.Org, team *store.Team, addingMaintainer bool) bool {
 	if ghInstallationTokenFromContext(ctx) != nil {
-		return s.credentialGrantsAccount(ctx, organizationAccount, org.Login, scopeMembers, permWrite)
+		return s.credentialGrantsAccount(ctx, store.OrganizationAccount, org.Login, store.ScopeMembers, store.PermWrite)
 	}
 	ctx = contextWithUser(ctx, user)
 	if s.viewerCanAdminOrg(ctx, org.Login) {
 		return true
 	}
 	role, isMember := team.RoleOf(user.ID)
-	return isMember && role == TeamRoleMaintainer && !addingMaintainer
+	return isMember && role == store.TeamRoleMaintainer && !addingMaintainer
 }
 
 // canManageTeamRepository keeps the human owner/maintainer rule while using
 // the endpoint's documented Members:read organization half for installation
 // tokens. The Administration:write repository half is enforced by
 // requirePerms before this handler is entered.
-func (s *Server) canManageTeamRepository(ctx context.Context, user *User, org *Org, team *Team, repo *Repo) bool {
-	if !s.viewerHasRepoPermission(ctx, repo, scopeAdministration, permWrite) {
+func (s *Server) canManageTeamRepository(ctx context.Context, user *store.User, org *store.Org, team *store.Team, repo *store.Repo) bool {
+	if !s.viewerHasRepoPermission(ctx, repo, store.ScopeAdministration, store.PermWrite) {
 		return false
 	}
 	if ghInstallationTokenFromContext(ctx) != nil {
-		return s.credentialGrantsAccount(ctx, organizationAccount, org.Login, scopeMembers, permRead)
+		return s.credentialGrantsAccount(ctx, store.OrganizationAccount, org.Login, store.ScopeMembers, store.PermRead)
 	}
 	return s.canManageTeam(ctx, user, org, team, false)
 }
@@ -490,7 +492,7 @@ func (s *Server) handleListTeamMembers(w http.ResponseWriter, r *http.Request) {
 	members := s.store.ListTeamMembers(orgLogin, slug)
 	result := make([]map[string]interface{}, 0, len(members))
 	for _, u := range members {
-		result = append(result, userToJSON(u))
+		result = append(result, store.UserToJSON(u))
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, result))
 }
@@ -529,23 +531,23 @@ func (s *Server) handleAddTeamMember(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONBodyOptional(w, r, &req) {
 		return
 	}
-	role := TeamRole(req.Role)
+	role := store.TeamRole(req.Role)
 	if role == "" {
-		role = TeamRoleMember
+		role = store.TeamRoleMember
 	}
-	if role != TeamRoleMember && role != TeamRoleMaintainer {
-		writeGHValidationError(w, "TeamMembership", "role", "invalid")
+	if role != store.TeamRoleMember && role != store.TeamRoleMaintainer {
+		store.WriteGHValidationError(w, "TeamMembership", "role", "invalid")
 		return
 	}
 
-	if !s.canManageTeam(r.Context(), user, org, team, role == TeamRoleMaintainer) {
+	if !s.canManageTeam(r.Context(), user, org, team, role == store.TeamRoleMaintainer) {
 		writeGHError(w, http.StatusForbidden, "Must be an organization owner or team maintainer.")
 		return
 	}
 
 	orgMembership := s.store.GetMembership(orgLogin, target.ID)
 	if orgMembership == nil {
-		orgMembership = s.store.SetMembership(orgLogin, target.ID, OrgRoleMember, MembershipStatePending)
+		orgMembership = s.store.SetMembership(orgLogin, target.ID, store.OrgRoleMember, store.MembershipStatePending)
 		s.emitOrgMembershipEvent(org, "member_invited", orgMembership, target, user)
 	}
 
@@ -590,14 +592,14 @@ func (s *Server) handleGetTeamMembership(w http.ResponseWriter, r *http.Request)
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	state := MembershipStateActive
+	state := store.MembershipStateActive
 	if m := s.store.GetMembership(orgLogin, target.ID); m != nil {
 		state = m.State
 	}
 	writeJSON(w, http.StatusOK, teamMembershipJSON(s.baseURL(r), orgLogin, slug, target, team, org, role, state))
 }
 
-func teamMembershipJSON(baseURL, orgLogin, slug string, user *User, team *Team, org *Org, role TeamRole, state MembershipState) map[string]interface{} {
+func teamMembershipJSON(baseURL, orgLogin, slug string, user *store.User, team *store.Team, org *store.Org, role store.TeamRole, state store.MembershipState) map[string]interface{} {
 	api := baseURL + "/api/v3/orgs/" + orgLogin + "/teams/" + slug
 	return map[string]interface{}{
 		"url":   api + "/memberships/" + user.Login,
@@ -674,7 +676,7 @@ func (s *Server) handleListTeamRepos(w http.ResponseWriter, r *http.Request) {
 	for _, repo := range page {
 		perm, _ := s.store.GetTeamRepoPermission(orgLogin, team.Slug, repo.FullName)
 		perms, roleName := teamRepoPermissionsJSON(perm)
-		j := repoToJSON(repo, s.store, base)
+		j := store.RepoToJSON(repo, s.store, base)
 		j["permissions"] = perms
 		j["role_name"] = roleName
 		result = append(result, j)
@@ -713,7 +715,7 @@ func (s *Server) handleCheckTeamRepo(w http.ResponseWriter, r *http.Request) {
 // already-resolved team: 204 when linked, 200 with the team-repository
 // body under the repository media type, 404 otherwise. Shared by the
 // slug-addressed and the legacy ID-addressed check endpoints.
-func (s *Server) writeTeamRepoCheck(w http.ResponseWriter, r *http.Request, orgLogin string, team *Team) {
+func (s *Server) writeTeamRepoCheck(w http.ResponseWriter, r *http.Request, orgLogin string, team *store.Team) {
 	owner, name := r.PathValue("owner"), r.PathValue("repo")
 	fullName := owner + "/" + name
 	if _, linked := s.store.GetTeamRepoPermission(orgLogin, team.Slug, fullName); !linked {
@@ -726,7 +728,7 @@ func (s *Server) writeTeamRepoCheck(w http.ResponseWriter, r *http.Request, orgL
 		return
 	}
 	if strings.Contains(r.Header.Get("Accept"), "vnd.github.v3.repository") {
-		j := repoToJSON(repo, s.store, s.baseURL(r))
+		j := store.RepoToJSON(repo, s.store, s.baseURL(r))
 		perm, _ := s.store.GetTeamRepoPermission(orgLogin, team.Slug, fullName)
 		perms, roleName := teamRepoPermissionsJSON(perm)
 		j["permissions"] = perms
@@ -781,11 +783,11 @@ func (s *Server) handleAddTeamRepo(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONBodyOptional(w, r, &req) {
 		return
 	}
-	perm := TeamPermission(req.Permission)
+	perm := store.TeamPermission(req.Permission)
 	switch perm {
-	case "", TeamPermissionPull, TeamPermissionPush, TeamPermissionAdmin:
+	case "", store.TeamPermissionPull, store.TeamPermissionPush, store.TeamPermissionAdmin:
 	default:
-		writeGHValidationError(w, "TeamRepo", "permission", "invalid")
+		store.WriteGHValidationError(w, "TeamRepo", "permission", "invalid")
 		return
 	}
 
@@ -836,18 +838,18 @@ func (s *Server) handleRemoveTeamRepo(w http.ResponseWriter, r *http.Request) {
 
 // teamRepoPermissionsJSON expands a team's permission level into the
 // boolean permissions object + role_name GitHub serves on team repos.
-func teamRepoPermissionsJSON(perm TeamPermission) (map[string]interface{}, string) {
+func teamRepoPermissionsJSON(perm store.TeamPermission) (map[string]interface{}, string) {
 	perms := map[string]interface{}{
 		"pull":     true,
-		"triage":   perm == TeamPermissionPush || perm == TeamPermissionAdmin,
-		"push":     perm == TeamPermissionPush || perm == TeamPermissionAdmin,
-		"maintain": perm == TeamPermissionAdmin,
-		"admin":    perm == TeamPermissionAdmin,
+		"triage":   perm == store.TeamPermissionPush || perm == store.TeamPermissionAdmin,
+		"push":     perm == store.TeamPermissionPush || perm == store.TeamPermissionAdmin,
+		"maintain": perm == store.TeamPermissionAdmin,
+		"admin":    perm == store.TeamPermissionAdmin,
 	}
 	switch perm {
-	case TeamPermissionPush:
+	case store.TeamPermissionPush:
 		return perms, "write"
-	case TeamPermissionAdmin:
+	case store.TeamPermissionAdmin:
 		return perms, "admin"
 	default:
 		return perms, "read"
@@ -858,7 +860,7 @@ func teamRepoPermissionsJSON(perm TeamPermission) (map[string]interface{}, strin
 // flat reference object used for a team's `parent` member. All bleephub
 // teams are organization-owned, so type is "organization" (the other
 // enum value is "enterprise").
-func teamRefJSON(team *Team, org *Org, baseURL string) map[string]interface{} {
+func teamRefJSON(team *store.Team, org *store.Org, baseURL string) map[string]interface{} {
 	api := baseURL + "/api/v3/orgs/" + org.Login + "/teams/" + team.Slug
 	return map[string]interface{}{
 		"id":                   team.ID,
@@ -880,7 +882,7 @@ func teamRefJSON(team *Team, org *Org, baseURL string) map[string]interface{} {
 // teamSimpleJSON converts a Team to the GitHub `team` shape used in org
 // team list responses: team-simple plus a nullable parent reference.
 // Must not be called with st.mu held (parent resolution takes RLock).
-func teamSimpleJSON(team *Team, org *Org, st *Store, baseURL string) map[string]interface{} {
+func teamSimpleJSON(team *store.Team, org *store.Org, st *store.Store, baseURL string) map[string]interface{} {
 	out := teamRefJSON(team, org, baseURL)
 	out["parent"] = nil
 	if team.ParentID != 0 {
@@ -895,7 +897,7 @@ func teamSimpleJSON(team *Team, org *Org, st *Store, baseURL string) map[string]
 // single-team operations. Member and repository counts come straight
 // from the team's stored membership and repo links. Must not be called
 // with st.mu held (the embedded organization-full derives counts).
-func teamToJSON(team *Team, org *Org, st *Store, baseURL string) map[string]interface{} {
+func teamToJSON(team *store.Team, org *store.Org, st *store.Store, baseURL string) map[string]interface{} {
 	out := teamSimpleJSON(team, org, st, baseURL)
 	out["organization"] = orgToJSON(org, st, baseURL)
 	out["members_count"] = len(team.MemberIDs)

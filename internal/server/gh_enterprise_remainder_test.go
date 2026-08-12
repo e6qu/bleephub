@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strconv"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func TestEnterpriseRemainderJourneys(t *testing.T) {
@@ -37,7 +39,7 @@ func TestEnterpriseRemainderJourneys(t *testing.T) {
 		strconv.Itoa(sshCredentialID), defaultToken), http.StatusNoContent, "revoke SSH authorization")
 
 	srv.store.Mu.Lock()
-	srv.store.EnterpriseSettings.OrganizationCustomProperties["cost_center"] = &CustomProperty{
+	srv.store.EnterpriseSettings.OrganizationCustomProperties["cost_center"] = &store.CustomProperty{
 		PropertyName: "cost_center", ValueType: "string",
 	}
 	srv.store.PersistEnterpriseSettings()
@@ -67,7 +69,7 @@ func TestEnterpriseRemainderJourneys(t *testing.T) {
 	srv.store.Mu.Lock()
 	configID := srv.store.NextCodeSecurityConfigID
 	srv.store.NextCodeSecurityConfigID++
-	srv.store.CodeSecurityConfigs[org.Login] = map[int]*CodeSecurityConfiguration{
+	srv.store.CodeSecurityConfigs[org.Login] = map[int]*store.CodeSecurityConfiguration{
 		configID: {ID: configID, OrgLogin: org.Login, Name: "advanced", AdvancedSecurity: "enabled"},
 	}
 	srv.store.CodeSecurityRepoAttachments[org.Login] = map[int]int{repoID: configID}

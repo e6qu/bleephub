@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // PullPendingMessage hands the polling session the first queued message its
@@ -12,7 +14,7 @@ import (
 // secrets, so a runner registered elsewhere never sees it. Operator-submitted
 // jobs (/internal/exec/submit) name no repository and carry no repository,
 // organization or environment secrets, so any registered runner may take one.
-func (s *Engine) PullPendingMessage(session *Session, scope runnerScope) *TaskAgentMessage {
+func (s *Engine) PullPendingMessage(session *store.Session, scope store.RunnerScope) *store.TaskAgentMessage {
 	s.store.Mu.Lock()
 	defer s.store.Mu.Unlock()
 	if !s.AgentTakesAJobLocked(session.Agent) {
@@ -42,7 +44,7 @@ func (s *Engine) PullPendingMessage(session *Session, scope runnerScope) *TaskAg
 // jobMessageRepoName reports the repository a queued job message runs as, or
 // "" for an operator-submitted job that names none.
 func jobMessageRepoName(message string) string {
-	_, repo := jobMessageScopeAndRepo(message)
+	_, repo := store.JobMessageScopeAndRepo(message)
 	return repo
 }
 
@@ -51,7 +53,7 @@ func jobMessageRepoName(message string) string {
 // received the message, so the assignment is fully undone — including the
 // EverAssigned mark, which must not burn an ephemeral runner's single job on
 // a delivery that failed.
-func (s *Engine) RequeuePendingMessage(msg *TaskAgentMessage) {
+func (s *Engine) RequeuePendingMessage(msg *store.TaskAgentMessage) {
 	s.store.Mu.Lock()
 	defer s.store.Mu.Unlock()
 	if job := s.store.Jobs[msg.JobID]; job != nil {
@@ -61,7 +63,7 @@ func (s *Engine) RequeuePendingMessage(msg *TaskAgentMessage) {
 		}
 		job.AgentID = 0
 	}
-	s.store.PendingMessages = append([]*TaskAgentMessage{msg}, s.store.PendingMessages...)
+	s.store.PendingMessages = append([]*store.TaskAgentMessage{msg}, s.store.PendingMessages...)
 }
 
 // AgentTakesAJobLocked reports whether the agent may be handed a queued job.
@@ -77,7 +79,7 @@ func (s *Engine) RequeuePendingMessage(msg *TaskAgentMessage) {
 // completed job lingering in store.Jobs forever). This is O(1) on every
 // long-poll where it used to scan all of store.Jobs under the write lock.
 // Callers hold the store lock.
-func (s *Engine) AgentTakesAJobLocked(agent *Agent) bool {
+func (s *Engine) AgentTakesAJobLocked(agent *store.Agent) bool {
 	if agent == nil || agent.ID == 0 {
 		return false
 	}
@@ -94,7 +96,7 @@ func (s *Engine) AgentTakesAJobLocked(agent *Agent) bool {
 
 // RecordJobAgentLocked associates a delivered job with the agent that
 // took it (busy tracking + the runners API's `busy`).
-func (s *Engine) RecordJobAgentLocked(msg *TaskAgentMessage, session *Session) {
+func (s *Engine) RecordJobAgentLocked(msg *store.TaskAgentMessage, session *store.Session) {
 	if msg.JobID == "" || session.Agent == nil {
 		return
 	}
@@ -112,7 +114,7 @@ func (s *Engine) RecordJobAgentLocked(msg *TaskAgentMessage, session *Session) {
 // Delivery happens exclusively in handleGetMessage — a fresh poll from a
 // free, label-matching runner pulls the next queued message, exactly the
 // hold-until-poll semantics real GitHub's broker has.
-func (s *Engine) QueueJobMessage(msg *TaskAgentMessage) {
+func (s *Engine) QueueJobMessage(msg *store.TaskAgentMessage) {
 	s.store.Mu.Lock()
 	s.store.PendingMessages = append(s.store.PendingMessages, msg)
 	s.store.Mu.Unlock()
@@ -124,7 +126,7 @@ func (s *Engine) QueueJobMessage(msg *TaskAgentMessage) {
 // agent: bleephub has no hosted pool, so a hosted-alias job runs on
 // whatever runner connects — the same accommodation act/nektos makes.
 // All other labels (self-hosted, custom) match strictly.
-func AgentSatisfiesLabels(agent *Agent, required []string) bool {
+func AgentSatisfiesLabels(agent *store.Agent, required []string) bool {
 	if len(required) == 0 {
 		return true
 	}
@@ -173,7 +175,7 @@ func (s *Engine) SendAgentRefreshMessage(agentID int, targetVersion string, time
 		s.logger.Error().Err(err).Int("agentId", agentID).Msg("failed to marshal AgentRefreshMessage")
 		return
 	}
-	msg := &TaskAgentMessage{
+	msg := &store.TaskAgentMessage{
 		MessageID:   s.store.NextMsg,
 		MessageType: "AgentRefreshMessage",
 		Body:        string(body),
@@ -203,7 +205,7 @@ func (s *Engine) SendJobCancellation(jobID string) {
 	if job == nil || job.AgentID == 0 {
 		return
 	}
-	var target *Session
+	var target *store.Session
 	for _, sess := range s.store.Sessions {
 		if sess.Agent != nil && sess.Agent.ID == job.AgentID {
 			target = sess
@@ -219,7 +221,7 @@ func (s *Engine) SendJobCancellation(jobID string) {
 		"jobId":   jobID,
 		"timeout": "00:05:00",
 	})
-	msg := &TaskAgentMessage{
+	msg := &store.TaskAgentMessage{
 		MessageID:   s.store.NextMsg,
 		MessageType: "JobCancellation",
 		Body:        string(body),
@@ -269,7 +271,7 @@ func (s *Engine) NextLogID() int {
 	return s.store.ReserveLogID()
 }
 
-func (s *Engine) LookupJobByRequestID(reqID int64) *Job {
+func (s *Engine) LookupJobByRequestID(reqID int64) *store.Job {
 	s.store.Mu.RLock()
 	defer s.store.Mu.RUnlock()
 	return s.store.JobByRequestIDLocked(reqID)
@@ -281,7 +283,7 @@ func (s *Engine) SessionCount() int {
 	return len(s.store.Sessions)
 }
 
-func (s *Engine) LookupJobByPlanID(planID string) *Job {
+func (s *Engine) LookupJobByPlanID(planID string) *store.Job {
 	s.store.Mu.RLock()
 	defer s.store.Mu.RUnlock()
 	return s.store.JobByPlanIDLocked(planID)

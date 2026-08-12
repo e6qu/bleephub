@@ -1,6 +1,10 @@
 package bleephub
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
+)
 
 // TestGQLNodeFindersDecodeDBID covers the GQL-024 follow-up: every GraphQL
 // node finder that keys its collection by database id now decodes the id
@@ -27,31 +31,31 @@ func TestGQLNodeFindersDecodeDBID(t *testing.T) {
 
 	project := st.ProjectsV2.CreateProject(admin.ID, "User", "Roadmap", admin.ID)
 	item := st.ProjectsV2.AddItem(project.ID, "Issue", issue.ID, admin.ID)
-	field := st.ProjectsV2.CreateField(project.ID, "Status", ProjectV2FieldText, nil, nil)
+	field := st.ProjectsV2.CreateField(project.ID, "Status", store.ProjectV2FieldText, nil, nil)
 
 	// Each case resolves a real record by its node id (fast path) and rejects an
 	// unknown id that shares the same prefix (equality guard + fallback miss).
 	t.Run("issue", func(t *testing.T) {
-		if got := findIssueByNodeID(st, issue.NodeID); got == nil || got.ID != issue.ID {
+		if got := store.FindIssueByNodeID(st, issue.NodeID); got == nil || got.ID != issue.ID {
 			t.Fatalf("findIssueByNodeID(%q) = %v, want issue %d", issue.NodeID, got, issue.ID)
 		}
-		if got := findIssueByNodeID(st, "I_kgDO99999999"); got != nil {
+		if got := store.FindIssueByNodeID(st, "I_kgDO99999999"); got != nil {
 			t.Fatalf("findIssueByNodeID(unknown) = %v, want nil", got)
 		}
 	})
 	t.Run("label", func(t *testing.T) {
-		if got := findLabelByNodeID(st, label.NodeID); got == nil || got.ID != label.ID {
+		if got := store.FindLabelByNodeID(st, label.NodeID); got == nil || got.ID != label.ID {
 			t.Fatalf("findLabelByNodeID(%q) = %v, want label %d", label.NodeID, got, label.ID)
 		}
-		if got := findLabelByNodeID(st, "LA_kgDO99999999"); got != nil {
+		if got := store.FindLabelByNodeID(st, "LA_kgDO99999999"); got != nil {
 			t.Fatalf("findLabelByNodeID(unknown) = %v, want nil", got)
 		}
 	})
 	t.Run("milestone", func(t *testing.T) {
-		if got := findMilestoneByNodeID(st, milestone.NodeID); got == nil || got.ID != milestone.ID {
+		if got := store.FindMilestoneByNodeID(st, milestone.NodeID); got == nil || got.ID != milestone.ID {
 			t.Fatalf("findMilestoneByNodeID(%q) = %v, want milestone %d", milestone.NodeID, got, milestone.ID)
 		}
-		if got := findMilestoneByNodeID(st, "MI_kgDO99999999"); got != nil {
+		if got := store.FindMilestoneByNodeID(st, "MI_kgDO99999999"); got != nil {
 			t.Fatalf("findMilestoneByNodeID(unknown) = %v, want nil", got)
 		}
 	})
@@ -64,34 +68,34 @@ func TestGQLNodeFindersDecodeDBID(t *testing.T) {
 		}
 	})
 	t.Run("pull_request", func(t *testing.T) {
-		if got := findPullRequestByNodeID(st, pr.NodeID); got == nil || got.ID != pr.ID {
+		if got := store.FindPullRequestByNodeID(st, pr.NodeID); got == nil || got.ID != pr.ID {
 			t.Fatalf("findPullRequestByNodeID(%q) = %v, want pr %d", pr.NodeID, got, pr.ID)
 		}
-		if got := findPullRequestByNodeID(st, "PR_kgDO99999999"); got != nil {
+		if got := store.FindPullRequestByNodeID(st, "PR_kgDO99999999"); got != nil {
 			t.Fatalf("findPullRequestByNodeID(unknown) = %v, want nil", got)
 		}
 	})
 	t.Run("discussion", func(t *testing.T) {
-		if got := findDiscussionByNodeID(st, discussion.NodeID); got == nil || got.ID != discussion.ID {
+		if got := store.FindDiscussionByNodeID(st, discussion.NodeID); got == nil || got.ID != discussion.ID {
 			t.Fatalf("findDiscussionByNodeID(%q) = %v, want discussion %d", discussion.NodeID, got, discussion.ID)
 		}
-		if got := findDiscussionByNodeID(st, "D_kgDO99999999"); got != nil {
+		if got := store.FindDiscussionByNodeID(st, "D_kgDO99999999"); got != nil {
 			t.Fatalf("findDiscussionByNodeID(unknown) = %v, want nil", got)
 		}
 	})
 	t.Run("discussion_category", func(t *testing.T) {
-		if got := findDiscussionCategoryByNodeID(st, category.NodeID); got == nil || got.ID != category.ID {
+		if got := store.FindDiscussionCategoryByNodeID(st, category.NodeID); got == nil || got.ID != category.ID {
 			t.Fatalf("findDiscussionCategoryByNodeID(%q) = %v, want category %d", category.NodeID, got, category.ID)
 		}
-		if got := findDiscussionCategoryByNodeID(st, "DGC_kgDO99999999"); got != nil {
+		if got := store.FindDiscussionCategoryByNodeID(st, "DGC_kgDO99999999"); got != nil {
 			t.Fatalf("findDiscussionCategoryByNodeID(unknown) = %v, want nil", got)
 		}
 	})
 	t.Run("discussion_comment", func(t *testing.T) {
-		if got := findDiscussionCommentByNodeID(st, discComment.NodeID); got == nil || got.ID != discComment.ID {
+		if got := store.FindDiscussionCommentByNodeID(st, discComment.NodeID); got == nil || got.ID != discComment.ID {
 			t.Fatalf("findDiscussionCommentByNodeID(%q) = %v, want comment %d", discComment.NodeID, got, discComment.ID)
 		}
-		if got := findDiscussionCommentByNodeID(st, "DC_kgDO99999999"); got != nil {
+		if got := store.FindDiscussionCommentByNodeID(st, "DC_kgDO99999999"); got != nil {
 			t.Fatalf("findDiscussionCommentByNodeID(unknown) = %v, want nil", got)
 		}
 	})

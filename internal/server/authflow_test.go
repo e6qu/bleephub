@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/e6qu/bleephub/internal/server/testutil"
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // --- shared fixtures ---
@@ -24,11 +25,11 @@ func authflowName(prefix string) string {
 
 // authflowStranger seeds a user with no relationship to anything and returns
 // the user together with a classic token for it.
-func authflowStranger(t *testing.T, s *Server, login string) (*User, string) {
+func authflowStranger(t *testing.T, s *Server, login string) (*store.User, string) {
 	t.Helper()
 	s.store.Mu.Lock()
 	now := fixedTestTime.UTC()
-	user := &User{ID: s.store.NextUser, Login: login, Type: "User", StarredRepos: map[string]bool{}, CreatedAt: now, UpdatedAt: now}
+	user := &store.User{ID: s.store.NextUser, Login: login, Type: "User", StarredRepos: map[string]bool{}, CreatedAt: now, UpdatedAt: now}
 	s.store.Users[user.ID] = user
 	s.store.UsersByLogin[login] = user
 	s.store.NextUser++
@@ -40,7 +41,7 @@ func authflowStranger(t *testing.T, s *Server, login string) (*User, string) {
 // does, so a handler can be exercised without its route decorator. Several of
 // the fixes below are deliberately redundant with the route gate; calling the
 // handler directly is the only way to show the handler itself refuses.
-func withUser(r *http.Request, user *User) *http.Request {
+func withUser(r *http.Request, user *store.User) *http.Request {
 	return r.WithContext(context.WithValue(r.Context(), ctxUser, user))
 }
 
@@ -116,7 +117,7 @@ func TestOAuthApproveRefusesUnregisteredRedirectURI(t *testing.T) {
 // registerGitHubAppViaManifest submits the app manifest the way the browser
 // form does and returns the created app. callbackURLs is passed through
 // verbatim so a malformed registration can be exercised too.
-func registerGitHubAppViaManifest(t *testing.T, s *Server, name string, callbackURLs []string) (*App, int, string) {
+func registerGitHubAppViaManifest(t *testing.T, s *Server, name string, callbackURLs []string) (*store.App, int, string) {
 	t.Helper()
 	manifest := map[string]interface{}{
 		"name":         name,
@@ -133,13 +134,13 @@ func registerGitHubAppViaManifest(t *testing.T, s *Server, name string, callback
 	form := url.Values{"manifest": {string(encoded)}}
 	req := httptest.NewRequest("POST", "/settings/apps/new", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("Authorization", "token "+AdminToken())
+	req.Header.Set("Authorization", "token "+store.AdminToken())
 	w := httptest.NewRecorder()
 	s.mux.ServeHTTP(w, req)
 	if w.Code != http.StatusFound {
 		return nil, w.Code, w.Body.String()
 	}
-	app := s.store.GetAppBySlug(slugify(name))
+	app := s.store.GetAppBySlug(store.Slugify(name))
 	if app == nil {
 		t.Fatalf("manifest submission returned 302 but registered no app named %q", name)
 	}
@@ -237,7 +238,7 @@ func TestGitHubAppWithoutARegisteredCallbackIsStillRefused(t *testing.T) {
 	}
 
 	jar := doLogin(t, s, "admin")
-	for _, app := range []*App{viaStore, viaManifest} {
+	for _, app := range []*store.App{viaStore, viaManifest} {
 		for _, redirectURI := range []string{"https://anywhere.test/cb", "https://ghapp.test/cb", ""} {
 			w := requestWithJar(s, "GET", "/login/oauth/authorize?client_id="+url.QueryEscape(app.ClientID)+
 				"&redirect_uri="+url.QueryEscape(redirectURI)+"&scope=repo&state=S", "", "", jar)
@@ -276,7 +277,7 @@ func TestAppRegistrationRejectsAMalformedCallback(t *testing.T) {
 		form := url.Values{"name": {authflowName("badcb-oauth")}, "callback_url": {bad}}
 		req := httptest.NewRequest("POST", "/settings/oauth-apps/new", strings.NewReader(form.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		req.Header.Set("Authorization", "token "+AdminToken())
+		req.Header.Set("Authorization", "token "+store.AdminToken())
 		w := httptest.NewRecorder()
 		s.mux.ServeHTTP(w, req)
 		if w.Code != http.StatusUnprocessableEntity {
@@ -287,11 +288,11 @@ func TestAppRegistrationRejectsAMalformedCallback(t *testing.T) {
 
 func TestGitHubAppCallbackSurvivesAReload(t *testing.T) {
 	var appID int
-	st := reloadedStore(t, func(_ *Persistence, st *Store) {
+	st := reloadedStore(t, func(_ *store.Persistence, st *store.Store) {
 		st.SeedDefaultUser()
 		app := st.CreateApp(st.UsersByLogin["admin"].ID, "Reloaded Callback App", "", nil, nil)
 		appID = app.ID
-		if !st.UpdateApp(app.ID, func(a *App) { a.CallbackURL = "https://reloaded.test/cb" }) {
+		if !st.UpdateApp(app.ID, func(a *store.App) { a.CallbackURL = "https://reloaded.test/cb" }) {
 			t.Fatal("UpdateApp did not find the app it just created")
 		}
 	})
@@ -541,7 +542,7 @@ func TestRepositorySecretHandlersKeyOffTheResolvedRepository(t *testing.T) {
 	}
 	payload, _ := json.Marshal(map[string]string{"encrypted_value": enc, "key_id": keyID})
 	req := httptest.NewRequest("PUT", "/api/v3/repos/"+repo.FullName+"/actions/secrets/PROD", strings.NewReader(string(payload)))
-	req.Header.Set("Authorization", "token "+AdminToken())
+	req.Header.Set("Authorization", "token "+store.AdminToken())
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	s.requestHandler().ServeHTTP(w, req)
@@ -570,8 +571,8 @@ func (s *isolatedServer) authflowProtectedRepo(t *testing.T) (repoName string, p
 	if repo == nil {
 		t.Fatalf("fixture repository admin/%s not found", repoName)
 	}
-	s.setBranchProtection(repo, "main", &BranchProtection{
-		EnforceAdmins: &BPEnforceAdmins{Enabled: false},
+	s.setBranchProtection(repo, "main", &store.BranchProtection{
+		EnforceAdmins: &store.BPEnforceAdmins{Enabled: false},
 	})
 	pusher, token := authflowStranger(t, s.Server, authflowName("pusher"))
 	if !s.store.AddRepoCollaborator("admin", repoName, pusher.Login, "push") {
@@ -634,8 +635,8 @@ func TestProtectedBranchAllowanceIsHonoured(t *testing.T) {
 	s := newIsolatedServer(t)
 	repoName, pushToken := s.authflowProtectedRepo(t)
 	repo := s.store.GetRepo("admin", repoName)
-	s.setBranchProtection(repo, "main", &BranchProtection{
-		AllowDeletions: &BPEnabled{Enabled: true},
+	s.setBranchProtection(repo, "main", &store.BranchProtection{
+		AllowDeletions: &store.BPEnabled{Enabled: true},
 	})
 	requireStatus(t, s.delete(t, "/api/v3/repos/admin/"+repoName+"/git/refs/heads/main", pushToken), 204)
 }
@@ -712,7 +713,7 @@ func TestSourceImportRefusesNonPublicSources(t *testing.T) {
 	} {
 		payload, _ := json.Marshal(map[string]string{"vcs": "git", "vcs_url": hostile})
 		req := httptest.NewRequest("PUT", "/api/v3/repos/"+repo.FullName+"/import", strings.NewReader(string(payload)))
-		req.Header.Set("Authorization", "token "+AdminToken())
+		req.Header.Set("Authorization", "token "+store.AdminToken())
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
 		s.requestHandler().ServeHTTP(w, req)
@@ -741,7 +742,7 @@ func TestPrivateOutboundOptOutCoversBothTransports(t *testing.T) {
 	importSource := func(raw string) int {
 		payload, _ := json.Marshal(map[string]string{"vcs": "git", "vcs_url": raw})
 		req := httptest.NewRequest("PUT", "/api/v3/repos/"+repo.FullName+"/import", strings.NewReader(string(payload)))
-		req.Header.Set("Authorization", "token "+AdminToken())
+		req.Header.Set("Authorization", "token "+store.AdminToken())
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
 		s.requestHandler().ServeHTTP(w, req)

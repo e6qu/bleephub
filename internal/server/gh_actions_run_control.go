@@ -13,17 +13,18 @@ import (
 	"time"
 
 	"github.com/e6qu/bleephub/internal/actions"
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func (s *Server) registerGHActionsRunControlRoutes() {
 	s.route("POST /api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/approve",
-		s.requirePerm(scopeActions, permWrite, s.handleApproveWorkflowRun))
+		s.requirePerm(store.ScopeActions, store.PermWrite, s.handleApproveWorkflowRun))
 	s.route("POST /api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/force-cancel",
-		s.requirePerm(scopeActions, permWrite, s.handleForceCancelWorkflowRun))
+		s.requirePerm(store.ScopeActions, store.PermWrite, s.handleForceCancelWorkflowRun))
 	s.route("POST /api/v3/repos/{owner}/{repo}/actions/jobs/{job_id}/rerun",
-		s.requirePerm(scopeActions, permWrite, s.handleRerunWorkflowJob))
+		s.requirePerm(store.ScopeActions, store.PermWrite, s.handleRerunWorkflowJob))
 	s.route("POST /api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/deployment_protection_rule",
-		s.requirePerm(scopeActions, permWrite, s.handleReviewCustomDeploymentProtectionRule))
+		s.requirePerm(store.ScopeActions, store.PermWrite, s.handleReviewCustomDeploymentProtectionRule))
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/attempts/{attempt_number}/logs",
 		s.handleRunAttemptLogs)
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/workflows/{workflow_id}/timing",
@@ -48,7 +49,7 @@ func (s *Server) handleApproveWorkflowRun(w http.ResponseWriter, r *http.Request
 	}
 
 	s.store.Mu.Lock()
-	if wf.Status != WorkflowStatusActionRequired {
+	if wf.Status != store.WorkflowStatusActionRequired {
 		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusForbidden, "This workflow run is not waiting for approval")
 		return
@@ -56,24 +57,24 @@ func (s *Server) handleApproveWorkflowRun(w http.ResponseWriter, r *http.Request
 	// Concurrency admission, deferred from submit time by the approval
 	// gate: an active run in the same group either loses its lease
 	// (cancel-in-progress) or queues this run behind it.
-	var activeWf *Workflow
+	var activeWf *store.Workflow
 	if wf.ConcurrencyGroup != "" {
 		for _, existing := range s.store.Workflows {
 			if existing.ID != wf.ID && existing.ConcurrencyGroup == wf.ConcurrencyGroup &&
-				existing.Status == WorkflowStatusRunning {
+				existing.Status == store.WorkflowStatusRunning {
 				activeWf = existing
 				break
 			}
 		}
 	}
 	if activeWf != nil && !wf.CancelInProgress {
-		wf.Status = WorkflowStatusPendingConcurrency
+		wf.Status = store.WorkflowStatusPendingConcurrency
 		s.store.PersistWorkflowRecord(wf)
 		s.store.Mu.Unlock()
 		writeJSON(w, http.StatusCreated, map[string]any{})
 		return
 	}
-	wf.Status = WorkflowStatusRunning
+	wf.Status = store.WorkflowStatusRunning
 	if wf.ConcurrencyGroup != "" {
 		wf.ConcurrencyAcquiredAt = time.Now().UTC()
 	}
@@ -113,7 +114,7 @@ func (s *Server) handleForceCancelWorkflowRun(w http.ResponseWriter, r *http.Req
 		return
 	}
 	s.store.Mu.RLock()
-	completed := wf.Status == WorkflowStatusCompleted
+	completed := wf.Status == store.WorkflowStatusCompleted
 	s.store.Mu.RUnlock()
 	if completed {
 		writeGHError(w, http.StatusConflict, "Cannot force cancel a workflow run that is completed.")
@@ -127,20 +128,20 @@ func (s *Server) handleForceCancelWorkflowRun(w http.ResponseWriter, r *http.Req
 // unlike cancelWorkflow it does not leave always()/cancelled() jobs
 // eligible for dispatch and does not wait for runners to report back;
 // running jobs are still signalled so their runners abort.
-func (s *Server) forceCancelWorkflow(wf *Workflow) {
+func (s *Server) forceCancelWorkflow(wf *store.Workflow) {
 	s.store.Mu.Lock()
 	wf.CancelRequested = true
 	cancelledJobIDs := map[string]bool{}
 	var runningJobIDs []string
 	for _, wfJob := range wf.Jobs {
-		if wfJob.Status == JobStatusCompleted || wfJob.Status == JobStatusSkipped {
+		if wfJob.Status == store.JobStatusCompleted || wfJob.Status == store.JobStatusSkipped {
 			continue
 		}
 		if job := s.store.Jobs[wfJob.JobID]; job != nil && job.AgentID != 0 && job.Status != "completed" {
 			runningJobIDs = append(runningJobIDs, wfJob.JobID)
 		}
-		wfJob.Status = JobStatusCompleted
-		wfJob.Result = ResultCancelled
+		wfJob.Status = store.JobStatusCompleted
+		wfJob.Result = store.ResultCancelled
 		wfJob.CompletedAt = time.Now()
 		cancelledJobIDs[wfJob.JobID] = true
 		s.actions.QueueEvent(actions.EvJobCompleted, wf, wfJob)
@@ -190,7 +191,7 @@ func (s *Server) handleRerunWorkflowJob(w http.ResponseWriter, r *http.Request) 
 	_ = json.NewDecoder(r.Body).Decode(&body)
 
 	s.store.Mu.RLock()
-	inProgress := wf.Status != WorkflowStatusCompleted
+	inProgress := wf.Status != store.WorkflowStatusCompleted
 	s.store.Mu.RUnlock()
 	if inProgress {
 		writeGHError(w, http.StatusForbidden, "This workflow run is still in progress and its jobs cannot be re-run")
@@ -206,7 +207,7 @@ func (s *Server) handleRerunWorkflowJob(w http.ResponseWriter, r *http.Request) 
 		writeGHError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
-	def, perr := ParseWorkflow([]byte(match.YAML))
+	def, perr := store.ParseWorkflow([]byte(match.YAML))
 	if perr != nil {
 		writeGHError(w, http.StatusUnprocessableEntity, "parse cached YAML: "+perr.Error())
 		return
@@ -222,7 +223,7 @@ func (s *Server) handleRerunWorkflowJob(w http.ResponseWriter, r *http.Request) 
 	// Carry over every job except the target and its transitive
 	// dependents (they must re-run because their inputs change).
 	rerunKeys := dependentJobKeys(wf, target.Key)
-	carryOver := map[string]*WorkflowJob{}
+	carryOver := map[string]*store.WorkflowJob{}
 	s.store.Mu.RLock()
 	for key, j := range wf.Jobs {
 		if !rerunKeys[key] {
@@ -240,7 +241,7 @@ func (s *Server) handleRerunWorkflowJob(w http.ResponseWriter, r *http.Request) 
 
 // dependentJobKeys returns the target job key plus every job that
 // transitively depends on it.
-func dependentJobKeys(wf *Workflow, targetKey string) map[string]bool {
+func dependentJobKeys(wf *store.Workflow, targetKey string) map[string]bool {
 	out := map[string]bool{targetKey: true}
 	for changed := true; changed; {
 		changed = false
@@ -320,7 +321,7 @@ func (s *Server) handleReviewCustomDeploymentProtectionRule(w http.ResponseWrite
 			reviewerID = reviewer.ID
 		}
 		s.store.Mu.Lock()
-		wf.EnvApprovals = append(wf.EnvApprovals, &EnvApproval{
+		wf.EnvApprovals = append(wf.EnvApprovals, &store.EnvApproval{
 			State:     "pending",
 			Comment:   body.Comment,
 			UserID:    reviewerID,
@@ -375,7 +376,7 @@ func (s *Server) handleWorkflowFileTiming(w http.ResponseWriter, r *http.Request
 	}
 
 	var totalMs int64
-	sumRun := func(wf *Workflow) {
+	sumRun := func(wf *store.Workflow) {
 		if wf.RepoFullName != "" && wf.RepoFullName != repo {
 			return
 		}

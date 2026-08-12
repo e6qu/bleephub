@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // Reactions API.
@@ -31,36 +33,36 @@ func (s *Server) registerGHReactionsRoutes() {
 	// registerGHIssueRoutes because Go's mux cannot disambiguate literal
 	// segments (comments) from wildcard segments (number) at the same depth.
 	s.route("POST /api/v3/repos/{owner}/{repo}/issues/{number}/reactions",
-		s.requirePerm(scopeIssues, permWrite, s.handleCreateReaction("issue", "number")))
+		s.requirePerm(store.ScopeIssues, store.PermWrite, s.handleCreateReaction("issue", "number")))
 
 	// Issue comment reactions. The DELETE path has four segments after
 	// /issues, so it does not collide with the issue three-segment dispatch.
 	s.route("POST /api/v3/repos/{owner}/{repo}/issues/comments/{comment_id}/reactions",
-		s.requirePerm(scopeIssues, permWrite, s.handleCreateReaction("issue_comment", "comment_id")))
+		s.requirePerm(store.ScopeIssues, store.PermWrite, s.handleCreateReaction("issue_comment", "comment_id")))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/issues/comments/{comment_id}/reactions/{reaction_id}",
-		s.requirePerm(scopeIssues, permWrite, s.handleDeleteReaction("issue_comment", "comment_id")))
+		s.requirePerm(store.ScopeIssues, store.PermWrite, s.handleDeleteReaction("issue_comment", "comment_id")))
 
 	// PR review-comment reaction deletion. Four segments after /pulls, so it
 	// does not collide with the pulls three-segment dispatch below.
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions/{reaction_id}",
-		s.requirePerm(scopePullRequests, permWrite, s.handleDeleteReaction("pull_request_review_comment", "comment_id")))
+		s.requirePerm(store.ScopePullRequests, store.PermWrite, s.handleDeleteReaction("pull_request_review_comment", "comment_id")))
 
 	// PR review-comment reactions. The 3-segment GET/POST routes
 	// (/pulls/comments/{comment_id}/reactions) conflict with the PR review
 	// routes (/pulls/{number}/reviews/{review_id}) under Go 1.22's mux, so
 	// they are dispatched via handlePullsThreeSegDispatch.
 	s.route("GET /api/v3/repos/{owner}/{repo}/pulls/{p1}/{p2}/{p3}", s.handlePullsThreeSegDispatch("GET"))
-	s.route("POST /api/v3/repos/{owner}/{repo}/pulls/{p1}/{p2}/{p3}", s.requirePerm(scopePullRequests, permWrite, s.handlePullsThreeSegDispatch("POST")))
-	s.route("PUT /api/v3/repos/{owner}/{repo}/pulls/{p1}/{p2}/{p3}", s.requirePerm(scopePullRequests, permWrite, s.handlePullsThreeSegDispatch("PUT")))
-	s.route("DELETE /api/v3/repos/{owner}/{repo}/pulls/{p1}/{p2}/{p3}", s.requirePerm(scopePullRequests, permWrite, s.handlePullsThreeSegDispatch("DELETE")))
+	s.route("POST /api/v3/repos/{owner}/{repo}/pulls/{p1}/{p2}/{p3}", s.requirePerm(store.ScopePullRequests, store.PermWrite, s.handlePullsThreeSegDispatch("POST")))
+	s.route("PUT /api/v3/repos/{owner}/{repo}/pulls/{p1}/{p2}/{p3}", s.requirePerm(store.ScopePullRequests, store.PermWrite, s.handlePullsThreeSegDispatch("PUT")))
+	s.route("DELETE /api/v3/repos/{owner}/{repo}/pulls/{p1}/{p2}/{p3}", s.requirePerm(store.ScopePullRequests, store.PermWrite, s.handlePullsThreeSegDispatch("DELETE")))
 
 	// Commit comment reactions
 	s.route("POST /api/v3/repos/{owner}/{repo}/comments/{comment_id}/reactions",
-		s.requirePerm(scopeContents, permWrite, s.handleCreateReaction("commit_comment", "comment_id")))
+		s.requirePerm(store.ScopeContents, store.PermWrite, s.handleCreateReaction("commit_comment", "comment_id")))
 	s.route("GET /api/v3/repos/{owner}/{repo}/comments/{comment_id}/reactions",
 		s.handleListReactions("commit_comment", "comment_id"))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/comments/{comment_id}/reactions/{reaction_id}",
-		s.requirePerm(scopeContents, permWrite, s.handleDeleteReaction("commit_comment", "comment_id")))
+		s.requirePerm(store.ScopeContents, store.PermWrite, s.handleDeleteReaction("commit_comment", "comment_id")))
 
 	// Release reactions — register via the disambiguation dispatcher in
 	// gh_releases.go because `/releases/tags/{tag}` and
@@ -145,12 +147,12 @@ func (s *Server) handleCreateReaction(parentType, pathParam string) http.Handler
 			Content string `json:"content"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Content == "" {
-			writeGHValidationError(w, "Reaction", "content", "missing_field")
+			store.WriteGHValidationError(w, "Reaction", "content", "missing_field")
 			return
 		}
 		reaction, alreadyExisted, err := s.store.Reactions.AddReaction(effType, parentID, user.ID, body.Content)
 		if err != nil {
-			writeGHValidationError(w, "Reaction", "content", "invalid")
+			store.WriteGHValidationError(w, "Reaction", "content", "invalid")
 			return
 		}
 		status := http.StatusCreated
@@ -206,10 +208,10 @@ func (s *Server) handleDeleteReaction(parentType, pathParam string) http.Handler
 	}
 }
 
-func reactionToJSON(r *Reaction, user *User) map[string]interface{} {
+func reactionToJSON(r *store.Reaction, user *store.User) map[string]interface{} {
 	var userJSON map[string]interface{}
 	if user != nil {
-		userJSON = userToJSON(user)
+		userJSON = store.UserToJSON(user)
 	}
 	return map[string]interface{}{
 		"id":         r.ID,

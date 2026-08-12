@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func customPatternScope(kind, owner string) string { return kind + ":" + owner }
@@ -55,7 +57,7 @@ func (s *Server) listCustomPatterns(w http.ResponseWriter, r *http.Request, scop
 
 func (s *Server) createCustomPatterns(w http.ResponseWriter, r *http.Request, scope string) {
 	var request struct {
-		Patterns []secretScanningPatternCreate `json:"patterns"`
+		Patterns []store.SecretScanningPatternCreate `json:"patterns"`
 	}
 	if !decodeJSONBody(w, r, &request) {
 		return
@@ -106,18 +108,18 @@ func (s *Server) createCustomPatterns(w http.ResponseWriter, r *http.Request, sc
 
 func (s *Server) deleteCustomPatterns(w http.ResponseWriter, r *http.Request, scope string) {
 	var request struct {
-		Patterns         []secretScanningPatternDelete `json:"patterns"`
-		PostDeleteAction string                        `json:"post_delete_action"`
+		Patterns         []store.SecretScanningPatternDelete `json:"patterns"`
+		PostDeleteAction string                              `json:"post_delete_action"`
 	}
 	if !decodeJSONBody(w, r, &request) {
 		return
 	}
 	if len(request.Patterns) == 0 || len(request.Patterns) > 500 {
-		writeGHValidationError(w, "SecretScanningCustomPattern", "patterns", "invalid")
+		store.WriteGHValidationError(w, "SecretScanningCustomPattern", "patterns", "invalid")
 		return
 	}
 	if request.PostDeleteAction != "" && request.PostDeleteAction != "delete_alerts" && request.PostDeleteAction != "resolve_alerts" {
-		writeGHValidationError(w, "SecretScanningCustomPattern", "post_delete_action", "invalid")
+		store.WriteGHValidationError(w, "SecretScanningCustomPattern", "post_delete_action", "invalid")
 		return
 	}
 	found, versionsOK := s.store.DeleteSecretScanningCustomPatterns(scope, request.Patterns)
@@ -148,22 +150,22 @@ func (s *Server) updateCustomPattern(w http.ResponseWriter, r *http.Request, sco
 	}
 	for name := range raw {
 		if !allowed[name] {
-			writeGHValidationError(w, "SecretScanningCustomPattern", name, "invalid")
+			store.WriteGHValidationError(w, "SecretScanningCustomPattern", name, "invalid")
 			return
 		}
 	}
-	var update secretScanningPatternUpdate
+	var update store.SecretScanningPatternUpdate
 	body, _ := json.Marshal(raw)
 	if err := json.Unmarshal(body, &update); err != nil || update.Version == "" {
-		writeGHValidationError(w, "SecretScanningCustomPattern", "custom_pattern_version", "missing_field")
+		store.WriteGHValidationError(w, "SecretScanningCustomPattern", "custom_pattern_version", "missing_field")
 		return
 	}
 	if update.Pattern == nil && update.StartDelimiter == nil && update.EndDelimiter == nil &&
 		update.MustMatch == nil && update.MustNotMatch == nil {
-		writeGHValidationError(w, "SecretScanningCustomPattern", "pattern", "missing_field")
+		store.WriteGHValidationError(w, "SecretScanningCustomPattern", "pattern", "missing_field")
 		return
 	}
-	var current *SecretScanningCustomPattern
+	var current *store.SecretScanningCustomPattern
 	for _, pattern := range s.store.ListSecretScanningCustomPatterns(scope) {
 		if pattern.ID == id {
 			current = pattern
@@ -193,7 +195,7 @@ func (s *Server) updateCustomPattern(w http.ResponseWriter, r *http.Request, sco
 		mustNot = *update.MustNotMatch
 	}
 	if !validPatternRegexes(patternText, start, end, must, mustNot) {
-		writeGHValidationError(w, "SecretScanningCustomPattern", "pattern", "invalid")
+		store.WriteGHValidationError(w, "SecretScanningCustomPattern", "pattern", "invalid")
 		return
 	}
 	updated, versionOK := s.store.UpdateSecretScanningCustomPattern(scope, id, update)

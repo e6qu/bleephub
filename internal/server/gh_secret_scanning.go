@@ -5,17 +5,19 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func (s *Server) registerGHSecretScanningRoutes() {
 	s.route("GET /api/v3/repos/{owner}/{repo}/secret-scanning/custom-patterns",
-		s.requirePerm(scopeSecurityEvents, permRead, s.handleListRepoSecretScanningCustomPatterns))
+		s.requirePerm(store.ScopeSecurityEvents, store.PermRead, s.handleListRepoSecretScanningCustomPatterns))
 	s.route("POST /api/v3/repos/{owner}/{repo}/secret-scanning/custom-patterns",
-		s.requirePerm(scopeSecurityEvents, permWrite, s.handleCreateRepoSecretScanningCustomPatterns))
+		s.requirePerm(store.ScopeSecurityEvents, store.PermWrite, s.handleCreateRepoSecretScanningCustomPatterns))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/secret-scanning/custom-patterns",
-		s.requirePerm(scopeSecurityEvents, permWrite, s.handleDeleteRepoSecretScanningCustomPatterns))
+		s.requirePerm(store.ScopeSecurityEvents, store.PermWrite, s.handleDeleteRepoSecretScanningCustomPatterns))
 	s.route("PATCH /api/v3/repos/{owner}/{repo}/secret-scanning/custom-patterns/{pattern_id}",
-		s.requirePerm(scopeSecurityEvents, permWrite, s.handleUpdateRepoSecretScanningCustomPattern))
+		s.requirePerm(store.ScopeSecurityEvents, store.PermWrite, s.handleUpdateRepoSecretScanningCustomPattern))
 	s.route("GET /api/v3/repos/{owner}/{repo}/secret-scanning/alerts", s.handleListSecretScanningAlerts)
 	s.route("GET /api/v3/repos/{owner}/{repo}/secret-scanning/alerts/{alert_number}", s.handleGetSecretScanningAlert)
 	s.route("PATCH /api/v3/repos/{owner}/{repo}/secret-scanning/alerts/{alert_number}", s.handleUpdateSecretScanningAlert)
@@ -23,19 +25,19 @@ func (s *Server) registerGHSecretScanningRoutes() {
 
 	// Organization-level alerts and pattern configurations
 	s.route("GET /api/v3/orgs/{org}/secret-scanning/alerts",
-		s.requireOrgAdmin(scopeSecurityEvents, permRead, s.handleListSecretScanningOrgAlerts))
+		s.requireOrgAdmin(store.ScopeSecurityEvents, store.PermRead, s.handleListSecretScanningOrgAlerts))
 	s.route("GET /api/v3/orgs/{org}/secret-scanning/pattern-configurations",
-		s.requireOrgAdmin(scopeSecurityEvents, permRead, s.handleListSecretScanningPatternConfigurations))
+		s.requireOrgAdmin(store.ScopeSecurityEvents, store.PermRead, s.handleListSecretScanningPatternConfigurations))
 	s.route("PATCH /api/v3/orgs/{org}/secret-scanning/pattern-configurations",
-		s.requireOrgAdmin(scopeSecurityEvents, permWrite, s.handleUpdateSecretScanningPatternConfigurations))
+		s.requireOrgAdmin(store.ScopeSecurityEvents, store.PermWrite, s.handleUpdateSecretScanningPatternConfigurations))
 	s.route("GET /api/v3/orgs/{org}/secret-scanning/custom-patterns",
-		s.requireOrgAdmin(scopeSecurityEvents, permRead, s.handleListOrgSecretScanningCustomPatterns))
+		s.requireOrgAdmin(store.ScopeSecurityEvents, store.PermRead, s.handleListOrgSecretScanningCustomPatterns))
 	s.route("POST /api/v3/orgs/{org}/secret-scanning/custom-patterns",
-		s.requireOrgAdmin(scopeSecurityEvents, permWrite, s.handleCreateOrgSecretScanningCustomPatterns))
+		s.requireOrgAdmin(store.ScopeSecurityEvents, store.PermWrite, s.handleCreateOrgSecretScanningCustomPatterns))
 	s.route("DELETE /api/v3/orgs/{org}/secret-scanning/custom-patterns",
-		s.requireOrgAdmin(scopeSecurityEvents, permWrite, s.handleDeleteOrgSecretScanningCustomPatterns))
+		s.requireOrgAdmin(store.ScopeSecurityEvents, store.PermWrite, s.handleDeleteOrgSecretScanningCustomPatterns))
 	s.route("PATCH /api/v3/orgs/{org}/secret-scanning/custom-patterns/{pattern_id}",
-		s.requireOrgAdmin(scopeSecurityEvents, permWrite, s.handleUpdateOrgSecretScanningCustomPattern))
+		s.requireOrgAdmin(store.ScopeSecurityEvents, store.PermWrite, s.handleUpdateOrgSecretScanningCustomPattern))
 
 	// Push protection bypasses + scan history
 	s.route("POST /api/v3/repos/{owner}/{repo}/secret-scanning/push-protection-bypasses", s.handleCreateSecretScanningPushProtectionBypass)
@@ -98,7 +100,7 @@ func (s *Server) handleUpdateSecretScanningAlert(w http.ResponseWriter, r *http.
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !s.viewerMayActOnRepo(r.Context(), repo, scopeSecurityEvents, permWrite, permAdmin) {
+	if !s.viewerMayActOnRepo(r.Context(), repo, store.ScopeSecurityEvents, store.PermWrite, store.PermAdmin) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -117,11 +119,11 @@ func (s *Server) handleUpdateSecretScanningAlert(w http.ResponseWriter, r *http.
 		return
 	}
 	if req.State == "" && req.Resolution == "" {
-		writeGHValidationError(w, "SecretScanningAlert", "state", "missing_field")
+		store.WriteGHValidationError(w, "SecretScanningAlert", "state", "missing_field")
 		return
 	}
 	if err := s.store.UpdateSecretScanningAlert(a, req.State, req.Resolution, req.ResolutionComment); err != nil {
-		writeGHValidationError(w, "SecretScanningAlert", "state", "invalid")
+		store.WriteGHValidationError(w, "SecretScanningAlert", "state", "invalid")
 		return
 	}
 	writeJSON(w, http.StatusOK, secretScanningAlertToJSON(a, s.baseURL(r), repo))
@@ -214,12 +216,12 @@ func (s *Server) handleUpdateSecretScanningPatternConfigurationsForScope(w http.
 
 	provider := map[string]string{}
 	for _, setting := range req.ProviderPatternSettings {
-		if !isSecretScanningProviderPattern(setting.TokenType) {
-			writeGHValidationError(w, "SecretScanningPatternConfiguration", "token_type", "invalid")
+		if !store.IsSecretScanningProviderPattern(setting.TokenType) {
+			store.WriteGHValidationError(w, "SecretScanningPatternConfiguration", "token_type", "invalid")
 			return
 		}
 		if !validPushProtectionSetting(setting.PushProtectionSetting, true) {
-			writeGHValidationError(w, "SecretScanningPatternConfiguration", "push_protection_setting", "invalid")
+			store.WriteGHValidationError(w, "SecretScanningPatternConfiguration", "push_protection_setting", "invalid")
 			return
 		}
 		provider[setting.TokenType] = setting.PushProtectionSetting
@@ -227,11 +229,11 @@ func (s *Server) handleUpdateSecretScanningPatternConfigurationsForScope(w http.
 	custom := map[string]string{}
 	for _, setting := range req.CustomPatternSettings {
 		if setting.TokenType == "" {
-			writeGHValidationError(w, "SecretScanningPatternConfiguration", "token_type", "missing_field")
+			store.WriteGHValidationError(w, "SecretScanningPatternConfiguration", "token_type", "missing_field")
 			return
 		}
 		if !validPushProtectionSetting(setting.PushProtectionSetting, false) {
-			writeGHValidationError(w, "SecretScanningPatternConfiguration", "push_protection_setting", "invalid")
+			store.WriteGHValidationError(w, "SecretScanningPatternConfiguration", "push_protection_setting", "invalid")
 			return
 		}
 		custom[setting.TokenType] = setting.PushProtectionSetting
@@ -258,7 +260,7 @@ func (s *Server) handleCreateSecretScanningPushProtectionBypass(w http.ResponseW
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !s.viewerHasRepoPermission(r.Context(), repo, scopeSecurityEvents, permWrite) {
+	if !s.viewerHasRepoPermission(r.Context(), repo, store.ScopeSecurityEvents, store.PermWrite) {
 		writeGHError(w, http.StatusForbidden, "User does not have enough permissions to perform this action.")
 		return
 	}
@@ -273,11 +275,11 @@ func (s *Server) handleCreateSecretScanningPushProtectionBypass(w http.ResponseW
 	switch req.Reason {
 	case "false_positive", "used_in_tests", "will_fix_later":
 	default:
-		writeGHValidationError(w, "SecretScanningPushProtectionBypass", "reason", "invalid")
+		store.WriteGHValidationError(w, "SecretScanningPushProtectionBypass", "reason", "invalid")
 		return
 	}
 	if req.PlaceholderID == "" {
-		writeGHValidationError(w, "SecretScanningPushProtectionBypass", "placeholder_id", "missing_field")
+		store.WriteGHValidationError(w, "SecretScanningPushProtectionBypass", "placeholder_id", "missing_field")
 		return
 	}
 
@@ -293,7 +295,7 @@ func (s *Server) handleCreateSecretScanningPushProtectionBypass(w http.ResponseW
 	})
 }
 
-func writeSecretScanningPushProtectionBlocked(w http.ResponseWriter, ph *SecretScanningPushProtectionPlaceholder) {
+func writeSecretScanningPushProtectionBlocked(w http.ResponseWriter, ph *store.SecretScanningPushProtectionPlaceholder) {
 	writeJSON(w, http.StatusUnprocessableEntity, map[string]interface{}{
 		"message":           "Push cannot contain secrets.",
 		"documentation_url": "https://docs.github.com/code-security/secret-scanning/working-with-secret-scanning-and-push-protection",
@@ -311,7 +313,7 @@ func writeSecretScanningPushProtectionBlocked(w http.ResponseWriter, ph *SecretS
 	})
 }
 
-func secretScanningScanRecordsJSON(records []*SecretScanningScanRecord) []map[string]interface{} {
+func secretScanningScanRecordsJSON(records []*store.SecretScanningScanRecord) []map[string]interface{} {
 	out := make([]map[string]interface{}, 0, len(records))
 	for _, rec := range records {
 		out = append(out, map[string]interface{}{
@@ -344,7 +346,7 @@ func (s *Server) handleGetSecretScanningScanHistory(w http.ResponseWriter, r *ht
 	})
 }
 
-func (s *Server) lookupSecretScanningAlert(w http.ResponseWriter, r *http.Request, repo *Repo) *SecretScanningAlert {
+func (s *Server) lookupSecretScanningAlert(w http.ResponseWriter, r *http.Request, repo *store.Repo) *store.SecretScanningAlert {
 	number, err := strconv.Atoi(r.PathValue("alert_number"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -358,7 +360,7 @@ func (s *Server) lookupSecretScanningAlert(w http.ResponseWriter, r *http.Reques
 	return a
 }
 
-func secretScanningAlertToJSON(a *SecretScanningAlert, baseURL string, repo *Repo) map[string]interface{} {
+func secretScanningAlertToJSON(a *store.SecretScanningAlert, baseURL string, repo *store.Repo) map[string]interface{} {
 	apiURL := fmt.Sprintf("%s/api/v3/repos/%s/secret-scanning/alerts/%d", baseURL, repo.FullName, a.Number)
 	htmlURL := fmt.Sprintf("%s/%s/security/secret-scanning/%d", baseURL, repo.FullName, a.Number)
 	locationsURL := fmt.Sprintf("%s/locations", apiURL)
@@ -383,7 +385,7 @@ func secretScanningAlertToJSON(a *SecretScanningAlert, baseURL string, repo *Rep
 	}
 }
 
-func secretScanningLocationToJSON(loc SecretScanningLocation) map[string]interface{} {
+func secretScanningLocationToJSON(loc store.SecretScanningLocation) map[string]interface{} {
 	return map[string]interface{}{
 		"type": loc.Type,
 		"details": map[string]interface{}{
@@ -424,7 +426,7 @@ func nullOrString(s string) interface{} {
 // }
 
 // resolveOrgForSecretScanning resolves {org} for secret-scanning handlers.
-func (s *Server) resolveOrgForSecretScanning(w http.ResponseWriter, r *http.Request) (*Org, bool) {
+func (s *Server) resolveOrgForSecretScanning(w http.ResponseWriter, r *http.Request) (*store.Org, bool) {
 	org := s.store.GetOrg(r.PathValue("org"))
 	if org == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")

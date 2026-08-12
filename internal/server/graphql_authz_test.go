@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/graphql-go/graphql"
 )
 
@@ -27,19 +28,19 @@ import (
 // gqlAuthzFixture is a private repository with one of everything the mutation
 // surface addresses, plus its owner and an unrelated account.
 type gqlAuthzFixture struct {
-	owner         *User
+	owner         *store.User
 	ownerToken    string
-	stranger      *User
+	stranger      *store.User
 	strangerToken string
-	repo          *Repo
-	issue         *Issue
-	comment       *Comment
-	label         *IssueLabel
-	milestone     *Milestone
-	category      *DiscussionCategory
-	discussion    *Discussion
-	discComment   *DiscussionComment
-	pr            *PullRequest
+	repo          *store.Repo
+	issue         *store.Issue
+	comment       *store.Comment
+	label         *store.IssueLabel
+	milestone     *store.Milestone
+	category      *store.DiscussionCategory
+	discussion    *store.Discussion
+	discComment   *store.DiscussionComment
+	pr            *store.PullRequest
 	threadNodeID  string
 	headSHA       string
 }
@@ -49,10 +50,10 @@ func newGQLAuthzFixture(t *testing.T, srv *Server, tag string, private bool) *gq
 	st := srv.store
 	now := fixedTestTime.UTC()
 
-	mkUser := func(login string) *User {
+	mkUser := func(login string) *store.User {
 		st.Mu.Lock()
 		defer st.Mu.Unlock()
-		u := &User{
+		u := &store.User{
 			ID:        st.NextUser,
 			NodeID:    fmt.Sprintf("U_authz%08d", st.NextUser),
 			Login:     login,
@@ -96,7 +97,7 @@ func newGQLAuthzFixture(t *testing.T, srv *Server, tag string, private bool) *gq
 	if root == nil {
 		t.Fatalf("fixture %s: could not seed a review thread", tag)
 	}
-	f.threadNodeID = prReviewThreadNodeID(root.ID)
+	f.threadNodeID = store.PRReviewThreadNodeID(root.ID)
 
 	ownerTok := st.CreateToken(f.owner.ID, "repo")
 	strangerTok := st.CreateToken(f.stranger.ID, "repo")
@@ -173,7 +174,7 @@ var gqlMutationCases = []gqlMutationCase{
 		input: func(f *gqlAuthzFixture) map[string]interface{} {
 			return map[string]interface{}{
 				"repositoryId": f.repo.NodeID,
-				"categoryId":   discussionCategoryNodeID(f.category.ID),
+				"categoryId":   store.DiscussionCategoryNodeID(f.category.ID),
 				"title":        "from the table",
 				"body":         "from the table",
 			}
@@ -394,7 +395,7 @@ func (s *isolatedServer) assertGQLFixtureUntouched(t *testing.T, what string, f 
 
 func parsedThreadID(t *testing.T, nodeID string) int {
 	t.Helper()
-	id, ok := parsePRReviewThreadNodeID(nodeID)
+	id, ok := store.ParsePRReviewThreadNodeID(nodeID)
 	if !ok {
 		t.Fatalf("thread node id %q does not parse", nodeID)
 	}
@@ -705,17 +706,17 @@ func TestGraphQLEveryMutationIsCoveredByThePolicyTable(t *testing.T) {
 // project as a way of reading its title.
 
 type gqlProjectAuthzFixture struct {
-	owner         *User
+	owner         *store.User
 	ownerToken    string
-	stranger      *User
+	stranger      *store.User
 	strangerToken string
-	project       *ProjectV2
-	item          *ProjectV2Item
-	field         *ProjectV2Field
-	issue         *Issue
-	spareIssue    *Issue
-	strangerIssue *Issue
-	org           *Org
+	project       *store.ProjectV2
+	item          *store.ProjectV2Item
+	field         *store.ProjectV2Field
+	issue         *store.Issue
+	spareIssue    *store.Issue
+	strangerIssue *store.Issue
+	org           *store.Org
 }
 
 func (s *isolatedServer) newGQLProjectAuthzFixture(t *testing.T, tag string) *gqlProjectAuthzFixture {
@@ -723,10 +724,10 @@ func (s *isolatedServer) newGQLProjectAuthzFixture(t *testing.T, tag string) *gq
 	st := s.store
 	now := fixedTestTime.UTC()
 
-	mkUser := func(login string) *User {
+	mkUser := func(login string) *store.User {
 		st.Mu.Lock()
 		defer st.Mu.Unlock()
-		u := &User{
+		u := &store.User{
 			ID:        st.NextUser,
 			NodeID:    fmt.Sprintf("U_pauthz%08d", st.NextUser),
 			Login:     login,
@@ -761,7 +762,7 @@ func (s *isolatedServer) newGQLProjectAuthzFixture(t *testing.T, tag string) *gq
 		t.Fatalf("fixture %s: could not create the project", tag)
 	}
 	f.item = st.ProjectsV2.AddItem(f.project.ID, "Issue", f.issue.ID, f.owner.ID)
-	f.field = st.ProjectsV2.CreateField(f.project.ID, "Notes", ProjectV2FieldText, nil, nil)
+	f.field = st.ProjectsV2.CreateField(f.project.ID, "Notes", store.ProjectV2FieldText, nil, nil)
 	if f.item == nil || f.field == nil {
 		t.Fatalf("fixture %s: could not seed the project item or field", tag)
 	}

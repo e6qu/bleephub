@@ -4,6 +4,8 @@ import (
 	"encoding/base64"
 	"strings"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // TestCreatePackageVersionRequiresObjectStoreWhenPersistent covers STORE-042:
@@ -16,7 +18,7 @@ import (
 func TestCreatePackageVersionRequiresObjectStoreWhenPersistent(t *testing.T) {
 	t.Setenv("BLEEPHUB_PERSIST", "true")
 	t.Setenv("BLEEPHUB_DATA_DIR", t.TempDir())
-	p, err := NewPersistence()
+	p, err := store.NewPersistence()
 	if err != nil {
 		t.Fatalf("persistence: %v", err)
 	}
@@ -24,7 +26,7 @@ func TestCreatePackageVersionRequiresObjectStoreWhenPersistent(t *testing.T) {
 		t.Fatal("persistence not enabled")
 	}
 	t.Cleanup(func() { _ = p.Close() })
-	st := NewStore()
+	st := store.NewStore()
 	if err := st.SetPersistence(p); err != nil {
 		t.Fatalf("set persistence: %v", err)
 	}
@@ -36,7 +38,7 @@ func TestCreatePackageVersionRequiresObjectStoreWhenPersistent(t *testing.T) {
 	}
 
 	_, err = st.CreatePackageVersion("User", "octocat", "container", "app", "1.0.0", "", nil,
-		[]PackageFileInput{{Name: "layer", ContentBase64: base64.StdEncoding.EncodeToString([]byte("bytes"))}})
+		[]store.PackageFileInput{{Name: "layer", ContentBase64: base64.StdEncoding.EncodeToString([]byte("bytes"))}})
 	if err == nil {
 		t.Fatal("STORE-042: CreatePackageVersion accepted package bytes with persistence enabled but no object store")
 	}
@@ -67,7 +69,7 @@ func TestRepoRenameRekeysWorkflowFiles(t *testing.T) {
 		t.Fatal("rename failed")
 	}
 	newFull := admin.Login + "/wf-renamed"
-	newID := stableWorkflowFileID(newFull, path)
+	newID := store.StableWorkflowFileID(newFull, path)
 
 	s.store.Mu.RLock()
 	_, oldExists := s.store.WorkflowFiles[oldID]

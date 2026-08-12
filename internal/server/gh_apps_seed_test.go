@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/rs/zerolog"
 )
 
@@ -134,7 +135,7 @@ func TestSeedPreRegisteredAppRequiresExplicitExistingOwner(t *testing.T) {
 	}})
 	t.Setenv("BLEEPHUB_SEED_APPS", string(seed))
 
-	srv := &Server{store: NewStore(), logger: zerolog.Nop()}
+	srv := &Server{store: store.NewStore(), logger: zerolog.Nop()}
 	srv.store.SeedDefaultUser()
 	err := srv.seedConfiguredApps()
 	if err == nil || err.Error() != `seed app "Ownerless": owner is required` {
@@ -160,7 +161,7 @@ func TestSeedPreRegisteredAppRejectsUnknownInstallationAccount(t *testing.T) {
 	}})
 	t.Setenv("BLEEPHUB_SEED_APPS", string(seed))
 
-	srv := &Server{store: NewStore(), logger: zerolog.Nop()}
+	srv := &Server{store: store.NewStore(), logger: zerolog.Nop()}
 	srv.store.SeedDefaultUser()
 	err := srv.seedConfiguredApps()
 	if err == nil || err.Error() != `seed app "Unknown Install": installation account "missing-org" does not resolve to an existing user or organization` {
@@ -178,11 +179,11 @@ func TestSeedPreRegisteredAppRejectsUnknownInstallationAccount(t *testing.T) {
 // id is a no-op (created=false), and a non-RSA / malformed PEM is rejected
 // loud rather than producing an unusable App.
 func TestSeedAppIdempotentAndBadKey(t *testing.T) {
-	st := NewStore()
+	st := store.NewStore()
 	st.SeedDefaultUser()
 
 	pemKey := testSeedPrivateKeyPEM(t)
-	spec := AppSeedSpec{ID: 77, Name: "Dup App"}
+	spec := store.AppSeedSpec{ID: 77, Name: "Dup App"}
 
 	app1, created1, err := st.SeedApp(spec, pemKey, "admin")
 	if err != nil || !created1 || app1.ID != 77 {
@@ -193,7 +194,7 @@ func TestSeedAppIdempotentAndBadKey(t *testing.T) {
 		t.Fatalf("re-seed must be a no-op: created=%v err=%v", created2, err)
 	}
 
-	if _, _, err := st.SeedApp(AppSeedSpec{ID: 78, Name: "Bad"}, "not-a-pem", "admin"); err == nil {
+	if _, _, err := st.SeedApp(store.AppSeedSpec{ID: 78, Name: "Bad"}, "not-a-pem", "admin"); err == nil {
 		t.Fatal("seed with a malformed key must error, not produce an unusable App")
 	}
 }

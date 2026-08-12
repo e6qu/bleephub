@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/http"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func requireHTTPStatus(t *testing.T, resp *http.Response, want int) {
@@ -96,14 +98,14 @@ func TestCurrentArtifactCodeQualityIssueTypeAndCopilotREST(t *testing.T) {
 		t.Fatalf("repository issue types = %#v", types)
 	}
 
-	s.store.PutCodeQualityFinding(&CodeQualityFinding{
+	s.store.PutCodeQualityFinding(&store.CodeQualityFinding{
 		Number: 1, RepoKey: repo.FullName, State: "open",
-		Rule: CodeQualityFindingRule{
+		Rule: store.CodeQualityFindingRule{
 			ID: "go/no-dead-code", Title: "Dead code", Description: "A declaration is unreachable.",
 			Severity: "warning", Category: "maintainability",
 		},
-		Location: CodeQualityFindingLocation{Path: "main.go", StartLine: 8},
-		Message:  CodeQualityFindingMessage{Text: "Unused declaration", Markdown: "**Unused declaration**"},
+		Location: store.CodeQualityFindingLocation{Path: "main.go", StartLine: 8},
+		Message:  store.CodeQualityFindingMessage{Text: "Unused declaration", Markdown: "**Unused declaration**"},
 	})
 	findingsBase := "/api/v3/repos/" + repo.FullName + "/code-quality/findings"
 	resp = s.get(t, findingsBase+"?state=open", defaultToken)
@@ -212,8 +214,8 @@ func TestCurrentPullRequestControlsStacksAndSuggestionsREST(t *testing.T) {
 	resp.Body.Close()
 
 	issue := s.store.CreateIssue(repo.ID, admin.ID, "Suggested issue", "", nil, nil, 0)
-	approve := s.store.CreateIssueSuggestion(repo.FullName, issue.ID, IssueSuggestion{Action: "close_issue"})
-	dismiss := s.store.CreateIssueSuggestion(repo.FullName, issue.ID, IssueSuggestion{Action: "close_issue"})
+	approve := s.store.CreateIssueSuggestion(repo.FullName, issue.ID, store.IssueSuggestion{Action: "close_issue"})
+	dismiss := s.store.CreateIssueSuggestion(repo.FullName, issue.ID, store.IssueSuggestion{Action: "close_issue"})
 	suggestionsBase := fmt.Sprintf("/api/v3/repos/%s/issues/%d/suggestions", repo.FullName, issue.Number)
 	resp = s.get(t, suggestionsBase, defaultToken)
 	requireHTTPStatus(t, resp, http.StatusOK)
@@ -277,7 +279,7 @@ func TestOrgPRCreationCapAndMergeAsyncREST(t *testing.T) {
 	user := st.UsersByLogin[owner]
 	stor := st.GetGitStorage(owner, repoName)
 	headBranch := "main"
-	if resolveBranchSha(stor, "main") == "" {
+	if store.ResolveBranchSha(stor, "main") == "" {
 		headBranch = "master"
 	}
 	seedStorePullRequestBranches(t, st, repo, headBranch, "base")
@@ -285,7 +287,7 @@ func TestOrgPRCreationCapAndMergeAsyncREST(t *testing.T) {
 	if pr == nil {
 		t.Fatal("PR not created")
 	}
-	st.UpdatePullRequest(pr.ID, func(p *PullRequest) { p.Mergeable = "MERGEABLE" })
+	st.UpdatePullRequest(pr.ID, func(p *store.PullRequest) { p.Mergeable = "MERGEABLE" })
 
 	asyncBase := fmt.Sprintf("/api/v3/repos/%s/pulls/%d/merge-async", repoKey, pr.Number)
 	resp = s.put(t, asyncBase, defaultToken, map[string]interface{}{"merge_method": "squash"})

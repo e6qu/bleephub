@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/packfile"
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
@@ -30,7 +31,7 @@ const uploadPackRequestCap = 50 << 20 // 50 MiB
 // outside the /api middleware and the credential shape — installation token,
 // user-to-server token, PAT, session — lives on that context and decides what
 // the caller may read.
-func (s *Server) authenticateGitRequest(r *http.Request) (context.Context, *User) {
+func (s *Server) authenticateGitRequest(r *http.Request) (context.Context, *store.User) {
 	ctx := s.authenticateRequest(r)
 	return ctx, ghUserFromContext(ctx)
 }
@@ -111,7 +112,7 @@ func (s *Server) resolveGitRepo(owner, repoName string) storer.Storer { //nolint
 // same 404 as a nonexistent repository, so neither response discloses whether
 // a private repository name is taken. When it returns ok=false the response
 // has already been written.
-func (s *Server) authorizeGitHTTP(w http.ResponseWriter, r *http.Request, owner, repoName string, wantWrite bool) (context.Context, *User, *Repo, storer.Storer, bool) {
+func (s *Server) authorizeGitHTTP(w http.ResponseWriter, r *http.Request, owner, repoName string, wantWrite bool) (context.Context, *store.User, *store.Repo, storer.Storer, bool) {
 	ctx, user := s.authenticateGitRequest(r)
 	// git HTTP sits outside ghHeadersMiddleware, so an invalid or revoked
 	// credential would otherwise be silently downgraded to anonymous and, on a
@@ -124,7 +125,7 @@ func (s *Server) authorizeGitHTTP(w http.ResponseWriter, r *http.Request, owner,
 	}
 	stor := s.resolveGitRepo(owner, repoName)
 	repo := s.store.GetRepo(owner, repoName)
-	if stor == nil || repo == nil || !s.viewerHasRepoPermission(ctx, repo, scopeContents, permRead) {
+	if stor == nil || repo == nil || !s.viewerHasRepoPermission(ctx, repo, store.ScopeContents, store.PermRead) {
 		if user == nil {
 			w.Header().Set("WWW-Authenticate", `Basic realm="GitHub"`)
 			http.Error(w, "401 Authorization Required", http.StatusUnauthorized)
@@ -133,7 +134,7 @@ func (s *Server) authorizeGitHTTP(w http.ResponseWriter, r *http.Request, owner,
 		}
 		return ctx, user, nil, nil, false
 	}
-	if wantWrite && !s.viewerHasRepoPermission(ctx, repo, scopeContents, permWrite) {
+	if wantWrite && !s.viewerHasRepoPermission(ctx, repo, store.ScopeContents, store.PermWrite) {
 		if user == nil {
 			w.Header().Set("WWW-Authenticate", `Basic realm="GitHub"`)
 			http.Error(w, "401 Authorization Required", http.StatusUnauthorized)
@@ -362,7 +363,7 @@ func (e *refusedPushError) Error() string { return e.reason }
 // The objects are ingested first because whether an update discards commits —
 // the question force-push protection turns on — is only answerable once the
 // commits the push carries are readable.
-func (s *Server) applyReceivePack(ctx context.Context, repo *Repo, stor storer.Storer, session transport.ReceivePackSession, request *packp.ReferenceUpdateRequest) (*packp.ReportStatus, error) {
+func (s *Server) applyReceivePack(ctx context.Context, repo *store.Repo, stor storer.Storer, session transport.ReceivePackSession, request *packp.ReferenceUpdateRequest) (*packp.ReportStatus, error) {
 	if err := ingestPushedObjects(stor, request); err != nil {
 		return nil, err
 	}
@@ -453,7 +454,7 @@ func applyPushCommandAtomic(stor storer.Storer, command *packp.Command) error {
 
 // refusedPushCommands maps each command branch protection refuses to its
 // reason. The commands it does not name are the ones the rule allows.
-func (s *Server) refusedPushCommands(ctx context.Context, repo *Repo, stor storer.Storer, commands []*packp.Command) (map[plumbing.ReferenceName]string, error) {
+func (s *Server) refusedPushCommands(ctx context.Context, repo *store.Repo, stor storer.Storer, commands []*packp.Command) (map[plumbing.ReferenceName]string, error) {
 	refusals := map[plumbing.ReferenceName]string{}
 	for _, command := range commands {
 		kind, err := classifyPushedRefWrite(stor, command)
@@ -538,10 +539,10 @@ func appliedPushCommands(request *packp.ReferenceUpdateRequest, report *packp.Re
 	return applied
 }
 
-func (s *Server) afterGitReceivePack(repo *Repo, user *User, applied []*packp.Command, baseURL string) {
+func (s *Server) afterGitReceivePack(repo *store.Repo, user *store.User, applied []*packp.Command, baseURL string) {
 	owner, _ := splitRepoPath("/" + repo.FullName)
 	stor := s.resolveGitRepo(owner, repo.Name)
-	s.store.UpdateRepo(owner, repo.Name, func(updated *Repo) {
+	s.store.UpdateRepo(owner, repo.Name, func(updated *store.Repo) {
 		updated.PushedAt = updated.UpdatedAt
 	})
 	if stor != nil {
@@ -558,7 +559,7 @@ func (s *Server) afterGitReceivePack(repo *Repo, user *User, applied []*packp.Co
 				ref := plumbing.NewBranchReferenceName(branch)
 				if _, err := stor.Reference(ref); err == nil {
 					_ = stor.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, ref))
-					s.store.UpdateRepo(owner, repo.Name, func(updated *Repo) { updated.DefaultBranch = branch })
+					s.store.UpdateRepo(owner, repo.Name, func(updated *store.Repo) { updated.DefaultBranch = branch })
 					break
 				}
 			}

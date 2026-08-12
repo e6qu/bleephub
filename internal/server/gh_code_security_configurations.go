@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // GitHub code security configurations: named bundles of security feature
@@ -12,25 +14,25 @@ import (
 
 func (s *Server) registerGHCodeSecurityConfigurationRoutes() {
 	s.route("GET /api/v3/orgs/{org}/code-security/configurations",
-		s.requirePerm(scopeOrgAdministration, permRead, s.orgGated(s.handleListCodeSecurityConfigurations)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.orgGated(s.handleListCodeSecurityConfigurations)))
 	s.route("POST /api/v3/orgs/{org}/code-security/configurations",
-		s.requirePerm(scopeOrgAdministration, permWrite, s.orgGated(s.handleCreateCodeSecurityConfiguration)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.orgGated(s.handleCreateCodeSecurityConfiguration)))
 	s.route("GET /api/v3/orgs/{org}/code-security/configurations/defaults",
-		s.requirePerm(scopeOrgAdministration, permRead, s.orgGated(s.handleGetDefaultCodeSecurityConfigurations)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.orgGated(s.handleGetDefaultCodeSecurityConfigurations)))
 	s.route("DELETE /api/v3/orgs/{org}/code-security/configurations/detach",
-		s.requirePerm(scopeOrgAdministration, permWrite, s.orgGated(s.handleDetachCodeSecurityConfiguration)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.orgGated(s.handleDetachCodeSecurityConfiguration)))
 	s.route("GET /api/v3/orgs/{org}/code-security/configurations/{configuration_id}",
-		s.requirePerm(scopeOrgAdministration, permRead, s.orgGated(s.handleGetCodeSecurityConfiguration)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.orgGated(s.handleGetCodeSecurityConfiguration)))
 	s.route("PATCH /api/v3/orgs/{org}/code-security/configurations/{configuration_id}",
-		s.requirePerm(scopeOrgAdministration, permWrite, s.orgGated(s.handleUpdateCodeSecurityConfiguration)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.orgGated(s.handleUpdateCodeSecurityConfiguration)))
 	s.route("DELETE /api/v3/orgs/{org}/code-security/configurations/{configuration_id}",
-		s.requirePerm(scopeOrgAdministration, permWrite, s.orgGated(s.handleDeleteCodeSecurityConfiguration)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.orgGated(s.handleDeleteCodeSecurityConfiguration)))
 	s.route("POST /api/v3/orgs/{org}/code-security/configurations/{configuration_id}/attach",
-		s.requirePerm(scopeOrgAdministration, permWrite, s.orgGated(s.handleAttachCodeSecurityConfiguration)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.orgGated(s.handleAttachCodeSecurityConfiguration)))
 	s.route("PUT /api/v3/orgs/{org}/code-security/configurations/{configuration_id}/defaults",
-		s.requirePerm(scopeOrgAdministration, permWrite, s.orgGated(s.handleSetCodeSecurityConfigurationAsDefault)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.orgGated(s.handleSetCodeSecurityConfigurationAsDefault)))
 	s.route("GET /api/v3/orgs/{org}/code-security/configurations/{configuration_id}/repositories",
-		s.requirePerm(scopeOrgAdministration, permRead, s.orgGated(s.handleListCodeSecurityConfigurationRepositories)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.orgGated(s.handleListCodeSecurityConfigurationRepositories)))
 	s.route("GET /api/v3/repos/{owner}/{repo}/code-security-configuration", s.handleGetRepoCodeSecurityConfiguration)
 }
 
@@ -52,23 +54,23 @@ func (s *Server) handleListCodeSecurityConfigurations(w http.ResponseWriter, r *
 
 func (s *Server) handleCreateCodeSecurityConfiguration(w http.ResponseWriter, r *http.Request) {
 	org := r.PathValue("org")
-	var req codeSecurityConfigurationRequest
+	var req store.CodeSecurityConfigurationRequest
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	if req.Name == nil || *req.Name == "" {
-		writeGHValidationError(w, "CodeSecurityConfiguration", "name", "missing_field")
+		store.WriteGHValidationError(w, "CodeSecurityConfiguration", "name", "missing_field")
 		return
 	}
 	if req.Description == nil || *req.Description == "" {
-		writeGHValidationError(w, "CodeSecurityConfiguration", "description", "missing_field")
+		store.WriteGHValidationError(w, "CodeSecurityConfiguration", "description", "missing_field")
 		return
 	}
 	if !req.ValidateEnums(w) {
 		return
 	}
 	if s.store.GetCodeSecurityConfigurationByName(org, *req.Name) != nil {
-		writeGHValidationError(w, "CodeSecurityConfiguration", "name", "already_exists")
+		store.WriteGHValidationError(w, "CodeSecurityConfiguration", "name", "already_exists")
 		return
 	}
 	c := s.store.CreateCodeSecurityConfiguration(org, &req)
@@ -94,7 +96,7 @@ func (s *Server) handleGetDefaultCodeSecurityConfigurations(w http.ResponseWrite
 
 // resolveCodeSecurityConfiguration parses {configuration_id} and loads the
 // configuration, writing a 404 on failure.
-func (s *Server) resolveCodeSecurityConfiguration(w http.ResponseWriter, r *http.Request) *CodeSecurityConfiguration {
+func (s *Server) resolveCodeSecurityConfiguration(w http.ResponseWriter, r *http.Request) *store.CodeSecurityConfiguration {
 	id, err := strconv.Atoi(r.PathValue("configuration_id"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -121,7 +123,7 @@ func (s *Server) handleUpdateCodeSecurityConfiguration(w http.ResponseWriter, r 
 	if c == nil {
 		return
 	}
-	var req codeSecurityConfigurationRequest
+	var req store.CodeSecurityConfigurationRequest
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
@@ -158,26 +160,26 @@ func (s *Server) handleAttachCodeSecurityConfiguration(w http.ResponseWriter, r 
 		return
 	}
 	if req.Scope == nil {
-		writeGHValidationError(w, "CodeSecurityConfiguration", "scope", "missing_field")
+		store.WriteGHValidationError(w, "CodeSecurityConfiguration", "scope", "missing_field")
 		return
 	}
 	switch *req.Scope {
 	case "all", "all_without_configurations", "public", "private_or_internal":
 		if len(req.SelectedRepositoryIDs) > 0 {
-			writeGHValidationError(w, "CodeSecurityConfiguration", "selected_repository_ids", "invalid")
+			store.WriteGHValidationError(w, "CodeSecurityConfiguration", "selected_repository_ids", "invalid")
 			return
 		}
 	case "selected":
 		if len(req.SelectedRepositoryIDs) == 0 {
-			writeGHValidationError(w, "CodeSecurityConfiguration", "selected_repository_ids", "missing_field")
+			store.WriteGHValidationError(w, "CodeSecurityConfiguration", "selected_repository_ids", "missing_field")
 			return
 		}
 	default:
-		writeGHValidationError(w, "CodeSecurityConfiguration", "scope", "invalid")
+		store.WriteGHValidationError(w, "CodeSecurityConfiguration", "scope", "invalid")
 		return
 	}
 	if !s.store.AttachCodeSecurityConfiguration(c.OrgLogin, c.ID, *req.Scope, req.SelectedRepositoryIDs) {
-		writeGHValidationError(w, "CodeSecurityConfiguration", "selected_repository_ids", "invalid")
+		store.WriteGHValidationError(w, "CodeSecurityConfiguration", "selected_repository_ids", "invalid")
 		return
 	}
 	writeJSON(w, http.StatusAccepted, map[string]interface{}{})
@@ -211,13 +213,13 @@ func (s *Server) handleSetCodeSecurityConfigurationAsDefault(w http.ResponseWrit
 		return
 	}
 	if req.DefaultForNewRepos == nil {
-		writeGHValidationError(w, "CodeSecurityConfiguration", "default_for_new_repos", "missing_field")
+		store.WriteGHValidationError(w, "CodeSecurityConfiguration", "default_for_new_repos", "missing_field")
 		return
 	}
 	switch *req.DefaultForNewRepos {
 	case "all", "none", "private_and_internal", "public":
 	default:
-		writeGHValidationError(w, "CodeSecurityConfiguration", "default_for_new_repos", "invalid")
+		store.WriteGHValidationError(w, "CodeSecurityConfiguration", "default_for_new_repos", "invalid")
 		return
 	}
 	updated := s.store.SetCodeSecurityConfigurationAsDefault(c.OrgLogin, c.ID, *req.DefaultForNewRepos)
@@ -286,7 +288,7 @@ func (s *Server) handleGetRepoCodeSecurityConfiguration(w http.ResponseWriter, r
 	})
 }
 
-func codeSecurityConfigurationJSON(c *CodeSecurityConfiguration, baseURL string) map[string]interface{} {
+func codeSecurityConfigurationJSON(c *store.CodeSecurityConfiguration, baseURL string) map[string]interface{} {
 	out := map[string]interface{}{
 		"id":                                        c.ID,
 		"name":                                      c.Name,

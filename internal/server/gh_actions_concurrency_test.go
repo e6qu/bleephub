@@ -7,6 +7,8 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // submitConcurrencyWorkflow submits a one-job workflow with a
@@ -27,7 +29,7 @@ func (s *isolatedServer) submitConcurrencyWorkflow(t *testing.T, name, group, re
 	if stor == nil {
 		t.Fatalf("git storage for %s missing", repo)
 	}
-	if resolveBranchSha(stor, repoRow.DefaultBranch) == "" {
+	if store.ResolveBranchSha(stor, repoRow.DefaultBranch) == "" {
 		admin := s.store.Users[1]
 		if _, err := initRepoWithFiles(stor, repoRow.DefaultBranch, "seed workflow", map[string]string{
 			".github/workflows/" + name + ".yml": yaml,

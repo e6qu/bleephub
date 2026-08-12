@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/e6qu/bleephub/internal/server/testutil"
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // seedRun installs a Workflow + WorkflowJob in the store and returns
@@ -26,7 +27,7 @@ import (
 // runs, caches or artifacts belong to. Handlers refuse a repository that does
 // not exist, so a fixture that seeds against a bare "owner/name" string has to
 // create it rather than rely on the gate letting an unresolved path through.
-func ensureSeededRepo(s *Server, fullName string) *Repo {
+func ensureSeededRepo(s *Server, fullName string) *store.Repo {
 	owner, name, ok := strings.Cut(fullName, "/")
 	if !ok {
 		return nil
@@ -37,7 +38,7 @@ func ensureSeededRepo(s *Server, fullName string) *Repo {
 	user := s.store.LookupUserByLogin(owner)
 	if user == nil {
 		s.store.Mu.Lock()
-		user = &User{ID: s.store.NextUser, Login: owner, Type: "User", CreatedAt: fixedTestTime.UTC()}
+		user = &store.User{ID: s.store.NextUser, Login: owner, Type: "User", CreatedAt: fixedTestTime.UTC()}
 		s.store.Users[user.ID] = user
 		s.store.UsersByLogin[owner] = user
 		s.store.NextUser++
@@ -52,28 +53,28 @@ func ensureSeededRepo(s *Server, fullName string) *Repo {
 	return s.store.CreateRepo(user, name, "", false)
 }
 
-func seedRun(t *testing.T, s *Server, repo string, status, result string) (*Workflow, *WorkflowJob) {
+func seedRun(t *testing.T, s *Server, repo string, status, result string) (*store.Workflow, *store.WorkflowJob) {
 	t.Helper()
 	ensureSeededRepo(s, repo)
 	s.store.Mu.Lock()
 	runID := s.store.NextRunID
 	s.store.NextRunID++
 	jobID := uuid.New().String()
-	wf := &Workflow{
+	wf := &store.Workflow{
 		ID:           uuid.New().String(),
 		Name:         "ci",
 		RunID:        runID,
 		RunNumber:    runID,
-		Status:       WorkflowStatus(status),
-		Result:       Result(result),
+		Status:       store.WorkflowStatus(status),
+		Result:       store.Result(result),
 		CreatedAt:    fixedTestTime,
 		EventName:    "push",
 		Ref:          "refs/heads/main",
 		Sha:          "abcdef0123456789abcdef0123456789abcdef01",
 		RepoFullName: repo,
-		Jobs:         map[string]*WorkflowJob{},
+		Jobs:         map[string]*store.WorkflowJob{},
 	}
-	wfJob := &WorkflowJob{
+	wfJob := &store.WorkflowJob{
 		Key:         "build",
 		JobID:       jobID,
 		DisplayName: "Build",
@@ -101,9 +102,9 @@ func runAuthedRequest(s *Server, method, path string) *httptest.ResponseRecorder
 	return serveTestRequest(s, "Bearer "+defaultToken, method, path, nil)
 }
 
-func seedFinalizedArtifact(s *Server, id int64, wf *Workflow, name string, createdAt time.Time) {
+func seedFinalizedArtifact(s *Server, id int64, wf *store.Workflow, name string, createdAt time.Time) {
 	s.artifactStore.Mu.Lock()
-	s.artifactStore.Artifacts[id] = &Artifact{
+	s.artifactStore.Artifacts[id] = &store.Artifact{
 		ID:                   id,
 		Name:                 name,
 		Size:                 int64(len("artifact-data")),
@@ -529,7 +530,7 @@ func TestActionsRuns_RerunFailedJobsUsesOriginatingWorkflowFile(t *testing.T) {
 	wf.Name = "shared"
 	wf.WorkflowFileID = target.ID
 	wf.WorkflowFilePath = target.Path
-	wf.Jobs["build"].Result = ResultFailure
+	wf.Jobs["build"].Result = store.ResultFailure
 
 	w := runAuthedRequest(s, "POST", fmt.Sprintf("/api/v3/repos/%s/actions/runs/%d/rerun-failed-jobs", repo, wf.RunID))
 	if w.Code != http.StatusCreated {
@@ -560,7 +561,7 @@ func TestActionsJobs_RerunUsesOriginatingWorkflowFile(t *testing.T) {
 	wf.Name = "shared"
 	wf.WorkflowFileID = target.ID
 	wf.WorkflowFilePath = target.Path
-	job.Result = ResultFailure
+	job.Result = store.ResultFailure
 
 	jobID := stableJobID(job.JobID)
 	w := runAuthedRequest(s, "POST", fmt.Sprintf("/api/v3/repos/%s/actions/jobs/%d/rerun", repo, jobID))
@@ -598,7 +599,7 @@ func TestActionsRuns_RerunAmbiguousNameFailsLoud(t *testing.T) {
 	}
 }
 
-func registerSameNamedWorkflowFiles(t *testing.T, s *Server, repo string) *WorkflowFile {
+func registerSameNamedWorkflowFiles(t *testing.T, s *Server, repo string) *store.WorkflowFile {
 	t.Helper()
 	s.store.RegisterWorkflowFile(repo, ".github/workflows/a.yml", "shared", "name: shared\njobs:\n  wrong:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo wrong\n", "submitted")
 	s.store.RegisterWorkflowFile(repo, ".github/workflows/b.yml", "shared", "name: shared\njobs:\n  target:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo target\n", "submitted")
@@ -628,14 +629,14 @@ func TestActionsRunners_List(t *testing.T) {
 	s.registerGHActionsRoutes()
 	ensureSeededRepo(s, "octo/repo")
 	s.store.Mu.Lock()
-	s.store.Agents[1] = &Agent{
+	s.store.Agents[1] = &store.Agent{
 		ID: 1, Name: "runner-a", OSDescription: "Linux", Status: "online",
-		Labels: []Label{{ID: 10, Name: "self-hosted", Type: "system"}, {ID: 11, Name: "linux", Type: "custom"}},
-		Scope:  runnerScope{Repo: "octo/repo"},
+		Labels: []store.Label{{ID: 10, Name: "self-hosted", Type: "system"}, {ID: 11, Name: "linux", Type: "custom"}},
+		Scope:  store.RunnerScope{Repo: "octo/repo"},
 	}
-	s.store.Agents[2] = &Agent{
+	s.store.Agents[2] = &store.Agent{
 		ID: 2, Name: "runner-b", OSDescription: "Darwin", Status: "offline",
-		Scope: runnerScope{Repo: "octo/repo"},
+		Scope: store.RunnerScope{Repo: "octo/repo"},
 	}
 	s.store.Mu.Unlock()
 
@@ -691,8 +692,8 @@ func TestActionsRunners_Delete(t *testing.T) {
 	s.registerGHActionsRoutes()
 	ensureSeededRepo(s, "octo/repo")
 	s.store.Mu.Lock()
-	s.store.Agents[42] = &Agent{
-		ID: 42, Name: "to-delete", Status: "online", Scope: runnerScope{Repo: "octo/repo"},
+	s.store.Agents[42] = &store.Agent{
+		ID: 42, Name: "to-delete", Status: "online", Scope: store.RunnerScope{Repo: "octo/repo"},
 	}
 	s.store.Mu.Unlock()
 
@@ -726,10 +727,10 @@ func TestActionsRun_WorkflowFileReferences(t *testing.T) {
 	wf, _ := seedRun(t, s, "octo/repo", "completed", "success")
 
 	workflowPath := ".github/workflows/ci.yml"
-	wantFileID := stableWorkflowFileID("octo/repo", workflowPath)
+	wantFileID := store.StableWorkflowFileID("octo/repo", workflowPath)
 	for i := 0; int64(wf.RunID) == wantFileID; i++ {
 		workflowPath = fmt.Sprintf(".github/workflows/ci-%d.yml", i)
-		wantFileID = stableWorkflowFileID("octo/repo", workflowPath)
+		wantFileID = store.StableWorkflowFileID("octo/repo", workflowPath)
 	}
 	wf.WorkflowFileID = wantFileID
 	wf.WorkflowFilePath = workflowPath
@@ -847,9 +848,9 @@ func TestActionsRunners_ExtraFields(t *testing.T) {
 	s.registerGHActionsRoutes()
 	ensureSeededRepo(s, "octo/repo")
 	s.store.Mu.Lock()
-	s.store.Agents[7] = &Agent{
+	s.store.Agents[7] = &store.Agent{
 		ID: 7, Name: "r", OSDescription: "Linux", Status: "online", Version: "2.300.0",
-		Scope: runnerScope{Repo: "octo/repo"},
+		Scope: store.RunnerScope{Repo: "octo/repo"},
 	}
 	s.store.Mu.Unlock()
 
@@ -892,7 +893,7 @@ func TestStableJobID_DeterministicPositiveAndJSONSafe(t *testing.T) {
 	if a == c {
 		t.Errorf("collision on distinct UUIDs")
 	}
-	if uint64(a) > maxJSONSafeInteger || uint64(c) > maxJSONSafeInteger {
+	if uint64(a) > store.MaxJSONSafeInteger || uint64(c) > store.MaxJSONSafeInteger {
 		t.Fatalf("IDs exceed exact JSON integer range: a=%d c=%d", a, c)
 	}
 	encoded, err := json.Marshal(map[string]int64{"id": a})
@@ -1461,10 +1462,10 @@ func TestActionsRunLogs_Delete(t *testing.T) {
 	planID, _ := linkJobToPlan(t, s, wfJob)
 	// Seed a timeline record with a log file so deletion has something to remove.
 	s.store.Mu.Lock()
-	s.store.TimelineRecords[planID] = append(s.store.TimelineRecords[planID], &TimelineRecord{
+	s.store.TimelineRecords[planID] = append(s.store.TimelineRecords[planID], &store.TimelineRecord{
 		Type: "Task",
 		Name: "Step",
-		Log:  &TimelineLogRef{ID: 1},
+		Log:  &store.TimelineLogRef{ID: 1},
 	})
 	s.store.LogFiles[1] = []byte("step log")
 	s.store.Mu.Unlock()

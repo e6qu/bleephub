@@ -127,8 +127,8 @@ func (s *Resolver) addMetaFieldsToSchema(queryType *graphql.Object) {
 	queryType.AddFieldConfig("licenses", &graphql.Field{
 		Type: graphql.NewNonNull(graphql.NewList(licenseType)),
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			keys := make([]string, 0, len(licenseTemplates))
-			for key := range licenseTemplates {
+			keys := make([]string, 0, len(store.LicenseTemplates))
+			for key := range store.LicenseTemplates {
 				keys = append(keys, key)
 			}
 			sort.Strings(keys)
@@ -242,7 +242,7 @@ func (s *Resolver) gqlLicenseType() *graphql.Object {
 // graphQLLicenseJSON renders the GraphQL source map for a catalog license
 // key, or nil when the key names no vendored license template.
 func graphQLLicenseJSON(key string) interface{} {
-	tmpl, ok := licenseTemplates[strings.ToLower(key)]
+	tmpl, ok := store.LicenseTemplates[strings.ToLower(key)]
 	if !ok {
 		return nil
 	}

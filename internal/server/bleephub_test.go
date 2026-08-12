@@ -27,6 +27,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/e6qu/bleephub/internal/server/testutil"
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 var (
@@ -383,7 +384,7 @@ func TestOAuthToken(t *testing.T) {
 	mod := base64.StdEncoding.EncodeToString(key.N.Bytes())
 	exp := base64.StdEncoding.EncodeToString(big.NewInt(int64(key.E)).Bytes())
 	regBody := fmt.Sprintf(`{"name":"oauth-test","version":"2.0","authorization":{"publicKey":{"modulus":%q,"exponent":%q}}}`, mod, exp)
-	regToken := mustRunnerRegistrationToken(t, runnerScope{Repo: "oauth-owner/oauth-repo"})
+	regToken := mustRunnerRegistrationToken(t, store.RunnerScope{Repo: "oauth-owner/oauth-repo"})
 	regResp := runnerDo(t, "POST", s.baseURL+"/_apis/v1/Agent/1", regToken, regBody)
 	defer regResp.Body.Close()
 	if regResp.StatusCode != 200 {
@@ -503,7 +504,7 @@ func TestRunnerRegistration(t *testing.T) {
 	s := newIsolatedServer(t)
 	body := `{"url":"http://localhost","runner_event":"register"}`
 	// config.sh presents the administration:write-minted registration token.
-	regToken := mustRunnerRegistrationToken(t, runnerScope{Repo: "reg-owner/reg-repo"})
+	regToken := mustRunnerRegistrationToken(t, store.RunnerScope{Repo: "reg-owner/reg-repo"})
 
 	if unauth := runnerDo(t, "POST", s.baseURL+"/api/v3/actions/runner-registration", "", body); true {
 		unauth.Body.Close()
@@ -532,7 +533,7 @@ func TestRunnerRegistration(t *testing.T) {
 func TestListPools(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
-	sessionToken, _ := testAgentSession(t, s.Server, runnerScope{Repo: "pool-owner/pool-repo"})
+	sessionToken, _ := testAgentSession(t, s.Server, store.RunnerScope{Repo: "pool-owner/pool-repo"})
 	resp := runnerDo(t, "GET", s.baseURL+"/_apis/v1/AgentPools", sessionToken, "")
 	defer resp.Body.Close()
 
@@ -550,7 +551,7 @@ func TestAgentLifecycle(t *testing.T) {
 	s := newIsolatedServer(t)
 	// Register agent with the credential config.sh was given.
 	agentBody := `{"name":"test-runner","version":"3.0.0","labels":[{"name":"self-hosted","type":"system"}]}`
-	regToken := mustRunnerRegistrationToken(t, runnerScope{Repo: "life-owner/life-repo"})
+	regToken := mustRunnerRegistrationToken(t, store.RunnerScope{Repo: "life-owner/life-repo"})
 	resp := runnerDo(t, "POST", s.baseURL+"/_apis/v1/Agent/1", regToken, agentBody)
 	defer resp.Body.Close()
 
@@ -605,7 +606,7 @@ func TestAgentLifecycle(t *testing.T) {
 	// Verify deleted. The deleted runner's own token no longer resolves to an
 	// agent, so the check runs as another runner registered for the same
 	// scope.
-	observerToken, _ := testAgentSession(t, s.Server, runnerScope{Repo: "life-owner/life-repo"})
+	observerToken, _ := testAgentSession(t, s.Server, store.RunnerScope{Repo: "life-owner/life-repo"})
 	resp5 := runnerDo(t, "GET", fmt.Sprintf("%s/_apis/v1/Agent/1/%d", s.baseURL, agentID), observerToken, "")
 	defer resp5.Body.Close()
 	if resp5.StatusCode != 404 {
@@ -617,7 +618,7 @@ func TestSessionAndMessage(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
 	// Create session as a registered runner.
-	sessionToken, agent := testAgentSession(t, s.Server, runnerScope{Repo: "sess-owner/sess-repo"})
+	sessionToken, agent := testAgentSession(t, s.Server, store.RunnerScope{Repo: "sess-owner/sess-repo"})
 	sessionBody := fmt.Sprintf(`{"ownerName":"RUNNER","agent":{"id":%d,"name":"test"}}`, agent.ID)
 	resp := runnerDo(t, "POST", s.baseURL+"/_apis/v1/AgentSession/1", sessionToken, sessionBody)
 	defer resp.Body.Close()
@@ -647,7 +648,7 @@ func TestSessionAndMessage(t *testing.T) {
 		t.Fatal("expected a message, got empty response")
 	}
 
-	var msg TaskAgentMessage
+	var msg store.TaskAgentMessage
 	if err := json.Unmarshal(body, &msg); err != nil {
 		t.Fatalf("failed to parse message: %v", err)
 	}

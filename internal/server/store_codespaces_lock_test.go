@@ -5,38 +5,39 @@ import (
 	"testing"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	gitStorage "github.com/go-git/go-git/v5/storage"
 )
 
 func TestCodespaceRuntimeDeletionDoesNotHoldStoreLock(t *testing.T) {
-	store := NewStore()
-	store.SeedDefaultUser()
-	codespace := &Codespace{
-		ID:         store.NextCodespaceID,
+	st := store.NewStore()
+	st.SeedDefaultUser()
+	codespace := &store.Codespace{
+		ID:         st.NextCodespaceID,
 		Name:       "lock-free-delete",
 		OwnerLogin: "admin",
 		State:      "Available",
 	}
-	store.NextCodespaceID++
-	store.Codespaces[codespace.ID] = codespace
-	store.CodespacesByName[codespace.Name] = codespace
+	st.NextCodespaceID++
+	st.Codespaces[codespace.ID] = codespace
+	st.CodespacesByName[codespace.Name] = codespace
 
 	started := make(chan struct{})
 	release := make(chan struct{})
-	store.CodespaceRuntimeDelete = func(*Codespace) error {
+	st.CodespaceRuntimeDelete = func(*store.Codespace) error {
 		close(started)
 		<-release
 		return nil
 	}
 	deleted := make(chan error, 1)
 	go func() {
-		_, err := store.DeleteCodespace(codespace.ID)
+		_, err := st.DeleteCodespace(codespace.ID)
 		deleted <- err
 	}()
 	<-started
 
-	readFinished := make(chan *Codespace, 1)
-	go func() { readFinished <- store.GetCodespace(codespace.ID) }()
+	readFinished := make(chan *store.Codespace, 1)
+	go func() { readFinished <- st.GetCodespace(codespace.ID) }()
 	select {
 	case snapshot := <-readFinished:
 		if snapshot == nil || snapshot.State != "Deleting" {
@@ -49,39 +50,39 @@ func TestCodespaceRuntimeDeletionDoesNotHoldStoreLock(t *testing.T) {
 	if err := <-deleted; err != nil {
 		t.Fatalf("delete codespace: %v", err)
 	}
-	if store.GetCodespace(codespace.ID) != nil {
+	if st.GetCodespace(codespace.ID) != nil {
 		t.Fatal("codespace remained after runtime deletion")
 	}
 }
 
 func TestCodespaceRuntimeDeletionFailureRestoresVisibleState(t *testing.T) {
-	store := NewStore()
-	codespace := &Codespace{ID: 41, Name: "retryable-delete", State: "Available"}
-	store.Codespaces[codespace.ID] = codespace
-	store.CodespacesByName[codespace.Name] = codespace
-	store.CodespaceRuntimeDelete = func(*Codespace) error { return errors.New("runtime unavailable") }
+	st := store.NewStore()
+	codespace := &store.Codespace{ID: 41, Name: "retryable-delete", State: "Available"}
+	st.Codespaces[codespace.ID] = codespace
+	st.CodespacesByName[codespace.Name] = codespace
+	st.CodespaceRuntimeDelete = func(*store.Codespace) error { return errors.New("runtime unavailable") }
 
-	ok, err := store.DeleteCodespace(codespace.ID)
+	ok, err := st.DeleteCodespace(codespace.ID)
 	if !ok || err == nil {
 		t.Fatalf("delete = %v, %v", ok, err)
 	}
-	if got := store.GetCodespace(codespace.ID); got == nil || got.State != "Available" {
+	if got := st.GetCodespace(codespace.ID); got == nil || got.State != "Available" {
 		t.Fatalf("failed deletion left codespace unavailable: %#v", got)
 	}
 }
 
 func TestCodespaceWorkspacePreparationDoesNotHoldStoreLock(t *testing.T) {
-	store := NewStore()
-	store.SeedDefaultUser()
-	user := store.GetUserByID(1)
-	repo := store.CreateRepo(user, "workspace-lock", "", false)
+	st := store.NewStore()
+	st.SeedDefaultUser()
+	user := st.GetUserByID(1)
+	repo := st.CreateRepo(user, "workspace-lock", "", false)
 	if repo == nil {
 		t.Fatal("create repo")
 	}
 
 	started := make(chan struct{})
 	release := make(chan struct{})
-	store.CodespaceWorkspacePrepare = func(string, *Repo, gitStorage.Storer, string) (string, func(), error) {
+	st.CodespaceWorkspacePrepare = func(string, *store.Repo, gitStorage.Storer, string) (string, func(), error) {
 		close(started)
 		<-release
 		return "", func() {}, nil
@@ -89,7 +90,7 @@ func TestCodespaceWorkspacePreparationDoesNotHoldStoreLock(t *testing.T) {
 
 	created := make(chan error, 1)
 	go func() {
-		_, _, cleanup, err := store.ReserveCodespace(user.Login, repo.FullName, "main", "", codespaceCreateOptions{})
+		_, _, cleanup, err := st.ReserveCodespace(user.Login, repo.FullName, "main", "", store.CodespaceCreateOptions{})
 		if cleanup != nil {
 			cleanup()
 		}
@@ -97,8 +98,8 @@ func TestCodespaceWorkspacePreparationDoesNotHoldStoreLock(t *testing.T) {
 	}()
 	<-started
 
-	readFinished := make(chan *Repo, 1)
-	go func() { readFinished <- store.GetRepo(user.Login, repo.Name) }()
+	readFinished := make(chan *store.Repo, 1)
+	go func() { readFinished <- st.GetRepo(user.Login, repo.Name) }()
 	select {
 	case snapshot := <-readFinished:
 		if snapshot == nil || snapshot.ID != repo.ID {
@@ -118,23 +119,23 @@ func TestCodespaceWorkspacePreparationDoesNotHoldStoreLock(t *testing.T) {
 // updating an existing secret. The value is never returned through the API,
 // so it is only observable at the store boundary.
 func TestCodespaceSecretStoresValue(t *testing.T) {
-	store := NewStore()
-	store.SeedDefaultUser()
-	scope := codespaceSecretScopeKey("user", "admin")
+	st := store.NewStore()
+	st.SeedDefaultUser()
+	scope := store.CodespaceSecretScopeKey("user", "admin")
 
-	store.CreateCodespaceSecret(scope, "DEPLOY_KEY", "first-value", "", nil)
-	if got := store.GetCodespaceSecret(scope, "DEPLOY_KEY"); got == nil || got.Value != "first-value" {
+	st.CreateCodespaceSecret(scope, "DEPLOY_KEY", "first-value", "", nil)
+	if got := st.GetCodespaceSecret(scope, "DEPLOY_KEY"); got == nil || got.Value != "first-value" {
 		t.Fatalf("after create, Value = %q, want %q", codespaceSecretValue(got), "first-value")
 	}
 
 	// Updating the same name must overwrite the stored value.
-	store.CreateCodespaceSecret(scope, "DEPLOY_KEY", "second-value", "", nil)
-	if got := store.GetCodespaceSecret(scope, "DEPLOY_KEY"); got == nil || got.Value != "second-value" {
+	st.CreateCodespaceSecret(scope, "DEPLOY_KEY", "second-value", "", nil)
+	if got := st.GetCodespaceSecret(scope, "DEPLOY_KEY"); got == nil || got.Value != "second-value" {
 		t.Fatalf("after update, Value = %q, want %q", codespaceSecretValue(got), "second-value")
 	}
 }
 
-func codespaceSecretValue(s *CodespaceSecret) string {
+func codespaceSecretValue(s *store.CodespaceSecret) string {
 	if s == nil {
 		return "<nil>"
 	}

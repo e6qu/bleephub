@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func (s *Server) registerGHEnterpriseCodeSecurityRoutes() {
@@ -103,7 +105,7 @@ func (req *enterpriseCodeSecurityConfigRequest) validate() (string, bool) {
 // into advanced_security exactly as GitHub reports them back: both enabled →
 // "enabled", one enabled → that product's value; an explicit
 // advanced_security member wins.
-func (req *enterpriseCodeSecurityConfigRequest) apply(c *EnterpriseCodeSecurityConfiguration) {
+func (req *enterpriseCodeSecurityConfigRequest) apply(c *store.EnterpriseCodeSecurityConfiguration) {
 	setStr := func(dst *string, v *string) {
 		if v != nil {
 			*dst = *v
@@ -158,7 +160,7 @@ func (req *enterpriseCodeSecurityConfigRequest) apply(c *EnterpriseCodeSecurityC
 
 // enterpriseCodeSecurityConfigJSON renders the GitHub
 // code-security-configuration schema shape with target_type "enterprise".
-func (s *Server) enterpriseCodeSecurityConfigJSON(c *EnterpriseCodeSecurityConfiguration, baseURL string) map[string]interface{} {
+func (s *Server) enterpriseCodeSecurityConfigJSON(c *store.EnterpriseCodeSecurityConfiguration, baseURL string) map[string]interface{} {
 	api := baseURL + "/api/v3/enterprises/" + s.enterpriseSlug() + "/code-security/configurations/" + strconv.Itoa(c.ID)
 	var codeScanningOptions interface{}
 	if c.CodeScanningAllowAdvanced != nil {
@@ -212,7 +214,7 @@ func (s *Server) handleListEnterpriseCodeSecurityConfigs(w http.ResponseWriter, 
 	configs := s.store.ListEnterpriseCodeSecurityConfigs()
 	base := s.baseURL(r)
 	out := make([]map[string]interface{}, 0, len(configs))
-	page, ok := cursorPageByID(w, r, configs, func(c *EnterpriseCodeSecurityConfiguration) int { return c.ID })
+	page, ok := cursorPageByID(w, r, configs, func(c *store.EnterpriseCodeSecurityConfiguration) int { return c.ID })
 	if !ok {
 		return
 	}
@@ -238,7 +240,7 @@ func (s *Server) handleCreateEnterpriseCodeSecurityConfig(w http.ResponseWriter,
 		return
 	}
 
-	c := &EnterpriseCodeSecurityConfiguration{
+	c := &store.EnterpriseCodeSecurityConfiguration{
 		// Defaults per GitHub's create schema: dependency graph on, every
 		// other feature off, enforcement on.
 		AdvancedSecurity:                      "disabled",
@@ -266,7 +268,7 @@ func (s *Server) handleCreateEnterpriseCodeSecurityConfig(w http.ResponseWriter,
 
 // lookupEnterpriseCodeSecurityConfig resolves {configuration_id}, writing 404
 // when absent.
-func (s *Server) lookupEnterpriseCodeSecurityConfig(w http.ResponseWriter, r *http.Request) *EnterpriseCodeSecurityConfiguration {
+func (s *Server) lookupEnterpriseCodeSecurityConfig(w http.ResponseWriter, r *http.Request) *store.EnterpriseCodeSecurityConfiguration {
 	id, err := strconv.Atoi(r.PathValue("configuration_id"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -298,7 +300,7 @@ func (s *Server) handleUpdateEnterpriseCodeSecurityConfig(w http.ResponseWriter,
 		return
 	}
 	if field, ok := req.validate(); !ok {
-		writeGHValidationError(w, "CodeSecurityConfiguration", field, "invalid")
+		store.WriteGHValidationError(w, "CodeSecurityConfiguration", field, "invalid")
 		return
 	}
 	s.store.TouchEnterpriseCodeSecurityConfig(c, func() { req.apply(c) })
@@ -334,7 +336,7 @@ func (s *Server) handleAttachEnterpriseCodeSecurityConfig(w http.ResponseWriter,
 		return
 	}
 	if req.Scope != "all" && req.Scope != "all_without_configurations" {
-		writeGHValidationError(w, "CodeSecurityConfiguration", "scope", "invalid")
+		store.WriteGHValidationError(w, "CodeSecurityConfiguration", "scope", "invalid")
 		return
 	}
 	s.store.AttachEnterpriseCodeSecurityConfig(c, req.Scope)
@@ -355,7 +357,7 @@ func (s *Server) handleSetEnterpriseCodeSecurityConfigDefault(w http.ResponseWri
 	switch req.DefaultForNewRepos {
 	case "all", "none", "private_and_internal", "public":
 	default:
-		writeGHValidationError(w, "CodeSecurityConfiguration", "default_for_new_repos", "invalid")
+		store.WriteGHValidationError(w, "CodeSecurityConfiguration", "default_for_new_repos", "invalid")
 		return
 	}
 	s.store.SetEnterpriseCodeSecurityConfigDefault(c, req.DefaultForNewRepos)
@@ -393,7 +395,7 @@ func (s *Server) handleListEnterpriseCodeSecurityConfigRepos(w http.ResponseWrit
 	out := make([]map[string]interface{}, 0)
 	if status == "" || status == "all" || statusFilterContains(status, "attached") {
 		repos := s.store.ListEnterpriseCodeSecurityConfigRepos(c.ID)
-		page, ok := cursorPageByID(w, r, repos, func(rp *Repo) int { return rp.ID })
+		page, ok := cursorPageByID(w, r, repos, func(rp *store.Repo) int { return rp.ID })
 		if !ok {
 			return
 		}
@@ -433,7 +435,7 @@ func cursorPageByID[T any](w http.ResponseWriter, r *http.Request, items []T, id
 	}
 	after, hasAfter, valid := restCursorID(q.Get("after"))
 	if !valid {
-		writeGHValidationError(w, "Pagination", "after", "invalid")
+		store.WriteGHValidationError(w, "Pagination", "after", "invalid")
 		return nil, false
 	}
 	if hasAfter {
@@ -443,7 +445,7 @@ func cursorPageByID[T any](w http.ResponseWriter, r *http.Request, items []T, id
 	}
 	before, hasBefore, valid := restCursorID(q.Get("before"))
 	if !valid {
-		writeGHValidationError(w, "Pagination", "before", "invalid")
+		store.WriteGHValidationError(w, "Pagination", "before", "invalid")
 		return nil, false
 	}
 	if hasBefore {

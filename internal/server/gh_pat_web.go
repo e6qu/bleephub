@@ -6,9 +6,11 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
-func (s *Server) personalAccessTokenWebUser(w http.ResponseWriter, r *http.Request) (*User, *http.Request) {
+func (s *Server) personalAccessTokenWebUser(w http.ResponseWriter, r *http.Request) (*store.User, *http.Request) {
 	ctx := s.authenticateRequest(r)
 	user := ghUserFromContext(ctx)
 	// The settings UI is a browser-authenticated surface. A signed-in browser
@@ -25,7 +27,7 @@ func (s *Server) personalAccessTokenWebUser(w http.ResponseWriter, r *http.Reque
 	return user, r.WithContext(ctx)
 }
 
-func (s *Server) fineGrainedPATStatus(token *Token) string {
+func (s *Server) fineGrainedPATStatus(token *store.Token) string {
 	if token.ExpiresAt != nil && !token.ExpiresAt.After(time.Now()) {
 		return "expired"
 	}
@@ -47,7 +49,7 @@ func (s *Server) fineGrainedPATStatus(token *Token) string {
 	return "revoked"
 }
 
-func personalAccessTokenWebJSON(token *Token, status string) map[string]interface{} {
+func personalAccessTokenWebJSON(token *store.Token, status string) map[string]interface{} {
 	var expiry interface{}
 	if token.ExpiresAt != nil {
 		expiry = token.ExpiresAt.UTC().Format(time.RFC3339)
@@ -65,7 +67,7 @@ func (s *Server) handleListPersonalAccessTokensWeb(w http.ResponseWriter, r *htt
 	if user == nil {
 		return
 	}
-	tokens := make([]*Token, 0)
+	tokens := make([]*store.Token, 0)
 	s.store.Mu.RLock()
 	for _, token := range s.store.Tokens {
 		if token.UserID == user.ID && token.FineGrained {
@@ -89,7 +91,7 @@ func (s *Server) handleListPersonalAccessTokensWeb(w http.ResponseWriter, r *htt
 		repositories[org.Login] = s.personalAccessTokenRepositories(org.Login)
 		if s.viewerCanAdminOrg(r.Context(), org.Login) {
 			s.store.Mu.RLock()
-			requests := make([]*OrgPATGrantRequest, 0, len(s.store.OrgPATGrantRequests[org.Login]))
+			requests := make([]*store.OrgPATGrantRequest, 0, len(s.store.OrgPATGrantRequests[org.Login]))
 			for _, request := range s.store.OrgPATGrantRequests[org.Login] {
 				requests = append(requests, request)
 			}
@@ -133,13 +135,13 @@ func (s *Server) handleCreatePersonalAccessTokenWeb(w http.ResponseWriter, r *ht
 	if user == nil {
 		return
 	}
-	var body createPersonalAccessTokenWebRequest
+	var body store.CreatePersonalAccessTokenWebRequest
 	if !decodeJSONBody(w, r, &body) {
 		return
 	}
 	body.Name = strings.TrimSpace(body.Name)
 	if body.Name == "" || len(body.Name) > 40 {
-		writeGHValidationError(w, "FineGrainedPersonalAccessToken", "name", "invalid")
+		store.WriteGHValidationError(w, "FineGrainedPersonalAccessToken", "name", "invalid")
 		return
 	}
 	if body.ResourceOwner == "" {
@@ -149,30 +151,30 @@ func (s *Server) handleCreatePersonalAccessTokenWeb(w http.ResponseWriter, r *ht
 		body.RepositorySelection = "subset"
 	}
 	if body.RepositorySelection != "all" && body.RepositorySelection != "subset" && body.RepositorySelection != "none" {
-		writeGHValidationError(w, "FineGrainedPersonalAccessToken", "repository_selection", "invalid")
+		store.WriteGHValidationError(w, "FineGrainedPersonalAccessToken", "repository_selection", "invalid")
 		return
 	}
 	if body.ExpiresAt != nil && !body.ExpiresAt.After(time.Now()) {
-		writeGHValidationError(w, "FineGrainedPersonalAccessToken", "expires_at", "invalid")
+		store.WriteGHValidationError(w, "FineGrainedPersonalAccessToken", "expires_at", "invalid")
 		return
 	}
 	if !validPATPermissions(body.Permissions) {
-		writeGHValidationError(w, "FineGrainedPersonalAccessToken", "permissions", "invalid")
+		store.WriteGHValidationError(w, "FineGrainedPersonalAccessToken", "permissions", "invalid")
 		return
 	}
 	org := s.store.GetOrg(body.ResourceOwner)
 	if body.ResourceOwner != user.Login && (org == nil || !s.viewerIsOrgMember(r.Context(), org.Login)) {
-		writeGHValidationError(w, "FineGrainedPersonalAccessToken", "resource_owner", "invalid")
+		store.WriteGHValidationError(w, "FineGrainedPersonalAccessToken", "resource_owner", "invalid")
 		return
 	}
 	if body.RepositorySelection != "subset" && len(body.RepositoryIDs) != 0 {
-		writeGHValidationError(w, "FineGrainedPersonalAccessToken", "repository_ids", "invalid")
+		store.WriteGHValidationError(w, "FineGrainedPersonalAccessToken", "repository_ids", "invalid")
 		return
 	}
 	for _, id := range body.RepositoryIDs {
 		repo := s.store.GetRepoByID(id)
 		if repo == nil || !strings.HasPrefix(repo.FullName, body.ResourceOwner+"/") || !s.viewerCanReadRepo(r.Context(), repo) {
-			writeGHValidationError(w, "FineGrainedPersonalAccessToken", "repository_ids", "invalid")
+			store.WriteGHValidationError(w, "FineGrainedPersonalAccessToken", "repository_ids", "invalid")
 			return
 		}
 	}
@@ -180,7 +182,7 @@ func (s *Server) handleCreatePersonalAccessTokenWeb(w http.ResponseWriter, r *ht
 		writeGHError(w, http.StatusUnprocessableEntity, "Fine-grained personal access token limit reached")
 		return
 	}
-	var token *Token
+	var token *store.Token
 	var err error
 	if org != nil {
 		request, createErr := s.store.CreateOrgPATGrantRequest(org.Login, user.ID, body.Name, body.Reason, body.RepositorySelection, body.RepositoryIDs, body.Permissions, body.ExpiresAt)
@@ -201,7 +203,7 @@ func (s *Server) handleCreatePersonalAccessTokenWeb(w http.ResponseWriter, r *ht
 	writeJSON(w, http.StatusCreated, out)
 }
 
-func validPATPermissions(perms OrgPATPermissions) bool {
+func validPATPermissions(perms store.OrgPATPermissions) bool {
 	for _, group := range []map[string]string{perms.Organization, perms.Repository, perms.Other} {
 		for _, level := range group {
 			if !validPermLevelString(level) {
@@ -247,7 +249,7 @@ func (s *Server) handleReviewPersonalAccessTokenWeb(w http.ResponseWriter, r *ht
 		return
 	}
 	if !validPATReviewAction(body.Action) {
-		writeGHValidationError(w, "OrganizationProgrammaticAccessGrantRequest", "action", "invalid")
+		store.WriteGHValidationError(w, "OrganizationProgrammaticAccessGrantRequest", "action", "invalid")
 		return
 	}
 	if !s.store.ReviewOrgPATGrantRequest(org.Login, id, body.Action == "approve") {

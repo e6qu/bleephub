@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/storer"
@@ -14,7 +15,7 @@ import (
 // evaluateRulesetsForRefWrite evaluates and records every applicable active or
 // evaluate-mode rule. It returns the first active-rule refusal; evaluate-mode
 // failures are observable in the suite but never block the ref update.
-func (s *Server) evaluateRulesetsForRefWrite(ctx context.Context, repo *Repo, stor storer.Storer, ref plumbing.ReferenceName, kind refWriteKind, target plumbing.Hash) string {
+func (s *Server) evaluateRulesetsForRefWrite(ctx context.Context, repo *store.Repo, stor storer.Storer, ref plumbing.ReferenceName, kind refWriteKind, target plumbing.Hash) string {
 	rulesets := s.store.ApplicableRulesets(repo, ref.String())
 	if len(rulesets) == 0 {
 		return ""
@@ -31,7 +32,7 @@ func (s *Server) evaluateRulesetsForRefWrite(ctx context.Context, repo *Repo, st
 
 	activeFailed, evaluateFailed, hasEvaluate := false, false, false
 	activeBypassed := false
-	evaluations := make([]RulesetEvaluation, 0)
+	evaluations := make([]store.RulesetEvaluation, 0)
 	firstRefusal := ""
 	for i := range rulesets {
 		rs := &rulesets[i]
@@ -47,8 +48,8 @@ func (s *Server) evaluateRulesetsForRefWrite(ctx context.Context, repo *Repo, st
 			if bypassed {
 				passed, detail = true, ""
 			}
-			evaluation := RulesetEvaluation{
-				RuleSource: RulesetEvaluationSource{
+			evaluation := store.RulesetEvaluation{
+				RuleSource: store.RulesetEvaluationSource{
 					Type: "ruleset",
 					ID:   intPointer(rs.ID),
 					Name: stringPointer(rs.Name),
@@ -91,7 +92,7 @@ func (s *Server) evaluateRulesetsForRefWrite(ctx context.Context, repo *Repo, st
 	return firstRefusal
 }
 
-func (s *Server) evaluateRulesetRule(repo *Repo, stor storer.Storer, ref plumbing.ReferenceName, kind refWriteKind, target plumbing.Hash, rule Rule) (bool, string) {
+func (s *Server) evaluateRulesetRule(repo *store.Repo, stor storer.Storer, ref plumbing.ReferenceName, kind refWriteKind, target plumbing.Hash, rule store.Rule) (bool, string) {
 	short := ref.Short()
 	switch rule.Type {
 	case "creation":
@@ -179,7 +180,7 @@ func rulesetAddedCommits(stor storer.Storer, ref plumbing.ReferenceName, target 
 	return added
 }
 
-func (s *Server) missingRulesetStatusChecks(repo *Repo, sha string, parameters map[string]interface{}) []string {
+func (s *Server) missingRulesetStatusChecks(repo *store.Repo, sha string, parameters map[string]interface{}) []string {
 	required := rulesetRequiredStatusContexts(parameters)
 	if len(required) == 0 {
 		return nil
@@ -277,7 +278,7 @@ func rulesetPatternMatches(value string, parameters map[string]interface{}) (boo
 	return true, ""
 }
 
-func rulesetActorBypasses(rs *Ruleset, actor *User) bool {
+func rulesetActorBypasses(rs *store.Ruleset, actor *store.User) bool {
 	if actor == nil {
 		return false
 	}

@@ -5,21 +5,28 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func (s *Server) registerGHHookRoutes() {
-	s.route("POST /api/v3/repos/{owner}/{repo}/hooks", s.requirePerm(scopeAdministration, permWrite, s.handleCreateHook))
-	s.route("GET /api/v3/repos/{owner}/{repo}/hooks", s.requirePerm(scopeAdministration, permRead, s.handleListHooks))
-	s.route("GET /api/v3/repos/{owner}/{repo}/hooks/{id}", s.requirePerm(scopeAdministration, permRead, s.handleGetHook))
-	s.route("PATCH /api/v3/repos/{owner}/{repo}/hooks/{id}", s.requirePerm(scopeAdministration, permWrite, s.handleUpdateHook))
-	s.route("DELETE /api/v3/repos/{owner}/{repo}/hooks/{id}", s.requirePerm(scopeAdministration, permWrite, s.handleDeleteHook))
-	s.route("GET /api/v3/repos/{owner}/{repo}/hooks/{id}/deliveries", s.requirePerm(scopeAdministration, permRead, s.handleListHookDeliveries))
-	s.route("GET /api/v3/repos/{owner}/{repo}/hooks/{id}/deliveries/{delivery_id}", s.requirePerm(scopeAdministration, permRead, s.handleGetHookDelivery))
-	s.route("POST /api/v3/repos/{owner}/{repo}/hooks/{id}/deliveries/{delivery_id}/attempts", s.requirePerm(scopeAdministration, permWrite, s.handleRedeliverHookDelivery))
-	s.route("POST /api/v3/repos/{owner}/{repo}/hooks/{id}/pings", s.requirePerm(scopeAdministration, permWrite, s.handlePingHook))
-	s.route("GET /api/v3/repos/{owner}/{repo}/hooks/{id}/config", s.requirePerm(scopeAdministration, permRead, s.handleGetHookConfig))
-	s.route("PATCH /api/v3/repos/{owner}/{repo}/hooks/{id}/config", s.requirePerm(scopeAdministration, permWrite, s.handleUpdateHookConfig))
-	s.route("POST /api/v3/repos/{owner}/{repo}/hooks/{id}/tests", s.requirePerm(scopeAdministration, permWrite, s.handleTestHook))
+	// Every webhook-management endpoint is gated on the administration scope, so
+	// bind that shared scope once and let each registration name only its verb.
+	adminHookRoute := func(pattern string, level store.PermLevel, next http.HandlerFunc) {
+		s.route(pattern, s.requirePerm(store.ScopeAdministration, level, next))
+	}
+	adminHookRoute("POST /api/v3/repos/{owner}/{repo}/hooks", store.PermWrite, s.handleCreateHook)
+	adminHookRoute("GET /api/v3/repos/{owner}/{repo}/hooks", store.PermRead, s.handleListHooks)
+	adminHookRoute("GET /api/v3/repos/{owner}/{repo}/hooks/{id}", store.PermRead, s.handleGetHook)
+	adminHookRoute("PATCH /api/v3/repos/{owner}/{repo}/hooks/{id}", store.PermWrite, s.handleUpdateHook)
+	adminHookRoute("DELETE /api/v3/repos/{owner}/{repo}/hooks/{id}", store.PermWrite, s.handleDeleteHook)
+	adminHookRoute("GET /api/v3/repos/{owner}/{repo}/hooks/{id}/deliveries", store.PermRead, s.handleListHookDeliveries)
+	adminHookRoute("GET /api/v3/repos/{owner}/{repo}/hooks/{id}/deliveries/{delivery_id}", store.PermRead, s.handleGetHookDelivery)
+	adminHookRoute("POST /api/v3/repos/{owner}/{repo}/hooks/{id}/deliveries/{delivery_id}/attempts", store.PermWrite, s.handleRedeliverHookDelivery)
+	adminHookRoute("POST /api/v3/repos/{owner}/{repo}/hooks/{id}/pings", store.PermWrite, s.handlePingHook)
+	adminHookRoute("GET /api/v3/repos/{owner}/{repo}/hooks/{id}/config", store.PermRead, s.handleGetHookConfig)
+	adminHookRoute("PATCH /api/v3/repos/{owner}/{repo}/hooks/{id}/config", store.PermWrite, s.handleUpdateHookConfig)
+	adminHookRoute("POST /api/v3/repos/{owner}/{repo}/hooks/{id}/tests", store.PermWrite, s.handleTestHook)
 }
 
 // hookRepo resolves the repository the hook routes name, or writes 404.
@@ -28,7 +35,7 @@ func (s *Server) registerGHHookRoutes() {
 // to, and has nothing to compare against when the path names a repository that
 // does not exist — so every handler here must resolve the repository itself
 // rather than operate on a key that belongs to no repository.
-func (s *Server) hookRepo(w http.ResponseWriter, r *http.Request) *Repo {
+func (s *Server) hookRepo(w http.ResponseWriter, r *http.Request) *store.Repo {
 	repo := s.store.GetRepo(r.PathValue("owner"), r.PathValue("repo"))
 	if repo == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -45,12 +52,12 @@ func (s *Server) rejectUndeliverableHookURL(w http.ResponseWriter, target string
 	// hook that silently never delivers.
 	if err := webhookTargetRequiresHTTPS(target); err != nil {
 		s.logger.Warn().Err(err).Msg("webhook target rejected: https required")
-		writeGHValidationError(w, "Hook", "config.url", "invalid")
+		store.WriteGHValidationError(w, "Hook", "config.url", "invalid")
 		return true
 	}
 	if err := validateWebhookTargetURL(target, s.allowPrivateOutboundTargets); err != nil {
 		s.logger.Warn().Err(err).Msg("webhook target rejected at configuration time")
-		writeGHValidationError(w, "Hook", "config.url", "invalid")
+		store.WriteGHValidationError(w, "Hook", "config.url", "invalid")
 		return true
 	}
 	return false
@@ -86,12 +93,12 @@ func (s *Server) handleCreateHook(w http.ResponseWriter, r *http.Request) {
 
 	// GitHub only supports the "web" hook type via the REST API.
 	if req.Name != "" && req.Name != "web" {
-		writeGHValidationError(w, "Hook", "name", "invalid")
+		store.WriteGHValidationError(w, "Hook", "name", "invalid")
 		return
 	}
 
 	if req.Config.URL == "" {
-		writeGHValidationError(w, "Hook", "url", "missing_field")
+		store.WriteGHValidationError(w, "Hook", "url", "missing_field")
 		return
 	}
 	if s.rejectUndeliverableHookURL(w, req.Config.URL) {
@@ -203,7 +210,7 @@ func (s *Server) handleUpdateHook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.Name != "" && req.Name != "web" {
-		writeGHValidationError(w, "Hook", "name", "invalid")
+		store.WriteGHValidationError(w, "Hook", "name", "invalid")
 		return
 	}
 	// Existence before validity: an unknown hook is 404 whatever the body says.
@@ -215,7 +222,7 @@ func (s *Server) handleUpdateHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	found := s.store.UpdateHook(repoKey, hookID, func(h *Webhook) {
+	found := s.store.UpdateHook(repoKey, hookID, func(h *store.Webhook) {
 		if req.Config != nil {
 			if req.Config.URL != "" {
 				h.URL = req.Config.URL
@@ -336,11 +343,11 @@ func (s *Server) handlePingHook(w http.ResponseWriter, r *http.Request) {
 // hookConfigJSON renders a webhook's config sub-object in the published
 // webhook-config shape. The secret is never echoed back in cleartext — real
 // GitHub masks a configured secret as "********".
-func hookConfigJSON(h *Webhook) map[string]interface{} {
+func hookConfigJSON(h *store.Webhook) map[string]interface{} {
 	config := map[string]interface{}{
 		"url":          h.URL,
-		"content_type": coalesceStr(h.ContentType, "form"),
-		"insecure_ssl": coalesceStr(h.InsecureSSL, "0"),
+		"content_type": store.CoalesceStr(h.ContentType, "form"),
+		"insecure_ssl": store.CoalesceStr(h.InsecureSSL, "0"),
 	}
 	if h.Secret != "" {
 		config["secret"] = "********"
@@ -398,7 +405,7 @@ func (s *Server) handleUpdateHookConfig(w http.ResponseWriter, r *http.Request) 
 	if req.URL != nil && s.rejectUndeliverableHookURL(w, *req.URL) {
 		return
 	}
-	found := s.store.UpdateHook(repoKey, hookID, func(h *Webhook) {
+	found := s.store.UpdateHook(repoKey, hookID, func(h *store.Webhook) {
 		if req.URL != nil {
 			h.URL = *req.URL
 		}
@@ -441,7 +448,7 @@ func (s *Server) handleTestHook(w http.ResponseWriter, r *http.Request) {
 	if hookMatchesEvent(hook, "push") {
 		sender := ghUserFromContext(r.Context())
 		branch := repo.DefaultBranch
-		headSha := resolveBranchSha(s.store.GetGitStorage(r.PathValue("owner"), r.PathValue("repo")), branch)
+		headSha := store.ResolveBranchSha(s.store.GetGitStorage(r.PathValue("owner"), r.PathValue("repo")), branch)
 		if headSha == "" {
 			writeGHError(w, http.StatusUnprocessableEntity, "No default branch commit found")
 			return
@@ -522,7 +529,7 @@ func (s *Server) handleRedeliverHookDelivery(w http.ResponseWriter, r *http.Requ
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	var original *WebhookDelivery
+	var original *store.WebhookDelivery
 	for _, d := range s.store.ListDeliveries(hookID) {
 		if d.ID == deliveryID {
 			original = d
@@ -542,7 +549,7 @@ func (s *Server) handleRedeliverHookDelivery(w http.ResponseWriter, r *http.Requ
 
 // hookToJSON serialises a Webhook to GitHub's published hook object shape.
 // r and owner/repo are needed to construct the self-referential API URLs.
-func (s *Server) hookToJSON(h *Webhook, lastResp *HookLastResponse, r *http.Request, owner, repo string) map[string]interface{} {
+func (s *Server) hookToJSON(h *store.Webhook, lastResp *store.HookLastResponse, r *http.Request, owner, repo string) map[string]interface{} {
 	base := s.baseURL(r)
 	hookBase := base + "/api/v3/repos/" + owner + "/" + repo + "/hooks/" + strconv.Itoa(h.ID)
 
@@ -578,7 +585,7 @@ func (s *Server) hookToJSON(h *Webhook, lastResp *HookLastResponse, r *http.Requ
 
 // hookLastResponseJSON renders the hook's last_response field. Before any
 // delivery has occurred GitHub returns {code:null,status:"unused",message:null}.
-func hookLastResponseJSON(lr *HookLastResponse) map[string]interface{} {
+func hookLastResponseJSON(lr *store.HookLastResponse) map[string]interface{} {
 	if lr == nil {
 		return map[string]interface{}{
 			"code":    nil,
@@ -626,7 +633,7 @@ func deliveryStatus(statusCode int) string {
 	return strconv.Itoa(statusCode) + " " + http.StatusText(statusCode)
 }
 
-func deliveryToJSON(d *WebhookDelivery) map[string]interface{} {
+func deliveryToJSON(d *store.WebhookDelivery) map[string]interface{} {
 	out := map[string]interface{}{
 		"id":              d.ID,
 		"guid":            d.GUID,

@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // stressDuration returns how long the storm harnesses run. The default keeps
@@ -240,7 +242,7 @@ func TestStressCRUDStorm(t *testing.T) {
 // must preserve under any interleaving: every id-keyed record is reachable
 // through its secondary (name/slug) index and vice-versa, and the monotonic
 // Next* allocators stayed ahead of every allocated id.
-func assertStoreIndexInvariants(t *testing.T, st *Store) {
+func assertStoreIndexInvariants(t *testing.T, st *store.Store) {
 	t.Helper()
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()

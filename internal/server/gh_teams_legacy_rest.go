@@ -3,6 +3,8 @@ package bleephub
 import (
 	"net/http"
 	"strconv"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // Legacy ID-addressed team endpoints (/teams/{team_id}/…). These are
@@ -11,26 +13,26 @@ import (
 // handlers run the same logic, so both surfaces always agree.
 
 func (s *Server) registerGHLegacyTeamRoutes() {
-	s.route("GET /api/v3/teams/{team_id}", s.requirePerm(scopeMembers, permRead, s.handleLegacyGetTeam))
-	s.route("PATCH /api/v3/teams/{team_id}", s.requirePerm(scopeMembers, permWrite, s.handleLegacyUpdateTeam))
-	s.route("DELETE /api/v3/teams/{team_id}", s.requirePerm(scopeMembers, permWrite, s.handleLegacyDeleteTeam))
-	s.route("GET /api/v3/teams/{team_id}/teams", s.requirePerm(scopeMembers, permRead, s.handleLegacyListChildTeams))
-	s.route("GET /api/v3/teams/{team_id}/invitations", s.requirePerm(scopeMembers, permRead, s.handleLegacyListTeamInvitations))
+	s.route("GET /api/v3/teams/{team_id}", s.requirePerm(store.ScopeMembers, store.PermRead, s.handleLegacyGetTeam))
+	s.route("PATCH /api/v3/teams/{team_id}", s.requirePerm(store.ScopeMembers, store.PermWrite, s.handleLegacyUpdateTeam))
+	s.route("DELETE /api/v3/teams/{team_id}", s.requirePerm(store.ScopeMembers, store.PermWrite, s.handleLegacyDeleteTeam))
+	s.route("GET /api/v3/teams/{team_id}/teams", s.requirePerm(store.ScopeMembers, store.PermRead, s.handleLegacyListChildTeams))
+	s.route("GET /api/v3/teams/{team_id}/invitations", s.requirePerm(store.ScopeMembers, store.PermRead, s.handleLegacyListTeamInvitations))
 
-	s.route("GET /api/v3/teams/{team_id}/members", s.requirePerm(scopeMembers, permRead, s.handleLegacyListTeamMembers))
-	s.route("GET /api/v3/teams/{team_id}/members/{username}", s.requirePerm(scopeMembers, permRead, s.handleLegacyCheckTeamMember))
-	s.route("PUT /api/v3/teams/{team_id}/members/{username}", s.requirePerm(scopeMembers, permWrite, s.handleLegacyAddTeamMember))
-	s.route("DELETE /api/v3/teams/{team_id}/members/{username}", s.requirePerm(scopeMembers, permWrite, s.handleLegacyRemoveTeamMember))
+	s.route("GET /api/v3/teams/{team_id}/members", s.requirePerm(store.ScopeMembers, store.PermRead, s.handleLegacyListTeamMembers))
+	s.route("GET /api/v3/teams/{team_id}/members/{username}", s.requirePerm(store.ScopeMembers, store.PermRead, s.handleLegacyCheckTeamMember))
+	s.route("PUT /api/v3/teams/{team_id}/members/{username}", s.requirePerm(store.ScopeMembers, store.PermWrite, s.handleLegacyAddTeamMember))
+	s.route("DELETE /api/v3/teams/{team_id}/members/{username}", s.requirePerm(store.ScopeMembers, store.PermWrite, s.handleLegacyRemoveTeamMember))
 
-	s.route("GET /api/v3/teams/{team_id}/memberships/{username}", s.requirePerm(scopeMembers, permRead, s.handleLegacyGetTeamMembership))
-	s.route("PUT /api/v3/teams/{team_id}/memberships/{username}", s.requirePerm(scopeMembers, permWrite, s.handleLegacyPutTeamMembership))
-	s.route("DELETE /api/v3/teams/{team_id}/memberships/{username}", s.requirePerm(scopeMembers, permWrite, s.handleLegacyDeleteTeamMembership))
+	s.route("GET /api/v3/teams/{team_id}/memberships/{username}", s.requirePerm(store.ScopeMembers, store.PermRead, s.handleLegacyGetTeamMembership))
+	s.route("PUT /api/v3/teams/{team_id}/memberships/{username}", s.requirePerm(store.ScopeMembers, store.PermWrite, s.handleLegacyPutTeamMembership))
+	s.route("DELETE /api/v3/teams/{team_id}/memberships/{username}", s.requirePerm(store.ScopeMembers, store.PermWrite, s.handleLegacyDeleteTeamMembership))
 
-	s.route("GET /api/v3/teams/{team_id}/repos", s.requirePerm(scopeMembers, permRead, s.handleLegacyListTeamRepos))
-	s.route("GET /api/v3/teams/{team_id}/repos/{owner}/{repo}", s.requirePerm(scopeMembers, permRead, s.handleLegacyCheckTeamRepo))
+	s.route("GET /api/v3/teams/{team_id}/repos", s.requirePerm(store.ScopeMembers, store.PermRead, s.handleLegacyListTeamRepos))
+	s.route("GET /api/v3/teams/{team_id}/repos/{owner}/{repo}", s.requirePerm(store.ScopeMembers, store.PermRead, s.handleLegacyCheckTeamRepo))
 	teamRepoWrite := []permissionGrant{
-		{scope: scopeMembers, level: permRead},
-		{scope: scopeAdministration, level: permWrite},
+		{scope: store.ScopeMembers, level: store.PermRead},
+		{scope: store.ScopeAdministration, level: store.PermWrite},
 	}
 	s.route("PUT /api/v3/teams/{team_id}/repos/{owner}/{repo}", s.requirePerms(teamRepoWrite, s.handleLegacyAddTeamRepo))
 	s.route("DELETE /api/v3/teams/{team_id}/repos/{owner}/{repo}", s.requirePerms(teamRepoWrite, s.handleLegacyRemoveTeamRepo))
@@ -38,7 +40,7 @@ func (s *Server) registerGHLegacyTeamRoutes() {
 
 // resolveLegacyTeam resolves the numeric {team_id} path parameter to the
 // team and its organization, writing a 404 when either doesn't resolve.
-func (s *Server) resolveLegacyTeam(w http.ResponseWriter, r *http.Request) (*Team, *Org) {
+func (s *Server) resolveLegacyTeam(w http.ResponseWriter, r *http.Request) (*store.Team, *store.Org) {
 	id, err := strconv.Atoi(r.PathValue("team_id"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -60,7 +62,7 @@ func (s *Server) resolveLegacyTeam(w http.ResponseWriter, r *http.Request) (*Tea
 // resolveLegacyTeamForMember resolves {team_id} and additionally
 // requires the caller to be an active member of the owning org — team
 // structure is invisible to non-members, matching the slug surface.
-func (s *Server) resolveLegacyTeamForMember(w http.ResponseWriter, r *http.Request) (*Team, *Org, *User) {
+func (s *Server) resolveLegacyTeamForMember(w http.ResponseWriter, r *http.Request) (*store.Team, *store.Org, *store.User) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
@@ -79,7 +81,7 @@ func (s *Server) resolveLegacyTeamForMember(w http.ResponseWriter, r *http.Reque
 
 // legacyTeamMembershipJSON renders the documented `team-membership`
 // members (url, role, state) with the legacy ID-addressed URL.
-func legacyTeamMembershipJSON(baseURL string, teamID int, login string, role TeamRole, state MembershipState) map[string]interface{} {
+func legacyTeamMembershipJSON(baseURL string, teamID int, login string, role store.TeamRole, state store.MembershipState) map[string]interface{} {
 	return map[string]interface{}{
 		"url":   baseURL + "/api/v3/teams/" + strconv.Itoa(teamID) + "/memberships/" + login,
 		"role":  role,
@@ -170,7 +172,7 @@ func (s *Server) handleLegacyListTeamMembers(w http.ResponseWriter, r *http.Requ
 	members := s.store.ListTeamMembers(org.Login, team.Slug)
 	result := make([]map[string]interface{}, 0, len(members))
 	for _, u := range members {
-		result = append(result, userToJSON(u))
+		result = append(result, store.UserToJSON(u))
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, result))
 }
@@ -215,11 +217,11 @@ func (s *Server) handleLegacyAddTeamMember(w http.ResponseWriter, r *http.Reques
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if m := s.store.GetMembership(org.Login, target.ID); m == nil || m.State != MembershipStateActive {
+	if m := s.store.GetMembership(org.Login, target.ID); m == nil || m.State != store.MembershipStateActive {
 		writeGHError(w, http.StatusUnprocessableEntity, "User is not an active member of this organization.")
 		return
 	}
-	s.store.SetTeamMembership(org.Login, team.Slug, target.ID, TeamRoleMember)
+	s.store.SetTeamMembership(org.Login, team.Slug, target.ID, store.TeamRoleMember)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -264,7 +266,7 @@ func (s *Server) handleLegacyGetTeamMembership(w http.ResponseWriter, r *http.Re
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	state := MembershipStateActive
+	state := store.MembershipStateActive
 	if m := s.store.GetMembership(org.Login, target.ID); m != nil {
 		state = m.State
 	}
@@ -296,23 +298,23 @@ func (s *Server) handleLegacyPutTeamMembership(w http.ResponseWriter, r *http.Re
 	if !decodeJSONBodyOptional(w, r, &req) {
 		return
 	}
-	role := TeamRole(req.Role)
+	role := store.TeamRole(req.Role)
 	if role == "" {
-		role = TeamRoleMember
+		role = store.TeamRoleMember
 	}
-	if role != TeamRoleMember && role != TeamRoleMaintainer {
-		writeGHValidationError(w, "TeamMembership", "role", "invalid")
+	if role != store.TeamRoleMember && role != store.TeamRoleMaintainer {
+		store.WriteGHValidationError(w, "TeamMembership", "role", "invalid")
 		return
 	}
 
-	if !s.canManageTeam(r.Context(), user, org, team, role == TeamRoleMaintainer) {
+	if !s.canManageTeam(r.Context(), user, org, team, role == store.TeamRoleMaintainer) {
 		writeGHError(w, http.StatusForbidden, "Must be an organization owner or team maintainer.")
 		return
 	}
 
 	orgMembership := s.store.GetMembership(org.Login, target.ID)
 	if orgMembership == nil {
-		orgMembership = s.store.SetMembership(org.Login, target.ID, OrgRoleMember, MembershipStatePending)
+		orgMembership = s.store.SetMembership(org.Login, target.ID, store.OrgRoleMember, store.MembershipStatePending)
 		s.emitOrgMembershipEvent(org, "member_invited", orgMembership, target, user)
 	}
 
@@ -399,11 +401,11 @@ func (s *Server) handleLegacyAddTeamRepo(w http.ResponseWriter, r *http.Request)
 	if !decodeJSONBodyOptional(w, r, &req) {
 		return
 	}
-	perm := TeamPermission(req.Permission)
+	perm := store.TeamPermission(req.Permission)
 	switch perm {
-	case "", TeamPermissionPull, TeamPermissionPush, TeamPermissionAdmin:
+	case "", store.TeamPermissionPull, store.TeamPermissionPush, store.TeamPermissionAdmin:
 	default:
-		writeGHValidationError(w, "TeamRepo", "permission", "invalid")
+		store.WriteGHValidationError(w, "TeamRepo", "permission", "invalid")
 		return
 	}
 	s.store.SetTeamRepoPermission(org.Login, team.Slug, owner+"/"+repoName, perm)

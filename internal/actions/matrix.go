@@ -5,11 +5,13 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // ExpandMatrix produces all combinations from a MatrixDef.
 // It computes the Cartesian product of Values, applies includes, then excludes.
-func ExpandMatrix(m *MatrixDef) []map[string]interface{} {
+func ExpandMatrix(m *store.MatrixDef) []map[string]interface{} {
 	if m == nil || len(m.Values) == 0 {
 		// No matrix values — just apply includes if any
 		if len(m.Include) > 0 {
@@ -180,5 +182,5 @@ func MatrixJobName(baseKey string, values map[string]interface{}, declarationOrd
 }
 
 func matrixValuesEqual(left, right interface{}) bool {
-	return reflect.DeepEqual(normalizeYAMLValue(left), normalizeYAMLValue(right))
+	return reflect.DeepEqual(store.NormalizeYAMLValue(left), store.NormalizeYAMLValue(right))
 }

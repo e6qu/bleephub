@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-billy/v5/memfs"
 	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -51,7 +52,7 @@ func newFuzzFixture(t *testing.T) *fuzzFixture {
 		t.Fatalf("seed: create org")
 		return nil
 	}
-	team := s.store.CreateTeam("fuzz-org", "Fuzz Team", TeamOptions{Description: "t"})
+	team := s.store.CreateTeam("fuzz-org", "Fuzz Team", store.TeamOptions{Description: "t"})
 	if team == nil {
 		t.Fatalf("seed: create team")
 		return nil
@@ -86,7 +87,7 @@ func newFuzzFixture(t *testing.T) *fuzzFixture {
 	// with a credential that is valid but limited.
 	scoped := "fuzz-scoped-token-000000000000000000000000"
 	s.store.Mu.Lock()
-	s.store.Tokens[scoped] = &Token{Value: scoped, UserID: admin.ID, Scopes: "public_repo", CreatedAt: fixedTestTime.UTC()}
+	s.store.Tokens[scoped] = &store.Token{Value: scoped, UserID: admin.ID, Scopes: "public_repo", CreatedAt: fixedTestTime.UTC()}
 	s.store.Mu.Unlock()
 
 	handler := s.requestHandler()
@@ -94,7 +95,7 @@ func newFuzzFixture(t *testing.T) *fuzzFixture {
 	return &fuzzFixture{
 		s:           s,
 		handler:     handler,
-		adminToken:  AdminToken(),
+		adminToken:  store.AdminToken(),
 		scopedToken: scoped,
 		segVocab: []string{
 			"admin", "fuzz-org", "fuzz-repo", "fuzz-team",

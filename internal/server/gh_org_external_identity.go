@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 type teamSyncGroupRequest struct {
@@ -18,26 +20,26 @@ type teamSyncGroupRequest struct {
 }
 
 func (s *Server) registerGHExternalIdentityRoutes() {
-	s.route("GET /api/v3/orgs/{org}/external-groups", s.requirePerm(scopeMembers, permRead, s.handleListOrgExternalGroups))
-	s.route("GET /api/v3/orgs/{org}/external-group/{group_id}", s.requirePerm(scopeMembers, permRead, s.handleGetOrgExternalGroup))
-	s.route("GET /api/v3/orgs/{org}/team-sync/groups", s.requirePerm(scopeMembers, permRead, s.handleListOrgTeamSyncGroups))
+	s.route("GET /api/v3/orgs/{org}/external-groups", s.requirePerm(store.ScopeMembers, store.PermRead, s.handleListOrgExternalGroups))
+	s.route("GET /api/v3/orgs/{org}/external-group/{group_id}", s.requirePerm(store.ScopeMembers, store.PermRead, s.handleGetOrgExternalGroup))
+	s.route("GET /api/v3/orgs/{org}/team-sync/groups", s.requirePerm(store.ScopeMembers, store.PermRead, s.handleListOrgTeamSyncGroups))
 
-	s.route("GET /api/v3/orgs/{org}/teams/{team_slug}/external-groups", s.requirePerm(scopeMembers, permRead, s.handleListTeamExternalGroups))
-	s.route("PATCH /api/v3/orgs/{org}/teams/{team_slug}/external-groups", s.requirePerm(scopeMembers, permWrite, s.handleLinkTeamExternalGroup))
-	s.route("DELETE /api/v3/orgs/{org}/teams/{team_slug}/external-groups", s.requirePerm(scopeMembers, permWrite, s.handleUnlinkTeamExternalGroups))
-	s.route("GET /api/v3/orgs/{org}/teams/{team_slug}/team-sync/group-mappings", s.requirePerm(scopeMembers, permRead, s.handleGetTeamSyncMappings))
-	s.route("PATCH /api/v3/orgs/{org}/teams/{team_slug}/team-sync/group-mappings", s.requirePerm(scopeMembers, permWrite, s.handleSetTeamSyncMappings))
+	s.route("GET /api/v3/orgs/{org}/teams/{team_slug}/external-groups", s.requirePerm(store.ScopeMembers, store.PermRead, s.handleListTeamExternalGroups))
+	s.route("PATCH /api/v3/orgs/{org}/teams/{team_slug}/external-groups", s.requirePerm(store.ScopeMembers, store.PermWrite, s.handleLinkTeamExternalGroup))
+	s.route("DELETE /api/v3/orgs/{org}/teams/{team_slug}/external-groups", s.requirePerm(store.ScopeMembers, store.PermWrite, s.handleUnlinkTeamExternalGroups))
+	s.route("GET /api/v3/orgs/{org}/teams/{team_slug}/team-sync/group-mappings", s.requirePerm(store.ScopeMembers, store.PermRead, s.handleGetTeamSyncMappings))
+	s.route("PATCH /api/v3/orgs/{org}/teams/{team_slug}/team-sync/group-mappings", s.requirePerm(store.ScopeMembers, store.PermWrite, s.handleSetTeamSyncMappings))
 
-	s.route("GET /api/v3/teams/{team_id}/team-sync/group-mappings", s.requirePerm(scopeMembers, permRead, s.handleGetLegacyTeamSyncMappings))
-	s.route("PATCH /api/v3/teams/{team_id}/team-sync/group-mappings", s.requirePerm(scopeMembers, permWrite, s.handleSetLegacyTeamSyncMappings))
+	s.route("GET /api/v3/teams/{team_id}/team-sync/group-mappings", s.requirePerm(store.ScopeMembers, store.PermRead, s.handleGetLegacyTeamSyncMappings))
+	s.route("PATCH /api/v3/teams/{team_id}/team-sync/group-mappings", s.requirePerm(store.ScopeMembers, store.PermWrite, s.handleSetLegacyTeamSyncMappings))
 }
 
-func (s *Server) resolveOrgExternalIdentityAdmin(w http.ResponseWriter, r *http.Request) *Org {
+func (s *Server) resolveOrgExternalIdentityAdmin(w http.ResponseWriter, r *http.Request) *store.Org {
 	org, _ := s.resolveOrgOwner(w, r)
 	return org
 }
 
-func (s *Server) resolveOrgTeamForExternalIdentity(w http.ResponseWriter, r *http.Request) (*Org, *Team) {
+func (s *Server) resolveOrgTeamForExternalIdentity(w http.ResponseWriter, r *http.Request) (*store.Org, *store.Team) {
 	org := s.resolveOrgExternalIdentityAdmin(w, r)
 	if org == nil {
 		return nil, nil
@@ -50,7 +52,7 @@ func (s *Server) resolveOrgTeamForExternalIdentity(w http.ResponseWriter, r *htt
 	return org, team
 }
 
-func (s *Server) resolveLegacyTeamForExternalIdentity(w http.ResponseWriter, r *http.Request) (*Org, *Team) {
+func (s *Server) resolveLegacyTeamForExternalIdentity(w http.ResponseWriter, r *http.Request) (*store.Org, *store.Team) {
 	id, err := strconv.Atoi(r.PathValue("team_id"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -69,14 +71,14 @@ func (s *Server) resolveLegacyTeamForExternalIdentity(w http.ResponseWriter, r *
 	return org, team
 }
 
-func externalGroupSummary(group *OrgExternalIdentityGroup) map[string]interface{} {
+func externalGroupSummary(group *store.OrgExternalIdentityGroup) map[string]interface{} {
 	return map[string]interface{}{
 		"group_id": group.NumericID, "group_name": group.Name,
 		"updated_at": group.UpdatedAt.UTC().Format(time.RFC3339),
 	}
 }
 
-func teamSyncGroupJSON(group *OrgExternalIdentityGroup, mapped bool) map[string]interface{} {
+func teamSyncGroupJSON(group *store.OrgExternalIdentityGroup, mapped bool) map[string]interface{} {
 	status := "unsynced"
 	var syncedAt interface{}
 	if mapped {
@@ -89,8 +91,8 @@ func teamSyncGroupJSON(group *OrgExternalIdentityGroup, mapped bool) map[string]
 	}
 }
 
-func copyExternalGroups(groups map[string]*OrgExternalIdentityGroup) []*OrgExternalIdentityGroup {
-	result := make([]*OrgExternalIdentityGroup, 0, len(groups))
+func copyExternalGroups(groups map[string]*store.OrgExternalIdentityGroup) []*store.OrgExternalIdentityGroup {
+	result := make([]*store.OrgExternalIdentityGroup, 0, len(groups))
 	for _, group := range groups {
 		copyGroup := *group
 		copyGroup.MemberIDs = append([]int(nil), group.MemberIDs...)
@@ -115,7 +117,7 @@ func (s *Server) handleListOrgExternalGroups(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, map[string]interface{}{"groups": paginateAndLink(w, r, result)})
 }
 
-func (s *Server) externalGroupByNumericID(orgLogin string, id int) *OrgExternalIdentityGroup {
+func (s *Server) externalGroupByNumericID(orgLogin string, id int) *store.OrgExternalIdentityGroup {
 	s.store.Mu.RLock()
 	defer s.store.Mu.RUnlock()
 	for _, group := range s.store.OrgExternalGroups[orgLogin] {
@@ -187,10 +189,10 @@ func (s *Server) handleListOrgTeamSyncGroups(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, map[string]interface{}{"groups": paginateAndLink(w, r, result)})
 }
 
-func (s *Server) listTeamExternalGroups(w http.ResponseWriter, r *http.Request, org *Org, team *Team) {
+func (s *Server) listTeamExternalGroups(w http.ResponseWriter, r *http.Request, org *store.Org, team *store.Team) {
 	s.store.Mu.RLock()
 	ids := append([]string(nil), s.store.TeamExternalGroupIDs[team.ID]...)
-	groups := make([]*OrgExternalIdentityGroup, 0, len(ids))
+	groups := make([]*store.OrgExternalIdentityGroup, 0, len(ids))
 	for _, id := range ids {
 		if group := s.store.OrgExternalGroups[org.Login][id]; group != nil {
 			copyGroup := *group
@@ -216,15 +218,15 @@ func (s *Server) persistTeamExternalGroupsLocked(orgLogin string, teamID int) {
 	// One transaction: the org's external-group set and the team's group binding
 	// commit together, so a crash cannot leave a team bound to a group the org no
 	// longer records, or vice versa (STORE-001/002).
-	batch := newPersistBatch(s.store.Persist)
+	batch := store.NewPersistBatch(s.store.Persist)
 	batch.Put("org_external_groups", orgLogin, s.store.OrgExternalGroups[orgLogin])
 	batch.Put("team_external_group_ids", strconv.Itoa(teamID), s.store.TeamExternalGroupIDs[teamID])
 	if err := batch.Commit(); err != nil {
-		panic(&persistenceFailure{Op: "batch", Bucket: "org_external_groups", Err: err})
+		panic(&store.PersistenceFailure{Op: "batch", Bucket: "org_external_groups", Err: err})
 	}
 }
 
-func (s *Server) syncExternalTeamMembersLocked(org *Org, team *Team) {
+func (s *Server) syncExternalTeamMembersLocked(org *store.Org, team *store.Team) {
 	for _, groupID := range s.store.TeamExternalGroupIDs[team.ID] {
 		group := s.store.OrgExternalGroups[org.Login][groupID]
 		if group == nil {
@@ -255,12 +257,12 @@ func (s *Server) handleLinkTeamExternalGroup(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if req.GroupID == nil {
-		writeGHValidationError(w, "ExternalGroup", "group_id", "missing_field")
+		store.WriteGHValidationError(w, "ExternalGroup", "group_id", "missing_field")
 		return
 	}
 	group := s.externalGroupByNumericID(org.Login, *req.GroupID)
 	if group == nil {
-		writeGHValidationError(w, "ExternalGroup", "group_id", "invalid")
+		store.WriteGHValidationError(w, "ExternalGroup", "group_id", "invalid")
 		return
 	}
 	s.store.Mu.Lock()
@@ -288,10 +290,10 @@ func (s *Server) handleUnlinkTeamExternalGroups(w http.ResponseWriter, r *http.R
 	_ = org
 }
 
-func (s *Server) teamSyncMappings(w http.ResponseWriter, r *http.Request, org *Org, team *Team) {
+func (s *Server) teamSyncMappings(w http.ResponseWriter, r *http.Request, org *store.Org, team *store.Team) {
 	s.store.Mu.RLock()
 	ids := append([]string(nil), s.store.TeamExternalGroupIDs[team.ID]...)
-	groups := make([]*OrgExternalIdentityGroup, 0, len(ids))
+	groups := make([]*store.OrgExternalIdentityGroup, 0, len(ids))
 	for _, id := range ids {
 		if group := s.store.OrgExternalGroups[org.Login][id]; group != nil {
 			copyGroup := *group
@@ -320,7 +322,7 @@ func (s *Server) handleGetLegacyTeamSyncMappings(w http.ResponseWriter, r *http.
 	}
 }
 
-func (s *Server) setTeamSyncMappings(w http.ResponseWriter, r *http.Request, org *Org, team *Team) {
+func (s *Server) setTeamSyncMappings(w http.ResponseWriter, r *http.Request, org *store.Org, team *store.Team) {
 	var req teamSyncGroupRequest
 	if !decodeJSONBody(w, r, &req) {
 		return
@@ -328,7 +330,7 @@ func (s *Server) setTeamSyncMappings(w http.ResponseWriter, r *http.Request, org
 	seen := map[string]bool{}
 	for _, group := range req.Groups {
 		if strings.TrimSpace(group.ID) == "" || strings.TrimSpace(group.Name) == "" || seen[group.ID] {
-			writeGHValidationError(w, "TeamSyncGroup", "groups", "invalid")
+			store.WriteGHValidationError(w, "TeamSyncGroup", "groups", "invalid")
 			return
 		}
 		seen[group.ID] = true
@@ -336,13 +338,13 @@ func (s *Server) setTeamSyncMappings(w http.ResponseWriter, r *http.Request, org
 	now := s.currentTime()
 	s.store.Mu.Lock()
 	if s.store.OrgExternalGroups[org.Login] == nil {
-		s.store.OrgExternalGroups[org.Login] = map[string]*OrgExternalIdentityGroup{}
+		s.store.OrgExternalGroups[org.Login] = map[string]*store.OrgExternalIdentityGroup{}
 	}
 	groupIDs := make([]string, 0, len(req.Groups))
 	for _, input := range req.Groups {
 		group := s.store.OrgExternalGroups[org.Login][input.ID]
 		if group == nil {
-			group = &OrgExternalIdentityGroup{
+			group = &store.OrgExternalIdentityGroup{
 				ID: input.ID, NumericID: s.store.NextOrgExternalGroupID,
 			}
 			s.store.NextOrgExternalGroupID++

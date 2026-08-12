@@ -2,6 +2,7 @@ package bleephub
 
 import (
 	"github.com/e6qu/bleephub/internal/graphqlapi"
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/graphql-go/graphql"
 
 	"bytes"
@@ -18,7 +19,7 @@ import (
 	"github.com/graphql-go/graphql/language/source"
 )
 
-func graphQLRequestOnServer(t *testing.T, server *Server, user *User, query string) map[string]interface{} {
+func graphQLRequestOnServer(t *testing.T, server *Server, user *store.User, query string) map[string]interface{} {
 	t.Helper()
 	body, err := json.Marshal(map[string]interface{}{"query": query})
 	if err != nil {
@@ -126,7 +127,7 @@ func TestGraphQLRepositoryConnectionHonorsAffiliationOrderAndBackwardPagination(
 		t.Fatal("seeded admin is missing")
 	}
 	now := server.store.CurrentTime()
-	other := &User{
+	other := &store.User{
 		ID: admin.ID + 1, NodeID: "U_kgDOgraphqlother", Login: "other",
 		Name: "Other", Email: "other@example.test", Type: "User",
 		StarredRepos: map[string]bool{}, CreatedAt: now, UpdatedAt: now,
@@ -147,7 +148,7 @@ func TestGraphQLRepositoryConnectionHonorsAffiliationOrderAndBackwardPagination(
 	if !server.store.AddRepoCollaborator("other", "beta", admin.Login, "pull") {
 		t.Fatal("seed collaborator grant")
 	}
-	if repos := server.store.ListReposForAuthUser(admin, RepoListOptions{
+	if repos := server.store.ListReposForAuthUser(admin, store.RepoListOptions{
 		Affiliation: "owner,collaborator",
 		NoPaginate:  true,
 	}); len(repos) != 3 {

@@ -2,6 +2,8 @@ package bleephub
 
 import (
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // TestEnterpriseStatePersistenceReload verifies every enterprise store
@@ -14,11 +16,11 @@ func TestEnterpriseStatePersistenceReload(t *testing.T) {
 	t.Setenv("BLEEPHUB_DATA_DIR", dir)
 
 	// --- session 1: create enterprise state, then close ---
-	p1, err := NewPersistence()
+	p1, err := store.NewPersistence()
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	st1 := NewStore()
+	st1 := store.NewStore()
 	if err := st1.SetPersistence(p1); err != nil {
 		t.Fatalf("SetPersistence: %v", err)
 	}
@@ -33,7 +35,7 @@ func TestEnterpriseStatePersistenceReload(t *testing.T) {
 	st1.AddEnterpriseTeamMember(team, admin.ID)
 	st1.AddEnterpriseTeamOrg(team, "reload-org")
 
-	cfg := st1.CreateEnterpriseCodeSecurityConfig(&EnterpriseCodeSecurityConfiguration{
+	cfg := st1.CreateEnterpriseCodeSecurityConfig(&store.EnterpriseCodeSecurityConfiguration{
 		Name:            "reload-config",
 		Description:     "reload coverage",
 		SecretScanning:  "enabled",
@@ -41,11 +43,11 @@ func TestEnterpriseStatePersistenceReload(t *testing.T) {
 		Enforcement:     "enforced",
 	})
 	st1.SetEnterpriseCodeSecurityConfigDefault(cfg, "public")
-	enterpriseRuleset := st1.CreateEnterpriseRuleset("bleephub", &Ruleset{
+	enterpriseRuleset := st1.CreateEnterpriseRuleset("bleephub", &store.Ruleset{
 		Name: "reload-enterprise-ruleset", Target: "branch", Enforcement: "active",
-		Rules: []Rule{{Type: "deletion"}},
+		Rules: []store.Rule{{Type: "deletion"}},
 	})
-	enterprisePatterns := st1.CreateSecretScanningCustomPatterns("enterprise:bleephub", []secretScanningPatternCreate{{
+	enterprisePatterns := st1.CreateSecretScanningCustomPatterns("enterprise:bleephub", []store.SecretScanningPatternCreate{{
 		Name: "reload-enterprise-pattern", Pattern: `ent_[0-9a-f]{16}`,
 	}})
 	repo := st1.CreateRepo(admin, "ent-reload-repo", "", false)
@@ -57,7 +59,7 @@ func TestEnterpriseStatePersistenceReload(t *testing.T) {
 	st1.Mu.Lock()
 	st1.EnterpriseCodeSecurityRepoConfigs[repo.ID] = cfg.ID
 	st1.Persist.MustPut("enterprise_code_security_attachments", "1",
-		&EnterpriseCodeSecurityAttachment{RepoID: repo.ID, ConfigID: cfg.ID})
+		&store.EnterpriseCodeSecurityAttachment{RepoID: repo.ID, ConfigID: cfg.ID})
 	st1.Mu.Unlock()
 
 	st1.SetEnterpriseDependabotRepoAccess([]int{repo.ID})
@@ -73,74 +75,74 @@ func TestEnterpriseStatePersistenceReload(t *testing.T) {
 	st1.Mu.Lock()
 	expiry := "2030-01-02T03:04:05Z"
 	customLink := "https://example.test/security"
-	st1.EnterpriseSettings.Announcement = &EnterpriseAnnouncement{
+	st1.EnterpriseSettings.Announcement = &store.EnterpriseAnnouncement{
 		Announcement: "Persistent announcement", ExpiresAt: &expiry, UserDismissible: true,
 	}
 	st1.EnterpriseSettings.AccessRestrictionsEnabled = true
-	st1.EnterpriseSettings.CodeSecurityAndAnalysis = EnterpriseCodeSecurity{
+	st1.EnterpriseSettings.CodeSecurityAndAnalysis = store.EnterpriseCodeSecurity{
 		AdvancedSecurityEnabledForNewRepositories: true,
 		SecretScanningPushProtectionCustomLink:    &customLink,
 	}
 	pausedAt := st1.CurrentTime()
-	st1.EnterpriseSettings.AuditLogStreams = []*EnterpriseAuditLogStream{{
+	st1.EnterpriseSettings.AuditLogStreams = []*store.EnterpriseAuditLogStream{{
 		ID: 7, StreamType: "Datadog", StreamDetails: "EU1", Enabled: false,
 		VendorSpecific: map[string]interface{}{"site": "EU1", "encrypted_token": "sealed"},
 		CreatedAt:      pausedAt, UpdatedAt: pausedAt, PausedAt: &pausedAt,
 	}}
 	st1.EnterpriseSettings.NextAuditLogStreamID = 8
-	st1.EnterpriseSettings.RepositoryCustomProperties["environment"] = &CustomProperty{
+	st1.EnterpriseSettings.RepositoryCustomProperties["environment"] = &store.CustomProperty{
 		PropertyName: "environment", ValueType: "single_select", AllowedValues: []string{"prod", "dev"},
 	}
-	st1.EnterpriseSettings.OrganizationCustomProperties["cost_center"] = &CustomProperty{
+	st1.EnterpriseSettings.OrganizationCustomProperties["cost_center"] = &store.CustomProperty{
 		PropertyName: "cost_center", ValueType: "string", ValuesEditableBy: "enterprise_actors",
 	}
 	st1.EnterpriseSettings.OrganizationPropertyValues["reload-org"] = map[string]interface{}{"cost_center": "CC-42"}
-	st1.EnterpriseSettings.SCIMUsers["scim-user-reload"] = &EnterpriseSCIMUser{
+	st1.EnterpriseSettings.SCIMUsers["scim-user-reload"] = &store.EnterpriseSCIMUser{
 		Schemas: []string{scimUserSchema}, ID: "scim-user-reload", ExternalID: "directory-user-reload",
 		UserName: admin.Login, DisplayName: "Reload SCIM User", Active: true,
 		UserID: admin.ID, CreatedAt: st1.CurrentTime(), UpdatedAt: st1.CurrentTime(),
 	}
-	st1.EnterpriseSettings.SCIMGroups["scim-group-reload"] = &EnterpriseSCIMGroup{
+	st1.EnterpriseSettings.SCIMGroups["scim-group-reload"] = &store.EnterpriseSCIMGroup{
 		Schemas: []string{scimGroupSchema}, ID: "scim-group-reload", ExternalID: "directory-group-reload",
-		DisplayName: "Reload Crew", Members: []EnterpriseSCIMMember{{Value: "scim-user-reload"}},
+		DisplayName: "Reload Crew", Members: []store.EnterpriseSCIMMember{{Value: "scim-user-reload"}},
 		TeamID: team.ID, CreatedAt: st1.CurrentTime(), UpdatedAt: st1.CurrentTime(),
 	}
 	st1.EnterpriseSettings.EnterpriseRoleTeamAssignments[8030] = []int{team.ID}
 	st1.EnterpriseSettings.EnterpriseRoleUserAssignments[8031] = []int{admin.ID}
-	st1.EnterpriseSettings.VisualStudioSubscriptions["00000000-0000-0000-0000-000000000042"] = &VisualStudioSubscription{
+	st1.EnterpriseSettings.VisualStudioSubscriptions["00000000-0000-0000-0000-000000000042"] = &store.VisualStudioSubscription{
 		SubscriptionID: "00000000-0000-0000-0000-000000000042",
 		Email:          admin.Email, Username: admin.Login, ManualMatch: true,
 	}
-	st1.EnterpriseSettings.InnerSourceSyncJobs["external-vulnerability-sync-reload"] = &EnterpriseInnerSourceSyncJob{
+	st1.EnterpriseSettings.InnerSourceSyncJobs["external-vulnerability-sync-reload"] = &store.EnterpriseInnerSourceSyncJob{
 		ID: "external-vulnerability-sync-reload", Status: "completed", Processed: 1, Created: 1,
-		Results: []EnterpriseInnerSourceSyncResult{{
+		Results: []store.EnterpriseInnerSourceSyncResult{{
 			ExternalID: "MVS-reload", Status: "created", GHSAID: "GHIS-reload",
 		}},
 		CreatedAt: st1.CurrentTime(), UpdatedAt: st1.CurrentTime(),
 	}
-	st1.EnterpriseSettings.EnterpriseCopilotSeats["user:1"] = &CopilotSeat{
+	st1.EnterpriseSettings.EnterpriseCopilotSeats["user:1"] = &store.CopilotSeat{
 		OrgLogin: "enterprise:bleephub", UserID: admin.ID,
 		CreatedAt: st1.CurrentTime(), UpdatedAt: st1.CurrentTime(),
 	}
 	st1.EnterpriseSettings.CopilotCustomAgentsSourceOrgID = 42
 	st1.EnterpriseSettings.CopilotCustomAgentsRulesetID = 73
-	st1.EnterpriseSettings.EnterpriseBudgets["reload-budget"] = &OrgBudget{
+	st1.EnterpriseSettings.EnterpriseBudgets["reload-budget"] = &store.OrgBudget{
 		ID: "reload-budget", BudgetScope: "enterprise", BudgetAmount: 500,
 		BudgetProductSKU: "actions", BudgetType: "ProductPricing", CreatedAt: st1.CurrentTime(),
 	}
-	st1.EnterpriseSettings.EnterpriseCostCenters["reload-cost-center"] = &EnterpriseCostCenter{
+	st1.EnterpriseSettings.EnterpriseCostCenters["reload-cost-center"] = &store.EnterpriseCostCenter{
 		ID: "reload-cost-center", Name: "Reload Engineering", State: "active",
-		Resources: []EnterpriseCostCenterResource{{Type: "User", Name: admin.Login}},
+		Resources: []store.EnterpriseCostCenterResource{{Type: "User", Name: admin.Login}},
 		CreatedAt: st1.CurrentTime(), UpdatedAt: st1.CurrentTime(),
 	}
-	st1.EnterpriseSettings.EnterpriseBillingReports["reload-report"] = &EnterpriseBillingReport{
+	st1.EnterpriseSettings.EnterpriseBillingReports["reload-report"] = &store.EnterpriseBillingReport{
 		ID: "reload-report", ReportType: "summarized", StartDate: "2026-01-01",
 		EndDate: "2026-01-31", Status: "completed", Actor: admin.Login,
 		CreatedAt: st1.CurrentTime(), DownloadURLs: []string{"https://example.test/report.csv"},
 	}
 	st1.EnterpriseSettings.GHESManagement.SSHKeys = []string{"ssh-ed25519 reload"}
 	st1.EnterpriseSettings.GHESManagement.Settings["github_hostname"] = "reload.example.test"
-	st1.EnterpriseSettings.GHESManagement.Maintenance = GHESMaintenanceState{
+	st1.EnterpriseSettings.GHESManagement.Maintenance = store.GHESMaintenanceState{
 		Enabled: true, IPExceptionList: []string{"192.0.2.1"}, MaintenanceModeMessage: "Reloading",
 	}
 	st1.EnterpriseSettings.GHESManagement.ConfigStatus = "success"
@@ -149,17 +151,17 @@ func TestEnterpriseStatePersistenceReload(t *testing.T) {
 	st1.EnterpriseSettings.ActionsAllowedActions = "selected"
 	st1.EnterpriseSettings.ActionsSHAPinningRequired = true
 	st1.EnterpriseSettings.ActionsSelectedOrganizationIDs = []int{17}
-	st1.EnterpriseSettings.ActionsAllowed = &ActionsAllowed{
+	st1.EnterpriseSettings.ActionsAllowed = &store.ActionsAllowed{
 		GithubOwnedAllowed: true,
 		PatternsAllowed:    []string{"actions/*"},
 	}
-	st1.EnterpriseSettings.ActionsWorkflowPermissions = &WorkflowPermissions{
+	st1.EnterpriseSettings.ActionsWorkflowPermissions = &store.WorkflowPermissions{
 		DefaultWorkflowPermissions:   "write",
 		CanApprovePullRequestReviews: true,
 	}
 	st1.EnterpriseSettings.ActionsArtifactRetentionDays = 120
 	st1.EnterpriseSettings.ActionsForkPRApprovalPolicy = "all_external_contributors"
-	st1.EnterpriseSettings.ActionsForkPRWorkflowsPrivate = &ForkPRWorkflowsPrivateRepos{
+	st1.EnterpriseSettings.ActionsForkPRWorkflowsPrivate = &store.ForkPRWorkflowsPrivateRepos{
 		RunWorkflowsFromForkPullRequests: true,
 	}
 	st1.EnterpriseSettings.ActionsDisableSelfHostedRunners = true
@@ -173,7 +175,7 @@ func TestEnterpriseStatePersistenceReload(t *testing.T) {
 	}
 	enterpriseNetworkName := "reload_enterprise_network"
 	enterpriseComputeService := "actions"
-	enterpriseNetwork, err := st1.CreateNetworkConfiguration(enterpriseNetworkScope, &networkConfigurationRequest{
+	enterpriseNetwork, err := st1.CreateNetworkConfiguration(enterpriseNetworkScope, &store.NetworkConfigurationRequest{
 		Name: &enterpriseNetworkName, ComputeService: &enterpriseComputeService,
 		NetworkSettingsIDs: []string{enterpriseNetworkSettings.ID},
 	})
@@ -188,7 +190,7 @@ func TestEnterpriseStatePersistenceReload(t *testing.T) {
 	st1.Mu.Lock()
 	hostedRunnerID := st1.NextHostedRunnerID
 	st1.NextHostedRunnerID++
-	st1.HostedRunners[hostedRunnerID] = &HostedRunner{
+	st1.HostedRunners[hostedRunnerID] = &store.HostedRunner{
 		ID: hostedRunnerID, Enterprise: "bleephub", Name: "reload-enterprise-hosted",
 		RunnerGroupID: 47, ImageID: "ubuntu-24.04", ImageSource: "github",
 		MachineSizeID: "4-core", MaximumRunners: 3, CreatedAt: st1.CurrentTime(),
@@ -201,11 +203,11 @@ func TestEnterpriseStatePersistenceReload(t *testing.T) {
 	}
 
 	// --- session 2: reload and assert every surface came back ---
-	p2, err := NewPersistence()
+	p2, err := store.NewPersistence()
 	if err != nil {
 		t.Fatalf("re-open: %v", err)
 	}
-	st2 := NewStore()
+	st2 := store.NewStore()
 	if err := st2.SetPersistence(p2); err != nil {
 		t.Fatalf("re-load SetPersistence: %v", err)
 	}

@@ -3,6 +3,8 @@ package bleephub
 import (
 	"net/http"
 	"sort"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func (s *Server) registerGHEnterprisePropertyRoutes() {
@@ -22,20 +24,20 @@ func (s *Server) registerGHEnterprisePropertyRoutes() {
 	s.route("PATCH /api/v3/enterprises/{enterprise}/org-properties/values", s.requireEnterpriseOwner(s.handleSetEnterpriseOrganizationPropertyValues))
 }
 
-func enterprisePropertyJSON(p *CustomProperty, baseURL, enterprise, family string) map[string]interface{} {
+func enterprisePropertyJSON(p *store.CustomProperty, baseURL, enterprise, family string) map[string]interface{} {
 	out := customPropertyJSON(p, enterprise, baseURL)
 	out["url"] = baseURL + "/api/v3/enterprises/" + enterprise + "/" + family + "/schema/" + p.PropertyName
 	out["source_type"] = "enterprise"
 	return out
 }
 
-func sortedEnterpriseProperties(properties map[string]*CustomProperty) []*CustomProperty {
+func sortedEnterpriseProperties(properties map[string]*store.CustomProperty) []*store.CustomProperty {
 	names := make([]string, 0, len(properties))
 	for name := range properties {
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	out := make([]*CustomProperty, 0, len(names))
+	out := make([]*store.CustomProperty, 0, len(names))
 	for _, name := range names {
 		out = append(out, properties[name])
 	}
@@ -91,7 +93,7 @@ func (s *Server) handleGetEnterpriseOrganizationProperty(w http.ResponseWriter, 
 	s.getEnterpriseProperty(w, r, "org-properties", true)
 }
 
-func enterprisePropertyFromPayload(w http.ResponseWriter, payload *customPropertyPayload, name string, organization bool) *CustomProperty {
+func enterprisePropertyFromPayload(w http.ResponseWriter, payload *customPropertyPayload, name string, organization bool) *store.CustomProperty {
 	if organization {
 		return payload.toCustomPropertyFor(w, name, "enterprise_actors", "enterprise_actors", "enterprise_and_org_actors")
 	}
@@ -134,10 +136,10 @@ func (s *Server) batchUpsertEnterpriseProperties(w http.ResponseWriter, r *http.
 		return
 	}
 	if len(req.Properties) == 0 {
-		writeGHValidationError(w, "CustomProperty", "properties", "missing_field")
+		store.WriteGHValidationError(w, "CustomProperty", "properties", "missing_field")
 		return
 	}
-	definitions := make([]*CustomProperty, 0, len(req.Properties))
+	definitions := make([]*store.CustomProperty, 0, len(req.Properties))
 	for i := range req.Properties {
 		definition := enterprisePropertyFromPayload(w, &req.Properties[i], req.Properties[i].PropertyName, organization)
 		if definition == nil {
@@ -247,25 +249,25 @@ func (s *Server) handleListEnterpriseOrganizationPropertyValues(w http.ResponseW
 
 func (s *Server) handleSetEnterpriseOrganizationPropertyValues(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		OrganizationLogins []string                     `json:"organization_logins"`
-		Properties         []customPropertyValuePayload `json:"properties"`
+		OrganizationLogins []string                           `json:"organization_logins"`
+		Properties         []store.CustomPropertyValuePayload `json:"properties"`
 	}
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	if len(req.OrganizationLogins) == 0 {
-		writeGHValidationError(w, "CustomPropertyValues", "organization_logins", "missing_field")
+		store.WriteGHValidationError(w, "CustomPropertyValues", "organization_logins", "missing_field")
 		return
 	}
 	if len(req.Properties) == 0 {
-		writeGHValidationError(w, "CustomPropertyValues", "properties", "missing_field")
+		store.WriteGHValidationError(w, "CustomPropertyValues", "properties", "missing_field")
 		return
 	}
 	s.store.Mu.RLock()
 	for _, login := range req.OrganizationLogins {
 		if s.store.OrgsByLogin[login] == nil {
 			s.store.Mu.RUnlock()
-			writeGHValidationError(w, "CustomPropertyValues", "organization_logins", "invalid")
+			store.WriteGHValidationError(w, "CustomPropertyValues", "organization_logins", "invalid")
 			return
 		}
 	}
@@ -273,7 +275,7 @@ func (s *Server) handleSetEnterpriseOrganizationPropertyValues(w http.ResponseWr
 		definition := s.store.EnterpriseSettings.OrganizationCustomProperties[value.PropertyName]
 		if definition == nil || validateCustomPropertyValue(definition, value.Value) != nil {
 			s.store.Mu.RUnlock()
-			writeGHValidationError(w, "CustomPropertyValues", "properties", "invalid")
+			store.WriteGHValidationError(w, "CustomPropertyValues", "properties", "invalid")
 			return
 		}
 	}
@@ -289,7 +291,7 @@ func (s *Server) handleSetEnterpriseOrganizationPropertyValues(w http.ResponseWr
 			if value.Value == nil {
 				delete(values, value.PropertyName)
 			} else {
-				values[value.PropertyName] = cloneCustomPropertyValue(value.Value)
+				values[value.PropertyName] = store.CloneCustomPropertyValue(value.Value)
 			}
 		}
 	}

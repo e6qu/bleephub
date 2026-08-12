@@ -8,26 +8,28 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func (s *Server) registerGHCodespacesRoutes() {
 	// User-scoped codespaces.
-	s.route("GET /api/v3/user/codespaces", s.requirePerm(scopeCodespaces, permRead, s.handleListUserCodespaces))
-	s.route("POST /api/v3/user/codespaces", s.requirePerm(scopeCodespaces, permWrite, s.handleCreateUserCodespace))
-	s.route("GET /api/v3/user/codespaces/{codespace_name}", s.requirePerm(scopeCodespaces, permRead, s.handleGetUserCodespace))
-	s.route("PATCH /api/v3/user/codespaces/{codespace_name}", s.requirePerm(scopeCodespaces, permWrite, s.handlePatchUserCodespace))
-	s.route("DELETE /api/v3/user/codespaces/{codespace_name}", s.requirePerm(scopeCodespaces, permWrite, s.handleDeleteUserCodespace))
-	s.route("POST /api/v3/user/codespaces/{codespace_name}/start", s.requirePerm(scopeCodespaces, permWrite, s.handleStartUserCodespace))
-	s.route("POST /api/v3/user/codespaces/{codespace_name}/stop", s.requirePerm(scopeCodespaces, permWrite, s.handleStopUserCodespace))
+	s.route("GET /api/v3/user/codespaces", s.requirePerm(store.ScopeCodespaces, store.PermRead, s.handleListUserCodespaces))
+	s.route("POST /api/v3/user/codespaces", s.requirePerm(store.ScopeCodespaces, store.PermWrite, s.handleCreateUserCodespace))
+	s.route("GET /api/v3/user/codespaces/{codespace_name}", s.requirePerm(store.ScopeCodespaces, store.PermRead, s.handleGetUserCodespace))
+	s.route("PATCH /api/v3/user/codespaces/{codespace_name}", s.requirePerm(store.ScopeCodespaces, store.PermWrite, s.handlePatchUserCodespace))
+	s.route("DELETE /api/v3/user/codespaces/{codespace_name}", s.requirePerm(store.ScopeCodespaces, store.PermWrite, s.handleDeleteUserCodespace))
+	s.route("POST /api/v3/user/codespaces/{codespace_name}/start", s.requirePerm(store.ScopeCodespaces, store.PermWrite, s.handleStartUserCodespace))
+	s.route("POST /api/v3/user/codespaces/{codespace_name}/stop", s.requirePerm(store.ScopeCodespaces, store.PermWrite, s.handleStopUserCodespace))
 
 	// Repository-scoped codespaces.
-	s.route("GET /api/v3/repos/{owner}/{repo}/codespaces", s.requirePerm(scopeCodespaces, permRead, s.handleListRepoCodespaces))
-	s.route("POST /api/v3/repos/{owner}/{repo}/codespaces", s.requirePerm(scopeCodespaces, permWrite, s.handleCreateRepoCodespace))
-	s.route("GET /api/v3/repos/{owner}/{repo}/codespaces/devcontainers", s.requirePerm(scopeCodespaces, permRead, s.handleListRepoDevcontainers))
-	s.route("GET /api/v3/repos/{owner}/{repo}/codespaces/new", s.requirePerm(scopeCodespaces, permRead, s.handleGetCodespaceDefaults))
-	s.route("GET /api/v3/repos/{owner}/{repo}/codespaces/permissions_check", s.requirePerm(scopeCodespaces, permRead, s.handleCodespacePermissionsCheck))
+	s.route("GET /api/v3/repos/{owner}/{repo}/codespaces", s.requirePerm(store.ScopeCodespaces, store.PermRead, s.handleListRepoCodespaces))
+	s.route("POST /api/v3/repos/{owner}/{repo}/codespaces", s.requirePerm(store.ScopeCodespaces, store.PermWrite, s.handleCreateRepoCodespace))
+	s.route("GET /api/v3/repos/{owner}/{repo}/codespaces/devcontainers", s.requirePerm(store.ScopeCodespaces, store.PermRead, s.handleListRepoDevcontainers))
+	s.route("GET /api/v3/repos/{owner}/{repo}/codespaces/new", s.requirePerm(store.ScopeCodespaces, store.PermRead, s.handleGetCodespaceDefaults))
+	s.route("GET /api/v3/repos/{owner}/{repo}/codespaces/permissions_check", s.requirePerm(store.ScopeCodespaces, store.PermRead, s.handleCodespacePermissionsCheck))
 	// Machine types.
-	s.route("GET /api/v3/repos/{owner}/{repo}/codespaces/machines", s.requirePerm(scopeCodespaces, permRead, s.handleListCodespaceMachines))
+	s.route("GET /api/v3/repos/{owner}/{repo}/codespaces/machines", s.requirePerm(store.ScopeCodespaces, store.PermRead, s.handleListCodespaceMachines))
 
 	// Organization-member codespace administration: an org owner
 	// operating on a member's codespaces on the org's repositories.
@@ -36,17 +38,17 @@ func (s *Server) registerGHCodespacesRoutes() {
 	s.route("POST /api/v3/orgs/{org}/members/{username}/codespaces/{codespace_name}/stop", s.requireOrgAdminOrCodespaceScope(s.handleStopOrgMemberCodespace))
 
 	// User-scoped secrets.
-	s.route("GET /api/v3/user/codespaces/secrets", s.requirePerm(scopeCodespaces, permRead, s.handleListUserCodespaceSecrets))
-	s.route("GET /api/v3/user/codespaces/secrets/public-key", s.requirePerm(scopeCodespaces, permRead, s.handleGetCodespacePublicKey))
-	s.route("GET /api/v3/user/codespaces/secrets/{secret_name}", s.requirePerm(scopeCodespaces, permRead, s.handleGetUserCodespaceSecret))
-	s.route("PUT /api/v3/user/codespaces/secrets/{secret_name}", s.requirePerm(scopeCodespaces, permWrite, s.handlePutUserCodespaceSecret))
-	s.route("DELETE /api/v3/user/codespaces/secrets/{secret_name}", s.requirePerm(scopeCodespaces, permWrite, s.handleDeleteUserCodespaceSecret))
+	s.route("GET /api/v3/user/codespaces/secrets", s.requirePerm(store.ScopeCodespaces, store.PermRead, s.handleListUserCodespaceSecrets))
+	s.route("GET /api/v3/user/codespaces/secrets/public-key", s.requirePerm(store.ScopeCodespaces, store.PermRead, s.handleGetCodespacePublicKey))
+	s.route("GET /api/v3/user/codespaces/secrets/{secret_name}", s.requirePerm(store.ScopeCodespaces, store.PermRead, s.handleGetUserCodespaceSecret))
+	s.route("PUT /api/v3/user/codespaces/secrets/{secret_name}", s.requirePerm(store.ScopeCodespaces, store.PermWrite, s.handlePutUserCodespaceSecret))
+	s.route("DELETE /api/v3/user/codespaces/secrets/{secret_name}", s.requirePerm(store.ScopeCodespaces, store.PermWrite, s.handleDeleteUserCodespaceSecret))
 
 	// User-secret selected repositories.
-	s.route("GET /api/v3/user/codespaces/secrets/{secret_name}/repositories", s.requirePerm(scopeCodespaces, permRead, s.handleListUserCodespaceSecretRepos))
-	s.route("PUT /api/v3/user/codespaces/secrets/{secret_name}/repositories", s.requirePerm(scopeCodespaces, permWrite, s.handleSetUserCodespaceSecretRepos))
-	s.route("PUT /api/v3/user/codespaces/secrets/{secret_name}/repositories/{repository_id}", s.requirePerm(scopeCodespaces, permWrite, s.handleAddUserCodespaceSecretRepo))
-	s.route("DELETE /api/v3/user/codespaces/secrets/{secret_name}/repositories/{repository_id}", s.requirePerm(scopeCodespaces, permWrite, s.handleRemoveUserCodespaceSecretRepo))
+	s.route("GET /api/v3/user/codespaces/secrets/{secret_name}/repositories", s.requirePerm(store.ScopeCodespaces, store.PermRead, s.handleListUserCodespaceSecretRepos))
+	s.route("PUT /api/v3/user/codespaces/secrets/{secret_name}/repositories", s.requirePerm(store.ScopeCodespaces, store.PermWrite, s.handleSetUserCodespaceSecretRepos))
+	s.route("PUT /api/v3/user/codespaces/secrets/{secret_name}/repositories/{repository_id}", s.requirePerm(store.ScopeCodespaces, store.PermWrite, s.handleAddUserCodespaceSecretRepo))
+	s.route("DELETE /api/v3/user/codespaces/secrets/{secret_name}/repositories/{repository_id}", s.requirePerm(store.ScopeCodespaces, store.PermWrite, s.handleRemoveUserCodespaceSecretRepo))
 
 	// Per-codespace machines + export details. Go 1.22's ServeMux rejects
 	// registering GET /user/codespaces/{codespace_name}/machines alongside
@@ -54,22 +56,22 @@ func (s *Server) registerGHCodespacesRoutes() {
 	// at secrets/machines with neither more specific), so both GET shapes
 	// dispatch through wildcards; the more-specific secrets routes above
 	// still win for secrets/* paths.
-	s.route("GET /api/v3/user/codespaces/{codespace_name}/{sub}", s.requirePerm(scopeCodespaces, permRead, s.handleUserCodespaceTwoSegGetDispatch))
-	s.route("GET /api/v3/user/codespaces/{codespace_name}/{sub}/{export_id}", s.requirePerm(scopeCodespaces, permRead, s.handleUserCodespaceThreeSegGetDispatch))
+	s.route("GET /api/v3/user/codespaces/{codespace_name}/{sub}", s.requirePerm(store.ScopeCodespaces, store.PermRead, s.handleUserCodespaceTwoSegGetDispatch))
+	s.route("GET /api/v3/user/codespaces/{codespace_name}/{sub}/{export_id}", s.requirePerm(store.ScopeCodespaces, store.PermRead, s.handleUserCodespaceThreeSegGetDispatch))
 
 	// Codespace exports + publish.
-	s.route("POST /api/v3/user/codespaces/{codespace_name}/exports", s.requirePerm(scopeCodespaces, permWrite, s.handleExportUserCodespace))
-	s.route("POST /api/v3/user/codespaces/{codespace_name}/publish", s.requirePerm(scopeCodespaces, permWrite, s.handlePublishUserCodespace))
+	s.route("POST /api/v3/user/codespaces/{codespace_name}/exports", s.requirePerm(store.ScopeCodespaces, store.PermWrite, s.handleExportUserCodespace))
+	s.route("POST /api/v3/user/codespaces/{codespace_name}/publish", s.requirePerm(store.ScopeCodespaces, store.PermWrite, s.handlePublishUserCodespace))
 
 	// Pull-request codespaces.
-	s.route("POST /api/v3/repos/{owner}/{repo}/pulls/{pull_number}/codespaces", s.requirePerm(scopeCodespaces, permWrite, s.handleCreatePullRequestCodespace))
+	s.route("POST /api/v3/repos/{owner}/{repo}/pulls/{pull_number}/codespaces", s.requirePerm(store.ScopeCodespaces, store.PermWrite, s.handleCreatePullRequestCodespace))
 
 	// Repository-scoped secrets.
-	s.route("GET /api/v3/repos/{owner}/{repo}/codespaces/secrets", s.requirePerm(scopeCodespaces, permRead, s.handleListRepoCodespaceSecrets))
-	s.route("GET /api/v3/repos/{owner}/{repo}/codespaces/secrets/public-key", s.requirePerm(scopeCodespaces, permRead, s.handleGetCodespacePublicKey))
-	s.route("GET /api/v3/repos/{owner}/{repo}/codespaces/secrets/{secret_name}", s.requirePerm(scopeCodespaces, permRead, s.handleGetRepoCodespaceSecret))
-	s.route("PUT /api/v3/repos/{owner}/{repo}/codespaces/secrets/{secret_name}", s.requirePerm(scopeCodespaces, permWrite, s.handlePutRepoCodespaceSecret))
-	s.route("DELETE /api/v3/repos/{owner}/{repo}/codespaces/secrets/{secret_name}", s.requirePerm(scopeCodespaces, permWrite, s.handleDeleteRepoCodespaceSecret))
+	s.route("GET /api/v3/repos/{owner}/{repo}/codespaces/secrets", s.requirePerm(store.ScopeCodespaces, store.PermRead, s.handleListRepoCodespaceSecrets))
+	s.route("GET /api/v3/repos/{owner}/{repo}/codespaces/secrets/public-key", s.requirePerm(store.ScopeCodespaces, store.PermRead, s.handleGetCodespacePublicKey))
+	s.route("GET /api/v3/repos/{owner}/{repo}/codespaces/secrets/{secret_name}", s.requirePerm(store.ScopeCodespaces, store.PermRead, s.handleGetRepoCodespaceSecret))
+	s.route("PUT /api/v3/repos/{owner}/{repo}/codespaces/secrets/{secret_name}", s.requirePerm(store.ScopeCodespaces, store.PermWrite, s.handlePutRepoCodespaceSecret))
+	s.route("DELETE /api/v3/repos/{owner}/{repo}/codespaces/secrets/{secret_name}", s.requirePerm(store.ScopeCodespaces, store.PermWrite, s.handleDeleteRepoCodespaceSecret))
 
 	// Organization-scoped codespaces + access controls.
 	s.route("GET /api/v3/orgs/{org}/codespaces", s.requireOrgAdminOrCodespaceScope(s.handleListOrgCodespaces))
@@ -106,7 +108,7 @@ func (s *Server) handleGetCodespaceDefaults(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"billable_owner": userToJSON(ghUserFromContext(r.Context())),
+		"billable_owner": store.UserToJSON(ghUserFromContext(r.Context())),
 		"defaults": map[string]interface{}{
 			"location":          "EastUs",
 			"devcontainer_path": nil,
@@ -143,7 +145,7 @@ func (s *Server) requireOrgAdminOrCodespaceScope(next http.HandlerFunc) http.Han
 	}
 }
 
-func (s *Server) resolveCodespace(w http.ResponseWriter, r *http.Request, ownerLogin, repoKey string) *Codespace {
+func (s *Server) resolveCodespace(w http.ResponseWriter, r *http.Request, ownerLogin, repoKey string) *store.Codespace {
 	name := r.PathValue("codespace_name")
 	cs := s.store.GetCodespaceByName(name)
 	if cs == nil {
@@ -186,7 +188,7 @@ func (s *Server) handleCreateUserCodespace(w http.ResponseWriter, r *http.Reques
 	hasRepository := req.RepositoryID > 0
 	hasPullRequest := req.PullRequest != nil
 	if hasRepository == hasPullRequest {
-		writeGHValidationError(w, "Codespace", "repository_id or pull_request", "missing_field")
+		store.WriteGHValidationError(w, "Codespace", "repository_id or pull_request", "missing_field")
 		return
 	}
 	repositoryID := req.RepositoryID
@@ -194,7 +196,7 @@ func (s *Server) handleCreateUserCodespace(w http.ResponseWriter, r *http.Reques
 	if hasPullRequest {
 		repositoryID = req.PullRequest.RepositoryID
 		if repositoryID <= 0 || req.PullRequest.PullRequestNumber <= 0 {
-			writeGHValidationError(w, "Codespace", "pull_request", "invalid")
+			store.WriteGHValidationError(w, "Codespace", "pull_request", "invalid")
 			return
 		}
 	}
@@ -204,19 +206,19 @@ func (s *Server) handleCreateUserCodespace(w http.ResponseWriter, r *http.Reques
 		if hasPullRequest {
 			field = "pull_request"
 		}
-		writeGHValidationError(w, "Codespace", field, "invalid")
+		store.WriteGHValidationError(w, "Codespace", field, "invalid")
 		return
 	}
 	if hasPullRequest {
 		pr := s.store.GetPullRequestByNumber(repo.ID, req.PullRequest.PullRequestNumber)
 		if pr == nil {
-			writeGHValidationError(w, "Codespace", "pull_request", "invalid")
+			store.WriteGHValidationError(w, "Codespace", "pull_request", "invalid")
 			return
 		}
 		gitRef = pr.HeadRefName
 	}
 	repoKey := repo.FullName
-	opts := codespaceCreateOptions{
+	opts := store.CodespaceCreateOptions{
 		MachineName:            req.Machine,
 		DisplayName:            req.DisplayName,
 		WorkingDirectory:       req.WorkingDirectory,
@@ -340,10 +342,10 @@ func (s *Server) handleCreateRepoCodespace(w http.ResponseWriter, r *http.Reques
 	if req.RepositoryID == 0 {
 		req.RepositoryID = repo.ID
 	} else if req.RepositoryID != repo.ID {
-		writeGHValidationError(w, "Codespace", "repository_id", "invalid")
+		store.WriteGHValidationError(w, "Codespace", "repository_id", "invalid")
 		return
 	}
-	opts := codespaceCreateOptions{
+	opts := store.CodespaceCreateOptions{
 		MachineName:            req.Machine,
 		DisplayName:            req.DisplayName,
 		WorkingDirectory:       req.WorkingDirectory,
@@ -366,7 +368,7 @@ func (s *Server) handleCreateRepoCodespace(w http.ResponseWriter, r *http.Reques
 // codespaceMachineJSON renders one catalog machine in GitHub's
 // codespace-machine schema. bleephub has no prebuild pipeline, so
 // prebuild availability is "none".
-func codespaceMachineJSON(m codespaceMachine) map[string]interface{} {
+func codespaceMachineJSON(m store.CodespaceMachine) map[string]interface{} {
 	return map[string]interface{}{
 		"name":                  m.Name,
 		"display_name":          m.DisplayName,
@@ -379,8 +381,8 @@ func codespaceMachineJSON(m codespaceMachine) map[string]interface{} {
 }
 
 func codespaceMachinesListJSON() map[string]interface{} {
-	machines := make([]map[string]interface{}, len(codespaceMachines))
-	for i, m := range codespaceMachines {
+	machines := make([]map[string]interface{}, len(store.CodespaceMachines))
+	for i, m := range store.CodespaceMachines {
 		machines[i] = codespaceMachineJSON(m)
 	}
 	return map[string]interface{}{"machines": machines, "total_count": len(machines)}
@@ -432,7 +434,7 @@ func (s *Server) handleUserCodespaceThreeSegGetDispatch(w http.ResponseWriter, r
 
 // --- exports + publish ---
 
-func (s *Server) codespaceExportJSON(live *Codespace, liveExport *CodespaceExport, baseURL string) map[string]interface{} {
+func (s *Server) codespaceExportJSON(live *store.Codespace, liveExport *store.CodespaceExport, baseURL string) map[string]interface{} {
 	cs, export := s.snapshotCodespaceExport(live, liveExport)
 	out := map[string]interface{}{
 		"state":        export.State,
@@ -458,8 +460,8 @@ func (s *Server) handleExportUserCodespace(w http.ResponseWriter, r *http.Reques
 	}
 	export, err := s.store.ExportCodespace(cs.ID)
 	switch {
-	case err == errCodespaceNoRepository:
-		writeGHValidationError(w, "CodespaceExport", "repository", "missing")
+	case err == store.ErrCodespaceNoRepository:
+		store.WriteGHValidationError(w, "CodespaceExport", "repository", "missing")
 		return
 	case err != nil:
 		writeGHError(w, http.StatusInternalServerError, err.Error())
@@ -484,11 +486,11 @@ func (s *Server) handlePublishUserCodespace(w http.ResponseWriter, r *http.Reque
 	published, err := s.store.PublishCodespace(cs.ID, user, req.Name, req.Private)
 	switch err {
 	case nil:
-	case errCodespacePublished:
-		writeGHValidationError(w, "Codespace", "codespace", "already_exists")
+	case store.ErrCodespacePublished:
+		store.WriteGHValidationError(w, "Codespace", "codespace", "already_exists")
 		return
-	case errRepoNameTaken:
-		writeGHValidationError(w, "Repository", "name", "already_exists")
+	case store.ErrRepoNameTaken:
+		store.WriteGHValidationError(w, "Repository", "name", "already_exists")
 		return
 	default:
 		writeGHError(w, http.StatusInternalServerError, err.Error())
@@ -526,7 +528,7 @@ func (s *Server) handleCreatePullRequestCodespace(w http.ResponseWriter, r *http
 	if !decodeJSONBodyOptional(w, r, &req) {
 		return
 	}
-	opts := codespaceCreateOptions{
+	opts := store.CodespaceCreateOptions{
 		MachineName:            req.Machine,
 		DisplayName:            req.DisplayName,
 		WorkingDirectory:       req.WorkingDirectory,
@@ -577,7 +579,7 @@ func (s *Server) handleSetUserCodespaceSecretRepos(w http.ResponseWriter, r *htt
 			return
 		}
 	}
-	scope := codespaceSecretScopeKey("user", user.Login)
+	scope := store.CodespaceSecretScopeKey("user", user.Login)
 	if !s.store.SetCodespaceSecretSelectedRepos(scope, r.PathValue("secret_name"), req.SelectedRepositoryIDs) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -592,7 +594,7 @@ func (s *Server) handleAddUserCodespaceSecretRepo(w http.ResponseWriter, r *http
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	scope := codespaceSecretScopeKey("user", user.Login)
+	scope := store.CodespaceSecretScopeKey("user", user.Login)
 	if !s.store.AddCodespaceSecretSelectedRepo(scope, r.PathValue("secret_name"), repoID) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -607,7 +609,7 @@ func (s *Server) handleRemoveUserCodespaceSecretRepo(w http.ResponseWriter, r *h
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	scope := codespaceSecretScopeKey("user", user.Login)
+	scope := store.CodespaceSecretScopeKey("user", user.Login)
 	if !s.store.RemoveCodespaceSecretSelectedRepo(scope, r.PathValue("secret_name"), repoID) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -621,7 +623,7 @@ func (s *Server) handleRemoveUserCodespaceSecretRepo(w http.ResponseWriter, r *h
 // the org-member codespace endpoints: the user must exist and hold an
 // active membership in the org. The caller was already vetted as an org
 // owner by requireOrgAdminOrCodespaceScope.
-func (s *Server) resolveOrgMemberForCodespaces(w http.ResponseWriter, r *http.Request) (*Org, *User) {
+func (s *Server) resolveOrgMemberForCodespaces(w http.ResponseWriter, r *http.Request) (*store.Org, *store.User) {
 	org := s.store.GetOrg(r.PathValue("org"))
 	if org == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -633,7 +635,7 @@ func (s *Server) resolveOrgMemberForCodespaces(w http.ResponseWriter, r *http.Re
 		return nil, nil
 	}
 	m := s.store.GetMembership(org.Login, member.ID)
-	if m == nil || m.State != MembershipStateActive {
+	if m == nil || m.State != store.MembershipStateActive {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil, nil
 	}
@@ -662,7 +664,7 @@ func (s *Server) handleListOrgMemberCodespaces(w http.ResponseWriter, r *http.Re
 
 // resolveOrgMemberCodespace resolves {codespace_name} to a codespace the
 // member owns on one of the organization's repositories.
-func (s *Server) resolveOrgMemberCodespace(w http.ResponseWriter, r *http.Request, org *Org, member *User) *Codespace {
+func (s *Server) resolveOrgMemberCodespace(w http.ResponseWriter, r *http.Request, org *store.Org, member *store.User) *store.Codespace {
 	cs := s.store.GetCodespaceByName(r.PathValue("codespace_name"))
 	if cs == nil || cs.OwnerLogin != member.Login || !strings.HasPrefix(cs.RepoKey, org.Login+"/") {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -717,7 +719,7 @@ func (s *Server) handleStopOrgMemberCodespace(w http.ResponseWriter, r *http.Req
 
 func (s *Server) handleListUserCodespaceSecrets(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
-	scope := codespaceSecretScopeKey("user", user.Login)
+	scope := store.CodespaceSecretScopeKey("user", user.Login)
 	secs := s.snapshotCodespaceSecrets(s.store.ListCodespaceSecrets(scope))
 	paged := paginateAndLink(w, r, secs)
 	writeJSON(w, http.StatusOK, codespaceSecretsListJSON(paged, len(secs), s.baseURL(r)))
@@ -740,13 +742,13 @@ func (s *Server) handlePutUserCodespaceSecret(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
-	s.store.CreateCodespaceSecret(codespaceSecretScopeKey("user", user.Login), name, value, "", nil)
+	s.store.CreateCodespaceSecret(store.CodespaceSecretScopeKey("user", user.Login), name, value, "", nil)
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleDeleteUserCodespaceSecret(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
-	if !s.store.DeleteCodespaceSecret(codespaceSecretScopeKey("user", user.Login), r.PathValue("secret_name")) {
+	if !s.store.DeleteCodespaceSecret(store.CodespaceSecretScopeKey("user", user.Login), r.PathValue("secret_name")) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -759,7 +761,7 @@ func (s *Server) handleListRepoCodespaceSecrets(w http.ResponseWriter, r *http.R
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	scope := codespaceSecretScopeKey("repo", repo.FullName)
+	scope := store.CodespaceSecretScopeKey("repo", repo.FullName)
 	secs := s.snapshotCodespaceSecrets(s.store.ListCodespaceSecrets(scope))
 	out := make([]map[string]interface{}, len(secs))
 	for i, sec := range secs {
@@ -794,7 +796,7 @@ func (s *Server) handlePutRepoCodespaceSecret(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
-	s.store.CreateCodespaceSecret(codespaceSecretScopeKey("repo", repo.FullName), name, value, "", nil)
+	s.store.CreateCodespaceSecret(store.CodespaceSecretScopeKey("repo", repo.FullName), name, value, "", nil)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -804,7 +806,7 @@ func (s *Server) handleDeleteRepoCodespaceSecret(w http.ResponseWriter, r *http.
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !s.store.DeleteCodespaceSecret(codespaceSecretScopeKey("repo", repo.FullName), r.PathValue("secret_name")) {
+	if !s.store.DeleteCodespaceSecret(store.CodespaceSecretScopeKey("repo", repo.FullName), r.PathValue("secret_name")) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -813,7 +815,7 @@ func (s *Server) handleDeleteRepoCodespaceSecret(w http.ResponseWriter, r *http.
 
 func (s *Server) handleListOrgCodespaceSecrets(w http.ResponseWriter, r *http.Request) {
 	org := r.PathValue("org")
-	scope := codespaceSecretScopeKey("org", org)
+	scope := store.CodespaceSecretScopeKey("org", org)
 	secs := s.snapshotCodespaceSecrets(s.store.ListCodespaceSecrets(scope))
 	out := make([]map[string]interface{}, len(secs))
 	for i, sec := range secs {
@@ -855,12 +857,12 @@ func (s *Server) handlePutOrgCodespaceSecret(w http.ResponseWriter, r *http.Requ
 			req.Visibility = "all"
 		}
 	}
-	s.store.CreateCodespaceSecret(codespaceSecretScopeKey("org", org), name, plain, req.Visibility, req.SelectedRepositoryIDs)
+	s.store.CreateCodespaceSecret(store.CodespaceSecretScopeKey("org", org), name, plain, req.Visibility, req.SelectedRepositoryIDs)
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleDeleteOrgCodespaceSecret(w http.ResponseWriter, r *http.Request) {
-	if !s.store.DeleteCodespaceSecret(codespaceSecretScopeKey("org", r.PathValue("org")), r.PathValue("secret_name")) {
+	if !s.store.DeleteCodespaceSecret(store.CodespaceSecretScopeKey("org", r.PathValue("org")), r.PathValue("secret_name")) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -876,7 +878,7 @@ func (s *Server) handleListOrgCodespaceSecretRepos(w http.ResponseWriter, r *htt
 	repos := make([]map[string]interface{}, 0, len(sec.SelectedRepoIDs))
 	for _, id := range sec.SelectedRepoIDs {
 		if repo := s.store.GetRepoByID(id); repo != nil {
-			repos = append(repos, repoToJSON(repo, s.store, s.baseURL(r)))
+			repos = append(repos, store.RepoToJSON(repo, s.store, s.baseURL(r)))
 		}
 	}
 	paged := paginateAndLink(w, r, repos)
@@ -892,7 +894,7 @@ func (s *Server) handleSetOrgCodespaceSecretRepos(w http.ResponseWriter, r *http
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	if !s.store.SetCodespaceSecretSelectedRepos(codespaceSecretScopeKey("org", org), name, req.SelectedRepositoryIDs) {
+	if !s.store.SetCodespaceSecretSelectedRepos(store.CodespaceSecretScopeKey("org", org), name, req.SelectedRepositoryIDs) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -906,8 +908,8 @@ func (s *Server) handleGetCodespacePublicKey(w http.ResponseWriter, r *http.Requ
 // getCodespaceSecret resolves {secret_name} in a scope as a snapshot: the
 // handlers that follow read its selected-repository list and render it, and a
 // concurrent selection change would otherwise be seen half-applied.
-func (s *Server) getCodespaceSecret(r *http.Request, kind, key string) *CodespaceSecret {
-	return s.snapshotCodespaceSecret(s.store.GetCodespaceSecret(codespaceSecretScopeKey(kind, key), r.PathValue("secret_name")))
+func (s *Server) getCodespaceSecret(r *http.Request, kind, key string) *store.CodespaceSecret {
+	return s.snapshotCodespaceSecret(s.store.GetCodespaceSecret(store.CodespaceSecretScopeKey(kind, key), r.PathValue("secret_name")))
 }
 
 func (s *Server) readSealedCodespaceSecret(w http.ResponseWriter, r *http.Request) (string, bool) {
@@ -920,7 +922,7 @@ func (s *Server) readSealedCodespaceSecret(w http.ResponseWriter, r *http.Reques
 
 // --- lifecycle helpers ---
 
-func (s *Server) startCodespace(cs *Codespace) error {
+func (s *Server) startCodespace(cs *store.Codespace) error {
 	if cs.ContainerID == "" {
 		if cs.Runtime == "workspace" {
 			s.store.SetCodespaceState(cs.ID, "Available", true)
@@ -930,14 +932,14 @@ func (s *Server) startCodespace(cs *Codespace) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	if err := dockerStartContainer(ctx, cs.ContainerID); err != nil {
+	if err := store.DockerStartContainer(ctx, cs.ContainerID); err != nil {
 		return err
 	}
-	s.store.SetCodespaceState(cs.ID, dockerStateToCodespaceState(cs.ContainerID), true)
+	s.store.SetCodespaceState(cs.ID, store.DockerStateToCodespaceState(cs.ContainerID), true)
 	return nil
 }
 
-func (s *Server) stopCodespace(cs *Codespace) error {
+func (s *Server) stopCodespace(cs *store.Codespace) error {
 	if cs.ContainerID == "" {
 		if cs.Runtime == "workspace" {
 			s.store.SetCodespaceState(cs.ID, "Shutdown", false)
@@ -947,10 +949,10 @@ func (s *Server) stopCodespace(cs *Codespace) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	if err := dockerStopContainer(ctx, cs.ContainerID); err != nil {
+	if err := store.DockerStopContainer(ctx, cs.ContainerID); err != nil {
 		return err
 	}
-	s.store.SetCodespaceState(cs.ID, dockerStateToCodespaceState(cs.ContainerID), false)
+	s.store.SetCodespaceState(cs.ID, store.DockerStateToCodespaceState(cs.ContainerID), false)
 	return nil
 }
 
@@ -974,8 +976,8 @@ type codespaceCreateRequest struct {
 // create endpoint runs before reserving a codespace. It writes the error
 // response and returns false when the request is rejected.
 func validateCodespaceCreate(w http.ResponseWriter, req codespaceCreateRequest) bool {
-	if req.Machine != "" && !codespaceMachineExists(req.Machine) {
-		writeGHValidationError(w, "Codespace", "machine", "invalid")
+	if req.Machine != "" && !store.CodespaceMachineExists(req.Machine) {
+		store.WriteGHValidationError(w, "Codespace", "machine", "invalid")
 		return false
 	}
 	return true
@@ -996,27 +998,27 @@ type codespacePatchRequest struct {
 // response is rendered from a copy: a codespace is written by container
 // lifecycle transitions that run concurrently with requests, and a serializer
 // walking the stored record would publish a half-applied one.
-func (s *Server) snapshotCodespace(cs *Codespace) *Codespace {
+func (s *Server) snapshotCodespace(cs *store.Codespace) *store.Codespace {
 	if cs == nil {
 		return nil
 	}
 	s.store.Mu.RLock()
 	defer s.store.Mu.RUnlock()
-	return cloneCodespace(cs)
+	return store.CloneCodespace(cs)
 }
 
 // snapshotCodespaceExport copies a codespace and one of its exports under a
 // single acquisition of the lock, so the pair a response renders is one
 // consistent instant rather than two.
-func (s *Server) snapshotCodespaceExport(cs *Codespace, export *CodespaceExport) (*Codespace, *CodespaceExport) {
+func (s *Server) snapshotCodespaceExport(cs *store.Codespace, export *store.CodespaceExport) (*store.Codespace, *store.CodespaceExport) {
 	s.store.Mu.RLock()
 	defer s.store.Mu.RUnlock()
-	return cloneCodespace(cs), clonePointer(export)
+	return store.CloneCodespace(cs), store.ClonePointer(export)
 }
 
 // snapshotCodespaceSecret copies a stored secret under the store lock,
 // including the selected-repository list a concurrent write replaces.
-func (s *Server) snapshotCodespaceSecret(sec *CodespaceSecret) *CodespaceSecret {
+func (s *Server) snapshotCodespaceSecret(sec *store.CodespaceSecret) *store.CodespaceSecret {
 	if sec == nil {
 		return nil
 	}
@@ -1027,26 +1029,26 @@ func (s *Server) snapshotCodespaceSecret(sec *CodespaceSecret) *CodespaceSecret 
 	return &view
 }
 
-func (s *Server) snapshotCodespaceSecrets(secs []*CodespaceSecret) []*CodespaceSecret {
-	out := make([]*CodespaceSecret, len(secs))
+func (s *Server) snapshotCodespaceSecrets(secs []*store.CodespaceSecret) []*store.CodespaceSecret {
+	out := make([]*store.CodespaceSecret, len(secs))
 	for i, sec := range secs {
 		out[i] = s.snapshotCodespaceSecret(sec)
 	}
 	return out
 }
 
-func (s *Server) codespaceToJSON(live *Codespace, baseURL string) map[string]interface{} {
+func (s *Server) codespaceToJSON(live *store.Codespace, baseURL string) map[string]interface{} {
 	cs := s.snapshotCodespace(live)
 	owner := s.store.LookupUserByLogin(cs.OwnerLogin)
 	ownerJSON := map[string]interface{}(nil)
 	if owner != nil {
-		ownerJSON = userToJSON(owner)
+		ownerJSON = store.UserToJSON(owner)
 	}
 	var repoJSON map[string]interface{}
 	if cs.RepoKey != "" {
-		if owner, repoName, ok := splitRepoFullName(cs.RepoKey); ok {
+		if owner, repoName, ok := store.SplitRepoFullName(cs.RepoKey); ok {
 			if repo := s.store.GetRepo(owner, repoName); repo != nil {
-				repoJSON = repoToJSON(repo, s.store, baseURL)
+				repoJSON = store.RepoToJSON(repo, s.store, baseURL)
 			}
 		}
 	}
@@ -1060,7 +1062,7 @@ func (s *Server) codespaceToJSON(live *Codespace, baseURL string) map[string]int
 		"owner":                    ownerJSON,
 		"billable_owner":           ownerJSON,
 		"repository":               repoJSON,
-		"machine":                  codespaceMachineJSON(codespaceMachineByName(cs.MachineName)),
+		"machine":                  codespaceMachineJSON(store.CodespaceMachineByName(cs.MachineName)),
 		"created_at":               cs.CreatedAt.UTC().Format(time.RFC3339),
 		"updated_at":               cs.UpdatedAt.UTC().Format(time.RFC3339),
 		"last_used_at":             cs.LastUsedAt.UTC().Format(time.RFC3339),
@@ -1073,7 +1075,7 @@ func (s *Server) codespaceToJSON(live *Codespace, baseURL string) map[string]int
 		"idle_timeout_minutes":     cs.IdleTimeoutMinutes,
 		// location is a non-empty region enum; a record without one (a pre-fix
 		// row) still reports a valid region (PAR-010).
-		"location":       coalesceStr(cs.Location, "EastUs"),
+		"location":       store.CoalesceStr(cs.Location, "EastUs"),
 		"machines_url":   url + "/machines",
 		"prebuild":       false,
 		"pulls_url":      url + "/pulls",
@@ -1083,7 +1085,7 @@ func (s *Server) codespaceToJSON(live *Codespace, baseURL string) map[string]int
 	}
 }
 
-func codespaceUserSecretJSON(sec *CodespaceSecret, baseURL string) map[string]interface{} {
+func codespaceUserSecretJSON(sec *store.CodespaceSecret, baseURL string) map[string]interface{} {
 	visibility := sec.Visibility
 	if visibility == "" {
 		visibility = "all"
@@ -1097,7 +1099,7 @@ func codespaceUserSecretJSON(sec *CodespaceSecret, baseURL string) map[string]in
 	}
 }
 
-func codespaceRepoSecretJSON(sec *CodespaceSecret) map[string]interface{} {
+func codespaceRepoSecretJSON(sec *store.CodespaceSecret) map[string]interface{} {
 	return map[string]interface{}{
 		"name":       sec.Name,
 		"created_at": sec.CreatedAt.UTC().Format(time.RFC3339),
@@ -1105,13 +1107,13 @@ func codespaceRepoSecretJSON(sec *CodespaceSecret) map[string]interface{} {
 	}
 }
 
-func codespaceOrgSecretJSON(sec *CodespaceSecret, orgLogin, baseURL string) map[string]interface{} {
+func codespaceOrgSecretJSON(sec *store.CodespaceSecret, orgLogin, baseURL string) map[string]interface{} {
 	out := codespaceUserSecretJSON(sec, baseURL)
 	out["selected_repositories_url"] = baseURL + "/api/v3/orgs/" + orgLogin + "/codespaces/secrets/" + sec.Name + "/repositories"
 	return out
 }
 
-func codespaceSecretsListJSON(secs []*CodespaceSecret, total int, baseURL string) map[string]interface{} {
+func codespaceSecretsListJSON(secs []*store.CodespaceSecret, total int, baseURL string) map[string]interface{} {
 	out := make([]map[string]interface{}, len(secs))
 	for i, sec := range secs {
 		out[i] = codespaceUserSecretJSON(sec, baseURL)
@@ -1140,13 +1142,13 @@ func (s *Server) handleListOrgCodespaces(w http.ResponseWriter, r *http.Request)
 	s.store.Mu.RLock()
 	memberLogins := map[string]bool{}
 	for _, m := range s.store.Memberships {
-		if m.OrgID == org.ID && m.State == MembershipStateActive {
+		if m.OrgID == org.ID && m.State == store.MembershipStateActive {
 			if u := s.store.Users[m.UserID]; u != nil {
 				memberLogins[u.Login] = true
 			}
 		}
 	}
-	var list []*Codespace
+	var list []*store.Codespace
 	for _, cs := range s.store.Codespaces {
 		if memberLogins[cs.OwnerLogin] {
 			list = append(list, cs)
@@ -1178,15 +1180,15 @@ func (s *Server) handleSetOrgCodespacesAccess(w http.ResponseWriter, r *http.Req
 		return
 	}
 	if !orgCodespacesAccessVisibilities[req.Visibility] {
-		writeGHValidationError(w, "OrgCodespacesAccess", "visibility", "invalid")
+		store.WriteGHValidationError(w, "OrgCodespacesAccess", "visibility", "invalid")
 		return
 	}
 	if len(req.SelectedUsernames) > 100 {
-		writeGHValidationError(w, "OrgCodespacesAccess", "selected_usernames", "invalid")
+		store.WriteGHValidationError(w, "OrgCodespacesAccess", "selected_usernames", "invalid")
 		return
 	}
 	if len(req.SelectedUsernames) > 0 && req.Visibility != "selected_members" {
-		writeGHValidationError(w, "OrgCodespacesAccess", "selected_usernames", "invalid")
+		store.WriteGHValidationError(w, "OrgCodespacesAccess", "selected_usernames", "invalid")
 		return
 	}
 	if invalid := s.store.OrgCodespacesInvalidUsers(org, req.SelectedUsernames); len(invalid) > 0 {
@@ -1210,7 +1212,7 @@ func (s *Server) modifyOrgCodespacesAccessUsers(w http.ResponseWriter, r *http.R
 		return
 	}
 	if len(req.SelectedUsernames) == 0 || len(req.SelectedUsernames) > 100 {
-		writeGHValidationError(w, "OrgCodespacesAccess", "selected_usernames", "invalid")
+		store.WriteGHValidationError(w, "OrgCodespacesAccess", "selected_usernames", "invalid")
 		return
 	}
 	if invalid := s.store.OrgCodespacesInvalidUsers(org, req.SelectedUsernames); len(invalid) > 0 {
@@ -1218,7 +1220,7 @@ func (s *Server) modifyOrgCodespacesAccessUsers(w http.ResponseWriter, r *http.R
 		return
 	}
 	if !s.store.ModifyOrgCodespacesAccessUsers(org.Login, add, req.SelectedUsernames) {
-		writeGHValidationError(w, "OrgCodespacesAccess", "visibility", "invalid")
+		store.WriteGHValidationError(w, "OrgCodespacesAccess", "visibility", "invalid")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -1237,10 +1239,10 @@ func (s *Server) handleRemoveOrgCodespacesAccessUsers(w http.ResponseWriter, r *
 // orgCodespaceSecretSelectionChange adapts the shared per-repository
 // selection core to the org codespaces secrets table.
 func (s *Server) orgCodespaceSecretSelectionChange(w http.ResponseWriter, r *http.Request, add bool) {
-	scope := codespaceSecretScopeKey("org", r.PathValue("org"))
+	scope := store.CodespaceSecretScopeKey("org", r.PathValue("org"))
 	name := r.PathValue("secret_name")
 	s.handleOrgSelectionChange(w, r, name, add,
-		func() orgScopedItem {
+		func() store.OrgScopedItem {
 			if sec := s.store.CodespaceSecrets[scope][name]; sec != nil {
 				return sec
 			}

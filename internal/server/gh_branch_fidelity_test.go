@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func TestBranchProtectionStateAcrossBranchAPIs(t *testing.T) {
@@ -21,14 +23,14 @@ func TestBranchProtectionStateAcrossBranchAPIs(t *testing.T) {
 		t.Fatal("created repository missing from store")
 	}
 	shas := seedPullRequestBranches(t, srv.Server, repo, "policy", "plain")
-	srv.store.CreateRuleset(repo, &Ruleset{
+	srv.store.CreateRuleset(repo, &store.Ruleset{
 		Name:        "protect-policy",
 		Target:      "branch",
 		Enforcement: "active",
-		Conditions: RulesetConditions{RefName: RefNameCondition{
+		Conditions: store.RulesetConditions{RefName: store.RefNameCondition{
 			Include: []string{"refs/heads/policy"},
 		}},
-		Rules: []Rule{{Type: "required_linear_history"}},
+		Rules: []store.Rule{{Type: "required_linear_history"}},
 	})
 
 	base := "/api/v3/repos/admin/" + repoName
@@ -115,14 +117,14 @@ func TestBranchProtectedByRepositoryAndOrganizationRulesets(t *testing.T) {
 	admin := s.store.UsersByLogin["admin"]
 	userRepo := s.store.CreateRepo(admin, "ruleset-protection-user", "", false)
 
-	s.store.CreateRuleset(userRepo, &Ruleset{
+	s.store.CreateRuleset(userRepo, &store.Ruleset{
 		Name:        "evaluate-only",
 		Target:      "branch",
 		Enforcement: "evaluate",
-		Conditions: RulesetConditions{RefName: RefNameCondition{
+		Conditions: store.RulesetConditions{RefName: store.RefNameCondition{
 			Include: []string{"refs/heads/main"},
 		}},
-		Rules: []Rule{{Type: "required_linear_history"}},
+		Rules: []store.Rule{{Type: "required_linear_history"}},
 	})
 	if s.store.BranchProtectedByRuleset(userRepo, "main") {
 		t.Fatal("an evaluate-only ruleset must not mark a branch protected")
@@ -135,8 +137,8 @@ func TestBranchProtectedByRepositoryAndOrganizationRulesets(t *testing.T) {
 		"protect-release",
 		"branch",
 		"active",
-		RulesetConditions{RefName: RefNameCondition{Include: []string{"release/*"}}},
-		[]Rule{{Type: "required_status_checks"}},
+		store.RulesetConditions{RefName: store.RefNameCondition{Include: []string{"release/*"}}},
+		[]store.Rule{{Type: "required_status_checks"}},
 	)
 	if !s.store.BranchProtectedByRuleset(orgRepo, "release/v1") {
 		t.Fatal("active organization ruleset did not protect a matching repository branch")

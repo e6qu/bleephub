@@ -11,22 +11,23 @@ import (
 	"time"
 
 	"github.com/e6qu/bleephub/internal/actions"
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // --- P57-001c: continue-on-error tests ---
 
 func TestContinueOnErrorDepStillRuns(t *testing.T) {
 	s := newTestServer()
-	wf := &WorkflowDef{
+	wf := &store.WorkflowDef{
 		Name: "coe-test",
-		Jobs: map[string]*JobDef{
+		Jobs: map[string]*store.JobDef{
 			"build": {
 				ContinueOnError: true,
-				Steps:           []StepDef{{Run: "exit 1"}},
+				Steps:           []store.StepDef{{Run: "exit 1"}},
 			},
 			"test": {
 				Needs: []string{"build"},
-				Steps: []StepDef{{Run: "echo test"}},
+				Steps: []store.StepDef{{Run: "echo test"}},
 			},
 		},
 	}
@@ -47,10 +48,10 @@ func TestContinueOnErrorDepStillRuns(t *testing.T) {
 }
 
 func TestContinueOnErrorNeedsContextShowsFailure(t *testing.T) {
-	wf := &Workflow{
+	wf := &store.Workflow{
 		ID:   "coe-wf",
 		Name: "test",
-		Jobs: map[string]*WorkflowJob{
+		Jobs: map[string]*store.WorkflowJob{
 			"build": {
 				Key:             "build",
 				JobID:           "j1",
@@ -94,7 +95,7 @@ func TestMaxParallelLimitsDispatch(t *testing.T) {
 	s := newTestServer()
 
 	// Create a workflow with 4 matrix jobs but max-parallel=2
-	workflow := &Workflow{
+	workflow := &store.Workflow{
 		ID:          "mp-test",
 		Name:        "matrix-parallel",
 		RunID:       1,
@@ -102,19 +103,19 @@ func TestMaxParallelLimitsDispatch(t *testing.T) {
 		Status:      "running",
 		MaxParallel: 2,
 		Env:         map[string]string{"__serverURL": "http://localhost", "__defaultImage": "alpine:latest"},
-		Jobs:        make(map[string]*WorkflowJob),
+		Jobs:        make(map[string]*store.WorkflowJob),
 		CreatedAt:   fixedTestTime,
 	}
 
 	for i := 0; i < 4; i++ {
 		key := fmt.Sprintf("test_%d", i)
-		workflow.Jobs[key] = &WorkflowJob{
+		workflow.Jobs[key] = &store.WorkflowJob{
 			Key:         key,
 			JobID:       fmt.Sprintf("j%d", i),
 			Status:      "pending",
 			MatrixGroup: "test",
 			Outputs:     make(map[string]string),
-			Def:         &JobDef{Steps: []StepDef{{Run: "echo"}}},
+			Def:         &store.JobDef{Steps: []store.StepDef{{Run: "echo"}}},
 		}
 	}
 
@@ -139,7 +140,7 @@ func TestMaxParallelLimitsDispatch(t *testing.T) {
 func TestMaxParallelZeroMeansUnlimited(t *testing.T) {
 	s := newTestServer()
 
-	workflow := &Workflow{
+	workflow := &store.Workflow{
 		ID:          "mp-zero",
 		Name:        "unlimited",
 		RunID:       1,
@@ -147,19 +148,19 @@ func TestMaxParallelZeroMeansUnlimited(t *testing.T) {
 		Status:      "running",
 		MaxParallel: 0, // no limit
 		Env:         map[string]string{"__serverURL": "http://localhost", "__defaultImage": "alpine:latest"},
-		Jobs:        make(map[string]*WorkflowJob),
+		Jobs:        make(map[string]*store.WorkflowJob),
 		CreatedAt:   fixedTestTime,
 	}
 
 	for i := 0; i < 4; i++ {
 		key := fmt.Sprintf("test_%d", i)
-		workflow.Jobs[key] = &WorkflowJob{
+		workflow.Jobs[key] = &store.WorkflowJob{
 			Key:         key,
 			JobID:       fmt.Sprintf("j%d", i),
 			Status:      "pending",
 			MatrixGroup: "test",
 			Outputs:     make(map[string]string),
-			Def:         &JobDef{Steps: []StepDef{{Run: "echo"}}},
+			Def:         &store.JobDef{Steps: []store.StepDef{{Run: "echo"}}},
 		}
 	}
 
@@ -186,25 +187,25 @@ func TestMaxParallelZeroMeansUnlimited(t *testing.T) {
 func TestJobTimeoutFailsJobFromExecutionStart(t *testing.T) {
 	s := newTestServer()
 
-	workflow := &Workflow{
+	workflow := &store.Workflow{
 		ID:        "to-test",
 		Name:      "timeout-test",
 		RunID:     1,
 		RunNumber: 1,
 		Status:    "running",
 		Env:       map[string]string{"__serverURL": "http://localhost", "__defaultImage": "alpine:latest"},
-		Jobs:      make(map[string]*WorkflowJob),
+		Jobs:      make(map[string]*store.WorkflowJob),
 		CreatedAt: fixedTestTime,
 	}
 
 	// Job with 1-minute timeout, started 2 minutes ago
-	workflow.Jobs["slow"] = &WorkflowJob{
+	workflow.Jobs["slow"] = &store.WorkflowJob{
 		Key:       "slow",
 		JobID:     "j-slow",
 		Status:    "running",
 		StartedAt: fixedTestTime.Add(-2 * time.Minute),
 		Outputs:   make(map[string]string),
-		Def:       &JobDef{TimeoutMinutes: 1, Steps: []StepDef{{Run: "sleep 999"}}},
+		Def:       &store.JobDef{TimeoutMinutes: 1, Steps: []store.StepDef{{Run: "sleep 999"}}},
 	}
 
 	s.store.Mu.Lock()
@@ -226,8 +227,8 @@ func TestJobTimeoutFailsJobFromExecutionStart(t *testing.T) {
 func TestQueuedJobsSpreadAcrossPollingRunners(t *testing.T) {
 	s := newTestServer()
 
-	mk := func(id string, agentID int) *Session {
-		sess := &Session{SessionID: id, Agent: &Agent{ID: agentID}, MsgCh: make(chan *TaskAgentMessage, 10)}
+	mk := func(id string, agentID int) *store.Session {
+		sess := &store.Session{SessionID: id, Agent: &store.Agent{ID: agentID}, MsgCh: make(chan *store.TaskAgentMessage, 10)}
 		s.store.Mu.Lock()
 		s.store.Sessions[id] = sess
 		s.store.Mu.Unlock()
@@ -239,21 +240,21 @@ func TestQueuedJobsSpreadAcrossPollingRunners(t *testing.T) {
 	// Queue two jobs; each runner's poll pulls one, and the pulled job's
 	// agent association marks the runner busy so it can't take the second.
 	s.store.Mu.Lock()
-	s.store.Jobs["j1"] = &Job{ID: "j1", Status: "queued"}
-	s.store.Jobs["j2"] = &Job{ID: "j2", Status: "queued"}
+	s.store.Jobs["j1"] = &store.Job{ID: "j1", Status: "queued"}
+	s.store.Jobs["j2"] = &store.Job{ID: "j2", Status: "queued"}
 	s.store.Mu.Unlock()
-	s.actions.QueueJobMessage(&TaskAgentMessage{MessageID: 1, JobID: "j1"})
-	s.actions.QueueJobMessage(&TaskAgentMessage{MessageID: 2, JobID: "j2"})
+	s.actions.QueueJobMessage(&store.TaskAgentMessage{MessageID: 1, JobID: "j1"})
+	s.actions.QueueJobMessage(&store.TaskAgentMessage{MessageID: 2, JobID: "j2"})
 
-	first := s.actions.PullPendingMessage(s1, runnerScope{Org: "octo"})
+	first := s.actions.PullPendingMessage(s1, store.RunnerScope{Org: "octo"})
 	if first == nil || first.MessageID != 1 {
 		t.Fatalf("first poll pulled %v, want message 1", first)
 	}
 	// s1 is now busy with j1 — its next poll gets nothing.
-	if again := s.actions.PullPendingMessage(s1, runnerScope{Org: "octo"}); again != nil {
+	if again := s.actions.PullPendingMessage(s1, store.RunnerScope{Org: "octo"}); again != nil {
 		t.Fatalf("busy runner pulled a second job: %v", again)
 	}
-	second := s.actions.PullPendingMessage(s2, runnerScope{Org: "octo"})
+	second := s.actions.PullPendingMessage(s2, store.RunnerScope{Org: "octo"})
 	if second == nil || second.MessageID != 2 {
 		t.Fatalf("second runner pulled %v, want message 2", second)
 	}
@@ -264,7 +265,7 @@ func TestQueuedMessagePulledByFirstPollAfterConnect(t *testing.T) {
 	s.metrics = NewMetrics()
 
 	// Queue a job with no sessions connected.
-	s.actions.QueueJobMessage(&TaskAgentMessage{MessageID: 42})
+	s.actions.QueueJobMessage(&store.TaskAgentMessage{MessageID: 42})
 
 	s.store.Mu.RLock()
 	pendingCount := len(s.store.PendingMessages)
@@ -274,12 +275,12 @@ func TestQueuedMessagePulledByFirstPollAfterConnect(t *testing.T) {
 	}
 
 	// A session connects; its first poll pulls the queued message.
-	sess := &Session{SessionID: "new-sess", Agent: &Agent{ID: 31}, MsgCh: make(chan *TaskAgentMessage, 10)}
+	sess := &store.Session{SessionID: "new-sess", Agent: &store.Agent{ID: 31}, MsgCh: make(chan *store.TaskAgentMessage, 10)}
 	s.store.Mu.Lock()
 	s.store.Sessions["new-sess"] = sess
 	s.store.Mu.Unlock()
 
-	got := s.actions.PullPendingMessage(sess, runnerScope{Org: "octo"})
+	got := s.actions.PullPendingMessage(sess, store.RunnerScope{Org: "octo"})
 	if got == nil || got.MessageID != 42 {
 		t.Fatalf("first poll pulled %v, want message 42", got)
 	}
@@ -313,7 +314,7 @@ func TestConcurrentWorkflowLimit(t *testing.T) {
 	s2.maxConcurrentWorkflows = 1
 
 	// Submit one workflow directly
-	wfDef, _ := ParseWorkflow([]byte("name: w1\njobs:\n  a:\n    runs-on: self-hosted\n    steps:\n      - run: echo 1"))
+	wfDef, _ := store.ParseWorkflow([]byte("name: w1\njobs:\n  a:\n    runs-on: self-hosted\n    steps:\n      - run: echo 1"))
 	_, err = s2.actions.SubmitWorkflow(context.Background(), "http://localhost", wfDef, "alpine:latest")
 	if err != nil {
 		t.Fatalf("first submit: %v", err)
@@ -376,12 +377,12 @@ func TestStatusEndpoint(t *testing.T) {
 
 func TestThreeStagePipeline(t *testing.T) {
 	s := newTestServer()
-	wf := &WorkflowDef{
+	wf := &store.WorkflowDef{
 		Name: "pipeline",
-		Jobs: map[string]*JobDef{
-			"build":  {Steps: []StepDef{{Run: "make build"}}},
-			"test":   {Needs: []string{"build"}, Steps: []StepDef{{Run: "make test"}}},
-			"deploy": {Needs: []string{"test"}, Steps: []StepDef{{Run: "make deploy"}}},
+		Jobs: map[string]*store.JobDef{
+			"build":  {Steps: []store.StepDef{{Run: "make build"}}},
+			"test":   {Needs: []string{"build"}, Steps: []store.StepDef{{Run: "make test"}}},
+			"deploy": {Needs: []string{"test"}, Steps: []store.StepDef{{Run: "make deploy"}}},
 		},
 	}
 
@@ -437,7 +438,7 @@ jobs:
     steps:
       - run: echo ${{ matrix.os }} ${{ matrix.version }}
 `
-	wfDef, err := ParseWorkflow([]byte(yamlStr))
+	wfDef, err := store.ParseWorkflow([]byte(yamlStr))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -474,18 +475,18 @@ jobs:
 
 func TestOutputPropagationEndToEnd(t *testing.T) {
 	s := newTestServer()
-	wf := &WorkflowDef{
+	wf := &store.WorkflowDef{
 		Name: "output-e2e",
-		Jobs: map[string]*JobDef{
+		Jobs: map[string]*store.JobDef{
 			"build": {
 				Outputs: map[string]string{
 					"version": "${{ steps.ver.outputs.version }}",
 				},
-				Steps: []StepDef{{ID: "ver", Run: "echo 'version=1.0' >> $GITHUB_OUTPUT"}},
+				Steps: []store.StepDef{{ID: "ver", Run: "echo 'version=1.0' >> $GITHUB_OUTPUT"}},
 			},
 			"deploy": {
 				Needs: []string{"build"},
-				Steps: []StepDef{{Run: "echo deploy"}},
+				Steps: []store.StepDef{{Run: "echo deploy"}},
 			},
 		},
 	}
@@ -522,25 +523,25 @@ func TestOutputPropagationEndToEnd(t *testing.T) {
 
 func TestDiamondDependencyWithOutputs(t *testing.T) {
 	s := newTestServer()
-	wf := &WorkflowDef{
+	wf := &store.WorkflowDef{
 		Name: "diamond-outputs",
-		Jobs: map[string]*JobDef{
+		Jobs: map[string]*store.JobDef{
 			"root": {
 				Outputs: map[string]string{"tag": "${{ steps.t.outputs.tag }}"},
-				Steps:   []StepDef{{ID: "t", Run: "echo"}},
+				Steps:   []store.StepDef{{ID: "t", Run: "echo"}},
 			},
 			"left": {
 				Needs:   []string{"root"},
 				Outputs: map[string]string{"l_result": "${{ steps.l.outputs.result }}"},
-				Steps:   []StepDef{{ID: "l", Run: "echo"}},
+				Steps:   []store.StepDef{{ID: "l", Run: "echo"}},
 			},
 			"right": {
 				Needs: []string{"root"},
-				Steps: []StepDef{{Run: "echo"}},
+				Steps: []store.StepDef{{Run: "echo"}},
 			},
 			"merge": {
 				Needs: []string{"left", "right"},
-				Steps: []StepDef{{Run: "echo"}},
+				Steps: []store.StepDef{{Run: "echo"}},
 			},
 		},
 	}
@@ -581,13 +582,13 @@ func TestDiamondDependencyWithOutputs(t *testing.T) {
 
 func TestRootFailureCascadesSkipAll(t *testing.T) {
 	s := newTestServer()
-	wf := &WorkflowDef{
+	wf := &store.WorkflowDef{
 		Name: "cascade-skip",
-		Jobs: map[string]*JobDef{
-			"root":  {Steps: []StepDef{{Run: "exit 1"}}},
-			"mid":   {Needs: []string{"root"}, Steps: []StepDef{{Run: "echo"}}},
-			"leaf1": {Needs: []string{"mid"}, Steps: []StepDef{{Run: "echo"}}},
-			"leaf2": {Needs: []string{"mid"}, Steps: []StepDef{{Run: "echo"}}},
+		Jobs: map[string]*store.JobDef{
+			"root":  {Steps: []store.StepDef{{Run: "exit 1"}}},
+			"mid":   {Needs: []string{"root"}, Steps: []store.StepDef{{Run: "echo"}}},
+			"leaf1": {Needs: []string{"mid"}, Steps: []store.StepDef{{Run: "echo"}}},
+			"leaf2": {Needs: []string{"mid"}, Steps: []store.StepDef{{Run: "echo"}}},
 		},
 	}
 
@@ -623,30 +624,30 @@ func TestRootFailureCascadesSkipAll(t *testing.T) {
 func TestFailFastCancelsSiblings(t *testing.T) {
 	s := newTestServer()
 
-	workflow := &Workflow{
+	workflow := &store.Workflow{
 		ID:        "ff-test",
 		Name:      "fail-fast-test",
 		RunID:     1,
 		RunNumber: 1,
 		Status:    "running",
 		Env:       map[string]string{"__serverURL": "http://localhost", "__defaultImage": "alpine:latest"},
-		Jobs:      make(map[string]*WorkflowJob),
+		Jobs:      make(map[string]*store.WorkflowJob),
 		CreatedAt: fixedTestTime,
 	}
 
 	for i := 0; i < 4; i++ {
 		key := fmt.Sprintf("test_%d", i)
-		status := JobStatusPending
+		status := store.JobStatusPending
 		if i == 0 {
-			status = JobStatusQueued
+			status = store.JobStatusQueued
 		}
-		workflow.Jobs[key] = &WorkflowJob{
+		workflow.Jobs[key] = &store.WorkflowJob{
 			Key:         key,
 			JobID:       fmt.Sprintf("j%d", i),
 			Status:      status,
 			MatrixGroup: "test",
 			Outputs:     make(map[string]string),
-			Def:         &JobDef{Strategy: &StrategyDef{FailFast: boolPtr(true)}, Steps: []StepDef{{Run: "echo"}}},
+			Def:         &store.JobDef{Strategy: &store.StrategyDef{FailFast: boolPtr(true)}, Steps: []store.StepDef{{Run: "echo"}}},
 		}
 	}
 
@@ -671,30 +672,30 @@ func TestFailFastCancelsSiblings(t *testing.T) {
 func TestFailFastFalseNoCancel(t *testing.T) {
 	s := newTestServer()
 
-	workflow := &Workflow{
+	workflow := &store.Workflow{
 		ID:        "ff-false",
 		Name:      "no-fail-fast",
 		RunID:     1,
 		RunNumber: 1,
 		Status:    "running",
 		Env:       map[string]string{"__serverURL": "http://localhost", "__defaultImage": "alpine:latest"},
-		Jobs:      make(map[string]*WorkflowJob),
+		Jobs:      make(map[string]*store.WorkflowJob),
 		CreatedAt: fixedTestTime,
 	}
 
 	for i := 0; i < 3; i++ {
 		key := fmt.Sprintf("test_%d", i)
-		status := JobStatusPending
+		status := store.JobStatusPending
 		if i == 0 {
-			status = JobStatusQueued
+			status = store.JobStatusQueued
 		}
-		workflow.Jobs[key] = &WorkflowJob{
+		workflow.Jobs[key] = &store.WorkflowJob{
 			Key:         key,
 			JobID:       fmt.Sprintf("j%d", i),
 			Status:      status,
 			MatrixGroup: "test",
 			Outputs:     make(map[string]string),
-			Def:         &JobDef{Strategy: &StrategyDef{FailFast: boolPtr(false)}, Steps: []StepDef{{Run: "echo"}}},
+			Def:         &store.JobDef{Strategy: &store.StrategyDef{FailFast: boolPtr(false)}, Steps: []store.StepDef{{Run: "echo"}}},
 		}
 	}
 
@@ -719,31 +720,31 @@ func TestFailFastFalseNoCancel(t *testing.T) {
 func TestFailFastDefaultTrue(t *testing.T) {
 	s := newTestServer()
 
-	workflow := &Workflow{
+	workflow := &store.Workflow{
 		ID:        "ff-default",
 		Name:      "default-fail-fast",
 		RunID:     1,
 		RunNumber: 1,
 		Status:    "running",
 		Env:       map[string]string{"__serverURL": "http://localhost", "__defaultImage": "alpine:latest"},
-		Jobs:      make(map[string]*WorkflowJob),
+		Jobs:      make(map[string]*store.WorkflowJob),
 		CreatedAt: fixedTestTime,
 	}
 
 	for i := 0; i < 3; i++ {
 		key := fmt.Sprintf("test_%d", i)
-		status := JobStatusPending
+		status := store.JobStatusPending
 		if i == 0 {
-			status = JobStatusQueued
+			status = store.JobStatusQueued
 		}
-		workflow.Jobs[key] = &WorkflowJob{
+		workflow.Jobs[key] = &store.WorkflowJob{
 			Key:         key,
 			JobID:       fmt.Sprintf("j%d", i),
 			Status:      status,
 			MatrixGroup: "test",
 			Outputs:     make(map[string]string),
 			// nil FailFast → defaults to true
-			Def: &JobDef{Strategy: &StrategyDef{}, Steps: []StepDef{{Run: "echo"}}},
+			Def: &store.JobDef{Strategy: &store.StrategyDef{}, Steps: []store.StepDef{{Run: "echo"}}},
 		}
 	}
 
@@ -767,33 +768,33 @@ func TestFailFastDefaultTrue(t *testing.T) {
 func TestFailFastOnlySameGroup(t *testing.T) {
 	s := newTestServer()
 
-	workflow := &Workflow{
+	workflow := &store.Workflow{
 		ID:        "ff-group",
 		Name:      "group-isolation",
 		RunID:     1,
 		RunNumber: 1,
 		Status:    "running",
 		Env:       map[string]string{"__serverURL": "http://localhost", "__defaultImage": "alpine:latest"},
-		Jobs:      make(map[string]*WorkflowJob),
+		Jobs:      make(map[string]*store.WorkflowJob),
 		CreatedAt: fixedTestTime,
 	}
 
 	// Group "test": test_0 (will fail), test_1 (pending)
-	workflow.Jobs["test_0"] = &WorkflowJob{
+	workflow.Jobs["test_0"] = &store.WorkflowJob{
 		Key: "test_0", JobID: "jt0", Status: "queued", MatrixGroup: "test",
 		Outputs: make(map[string]string),
-		Def:     &JobDef{Strategy: &StrategyDef{FailFast: boolPtr(true)}, Steps: []StepDef{{Run: "echo"}}},
+		Def:     &store.JobDef{Strategy: &store.StrategyDef{FailFast: boolPtr(true)}, Steps: []store.StepDef{{Run: "echo"}}},
 	}
-	workflow.Jobs["test_1"] = &WorkflowJob{
+	workflow.Jobs["test_1"] = &store.WorkflowJob{
 		Key: "test_1", JobID: "jt1", Status: "pending", MatrixGroup: "test",
 		Outputs: make(map[string]string),
-		Def:     &JobDef{Strategy: &StrategyDef{FailFast: boolPtr(true)}, Steps: []StepDef{{Run: "echo"}}},
+		Def:     &store.JobDef{Strategy: &store.StrategyDef{FailFast: boolPtr(true)}, Steps: []store.StepDef{{Run: "echo"}}},
 	}
 	// Group "build": build_0 (pending) — should NOT be cancelled
-	workflow.Jobs["build_0"] = &WorkflowJob{
+	workflow.Jobs["build_0"] = &store.WorkflowJob{
 		Key: "build_0", JobID: "jb0", Status: "pending", MatrixGroup: "build",
 		Outputs: make(map[string]string),
-		Def:     &JobDef{Steps: []StepDef{{Run: "echo"}}},
+		Def:     &store.JobDef{Steps: []store.StepDef{{Run: "echo"}}},
 	}
 
 	s.store.Mu.Lock()
@@ -816,14 +817,14 @@ func boolPtr(b bool) *bool { return &b }
 
 func TestJobIfSkipsOnFalse(t *testing.T) {
 	s := newTestServer()
-	wf := &WorkflowDef{
+	wf := &store.WorkflowDef{
 		Name: "if-test",
-		Jobs: map[string]*JobDef{
-			"build": {Steps: []StepDef{{Run: "echo build"}}},
+		Jobs: map[string]*store.JobDef{
+			"build": {Steps: []store.StepDef{{Run: "echo build"}}},
 			"deploy": {
 				Needs: []string{"build"},
 				If:    "github.ref == 'refs/heads/production'",
-				Steps: []StepDef{{Run: "echo deploy"}},
+				Steps: []store.StepDef{{Run: "echo deploy"}},
 			},
 		},
 	}
@@ -844,11 +845,11 @@ func TestJobIfSkipsOnFalse(t *testing.T) {
 
 func TestJobIfAlwaysRunsAfterFailure(t *testing.T) {
 	s := newTestServer()
-	wf := &WorkflowDef{
+	wf := &store.WorkflowDef{
 		Name: "always-test",
-		Jobs: map[string]*JobDef{
-			"build":   {Steps: []StepDef{{Run: "exit 1"}}},
-			"cleanup": {Needs: []string{"build"}, If: "always()", Steps: []StepDef{{Run: "echo cleanup"}}},
+		Jobs: map[string]*store.JobDef{
+			"build":   {Steps: []store.StepDef{{Run: "exit 1"}}},
+			"cleanup": {Needs: []string{"build"}, If: "always()", Steps: []store.StepDef{{Run: "echo cleanup"}}},
 		},
 	}
 
@@ -867,11 +868,11 @@ func TestJobIfAlwaysRunsAfterFailure(t *testing.T) {
 
 func TestJobIfFailureRunsAfterFailure(t *testing.T) {
 	s := newTestServer()
-	wf := &WorkflowDef{
+	wf := &store.WorkflowDef{
 		Name: "failure-test",
-		Jobs: map[string]*JobDef{
-			"build":  {Steps: []StepDef{{Run: "exit 1"}}},
-			"notify": {Needs: []string{"build"}, If: "failure()", Steps: []StepDef{{Run: "echo notify"}}},
+		Jobs: map[string]*store.JobDef{
+			"build":  {Steps: []store.StepDef{{Run: "exit 1"}}},
+			"notify": {Needs: []string{"build"}, If: "failure()", Steps: []store.StepDef{{Run: "echo notify"}}},
 		},
 	}
 
@@ -892,11 +893,11 @@ func TestJobIfFailureRunsAfterFailure(t *testing.T) {
 
 func TestCancelRunningWorkflow(t *testing.T) {
 	s := newTestServer()
-	wf := &WorkflowDef{
+	wf := &store.WorkflowDef{
 		Name: "cancel-test",
-		Jobs: map[string]*JobDef{
-			"build": {Steps: []StepDef{{Run: "sleep 999"}}},
-			"test":  {Needs: []string{"build"}, Steps: []StepDef{{Run: "echo test"}}},
+		Jobs: map[string]*store.JobDef{
+			"build": {Steps: []store.StepDef{{Run: "sleep 999"}}},
+			"test":  {Needs: []string{"build"}, Steps: []store.StepDef{{Run: "echo test"}}},
 		},
 	}
 
@@ -923,10 +924,10 @@ func TestCancelWorkflowHTTP(t *testing.T) {
 	s.registerRoutes()
 
 	// Submit a workflow
-	wf := &WorkflowDef{
+	wf := &store.WorkflowDef{
 		Name: "http-cancel",
-		Jobs: map[string]*JobDef{
-			"build": {Steps: []StepDef{{Run: "sleep 999"}}},
+		Jobs: map[string]*store.JobDef{
+			"build": {Steps: []store.StepDef{{Run: "sleep 999"}}},
 		},
 	}
 	workflow, err := s.actions.SubmitWorkflow(context.Background(), "http://localhost", wf, "alpine:latest")

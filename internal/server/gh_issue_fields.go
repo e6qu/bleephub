@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // GitHub organization issue fields: custom attributes (text, number, date,
@@ -14,20 +16,20 @@ import (
 
 func (s *Server) registerGHIssueFieldRoutes() {
 	s.route("GET /api/v3/orgs/{org}/issue-fields",
-		s.requirePerm(scopeOrgAdministration, permRead, s.orgGated(s.handleListOrgIssueFields)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.orgGated(s.handleListOrgIssueFields)))
 	s.route("POST /api/v3/orgs/{org}/issue-fields",
-		s.requirePerm(scopeOrgAdministration, permWrite, s.orgGated(s.handleCreateOrgIssueField)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.orgGated(s.handleCreateOrgIssueField)))
 	s.route("PATCH /api/v3/orgs/{org}/issue-fields/{issue_field_id}",
-		s.requirePerm(scopeOrgAdministration, permWrite, s.orgGated(s.handleUpdateOrgIssueField)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.orgGated(s.handleUpdateOrgIssueField)))
 	s.route("DELETE /api/v3/orgs/{org}/issue-fields/{issue_field_id}",
-		s.requirePerm(scopeOrgAdministration, permWrite, s.orgGated(s.handleDeleteOrgIssueField)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.orgGated(s.handleDeleteOrgIssueField)))
 
 	// Per-issue field values. The GET route dispatches through the shared
 	// two-segment issue GET handler (gh_labels_rest.go).
 	s.route("POST /api/v3/repos/{owner}/{repo}/issues/{number}/issue-field-values",
-		s.requirePerm(scopeIssues, permWrite, s.handleAddIssueFieldValues))
+		s.requirePerm(store.ScopeIssues, store.PermWrite, s.handleAddIssueFieldValues))
 	s.route("PUT /api/v3/repos/{owner}/{repo}/issues/{number}/issue-field-values",
-		s.requirePerm(scopeIssues, permWrite, s.handleSetIssueFieldValues))
+		s.requirePerm(store.ScopeIssues, store.PermWrite, s.handleSetIssueFieldValues))
 }
 
 var issueFieldDataTypes = map[string]bool{
@@ -51,11 +53,11 @@ func (s *Server) handleListOrgIssueFields(w http.ResponseWriter, r *http.Request
 func (s *Server) handleCreateOrgIssueField(w http.ResponseWriter, r *http.Request) {
 	org := r.PathValue("org")
 	var req struct {
-		Name        *string                   `json:"name"`
-		Description *string                   `json:"description"`
-		DataType    *string                   `json:"data_type"`
-		Visibility  *string                   `json:"visibility"`
-		Options     []issueFieldOptionRequest `json:"options"`
+		Name        *string                         `json:"name"`
+		Description *string                         `json:"description"`
+		DataType    *string                         `json:"data_type"`
+		Visibility  *string                         `json:"visibility"`
+		Options     []store.IssueFieldOptionRequest `json:"options"`
 	}
 	if !decodeJSONBody(w, r, &req) {
 		return
@@ -106,10 +108,10 @@ func (s *Server) handleUpdateOrgIssueField(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	var req struct {
-		Name        *string                   `json:"name"`
-		Description *string                   `json:"description"`
-		Visibility  *string                   `json:"visibility"`
-		Options     []issueFieldOptionRequest `json:"options"`
+		Name        *string                         `json:"name"`
+		Description *string                         `json:"description"`
+		Visibility  *string                         `json:"visibility"`
+		Options     []store.IssueFieldOptionRequest `json:"options"`
 	}
 	if !decodeJSONBody(w, r, &req) {
 		return
@@ -163,7 +165,7 @@ func (s *Server) handleDeleteOrgIssueField(w http.ResponseWriter, r *http.Reques
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func issueFieldJSON(f *IssueField) map[string]interface{} {
+func issueFieldJSON(f *store.IssueField) map[string]interface{} {
 	var desc interface{}
 	if f.Description != nil {
 		desc = *f.Description
@@ -204,7 +206,7 @@ func issueFieldJSON(f *IssueField) map[string]interface{} {
 
 // resolveIssueForFieldValues resolves the repo + issue for the
 // issue-field-values endpoints, writing the error response on failure.
-func (s *Server) resolveIssueForFieldValues(w http.ResponseWriter, r *http.Request) (*Repo, *Issue, bool) {
+func (s *Server) resolveIssueForFieldValues(w http.ResponseWriter, r *http.Request) (*store.Repo, *store.Issue, bool) {
 	owner := r.PathValue("owner")
 	name := r.PathValue("repo")
 	repo := s.store.GetRepo(owner, name)
@@ -231,7 +233,7 @@ func (s *Server) resolveIssueForFieldValues(w http.ResponseWriter, r *http.Reque
 
 // issueFieldsOrg returns the org login owning the repo, or "" for a
 // user-owned repo (which has no organization issue fields).
-func issueFieldsOrg(st *Store, repo *Repo) string {
+func issueFieldsOrg(st *store.Store, repo *store.Repo) string {
 	orgLogin, _, _ := strings.Cut(repo.FullName, "/")
 	if st.GetOrg(orgLogin) == nil {
 		return ""
@@ -268,7 +270,7 @@ func (s *Server) handleDeleteIssueFieldValue(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
-	if !s.viewerHasRepoPermission(r.Context(), repo, scopeIssues, permWrite) {
+	if !s.viewerHasRepoPermission(r.Context(), repo, store.ScopeIssues, store.PermWrite) {
 		writeGHError(w, http.StatusForbidden, "Must have push access to the repository.")
 		return
 	}
@@ -287,7 +289,7 @@ func (s *Server) applyIssueFieldValues(w http.ResponseWriter, r *http.Request, r
 	if !ok {
 		return
 	}
-	if !s.viewerHasRepoPermission(r.Context(), repo, scopeIssues, permWrite) {
+	if !s.viewerHasRepoPermission(r.Context(), repo, store.ScopeIssues, store.PermWrite) {
 		writeGHError(w, http.StatusForbidden, "Must have push access to the repository.")
 		return
 	}
@@ -302,12 +304,12 @@ func (s *Server) applyIssueFieldValues(w http.ResponseWriter, r *http.Request, r
 	updates := map[int]interface{}{}
 	for _, v := range req.IssueFieldValues {
 		if v.FieldID == nil {
-			writeGHValidationError(w, "IssueFieldValue", "field_id", "missing_field")
+			store.WriteGHValidationError(w, "IssueFieldValue", "field_id", "missing_field")
 			return
 		}
 		field := s.store.GetIssueField(org, *v.FieldID)
 		if field == nil {
-			writeGHValidationError(w, "IssueFieldValue", "field_id", "invalid")
+			store.WriteGHValidationError(w, "IssueFieldValue", "field_id", "invalid")
 			return
 		}
 		normalized, err := normalizeIssueFieldValue(field, v.Value)
@@ -332,7 +334,7 @@ func (s *Server) applyIssueFieldValues(w http.ResponseWriter, r *http.Request, r
 
 // normalizeIssueFieldValue validates a raw JSON value against the field's
 // data type and returns the canonical stored representation.
-func normalizeIssueFieldValue(field *IssueField, value interface{}) (interface{}, error) {
+func normalizeIssueFieldValue(field *store.IssueField, value interface{}) (interface{}, error) {
 	switch field.DataType {
 	case "text":
 		str, ok := value.(string)

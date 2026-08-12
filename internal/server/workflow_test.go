@@ -2,6 +2,8 @@ package bleephub
 
 import (
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func TestWorkflowParseSingleJob(t *testing.T) {
@@ -14,7 +16,7 @@ jobs:
       - run: echo hello
       - run: echo world
 `
-	wf, err := ParseWorkflow([]byte(yaml))
+	wf, err := store.ParseWorkflow([]byte(yaml))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -57,7 +59,7 @@ jobs:
     steps:
       - run: ./deploy
 `
-	wf, err := ParseWorkflow([]byte(yaml))
+	wf, err := store.ParseWorkflow([]byte(yaml))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -81,7 +83,7 @@ jobs:
 }
 
 func TestWorkflowRejectsInvalidPermissionAccess(t *testing.T) {
-	_, err := ParseWorkflow([]byte(`
+	_, err := store.ParseWorkflow([]byte(`
 permissions:
   contents: admin
 jobs:
@@ -112,7 +114,7 @@ jobs:
     steps:
       - run: make deploy
 `
-	wf, err := ParseWorkflow([]byte(yaml))
+	wf, err := store.ParseWorkflow([]byte(yaml))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -145,7 +147,7 @@ jobs:
           go-version: "1.22"
       - run: go test ./...
 `
-	wf, err := ParseWorkflow([]byte(yaml))
+	wf, err := store.ParseWorkflow([]byte(yaml))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -182,7 +184,7 @@ jobs:
     steps:
       - run: echo test
 `
-	wf, err := ParseWorkflow([]byte(yaml))
+	wf, err := store.ParseWorkflow([]byte(yaml))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -214,7 +216,7 @@ jobs:
     steps:
       - run: node --version
 `
-	wf, err := ParseWorkflow([]byte(yaml))
+	wf, err := store.ParseWorkflow([]byte(yaml))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -236,7 +238,7 @@ jobs:
     steps:
       - run: node --version
 `
-	wf, err := ParseWorkflow([]byte(yaml))
+	wf, err := store.ParseWorkflow([]byte(yaml))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -247,14 +249,14 @@ jobs:
 }
 
 func TestWorkflowParseInvalidYAML(t *testing.T) {
-	_, err := ParseWorkflow([]byte(`{invalid yaml`))
+	_, err := store.ParseWorkflow([]byte(`{invalid yaml`))
 	if err == nil {
 		t.Fatal("expected error for invalid YAML")
 	}
 }
 
 func TestWorkflowParseNoJobs(t *testing.T) {
-	_, err := ParseWorkflow([]byte(`name: empty`))
+	_, err := store.ParseWorkflow([]byte(`name: empty`))
 	if err == nil {
 		t.Fatal("expected error for empty jobs")
 	}
@@ -272,7 +274,7 @@ jobs:
         env:
           BAZ: qux
 `
-	wf, err := ParseWorkflow([]byte(yaml))
+	wf, err := store.ParseWorkflow([]byte(yaml))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -296,7 +298,7 @@ jobs:
       - id: ver
         run: echo "version=1.0" >> $GITHUB_OUTPUT
 `
-	wf, err := ParseWorkflow([]byte(yaml))
+	wf, err := store.ParseWorkflow([]byte(yaml))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -358,7 +360,7 @@ jobs:
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := ParseWorkflow([]byte(tc.yaml))
+			_, err := store.ParseWorkflow([]byte(tc.yaml))
 			if err == nil {
 				t.Fatal("expected error")
 			}
@@ -377,7 +379,7 @@ jobs:
     with:
       target: prod
 `
-	wf, err := ParseWorkflow([]byte(yaml))
+	wf, err := store.ParseWorkflow([]byte(yaml))
 	if err != nil {
 		t.Fatalf("parse reusable workflow job: %v", err)
 	}
@@ -402,7 +404,7 @@ func TestParseActionRef(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		nwo, path, ref, isLocal := ParseActionRef(tc.uses)
+		nwo, path, ref, isLocal := store.ParseActionRef(tc.uses)
 		if nwo != tc.wantNWO || path != tc.wantPath || ref != tc.wantRef || isLocal != tc.wantLocal {
 			t.Errorf("ParseActionRef(%q) = (%q, %q, %q, %v), want (%q, %q, %q, %v)",
 				tc.uses, nwo, path, ref, isLocal,
@@ -422,7 +424,7 @@ jobs:
     steps:
       - run: echo hello
 `
-	wf, err := ParseWorkflow([]byte(yaml))
+	wf, err := store.ParseWorkflow([]byte(yaml))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -449,7 +451,7 @@ jobs:
     steps:
       - run: echo hello
 `
-	wf, err := ParseWorkflow([]byte(yaml))
+	wf, err := store.ParseWorkflow([]byte(yaml))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -481,7 +483,7 @@ jobs:
     steps:
       - run: echo hello
 `
-	wf, err := ParseWorkflow([]byte(yaml))
+	wf, err := store.ParseWorkflow([]byte(yaml))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -515,7 +517,7 @@ jobs:
     steps:
       - run: echo hello
 `
-	wf, err := ParseWorkflow([]byte(yaml))
+	wf, err := store.ParseWorkflow([]byte(yaml))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -538,7 +540,7 @@ jobs:
     steps:
       - run: echo test
 `
-	wf, err := ParseWorkflow([]byte(yaml))
+	wf, err := store.ParseWorkflow([]byte(yaml))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}

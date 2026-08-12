@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -20,7 +21,7 @@ import (
 // resolveGitRef, refHash, findMergeBase, commitsBetween moved to
 // internal/store (ARCH-003): shared by REST and the GraphQL resolver layer.
 
-func commitToJSON(c *object.Commit, repo *Repo, baseURL string) map[string]interface{} {
+func commitToJSON(c *object.Commit, repo *store.Repo, baseURL string) map[string]interface{} {
 	if c == nil {
 		return nil
 	}
@@ -77,7 +78,7 @@ func commitToJSON(c *object.Commit, repo *Repo, baseURL string) map[string]inter
 // compareFiles walks the diff between baseTree and headTree and returns the
 // file entries GitHub's compare API emits, plus total additions/deletions/
 // changes.
-func compareFiles(baseTree, headTree *object.Tree, headCommit *object.Commit, repo *Repo, baseURL string) ([]map[string]interface{}, int, int, int, error) {
+func compareFiles(baseTree, headTree *object.Tree, headCommit *object.Commit, repo *store.Repo, baseURL string) ([]map[string]interface{}, int, int, int, error) {
 	changes, err := object.DiffTree(baseTree, headTree)
 	if err != nil {
 		return nil, 0, 0, 0, err
@@ -183,12 +184,12 @@ func (s *Server) handleCompareRefs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	baseHash, err := resolveGitRef(stor, baseRef)
+	baseHash, err := store.ResolveGitRef(stor, baseRef)
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	headHash, err := resolveGitRef(stor, headRef)
+	headHash, err := store.ResolveGitRef(stor, headRef)
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -205,7 +206,7 @@ func (s *Server) handleCompareRefs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mergeBase, err := findMergeBase(stor, baseHash, headHash)
+	mergeBase, err := store.FindMergeBase(stor, baseHash, headHash)
 	if err != nil {
 		writeGHError(w, http.StatusInternalServerError, "merge base lookup failed")
 		return
@@ -226,7 +227,7 @@ func (s *Server) handleCompareRefs(w http.ResponseWriter, r *http.Request) {
 		status = "identical"
 	} else if mergeBase == headHash {
 		status = "behind"
-		aheadCommits, err := commitsBetween(stor, headHash, baseHash)
+		aheadCommits, err := store.CommitsBetween(stor, headHash, baseHash)
 		if err != nil {
 			writeGHError(w, http.StatusInternalServerError, "Commit traversal failed")
 			return
@@ -234,19 +235,19 @@ func (s *Server) handleCompareRefs(w http.ResponseWriter, r *http.Request) {
 		behindBy = len(aheadCommits)
 	} else if mergeBase == baseHash {
 		status = "ahead"
-		aheadCommits, err := commitsBetween(stor, baseHash, headHash)
+		aheadCommits, err := store.CommitsBetween(stor, baseHash, headHash)
 		if err != nil {
 			writeGHError(w, http.StatusInternalServerError, "Commit traversal failed")
 			return
 		}
 		aheadBy = len(aheadCommits)
 	} else {
-		aheadCommits, err := commitsBetween(stor, mergeBase, headHash)
+		aheadCommits, err := store.CommitsBetween(stor, mergeBase, headHash)
 		if err != nil {
 			writeGHError(w, http.StatusInternalServerError, "Commit traversal failed")
 			return
 		}
-		behindCommits, err := commitsBetween(stor, mergeBase, baseHash)
+		behindCommits, err := store.CommitsBetween(stor, mergeBase, baseHash)
 		if err != nil {
 			writeGHError(w, http.StatusInternalServerError, "Commit traversal failed")
 			return
@@ -257,7 +258,7 @@ func (s *Server) handleCompareRefs(w http.ResponseWriter, r *http.Request) {
 
 	commits := make([]map[string]interface{}, 0)
 	if status == "ahead" || status == "diverged" {
-		commitObjs, err := commitsBetween(stor, baseHash, headHash)
+		commitObjs, err := store.CommitsBetween(stor, baseHash, headHash)
 		if err != nil {
 			writeGHError(w, http.StatusInternalServerError, "Commit traversal failed")
 			return
@@ -522,7 +523,7 @@ func performMerge(stor gitStorage.Storer, baseRef plumbing.ReferenceName, headHa
 		return baseHash, true, nil
 	}
 
-	mergeBase, err := findMergeBase(stor, baseHash, headHash)
+	mergeBase, err := store.FindMergeBase(stor, baseHash, headHash)
 	if err != nil {
 		return plumbing.ZeroHash, false, err
 	}
@@ -622,7 +623,7 @@ func computeMergeCommitHash(stor gitStorage.Storer, baseRef plumbing.ReferenceNa
 	}
 	baseHash := baseRefObj.Hash()
 
-	mergeBase, err := findMergeBase(stor, baseHash, headHash)
+	mergeBase, err := store.FindMergeBase(stor, baseHash, headHash)
 	if err != nil {
 		return plumbing.ZeroHash, err
 	}
@@ -662,10 +663,10 @@ func computeMergeCommitHash(stor gitStorage.Storer, baseRef plumbing.ReferenceNa
 // workflow run reports the merge ref/SHA rather than the head SHA (ACT-027). A
 // merge conflict, an unresolvable ref, or in-memory-only git storage clears the
 // field, leaving the head-SHA fallback in place.
-func (s *Server) refreshPullRequestPotentialMerge(repo *Repo, pr *PullRequest) {
+func (s *Server) refreshPullRequestPotentialMerge(repo *store.Repo, pr *store.PullRequest) {
 	sha := ""
 	if repo != nil && pr != nil && pr.State == "OPEN" {
-		if owner, name, ok := splitRepoFullName(repo.FullName); ok {
+		if owner, name, ok := store.SplitRepoFullName(repo.FullName); ok {
 			if stor := s.store.GetGitStorage(owner, name); stor != nil {
 				if head := pullRequestHeadSHA(pr, s.store); head != "" {
 					sig := &object.Signature{Name: "bleephub", Email: "bleephub@bleephub.invalid", When: s.currentTime()}
@@ -709,7 +710,7 @@ func performSquashMerge(stor gitStorage.Storer, baseRef plumbing.ReferenceName, 
 	}
 	baseHash := baseRefObj.Hash()
 
-	mergeBase, err := findMergeBase(stor, baseHash, headHash)
+	mergeBase, err := store.FindMergeBase(stor, baseHash, headHash)
 	if err != nil {
 		return plumbing.ZeroHash, err
 	}
@@ -762,7 +763,7 @@ func performRebaseMerge(stor gitStorage.Storer, baseRef plumbing.ReferenceName, 
 	}
 	baseHash := baseRefObj.Hash()
 
-	mergeBase, err := findMergeBase(stor, baseHash, headHash)
+	mergeBase, err := store.FindMergeBase(stor, baseHash, headHash)
 	if err != nil {
 		return plumbing.ZeroHash, err
 	}
@@ -774,7 +775,7 @@ func performRebaseMerge(stor gitStorage.Storer, baseRef plumbing.ReferenceName, 
 		return baseHash, nil
 	}
 
-	commits, err := commitsBetween(stor, mergeBase, headHash)
+	commits, err := store.CommitsBetween(stor, mergeBase, headHash)
 	if err != nil {
 		return plumbing.ZeroHash, err
 	}
@@ -852,7 +853,7 @@ func (s *Server) handleMergeRefs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	headHash, err := resolveGitRef(stor, req.Head)
+	headHash, err := store.ResolveGitRef(stor, req.Head)
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -867,7 +868,7 @@ func (s *Server) handleMergeRefs(w http.ResponseWriter, r *http.Request) {
 	baseHash := baseRefObj.Hash()
 
 	// Already merged: head is an ancestor of base.
-	mergeBase, err := findMergeBase(stor, baseHash, headHash)
+	mergeBase, err := store.FindMergeBase(stor, baseHash, headHash)
 	if err != nil {
 		writeGHError(w, http.StatusInternalServerError, "merge base lookup failed")
 		return
@@ -881,7 +882,7 @@ func (s *Server) handleMergeRefs(w http.ResponseWriter, r *http.Request) {
 	if email == "" {
 		email = user.Login + "@users.noreply.bleephub.local"
 	}
-	sig := repoSignature(coalesceStr(user.Name, user.Login), email)
+	sig := repoSignature(store.CoalesceStr(user.Name, user.Login), email)
 	commitHash, _, err := performMerge(stor, baseRef, headHash, req.Head, req.CommitMessage, sig)
 	if err != nil {
 		if errors.Is(err, gitStorage.ErrReferenceHasChanged) {
@@ -902,7 +903,7 @@ func (s *Server) handleMergeRefs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.store.UpdateRepo(owner, name, func(r *Repo) {
+	s.store.UpdateRepo(owner, name, func(r *store.Repo) {
 		r.PushedAt = time.Now().UTC()
 	})
 	writeJSON(w, http.StatusCreated, commitToJSON(mergeCommit, repo, s.baseURL(r)))

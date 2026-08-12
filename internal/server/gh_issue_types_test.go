@@ -2,6 +2,8 @@ package bleephub
 
 import (
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func TestOrgIssueTypes_CRUD(t *testing.T) {
@@ -193,14 +195,14 @@ func TestIssueTypeAssignmentRESTValidation(t *testing.T) {
 }
 
 func TestIssueTypeAssignmentPersists(t *testing.T) {
-	st2 := reloadedStore(t, func(_ *Persistence, st *Store) {
+	st2 := reloadedStore(t, func(_ *store.Persistence, st *store.Store) {
 		st.SeedDefaultUser()
 		admin := st.Users[1]
 		org := st.CreateOrg(admin, "persist-issue-type-org", "Persist Issue Type", "")
 		repo := st.CreateOrgRepo(org, admin, "persist-issue-type-repo", "", false)
 		it := st.CreateIssueType(org.Login, "Epic", nil, nil, true)
 		issue := st.CreateIssue(repo.ID, admin.ID, "typed", "", nil, nil, 0)
-		st.UpdateIssue(issue.ID, func(i *Issue) {
+		st.UpdateIssue(issue.ID, func(i *store.Issue) {
 			i.IssueTypeID = it.ID
 		})
 	})

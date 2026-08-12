@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // TestOrgUpdateDeleteAllowSiteAdmin guards the operator path on the org
@@ -38,7 +40,7 @@ func TestOrgUpdateDeleteAllowSiteAdmin(t *testing.T) {
 	}
 
 	// Site admin (non-owner) can edit the org.
-	w := serveTestRequest(s, bearerHeader(AdminToken()), "PATCH", "/api/v3/orgs/acme-corp",
+	w := serveTestRequest(s, bearerHeader(store.AdminToken()), "PATCH", "/api/v3/orgs/acme-corp",
 		[]byte(`{"description":"edited by operator"}`))
 	if w.Code != http.StatusOK {
 		t.Fatalf("site-admin PATCH org = %d, want 200; body=%s", w.Code, w.Body.String())
@@ -50,7 +52,7 @@ func TestOrgUpdateDeleteAllowSiteAdmin(t *testing.T) {
 	}
 
 	// Site admin (non-owner) can delete the org.
-	if w := serveTestRequest(s, bearerHeader(AdminToken()), "DELETE", "/api/v3/orgs/acme-corp", nil); w.Code != http.StatusNoContent {
+	if w := serveTestRequest(s, bearerHeader(store.AdminToken()), "DELETE", "/api/v3/orgs/acme-corp", nil); w.Code != http.StatusNoContent {
 		t.Fatalf("site-admin DELETE org = %d, want 204; body=%s", w.Code, w.Body.String())
 	}
 	if s.store.GetOrg("acme-corp") != nil {

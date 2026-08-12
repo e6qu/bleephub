@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func (s *Server) registerGHMigrationsRoutes() {
@@ -80,7 +82,7 @@ func (s *Server) handleStartUserMigration(w http.ResponseWriter, r *http.Request
 	}
 	repos, err := s.validateUserMigrationRepos(user, body.Repositories)
 	if err != "" {
-		writeGHValidationError(w, "Migration", "repositories", err)
+		store.WriteGHValidationError(w, "Migration", "repositories", err)
 		return
 	}
 	m := s.store.CreateUserMigration(user.ID, repos, body.LockRepositories, body.ExcludeMetadata, body.ExcludeGitData, body.ExcludeAttachments, body.ExcludeReleases, body.ExcludeOwnerProjects, body.OrgMetadataOnly)
@@ -220,7 +222,7 @@ func (s *Server) handleStartOrgMigration(w http.ResponseWriter, r *http.Request)
 	}
 	repos, err := s.validateOrgMigrationRepos(org, body.Repositories)
 	if err != "" {
-		writeGHValidationError(w, "Migration", "repositories", err)
+		store.WriteGHValidationError(w, "Migration", "repositories", err)
 		return
 	}
 	m := s.store.CreateOrgMigration(org.Login, repos, body.LockRepositories, body.ExcludeMetadata, body.ExcludeGitData, body.ExcludeAttachments, body.ExcludeReleases, body.ExcludeOwnerProjects, body.OrgMetadataOnly)
@@ -348,7 +350,7 @@ func (s *Server) handleUnlockOrgMigrationRepo(w http.ResponseWriter, r *http.Req
 
 // Resolvers
 
-func (s *Server) resolveUserMigration(w http.ResponseWriter, r *http.Request, userID int) (*UserMigration, bool) {
+func (s *Server) resolveUserMigration(w http.ResponseWriter, r *http.Request, userID int) (*store.UserMigration, bool) {
 	id, err := strconv.Atoi(r.PathValue("migration_id"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -362,7 +364,7 @@ func (s *Server) resolveUserMigration(w http.ResponseWriter, r *http.Request, us
 	return m, true
 }
 
-func (s *Server) resolveOrgMigration(w http.ResponseWriter, r *http.Request, user *User) (*OrgMigration, *Org, bool) {
+func (s *Server) resolveOrgMigration(w http.ResponseWriter, r *http.Request, user *store.User) (*store.OrgMigration, *store.Org, bool) {
 	org := s.store.GetOrg(r.PathValue("org"))
 	if org == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -387,7 +389,7 @@ func (s *Server) resolveOrgMigration(w http.ResponseWriter, r *http.Request, use
 
 // Validation
 
-func (s *Server) validateUserMigrationRepos(user *User, names []string) ([]string, string) {
+func (s *Server) validateUserMigrationRepos(user *store.User, names []string) ([]string, string) {
 	if len(names) == 0 {
 		return nil, "missing_field"
 	}
@@ -403,7 +405,7 @@ func (s *Server) validateUserMigrationRepos(user *User, names []string) ([]strin
 	return names, ""
 }
 
-func (s *Server) validateOrgMigrationRepos(org *Org, names []string) ([]string, string) {
+func (s *Server) validateOrgMigrationRepos(org *store.Org, names []string) ([]string, string) {
 	if len(names) == 0 {
 		return nil, "missing_field"
 	}
@@ -422,23 +424,23 @@ func (s *Server) validateOrgMigrationRepos(org *Org, names []string) ([]string, 
 
 // JSON serialization
 
-func (s *Server) userMigrationToJSON(m *UserMigration, baseURL string, excludeRepos bool) map[string]interface{} {
+func (s *Server) userMigrationToJSON(m *store.UserMigration, baseURL string, excludeRepos bool) map[string]interface{} {
 	owner := map[string]interface{}{}
 	if u := s.store.GetUserByID(m.UserID); u != nil {
-		owner = userToJSON(u)
+		owner = store.UserToJSON(u)
 	}
 	return s.migrationToJSON(m.MigrationCommon, owner, baseURL, "user", "", excludeRepos)
 }
 
-func (s *Server) orgMigrationToJSON(m *OrgMigration, baseURL string, excludeRepos bool) map[string]interface{} {
+func (s *Server) orgMigrationToJSON(m *store.OrgMigration, baseURL string, excludeRepos bool) map[string]interface{} {
 	owner := map[string]interface{}{}
 	if org := s.store.GetOrg(m.OrgLogin); org != nil {
-		owner = orgAsSimpleUserJSON(org)
+		owner = store.OrgAsSimpleUserJSON(org)
 	}
 	return s.migrationToJSON(m.MigrationCommon, owner, baseURL, "orgs", m.OrgLogin, excludeRepos)
 }
 
-func (s *Server) migrationToJSON(m MigrationCommon, owner map[string]interface{}, baseURL, scope, scopeLogin string, excludeRepos bool) map[string]interface{} {
+func (s *Server) migrationToJSON(m store.MigrationCommon, owner map[string]interface{}, baseURL, scope, scopeLogin string, excludeRepos bool) map[string]interface{} {
 	var url, archiveURL string
 	if scope == "user" {
 		url = baseURL + "/api/v3/user/migrations/" + strconv.Itoa(m.ID)
@@ -480,17 +482,17 @@ func (s *Server) migrationToJSON(m MigrationCommon, owner map[string]interface{}
 	return out
 }
 
-func migrationRepoJSON(repo *Repo, st *Store, baseURL string) map[string]interface{} {
+func migrationRepoJSON(repo *store.Repo, st *store.Store, baseURL string) map[string]interface{} {
 	owner := map[string]interface{}{}
 	if repo.OwnerType == "Organization" {
 		parts := strings.SplitN(repo.FullName, "/", 2)
 		if len(parts) == 2 {
 			if org := st.GetOrg(parts[0]); org != nil {
-				owner = orgAsSimpleUserJSON(org)
+				owner = store.OrgAsSimpleUserJSON(org)
 			}
 		}
 	} else if repo.Owner != nil {
-		owner = userToJSON(repo.Owner)
+		owner = store.UserToJSON(repo.Owner)
 	}
 
 	api := baseURL + "/api/v3/repos/" + repo.FullName
@@ -509,7 +511,7 @@ func migrationRepoJSON(repo *Repo, st *Store, baseURL string) map[string]interfa
 		"owner":             owner,
 		"private":           repo.Private,
 		"html_url":          htmlURL,
-		"description":       nilOrString(repo.Description),
+		"description":       store.NilOrString(repo.Description),
 		"fork":              repo.Fork,
 		"url":               api,
 		"archive_url":       api + "/{archive_format}{/ref}",
@@ -550,12 +552,12 @@ func migrationRepoJSON(repo *Repo, st *Store, baseURL string) map[string]interfa
 		"hooks_url":         api + "/hooks",
 		"clone_url":         baseURL + "/" + repo.FullName + ".git",
 		"git_url":           "git://" + host + "/" + repo.FullName + ".git",
-		"ssh_url":           sshGitURL(repo.FullName),
+		"ssh_url":           store.SshGitURL(repo.FullName),
 		"svn_url":           baseURL + "/" + repo.FullName,
 		"mirror_url":        nil,
-		"homepage":          nilOrString(repo.Homepage),
-		"license":           licenseJSON(repo),
-		"language":          nilOrString(repo.Language),
+		"homepage":          store.NilOrString(repo.Homepage),
+		"license":           store.LicenseJSON(repo),
+		"language":          store.NilOrString(repo.Language),
 		"default_branch":    repo.DefaultBranch,
 		"visibility":        repo.Visibility,
 		"archived":          repo.Archived,
@@ -573,7 +575,7 @@ func migrationRepoJSON(repo *Repo, st *Store, baseURL string) map[string]interfa
 		"has_wiki":          repo.HasWiki,
 		"has_pages":         false,
 		"has_downloads":     false,
-		"has_discussions":   repoHasDiscussions(repo),
+		"has_discussions":   store.RepoHasDiscussions(repo),
 		"has_pull_requests": repo.HasPullRequests,
 		"is_template":       repo.IsTemplate,
 		"topics":            jsonArray(repo.Topics),
@@ -590,7 +592,7 @@ func migrationRepoJSON(repo *Repo, st *Store, baseURL string) map[string]interfa
 
 // Archive generation and download
 
-func (s *Server) serveMigrationArchive(w http.ResponseWriter, r *http.Request, m MigrationCommon, scope, scopeLogin string) {
+func (s *Server) serveMigrationArchive(w http.ResponseWriter, r *http.Request, m store.MigrationCommon, scope, scopeLogin string) {
 	if m.State != "exported" || m.ArchiveDeleted {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -608,7 +610,7 @@ func (s *Server) serveMigrationArchive(w http.ResponseWriter, r *http.Request, m
 	_, _ = io.Copy(w, bytes.NewReader(data))
 }
 
-func (s *Server) generateMigrationArchive(m MigrationCommon, scope, scopeLogin string) ([]byte, error) {
+func (s *Server) generateMigrationArchive(m store.MigrationCommon, scope, scopeLogin string) ([]byte, error) {
 	var buf bytes.Buffer
 	gw := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gw)

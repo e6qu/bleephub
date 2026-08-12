@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -40,7 +41,7 @@ func (s *Server) registerGHSearchRoutes() {
 // own store locks.
 func (s *Server) searchAccessibleRepoIDs(ctx context.Context) map[int]struct{} {
 	s.store.Mu.RLock()
-	repositories := make([]*Repo, 0, len(s.store.Repos))
+	repositories := make([]*store.Repo, 0, len(s.store.Repos))
 	for _, repo := range s.store.Repos {
 		snapshot := *repo
 		repositories = append(repositories, &snapshot)
@@ -355,8 +356,8 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 	// concurrent UpdateIssue writer (the JSON builders re-lock, but these raw
 	// reads did not).
 	type issueRow struct {
-		issue   *Issue
-		repo    *Repo
+		issue   *store.Issue
+		repo    *store.Repo
 		assoc   string
 		title   string
 		body    string
@@ -364,8 +365,8 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 		updated time.Time
 	}
 	type prRow struct {
-		pr      *PullRequest
-		repo    *Repo
+		pr      *store.PullRequest
+		repo    *store.Repo
 		assoc   string
 		title   string
 		body    string
@@ -453,7 +454,7 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		issueRows = append(issueRows, issueRow{issue, repo, authorAssociationLocked(s.store, issue.AuthorID, repo), issue.Title, issue.Body, issue.CreatedAt, issue.UpdatedAt})
+		issueRows = append(issueRows, issueRow{issue, repo, store.AuthorAssociationLocked(s.store, issue.AuthorID, repo), issue.Title, issue.Body, issue.CreatedAt, issue.UpdatedAt})
 	}
 
 	for _, pr := range s.store.PullRequests {
@@ -538,7 +539,7 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		prRows = append(prRows, prRow{pr, repo, authorAssociationLocked(s.store, pr.AuthorID, repo), pr.Title, pr.Body, pr.CreatedAt, pr.UpdatedAt})
+		prRows = append(prRows, prRow{pr, repo, store.AuthorAssociationLocked(s.store, pr.AuthorID, repo), pr.Title, pr.Body, pr.CreatedAt, pr.UpdatedAt})
 	}
 
 	s.store.Mu.RUnlock()
@@ -568,14 +569,14 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 			item["draft"] = false
 			// pull_request is optional and non-nullable: GitHub sets it only on
 			// rows that are pull requests, and omits it for plain issues.
-			item["repository"] = repoToJSON(row.repo, s.store, base)
+			item["repository"] = store.RepoToJSON(row.repo, s.store, base)
 			return item
 		}
 		item := issueToJSONForPR(row.pr, s.store, base, row.repo.FullName)
 		delete(item, "closed_by")
 		item["score"] = searchRelevanceScore(q.Terms, row.title, row.body)
 		item["author_association"] = row.assoc
-		item["repository"] = repoToJSON(row.repo, s.store, base)
+		item["repository"] = store.RepoToJSON(row.repo, s.store, base)
 		return item
 	}
 
@@ -615,9 +616,9 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 // searchIssueRow is a matched issue or PR gathered by the issue-search scan,
 // carrying just enough to sort and then render only the requested page.
 type searchIssueRow struct {
-	issue *Issue
-	pr    *PullRequest
-	repo  *Repo
+	issue *store.Issue
+	pr    *store.PullRequest
+	repo  *store.Repo
 	assoc string
 	// title/body/created/updated are snapshotted under the store lock at gather
 	// time; the scorer and sorter read these instead of the live entity so they
@@ -689,7 +690,7 @@ func searchPageBounds(page, perPage, total int) (int, int) {
 	return start, end
 }
 
-func issueToJSONForPR(pr *PullRequest, st *Store, baseURL, repoFullName string) map[string]interface{} {
+func issueToJSONForPR(pr *store.PullRequest, st *store.Store, baseURL, repoFullName string) map[string]interface{} {
 	out := issueToJSONForPullRequest(pr, st, baseURL, repoFullName)
 	out["pull_request"] = map[string]interface{}{
 		"url":       baseURL + "/api/v3/repos/" + repoFullName + "/pulls/" + strconv.Itoa(pr.Number),
@@ -704,10 +705,10 @@ func issueToJSONForPR(pr *PullRequest, st *Store, baseURL, repoFullName string) 
 // issueToJSONForPullRequest renders a pull request in the issue shape.
 // Must not be called with st.mu held: it takes the read lock itself and
 // derives milestone issue counts via milestoneToJSON, which locks too.
-func issueToJSONForPullRequest(pr *PullRequest, st *Store, baseURL, repoFullName string) map[string]interface{} {
+func issueToJSONForPullRequest(pr *store.PullRequest, st *store.Store, baseURL, repoFullName string) map[string]interface{} {
 	pr = st.SnapPR(pr)
 	st.Mu.RLock()
-	authorJSON := userToJSON(actorUserLocked(st, pr.AuthorID))
+	authorJSON := store.UserToJSON(store.ActorUserLocked(st, pr.AuthorID))
 	repo := st.Repos[pr.RepoID]
 
 	labels := make([]map[string]interface{}, 0)
@@ -719,7 +720,7 @@ func issueToJSONForPullRequest(pr *PullRequest, st *Store, baseURL, repoFullName
 	assignees := make([]map[string]interface{}, 0)
 	for _, aid := range pr.AssigneeIDs {
 		if u := st.Users[aid]; u != nil {
-			assignees = append(assignees, userToJSON(u))
+			assignees = append(assignees, store.UserToJSON(u))
 		}
 	}
 	var assignee interface{}
@@ -728,7 +729,7 @@ func issueToJSONForPullRequest(pr *PullRequest, st *Store, baseURL, repoFullName
 	}
 	// Grab the milestone pointer; conversion happens after unlock because
 	// milestoneToJSON derives issue counts under its own lock.
-	var milestone *Milestone
+	var milestone *store.Milestone
 	if pr.MilestoneID > 0 {
 		milestone = st.Milestones[pr.MilestoneID]
 	}
@@ -776,12 +777,12 @@ func issueToJSONForPullRequest(pr *PullRequest, st *Store, baseURL, repoFullName
 		"updated_at":         pr.UpdatedAt.Format(time.RFC3339),
 		"closed_at":          closedAt,
 		"closed_by":          pullRequestClosedByJSON(st, pr),
-		"author_association": authorAssociation(st, pr.AuthorID, repo),
+		"author_association": store.AuthorAssociation(st, pr.AuthorID, repo),
 		"draft":              pr.IsDraft,
 	}
 }
 
-func pullRequestClosedByJSON(st *Store, pr *PullRequest) interface{} {
+func pullRequestClosedByJSON(st *store.Store, pr *store.PullRequest) interface{} {
 	if pr == nil || (pr.State != "CLOSED" && pr.State != "MERGED") {
 		return nil
 	}
@@ -797,16 +798,16 @@ func pullRequestClosedByJSON(st *Store, pr *PullRequest) interface{} {
 	}
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
-	actor := actorUserLocked(st, actorID)
+	actor := store.ActorUserLocked(st, actorID)
 	if actor == nil {
 		return nil
 	}
-	return userToJSON(actor)
+	return store.UserToJSON(actor)
 }
 
 // issueHasLabelNames reports whether the issue carries every named label.
 // Callers hold st.mu (it reads st.Labels directly).
-func issueHasLabelNames(st *Store, issue *Issue, names []string) bool {
+func issueHasLabelNames(st *store.Store, issue *store.Issue, names []string) bool {
 	for _, name := range names {
 		found := false
 		for _, lid := range issue.LabelIDs {
@@ -824,7 +825,7 @@ func issueHasLabelNames(st *Store, issue *Issue, names []string) bool {
 
 // prHasLabelNames reports whether the pull request carries every named
 // label. Callers hold st.mu (it reads st.Labels directly).
-func prHasLabelNames(st *Store, pr *PullRequest, names []string) bool {
+func prHasLabelNames(st *store.Store, pr *store.PullRequest, names []string) bool {
 	for _, name := range names {
 		found := false
 		for _, lid := range pr.LabelIDs {
@@ -846,17 +847,17 @@ func (s *Server) handleSearchRepositories(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if strings.TrimSpace(r.URL.Query().Get("q")) == "" {
-		writeGHValidationError(w, "Search", "q", "missing_field")
+		store.WriteGHValidationError(w, "Search", "q", "missing_field")
 		return
 	}
 	switch q.Sort {
 	case "", "stars", "forks", "help-wanted-issues", "updated":
 	default:
-		writeGHValidationError(w, "Search", "sort", "invalid")
+		store.WriteGHValidationError(w, "Search", "sort", "invalid")
 		return
 	}
 	if q.Order != "" && q.Order != "asc" && q.Order != "desc" {
-		writeGHValidationError(w, "Search", "order", "invalid")
+		store.WriteGHValidationError(w, "Search", "order", "invalid")
 		return
 	}
 
@@ -864,7 +865,7 @@ func (s *Server) handleSearchRepositories(w http.ResponseWriter, r *http.Request
 	// then evaluate storage-backed qualifiers (size, README and funding file)
 	// after releasing it. repoToJSON and several qualifier counters lock the
 	// store themselves.
-	var candidates []*Repo
+	var candidates []*store.Repo
 	accessibleRepoIDs := s.searchAccessibleRepoIDs(r.Context())
 	s.store.Mu.RLock()
 	for _, repo := range s.store.Repos {
@@ -881,7 +882,7 @@ func (s *Server) handleSearchRepositories(w http.ResponseWriter, r *http.Request
 	}
 	s.store.Mu.RUnlock()
 
-	var matched []*Repo
+	var matched []*store.Repo
 	for _, repo := range candidates {
 		if repositoryMatchesSearch(s.store, repo, q) {
 			matched = append(matched, repo)
@@ -891,7 +892,7 @@ func (s *Server) handleSearchRepositories(w http.ResponseWriter, r *http.Request
 	base := s.baseURL(r)
 	var results []map[string]interface{}
 	for _, repo := range matched {
-		item := repoToJSON(repo, s.store, base)
+		item := store.RepoToJSON(repo, s.store, base)
 		item["score"] = searchRelevanceScore(q.Terms, repo.Name, repo.Description)
 		item["_help_wanted_issues"] = repoIssueLabelCount(s.store, repo.ID, "help wanted")
 		results = append(results, item)
@@ -900,7 +901,7 @@ func (s *Server) handleSearchRepositories(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, searchEnvelope(results, len(results), false, q, sortRepoSearchResults))
 }
 
-func repoIssueLabelCount(st *Store, repoID int, labelName string) int {
+func repoIssueLabelCount(st *store.Store, repoID int, labelName string) int {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 	count := 0
@@ -929,7 +930,7 @@ func (s *Server) handleSearchCode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(q.Terms) == 0 && q.Filename == "" && q.Extension == "" && q.Path == "" {
-		writeGHValidationError(w, "Search", "q", "missing_field")
+		store.WriteGHValidationError(w, "Search", "q", "missing_field")
 		return
 	}
 
@@ -937,7 +938,7 @@ func (s *Server) handleSearchCode(w http.ResponseWriter, r *http.Request) {
 	// lock; the tree walk and rendering happen after release because
 	// repoToJSON takes the store lock itself.
 	type codeSearchRepo struct {
-		repo *Repo
+		repo *store.Repo
 		stor gitStorage.Storer
 	}
 	var searchRepos []codeSearchRepo
@@ -1070,7 +1071,7 @@ func (s *Server) handleSearchCode(w http.ResponseWriter, r *http.Request) {
 				"url":        api + "/contents/" + path,
 				"git_url":    api + "/git/blobs/" + f.Hash.String(),
 				"html_url":   base + "/" + repo.FullName + "/blob/" + repo.DefaultBranch + "/" + path,
-				"repository": repoToJSON(repo, s.store, base),
+				"repository": store.RepoToJSON(repo, s.store, base),
 				"score":      searchRelevanceScore(q.Terms, name, path),
 				"language":   detectLanguage(name),
 			}
@@ -1094,8 +1095,8 @@ func (s *Server) handleSearchUsers(w http.ResponseWriter, r *http.Request) {
 	// Matching users and orgs are gathered under the read lock; rendering
 	// happens after release because fullUserJSON derives follower and repo
 	// counts under the store and misc locks itself.
-	var users []*User
-	var orgs []*Org
+	var users []*store.User
+	var orgs []*store.Org
 	s.store.Mu.RLock()
 	for _, u := range s.store.Users {
 		if q.Type == "org" {
@@ -1134,7 +1135,7 @@ func (s *Server) handleSearchUsers(w http.ResponseWriter, r *http.Request) {
 		results = append(results, item)
 	}
 	for _, org := range orgs {
-		item := orgAsSimpleUserJSON(org)
+		item := store.OrgAsSimpleUserJSON(org)
 		item["score"] = searchRelevanceScore(q.Terms, org.Login, org.Name+" "+org.Description)
 		results = append(results, item)
 	}
@@ -1420,7 +1421,7 @@ func (s *Server) handleSearchCommits(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(q.Terms) == 0 && q.Repo == "" && q.Author == "" && q.Hash == "" && q.User == "" && q.Org == "" {
-		writeGHValidationError(w, "Search", "q", "missing_field")
+		store.WriteGHValidationError(w, "Search", "q", "missing_field")
 		return
 	}
 
@@ -1429,7 +1430,7 @@ func (s *Server) handleSearchCommits(w http.ResponseWriter, r *http.Request) {
 	// commitSearchItemJSON and commitAuthorMatches take the store lock
 	// themselves.
 	type commitSearchRepo struct {
-		repo *Repo
+		repo *store.Repo
 		stor gitStorage.Storer
 	}
 	var searchRepos []commitSearchRepo
@@ -1531,7 +1532,7 @@ func (s *Server) handleSearchCommits(w http.ResponseWriter, r *http.Request) {
 // git author name/email and against the login of a store user with the
 // commit author's email. Must not be called with st.mu held; it takes the
 // read lock itself.
-func commitAuthorMatches(st *Store, commit *object.Commit, author string) bool {
+func commitAuthorMatches(st *store.Store, commit *object.Commit, author string) bool {
 	if strings.EqualFold(commit.Author.Name, author) {
 		return true
 	}
@@ -1554,7 +1555,7 @@ func commitAuthorMatches(st *Store, commit *object.Commit, author string) bool {
 // counters under the store lock itself. terms drives the relevance score:
 // the commit subject (first line) is the primary field and the full message
 // the secondary one.
-func (s *Server) commitSearchItemJSON(commit *object.Commit, repo *Repo, base string, terms []string) map[string]interface{} {
+func (s *Server) commitSearchItemJSON(commit *object.Commit, repo *store.Repo, base string, terms []string) map[string]interface{} {
 	sha := commit.Hash.String()
 	api := base + "/api/v3/repos/" + repo.FullName
 
@@ -1564,7 +1565,7 @@ func (s *Server) commitSearchItemJSON(commit *object.Commit, repo *Repo, base st
 	s.store.Mu.RLock()
 	for _, u := range s.store.Users {
 		if u.Email != "" && strings.EqualFold(u.Email, commit.Author.Email) {
-			authorJSON = userToJSON(u)
+			authorJSON = store.UserToJSON(u)
 			break
 		}
 	}
@@ -1613,7 +1614,7 @@ func (s *Server) commitSearchItemJSON(commit *object.Commit, repo *Repo, base st
 			"date":  commit.Committer.When.UTC().Format(time.RFC3339),
 		},
 		"parents":    parents,
-		"repository": repoToJSON(repo, s.store, base),
+		"repository": store.RepoToJSON(repo, s.store, base),
 		"score":      searchRelevanceScore(terms, subject, commit.Message),
 	}
 }
@@ -1648,16 +1649,16 @@ func sortCommitSearchResults(items []map[string]interface{}, sortKey, order stri
 func (s *Server) handleSearchLabels(w http.ResponseWriter, r *http.Request) {
 	repoIDStr := r.URL.Query().Get("repository_id")
 	if repoIDStr == "" {
-		writeGHValidationError(w, "Search", "repository_id", "missing_field")
+		store.WriteGHValidationError(w, "Search", "repository_id", "missing_field")
 		return
 	}
 	if r.URL.Query().Get("q") == "" {
-		writeGHValidationError(w, "Search", "q", "missing_field")
+		store.WriteGHValidationError(w, "Search", "q", "missing_field")
 		return
 	}
 	repoID, err := strconv.Atoi(repoIDStr)
 	if err != nil {
-		writeGHValidationError(w, "Search", "repository_id", "invalid")
+		store.WriteGHValidationError(w, "Search", "repository_id", "invalid")
 		return
 	}
 	repo := s.store.GetRepoByID(repoID)
@@ -1671,7 +1672,7 @@ func (s *Server) handleSearchLabels(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.store.Mu.RLock()
-	labels := make([]*IssueLabel, 0)
+	labels := make([]*store.IssueLabel, 0)
 	for _, l := range s.store.Labels {
 		if l.RepoID != repo.ID {
 			continue
@@ -1705,7 +1706,7 @@ func (s *Server) handleSearchLabels(w http.ResponseWriter, r *http.Request) {
 // topics applied to repositories the caller can read.
 func (s *Server) handleSearchTopics(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("q") == "" {
-		writeGHValidationError(w, "Search", "q", "missing_field")
+		store.WriteGHValidationError(w, "Search", "q", "missing_field")
 		return
 	}
 	q, ok := searchQueryOrError(w, r, "topics")

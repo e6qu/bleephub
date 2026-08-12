@@ -5,6 +5,8 @@ import (
 	"sort"
 	"strconv"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // REST surface for organization people management: organization
@@ -20,28 +22,28 @@ func (s *Server) registerGHOrgsPeopleRoutes() {
 	s.registerGHExternalIdentityRoutes()
 
 	// Organization invitations.
-	s.route("GET /api/v3/orgs/{org}/invitations", s.requirePerm(scopeMembers, permRead, s.handleListOrgInvitations))
-	s.route("POST /api/v3/orgs/{org}/invitations", s.requirePerm(scopeMembers, permWrite, s.handleCreateOrgInvitation))
-	s.route("DELETE /api/v3/orgs/{org}/invitations/{invitation_id}", s.requirePerm(scopeMembers, permWrite, s.handleCancelOrgInvitation))
-	s.route("GET /api/v3/orgs/{org}/invitations/{invitation_id}/teams", s.requirePerm(scopeMembers, permRead, s.handleListOrgInvitationTeams))
-	s.route("GET /api/v3/orgs/{org}/failed_invitations", s.requirePerm(scopeMembers, permRead, s.handleListFailedOrgInvitations))
-	s.route("GET /api/v3/orgs/{org}/teams/{team_slug}/invitations", s.requirePerm(scopeMembers, permRead, s.handleListTeamInvitations))
+	s.route("GET /api/v3/orgs/{org}/invitations", s.requirePerm(store.ScopeMembers, store.PermRead, s.handleListOrgInvitations))
+	s.route("POST /api/v3/orgs/{org}/invitations", s.requirePerm(store.ScopeMembers, store.PermWrite, s.handleCreateOrgInvitation))
+	s.route("DELETE /api/v3/orgs/{org}/invitations/{invitation_id}", s.requirePerm(store.ScopeMembers, store.PermWrite, s.handleCancelOrgInvitation))
+	s.route("GET /api/v3/orgs/{org}/invitations/{invitation_id}/teams", s.requirePerm(store.ScopeMembers, store.PermRead, s.handleListOrgInvitationTeams))
+	s.route("GET /api/v3/orgs/{org}/failed_invitations", s.requirePerm(store.ScopeMembers, store.PermRead, s.handleListFailedOrgInvitations))
+	s.route("GET /api/v3/orgs/{org}/teams/{team_slug}/invitations", s.requirePerm(store.ScopeMembers, store.PermRead, s.handleListTeamInvitations))
 
 	// Outside collaborators.
-	s.route("GET /api/v3/orgs/{org}/outside_collaborators", s.requirePerm(scopeMembers, permRead, s.handleListOutsideCollaborators))
-	s.route("PUT /api/v3/orgs/{org}/outside_collaborators/{username}", s.requirePerm(scopeMembers, permWrite, s.handleConvertMemberToOutsideCollaborator))
-	s.route("DELETE /api/v3/orgs/{org}/outside_collaborators/{username}", s.requirePerm(scopeMembers, permWrite, s.handleRemoveOutsideCollaborator))
+	s.route("GET /api/v3/orgs/{org}/outside_collaborators", s.requirePerm(store.ScopeMembers, store.PermRead, s.handleListOutsideCollaborators))
+	s.route("PUT /api/v3/orgs/{org}/outside_collaborators/{username}", s.requirePerm(store.ScopeMembers, store.PermWrite, s.handleConvertMemberToOutsideCollaborator))
+	s.route("DELETE /api/v3/orgs/{org}/outside_collaborators/{username}", s.requirePerm(store.ScopeMembers, store.PermWrite, s.handleRemoveOutsideCollaborator))
 
 	// Organization user blocks.
-	s.route("GET /api/v3/orgs/{org}/blocks", s.requirePerm(scopeOrgAdministration, permRead, s.handleListOrgBlocks))
-	s.route("GET /api/v3/orgs/{org}/blocks/{username}", s.requirePerm(scopeOrgAdministration, permRead, s.handleCheckOrgBlock))
-	s.route("PUT /api/v3/orgs/{org}/blocks/{username}", s.requirePerm(scopeOrgAdministration, permWrite, s.handleBlockOrgUser))
-	s.route("DELETE /api/v3/orgs/{org}/blocks/{username}", s.requirePerm(scopeOrgAdministration, permWrite, s.handleUnblockOrgUser))
+	s.route("GET /api/v3/orgs/{org}/blocks", s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.handleListOrgBlocks))
+	s.route("GET /api/v3/orgs/{org}/blocks/{username}", s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.handleCheckOrgBlock))
+	s.route("PUT /api/v3/orgs/{org}/blocks/{username}", s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.handleBlockOrgUser))
+	s.route("DELETE /api/v3/orgs/{org}/blocks/{username}", s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.handleUnblockOrgUser))
 
 	// Organization interaction limits.
-	s.route("GET /api/v3/orgs/{org}/interaction-limits", s.requirePerm(scopeOrgAdministration, permRead, s.handleGetOrgInteractionLimits))
-	s.route("PUT /api/v3/orgs/{org}/interaction-limits", s.requirePerm(scopeOrgAdministration, permWrite, s.handleSetOrgInteractionLimits))
-	s.route("DELETE /api/v3/orgs/{org}/interaction-limits", s.requirePerm(scopeOrgAdministration, permWrite, s.handleDeleteOrgInteractionLimits))
+	s.route("GET /api/v3/orgs/{org}/interaction-limits", s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.handleGetOrgInteractionLimits))
+	s.route("PUT /api/v3/orgs/{org}/interaction-limits", s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.handleSetOrgInteractionLimits))
+	s.route("DELETE /api/v3/orgs/{org}/interaction-limits", s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.handleDeleteOrgInteractionLimits))
 
 	s.registerGHOrgRolesRoutes()
 }
@@ -50,34 +52,34 @@ func (s *Server) registerGHOrgRolesRoutes() {
 	s.registerGHOrgGovernanceRoutes()
 
 	// Organization roles.
-	s.route("GET /api/v3/orgs/{org}/organization-roles", s.requirePerm(scopeOrgAdministration, permRead, s.handleListOrganizationRoles))
-	s.route("POST /api/v3/orgs/{org}/organization-roles", s.requirePerm(scopeOrgAdministration, permWrite, s.handleCreateOrganizationRole))
-	s.route("GET /api/v3/orgs/{org}/organization-roles/{role_id}", s.requirePerm(scopeOrgAdministration, permRead, s.handleGetOrganizationRole))
-	s.route("PATCH /api/v3/orgs/{org}/organization-roles/{role_id}", s.requirePerm(scopeOrgAdministration, permWrite, s.handleUpdateOrganizationRole))
-	s.route("DELETE /api/v3/orgs/{org}/organization-roles/{role_id}", s.requirePerm(scopeOrgAdministration, permWrite, s.handleDeleteOrganizationRole))
-	s.route("GET /api/v3/orgs/{org}/organization-roles/{role_id}/teams", s.requirePerm(scopeOrgAdministration, permRead, s.handleListOrganizationRoleTeams))
-	s.route("GET /api/v3/orgs/{org}/organization-roles/{role_id}/users", s.requirePerm(scopeOrgAdministration, permRead, s.handleListOrganizationRoleUsers))
-	s.route("PUT /api/v3/orgs/{org}/organization-roles/teams/{team_slug}/{role_id}", s.requirePerm(scopeOrgAdministration, permWrite, s.handleAssignOrganizationRoleToTeam))
-	s.route("DELETE /api/v3/orgs/{org}/organization-roles/teams/{team_slug}/{role_id}", s.requirePerm(scopeOrgAdministration, permWrite, s.handleRevokeOrganizationRoleFromTeam))
-	s.route("DELETE /api/v3/orgs/{org}/organization-roles/teams/{team_slug}", s.requirePerm(scopeOrgAdministration, permWrite, s.handleRevokeAllOrganizationRolesFromTeam))
-	s.route("PUT /api/v3/orgs/{org}/organization-roles/users/{username}/{role_id}", s.requirePerm(scopeOrgAdministration, permWrite, s.handleAssignOrganizationRoleToUser))
-	s.route("DELETE /api/v3/orgs/{org}/organization-roles/users/{username}/{role_id}", s.requirePerm(scopeOrgAdministration, permWrite, s.handleRevokeOrganizationRoleFromUser))
-	s.route("DELETE /api/v3/orgs/{org}/organization-roles/users/{username}", s.requirePerm(scopeOrgAdministration, permWrite, s.handleRevokeAllOrganizationRolesFromUser))
+	s.route("GET /api/v3/orgs/{org}/organization-roles", s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.handleListOrganizationRoles))
+	s.route("POST /api/v3/orgs/{org}/organization-roles", s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.handleCreateOrganizationRole))
+	s.route("GET /api/v3/orgs/{org}/organization-roles/{role_id}", s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.handleGetOrganizationRole))
+	s.route("PATCH /api/v3/orgs/{org}/organization-roles/{role_id}", s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.handleUpdateOrganizationRole))
+	s.route("DELETE /api/v3/orgs/{org}/organization-roles/{role_id}", s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.handleDeleteOrganizationRole))
+	s.route("GET /api/v3/orgs/{org}/organization-roles/{role_id}/teams", s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.handleListOrganizationRoleTeams))
+	s.route("GET /api/v3/orgs/{org}/organization-roles/{role_id}/users", s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.handleListOrganizationRoleUsers))
+	s.route("PUT /api/v3/orgs/{org}/organization-roles/teams/{team_slug}/{role_id}", s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.handleAssignOrganizationRoleToTeam))
+	s.route("DELETE /api/v3/orgs/{org}/organization-roles/teams/{team_slug}/{role_id}", s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.handleRevokeOrganizationRoleFromTeam))
+	s.route("DELETE /api/v3/orgs/{org}/organization-roles/teams/{team_slug}", s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.handleRevokeAllOrganizationRolesFromTeam))
+	s.route("PUT /api/v3/orgs/{org}/organization-roles/users/{username}/{role_id}", s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.handleAssignOrganizationRoleToUser))
+	s.route("DELETE /api/v3/orgs/{org}/organization-roles/users/{username}/{role_id}", s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.handleRevokeOrganizationRoleFromUser))
+	s.route("DELETE /api/v3/orgs/{org}/organization-roles/users/{username}", s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.handleRevokeAllOrganizationRolesFromUser))
 
 	// Security managers (the team-assignment alias of the
 	// security_manager organization role).
-	s.route("GET /api/v3/orgs/{org}/security-managers", s.requirePerm(scopeOrgAdministration, permRead, s.handleListSecurityManagerTeams))
-	s.route("PUT /api/v3/orgs/{org}/security-managers/teams/{team_slug}", s.requirePerm(scopeOrgAdministration, permWrite, s.handleAddSecurityManagerTeam))
-	s.route("DELETE /api/v3/orgs/{org}/security-managers/teams/{team_slug}", s.requirePerm(scopeOrgAdministration, permWrite, s.handleRemoveSecurityManagerTeam))
+	s.route("GET /api/v3/orgs/{org}/security-managers", s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.handleListSecurityManagerTeams))
+	s.route("PUT /api/v3/orgs/{org}/security-managers/teams/{team_slug}", s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.handleAddSecurityManagerTeam))
+	s.route("DELETE /api/v3/orgs/{org}/security-managers/teams/{team_slug}", s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.handleRemoveSecurityManagerTeam))
 
 	// Org-wide security-product enablement.
-	s.route("POST /api/v3/orgs/{org}/{security_product}/{enablement}", s.requirePerm(scopeOrgAdministration, permWrite, s.handleOrgSecurityProductEnablement))
+	s.route("POST /api/v3/orgs/{org}/{security_product}/{enablement}", s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.handleOrgSecurityProductEnablement))
 }
 
 // resolveOrgOwner resolves the {org} path parameter and requires the
 // authenticated caller to be an active organization owner, writing the
 // appropriate error otherwise.
-func (s *Server) resolveOrgOwner(w http.ResponseWriter, r *http.Request) (*Org, *User) {
+func (s *Server) resolveOrgOwner(w http.ResponseWriter, r *http.Request) (*store.Org, *store.User) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
@@ -98,7 +100,7 @@ func (s *Server) resolveOrgOwner(w http.ResponseWriter, r *http.Request) (*Org, 
 // resolveOrgMember resolves the {org} path parameter and requires the
 // authenticated caller to be an active organization member — the org's
 // internal structure reads as 404 to everyone else, like real GitHub.
-func (s *Server) resolveOrgMember(w http.ResponseWriter, r *http.Request) (*Org, *User) {
+func (s *Server) resolveOrgMember(w http.ResponseWriter, r *http.Request) (*store.Org, *store.User) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
@@ -119,7 +121,7 @@ func (s *Server) resolveOrgMember(w http.ResponseWriter, r *http.Request) (*Org,
 // --- organization invitations ---
 
 // orgInvitationJSON renders the GitHub `organization-invitation` shape.
-func (s *Server) orgInvitationJSON(inv *OrgInvitation, org *Org, baseURL string) map[string]interface{} {
+func (s *Server) orgInvitationJSON(inv *store.OrgInvitation, org *store.Org, baseURL string) map[string]interface{} {
 	var login, email interface{}
 	if inv.Login != "" {
 		login = inv.Login
@@ -129,7 +131,7 @@ func (s *Server) orgInvitationJSON(inv *OrgInvitation, org *Org, baseURL string)
 	}
 	inviter := map[string]interface{}(nil)
 	if u := s.store.GetUserByID(inv.InviterID); u != nil {
-		inviter = userToJSON(u)
+		inviter = store.UserToJSON(u)
 	}
 	var failedAt, failedReason interface{}
 	if inv.FailedAt != nil {
@@ -161,14 +163,14 @@ func (s *Server) handleListOrgInvitations(w http.ResponseWriter, r *http.Request
 	switch roleFilter {
 	case "", "all", "admin", "direct_member", "billing_manager", "hiring_manager":
 	default:
-		writeGHValidationError(w, "OrganizationInvitation", "role", "invalid")
+		store.WriteGHValidationError(w, "OrganizationInvitation", "role", "invalid")
 		return
 	}
 	sourceFilter := r.URL.Query().Get("invitation_source")
 	switch sourceFilter {
 	case "", "all", "member", "scim":
 	default:
-		writeGHValidationError(w, "OrganizationInvitation", "invitation_source", "invalid")
+		store.WriteGHValidationError(w, "OrganizationInvitation", "invitation_source", "invalid")
 		return
 	}
 
@@ -215,7 +217,7 @@ func (s *Server) handleCreateOrgInvitation(w http.ResponseWriter, r *http.Reques
 		writeGHError(w, http.StatusUnprocessableEntity, "Invitee was not previously a member of this organization, so there is no role to reinstate.")
 		return
 	default:
-		writeGHValidationError(w, "OrganizationInvitation", "role", "invalid")
+		store.WriteGHValidationError(w, "OrganizationInvitation", "role", "invalid")
 		return
 	}
 
@@ -228,12 +230,12 @@ func (s *Server) handleCreateOrgInvitation(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	var invitee *User
+	var invitee *store.User
 	email := req.Email
 	if req.InviteeID != 0 {
 		invitee = s.store.GetUserByID(int(req.InviteeID))
 		if invitee == nil {
-			writeGHValidationError(w, "OrganizationInvitation", "invitee_id", "invalid")
+			store.WriteGHValidationError(w, "OrganizationInvitation", "invitee_id", "invalid")
 			return
 		}
 	} else if u := s.store.LookupUserByEmail(email); u != nil {
@@ -251,7 +253,7 @@ func (s *Server) handleCreateOrgInvitation(w http.ResponseWriter, r *http.Reques
 	for _, id := range req.TeamIDs {
 		team := s.store.GetTeamByID(id)
 		if team == nil || team.OrgID != org.ID {
-			writeGHValidationError(w, "OrganizationInvitation", "team_ids", "invalid")
+			store.WriteGHValidationError(w, "OrganizationInvitation", "team_ids", "invalid")
 			return
 		}
 		teamIDs = append(teamIDs, id)
@@ -360,7 +362,7 @@ func (s *Server) handleListOutsideCollaborators(w http.ResponseWriter, r *http.R
 	switch filter {
 	case "", "all", "2fa_disabled", "2fa_insecure":
 	default:
-		writeGHValidationError(w, "OutsideCollaborator", "filter", "invalid")
+		store.WriteGHValidationError(w, "OutsideCollaborator", "filter", "invalid")
 		return
 	}
 	collaborators := s.store.ListOutsideCollaborators(org.Login)
@@ -372,7 +374,7 @@ func (s *Server) handleListOutsideCollaborators(w http.ResponseWriter, r *http.R
 	}
 	result := make([]map[string]interface{}, 0, len(collaborators))
 	for _, u := range collaborators {
-		result = append(result, userToJSON(u))
+		result = append(result, store.UserToJSON(u))
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, result))
 }
@@ -388,11 +390,11 @@ func (s *Server) handleConvertMemberToOutsideCollaborator(w http.ResponseWriter,
 		return
 	}
 	m := s.store.GetMembership(org.Login, target.ID)
-	if m == nil || m.State != MembershipStateActive {
+	if m == nil || m.State != store.MembershipStateActive {
 		writeGHError(w, http.StatusNotFound, r.PathValue("username")+" is not a member of the "+org.Login+" organization.")
 		return
 	}
-	if m.Role == OrgRoleAdmin {
+	if m.Role == store.OrgRoleAdmin {
 		writeGHError(w, http.StatusForbidden, "Cannot convert an organization owner to an outside collaborator.")
 		return
 	}
@@ -416,7 +418,7 @@ func (s *Server) handleRemoveOutsideCollaborator(w http.ResponseWriter, r *http.
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if m := s.store.GetMembership(org.Login, target.ID); m != nil && m.State == MembershipStateActive {
+	if m := s.store.GetMembership(org.Login, target.ID); m != nil && m.State == store.MembershipStateActive {
 		writeGHError(w, http.StatusUnprocessableEntity, "You cannot specify an organization member to remove as an outside collaborator.")
 		return
 	}
@@ -435,7 +437,7 @@ func (s *Server) handleListOrgBlocks(w http.ResponseWriter, r *http.Request) {
 	blocked := s.store.ListOrgBlockedUsers(org.Login)
 	result := make([]map[string]interface{}, 0, len(blocked))
 	for _, u := range blocked {
-		result = append(result, userToJSON(u))
+		result = append(result, store.UserToJSON(u))
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, result))
 }
@@ -467,7 +469,7 @@ func (s *Server) handleBlockOrgUser(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnprocessableEntity, "You cannot block yourself.")
 		return
 	}
-	if m := s.store.GetMembership(org.Login, target.ID); m != nil && m.State == MembershipStateActive {
+	if m := s.store.GetMembership(org.Login, target.ID); m != nil && m.State == store.MembershipStateActive {
 		writeGHError(w, http.StatusUnprocessableEntity, "You cannot block a member of this organization.")
 		return
 	}
@@ -503,7 +505,7 @@ var orgInteractionExpiryDurations = map[string]time.Duration{
 	"six_months": 180 * 24 * time.Hour,
 }
 
-func orgInteractionLimitJSON(lim *OrgInteractionLimit) map[string]interface{} {
+func orgInteractionLimitJSON(lim *store.OrgInteractionLimit) map[string]interface{} {
 	return map[string]interface{}{
 		"limit":      lim.Limit,
 		"origin":     "organization",
@@ -541,7 +543,7 @@ func (s *Server) handleSetOrgInteractionLimits(w http.ResponseWriter, r *http.Re
 	switch req.Limit {
 	case "existing_users", "contributors_only", "collaborators_only":
 	default:
-		writeGHValidationError(w, "InteractionLimit", "limit", "invalid")
+		store.WriteGHValidationError(w, "InteractionLimit", "limit", "invalid")
 		return
 	}
 	expiry := req.Expiry
@@ -550,7 +552,7 @@ func (s *Server) handleSetOrgInteractionLimits(w http.ResponseWriter, r *http.Re
 	}
 	duration, ok := orgInteractionExpiryDurations[expiry]
 	if !ok {
-		writeGHValidationError(w, "InteractionLimit", "expiry", "invalid")
+		store.WriteGHValidationError(w, "InteractionLimit", "expiry", "invalid")
 		return
 	}
 	lim := s.store.SetOrgInteractionLimit(org.Login, req.Limit, s.currentTime().Add(duration))
@@ -620,7 +622,7 @@ func predefinedOrgRoleByID(id int) *predefinedOrgRole {
 // orgRoleJSON renders the GitHub `organization-role` shape. Predefined
 // roles carry a null organization and exist from the organization's
 // creation.
-func predefinedOrgRoleView(role *predefinedOrgRole, org *Org) *organizationRoleView {
+func predefinedOrgRoleView(role *predefinedOrgRole, org *store.Org) *organizationRoleView {
 	description, baseRole := role.Description, role.BaseRole
 	return &organizationRoleView{
 		ID: role.ID, Name: role.Name, Description: &description, BaseRole: &baseRole,
@@ -629,7 +631,7 @@ func predefinedOrgRoleView(role *predefinedOrgRole, org *Org) *organizationRoleV
 	}
 }
 
-func customOrgRoleView(role *OrgCustomOrganizationRole) *organizationRoleView {
+func customOrgRoleView(role *store.OrgCustomOrganizationRole) *organizationRoleView {
 	if role == nil {
 		return nil
 	}
@@ -640,7 +642,7 @@ func customOrgRoleView(role *OrgCustomOrganizationRole) *organizationRoleView {
 	}
 }
 
-func orgRoleJSON(role *organizationRoleView, org *Org, baseURL string) map[string]interface{} {
+func orgRoleJSON(role *organizationRoleView, org *store.Org, baseURL string) map[string]interface{} {
 	permissions := role.Permissions
 	if permissions == nil {
 		permissions = []string{}
@@ -697,7 +699,7 @@ func (s *Server) handleListOrganizationRoles(w http.ResponseWriter, r *http.Requ
 		roles = append(roles, orgRoleJSON(predefinedOrgRoleView(&predefinedOrgRoles[i], org), org, s.baseURL(r)))
 	}
 	s.store.Mu.RLock()
-	custom := make([]*OrgCustomOrganizationRole, 0, len(s.store.OrgCustomRoles[org.Login]))
+	custom := make([]*store.OrgCustomOrganizationRole, 0, len(s.store.OrgCustomRoles[org.Login]))
 	for _, role := range s.store.OrgCustomRoles[org.Login] {
 		copyRole := *role
 		copyRole.Permissions = append([]string(nil), role.Permissions...)
@@ -767,7 +769,7 @@ func (s *Server) handleListOrganizationRoleUsers(w http.ResponseWriter, r *http.
 		if u == nil {
 			continue
 		}
-		j := userToJSON(u)
+		j := store.UserToJSON(u)
 		j["assignment"] = assignments[id]
 		result = append(result, j)
 	}
@@ -838,7 +840,7 @@ func (s *Server) handleAssignOrganizationRoleToUser(w http.ResponseWriter, r *ht
 	if role == nil {
 		return
 	}
-	if m := s.store.GetMembership(org.Login, target.ID); m == nil || m.State != MembershipStateActive {
+	if m := s.store.GetMembership(org.Login, target.ID); m == nil || m.State != store.MembershipStateActive {
 		writeGHError(w, http.StatusUnprocessableEntity, "User must be an active member of the organization to be assigned an organization role.")
 		return
 	}
@@ -971,7 +973,7 @@ func (s *Server) handleOrgSecurityProductEnablement(w http.ResponseWriter, r *ht
 	}
 	enable := enablement == "enable_all"
 	field := orgSecurityProductRepoFlags[product]
-	for _, repo := range s.store.ListReposForOrg(org.Login, RepoListOptions{NoPaginate: true}) {
+	for _, repo := range s.store.ListReposForOrg(org.Login, store.RepoListOptions{NoPaginate: true}) {
 		s.store.SetRepoFlag(repo.ID, field, enable)
 	}
 	s.recordAuditEvent("org.security_product_enablement", user.Login, org.Login, map[string]interface{}{"security_product": product, "enablement": enablement})

@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // Artifact attestation REST API: uploading Sigstore bundles to a
@@ -55,12 +57,12 @@ func (s *Server) handleRepoCreateAttestation(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if len(req.Bundle) == 0 || string(req.Bundle) == "null" {
-		writeGHValidationError(w, "Attestation", "bundle", "missing_field")
+		store.WriteGHValidationError(w, "Attestation", "bundle", "missing_field")
 		return
 	}
-	subjects, predicateType, err := parseSigstoreBundleSubjects(req.Bundle)
+	subjects, predicateType, err := store.ParseSigstoreBundleSubjects(req.Bundle)
 	if err != nil {
-		writeGHValidationError(w, "Attestation", "bundle", "invalid")
+		store.WriteGHValidationError(w, "Attestation", "bundle", "invalid")
 		return
 	}
 	a, err := s.store.CreateAttestation(repo.ID, req.Bundle, subjects, predicateType, user.Login)
@@ -103,7 +105,7 @@ func (s *Server) attestationRepoScope(r *http.Request, ownerLogin string) map[in
 
 // requireOrgAttestationAdmin resolves {org} and enforces org-admin
 // rights for attestation deletion. Writes 404/401/403 on failure.
-func (s *Server) requireOrgAttestationAdmin(w http.ResponseWriter, r *http.Request) (*Org, bool) {
+func (s *Server) requireOrgAttestationAdmin(w http.ResponseWriter, r *http.Request) (*store.Org, bool) {
 	org := s.store.GetOrg(r.PathValue("org"))
 	if org == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -123,7 +125,7 @@ func (s *Server) requireOrgAttestationAdmin(w http.ResponseWriter, r *http.Reque
 
 // requireUserAttestationOwner resolves {username} and enforces that the
 // caller is that user (or a site admin) for attestation deletion.
-func (s *Server) requireUserAttestationOwner(w http.ResponseWriter, r *http.Request) (*User, bool) {
+func (s *Server) requireUserAttestationOwner(w http.ResponseWriter, r *http.Request) (*store.User, bool) {
 	target := s.store.LookupUserByLogin(r.PathValue("username"))
 	if target == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -143,8 +145,8 @@ func (s *Server) requireUserAttestationOwner(w http.ResponseWriter, r *http.Requ
 
 // writeAttestationList paginates and renders the shared
 // {"attestations": [{bundle, repository_id}]} list shape.
-func (s *Server) writeAttestationList(w http.ResponseWriter, r *http.Request, attestations []*Attestation) {
-	page, pi := cursorPaginate(r, attestations, func(a *Attestation) int { return a.ID })
+func (s *Server) writeAttestationList(w http.ResponseWriter, r *http.Request, attestations []*store.Attestation) {
+	page, pi := cursorPaginate(r, attestations, func(a *store.Attestation) int { return a.ID })
 	setCursorLinkHeader(w, r, pi)
 	out := make([]map[string]interface{}, 0, len(page))
 	for _, a := range page {
@@ -179,7 +181,7 @@ func (s *Server) serveOwnerListAttestationsBulk(w http.ResponseWriter, r *http.R
 		return
 	}
 	if len(req.SubjectDigests) == 0 || len(req.SubjectDigests) > 1024 {
-		writeGHValidationError(w, "Attestation", "subject_digests", "invalid")
+		store.WriteGHValidationError(w, "Attestation", "subject_digests", "invalid")
 		return
 	}
 	scope := s.attestationRepoScope(r, ownerLogin)
@@ -188,7 +190,7 @@ func (s *Server) serveOwnerListAttestationsBulk(w http.ResponseWriter, r *http.R
 	for _, d := range req.SubjectDigests {
 		requested = append(requested, strings.ToLower(d))
 	}
-	matched := make([]*Attestation, 0)
+	matched := make([]*store.Attestation, 0)
 	seen := map[int]bool{}
 	for _, digest := range requested {
 		for _, a := range s.store.ListAttestations(scope, digest, req.PredicateType) {
@@ -200,7 +202,7 @@ func (s *Server) serveOwnerListAttestationsBulk(w http.ResponseWriter, r *http.R
 	}
 	sort.Slice(matched, func(i, j int) bool { return matched[i].ID < matched[j].ID })
 
-	page, pi := cursorPaginate(r, matched, func(a *Attestation) int { return a.ID })
+	page, pi := cursorPaginate(r, matched, func(a *store.Attestation) int { return a.ID })
 	setCursorLinkHeader(w, r, pi)
 
 	byDigest := map[string]interface{}{}
@@ -262,7 +264,7 @@ func (s *Server) serveOwnerDeleteAttestationsBulk(w http.ResponseWriter, r *http
 		return
 	}
 	if (len(req.SubjectDigests) == 0) == (len(req.AttestationIDs) == 0) {
-		writeGHValidationError(w, "Attestation", "subject_digests", "invalid")
+		store.WriteGHValidationError(w, "Attestation", "subject_digests", "invalid")
 		return
 	}
 	scope := s.store.RepoIDsOwnedBy(ownerLogin)

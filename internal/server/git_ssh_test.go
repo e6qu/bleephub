@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -137,11 +138,11 @@ func TestGitSSHTransportPushAndClone(t *testing.T) {
 
 func TestSSHGITURL(t *testing.T) {
 	t.Setenv("BLEEPHUB_SSH_HOST", "ssh.bleephub.example")
-	if got, want := sshGitURL("owner/repository"), "git@ssh.bleephub.example:owner/repository.git"; got != want {
+	if got, want := store.SshGitURL("owner/repository"), "git@ssh.bleephub.example:owner/repository.git"; got != want {
 		t.Fatalf("sshGitURL default port = %q, want %q", got, want)
 	}
 	t.Setenv("BLEEPHUB_SSH_HOST", "127.0.0.1:2222")
-	if got, want := sshGitURL("owner/repository"), "ssh://git@127.0.0.1:2222/owner/repository.git"; got != want {
+	if got, want := store.SshGitURL("owner/repository"), "ssh://git@127.0.0.1:2222/owner/repository.git"; got != want {
 		t.Fatalf("sshGitURL custom port = %q, want %q", got, want)
 	}
 }

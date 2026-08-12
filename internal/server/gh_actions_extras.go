@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/e6qu/bleephub/internal/actions"
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // Actions extras gh CLI / Octokit hit.
@@ -31,11 +32,11 @@ import (
 
 func (s *Server) registerGHActionsExtrasRoutes() {
 	s.route("POST /api/v3/repos/{owner}/{repo}/dispatches",
-		s.requirePerm(scopeContents, permWrite, s.handleRepositoryDispatch))
+		s.requirePerm(store.ScopeContents, store.PermWrite, s.handleRepositoryDispatch))
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/logs",
 		s.handleRunLogs)
 	s.route("POST /api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/rerun-failed-jobs",
-		s.requirePerm(scopeActions, permWrite, s.handleRerunFailedJobs))
+		s.requirePerm(store.ScopeActions, store.PermWrite, s.handleRerunFailedJobs))
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/timing",
 		s.handleRunTiming)
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/artifacts",
@@ -45,7 +46,7 @@ func (s *Server) registerGHActionsExtrasRoutes() {
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/artifacts/{artifact_id}",
 		s.handleGetArtifact)
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/actions/artifacts/{artifact_id}",
-		s.requirePerm(scopeActions, permWrite, s.handleDeleteArtifact))
+		s.requirePerm(store.ScopeActions, store.PermWrite, s.handleDeleteArtifact))
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/artifacts/{artifact_id}/{archive_format}",
 		s.handleDownloadArtifactArchive)
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/approvals",
@@ -53,7 +54,7 @@ func (s *Server) registerGHActionsExtrasRoutes() {
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/pending_deployments",
 		s.handleGetPendingDeployments)
 	s.route("POST /api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/pending_deployments",
-		s.requirePerm(scopeActions, permWrite, s.handleReviewPendingDeployments))
+		s.requirePerm(store.ScopeActions, store.PermWrite, s.handleReviewPendingDeployments))
 }
 
 // handleRepositoryDispatch — POST /repos/{o}/{r}/dispatches.
@@ -72,7 +73,7 @@ func (s *Server) handleRepositoryDispatch(w http.ResponseWriter, r *http.Request
 		ClientPayload map[string]interface{} `json:"client_payload"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.EventType == "" {
-		writeGHValidationError(w, "RepositoryDispatch", "event_type", "missing_field")
+		store.WriteGHValidationError(w, "RepositoryDispatch", "event_type", "missing_field")
 		return
 	}
 	payload := repositoryDispatchPayload(repo, user, req.EventType, req.ClientPayload)
@@ -83,7 +84,7 @@ func (s *Server) handleRepositoryDispatch(w http.ResponseWriter, r *http.Request
 // repositoryDispatchPayload builds the repository_dispatch webhook event
 // body. GitHub includes a top-level `branch` (the repo's default branch)
 // alongside action / client_payload / repository / sender.
-func repositoryDispatchPayload(repo *Repo, user *User, eventType string, clientPayload map[string]interface{}) map[string]interface{} {
+func repositoryDispatchPayload(repo *store.Repo, user *store.User, eventType string, clientPayload map[string]interface{}) map[string]interface{} {
 	return map[string]interface{}{
 		"action":         eventType,
 		"event_type":     eventType,
@@ -118,7 +119,7 @@ func (s *Server) handleRunLogs(w http.ResponseWriter, r *http.Request) {
 // per job a top-level "0_<jobname>.txt" full job log plus a
 // "<jobname>/" folder with per-step files) and writes it as the
 // response. Shared by the run-level and attempt-level log endpoints.
-func (s *Server) writeRunLogsZip(ctx context.Context, w http.ResponseWriter, wf *Workflow, runID int) {
+func (s *Server) writeRunLogsZip(ctx context.Context, w http.ResponseWriter, wf *store.Workflow, runID int) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 
@@ -236,7 +237,7 @@ func (s *Server) handleRerunFailedJobs(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
-	def, perr := ParseWorkflow([]byte(match.YAML))
+	def, perr := store.ParseWorkflow([]byte(match.YAML))
 	if perr != nil {
 		writeGHError(w, http.StatusUnprocessableEntity, "parse cached YAML: "+perr.Error())
 		return
@@ -249,10 +250,10 @@ func (s *Server) handleRerunFailedJobs(w http.ResponseWriter, r *http.Request) {
 	def.Env["__serverURL"] = serverURL
 	def.Env["__defaultImage"] = ""
 
-	carryOver := map[string]*WorkflowJob{}
+	carryOver := map[string]*store.WorkflowJob{}
 	s.store.Mu.RLock()
 	for key, j := range wf.Jobs {
-		if j.Result == ResultSuccess || j.Result == ResultSkipped {
+		if j.Result == store.ResultSuccess || j.Result == store.ResultSkipped {
 			carryOver[key] = j
 		}
 	}
@@ -324,7 +325,7 @@ func (s *Server) handleRunArtifacts(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	matching := s.filterArtifacts(r, func(art *Artifact) bool {
+	matching := s.filterArtifacts(r, func(art *store.Artifact) bool {
 		return s.artifactBelongsToRun(art, wf)
 	})
 	s.writeArtifactList(w, r, matching)
@@ -335,7 +336,7 @@ func (s *Server) handleRepoArtifacts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	repo := repoFullName(r)
-	matching := s.filterArtifacts(r, func(art *Artifact) bool {
+	matching := s.filterArtifacts(r, func(art *store.Artifact) bool {
 		return s.artifactBelongsToRepo(art, repo)
 	})
 	s.writeArtifactList(w, r, matching)
@@ -378,7 +379,7 @@ func (s *Server) handleDownloadArtifactArchive(w http.ResponseWriter, r *http.Re
 	http.Redirect(w, r, fmt.Sprintf("%s/_apis/v1/artifacts/%d/download", s.baseURL(r), art.ID), http.StatusFound)
 }
 
-func (s *Server) getRepoArtifact(w http.ResponseWriter, r *http.Request) (*Artifact, bool) {
+func (s *Server) getRepoArtifact(w http.ResponseWriter, r *http.Request) (*store.Artifact, bool) {
 	artifactID, err := strconv.ParseInt(r.PathValue("artifact_id"), 10, 64)
 	if err != nil {
 		writeGHError(w, http.StatusBadRequest, "invalid artifact_id")
@@ -392,10 +393,10 @@ func (s *Server) getRepoArtifact(w http.ResponseWriter, r *http.Request) (*Artif
 	return art, true
 }
 
-func (s *Server) filterArtifacts(r *http.Request, keep func(*Artifact) bool) []*Artifact {
+func (s *Server) filterArtifacts(r *http.Request, keep func(*store.Artifact) bool) []*store.Artifact {
 	nameFilter := r.URL.Query().Get("name")
 	artifacts := s.artifactStore.FinalizedArtifacts()
-	matching := make([]*Artifact, 0, len(artifacts))
+	matching := make([]*store.Artifact, 0, len(artifacts))
 	for _, art := range artifacts {
 		if nameFilter != "" && art.Name != nameFilter {
 			continue
@@ -413,7 +414,7 @@ func (s *Server) filterArtifacts(r *http.Request, keep func(*Artifact) bool) []*
 	return matching
 }
 
-func (s *Server) writeArtifactList(w http.ResponseWriter, r *http.Request, matching []*Artifact) {
+func (s *Server) writeArtifactList(w http.ResponseWriter, r *http.Request, matching []*store.Artifact) {
 	page := paginateAndLink(w, r, matching)
 	artifacts := make([]map[string]any, 0, len(page))
 	for _, art := range page {
@@ -425,7 +426,7 @@ func (s *Server) writeArtifactList(w http.ResponseWriter, r *http.Request, match
 	})
 }
 
-func (s *Server) artifactJSON(art *Artifact, r *http.Request) map[string]any {
+func (s *Server) artifactJSON(art *store.Artifact, r *http.Request) map[string]any {
 	repo := art.RepoFullName
 	if repo == "" {
 		if wf := s.workflowForArtifact(art); wf != nil {
@@ -476,7 +477,7 @@ func (s *Server) artifactJSON(art *Artifact, r *http.Request) map[string]any {
 	}
 }
 
-func (s *Server) artifactBelongsToRun(art *Artifact, wf *Workflow) bool {
+func (s *Server) artifactBelongsToRun(art *store.Artifact, wf *store.Workflow) bool {
 	if wf == nil {
 		return false
 	}
@@ -487,7 +488,7 @@ func (s *Server) artifactBelongsToRun(art *Artifact, wf *Workflow) bool {
 	return art.RunID == runID || art.WorkflowRunBackendID == runID
 }
 
-func (s *Server) artifactBelongsToRepo(art *Artifact, repo string) bool {
+func (s *Server) artifactBelongsToRepo(art *store.Artifact, repo string) bool {
 	if strings.EqualFold(art.RepoFullName, repo) {
 		return true
 	}
@@ -495,7 +496,7 @@ func (s *Server) artifactBelongsToRepo(art *Artifact, repo string) bool {
 	return wf != nil && strings.EqualFold(wf.RepoFullName, repo)
 }
 
-func (s *Server) workflowForArtifact(art *Artifact) *Workflow {
+func (s *Server) workflowForArtifact(art *store.Artifact) *store.Workflow {
 	if art == nil {
 		return nil
 	}
@@ -509,7 +510,7 @@ func (s *Server) workflowForArtifact(art *Artifact) *Workflow {
 	return nil
 }
 
-func (s *Server) findWorkflowByBackendID(backendID string) *Workflow {
+func (s *Server) findWorkflowByBackendID(backendID string) *store.Workflow {
 	if backendID == "" {
 		return nil
 	}
@@ -560,7 +561,7 @@ func (s *Server) handleRunApprovals(w http.ResponseWriter, r *http.Request) {
 	base := s.baseURL(r)
 	out := []map[string]interface{}{}
 	s.store.Mu.RLock()
-	approvals := append([]*EnvApproval(nil), wf.EnvApprovals...)
+	approvals := append([]*store.EnvApproval(nil), wf.EnvApprovals...)
 	s.store.Mu.RUnlock()
 	for _, a := range approvals {
 		envs := []map[string]interface{}{}
@@ -582,7 +583,7 @@ func (s *Server) handleRunApprovals(w http.ResponseWriter, r *http.Request) {
 		var user map[string]interface{}
 		s.store.Mu.RLock()
 		if u := s.store.Users[a.UserID]; u != nil {
-			user = userToJSON(u)
+			user = store.UserToJSON(u)
 		}
 		s.store.Mu.RUnlock()
 		out = append(out, map[string]interface{}{
@@ -606,7 +607,7 @@ func (s *Server) handleGetPendingDeployments(w http.ResponseWriter, r *http.Requ
 	base := s.baseURL(r)
 	out := []map[string]interface{}{}
 	s.store.Mu.RLock()
-	pending := append([]*PendingDeployment(nil), wf.PendingDeployments...)
+	pending := append([]*store.PendingDeployment(nil), wf.PendingDeployments...)
 	s.store.Mu.RUnlock()
 	for _, p := range pending {
 		env := s.store.Deployments.GetEnvironmentByID(p.EnvID)
@@ -691,7 +692,7 @@ func (s *Server) handleReviewPendingDeployments(w http.ResponseWriter, r *http.R
 
 // lookupRunFromPath resolves the {owner}/{repo} + {run_id} path params to
 // the repo and workflow run.
-func (s *Server) lookupRunFromPath(r *http.Request) (*Repo, *Workflow) {
+func (s *Server) lookupRunFromPath(r *http.Request) (*store.Repo, *store.Workflow) {
 	repo := s.lookupRepoFromPath(r)
 	if repo == nil {
 		return nil, nil

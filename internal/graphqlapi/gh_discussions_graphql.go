@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/graphql-go/graphql"
 )
 
@@ -336,7 +337,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 					}
 					repoID, _ := d["repoID"].(int)
 					repo := s.store.GetRepoByID(repoID)
-					return s.viewerMayActOnRepo(p.Context, repo, scopeDiscussions, permWrite, permAdmin), nil
+					return s.viewerMayActOnRepo(p.Context, repo, store.ScopeDiscussions, store.PermWrite, store.PermAdmin), nil
 				},
 			},
 			"viewerCanUpdate": &graphql.Field{
@@ -356,7 +357,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 					}
 					repoID, _ := d["repoID"].(int)
 					repo := s.store.GetRepoByID(repoID)
-					return s.viewerMayActOnRepo(p.Context, repo, scopeDiscussions, permWrite, permAdmin), nil
+					return s.viewerMayActOnRepo(p.Context, repo, store.ScopeDiscussions, store.PermWrite, store.PermAdmin), nil
 				},
 			},
 			"viewerCanReact": &graphql.Field{
@@ -510,7 +511,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 
 			categoryID := 0
 			if catNodeID, ok := p.Args["categoryId"].(string); ok && catNodeID != "" {
-				cat := findDiscussionCategoryByNodeID(s.store, catNodeID)
+				cat := store.FindDiscussionCategoryByNodeID(s.store, catNodeID)
 				if cat == nil || cat.RepoID != repoID {
 					return paginateGQLMaps(nil, p.Args), nil
 				}
@@ -720,11 +721,11 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 			title, _ := input["title"].(string)
 			body, _ := input["body"].(string)
 
-			repo := findRepoByNodeID(s.store, repoNodeID)
+			repo := store.FindRepoByNodeID(s.store, repoNodeID)
 			if repo == nil {
 				return nil, fmt.Errorf("could not resolve to a Repository with the global id of '%s'", repoNodeID)
 			}
-			cat := findDiscussionCategoryByNodeID(s.store, categoryNodeID)
+			cat := store.FindDiscussionCategoryByNodeID(s.store, categoryNodeID)
 			if cat == nil || cat.RepoID != repo.ID {
 				return nil, fmt.Errorf("could not resolve to a DiscussionCategory with the global id of '%s'", categoryNodeID)
 			}
@@ -737,7 +738,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 				"action":     "created",
 				"discussion": map[string]interface{}{"number": d.Number, "title": d.Title, "body": d.Body},
 				"repository": s.repoPayload(repo),
-				"sender":     userToJSON(user),
+				"sender":     store.UserToJSON(user),
 			})
 			return map[string]interface{}{
 				"discussion":       discussionToGQL(d, s.store),
@@ -754,11 +755,11 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			input, _ := p.Args["input"].(map[string]interface{})
 			discussionNodeID, _ := input["discussionId"].(string)
-			d := findDiscussionByNodeID(s.store, discussionNodeID)
+			d := store.FindDiscussionByNodeID(s.store, discussionNodeID)
 			if d == nil {
 				return nil, fmt.Errorf("could not resolve to a Discussion")
 			}
-			s.store.UpdateDiscussion(d.ID, func(disc *Discussion) {
+			s.store.UpdateDiscussion(d.ID, func(disc *store.Discussion) {
 				if v, ok := input["title"].(string); ok {
 					disc.Title = v
 				}
@@ -766,7 +767,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 					disc.Body = v
 				}
 				if v, ok := input["categoryId"].(string); ok && v != "" {
-					if cat := findDiscussionCategoryByNodeID(s.store, v); cat != nil && cat.RepoID == disc.RepoID {
+					if cat := store.FindDiscussionCategoryByNodeID(s.store, v); cat != nil && cat.RepoID == disc.RepoID {
 						disc.CategoryID = cat.ID
 					}
 				}
@@ -786,7 +787,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			input, _ := p.Args["input"].(map[string]interface{})
 			discussionNodeID, _ := input["id"].(string)
-			d := findDiscussionByNodeID(s.store, discussionNodeID)
+			d := store.FindDiscussionByNodeID(s.store, discussionNodeID)
 			if d == nil {
 				return nil, fmt.Errorf("could not resolve to a Discussion")
 			}
@@ -809,13 +810,13 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 			input, _ := p.Args["input"].(map[string]interface{})
 			discussionNodeID, _ := input["discussionId"].(string)
 			body, _ := input["body"].(string)
-			d := findDiscussionByNodeID(s.store, discussionNodeID)
+			d := store.FindDiscussionByNodeID(s.store, discussionNodeID)
 			if d == nil {
 				return nil, fmt.Errorf("could not resolve to a Discussion")
 			}
 			parentID := 0
 			if replyToID, ok := input["replyToId"].(string); ok && replyToID != "" {
-				if parent := findDiscussionCommentByNodeID(s.store, replyToID); parent != nil && parent.DiscussionID == d.ID {
+				if parent := store.FindDiscussionCommentByNodeID(s.store, replyToID); parent != nil && parent.DiscussionID == d.ID {
 					parentID = parent.ID
 				} else {
 					return nil, fmt.Errorf("could not resolve replyToId to a comment on this discussion")
@@ -830,7 +831,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 					"comment":    map[string]interface{}{"id": c.ID, "body": c.Body},
 					"discussion": map[string]interface{}{"number": d.Number, "title": d.Title},
 					"repository": s.repoPayload(repo),
-					"sender":     userToJSON(user),
+					"sender":     store.UserToJSON(user),
 				})
 			}
 			return map[string]interface{}{
@@ -849,11 +850,11 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 			input, _ := p.Args["input"].(map[string]interface{})
 			commentNodeID, _ := input["commentId"].(string)
 			body, _ := input["body"].(string)
-			c := findDiscussionCommentByNodeID(s.store, commentNodeID)
+			c := store.FindDiscussionCommentByNodeID(s.store, commentNodeID)
 			if c == nil {
 				return nil, fmt.Errorf("could not resolve to a DiscussionComment")
 			}
-			s.store.UpdateDiscussionComment(c.ID, func(cc *DiscussionComment) {
+			s.store.UpdateDiscussionComment(c.ID, func(cc *store.DiscussionComment) {
 				cc.Body = body
 			})
 			return map[string]interface{}{
@@ -871,7 +872,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			input, _ := p.Args["input"].(map[string]interface{})
 			commentNodeID, _ := input["id"].(string)
-			c := findDiscussionCommentByNodeID(s.store, commentNodeID)
+			c := store.FindDiscussionCommentByNodeID(s.store, commentNodeID)
 			if c == nil {
 				return nil, fmt.Errorf("could not resolve to a DiscussionComment")
 			}
@@ -891,7 +892,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			input, _ := p.Args["input"].(map[string]interface{})
 			commentNodeID, _ := input["id"].(string)
-			c := findDiscussionCommentByNodeID(s.store, commentNodeID)
+			c := store.FindDiscussionCommentByNodeID(s.store, commentNodeID)
 			if c == nil {
 				return nil, fmt.Errorf("could not resolve to a DiscussionComment")
 			}
@@ -919,7 +920,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			input, _ := p.Args["input"].(map[string]interface{})
 			commentNodeID, _ := input["id"].(string)
-			c := findDiscussionCommentByNodeID(s.store, commentNodeID)
+			c := store.FindDiscussionCommentByNodeID(s.store, commentNodeID)
 			if c == nil {
 				return nil, fmt.Errorf("could not resolve to a DiscussionComment")
 			}
@@ -938,7 +939,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 
 // --- GraphQL converters ---
 
-func discussionCategoryToGQL(cat *DiscussionCategory) map[string]interface{} {
+func discussionCategoryToGQL(cat *store.DiscussionCategory) map[string]interface{} {
 	return map[string]interface{}{
 		"nodeID":       cat.NodeID,
 		"name":         cat.Name,
@@ -950,7 +951,7 @@ func discussionCategoryToGQL(cat *DiscussionCategory) map[string]interface{} {
 	}
 }
 
-func discussionToGQL(d *Discussion, st *Store) map[string]interface{} {
+func discussionToGQL(d *store.Discussion, st *store.Store) map[string]interface{} {
 	// A comment can outlive its soft-deleted discussion, and several callers pass
 	// a re-fetched GetDiscussion result straight through; guarding here keeps a
 	// nil discussion from panicking on d.RepoID below rather than relying on
@@ -1010,7 +1011,7 @@ func discussionToGQL(d *Discussion, st *Store) map[string]interface{} {
 	}
 }
 
-func discussionCommentToGQL(c *DiscussionComment, st *Store) map[string]interface{} {
+func discussionCommentToGQL(c *store.DiscussionComment, st *store.Store) map[string]interface{} {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 
@@ -1044,7 +1045,7 @@ func discussionBodyToHTML(body string) string {
 		return ""
 	}
 	var rendered bytes.Buffer
-	if err := markdownModeRenderer.Convert([]byte(body), &rendered); err != nil {
+	if err := store.MarkdownModeRenderer.Convert([]byte(body), &rendered); err != nil {
 		return ""
 	}
 	return rendered.String()
@@ -1054,7 +1055,7 @@ func discussionBodyToText(body string) string {
 	return strings.TrimSpace(body)
 }
 
-func discussionReactionConnection(st *Store, parentType string, parentID int, args map[string]interface{}) map[string]interface{} {
+func discussionReactionConnection(st *store.Store, parentType string, parentID int, args map[string]interface{}) map[string]interface{} {
 	reactions := st.Reactions.ListReactions(parentType, parentID, "")
 	nodes := make([]map[string]interface{}, 0, len(reactions))
 	for _, r := range reactions {

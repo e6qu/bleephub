@@ -10,6 +10,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func dependabotTestPackageURL(ecosystem, packageName, rangeExpr string) string {
@@ -43,20 +45,20 @@ func TestDependabotAlertReadsReturnDetachedSnapshots(t *testing.T) {
 		"GHSA-xxxx", "CVE-1", "high", "prototype pollution", "desc", "< 1.0.0", "1.0.0")
 
 	got := s.store.GetDependabotAlert(repo.FullName, alert.Number)
-	got.State = DependabotStateDismissed
+	got.State = store.DependabotStateDismissed
 	got.Summary = "hacked"
 	again := s.store.GetDependabotAlert(repo.FullName, alert.Number)
-	if again.State != DependabotStateOpen || again.Summary == "hacked" {
+	if again.State != store.DependabotStateOpen || again.Summary == "hacked" {
 		t.Fatalf("alert mutated through the getter: state=%q summary=%q", again.State, again.Summary)
 	}
 
 	if err := s.store.UpdateDependabotAlert(again, "dismissed", "tolerable_risk", "acceptable", admin); err != nil {
 		t.Fatalf("update: %v", err)
 	}
-	if again.State != DependabotStateDismissed {
+	if again.State != store.DependabotStateDismissed {
 		t.Fatalf("returned snapshot state = %q, want dismissed", again.State)
 	}
-	if live := s.store.GetDependabotAlert(repo.FullName, alert.Number); live.State != DependabotStateDismissed {
+	if live := s.store.GetDependabotAlert(repo.FullName, alert.Number); live.State != store.DependabotStateDismissed {
 		t.Fatalf("live alert after update = %q, want dismissed", live.State)
 	}
 }

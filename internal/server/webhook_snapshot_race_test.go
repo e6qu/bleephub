@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // TestWebhookReadersReceiveDeepSnapshots covers both repository and
@@ -11,7 +13,7 @@ import (
 // rendering and delivery run after the store lock has been released; getters
 // therefore must return detached snapshots rather than shared pointers.
 func TestWebhookReadersReceiveDeepSnapshots(t *testing.T) {
-	st := NewStore()
+	st := store.NewStore()
 	repoHook := st.CreateHook("admin/repo", "https://one.example", "one", "json", "0", []string{"one"}, true)
 	orgHook := st.CreateOrgHook("octo", "https://one.example", "one", "json", "0", []string{"one"}, true)
 
@@ -25,12 +27,12 @@ func TestWebhookReadersReceiveDeepSnapshots(t *testing.T) {
 		<-start
 		for i := range writes {
 			value := fmt.Sprintf("%d", i)
-			st.UpdateHook("admin/repo", repoHook.ID, func(h *Webhook) {
+			st.UpdateHook("admin/repo", repoHook.ID, func(h *store.Webhook) {
 				h.URL = "https://" + value + ".example"
 				h.Secret = value
 				h.Events = []string{value}
 			})
-			st.UpdateOrgHook("octo", orgHook.ID, func(h *Webhook) {
+			st.UpdateOrgHook("octo", orgHook.ID, func(h *store.Webhook) {
 				h.URL = "https://" + value + ".example"
 				h.Secret = value
 				h.Events = []string{value}
@@ -38,7 +40,7 @@ func TestWebhookReadersReceiveDeepSnapshots(t *testing.T) {
 		}
 	}()
 
-	check := func(get func() *Webhook) {
+	check := func(get func() *store.Webhook) {
 		defer wg.Done()
 		<-start
 		for range writes {
@@ -55,8 +57,8 @@ func TestWebhookReadersReceiveDeepSnapshots(t *testing.T) {
 			hook.Events[0] = "caller mutation"
 		}
 	}
-	go check(func() *Webhook { return st.GetHook("admin/repo", repoHook.ID) })
-	go check(func() *Webhook { return st.GetOrgHook("octo", orgHook.ID) })
+	go check(func() *store.Webhook { return st.GetHook("admin/repo", repoHook.ID) })
+	go check(func() *store.Webhook { return st.GetOrgHook("octo", orgHook.ID) })
 
 	close(start)
 	wg.Wait()

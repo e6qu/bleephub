@@ -5,28 +5,29 @@ import (
 	"testing"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	gitStorage "github.com/go-git/go-git/v5/storage"
 	"github.com/go-git/go-git/v5/storage/memory"
 )
 
 func TestRepositoryStorageInitializationDoesNotHoldStoreLock(t *testing.T) {
-	store := NewStore()
-	store.SeedDefaultUser()
-	owner := store.UsersByLogin["admin"]
+	st := store.NewStore()
+	st.SeedDefaultUser()
+	owner := st.UsersByLogin["admin"]
 	started := make(chan struct{})
 	release := make(chan struct{})
-	store.RepoStorageOpen = func(context.Context, string) (gitStorage.Storer, error) {
+	st.RepoStorageOpen = func(context.Context, string) (gitStorage.Storer, error) {
 		close(started)
 		<-release
 		return memory.NewStorage(), nil
 	}
 
-	created := make(chan *Repo, 1)
-	go func() { created <- store.CreateRepo(owner, "unlocked-create", "", false) }()
+	created := make(chan *store.Repo, 1)
+	go func() { created <- st.CreateRepo(owner, "unlocked-create", "", false) }()
 	<-started
 
-	readFinished := make(chan *User, 1)
-	go func() { readFinished <- store.GetUserByID(owner.ID) }()
+	readFinished := make(chan *store.User, 1)
+	go func() { readFinished <- st.GetUserByID(owner.ID) }()
 	select {
 	case user := <-readFinished:
 		if user == nil || user.ID != owner.ID {
@@ -35,7 +36,7 @@ func TestRepositoryStorageInitializationDoesNotHoldStoreLock(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("ordinary store read blocked behind repository storage initialization")
 	}
-	if duplicate := store.CreateRepo(owner, "unlocked-create", "", false); duplicate != nil {
+	if duplicate := st.CreateRepo(owner, "unlocked-create", "", false); duplicate != nil {
 		t.Fatalf("duplicate creation bypassed pending-name reservation: %#v", duplicate)
 	}
 	close(release)
@@ -45,28 +46,28 @@ func TestRepositoryStorageInitializationDoesNotHoldStoreLock(t *testing.T) {
 }
 
 func TestRepositoryForkCopyDoesNotHoldStoreLock(t *testing.T) {
-	store := NewStore()
-	store.SeedDefaultUser()
-	owner := store.UsersByLogin["admin"]
-	source := store.CreateRepo(owner, "fork-source", "", false)
+	st := store.NewStore()
+	st.SeedDefaultUser()
+	owner := st.UsersByLogin["admin"]
+	source := st.CreateRepo(owner, "fork-source", "", false)
 	if source == nil {
 		t.Fatal("create source repository")
 	}
 
 	started := make(chan struct{})
 	release := make(chan struct{})
-	store.RepoStorageOpen = func(context.Context, string) (gitStorage.Storer, error) {
+	st.RepoStorageOpen = func(context.Context, string) (gitStorage.Storer, error) {
 		close(started)
 		<-release
 		return memory.NewStorage(), nil
 	}
 
-	created := make(chan *Repo, 1)
-	go func() { created <- store.ForkRepo(owner, source, "unlocked-fork") }()
+	created := make(chan *store.Repo, 1)
+	go func() { created <- st.ForkRepo(owner, source, "unlocked-fork") }()
 	<-started
 
-	readFinished := make(chan *User, 1)
-	go func() { readFinished <- store.GetUserByID(owner.ID) }()
+	readFinished := make(chan *store.User, 1)
+	go func() { readFinished <- st.GetUserByID(owner.ID) }()
 	select {
 	case user := <-readFinished:
 		if user == nil || user.ID != owner.ID {
@@ -75,7 +76,7 @@ func TestRepositoryForkCopyDoesNotHoldStoreLock(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("ordinary store read blocked behind repository fork storage copy")
 	}
-	if duplicate := store.CreateRepo(owner, "unlocked-fork", "", false); duplicate != nil {
+	if duplicate := st.CreateRepo(owner, "unlocked-fork", "", false); duplicate != nil {
 		t.Fatalf("duplicate creation bypassed fork name reservation: %#v", duplicate)
 	}
 	close(release)

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	gitStorage "github.com/go-git/go-git/v5/storage"
@@ -47,22 +48,22 @@ func releaseExcludedFromLatest(v interface{}) bool {
 
 func (s *Server) registerGHReleasesRoutes() {
 	s.route("POST /api/v3/repos/{owner}/{repo}/releases",
-		s.requirePerm(scopeContents, permWrite, s.handleCreateRelease))
+		s.requirePerm(store.ScopeContents, store.PermWrite, s.handleCreateRelease))
 	s.route("GET /api/v3/repos/{owner}/{repo}/releases",
 		s.handleListReleases)
 	s.route("GET /api/v3/repos/{owner}/{repo}/releases/latest",
 		s.handleGetLatestRelease)
 	s.route("POST /api/v3/repos/{owner}/{repo}/releases/generate-notes",
-		s.requirePerm(scopeContents, permWrite, s.handleGenerateReleaseNotes))
+		s.requirePerm(store.ScopeContents, store.PermWrite, s.handleGenerateReleaseNotes))
 
 	// Single-segment after /releases/ is GET-release-by-id. Use {release_id}
 	// directly here — these patterns don't conflict with the two-segment ones.
 	s.route("GET /api/v3/repos/{owner}/{repo}/releases/{release_id}",
 		s.handleGetRelease)
 	s.route("PATCH /api/v3/repos/{owner}/{repo}/releases/{release_id}",
-		s.requirePerm(scopeContents, permWrite, s.handleUpdateRelease))
+		s.requirePerm(store.ScopeContents, store.PermWrite, s.handleUpdateRelease))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/releases/{release_id}",
-		s.requirePerm(scopeContents, permWrite, s.handleDeleteRelease))
+		s.requirePerm(store.ScopeContents, store.PermWrite, s.handleDeleteRelease))
 
 	// `/releases/{p1}/{p2}` dispatches by segment value:
 	//   p1=="tags"      → GET release-by-tag (real GH path: releases/tags/{tag})
@@ -85,7 +86,7 @@ func (s *Server) registerGHReleasesRoutes() {
 		"POST /api/v3/repos/{owner}/{repo}/releases/{release_id}/assets",
 		"POST /api/v3/repos/{owner}/{repo}/releases/{release_id}/reactions")
 	s.route("POST /api/uploads/repos/{owner}/{repo}/releases/{release_id}/assets",
-		s.requirePerm(scopeContents, permWrite, s.handleUploadReleaseAsset))
+		s.requirePerm(store.ScopeContents, store.PermWrite, s.handleUploadReleaseAsset))
 	s.routeDispatch("PATCH /api/v3/repos/{owner}/{repo}/releases/{p1}/{p2}",
 		s.handleReleaseTwoSegDispatch("PATCH"),
 		"PATCH /api/v3/repos/{owner}/{repo}/releases/assets/{asset_id}")
@@ -121,9 +122,9 @@ func (s *Server) handleReleaseTwoSegDispatch(method string) http.HandlerFunc {
 			case "GET":
 				s.handleGetReleaseAsset(w, r)
 			case "PATCH":
-				s.requirePerm(scopeContents, permWrite, s.handleUpdateReleaseAsset)(w, r)
+				s.requirePerm(store.ScopeContents, store.PermWrite, s.handleUpdateReleaseAsset)(w, r)
 			case "DELETE":
-				s.requirePerm(scopeContents, permWrite, s.handleDeleteReleaseAsset)(w, r)
+				s.requirePerm(store.ScopeContents, store.PermWrite, s.handleDeleteReleaseAsset)(w, r)
 			default:
 				writeGHError(w, http.StatusNotFound, "Not Found")
 			}
@@ -133,7 +134,7 @@ func (s *Server) handleReleaseTwoSegDispatch(method string) http.HandlerFunc {
 			case "GET":
 				s.handleListReleaseAssets(w, r)
 			case "POST":
-				s.requirePerm(scopeContents, permWrite, s.handleUploadReleaseAsset)(w, r)
+				s.requirePerm(store.ScopeContents, store.PermWrite, s.handleUploadReleaseAsset)(w, r)
 			default:
 				writeGHError(w, http.StatusNotFound, "Not Found")
 			}
@@ -143,7 +144,7 @@ func (s *Server) handleReleaseTwoSegDispatch(method string) http.HandlerFunc {
 			case "GET":
 				s.handleListReactions("release", "release_id")(w, r)
 			case "POST":
-				s.requirePerm(scopeReactions, permWrite, s.handleCreateReaction("release", "release_id"))(w, r)
+				s.requirePerm(store.ScopeReactions, store.PermWrite, s.handleCreateReaction("release", "release_id"))(w, r)
 			default:
 				writeGHError(w, http.StatusNotFound, "Not Found")
 			}
@@ -164,14 +165,14 @@ func (s *Server) handleReleaseThreeSegDispatch(method string) http.HandlerFunc {
 		if p2 == "reactions" && method == "DELETE" {
 			r.SetPathValue("release_id", p1)
 			r.SetPathValue("reaction_id", p3)
-			s.requirePerm(scopeReactions, permWrite, s.handleDeleteReaction("release", "release_id"))(w, r)
+			s.requirePerm(store.ScopeReactions, store.PermWrite, s.handleDeleteReaction("release", "release_id"))(w, r)
 			return
 		}
 		writeGHError(w, http.StatusNotFound, "Not Found")
 	}
 }
 
-func (s *Server) lookupRepoFromPath(r *http.Request) *Repo {
+func (s *Server) lookupRepoFromPath(r *http.Request) *store.Repo {
 	return s.store.GetRepo(r.PathValue("owner"), r.PathValue("repo"))
 }
 
@@ -181,7 +182,7 @@ func (s *Server) lookupRepoFromPath(r *http.Request) *Repo {
 // GitHub (which hides the existence of private repos behind 404, never 403, on
 // read paths). Use this on every GET handler that returns repo-scoped content;
 // lookupRepoFromPath stays for write handlers already gated by requirePerm.
-func (s *Server) lookupReadableRepoFromPath(w http.ResponseWriter, r *http.Request) *Repo {
+func (s *Server) lookupReadableRepoFromPath(w http.ResponseWriter, r *http.Request) *store.Repo {
 	repo := s.store.GetRepo(r.PathValue("owner"), r.PathValue("repo"))
 	if repo == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -248,11 +249,11 @@ func (s *Server) handleCreateRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.TagName == "" {
-		writeGHValidationError(w, "Release", "tag_name", "missing_field")
+		store.WriteGHValidationError(w, "Release", "tag_name", "missing_field")
 		return
 	}
 	if s.store.Releases.GetByTag(repo.ID, req.TagName) != nil {
-		writeGHValidationError(w, "Release", "tag_name", "already_exists")
+		store.WriteGHValidationError(w, "Release", "tag_name", "already_exists")
 		return
 	}
 	target := req.TargetCommitish
@@ -265,10 +266,10 @@ func (s *Server) handleCreateRelease(w http.ResponseWriter, r *http.Request) {
 	}
 	// discussion_category_name must name a category that already exists, or
 	// GitHub rejects the request; validate before the release is created.
-	var discussionCategory *DiscussionCategory
+	var discussionCategory *store.DiscussionCategory
 	if req.DiscussionCategoryName != "" {
 		if discussionCategory = s.store.GetDiscussionCategoryByName(repo.ID, req.DiscussionCategoryName); discussionCategory == nil {
-			writeGHValidationError(w, "Release", "discussion_category_name", "invalid")
+			store.WriteGHValidationError(w, "Release", "discussion_category_name", "invalid")
 			return
 		}
 	}
@@ -302,7 +303,7 @@ func (s *Server) handleListReleases(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	releases := s.store.Releases.List(repo.ID)
-	visible := make([]*Release, 0, len(releases))
+	visible := make([]*store.Release, 0, len(releases))
 	mayPush := s.viewerCanPushRepo(r.Context(), repo)
 	for _, release := range releases {
 		if release.Draft && !mayPush {
@@ -393,10 +394,10 @@ func (s *Server) handleUpdateRelease(w http.ResponseWriter, r *http.Request) {
 	}
 	// A discussion_category_name that names a missing category is rejected;
 	// validate before mutating.
-	var discussionCategory *DiscussionCategory
+	var discussionCategory *store.DiscussionCategory
 	if req.DiscussionCategoryName != nil && *req.DiscussionCategoryName != "" && release.DiscussionNumber == 0 {
 		if discussionCategory = s.store.GetDiscussionCategoryByName(repo.ID, *req.DiscussionCategoryName); discussionCategory == nil {
-			writeGHValidationError(w, "Release", "discussion_category_name", "invalid")
+			store.WriteGHValidationError(w, "Release", "discussion_category_name", "invalid")
 			return
 		}
 	}
@@ -404,11 +405,11 @@ func (s *Server) handleUpdateRelease(w http.ResponseWriter, r *http.Request) {
 	wasPrerelease := release.Prerelease
 	if req.TagName != nil && *req.TagName != release.TagName {
 		if *req.TagName == "" {
-			writeGHValidationError(w, "Release", "tag_name", "missing_field")
+			store.WriteGHValidationError(w, "Release", "tag_name", "missing_field")
 			return
 		}
 		if s.store.Releases.GetByTag(repo.ID, *req.TagName) != nil {
-			writeGHValidationError(w, "Release", "tag_name", "already_exists")
+			store.WriteGHValidationError(w, "Release", "tag_name", "already_exists")
 			return
 		}
 		target := release.TargetCommitish
@@ -425,7 +426,7 @@ func (s *Server) handleUpdateRelease(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	ok := s.store.Releases.Update(id, func(rel *Release) {
+	ok := s.store.Releases.Update(id, func(rel *store.Release) {
 		if req.TagName != nil {
 			rel.TagName = *req.TagName
 		}
@@ -461,26 +462,26 @@ func (s *Server) handleUpdateRelease(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, releaseToJSON(updated, s.store, s.baseURL(r), repo))
 }
 
-func (s *Server) resolveReleaseTarget(repo *Repo, target string) (plumbing.Hash, error) {
+func (s *Server) resolveReleaseTarget(repo *store.Repo, target string) (plumbing.Hash, error) {
 	stor, _ := s.store.GitStorageForRepoID(repo.ID)
 	if stor == nil {
 		return plumbing.ZeroHash, fmt.Errorf("release source git storage is unavailable")
 	}
-	hash, err := resolveGitRef(stor, target)
+	hash, err := store.ResolveGitRef(stor, target)
 	if err != nil {
 		return plumbing.ZeroHash, fmt.Errorf("target_commitish %q does not resolve to a commit", target)
 	}
 	return hash, nil
 }
 
-func (s *Server) ensureReleaseTag(repo *Repo, tagName, target string) error {
+func (s *Server) ensureReleaseTag(repo *store.Repo, tagName, target string) error {
 	stor, _ := s.store.GitStorageForRepoID(repo.ID)
 	if stor == nil {
 		return fmt.Errorf("release source git storage is unavailable")
 	}
 	tagRef := plumbing.NewTagReferenceName(tagName)
 	if existing, err := stor.Reference(tagRef); err == nil {
-		_, err = refHash(existing, stor)
+		_, err = store.RefHash(existing, stor)
 		if err != nil {
 			return fmt.Errorf("release tag %q does not resolve to a commit", tagName)
 		}
@@ -543,7 +544,7 @@ func releaseUpdateAction(wasDraft, wasPrerelease, draft, prerelease bool) string
 	}
 }
 
-func (s *Server) emitReleaseEvent(repo *Repo, release *Release, sender *User, action, baseURL string) {
+func (s *Server) emitReleaseEvent(repo *store.Repo, release *store.Release, sender *store.User, action, baseURL string) {
 	payload := s.buildReleaseEventPayload(repo, release, sender, action, baseURL)
 	s.emitWebhookEvent(repo.FullName, "release", action, payload)
 }
@@ -589,7 +590,7 @@ func (s *Server) handleUploadReleaseAsset(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if !ok {
-		writeGHValidationError(w, "ReleaseAsset", "name", "missing_field")
+		store.WriteGHValidationError(w, "ReleaseAsset", "name", "missing_field")
 		return
 	}
 	asset, err := s.store.Releases.CreateReleaseAsset(releaseID, user.ID, name, label, contentType, data)
@@ -745,10 +746,10 @@ func (s *Server) handleDeleteReleaseAsset(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func releaseAssetToJSON(asset *ReleaseAsset, st *Store, baseURL string, repo *Repo, rel *Release) map[string]interface{} {
+func releaseAssetToJSON(asset *store.ReleaseAsset, st *store.Store, baseURL string, repo *store.Repo, rel *store.Release) map[string]interface{} {
 	var uploader map[string]interface{}
 	if user := st.Users[asset.UploaderID]; user != nil {
-		uploader = userToJSON(user)
+		uploader = store.UserToJSON(user)
 	}
 	downloadURL := fmt.Sprintf("%s/api/v3/repos/%s/releases/assets/%d", baseURL, repo.FullName, asset.ID)
 	return map[string]interface{}{
@@ -781,7 +782,7 @@ func (s *Server) handleGenerateReleaseNotes(w http.ResponseWriter, r *http.Reque
 		ConfigurationFile string `json:"configuration_file_path"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.TagName == "" {
-		writeGHValidationError(w, "Release", "tag_name", "missing_field")
+		store.WriteGHValidationError(w, "Release", "tag_name", "missing_field")
 		return
 	}
 	notes := s.generatedReleaseNotes(repo, req.TagName, req.TargetCommitish, req.PreviousTagName)
@@ -794,7 +795,7 @@ func (s *Server) handleGenerateReleaseNotes(w http.ResponseWriter, r *http.Reque
 
 // previousReleaseTag returns the tag of the newest existing published release
 // (excluding excludeTag), used to bound generated release notes.
-func (s *Server) previousReleaseTag(repo *Repo, excludeTag string) string {
+func (s *Server) previousReleaseTag(repo *store.Repo, excludeTag string) string {
 	if prev := s.store.Releases.Latest(repo.ID); prev != nil && prev.TagName != excludeTag {
 		return prev.TagName
 	}
@@ -803,7 +804,7 @@ func (s *Server) previousReleaseTag(repo *Repo, excludeTag string) string {
 
 // linkReleaseDiscussion creates a repository discussion in the given category
 // and links it to the release (discussion_category_name).
-func (s *Server) linkReleaseDiscussion(repo *Repo, release *Release, user *User, category *DiscussionCategory) {
+func (s *Server) linkReleaseDiscussion(repo *store.Repo, release *store.Release, user *store.User, category *store.DiscussionCategory) {
 	if category == nil {
 		return
 	}
@@ -815,11 +816,11 @@ func (s *Server) linkReleaseDiscussion(repo *Repo, release *Release, user *User,
 	if disc == nil {
 		return
 	}
-	s.store.Releases.Update(release.ID, func(rel *Release) { rel.DiscussionNumber = disc.Number })
+	s.store.Releases.Update(release.ID, func(rel *store.Release) { rel.DiscussionNumber = disc.Number })
 	release.DiscussionNumber = disc.Number
 }
 
-func (s *Server) generatedReleaseNotes(repo *Repo, tagName, targetCommitish, previousTagName string) string {
+func (s *Server) generatedReleaseNotes(repo *store.Repo, tagName, targetCommitish, previousTagName string) string {
 	var lines []string
 	lines = append(lines, "## What's Changed", "")
 	for _, pr := range s.mergedPullRequestsInRange(repo, tagName, targetCommitish, previousTagName) {
@@ -833,14 +834,14 @@ func (s *Server) generatedReleaseNotes(repo *Repo, tagName, targetCommitish, pre
 		lines = append(lines, fmt.Sprintf("* %s by @%s in %s/pull/%d", pr.Title, author, repo.FullName, pr.Number))
 	}
 	if len(lines) == 2 {
-		lines = append(lines, fmt.Sprintf("Since %s", coalesceStr(previousTagName, "(no previous tag)")))
+		lines = append(lines, fmt.Sprintf("Since %s", store.CoalesceStr(previousTagName, "(no previous tag)")))
 	}
-	lines = append(lines, "", fmt.Sprintf("**Full Changelog**: %s...%s", coalesceStr(previousTagName, ""), tagName))
+	lines = append(lines, "", fmt.Sprintf("**Full Changelog**: %s...%s", store.CoalesceStr(previousTagName, ""), tagName))
 	return strings.Join(lines, "\n")
 }
 
-func (s *Server) mergedPullRequestsInRange(repo *Repo, tagName, targetCommitish, previousTagName string) []*PullRequest {
-	owner, name, ok := splitRepoFullName(repo.FullName)
+func (s *Server) mergedPullRequestsInRange(repo *store.Repo, tagName, targetCommitish, previousTagName string) []*store.PullRequest {
+	owner, name, ok := store.SplitRepoFullName(repo.FullName)
 	if !ok {
 		return nil
 	}
@@ -852,16 +853,16 @@ func (s *Server) mergedPullRequestsInRange(repo *Repo, tagName, targetCommitish,
 	if targetCommitish != "" {
 		targetRef = targetCommitish
 	}
-	targetHash, err := resolveGitRef(stor, targetRef)
+	targetHash, err := store.ResolveGitRef(stor, targetRef)
 	if err != nil && targetCommitish == "" {
-		targetHash, err = resolveGitRef(stor, repo.DefaultBranch)
+		targetHash, err = store.ResolveGitRef(stor, repo.DefaultBranch)
 	}
 	if err != nil {
 		return nil
 	}
 	var previousHash plumbing.Hash
 	if previousTagName != "" {
-		if h, err := resolveGitRef(stor, previousTagName); err == nil {
+		if h, err := store.ResolveGitRef(stor, previousTagName); err == nil {
 			previousHash = h
 		}
 	}
@@ -870,7 +871,7 @@ func (s *Server) mergedPullRequestsInRange(repo *Repo, tagName, targetCommitish,
 		return nil
 	}
 
-	var out []*PullRequest
+	var out []*store.PullRequest
 	for _, pr := range s.store.ListPullRequests(repo.ID, "MERGED") {
 		snap := s.store.SnapPR(pr)
 		if snap.MergeCommitSHA != "" && inRange[snap.MergeCommitSHA] {
@@ -902,7 +903,7 @@ func releaseCommitRangeSet(stor gitStorage.Storer, previousHash, targetHash plum
 			return nil
 		})
 	} else {
-		commits, err = commitsBetween(stor, previousHash, targetHash)
+		commits, err = store.CommitsBetween(stor, previousHash, targetHash)
 		if err != nil {
 			return out
 		}
@@ -913,14 +914,14 @@ func releaseCommitRangeSet(stor gitStorage.Storer, previousHash, targetHash plum
 	return out
 }
 
-func releaseToJSON(rel *Release, st *Store, baseURL string, repo *Repo) map[string]interface{} {
+func releaseToJSON(rel *store.Release, st *store.Store, baseURL string, repo *store.Repo) map[string]interface{} {
 	if rel == nil {
 		return nil
 	}
 	var author map[string]interface{}
 	st.Mu.RLock()
 	if u := st.Users[rel.AuthorID]; u != nil {
-		author = userToJSON(u)
+		author = store.UserToJSON(u)
 	}
 	st.Mu.RUnlock()
 	publishedAt := interface{}(nil)
@@ -967,7 +968,7 @@ func releaseToJSON(rel *Release, st *Store, baseURL string, repo *Repo) map[stri
 }
 
 // buildReleaseEventPayload — `release` webhook event payload.
-func (s *Server) buildReleaseEventPayload(repo *Repo, rel *Release, sender *User, action, baseURL string) map[string]interface{} {
+func (s *Server) buildReleaseEventPayload(repo *store.Repo, rel *store.Release, sender *store.User, action, baseURL string) map[string]interface{} {
 	return attachInstallationBlock(map[string]interface{}{
 		"action":     action,
 		"release":    releaseToJSON(rel, s.store, baseURL, repo),

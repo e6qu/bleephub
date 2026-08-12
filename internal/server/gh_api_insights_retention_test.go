@@ -2,6 +2,8 @@ package bleephub
 
 import (
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // TestAPIInsightsDurableBucketStaysBounded pins STORE-024: FIFO eviction of the
@@ -13,18 +15,18 @@ func TestAPIInsightsDurableBucketStaysBounded(t *testing.T) {
 	t.Setenv("BLEEPHUB_PERSIST", "true")
 	t.Setenv("BLEEPHUB_DATA_DIR", dir)
 
-	record := func(st *Store, n int) {
+	record := func(st *store.Store, n int) {
 		for i := 0; i < n; i++ {
-			st.RecordAPIRequest(&APIRequestRecord{Method: "GET", Route: "/x"})
+			st.RecordAPIRequest(&store.APIRequestRecord{Method: "GET", Route: "/x"})
 		}
 	}
 
 	// Session 1: record with the default cap so the durable bucket holds all 8.
-	p1, err := NewPersistence()
+	p1, err := store.NewPersistence()
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	st1 := NewStore()
+	st1 := store.NewStore()
 	if err := st1.SetPersistence(p1); err != nil {
 		t.Fatalf("SetPersistence: %v", err)
 	}
@@ -42,12 +44,12 @@ func TestAPIInsightsDurableBucketStaysBounded(t *testing.T) {
 
 	// Session 2: reopen with a small cap. Load-time pruning must converge the
 	// leaked durable bucket down to the cap, keeping the newest records.
-	p2, err := NewPersistence()
+	p2, err := store.NewPersistence()
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
 	t.Cleanup(func() { _ = p2.Close() })
-	st2 := NewStore()
+	st2 := store.NewStore()
 	st2.ApiRequestRecordCap = 3
 	if err := st2.SetPersistence(p2); err != nil {
 		t.Fatalf("reload: %v", err)

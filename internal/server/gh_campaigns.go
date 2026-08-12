@@ -5,6 +5,8 @@ import (
 	"sort"
 	"strconv"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // GitHub security campaigns: organization-scoped remediation drives over
@@ -12,15 +14,15 @@ import (
 
 func (s *Server) registerGHCampaignRoutes() {
 	s.route("GET /api/v3/orgs/{org}/campaigns",
-		s.requirePerm(scopeSecurityEvents, permRead, s.orgGated(s.handleListOrgCampaigns)))
+		s.requirePerm(store.ScopeSecurityEvents, store.PermRead, s.orgGated(s.handleListOrgCampaigns)))
 	s.route("POST /api/v3/orgs/{org}/campaigns",
-		s.requirePerm(scopeSecurityEvents, permWrite, s.orgGated(s.handleCreateOrgCampaign)))
+		s.requirePerm(store.ScopeSecurityEvents, store.PermWrite, s.orgGated(s.handleCreateOrgCampaign)))
 	s.route("GET /api/v3/orgs/{org}/campaigns/{campaign_number}",
-		s.requirePerm(scopeSecurityEvents, permRead, s.orgGated(s.handleGetOrgCampaign)))
+		s.requirePerm(store.ScopeSecurityEvents, store.PermRead, s.orgGated(s.handleGetOrgCampaign)))
 	s.route("PATCH /api/v3/orgs/{org}/campaigns/{campaign_number}",
-		s.requirePerm(scopeSecurityEvents, permWrite, s.orgGated(s.handleUpdateOrgCampaign)))
+		s.requirePerm(store.ScopeSecurityEvents, store.PermWrite, s.orgGated(s.handleUpdateOrgCampaign)))
 	s.route("DELETE /api/v3/orgs/{org}/campaigns/{campaign_number}",
-		s.requirePerm(scopeSecurityEvents, permWrite, s.orgGated(s.handleDeleteOrgCampaign)))
+		s.requirePerm(store.ScopeSecurityEvents, store.PermWrite, s.orgGated(s.handleDeleteOrgCampaign)))
 }
 
 func (s *Server) handleListOrgCampaigns(w http.ResponseWriter, r *http.Request) {
@@ -154,7 +156,7 @@ func (s *Server) handleCreateOrgCampaign(w http.ResponseWriter, r *http.Request)
 
 // resolveCampaign parses {campaign_number} and loads the campaign, writing a
 // 404 on failure.
-func (s *Server) resolveCampaign(w http.ResponseWriter, r *http.Request) *Campaign {
+func (s *Server) resolveCampaign(w http.ResponseWriter, r *http.Request) *store.Campaign {
 	number, err := strconv.Atoi(r.PathValue("campaign_number"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -222,7 +224,7 @@ func (s *Server) handleUpdateOrgCampaign(w http.ResponseWriter, r *http.Request)
 			return
 		}
 	}
-	updated := s.store.UpdateCampaign(org, c.Number, func(c *Campaign) {
+	updated := s.store.UpdateCampaign(org, c.Number, func(c *store.Campaign) {
 		if req.Name != nil {
 			c.Name = *req.Name
 		}
@@ -268,12 +270,12 @@ func (s *Server) handleDeleteOrgCampaign(w http.ResponseWriter, r *http.Request)
 
 // campaignJSON renders the campaign-summary shape. Alert stats are derived
 // live from the linked code scanning alerts' current states.
-func (s *Server) campaignJSON(c *Campaign, r *http.Request) map[string]interface{} {
+func (s *Server) campaignJSON(c *store.Campaign, r *http.Request) map[string]interface{} {
 	base := s.baseURL(r)
 	managers := make([]map[string]interface{}, 0, len(c.ManagerLogins))
 	for _, login := range c.ManagerLogins {
 		if u := s.store.LookupUserByLogin(login); u != nil {
-			managers = append(managers, userToJSON(u))
+			managers = append(managers, store.UserToJSON(u))
 		}
 	}
 	var contactLink interface{}

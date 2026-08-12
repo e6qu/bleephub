@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // registerGHEnterpriseAdminRoutes mounts the enterprise administration APIs
@@ -51,7 +53,7 @@ func (s *Server) handleGetEnterpriseAnnouncement(w http.ResponseWriter, _ *http.
 	s.store.Mu.RLock()
 	announcement := s.store.EnterpriseSettings.Announcement
 	if announcement == nil {
-		announcement = &EnterpriseAnnouncement{}
+		announcement = &store.EnterpriseAnnouncement{}
 	}
 	result := *announcement
 	s.store.Mu.RUnlock()
@@ -70,16 +72,16 @@ func (s *Server) handleSetEnterpriseAnnouncement(w http.ResponseWriter, r *http.
 		return
 	}
 	if req.Announcement == nil {
-		writeGHValidationError(w, "EnterpriseAnnouncement", "announcement", "missing_field")
+		store.WriteGHValidationError(w, "EnterpriseAnnouncement", "announcement", "missing_field")
 		return
 	}
 	if req.ExpiresAt != nil && *req.ExpiresAt != "" {
 		if _, err := time.Parse(time.RFC3339, *req.ExpiresAt); err != nil {
-			writeGHValidationError(w, "EnterpriseAnnouncement", "expires_at", "invalid")
+			store.WriteGHValidationError(w, "EnterpriseAnnouncement", "expires_at", "invalid")
 			return
 		}
 	}
-	announcement := &EnterpriseAnnouncement{Announcement: *req.Announcement}
+	announcement := &store.EnterpriseAnnouncement{Announcement: *req.Announcement}
 	if req.ExpiresAt != nil && *req.ExpiresAt != "" {
 		expires := *req.ExpiresAt
 		announcement.ExpiresAt = &expires
@@ -135,7 +137,7 @@ type enterpriseCodeSecurityRequest struct {
 	SecretScanningNonProviderPatternsEnabledForNewRepositories *bool   `json:"secret_scanning_non_provider_patterns_enabled_for_new_repositories"`
 }
 
-func (req enterpriseCodeSecurityRequest) apply(settings *EnterpriseCodeSecurity) {
+func (req enterpriseCodeSecurityRequest) apply(settings *store.EnterpriseCodeSecurity) {
 	setBool := func(dst *bool, src *bool) {
 		if src != nil {
 			*dst = *src
@@ -172,7 +174,7 @@ func (s *Server) handleUpdateEnterpriseCodeSecurityAndAnalysis(w http.ResponseWr
 func (s *Server) handleSetEnterpriseSecurityFeature(w http.ResponseWriter, r *http.Request) {
 	enabled := r.PathValue("enablement") == "enable_all"
 	if !enabled && r.PathValue("enablement") != "disable_all" {
-		writeGHValidationError(w, "EnterpriseSecurityFeature", "enablement", "invalid")
+		store.WriteGHValidationError(w, "EnterpriseSecurityFeature", "enablement", "invalid")
 		return
 	}
 	s.store.Mu.Lock()
@@ -192,7 +194,7 @@ func (s *Server) handleSetEnterpriseSecurityFeature(w http.ResponseWriter, r *ht
 		settings.SecretScanningNonProviderPatternsEnabledForNewRepositories = enabled
 	default:
 		s.store.Mu.Unlock()
-		writeGHValidationError(w, "EnterpriseSecurityFeature", "security_product", "invalid")
+		store.WriteGHValidationError(w, "EnterpriseSecurityFeature", "security_product", "invalid")
 		return
 	}
 	s.store.PersistEnterpriseSettings()
@@ -212,12 +214,12 @@ func decodeEnterpriseCredentialRevocation(w http.ResponseWriter, r *http.Request
 		return req, false
 	}
 	if credentialTypeRequired && !validEnterpriseCredentialType(req.CredentialType) {
-		writeGHValidationError(w, "CredentialAuthorization", "credential_type", "invalid")
+		store.WriteGHValidationError(w, "CredentialAuthorization", "credential_type", "invalid")
 		return req, false
 	}
 	// bleephub models a regular GHES enterprise rather than an EMU enterprise.
 	if req.RevokeCredentials {
-		writeGHValidationError(w, "CredentialAuthorization", "revoke_credentials", "invalid")
+		store.WriteGHValidationError(w, "CredentialAuthorization", "revoke_credentials", "invalid")
 		return req, false
 	}
 	return req, true
@@ -246,7 +248,7 @@ func (s *Server) handleRevokeEnterpriseCredentialType(w http.ResponseWriter, r *
 	writeJSON(w, http.StatusAccepted, map[string]string{"message": "Credential type revocation has been queued"})
 }
 
-func (s *Server) enterpriseCredentialUser(w http.ResponseWriter, username string) *User {
+func (s *Server) enterpriseCredentialUser(w http.ResponseWriter, username string) *store.User {
 	user := s.store.LookupUserByLogin(username)
 	if user == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -283,16 +285,16 @@ func (s *Server) handleRevokeUserCredentialType(w http.ResponseWriter, r *http.R
 func (s *Server) handleEnterpriseAuditLog(w http.ResponseWriter, r *http.Request) {
 	order := r.URL.Query().Get("order")
 	if order != "" && order != "asc" && order != "desc" {
-		writeGHValidationError(w, "AuditLog", "order", "invalid")
+		store.WriteGHValidationError(w, "AuditLog", "order", "invalid")
 		return
 	}
 	include := r.URL.Query().Get("include")
 	if include != "" && include != "web" && include != "git" && include != "all" {
-		writeGHValidationError(w, "AuditLog", "include", "invalid")
+		store.WriteGHValidationError(w, "AuditLog", "include", "invalid")
 		return
 	}
 	s.store.Misc.Mu.RLock()
-	entries := make([]*AuditEntry, 0, len(s.store.Misc.AuditLog))
+	entries := make([]*store.AuditEntry, 0, len(s.store.Misc.AuditLog))
 	for _, entry := range s.store.Misc.AuditLog {
 		if phrase := r.URL.Query().Get("phrase"); phrase != "" && !auditEntryMatchesPhrase(entry, phrase) {
 			continue
@@ -312,7 +314,7 @@ func (s *Server) handleEnterpriseAuditLogStreamKey(w http.ResponseWriter, _ *htt
 	s.writeActionsPublicKey(w)
 }
 
-func enterpriseAuditLogStreamJSON(stream *EnterpriseAuditLogStream) map[string]interface{} {
+func enterpriseAuditLogStreamJSON(stream *store.EnterpriseAuditLogStream) map[string]interface{} {
 	return map[string]interface{}{
 		"id":             stream.ID,
 		"stream_type":    stream.StreamType,
@@ -343,7 +345,7 @@ func enterpriseAuditLogStreamID(w http.ResponseWriter, r *http.Request) (int, bo
 	return id, true
 }
 
-func (s *Server) enterpriseAuditLogStreamLocked(id int) *EnterpriseAuditLogStream {
+func (s *Server) enterpriseAuditLogStreamLocked(id int) *store.EnterpriseAuditLogStream {
 	for _, stream := range s.store.EnterpriseSettings.AuditLogStreams {
 		if stream.ID == id {
 			return stream
@@ -400,15 +402,15 @@ func decodeEnterpriseAuditLogStreamRequest(w http.ResponseWriter, r *http.Reques
 		return req, false
 	}
 	if req.Enabled == nil {
-		writeGHValidationError(w, "AuditLogStream", "enabled", "missing_field")
+		store.WriteGHValidationError(w, "AuditLogStream", "enabled", "missing_field")
 		return req, false
 	}
 	if !validEnterpriseAuditLogStreamType(req.StreamType) {
-		writeGHValidationError(w, "AuditLogStream", "stream_type", "invalid")
+		store.WriteGHValidationError(w, "AuditLogStream", "stream_type", "invalid")
 		return req, false
 	}
 	if len(req.VendorSpecific) == 0 {
-		writeGHValidationError(w, "AuditLogStream", "vendor_specific", "missing_field")
+		store.WriteGHValidationError(w, "AuditLogStream", "vendor_specific", "missing_field")
 		return req, false
 	}
 	return req, true
@@ -420,7 +422,7 @@ func (s *Server) handleCreateEnterpriseAuditLogStream(w http.ResponseWriter, r *
 		return
 	}
 	now := s.store.CurrentTime()
-	stream := &EnterpriseAuditLogStream{
+	stream := &store.EnterpriseAuditLogStream{
 		StreamType: req.StreamType, StreamDetails: enterpriseAuditLogStreamDetails(req.StreamType, req.VendorSpecific),
 		Enabled: *req.Enabled, VendorSpecific: req.VendorSpecific, CreatedAt: now, UpdatedAt: now,
 	}

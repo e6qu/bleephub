@@ -5,6 +5,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -15,8 +16,8 @@ import (
 func TestTokenMatchesClientUsesTheStoreLock(t *testing.T) {
 	st := newTestServer().store
 	const clientID = "Iv1.concurrent-client"
-	token := &UserToServerToken{AppID: 73}
-	app := &App{ID: token.AppID, ClientID: clientID}
+	token := &store.UserToServerToken{AppID: 73}
+	app := &store.App{ID: token.AppID, ClientID: clientID}
 
 	var writers sync.WaitGroup
 	writers.Add(1)
@@ -54,12 +55,12 @@ func TestTokenMatchesClientUsesTheStoreLock(t *testing.T) {
 func TestUserGraphReadersUseStoreLock(t *testing.T) {
 	st := newTestServer().store
 
-	blocker := &User{ID: 9001, Login: "blocker"}
-	blocked := &User{ID: 9002, Login: "blocked"}
-	follower := &User{ID: 9003, Login: "follower"}
-	followee := &User{ID: 9004, Login: "followee"}
+	blocker := &store.User{ID: 9001, Login: "blocker"}
+	blocked := &store.User{ID: 9002, Login: "blocked"}
+	follower := &store.User{ID: 9003, Login: "follower"}
+	followee := &store.User{ID: 9004, Login: "followee"}
 	st.Mu.Lock()
-	for _, u := range []*User{blocker, blocked, follower, followee} {
+	for _, u := range []*store.User{blocker, blocked, follower, followee} {
 		st.Users[u.ID] = u
 		st.UsersByLogin[u.Login] = u
 	}
@@ -75,12 +76,12 @@ func TestUserGraphReadersUseStoreLock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("derive ssh public key: %v", err)
 	}
-	uk := &UserKey{ID: 1, Key: string(ssh.MarshalAuthorizedKey(pub)), UserID: followee.ID}
-	if err := cacheParsedKey(uk); err != nil {
+	uk := &store.UserKey{ID: 1, Key: string(ssh.MarshalAuthorizedKey(pub)), UserID: followee.ID}
+	if err := store.CacheParsedKey(uk); err != nil {
 		t.Fatalf("cache parsed key: %v", err)
 	}
 	st.Misc.Mu.Lock()
-	st.Misc.KeysByUser[followee.ID] = []*UserKey{uk}
+	st.Misc.KeysByUser[followee.ID] = []*store.UserKey{uk}
 	st.Misc.Mu.Unlock()
 
 	// Writer churns st.Users under st.mu.Lock for as long as the readers run.
@@ -89,7 +90,7 @@ func TestUserGraphReadersUseStoreLock(t *testing.T) {
 	writers.Add(1)
 	go func() {
 		defer writers.Done()
-		churn := &User{ID: 9999, Login: "churn"}
+		churn := &store.User{ID: 9999, Login: "churn"}
 		for !stop.Load() {
 			st.Mu.Lock()
 			st.Users[churn.ID] = churn

@@ -8,14 +8,16 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // seedOIDCRepoOwner creates a user with the given login so a repo can be
 // created under it (the OIDC mint requires the repo to actually exist).
-func seedOIDCRepoOwner(s *Server, login string) *User {
+func seedOIDCRepoOwner(s *Server, login string) *store.User {
 	s.store.Mu.Lock()
 	defer s.store.Mu.Unlock()
-	u := &User{ID: s.store.NextUser, Login: login, Type: "User", CreatedAt: fixedTestTime.UTC(), UpdatedAt: fixedTestTime.UTC()}
+	u := &store.User{ID: s.store.NextUser, Login: login, Type: "User", CreatedAt: fixedTestTime.UTC(), UpdatedAt: fixedTestTime.UTC()}
 	s.store.NextUser++
 	s.store.Users[u.ID] = u
 	s.store.UsersByLogin[login] = u

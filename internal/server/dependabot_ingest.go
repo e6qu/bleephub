@@ -4,9 +4,11 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
-func (s *Server) deriveDependabotAlertsForRepository(repo *Repo) {
+func (s *Server) deriveDependabotAlertsForRepository(repo *store.Repo) {
 	if repo == nil {
 		return
 	}
@@ -19,12 +21,12 @@ func (s *Server) deriveDependabotAlertsForRepository(repo *Repo) {
 	}
 }
 
-func (s *Server) deriveDependabotAlertsForPublishedAdvisory(advisory *SecurityAdvisory) {
+func (s *Server) deriveDependabotAlertsForPublishedAdvisory(advisory *store.SecurityAdvisory) {
 	if advisory == nil || advisory.PublishedAt == nil || advisory.State != "published" {
 		return
 	}
 	s.store.Mu.RLock()
-	repos := make([]*Repo, 0, len(s.store.Repos))
+	repos := make([]*store.Repo, 0, len(s.store.Repos))
 	for _, repo := range s.store.Repos {
 		repos = append(repos, repo)
 	}
@@ -39,7 +41,7 @@ func (s *Server) deriveDependabotAlertsForPublishedAdvisory(advisory *SecurityAd
 	}
 }
 
-func (s *Server) deriveDependabotAlertsForRepositoryAdvisory(repo *Repo, deps map[string]*dependencyEntry, advisory *SecurityAdvisory) {
+func (s *Server) deriveDependabotAlertsForRepositoryAdvisory(repo *store.Repo, deps map[string]*dependencyEntry, advisory *store.SecurityAdvisory) {
 	if advisory == nil || advisory.PublishedAt == nil || advisory.State != "published" {
 		return
 	}
@@ -59,7 +61,7 @@ func (s *Server) deriveDependabotAlertsForRepositoryAdvisory(repo *Repo, deps ma
 	}
 }
 
-func dependabotPackageMatches(v SecurityAdvisoryVulnerability, ecosystem, packageName string) bool {
+func dependabotPackageMatches(v store.SecurityAdvisoryVulnerability, ecosystem, packageName string) bool {
 	return normalizeDependabotEcosystem(v.PackageEcosystem) == normalizeDependabotEcosystem(ecosystem) &&
 		strings.EqualFold(v.PackageName, packageName)
 }

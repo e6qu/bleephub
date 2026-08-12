@@ -3,6 +3,8 @@ package bleephub
 import (
 	"net/http"
 	"strconv"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func (s *Server) registerGHEnterpriseRulesetRoutes() {
@@ -14,7 +16,7 @@ func (s *Server) registerGHEnterpriseRulesetRoutes() {
 	s.route("GET /api/v3/enterprises/{enterprise}/rulesets/{ruleset_id}/history/{version_id}", s.requireEnterpriseMember(s.handleGetEnterpriseRulesetVersion))
 }
 
-func (s *Server) lookupEnterpriseRuleset(w http.ResponseWriter, r *http.Request) *Ruleset {
+func (s *Server) lookupEnterpriseRuleset(w http.ResponseWriter, r *http.Request) *store.Ruleset {
 	id, err := strconv.Atoi(r.PathValue("ruleset_id"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -28,12 +30,12 @@ func (s *Server) lookupEnterpriseRuleset(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) handleCreateEnterpriseRuleset(w http.ResponseWriter, r *http.Request) {
-	var body Ruleset
+	var body store.Ruleset
 	if !decodeJSONBody(w, r, &body) {
 		return
 	}
 	if body.Name == "" {
-		writeGHValidationError(w, "ruleset", "name", "missing_field")
+		store.WriteGHValidationError(w, "ruleset", "name", "missing_field")
 		return
 	}
 	ruleset := s.store.CreateEnterpriseRuleset(s.enterpriseSlug(), &body)
@@ -48,7 +50,7 @@ func (s *Server) handleGetEnterpriseRuleset(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, rulesetToJSON(ruleset, true))
 }
 
-func applyRulesetUpdate(ruleset *Ruleset, body *Ruleset) {
+func applyRulesetUpdate(ruleset *store.Ruleset, body *store.Ruleset) {
 	if body.Name != "" {
 		ruleset.Name = body.Name
 	}
@@ -78,11 +80,11 @@ func (s *Server) handleUpdateEnterpriseRuleset(w http.ResponseWriter, r *http.Re
 	if ruleset == nil {
 		return
 	}
-	var body Ruleset
+	var body store.Ruleset
 	if !decodeJSONBody(w, r, &body) {
 		return
 	}
-	if !s.store.UpdateOrgRuleset(ruleset.ID, user.ID, func(candidate *Ruleset) {
+	if !s.store.UpdateOrgRuleset(ruleset.ID, user.ID, func(candidate *store.Ruleset) {
 		applyRulesetUpdate(candidate, &body)
 	}) {
 		writeGHError(w, http.StatusNotFound, "Not Found")

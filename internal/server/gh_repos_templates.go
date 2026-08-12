@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func (s *Server) registerGHTemplateRoutes() {
@@ -35,7 +37,7 @@ func (s *Server) handleListLicenses(w http.ResponseWriter, r *http.Request) {
 	keys := listLicenseKeys()
 	out := make([]map[string]interface{}, 0, len(keys))
 	for _, k := range keys {
-		tmpl := licenseTemplates[k]
+		tmpl := store.LicenseTemplates[k]
 		out = append(out, map[string]interface{}{
 			"key":     k,
 			"name":    tmpl.Name,
@@ -49,7 +51,7 @@ func (s *Server) handleListLicenses(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGetLicense(w http.ResponseWriter, r *http.Request) {
 	key := strings.ToLower(r.PathValue("license"))
-	tmpl, ok := licenseTemplates[key]
+	tmpl, ok := store.LicenseTemplates[key]
 	if !ok {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -249,8 +251,8 @@ func listGitignoreNames() []string {
 }
 
 func listLicenseKeys() []string {
-	keys := make([]string, 0, len(licenseTemplates))
-	for k := range licenseTemplates {
+	keys := make([]string, 0, len(store.LicenseTemplates))
+	for k := range store.LicenseTemplates {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
@@ -259,7 +261,7 @@ func listLicenseKeys() []string {
 
 func normalizeLicenseKey(key string) (string, bool) {
 	lower := strings.ToLower(key)
-	if _, ok := licenseTemplates[lower]; ok {
+	if _, ok := store.LicenseTemplates[lower]; ok {
 		return lower, true
 	}
 	return "", false
@@ -275,7 +277,7 @@ func normalizeGitignoreName(name string) (string, bool) {
 }
 
 func licenseBody(key, owner, repo string, year int) string {
-	tmpl := licenseTemplates[key]
+	tmpl := store.LicenseTemplates[key]
 	body := strings.ReplaceAll(tmpl.Body, "[year]", fmt.Sprintf("%d", year))
 	body = strings.ReplaceAll(body, "[fullname]", owner)
 	return body

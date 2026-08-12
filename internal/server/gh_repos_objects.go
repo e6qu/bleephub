@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -29,8 +30,8 @@ func (s *Server) registerGHRepoObjectRoutes() {
 	s.route("GET /api/v3/repos/{owner}/{repo}/commits", s.handleListCommits)
 	s.route("GET /api/v3/repos/{owner}/{repo}/readme", s.handleGetReadme)
 	s.route("GET /api/v3/repos/{owner}/{repo}/contents/{path...}", s.handleGetContents)
-	s.route("PUT /api/v3/repos/{owner}/{repo}/contents/{path...}", s.requirePerm(scopeContents, permWrite, s.handlePutContents))
-	s.route("DELETE /api/v3/repos/{owner}/{repo}/contents/{path...}", s.requirePerm(scopeContents, permWrite, s.handleDeleteContents))
+	s.route("PUT /api/v3/repos/{owner}/{repo}/contents/{path...}", s.requirePerm(store.ScopeContents, store.PermWrite, s.handlePutContents))
+	s.route("DELETE /api/v3/repos/{owner}/{repo}/contents/{path...}", s.requirePerm(store.ScopeContents, store.PermWrite, s.handleDeleteContents))
 }
 
 func (s *Server) handleListCommits(w http.ResponseWriter, r *http.Request) {
@@ -88,7 +89,7 @@ func parseListCommitsOptions(w http.ResponseWriter, r *http.Request) (listCommit
 		}
 		parsed, err := time.Parse(time.RFC3339, raw)
 		if err != nil {
-			writeGHValidationError(w, "Commit", name, "invalid")
+			store.WriteGHValidationError(w, "Commit", name, "invalid")
 			return listCommitsOptions{}, false
 		}
 		parsed = parsed.UTC()
@@ -97,7 +98,7 @@ func parseListCommitsOptions(w http.ResponseWriter, r *http.Request) (listCommit
 	return options, true
 }
 
-func (s *Server) listRepoCommits(repo *Repo, owner, repoName string, options listCommitsOptions, baseURL string) ([]map[string]interface{}, error) {
+func (s *Server) listRepoCommits(repo *store.Repo, owner, repoName string, options listCommitsOptions, baseURL string) ([]map[string]interface{}, error) {
 	stor := s.store.GetGitStorage(owner, repoName)
 	if stor == nil {
 		return nil, errRepoGitStorageUnavailable
@@ -108,7 +109,7 @@ func (s *Server) listRepoCommits(repo *Repo, owner, repoName string, options lis
 	if usingDefault {
 		refName = repo.DefaultBranch
 	}
-	hash, err := resolveGitRef(stor, refName)
+	hash, err := store.ResolveGitRef(stor, refName)
 	if err != nil {
 		if usingDefault {
 			return nil, errRepoGitRepositoryEmpty
@@ -536,11 +537,11 @@ func contentSHAPreconditionMet(w http.ResponseWriter, stor gitStorage.Storer, br
 	current, exists := contentBlobSHA(stor, branch, path)
 	switch {
 	case exists && given == "":
-		writeGHValidationError(w, "Commit", "sha", "missing_field")
+		store.WriteGHValidationError(w, "Commit", "sha", "missing_field")
 	case exists && given != current:
 		writeGHError(w, http.StatusConflict, path+" does not match "+given)
 	case !exists && given != "":
-		writeGHValidationError(w, "Commit", "sha", "invalid")
+		store.WriteGHValidationError(w, "Commit", "sha", "invalid")
 	default:
 		return true
 	}
@@ -555,7 +556,7 @@ func (e *contentRefWriteRefusal) Error() string {
 	return e.message
 }
 
-func (s *Server) contentRefWriteGuard(r *http.Request, repo *Repo, stor gitStorage.Storer, ref plumbing.ReferenceName, kind refWriteKind) func(plumbing.Hash) error {
+func (s *Server) contentRefWriteGuard(r *http.Request, repo *store.Repo, stor gitStorage.Storer, ref plumbing.ReferenceName, kind refWriteKind) func(plumbing.Hash) error {
 	return func(target plumbing.Hash) error {
 		if refusal := s.protectedRefWriteRefusal(r.Context(), repo, stor, ref, kind, target); refusal != "" {
 			return &contentRefWriteRefusal{message: refusal}
@@ -614,17 +615,17 @@ func (s *Server) handlePutContents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Message == "" {
-		writeGHValidationError(w, "Commit", "message", "missing_field")
+		store.WriteGHValidationError(w, "Commit", "message", "missing_field")
 		return
 	}
 	if req.Content == "" {
-		writeGHValidationError(w, "Commit", "content", "missing_field")
+		store.WriteGHValidationError(w, "Commit", "content", "missing_field")
 		return
 	}
 
 	decoded, err := base64.StdEncoding.DecodeString(req.Content)
 	if err != nil {
-		writeGHValidationError(w, "Commit", "content", "invalid")
+		store.WriteGHValidationError(w, "Commit", "content", "invalid")
 		return
 	}
 
@@ -716,7 +717,7 @@ func (s *Server) handlePutContents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.store.UpdateRepo(owner, repoName, func(r *Repo) {
+	s.store.UpdateRepo(owner, repoName, func(r *store.Repo) {
 		r.PushedAt = time.Now().UTC()
 	})
 
@@ -793,11 +794,11 @@ func (s *Server) handleDeleteContents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Message == "" {
-		writeGHValidationError(w, "Commit", "message", "missing_field")
+		store.WriteGHValidationError(w, "Commit", "message", "missing_field")
 		return
 	}
 	if req.SHA == "" {
-		writeGHValidationError(w, "Commit", "sha", "missing_field")
+		store.WriteGHValidationError(w, "Commit", "sha", "missing_field")
 		return
 	}
 
@@ -852,7 +853,7 @@ func (s *Server) handleDeleteContents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.store.UpdateRepo(owner, repoName, func(r *Repo) {
+	s.store.UpdateRepo(owner, repoName, func(r *store.Repo) {
 		r.PushedAt = time.Now().UTC()
 	})
 	s.afterCommittedRefUpdate(repo, user, branchRef.String(), ref.Hash().String(), commitHash.String(), s.baseURL(r))
@@ -882,7 +883,7 @@ func (s *Server) handleDeleteContents(w http.ResponseWriter, r *http.Request) {
 // contentFileJSON builds the common members of the GitHub content-file
 // shape (name/path/sha/size plus the hypermedia URLs and _links the
 // schema requires) for a blob at the given path on the given ref.
-func contentFileJSON(baseURL string, repo *Repo, ref, path, sha string, size int64) map[string]interface{} {
+func contentFileJSON(baseURL string, repo *store.Repo, ref, path, sha string, size int64) map[string]interface{} {
 	selfURL := baseURL + "/api/v3/repos/" + repo.FullName + "/contents/" + path + "?ref=" + ref
 	gitURL := baseURL + "/api/v3/repos/" + repo.FullName + "/git/blobs/" + sha
 	htmlURL := baseURL + "/" + repo.FullName + "/blob/" + ref + "/" + path
@@ -905,7 +906,7 @@ func contentFileJSON(baseURL string, repo *Repo, ref, path, sha string, size int
 	}
 }
 
-func contentDirectoryEntryJSON(baseURL string, repo *Repo, ref, path string, entry object.TreeEntry, size int64) map[string]interface{} {
+func contentDirectoryEntryJSON(baseURL string, repo *store.Repo, ref, path string, entry object.TreeEntry, size int64) map[string]interface{} {
 	selfURL := baseURL + "/api/v3/repos/" + repo.FullName + "/contents/" + path + "?ref=" + ref
 	htmlKind := "blob"
 	gitKind := "blobs"
@@ -1023,7 +1024,7 @@ func (s *Server) writeContentsFile(
 	w http.ResponseWriter,
 	r *http.Request,
 	stor gitStorage.Storer,
-	repo *Repo,
+	repo *store.Repo,
 	refName string,
 	requestedPath string,
 	hash plumbing.Hash,
@@ -1073,7 +1074,7 @@ func (s *Server) writeTreeListing(
 	w http.ResponseWriter,
 	r *http.Request,
 	stor gitStorage.Storer,
-	repo *Repo,
+	repo *store.Repo,
 	ref string,
 	root *object.Tree,
 	tree *object.Tree,

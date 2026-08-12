@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // --- GitHub Copilot coding agent repository secrets ---
@@ -398,11 +400,11 @@ func TestAgentsCodeScanPersistenceReload(t *testing.T) {
 	t.Setenv("BLEEPHUB_DATA_DIR", dir)
 
 	// --- session 1: create state, then close ---
-	p1, err := NewPersistence()
+	p1, err := store.NewPersistence()
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	st1 := NewStore()
+	st1 := store.NewStore()
 	if err := st1.SetPersistence(p1); err != nil {
 		t.Fatalf("SetPersistence: %v", err)
 	}
@@ -419,14 +421,14 @@ func TestAgentsCodeScanPersistenceReload(t *testing.T) {
 	srv1.upsertSecret(st1.AgentsRepoSecrets, "agents_repo_secrets", repo.FullName, "RELOAD_SECRET", "plain-value")
 	now := fixedTestTime.UTC()
 	tbl := agentsVariableTable{srv1, "agents_repo_variables", repo.FullName}
-	if !tbl.create(&ActionsVariable{Name: "RELOAD_VAR", Value: "vv", CreatedAt: now, UpdatedAt: now}) {
+	if !tbl.create(&store.ActionsVariable{Name: "RELOAD_VAR", Value: "vv", CreatedAt: now, UpdatedAt: now}) {
 		t.Fatal("create agents variable failed")
 	}
 
 	task := st1.CreateAgentTask(repo, user, "reload prompt", "claude-sonnet-4.6", false, "", "")
 
 	alert := st1.CreateCodeScanningAlert(repo.FullName, "reload-rule", "error", "d", "CodeQL", "c7a7c45a-8a3c-4f6e-9b5c-1d3c01234567", "open",
-		[]CodeScanningAlertInstance{{Ref: "refs/heads/main", Path: "f.go", StartLine: 1, State: "open"}})
+		[]store.CodeScanningAlertInstance{{Ref: "refs/heads/main", Path: "f.go", StartLine: 1, State: "open"}})
 	if _, created := st1.CreateCodeScanningAutofix(alert); !created {
 		t.Fatal("autofix not created")
 	}
@@ -451,11 +453,11 @@ func TestAgentsCodeScanPersistenceReload(t *testing.T) {
 	}
 
 	// --- session 2: reload, assert everything came back ---
-	p2, err := NewPersistence()
+	p2, err := store.NewPersistence()
 	if err != nil {
 		t.Fatalf("re-open: %v", err)
 	}
-	st2 := NewStore()
+	st2 := store.NewStore()
 	st2.ObjectByteStore = objectStore
 	if err := st2.SetPersistence(p2); err != nil {
 		t.Fatalf("re-load SetPersistence: %v", err)

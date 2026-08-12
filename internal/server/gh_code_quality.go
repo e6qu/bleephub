@@ -10,6 +10,8 @@ import (
 	"slices"
 	"strconv"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func (s *Server) registerGHCodeQualityRoutes() {
@@ -19,7 +21,7 @@ func (s *Server) registerGHCodeQualityRoutes() {
 	s.route("GET /api/v3/repos/{owner}/{repo}/code-quality/findings/{finding_number}", s.handleGetCodeQualityFinding)
 }
 
-func (s *Server) codeQualityFindingJSON(r *http.Request, repo *Repo, finding *CodeQualityFinding) map[string]interface{} {
+func (s *Server) codeQualityFindingJSON(r *http.Request, repo *store.Repo, finding *store.CodeQualityFinding) map[string]interface{} {
 	return map[string]interface{}{
 		"number":     finding.Number,
 		"state":      finding.State,
@@ -38,7 +40,7 @@ func (s *Server) handleListCodeQualityFindings(w http.ResponseWriter, r *http.Re
 	}
 	state := r.URL.Query().Get("state")
 	if state != "" && state != "open" && state != "dismissed" {
-		writeGHValidationError(w, "CodeQualityFinding", "state", "invalid")
+		store.WriteGHValidationError(w, "CodeQualityFinding", "state", "invalid")
 		return
 	}
 	findings := s.store.ListCodeQualityFindings(repo.FullName, state)
@@ -68,7 +70,7 @@ func (s *Server) handleGetCodeQualityFinding(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, s.codeQualityFindingJSON(r, repo, finding))
 }
 
-func codeQualitySetupJSON(setup *CodeQualitySetup) map[string]interface{} {
+func codeQualitySetupJSON(setup *store.CodeQualitySetup) map[string]interface{} {
 	nullable := func(v string) interface{} {
 		if v == "" {
 			return nil

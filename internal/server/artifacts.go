@@ -15,6 +15,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // maxCacheEntryBytes is GitHub's per-entry Actions cache limit.
@@ -27,7 +29,7 @@ const maxArtifactChunkBytes = 10 << 30
 // artifactByIDForCaller returns an artifact's metadata regardless of
 // finalization, for the access checks that must answer before the body is
 // read. Data is left out: only the ownership fields matter here.
-func (s *Server) artifactByIDForCaller(id int64) (*Artifact, bool) {
+func (s *Server) artifactByIDForCaller(id int64) (*store.Artifact, bool) {
 	s.artifactStore.Mu.RLock()
 	defer s.artifactStore.Mu.RUnlock()
 	art, ok := s.artifactStore.Artifacts[id]
@@ -71,14 +73,14 @@ func (s *Server) registerArtifactRoutes() {
 	// @actions/cache toolkit writes to.
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/caches", s.handleListRepoCaches)
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/actions/caches",
-		s.requirePerm(scopeActions, permWrite, s.handleDeleteRepoCachesByKey))
+		s.requirePerm(store.ScopeActions, store.PermWrite, s.handleDeleteRepoCachesByKey))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/actions/caches/{cache_id}",
-		s.requirePerm(scopeActions, permWrite, s.handleDeleteRepoCacheByID))
+		s.requirePerm(store.ScopeActions, store.PermWrite, s.handleDeleteRepoCacheByID))
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/cache/usage", s.handleRepoCacheUsage)
 }
 
 // repoCacheJSON renders a CacheEntry in GitHub's ActionsCacheList item shape.
-func repoCacheJSON(entry *CacheEntry) map[string]any {
+func repoCacheJSON(entry *store.CacheEntry) map[string]any {
 	created := entry.CreatedAt.UTC().Format("2006-01-02T15:04:05Z")
 	lastAccessed := entry.LastAccessedAt
 	if lastAccessed.IsZero() {
@@ -130,10 +132,10 @@ func (s *Server) handleDeleteRepoCachesByKey(w http.ResponseWriter, r *http.Requ
 	repo := repoFullName(r)
 	key := r.URL.Query().Get("key")
 	if key == "" {
-		writeGHValidationError(w, "Cache", "key", "missing_field")
+		store.WriteGHValidationError(w, "Cache", "key", "missing_field")
 		return
 	}
-	var deleted []*CacheEntry
+	var deleted []*store.CacheEntry
 	s.artifactStore.Mu.Lock()
 	for _, entry := range s.artifactStore.Caches {
 		if entry.Repo != repo || entry.Key != key {
@@ -151,7 +153,7 @@ func (s *Server) handleDeleteRepoCachesByKey(w http.ResponseWriter, r *http.Requ
 	s.artifactStore.Mu.Lock()
 	for _, entry := range deleted {
 		delete(s.artifactStore.Caches, entry.ID)
-		delete(s.artifactStore.CacheIndex, cacheLookupKey(entry.Repo, entry.Key, entry.Version))
+		delete(s.artifactStore.CacheIndex, store.CacheLookupKey(entry.Repo, entry.Key, entry.Version))
 	}
 	s.artifactStore.Mu.Unlock()
 	sort.Slice(deleted, func(i, j int) bool { return deleted[i].ID < deleted[j].ID })
@@ -187,7 +189,7 @@ func (s *Server) handleDeleteRepoCacheByID(w http.ResponseWriter, r *http.Reques
 	}
 	s.artifactStore.Mu.Lock()
 	delete(s.artifactStore.Caches, id)
-	delete(s.artifactStore.CacheIndex, cacheLookupKey(entry.Repo, entry.Key, entry.Version))
+	delete(s.artifactStore.CacheIndex, store.CacheLookupKey(entry.Repo, entry.Key, entry.Version))
 	s.artifactStore.Mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -225,7 +227,7 @@ func (s *Server) evictRepoCacheOverLimit(ctx context.Context, repo string) {
 		return
 	}
 	var total int64
-	entries := make([]*CacheEntry, 0)
+	entries := make([]*store.CacheEntry, 0)
 	for _, e := range as.Caches {
 		if e.Repo == repo && e.Finalized {
 			total += e.Size
@@ -242,7 +244,7 @@ func (s *Server) evictRepoCacheOverLimit(ctx context.Context, repo string) {
 		}
 		return entries[i].ID < entries[j].ID
 	})
-	victims := make([]*CacheEntry, 0)
+	victims := make([]*store.CacheEntry, 0)
 	for _, e := range entries {
 		if total <= budget {
 			break
@@ -259,7 +261,7 @@ func (s *Server) evictRepoCacheOverLimit(ctx context.Context, repo string) {
 		}
 		as.Mu.Lock()
 		delete(as.Caches, e.ID)
-		delete(as.CacheIndex, cacheLookupKey(e.Repo, e.Key, e.Version))
+		delete(as.CacheIndex, store.CacheLookupKey(e.Repo, e.Key, e.Version))
 		as.Mu.Unlock()
 	}
 }
@@ -271,12 +273,12 @@ func (s *Server) removeCacheBytes(ctx context.Context, id int64) error {
 		}
 	}
 	if s.artifactStore.ByteStore != nil {
-		if err := s.artifactStore.ByteStore.Delete(ctx, cacheDataKey(id)); err != nil {
+		if err := s.artifactStore.ByteStore.Delete(ctx, store.CacheDataKey(id)); err != nil {
 			return err
 		}
 	}
 	if s.artifactStore.Persist != nil {
-		if err := s.artifactStore.Persist.Delete(actionsCachesBucket, strconv.FormatInt(id, 10)); err != nil {
+		if err := s.artifactStore.Persist.Delete(store.ActionsCachesBucket, strconv.FormatInt(id, 10)); err != nil {
 			return err
 		}
 	}
@@ -288,7 +290,7 @@ func (s *Server) removeCacheBytes(ctx context.Context, id int64) error {
 // runArtifactScope resolves the workflow run an artifact call names and
 // checks it against the caller's job scope. An absent or unknown run id is an
 // error: it must never widen the call to every run on the instance.
-func (s *Server) runArtifactScope(w http.ResponseWriter, r *http.Request, backendID string) (*Workflow, bool) {
+func (s *Server) runArtifactScope(w http.ResponseWriter, r *http.Request, backendID string) (*store.Workflow, bool) {
 	if backendID == "" {
 		writeGHError(w, http.StatusBadRequest, "workflow_run_backend_id is required")
 		return nil, false
@@ -320,7 +322,7 @@ func (s *Server) handleCreateArtifact(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	req.WorkflowRunBackendID = coalesceStr(req.WorkflowRunBackendID, req.WorkflowRunBackendIDAlt)
+	req.WorkflowRunBackendID = store.CoalesceStr(req.WorkflowRunBackendID, req.WorkflowRunBackendIDAlt)
 
 	wf, ok := s.runArtifactScope(w, r, req.WorkflowRunBackendID)
 	if !ok {
@@ -330,13 +332,13 @@ func (s *Server) handleCreateArtifact(w http.ResponseWriter, r *http.Request) {
 	githubRunID := wf.RunID
 
 	s.artifactStore.Mu.Lock()
-	id, err := s.artifactStore.ReserveID(actionsArtifactsBucket, &s.artifactStore.NextID)
+	id, err := s.artifactStore.ReserveID(store.ActionsArtifactsBucket, &s.artifactStore.NextID)
 	if err != nil {
 		s.artifactStore.Mu.Unlock()
 		writeGHError(w, http.StatusInternalServerError, "reserve artifact identifier: "+err.Error())
 		return
 	}
-	art := &Artifact{
+	art := &store.Artifact{
 		ID:                   id,
 		Name:                 req.Name,
 		RunID:                req.WorkflowRunBackendID,
@@ -439,7 +441,7 @@ func (s *Server) handleFinalizeArtifact(w http.ResponseWriter, r *http.Request) 
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	workflowRunBackendID := coalesceStr(req.WorkflowRunBackendID, req.WorkflowRunBackendIDAlt)
+	workflowRunBackendID := store.CoalesceStr(req.WorkflowRunBackendID, req.WorkflowRunBackendIDAlt)
 	if _, ok := s.runArtifactScope(w, r, workflowRunBackendID); !ok {
 		return
 	}
@@ -540,7 +542,7 @@ func (s *Server) handleGetSignedArtifactURL(w http.ResponseWriter, r *http.Reque
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	workflowRunBackendID := coalesceStr(req.WorkflowRunBackendID, req.WorkflowRunBackendIDAlt)
+	workflowRunBackendID := store.CoalesceStr(req.WorkflowRunBackendID, req.WorkflowRunBackendIDAlt)
 	if _, ok := s.runArtifactScope(w, r, workflowRunBackendID); !ok {
 		return
 	}
@@ -572,7 +574,7 @@ func (s *Server) handleGetSignedArtifactURL(w http.ResponseWriter, r *http.Reque
 // and needs read access on the owning repository, so an anonymous caller gets
 // public repositories only. An artifact with no owning repository is
 // unreadable rather than public — a sequential id must never be a wildcard.
-func (s *Server) mayReadArtifact(r *http.Request, art *Artifact) bool {
+func (s *Server) mayReadArtifact(r *http.Request, art *store.Artifact) bool {
 	if art.RepoFullName == "" {
 		return false
 	}
@@ -613,7 +615,7 @@ func (s *Server) handleDownloadArtifact(w http.ResponseWriter, r *http.Request) 
 	data := art.Data
 	if len(data) == 0 && art.Size > 0 && s.artifactStore.ByteStore != nil {
 		var err error
-		data, err = s.artifactStore.ByteStore.Get(r.Context(), artifactDataKey(art.ID))
+		data, err = s.artifactStore.ByteStore.Get(r.Context(), store.ArtifactDataKey(art.ID))
 		if err != nil {
 			http.Error(w, "artifact byte-store read: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -639,12 +641,12 @@ func (s *Server) handleCacheReserve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Key == "" || req.Version == "" {
-		writeGHValidationError(w, "Cache", "key", "missing_field")
+		store.WriteGHValidationError(w, "Cache", "key", "missing_field")
 		return
 	}
 
 	s.artifactStore.Mu.Lock()
-	if id, ok := s.artifactStore.CacheIndex[cacheLookupKey(repo, req.Key, req.Version)]; ok {
+	if id, ok := s.artifactStore.CacheIndex[store.CacheLookupKey(repo, req.Key, req.Version)]; ok {
 		entry := s.artifactStore.Caches[id]
 		s.artifactStore.Mu.Unlock()
 		if entry != nil && entry.Finalized {
@@ -660,13 +662,13 @@ func (s *Server) handleCacheReserve(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	id, err := s.artifactStore.ReserveID(actionsCachesBucket, &s.artifactStore.NextCacheID)
+	id, err := s.artifactStore.ReserveID(store.ActionsCachesBucket, &s.artifactStore.NextCacheID)
 	if err != nil {
 		s.artifactStore.Mu.Unlock()
 		writeGHError(w, http.StatusInternalServerError, "reserve cache identifier: "+err.Error())
 		return
 	}
-	entry := &CacheEntry{
+	entry := &store.CacheEntry{
 		ID:             id,
 		Repo:           repo,
 		Key:            req.Key,
@@ -676,10 +678,10 @@ func (s *Server) handleCacheReserve(w http.ResponseWriter, r *http.Request) {
 		LastAccessedAt: time.Now(),
 	}
 	s.artifactStore.Caches[id] = entry
-	s.artifactStore.CacheIndex[cacheLookupKey(repo, req.Key, req.Version)] = id
+	s.artifactStore.CacheIndex[store.CacheLookupKey(repo, req.Key, req.Version)] = id
 	if err := s.artifactStore.PersistCacheMeta(entry); err != nil {
 		delete(s.artifactStore.Caches, id)
-		delete(s.artifactStore.CacheIndex, cacheLookupKey(repo, req.Key, req.Version))
+		delete(s.artifactStore.CacheIndex, store.CacheLookupKey(repo, req.Key, req.Version))
 		s.artifactStore.Mu.Unlock()
 		writeGHError(w, http.StatusInternalServerError, "persist cache metadata: "+err.Error())
 		return
@@ -698,7 +700,7 @@ func (s *Server) handleCacheLookup(w http.ResponseWriter, r *http.Request) {
 	version := r.URL.Query().Get("version")
 	keys := splitCacheKeys(r.URL.Query().Get("keys"))
 	if version == "" || len(keys) == 0 {
-		writeGHValidationError(w, "Cache", "keys", "missing_field")
+		store.WriteGHValidationError(w, "Cache", "keys", "missing_field")
 		return
 	}
 
@@ -731,9 +733,9 @@ func (s *Server) handleCacheLookup(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) lookupFinalizedCacheLocked(repo string, keys []string, version string) *CacheEntry {
+func (s *Server) lookupFinalizedCacheLocked(repo string, keys []string, version string) *store.CacheEntry {
 	for _, key := range keys {
-		if id, ok := s.artifactStore.CacheIndex[cacheLookupKey(repo, key, version)]; ok {
+		if id, ok := s.artifactStore.CacheIndex[store.CacheLookupKey(repo, key, version)]; ok {
 			entry := s.artifactStore.Caches[id]
 			if entry != nil && entry.Finalized {
 				return entry
@@ -741,7 +743,7 @@ func (s *Server) lookupFinalizedCacheLocked(repo string, keys []string, version 
 		}
 	}
 	for _, key := range keys {
-		var newest *CacheEntry
+		var newest *store.CacheEntry
 		for _, entry := range s.artifactStore.Caches {
 			if entry.Repo != repo || entry.Version != version || !entry.Finalized || !strings.HasPrefix(entry.Key, key) {
 				continue
@@ -805,7 +807,7 @@ func (s *Server) handleCacheUpload(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusBadRequest, fmt.Sprintf("cache entry exceeds the %d byte limit", int64(maxCacheEntryBytes)))
 		return
 	}
-	entry.Chunks = append(entry.Chunks, cacheChunk{Start: start, Data: chunk})
+	entry.Chunks = append(entry.Chunks, store.CacheChunk{Start: start, Data: chunk})
 	entry.Received += declared
 	previousSize := entry.Size
 	if end+1 > entry.Size {
@@ -916,7 +918,7 @@ func (s *Server) handleCacheDownload(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Cache not found")
 		return
 	}
-	if sig := r.URL.Query().Get("sig"); entry.DownloadToken == "" || !secretEqual(sig, entry.DownloadToken) {
+	if sig := r.URL.Query().Get("sig"); entry.DownloadToken == "" || !store.SecretEqual(sig, entry.DownloadToken) {
 		writeGHError(w, http.StatusNotFound, "Cache not found")
 		return
 	}
@@ -925,7 +927,7 @@ func (s *Server) handleCacheDownload(w http.ResponseWriter, r *http.Request) {
 	data := entry.Data
 	if len(data) == 0 && entry.Size > 0 && s.artifactStore.ByteStore != nil {
 		var err error
-		data, err = s.artifactStore.ByteStore.Get(r.Context(), cacheDataKey(entry.ID))
+		data, err = s.artifactStore.ByteStore.Get(r.Context(), store.CacheDataKey(entry.ID))
 		if err != nil {
 			writeGHError(w, http.StatusInternalServerError, "cache byte-store read: "+err.Error())
 			return
@@ -941,8 +943,8 @@ func (s *Server) handleCacheDownload(w http.ResponseWriter, r *http.Request) {
 // uploads them concurrently — but they must cover [0, size) with no hole: a
 // gap would mean serving back an archive padded with zeroes the client never
 // uploaded, so it is an error instead.
-func assembleCacheChunks(chunks []cacheChunk, size int64) ([]byte, error) {
-	ordered := append([]cacheChunk(nil), chunks...)
+func assembleCacheChunks(chunks []store.CacheChunk, size int64) ([]byte, error) {
+	ordered := append([]store.CacheChunk(nil), chunks...)
 	sort.Slice(ordered, func(i, j int) bool { return ordered[i].Start < ordered[j].Start })
 	var covered int64
 	for _, c := range ordered {
@@ -1015,7 +1017,7 @@ func (s *Server) repoForJobScope(scopeID string) (string, error) {
 	// Fallback for jobs seeded outside the dispatch path (tests): parse each
 	// job's message.
 	for _, job := range s.store.Jobs {
-		if plan, repo := jobMessageScopeAndRepo(job.Message); plan != "" && plan == scopeID {
+		if plan, repo := store.JobMessageScopeAndRepo(job.Message); plan != "" && plan == scopeID {
 			return repo, nil
 		}
 	}

@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func (s *Server) registerGHCopilotRoutes() {
@@ -45,7 +47,7 @@ func (s *Server) registerGHCopilotRoutes() {
 // caller is an authenticated organization owner — the audience real
 // GitHub grants the Copilot billing, metrics, and policy surface to.
 // Writes 401/404/403 and returns nil when the gate fails.
-func (s *Server) copilotOrgAdmin(w http.ResponseWriter, r *http.Request) *Org {
+func (s *Server) copilotOrgAdmin(w http.ResponseWriter, r *http.Request) *store.Org {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "Requires authentication")
@@ -64,10 +66,10 @@ func (s *Server) copilotOrgAdmin(w http.ResponseWriter, r *http.Request) *Org {
 }
 
 // copilotSeatJSON renders one seat in the copilot-seat-details shape.
-func (s *Server) copilotSeatJSON(seat *CopilotSeat, org *Org, baseURL string) map[string]interface{} {
+func (s *Server) copilotSeatJSON(seat *store.CopilotSeat, org *store.Org, baseURL string) map[string]interface{} {
 	var assignee interface{}
 	if u := s.store.GetUserByID(seat.UserID); u != nil {
-		assignee = userToJSON(u)
+		assignee = store.UserToJSON(u)
 	}
 	var assigningTeam interface{}
 	if seat.AssigningTeamSlug != "" {
@@ -112,7 +114,7 @@ func (s *Server) handleGetCopilotOrganizationDetails(w http.ResponseWriter, r *h
 		if seat.CreatedAt.Year() == now.Year() && seat.CreatedAt.Month() == now.Month() {
 			addedThisCycle++
 		}
-		if m := s.store.GetMembership(org.Login, seat.UserID); m != nil && m.State == MembershipStatePending {
+		if m := s.store.GetMembership(org.Login, seat.UserID); m != nil && m.State == store.MembershipStatePending {
 			pendingInvitation++
 		}
 	}
@@ -163,9 +165,9 @@ func (s *Server) handleListCopilotSeats(w http.ResponseWriter, r *http.Request) 
 // resolveCopilotSeatUsers maps usernames to active organization members,
 // writing a 422 and returning nil when any username does not resolve —
 // GitHub validates the whole batch before assigning any seat.
-func (s *Server) resolveCopilotSeatUsers(w http.ResponseWriter, org *Org, usernames []string) []int {
+func (s *Server) resolveCopilotSeatUsers(w http.ResponseWriter, org *store.Org, usernames []string) []int {
 	if len(usernames) == 0 {
-		writeGHValidationError(w, "CopilotSeat", "selected_usernames", "missing_field")
+		store.WriteGHValidationError(w, "CopilotSeat", "selected_usernames", "missing_field")
 		return nil
 	}
 	ids := make([]int, 0, len(usernames))
@@ -177,7 +179,7 @@ func (s *Server) resolveCopilotSeatUsers(w http.ResponseWriter, org *Org, userna
 			continue
 		}
 		m := s.store.GetMembership(org.Login, u.ID)
-		if m == nil || m.State != MembershipStateActive {
+		if m == nil || m.State != store.MembershipStateActive {
 			invalid = append(invalid, login)
 			continue
 		}
@@ -242,17 +244,17 @@ func (s *Server) handleCancelCopilotSeatsForUsers(w http.ResponseWriter, r *http
 
 // resolveCopilotSeatTeams maps team names (or slugs) to teams of the
 // organization, writing a 422 and returning nil when any does not resolve.
-func (s *Server) resolveCopilotSeatTeams(w http.ResponseWriter, org *Org, names []string) []*Team {
+func (s *Server) resolveCopilotSeatTeams(w http.ResponseWriter, org *store.Org, names []string) []*store.Team {
 	if len(names) == 0 {
-		writeGHValidationError(w, "CopilotSeat", "selected_teams", "missing_field")
+		store.WriteGHValidationError(w, "CopilotSeat", "selected_teams", "missing_field")
 		return nil
 	}
-	teams := make([]*Team, 0, len(names))
+	teams := make([]*store.Team, 0, len(names))
 	var invalid []string
 	for _, name := range names {
 		team := s.store.GetTeam(org.Login, name)
 		if team == nil {
-			team = s.store.GetTeam(org.Login, slugify(name))
+			team = s.store.GetTeam(org.Login, store.Slugify(name))
 		}
 		if team == nil {
 			invalid = append(invalid, name)
@@ -347,7 +349,7 @@ func (s *Server) handleGetCopilotSeatDetailsForUser(w http.ResponseWriter, r *ht
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if m.State == MembershipStatePending {
+	if m.State == store.MembershipStatePending {
 		writeGHError(w, http.StatusUnprocessableEntity, "User has a pending organization invitation.")
 		return
 	}
@@ -422,11 +424,11 @@ func (s *Server) handleCopilotOneDayReport(w http.ResponseWriter, r *http.Reques
 	}
 	day := r.URL.Query().Get("day")
 	if day == "" {
-		writeGHValidationError(w, "CopilotMetricsReport", "day", "missing_field")
+		store.WriteGHValidationError(w, "CopilotMetricsReport", "day", "missing_field")
 		return
 	}
 	if _, err := time.Parse("2006-01-02", day); err != nil {
-		writeGHValidationError(w, "CopilotMetricsReport", "day", "invalid")
+		store.WriteGHValidationError(w, "CopilotMetricsReport", "day", "invalid")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -543,10 +545,10 @@ func (s *Server) handleSetCopilotCodingAgentPermissions(w http.ResponseWriter, r
 	switch req.EnabledRepositories {
 	case "all", "selected", "none":
 	case "":
-		writeGHValidationError(w, "CopilotCodingAgentPermissions", "enabled_repositories", "missing_field")
+		store.WriteGHValidationError(w, "CopilotCodingAgentPermissions", "enabled_repositories", "missing_field")
 		return
 	default:
-		writeGHValidationError(w, "CopilotCodingAgentPermissions", "enabled_repositories", "invalid")
+		store.WriteGHValidationError(w, "CopilotCodingAgentPermissions", "enabled_repositories", "invalid")
 		return
 	}
 	s.store.SetCopilotCodingAgentPolicy(org.Login, req.EnabledRepositories)
@@ -555,7 +557,7 @@ func (s *Server) handleSetCopilotCodingAgentPermissions(w http.ResponseWriter, r
 
 // copilotCodingAgentSelectedGate enforces the 409 the selected-repository
 // sub-resource returns when the organization policy is not "selected".
-func (s *Server) copilotCodingAgentSelectedGate(w http.ResponseWriter, org *Org) bool {
+func (s *Server) copilotCodingAgentSelectedGate(w http.ResponseWriter, org *store.Org) bool {
 	p := s.store.GetCopilotCodingAgentPermissions(org.Login)
 	if p.EnabledRepositories != "selected" {
 		writeGHError(w, http.StatusConflict,
@@ -584,7 +586,7 @@ func (s *Server) handleListCopilotCodingAgentRepos(w http.ResponseWriter, r *htt
 		repo := s.store.Repos[id]
 		s.store.Mu.RUnlock()
 		if repo != nil {
-			repos = append(repos, repoToJSON(repo, s.store, base))
+			repos = append(repos, store.RepoToJSON(repo, s.store, base))
 		}
 	}
 	total := len(repos)
@@ -597,7 +599,7 @@ func (s *Server) handleListCopilotCodingAgentRepos(w http.ResponseWriter, r *htt
 
 // copilotOrgRepoIDs validates every ID references an existing repository
 // owned by the organization, writing a 422 and returning false otherwise.
-func (s *Server) copilotOrgRepoIDs(w http.ResponseWriter, org *Org, ids []int) bool {
+func (s *Server) copilotOrgRepoIDs(w http.ResponseWriter, org *store.Org, ids []int) bool {
 	var invalid []string
 	for _, id := range ids {
 		s.store.Mu.RLock()
@@ -630,7 +632,7 @@ func (s *Server) handleSetCopilotCodingAgentRepos(w http.ResponseWriter, r *http
 		return
 	}
 	if req.SelectedRepositoryIDs == nil {
-		writeGHValidationError(w, "CopilotCodingAgentPermissions", "selected_repository_ids", "missing_field")
+		store.WriteGHValidationError(w, "CopilotCodingAgentPermissions", "selected_repository_ids", "missing_field")
 		return
 	}
 	if !s.copilotOrgRepoIDs(w, org, *req.SelectedRepositoryIDs) {

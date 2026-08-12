@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -86,10 +87,10 @@ func TestWorkflowDispatchCreatesSpan(t *testing.T) {
 	defer otel.SetTracerProvider(noop.NewTracerProvider())
 
 	s := newTestServer()
-	wf := &WorkflowDef{
+	wf := &store.WorkflowDef{
 		Name: "otel-test",
-		Jobs: map[string]*JobDef{
-			"build": {Steps: []StepDef{{Run: "echo hi"}}},
+		Jobs: map[string]*store.JobDef{
+			"build": {Steps: []store.StepDef{{Run: "echo hi"}}},
 		},
 	}
 
@@ -122,10 +123,10 @@ func TestNoSpansWhenDisabled(t *testing.T) {
 	otel.SetTracerProvider(noop.NewTracerProvider())
 
 	s := newTestServer()
-	wf := &WorkflowDef{
+	wf := &store.WorkflowDef{
 		Name: "no-trace-test",
-		Jobs: map[string]*JobDef{
-			"build": {Steps: []StepDef{{Run: "echo hi"}}},
+		Jobs: map[string]*store.JobDef{
+			"build": {Steps: []store.StepDef{{Run: "echo hi"}}},
 		},
 	}
 

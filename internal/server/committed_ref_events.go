@@ -5,16 +5,17 @@ import (
 	"strings"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
 )
 
-func (s *Server) afterCommittedRefUpdate(repo *Repo, sender *User, ref, before, after, baseURL string) {
+func (s *Server) afterCommittedRefUpdate(repo *store.Repo, sender *store.User, ref, before, after, baseURL string) {
 	if repo == nil {
 		return
 	}
 	stor, _ := s.store.GitStorageForRepoID(repo.ID)
-	if owner, name, ok := splitRepoFullName(repo.FullName); ok {
-		s.store.UpdateRepo(owner, name, func(current *Repo) {
+	if owner, name, ok := store.SplitRepoFullName(repo.FullName); ok {
+		s.store.UpdateRepo(owner, name, func(current *store.Repo) {
 			current.PushedAt = time.Now().UTC()
 		})
 	}
@@ -33,7 +34,7 @@ func (s *Server) afterCommittedRefUpdate(repo *Repo, sender *User, ref, before, 
 	s.triggerPagesBuildForRef(repo, sender, ref, baseURL)
 }
 
-func (s *Server) triggerPagesBuildForRef(repo *Repo, sender *User, ref, baseURL string) {
+func (s *Server) triggerPagesBuildForRef(repo *store.Repo, sender *store.User, ref, baseURL string) {
 	s.store.Misc.Mu.RLock()
 	site := s.store.Misc.PagesByRepo[repo.ID]
 	buildType := ""
@@ -49,10 +50,10 @@ func (s *Server) triggerPagesBuildForRef(repo *Repo, sender *User, ref, baseURL 
 		return
 	}
 	actor := "bleephub-system"
-	var pusher *PagesPusher
+	var pusher *store.PagesPusher
 	if sender != nil {
 		actor = sender.Login
-		pusher = &PagesPusher{Login: sender.Login, ID: sender.ID, Type: coalesceStr(sender.Type, "User")}
+		pusher = &store.PagesPusher{Login: sender.Login, ID: sender.ID, Type: store.CoalesceStr(sender.Type, "User")}
 	}
 	_, _ = s.runPagesBuild(context.Background(), repo, pusher, actor, baseURL)
 }

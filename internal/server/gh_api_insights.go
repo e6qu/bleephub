@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // API insights (GET /orgs/{org}/insights/api/*) aggregate real recorded REST
@@ -21,16 +23,16 @@ import (
 // are honestly zero/empty.
 
 const (
-	ActorTypeInstallation          APIInsightsActorType = "installation"
-	ActorTypeClassicPAT            APIInsightsActorType = "classic_pat"
-	ActorTypeFineGrainedPAT        APIInsightsActorType = "fine_grained_pat"
-	ActorTypeOAuthApp              APIInsightsActorType = "oauth_app"
-	ActorTypeGitHubAppUserToServer APIInsightsActorType = "github_app_user_to_server"
+	ActorTypeInstallation          store.APIInsightsActorType = "installation"
+	ActorTypeClassicPAT            store.APIInsightsActorType = "classic_pat"
+	ActorTypeFineGrainedPAT        store.APIInsightsActorType = "fine_grained_pat"
+	ActorTypeOAuthApp              store.APIInsightsActorType = "oauth_app"
+	ActorTypeGitHubAppUserToServer store.APIInsightsActorType = "github_app_user_to_server"
 )
 
 const (
-	SubjectTypeUser         APIInsightsSubjectType = "user"
-	SubjectTypeInstallation APIInsightsSubjectType = "installation"
+	SubjectTypeUser         store.APIInsightsSubjectType = "user"
+	SubjectTypeInstallation store.APIInsightsSubjectType = "installation"
 )
 
 var apiInsightsActorTypes = map[string]bool{
@@ -42,15 +44,15 @@ var apiInsightsActorTypes = map[string]bool{
 }
 
 func (s *Server) registerGHAPIInsightsRoutes() {
-	s.route("GET /api/v3/orgs/{org}/insights/api/route-stats/{actor_type}/{actor_id}", s.requireOrgAdmin(scopeOrgAdministration, permRead, s.handleAPIInsightsRouteStats))
-	s.route("GET /api/v3/orgs/{org}/insights/api/subject-stats", s.requireOrgAdmin(scopeOrgAdministration, permRead, s.handleAPIInsightsSubjectStats))
-	s.route("GET /api/v3/orgs/{org}/insights/api/summary-stats", s.requireOrgAdmin(scopeOrgAdministration, permRead, s.handleAPIInsightsSummaryStats))
-	s.route("GET /api/v3/orgs/{org}/insights/api/summary-stats/users/{user_id}", s.requireOrgAdmin(scopeOrgAdministration, permRead, s.handleAPIInsightsSummaryStatsByUser))
-	s.route("GET /api/v3/orgs/{org}/insights/api/summary-stats/{actor_type}/{actor_id}", s.requireOrgAdmin(scopeOrgAdministration, permRead, s.handleAPIInsightsSummaryStatsByActor))
-	s.route("GET /api/v3/orgs/{org}/insights/api/time-stats", s.requireOrgAdmin(scopeOrgAdministration, permRead, s.handleAPIInsightsTimeStats))
-	s.route("GET /api/v3/orgs/{org}/insights/api/time-stats/users/{user_id}", s.requireOrgAdmin(scopeOrgAdministration, permRead, s.handleAPIInsightsTimeStatsByUser))
-	s.route("GET /api/v3/orgs/{org}/insights/api/time-stats/{actor_type}/{actor_id}", s.requireOrgAdmin(scopeOrgAdministration, permRead, s.handleAPIInsightsTimeStatsByActor))
-	s.route("GET /api/v3/orgs/{org}/insights/api/user-stats/{user_id}", s.requireOrgAdmin(scopeOrgAdministration, permRead, s.handleAPIInsightsUserStats))
+	s.route("GET /api/v3/orgs/{org}/insights/api/route-stats/{actor_type}/{actor_id}", s.requireOrgAdmin(store.ScopeOrgAdministration, store.PermRead, s.handleAPIInsightsRouteStats))
+	s.route("GET /api/v3/orgs/{org}/insights/api/subject-stats", s.requireOrgAdmin(store.ScopeOrgAdministration, store.PermRead, s.handleAPIInsightsSubjectStats))
+	s.route("GET /api/v3/orgs/{org}/insights/api/summary-stats", s.requireOrgAdmin(store.ScopeOrgAdministration, store.PermRead, s.handleAPIInsightsSummaryStats))
+	s.route("GET /api/v3/orgs/{org}/insights/api/summary-stats/users/{user_id}", s.requireOrgAdmin(store.ScopeOrgAdministration, store.PermRead, s.handleAPIInsightsSummaryStatsByUser))
+	s.route("GET /api/v3/orgs/{org}/insights/api/summary-stats/{actor_type}/{actor_id}", s.requireOrgAdmin(store.ScopeOrgAdministration, store.PermRead, s.handleAPIInsightsSummaryStatsByActor))
+	s.route("GET /api/v3/orgs/{org}/insights/api/time-stats", s.requireOrgAdmin(store.ScopeOrgAdministration, store.PermRead, s.handleAPIInsightsTimeStats))
+	s.route("GET /api/v3/orgs/{org}/insights/api/time-stats/users/{user_id}", s.requireOrgAdmin(store.ScopeOrgAdministration, store.PermRead, s.handleAPIInsightsTimeStatsByUser))
+	s.route("GET /api/v3/orgs/{org}/insights/api/time-stats/{actor_type}/{actor_id}", s.requireOrgAdmin(store.ScopeOrgAdministration, store.PermRead, s.handleAPIInsightsTimeStatsByActor))
+	s.route("GET /api/v3/orgs/{org}/insights/api/user-stats/{user_id}", s.requireOrgAdmin(store.ScopeOrgAdministration, store.PermRead, s.handleAPIInsightsUserStats))
 }
 
 // ─── request instrumentation ─────────────────────────────────────────────
@@ -114,7 +116,7 @@ func (w *apiInsightsStatusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error
 // appear in any organization's insights.
 func (s *Server) recordAPIInsightsRequest(r *http.Request, method, route string, status int) {
 	ctx := r.Context()
-	rec := &APIRequestRecord{
+	rec := &store.APIRequestRecord{
 		Timestamp:   s.currentTime(),
 		Method:      method,
 		Route:       route,
@@ -146,7 +148,7 @@ func (s *Server) recordAPIInsightsRequest(r *http.Request, method, route string,
 		if user == nil {
 			return
 		}
-		if strings.HasPrefix(uts.Token, tokenPrefixAppUser) {
+		if strings.HasPrefix(uts.Token, store.TokenPrefixAppUser) {
 			rec.ActorType = ActorTypeGitHubAppUserToServer
 			if app := s.store.GetApp(uts.AppID); app != nil {
 				rec.ActorID = int64(app.ID)
@@ -213,27 +215,27 @@ func (s *Server) recordAPIInsightsRequest(r *http.Request, method, route string,
 func (s *Server) apiInsightsWindow(w http.ResponseWriter, r *http.Request) (minT, maxT time.Time, ok bool) {
 	minRaw := r.URL.Query().Get("min_timestamp")
 	if minRaw == "" {
-		writeGHValidationError(w, "ApiInsights", "min_timestamp", "missing_field")
+		store.WriteGHValidationError(w, "ApiInsights", "min_timestamp", "missing_field")
 		return time.Time{}, time.Time{}, false
 	}
 	minT, err := time.Parse(time.RFC3339, minRaw)
 	if err != nil {
-		writeGHValidationError(w, "ApiInsights", "min_timestamp", "invalid")
+		store.WriteGHValidationError(w, "ApiInsights", "min_timestamp", "invalid")
 		return time.Time{}, time.Time{}, false
 	}
 	maxT = s.currentTime()
 	if maxRaw := r.URL.Query().Get("max_timestamp"); maxRaw != "" {
 		maxT, err = time.Parse(time.RFC3339, maxRaw)
 		if err != nil {
-			writeGHValidationError(w, "ApiInsights", "max_timestamp", "invalid")
+			store.WriteGHValidationError(w, "ApiInsights", "max_timestamp", "invalid")
 			return time.Time{}, time.Time{}, false
 		}
 	}
 	return minT, maxT, true
 }
 
-func filterRecordsByActor(records []*APIRequestRecord, actorType string, actorID int64) []*APIRequestRecord {
-	var out []*APIRequestRecord
+func filterRecordsByActor(records []*store.APIRequestRecord, actorType string, actorID int64) []*store.APIRequestRecord {
+	var out []*store.APIRequestRecord
 	for _, rec := range records {
 		if string(rec.ActorType) == actorType && rec.ActorID == actorID {
 			out = append(out, rec)
@@ -242,8 +244,8 @@ func filterRecordsByActor(records []*APIRequestRecord, actorType string, actorID
 	return out
 }
 
-func filterRecordsByUser(records []*APIRequestRecord, userID int) []*APIRequestRecord {
-	var out []*APIRequestRecord
+func filterRecordsByUser(records []*store.APIRequestRecord, userID int) []*store.APIRequestRecord {
+	var out []*store.APIRequestRecord
 	for _, rec := range records {
 		if rec.UserID == userID && rec.UserID != 0 {
 			out = append(out, rec)
@@ -260,7 +262,7 @@ type apiInsightsAggregate struct {
 	lastRateLimited *time.Time
 }
 
-func (agg *apiInsightsAggregate) add(rec *APIRequestRecord) {
+func (agg *apiInsightsAggregate) add(rec *store.APIRequestRecord) {
 	agg.total++
 	if rec.Timestamp.After(agg.lastRequest) {
 		agg.lastRequest = rec.Timestamp
@@ -418,7 +420,7 @@ func (s *Server) handleAPIInsightsSubjectStats(w http.ResponseWriter, r *http.Re
 	writeJSON(w, http.StatusOK, rows)
 }
 
-func writeAPIInsightsSummary(w http.ResponseWriter, records []*APIRequestRecord) {
+func writeAPIInsightsSummary(w http.ResponseWriter, records []*store.APIRequestRecord) {
 	var total, rateLimited int64
 	for _, rec := range records {
 		total++
@@ -492,15 +494,15 @@ func parseTimestampIncrement(raw string) (time.Duration, bool) {
 // wide window with a tiny increment cannot allocate unbounded output.
 const maxTimeStatsBuckets = 10000
 
-func writeAPIInsightsTimeStats(w http.ResponseWriter, r *http.Request, records []*APIRequestRecord, minT, maxT time.Time) {
+func writeAPIInsightsTimeStats(w http.ResponseWriter, r *http.Request, records []*store.APIRequestRecord, minT, maxT time.Time) {
 	incRaw := r.URL.Query().Get("timestamp_increment")
 	if incRaw == "" {
-		writeGHValidationError(w, "ApiInsights", "timestamp_increment", "missing_field")
+		store.WriteGHValidationError(w, "ApiInsights", "timestamp_increment", "missing_field")
 		return
 	}
 	inc, ok := parseTimestampIncrement(incRaw)
 	if !ok {
-		writeGHValidationError(w, "ApiInsights", "timestamp_increment", "invalid")
+		store.WriteGHValidationError(w, "ApiInsights", "timestamp_increment", "invalid")
 		return
 	}
 	if maxT.Before(minT) {
@@ -509,7 +511,7 @@ func writeAPIInsightsTimeStats(w http.ResponseWriter, r *http.Request, records [
 	}
 	buckets := int(maxT.Sub(minT)/inc) + 1
 	if buckets > maxTimeStatsBuckets {
-		writeGHValidationError(w, "ApiInsights", "timestamp_increment", "invalid")
+		store.WriteGHValidationError(w, "ApiInsights", "timestamp_increment", "invalid")
 		return
 	}
 	totals := make([]int64, buckets)

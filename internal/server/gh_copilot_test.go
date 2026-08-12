@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func TestOrgCopilotBillingSeats_AddListCancelReinstate(t *testing.T) {
@@ -149,7 +151,7 @@ func TestOrgCopilotBillingSeats_ValidationAndPermissions(t *testing.T) {
 
 	// Member with a pending invitation → 422.
 	invited := seedTestUser(s.Server, "copilot-invited")
-	s.store.SetMembership(org.Login, invited.ID, OrgRoleMember, MembershipStatePending)
+	s.store.SetMembership(org.Login, invited.ID, store.OrgRoleMember, store.MembershipStatePending)
 	requireStatus(t, s.get(t, base+"/members/"+invited.Login+"/copilot", defaultToken), 422)
 }
 
@@ -158,12 +160,12 @@ func TestOrgCopilotBillingSeats_Teams(t *testing.T) {
 	s := newIsolatedServer(t)
 	org, members := s.copilotTestOrg(t, "copilot-teams-org", "copilot-team-user1", "copilot-team-user2")
 	base := "/api/v3/orgs/" + org.Login
-	team := s.store.CreateTeam(org.Login, "copilot engineers", TeamOptions{})
+	team := s.store.CreateTeam(org.Login, "copilot engineers", store.TeamOptions{})
 	if team == nil {
 		t.Fatal("CreateTeam returned nil")
 	}
 	for _, m := range members {
-		s.store.SetTeamMembership(org.Login, team.Slug, m.ID, TeamRoleMember)
+		s.store.SetTeamMembership(org.Login, team.Slug, m.ID, store.TeamRoleMember)
 	}
 
 	// Unknown team → 422.
@@ -206,7 +208,7 @@ func TestOrgCopilotMetrics_HonestlyEmptyWithoutActivity(t *testing.T) {
 	s := newIsolatedServer(t)
 	org, _ := s.copilotTestOrg(t, "copilot-metrics-org", "copilot-metrics-member")
 	base := "/api/v3/orgs/" + org.Login
-	team := s.store.CreateTeam(org.Login, "metrics team", TeamOptions{})
+	team := s.store.CreateTeam(org.Login, "metrics team", store.TeamOptions{})
 
 	// No Copilot telemetry is recorded → empty metrics arrays.
 	for _, path := range []string{base + "/copilot/metrics", base + "/team/" + team.Slug + "/copilot/metrics"} {

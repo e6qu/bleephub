@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strconv"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // mustPost asserts a setup/precondition request returned a 2xx status, then
@@ -1177,14 +1179,14 @@ func TestGraphQLViewerPermissionNotHardcoded(t *testing.T) {
 	// distinguish "viewerPermission is computed" from "the request was
 	// refused" — an authenticated non-owner tests the same property and is a
 	// request GitHub would actually serve.
-	store := s.store
-	store.Mu.Lock()
-	outsider := &User{ID: store.NextUser, Login: "gql-viewer-perm-outsider", Type: "User"}
-	store.Users[outsider.ID] = outsider
-	store.UsersByLogin[outsider.Login] = outsider
-	store.NextUser++
-	store.Mu.Unlock()
-	outsiderToken := store.CreateToken(outsider.ID, "repo")
+	st := s.store
+	st.Mu.Lock()
+	outsider := &store.User{ID: st.NextUser, Login: "gql-viewer-perm-outsider", Type: "User"}
+	st.Users[outsider.ID] = outsider
+	st.UsersByLogin[outsider.Login] = outsider
+	st.NextUser++
+	st.Mu.Unlock()
+	outsiderToken := st.CreateToken(outsider.ID, "repo")
 
 	resp := s.post(t, "/api/graphql", outsiderToken.Value, map[string]interface{}{
 		"query": `{repository(owner:"admin",name:"gql-viewer-perm"){viewerPermission}}`,

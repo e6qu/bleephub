@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func TestAggregateIssueAndNotificationReadsHonorAppRepositorySelection(t *testing.T) {
@@ -62,12 +64,12 @@ func TestAggregateIssueAndNotificationReadsHonorAppRepositorySelection(t *testin
 	if err := json.Unmarshal(notificationsResponse.Body.Bytes(), &notifications); err != nil {
 		t.Fatal(err)
 	}
-	wantThreadID := notificationThreadID("Issue", selectedIssue.ID)
+	wantThreadID := store.NotificationThreadID("Issue", selectedIssue.ID)
 	if len(notifications) != 1 || notifications[0].ID != wantThreadID {
 		t.Fatalf("notifications = %#v, want only %q", notifications, wantThreadID)
 	}
 
-	excludedThread := get(fmt.Sprintf("/api/v3/notifications/threads/%s", notificationThreadID("Issue", excludedIssue.ID)))
+	excludedThread := get(fmt.Sprintf("/api/v3/notifications/threads/%s", store.NotificationThreadID("Issue", excludedIssue.ID)))
 	if excludedThread.Code != http.StatusNotFound {
 		t.Fatalf("excluded thread status = %d, want 404", excludedThread.Code)
 	}

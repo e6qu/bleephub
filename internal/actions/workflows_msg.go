@@ -8,12 +8,13 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/google/uuid"
 )
 
 // BuildJobMessageFromDef builds a job message from a WorkflowDef-based job,
 // supporting both run: and uses: steps.
-func (s *Engine) BuildJobMessageFromDef(serverURL string, wf *Workflow, wfJob *WorkflowJob, planID, timelineID string, requestID int64, defaultImage string) (map[string]interface{}, error) {
+func (s *Engine) BuildJobMessageFromDef(serverURL string, wf *store.Workflow, wfJob *store.WorkflowJob, planID, timelineID string, requestID int64, defaultImage string) (map[string]interface{}, error) {
 	jd := wfJob.Def
 	scopeID := uuid.New().String()
 	// GITHUB_TOKEN is scoped to this workflow's repository and the least-
@@ -92,7 +93,7 @@ func (s *Engine) BuildJobMessageFromDef(serverURL string, wf *Workflow, wfJob *W
 			steps = append(steps, messageStep)
 		} else if step.Uses != "" {
 			// Action step
-			nameWithOwner, path, ref, isLocal := ParseActionRef(step.Uses)
+			nameWithOwner, path, ref, isLocal := store.ParseActionRef(step.Uses)
 			displayName := step.Name
 			if displayName == "" {
 				displayName = step.Uses
@@ -404,7 +405,7 @@ func anyMap(m map[string]interface{}) map[string]interface{} { return m }
 // githubRunnerContext assembles the full `github` context the runner
 // receives: the server-side context map (including the triggering event
 // payload) plus the runner-session keys.
-func githubRunnerContext(s *Engine, wf *Workflow, wfJob *WorkflowJob, serverURL, jobToken string) map[string]interface{} {
+func githubRunnerContext(s *Engine, wf *store.Workflow, wfJob *store.WorkflowJob, serverURL, jobToken string) map[string]interface{} {
 	m := s.GithubContextMap(wf)
 	m["server_url"] = serverURL
 	m["api_url"] = serverURL
@@ -427,7 +428,7 @@ func githubRunnerContext(s *Engine, wf *Workflow, wfJob *WorkflowJob, serverURL,
 // RemapCallSecrets applies a reusable-workflow call's explicit `secrets:`
 // map: the called job receives ONLY the mapped names, with each value
 // template (`${{ secrets.X }}`) evaluated against the caller's secrets.
-func RemapCallSecrets(s *Engine, wf *Workflow, binding *WorkflowCallBinding, callerSecrets map[string]string) (map[string]string, error) {
+func RemapCallSecrets(s *Engine, wf *store.Workflow, binding *store.WorkflowCallBinding, callerSecrets map[string]string) (map[string]string, error) {
 	secretsCtx := make(map[string]interface{}, len(callerSecrets))
 	for k, v := range callerSecrets {
 		secretsCtx[k] = v
@@ -493,7 +494,7 @@ func toPipelineContextData(v interface{}) interface{} {
 // field as a TemplateToken (mapping = {"type":2,"map":[{Key,Value}]}),
 // not plain JSON — a raw map fails its template validation at job
 // start ("The template is not valid. Unexpected value ”").
-func buildServiceContainers(services map[string]*ServiceDef) interface{} {
+func buildServiceContainers(services map[string]*store.ServiceDef) interface{} {
 	if len(services) == 0 {
 		return nil
 	}
@@ -554,7 +555,7 @@ func mappingEntry(key string, value interface{}) map[string]interface{} {
 	}
 }
 
-func applyStepExecutionOptions(message map[string]interface{}, step StepDef) {
+func applyStepExecutionOptions(message map[string]interface{}, step store.StepDef) {
 	if len(step.Env) > 0 {
 		entries := make([]interface{}, 0, len(step.Env))
 		for _, name := range sortedKeys(step.Env) {
@@ -593,7 +594,7 @@ func scalarToken(v interface{}) map[string]interface{} {
 	}
 }
 
-func sortedServiceNames(m map[string]*ServiceDef) []string {
+func sortedServiceNames(m map[string]*store.ServiceDef) []string {
 	names := make([]string, 0, len(m))
 	for k := range m {
 		names = append(names, k)
@@ -605,11 +606,11 @@ func sortedServiceNames(m map[string]*ServiceDef) []string {
 // BuildNeedsContext builds the "needs" PipelineContextData from completed
 // dependency outputs. Jobs inside a reusable-workflow call see sibling
 // needs under their unprefixed keys; the synthetic gate never appears.
-func BuildNeedsContext(wf *Workflow, wfJob *WorkflowJob) interface{} {
+func BuildNeedsContext(wf *store.Workflow, wfJob *store.WorkflowJob) interface{} {
 	if len(wfJob.Needs) == 0 {
 		return DictContextData()
 	}
-	var binding *WorkflowCallBinding
+	var binding *store.WorkflowCallBinding
 	if wfJob.Def != nil && wfJob.Def.Call != nil && wfJob.Def.CallRole == "" {
 		binding = wfJob.Def.Call
 	}
@@ -691,7 +692,7 @@ func varVal(value string) map[string]interface{} {
 // this block to the actual leasing agent at delivery (ACT-051) so
 // `${{ runner.os }}`, `runner.arch` and `runner.name` reflect the runner that
 // ran the job rather than a fixed placeholder.
-func RunnerContextData(agent *Agent) map[string]interface{} {
+func RunnerContextData(agent *store.Agent) map[string]interface{} {
 	osName, arch, name := "Linux", "X64", "test-runner"
 	if agent != nil {
 		if agent.Name != "" {
@@ -719,7 +720,7 @@ func RunnerContextData(agent *Agent) map[string]interface{} {
 // runnerContextOS maps a registered agent to the canonical `runner.os` value
 // GitHub exposes ("Linux"/"Windows"/"macOS"). A self-reported OS label wins
 // over the free-form OS description.
-func runnerContextOS(agent *Agent) string {
+func runnerContextOS(agent *store.Agent) string {
 	for _, l := range agent.Labels {
 		switch strings.ToLower(l.Name) {
 		case "linux":
@@ -743,7 +744,7 @@ func runnerContextOS(agent *Agent) string {
 // runnerContextArch maps a registered agent to the canonical `runner.arch`
 // value ("X64"/"ARM"/"ARM64"), preferring a self-reported architecture label
 // and falling back to tokens in the OS description.
-func runnerContextArch(agent *Agent) string {
+func runnerContextArch(agent *store.Agent) string {
 	for _, l := range agent.Labels {
 		switch strings.ToLower(l.Name) {
 		case "arm64":
@@ -770,7 +771,7 @@ func runnerContextArch(agent *Agent) string {
 // redelivered message is simply rebound to whichever runner next takes it. The
 // original bytes are returned unchanged if the message is not a job request in
 // the expected shape.
-func rebindRunnerContext(bodyJSON string, agent *Agent) string {
+func rebindRunnerContext(bodyJSON string, agent *store.Agent) string {
 	if agent == nil {
 		return bodyJSON
 	}

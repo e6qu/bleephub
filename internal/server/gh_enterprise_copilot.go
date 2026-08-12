@@ -3,6 +3,8 @@ package bleephub
 import (
 	"net/http"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func (s *Server) registerGHEnterpriseCopilotRoutes() {
@@ -112,12 +114,12 @@ func (s *Server) handleRemoveEnterpriseCopilotCodingAgentOrgs(w http.ResponseWri
 func (s *Server) handleEnterpriseCopilotOneDayReport(w http.ResponseWriter, r *http.Request) {
 	day := r.URL.Query().Get("day")
 	if day == "" {
-		writeGHValidationError(w, "CopilotUsageMetricsReport", "day", "missing")
+		store.WriteGHValidationError(w, "CopilotUsageMetricsReport", "day", "missing")
 		return
 	}
 	parsed, err := time.Parse("2006-01-02", day)
 	if err != nil {
-		writeGHValidationError(w, "CopilotUsageMetricsReport", "day", "invalid")
+		store.WriteGHValidationError(w, "CopilotUsageMetricsReport", "day", "invalid")
 		return
 	}
 	// A report can only exist for days that have already happened.

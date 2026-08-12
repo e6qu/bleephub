@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
 )
 
@@ -222,11 +223,11 @@ func TestGPGKeyDeleteOwnership(t *testing.T) {
 	s.registerGHMiscEndpoints()
 
 	s.store.Mu.Lock()
-	other := &User{ID: s.store.NextUser, Login: "other-user", Type: "User", SiteAdmin: false}
+	other := &store.User{ID: s.store.NextUser, Login: "other-user", Type: "User", SiteAdmin: false}
 	s.store.NextUser++
 	s.store.Users[other.ID] = other
 	s.store.UsersByLogin[other.Login] = other
-	s.store.Tokens["ghp_other"] = &Token{Value: "ghp_other", UserID: other.ID}
+	s.store.Tokens["ghp_other"] = &store.Token{Value: "ghp_other", UserID: other.ID}
 	s.store.Mu.Unlock()
 
 	w := doMiscReq(s, "POST", "/api/v3/user/gpg_keys", `{
@@ -257,11 +258,11 @@ func TestUserSSHKeyIsOwnerScoped(t *testing.T) {
 	s.registerGHMiscEndpoints()
 
 	s.store.Mu.Lock()
-	other := &User{ID: s.store.NextUser, Login: "other-user", Type: "User"}
+	other := &store.User{ID: s.store.NextUser, Login: "other-user", Type: "User"}
 	s.store.NextUser++
 	s.store.Users[other.ID] = other
 	s.store.UsersByLogin[other.Login] = other
-	s.store.Tokens["ghp_other"] = &Token{Value: "ghp_other", UserID: other.ID}
+	s.store.Tokens["ghp_other"] = &store.Token{Value: "ghp_other", UserID: other.ID}
 	s.store.Mu.Unlock()
 
 	// admin creates a key.
@@ -314,7 +315,7 @@ func TestPagesBuildsCRUD(t *testing.T) {
 	s.registerGHGitDataRoutes()
 	fs := newS3FSForTest(t)
 	objectFS := deriveS3FSForTest(t, fs.Bucket(), "pages-build-objects")
-	s.store.ObjectByteStore = &s3ActionsByteStore{Fs: objectFS}
+	s.store.ObjectByteStore = &store.S3ActionsByteStore{Fs: objectFS}
 	admin := s.store.UsersByLogin["admin"]
 	repo := s.store.CreateRepo(admin, "pages-build-test", "", false)
 	commitHash, err := initRepoWithFiles(s.store.GetGitStorage("admin", "pages-build-test"), repo.DefaultBranch, "init", map[string]string{
@@ -500,7 +501,7 @@ func TestPagesJekyllBuildPublishesGeneratedSite(t *testing.T) {
 	s.pagesJekyllExecutable = realPagesJekyllExecutable(t)
 	fs := newS3FSForTest(t)
 	objectFS := deriveS3FSForTest(t, fs.Bucket(), "pages-jekyll-objects")
-	s.store.ObjectByteStore = &s3ActionsByteStore{Fs: objectFS}
+	s.store.ObjectByteStore = &store.S3ActionsByteStore{Fs: objectFS}
 	admin := s.store.UsersByLogin["admin"]
 	repo := s.store.CreateRepo(admin, "pages-jekyll-test", "", false)
 	commitHash, err := initRepoWithFiles(s.store.GetGitStorage("admin", repo.Name), repo.DefaultBranch, "Jekyll source", map[string]string{
@@ -801,7 +802,7 @@ func TestPagesListBuildsPagination(t *testing.T) {
 	admin := s.store.UsersByLogin["admin"]
 	repo := s.store.CreateRepo(admin, "pages-build-pagination", "", false)
 	s.store.Misc.Mu.Lock()
-	s.store.Misc.PagesBuilds[repo.FullName] = []*PagesBuild{
+	s.store.Misc.PagesBuilds[repo.FullName] = []*store.PagesBuild{
 		{ID: 2, URL: "http://127.0.0.1/api/v3/repos/" + repo.FullName + "/pages/builds/2", Status: "built"},
 		{ID: 1, URL: "http://127.0.0.1/api/v3/repos/" + repo.FullName + "/pages/builds/1", Status: "built"},
 	}

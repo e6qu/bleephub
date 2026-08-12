@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
@@ -19,18 +20,18 @@ import (
 // scope (read for reads, write for create/update).
 
 func (s *Server) registerGHChecksRoutes() {
-	s.route("POST /api/v3/repos/{owner}/{repo}/check-runs", s.requirePerm(scopeChecks, permWrite, s.handleCreateCheckRun))
-	s.route("GET /api/v3/repos/{owner}/{repo}/check-runs/{id}", s.requirePerm(scopeChecks, permRead, s.handleGetCheckRun))
-	s.route("PATCH /api/v3/repos/{owner}/{repo}/check-runs/{id}", s.requirePerm(scopeChecks, permWrite, s.handleUpdateCheckRun))
-	s.route("GET /api/v3/repos/{owner}/{repo}/check-runs/{id}/annotations", s.requirePerm(scopeChecks, permRead, s.handleListCheckRunAnnotations))
-	s.route("GET /api/v3/repos/{owner}/{repo}/commits/{sha}/check-runs", s.requirePerm(scopeChecks, permRead, s.handleListCheckRunsForCommit))
-	s.route("GET /api/v3/repos/{owner}/{repo}/commits/{sha}/check-suites", s.requirePerm(scopeChecks, permRead, s.handleListCheckSuitesForCommit))
-	s.route("POST /api/v3/repos/{owner}/{repo}/check-suites", s.requirePerm(scopeChecks, permWrite, s.handleCreateCheckSuite))
-	s.route("PATCH /api/v3/repos/{owner}/{repo}/check-suites/preferences", s.requirePerm(scopeAdministration, permWrite, s.handleUpdateCheckSuitePrefs))
-	s.route("GET /api/v3/repos/{owner}/{repo}/check-suites/{id}", s.requirePerm(scopeChecks, permRead, s.handleGetCheckSuite))
-	s.route("GET /api/v3/repos/{owner}/{repo}/check-suites/{id}/check-runs", s.requirePerm(scopeChecks, permRead, s.handleListCheckRunsForSuite))
-	s.route("POST /api/v3/repos/{owner}/{repo}/check-runs/{id}/rerequest", s.requirePerm(scopeChecks, permWrite, s.handleRerequestCheckRun))
-	s.route("POST /api/v3/repos/{owner}/{repo}/check-suites/{id}/rerequest", s.requirePerm(scopeChecks, permWrite, s.handleRerequestCheckSuite))
+	s.route("POST /api/v3/repos/{owner}/{repo}/check-runs", s.requirePerm(store.ScopeChecks, store.PermWrite, s.handleCreateCheckRun))
+	s.route("GET /api/v3/repos/{owner}/{repo}/check-runs/{id}", s.requirePerm(store.ScopeChecks, store.PermRead, s.handleGetCheckRun))
+	s.route("PATCH /api/v3/repos/{owner}/{repo}/check-runs/{id}", s.requirePerm(store.ScopeChecks, store.PermWrite, s.handleUpdateCheckRun))
+	s.route("GET /api/v3/repos/{owner}/{repo}/check-runs/{id}/annotations", s.requirePerm(store.ScopeChecks, store.PermRead, s.handleListCheckRunAnnotations))
+	s.route("GET /api/v3/repos/{owner}/{repo}/commits/{sha}/check-runs", s.requirePerm(store.ScopeChecks, store.PermRead, s.handleListCheckRunsForCommit))
+	s.route("GET /api/v3/repos/{owner}/{repo}/commits/{sha}/check-suites", s.requirePerm(store.ScopeChecks, store.PermRead, s.handleListCheckSuitesForCommit))
+	s.route("POST /api/v3/repos/{owner}/{repo}/check-suites", s.requirePerm(store.ScopeChecks, store.PermWrite, s.handleCreateCheckSuite))
+	s.route("PATCH /api/v3/repos/{owner}/{repo}/check-suites/preferences", s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleUpdateCheckSuitePrefs))
+	s.route("GET /api/v3/repos/{owner}/{repo}/check-suites/{id}", s.requirePerm(store.ScopeChecks, store.PermRead, s.handleGetCheckSuite))
+	s.route("GET /api/v3/repos/{owner}/{repo}/check-suites/{id}/check-runs", s.requirePerm(store.ScopeChecks, store.PermRead, s.handleListCheckRunsForSuite))
+	s.route("POST /api/v3/repos/{owner}/{repo}/check-runs/{id}/rerequest", s.requirePerm(store.ScopeChecks, store.PermWrite, s.handleRerequestCheckRun))
+	s.route("POST /api/v3/repos/{owner}/{repo}/check-suites/{id}/rerequest", s.requirePerm(store.ScopeChecks, store.PermWrite, s.handleRerequestCheckSuite))
 }
 
 // handleRerequestCheckRun resets a completed check run to queued and fires
@@ -44,7 +45,7 @@ func (s *Server) handleRerequestCheckRun(w http.ResponseWriter, r *http.Request)
 		writeGHError(w, http.StatusUnprocessableEntity, "This check run is not yet completed and cannot be rerequested.")
 		return
 	}
-	s.store.UpdateCheckRun(cr.ID, func(c *CheckRun) {
+	s.store.UpdateCheckRun(cr.ID, func(c *store.CheckRun) {
 		c.Status = "queued"
 		c.Conclusion = ""
 		c.CompletedAt = nil
@@ -60,7 +61,7 @@ func (s *Server) handleRerequestCheckSuite(w http.ResponseWriter, r *http.Reques
 	if suite == nil {
 		return
 	}
-	s.store.UpdateCheckSuite(suite.ID, func(cs *CheckSuite) {
+	s.store.UpdateCheckSuite(suite.ID, func(cs *store.CheckSuite) {
 		cs.Status = "queued"
 		cs.Conclusion = ""
 	})
@@ -76,30 +77,30 @@ func (s *Server) handleCreateCheckRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Name        string          `json:"name"`
-		HeadSHA     string          `json:"head_sha"`
-		Status      string          `json:"status"`
-		Conclusion  string          `json:"conclusion"`
-		ExternalID  string          `json:"external_id"`
-		DetailsURL  string          `json:"details_url"`
-		StartedAt   *time.Time      `json:"started_at"`
-		CompletedAt *time.Time      `json:"completed_at"`
-		Output      *CheckRunOutput `json:"output"`
+		Name        string                `json:"name"`
+		HeadSHA     string                `json:"head_sha"`
+		Status      string                `json:"status"`
+		Conclusion  string                `json:"conclusion"`
+		ExternalID  string                `json:"external_id"`
+		DetailsURL  string                `json:"details_url"`
+		StartedAt   *time.Time            `json:"started_at"`
+		CompletedAt *time.Time            `json:"completed_at"`
+		Output      *store.CheckRunOutput `json:"output"`
 	}
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	if req.Name == "" {
-		writeGHValidationError(w, "CheckRun", "name", "missing_field")
+		store.WriteGHValidationError(w, "CheckRun", "name", "missing_field")
 		return
 	}
 	if req.HeadSHA == "" {
-		writeGHValidationError(w, "CheckRun", "head_sha", "missing_field")
+		store.WriteGHValidationError(w, "CheckRun", "head_sha", "missing_field")
 		return
 	}
 	appID := appIDFromContext(r.Context())
 	cr := s.store.CreateCheckRun(repoKey, req.HeadSHA, req.Name, appID, 0)
-	s.store.UpdateCheckRun(cr.ID, func(c *CheckRun) {
+	s.store.UpdateCheckRun(cr.ID, func(c *store.CheckRun) {
 		if req.Status != "" {
 			c.Status = req.Status
 		}
@@ -132,7 +133,7 @@ func (s *Server) handleCreateCheckRun(w http.ResponseWriter, r *http.Request) {
 // checkRunInRepo resolves the check run named by {id}, answering 404 unless it
 // belongs to the repository in the URL path. Check run ids are global, so the
 // path repository is the only thing that ties the id to a tenant.
-func (s *Server) checkRunInRepo(w http.ResponseWriter, r *http.Request) *CheckRun {
+func (s *Server) checkRunInRepo(w http.ResponseWriter, r *http.Request) *store.CheckRun {
 	repoKey := r.PathValue("owner") + "/" + r.PathValue("repo")
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
@@ -148,7 +149,7 @@ func (s *Server) checkRunInRepo(w http.ResponseWriter, r *http.Request) *CheckRu
 }
 
 // checkSuiteInRepo is checkRunInRepo for check suites.
-func (s *Server) checkSuiteInRepo(w http.ResponseWriter, r *http.Request) *CheckSuite {
+func (s *Server) checkSuiteInRepo(w http.ResponseWriter, r *http.Request) *store.CheckSuite {
 	repoKey := r.PathValue("owner") + "/" + r.PathValue("repo")
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
@@ -178,19 +179,19 @@ func (s *Server) handleUpdateCheckRun(w http.ResponseWriter, r *http.Request) {
 	}
 	id := existing.ID
 	var req struct {
-		Name        *string         `json:"name"`
-		Status      *string         `json:"status"`
-		Conclusion  *string         `json:"conclusion"`
-		DetailsURL  *string         `json:"details_url"`
-		ExternalID  *string         `json:"external_id"`
-		StartedAt   *time.Time      `json:"started_at"`
-		CompletedAt *time.Time      `json:"completed_at"`
-		Output      *CheckRunOutput `json:"output"`
+		Name        *string               `json:"name"`
+		Status      *string               `json:"status"`
+		Conclusion  *string               `json:"conclusion"`
+		DetailsURL  *string               `json:"details_url"`
+		ExternalID  *string               `json:"external_id"`
+		StartedAt   *time.Time            `json:"started_at"`
+		CompletedAt *time.Time            `json:"completed_at"`
+		Output      *store.CheckRunOutput `json:"output"`
 	}
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	found := s.store.UpdateCheckRun(id, func(cr *CheckRun) {
+	found := s.store.UpdateCheckRun(id, func(cr *store.CheckRun) {
 		if req.Name != nil {
 			cr.Name = *req.Name
 		}
@@ -229,7 +230,7 @@ func (s *Server) handleListCheckRunAnnotations(w http.ResponseWriter, r *http.Re
 	if cr == nil {
 		return
 	}
-	out := []*CheckAnnotation{}
+	out := []*store.CheckAnnotation{}
 	if cr.Output != nil {
 		out = cr.Output.Annotations
 	}
@@ -246,7 +247,7 @@ func (s *Server) handleListCheckRunsForCommit(w http.ResponseWriter, r *http.Req
 		filter = "latest"
 	}
 	if filter != "latest" && filter != "all" {
-		writeGHValidationError(w, "CheckRun", "filter", "invalid")
+		store.WriteGHValidationError(w, "CheckRun", "filter", "invalid")
 		return
 	}
 	appID := 0
@@ -254,7 +255,7 @@ func (s *Server) handleListCheckRunsForCommit(w http.ResponseWriter, r *http.Req
 		var err error
 		appID, err = strconv.Atoi(raw)
 		if err != nil || appID < 1 {
-			writeGHValidationError(w, "CheckRun", "app_id", "invalid")
+			store.WriteGHValidationError(w, "CheckRun", "app_id", "invalid")
 			return
 		}
 	}
@@ -276,15 +277,15 @@ func (s *Server) handleListCheckRunsForCommit(w http.ResponseWriter, r *http.Req
 // latestCheckRuns implements the documented default filter: reruns remain
 // addressable with filter=all, while the normal listing exposes only the most
 // recent run in each check suite.
-func latestCheckRuns(runs []*CheckRun) []*CheckRun {
-	latest := make(map[int64]*CheckRun, len(runs))
+func latestCheckRuns(runs []*store.CheckRun) []*store.CheckRun {
+	latest := make(map[int64]*store.CheckRun, len(runs))
 	for _, run := range runs {
 		current := latest[run.SuiteID]
 		if current == nil || run.ID > current.ID {
 			latest[run.SuiteID] = run
 		}
 	}
-	out := make([]*CheckRun, 0, len(latest))
+	out := make([]*store.CheckRun, 0, len(latest))
 	for _, run := range latest {
 		out = append(out, run)
 	}
@@ -313,7 +314,7 @@ func (s *Server) handleCreateCheckSuite(w http.ResponseWriter, r *http.Request) 
 		HeadSHA string `json:"head_sha"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.HeadSHA == "" {
-		writeGHValidationError(w, "CheckSuite", "head_sha", "missing_field")
+		store.WriteGHValidationError(w, "CheckSuite", "head_sha", "missing_field")
 		return
 	}
 	appID := appIDFromContext(r.Context())
@@ -330,7 +331,7 @@ func (s *Server) handleUpdateCheckSuitePrefs(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	var req struct {
-		AutoTriggerChecks []*CheckSuitePref `json:"auto_trigger_checks"`
+		AutoTriggerChecks []*store.CheckSuitePref `json:"auto_trigger_checks"`
 	}
 	if !decodeJSONBody(w, r, &req) {
 		return
@@ -340,7 +341,7 @@ func (s *Server) handleUpdateCheckSuitePrefs(w http.ResponseWriter, r *http.Requ
 		"preferences": map[string]interface{}{
 			"auto_trigger_checks": jsonArray(req.AutoTriggerChecks),
 		},
-		"repository": repoToJSONForViewer(repo, s.store, s.baseURL(r), ghUserFromContext(r.Context())),
+		"repository": store.RepoToJSONForViewer(repo, s.store, s.baseURL(r), ghUserFromContext(r.Context())),
 	})
 }
 
@@ -375,13 +376,13 @@ func appIDFromContext(ctx interface {
 	Value(any) any
 },
 ) int {
-	if t, _ := ctx.Value(ctxInstallationToken).(*InstallationToken); t != nil {
+	if t, _ := ctx.Value(ctxInstallationToken).(*store.InstallationToken); t != nil {
 		return t.AppID
 	}
-	if t, _ := ctx.Value(ctxUserToServerToken).(*UserToServerToken); t != nil {
+	if t, _ := ctx.Value(ctxUserToServerToken).(*store.UserToServerToken); t != nil {
 		return t.AppID
 	}
-	if a, _ := ctx.Value(ctxApp).(*App); a != nil {
+	if a, _ := ctx.Value(ctxApp).(*store.App); a != nil {
 		return a.ID
 	}
 	return 0
@@ -404,7 +405,7 @@ func (s *Server) checkAppJSON(appID int) interface{} {
 // checkRunToJSON renders the GitHub check-run shape. base is the external
 // base URL ("" for webhook payloads, which carry relative API paths like the
 // other event payload builders).
-func (s *Server) checkRunToJSON(cr *CheckRun, base string) map[string]interface{} {
+func (s *Server) checkRunToJSON(cr *store.CheckRun, base string) map[string]interface{} {
 	if cr == nil {
 		return nil
 	}
@@ -425,9 +426,9 @@ func (s *Server) checkRunToJSON(cr *CheckRun, base string) map[string]interface{
 		"annotations_url":   fmt.Sprintf("%s/check-runs/%d/annotations", api, cr.ID),
 	}
 	if cr.Output != nil {
-		output["title"] = nilOrString(cr.Output.Title)
-		output["summary"] = nilOrString(cr.Output.Summary)
-		output["text"] = nilOrString(cr.Output.Text)
+		output["title"] = store.NilOrString(cr.Output.Title)
+		output["summary"] = store.NilOrString(cr.Output.Summary)
+		output["text"] = store.NilOrString(cr.Output.Text)
 		output["annotations_count"] = cr.Output.AnnotationsCount
 	}
 	return map[string]interface{}{
@@ -453,7 +454,7 @@ func (s *Server) checkRunToJSON(cr *CheckRun, base string) map[string]interface{
 // checkSuiteToJSON renders the GitHub check-suite shape, resolving the head
 // commit from the repository's real git storage and embedding the repository
 // as a minimal-repository.
-func (s *Server) checkSuiteToJSON(suite *CheckSuite, base string) map[string]interface{} {
+func (s *Server) checkSuiteToJSON(suite *store.CheckSuite, base string) map[string]interface{} {
 	if suite == nil {
 		return nil
 	}
@@ -469,9 +470,9 @@ func (s *Server) checkSuiteToJSON(suite *CheckSuite, base string) map[string]int
 
 	var repository interface{}
 	var headCommit interface{}
-	if owner, name, ok := splitRepoFullName(suite.RepoKey); ok {
+	if owner, name, ok := store.SplitRepoFullName(suite.RepoKey); ok {
 		if repo := s.store.GetRepo(owner, name); repo != nil {
-			repository = repoToJSON(repo, s.store, base)
+			repository = store.RepoToJSON(repo, s.store, base)
 		}
 		if stor := s.store.GetGitStorage(owner, name); stor != nil {
 			if commit, err := object.GetCommit(stor, plumbing.NewHash(suite.HeadSHA)); err == nil {

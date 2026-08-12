@@ -3,13 +3,15 @@ package actions
 import (
 	"fmt"
 	"strings"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // OrgItemVisibleToRepo reports whether an organization-level secret or
 // variable applies to a repository under real GitHub's visibility rules:
 // "all" applies to every repo in the org, "private" only to private (and
 // internal) repos, "selected" only to the explicitly selected repo IDs.
-func OrgItemVisibleToRepo(visibility string, selectedIDs []int, repo *Repo) bool {
+func OrgItemVisibleToRepo(visibility string, selectedIDs []int, repo *store.Repo) bool {
 	switch visibility {
 	case "all":
 		return true
@@ -36,7 +38,7 @@ func OrgItemVisibleToRepo(visibility string, selectedIDs []int, repo *Repo) bool
 //
 // A job message that names no repository — the operator /internal/exec/submit
 // path — carries none of those secrets and is therefore not scope-restricted.
-func JobSecretsEntitled(scope runnerScope, repoFullName string) bool {
+func JobSecretsEntitled(scope store.RunnerScope, repoFullName string) bool {
 	if repoFullName == "" {
 		return true
 	}
@@ -95,7 +97,7 @@ func (s *Engine) collectJobSecretsAndVarsLocked(repoFullName, envName string) (s
 
 	// Environment scope (highest precedence).
 	if envName != "" {
-		key := envScopeKey(repoFullName, envName)
+		key := store.EnvScopeKey(repoFullName, envName)
 		for name, sec := range s.store.EnvSecrets[key] {
 			secrets[name] = sec.Value
 		}

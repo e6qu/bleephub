@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
@@ -173,11 +174,11 @@ func TestForkPullRequestRESTAndGraphQL(t *testing.T) {
 	seedPullRequestBranches(t, s.Server, source)
 
 	s.store.Mu.Lock()
-	forker := &User{ID: s.store.NextUser, Login: "pr-forker", Type: "User", CreatedAt: fixedTestTime, UpdatedAt: fixedTestTime}
+	forker := &store.User{ID: s.store.NextUser, Login: "pr-forker", Type: "User", CreatedAt: fixedTestTime, UpdatedAt: fixedTestTime}
 	s.store.NextUser++
 	s.store.Users[forker.ID] = forker
 	s.store.UsersByLogin[forker.Login] = forker
-	tok := &Token{Value: "pr-forker-token", UserID: forker.ID, Scopes: "repo", CreatedAt: fixedTestTime}
+	tok := &store.Token{Value: "pr-forker-token", UserID: forker.ID, Scopes: "repo", CreatedAt: fixedTestTime}
 	s.store.Tokens[tok.Value] = tok
 	s.store.Mu.Unlock()
 
@@ -269,7 +270,7 @@ func TestForkPullRequestRESTAndGraphQL(t *testing.T) {
 		t.Fatalf("GraphQL commits = %v, want one commit", gqlCommits)
 	}
 
-	beforeMergeSHA := resolveBranchSha(s.store.GetGitStorage("admin", sourceName), "main")
+	beforeMergeSHA := store.ResolveBranchSha(s.store.GetGitStorage("admin", sourceName), "main")
 	mergeResp := s.put(t, "/api/v3/repos/admin/"+sourceName+"/pulls/1/merge", defaultToken, map[string]interface{}{
 		"merge_method": "merge",
 	})
@@ -279,7 +280,7 @@ func TestForkPullRequestRESTAndGraphQL(t *testing.T) {
 		t.Fatalf("merge status = %d body=%s", mergeResp.StatusCode, body)
 	}
 	mergeResp.Body.Close()
-	baseSHA := resolveBranchSha(s.store.GetGitStorage("admin", sourceName), "main")
+	baseSHA := store.ResolveBranchSha(s.store.GetGitStorage("admin", sourceName), "main")
 	if baseSHA == "" || baseSHA == beforeMergeSHA {
 		t.Fatalf("base branch did not advance after fork pull request merge: %q", baseSHA)
 	}
@@ -683,7 +684,7 @@ func TestPRUpdateBranchREST(t *testing.T) {
 
 	repo := s.store.GetRepo("admin", "pr-update-branch")
 	stor := s.store.GetGitStorage("admin", "pr-update-branch")
-	headBefore := resolveBranchSha(stor, "feat")
+	headBefore := store.ResolveBranchSha(stor, "feat")
 	_, err := createFileCommit(
 		stor, "main", "base-update.txt", "new base work\n", "advance base",
 		&object.Signature{Name: "admin", Email: "admin@example.com", When: fixedTestTime.UTC()},
@@ -691,7 +692,7 @@ func TestPRUpdateBranchREST(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	baseAfter := resolveBranchSha(stor, "main")
+	baseAfter := store.ResolveBranchSha(stor, "main")
 
 	stale := s.put(t, "/api/v3/repos/admin/pr-update-branch/pulls/1/update-branch", defaultToken, map[string]interface{}{
 		"expected_head_sha": plumbing.ZeroHash.String(),
@@ -701,7 +702,7 @@ func TestPRUpdateBranchREST(t *testing.T) {
 		t.Fatalf("stale expected_head_sha status = %d, want 422", stale.StatusCode)
 	}
 	stale.Body.Close()
-	if got := resolveBranchSha(stor, "feat"); got != headBefore {
+	if got := store.ResolveBranchSha(stor, "feat"); got != headBefore {
 		t.Fatalf("stale precondition moved head to %s", got)
 	}
 
@@ -716,7 +717,7 @@ func TestPRUpdateBranchREST(t *testing.T) {
 	if data["message"] == nil || data["message"] == "" {
 		t.Fatal("expected message in update-branch response")
 	}
-	headAfter := resolveBranchSha(stor, "feat")
+	headAfter := store.ResolveBranchSha(stor, "feat")
 	if headAfter == headBefore {
 		t.Fatal("update-branch returned 202 without moving the pull request head")
 	}
@@ -740,7 +741,7 @@ func TestPRTeamReviewRequestsRoundTrip(t *testing.T) {
 	s := newIsolatedServer(t)
 	admin := s.store.LookupUserByLogin("admin")
 	org := s.store.CreateOrg(admin, "pr-team-review-org", "PR review org", "")
-	team := s.store.CreateTeam(org.Login, "Core Reviewers", TeamOptions{})
+	team := s.store.CreateTeam(org.Login, "Core Reviewers", store.TeamOptions{})
 	repo := s.store.CreateOrgRepo(org, admin, "repo", "", false)
 	seedPullRequestBranches(t, s.Server, repo, "feature")
 	pr := s.store.CreatePullRequest(repo.ID, admin.ID, "Team review", "", "feature", "main", false, nil, nil, 0)

@@ -73,13 +73,13 @@ func (s *Server) handleRenderMarkdown(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Text == nil {
-		writeGHValidationError(w, "Markdown", "text", "missing_field")
+		store.WriteGHValidationError(w, "Markdown", "text", "missing_field")
 		return
 	}
 	switch req.Mode {
 	case "", "markdown", "gfm":
 	default:
-		writeGHValidationError(w, "Markdown", "mode", "invalid")
+		store.WriteGHValidationError(w, "Markdown", "mode", "invalid")
 		return
 	}
 	rendered, err := s.renderMarkdown(*req.Text, req.Mode, req.Context, s.baseURL(r))
@@ -152,7 +152,7 @@ var (
 // to a real user and the number resolves to a real issue or pull request
 // in the context repository.
 func (s *Server) linkifyGFMReferences(rendered, context, baseURL string) string {
-	var contextRepo *Repo
+	var contextRepo *store.Repo
 	if owner, name, found := strings.Cut(context, "/"); found {
 		contextRepo = s.store.GetRepo(owner, name)
 	}
@@ -198,7 +198,7 @@ func (s *Server) linkifyGFMReferences(rendered, context, baseURL string) string 
 
 // linkifyTextNode replaces mention/issue references in a single text node
 // with anchor elements, splicing the replacement nodes in place.
-func (s *Server) linkifyTextNode(parent, textNode *xhtml.Node, contextRepo *Repo, baseURL string) {
+func (s *Server) linkifyTextNode(parent, textNode *xhtml.Node, contextRepo *store.Repo, baseURL string) {
 	type ref struct {
 		start, end int // bounds of the replaced token (@login / #n)
 		href       string

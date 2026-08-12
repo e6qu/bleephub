@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v5/plumbing/transport"
@@ -168,7 +169,7 @@ func parseGitSSHUserID(value string) (int, error) {
 	return result, nil
 }
 
-func (s *Server) serveGitSSHSession(channel ssh.Channel, requests <-chan *ssh.Request, user *User) {
+func (s *Server) serveGitSSHSession(channel ssh.Channel, requests <-chan *ssh.Request, user *store.User) {
 	defer func() { _ = channel.Close() }()
 	for request := range requests {
 		if request.Type != "exec" {
@@ -219,7 +220,7 @@ func parseGitSSHCommand(command string) (service, owner, repo string, ok bool) {
 // side before the required report-status response can be written.
 type sshChannelReader struct{ io.Reader }
 
-func (s *Server) runGitSSHService(channel ssh.Channel, service, owner, repoName string, user *User) error {
+func (s *Server) runGitSSHService(channel ssh.Channel, service, owner, repoName string, user *store.User) error {
 	repo := s.store.GetRepo(owner, repoName)
 	stor := s.resolveGitRepo(owner, repoName)
 	if repo == nil || stor == nil {
@@ -237,7 +238,7 @@ func (s *Server) runGitSSHService(channel ssh.Channel, service, owner, repoName 
 	// Cloning reads repository CONTENTS, so gate on contents:read (matching the
 	// git-HTTP path) rather than metadata:read — a caller with only metadata
 	// visibility must not be able to pull the code.
-	if !s.viewerHasRepoPermission(ctx, repo, scopeContents, permRead) {
+	if !s.viewerHasRepoPermission(ctx, repo, store.ScopeContents, store.PermRead) {
 		return transport.ErrRepositoryNotFound
 	}
 	if service == "git-receive-pack" && !s.viewerCanPushRepo(ctx, repo) {

@@ -7,13 +7,14 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/google/uuid"
 )
 
 func (s *Server) registerGHOrganizationSCIMRoutes() {
-	read := s.requirePerm(scopeMembers, permRead, s.handleListOrganizationSCIMUsers)
+	read := s.requirePerm(store.ScopeMembers, store.PermRead, s.handleListOrganizationSCIMUsers)
 	write := func(handler http.HandlerFunc) http.HandlerFunc {
-		return s.requirePerm(scopeMembers, permWrite, handler)
+		return s.requirePerm(store.ScopeMembers, store.PermWrite, handler)
 	}
 	s.route("GET /api/v3/scim/v2/organizations/{org}/Users", read)
 	s.route("POST /api/v3/scim/v2/organizations/{org}/Users", write(s.handleCreateOrganizationSCIMUser))
@@ -23,12 +24,12 @@ func (s *Server) registerGHOrganizationSCIMRoutes() {
 	s.route("DELETE /api/v3/scim/v2/organizations/{org}/Users/{scim_user_id}", write(s.handleDeleteOrganizationSCIMUser))
 }
 
-func (s *Server) resolveOrganizationSCIMAdmin(w http.ResponseWriter, r *http.Request) *Org {
+func (s *Server) resolveOrganizationSCIMAdmin(w http.ResponseWriter, r *http.Request) *store.Org {
 	org, _ := s.resolveOrgOwner(w, r)
 	return org
 }
 
-func (s *Server) organizationSCIMUserJSON(r *http.Request, org *Org, user *EnterpriseSCIMUser) map[string]interface{} {
+func (s *Server) organizationSCIMUserJSON(r *http.Request, org *store.Org, user *store.EnterpriseSCIMUser) map[string]interface{} {
 	return map[string]interface{}{
 		"schemas": user.Schemas, "id": user.ID, "externalId": user.ExternalID,
 		"userName": user.UserName, "name": user.Name, "displayName": user.DisplayName,
@@ -42,13 +43,13 @@ func (s *Server) organizationSCIMUserJSON(r *http.Request, org *Org, user *Enter
 	}
 }
 
-func copySCIMUser(user *EnterpriseSCIMUser) *EnterpriseSCIMUser {
+func copySCIMUser(user *store.EnterpriseSCIMUser) *store.EnterpriseSCIMUser {
 	if user == nil {
 		return nil
 	}
 	result := *user
 	result.Schemas = append([]string(nil), user.Schemas...)
-	result.Emails = append([]EnterpriseSCIMEmail(nil), user.Emails...)
+	result.Emails = append([]store.EnterpriseSCIMEmail(nil), user.Emails...)
 	return &result
 }
 
@@ -59,7 +60,7 @@ func (s *Server) handleListOrganizationSCIMUsers(w http.ResponseWriter, r *http.
 	}
 	filter := r.URL.Query().Get("filter")
 	s.store.Mu.RLock()
-	users := make([]*EnterpriseSCIMUser, 0, len(s.store.OrgSCIMUsers[org.Login]))
+	users := make([]*store.EnterpriseSCIMUser, 0, len(s.store.OrgSCIMUsers[org.Login]))
 	for _, user := range s.store.OrgSCIMUsers[org.Login] {
 		if filter != "" {
 			value, ok := scimFilterValue(filter, "userName")
@@ -94,7 +95,7 @@ func (s *Server) handleListOrganizationSCIMUsers(w http.ResponseWriter, r *http.
 	})
 }
 
-func (s *Server) createOrResolveOrganizationSCIMBackingUser(w http.ResponseWriter, org *Org, req *scimUserRequest) (*User, bool) {
+func (s *Server) createOrResolveOrganizationSCIMBackingUser(w http.ResponseWriter, org *store.Org, req *scimUserRequest) (*store.User, bool) {
 	login := normalizeGitHubLogin(req.UserName)
 	if login == "" {
 		writeSCIMError(w, http.StatusBadRequest, "userName is required")
@@ -117,7 +118,7 @@ func (s *Server) createOrResolveOrganizationSCIMBackingUser(w http.ResponseWrite
 	}
 	now := s.store.CurrentTime()
 	userID := s.store.ReserveGlobalID("next_user", &s.store.NextUser)
-	user := &User{
+	user := &store.User{
 		ID: userID, NodeID: fmt.Sprintf("U_kgDO%08d", userID),
 		Login: login, Name: req.DisplayName, Email: primarySCIMEmail(req.Emails), Type: "User",
 		SCIMManagedByOrg: org.Login,
@@ -133,8 +134,8 @@ func (s *Server) createOrResolveOrganizationSCIMBackingUser(w http.ResponseWrite
 	return &copy, true
 }
 
-func (s *Server) setOrganizationSCIMMembershipLocked(org *Org, userID int, active bool) {
-	key := membershipKey(org.Login, userID)
+func (s *Server) setOrganizationSCIMMembershipLocked(org *store.Org, userID int, active bool) {
+	key := store.MembershipKey(org.Login, userID)
 	if !active {
 		delete(s.store.Memberships, key)
 		if s.store.Persist != nil {
@@ -144,10 +145,10 @@ func (s *Server) setOrganizationSCIMMembershipLocked(org *Org, userID int, activ
 	}
 	membership := s.store.Memberships[key]
 	if membership == nil {
-		membership = &Membership{OrgID: org.ID, UserID: userID, Role: OrgRoleMember}
+		membership = &store.Membership{OrgID: org.ID, UserID: userID, Role: store.OrgRoleMember}
 		s.store.Memberships[key] = membership
 	}
-	membership.State = MembershipStateActive
+	membership.State = store.MembershipStateActive
 	if s.store.Persist != nil {
 		s.store.Persist.MustPut("memberships", key, membership)
 	}
@@ -168,15 +169,15 @@ func (s *Server) handleCreateOrganizationSCIMUser(w http.ResponseWriter, r *http
 	}
 	now := s.currentTime()
 	active := req.Active == nil || *req.Active
-	user := &EnterpriseSCIMUser{
+	user := &store.EnterpriseSCIMUser{
 		Schemas: []string{scimUserSchema}, ID: uuid.NewString(), ExternalID: req.ExternalID,
 		UserName: backing.Login, Name: req.Name, DisplayName: req.DisplayName,
-		Active: active, Emails: append([]EnterpriseSCIMEmail(nil), req.Emails...),
+		Active: active, Emails: append([]store.EnterpriseSCIMEmail(nil), req.Emails...),
 		UserID: backing.ID, CreatedAt: now, UpdatedAt: now,
 	}
 	s.store.Mu.Lock()
 	if s.store.OrgSCIMUsers[org.Login] == nil {
-		s.store.OrgSCIMUsers[org.Login] = map[string]*EnterpriseSCIMUser{}
+		s.store.OrgSCIMUsers[org.Login] = map[string]*store.EnterpriseSCIMUser{}
 	}
 	for _, existing := range s.store.OrgSCIMUsers[org.Login] {
 		if strings.EqualFold(existing.UserName, user.UserName) ||
@@ -196,7 +197,7 @@ func (s *Server) handleCreateOrganizationSCIMUser(w http.ResponseWriter, r *http
 	writeSCIM(w, http.StatusCreated, s.organizationSCIMUserJSON(r, org, user))
 }
 
-func (s *Server) organizationSCIMUser(w http.ResponseWriter, r *http.Request, org *Org) *EnterpriseSCIMUser {
+func (s *Server) organizationSCIMUser(w http.ResponseWriter, r *http.Request, org *store.Org) *store.EnterpriseSCIMUser {
 	s.store.Mu.RLock()
 	user := copySCIMUser(s.store.OrgSCIMUsers[org.Login][r.PathValue("scim_user_id")])
 	s.store.Mu.RUnlock()
@@ -216,7 +217,7 @@ func (s *Server) handleGetOrganizationSCIMUser(w http.ResponseWriter, r *http.Re
 	}
 }
 
-func (s *Server) replaceOrganizationSCIMUser(w http.ResponseWriter, r *http.Request, org *Org, req *scimUserRequest) *EnterpriseSCIMUser {
+func (s *Server) replaceOrganizationSCIMUser(w http.ResponseWriter, r *http.Request, org *store.Org, req *scimUserRequest) *store.EnterpriseSCIMUser {
 	id := r.PathValue("scim_user_id")
 	login := normalizeGitHubLogin(req.UserName)
 	if login == "" {
@@ -263,19 +264,19 @@ func (s *Server) replaceOrganizationSCIMUser(w http.ResponseWriter, r *http.Requ
 	s.store.UsersByLogin[backing.Login] = backing
 	active := req.Active == nil || *req.Active
 	user.ExternalID, user.UserName, user.Name, user.DisplayName = req.ExternalID, login, req.Name, req.DisplayName
-	user.Active, user.Emails, user.UpdatedAt = active, append([]EnterpriseSCIMEmail(nil), req.Emails...), backing.UpdatedAt
+	user.Active, user.Emails, user.UpdatedAt = active, append([]store.EnterpriseSCIMEmail(nil), req.Emails...), backing.UpdatedAt
 	s.setOrganizationSCIMMembershipLocked(org, backing.ID, active)
 	// One transaction: the renamed backing account and the org's SCIM-user record
 	// commit together, so a crash cannot leave the global identity and the SCIM
 	// view of it disagreeing (STORE-001/002).
-	batch := newPersistBatch(s.store.Persist)
+	batch := store.NewPersistBatch(s.store.Persist)
 	batch.Put("users", strconv.Itoa(backing.ID), backing)
 	batch.Put("org_scim_users", org.Login, s.store.OrgSCIMUsers[org.Login])
 	commitErr := batch.Commit()
 	result := copySCIMUser(user)
 	s.store.Mu.Unlock()
 	if commitErr != nil {
-		panic(&persistenceFailure{Op: "batch", Bucket: "users", Err: commitErr})
+		panic(&store.PersistenceFailure{Op: "batch", Bucket: "users", Err: commitErr})
 	}
 	return result
 }

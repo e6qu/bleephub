@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // expectStatus drains and closes the response, failing unless the status
@@ -560,7 +562,7 @@ func TestOrgSecurityProductEnablement(t *testing.T) {
 			map[string]interface{}{"name": name}), http.StatusCreated, "create "+name)
 	}
 
-	repoFlag := func(name string, pick func(*Repo) bool) bool {
+	repoFlag := func(name string, pick func(*store.Repo) bool) bool {
 		t.Helper()
 		repo := srv.store.GetRepo("people-sec-org", name)
 		if repo == nil {
@@ -568,8 +570,8 @@ func TestOrgSecurityProductEnablement(t *testing.T) {
 		}
 		return pick(repo)
 	}
-	vulnAlerts := func(r *Repo) bool { return r.VulnerabilityAlertsEnabled }
-	autoFixes := func(r *Repo) bool { return r.AutomatedSecurityFixesEnabled }
+	vulnAlerts := func(r *store.Repo) bool { return r.VulnerabilityAlertsEnabled }
+	autoFixes := func(r *store.Repo) bool { return r.AutomatedSecurityFixesEnabled }
 
 	expectStatus(t, srv.post(t, "/api/v3/orgs/people-sec-org/dependabot_alerts/enable_all", defaultToken, nil),
 		http.StatusNoContent, "enable dependabot alerts")
@@ -611,20 +613,20 @@ func TestTeamsPeoplePersistenceReload(t *testing.T) {
 	t.Setenv("BLEEPHUB_PERSIST", "true")
 	t.Setenv("BLEEPHUB_DATA_DIR", dir)
 
-	p1, err := NewPersistence()
+	p1, err := store.NewPersistence()
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	st1 := NewStore()
+	st1 := store.NewStore()
 	if err := st1.SetPersistence(p1); err != nil {
 		t.Fatalf("SetPersistence: %v", err)
 	}
 	st1.SeedDefaultUser()
 	admin := st1.UsersByLogin["admin"]
 	org := st1.CreateOrg(admin, "reload-people-org", "Reload People", "")
-	team := st1.CreateTeam(org.Login, "reload-team", TeamOptions{})
+	team := st1.CreateTeam(org.Login, "reload-team", store.TeamOptions{})
 
-	invitee := &User{ID: st1.NextUser, Login: "reload-invitee", Type: "User"}
+	invitee := &store.User{ID: st1.NextUser, Login: "reload-invitee", Type: "User"}
 	st1.NextUser++
 	st1.Users[invitee.ID] = invitee
 	st1.UsersByLogin[invitee.Login] = invitee
@@ -645,12 +647,12 @@ func TestTeamsPeoplePersistenceReload(t *testing.T) {
 		t.Fatalf("close: %v", err)
 	}
 
-	p2, err := NewPersistence()
+	p2, err := store.NewPersistence()
 	if err != nil {
 		t.Fatalf("re-open: %v", err)
 	}
 	defer p2.Close()
-	st2 := NewStore()
+	st2 := store.NewStore()
 	if err := st2.SetPersistence(p2); err != nil {
 		t.Fatalf("re-load: %v", err)
 	}

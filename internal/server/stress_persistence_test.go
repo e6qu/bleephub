@@ -5,6 +5,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // storeCensus is a per-resource-class cardinality + counter snapshot used to
@@ -24,7 +26,7 @@ type storeCensus struct {
 // snapshotStoreCensus reads the store under its locks and records the
 // cardinality of every resource class the persistence storm creates plus the
 // monotonic Next* allocators.
-func snapshotStoreCensus(st *Store) storeCensus {
+func snapshotStoreCensus(st *store.Store) storeCensus {
 	st.Mu.RLock()
 	c := storeCensus{
 		repos:         len(st.Repos),
@@ -132,11 +134,11 @@ func TestStressPersistenceReloadConsistency(t *testing.T) {
 	t.Setenv("BLEEPHUB_DATA_DIR", dir)
 	t.Setenv("BLEEPHUB_GIT_DIR", gitDir)
 
-	p1, err := NewPersistence()
+	p1, err := store.NewPersistence()
 	if err != nil {
 		t.Fatalf("open persistence: %v", err)
 	}
-	st1 := NewStore()
+	st1 := store.NewStore()
 	if err := st1.SetPersistence(p1); err != nil {
 		t.Fatalf("SetPersistence: %v", err)
 	}
@@ -200,7 +202,7 @@ func TestStressPersistenceReloadConsistency(t *testing.T) {
 					fail(fmt.Errorf("CreateOrg %s nil", tag))
 					continue
 				}
-				if st1.CreateTeam(org.Login, "team-"+tag, TeamOptions{}) == nil {
+				if st1.CreateTeam(org.Login, "team-"+tag, store.TeamOptions{}) == nil {
 					fail(fmt.Errorf("CreateTeam %s nil", tag))
 				}
 			}
@@ -227,11 +229,11 @@ func TestStressPersistenceReloadConsistency(t *testing.T) {
 		t.Fatalf("close p1: %v", err)
 	}
 
-	p2, err := NewPersistence()
+	p2, err := store.NewPersistence()
 	if err != nil {
 		t.Fatalf("reopen persistence: %v", err)
 	}
-	st2 := NewStore()
+	st2 := store.NewStore()
 	if err := st2.SetPersistence(p2); err != nil {
 		t.Fatalf("reload SetPersistence: %v", err)
 	}

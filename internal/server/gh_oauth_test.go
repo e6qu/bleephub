@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -209,18 +210,18 @@ func postLogin(t *testing.T, s *Server, login, credential string) *httptest.Resp
 	return w
 }
 
-func seedOAuthTestUser(t *testing.T, s *Server, login string) *User {
+func seedOAuthTestUser(t *testing.T, s *Server, login string) *store.User {
 	t.Helper()
 	s.store.Mu.Lock()
 	defer s.store.Mu.Unlock()
-	user := &User{ID: s.store.NextUser, Login: login, Type: "User"}
+	user := &store.User{ID: s.store.NextUser, Login: login, Type: "User"}
 	s.store.NextUser++
 	s.store.Users[user.ID] = user
 	s.store.UsersByLogin[user.Login] = user
 	return user
 }
 
-func createOAuthTestApp(t *testing.T, s *Server, callbackURL string) *OAuthApp {
+func createOAuthTestApp(t *testing.T, s *Server, callbackURL string) *store.OAuthApp {
 	t.Helper()
 	admin := s.store.LookupUserByLogin("admin")
 	if admin == nil {
@@ -358,7 +359,7 @@ func TestOAuth_ConformantWebFlow_BindsCodeToSessionUser(t *testing.T) {
 	s.store.SeedDefaultUser()
 	// Seed a second non-admin user.
 	s.store.Mu.Lock()
-	alice := &User{ID: s.store.NextUser, Login: "alice", Type: "User", SiteAdmin: false}
+	alice := &store.User{ID: s.store.NextUser, Login: "alice", Type: "User", SiteAdmin: false}
 	s.store.NextUser++
 	s.store.Users[alice.ID] = alice
 	s.store.UsersByLogin[alice.Login] = alice
@@ -637,7 +638,7 @@ func TestOAuth_DeviceFlow_StillWorks(t *testing.T) {
 	s := newTestServer()
 	s.store.SeedDefaultUser()
 	s.store.Mu.Lock()
-	alice := &User{ID: s.store.NextUser, Login: "device-alice", Type: "User"}
+	alice := &store.User{ID: s.store.NextUser, Login: "device-alice", Type: "User"}
 	s.store.NextUser++
 	s.store.Users[alice.ID] = alice
 	s.store.UsersByLogin[alice.Login] = alice

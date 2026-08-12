@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func initPhase8Routes(s *Server) {
@@ -101,7 +103,7 @@ func TestSecretScanning_OrgAlertFilters(t *testing.T) {
 	}
 }
 
-func adminTokenFor(s *Server) string { return AdminToken() }
+func adminTokenFor(s *Server) string { return store.AdminToken() }
 
 // TestDependabot_OrgAlertFilters verifies the org-level dependabot alert
 // endpoint accepts and applies state, ecosystem, and package filters.
@@ -233,7 +235,7 @@ func TestCodeScanning_ToolGUIDAccepted(t *testing.T) {
 
 func seedSARIFUploadOnServer(t *testing.T, s *Server, repoFullName string, sarif map[string]any) {
 	t.Helper()
-	token := AdminToken()
+	token := store.AdminToken()
 	commitSHA := putRepoFileOnServer(t, s, repoFullName, "src/rule.js", "const x = 1;\n", "seed")
 	sarifBytes, _ := json.Marshal(sarif)
 	w := pagedJSONRequest(t, s, "POST", "/api/v3/repos/"+repoFullName+"/code-scanning/sarifs", token, map[string]any{
@@ -248,7 +250,7 @@ func seedSARIFUploadOnServer(t *testing.T, s *Server, repoFullName string, sarif
 
 func putRepoFileOnServer(t *testing.T, s *Server, repoFullName, path, content, message string) string {
 	t.Helper()
-	token := AdminToken()
+	token := store.AdminToken()
 	w := pagedJSONRequest(t, s, "PUT", "/api/v3/repos/"+repoFullName+"/contents/"+path, token, map[string]any{
 		"message": message,
 		"content": base64.StdEncoding.EncodeToString([]byte(content)),
@@ -278,8 +280,8 @@ func TestCodeScanning_OrgAlertFilters(t *testing.T) {
 	}
 
 	toolGUID := "c7a7c45a-8a3c-4f6e-9b5c-1d3c01234567"
-	s.store.CreateCodeScanningAlert(repo.FullName, "rule-a", "error", "desc a", "CodeQL", toolGUID, "open", []CodeScanningAlertInstance{{Path: "a.go", StartLine: 1}})
-	s.store.CreateCodeScanningAlert(repo.FullName, "rule-b", "warning", "desc b", "Semgrep", toolGUID, "open", []CodeScanningAlertInstance{{Path: "b.go", StartLine: 1}})
+	s.store.CreateCodeScanningAlert(repo.FullName, "rule-a", "error", "desc a", "CodeQL", toolGUID, "open", []store.CodeScanningAlertInstance{{Path: "a.go", StartLine: 1}})
+	s.store.CreateCodeScanningAlert(repo.FullName, "rule-b", "warning", "desc b", "Semgrep", toolGUID, "open", []store.CodeScanningAlertInstance{{Path: "b.go", StartLine: 1}})
 
 	token := adminTokenFor(s)
 	base := "/api/v3/orgs/cs-org-filters/code-scanning/alerts"

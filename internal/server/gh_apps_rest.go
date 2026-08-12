@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/google/uuid"
 )
 
@@ -93,7 +94,7 @@ func (s *Server) handleManifestSubmission(w http.ResponseWriter, r *http.Request
 	}
 	raw := r.PostFormValue("manifest")
 	if raw == "" {
-		writeGHValidationError(w, "AppManifest", "manifest", "missing_field")
+		store.WriteGHValidationError(w, "AppManifest", "manifest", "missing_field")
 		return
 	}
 	if err := json.Unmarshal([]byte(raw), &manifest); err != nil {
@@ -101,29 +102,29 @@ func (s *Server) handleManifestSubmission(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if manifest.Name == "" {
-		writeGHValidationError(w, "AppManifest", "name", "missing_field")
+		store.WriteGHValidationError(w, "AppManifest", "name", "missing_field")
 		return
 	}
 	if manifest.URL == "" {
-		writeGHValidationError(w, "AppManifest", "url", "missing_field")
+		store.WriteGHValidationError(w, "AppManifest", "url", "missing_field")
 		return
 	}
-	if err := validateClientCallbackURL(strings.TrimSpace(manifest.URL)); err != nil {
-		writeGHValidationError(w, "AppManifest", "url", "invalid")
+	if err := store.ValidateClientCallbackURL(strings.TrimSpace(manifest.URL)); err != nil {
+		store.WriteGHValidationError(w, "AppManifest", "url", "invalid")
 		return
 	}
 	if manifest.RedirectURL == "" {
-		writeGHValidationError(w, "AppManifest", "redirect_url", "missing_field")
+		store.WriteGHValidationError(w, "AppManifest", "redirect_url", "missing_field")
 		return
 	}
 	redirect, err := url.Parse(manifest.RedirectURL)
 	if err != nil {
-		writeGHValidationError(w, "AppManifest", "redirect_url", "invalid")
+		store.WriteGHValidationError(w, "AppManifest", "redirect_url", "invalid")
 		return
 	}
 	for scope, level := range manifest.DefaultPermissions {
 		if !validPermLevelString(level) {
-			writeGHValidationError(w, "AppManifest", "default_permissions."+scope, "invalid")
+			store.WriteGHValidationError(w, "AppManifest", "default_permissions."+scope, "invalid")
 			return
 		}
 	}
@@ -133,13 +134,13 @@ func (s *Server) handleManifestSubmission(w http.ResponseWriter, r *http.Request
 	// reduced to its first entry.
 	callbackURL := ""
 	if len(manifest.CallbackURLs) > 1 {
-		writeGHValidationError(w, "AppManifest", "callback_urls", "invalid")
+		store.WriteGHValidationError(w, "AppManifest", "callback_urls", "invalid")
 		return
 	}
 	if len(manifest.CallbackURLs) == 1 {
 		callbackURL = strings.TrimSpace(manifest.CallbackURLs[0])
-		if err := validateClientCallbackURL(callbackURL); err != nil {
-			writeGHValidationError(w, "AppManifest", "callback_urls", "invalid")
+		if err := store.ValidateClientCallbackURL(callbackURL); err != nil {
+			store.WriteGHValidationError(w, "AppManifest", "callback_urls", "invalid")
 			return
 		}
 	}
@@ -149,7 +150,7 @@ func (s *Server) handleManifestSubmission(w http.ResponseWriter, r *http.Request
 		writeGHError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.store.UpdateApp(app.ID, func(a *App) {
+	s.store.UpdateApp(app.ID, func(a *store.App) {
 		if manifest.URL != "" {
 			// The manifest's `url` is the app homepage, served back
 			// as external_url.
@@ -222,7 +223,7 @@ func (s *Server) handleBrowserInstallApp(w http.ResponseWriter, r *http.Request)
 	}
 	for _, existing := range s.store.ListAppInstallations(app.ID) {
 		if existing.TargetLogin == targetLogin {
-			writeGHValidationError(w, "Installation", "target_login", "already_exists")
+			store.WriteGHValidationError(w, "Installation", "target_login", "already_exists")
 			return
 		}
 	}
@@ -231,12 +232,12 @@ func (s *Server) handleBrowserInstallApp(w http.ResponseWriter, r *http.Request)
 		selection = "all"
 	}
 	if selection != "all" && selection != "selected" {
-		writeGHValidationError(w, "Installation", "repository_selection", "invalid")
+		store.WriteGHValidationError(w, "Installation", "repository_selection", "invalid")
 		return
 	}
 	repoIDs, valid := s.resolveInstallationRepositorySelection(targetLogin, selection, r.PostForm["repository_ids"])
 	if !valid {
-		writeGHValidationError(w, "Installation", "repository_ids", "invalid")
+		store.WriteGHValidationError(w, "Installation", "repository_ids", "invalid")
 		return
 	}
 
@@ -308,7 +309,7 @@ func (s *Server) handleBrowserDeleteInstallation(w http.ResponseWriter, r *http.
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) browserManageableInstallation(w http.ResponseWriter, r *http.Request, user *User) (*Installation, bool) {
+func (s *Server) browserManageableInstallation(w http.ResponseWriter, r *http.Request, user *store.User) (*store.Installation, bool) {
 	id, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
 		writeGHError(w, http.StatusBadRequest, "Invalid installation ID")
@@ -329,7 +330,7 @@ func (s *Server) browserManageableInstallation(w http.ResponseWriter, r *http.Re
 	return nil, false
 }
 
-func (s *Server) resolveInstallTarget(ctx context.Context, user *User, targetLogin string) (string, int, bool) {
+func (s *Server) resolveInstallTarget(ctx context.Context, user *store.User, targetLogin string) (string, int, bool) {
 	if targetLogin == user.Login {
 		return "User", user.ID, true
 	}
@@ -366,7 +367,7 @@ func (s *Server) resolveInstallationRepositorySelection(targetLogin, selection s
 }
 
 func copyInstallationPermissions(perms map[string]string) map[string]string {
-	return normalizeAppPermissions(perms)
+	return store.NormalizeAppPermissions(perms)
 }
 
 func (s *Server) handleManifestConversion(w http.ResponseWriter, r *http.Request) {
@@ -521,10 +522,10 @@ func (s *Server) handleCreateInstallationToken(w http.ResponseWriter, r *http.Re
 	// returns repository_selection="selected" and a `repositories` array of the
 	// scoped repos. Resolve the token's repo IDs against the installation's
 	// owned repos.
-	var scopedRepos []*Repo
+	var scopedRepos []*store.Repo
 	if len(token.RepositoryIDs) > 0 {
 		owned := s.store.ListReposByOwner(inst.TargetLogin)
-		byID := make(map[int]*Repo, len(owned))
+		byID := make(map[int]*store.Repo, len(owned))
 		for _, repo := range owned {
 			byID[repo.ID] = repo
 		}
@@ -592,7 +593,7 @@ func (s *Server) handleGetRepoInstallation(w http.ResponseWriter, r *http.Reques
 
 // JSON serializers
 
-func appToJSON(st *Store, app *App, includePEM bool) map[string]interface{} {
+func appToJSON(st *store.Store, app *store.App, includePEM bool) map[string]interface{} {
 	result := map[string]interface{}{
 		"id":                  app.ID,
 		"node_id":             app.NodeID,
@@ -621,17 +622,17 @@ func appToJSON(st *Store, app *App, includePEM bool) map[string]interface{} {
 // matching the `owner` object real GitHub returns on GET /app and
 // GET /apps/{slug}. App loading and creation validate OwnerID, so a missing
 // owner is corrupt state and is exposed as null rather than a fabricated user.
-func appOwnerJSON(st *Store, app *App) map[string]interface{} {
+func appOwnerJSON(st *store.Store, app *store.App) map[string]interface{} {
 	st.Mu.RLock()
 	owner := st.Users[app.OwnerID]
 	st.Mu.RUnlock()
 	if owner == nil {
 		return nil
 	}
-	return userToJSON(owner)
+	return store.UserToJSON(owner)
 }
 
-func installationToJSON(inst *Installation) map[string]interface{} {
+func installationToJSON(inst *store.Installation) map[string]interface{} {
 	if inst == nil {
 		return nil
 	}
@@ -685,13 +686,13 @@ func installationToJSON(inst *Installation) map[string]interface{} {
 	if inst.SuspendedAt != nil {
 		out["suspended_at"] = inst.SuspendedAt.UTC().Format(time.RFC3339)
 		if inst.SuspendedBy != nil {
-			out["suspended_by"] = userToJSON(inst.SuspendedBy)
+			out["suspended_by"] = store.UserToJSON(inst.SuspendedBy)
 		}
 	}
 	return out
 }
 
-func installationTokenToJSON(token *InstallationToken, inst *Installation, scopedRepos []*Repo, st *Store, baseURL string) map[string]interface{} {
+func installationTokenToJSON(token *store.InstallationToken, inst *store.Installation, scopedRepos []*store.Repo, st *store.Store, baseURL string) map[string]interface{} {
 	// repository_selection reflects the token's effective scope: "selected"
 	// when minted with a repository subset, otherwise the installation's.
 	selection := ""
@@ -710,7 +711,7 @@ func installationTokenToJSON(token *InstallationToken, inst *Installation, scope
 	if len(token.RepositoryIDs) > 0 {
 		repoJSON := make([]map[string]interface{}, 0, len(scopedRepos))
 		for _, repo := range scopedRepos {
-			repoJSON = append(repoJSON, repoToJSON(repo, st, baseURL))
+			repoJSON = append(repoJSON, store.RepoToJSON(repo, st, baseURL))
 		}
 		out["repositories"] = repoJSON
 	}
@@ -727,7 +728,7 @@ func (s *Server) handleListUserInstallations(w http.ResponseWriter, r *http.Requ
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
 	}
-	var all []*Installation
+	var all []*store.Installation
 	for _, inst := range s.snapshotInstallations() {
 		if inst.TargetLogin == user.Login {
 			all = append(all, inst)
@@ -777,7 +778,7 @@ func (s *Server) handleListUserInstallationRepos(w http.ResponseWriter, r *http.
 	base := s.baseURL(r)
 	repoJSON := make([]map[string]interface{}, 0, len(page))
 	for _, repo := range page {
-		repoJSON = append(repoJSON, repoToJSON(repo, s.store, base))
+		repoJSON = append(repoJSON, store.RepoToJSON(repo, s.store, base))
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"total_count":          len(repos),
@@ -793,7 +794,7 @@ func (s *Server) handleListUserInstallationRepos(w http.ResponseWriter, r *http.
 // Read endpoints accept active organization members, matching
 // /user/installations. Mutations require an organization owner. A user-account
 // installation is visible and mutable only by that account's user.
-func (s *Server) userAccessibleInstallation(ctx context.Context, user *User, id int, requireAdmin bool) (*Installation, bool) {
+func (s *Server) userAccessibleInstallation(ctx context.Context, user *store.User, id int, requireAdmin bool) (*store.Installation, bool) {
 	inst := s.store.GetInstallation(id)
 	if inst == nil || user == nil {
 		return nil, false
@@ -860,7 +861,7 @@ func (s *Server) handleSuspendInstallation(w http.ResponseWriter, r *http.Reques
 		writeGHError(w, http.StatusForbidden, "Installation does not belong to this app")
 		return
 	}
-	if !s.store.SuspendInstallation(id, &User{Login: app.Slug + "[bot]", Type: "Bot", ID: -app.ID}) {
+	if !s.store.SuspendInstallation(id, &store.User{Login: app.Slug + "[bot]", Type: "Bot", ID: -app.ID}) {
 		writeGHError(w, http.StatusConflict, "Installation already suspended")
 		return
 	}
@@ -932,7 +933,7 @@ func (s *Server) handleListOrgInstallations(w http.ResponseWriter, r *http.Reque
 		writeGHError(w, http.StatusForbidden, "Must be an organization owner.")
 		return
 	}
-	var all []*Installation
+	var all []*store.Installation
 	for _, inst := range s.snapshotInstallations() {
 		if inst.TargetType == "Organization" && inst.TargetLogin == org.Login {
 			all = append(all, inst)
@@ -1005,11 +1006,11 @@ func (s *Server) handleUserInstallationRepoMutation(w http.ResponseWriter, r *ht
 		return
 	}
 	if inst.RepositorySelection != "selected" {
-		writeGHValidationError(w, "Installation", "repository_selection", "not_selected")
+		store.WriteGHValidationError(w, "Installation", "repository_selection", "not_selected")
 		return
 	}
 	repo := s.store.GetRepoByID(repoID)
-	if !installationOwnsRepo(inst, repo) {
+	if !store.InstallationOwnsRepo(inst, repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -1050,7 +1051,7 @@ func (s *Server) handleListInstallationRepositories(w http.ResponseWriter, r *ht
 	base := s.baseURL(r)
 	repoJSON := make([]map[string]interface{}, 0, len(page))
 	for _, repo := range page {
-		repoJSON = append(repoJSON, repoToJSON(repo, s.store, base))
+		repoJSON = append(repoJSON, store.RepoToJSON(repo, s.store, base))
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"total_count":          len(filtered),
@@ -1061,20 +1062,20 @@ func (s *Server) handleListInstallationRepositories(w http.ResponseWriter, r *ht
 
 // snapshotInstallations returns a slice copy of every installation under
 // a single RLock; lets handlers iterate without holding the store lock.
-func (s *Server) snapshotInstallations() []*Installation {
+func (s *Server) snapshotInstallations() []*store.Installation {
 	s.store.Mu.RLock()
 	defer s.store.Mu.RUnlock()
-	out := make([]*Installation, 0, len(s.store.Installations))
+	out := make([]*store.Installation, 0, len(s.store.Installations))
 	for _, inst := range s.store.Installations {
 		out = append(out, inst)
 	}
 	return out
 }
 
-func (s *Server) snapshotGitHubApps() []*App {
+func (s *Server) snapshotGitHubApps() []*store.App {
 	s.store.Mu.RLock()
 	defer s.store.Mu.RUnlock()
-	out := make([]*App, 0, len(s.store.Apps))
+	out := make([]*store.App, 0, len(s.store.Apps))
 	for _, app := range s.store.Apps {
 		out = append(out, app)
 	}
@@ -1084,7 +1085,7 @@ func (s *Server) snapshotGitHubApps() []*App {
 // installationAccessibleRepoIDs returns the set of repo IDs the installation
 // can reach: the target's owned repos, narrowed to SelectedRepoIDs when the
 // installation is in "selected" mode.
-func installationAccessibleRepoIDs(st *Store, inst *Installation) map[int]struct{} {
+func installationAccessibleRepoIDs(st *store.Store, inst *store.Installation) map[int]struct{} {
 	owned := st.ListReposByOwner(inst.TargetLogin)
 	out := make(map[int]struct{}, len(owned))
 	if inst.RepositorySelection == "selected" {
@@ -1107,7 +1108,7 @@ func installationAccessibleRepoIDs(st *Store, inst *Installation) map[int]struct
 
 // filterReposBySelection applies the installation's repository_selection mode
 // + token-scoped repository_ids subset.
-func filterReposBySelection(all []*Repo, inst *Installation, tok *InstallationToken) []*Repo {
+func filterReposBySelection(all []*store.Repo, inst *store.Installation, tok *store.InstallationToken) []*store.Repo {
 	out := filterInstallationRepos(all, inst)
 	if len(tok.RepositoryIDs) == 0 {
 		return out
@@ -1125,7 +1126,7 @@ func filterReposBySelection(all []*Repo, inst *Installation, tok *InstallationTo
 	return filtered
 }
 
-func filterInstallationRepos(all []*Repo, inst *Installation) []*Repo {
+func filterInstallationRepos(all []*store.Repo, inst *store.Installation) []*store.Repo {
 	allowed := map[int]struct{}{}
 	if inst.RepositorySelection == "selected" {
 		for _, id := range inst.SelectedRepoIDs {
@@ -1136,7 +1137,7 @@ func filterInstallationRepos(all []*Repo, inst *Installation) []*Repo {
 			allowed[r.ID] = struct{}{}
 		}
 	}
-	out := make([]*Repo, 0, len(all))
+	out := make([]*store.Repo, 0, len(all))
 	for _, r := range all {
 		if _, ok := allowed[r.ID]; ok {
 			out = append(out, r)
@@ -1149,7 +1150,7 @@ func filterInstallationRepos(all []*Repo, inst *Installation) []*Repo {
 // created | deleted | suspend | unsuspend | new_permissions_accepted) to
 // the app's configured webhook URL, and records the delivery on the
 // app-level deliveries queue.
-func (s *Server) emitInstallationEvent(app *App, action string, inst *Installation) {
+func (s *Server) emitInstallationEvent(app *store.App, action string, inst *store.Installation) {
 	if app == nil || app.WebhookURL == "" || !app.WebhookActive {
 		return
 	}
@@ -1162,7 +1163,7 @@ func (s *Server) emitInstallationEvent(app *App, action string, inst *Installati
 
 // emitInstallationRepositoriesEvent fires an `installation_repositories`
 // webhook (action: added | removed).
-func (s *Server) emitInstallationRepositoriesEvent(app *App, action string, inst *Installation, repoIDsChanged []int) {
+func (s *Server) emitInstallationRepositoriesEvent(app *store.App, action string, inst *store.Installation, repoIDsChanged []int) {
 	if app == nil || app.WebhookURL == "" || !app.WebhookActive {
 		return
 	}
@@ -1175,7 +1176,7 @@ func (s *Server) emitInstallationRepositoriesEvent(app *App, action string, inst
 
 // deliverAppWebhook is the app-level analogue of deliverWebhook: same
 // retry shape, but records to AppHookDeliveries.
-func (s *Server) deliverAppWebhook(app *App, event, action string, installationID int, payloadBytes []byte) {
+func (s *Server) deliverAppWebhook(app *store.App, event, action string, installationID int, payloadBytes []byte) {
 	hook := appWebhookPseudoHook(app)
 	guid := uuid.New().String()
 	backoffs := []time.Duration{0, 1 * time.Second, 5 * time.Second}
@@ -1205,7 +1206,7 @@ func (s *Server) handleRevokeInstallationToken(w http.ResponseWriter, r *http.Re
 	if scheme == "token" || scheme == "bearer" {
 		tokenStr = cred
 	}
-	if !strings.HasPrefix(tokenStr, tokenPrefixInstallation) {
+	if !strings.HasPrefix(tokenStr, store.TokenPrefixInstallation) {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
 	}

@@ -6,10 +6,12 @@ import (
 	"sort"
 	"strconv"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func newInviteCodeE() (string, error) {
-	code, err := randomHex(6)
+	code, err := store.RandomHex(6)
 	if err != nil {
 		return "", fmt.Errorf("generate Classroom invite code: %w", err)
 	}
@@ -47,12 +49,12 @@ func (s *Server) classroomLocked(next http.HandlerFunc) http.HandlerFunc {
 
 // --- JSON shapes ---
 
-func classroomURL(baseURL string, c *Classroom) string {
+func classroomURL(baseURL string, c *store.Classroom) string {
 	return baseURL + "/ui/classrooms/" + strconv.Itoa(c.ID)
 }
 
 // simpleClassroomJSON renders the spec `simple-classroom` shape.
-func simpleClassroomJSON(c *Classroom, baseURL string) map[string]interface{} {
+func simpleClassroomJSON(c *store.Classroom, baseURL string) map[string]interface{} {
 	return map[string]interface{}{
 		"id":       c.ID,
 		"name":     c.Name,
@@ -63,7 +65,7 @@ func simpleClassroomJSON(c *Classroom, baseURL string) map[string]interface{} {
 
 // classroomJSON renders the spec `classroom` shape (simple-classroom plus
 // the owning organization).
-func (s *Server) classroomJSON(c *Classroom, baseURL string) map[string]interface{} {
+func (s *Server) classroomJSON(c *store.Classroom, baseURL string) map[string]interface{} {
 	out := simpleClassroomJSON(c, baseURL)
 	org := s.store.GetOrgByID(c.OrgID)
 	if org == nil {
@@ -82,7 +84,7 @@ func (s *Server) classroomJSON(c *Classroom, baseURL string) map[string]interfac
 
 // simpleClassroomRepositoryJSON renders the spec `simple-classroom-repository`
 // shape from a real repository.
-func simpleClassroomRepositoryJSON(repo *Repo, baseURL string) map[string]interface{} {
+func simpleClassroomRepositoryJSON(repo *store.Repo, baseURL string) map[string]interface{} {
 	if repo == nil {
 		return nil
 	}
@@ -126,7 +128,7 @@ type classroomAcceptedDerivedState struct {
 // classroomAcceptedState derives Classroom reporting exclusively from the
 // generated repository and completed GitHub Actions jobs. The management
 // product cannot assert that a student submitted, passed, or earned points.
-func (s *Server) classroomAcceptedState(a *ClassroomAssignment, aa *ClassroomAcceptedAssignment) classroomAcceptedDerivedState {
+func (s *Server) classroomAcceptedState(a *store.ClassroomAssignment, aa *store.ClassroomAcceptedAssignment) classroomAcceptedDerivedState {
 	acceptedAt := classroomAcceptedAt(aa)
 	state := classroomAcceptedDerivedState{submittedAt: acceptedAt}
 	if a == nil {
@@ -153,24 +155,24 @@ func (s *Server) classroomAcceptedState(a *ClassroomAssignment, aa *ClassroomAcc
 	}
 	state.submitted = a.Deadline != nil && !s.currentTime().Before(*a.Deadline)
 
-	jobResults := map[string]Result{}
+	jobResults := map[string]store.Result{}
 	s.store.Mu.RLock()
-	var latest *Workflow
+	var latest *store.Workflow
 	for _, workflow := range s.store.Workflows {
-		if workflow.RepoFullName == repo.FullName && workflow.Status == WorkflowStatusCompleted && (latest == nil || workflow.CreatedAt.After(latest.CreatedAt)) {
+		if workflow.RepoFullName == repo.FullName && workflow.Status == store.WorkflowStatusCompleted && (latest == nil || workflow.CreatedAt.After(latest.CreatedAt)) {
 			latest = workflow
 		}
 	}
 	if latest != nil {
 		for key, job := range latest.Jobs {
-			if job.Status == JobStatusCompleted {
+			if job.Status == store.JobStatusCompleted {
 				jobResults[key] = job.Result
 			}
 		}
 	}
 	s.store.Mu.RUnlock()
 	for index, test := range a.AutogradingTests {
-		if jobResults[fmt.Sprintf("autograding-%d", index+1)] == ResultSuccess {
+		if jobResults[fmt.Sprintf("autograding-%d", index+1)] == store.ResultSuccess {
 			state.awarded += test.Points
 		}
 	}
@@ -179,7 +181,7 @@ func (s *Server) classroomAcceptedState(a *ClassroomAssignment, aa *ClassroomAcc
 	return state
 }
 
-func classroomAcceptedAt(accepted *ClassroomAcceptedAssignment) time.Time {
+func classroomAcceptedAt(accepted *store.ClassroomAcceptedAssignment) time.Time {
 	if !accepted.AcceptedAt.IsZero() {
 		return accepted.AcceptedAt
 	}
@@ -189,7 +191,7 @@ func classroomAcceptedAt(accepted *ClassroomAcceptedAssignment) time.Time {
 // classroomAssignmentJSON renders the assignment shape; full=true renders
 // the spec `classroom-assignment` (full classroom + starter code repo),
 // full=false the `simple-classroom-assignment`.
-func (s *Server) classroomAssignmentJSON(a *ClassroomAssignment, baseURL string, full bool) map[string]interface{} {
+func (s *Server) classroomAssignmentJSON(a *store.ClassroomAssignment, baseURL string, full bool) map[string]interface{} {
 	accepted, submitted, passing := s.classroomAssignmentCounters(a.ID)
 	var deadline interface{}
 	if a.Deadline != nil {
@@ -240,12 +242,12 @@ func (s *Server) handleListClassrooms(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.store.Mu.RLock()
-	all := make([]*Classroom, 0, len(s.store.Classrooms))
+	all := make([]*store.Classroom, 0, len(s.store.Classrooms))
 	for _, c := range s.store.Classrooms {
 		all = append(all, c)
 	}
 	s.store.Mu.RUnlock()
-	classrooms := make([]*Classroom, 0, len(all))
+	classrooms := make([]*store.Classroom, 0, len(all))
 	for _, c := range all {
 		org := s.store.GetOrgByID(c.OrgID)
 		if org != nil && (user.SiteAdmin || s.viewerCanAdminOrg(r.Context(), org.Login)) {
@@ -267,7 +269,7 @@ func (s *Server) handleListClassrooms(w http.ResponseWriter, r *http.Request) {
 // callers who do not administer its owning organization. GitHub's Classroom
 // REST endpoints are organization-administrator endpoints, not public course
 // catalogues.
-func (s *Server) classroomForAdmin(w http.ResponseWriter, r *http.Request, id int) *Classroom {
+func (s *Server) classroomForAdmin(w http.ResponseWriter, r *http.Request, id int) *store.Classroom {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "Requires authentication")
@@ -286,7 +288,7 @@ func (s *Server) classroomForAdmin(w http.ResponseWriter, r *http.Request, id in
 	return c
 }
 
-func (s *Server) classroomAssignmentForAdmin(w http.ResponseWriter, r *http.Request, id int) *ClassroomAssignment {
+func (s *Server) classroomAssignmentForAdmin(w http.ResponseWriter, r *http.Request, id int) *store.ClassroomAssignment {
 	a := s.store.GetClassroomAssignment(id)
 	if a == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -322,7 +324,7 @@ func (s *Server) handleListClassroomAssignments(w http.ResponseWriter, r *http.R
 		return
 	}
 	s.store.Mu.RLock()
-	assignments := make([]*ClassroomAssignment, 0)
+	assignments := make([]*store.ClassroomAssignment, 0)
 	for _, a := range s.store.ClassroomAssignments {
 		if a.ClassroomID == c.ID {
 			assignments = append(assignments, a)

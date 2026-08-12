@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/graphql/gqlerrors"
 	"github.com/graphql-go/graphql/language/ast"
@@ -271,11 +272,11 @@ func (s *Resolver) addNodeFieldsToSchema(queryType *graphql.Object, nodeInterfac
 }
 
 func (s *Resolver) graphQLNodeByID(ctx context.Context, nodeID string) interface{} {
-	if user := findUserByNodeID(s.store, nodeID); user != nil {
+	if user := store.FindUserByNodeID(s.store, nodeID); user != nil {
 		return userToGraphQL(user)
 	}
 	s.store.Mu.RLock()
-	var organization *Org
+	var organization *store.Org
 	for _, candidate := range s.store.Orgs {
 		if candidate.NodeID == nodeID {
 			copy := *candidate
@@ -287,20 +288,20 @@ func (s *Resolver) graphQLNodeByID(ctx context.Context, nodeID string) interface
 	if organization != nil {
 		return orgToGraphQL(organization)
 	}
-	if repo := findRepoByNodeID(s.store, nodeID); repo != nil {
+	if repo := store.FindRepoByNodeID(s.store, nodeID); repo != nil {
 		if repo.Private && !s.viewerCanReadRepo(ctx, repo) {
 			return nil
 		}
 		return repoToGraphQL(s.store, s.store.SnapRepo(repo))
 	}
-	if issue := findIssueByNodeID(s.store, nodeID); issue != nil {
+	if issue := store.FindIssueByNodeID(s.store, nodeID); issue != nil {
 		repo := s.store.GetRepoByID(issue.RepoID)
 		if repo == nil || (repo.Private && !s.viewerCanReadRepo(ctx, repo)) {
 			return nil
 		}
 		return issueToGQL(issue, s.store)
 	}
-	if pullRequest := findPullRequestByNodeID(s.store, nodeID); pullRequest != nil {
+	if pullRequest := store.FindPullRequestByNodeID(s.store, nodeID); pullRequest != nil {
 		repo := s.store.GetRepoByID(pullRequest.RepoID)
 		if repo == nil || (repo.Private && !s.viewerCanReadRepo(ctx, repo)) {
 			return nil
@@ -593,7 +594,7 @@ func graphqlStringValue(value ast.Value, variables map[string]interface{}) (stri
 }
 
 // userToGraphQL converts a User to a map with camelCase keys for GraphQL resolvers.
-func userToGraphQL(u *User) map[string]interface{} {
+func userToGraphQL(u *store.User) map[string]interface{} {
 	return map[string]interface{}{
 		"nodeID":       u.NodeID,
 		"databaseId":   u.ID,

@@ -6,6 +6,8 @@ import (
 	"net/url"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // TestAPIInsights_StatsFromObservedTraffic drives real REST traffic with a
@@ -24,9 +26,9 @@ func TestAPIInsights_StatsFromObservedTraffic(t *testing.T) {
 		t.Fatal("create org failed")
 	}
 	member := srv.createTestUser(t, "insights-member")
-	srv.store.SetMembership(org.Login, member.ID, OrgRoleMember, MembershipStateActive)
+	srv.store.SetMembership(org.Login, member.ID, store.OrgRoleMember, store.MembershipStateActive)
 	memberToken := "ghp_insights_member_token"
-	srv.store.Tokens[memberToken] = &Token{Value: memberToken, UserID: member.ID}
+	srv.store.Tokens[memberToken] = &store.Token{Value: memberToken, UserID: member.ID}
 
 	minTS := fixedNow.Add(-time.Hour).Format(time.RFC3339)
 
@@ -202,7 +204,7 @@ func TestAPIInsights_ParameterValidation(t *testing.T) {
 
 	// Non-admin caller is forbidden.
 	outsider := srv.createTestUser(t, "insights-outsider")
-	srv.store.Tokens["ghp_insights_outsider"] = &Token{Value: "ghp_insights_outsider", UserID: outsider.ID}
+	srv.store.Tokens["ghp_insights_outsider"] = &store.Token{Value: "ghp_insights_outsider", UserID: outsider.ID}
 	resp = srv.get(t, "/api/v3/orgs/insights-val-org/insights/api/summary-stats?min_timestamp="+minTS, "ghp_insights_outsider")
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusForbidden {

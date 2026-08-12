@@ -5,31 +5,33 @@ import (
 	"sort"
 	"strconv"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func (s *Server) registerGHIssueRoutes() {
 	// Labels — issues:write covers labels (real GH conflates the two; admin
 	// would be required for organization-level changes which bleephub doesn't model).
-	s.route("POST /api/v3/repos/{owner}/{repo}/labels", s.requirePerm(scopeIssues, permWrite, s.handleCreateLabel))
+	s.route("POST /api/v3/repos/{owner}/{repo}/labels", s.requirePerm(store.ScopeIssues, store.PermWrite, s.handleCreateLabel))
 	s.route("GET /api/v3/repos/{owner}/{repo}/labels", s.handleListLabels)
 	s.route("GET /api/v3/repos/{owner}/{repo}/labels/{name}", s.handleGetLabel)
-	s.route("PATCH /api/v3/repos/{owner}/{repo}/labels/{name}", s.requirePerm(scopeIssues, permWrite, s.handleUpdateLabel))
-	s.route("DELETE /api/v3/repos/{owner}/{repo}/labels/{name}", s.requirePerm(scopeIssues, permWrite, s.handleDeleteLabel))
+	s.route("PATCH /api/v3/repos/{owner}/{repo}/labels/{name}", s.requirePerm(store.ScopeIssues, store.PermWrite, s.handleUpdateLabel))
+	s.route("DELETE /api/v3/repos/{owner}/{repo}/labels/{name}", s.requirePerm(store.ScopeIssues, store.PermWrite, s.handleDeleteLabel))
 
 	// Milestones
-	s.route("POST /api/v3/repos/{owner}/{repo}/milestones", s.requirePerm(scopeIssues, permWrite, s.handleCreateMilestone))
+	s.route("POST /api/v3/repos/{owner}/{repo}/milestones", s.requirePerm(store.ScopeIssues, store.PermWrite, s.handleCreateMilestone))
 	s.route("GET /api/v3/repos/{owner}/{repo}/milestones", s.handleListMilestones)
 	s.route("GET /api/v3/repos/{owner}/{repo}/milestones/{number}/labels", s.handleListMilestoneLabels)
 	s.route("GET /api/v3/repos/{owner}/{repo}/milestones/{number}", s.handleGetMilestone)
-	s.route("PATCH /api/v3/repos/{owner}/{repo}/milestones/{number}", s.requirePerm(scopeIssues, permWrite, s.handleUpdateMilestone))
-	s.route("DELETE /api/v3/repos/{owner}/{repo}/milestones/{number}", s.requirePerm(scopeIssues, permWrite, s.handleDeleteMilestone))
+	s.route("PATCH /api/v3/repos/{owner}/{repo}/milestones/{number}", s.requirePerm(store.ScopeIssues, store.PermWrite, s.handleUpdateMilestone))
+	s.route("DELETE /api/v3/repos/{owner}/{repo}/milestones/{number}", s.requirePerm(store.ScopeIssues, store.PermWrite, s.handleDeleteMilestone))
 
 	// Issues
-	s.route("POST /api/v3/repos/{owner}/{repo}/issues", s.requirePerm(scopeIssues, permWrite, s.handleCreateIssue))
+	s.route("POST /api/v3/repos/{owner}/{repo}/issues", s.requirePerm(store.ScopeIssues, store.PermWrite, s.handleCreateIssue))
 	s.route("GET /api/v3/repos/{owner}/{repo}/issues", s.handleListIssues)
 	s.route("GET /api/v3/orgs/{org}/issues", s.handleListOrgIssues)
 	s.route("GET /api/v3/repos/{owner}/{repo}/issues/{number}", s.handleGetIssue)
-	s.route("PATCH /api/v3/repos/{owner}/{repo}/issues/{number}", s.requirePerm(scopeIssues, permWrite, s.handleUpdateIssue))
+	s.route("PATCH /api/v3/repos/{owner}/{repo}/issues/{number}", s.requirePerm(store.ScopeIssues, store.PermWrite, s.handleUpdateIssue))
 
 	// Issue comments. GET /issues/comments/{id} conflicts with
 	// GET /issues/{number}/reactions (and GET /issues/events/{id}) under
@@ -37,28 +39,28 @@ func (s *Server) registerGHIssueRoutes() {
 	// handleIssuesTwoSegGetDispatch.
 	s.route("GET /api/v3/repos/{owner}/{repo}/issues/{p1}/{p2}", s.handleIssuesTwoSegGetDispatch)
 
-	s.route("POST /api/v3/repos/{owner}/{repo}/issues/{number}/comments", s.requirePerm(scopeIssues, permWrite, s.handleCreateIssueComment))
-	s.route("PATCH /api/v3/repos/{owner}/{repo}/issues/comments/{comment_id}", s.requirePerm(scopeIssues, permWrite, s.handleUpdateIssueComment))
+	s.route("POST /api/v3/repos/{owner}/{repo}/issues/{number}/comments", s.requirePerm(store.ScopeIssues, store.PermWrite, s.handleCreateIssueComment))
+	s.route("PATCH /api/v3/repos/{owner}/{repo}/issues/comments/{comment_id}", s.requirePerm(store.ScopeIssues, store.PermWrite, s.handleUpdateIssueComment))
 
 	// Issue + PR moderation — comment-by-id delete + lock/unlock collide at
 	// `/issues/{p1}/{p2}` because Go 1.22's mux can't disambiguate
 	// `/issues/comments/{id}` from `/issues/{n}/lock`. Dispatch via a
 	// single 2-segment handler at delete time.
-	s.route("DELETE /api/v3/repos/{owner}/{repo}/issues/{p1}/{p2}", s.requirePerm(scopeIssues, permWrite, s.handleIssuesDeleteDispatch))
-	s.route("PUT /api/v3/repos/{owner}/{repo}/issues/{number}/lock", s.requirePerm(scopeIssues, permWrite, s.handleLockIssue))
+	s.route("DELETE /api/v3/repos/{owner}/{repo}/issues/{p1}/{p2}", s.requirePerm(store.ScopeIssues, store.PermWrite, s.handleIssuesDeleteDispatch))
+	s.route("PUT /api/v3/repos/{owner}/{repo}/issues/{number}/lock", s.requirePerm(store.ScopeIssues, store.PermWrite, s.handleLockIssue))
 
 	// Issue label management
-	s.route("POST /api/v3/repos/{owner}/{repo}/issues/{number}/labels", s.requirePerm(scopeIssues, permWrite, s.handleAddIssueLabels))
-	s.route("PUT /api/v3/repos/{owner}/{repo}/issues/{number}/labels", s.requirePerm(scopeIssues, permWrite, s.handleSetIssueLabels))
-	s.route("DELETE /api/v3/repos/{owner}/{repo}/issues/{number}/labels", s.requirePerm(scopeIssues, permWrite, s.handleClearIssueLabels))
+	s.route("POST /api/v3/repos/{owner}/{repo}/issues/{number}/labels", s.requirePerm(store.ScopeIssues, store.PermWrite, s.handleAddIssueLabels))
+	s.route("PUT /api/v3/repos/{owner}/{repo}/issues/{number}/labels", s.requirePerm(store.ScopeIssues, store.PermWrite, s.handleSetIssueLabels))
+	s.route("DELETE /api/v3/repos/{owner}/{repo}/issues/{number}/labels", s.requirePerm(store.ScopeIssues, store.PermWrite, s.handleClearIssueLabels))
 
 	// Issue comments (repo-level)
 	s.route("GET /api/v3/repos/{owner}/{repo}/issues/comments", s.handleListRepoIssueComments)
-	s.route("PUT /api/v3/repos/{owner}/{repo}/issues/comments/{comment_id}/pin", s.requirePerm(scopeIssues, permWrite, s.handlePinIssueComment))
+	s.route("PUT /api/v3/repos/{owner}/{repo}/issues/comments/{comment_id}/pin", s.requirePerm(store.ScopeIssues, store.PermWrite, s.handlePinIssueComment))
 
 	// Issue assignees
-	s.route("POST /api/v3/repos/{owner}/{repo}/issues/{number}/assignees", s.requirePerm(scopeIssues, permWrite, s.handleAddIssueAssignees))
-	s.route("DELETE /api/v3/repos/{owner}/{repo}/issues/{number}/assignees", s.requirePerm(scopeIssues, permWrite, s.handleRemoveIssueAssignees))
+	s.route("POST /api/v3/repos/{owner}/{repo}/issues/{number}/assignees", s.requirePerm(store.ScopeIssues, store.PermWrite, s.handleAddIssueAssignees))
+	s.route("DELETE /api/v3/repos/{owner}/{repo}/issues/{number}/assignees", s.requirePerm(store.ScopeIssues, store.PermWrite, s.handleRemoveIssueAssignees))
 
 	// Issue timeline + events
 	s.route("GET /api/v3/repos/{owner}/{repo}/issues/events", s.handleListRepoIssueEvents)
@@ -67,16 +69,16 @@ func (s *Server) registerGHIssueRoutes() {
 	// POST/PUT live in gh_issue_fields.go. List GETs and the sub-issue
 	// removal dispatch through the shared two-/three-segment wildcard
 	// handlers below.
-	s.route("POST /api/v3/repos/{owner}/{repo}/issues/{number}/sub_issues", s.requirePerm(scopeIssues, permWrite, s.handleCreateSubIssue))
-	s.route("PATCH /api/v3/repos/{owner}/{repo}/issues/{number}/sub_issues/priority", s.requirePerm(scopeIssues, permWrite, s.handleReprioritizeSubIssue))
-	s.route("POST /api/v3/repos/{owner}/{repo}/issues/{number}/dependencies/blocked_by", s.requirePerm(scopeIssues, permWrite, s.handleAddIssueDependencyBlockedBy))
-	s.route("DELETE /api/v3/repos/{owner}/{repo}/issues/{number}/dependencies/blocked_by/{issue_id}", s.requirePerm(scopeIssues, permWrite, s.handleRemoveIssueDependencyBlockedBy))
+	s.route("POST /api/v3/repos/{owner}/{repo}/issues/{number}/sub_issues", s.requirePerm(store.ScopeIssues, store.PermWrite, s.handleCreateSubIssue))
+	s.route("PATCH /api/v3/repos/{owner}/{repo}/issues/{number}/sub_issues/priority", s.requirePerm(store.ScopeIssues, store.PermWrite, s.handleReprioritizeSubIssue))
+	s.route("POST /api/v3/repos/{owner}/{repo}/issues/{number}/dependencies/blocked_by", s.requirePerm(store.ScopeIssues, store.PermWrite, s.handleAddIssueDependencyBlockedBy))
+	s.route("DELETE /api/v3/repos/{owner}/{repo}/issues/{number}/dependencies/blocked_by/{issue_id}", s.requirePerm(store.ScopeIssues, store.PermWrite, s.handleRemoveIssueDependencyBlockedBy))
 
 	// Go's mux cannot disambiguate 3-segment issue DELETE paths (e.g.
 	// /issues/{n}/labels/{name} vs /issues/{n}/reactions/{id}), so they
 	// dispatch from one handler. Direct routes for labels/sub-issues are more
 	// specific and take precedence.
-	s.route("DELETE /api/v3/repos/{owner}/{repo}/issues/{p1}/{p2}/{p3}", s.requirePerm(scopeIssues, permWrite, s.handleIssuesThreeSegDeleteDispatch))
+	s.route("DELETE /api/v3/repos/{owner}/{repo}/issues/{p1}/{p2}/{p3}", s.requirePerm(store.ScopeIssues, store.PermWrite, s.handleIssuesThreeSegDeleteDispatch))
 
 	// 3-segment issue GET paths (e.g. /issues/comments/{id}/reactions vs
 	// /issues/{n}/dependencies/blocked_by) also dispatch from one handler.
@@ -87,24 +89,24 @@ func (s *Server) registerGHIssueRoutes() {
 
 // buildLabelPayload assembles the GitHub `label` webhook event body so that
 // `on: label` workflows fire for label create/edit/delete.
-func buildLabelPayload(repo *Repo, labelJSON map[string]interface{}, sender *User, action string) map[string]interface{} {
+func buildLabelPayload(repo *store.Repo, labelJSON map[string]interface{}, sender *store.User, action string) map[string]interface{} {
 	return map[string]interface{}{
 		"action":     action,
 		"label":      labelJSON,
 		"repository": repoPayload(repo),
-		"sender":     userToJSON(sender),
+		"sender":     store.UserToJSON(sender),
 	}
 }
 
 // buildMilestonePayload assembles the GitHub `milestone` webhook event body so
 // that `on: milestone` workflows fire for milestone create/edit/close/reopen/
 // delete (ACT-026).
-func buildMilestonePayload(repo *Repo, milestoneJSON map[string]interface{}, sender *User, action string) map[string]interface{} {
+func buildMilestonePayload(repo *store.Repo, milestoneJSON map[string]interface{}, sender *store.User, action string) map[string]interface{} {
 	return map[string]interface{}{
 		"action":     action,
 		"milestone":  milestoneJSON,
 		"repository": repoPayload(repo),
-		"sender":     userToJSON(sender),
+		"sender":     store.UserToJSON(sender),
 	}
 }
 
@@ -132,13 +134,13 @@ func (s *Server) handleCreateLabel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Name == "" {
-		writeGHValidationError(w, "Label", "name", "missing_field")
+		store.WriteGHValidationError(w, "Label", "name", "missing_field")
 		return
 	}
 
 	label := s.store.CreateLabel(repo.ID, req.Name, req.Description, req.Color)
 	if label == nil {
-		writeGHValidationError(w, "Label", "name", "already_exists")
+		store.WriteGHValidationError(w, "Label", "name", "already_exists")
 		return
 	}
 
@@ -215,7 +217,7 @@ func (s *Server) handleUpdateLabel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.store.UpdateLabel(label.ID, func(l *IssueLabel) {
+	s.store.UpdateLabel(label.ID, func(l *store.IssueLabel) {
 		if v, ok := req["new_name"].(string); ok {
 			l.Name = v
 		}
@@ -399,7 +401,7 @@ func (s *Server) handleUpdateMilestone(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.store.UpdateMilestone(ms.ID, func(m *Milestone) {
+	s.store.UpdateMilestone(ms.ID, func(m *store.Milestone) {
 		if v, ok := req["title"].(string); ok {
 			m.Title = v
 		}
@@ -413,7 +415,7 @@ func (s *Server) handleUpdateMilestone(w http.ResponseWriter, r *http.Request) {
 			} else if v == "open" {
 				m.ClosedAt = nil
 			}
-			m.State = MilestoneState(v)
+			m.State = store.MilestoneState(v)
 		}
 	})
 
@@ -494,7 +496,7 @@ func (s *Server) handleListMilestoneLabels(w http.ResponseWriter, r *http.Reques
 
 	s.store.Mu.RLock()
 	seen := map[int]bool{}
-	var labels []*IssueLabel
+	var labels []*store.IssueLabel
 	collect := func(labelIDs []int) {
 		for _, lid := range labelIDs {
 			if seen[lid] {
@@ -529,7 +531,7 @@ func (s *Server) handleListMilestoneLabels(w http.ResponseWriter, r *http.Reques
 
 // --- JSON converters ---
 
-func issueLabelToJSON(l *IssueLabel, baseURL, repoFullName string) map[string]interface{} {
+func issueLabelToJSON(l *store.IssueLabel, baseURL, repoFullName string) map[string]interface{} {
 	return map[string]interface{}{
 		"id":          l.ID,
 		"node_id":     l.NodeID,
@@ -545,7 +547,7 @@ func issueLabelToJSON(l *IssueLabel, baseURL, repoFullName string) map[string]in
 // Open/closed issue counts are derived live from the issues and pull
 // requests attached to the milestone (PRs count because they are issues
 // internally on GitHub). Must not be called with st.mu held.
-func milestoneToJSON(ms *Milestone, st *Store, baseURL, repoFullName string) map[string]interface{} {
+func milestoneToJSON(ms *store.Milestone, st *store.Store, baseURL, repoFullName string) map[string]interface{} {
 	var dueOn interface{}
 	if ms.DueOn != nil {
 		dueOn = ms.DueOn.Format(time.RFC3339)
@@ -558,7 +560,7 @@ func milestoneToJSON(ms *Milestone, st *Store, baseURL, repoFullName string) map
 	st.Mu.RLock()
 	var creatorJSON interface{}
 	if u, ok := st.Users[ms.CreatorID]; ok {
-		creatorJSON = userToJSON(u)
+		creatorJSON = store.UserToJSON(u)
 	}
 	openIssues, closedIssues := 0, 0
 	for _, issue := range st.Issues {
@@ -708,7 +710,7 @@ func (s *Server) handleListIssueLabels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.store.Mu.RLock()
-	labels := make([]*IssueLabel, 0, len(issue.LabelIDs))
+	labels := make([]*store.IssueLabel, 0, len(issue.LabelIDs))
 	for _, id := range issue.LabelIDs {
 		if label := s.store.Labels[id]; label != nil {
 			labels = append(labels, label)

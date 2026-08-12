@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // Issue + PR moderation: comment edit/delete, issue/PR locking.
@@ -55,7 +57,7 @@ func (s *Server) handleUpdateIssueComment(w http.ResponseWriter, r *http.Request
 	}
 
 	// Optimistic concurrency (STORE-016): reject a stale If-Match with 412.
-	if !checkIfMatch(w, r, commentToJSON(existing, s.store, s.baseURL(r), repo.FullName, commentParentNumber(s.store, existing))) {
+	if !checkIfMatch(w, r, store.CommentToJSON(existing, s.store, s.baseURL(r), repo.FullName, commentParentNumber(s.store, existing))) {
 		return
 	}
 
@@ -80,7 +82,7 @@ func (s *Server) handleUpdateIssueComment(w http.ResponseWriter, r *http.Request
 	parentNumber := commentParentNumber(s.store, updated)
 	s.emitWebhookEvent(repo.FullName, "issue_comment", "edited",
 		buildIssueCommentPayload(s.store, repo, updated, user, "edited", s.baseURL(r), parentNumber))
-	writeJSON(w, http.StatusOK, commentToJSON(updated, s.store, s.baseURL(r), repo.FullName, parentNumber))
+	writeJSON(w, http.StatusOK, store.CommentToJSON(updated, s.store, s.baseURL(r), repo.FullName, parentNumber))
 }
 
 func (s *Server) handleDeleteIssueComment(w http.ResponseWriter, r *http.Request, idStr string) {
@@ -146,7 +148,7 @@ func (s *Server) handleIssuesDeleteDispatch(w http.ResponseWriter, r *http.Reque
 // commentParentNumber returns the issue or PR number that owns the comment,
 // or 0 when neither parent can be found (caller renders an URL without the
 // number segment).
-func commentParentNumber(st *Store, c *Comment) int {
+func commentParentNumber(st *store.Store, c *store.Comment) int {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 	switch c.ParentType {

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -182,18 +183,18 @@ func (s *Server) handleListWorkflowFilesInternal(w http.ResponseWriter, r *http.
 
 // workflowView is the JSON representation of a workflow for the management API.
 type workflowView struct {
-	ID           string                  `json:"id"`
-	Name         string                  `json:"name"`
-	RunID        int                     `json:"runId"`
-	Status       string                  `json:"status"`
-	Result       string                  `json:"result"`
-	CreatedAt    string                  `json:"createdAt"`
-	EventName    string                  `json:"eventName,omitempty"`
-	RepoFullName string                  `json:"repoFullName,omitempty"`
-	Jobs         map[string]*WorkflowJob `json:"jobs"`
+	ID           string                        `json:"id"`
+	Name         string                        `json:"name"`
+	RunID        int                           `json:"runId"`
+	Status       string                        `json:"status"`
+	Result       string                        `json:"result"`
+	CreatedAt    string                        `json:"createdAt"`
+	EventName    string                        `json:"eventName,omitempty"`
+	RepoFullName string                        `json:"repoFullName,omitempty"`
+	Jobs         map[string]*store.WorkflowJob `json:"jobs"`
 }
 
-func workflowToView(wf *Workflow) workflowView {
+func workflowToView(wf *store.Workflow) workflowView {
 	return workflowView{
 		ID:           wf.ID,
 		Name:         wf.Name,
@@ -269,10 +270,10 @@ func (s *Server) handleGetWorkflowLogs(w http.ResponseWriter, r *http.Request) {
 
 // sessionView is the JSON representation of a session for the management API.
 type sessionView struct {
-	SessionID       string `json:"sessionId"`
-	OwnerName       string `json:"ownerName"`
-	Agent           *Agent `json:"agent"`
-	PendingMessages int    `json:"pendingMessages"`
+	SessionID       string       `json:"sessionId"`
+	OwnerName       string       `json:"ownerName"`
+	Agent           *store.Agent `json:"agent"`
+	PendingMessages int          `json:"pendingMessages"`
 }
 
 func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
@@ -357,7 +358,7 @@ func (s *Server) handleAgentRefreshMessage(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if req.TargetVersion == "" {
-		writeGHValidationError(w, "AgentRefreshMessage", "targetVersion", "missing_field")
+		store.WriteGHValidationError(w, "AgentRefreshMessage", "targetVersion", "missing_field")
 		return
 	}
 
@@ -380,7 +381,7 @@ func (s *Server) handleAgentRefreshMessage(w http.ResponseWriter, r *http.Reques
 	w.WriteHeader(http.StatusAccepted)
 }
 
-func (s *Server) requireSiteAdmin(w http.ResponseWriter, r *http.Request) *User {
+func (s *Server) requireSiteAdmin(w http.ResponseWriter, r *http.Request) *store.User {
 	user := ghUserFromContext(r.Context())
 	if user == nil || !user.SiteAdmin || !credentialConveysSiteAdmin(r.Context()) {
 		writeGHError(w, http.StatusForbidden, "Must be a site administrator.")
@@ -394,7 +395,7 @@ func (s *Server) handleListUsersInternal(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	s.store.Mu.RLock()
-	users := make([]*User, 0, len(s.store.Users))
+	users := make([]*store.User, 0, len(s.store.Users))
 	for _, u := range s.store.Users {
 		users = append(users, u)
 	}
@@ -437,7 +438,7 @@ func (s *Server) handleCreateUserInternal(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if normalizedLogin == "" {
-		writeGHValidationError(w, "User", "login", "missing_field")
+		store.WriteGHValidationError(w, "User", "login", "missing_field")
 		return
 	}
 	if !s.identity.loginAllowed(normalizedLogin) {
@@ -459,7 +460,7 @@ func (s *Server) handleCreateUserInternal(w http.ResponseWriter, r *http.Request
 	s.store.Mu.Lock()
 	if _, exists := s.store.UsersByLogin[req.Login]; exists {
 		s.store.Mu.Unlock()
-		writeGHValidationError(w, "User", "login", "already_exists")
+		store.WriteGHValidationError(w, "User", "login", "already_exists")
 		return
 	}
 
@@ -469,7 +470,7 @@ func (s *Server) handleCreateUserInternal(w http.ResponseWriter, r *http.Request
 		siteAdmin = *req.SiteAdmin
 	}
 	userID := s.store.ReserveGlobalID("next_user", &s.store.NextUser)
-	u := &User{
+	u := &store.User{
 		ID:           userID,
 		NodeID:       fmt.Sprintf("U_kgDO%08d", userID),
 		Login:        req.Login,
@@ -598,7 +599,7 @@ func (s *Server) handleListOrgsInternal(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	s.store.Mu.RLock()
-	orgs := make([]*Org, 0, len(s.store.Orgs))
+	orgs := make([]*store.Org, 0, len(s.store.Orgs))
 	for _, org := range s.store.Orgs {
 		orgs = append(orgs, org)
 	}
@@ -711,7 +712,7 @@ func (s *Server) handleListTeamsInternal(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	s.store.Mu.RLock()
-	teams := make([]*Team, 0, len(s.store.Teams))
+	teams := make([]*store.Team, 0, len(s.store.Teams))
 	for _, team := range s.store.Teams {
 		teams = append(teams, team)
 	}
@@ -791,16 +792,16 @@ func (s *Server) handleUpdateTeamInternal(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	ok := s.store.UpdateTeam(org.Login, team.Slug, func(t *Team) {
+	ok := s.store.UpdateTeam(org.Login, team.Slug, func(t *store.Team) {
 		if req.Name != "" {
 			t.Name = req.Name
-			t.Slug = slugify(req.Name)
+			t.Slug = store.Slugify(req.Name)
 		}
 		if req.Description != "" {
 			t.Description = req.Description
 		}
 		if req.Privacy != "" {
-			t.Privacy = TeamPrivacy(req.Privacy)
+			t.Privacy = store.TeamPrivacy(req.Privacy)
 		}
 	})
 	if !ok {
@@ -851,7 +852,7 @@ func (s *Server) handleCreateAuditLogEventInternal(w http.ResponseWriter, r *htt
 		return
 	}
 	if req.Action == "" {
-		writeGHValidationError(w, "AuditLogEvent", "action", "missing_field")
+		store.WriteGHValidationError(w, "AuditLogEvent", "action", "missing_field")
 		return
 	}
 	e := s.recordInternalAuditEvent(req.Actor, req.Action, req.TargetType, req.TargetID, req.Org, req.Details)
@@ -876,7 +877,7 @@ func (s *Server) handleListAuditLogInternal(w http.ResponseWriter, r *http.Reque
 	}
 
 	s.store.Misc.Mu.RLock()
-	entries := make([]*AuditLogEvent, 0, len(s.store.Misc.AuditLogEvents))
+	entries := make([]*store.AuditLogEvent, 0, len(s.store.Misc.AuditLogEvents))
 	for _, e := range s.store.Misc.AuditLogEvents {
 		if orgFilter != "" && e.Org != orgFilter {
 			continue
@@ -900,12 +901,12 @@ func (s *Server) handleListAuditLogInternal(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, entries)
 }
 
-func (s *Server) recordInternalAuditEvent(actor, action, targetType, targetID, org string, details map[string]interface{}) *AuditLogEvent {
+func (s *Server) recordInternalAuditEvent(actor, action, targetType, targetID, org string, details map[string]interface{}) *store.AuditLogEvent {
 	s.store.Misc.Mu.Lock()
 	defer s.store.Misc.Mu.Unlock()
 	s.store.Misc.NextAdminAuditID++
 	now := s.currentTime()
-	e := &AuditLogEvent{
+	e := &store.AuditLogEvent{
 		ID:         s.store.Misc.NextAdminAuditID,
 		Timestamp:  now.Format(time.RFC3339Nano),
 		Actor:      actor,
@@ -916,7 +917,7 @@ func (s *Server) recordInternalAuditEvent(actor, action, targetType, targetID, o
 		Details:    details,
 		CreatedAt:  now,
 	}
-	s.store.Misc.AuditLogEvents = append([]*AuditLogEvent{e}, s.store.Misc.AuditLogEvents...)
+	s.store.Misc.AuditLogEvents = append([]*store.AuditLogEvent{e}, s.store.Misc.AuditLogEvents...)
 	if len(s.store.Misc.AuditLogEvents) > maxAuditLogEntries {
 		s.store.Misc.AuditLogEvents = s.store.Misc.AuditLogEvents[:maxAuditLogEntries]
 	}

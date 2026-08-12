@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 const (
@@ -19,17 +21,17 @@ func securityReviewScope(repoKey, kind string) string { return repoKey + "|" + k
 
 func (s *Server) registerGHSecurityReviewRoutes() {
 	read := func(handler http.HandlerFunc) http.HandlerFunc {
-		return s.requirePerm(scopeSecurityEvents, permRead, handler)
+		return s.requirePerm(store.ScopeSecurityEvents, store.PermRead, handler)
 	}
 	write := func(handler http.HandlerFunc) http.HandlerFunc {
-		return s.requirePerm(scopeSecurityEvents, permWrite, handler)
+		return s.requirePerm(store.ScopeSecurityEvents, store.PermWrite, handler)
 	}
 
-	s.route("GET /api/v3/orgs/{org}/bypass-requests/push-rules", s.requireOrgAdmin(scopeSecurityEvents, permRead, s.orgSecurityReviewList(reviewKindPushBypass)))
-	s.route("GET /api/v3/orgs/{org}/bypass-requests/secret-scanning", s.requireOrgAdmin(scopeSecurityEvents, permRead, s.orgSecurityReviewList(reviewKindSecretBypass)))
-	s.route("GET /api/v3/orgs/{org}/dismissal-requests/code-scanning", s.requireOrgAdmin(scopeSecurityEvents, permRead, s.orgSecurityReviewList(reviewKindCodeDismissal)))
-	s.route("GET /api/v3/orgs/{org}/dismissal-requests/dependabot", s.requireOrgAdmin(scopeSecurityEvents, permRead, s.orgSecurityReviewList(reviewKindDependabot)))
-	s.route("GET /api/v3/orgs/{org}/dismissal-requests/secret-scanning", s.requireOrgAdmin(scopeSecurityEvents, permRead, s.orgSecurityReviewList(reviewKindSecretDismissal)))
+	s.route("GET /api/v3/orgs/{org}/bypass-requests/push-rules", s.requireOrgAdmin(store.ScopeSecurityEvents, store.PermRead, s.orgSecurityReviewList(reviewKindPushBypass)))
+	s.route("GET /api/v3/orgs/{org}/bypass-requests/secret-scanning", s.requireOrgAdmin(store.ScopeSecurityEvents, store.PermRead, s.orgSecurityReviewList(reviewKindSecretBypass)))
+	s.route("GET /api/v3/orgs/{org}/dismissal-requests/code-scanning", s.requireOrgAdmin(store.ScopeSecurityEvents, store.PermRead, s.orgSecurityReviewList(reviewKindCodeDismissal)))
+	s.route("GET /api/v3/orgs/{org}/dismissal-requests/dependabot", s.requireOrgAdmin(store.ScopeSecurityEvents, store.PermRead, s.orgSecurityReviewList(reviewKindDependabot)))
+	s.route("GET /api/v3/orgs/{org}/dismissal-requests/secret-scanning", s.requireOrgAdmin(store.ScopeSecurityEvents, store.PermRead, s.orgSecurityReviewList(reviewKindSecretDismissal)))
 
 	s.route("GET /api/v3/repos/{owner}/{repo}/bypass-requests/push-rules", read(s.repoSecurityReviewList(reviewKindPushBypass)))
 	s.route("GET /api/v3/repos/{owner}/{repo}/bypass-requests/push-rules/{bypass_request_number}", read(s.repoSecurityReviewGet(reviewKindPushBypass, "bypass_request_number")))
@@ -53,7 +55,7 @@ func (s *Server) registerGHSecurityReviewRoutes() {
 	s.route("PATCH /api/v3/repos/{owner}/{repo}/dismissal-requests/secret-scanning/{alert_number}", write(s.repoSecurityReviewDecision(reviewKindSecretDismissal, "alert_number", false)))
 }
 
-func (s *Server) securityReviewJSON(r *http.Request, request *SecurityReviewRequest) map[string]interface{} {
+func (s *Server) securityReviewJSON(r *http.Request, request *store.SecurityReviewRequest) map[string]interface{} {
 	repo := s.store.GetRepoByFullName(request.RepoKey)
 	if repo == nil {
 		return nil
@@ -105,7 +107,7 @@ func (s *Server) securityReviewJSON(r *http.Request, request *SecurityReviewRequ
 	}
 }
 
-func (s *Server) writeSecurityReviewList(w http.ResponseWriter, r *http.Request, requests []*SecurityReviewRequest) {
+func (s *Server) writeSecurityReviewList(w http.ResponseWriter, r *http.Request, requests []*store.SecurityReviewRequest) {
 	requests = paginateAndLink(w, r, requests)
 	result := make([]map[string]interface{}, 0, len(requests))
 	for _, request := range requests {
@@ -157,7 +159,7 @@ func (s *Server) repoSecurityReviewGet(kind, parameter string) http.HandlerFunc 
 			return
 		}
 		s.store.Mu.RLock()
-		request := copySecurityReviewRequest(s.store.SecurityReviewRequests[securityReviewScope(repo.FullName, kind)][number])
+		request := store.CopySecurityReviewRequest(s.store.SecurityReviewRequests[securityReviewScope(repo.FullName, kind)][number])
 		s.store.Mu.RUnlock()
 		if request == nil {
 			writeGHError(w, http.StatusNotFound, "Not Found")
@@ -192,14 +194,14 @@ func (s *Server) repoSecurityReviewDecision(kind, parameter string, bypass bool)
 			status = "approved"
 		}
 		if status != "approved" && status != "deny" && status != "denied" {
-			writeGHValidationError(w, "SecurityReview", "status", "invalid")
+			store.WriteGHValidationError(w, "SecurityReview", "status", "invalid")
 			return
 		}
 		if status == "deny" {
 			status = "denied"
 		}
 		if len(req.Message) > 2048 {
-			writeGHValidationError(w, "SecurityReview", "message", "too_long")
+			store.WriteGHValidationError(w, "SecurityReview", "message", "too_long")
 			return
 		}
 		user := ghUserFromContext(r.Context())
@@ -213,7 +215,7 @@ func (s *Server) repoSecurityReviewDecision(kind, parameter string, bypass bool)
 		responseID := s.store.NextSecurityReviewResponseID
 		s.store.NextSecurityReviewResponseID++
 		request.Status = status
-		request.Responses = append(request.Responses, SecurityReviewResponse{
+		request.Responses = append(request.Responses, store.SecurityReviewResponse{
 			ID: responseID, ReviewerID: user.ID, Message: req.Message, Status: status, CreatedAt: s.currentTime(),
 		})
 		if s.store.Persist != nil {
@@ -253,7 +255,7 @@ func (s *Server) handleCreateDependabotDismissalRequest(w http.ResponseWriter, r
 	switch req.DismissedReason {
 	case "fix_started", "no_bandwidth", "tolerable_risk", "inaccurate", "not_used":
 	default:
-		writeGHValidationError(w, "DependabotDismissalRequest", "dismissed_reason", "invalid")
+		store.WriteGHValidationError(w, "DependabotDismissalRequest", "dismissed_reason", "invalid")
 		return
 	}
 	user := ghUserFromContext(r.Context())
@@ -262,7 +264,7 @@ func (s *Server) handleCreateDependabotDismissalRequest(w http.ResponseWriter, r
 	if repo.OwnerType == "Organization" {
 		orgLogin = strings.SplitN(repo.FullName, "/", 2)[0]
 	}
-	request := &SecurityReviewRequest{
+	request := &store.SecurityReviewRequest{
 		Number: number, RepoKey: repo.FullName, OrgLogin: orgLogin, Kind: reviewKindDependabot,
 		RequesterID: user.ID, ResourceID: strconv.Itoa(number), Status: "pending",
 		RequesterComment: req.DismissedComment,
@@ -275,11 +277,11 @@ func (s *Server) handleCreateDependabotDismissalRequest(w http.ResponseWriter, r
 	scope := securityReviewScope(repo.FullName, reviewKindDependabot)
 	s.store.Mu.Lock()
 	if s.store.SecurityReviewRequests[scope] == nil {
-		s.store.SecurityReviewRequests[scope] = map[int]*SecurityReviewRequest{}
+		s.store.SecurityReviewRequests[scope] = map[int]*store.SecurityReviewRequest{}
 	}
 	if existing := s.store.SecurityReviewRequests[scope][number]; existing != nil && existing.Status == "pending" {
 		s.store.Mu.Unlock()
-		writeGHValidationError(w, "DependabotDismissalRequest", "alert_number", "already_exists")
+		store.WriteGHValidationError(w, "DependabotDismissalRequest", "alert_number", "already_exists")
 		return
 	}
 	request.ID = s.store.NextSecurityReviewRequestID

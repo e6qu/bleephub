@@ -9,9 +9,11 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
-func setupTeamTestServer(t *testing.T) (*Server, *User, *User, *User, *User, *Org, *Team) {
+func setupTeamTestServer(t *testing.T) (*Server, *store.User, *store.User, *store.User, *store.User, *store.Org, *store.Team) {
 	t.Helper()
 	s := newTestServer()
 	s.registerGHTeamRoutes()
@@ -21,7 +23,7 @@ func setupTeamTestServer(t *testing.T) (*Server, *User, *User, *User, *User, *Or
 	if org == nil {
 		t.Fatal("CreateOrg returned nil")
 	}
-	team := s.store.CreateTeam(org.Login, "engineers", TeamOptions{Permission: TeamPermissionPush})
+	team := s.store.CreateTeam(org.Login, "engineers", store.TeamOptions{Permission: store.TeamPermissionPush})
 	if team == nil {
 		t.Fatal("CreateTeam returned nil")
 	}
@@ -29,16 +31,16 @@ func setupTeamTestServer(t *testing.T) (*Server, *User, *User, *User, *User, *Or
 	member := seedTestUser(s, "team-member")
 	outsider := seedTestUser(s, "team-outsider")
 
-	s.store.SetMembership(org.Login, maintainer.ID, OrgRoleMember, MembershipStateActive)
-	s.store.SetMembership(org.Login, member.ID, OrgRoleMember, MembershipStateActive)
-	s.store.SetTeamMembership(org.Login, team.Slug, admin.ID, TeamRoleMaintainer)
-	s.store.SetTeamMembership(org.Login, team.Slug, maintainer.ID, TeamRoleMaintainer)
-	s.store.SetTeamMembership(org.Login, team.Slug, member.ID, TeamRoleMember)
+	s.store.SetMembership(org.Login, maintainer.ID, store.OrgRoleMember, store.MembershipStateActive)
+	s.store.SetMembership(org.Login, member.ID, store.OrgRoleMember, store.MembershipStateActive)
+	s.store.SetTeamMembership(org.Login, team.Slug, admin.ID, store.TeamRoleMaintainer)
+	s.store.SetTeamMembership(org.Login, team.Slug, maintainer.ID, store.TeamRoleMaintainer)
+	s.store.SetTeamMembership(org.Login, team.Slug, member.ID, store.TeamRoleMember)
 
 	return s, admin, maintainer, member, outsider, org, team
 }
 
-func teamTestToken(s *Server, u *User, scopes string) string {
+func teamTestToken(s *Server, u *store.User, scopes string) string {
 	tok := s.store.CreateToken(u.ID, scopes)
 	return tok.Value
 }
@@ -49,9 +51,9 @@ func TestListAuthUserTeams_RequiresAuthNotReadOrgScope(t *testing.T) {
 
 	admin := s.store.LookupUserByLogin("admin")
 	org := s.store.CreateOrg(admin, "auth-user-teams-org", "Auth User Teams Org", "")
-	team := s.store.CreateTeam(org.Login, "engineers", TeamOptions{})
-	s.store.SetMembership(org.Login, admin.ID, OrgRoleMember, MembershipStateActive)
-	s.store.SetTeamMembership(org.Login, team.Slug, admin.ID, TeamRoleMaintainer)
+	team := s.store.CreateTeam(org.Login, "engineers", store.TeamOptions{})
+	s.store.SetMembership(org.Login, admin.ID, store.OrgRoleMember, store.MembershipStateActive)
+	s.store.SetTeamMembership(org.Login, team.Slug, admin.ID, store.TeamRoleMaintainer)
 
 	// A classic OAuth token with only "repo" (no read:org) must still be
 	// able to list the authenticated user's own teams. Regression for #754.
@@ -97,9 +99,9 @@ func TestListAuthUserTeams_ViaOAuthWebFlow(t *testing.T) {
 
 	admin := s.store.LookupUserByLogin("admin")
 	org := s.store.CreateOrg(admin, "oauth-webflow-org", "OAuth WebFlow Org", "")
-	team := s.store.CreateTeam(org.Login, "platform-admins", TeamOptions{})
-	s.store.SetMembership(org.Login, admin.ID, OrgRoleMember, MembershipStateActive)
-	s.store.SetTeamMembership(org.Login, team.Slug, admin.ID, TeamRoleMaintainer)
+	team := s.store.CreateTeam(org.Login, "platform-admins", store.TeamOptions{})
+	s.store.SetMembership(org.Login, admin.ID, store.OrgRoleMember, store.MembershipStateActive)
+	s.store.SetTeamMembership(org.Login, team.Slug, admin.ID, store.TeamRoleMaintainer)
 
 	oapp := s.store.CreateOAuthApp(admin.ID, "AuthJSReproducer", "", "", "http://localhost:3000/api/auth/callback/github")
 
@@ -301,7 +303,7 @@ func TestTeamMembershipGet(t *testing.T) {
 func TestTeamMembershipAddUpdateRemove(t *testing.T) {
 	s, admin, maintainer, _, outsider, org, team := setupTeamTestServer(t)
 	newUser := seedTestUser(s, "team-newuser")
-	s.store.SetMembership(org.Login, newUser.ID, OrgRoleMember, MembershipStateActive)
+	s.store.SetMembership(org.Login, newUser.ID, store.OrgRoleMember, store.MembershipStateActive)
 
 	path := "/api/v3/orgs/team-test-org/teams/" + team.Slug + "/memberships/" + newUser.Login
 
@@ -423,7 +425,7 @@ func TestTeamRepoPermissionOverride(t *testing.T) {
 	}
 
 	perm, linked := s.store.GetTeamRepoPermission(org.Login, team.Slug, repo.FullName)
-	if !linked || perm != TeamPermissionAdmin {
+	if !linked || perm != store.TeamPermissionAdmin {
 		t.Errorf("repo perm = %v, linked=%v, want admin/true", perm, linked)
 	}
 

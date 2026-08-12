@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/e6qu/bleephub/internal/server/testutil"
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 var repoWriteRepoSeq int64
@@ -209,18 +210,18 @@ func TestPagesDeployments_CreateStatusCancel(t *testing.T) {
 	_, byteStore := newObjectByteStoreForTest(t)
 	originalArtifactStore := s.artifactStore
 	originalObjectByteStore := s.store.ObjectByteStore
-	s.setArtifactStore(NewArtifactStoreWithByteStore("", byteStore))
+	s.setArtifactStore(store.NewArtifactStoreWithByteStore("", byteStore))
 	s.store.ObjectByteStore = byteStore
 	t.Cleanup(func() {
 		s.setArtifactStore(originalArtifactStore)
 		s.store.ObjectByteStore = originalObjectByteStore
 	})
 	invalidArtifact := []byte("not an archive")
-	if err := byteStore.Put(context.Background(), artifactDataKey(4241), invalidArtifact); err != nil {
+	if err := byteStore.Put(context.Background(), store.ArtifactDataKey(4241), invalidArtifact); err != nil {
 		t.Fatalf("put invalid Pages artifact: %v", err)
 	}
 	s.artifactStore.Mu.Lock()
-	s.artifactStore.Artifacts[4241] = &Artifact{ID: 4241, Name: "invalid-pages", Size: int64(len(invalidArtifact)), Finalized: true, RepoFullName: "admin/" + repo, CreatedAt: fixedTestTime}
+	s.artifactStore.Artifacts[4241] = &store.Artifact{ID: 4241, Name: "invalid-pages", Size: int64(len(invalidArtifact)), Finalized: true, RepoFullName: "admin/" + repo, CreatedAt: fixedTestTime}
 	s.artifactStore.Mu.Unlock()
 	resp = s.post(t, "/api/v3/repos/admin/"+repo+"/pages/deployments", defaultToken, map[string]interface{}{
 		"artifact_id":         4241,
@@ -233,11 +234,11 @@ func TestPagesDeployments_CreateStatusCancel(t *testing.T) {
 	if site["status"] != "building" {
 		t.Fatalf("pages status after invalid archive = %v, want building", site["status"])
 	}
-	if err := byteStore.Put(context.Background(), artifactDataKey(4242), artifactBytes); err != nil {
+	if err := byteStore.Put(context.Background(), store.ArtifactDataKey(4242), artifactBytes); err != nil {
 		t.Fatalf("put object-backed artifact: %v", err)
 	}
 	s.artifactStore.Mu.Lock()
-	s.artifactStore.Artifacts[4242] = &Artifact{
+	s.artifactStore.Artifacts[4242] = &store.Artifact{
 		ID:           4242,
 		Name:         "pages-object-artifact",
 		Size:         int64(len(artifactBytes)),
@@ -305,7 +306,7 @@ func TestPagesDeployments_CreateStatusCancel(t *testing.T) {
 	if deployment.ArtifactKey == "" {
 		t.Fatal("deployment did not retain Pages artifact object key")
 	}
-	if got := readS3TestFile(t, byteStore.(*s3ActionsByteStore).Fs, deployment.ArtifactKey); !bytes.Equal(got, artifactBytes) {
+	if got := readS3TestFile(t, byteStore.(*store.S3ActionsByteStore).Fs, deployment.ArtifactKey); !bytes.Equal(got, artifactBytes) {
 		t.Fatal("published Pages artifact bytes differ from deployment artifact")
 	}
 	for requestPath, want := range map[string]struct {
@@ -343,7 +344,7 @@ func TestPagesDeployments_CreateStatusCancel(t *testing.T) {
 		"index.html": "<h1>Replacement Pages deployment</h1>",
 		"404.html":   "<h1>Replacement missing page</h1>",
 	})
-	if err := byteStore.Put(context.Background(), artifactDataKey(4242), replacementBytes); err != nil {
+	if err := byteStore.Put(context.Background(), store.ArtifactDataKey(4242), replacementBytes); err != nil {
 		t.Fatalf("replace object-backed artifact: %v", err)
 	}
 	s.artifactStore.Mu.Lock()
@@ -435,19 +436,19 @@ func TestPagesArtifactValidationRejectsUnsafeAndEmptyArchives(t *testing.T) {
 
 func TestPagesPermissionIsDistinctFromAdministration(t *testing.T) {
 	t.Parallel()
-	if !hasPerm(map[string]string{"pages": "write"}, scopePages, permWrite) {
+	if !hasPerm(map[string]string{"pages": "write"}, store.ScopePages, store.PermWrite) {
 		t.Fatal("pages:write did not authorize a Pages write")
 	}
-	if !hasPerm(map[string]string{"pages": "read"}, scopePages, permRead) {
+	if !hasPerm(map[string]string{"pages": "read"}, store.ScopePages, store.PermRead) {
 		t.Fatal("pages:read did not authorize a Pages read")
 	}
-	if hasPerm(map[string]string{"pages": "read"}, scopePages, permWrite) {
+	if hasPerm(map[string]string{"pages": "read"}, store.ScopePages, store.PermWrite) {
 		t.Fatal("pages:read authorized a Pages write")
 	}
-	if hasPerm(map[string]string{"administration": "write"}, scopePages, permRead) {
+	if hasPerm(map[string]string{"administration": "write"}, store.ScopePages, store.PermRead) {
 		t.Fatal("administration:write authorized a Pages read")
 	}
-	if !classicScopeCovers("repo", scopePages, permWrite) {
+	if !classicScopeCovers("repo", store.ScopePages, store.PermWrite) {
 		t.Fatal("classic repo scope did not authorize a Pages write")
 	}
 }

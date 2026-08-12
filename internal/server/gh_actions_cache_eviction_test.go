@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // TestActionsCacheEvictsLRUOverRepoBudget pins ACT-052's eviction policy: when a
@@ -19,12 +21,12 @@ func TestActionsCacheEvictsLRUOverRepoBudget(t *testing.T) {
 	base := fixedTestTime.UTC()
 	add := func(id int64, key string, size int64, accessed time.Time) {
 		as.Mu.Lock()
-		e := &CacheEntry{
+		e := &store.CacheEntry{
 			ID: id, Repo: "admin/r", Key: key, Version: "v1", Size: size,
 			Finalized: true, LastAccessedAt: accessed,
 		}
 		as.Caches[id] = e
-		as.CacheIndex[cacheLookupKey(e.Repo, e.Key, e.Version)] = id
+		as.CacheIndex[store.CacheLookupKey(e.Repo, e.Key, e.Version)] = id
 		as.Mu.Unlock()
 	}
 	// Total 1500 > budget 1000. Evicting the oldest (id=1, 600 bytes) alone
@@ -46,7 +48,7 @@ func TestActionsCacheEvictsLRUOverRepoBudget(t *testing.T) {
 	if _, ok := as.Caches[3]; !ok {
 		t.Fatal("id=3 was wrongly evicted (most recently used)")
 	}
-	if _, ok := as.CacheIndex[cacheLookupKey("admin/r", "oldest", "v1")]; ok {
+	if _, ok := as.CacheIndex[store.CacheLookupKey("admin/r", "oldest", "v1")]; ok {
 		t.Fatal("evicted entry's cacheIndex entry remains")
 	}
 	// A repo already under budget is left untouched.

@@ -9,13 +9,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"golang.org/x/crypto/bcrypt"
 )
 
 // makeLocalPasswordUser inserts a user with a bcrypt password hash keyed under
 // the given (already-canonical) login, bypassing the creation handler so the
 // login path can be exercised in isolation.
-func makeLocalPasswordUser(t *testing.T, s *Server, login, password string) *User {
+func makeLocalPasswordUser(t *testing.T, s *Server, login, password string) *store.User {
 	t.Helper()
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.MinCost)
 	if err != nil {
@@ -26,7 +27,7 @@ func makeLocalPasswordUser(t *testing.T, s *Server, login, password string) *Use
 	if _, exists := s.store.UsersByLogin[login]; exists {
 		t.Fatalf("user %q already exists", login)
 	}
-	u := &User{
+	u := &store.User{
 		ID:           s.store.NextUser,
 		Login:        login,
 		Type:         "User",
@@ -332,7 +333,7 @@ func TestUpsertExternalUserHonorsAllowlistAndAuthoritativeRole(t *testing.T) {
 func TestSecureDeploymentIgnoresUnprefixedSessionCookie(t *testing.T) {
 	s := newTestServer()
 	s.externalURL = "https://bleephub.example.test" // secureCookies(r) == true
-	s.store.LoginSessions["attacker-session"] = &LoginSession{UserID: 1, ExpiresAt: s.currentTime().Add(time.Hour)}
+	s.store.LoginSessions["attacker-session"] = &store.LoginSession{UserID: 1, ExpiresAt: s.currentTime().Add(time.Hour)}
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.AddCookie(&http.Cookie{Name: "_gh_sess", Value: "attacker-session"})

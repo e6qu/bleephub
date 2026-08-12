@@ -6,6 +6,8 @@ import (
 	"slices"
 	"sort"
 	"strconv"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 const enterpriseArtifactAndLogRetentionMaxDays = 365
@@ -43,12 +45,12 @@ func (s *Server) handleSetEnterpriseActionsPermissions(w http.ResponseWriter, r 
 		return
 	}
 	if !slices.Contains([]string{"all", "none", "selected"}, req.EnabledOrganizations) {
-		writeGHValidationError(w, "ActionsPermissions", "enabled_organizations", "invalid")
+		store.WriteGHValidationError(w, "ActionsPermissions", "enabled_organizations", "invalid")
 		return
 	}
 	if req.AllowedActions != "" &&
 		!slices.Contains([]string{"all", "local_only", "selected"}, req.AllowedActions) {
-		writeGHValidationError(w, "ActionsPermissions", "allowed_actions", "invalid")
+		store.WriteGHValidationError(w, "ActionsPermissions", "allowed_actions", "invalid")
 		return
 	}
 
@@ -69,7 +71,7 @@ func (s *Server) handleSetEnterpriseActionsPermissions(w http.ResponseWriter, r 
 func (s *Server) handleListEnterpriseActionsOrganizations(w http.ResponseWriter, r *http.Request) {
 	s.store.Mu.RLock()
 	ids := append([]int(nil), s.store.EnterpriseSettings.ActionsSelectedOrganizationIDs...)
-	orgs := make([]*Org, 0, len(ids))
+	orgs := make([]*store.Org, 0, len(ids))
 	for _, id := range ids {
 		if org := s.store.Orgs[id]; org != nil {
 			orgs = append(orgs, org)
@@ -97,7 +99,7 @@ func (s *Server) handleSetEnterpriseActionsOrganizations(w http.ResponseWriter, 
 		return
 	}
 	if req.SelectedOrganizationIDs == nil {
-		writeGHValidationError(w, "ActionsPermissions", "selected_organization_ids", "missing_field")
+		store.WriteGHValidationError(w, "ActionsPermissions", "selected_organization_ids", "missing_field")
 		return
 	}
 	s.store.Mu.Lock()
@@ -164,7 +166,7 @@ func (s *Server) handleRemoveEnterpriseActionsOrganization(w http.ResponseWriter
 
 func (s *Server) handleGetEnterpriseAllowedActions(w http.ResponseWriter, _ *http.Request) {
 	s.store.Mu.RLock()
-	var allowed *ActionsAllowed
+	var allowed *store.ActionsAllowed
 	if current := s.store.EnterpriseSettings.ActionsAllowed; current != nil {
 		copy := *current
 		copy.PatternsAllowed = append([]string(nil), current.PatternsAllowed...)
@@ -175,7 +177,7 @@ func (s *Server) handleGetEnterpriseAllowedActions(w http.ResponseWriter, _ *htt
 }
 
 func (s *Server) handleSetEnterpriseAllowedActions(w http.ResponseWriter, r *http.Request) {
-	var req ActionsAllowed
+	var req store.ActionsAllowed
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
@@ -190,7 +192,7 @@ func (s *Server) handleSetEnterpriseAllowedActions(w http.ResponseWriter, r *htt
 
 func (s *Server) handleGetEnterpriseWorkflowPermissions(w http.ResponseWriter, _ *http.Request) {
 	s.store.Mu.RLock()
-	var permissions *WorkflowPermissions
+	var permissions *store.WorkflowPermissions
 	if current := s.store.EnterpriseSettings.ActionsWorkflowPermissions; current != nil {
 		copy := *current
 		permissions = &copy
@@ -200,12 +202,12 @@ func (s *Server) handleGetEnterpriseWorkflowPermissions(w http.ResponseWriter, _
 }
 
 func (s *Server) handleSetEnterpriseWorkflowPermissions(w http.ResponseWriter, r *http.Request) {
-	var req WorkflowPermissions
+	var req store.WorkflowPermissions
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	if !slices.Contains([]string{"read", "write"}, req.DefaultWorkflowPermissions) {
-		writeGHValidationError(w, "WorkflowPermissions", "default_workflow_permissions", "invalid")
+		store.WriteGHValidationError(w, "WorkflowPermissions", "default_workflow_permissions", "invalid")
 		return
 	}
 	s.store.Mu.Lock()
@@ -233,7 +235,7 @@ func (s *Server) handleSetEnterpriseArtifactAndLogRetention(w http.ResponseWrite
 		return
 	}
 	if req.Days == nil || *req.Days < 1 || *req.Days > enterpriseArtifactAndLogRetentionMaxDays {
-		writeGHValidationError(w, "ActionsArtifactAndLogRetention", "days", "invalid")
+		store.WriteGHValidationError(w, "ActionsArtifactAndLogRetention", "days", "invalid")
 		return
 	}
 	s.store.Mu.Lock()
@@ -258,7 +260,7 @@ func (s *Server) handleSetEnterpriseForkPRContributorApproval(w http.ResponseWri
 		return
 	}
 	if !forkPRApprovalPolicies[req.ApprovalPolicy] {
-		writeGHValidationError(w, "ActionsForkPRContributorApproval", "approval_policy", "invalid")
+		store.WriteGHValidationError(w, "ActionsForkPRContributorApproval", "approval_policy", "invalid")
 		return
 	}
 	s.store.Mu.Lock()
@@ -286,7 +288,7 @@ func (s *Server) handleSetEnterpriseForkPRWorkflowsPrivateRepos(w http.ResponseW
 		return
 	}
 	if req.RunWorkflowsFromForkPullRequests == nil {
-		writeGHValidationError(w, "ActionsForkPRWorkflowsPrivateRepos", "run_workflows_from_fork_pull_requests", "missing_field")
+		store.WriteGHValidationError(w, "ActionsForkPRWorkflowsPrivateRepos", "run_workflows_from_fork_pull_requests", "missing_field")
 		return
 	}
 	s.store.Mu.Lock()
@@ -323,7 +325,7 @@ func (s *Server) handleSetEnterpriseSelfHostedRunnerPermissions(w http.ResponseW
 		return
 	}
 	if req.Disabled == nil {
-		writeGHValidationError(w, "SelfHostedRunnersPermissions", "disable_self_hosted_runners_for_all_orgs", "missing_field")
+		store.WriteGHValidationError(w, "SelfHostedRunnersPermissions", "disable_self_hosted_runners_for_all_orgs", "missing_field")
 		return
 	}
 	s.store.Mu.Lock()

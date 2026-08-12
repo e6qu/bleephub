@@ -3,6 +3,8 @@ package bleephub
 import (
 	"net/http"
 	"strconv"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // Sub-issues and issue dependencies.
@@ -28,7 +30,7 @@ import (
 
 // issueFromNumberPath resolves {owner}/{repo} + the "number" path value to
 // the repo and issue, writing a 404 when either is missing.
-func (s *Server) issueFromNumberPath(w http.ResponseWriter, r *http.Request) (*Repo, *Issue) {
+func (s *Server) issueFromNumberPath(w http.ResponseWriter, r *http.Request) (*store.Repo, *store.Issue) {
 	repo := s.lookupRepoFromPath(r)
 	if repo == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -76,7 +78,7 @@ func (s *Server) handleCreateSubIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.SubIssueID == nil {
-		writeGHValidationError(w, "SubIssue", "sub_issue_id", "missing_field")
+		store.WriteGHValidationError(w, "SubIssue", "sub_issue_id", "missing_field")
 		return
 	}
 	child := s.store.GetIssue(*req.SubIssueID)
@@ -104,7 +106,7 @@ func (s *Server) handleRemoveSubIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.SubIssueID == nil {
-		writeGHValidationError(w, "SubIssue", "sub_issue_id", "missing_field")
+		store.WriteGHValidationError(w, "SubIssue", "sub_issue_id", "missing_field")
 		return
 	}
 	child := s.store.GetIssue(*req.SubIssueID)
@@ -203,7 +205,7 @@ func (s *Server) handleAddIssueDependencyBlockedBy(w http.ResponseWriter, r *htt
 		return
 	}
 	if req.IssueID == nil {
-		writeGHValidationError(w, "IssueDependency", "issue_id", "missing_field")
+		store.WriteGHValidationError(w, "IssueDependency", "issue_id", "missing_field")
 		return
 	}
 	blocker := s.store.GetIssue(*req.IssueID)

@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 const codespaceTestImage = "alpine:latest"
@@ -164,7 +166,7 @@ func TestCodespaces_UserCreateListGetDelete(t *testing.T) {
 	// Ensure container removed.
 	ctx, cancel := contextWithTimeout(10 * time.Second)
 	defer cancel()
-	if out, _ := runDockerCLI(ctx, "ps", "-a", "--filter", "name="+codespaceContainerName(name), "--format", "{{.Names}}"); strings.TrimSpace(string(out)) != "" {
+	if out, _ := store.RunDockerCLI(ctx, "ps", "-a", "--filter", "name="+store.CodespaceContainerName(name), "--format", "{{.Names}}"); strings.TrimSpace(string(out)) != "" {
 		t.Fatalf("container still exists after delete")
 	}
 }
@@ -587,7 +589,7 @@ func TestCodespaces_OrgList(t *testing.T) {
 
 	// Non-admin callers are forbidden.
 	outsider := s.createTestUser(t, "cs-outsider")
-	s.store.Tokens["ghp_cs_outsider"] = &Token{Value: "ghp_cs_outsider", UserID: outsider.ID}
+	s.store.Tokens["ghp_cs_outsider"] = &store.Token{Value: "ghp_cs_outsider", UserID: outsider.ID}
 	resp = s.get(t, "/api/v3/orgs/cs-list-org/codespaces", "ghp_cs_outsider")
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusForbidden {
@@ -620,9 +622,9 @@ func TestCodespaces_OrgAccessControls(t *testing.T) {
 		t.Fatal("create org failed")
 	}
 	member := s.createTestUser(t, "cs-access-member")
-	s.store.SetMembership(org.Login, member.ID, OrgRoleMember, MembershipStateActive)
+	s.store.SetMembership(org.Login, member.ID, store.OrgRoleMember, store.MembershipStateActive)
 	member2 := s.createTestUser(t, "cs-access-member2")
-	s.store.SetMembership(org.Login, member2.ID, OrgRoleMember, MembershipStateActive)
+	s.store.SetMembership(org.Login, member2.ID, store.OrgRoleMember, store.MembershipStateActive)
 
 	// Invalid visibility.
 	resp := s.put(t, "/api/v3/orgs/cs-access-org/codespaces/access", defaultToken, map[string]any{
@@ -782,7 +784,7 @@ func createPaginationTestCodespace(t *testing.T, s *Server, path string, body ma
 	return cs["name"].(string)
 }
 
-func createPaginationCodespaceRepo(t *testing.T, s *Server, name string) *Repo {
+func createPaginationCodespaceRepo(t *testing.T, s *Server, name string) *store.Repo {
 	t.Helper()
 	admin := s.store.UsersByLogin["admin"]
 	repo := s.store.CreateRepo(admin, name, "codespace test repo", false)

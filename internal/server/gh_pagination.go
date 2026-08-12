@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // PaginationParams holds parsed pagination query parameters.
@@ -28,7 +30,7 @@ func filterSince[T any](
 	}
 	since, err := time.Parse(time.RFC3339, raw)
 	if err != nil {
-		writeGHValidationError(w, resource, "since", "invalid")
+		store.WriteGHValidationError(w, resource, "since", "invalid")
 		return nil, false
 	}
 	filtered := make([]T, 0, len(items))

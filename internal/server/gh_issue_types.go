@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // GitHub organization issue types: named, colored classifications (Bug, Epic,
@@ -14,15 +16,15 @@ import (
 
 func (s *Server) registerGHIssueTypeRoutes() {
 	s.route("GET /api/v3/repos/{owner}/{repo}/issue-types",
-		s.requirePerm(scopeIssues, permRead, s.handleListRepoIssueTypes))
+		s.requirePerm(store.ScopeIssues, store.PermRead, s.handleListRepoIssueTypes))
 	s.route("GET /api/v3/orgs/{org}/issue-types",
-		s.requirePerm(scopeOrgAdministration, permRead, s.orgGated(s.handleListOrgIssueTypes)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.orgGated(s.handleListOrgIssueTypes)))
 	s.route("POST /api/v3/orgs/{org}/issue-types",
-		s.requirePerm(scopeOrgAdministration, permWrite, s.orgGated(s.handleCreateOrgIssueType)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.orgGated(s.handleCreateOrgIssueType)))
 	s.route("PUT /api/v3/orgs/{org}/issue-types/{issue_type_id}",
-		s.requirePerm(scopeOrgAdministration, permWrite, s.orgGated(s.handleUpdateOrgIssueType)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.orgGated(s.handleUpdateOrgIssueType)))
 	s.route("DELETE /api/v3/orgs/{org}/issue-types/{issue_type_id}",
-		s.requirePerm(scopeOrgAdministration, permWrite, s.orgGated(s.handleDeleteOrgIssueType)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.orgGated(s.handleDeleteOrgIssueType)))
 }
 
 // handleListRepoIssueTypes returns the enabled issue types defined by the
@@ -33,7 +35,7 @@ func (s *Server) handleListRepoIssueTypes(w http.ResponseWriter, r *http.Request
 	if repo == nil {
 		return
 	}
-	orgLogin := orgLoginForIssueTypeRepo(repo)
+	orgLogin := store.OrgLoginForIssueTypeRepo(repo)
 	if orgLogin == "" {
 		writeJSON(w, http.StatusOK, []map[string]interface{}{})
 		return
@@ -151,7 +153,7 @@ func (s *Server) handleDeleteOrgIssueType(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func issueTypeJSON(it *IssueType) map[string]interface{} {
+func issueTypeJSON(it *store.IssueType) map[string]interface{} {
 	var desc interface{}
 	if it.Description != nil {
 		desc = *it.Description

@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func (s *Server) requireEnterpriseAppPermission(write bool, next http.HandlerFunc) http.HandlerFunc {
@@ -60,7 +62,7 @@ func (s *Server) handleListEnterpriseInstallableOrganizations(w http.ResponseWri
 	writeJSON(w, http.StatusOK, out)
 }
 
-func (s *Server) enterpriseAppOrg(w http.ResponseWriter, r *http.Request) *Org {
+func (s *Server) enterpriseAppOrg(w http.ResponseWriter, r *http.Request) *store.Org {
 	org := s.store.GetOrg(r.PathValue("org"))
 	if org == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -68,7 +70,7 @@ func (s *Server) enterpriseAppOrg(w http.ResponseWriter, r *http.Request) *Org {
 	return org
 }
 
-func shallowEnterpriseRepoJSON(repo *Repo) map[string]interface{} {
+func shallowEnterpriseRepoJSON(repo *store.Repo) map[string]interface{} {
 	return map[string]interface{}{"id": repo.ID, "name": repo.Name, "full_name": repo.FullName}
 }
 
@@ -85,12 +87,12 @@ func (s *Server) handleListEnterpriseOrganizationAccessibleRepositories(w http.R
 	writeJSON(w, http.StatusOK, out)
 }
 
-func (s *Server) organizationInstallations(org string) []*Installation {
+func (s *Server) organizationInstallations(org string) []*store.Installation {
 	s.store.Mu.RLock()
-	out := make([]*Installation, 0)
+	out := make([]*store.Installation, 0)
 	for _, installation := range s.store.Installations {
 		if installation.TargetType == "Organization" && installation.TargetLogin == org {
-			out = append(out, cloneInstallation(installation))
+			out = append(out, store.CloneInstallation(installation))
 		}
 	}
 	s.store.Mu.RUnlock()
@@ -98,11 +100,11 @@ func (s *Server) organizationInstallations(org string) []*Installation {
 	return out
 }
 
-func sortInstallations(installations []*Installation) {
+func sortInstallations(installations []*store.Installation) {
 	sort.Slice(installations, func(i, j int) bool { return installations[i].ID < installations[j].ID })
 }
 
-func enterpriseInstallationJSON(installation *Installation, enterprise, org string) map[string]interface{} {
+func enterpriseInstallationJSON(installation *store.Installation, enterprise, org string) map[string]interface{} {
 	value := installationToJSON(installation)
 	value["repositories_url"] = "/api/v3/enterprises/" + enterprise + "/apps/organizations/" + org +
 		"/installations/" + strconv.Itoa(installation.ID) + "/repositories"
@@ -128,17 +130,17 @@ type enterpriseInstallationRequest struct {
 	Repositories        []string `json:"repositories"`
 }
 
-func (s *Server) resolveEnterpriseInstallationRepos(w http.ResponseWriter, org *Org, selection string, names []string) ([]int, bool) {
+func (s *Server) resolveEnterpriseInstallationRepos(w http.ResponseWriter, org *store.Org, selection string, names []string) ([]int, bool) {
 	if selection != "all" && selection != "selected" && selection != "none" {
-		writeGHValidationError(w, "Installation", "repository_selection", "invalid")
+		store.WriteGHValidationError(w, "Installation", "repository_selection", "invalid")
 		return nil, false
 	}
 	if selection == "selected" && len(names) == 0 {
-		writeGHValidationError(w, "Installation", "repositories", "missing_field")
+		store.WriteGHValidationError(w, "Installation", "repositories", "missing_field")
 		return nil, false
 	}
 	if selection != "selected" && len(names) != 0 {
-		writeGHValidationError(w, "Installation", "repositories", "invalid")
+		store.WriteGHValidationError(w, "Installation", "repositories", "invalid")
 		return nil, false
 	}
 	ids := make([]int, 0, len(names))
@@ -146,7 +148,7 @@ func (s *Server) resolveEnterpriseInstallationRepos(w http.ResponseWriter, org *
 	for _, name := range names {
 		repo := s.store.GetRepoByFullName(org.Login + "/" + name)
 		if repo == nil || seen[repo.ID] {
-			writeGHValidationError(w, "Installation", "repositories", "invalid")
+			store.WriteGHValidationError(w, "Installation", "repositories", "invalid")
 			return nil, false
 		}
 		seen[repo.ID] = true
@@ -166,7 +168,7 @@ func (s *Server) handleCreateEnterpriseOrganizationInstallation(w http.ResponseW
 	}
 	app := s.store.GetAppByClientID(req.ClientID)
 	if app == nil {
-		writeGHValidationError(w, "Installation", "client_id", "invalid")
+		store.WriteGHValidationError(w, "Installation", "client_id", "invalid")
 		return
 	}
 	repoIDs, ok := s.resolveEnterpriseInstallationRepos(w, org, req.RepositorySelection, req.Repositories)
@@ -189,7 +191,7 @@ func (s *Server) handleCreateEnterpriseOrganizationInstallation(w http.ResponseW
 		s.store.GetInstallation(installation.ID), s.enterpriseSlug(), org.Login))
 }
 
-func (s *Server) enterpriseOrganizationInstallation(w http.ResponseWriter, r *http.Request, org *Org) *Installation {
+func (s *Server) enterpriseOrganizationInstallation(w http.ResponseWriter, r *http.Request, org *store.Org) *store.Installation {
 	id, err := strconv.Atoi(r.PathValue("installation_id"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -217,11 +219,11 @@ func (s *Server) handleDeleteEnterpriseOrganizationInstallation(w http.ResponseW
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) enterpriseInstallationRepositories(installation *Installation) []*Repo {
+func (s *Server) enterpriseInstallationRepositories(installation *store.Installation) []*store.Repo {
 	return filterInstallationRepos(s.store.ListReposByOwner(installation.TargetLogin), installation)
 }
 
-func (s *Server) writeEnterpriseInstallationRepositories(w http.ResponseWriter, r *http.Request, installation *Installation) {
+func (s *Server) writeEnterpriseInstallationRepositories(w http.ResponseWriter, r *http.Request, installation *store.Installation) {
 	repos := paginateAndLink(w, r, s.enterpriseInstallationRepositories(installation))
 	out := make([]map[string]interface{}, len(repos))
 	for i, repo := range repos {
@@ -258,7 +260,7 @@ func (s *Server) handleSetEnterpriseInstallationRepositories(w http.ResponseWrit
 	repoIDs, ok := s.resolveEnterpriseInstallationRepos(w, org, req.RepositorySelection, req.Repositories)
 	if !ok || req.RepositorySelection == "none" {
 		if ok {
-			writeGHValidationError(w, "Installation", "repository_selection", "invalid")
+			store.WriteGHValidationError(w, "Installation", "repository_selection", "invalid")
 		}
 		return
 	}
@@ -277,7 +279,7 @@ func (s *Server) mutateEnterpriseInstallationRepositories(w http.ResponseWriter,
 		return
 	}
 	if installation.RepositorySelection != "selected" {
-		writeGHValidationError(w, "Installation", "repository_selection", "invalid")
+		store.WriteGHValidationError(w, "Installation", "repository_selection", "invalid")
 		return
 	}
 	var req struct {
@@ -289,12 +291,12 @@ func (s *Server) mutateEnterpriseInstallationRepositories(w http.ResponseWriter,
 	repoIDs, ok := s.resolveEnterpriseInstallationRepos(w, org, "selected", req.Repositories)
 	if !ok || len(repoIDs) > 50 {
 		if ok {
-			writeGHValidationError(w, "Installation", "repositories", "invalid")
+			store.WriteGHValidationError(w, "Installation", "repositories", "invalid")
 		}
 		return
 	}
 	if !add && len(installation.SelectedRepoIDs)-len(repoIDs) < 1 {
-		writeGHValidationError(w, "Installation", "repositories", "invalid")
+		store.WriteGHValidationError(w, "Installation", "repositories", "invalid")
 		return
 	}
 	for _, repoID := range repoIDs {

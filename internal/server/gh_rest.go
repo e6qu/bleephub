@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // maxJSONBodyBytes caps a JSON API request body. Real payloads are kilobytes;
@@ -242,11 +244,11 @@ func mutated[T any](w http.ResponseWriter, v *T) bool {
 // twitter_username are null, matching real GitHub. Followers/following
 // and repository counts are derived live from the store; gists are not a
 // bleephub feature so public_gists is 0.
-func (s *Server) fullUserJSON(u *User) map[string]interface{} {
+func (s *Server) fullUserJSON(u *store.User) map[string]interface{} {
 	if u == nil {
-		u = ghostUser()
+		u = store.GhostUser()
 	}
-	out := userToJSON(u)
+	out := store.UserToJSON(u)
 	out["bio"] = u.Bio
 	out["blog"] = u.Blog
 	out["company"] = nullableString(u.Company)

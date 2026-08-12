@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/e6qu/bleephub/internal/actions"
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // TestConcurrencyAdmissionSerializesAcrossReplicas pins the ACT-012 wiring:
@@ -19,7 +20,7 @@ func TestConcurrencyAdmissionSerializesAcrossReplicas(t *testing.T) {
 	t.Setenv("BLEEPHUB_PERSIST", "true")
 	t.Setenv("BLEEPHUB_DATA_DIR", dir)
 
-	p, err := NewPersistence()
+	p, err := store.NewPersistence()
 	if err != nil {
 		t.Fatalf("open persistence: %v", err)
 	}
@@ -30,8 +31,8 @@ func TestConcurrencyAdmissionSerializesAcrossReplicas(t *testing.T) {
 		t.Fatalf("SetPersistence: %v", err)
 	}
 
-	def := func(name string) *WorkflowDef {
-		wd, err := ParseWorkflow([]byte("name: " + name + "\nconcurrency: deploy\njobs:\n  a:\n    runs-on: self-hosted\n    steps:\n      - run: echo hi\n"))
+	def := func(name string) *store.WorkflowDef {
+		wd, err := store.ParseWorkflow([]byte("name: " + name + "\nconcurrency: deploy\njobs:\n  a:\n    runs-on: self-hosted\n    steps:\n      - run: echo hi\n"))
 		if err != nil {
 			t.Fatalf("parse: %v", err)
 		}

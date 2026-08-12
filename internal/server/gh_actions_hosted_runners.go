@@ -14,6 +14,8 @@ import (
 	"sort"
 	"strconv"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // hostedRunnerMachineSpec mirrors the actions-hosted-runner-machine-spec
@@ -71,39 +73,39 @@ const hostedRunnerStaticIPMaximum = 50
 
 func (s *Server) registerGHHostedRunnerRoutes() {
 	s.route("GET /api/v3/orgs/{org}/actions/hosted-runners",
-		s.requirePerm(scopeOrgAdministration, permRead, s.orgGated(s.handleListHostedRunners)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.orgGated(s.handleListHostedRunners)))
 	s.route("POST /api/v3/orgs/{org}/actions/hosted-runners",
-		s.requirePerm(scopeOrgAdministration, permWrite, s.orgGated(s.handleCreateHostedRunner)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.orgGated(s.handleCreateHostedRunner)))
 	s.route("GET /api/v3/orgs/{org}/actions/hosted-runners/images/github-owned",
-		s.requirePerm(scopeOrgAdministration, permRead, s.orgGated(s.handleHostedRunnerGitHubOwnedImages)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.orgGated(s.handleHostedRunnerGitHubOwnedImages)))
 	s.route("GET /api/v3/orgs/{org}/actions/hosted-runners/images/partner",
-		s.requirePerm(scopeOrgAdministration, permRead, s.orgGated(s.handleHostedRunnerPartnerImages)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.orgGated(s.handleHostedRunnerPartnerImages)))
 	s.route("GET /api/v3/orgs/{org}/actions/hosted-runners/images/custom",
-		s.requirePerm(scopeOrgAdministration, permRead, s.orgGated(s.handleListHostedRunnerCustomImages)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.orgGated(s.handleListHostedRunnerCustomImages)))
 	s.route("GET /api/v3/orgs/{org}/actions/hosted-runners/images/custom/{image_definition_id}",
-		s.requirePerm(scopeOrgAdministration, permRead, s.orgGated(s.handleGetHostedRunnerCustomImage)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.orgGated(s.handleGetHostedRunnerCustomImage)))
 	s.route("DELETE /api/v3/orgs/{org}/actions/hosted-runners/images/custom/{image_definition_id}",
-		s.requirePerm(scopeOrgAdministration, permWrite, s.orgGated(s.handleDeleteHostedRunnerCustomImage)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.orgGated(s.handleDeleteHostedRunnerCustomImage)))
 	s.route("GET /api/v3/orgs/{org}/actions/hosted-runners/images/custom/{image_definition_id}/versions",
-		s.requirePerm(scopeOrgAdministration, permRead, s.orgGated(s.handleListHostedRunnerCustomImageVersions)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.orgGated(s.handleListHostedRunnerCustomImageVersions)))
 	s.route("GET /api/v3/orgs/{org}/actions/hosted-runners/images/custom/{image_definition_id}/versions/{version}",
-		s.requirePerm(scopeOrgAdministration, permRead, s.orgGated(s.handleGetHostedRunnerCustomImageVersion)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.orgGated(s.handleGetHostedRunnerCustomImageVersion)))
 	s.route("DELETE /api/v3/orgs/{org}/actions/hosted-runners/images/custom/{image_definition_id}/versions/{version}",
-		s.requirePerm(scopeOrgAdministration, permWrite, s.orgGated(s.handleDeleteHostedRunnerCustomImageVersion)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.orgGated(s.handleDeleteHostedRunnerCustomImageVersion)))
 	s.route("GET /api/v3/orgs/{org}/actions/hosted-runners/limits",
-		s.requirePerm(scopeOrgAdministration, permRead, s.orgGated(s.handleHostedRunnerLimits)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.orgGated(s.handleHostedRunnerLimits)))
 	s.route("GET /api/v3/orgs/{org}/actions/hosted-runners/machine-sizes",
-		s.requirePerm(scopeOrgAdministration, permRead, s.orgGated(s.handleHostedRunnerMachineSizes)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.orgGated(s.handleHostedRunnerMachineSizes)))
 	s.route("GET /api/v3/orgs/{org}/actions/hosted-runners/platforms",
-		s.requirePerm(scopeOrgAdministration, permRead, s.orgGated(s.handleHostedRunnerPlatforms)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.orgGated(s.handleHostedRunnerPlatforms)))
 	s.route("GET /api/v3/orgs/{org}/actions/hosted-runners/{hosted_runner_id}",
-		s.requirePerm(scopeOrgAdministration, permRead, s.orgGated(s.handleGetHostedRunner)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.orgGated(s.handleGetHostedRunner)))
 	s.route("PATCH /api/v3/orgs/{org}/actions/hosted-runners/{hosted_runner_id}",
-		s.requirePerm(scopeOrgAdministration, permWrite, s.orgGated(s.handleUpdateHostedRunner)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.orgGated(s.handleUpdateHostedRunner)))
 	s.route("DELETE /api/v3/orgs/{org}/actions/hosted-runners/{hosted_runner_id}",
-		s.requirePerm(scopeOrgAdministration, permWrite, s.orgGated(s.handleDeleteHostedRunner)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.orgGated(s.handleDeleteHostedRunner)))
 	s.route("GET /api/v3/orgs/{org}/actions/runner-groups/{runner_group_id}/hosted-runners",
-		s.requirePerm(scopeOrgAdministration, permRead, s.orgGated(s.handleListRunnerGroupHostedRunners)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.orgGated(s.handleListRunnerGroupHostedRunners)))
 }
 
 // --- Store methods ---
@@ -150,7 +152,7 @@ func curatedImageByID(catalog []hostedRunnerCuratedImage, id string) (hostedRunn
 // hostedRunnerJSON renders the actions-hosted-runner shape. status
 // overrides the runner's steady state (e.g. "Deleting" on the DELETE
 // response); pass "" for the stored state.
-func hostedRunnerJSON(hr *HostedRunner, status string) map[string]any {
+func hostedRunnerJSON(hr *store.HostedRunner, status string) map[string]any {
 	if status == "" {
 		status = "Ready"
 	}
@@ -184,7 +186,7 @@ func hostedRunnerJSON(hr *HostedRunner, status string) map[string]any {
 	}
 }
 
-func hostedRunnerCustomImageJSON(img *HostedRunnerCustomImage) map[string]any {
+func hostedRunnerCustomImageJSON(img *store.HostedRunnerCustomImage) map[string]any {
 	totalSize := 0
 	latest := ""
 	var latestCreated time.Time
@@ -209,7 +211,7 @@ func hostedRunnerCustomImageJSON(img *HostedRunnerCustomImage) map[string]any {
 	}
 }
 
-func hostedRunnerCustomImageVersionJSON(v *HostedRunnerCustomImageVersion) map[string]any {
+func hostedRunnerCustomImageVersionJSON(v *store.HostedRunnerCustomImageVersion) map[string]any {
 	return map[string]any{
 		"version":       v.Version,
 		"state":         v.State,
@@ -243,8 +245,8 @@ func (s *Server) handleListHostedRunners(w http.ResponseWriter, r *http.Request)
 // resolveHostedRunnerImage resolves an image reference (id + source +
 // optional version) against the catalogs / the org's custom image
 // definitions. Returns a filled-in template or an error message.
-func (s *Server) resolveHostedRunnerImage(target runnerScope, id, source, version string) (*HostedRunner, string) {
-	out := &HostedRunner{ImageID: id, ImageSource: source, ImageVersion: version}
+func (s *Server) resolveHostedRunnerImage(target store.RunnerScope, id, source, version string) (*store.HostedRunner, string) {
+	out := &store.HostedRunner{ImageID: id, ImageSource: source, ImageVersion: version}
 	switch source {
 	case "github":
 		img, ok := curatedImageByID(hostedRunnerGitHubOwnedImages, id)
@@ -265,8 +267,8 @@ func (s *Server) resolveHostedRunnerImage(target runnerScope, id, source, versio
 		}
 		s.store.Mu.RLock()
 		img := s.store.HostedRunnerCustomImages[imgID]
-		var ver *HostedRunnerCustomImageVersion
-		if img != nil && customImageMatchesTarget(img, target) {
+		var ver *store.HostedRunnerCustomImageVersion
+		if img != nil && store.CustomImageMatchesTarget(img, target) {
 			for _, v := range img.Versions {
 				if version == "" || version == "latest" || v.Version == version {
 					// Versions append in generation order, so on equal
@@ -278,7 +280,7 @@ func (s *Server) resolveHostedRunnerImage(target runnerScope, id, source, versio
 			}
 		}
 		s.store.Mu.RUnlock()
-		if img == nil || !customImageMatchesTarget(img, target) {
+		if img == nil || !store.CustomImageMatchesTarget(img, target) {
 			return nil, fmt.Sprintf("custom image definition %q not found", id)
 		}
 		if ver == nil {
@@ -314,19 +316,19 @@ func (s *Server) handleCreateHostedRunner(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if req.Name == "" || len(req.Name) > 64 {
-		writeGHValidationError(w, "HostedRunner", "name", "invalid")
+		store.WriteGHValidationError(w, "HostedRunner", "name", "invalid")
 		return
 	}
 	if req.Image.ID == "" {
-		writeGHValidationError(w, "HostedRunner", "image", "missing_field")
+		store.WriteGHValidationError(w, "HostedRunner", "image", "missing_field")
 		return
 	}
 	if req.RunnerGroupID == nil {
-		writeGHValidationError(w, "HostedRunner", "runner_group_id", "missing_field")
+		store.WriteGHValidationError(w, "HostedRunner", "runner_group_id", "missing_field")
 		return
 	}
 	if _, ok := machineSpecByID(req.Size); !ok {
-		writeGHValidationError(w, "HostedRunner", "size", "invalid")
+		store.WriteGHValidationError(w, "HostedRunner", "size", "invalid")
 		return
 	}
 	source := req.Image.Source
@@ -348,7 +350,7 @@ func (s *Server) handleCreateHostedRunner(w http.ResponseWriter, r *http.Request
 	group := s.store.RunnerGroups[*req.RunnerGroupID]
 	if group == nil || !runnerGroupMatchesTarget(group, target) {
 		s.store.Mu.Unlock()
-		writeGHValidationError(w, "HostedRunner", "runner_group_id", "invalid")
+		store.WriteGHValidationError(w, "HostedRunner", "runner_group_id", "invalid")
 		return
 	}
 	if req.EnableStaticIP && s.store.StaticIPUsageLocked(target)+maxRunners > hostedRunnerStaticIPMaximum {
@@ -357,7 +359,7 @@ func (s *Server) handleCreateHostedRunner(w http.ResponseWriter, r *http.Request
 			fmt.Sprintf("enabling static IPs would exceed the target's %d static public IP address limit", hostedRunnerStaticIPMaximum))
 		return
 	}
-	hr := &HostedRunner{
+	hr := &store.HostedRunner{
 		ID:               s.store.NextHostedRunnerID,
 		Org:              target.Org,
 		Enterprise:       target.Enterprise,
@@ -385,7 +387,7 @@ func (s *Server) handleCreateHostedRunner(w http.ResponseWriter, r *http.Request
 
 // lookupHostedRunner resolves the path's hosted_runner_id within the owning
 // organization or enterprise; nil + handled response when missing.
-func (s *Server) lookupHostedRunner(w http.ResponseWriter, r *http.Request) *HostedRunner {
+func (s *Server) lookupHostedRunner(w http.ResponseWriter, r *http.Request) *store.HostedRunner {
 	target, ok := s.runnerGroupTarget(w, r)
 	if !ok {
 		return nil
@@ -398,7 +400,7 @@ func (s *Server) lookupHostedRunner(w http.ResponseWriter, r *http.Request) *Hos
 	s.store.Mu.RLock()
 	hr := s.store.HostedRunners[id]
 	s.store.Mu.RUnlock()
-	if hr == nil || !hostedRunnerMatchesTarget(hr, target) {
+	if hr == nil || !store.HostedRunnerMatchesTarget(hr, target) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil
 	}
@@ -438,11 +440,11 @@ func (s *Server) handleUpdateHostedRunner(w http.ResponseWriter, r *http.Request
 	}
 	if req.Size != nil {
 		if _, ok := machineSpecByID(*req.Size); !ok {
-			writeGHValidationError(w, "HostedRunner", "size", "invalid")
+			store.WriteGHValidationError(w, "HostedRunner", "size", "invalid")
 			return
 		}
 	}
-	var resolvedImage *HostedRunner
+	var resolvedImage *store.HostedRunner
 	if req.ImageID != nil {
 		source := hr.ImageSource
 		if req.ImageSource != nil {
@@ -466,7 +468,7 @@ func (s *Server) handleUpdateHostedRunner(w http.ResponseWriter, r *http.Request
 		group := s.store.RunnerGroups[*req.RunnerGroupID]
 		if group == nil || !runnerGroupMatchesTarget(group, target) {
 			s.store.Mu.Unlock()
-			writeGHValidationError(w, "HostedRunner", "runner_group_id", "invalid")
+			store.WriteGHValidationError(w, "HostedRunner", "runner_group_id", "invalid")
 			return
 		}
 		hr.RunnerGroupID = *req.RunnerGroupID
@@ -534,7 +536,7 @@ func (s *Server) handleListRunnerGroupHostedRunners(w http.ResponseWriter, r *ht
 		return
 	}
 	s.store.Mu.RLock()
-	members := make([]*HostedRunner, 0)
+	members := make([]*store.HostedRunner, 0)
 	for _, hr := range s.store.HostedRunnersLocked(g.Scope) {
 		if hr.RunnerGroupID == g.ID {
 			members = append(members, hr)
@@ -632,7 +634,7 @@ func (s *Server) handleListHostedRunnerCustomImages(w http.ResponseWriter, r *ht
 
 // lookupCustomImage resolves the path's image_definition_id within the owning
 // organization or enterprise; nil + handled response when missing.
-func (s *Server) lookupCustomImage(w http.ResponseWriter, r *http.Request) *HostedRunnerCustomImage {
+func (s *Server) lookupCustomImage(w http.ResponseWriter, r *http.Request) *store.HostedRunnerCustomImage {
 	target, ok := s.runnerGroupTarget(w, r)
 	if !ok {
 		return nil
@@ -645,7 +647,7 @@ func (s *Server) lookupCustomImage(w http.ResponseWriter, r *http.Request) *Host
 	s.store.Mu.RLock()
 	img := s.store.HostedRunnerCustomImages[id]
 	s.store.Mu.RUnlock()
-	if img == nil || !customImageMatchesTarget(img, target) {
+	if img == nil || !store.CustomImageMatchesTarget(img, target) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil
 	}
@@ -683,7 +685,7 @@ func (s *Server) handleListHostedRunnerCustomImageVersions(w http.ResponseWriter
 		return
 	}
 	s.store.Mu.RLock()
-	versions := append([]*HostedRunnerCustomImageVersion(nil), img.Versions...)
+	versions := append([]*store.HostedRunnerCustomImageVersion(nil), img.Versions...)
 	s.store.Mu.RUnlock()
 	// Newest first, matching real GitHub's version listing. Versions
 	// append in generation order, so reversing the copy orders equal

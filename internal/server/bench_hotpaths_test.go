@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/rs/zerolog"
@@ -233,7 +234,7 @@ func BenchmarkRepoToJSON(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = repoToJSON(repo, s.store, "http://bench.local")
+		_ = store.RepoToJSON(repo, s.store, "http://bench.local")
 	}
 }
 

@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // /applications/{client_id}/token family + OAuth App management — token
@@ -300,7 +302,7 @@ func TestOAuthAppBrowserSettingsCreateAndList(t *testing.T) {
 	form := "name=Browser+OAuth&description=settings&url=https%3A%2F%2Fexample.test&callback_url=https%3A%2F%2Fexample.test%2Fcb"
 	req := httptest.NewRequest("POST", "/settings/oauth-apps/new", strings.NewReader(form))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("Authorization", "token "+AdminToken())
+	req.Header.Set("Authorization", "token "+store.AdminToken())
 	w := httptest.NewRecorder()
 	s.mux.ServeHTTP(w, req)
 	if w.Code != http.StatusCreated {
@@ -313,7 +315,7 @@ func TestOAuthAppBrowserSettingsCreateAndList(t *testing.T) {
 	}
 
 	req = httptest.NewRequest("GET", "/settings/oauth-apps", nil)
-	req.Header.Set("Authorization", "token "+AdminToken())
+	req.Header.Set("Authorization", "token "+store.AdminToken())
 	w = httptest.NewRecorder()
 	s.mux.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/storer"
@@ -14,7 +15,7 @@ import (
 // attachInstallationBlock injects `installation: {id, node_id}` at the top
 // level of every event payload, mirroring what real GH does for events
 // delivered through an App installation.
-func attachInstallationBlock(payload map[string]interface{}, inst *Installation) map[string]interface{} {
+func attachInstallationBlock(payload map[string]interface{}, inst *store.Installation) map[string]interface{} {
 	if inst == nil {
 		return payload
 	}
@@ -36,7 +37,7 @@ func installationNodeID(id int) string {
 // The app argument is retained for call-site symmetry with the other event
 // builders; the app's identity is carried inside the installation object
 // (app_id/app_slug), not as a top-level key, matching GitHub's wire shape.
-func buildInstallationEventPayload(_ *App, action string, inst *Installation, sender *User) map[string]interface{} {
+func buildInstallationEventPayload(_ *store.App, action string, inst *store.Installation, sender *store.User) map[string]interface{} {
 	repos := []map[string]interface{}{}
 	return map[string]interface{}{
 		"action":       action,
@@ -48,7 +49,7 @@ func buildInstallationEventPayload(_ *App, action string, inst *Installation, se
 
 // buildInstallationRepositoriesEventPayload builds installation_repositories
 // (action: added | removed).
-func buildInstallationRepositoriesEventPayload(app *App, action string, inst *Installation, repoIDsChanged []int, sender *User) map[string]interface{} {
+func buildInstallationRepositoriesEventPayload(app *store.App, action string, inst *store.Installation, repoIDsChanged []int, sender *store.User) map[string]interface{} {
 	changes := []map[string]interface{}{}
 	for _, id := range repoIDsChanged {
 		changes = append(changes, map[string]interface{}{"id": id})
@@ -70,7 +71,7 @@ func buildInstallationRepositoriesEventPayload(app *App, action string, inst *In
 	return out
 }
 
-func buildPushPayload(st *Store, repo *Repo, sender *User, ref, before, after string) map[string]interface{} {
+func buildPushPayload(st *store.Store, repo *store.Repo, sender *store.User, ref, before, after string) map[string]interface{} {
 	repo = st.SnapRepo(repo)
 	sender = st.SnapUser(sender)
 	payload := buildPushPayloadWithInstallation(repo, sender, ref, before, after, nil)
@@ -93,7 +94,7 @@ func buildPushPayload(st *Store, repo *Repo, sender *User, ref, before, after st
 	return payload
 }
 
-func buildPushPayloadWithInstallation(repo *Repo, sender *User, ref, before, after string, inst *Installation) map[string]interface{} {
+func buildPushPayloadWithInstallation(repo *store.Repo, sender *store.User, ref, before, after string, inst *store.Installation) map[string]interface{} {
 	return attachInstallationBlock(map[string]interface{}{
 		"ref":         ref,
 		"before":      before,
@@ -157,23 +158,23 @@ func pushCommitPayloads(stor gitStorage.Storer, before, after plumbing.Hash, rep
 	return out
 }
 
-func coalesceUserLogin(user *User) string {
+func coalesceUserLogin(user *store.User) string {
 	if user == nil || user.Login == "" {
 		return "web-flow"
 	}
 	return user.Login
 }
 
-func coalesceUserEmail(user *User) string {
+func coalesceUserEmail(user *store.User) string {
 	if user == nil || user.Email == "" {
 		return "noreply@github.com"
 	}
 	return user.Email
 }
 
-func buildPullRequestPayload(st *Store, repo *Repo, pr *PullRequest, sender *User, action string) map[string]interface{} {
+func buildPullRequestPayload(st *store.Store, repo *store.Repo, pr *store.PullRequest, sender *store.User, action string) map[string]interface{} {
 	// Snapshot the shared entities before reading their mutable fields.
-	headRepo := pullRequestHeadRepo(st, pr)
+	headRepo := store.PullRequestHeadRepo(st, pr)
 	repo = st.SnapRepo(repo)
 	headRepo = st.SnapRepo(headRepo)
 	pr = st.SnapPR(pr)
@@ -194,7 +195,7 @@ func buildPullRequestPayload(st *Store, repo *Repo, pr *PullRequest, sender *Use
 		// test-merge commit (GitHub's "potential merge"), so a pull_request
 		// workflow run runs against the merge ref rather than the head (ACT-027).
 		// Both fall back to the head SHA when no merge commit is available.
-		"merge_commit_sha": coalesceStr(pr.MergeCommitSHA, coalesceStr(pr.PotentialMergeCommitSHA, pullRequestHeadSHA(pr, st))),
+		"merge_commit_sha": store.CoalesceStr(pr.MergeCommitSHA, store.CoalesceStr(pr.PotentialMergeCommitSHA, pullRequestHeadSHA(pr, st))),
 		"head": map[string]interface{}{
 			"ref":  pr.HeadRefName,
 			"sha":  pullRequestHeadSHA(pr, st),
@@ -219,7 +220,7 @@ func buildPullRequestPayload(st *Store, repo *Repo, pr *PullRequest, sender *Use
 	return buildPullRequestPayloadInner(action, pr, prJSON, repo, sender, nil)
 }
 
-func buildPullRequestPayloadInner(action string, pr *PullRequest, prJSON map[string]interface{}, repo *Repo, sender *User, inst *Installation) map[string]interface{} {
+func buildPullRequestPayloadInner(action string, pr *store.PullRequest, prJSON map[string]interface{}, repo *store.Repo, sender *store.User, inst *store.Installation) map[string]interface{} {
 	return attachInstallationBlock(map[string]interface{}{
 		"action":       action,
 		"number":       pr.Number,
@@ -229,7 +230,7 @@ func buildPullRequestPayloadInner(action string, pr *PullRequest, prJSON map[str
 	}, inst)
 }
 
-func buildIssuesPayload(st *Store, repo *Repo, issue *Issue, sender *User, action string) map[string]interface{} {
+func buildIssuesPayload(st *store.Store, repo *store.Repo, issue *store.Issue, sender *store.User, action string) map[string]interface{} {
 	// Snapshot the shared entities before reading their mutable fields.
 	repo = st.SnapRepo(repo)
 	issue = st.SnapIssue(issue)
@@ -261,10 +262,10 @@ func buildIssuesPayload(st *Store, repo *Repo, issue *Issue, sender *User, actio
 }
 
 func buildIssueCommentPayload(
-	st *Store,
-	repo *Repo,
-	comment *Comment,
-	sender *User,
+	st *store.Store,
+	repo *store.Repo,
+	comment *store.Comment,
+	sender *store.User,
 	action, baseURL string,
 	parentNumber int,
 ) map[string]interface{} {
@@ -285,18 +286,18 @@ func buildIssueCommentPayload(
 	return attachInstallationBlock(map[string]interface{}{
 		"action":     action,
 		"issue":      issueJSON,
-		"comment":    commentToJSON(comment, st, baseURL, repo.FullName, parentNumber),
+		"comment":    store.CommentToJSON(comment, st, baseURL, repo.FullName, parentNumber),
 		"repository": repoPayload(repo),
 		"sender":     senderPayload(sender),
 	}, nil)
 }
 
 func buildPullRequestReviewPayload(
-	st *Store,
-	repo *Repo,
-	pr *PullRequest,
-	review *PullRequestReview,
-	sender *User,
+	st *store.Store,
+	repo *store.Repo,
+	pr *store.PullRequest,
+	review *store.PullRequestReview,
+	sender *store.User,
 	action, baseURL string,
 ) map[string]interface{} {
 	repo = st.SnapRepo(repo)
@@ -308,7 +309,7 @@ func buildPullRequestReviewPayload(
 	return payload
 }
 
-func buildPingPayload(repo *Repo, hook *Webhook) map[string]interface{} {
+func buildPingPayload(repo *store.Repo, hook *store.Webhook) map[string]interface{} {
 	payload := map[string]interface{}{
 		"zen":     "Keep it logically awesome.",
 		"hook_id": hook.ID,
@@ -329,7 +330,7 @@ func buildPingPayload(repo *Repo, hook *Webhook) map[string]interface{} {
 	return payload
 }
 
-func repoPayload(repo *Repo) map[string]interface{} {
+func repoPayload(repo *store.Repo) map[string]interface{} {
 	if repo == nil {
 		return nil
 	}
@@ -353,7 +354,7 @@ func repoPayload(repo *Repo) map[string]interface{} {
 
 // orgWebhookPayload is the `organization` block on event payloads for
 // org-owned repos.
-func orgWebhookPayload(org *Org) map[string]interface{} {
+func orgWebhookPayload(org *store.Org) map[string]interface{} {
 	return map[string]interface{}{
 		"login":       org.Login,
 		"id":          org.ID,
@@ -363,7 +364,7 @@ func orgWebhookPayload(org *Org) map[string]interface{} {
 	}
 }
 
-func senderPayload(user *User) map[string]interface{} {
+func senderPayload(user *store.User) map[string]interface{} {
 	if user == nil {
 		// GitHub guarantees `sender` is always a populated user object. Events
 		// with no originating user (e.g. system-driven pushes) fall back to the
@@ -374,11 +375,11 @@ func senderPayload(user *User) map[string]interface{} {
 	if copy.Type == "" {
 		copy.Type = "User"
 	}
-	return userToJSON(&copy)
+	return store.UserToJSON(&copy)
 }
 
 // ghostSenderPayload returns GitHub's "ghost" deleted-user actor, used as the
 // sender for events that have no originating user account.
 func ghostSenderPayload() map[string]interface{} {
-	return userToJSON(nil)
+	return store.UserToJSON(nil)
 }

@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func (s *Server) registerGHESDirectoryRoutes(admin func(http.HandlerFunc) http.HandlerFunc) {
@@ -19,7 +21,7 @@ func (s *Server) registerGHESDirectoryRoutes(admin func(http.HandlerFunc) http.H
 	s.route("GET /api/v3/repos/{owner}/{repo}/replicas/caches", admin(s.handleListGHESRepositoryReplicaCaches))
 }
 
-func (s *Server) ghesLDAPTeam(w http.ResponseWriter, r *http.Request) (*Team, *Org) {
+func (s *Server) ghesLDAPTeam(w http.ResponseWriter, r *http.Request) (*store.Team, *store.Org) {
 	id, err := strconv.Atoi(r.PathValue("team_id"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -38,7 +40,7 @@ func (s *Server) ghesLDAPTeam(w http.ResponseWriter, r *http.Request) (*Team, *O
 	return team, org
 }
 
-func (s *Server) ghesLDAPTeamJSON(team *Team, org *Org, r *http.Request) map[string]interface{} {
+func (s *Server) ghesLDAPTeamJSON(team *store.Team, org *store.Org, r *http.Request) map[string]interface{} {
 	out := teamSimpleJSON(team, org, s.store, s.baseURL(r))
 	s.store.Mu.RLock()
 	out["ldap_dn"] = s.store.EnterpriseSettings.GHESLDAPTeamMappings[team.ID]
@@ -61,7 +63,7 @@ func (s *Server) handleUpdateGHESTeamLDAPMapping(w http.ResponseWriter, r *http.
 		return
 	}
 	if strings.TrimSpace(req.LDAPDN) == "" {
-		writeGHValidationError(w, "Team", "ldap_dn", "missing_field")
+		store.WriteGHValidationError(w, "Team", "ldap_dn", "missing_field")
 		return
 	}
 	s.store.Mu.Lock()
@@ -86,7 +88,7 @@ func (s *Server) handleSyncGHESTeamLDAPMapping(w http.ResponseWriter, r *http.Re
 	writeJSON(w, http.StatusCreated, map[string]interface{}{"status": "queued"})
 }
 
-func (s *Server) ghesLDAPUser(w http.ResponseWriter, r *http.Request) *User {
+func (s *Server) ghesLDAPUser(w http.ResponseWriter, r *http.Request) *store.User {
 	user := s.store.LookupUserByLogin(r.PathValue("username"))
 	if user == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -94,7 +96,7 @@ func (s *Server) ghesLDAPUser(w http.ResponseWriter, r *http.Request) *User {
 	return user
 }
 
-func (s *Server) ghesLDAPUserJSON(user *User) map[string]interface{} {
+func (s *Server) ghesLDAPUserJSON(user *store.User) map[string]interface{} {
 	out := s.fullUserJSON(user)
 	s.store.Mu.RLock()
 	out["ldap_dn"] = s.store.EnterpriseSettings.GHESLDAPUserMappings[user.Login]
@@ -114,7 +116,7 @@ func (s *Server) handleUpdateGHESUserLDAPMapping(w http.ResponseWriter, r *http.
 		return
 	}
 	if strings.TrimSpace(req.LDAPDN) == "" {
-		writeGHValidationError(w, "User", "ldap_dn", "missing_field")
+		store.WriteGHValidationError(w, "User", "ldap_dn", "missing_field")
 		return
 	}
 	s.store.Mu.Lock()
@@ -149,11 +151,11 @@ func (s *Server) handleRenameGHESOrganization(w http.ResponseWriter, r *http.Req
 	}
 	newLogin := normalizeGitHubLogin(req.Login)
 	if newLogin == "" {
-		writeGHValidationError(w, "Organization", "login", "missing_field")
+		store.WriteGHValidationError(w, "Organization", "login", "missing_field")
 		return
 	}
 	if oldLogin != newLogin && !s.renameGHESOrganization(oldLogin, newLogin) {
-		writeGHValidationError(w, "Organization", "login", "already_exists")
+		store.WriteGHValidationError(w, "Organization", "login", "already_exists")
 		return
 	}
 	writeJSON(w, http.StatusAccepted, map[string]interface{}{
@@ -194,13 +196,13 @@ func (s *Server) renameGHESOrganization(oldLogin, newLogin string) bool {
 	// target updates, the org row and enterprise settings — into one
 	// transaction so a crash can no longer commit some of them and leave the
 	// organization split across its old and new login (STORE-001/002).
-	batch := newPersistBatch(s.store.Persist)
+	batch := store.NewPersistBatch(s.store.Persist)
 	delete(s.store.OrgsByLogin, oldLogin)
 	for key, membership := range s.store.Memberships {
 		if membership.OrgID != org.ID {
 			continue
 		}
-		nextKey := membershipKey(newLogin, membership.UserID)
+		nextKey := store.MembershipKey(newLogin, membership.UserID)
 		delete(s.store.Memberships, key)
 		s.store.Memberships[nextKey] = membership
 		batch.Delete("memberships", key)
@@ -211,7 +213,7 @@ func (s *Server) renameGHESOrganization(oldLogin, newLogin string) bool {
 			continue
 		}
 		delete(s.store.TeamsBySlug, key)
-		s.store.TeamsBySlug[teamSlugKey(newLogin, team.Slug)] = team
+		s.store.TeamsBySlug[store.TeamSlugKey(newLogin, team.Slug)] = team
 	}
 	for _, installation := range s.store.Installations {
 		if installation.TargetType == "Organization" && installation.TargetID == org.ID {
@@ -225,7 +227,7 @@ func (s *Server) renameGHESOrganization(oldLogin, newLogin string) bool {
 	err := batch.Commit()
 	s.store.Mu.Unlock()
 	if err != nil {
-		panic(&persistenceFailure{Op: "batch", Bucket: "orgs", Key: strconv.Itoa(org.ID), Err: err})
+		panic(&store.PersistenceFailure{Op: "batch", Bucket: "orgs", Key: strconv.Itoa(org.ID), Err: err})
 	}
 	return true
 }
@@ -237,7 +239,7 @@ func moveMapKey[T any](values map[string]T, oldKey, newKey string) {
 	}
 }
 
-func moveGHESOrgScopedState(st *Store, oldLogin, newLogin string) {
+func moveGHESOrgScopedState(st *store.Store, oldLogin, newLogin string) {
 	moveMapKey(st.OrgHooks, oldLogin, newLogin)
 	for _, hook := range st.OrgHooks[newLogin] {
 		hook.OrgLogin = newLogin
@@ -304,7 +306,7 @@ func moveGHESOrgScopedState(st *Store, oldLogin, newLogin string) {
 	persistMovedOrgRow(st, "secret_scanning_pattern_configs", oldLogin, newLogin, st.SecretScanningPatternConfigs)
 }
 
-func persistMovedOrgRow[T any](st *Store, bucket, oldKey, newKey string, values map[string]T) {
+func persistMovedOrgRow[T any](st *store.Store, bucket, oldKey, newKey string, values map[string]T) {
 	if st.Persist == nil {
 		return
 	}

@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/google/uuid"
 )
 
@@ -254,15 +255,15 @@ func (h *handshakeRunner) testConnection() {
 // lookUpOwnName is GetAgentsAsync — the call config.sh makes to decide
 // between adding a registration and replacing one. It runs on the tenant
 // token, long before any agent session exists.
-func (h *handshakeRunner) lookUpOwnName() []Agent {
+func (h *handshakeRunner) lookUpOwnName() []store.Agent {
 	h.t.Helper()
 	path := "/_apis/v1/Agent/1?agentName=" + url.QueryEscape(h.name)
 	refuseAnonymous(h.t, h.srv.baseURL, "look up own name", "GET", path, "", "")
 	payload := handshakeStep(h.t, h.srv.baseURL, "look up own name", "GET", path,
 		"Bearer "+h.setupToken, "", "", http.StatusOK)
 	var listing struct {
-		Count int     `json:"count"`
-		Value []Agent `json:"value"`
+		Count int           `json:"count"`
+		Value []store.Agent `json:"value"`
 	}
 	if err := json.Unmarshal(payload, &listing); err != nil {
 		h.t.Fatalf("decode agent listing: %v", err)
@@ -311,7 +312,7 @@ func (h *handshakeRunner) replaceAgent(agentID int) {
 
 func (h *handshakeRunner) readAgent(step string, payload []byte) {
 	h.t.Helper()
-	var agent Agent
+	var agent store.Agent
 	if err := json.Unmarshal(payload, &agent); err != nil {
 		h.t.Fatalf("%s: decode agent: %v", step, err)
 	}
@@ -378,7 +379,7 @@ func (h *handshakeRunner) pollForMessage(messageType, bodyMarker string) []byte 
 	h.t.Helper()
 	payload := handshakeStep(h.t, h.srv.baseURL, "poll for messages", "GET", h.messagePath(),
 		"Bearer "+h.session, "", "", http.StatusOK)
-	var delivered TaskAgentMessage
+	var delivered store.TaskAgentMessage
 	if err := json.Unmarshal(payload, &delivered); err != nil {
 		h.t.Fatalf("decode polled message: %v; body=%s", err, payload)
 	}
@@ -432,13 +433,13 @@ func TestRunnerConfigurationHandshakeSucceedsForARepositoryRunner(t *testing.T) 
 func TestRunnerConfigurationHandshakeSucceedsForAnOrganizationRunner(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
-	store := s.store
-	admin := store.LookupUserByLogin("admin")
+	st := s.store
+	admin := st.LookupUserByLogin("admin")
 	if admin == nil {
 		t.Fatal("the seeded admin user is missing")
 	}
 	const orgLogin = "handshake-org"
-	if store.GetOrg(orgLogin) == nil && store.CreateOrg(admin, orgLogin, "Handshake Org", "") == nil {
+	if st.GetOrg(orgLogin) == nil && st.CreateOrg(admin, orgLogin, "Handshake Org", "") == nil {
 		t.Fatalf("could not create the fixture organization")
 	}
 
@@ -652,7 +653,7 @@ func TestEphemeralRunnerTeardownStaysAuthenticated(t *testing.T) {
 		runner.name, runner.name, runner.publicKeyJSON())
 	payload := handshakeStep(t, s.baseURL, "add ephemeral agent", "POST", "/_apis/v1/Agent/1",
 		"Bearer "+runner.setupToken, "application/json", body, http.StatusOK)
-	var registered Agent
+	var registered store.Agent
 	if err := json.Unmarshal(payload, &registered); err != nil {
 		t.Fatalf("decode agent: %v", err)
 	}
@@ -672,12 +673,12 @@ func TestEphemeralRunnerTeardownStaysAuthenticated(t *testing.T) {
 			`"contextData":{"github":{"t":2,"d":[{"k":"repository","v":"admin/handshake-ephemeral"}]}}}`,
 		planID, planID, requestID)
 	s.store.Mu.Lock()
-	s.store.Jobs[jobID] = &Job{
+	s.store.Jobs[jobID] = &store.Job{
 		ID: jobID, RequestID: requestID, PlanID: planID, Status: "queued", Message: message,
 		LockedUntil: fixedTestTime.Add(time.Hour),
 	}
 	s.store.Mu.Unlock()
-	queued := &TaskAgentMessage{
+	queued := &store.TaskAgentMessage{
 		MessageID:   s.actions.NextMessageID(),
 		MessageType: "PipelineAgentJobRequest",
 		Body:        message,
@@ -688,7 +689,7 @@ func TestEphemeralRunnerTeardownStaysAuthenticated(t *testing.T) {
 	// targeted message first so an unrelated test's generic self-hosted job
 	// cannot be claimed and mistaken for this one after shuffled execution.
 	s.store.Mu.Lock()
-	s.store.PendingMessages = append([]*TaskAgentMessage{queued}, s.store.PendingMessages...)
+	s.store.PendingMessages = append([]*store.TaskAgentMessage{queued}, s.store.PendingMessages...)
 	s.store.Mu.Unlock()
 
 	runner.pollForMessage("PipelineAgentJobRequest", planID)

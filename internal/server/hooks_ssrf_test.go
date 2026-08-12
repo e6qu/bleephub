@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/e6qu/bleephub/internal/server/testutil"
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // ssrfTestServer is a unit server with the webhook address gate at its secure
@@ -128,7 +129,7 @@ func TestRepositoryImportChecksTheDialedAddress(t *testing.T) {
 	if repo == nil {
 		t.Fatal("could not create import target")
 	}
-	imp := &RepoImport{RepoID: repo.ID, VCS: "git", VCSURL: receiver.URL + "/repo.git"}
+	imp := &store.RepoImport{RepoID: repo.ID, VCS: "git", VCSURL: receiver.URL + "/repo.git"}
 	s.runRepoImport(imp, repo)
 
 	if got := reached.Load(); got != 0 {
@@ -339,15 +340,15 @@ func TestWebhookDeliveryConcurrencyIsBounded(t *testing.T) {
 func TestRepoHookRoutesRefuseAnUnresolvedRepository(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
-	store := s.store
+	st := s.store
 	now := fixedTestTime
-	store.Mu.Lock()
-	stranger := &User{ID: store.NextUser, Login: "ssrf-stranger", Type: "User", CreatedAt: now, UpdatedAt: now}
-	store.Users[stranger.ID] = stranger
-	store.UsersByLogin[stranger.Login] = stranger
-	store.NextUser++
-	store.Mu.Unlock()
-	token := store.CreateToken(stranger.ID, "repo, workflow, read:org, admin:org, gist")
+	st.Mu.Lock()
+	stranger := &store.User{ID: st.NextUser, Login: "ssrf-stranger", Type: "User", CreatedAt: now, UpdatedAt: now}
+	st.Users[stranger.ID] = stranger
+	st.UsersByLogin[stranger.Login] = stranger
+	st.NextUser++
+	st.Mu.Unlock()
+	token := st.CreateToken(stranger.ID, "repo, workflow, read:org, admin:org, gist")
 	if token == nil {
 		t.Fatal("could not mint a token for the unrelated user")
 	}
@@ -363,7 +364,7 @@ func TestRepoHookRoutesRefuseAnUnresolvedRepository(t *testing.T) {
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("POST %s = %d (%s), want 404", path, resp.StatusCode, strings.TrimSpace(string(body)))
 	}
-	if hooks := store.ListHooks("ssrf-no-such-owner/ssrf-no-such-repo"); len(hooks) != 0 {
+	if hooks := st.ListHooks("ssrf-no-such-owner/ssrf-no-such-repo"); len(hooks) != 0 {
 		t.Fatalf("%d hook(s) stored against a repository that does not exist", len(hooks))
 	}
 
@@ -380,15 +381,15 @@ func TestRepoHookRoutesRefuseAnUnresolvedRepository(t *testing.T) {
 func TestDependabotSecretsRefuseAnUnresolvedRepository(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
-	store := s.store
+	st := s.store
 	now := fixedTestTime
-	store.Mu.Lock()
-	stranger := &User{ID: store.NextUser, Login: "ssrf-dependabot-stranger", Type: "User", CreatedAt: now, UpdatedAt: now}
-	store.Users[stranger.ID] = stranger
-	store.UsersByLogin[stranger.Login] = stranger
-	store.NextUser++
-	store.Mu.Unlock()
-	token := store.CreateToken(stranger.ID, "repo, workflow, read:org, admin:org, gist")
+	st.Mu.Lock()
+	stranger := &store.User{ID: st.NextUser, Login: "ssrf-dependabot-stranger", Type: "User", CreatedAt: now, UpdatedAt: now}
+	st.Users[stranger.ID] = stranger
+	st.UsersByLogin[stranger.Login] = stranger
+	st.NextUser++
+	st.Mu.Unlock()
+	token := st.CreateToken(stranger.ID, "repo, workflow, read:org, admin:org, gist")
 	if token == nil {
 		t.Fatal("could not mint a token for the unrelated user")
 	}

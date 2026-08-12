@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/google/uuid"
 )
 
@@ -57,12 +58,12 @@ var enterpriseBudgetTypes = map[string]bool{
 	"BundlePricing": true, "ProductPricing": true, "SkuPricing": true,
 }
 
-func (s *Server) enterpriseBudgets() []*OrgBudget {
+func (s *Server) enterpriseBudgets() []*store.OrgBudget {
 	s.store.Mu.RLock()
 	defer s.store.Mu.RUnlock()
-	out := make([]*OrgBudget, 0, len(s.store.EnterpriseSettings.EnterpriseBudgets))
+	out := make([]*store.OrgBudget, 0, len(s.store.EnterpriseSettings.EnterpriseBudgets))
 	for _, budget := range s.store.EnterpriseSettings.EnterpriseBudgets {
-		out = append(out, cloneBudget(budget))
+		out = append(out, store.CloneBudget(budget))
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if !out[i].CreatedAt.Equal(out[j].CreatedAt) {
@@ -73,7 +74,7 @@ func (s *Server) enterpriseBudgets() []*OrgBudget {
 	return out
 }
 
-func enterpriseBudgetPage(r *http.Request, budgets []*OrgBudget) ([]*OrgBudget, int, bool) {
+func enterpriseBudgetPage(r *http.Request, budgets []*store.OrgBudget) ([]*store.OrgBudget, int, bool) {
 	page, perPage := 1, 10
 	if parsed, err := strconv.Atoi(r.URL.Query().Get("page")); err == nil && parsed > 0 {
 		page = parsed
@@ -100,7 +101,7 @@ func (s *Server) handleListEnterpriseBudgets(w http.ResponseWriter, r *http.Requ
 			writeGHError(w, http.StatusBadRequest, "Invalid budget scope")
 			return
 		}
-		filtered := make([]*OrgBudget, 0, len(budgets))
+		filtered := make([]*store.OrgBudget, 0, len(budgets))
 		for _, budget := range budgets {
 			if budget.BudgetScope == scope {
 				filtered = append(filtered, budget)
@@ -118,8 +119,8 @@ func (s *Server) handleListEnterpriseBudgets(w http.ResponseWriter, r *http.Requ
 	})
 }
 
-func validateEnterpriseBudgetRequest(s *Server, req *orgBudgetBody, creating bool) (*OrgBudget, bool) {
-	budget := &OrgBudget{ID: uuid.NewString(), CreatedAt: s.currentTime()}
+func validateEnterpriseBudgetRequest(s *Server, req *orgBudgetBody, creating bool) (*store.OrgBudget, bool) {
+	budget := &store.OrgBudget{ID: uuid.NewString(), CreatedAt: s.currentTime()}
 	if !creating {
 		return budget, true
 	}
@@ -139,42 +140,42 @@ func validateEnterpriseBudgetRequest(s *Server, req *orgBudgetBody, creating boo
 	if req.User != nil {
 		budget.BudgetEntityName = *req.User
 	}
-	budget.BudgetAlerting = OrgBudgetAlerting{
+	budget.BudgetAlerting = store.OrgBudgetAlerting{
 		WillAlert: *req.BudgetAlerting.WillAlert, AlertRecipients: append([]string(nil), req.BudgetAlerting.AlertRecipients...),
 	}
 	return budget, true
 }
 
-func (s *Server) validateEnterpriseBudget(w http.ResponseWriter, budget *OrgBudget) bool {
+func (s *Server) validateEnterpriseBudget(w http.ResponseWriter, budget *store.OrgBudget) bool {
 	if budget.BudgetAmount < 0 || !enterpriseBudgetScopes[budget.BudgetScope] ||
 		!enterpriseBudgetTypes[budget.BudgetType] || budget.BudgetProductSKU == "" {
-		writeGHValidationError(w, "Budget", "budget", "invalid")
+		store.WriteGHValidationError(w, "Budget", "budget", "invalid")
 		return false
 	}
 	isMulti := budget.BudgetScope == "user" || budget.BudgetScope == "multi_user_customer" ||
 		budget.BudgetScope == "multi_user_cost_center"
 	if isMulti && (budget.BudgetProductSKU != "ai_credits" && budget.BudgetProductSKU != "premium_requests") {
-		writeGHValidationError(w, "Budget", "budget_product_sku", "invalid")
+		store.WriteGHValidationError(w, "Budget", "budget_product_sku", "invalid")
 		return false
 	}
 	if isMulti && !budget.PreventFurtherUsage {
-		writeGHValidationError(w, "Budget", "prevent_further_usage", "invalid")
+		store.WriteGHValidationError(w, "Budget", "prevent_further_usage", "invalid")
 		return false
 	}
 	switch budget.BudgetScope {
 	case "enterprise", "multi_user_customer":
 		if budget.BudgetEntityName != "" {
-			writeGHValidationError(w, "Budget", "budget_entity_name", "invalid")
+			store.WriteGHValidationError(w, "Budget", "budget_entity_name", "invalid")
 			return false
 		}
 	case "organization":
 		if s.store.GetOrg(budget.BudgetEntityName) == nil {
-			writeGHValidationError(w, "Budget", "budget_entity_name", "invalid")
+			store.WriteGHValidationError(w, "Budget", "budget_entity_name", "invalid")
 			return false
 		}
 	case "repository":
 		if s.store.GetRepoByFullName(budget.BudgetEntityName) == nil {
-			writeGHValidationError(w, "Budget", "budget_entity_name", "invalid")
+			store.WriteGHValidationError(w, "Budget", "budget_entity_name", "invalid")
 			return false
 		}
 	case "cost_center", "multi_user_cost_center":
@@ -182,18 +183,18 @@ func (s *Server) validateEnterpriseBudget(w http.ResponseWriter, budget *OrgBudg
 		center := s.store.EnterpriseSettings.EnterpriseCostCenters[budget.BudgetEntityName]
 		s.store.Mu.RUnlock()
 		if center == nil || center.State != "active" {
-			writeGHValidationError(w, "Budget", "budget_entity_name", "invalid")
+			store.WriteGHValidationError(w, "Budget", "budget_entity_name", "invalid")
 			return false
 		}
 	case "user":
 		if s.store.LookupUserByLogin(budget.BudgetEntityName) == nil {
-			writeGHValidationError(w, "Budget", "budget_entity_name", "invalid")
+			store.WriteGHValidationError(w, "Budget", "budget_entity_name", "invalid")
 			return false
 		}
 	}
 	for _, login := range budget.BudgetAlerting.AlertRecipients {
 		if s.store.LookupUserByLogin(login) == nil {
-			writeGHValidationError(w, "Budget", "budget_alerting.alert_recipients", "invalid")
+			store.WriteGHValidationError(w, "Budget", "budget_alerting.alert_recipients", "invalid")
 			return false
 		}
 	}
@@ -207,7 +208,7 @@ func (s *Server) handleCreateEnterpriseBudget(w http.ResponseWriter, r *http.Req
 	}
 	budget, ok := validateEnterpriseBudgetRequest(s, &req, true)
 	if !ok {
-		writeGHValidationError(w, "Budget", "budget", "missing_field")
+		store.WriteGHValidationError(w, "Budget", "budget", "missing_field")
 		return
 	}
 	if !s.validateEnterpriseBudget(w, budget) {
@@ -222,10 +223,10 @@ func (s *Server) handleCreateEnterpriseBudget(w http.ResponseWriter, r *http.Req
 	})
 }
 
-func (s *Server) enterpriseBudget(id string) *OrgBudget {
+func (s *Server) enterpriseBudget(id string) *store.OrgBudget {
 	s.store.Mu.RLock()
 	defer s.store.Mu.RUnlock()
-	return cloneBudget(s.store.EnterpriseSettings.EnterpriseBudgets[id])
+	return store.CloneBudget(s.store.EnterpriseSettings.EnterpriseBudgets[id])
 }
 
 func (s *Server) handleGetEnterpriseBudget(w http.ResponseWriter, r *http.Request) {
@@ -237,7 +238,7 @@ func (s *Server) handleGetEnterpriseBudget(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, budgetJSON(budget))
 }
 
-func applyEnterpriseBudgetPatch(budget *OrgBudget, req *orgBudgetBody) {
+func applyEnterpriseBudgetPatch(budget *store.OrgBudget, req *orgBudgetBody) {
 	if req.BudgetAmount != nil {
 		budget.BudgetAmount = *req.BudgetAmount
 	}
@@ -371,19 +372,19 @@ func (s *Server) handleEnterpriseBudgetUserStates(w http.ResponseWriter, r *http
 	})
 }
 
-func cloneCostCenter(center *EnterpriseCostCenter) *EnterpriseCostCenter {
+func cloneCostCenter(center *store.EnterpriseCostCenter) *store.EnterpriseCostCenter {
 	if center == nil {
 		return nil
 	}
 	copy := *center
-	copy.Resources = append([]EnterpriseCostCenterResource(nil), center.Resources...)
+	copy.Resources = append([]store.EnterpriseCostCenterResource(nil), center.Resources...)
 	return &copy
 }
 
-func costCenterJSON(center *EnterpriseCostCenter) map[string]interface{} {
-	resources := append([]EnterpriseCostCenterResource(nil), center.Resources...)
+func costCenterJSON(center *store.EnterpriseCostCenter) map[string]interface{} {
+	resources := append([]store.EnterpriseCostCenterResource(nil), center.Resources...)
 	if resources == nil {
-		resources = []EnterpriseCostCenterResource{}
+		resources = []store.EnterpriseCostCenterResource{}
 	}
 	sort.Slice(resources, func(i, j int) bool {
 		if resources[i].Type != resources[j].Type {
@@ -403,7 +404,7 @@ func costCenterJSON(center *EnterpriseCostCenter) map[string]interface{} {
 	return out
 }
 
-func (s *Server) enterpriseCostCenter(id string) *EnterpriseCostCenter {
+func (s *Server) enterpriseCostCenter(id string) *store.EnterpriseCostCenter {
 	s.store.Mu.RLock()
 	defer s.store.Mu.RUnlock()
 	return cloneCostCenter(s.store.EnterpriseSettings.EnterpriseCostCenters[id])
@@ -416,7 +417,7 @@ func (s *Server) handleListEnterpriseCostCenters(w http.ResponseWriter, r *http.
 		return
 	}
 	s.store.Mu.RLock()
-	centers := make([]*EnterpriseCostCenter, 0, len(s.store.EnterpriseSettings.EnterpriseCostCenters))
+	centers := make([]*store.EnterpriseCostCenter, 0, len(s.store.EnterpriseSettings.EnterpriseCostCenters))
 	for _, center := range s.store.EnterpriseSettings.EnterpriseCostCenters {
 		if state == "" || center.State == state {
 			centers = append(centers, cloneCostCenter(center))
@@ -454,8 +455,8 @@ func (s *Server) handleCreateEnterpriseCostCenter(w http.ResponseWriter, r *http
 		return
 	}
 	now := s.currentTime()
-	center := &EnterpriseCostCenter{
-		ID: uuid.NewString(), Name: req.Name, State: "active", Resources: []EnterpriseCostCenterResource{},
+	center := &store.EnterpriseCostCenter{
+		ID: uuid.NewString(), Name: req.Name, State: "active", Resources: []store.EnterpriseCostCenterResource{},
 		AICreditPoolEnabled: req.AICreditPoolEnabled, CreatedAt: now, UpdatedAt: now,
 	}
 	s.store.Mu.Lock()
@@ -499,7 +500,7 @@ func (s *Server) handleUpdateEnterpriseCostCenter(w http.ResponseWriter, r *http
 		name := strings.TrimSpace(*req.Name)
 		if name == "" || len(name) > 255 {
 			s.store.Mu.Unlock()
-			writeGHValidationError(w, "CostCenter", "name", "invalid")
+			store.WriteGHValidationError(w, "CostCenter", "name", "invalid")
 			return
 		}
 		if s.costCenterNameConflictLocked(name, id) {
@@ -514,7 +515,7 @@ func (s *Server) handleUpdateEnterpriseCostCenter(w http.ResponseWriter, r *http
 			for _, resource := range center.Resources {
 				if resource.Type == "Org" || resource.Type == "Repo" {
 					s.store.Mu.Unlock()
-					writeGHValidationError(w, "CostCenter", "ai_credit_pool_enabled", "invalid")
+					store.WriteGHValidationError(w, "CostCenter", "ai_credit_pool_enabled", "invalid")
 					return
 				}
 			}
@@ -538,7 +539,7 @@ func (s *Server) handleDeleteEnterpriseCostCenter(w http.ResponseWriter, r *http
 		return
 	}
 	center.State = "deleted"
-	center.Resources = []EnterpriseCostCenterResource{}
+	center.Resources = []store.EnterpriseCostCenterResource{}
 	center.UpdatedAt = s.currentTime()
 	name := center.Name
 	s.store.PersistEnterpriseSettings()
@@ -556,25 +557,25 @@ type enterpriseCostCenterResourcesBody struct {
 	EnterpriseTeams []string `json:"enterprise_teams"`
 }
 
-func (s *Server) validateCostCenterResources(w http.ResponseWriter, req enterpriseCostCenterResourcesBody) ([]EnterpriseCostCenterResource, bool) {
+func (s *Server) validateCostCenterResources(w http.ResponseWriter, req enterpriseCostCenterResourcesBody) ([]store.EnterpriseCostCenterResource, bool) {
 	total := len(req.Users) + len(req.Organizations) + len(req.Repositories) + len(req.EnterpriseTeams)
 	if total == 0 || total > 50 {
 		writeGHError(w, http.StatusBadRequest, "Between 1 and 50 resources are required.")
 		return nil, false
 	}
-	var out []EnterpriseCostCenterResource
+	var out []store.EnterpriseCostCenterResource
 	seen := map[string]bool{}
 	add := func(kind, name string) {
 		key := kind + "\x00" + strings.ToLower(name)
 		if !seen[key] {
 			seen[key] = true
-			out = append(out, EnterpriseCostCenterResource{Type: kind, Name: name})
+			out = append(out, store.EnterpriseCostCenterResource{Type: kind, Name: name})
 		}
 	}
 	for _, login := range req.Users {
 		user := s.store.LookupUserByLogin(login)
 		if user == nil {
-			writeGHValidationError(w, "CostCenter", "users", "invalid")
+			store.WriteGHValidationError(w, "CostCenter", "users", "invalid")
 			return nil, false
 		}
 		add("User", user.Login)
@@ -582,7 +583,7 @@ func (s *Server) validateCostCenterResources(w http.ResponseWriter, req enterpri
 	for _, login := range req.Organizations {
 		org := s.store.GetOrg(login)
 		if org == nil {
-			writeGHValidationError(w, "CostCenter", "organizations", "invalid")
+			store.WriteGHValidationError(w, "CostCenter", "organizations", "invalid")
 			return nil, false
 		}
 		add("Org", org.Login)
@@ -590,7 +591,7 @@ func (s *Server) validateCostCenterResources(w http.ResponseWriter, req enterpri
 	for _, fullName := range req.Repositories {
 		repo := s.store.GetRepoByFullName(fullName)
 		if repo == nil {
-			writeGHValidationError(w, "CostCenter", "repositories", "invalid")
+			store.WriteGHValidationError(w, "CostCenter", "repositories", "invalid")
 			return nil, false
 		}
 		add("Repo", repo.FullName)
@@ -598,7 +599,7 @@ func (s *Server) validateCostCenterResources(w http.ResponseWriter, req enterpri
 	for _, slug := range req.EnterpriseTeams {
 		team := s.store.GetEnterpriseTeam(slug)
 		if team == nil {
-			writeGHValidationError(w, "CostCenter", "enterprise_teams", "invalid")
+			store.WriteGHValidationError(w, "CostCenter", "enterprise_teams", "invalid")
 			return nil, false
 		}
 		add("Team", team.Slug)
@@ -606,11 +607,11 @@ func (s *Server) validateCostCenterResources(w http.ResponseWriter, req enterpri
 	return out, true
 }
 
-func sameCostCenterResource(a, b EnterpriseCostCenterResource) bool {
+func sameCostCenterResource(a, b store.EnterpriseCostCenterResource) bool {
 	return a.Type == b.Type && strings.EqualFold(a.Name, b.Name)
 }
 
-func removeCostCenterResource(resources []EnterpriseCostCenterResource, target EnterpriseCostCenterResource) ([]EnterpriseCostCenterResource, bool) {
+func removeCostCenterResource(resources []store.EnterpriseCostCenterResource, target store.EnterpriseCostCenterResource) ([]store.EnterpriseCostCenterResource, bool) {
 	for i, resource := range resources {
 		if sameCostCenterResource(resource, target) {
 			return append(resources[:i], resources[i+1:]...), true
@@ -705,8 +706,8 @@ func (s *Server) handleRemoveEnterpriseCostCenterResources(w http.ResponseWriter
 	})
 }
 
-func (s *Server) enterpriseActionsUsageLines(year, month, day int) []actionsUsageLine {
-	var lines []actionsUsageLine
+func (s *Server) enterpriseActionsUsageLines(year, month, day int) []store.ActionsUsageLine {
+	var lines []store.ActionsUsageLine
 	for _, org := range s.store.ListOrgsAll(0) {
 		lines = append(lines, s.store.OrgActionsUsageLines(org.Login, year, month, day)...)
 	}
@@ -888,7 +889,7 @@ func (s *Server) handleEnterpriseAdvancedSecurityBilling(w http.ResponseWriter, 
 	})
 }
 
-func cloneBillingReport(report *EnterpriseBillingReport) *EnterpriseBillingReport {
+func cloneBillingReport(report *store.EnterpriseBillingReport) *store.EnterpriseBillingReport {
 	if report == nil {
 		return nil
 	}
@@ -897,7 +898,7 @@ func cloneBillingReport(report *EnterpriseBillingReport) *EnterpriseBillingRepor
 	return &copy
 }
 
-func billingReportJSON(report *EnterpriseBillingReport) map[string]interface{} {
+func billingReportJSON(report *store.EnterpriseBillingReport) map[string]interface{} {
 	out := map[string]interface{}{
 		"id": report.ID, "report_type": report.ReportType, "start_date": report.StartDate,
 		"end_date": report.EndDate, "status": report.Status,
@@ -911,7 +912,7 @@ func billingReportJSON(report *EnterpriseBillingReport) map[string]interface{} {
 
 func (s *Server) handleListEnterpriseBillingReports(w http.ResponseWriter, _ *http.Request) {
 	s.store.Mu.RLock()
-	reports := make([]*EnterpriseBillingReport, 0, len(s.store.EnterpriseSettings.EnterpriseBillingReports))
+	reports := make([]*store.EnterpriseBillingReport, 0, len(s.store.EnterpriseSettings.EnterpriseBillingReports))
 	for _, report := range s.store.EnterpriseSettings.EnterpriseBillingReports {
 		reports = append(reports, cloneBillingReport(report))
 	}
@@ -960,7 +961,7 @@ func (s *Server) handleCreateEnterpriseBillingReport(w http.ResponseWriter, r *h
 		actor = app.Slug + "[bot]"
 	}
 	now := s.currentTime()
-	report := &EnterpriseBillingReport{
+	report := &store.EnterpriseBillingReport{
 		ID: uuid.NewString(), ReportType: req.ReportType, StartDate: req.StartDate, EndDate: req.EndDate,
 		Status: "processing", CreatedAt: now, Actor: actor,
 	}

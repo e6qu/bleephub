@@ -3,6 +3,8 @@ package bleephub
 import (
 	"net/http"
 	"strings"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // registerGHESAdminStatsRoutes closes the classic-token-only GHES
@@ -121,7 +123,7 @@ func (s *Server) ghesAdminStats() map[string]map[string]interface{} {
 		}
 	}
 	for _, membership := range s.store.Memberships {
-		if membership.State == MembershipStateActive {
+		if membership.State == store.MembershipStateActive {
 			orgs["total_team_members"] = orgs["total_team_members"].(int) + 1
 		}
 	}

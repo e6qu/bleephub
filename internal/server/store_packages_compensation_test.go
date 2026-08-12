@@ -7,6 +7,8 @@ import (
 	"errors"
 	"io"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // flakyByteStore is an actionsByteStore that fails the failOn-th Put and
@@ -51,7 +53,7 @@ func (m *flakyByteStore) Delete(_ context.Context, key string) error {
 // no orphaned blob that nothing references and nothing ever reclaims.
 func TestCreatePackageVersionCleansUpBlobsOnPartialWriteFailure(t *testing.T) {
 	t.Parallel()
-	st := NewStore()
+	st := store.NewStore()
 	st.SeedDefaultUser()
 	if _, ok := st.CreatePackage("User", "admin", "npm", "widget", "private"); !ok {
 		t.Fatal("create package")
@@ -60,7 +62,7 @@ func TestCreatePackageVersionCleansUpBlobsOnPartialWriteFailure(t *testing.T) {
 	st.ObjectByteStore = bs
 
 	b64 := func(s string) string { return base64.StdEncoding.EncodeToString([]byte(s)) }
-	_, err := st.CreatePackageVersion("User", "admin", "npm", "widget", "1.0.0", "", nil, []PackageFileInput{
+	_, err := st.CreatePackageVersion("User", "admin", "npm", "widget", "1.0.0", "", nil, []store.PackageFileInput{
 		{Name: "a.tgz", ContentType: "application/octet-stream", ContentBase64: b64("first")},
 		{Name: "b.tgz", ContentType: "application/octet-stream", ContentBase64: b64("second")},
 	})

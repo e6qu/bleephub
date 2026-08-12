@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/google/uuid"
 )
 
@@ -16,16 +17,16 @@ func TestFinishJobCapturesOfficialRunnerOutputsBeforeCompletion(t *testing.T) {
 	s.registerRunServiceRoutes()
 	jobID := uuid.New().String()
 	planID := uuid.New().String()
-	wf := &Workflow{
+	wf := &store.Workflow{
 		ID:           uuid.New().String(),
 		Name:         "outputs",
 		RunID:        42,
-		Status:       WorkflowStatusRunning,
+		Status:       store.WorkflowStatusRunning,
 		RepoFullName: "admin/test",
-		Jobs: map[string]*WorkflowJob{
+		Jobs: map[string]*store.WorkflowJob{
 			"build": {
-				Key: "build", JobID: jobID, PlanID: planID, Status: JobStatusRunning,
-				Outputs: map[string]string{}, Def: &JobDef{},
+				Key: "build", JobID: jobID, PlanID: planID, Status: store.JobStatusRunning,
+				Outputs: map[string]string{}, Def: &store.JobDef{},
 			},
 		},
 	}
@@ -33,7 +34,7 @@ func TestFinishJobCapturesOfficialRunnerOutputsBeforeCompletion(t *testing.T) {
 	// FinishJob is gated on the runtime token of the job whose plan it names,
 	// so the job needs the dispatched message that token is minted against.
 	scopeID := "scope-" + planID
-	s.store.Jobs[jobID] = &Job{ID: jobID, PlanID: planID, Status: "running", Message: fmt.Sprintf(
+	s.store.Jobs[jobID] = &store.Job{ID: jobID, PlanID: planID, Status: "running", Message: fmt.Sprintf(
 		`{"plan":{"scopeIdentifier":%q,"planId":%q},"contextData":{"github":{"t":2,"d":[{"k":"repository","v":"admin/test"}]}}}`,
 		scopeID, planID)}
 
@@ -55,7 +56,7 @@ func TestFinishJobCapturesOfficialRunnerOutputsBeforeCompletion(t *testing.T) {
 	if got := s.store.Jobs[jobID].Result; got != "Succeeded" {
 		t.Fatalf("broker job result = %q, want canonical Succeeded", got)
 	}
-	if job.Status != JobStatusCompleted || job.Result != ResultSuccess {
+	if job.Status != store.JobStatusCompleted || job.Result != store.ResultSuccess {
 		t.Fatalf("job state = %s/%s, want completed/success", job.Status, job.Result)
 	}
 }
@@ -66,7 +67,7 @@ func TestFinishJobRejectsMismatchedJobAndPlan(t *testing.T) {
 	jobID := uuid.New().String()
 	planID := uuid.New().String()
 	scopeID := "scope-" + planID
-	s.store.Jobs[jobID] = &Job{ID: jobID, PlanID: planID, Status: "running", Message: fmt.Sprintf(
+	s.store.Jobs[jobID] = &store.Job{ID: jobID, PlanID: planID, Status: "running", Message: fmt.Sprintf(
 		`{"plan":{"scopeIdentifier":%q,"planId":%q},"contextData":{"github":{"t":2,"d":[{"k":"repository","v":"admin/test"}]}}}`,
 		scopeID, planID)}
 

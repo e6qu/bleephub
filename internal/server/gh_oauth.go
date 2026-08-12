@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -137,7 +138,7 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 	}
 	sessionID := uuid.New().String()
 	csrf := uuid.New().String()
-	sess := &LoginSession{
+	sess := &store.LoginSession{
 		UserID:    user.ID,
 		CSRFToken: csrf,
 		ExpiresAt: time.Now().Add(time.Hour),
@@ -169,7 +170,7 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(`<!DOCTYPE html><html><body><p>Signed in successfully.</p></body></html>`))
 }
 
-func (s *Server) browserLoginUser(login, credential string) *User {
+func (s *Server) browserLoginUser(login, credential string) *store.User {
 	// Canonicalize the login (NFKC + case fold) before any lookup so "Alice"
 	// authenticates the account stored as "alice", and mixed Latin/Cyrillic
 	// lookalikes cannot resolve to a real account.
@@ -183,7 +184,7 @@ func (s *Server) browserLoginUser(login, credential string) *User {
 	// configured site-admin bootstrap credential; ordinary accounts use their
 	// password or an external identity provider.
 	_, user := s.store.LookupToken(credential)
-	adminCredential := AdminToken()
+	adminCredential := store.AdminToken()
 	if user != nil && user.Login == normalized && user.SiteAdmin && !user.Suspended &&
 		subtle.ConstantTimeCompare([]byte(credential), []byte(adminCredential)) == 1 {
 		return user
@@ -315,7 +316,7 @@ func (s *Server) handleDeviceCode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.store.Mu.Lock()
-	dc := &DeviceCode{
+	dc := &store.DeviceCode{
 		Code:          uuid.New().String(),
 		UserCode:      newDeviceUserCode(),
 		ClientID:      clientID,
@@ -501,7 +502,7 @@ func (s *Server) handleDeviceApprove(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.store.Mu.Lock()
-	var dc *DeviceCode
+	var dc *store.DeviceCode
 	for _, candidate := range s.store.DeviceCodes {
 		if normalizeDeviceUserCode(candidate.UserCode) == userCode {
 			dc = candidate
@@ -690,7 +691,7 @@ func (s *Server) consumeConsentToken(r *http.Request, provided string) (bool, er
 	if err != nil || sess == nil {
 		return false, err
 	}
-	if provided == "" || sess.CSRFToken == "" || !secretEqual(provided, sess.CSRFToken) {
+	if provided == "" || sess.CSRFToken == "" || !store.SecretEqual(provided, sess.CSRFToken) {
 		return false, nil
 	}
 	rotated, err := randomIdentityState()
@@ -706,7 +707,7 @@ func (s *Server) consumeConsentToken(r *http.Request, provided string) (bool, er
 
 // sessionRecordFromRequest returns the session together with the cookie value
 // that keys it, which the CSRF rotation needs and sessionFromRequest drops.
-func (s *Server) sessionRecordFromRequest(r *http.Request) (string, *LoginSession, error) {
+func (s *Server) sessionRecordFromRequest(r *http.Request) (string, *store.LoginSession, error) {
 	cookie := s.sessionCookieFromRequest(r)
 	if cookie == nil {
 		return "", nil, nil
@@ -726,20 +727,20 @@ func (s *Server) sessionRecordFromRequest(r *http.Request) (string, *LoginSessio
 //
 // The destination is checked here rather than only at the form, because this
 // is the single point at which a code becomes deliverable to an address.
-func (s *Server) completeAuthorize(w http.ResponseWriter, r *http.Request, user *User, clientID, redirectURI, scopes, state string) {
+func (s *Server) completeAuthorize(w http.ResponseWriter, r *http.Request, user *store.User, clientID, redirectURI, scopes, state string) {
 	if !s.requireRegisteredRedirectURI(w, clientID, redirectURI) {
 		return
 	}
 	s.store.Mu.Lock()
 	if s.store.AuthCodes == nil {
-		s.store.AuthCodes = map[string]*authCode{}
+		s.store.AuthCodes = map[string]*store.AuthCode{}
 	}
 	code := uuid.New().String()
 	// An omitted scope grants read-only access to public information (GitHub's
 	// documented default) — never a silent upgrade to `repo`, which the user
 	// consented to nothing for. An empty scope string carries that minimal grant
 	// through classicScopeCovers.
-	s.store.AuthCodes[code] = &authCode{
+	s.store.AuthCodes[code] = &store.AuthCode{
 		Code:        code,
 		ClientID:    clientID,
 		RedirectURI: redirectURI,
@@ -767,7 +768,7 @@ func (s *Server) completeAuthorize(w http.ResponseWriter, r *http.Request, user 
 
 // sessionFromRequest reads the session cookie and returns the corresponding
 // LoginSession, or nil if absent / expired / unknown.
-func (s *Server) sessionFromRequest(r *http.Request) *LoginSession {
+func (s *Server) sessionFromRequest(r *http.Request) *store.LoginSession {
 	cookie := s.sessionCookieFromRequest(r)
 	if cookie == nil {
 		return nil
@@ -778,7 +779,7 @@ func (s *Server) sessionFromRequest(r *http.Request) *LoginSession {
 		return nil
 	}
 	s.store.Mu.RLock()
-	var user *User
+	var user *store.User
 	if sess != nil {
 		user = s.store.Users[sess.UserID]
 	}

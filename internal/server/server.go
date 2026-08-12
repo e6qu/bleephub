@@ -28,7 +28,9 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/e6qu/bleephub/internal/actions"
+	"github.com/e6qu/bleephub/internal/gitstore"
 	"github.com/e6qu/bleephub/internal/graphqlapi"
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // Server is the bleephub HTTP server implementing the GitHub Actions
@@ -37,17 +39,17 @@ type Server struct {
 	addr                   string
 	mux                    *http.ServeMux
 	logger                 zerolog.Logger
-	store                  *Store
+	store                  *store.Store
 	graphql                *graphqlapi.Resolver
 	actionCache            *ActionCache
-	artifactStore          *ArtifactStore
+	artifactStore          *store.ArtifactStore
 	metrics                *Metrics
 	maxConcurrentWorkflows int
 	// injectedByteStore, when set by a ServerOption before persistence wiring,
 	// overrides the env-derived object byte store. It lets a test stand up a
 	// fully persistent server (BLEEPHUB_PERSIST=true) with an in-memory object
 	// store instead of requiring a live S3/MinIO endpoint.
-	injectedByteStore actionsByteStore
+	injectedByteStore store.ActionsByteStore
 	// actions is the extracted Actions execution engine (ARCH-002). It owns
 	// workflow submission/dispatch, the broker queue, concurrency admission,
 	// scheduling, and the checks/webhook event loop; the server reaches it
@@ -141,7 +143,7 @@ func WithBuildInfo(info BuildInfo) ServerOption {
 // but it must not exercise a structurally different six-field Server that
 // production can never create.
 type serverConstruction struct {
-	byteStore                  actionsByteStore
+	byteStore                  store.ActionsByteStore
 	dataDir                    string
 	maxConcurrentWorkflows     int
 	externalURL                string
@@ -160,9 +162,9 @@ func newServerState(addr string, logger zerolog.Logger, construction serverConst
 		addr:                        addr,
 		mux:                         http.NewServeMux(),
 		logger:                      logger,
-		store:                       NewStore(),
+		store:                       store.NewStore(),
 		actionCache:                 NewActionCache(),
-		artifactStore:               NewArtifactStoreWithByteStore(construction.dataDir, construction.byteStore),
+		artifactStore:               store.NewArtifactStoreWithByteStore(construction.dataDir, construction.byteStore),
 		metrics:                     NewMetrics(),
 		maxConcurrentWorkflows:      construction.maxConcurrentWorkflows,
 		registryUploads:             map[string]*containerRegistryUpload{},
@@ -201,7 +203,7 @@ func (s *Server) newActionsEngine() *actions.Engine {
 		// GITHUB_TOKEN minting stays in the auth layer: mint and verify share
 		// the runner MAC key (auth.go), and signature drift would break every
 		// runner job at lease time.
-		MintJobToken: func(scopeID string, wf *Workflow, jd *JobDef) string {
+		MintJobToken: func(scopeID string, wf *store.Workflow, jd *store.JobDef) string {
 			return makeJobJWT(scopeID, wf.RepoFullName, s.resolveJobTokenPermissions(wf, jd))
 		},
 		RepoEventPayload: repoPayload,
@@ -229,7 +231,7 @@ func (s *Server) newActionsEngine() *actions.Engine {
 func (s *Server) reconcileOrgInvitationsSafely(now time.Time) {
 	defer func() {
 		if r := recover(); r != nil {
-			if pf, ok := r.(*persistenceFailure); ok {
+			if pf, ok := r.(*store.PersistenceFailure); ok {
 				s.logger.Error().Err(pf).Msg("org-invitation reconcile persist failed; reloading")
 				if err := s.store.ReloadFromPersistence(); err != nil {
 					s.logger.Error().Err(err).Msg("reload after org-invitation reconcile failure")
@@ -386,7 +388,7 @@ func NewServer(addr string, logger zerolog.Logger, options ...ServerOption) *Ser
 		}
 	}
 	dataDir := os.Getenv("BLEEPHUB_DATA_DIR")
-	byteStore, err := newActionsByteStoreFromEnv(context.Background())
+	byteStore, err := store.NewActionsByteStoreFromEnv(context.Background())
 	if err != nil {
 		logger.Fatal().Err(err).Msg("failed to initialize BLEEPHUB_OBJECT_S3_* byte storage")
 	}
@@ -395,7 +397,7 @@ func NewServer(addr string, logger zerolog.Logger, options ...ServerOption) *Ser
 		dataDir:                    dataDir,
 		maxConcurrentWorkflows:     maxWF,
 		externalURL:                strings.TrimRight(os.Getenv("BLEEPHUB_EXTERNAL_URL"), "/"),
-		pagesJekyllExecutable:      coalesceStr(os.Getenv("BLEEPHUB_PAGES_JEKYLL_EXECUTABLE"), "bleephub-pages-jekyll"),
+		pagesJekyllExecutable:      store.CoalesceStr(os.Getenv("BLEEPHUB_PAGES_JEKYLL_EXECUTABLE"), "bleephub-pages-jekyll"),
 		identity:                   identityConfigFromEnv(),
 		build:                      BuildInfo{Version: "development", Commit: "none", PublishedAt: "not-yet-published"},
 		allowPrivateOutboundTarget: strings.EqualFold(strings.TrimSpace(os.Getenv("BLEEPHUB_ALLOW_PRIVATE_OUTBOUND_TARGETS")), "true"),
@@ -411,7 +413,7 @@ func NewServer(addr string, logger zerolog.Logger, options ...ServerOption) *Ser
 	// persistence validation and wiring read it.
 	if s.injectedByteStore != nil {
 		byteStore = s.injectedByteStore
-		s.artifactStore = NewArtifactStoreWithByteStore(dataDir, byteStore)
+		s.artifactStore = store.NewArtifactStoreWithByteStore(dataDir, byteStore)
 		// The engine and the store captured the replaced artifact store at
 		// construction; re-point both before anything runs — leaving
 		// store.ActionsArtifacts on the discarded instance would silently
@@ -433,7 +435,7 @@ func NewServer(addr string, logger zerolog.Logger, options ...ServerOption) *Ser
 
 	// Wire persistence. BLEEPHUB_PERSIST=true enables SQLite and fails loud
 	// on open failure.
-	persist := MustNewPersistence()
+	persist := store.MustNewPersistence()
 	if persist != nil {
 		if err := validatePersistentServerStorage(byteStore != nil); err != nil {
 			logger.Fatal().Err(err).Msg("invalid Bleephub persistent storage configuration")
@@ -462,7 +464,7 @@ func NewServer(addr string, logger zerolog.Logger, options ...ServerOption) *Ser
 }
 
 func validatePersistentServerStorage(serviceByteStoreReady bool) error {
-	if GitDataDir() == "" && !IsS3GitStorage() {
+	if gitstore.GitDataDir() == "" && !gitstore.IsS3GitStorage() {
 		return errors.New("persistence is enabled (BLEEPHUB_PERSIST=true) but git storage is in-memory: " +
 			"repo metadata would survive a restart while every git repo reloads empty. " +
 			"Configure durable git storage (BLEEPHUB_GIT_DIR=<dir> or BLEEPHUB_S3_BUCKET=<bucket>) or disable persistence")
@@ -787,8 +789,8 @@ func (s *Server) handleInternalStorage(w http.ResponseWriter, r *http.Request) {
 
 	gitBackend := "memory"
 	gitDetails := map[string]string{}
-	gitDir := GitDataDir()
-	if IsS3GitStorage() {
+	gitDir := gitstore.GitDataDir()
+	if gitstore.IsS3GitStorage() {
 		gitBackend = "s3"
 		if bucket := os.Getenv("BLEEPHUB_S3_BUCKET"); bucket != "" {
 			gitDetails["bucket"] = bucket
@@ -1118,7 +1120,7 @@ func (s *Server) replicaRefreshMiddleware(next http.Handler) http.Handler {
 // surface: any PAT in the store (which includes the seeded admin token).
 // Returns nil when absent/unknown. ghs_/gho_/ghu_ installation/OAuth tokens
 // are intentionally not accepted here — the internal surface is operator-only.
-func (s *Server) internalTokenUser(r *http.Request) *User {
+func (s *Server) internalTokenUser(r *http.Request) *store.User {
 	scheme, cred := authScheme(r.Header.Get("Authorization"))
 	var tok string
 	if scheme == "bearer" || scheme == "token" {
@@ -1314,7 +1316,7 @@ func (s *Server) recoverMiddleware(next http.Handler) http.Handler {
 			if recovered == http.ErrAbortHandler {
 				panic(recovered)
 			}
-			if _, ok := recovered.(*persistenceFailure); ok {
+			if _, ok := recovered.(*store.PersistenceFailure); ok {
 				if reloadErr := s.store.ReloadFromPersistence(); reloadErr != nil {
 					s.logger.Error().Err(reloadErr).Msg("failed to restore durable state after persistence error")
 				}

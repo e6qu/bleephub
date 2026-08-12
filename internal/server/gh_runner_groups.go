@@ -8,37 +8,39 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 const defaultRunnerGroupID = 1
 
 func (s *Server) registerRunnerGroupRoutes() {
 	s.route("GET /api/v3/orgs/{org}/actions/runner-groups",
-		s.requirePerm(scopeAdministration, permRead, s.orgGated(s.handleListRunnerGroups)))
+		s.requirePerm(store.ScopeAdministration, store.PermRead, s.orgGated(s.handleListRunnerGroups)))
 	s.route("POST /api/v3/orgs/{org}/actions/runner-groups",
-		s.requirePerm(scopeAdministration, permWrite, s.orgGated(s.handleCreateRunnerGroup)))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.orgGated(s.handleCreateRunnerGroup)))
 	s.route("GET /api/v3/orgs/{org}/actions/runner-groups/{runner_group_id}",
-		s.requirePerm(scopeAdministration, permRead, s.orgGated(s.handleGetRunnerGroup)))
+		s.requirePerm(store.ScopeAdministration, store.PermRead, s.orgGated(s.handleGetRunnerGroup)))
 	s.route("PATCH /api/v3/orgs/{org}/actions/runner-groups/{runner_group_id}",
-		s.requirePerm(scopeAdministration, permWrite, s.orgGated(s.handleUpdateRunnerGroup)))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.orgGated(s.handleUpdateRunnerGroup)))
 	s.route("DELETE /api/v3/orgs/{org}/actions/runner-groups/{runner_group_id}",
-		s.requirePerm(scopeAdministration, permWrite, s.orgGated(s.handleDeleteRunnerGroup)))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.orgGated(s.handleDeleteRunnerGroup)))
 	s.route("GET /api/v3/orgs/{org}/actions/runner-groups/{runner_group_id}/runners",
-		s.requirePerm(scopeAdministration, permRead, s.orgGated(s.handleListGroupRunners)))
+		s.requirePerm(store.ScopeAdministration, store.PermRead, s.orgGated(s.handleListGroupRunners)))
 	s.route("PUT /api/v3/orgs/{org}/actions/runner-groups/{runner_group_id}/runners",
-		s.requirePerm(scopeAdministration, permWrite, s.orgGated(s.handleSetGroupRunners)))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.orgGated(s.handleSetGroupRunners)))
 	s.route("PUT /api/v3/orgs/{org}/actions/runner-groups/{runner_group_id}/runners/{runner_id}",
-		s.requirePerm(scopeAdministration, permWrite, s.orgGated(s.handleAddGroupRunner)))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.orgGated(s.handleAddGroupRunner)))
 	s.route("DELETE /api/v3/orgs/{org}/actions/runner-groups/{runner_group_id}/runners/{runner_id}",
-		s.requirePerm(scopeAdministration, permWrite, s.orgGated(s.handleRemoveGroupRunner)))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.orgGated(s.handleRemoveGroupRunner)))
 	s.route("GET /api/v3/orgs/{org}/actions/runner-groups/{runner_group_id}/repositories",
-		s.requirePerm(scopeAdministration, permRead, s.orgGated(s.handleListGroupRepos)))
+		s.requirePerm(store.ScopeAdministration, store.PermRead, s.orgGated(s.handleListGroupRepos)))
 	s.route("PUT /api/v3/orgs/{org}/actions/runner-groups/{runner_group_id}/repositories",
-		s.requirePerm(scopeAdministration, permWrite, s.orgGated(s.handleSetGroupRepos)))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.orgGated(s.handleSetGroupRepos)))
 	s.route("PUT /api/v3/orgs/{org}/actions/runner-groups/{runner_group_id}/repositories/{repository_id}",
-		s.requirePerm(scopeAdministration, permWrite, s.orgGated(s.handleAddGroupRepo)))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.orgGated(s.handleAddGroupRepo)))
 	s.route("DELETE /api/v3/orgs/{org}/actions/runner-groups/{runner_group_id}/repositories/{repository_id}",
-		s.requirePerm(scopeAdministration, permWrite, s.orgGated(s.handleRemoveGroupRepo)))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.orgGated(s.handleRemoveGroupRepo)))
 }
 
 // orgGated 404s requests for unknown orgs before the handler runs.
@@ -82,7 +84,7 @@ func (s *Server) orgIDGated(h http.HandlerFunc) http.HandlerFunc {
 
 // ensureDefaultRunnerGroupLocked materializes the implicit Default group that
 // every organization and enterprise has. Callers hold the store lock.
-func (s *Server) ensureDefaultRunnerGroupLocked(target runnerScope) *RunnerGroup {
+func (s *Server) ensureDefaultRunnerGroupLocked(target store.RunnerScope) *store.RunnerGroup {
 	for _, group := range s.store.RunnerGroups {
 		if group.Default && runnerGroupMatchesTarget(group, target) {
 			return group
@@ -97,7 +99,7 @@ func (s *Server) ensureDefaultRunnerGroupLocked(target runnerScope) *RunnerGroup
 		id = defaultRunnerGroupID + 1
 	}
 	s.store.NextRunnerGroupID = id + 1
-	group := &RunnerGroup{
+	group := &store.RunnerGroup{
 		ID:                       id,
 		Name:                     "Default",
 		Visibility:               "all",
@@ -111,7 +113,7 @@ func (s *Server) ensureDefaultRunnerGroupLocked(target runnerScope) *RunnerGroup
 	return group
 }
 
-func runnerGroupMatchesTarget(group *RunnerGroup, target runnerScope) bool {
+func runnerGroupMatchesTarget(group *store.RunnerGroup, target store.RunnerScope) bool {
 	switch {
 	case target.Org != "":
 		return strings.EqualFold(group.Scope.Org, target.Org)
@@ -126,7 +128,7 @@ func nonNilStrings(values []string) []string {
 	return append([]string{}, values...)
 }
 
-func repoOwnedByOrg(repo *Repo, org string) bool {
+func repoOwnedByOrg(repo *store.Repo, org string) bool {
 	if repo == nil || repo.OwnerType != "Organization" {
 		return false
 	}
@@ -134,16 +136,16 @@ func repoOwnedByOrg(repo *Repo, org string) bool {
 	return ok && strings.EqualFold(owner, org)
 }
 
-func (s *Server) runnerGroupTarget(w http.ResponseWriter, r *http.Request) (runnerScope, bool) {
+func (s *Server) runnerGroupTarget(w http.ResponseWriter, r *http.Request) (store.RunnerScope, bool) {
 	target, err := s.runnerScopeFromRequest(r)
 	if err != nil || (target.Org == "" && target.Enterprise == "") {
 		writeGHError(w, http.StatusNotFound, "Not Found")
-		return runnerScope{}, false
+		return store.RunnerScope{}, false
 	}
 	return target, true
 }
 
-func runnerGroupJSON(g *RunnerGroup, baseURL string, target runnerScope) map[string]any {
+func runnerGroupJSON(g *store.RunnerGroup, baseURL string, target store.RunnerScope) map[string]any {
 	var apiBase string
 	if target.Enterprise != "" {
 		apiBase = fmt.Sprintf("%s/api/v3/enterprises/%s/actions/runner-groups/%d", baseURL, target.Enterprise, g.ID)
@@ -182,7 +184,7 @@ func (s *Server) handleListRunnerGroups(w http.ResponseWriter, r *http.Request) 
 	}
 	s.store.Mu.Lock()
 	s.ensureDefaultRunnerGroupLocked(target)
-	groups := make([]*RunnerGroup, 0, len(s.store.RunnerGroups))
+	groups := make([]*store.RunnerGroup, 0, len(s.store.RunnerGroups))
 	for _, g := range s.store.RunnerGroups {
 		if runnerGroupMatchesTarget(g, target) {
 			groups = append(groups, g)
@@ -203,7 +205,7 @@ func (s *Server) handleListRunnerGroups(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
-func sortRunnerGroups(groups []*RunnerGroup) {
+func sortRunnerGroups(groups []*store.RunnerGroup) {
 	for i := 1; i < len(groups); i++ {
 		for j := i; j > 0 && groups[j-1].ID > groups[j].ID; j-- {
 			groups[j-1], groups[j] = groups[j], groups[j-1]
@@ -228,7 +230,7 @@ func (s *Server) handleCreateRunnerGroup(w http.ResponseWriter, r *http.Request)
 		NetworkConfigurationID   string   `json:"network_configuration_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
-		writeGHValidationError(w, "RunnerGroup", "name", "missing_field")
+		store.WriteGHValidationError(w, "RunnerGroup", "name", "missing_field")
 		return
 	}
 	visibility := req.Visibility
@@ -238,11 +240,11 @@ func (s *Server) handleCreateRunnerGroup(w http.ResponseWriter, r *http.Request)
 	switch visibility {
 	case "all", "selected", "private":
 	default:
-		writeGHValidationError(w, "RunnerGroup", "visibility", "invalid")
+		store.WriteGHValidationError(w, "RunnerGroup", "visibility", "invalid")
 		return
 	}
 	if target.Enterprise != "" && visibility == "private" {
-		writeGHValidationError(w, "RunnerGroup", "visibility", "invalid")
+		store.WriteGHValidationError(w, "RunnerGroup", "visibility", "invalid")
 		return
 	}
 
@@ -251,7 +253,7 @@ func (s *Server) handleCreateRunnerGroup(w http.ResponseWriter, r *http.Request)
 	for _, existing := range s.store.RunnerGroups {
 		if runnerGroupMatchesTarget(existing, target) && strings.EqualFold(existing.Name, req.Name) {
 			s.store.Mu.Unlock()
-			writeGHValidationError(w, "RunnerGroup", "name", "already_exists")
+			store.WriteGHValidationError(w, "RunnerGroup", "name", "already_exists")
 			return
 		}
 	}
@@ -282,7 +284,7 @@ func (s *Server) handleCreateRunnerGroup(w http.ResponseWriter, r *http.Request)
 		id = defaultRunnerGroupID + 1
 	}
 	s.store.NextRunnerGroupID = id + 1
-	g := &RunnerGroup{
+	g := &store.RunnerGroup{
 		ID:                       id,
 		Name:                     req.Name,
 		Visibility:               visibility,
@@ -307,7 +309,7 @@ func (s *Server) handleCreateRunnerGroup(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusCreated, runnerGroupJSON(g, s.baseURL(r), target))
 }
 
-func (s *Server) persistRunnerGroupLocked(g *RunnerGroup) {
+func (s *Server) persistRunnerGroupLocked(g *store.RunnerGroup) {
 	if s.store.Persist != nil {
 		s.store.Persist.MustPut("runner_groups", strconv.Itoa(g.ID), g)
 	}
@@ -315,7 +317,7 @@ func (s *Server) persistRunnerGroupLocked(g *RunnerGroup) {
 
 // lookupRunnerGroup resolves the path's runner_group_id; nil + handled
 // response when missing.
-func (s *Server) lookupRunnerGroup(w http.ResponseWriter, r *http.Request) *RunnerGroup {
+func (s *Server) lookupRunnerGroup(w http.ResponseWriter, r *http.Request) *store.RunnerGroup {
 	target, ok := s.runnerGroupTarget(w, r)
 	if !ok {
 		return nil
@@ -362,14 +364,14 @@ func (s *Server) handleUpdateRunnerGroup(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if req.Name != nil && *req.Name == "" {
-		writeGHValidationError(w, "RunnerGroup", "name", "invalid")
+		store.WriteGHValidationError(w, "RunnerGroup", "name", "invalid")
 		return
 	}
 	if req.Visibility != nil {
 		valid := *req.Visibility == "all" || *req.Visibility == "selected" ||
 			(*req.Visibility == "private" && g.Scope.Org != "")
 		if !valid {
-			writeGHValidationError(w, "RunnerGroup", "visibility", "invalid")
+			store.WriteGHValidationError(w, "RunnerGroup", "visibility", "invalid")
 			return
 		}
 	}
@@ -379,7 +381,7 @@ func (s *Server) handleUpdateRunnerGroup(w http.ResponseWriter, r *http.Request)
 			if existing.ID != g.ID && runnerGroupMatchesTarget(existing, g.Scope) &&
 				strings.EqualFold(existing.Name, *req.Name) {
 				s.store.Mu.Unlock()
-				writeGHValidationError(w, "RunnerGroup", "name", "already_exists")
+				store.WriteGHValidationError(w, "RunnerGroup", "name", "already_exists")
 				return
 			}
 		}
@@ -437,7 +439,7 @@ func (s *Server) handleListGroupRunners(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	s.store.Mu.RLock()
-	members := make([]*Agent, 0)
+	members := make([]*store.Agent, 0)
 	for _, a := range s.store.Agents {
 		if runnerVisibleAt(a.Scope, g.Scope) &&
 			(a.RunnerGroupID == g.ID || (g.Default && a.RunnerGroupID == 0)) {
@@ -461,7 +463,7 @@ func (s *Server) handleListGroupRunners(w http.ResponseWriter, r *http.Request) 
 // agentGroupID resolves an agent's group for legacy response shapes. New
 // membership logic resolves the owning scope's actual default group because
 // every organization and enterprise has a distinct one.
-func agentGroupID(a *Agent) int {
+func agentGroupID(a *store.Agent) int {
 	if a.RunnerGroupID == 0 {
 		return defaultRunnerGroupID
 	}
@@ -568,7 +570,7 @@ func (s *Server) handleListGroupRepos(w http.ResponseWriter, r *http.Request) {
 		repo := s.store.Repos[id]
 		s.store.Mu.RUnlock()
 		if repoOwnedByOrg(repo, g.Scope.Org) {
-			repos = append(repos, repoToJSON(repo, s.store, base))
+			repos = append(repos, store.RepoToJSON(repo, s.store, base))
 		}
 	}
 	paged := paginateAndLink(w, r, repos)
@@ -674,7 +676,7 @@ func (s *Server) handleListGroupOrganizations(w http.ResponseWriter, r *http.Req
 		return
 	}
 	s.store.Mu.RLock()
-	orgs := make([]*Org, 0, len(g.SelectedOrgIDs))
+	orgs := make([]*store.Org, 0, len(g.SelectedOrgIDs))
 	for _, id := range g.SelectedOrgIDs {
 		if org := s.store.Orgs[id]; org != nil {
 			orgs = append(orgs, org)

@@ -7,11 +7,13 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func appSettingsRequest(s *Server, method, path, body string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
-	req.Header.Set("Authorization", "token "+AdminToken())
+	req.Header.Set("Authorization", "token "+store.AdminToken())
 	if body != "" {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -29,8 +31,8 @@ func TestBrowserGitHubAppSettingsLifecycle(t *testing.T) {
 	installation := s.store.CreateInstallation(app.ID, "User", admin.ID, admin.Login, app.Permissions, app.Events)
 	installationToken := s.store.CreateInstallationToken(installation.ID, app.ID, app.Permissions, nil)
 	userToken, _ := s.store.CreateUserToServerToken(admin.ID, app.ID, "", "repo", time.Hour, false)
-	s.store.AuthCodes["pending-app"] = &authCode{Code: "pending-app", ClientID: app.ClientID}
-	s.store.DeviceCodes["pending-app"] = &DeviceCode{Code: "pending-app", ClientID: app.ClientID, AppID: app.ID}
+	s.store.AuthCodes["pending-app"] = &store.AuthCode{Code: "pending-app", ClientID: app.ClientID}
+	s.store.DeviceCodes["pending-app"] = &store.DeviceCode{Code: "pending-app", ClientID: app.ClientID, AppID: app.ID}
 	oldSecret := app.ClientSecret
 	oldKey := app.PEMPrivateKey
 
@@ -99,7 +101,7 @@ func TestBrowserGitHubAppSettingsRequireHomepage(t *testing.T) {
 	s.registerGHAppsRoutes()
 	admin := s.store.UsersByLogin["admin"]
 	app := s.store.CreateApp(admin.ID, "Required homepage", "", nil, nil)
-	s.store.UpdateApp(app.ID, func(current *App) {
+	s.store.UpdateApp(app.ID, func(current *store.App) {
 		current.ExternalURL = "https://example.test/app"
 	})
 
@@ -125,8 +127,8 @@ func TestBrowserOAuthAppSettingsLifecycleAndOwnership(t *testing.T) {
 	admin := s.store.UsersByLogin["admin"]
 	app := s.store.CreateOAuthApp(admin.ID, "OAuth settings", "old", "https://old.test", "https://old.test/cb")
 	token, _ := s.store.CreateUserToServerToken(admin.ID, 0, app.ClientID, "repo", time.Hour, false)
-	s.store.AuthCodes["pending-oauth"] = &authCode{Code: "pending-oauth", ClientID: app.ClientID}
-	s.store.DeviceCodes["pending-oauth"] = &DeviceCode{Code: "pending-oauth", ClientID: app.ClientID, OAuthClientID: app.ClientID}
+	s.store.AuthCodes["pending-oauth"] = &store.AuthCode{Code: "pending-oauth", ClientID: app.ClientID}
+	s.store.DeviceCodes["pending-oauth"] = &store.DeviceCode{Code: "pending-oauth", ClientID: app.ClientID, OAuthClientID: app.ClientID}
 	oldSecret := app.ClientSecret
 
 	grants := appSettingsRequest(s, http.MethodGet, "/settings/connections/applications", "")

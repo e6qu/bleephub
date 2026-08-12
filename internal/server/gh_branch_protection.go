@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/storer"
@@ -18,94 +19,94 @@ import (
 // accepts a sparse body: missing sub-objects leave existing rules unchanged,
 // while an explicit null disables the corresponding rule.
 type bpRequest struct {
-	RequiredStatusChecks           *BPStatusChecks       `json:"required_status_checks"`
-	RequiredPullRequestReviews     *BPPullRequestReviews `json:"required_pull_request_reviews"`
-	EnforceAdmins                  *flexBool             `json:"enforce_admins"`
-	Restrictions                   *BPRestrictions       `json:"restrictions"`
-	RequiredLinearHistory          *flexBool             `json:"required_linear_history"`
-	AllowForcePushes               *flexBool             `json:"allow_force_pushes"`
-	AllowDeletions                 *flexBool             `json:"allow_deletions"`
-	BlockCreations                 *flexBool             `json:"block_creations"`
-	RequiredConversationResolution *flexBool             `json:"required_conversation_resolution"`
-	RequiredSignatures             *flexBool             `json:"required_signatures"`
+	RequiredStatusChecks           *store.BPStatusChecks       `json:"required_status_checks"`
+	RequiredPullRequestReviews     *store.BPPullRequestReviews `json:"required_pull_request_reviews"`
+	EnforceAdmins                  *flexBool                   `json:"enforce_admins"`
+	Restrictions                   *store.BPRestrictions       `json:"restrictions"`
+	RequiredLinearHistory          *flexBool                   `json:"required_linear_history"`
+	AllowForcePushes               *flexBool                   `json:"allow_force_pushes"`
+	AllowDeletions                 *flexBool                   `json:"allow_deletions"`
+	BlockCreations                 *flexBool                   `json:"block_creations"`
+	RequiredConversationResolution *flexBool                   `json:"required_conversation_resolution"`
+	RequiredSignatures             *flexBool                   `json:"required_signatures"`
 }
 
 func (s *Server) registerGHBranchProtectionRoutes() {
 	// Top-level branch protection
-	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection", s.requirePerm(scopeAdministration, permRead, s.handleBranchProtectionGet))
+	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection", s.requirePerm(store.ScopeAdministration, store.PermRead, s.handleBranchProtectionGet))
 	s.route("PUT /api/v3/repos/{owner}/{repo}/branches/{branch}/protection",
-		s.requirePerm(scopeAdministration, permWrite, s.handleBranchProtectionPut))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleBranchProtectionPut))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/branches/{branch}/protection",
-		s.requirePerm(scopeAdministration, permWrite, s.handleBranchProtectionDelete))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleBranchProtectionDelete))
 
 	// Required status checks
-	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks", s.requirePerm(scopeAdministration, permRead, s.handleBPStatusChecksGet))
+	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks", s.requirePerm(store.ScopeAdministration, store.PermRead, s.handleBPStatusChecksGet))
 	s.route("PATCH /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks",
-		s.requirePerm(scopeAdministration, permWrite, s.handleBPStatusChecksPatch))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleBPStatusChecksPatch))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks",
-		s.requirePerm(scopeAdministration, permWrite, s.handleBPStatusChecksDelete))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleBPStatusChecksDelete))
 
 	// Required commit signatures
-	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_signatures", s.requirePerm(scopeAdministration, permRead, s.handleBPRequiredSignaturesGet))
+	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_signatures", s.requirePerm(store.ScopeAdministration, store.PermRead, s.handleBPRequiredSignaturesGet))
 	s.route("POST /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_signatures",
-		s.requirePerm(scopeAdministration, permWrite, s.handleBPRequiredSignaturesPost))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleBPRequiredSignaturesPost))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_signatures",
-		s.requirePerm(scopeAdministration, permWrite, s.handleBPRequiredSignaturesDelete))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleBPRequiredSignaturesDelete))
 
 	// Restrictions apps
-	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/apps", s.requirePerm(scopeAdministration, permRead, s.handleBPRestrictionsAppsGet))
+	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/apps", s.requirePerm(store.ScopeAdministration, store.PermRead, s.handleBPRestrictionsAppsGet))
 	s.route("POST /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/apps",
-		s.requirePerm(scopeAdministration, permWrite, s.handleBPRestrictionsAppsPost))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleBPRestrictionsAppsPost))
 	s.route("PUT /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/apps",
-		s.requirePerm(scopeAdministration, permWrite, s.handleBPRestrictionsAppsPut))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleBPRestrictionsAppsPut))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/apps",
-		s.requirePerm(scopeAdministration, permWrite, s.handleBPRestrictionsAppsDelete))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleBPRestrictionsAppsDelete))
 
 	// Required status checks contexts
-	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks/contexts", s.requirePerm(scopeAdministration, permRead, s.handleBPContextsGet))
+	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks/contexts", s.requirePerm(store.ScopeAdministration, store.PermRead, s.handleBPContextsGet))
 	s.route("POST /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks/contexts",
-		s.requirePerm(scopeAdministration, permWrite, s.handleBPContextsPost))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleBPContextsPost))
 	s.route("PUT /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks/contexts",
-		s.requirePerm(scopeAdministration, permWrite, s.handleBPContextsPut))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleBPContextsPut))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks/contexts",
-		s.requirePerm(scopeAdministration, permWrite, s.handleBPContextsDelete))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleBPContextsDelete))
 
 	// Required pull request reviews
-	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_pull_request_reviews", s.requirePerm(scopeAdministration, permRead, s.handleBPReviewsGet))
+	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_pull_request_reviews", s.requirePerm(store.ScopeAdministration, store.PermRead, s.handleBPReviewsGet))
 	s.route("PATCH /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_pull_request_reviews",
-		s.requirePerm(scopeAdministration, permWrite, s.handleBPReviewsPatch))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleBPReviewsPatch))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_pull_request_reviews",
-		s.requirePerm(scopeAdministration, permWrite, s.handleBPReviewsDelete))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleBPReviewsDelete))
 
 	// Restrictions
-	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions", s.requirePerm(scopeAdministration, permRead, s.handleBPRestrictionsGet))
+	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions", s.requirePerm(store.ScopeAdministration, store.PermRead, s.handleBPRestrictionsGet))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions",
-		s.requirePerm(scopeAdministration, permWrite, s.handleBPRestrictionsDelete))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleBPRestrictionsDelete))
 
 	// Restrictions users
-	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/users", s.requirePerm(scopeAdministration, permRead, s.handleBPRestrictionsUsersGet))
+	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/users", s.requirePerm(store.ScopeAdministration, store.PermRead, s.handleBPRestrictionsUsersGet))
 	s.route("POST /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/users",
-		s.requirePerm(scopeAdministration, permWrite, s.handleBPRestrictionsUsersPost))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleBPRestrictionsUsersPost))
 	s.route("PUT /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/users",
-		s.requirePerm(scopeAdministration, permWrite, s.handleBPRestrictionsUsersPut))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleBPRestrictionsUsersPut))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/users",
-		s.requirePerm(scopeAdministration, permWrite, s.handleBPRestrictionsUsersDelete))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleBPRestrictionsUsersDelete))
 
 	// Restrictions teams
-	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/teams", s.requirePerm(scopeAdministration, permRead, s.handleBPRestrictionsTeamsGet))
+	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/teams", s.requirePerm(store.ScopeAdministration, store.PermRead, s.handleBPRestrictionsTeamsGet))
 	s.route("POST /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/teams",
-		s.requirePerm(scopeAdministration, permWrite, s.handleBPRestrictionsTeamsPost))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleBPRestrictionsTeamsPost))
 	s.route("PUT /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/teams",
-		s.requirePerm(scopeAdministration, permWrite, s.handleBPRestrictionsTeamsPut))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleBPRestrictionsTeamsPut))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/teams",
-		s.requirePerm(scopeAdministration, permWrite, s.handleBPRestrictionsTeamsDelete))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleBPRestrictionsTeamsDelete))
 
 	// Enforce admins
-	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/enforce_admins", s.requirePerm(scopeAdministration, permRead, s.handleBPEnforceAdminsGet))
+	s.route("GET /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/enforce_admins", s.requirePerm(store.ScopeAdministration, store.PermRead, s.handleBPEnforceAdminsGet))
 	s.route("POST /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/enforce_admins",
-		s.requirePerm(scopeAdministration, permWrite, s.handleBPEnforceAdminsPost))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleBPEnforceAdminsPost))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/branches/{branch}/protection/enforce_admins",
-		s.requirePerm(scopeAdministration, permWrite, s.handleBPEnforceAdminsDelete))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleBPEnforceAdminsDelete))
 
 }
 
@@ -123,7 +124,7 @@ func (s *Server) branchProtectionSubURL(baseURL, fullName, branch, sub string) s
 // branch protected when either a classic protection resource or an applicable
 // ruleset protects it; deriving the flag from both prevents the branch and
 // protection APIs from reporting contradictory state.
-func (s *Server) branchProtectionShape(repo *Repo, branch, baseURL string) (bool, map[string]interface{}, string) {
+func (s *Server) branchProtectionShape(repo *store.Repo, branch, baseURL string) (bool, map[string]interface{}, string) {
 	bp := s.branchProtectionFor(repo.ID, branch)
 	protected := bp != nil || s.store.BranchProtectedByRuleset(repo, branch)
 	protectionURL := s.branchProtectionURL(baseURL, repo.FullName, branch)
@@ -159,17 +160,17 @@ func (s *Server) branchProtectionShape(repo *Repo, branch, baseURL string) (bool
 // The caller gets a copy. Handlers edit the rule they read and renderers fill
 // request-derived URLs into it, and both would otherwise be writing the object
 // every other request reads, without the lock and with this request's host.
-func (s *Server) branchProtectionFor(repoID int, branch string) *BranchProtection {
+func (s *Server) branchProtectionFor(repoID int, branch string) *store.BranchProtection {
 	s.store.Misc.Mu.RLock()
 	defer s.store.Misc.Mu.RUnlock()
-	return cloneBranchProtection(s.store.Misc.BranchProtection[bpKey(repoID, branch)])
+	return cloneBranchProtection(s.store.Misc.BranchProtection[store.BpKey(repoID, branch)])
 }
 
 // cloneBranchProtection deep-copies a protection rule so that no caller holds a
 // pointer into the stored table. Every field is copied explicitly and
 // TestBranchProtectionCloneCoversEveryField fails when a new one is added
 // without being copied here.
-func cloneBranchProtection(bp *BranchProtection) *BranchProtection {
+func cloneBranchProtection(bp *store.BranchProtection) *store.BranchProtection {
 	if bp == nil {
 		return nil
 	}
@@ -177,9 +178,9 @@ func cloneBranchProtection(bp *BranchProtection) *BranchProtection {
 	if bp.RequiredStatusChecks != nil {
 		checks := *bp.RequiredStatusChecks
 		checks.Contexts = append([]string(nil), bp.RequiredStatusChecks.Contexts...)
-		checks.Checks = make([]BPCheck, len(bp.RequiredStatusChecks.Checks))
+		checks.Checks = make([]store.BPCheck, len(bp.RequiredStatusChecks.Checks))
 		for i, check := range bp.RequiredStatusChecks.Checks {
-			check.AppID = clonePointer(check.AppID)
+			check.AppID = store.ClonePointer(check.AppID)
 			checks.Checks[i] = check
 		}
 		out.RequiredStatusChecks = &checks
@@ -188,38 +189,38 @@ func cloneBranchProtection(bp *BranchProtection) *BranchProtection {
 		reviews := *bp.RequiredPullRequestReviews
 		reviews.DismissalRestrictions = cloneBPRestrictions(bp.RequiredPullRequestReviews.DismissalRestrictions)
 		if bp.RequiredPullRequestReviews.BypassPullRequestAllowances != nil {
-			allowances := BPBypassAllowances{
-				Users: append([]BPActor(nil), bp.RequiredPullRequestReviews.BypassPullRequestAllowances.Users...),
-				Teams: append([]BPActor(nil), bp.RequiredPullRequestReviews.BypassPullRequestAllowances.Teams...),
-				Apps:  append([]BPActor(nil), bp.RequiredPullRequestReviews.BypassPullRequestAllowances.Apps...),
+			allowances := store.BPBypassAllowances{
+				Users: append([]store.BPActor(nil), bp.RequiredPullRequestReviews.BypassPullRequestAllowances.Users...),
+				Teams: append([]store.BPActor(nil), bp.RequiredPullRequestReviews.BypassPullRequestAllowances.Teams...),
+				Apps:  append([]store.BPActor(nil), bp.RequiredPullRequestReviews.BypassPullRequestAllowances.Apps...),
 			}
 			reviews.BypassPullRequestAllowances = &allowances
 		}
 		out.RequiredPullRequestReviews = &reviews
 	}
-	out.EnforceAdmins = clonePointer(bp.EnforceAdmins)
+	out.EnforceAdmins = store.ClonePointer(bp.EnforceAdmins)
 	out.Restrictions = cloneBPRestrictions(bp.Restrictions)
-	out.RequiredLinearHistory = clonePointer(bp.RequiredLinearHistory)
-	out.AllowForcePushes = clonePointer(bp.AllowForcePushes)
-	out.AllowDeletions = clonePointer(bp.AllowDeletions)
-	out.BlockCreations = clonePointer(bp.BlockCreations)
-	out.RequiredConversationResolution = clonePointer(bp.RequiredConversationResolution)
-	out.RequiredSignatures = clonePointer(bp.RequiredSignatures)
+	out.RequiredLinearHistory = store.ClonePointer(bp.RequiredLinearHistory)
+	out.AllowForcePushes = store.ClonePointer(bp.AllowForcePushes)
+	out.AllowDeletions = store.ClonePointer(bp.AllowDeletions)
+	out.BlockCreations = store.ClonePointer(bp.BlockCreations)
+	out.RequiredConversationResolution = store.ClonePointer(bp.RequiredConversationResolution)
+	out.RequiredSignatures = store.ClonePointer(bp.RequiredSignatures)
 	return &out
 }
 
-func cloneBPRestrictions(r *BPRestrictions) *BPRestrictions {
+func cloneBPRestrictions(r *store.BPRestrictions) *store.BPRestrictions {
 	if r == nil {
 		return nil
 	}
 	out := *r
-	out.Users = append([]BPActor(nil), r.Users...)
-	out.Teams = append([]BPActor(nil), r.Teams...)
-	out.Apps = append([]BPActor(nil), r.Apps...)
+	out.Users = append([]store.BPActor(nil), r.Users...)
+	out.Teams = append([]store.BPActor(nil), r.Teams...)
+	out.Apps = append([]store.BPActor(nil), r.Apps...)
 	return &out
 }
 
-func (s *Server) getBranchProtection(r *http.Request) (*Repo, string, *BranchProtection) {
+func (s *Server) getBranchProtection(r *http.Request) (*store.Repo, string, *store.BranchProtection) {
 	repo := s.lookupRepoFromPath(r)
 	if repo == nil {
 		return nil, "", nil
@@ -231,8 +232,8 @@ func (s *Server) getBranchProtection(r *http.Request) (*Repo, string, *BranchPro
 // setBranchProtection replaces the stored rule with a copy of the supplied one,
 // so that whatever the caller does with its own rule afterwards — render it,
 // hydrate URLs into it, edit it again — cannot reach the stored table.
-func (s *Server) setBranchProtection(repo *Repo, branch string, bp *BranchProtection) {
-	key := bpKey(repo.ID, branch)
+func (s *Server) setBranchProtection(repo *store.Repo, branch string, bp *store.BranchProtection) {
+	key := store.BpKey(repo.ID, branch)
 	stored := cloneBranchProtection(bp)
 	s.store.Misc.Mu.Lock()
 	if stored == nil || !stored.IsProtected() {
@@ -297,12 +298,12 @@ func (s *Server) handleBranchProtectionPut(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	key := bpKey(repo.ID, branch)
+	key := store.BpKey(repo.ID, branch)
 	s.store.Misc.Mu.Lock()
 	existed := s.store.Misc.BranchProtection[key] != nil
 	bp := cloneBranchProtection(s.store.Misc.BranchProtection[key])
 	if bp == nil {
-		bp = &BranchProtection{}
+		bp = &store.BranchProtection{}
 	}
 	bp = s.applyBranchProtectionRequest(bp, &req)
 	for name, clear := range map[string]func(){
@@ -341,12 +342,12 @@ func (s *Server) handleBranchProtectionPut(w http.ResponseWriter, r *http.Reques
 }
 
 // emitBranchProtectionRuleEvent fires GitHub's `branch_protection_rule` webhook.
-func (s *Server) emitBranchProtectionRuleEvent(repo *Repo, branch, action string, r *http.Request) {
+func (s *Server) emitBranchProtectionRuleEvent(repo *store.Repo, branch, action string, r *http.Request) {
 	s.emitWebhookEvent(repo.FullName, "branch_protection_rule", action, map[string]interface{}{
 		"action":     action,
 		"rule":       map[string]interface{}{"name": branch, "repository_id": repo.ID},
 		"repository": repoPayload(repo),
-		"sender":     userToJSON(ghUserFromContext(r.Context())),
+		"sender":     store.UserToJSON(ghUserFromContext(r.Context())),
 	})
 }
 
@@ -358,7 +359,7 @@ func (s *Server) handleBranchProtectionDelete(w http.ResponseWriter, r *http.Req
 	}
 	branch := r.PathValue("branch")
 	s.store.Misc.Mu.RLock()
-	existed := s.store.Misc.BranchProtection[bpKey(repo.ID, branch)] != nil
+	existed := s.store.Misc.BranchProtection[store.BpKey(repo.ID, branch)] != nil
 	s.store.Misc.Mu.RUnlock()
 	s.setBranchProtection(repo, branch, nil)
 	if existed {
@@ -369,7 +370,7 @@ func (s *Server) handleBranchProtectionDelete(w http.ResponseWriter, r *http.Req
 
 // applyBranchProtectionRequest merges a sparse PUT body into an existing rule.
 // A present but null field clears the rule; an absent field leaves it unchanged.
-func (s *Server) applyBranchProtectionRequest(bp *BranchProtection, req *bpRequest) *BranchProtection {
+func (s *Server) applyBranchProtectionRequest(bp *store.BranchProtection, req *bpRequest) *store.BranchProtection {
 	if req.RequiredStatusChecks != nil {
 		bp.RequiredStatusChecks = req.RequiredStatusChecks
 	}
@@ -380,33 +381,33 @@ func (s *Server) applyBranchProtectionRequest(bp *BranchProtection, req *bpReque
 		bp.RequiredPullRequestReviews = req.RequiredPullRequestReviews
 	}
 	if req.EnforceAdmins != nil {
-		bp.EnforceAdmins = &BPEnforceAdmins{Enabled: bool(*req.EnforceAdmins)}
+		bp.EnforceAdmins = &store.BPEnforceAdmins{Enabled: bool(*req.EnforceAdmins)}
 	}
 	if req.Restrictions != nil {
 		bp.Restrictions = req.Restrictions
 	}
 	if req.RequiredLinearHistory != nil {
-		bp.RequiredLinearHistory = &BPEnabled{Enabled: bool(*req.RequiredLinearHistory)}
+		bp.RequiredLinearHistory = &store.BPEnabled{Enabled: bool(*req.RequiredLinearHistory)}
 	}
 	if req.AllowForcePushes != nil {
-		bp.AllowForcePushes = &BPEnabled{Enabled: bool(*req.AllowForcePushes)}
+		bp.AllowForcePushes = &store.BPEnabled{Enabled: bool(*req.AllowForcePushes)}
 	}
 	if req.AllowDeletions != nil {
-		bp.AllowDeletions = &BPEnabled{Enabled: bool(*req.AllowDeletions)}
+		bp.AllowDeletions = &store.BPEnabled{Enabled: bool(*req.AllowDeletions)}
 	}
 	if req.BlockCreations != nil {
-		bp.BlockCreations = &BPEnabled{Enabled: bool(*req.BlockCreations)}
+		bp.BlockCreations = &store.BPEnabled{Enabled: bool(*req.BlockCreations)}
 	}
 	if req.RequiredConversationResolution != nil {
-		bp.RequiredConversationResolution = &BPEnabled{Enabled: bool(*req.RequiredConversationResolution)}
+		bp.RequiredConversationResolution = &store.BPEnabled{Enabled: bool(*req.RequiredConversationResolution)}
 	}
 	if req.RequiredSignatures != nil {
-		bp.RequiredSignatures = &BPEnabledURL{Enabled: bool(*req.RequiredSignatures)}
+		bp.RequiredSignatures = &store.BPEnabledURL{Enabled: bool(*req.RequiredSignatures)}
 	}
 	return bp
 }
 
-func (s *Server) hydrateBranchProtectionURLs(bp *BranchProtection, repo *Repo, branch, baseURL string) *BranchProtection {
+func (s *Server) hydrateBranchProtectionURLs(bp *store.BranchProtection, repo *store.Repo, branch, baseURL string) *store.BranchProtection {
 	if bp == nil {
 		return nil
 	}
@@ -418,7 +419,7 @@ func (s *Server) hydrateBranchProtectionURLs(bp *BranchProtection, repo *Repo, b
 			bp.RequiredStatusChecks.Contexts = []string{}
 		}
 		if bp.RequiredStatusChecks.Checks == nil {
-			bp.RequiredStatusChecks.Checks = []BPCheck{}
+			bp.RequiredStatusChecks.Checks = []store.BPCheck{}
 		}
 	}
 	if bp.RequiredPullRequestReviews != nil {
@@ -439,19 +440,19 @@ func (s *Server) hydrateBranchProtectionURLs(bp *BranchProtection, repo *Repo, b
 	return bp
 }
 
-func (s *Server) hydrateRestrictionsURLs(r *BPRestrictions, baseURL, fullName, branch, sub string) {
+func (s *Server) hydrateRestrictionsURLs(r *store.BPRestrictions, baseURL, fullName, branch, sub string) {
 	r.URL = s.branchProtectionSubURL(baseURL, fullName, branch, sub)
 	r.UsersURL = s.branchProtectionSubURL(baseURL, fullName, branch, sub+"/users")
 	r.TeamsURL = s.branchProtectionSubURL(baseURL, fullName, branch, sub+"/teams")
 	r.AppsURL = s.branchProtectionSubURL(baseURL, fullName, branch, sub+"/apps")
 	if r.Users == nil {
-		r.Users = []BPActor{}
+		r.Users = []store.BPActor{}
 	}
 	if r.Teams == nil {
-		r.Teams = []BPActor{}
+		r.Teams = []store.BPActor{}
 	}
 	if r.Apps == nil {
-		r.Apps = []BPActor{}
+		r.Apps = []store.BPActor{}
 	}
 }
 
@@ -473,7 +474,7 @@ func (s *Server) handleBPStatusChecksGet(w http.ResponseWriter, r *http.Request)
 // statusCheckPolicyJSON renders required_status_checks in the published
 // status-check-policy shape: url, strict, contexts, checks, and contexts_url
 // are all required members — contexts/checks are present even when empty.
-func (s *Server) statusCheckPolicyJSON(sc *BPStatusChecks, repo *Repo, branch, baseURL string) map[string]interface{} {
+func (s *Server) statusCheckPolicyJSON(sc *store.BPStatusChecks, repo *store.Repo, branch, baseURL string) map[string]interface{} {
 	contexts := sc.Contexts
 	if contexts == nil {
 		contexts = []string{}
@@ -509,9 +510,9 @@ func (s *Server) handleBPStatusChecksPatch(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	var req struct {
-		Strict   *bool      `json:"strict"`
-		Contexts *[]string  `json:"contexts"`
-		Checks   *[]BPCheck `json:"checks"`
+		Strict   *bool            `json:"strict"`
+		Contexts *[]string        `json:"contexts"`
+		Checks   *[]store.BPCheck `json:"checks"`
 	}
 	if !decodeJSONBody(w, r, &req) {
 		return
@@ -667,9 +668,9 @@ func (s *Server) handleBPReviewsPatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if bp.RequiredPullRequestReviews == nil {
-		bp.RequiredPullRequestReviews = &BPPullRequestReviews{}
+		bp.RequiredPullRequestReviews = &store.BPPullRequestReviews{}
 	}
-	var req BPPullRequestReviews
+	var req store.BPPullRequestReviews
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
@@ -882,7 +883,7 @@ func (s *Server) handleBPRestrictionsTeamsDelete(w http.ResponseWriter, r *http.
 	writeJSON(w, http.StatusOK, s.bpRestrictedTeamsJSON(repo, bp.Restrictions.Teams, s.baseURL(r)))
 }
 
-func bpActorSliceContains(actors []BPActor, id int) bool {
+func bpActorSliceContains(actors []store.BPActor, id int) bool {
 	for _, actor := range actors {
 		if actor.ID == id {
 			return true
@@ -891,8 +892,8 @@ func bpActorSliceContains(actors []BPActor, id int) bool {
 	return false
 }
 
-func removeBPActors(current, removed []BPActor) []BPActor {
-	out := make([]BPActor, 0, len(current))
+func removeBPActors(current, removed []store.BPActor) []store.BPActor {
+	out := make([]store.BPActor, 0, len(current))
 	for _, actor := range current {
 		if !bpActorSliceContains(removed, actor.ID) {
 			out = append(out, actor)
@@ -901,7 +902,7 @@ func removeBPActors(current, removed []BPActor) []BPActor {
 	return out
 }
 
-func (s *Server) decodeBPUserLogins(w http.ResponseWriter, r *http.Request) ([]BPActor, bool) {
+func (s *Server) decodeBPUserLogins(w http.ResponseWriter, r *http.Request) ([]store.BPActor, bool) {
 	var req struct {
 		Users *[]string `json:"users"`
 	}
@@ -909,10 +910,10 @@ func (s *Server) decodeBPUserLogins(w http.ResponseWriter, r *http.Request) ([]B
 		return nil, false
 	}
 	if req.Users == nil {
-		writeGHValidationError(w, "BranchRestriction", "users", "missing_field")
+		store.WriteGHValidationError(w, "BranchRestriction", "users", "missing_field")
 		return nil, false
 	}
-	actors := make([]BPActor, 0, len(*req.Users))
+	actors := make([]store.BPActor, 0, len(*req.Users))
 	for _, login := range *req.Users {
 		s.store.Mu.RLock()
 		user := s.store.UsersByLogin[login]
@@ -921,19 +922,19 @@ func (s *Server) decodeBPUserLogins(w http.ResponseWriter, r *http.Request) ([]B
 			writeGHError(w, http.StatusUnprocessableEntity, "Could not resolve to a user: "+login)
 			return nil, false
 		}
-		actors = append(actors, BPActor{Login: user.Login, ID: user.ID, Type: "User"})
+		actors = append(actors, store.BPActor{Login: user.Login, ID: user.ID, Type: "User"})
 	}
 	return actors, true
 }
 
-func (s *Server) bpRestrictedUsersJSON(actors []BPActor) []map[string]interface{} {
+func (s *Server) bpRestrictedUsersJSON(actors []store.BPActor) []map[string]interface{} {
 	out := make([]map[string]interface{}, 0, len(actors))
 	for _, actor := range actors {
 		s.store.Mu.RLock()
 		user := s.store.Users[actor.ID]
 		var rendered map[string]interface{}
 		if user != nil {
-			rendered = userToJSON(user)
+			rendered = store.UserToJSON(user)
 		}
 		s.store.Mu.RUnlock()
 		if rendered != nil {
@@ -943,7 +944,7 @@ func (s *Server) bpRestrictedUsersJSON(actors []BPActor) []map[string]interface{
 	return out
 }
 
-func (s *Server) decodeBPTeamSlugs(w http.ResponseWriter, r *http.Request, repo *Repo) ([]BPActor, bool) {
+func (s *Server) decodeBPTeamSlugs(w http.ResponseWriter, r *http.Request, repo *store.Repo) ([]store.BPActor, bool) {
 	var req struct {
 		Teams *[]string `json:"teams"`
 	}
@@ -951,7 +952,7 @@ func (s *Server) decodeBPTeamSlugs(w http.ResponseWriter, r *http.Request, repo 
 		return nil, false
 	}
 	if req.Teams == nil {
-		writeGHValidationError(w, "BranchRestriction", "teams", "missing_field")
+		store.WriteGHValidationError(w, "BranchRestriction", "teams", "missing_field")
 		return nil, false
 	}
 	orgLogin := ownerFromRepoFullName(repo.FullName)
@@ -959,19 +960,19 @@ func (s *Server) decodeBPTeamSlugs(w http.ResponseWriter, r *http.Request, repo 
 		writeGHError(w, http.StatusUnprocessableEntity, "Team restrictions require an organization repository")
 		return nil, false
 	}
-	actors := make([]BPActor, 0, len(*req.Teams))
+	actors := make([]store.BPActor, 0, len(*req.Teams))
 	for _, slug := range *req.Teams {
 		team := s.store.GetTeam(orgLogin, slug)
 		if team == nil {
 			writeGHError(w, http.StatusUnprocessableEntity, "Could not resolve to a team: "+slug)
 			return nil, false
 		}
-		actors = append(actors, BPActor{Login: team.Slug, ID: team.ID, Type: "Team"})
+		actors = append(actors, store.BPActor{Login: team.Slug, ID: team.ID, Type: "Team"})
 	}
 	return actors, true
 }
 
-func (s *Server) bpRestrictedTeamsJSON(repo *Repo, actors []BPActor, baseURL string) []map[string]interface{} {
+func (s *Server) bpRestrictedTeamsJSON(repo *store.Repo, actors []store.BPActor, baseURL string) []map[string]interface{} {
 	out := make([]map[string]interface{}, 0, len(actors))
 	orgLogin := ownerFromRepoFullName(repo.FullName)
 	org := s.store.GetOrg(orgLogin)
@@ -1013,7 +1014,7 @@ func (s *Server) handleBPEnforceAdminsPost(w http.ResponseWriter, r *http.Reques
 		s.branchProtectionNotFound(w)
 		return
 	}
-	bp.EnforceAdmins = &BPEnforceAdmins{Enabled: true}
+	bp.EnforceAdmins = &store.BPEnforceAdmins{Enabled: true}
 	s.setBranchProtection(repo, branch, bp)
 	resp := *bp.EnforceAdmins
 	resp.URL = s.branchProtectionSubURL(s.baseURL(r), repo.FullName, branch, "enforce_admins")
@@ -1037,7 +1038,7 @@ func (s *Server) handleBPEnforceAdminsDelete(w http.ResponseWriter, r *http.Requ
 
 // --- Required commit signatures ---
 
-func (s *Server) requiredSignaturesJSON(bp *BranchProtection, repo *Repo, branch, baseURL string) map[string]interface{} {
+func (s *Server) requiredSignaturesJSON(bp *store.BranchProtection, repo *store.Repo, branch, baseURL string) map[string]interface{} {
 	enabled := bp.RequiredSignatures != nil && bp.RequiredSignatures.Enabled
 	return map[string]interface{}{
 		"url":     s.branchProtectionSubURL(baseURL, repo.FullName, branch, "required_signatures"),
@@ -1068,7 +1069,7 @@ func (s *Server) handleBPRequiredSignaturesPost(w http.ResponseWriter, r *http.R
 		s.branchProtectionNotFound(w)
 		return
 	}
-	bp.RequiredSignatures = &BPEnabledURL{Enabled: true}
+	bp.RequiredSignatures = &store.BPEnabledURL{Enabled: true}
 	s.setBranchProtection(repo, branch, bp)
 	writeJSON(w, http.StatusOK, s.requiredSignaturesJSON(bp, repo, branch, s.baseURL(r)))
 }
@@ -1093,7 +1094,7 @@ func (s *Server) handleBPRequiredSignaturesDelete(w http.ResponseWriter, r *http
 // bpRestrictedAppsJSON renders the restriction's app actors as full GitHub
 // App (integration) objects, the shape the restrictions/apps endpoints
 // return.
-func (s *Server) bpRestrictedAppsJSON(actors []BPActor) []map[string]interface{} {
+func (s *Server) bpRestrictedAppsJSON(actors []store.BPActor) []map[string]interface{} {
 	out := make([]map[string]interface{}, 0, len(actors))
 	for _, actor := range actors {
 		s.store.Mu.RLock()
@@ -1110,14 +1111,14 @@ func (s *Server) bpRestrictedAppsJSON(actors []BPActor) []map[string]interface{}
 // restrictions/apps mutation endpoints and resolves every slug to a
 // registered GitHub App. Writes a 422 and returns nil when a slug does not
 // resolve.
-func (s *Server) decodeBPAppSlugs(w http.ResponseWriter, r *http.Request) ([]BPActor, bool) {
+func (s *Server) decodeBPAppSlugs(w http.ResponseWriter, r *http.Request) ([]store.BPActor, bool) {
 	var req struct {
 		Apps []string `json:"apps"`
 	}
 	if !decodeJSONBody(w, r, &req) {
 		return nil, false
 	}
-	actors := make([]BPActor, 0, len(req.Apps))
+	actors := make([]store.BPActor, 0, len(req.Apps))
 	for _, slug := range req.Apps {
 		s.store.Mu.RLock()
 		app := s.store.AppsBySlug[slug]
@@ -1126,7 +1127,7 @@ func (s *Server) decodeBPAppSlugs(w http.ResponseWriter, r *http.Request) ([]BPA
 			writeGHError(w, http.StatusUnprocessableEntity, "Could not resolve to a GitHub App: "+slug)
 			return nil, false
 		}
-		actors = append(actors, BPActor{Login: app.Slug, ID: app.ID, Type: "App"})
+		actors = append(actors, store.BPActor{Login: app.Slug, ID: app.ID, Type: "App"})
 	}
 	return actors, true
 }
@@ -1279,7 +1280,7 @@ const (
 // allowances — force push, deletion, creation — are decided here as well as the
 // requirements a merge into the branch faces. Those come from the evaluator the
 // merge gate itself uses, applied to the commit being pushed.
-func (s *Server) protectedRefWriteRefusal(ctx context.Context, repo *Repo, stor storer.Storer, ref plumbing.ReferenceName, kind refWriteKind, target plumbing.Hash) string {
+func (s *Server) protectedRefWriteRefusal(ctx context.Context, repo *store.Repo, stor storer.Storer, ref plumbing.ReferenceName, kind refWriteKind, target plumbing.Hash) string {
 	if !ref.IsBranch() {
 		return s.evaluateRulesetsForRefWrite(ctx, repo, stor, ref, kind, target)
 	}
@@ -1325,7 +1326,7 @@ func (s *Server) protectedRefWriteRefusal(ctx context.Context, repo *Repo, stor 
 // protectedBranchTargetRefusal answers the requirements that govern what a
 // protected branch may be moved to. A direct write faces them exactly as a
 // merge into the branch does.
-func (s *Server) protectedBranchTargetRefusal(repo *Repo, bp *BranchProtection, stor storer.Storer, branch string, target plumbing.Hash) string {
+func (s *Server) protectedBranchTargetRefusal(repo *store.Repo, bp *store.BranchProtection, stor storer.Storer, branch string, target plumbing.Hash) string {
 	if bp.RequiredPullRequestReviews != nil {
 		return "Changes must be made through a pull request."
 	}
@@ -1389,7 +1390,7 @@ func commitsAddedToBranch(stor storer.Storer, branch string, target plumbing.Has
 
 // viewerIsRestrictedPusher reports whether the request's actor is one of the
 // actors a restrictions rule allows to write the branch.
-func (s *Server) viewerIsRestrictedPusher(ctx context.Context, repo *Repo, restrictions *BPRestrictions) bool {
+func (s *Server) viewerIsRestrictedPusher(ctx context.Context, repo *store.Repo, restrictions *store.BPRestrictions) bool {
 	user := ghUserFromContext(ctx)
 	if user == nil {
 		return false
@@ -1399,7 +1400,7 @@ func (s *Server) viewerIsRestrictedPusher(ctx context.Context, repo *Repo, restr
 			return true
 		}
 	}
-	orgLogin, _, ok := splitRepoFullName(repo.FullName)
+	orgLogin, _, ok := store.SplitRepoFullName(repo.FullName)
 	if ok {
 		for _, actor := range restrictions.Teams {
 			if _, member := s.store.GetTeamMembership(orgLogin, actor.Login, user.ID); member {
@@ -1426,7 +1427,7 @@ func (s *Server) viewerIsRestrictedPusher(ctx context.Context, repo *Repo, restr
 // canMergePullRequest checks branch protection rules for a PR merge.
 // It returns (ok, errorMessage). ok==false with empty message means the caller
 // should fall back to the existing required-status-check message.
-func (s *Server) canMergePullRequest(ctx context.Context, repo *Repo, pr *PullRequest) (bool, string) {
+func (s *Server) canMergePullRequest(ctx context.Context, repo *store.Repo, pr *store.PullRequest) (bool, string) {
 	bp := s.branchProtectionFor(repo.ID, pr.BaseRefName)
 	if bp == nil {
 		return true, ""
@@ -1526,7 +1527,7 @@ func (s *Server) requiredCheckContexts(repoID int, baseBranch string) []string {
 }
 
 // branchProtectionRuleForPR returns a GraphQL-shaped map for baseRef.branchProtectionRule.
-func (s *Server) branchProtectionRuleForPR(repo *Repo, baseBranch string) map[string]interface{} {
+func (s *Server) branchProtectionRuleForPR(repo *store.Repo, baseBranch string) map[string]interface{} {
 	bp := s.branchProtectionFor(repo.ID, baseBranch)
 	if bp == nil {
 		return nil

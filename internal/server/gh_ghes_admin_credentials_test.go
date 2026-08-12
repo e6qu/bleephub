@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func decodeGHESRecorderArray(t *testing.T, rec *httptest.ResponseRecorder) []map[string]interface{} {
@@ -84,12 +86,12 @@ func TestGHESGlobalHooksAndAdministrativeCredentials(t *testing.T) {
 
 	admin := s.store.LookupUserByLogin("admin")
 	s.store.Misc.Mu.Lock()
-	key := &UserKey{
+	key := &store.UserKey{
 		ID: 41, Key: "ssh-ed25519 AAAAGHESAdmin", Title: "site-admin",
 		Verified: true, UserID: admin.ID, CreatedAt: fixed,
 	}
 	s.store.Misc.UserKeys[key.ID] = key
-	s.store.Misc.KeysByUser[admin.ID] = []*UserKey{key}
+	s.store.Misc.KeysByUser[admin.ID] = []*store.UserKey{key}
 	s.store.Misc.Mu.Unlock()
 	rec = enterpriseActionsRequest(t, s, http.MethodGet, "/api/v3/admin/keys", nil)
 	if got := decodeGHESRecorderArray(t, rec); rec.Code != http.StatusOK || len(got) != 1 ||
@@ -135,18 +137,18 @@ func TestGHESGlobalHooksAndImpersonationTokensPersist(t *testing.T) {
 	t.Setenv("BLEEPHUB_DATA_DIR", dir)
 	fixed := time.Date(2026, time.July, 30, 11, 0, 0, 0, time.UTC)
 
-	p1, err := NewPersistence()
+	p1, err := store.NewPersistence()
 	if err != nil {
 		t.Fatal(err)
 	}
-	st1 := NewStore()
+	st1 := store.NewStore()
 	replaceStoreClockNow(st1, func() time.Time { return fixed })
 	if err := st1.SetPersistence(p1); err != nil {
 		t.Fatal(err)
 	}
 	st1.SeedDefaultUser()
 	st1.Mu.Lock()
-	st1.EnterpriseSettings.GHESGlobalHooks = []*Webhook{{
+	st1.EnterpriseSettings.GHESGlobalHooks = []*store.Webhook{{
 		ID: 77, URL: "https://hooks.example.test/persisted", Events: []string{"user"},
 		Active: true, Global: true, CreatedAt: fixed, UpdatedAt: fixed,
 	}}
@@ -160,12 +162,12 @@ func TestGHESGlobalHooksAndImpersonationTokensPersist(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	p2, err := NewPersistence()
+	p2, err := store.NewPersistence()
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer p2.Close()
-	st2 := NewStore()
+	st2 := store.NewStore()
 	if err := st2.SetPersistence(p2); err != nil {
 		t.Fatal(err)
 	}

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // TestMarkThreadReadBoundsReadMarkers pins STORE-023: the per-user read-marker
@@ -16,7 +18,7 @@ func TestMarkThreadReadBoundsReadMarkers(t *testing.T) {
 	// A fixed base time (time.Now is banned in tests); each mark is one second
 	// newer than the last, so "oldest" is deterministic.
 	base := time.Unix(1_600_000_000, 0)
-	total := maxReadThreadIDs + pruneReadThreadSlack + 100
+	total := store.MaxReadThreadIDs + store.PruneReadThreadSlack + 100
 	for i := 0; i < total; i++ {
 		st.MarkThreadRead(userID, fmt.Sprintf("thread-%d", i), base.Add(time.Duration(i)*time.Second))
 	}
@@ -28,11 +30,11 @@ func TestMarkThreadReadBoundsReadMarkers(t *testing.T) {
 	_, newestPresent := state.ReadThreadIDs[fmt.Sprintf("thread-%d", total-1)]
 	st.Mu.RUnlock()
 
-	if n > maxReadThreadIDs+pruneReadThreadSlack {
-		t.Fatalf("ReadThreadIDs grew unbounded: %d markers, cap+slack is %d", n, maxReadThreadIDs+pruneReadThreadSlack)
+	if n > store.MaxReadThreadIDs+store.PruneReadThreadSlack {
+		t.Fatalf("ReadThreadIDs grew unbounded: %d markers, cap+slack is %d", n, store.MaxReadThreadIDs+store.PruneReadThreadSlack)
 	}
-	if n < maxReadThreadIDs {
-		t.Fatalf("pruned too aggressively: %d markers, want >= %d", n, maxReadThreadIDs)
+	if n < store.MaxReadThreadIDs {
+		t.Fatalf("pruned too aggressively: %d markers, want >= %d", n, store.MaxReadThreadIDs)
 	}
 	if oldestPresent {
 		t.Errorf("oldest read marker (thread-0) should have been pruned once over the cap")

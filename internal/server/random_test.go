@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func TestCryptoRandomReadsAreChecked(t *testing.T) {
@@ -47,7 +49,7 @@ func TestCryptoRandomReadsAreChecked(t *testing.T) {
 }
 
 func TestEntropyHelpersReturnErrors(t *testing.T) {
-	if _, err := newHostedComputeIDFromReader(strings.NewReader("")); err == nil || !strings.Contains(err.Error(), "hosted compute resource id") {
+	if _, err := store.NewHostedComputeIDFromReader(strings.NewReader("")); err == nil || !strings.Contains(err.Error(), "hosted compute resource id") {
 		t.Fatalf("newHostedComputeIDFromReader error = %v", err)
 	}
 	if _, err := randomRunnerTokenFromReader(strings.NewReader("")); err == nil || !strings.Contains(err.Error(), "runner token") {
@@ -56,7 +58,7 @@ func TestEntropyHelpersReturnErrors(t *testing.T) {
 	if _, err := newCacheDownloadTokenFromReader(strings.NewReader("")); err == nil || !strings.Contains(err.Error(), "cache download token") {
 		t.Fatalf("newCacheDownloadTokenFromReader error = %v", err)
 	}
-	if _, err := newFineGrainedPATTokenFromReader(strings.NewReader("")); err == nil || !strings.Contains(err.Error(), "fine-grained personal access token") {
+	if _, err := store.NewFineGrainedPATTokenFromReader(strings.NewReader("")); err == nil || !strings.Contains(err.Error(), "fine-grained personal access token") {
 		t.Fatalf("newFineGrainedPATTokenFromReader error = %v", err)
 	}
 }

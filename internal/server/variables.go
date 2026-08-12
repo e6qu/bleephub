@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/e6qu/bleephub/internal/actions"
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // GitHub Actions configuration variables (plaintext counterpart of
@@ -16,35 +17,35 @@ import (
 
 func (s *Server) registerVariablesRoutes() {
 	// Repository scope.
-	s.route("GET /api/v3/repos/{owner}/{repo}/actions/variables", s.requirePerm(scopeSecrets, permRead, s.handleListRepoVariables))
-	s.route("POST /api/v3/repos/{owner}/{repo}/actions/variables", s.requirePerm(scopeSecrets, permWrite, s.handleCreateRepoVariable))
-	s.route("GET /api/v3/repos/{owner}/{repo}/actions/variables/{name}", s.requirePerm(scopeSecrets, permRead, s.handleGetRepoVariable))
-	s.route("PATCH /api/v3/repos/{owner}/{repo}/actions/variables/{name}", s.requirePerm(scopeSecrets, permWrite, s.handlePatchRepoVariable))
-	s.route("DELETE /api/v3/repos/{owner}/{repo}/actions/variables/{name}", s.requirePerm(scopeSecrets, permWrite, s.handleDeleteRepoVariable))
-	s.route("GET /api/v3/repos/{owner}/{repo}/actions/organization-variables", s.requirePerm(scopeSecrets, permRead, s.handleListRepoOrgVariables))
+	s.route("GET /api/v3/repos/{owner}/{repo}/actions/variables", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleListRepoVariables))
+	s.route("POST /api/v3/repos/{owner}/{repo}/actions/variables", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handleCreateRepoVariable))
+	s.route("GET /api/v3/repos/{owner}/{repo}/actions/variables/{name}", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleGetRepoVariable))
+	s.route("PATCH /api/v3/repos/{owner}/{repo}/actions/variables/{name}", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handlePatchRepoVariable))
+	s.route("DELETE /api/v3/repos/{owner}/{repo}/actions/variables/{name}", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handleDeleteRepoVariable))
+	s.route("GET /api/v3/repos/{owner}/{repo}/actions/organization-variables", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleListRepoOrgVariables))
 
 	// Environment scope.
-	s.route("GET /api/v3/repos/{owner}/{repo}/environments/{env_name}/variables", s.requirePerm(scopeSecrets, permRead, s.handleListEnvVariables))
-	s.route("POST /api/v3/repos/{owner}/{repo}/environments/{env_name}/variables", s.requirePerm(scopeSecrets, permWrite, s.handleCreateEnvVariable))
-	s.route("GET /api/v3/repos/{owner}/{repo}/environments/{env_name}/variables/{name}", s.requirePerm(scopeSecrets, permRead, s.handleGetEnvVariable))
-	s.route("PATCH /api/v3/repos/{owner}/{repo}/environments/{env_name}/variables/{name}", s.requirePerm(scopeSecrets, permWrite, s.handlePatchEnvVariable))
-	s.route("DELETE /api/v3/repos/{owner}/{repo}/environments/{env_name}/variables/{name}", s.requirePerm(scopeSecrets, permWrite, s.handleDeleteEnvVariable))
+	s.route("GET /api/v3/repos/{owner}/{repo}/environments/{env_name}/variables", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleListEnvVariables))
+	s.route("POST /api/v3/repos/{owner}/{repo}/environments/{env_name}/variables", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handleCreateEnvVariable))
+	s.route("GET /api/v3/repos/{owner}/{repo}/environments/{env_name}/variables/{name}", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleGetEnvVariable))
+	s.route("PATCH /api/v3/repos/{owner}/{repo}/environments/{env_name}/variables/{name}", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handlePatchEnvVariable))
+	s.route("DELETE /api/v3/repos/{owner}/{repo}/environments/{env_name}/variables/{name}", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handleDeleteEnvVariable))
 
 	// Organization scope.
-	s.route("GET /api/v3/orgs/{org}/actions/variables", s.requirePerm(scopeSecrets, permRead, s.handleListOrgVariables))
-	s.route("POST /api/v3/orgs/{org}/actions/variables", s.requirePerm(scopeSecrets, permWrite, s.handleCreateOrgVariable))
-	s.route("GET /api/v3/orgs/{org}/actions/variables/{name}", s.requirePerm(scopeSecrets, permRead, s.handleGetOrgVariable))
-	s.route("PATCH /api/v3/orgs/{org}/actions/variables/{name}", s.requirePerm(scopeSecrets, permWrite, s.handlePatchOrgVariable))
-	s.route("DELETE /api/v3/orgs/{org}/actions/variables/{name}", s.requirePerm(scopeSecrets, permWrite, s.handleDeleteOrgVariable))
-	s.route("GET /api/v3/orgs/{org}/actions/variables/{name}/repositories", s.requirePerm(scopeSecrets, permRead, s.handleListOrgVariableRepos))
-	s.route("PUT /api/v3/orgs/{org}/actions/variables/{name}/repositories", s.requirePerm(scopeSecrets, permWrite, s.handleSetOrgVariableRepos))
-	s.route("PUT /api/v3/orgs/{org}/actions/variables/{name}/repositories/{repository_id}", s.requirePerm(scopeSecrets, permWrite, s.handleAddOrgVariableRepo))
-	s.route("DELETE /api/v3/orgs/{org}/actions/variables/{name}/repositories/{repository_id}", s.requirePerm(scopeSecrets, permWrite, s.handleRemoveOrgVariableRepo))
+	s.route("GET /api/v3/orgs/{org}/actions/variables", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleListOrgVariables))
+	s.route("POST /api/v3/orgs/{org}/actions/variables", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handleCreateOrgVariable))
+	s.route("GET /api/v3/orgs/{org}/actions/variables/{name}", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleGetOrgVariable))
+	s.route("PATCH /api/v3/orgs/{org}/actions/variables/{name}", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handlePatchOrgVariable))
+	s.route("DELETE /api/v3/orgs/{org}/actions/variables/{name}", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handleDeleteOrgVariable))
+	s.route("GET /api/v3/orgs/{org}/actions/variables/{name}/repositories", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleListOrgVariableRepos))
+	s.route("PUT /api/v3/orgs/{org}/actions/variables/{name}/repositories", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handleSetOrgVariableRepos))
+	s.route("PUT /api/v3/orgs/{org}/actions/variables/{name}/repositories/{repository_id}", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handleAddOrgVariableRepo))
+	s.route("DELETE /api/v3/orgs/{org}/actions/variables/{name}/repositories/{repository_id}", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handleRemoveOrgVariableRepo))
 }
 
 // --- shared pieces ---
 
-func variableJSON(v *ActionsVariable) map[string]interface{} {
+func variableJSON(v *store.ActionsVariable) map[string]interface{} {
 	return map[string]interface{}{
 		"name":       v.Name,
 		"value":      v.Value,
@@ -55,7 +56,7 @@ func variableJSON(v *ActionsVariable) map[string]interface{} {
 
 // orgVariableJSON renders the organization-actions-variable shape;
 // selected_repositories_url appears only for visibility "selected".
-func orgVariableJSON(v *ActionsVariable, orgLogin, baseURL string) map[string]interface{} {
+func orgVariableJSON(v *store.ActionsVariable, orgLogin, baseURL string) map[string]interface{} {
 	out := variableJSON(v)
 	out["visibility"] = v.Visibility
 	if v.Visibility == "selected" {
@@ -82,7 +83,7 @@ func (s *Server) repoVariableTableFor(w http.ResponseWriter, r *http.Request) (v
 	return variableTable{s, "repo_variables", repo.FullName}, true
 }
 
-func (t variableTable) rows() map[string]map[string]*ActionsVariable {
+func (t variableTable) rows() map[string]map[string]*store.ActionsVariable {
 	switch t.bucket {
 	case "repo_variables":
 		return t.s.store.RepoVariables
@@ -95,7 +96,7 @@ func (t variableTable) rows() map[string]map[string]*ActionsVariable {
 
 // persistLocked writes the scope's collection through (or removes the row
 // when the collection emptied). Caller holds the store write lock.
-func (t variableTable) persistLocked(m map[string]*ActionsVariable) {
+func (t variableTable) persistLocked(m map[string]*store.ActionsVariable) {
 	if t.s.store.Persist == nil {
 		return
 	}
@@ -106,7 +107,7 @@ func (t variableTable) persistLocked(m map[string]*ActionsVariable) {
 	}
 }
 
-func cloneVariable(v *ActionsVariable) *ActionsVariable {
+func cloneVariable(v *store.ActionsVariable) *store.ActionsVariable {
 	cp := *v
 	cp.SelectedRepoIDs = append([]int(nil), v.SelectedRepoIDs...)
 	return &cp
@@ -114,7 +115,7 @@ func cloneVariable(v *ActionsVariable) *ActionsVariable {
 
 // list returns the scope's variables sorted by name (copies, so callers
 // can render without the lock).
-func (t variableTable) list() []*ActionsVariable {
+func (t variableTable) list() []*store.ActionsVariable {
 	t.s.store.Mu.RLock()
 	defer t.s.store.Mu.RUnlock()
 	m := t.rows()[t.key]
@@ -123,14 +124,14 @@ func (t variableTable) list() []*ActionsVariable {
 		names = append(names, n)
 	}
 	sort.Strings(names)
-	out := make([]*ActionsVariable, 0, len(names))
+	out := make([]*store.ActionsVariable, 0, len(names))
 	for _, n := range names {
 		out = append(out, cloneVariable(m[n]))
 	}
 	return out
 }
 
-func (t variableTable) get(name string) *ActionsVariable {
+func (t variableTable) get(name string) *store.ActionsVariable {
 	t.s.store.Mu.RLock()
 	defer t.s.store.Mu.RUnlock()
 	v := t.rows()[t.key][name]
@@ -141,13 +142,13 @@ func (t variableTable) get(name string) *ActionsVariable {
 }
 
 // create inserts a new variable; false when the name already exists.
-func (t variableTable) create(v *ActionsVariable) bool {
+func (t variableTable) create(v *store.ActionsVariable) bool {
 	t.s.store.Mu.Lock()
 	defer t.s.store.Mu.Unlock()
 	rows := t.rows()
 	m := rows[t.key]
 	if m == nil {
-		m = make(map[string]*ActionsVariable)
+		m = make(map[string]*store.ActionsVariable)
 		rows[t.key] = m
 	}
 	if m[v.Name] != nil {
@@ -160,7 +161,7 @@ func (t variableTable) create(v *ActionsVariable) bool {
 
 // patch mutates the named variable, optionally renaming it. Returns the
 // HTTP status to write: 204 applied, 404 unknown, 409 rename collision.
-func (t variableTable) patch(name, newName string, apply func(*ActionsVariable)) int {
+func (t variableTable) patch(name, newName string, apply func(*store.ActionsVariable)) int {
 	t.s.store.Mu.Lock()
 	defer t.s.store.Mu.Unlock()
 	m := t.rows()[t.key]
@@ -235,7 +236,7 @@ func (s *Server) handleCreateRepoVariable(w http.ResponseWriter, r *http.Request
 	}
 	name := strings.ToUpper(body.Name)
 	now := time.Now().UTC()
-	if !t.create(&ActionsVariable{Name: name, Value: body.Value, CreatedAt: now, UpdatedAt: now}) {
+	if !t.create(&store.ActionsVariable{Name: name, Value: body.Value, CreatedAt: now, UpdatedAt: now}) {
 		writeGHError(w, http.StatusConflict, "Variable already exists")
 		return
 	}
@@ -304,7 +305,7 @@ func (s *Server) handlePatchRepoVariable(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	name := strings.ToUpper(r.PathValue("name"))
-	status := t.patch(name, newName, func(v *ActionsVariable) {
+	status := t.patch(name, newName, func(v *store.ActionsVariable) {
 		if value != nil {
 			v.Value = *value
 		}
@@ -403,7 +404,7 @@ func (s *Server) handleCreateEnvVariable(w http.ResponseWriter, r *http.Request)
 	}
 	name := strings.ToUpper(body.Name)
 	now := time.Now().UTC()
-	if !t.create(&ActionsVariable{Name: name, Value: body.Value, CreatedAt: now, UpdatedAt: now}) {
+	if !t.create(&store.ActionsVariable{Name: name, Value: body.Value, CreatedAt: now, UpdatedAt: now}) {
 		writeGHError(w, http.StatusConflict, "Variable already exists")
 		return
 	}
@@ -436,7 +437,7 @@ func (s *Server) handlePatchEnvVariable(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	name := strings.ToUpper(r.PathValue("name"))
-	status := t.patch(name, newName, func(v *ActionsVariable) {
+	status := t.patch(name, newName, func(v *store.ActionsVariable) {
 		if value != nil {
 			v.Value = *value
 		}
@@ -515,7 +516,7 @@ func (s *Server) handleCreateOrgVariable(w http.ResponseWriter, r *http.Request)
 	name := strings.ToUpper(body.Name)
 	now := time.Now().UTC()
 	t := variableTable{s, "org_variables", org.Login}
-	v := &ActionsVariable{
+	v := &store.ActionsVariable{
 		Name: name, Value: body.Value,
 		Visibility: body.Visibility, SelectedRepoIDs: ids,
 		CreatedAt: now, UpdatedAt: now,
@@ -563,7 +564,7 @@ func (s *Server) handlePatchOrgVariable(w http.ResponseWriter, r *http.Request) 
 // table's locked mutate-or-rename core; the upper-cased variable name and
 // whether the patch applied are returned so the caller can audit.
 func (s *Server) patchOrgScopedVariable(w http.ResponseWriter, r *http.Request,
-	patch func(name, newName string, apply func(*ActionsVariable)) int) (string, bool) {
+	patch func(name, newName string, apply func(*store.ActionsVariable)) int) (string, bool) {
 	var body struct {
 		Name                  *string `json:"name"`
 		Value                 *string `json:"value"`
@@ -587,7 +588,7 @@ func (s *Server) patchOrgScopedVariable(w http.ResponseWriter, r *http.Request,
 	}
 
 	name := strings.ToUpper(r.PathValue("name"))
-	status := patch(name, newName, func(v *ActionsVariable) {
+	status := patch(name, newName, func(v *store.ActionsVariable) {
 		if body.Value != nil {
 			v.Value = *body.Value
 		}
@@ -660,7 +661,7 @@ func (s *Server) handleSetOrgVariableRepos(w http.ResponseWriter, r *http.Reques
 	}
 	name := strings.ToUpper(r.PathValue("name"))
 	s.setOrgItemSelectedRepos(w, r, name, true,
-		func() orgScopedItem {
+		func() store.OrgScopedItem {
 			if v := s.store.OrgVariables[org.Login][name]; v != nil {
 				return v
 			}
@@ -682,7 +683,7 @@ func (s *Server) orgVariableSelectionChange(w http.ResponseWriter, r *http.Reque
 	}
 	name := strings.ToUpper(r.PathValue("name"))
 	s.handleOrgSelectionChange(w, r, name, add,
-		func() orgScopedItem {
+		func() store.OrgScopedItem {
 			if v := s.store.OrgVariables[org.Login][name]; v != nil {
 				return v
 			}

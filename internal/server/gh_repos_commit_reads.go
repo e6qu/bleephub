@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	gitStorage "github.com/go-git/go-git/v5/storage"
@@ -23,7 +24,7 @@ func (s *Server) handleGetSingleCommit(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	hash, err := resolveGitRef(stor, strings.Trim(r.PathValue("ref"), "/"))
+	hash, err := store.ResolveGitRef(stor, strings.Trim(r.PathValue("ref"), "/"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -111,7 +112,7 @@ func commitUnifiedDiff(commit *object.Commit) (string, error) {
 // commits authored under an email no account owns.
 func (s *Server) commitSignatureUser(sig object.Signature) interface{} {
 	if u := s.store.ResolveUserBySignature(sig.Name, sig.Email); u != nil {
-		return userToJSON(u)
+		return store.UserToJSON(u)
 	}
 	return nil
 }
@@ -119,7 +120,7 @@ func (s *Server) commitSignatureUser(sig object.Signature) interface{} {
 // commitDiffEntries computes the diff-entry list (with per-file patch text
 // and addition/deletion counts) for a commit against its first parent, or
 // against the empty tree for a root commit.
-func commitDiffEntries(commit *object.Commit, repo *Repo, baseURL string) ([]map[string]interface{}, int, int, error) {
+func commitDiffEntries(commit *object.Commit, repo *store.Repo, baseURL string) ([]map[string]interface{}, int, int, error) {
 	parentTree := &object.Tree{}
 	if commit.NumParents() > 0 {
 		parent, err := commit.Parent(0)
@@ -212,7 +213,7 @@ func (s *Server) handleListPullsForCommit(w http.ResponseWriter, r *http.Request
 		return
 	}
 	sha := r.PathValue("commit_sha")
-	hash, err := resolveGitRef(stor, sha)
+	hash, err := store.ResolveGitRef(stor, sha)
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -231,16 +232,16 @@ func (s *Server) handleListPullsForCommit(w http.ResponseWriter, r *http.Request
 // pullRequestContainsCommit reports whether the commit is among the commits
 // the pull request introduces (reachable from its head branch but not from
 // its base branch, resolved live from the git storage).
-func pullRequestContainsCommit(stor gitStorage.Storer, pr *PullRequest, hash plumbing.Hash) bool {
-	headHash, err := resolveGitRef(stor, pr.HeadRefName)
+func pullRequestContainsCommit(stor gitStorage.Storer, pr *store.PullRequest, hash plumbing.Hash) bool {
+	headHash, err := store.ResolveGitRef(stor, pr.HeadRefName)
 	if err != nil {
 		return false
 	}
-	baseHash, err := resolveGitRef(stor, pr.BaseRefName)
+	baseHash, err := store.ResolveGitRef(stor, pr.BaseRefName)
 	if err != nil {
 		return false
 	}
-	commits, err := commitsBetween(stor, baseHash, headHash)
+	commits, err := store.CommitsBetween(stor, baseHash, headHash)
 	if err != nil {
 		return false
 	}
@@ -264,7 +265,7 @@ func (s *Server) handleListBranchesWhereHead(w http.ResponseWriter, r *http.Requ
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	hash, err := resolveGitRef(stor, r.PathValue("commit_sha"))
+	hash, err := store.ResolveGitRef(stor, r.PathValue("commit_sha"))
 	if err != nil {
 		writeGHError(w, http.StatusUnprocessableEntity, "No commit found for SHA: "+r.PathValue("commit_sha"))
 		return
@@ -305,7 +306,7 @@ func (s *Server) handleListBranchesWhereHead(w http.ResponseWriter, r *http.Requ
 type contributorBucket struct {
 	name          string
 	email         string
-	user          *User
+	user          *store.User
 	contributions int
 	firstSeen     int // insertion order for stable output
 }
@@ -313,7 +314,7 @@ type contributorBucket struct {
 // aggregateContributors walks the default branch history and groups commits
 // by author identity, resolving identities to real accounts by email or
 // login.
-func (s *Server) aggregateContributors(repo *Repo) ([]*contributorBucket, bool) {
+func (s *Server) aggregateContributors(repo *store.Repo) ([]*contributorBucket, bool) {
 	commits, ok := s.defaultBranchCommits(repo)
 	if !ok {
 		return nil, false
@@ -377,7 +378,7 @@ func (s *Server) handleListRepoContributors(w http.ResponseWriter, r *http.Reque
 	out := make([]map[string]interface{}, 0, len(merged))
 	for _, b := range merged {
 		if b.user != nil {
-			entry := userToJSON(b.user)
+			entry := store.UserToJSON(b.user)
 			entry["contributions"] = b.contributions
 			out = append(out, entry)
 			continue
@@ -396,7 +397,7 @@ func (s *Server) handleListRepoContributors(w http.ResponseWriter, r *http.Reque
 
 // defaultBranchCommits returns every commit reachable from the repository's
 // default branch. ok is false when the repo has no git data or no commits.
-func (s *Server) defaultBranchCommits(repo *Repo) ([]*object.Commit, bool) {
+func (s *Server) defaultBranchCommits(repo *store.Repo) ([]*object.Commit, bool) {
 	stor := s.gitStorageForRepo(repo)
 	if stor == nil {
 		return nil, false
@@ -456,7 +457,7 @@ func (s *Server) handleStatsContributors(w http.ResponseWriter, r *http.Request)
 
 	type weekCell struct{ a, d, c int }
 	type authorAgg struct {
-		user  *User
+		user  *store.User
 		total int
 		weeks map[int64]*weekCell
 	}
@@ -509,7 +510,7 @@ func (s *Server) handleStatsContributors(w http.ResponseWriter, r *http.Request)
 			})
 		}
 		out = append(out, map[string]interface{}{
-			"author": userToJSON(agg.user),
+			"author": store.UserToJSON(agg.user),
 			"total":  agg.total,
 			"weeks":  weeks,
 		})

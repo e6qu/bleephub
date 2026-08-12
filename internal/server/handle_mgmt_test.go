@@ -6,6 +6,8 @@ import (
 	"io"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func TestListWorkflowsEmpty(t *testing.T) {
@@ -31,7 +33,7 @@ func TestListWorkflowsWithData(t *testing.T) {
 	srv := newIsolatedServer(t)
 	// Seed a workflow
 	srv.store.Mu.Lock()
-	srv.store.Workflows["test-wf-1"] = &Workflow{
+	srv.store.Workflows["test-wf-1"] = &store.Workflow{
 		ID:        "test-wf-1",
 		Name:      "CI Pipeline",
 		RunID:     42,
@@ -39,7 +41,7 @@ func TestListWorkflowsWithData(t *testing.T) {
 		Result:    "success",
 		CreatedAt: time.Date(2035, time.June, 15, 12, 0, 0, 0, time.UTC),
 		EventName: "push",
-		Jobs: map[string]*WorkflowJob{
+		Jobs: map[string]*store.WorkflowJob{
 			"build": {Key: "build", JobID: "j1", DisplayName: "Build", Status: "completed", Result: "success"},
 		},
 	}
@@ -136,14 +138,14 @@ func TestGetWorkflowLogs(t *testing.T) {
 	srv := newIsolatedServer(t)
 	// Seed a workflow with log lines
 	srv.store.Mu.Lock()
-	srv.store.Workflows["test-wf-logs"] = &Workflow{
+	srv.store.Workflows["test-wf-logs"] = &store.Workflow{
 		ID:        "test-wf-logs",
 		Name:      "Log Test",
 		RunID:     99,
 		Status:    "completed",
 		Result:    "success",
 		CreatedAt: time.Date(2035, time.June, 15, 12, 0, 0, 0, time.UTC),
-		Jobs: map[string]*WorkflowJob{
+		Jobs: map[string]*store.WorkflowJob{
 			"test": {Key: "test", JobID: "j-log-1", DisplayName: "Test", Status: "completed", Result: "success"},
 		},
 	}

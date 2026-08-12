@@ -1,6 +1,10 @@
 package bleephub
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
+)
 
 // These tests exercise the STORE-001 conversions of multi-bucket mutations to a
 // single persistBatch commit. Each asserts that every bucket the mutation
@@ -9,7 +13,7 @@ import "testing"
 // inconsistent.
 
 func TestAddRepoCollaboratorPersistsCollaboratorAndRepoAcrossReload(t *testing.T) {
-	st := reloadedStore(t, func(p *Persistence, st *Store) {
+	st := reloadedStore(t, func(p *store.Persistence, st *store.Store) {
 		st.SeedDefaultUser()
 		admin := st.UsersByLogin["admin"]
 		addTestUser(p, st, "alice")
@@ -30,7 +34,7 @@ func TestAddRepoCollaboratorPersistsCollaboratorAndRepoAcrossReload(t *testing.T
 }
 
 func TestRemoveRepoCollaboratorPersistsAcrossReload(t *testing.T) {
-	st := reloadedStore(t, func(p *Persistence, st *Store) {
+	st := reloadedStore(t, func(p *store.Persistence, st *store.Store) {
 		st.SeedDefaultUser()
 		admin := st.UsersByLogin["admin"]
 		addTestUser(p, st, "alice")
@@ -52,7 +56,7 @@ func TestRemoveRepoCollaboratorPersistsAcrossReload(t *testing.T) {
 
 func TestCreateRepoDeployKeyPersistsAcrossReload(t *testing.T) {
 	var repoID int
-	st := reloadedStore(t, func(p *Persistence, st *Store) {
+	st := reloadedStore(t, func(p *store.Persistence, st *store.Store) {
 		st.SeedDefaultUser()
 		admin := st.UsersByLogin["admin"]
 		repo := st.CreateRepo(admin, "keys", "", false)
@@ -72,21 +76,21 @@ func TestCreateRepoDeployKeyPersistsAcrossReload(t *testing.T) {
 
 func TestDeleteTeamReparentsChildrenAcrossReload(t *testing.T) {
 	var grandparentID int
-	st := reloadedStore(t, func(p *Persistence, st *Store) {
+	st := reloadedStore(t, func(p *store.Persistence, st *store.Store) {
 		st.SeedDefaultUser()
 		admin := st.UsersByLogin["admin"]
 		if st.CreateOrg(admin, "acme", "Acme", "") == nil {
 			t.Fatal("create org")
 		}
-		grandparent := st.CreateTeam("acme", "grandparent", TeamOptions{})
+		grandparent := st.CreateTeam("acme", "grandparent", store.TeamOptions{})
 		if grandparent == nil {
 			t.Fatal("create grandparent team")
 		}
-		parent := st.CreateTeam("acme", "parent", TeamOptions{ParentID: grandparent.ID})
+		parent := st.CreateTeam("acme", "parent", store.TeamOptions{ParentID: grandparent.ID})
 		if parent == nil {
 			t.Fatal("create parent team")
 		}
-		if st.CreateTeam("acme", "child", TeamOptions{ParentID: parent.ID}) == nil {
+		if st.CreateTeam("acme", "child", store.TeamOptions{ParentID: parent.ID}) == nil {
 			t.Fatal("create child team")
 		}
 		grandparentID = grandparent.ID

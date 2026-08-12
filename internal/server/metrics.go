@@ -5,6 +5,8 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // Metrics is the live, mutable accumulator. It is never marshalled — the
@@ -56,7 +58,7 @@ func (m *Metrics) RecordJobDispatch() {
 // duration inflated by all the work that preceded it. Deriving the duration
 // here from the one authoritative pair of timestamps means a caller cannot
 // supply the wrong clock.
-func (m *Metrics) RecordJobCompletion(job *WorkflowJob) {
+func (m *Metrics) RecordJobCompletion(job *store.WorkflowJob) {
 	if job == nil {
 		return
 	}

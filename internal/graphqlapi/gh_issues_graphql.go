@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/graphql-go/graphql"
 )
 
@@ -501,7 +502,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 			repoFullName, _ := repo["nameWithOwner"].(string)
 
 			storedIssues := s.store.ListIssues(repoID, "")
-			issues := make([]*Issue, 0, len(storedIssues))
+			issues := make([]*store.Issue, 0, len(storedIssues))
 			for _, issue := range storedIssues {
 				issues = append(issues, s.store.SnapIssue(issue))
 			}
@@ -512,7 +513,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 				for _, st := range states {
 					stateMap[fmt.Sprintf("%v", st)] = true
 				}
-				var filtered []*Issue
+				var filtered []*store.Issue
 				for _, i := range issues {
 					if stateMap[i.State] {
 						filtered = append(filtered, i)
@@ -527,9 +528,9 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 				for _, ln := range labelNames {
 					names = append(names, fmt.Sprintf("%v", ln))
 				}
-				var filtered []*Issue
+				var filtered []*store.Issue
 				for _, i := range issues {
-					if issueHasAllLabels(s.store, i, names, repoID) {
+					if store.IssueHasAllLabels(s.store, i, names, repoID) {
 						filtered = append(filtered, i)
 					}
 				}
@@ -540,7 +541,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 			if filterBy, ok := p.Args["filterBy"].(map[string]interface{}); ok {
 				if assignee, ok := filterBy["assignee"].(string); ok && assignee != "" {
 					u := s.store.LookupUserByLogin(assignee)
-					var filtered []*Issue
+					var filtered []*store.Issue
 					if u != nil {
 						for _, i := range issues {
 							for _, aid := range i.AssigneeIDs {
@@ -557,7 +558,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 				}
 				if creator, ok := filterBy["createdBy"].(string); ok && creator != "" {
 					u := s.store.LookupUserByLogin(creator)
-					var filtered []*Issue
+					var filtered []*store.Issue
 					if u != nil {
 						for _, issue := range issues {
 							if issue.AuthorID == u.ID {
@@ -572,7 +573,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 					for _, state := range states {
 						allowed[fmt.Sprint(state)] = true
 					}
-					var filtered []*Issue
+					var filtered []*store.Issue
 					for _, issue := range issues {
 						if allowed[issue.State] {
 							filtered = append(filtered, issue)
@@ -585,9 +586,9 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 					for _, label := range labels {
 						names = append(names, fmt.Sprint(label))
 					}
-					var filtered []*Issue
+					var filtered []*store.Issue
 					for _, issue := range issues {
-						if issueHasAllLabels(s.store, issue, names, repoID) {
+						if store.IssueHasAllLabels(s.store, issue, names, repoID) {
 							filtered = append(filtered, issue)
 						}
 					}
@@ -595,7 +596,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 				}
 				if mentioned, ok := filterBy["mentioned"].(string); ok && mentioned != "" {
 					needle := "@" + strings.ToLower(mentioned)
-					var filtered []*Issue
+					var filtered []*store.Issue
 					for _, issue := range issues {
 						found := strings.Contains(strings.ToLower(issue.Body), needle)
 						if !found {
@@ -726,7 +727,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 			// Filter by query
 			if q, ok := p.Args["query"].(string); ok && q != "" {
 				q = strings.ToLower(q)
-				var filtered []*IssueLabel
+				var filtered []*store.IssueLabel
 				for _, l := range labels {
 					if strings.Contains(strings.ToLower(l.Name), q) {
 						filtered = append(filtered, l)
@@ -787,7 +788,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 			// Filter by query
 			if q, ok := p.Args["query"].(string); ok && q != "" {
 				q = strings.ToLower(q)
-				var filtered []*Milestone
+				var filtered []*store.Milestone
 				for _, ms := range milestones {
 					if strings.Contains(strings.ToLower(ms.Title), q) {
 						filtered = append(filtered, ms)
@@ -801,7 +802,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 				first = f
 			}
 			after, _ := p.Args["after"].(string)
-			return paginateGQL(milestones, first, after, milestoneToGQL, func(m *Milestone) string { return m.NodeID }), nil
+			return paginateGQL(milestones, first, after, milestoneToGQL, func(m *store.Milestone) string { return m.NodeID }), nil
 		},
 	})
 
@@ -822,7 +823,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 			if repo == nil {
 				return nil, fmt.Errorf("repository not found")
 			}
-			usersByID := map[int]*User{}
+			usersByID := map[int]*store.User{}
 			if repo.OwnerType == "User" && repo.Owner != nil {
 				usersByID[repo.Owner.ID] = repo.Owner
 			}
@@ -837,7 +838,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 					usersByID[user.ID] = user
 				}
 			}
-			users := make([]*User, 0, len(usersByID))
+			users := make([]*store.User, 0, len(usersByID))
 			for _, user := range usersByID {
 				users = append(users, user)
 			}
@@ -845,7 +846,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 			// Filter by query
 			if q, ok := p.Args["query"].(string); ok && q != "" {
 				q = strings.ToLower(q)
-				var filtered []*User
+				var filtered []*store.User
 				for _, u := range users {
 					if strings.Contains(strings.ToLower(u.Login), q) || strings.Contains(strings.ToLower(u.Name), q) {
 						filtered = append(filtered, u)
@@ -863,7 +864,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 				first = f
 			}
 			after, _ := p.Args["after"].(string)
-			return paginateGQL(users, first, after, userToGraphQL, func(u *User) string { return u.NodeID }), nil
+			return paginateGQL(users, first, after, userToGraphQL, func(u *store.User) string { return u.NodeID }), nil
 		},
 	})
 
@@ -910,7 +911,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 			title, _ := input["title"].(string)
 			body, _ := input["body"].(string)
 
-			repo := findRepoByNodeID(s.store, repoNodeID)
+			repo := store.FindRepoByNodeID(s.store, repoNodeID)
 			if repo == nil {
 				return nil, fmt.Errorf("could not resolve to a Repository with the global id of '%s'", repoNodeID)
 			}
@@ -940,7 +941,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 			}
 			var issueTypeID int
 			if itNodeID, ok := input["issueTypeId"].(string); ok && itNodeID != "" {
-				it := findIssueTypeByNodeID(s.store, itNodeID)
+				it := store.FindIssueTypeByNodeID(s.store, itNodeID)
 				if it == nil || s.store.GetAssignableIssueTypeForRepo(repo, it.ID) == nil {
 					return nil, fmt.Errorf("could not resolve to an IssueType with the global id of '%s'", itNodeID)
 				}
@@ -952,7 +953,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 				return nil, fmt.Errorf("issue creation failed")
 			}
 			if issueTypeID > 0 {
-				s.store.UpdateIssue(issue.ID, func(i *Issue) {
+				s.store.UpdateIssue(issue.ID, func(i *store.Issue) {
 					i.IssueTypeID = issueTypeID
 				})
 				issue = s.store.GetIssue(issue.ID)
@@ -1015,13 +1016,13 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 				stateReason = "COMPLETED"
 			}
 
-			issue := findIssueByNodeID(s.store, issueNodeID)
+			issue := store.FindIssueByNodeID(s.store, issueNodeID)
 			if issue == nil {
 				return nil, fmt.Errorf("could not resolve to an Issue")
 			}
 			previousState := issue.State
 
-			s.store.UpdateIssue(issue.ID, func(i *Issue) {
+			s.store.UpdateIssue(issue.ID, func(i *store.Issue) {
 				i.State = "CLOSED"
 				i.StateReason = stateReason
 				now := time.Now()
@@ -1060,13 +1061,13 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 			input, _ := p.Args["input"].(map[string]interface{})
 			issueNodeID, _ := input["issueId"].(string)
 
-			issue := findIssueByNodeID(s.store, issueNodeID)
+			issue := store.FindIssueByNodeID(s.store, issueNodeID)
 			if issue == nil {
 				return nil, fmt.Errorf("could not resolve to an Issue")
 			}
 			previousState := issue.State
 
-			s.store.UpdateIssue(issue.ID, func(i *Issue) {
+			s.store.UpdateIssue(issue.ID, func(i *store.Issue) {
 				i.State = "OPEN"
 				i.StateReason = ""
 				i.ClosedAt = nil
@@ -1117,7 +1118,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 
 			// On real GitHub a PR is an issue, so addComment's subjectId may be
 			// either; `gh pr comment` passes a PR node id. Resolve both.
-			if issue := findIssueByNodeID(s.store, subjectNodeID); issue != nil {
+			if issue := store.FindIssueByNodeID(s.store, subjectNodeID); issue != nil {
 				comment := s.store.CreateComment(issue.ID, user.ID, body)
 				if comment == nil {
 					return nil, fmt.Errorf("comment creation failed")
@@ -1127,7 +1128,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 					"subject":     issueToGQL(issue, s.store),
 				}, nil
 			}
-			if pr := findPullRequestByNodeID(s.store, subjectNodeID); pr != nil {
+			if pr := store.FindPullRequestByNodeID(s.store, subjectNodeID); pr != nil {
 				comment := s.store.CreateCommentFor("pull_request", pr.ID, user.ID, body)
 				if comment == nil {
 					return nil, fmt.Errorf("comment creation failed")
@@ -1174,7 +1175,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 			input, _ := p.Args["input"].(map[string]interface{})
 			issueNodeID, _ := input["id"].(string)
 
-			issue := findIssueByNodeID(s.store, issueNodeID)
+			issue := store.FindIssueByNodeID(s.store, issueNodeID)
 			if issue == nil {
 				return nil, fmt.Errorf("could not resolve to an Issue")
 			}
@@ -1185,7 +1186,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 			var issueTypeID *int
 			if raw, present := input["issueTypeId"]; present {
 				if itNodeID, ok := raw.(string); ok && itNodeID != "" {
-					it := findIssueTypeByNodeID(s.store, itNodeID)
+					it := store.FindIssueTypeByNodeID(s.store, itNodeID)
 					if it == nil || s.store.GetAssignableIssueTypeForRepo(repo, it.ID) == nil {
 						return nil, fmt.Errorf("could not resolve to an IssueType with the global id of '%s'", itNodeID)
 					}
@@ -1205,7 +1206,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 					triage = true
 				}
 			}
-			if triage && !s.viewerHasRepoPermission(p.Context, repo, scopeIssues, permWrite) {
+			if triage && !s.viewerHasRepoPermission(p.Context, repo, store.ScopeIssues, store.PermWrite) {
 				return nil, fmt.Errorf("must have push access to Repository")
 			}
 			// The schema types this as IssueState; the second check catches a
@@ -1232,7 +1233,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 				return nil, err
 			}
 
-			s.store.UpdateIssue(issue.ID, func(i *Issue) {
+			s.store.UpdateIssue(issue.ID, func(i *store.Issue) {
 				if v, ok := input["title"].(string); ok {
 					i.Title = v
 				}
@@ -1411,7 +1412,7 @@ func (s *Resolver) issueFieldValueGraphQLConnectionType() *graphql.Object {
 	})
 }
 
-func issueToGQL(issue *Issue, st *Store) map[string]interface{} {
+func issueToGQL(issue *store.Issue, st *store.Store) map[string]interface{} {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 
@@ -1460,7 +1461,7 @@ func issueToGQL(issue *Issue, st *Store) map[string]interface{} {
 
 	// Comments — resolved through the by-parent index so rendering a page of
 	// issues no longer scans every comment in the store once per issue.
-	indexed := st.CommentsByParent[commentCountKey("issue", issue.ID)]
+	indexed := st.CommentsByParent[store.CommentCountKey("issue", issue.ID)]
 	commentNodes := make([]map[string]interface{}, 0, len(indexed))
 	for _, c := range indexed {
 		commentNodes = append(commentNodes, commentToGQLLocked(c, st))
@@ -1896,7 +1897,7 @@ func relayConnectionArgs() graphql.FieldConfigArgument {
 	}
 }
 
-func issueFieldValuesConnectionLocked(st *Store, issue *Issue) map[string]interface{} {
+func issueFieldValuesConnectionLocked(st *store.Store, issue *store.Issue) map[string]interface{} {
 	repo := st.Repos[issue.RepoID]
 	org := ""
 	if repo != nil {
@@ -1933,7 +1934,7 @@ func issueFieldValuesConnectionLocked(st *Store, issue *Issue) map[string]interf
 	}
 }
 
-func issueFieldsOrgLocked(st *Store, repo *Repo) string {
+func issueFieldsOrgLocked(st *store.Store, repo *store.Repo) string {
 	orgLogin, _, _ := strings.Cut(repo.FullName, "/")
 	if st.OrgsByLogin[orgLogin] == nil {
 		return ""
@@ -1941,7 +1942,7 @@ func issueFieldsOrgLocked(st *Store, repo *Repo) string {
 	return orgLogin
 }
 
-func issueFieldValueToGQLLocked(field *IssueField, issueID int, value interface{}) map[string]interface{} {
+func issueFieldValueToGQLLocked(field *store.IssueField, issueID int, value interface{}) map[string]interface{} {
 	out := map[string]interface{}{
 		"id":    fmt.Sprintf("IFV_kwDO%08d%08d", issueID, field.ID),
 		"field": issueFieldToGQLLocked(field),
@@ -1967,7 +1968,7 @@ func issueFieldValueToGQLLocked(field *IssueField, issueID int, value interface{
 		}
 	case "multi_select":
 		out["__typename"] = "IssueFieldMultiSelectValue"
-		names := toStringSlice(value)
+		names := store.ToStringSlice(value)
 		opts := make([]map[string]interface{}, 0, len(names))
 		for _, name := range names {
 			if opt := issueFieldOptionByName(field, name); opt != nil {
@@ -1982,7 +1983,7 @@ func issueFieldValueToGQLLocked(field *IssueField, issueID int, value interface{
 	return out
 }
 
-func issueFieldToGQLLocked(field *IssueField) map[string]interface{} {
+func issueFieldToGQLLocked(field *store.IssueField) map[string]interface{} {
 	out := map[string]interface{}{
 		"id":             field.NodeID,
 		"fullDatabaseId": strconv.Itoa(field.ID),
@@ -2009,7 +2010,7 @@ func issueFieldToGQLLocked(field *IssueField) map[string]interface{} {
 	return out
 }
 
-func issueFieldOptionsToGQL(options []*IssueFieldOption) []map[string]interface{} {
+func issueFieldOptionsToGQL(options []*store.IssueFieldOption) []map[string]interface{} {
 	out := make([]map[string]interface{}, 0, len(options))
 	for _, opt := range options {
 		out = append(out, issueFieldOptionToGQL(opt))
@@ -2017,7 +2018,7 @@ func issueFieldOptionsToGQL(options []*IssueFieldOption) []map[string]interface{
 	return out
 }
 
-func issueFieldOptionToGQL(opt *IssueFieldOption) map[string]interface{} {
+func issueFieldOptionToGQL(opt *store.IssueFieldOption) map[string]interface{} {
 	return map[string]interface{}{
 		"id":             issueFieldOptionNodeID(opt.ID),
 		"databaseId":     opt.ID,
@@ -2029,7 +2030,7 @@ func issueFieldOptionToGQL(opt *IssueFieldOption) map[string]interface{} {
 	}
 }
 
-func issueFieldOptionByName(field *IssueField, name string) *IssueFieldOption {
+func issueFieldOptionByName(field *store.IssueField, name string) *store.IssueFieldOption {
 	for _, opt := range field.Options {
 		if opt.Name == name {
 			return opt
@@ -2057,7 +2058,7 @@ func issueFieldVisibilityEnum(visibility string) string {
 	return "ORG_ONLY"
 }
 
-func labelToGQL(l *IssueLabel) map[string]interface{} {
+func labelToGQL(l *store.IssueLabel) map[string]interface{} {
 	return map[string]interface{}{
 		"nodeID":      l.NodeID,
 		"name":        l.Name,
@@ -2066,7 +2067,7 @@ func labelToGQL(l *IssueLabel) map[string]interface{} {
 	}
 }
 
-func milestoneToGQL(ms *Milestone) map[string]interface{} {
+func milestoneToGQL(ms *store.Milestone) map[string]interface{} {
 	var dueOn interface{}
 	if ms.DueOn != nil {
 		dueOn = ms.DueOn.Format(time.RFC3339)
@@ -2081,13 +2082,13 @@ func milestoneToGQL(ms *Milestone) map[string]interface{} {
 	}
 }
 
-func commentToGQL(c *Comment, st *Store) map[string]interface{} {
+func commentToGQL(c *store.Comment, st *store.Store) map[string]interface{} {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 	return commentToGQLLocked(c, st)
 }
 
-func commentToGQLLocked(c *Comment, st *Store) map[string]interface{} {
+func commentToGQLLocked(c *store.Comment, st *store.Store) map[string]interface{} {
 	var author map[string]interface{}
 	if u, ok := st.Users[c.AuthorID]; ok {
 		author = userToGraphQL(u)
@@ -2120,7 +2121,7 @@ func commentToGQLLocked(c *Comment, st *Store) map[string]interface{} {
 	}
 }
 
-func commentAuthorAssociationLocked(comment *Comment, st *Store) string {
+func commentAuthorAssociationLocked(comment *store.Comment, st *store.Store) string {
 	repoID := 0
 	switch comment.ParentType {
 	case "pull_request":
@@ -2135,7 +2136,7 @@ func commentAuthorAssociationLocked(comment *Comment, st *Store) string {
 	return authorAssociationForRepoLocked(st, repoID, comment.AuthorID)
 }
 
-func commentURLLocked(comment *Comment, st *Store) string {
+func commentURLLocked(comment *store.Comment, st *store.Store) string {
 	repoID, number, lane := 0, 0, "issues"
 	switch comment.ParentType {
 	case "pull_request":
@@ -2153,7 +2154,7 @@ func commentURLLocked(comment *Comment, st *Store) string {
 	return externalURL(fmt.Sprintf("/comments/%d", comment.ID))
 }
 
-func authorAssociationForRepoLocked(st *Store, repoID, authorID int) string {
+func authorAssociationForRepoLocked(st *store.Store, repoID, authorID int) string {
 	repo := st.Repos[repoID]
 	author := st.Users[authorID]
 	if repo == nil || author == nil {
@@ -2164,7 +2165,7 @@ func authorAssociationForRepoLocked(st *Store, repoID, authorID int) string {
 	}
 	if repo.OwnerType == "Organization" {
 		owner, _, _ := strings.Cut(repo.FullName, "/")
-		if membership := st.Memberships[membershipKey(owner, authorID)]; membership != nil && membership.State == "active" {
+		if membership := st.Memberships[store.MembershipKey(owner, authorID)]; membership != nil && membership.State == "active" {
 			return "MEMBER"
 		}
 	}
@@ -2194,7 +2195,7 @@ func nilStrPtr(s *string) interface{} {
 // for the given parent, querying the real ReactionStore so per-content
 // totalCount values reflect actual reactions. Used by Issue, IssueComment,
 // and any other reactable type's `reactionGroups` field.
-func reactionGroupsForGraphQL(rs *ReactionStore, parentType string, parentID int) []map[string]interface{} {
+func reactionGroupsForGraphQL(rs *store.ReactionStore, parentType string, parentID int) []map[string]interface{} {
 	counts := map[string]int{
 		"+1": 0, "-1": 0, "laugh": 0, "confused": 0,
 		"heart": 0, "hooray": 0, "rocket": 0, "eyes": 0,
@@ -2231,7 +2232,7 @@ func reactionGroupsForGraphQL(rs *ReactionStore, parentType string, parentID int
 // — absent, or an explicit null — means "leave the labels alone" and yields a
 // nil result; an id that names no label of repoID is refused rather than
 // dropped, because dropping it reported success for a label never applied.
-func resolveGQLLabelIDs(st *Store, repoID int, raw interface{}) (*[]int, error) {
+func resolveGQLLabelIDs(st *store.Store, repoID int, raw interface{}) (*[]int, error) {
 	entries, ok := raw.([]interface{})
 	if !ok {
 		return nil, nil
@@ -2239,7 +2240,7 @@ func resolveGQLLabelIDs(st *Store, repoID int, raw interface{}) (*[]int, error) 
 	ids := make([]int, 0, len(entries))
 	for _, entry := range entries {
 		nodeID := fmt.Sprintf("%v", entry)
-		l := findLabelByNodeID(st, nodeID)
+		l := store.FindLabelByNodeID(st, nodeID)
 		if l == nil || l.RepoID != repoID {
 			return nil, gqlMissingNode("Label", nodeID)
 		}
@@ -2249,7 +2250,7 @@ func resolveGQLLabelIDs(st *Store, repoID int, raw interface{}) (*[]int, error) 
 }
 
 // resolveGQLAssigneeIDs is resolveGQLLabelIDs for assigneeIds.
-func resolveGQLAssigneeIDs(st *Store, raw interface{}) (*[]int, error) {
+func resolveGQLAssigneeIDs(st *store.Store, raw interface{}) (*[]int, error) {
 	entries, ok := raw.([]interface{})
 	if !ok {
 		return nil, nil
@@ -2257,7 +2258,7 @@ func resolveGQLAssigneeIDs(st *Store, raw interface{}) (*[]int, error) {
 	ids := make([]int, 0, len(entries))
 	for _, entry := range entries {
 		nodeID := fmt.Sprintf("%v", entry)
-		u := findUserByNodeID(st, nodeID)
+		u := store.FindUserByNodeID(st, nodeID)
 		if u == nil {
 			return nil, gqlMissingNode("User", nodeID)
 		}
@@ -2268,7 +2269,7 @@ func resolveGQLAssigneeIDs(st *Store, raw interface{}) (*[]int, error) {
 
 // resolveGQLMilestoneID maps a mutation's milestone argument onto a store id.
 // An absent member leaves the milestone alone; an explicit null clears it.
-func resolveGQLMilestoneID(st *Store, repoID int, input map[string]interface{}, key string) (*int, error) {
+func resolveGQLMilestoneID(st *store.Store, repoID int, input map[string]interface{}, key string) (*int, error) {
 	raw, present := input[key]
 	if !present {
 		return nil, nil
@@ -2278,7 +2279,7 @@ func resolveGQLMilestoneID(st *Store, repoID int, input map[string]interface{}, 
 		cleared := 0
 		return &cleared, nil
 	}
-	ms := findMilestoneByNodeID(st, nodeID)
+	ms := store.FindMilestoneByNodeID(st, nodeID)
 	if ms == nil || ms.RepoID != repoID {
 		return nil, gqlMissingNode("Milestone", nodeID)
 	}
@@ -2288,7 +2289,7 @@ func resolveGQLMilestoneID(st *Store, repoID int, input map[string]interface{}, 
 
 // applyIssueState moves an issue between OPEN and CLOSED, keeping ClosedAt and
 // StateReason consistent with the transition the way the REST handler does.
-func applyIssueState(i *Issue, state string) {
+func applyIssueState(i *store.Issue, state string) {
 	if state == "CLOSED" {
 		i.State = "CLOSED"
 		if i.ClosedAt == nil {
@@ -2306,10 +2307,10 @@ func applyIssueState(i *Issue, state string) {
 }
 
 // paginateIssuesGQL implements Relay-style cursor pagination for issues.
-func paginateIssuesGQL(issues []*Issue, st *Store, first int, after string) map[string]interface{} {
-	return paginateGQL(issues, first, after, func(i *Issue) map[string]interface{} {
+func paginateIssuesGQL(issues []*store.Issue, st *store.Store, first int, after string) map[string]interface{} {
+	return paginateGQL(issues, first, after, func(i *store.Issue) map[string]interface{} {
 		return issueToGQL(i, st)
-	}, func(i *Issue) string { return i.NodeID })
+	}, func(i *store.Issue) string { return i.NodeID })
 }
 
 // Some GraphQL fields queried by gh CLI are not mutable through the REST
@@ -2500,9 +2501,9 @@ func (s *Resolver) projectV2FieldConnectionType() *graphql.Object {
 	resolveFieldConfigType := func(value interface{}) *graphql.Object {
 		src, _ := value.(map[string]interface{})
 		switch src["dataType"] {
-		case string(ProjectV2FieldSingleSelect):
+		case string(store.ProjectV2FieldSingleSelect):
 			return s.graphqlTypes.projectV2SingleSelectFieldMemo
-		case string(ProjectV2FieldIteration):
+		case string(store.ProjectV2FieldIteration):
 			return s.graphqlTypes.projectV2IterationFieldMemo
 		default:
 			return s.graphqlTypes.projectV2FieldTypeMemo
@@ -2814,13 +2815,13 @@ func (s *Resolver) projectV2ItemConnectionType() *graphql.Object {
 		ResolveType: func(p graphql.ResolveTypeParams) *graphql.Object {
 			src, _ := p.Value.(map[string]interface{})
 			switch src["kind"] {
-			case string(ProjectV2FieldText):
+			case string(store.ProjectV2FieldText):
 				return s.graphqlTypes.projectV2TextValueMemo
-			case string(ProjectV2FieldNumber):
+			case string(store.ProjectV2FieldNumber):
 				return s.graphqlTypes.projectV2NumberValueMemo
-			case string(ProjectV2FieldDate):
+			case string(store.ProjectV2FieldDate):
 				return s.graphqlTypes.projectV2DateValueMemo
-			case string(ProjectV2FieldIteration):
+			case string(store.ProjectV2FieldIteration):
 				return s.graphqlTypes.projectV2IterationValueMemo
 			default:
 				return s.graphqlTypes.projectV2SingleSelectValueMemo
@@ -2901,7 +2902,7 @@ func (s *Resolver) projectV2ItemConnectionType() *graphql.Object {
 // resolves cleanly without a second lookup. Field values are
 // pre-resolved into fieldValuesByName so the fieldValueByName(name:)
 // resolver is a direct map lookup.
-func projectV2ItemToGQL(it *ProjectV2Item, st *Store) map[string]interface{} {
+func projectV2ItemToGQL(it *store.ProjectV2Item, st *store.Store) map[string]interface{} {
 	var projectMap map[string]interface{}
 	if p := st.ProjectsV2.GetProject(it.ProjectID); p != nil {
 		projectMap = projectV2ToGQL(p)
@@ -2923,16 +2924,16 @@ func projectV2ItemToGQL(it *ProjectV2Item, st *Store) map[string]interface{} {
 
 // projectV2FieldValueToGQL renders a persisted ProjectV2 field value as
 // the matching GraphQL union source map.
-func projectV2FieldValueToGQL(v *ProjectV2ItemFieldValue, f *ProjectV2Field) map[string]interface{} {
+func projectV2FieldValueToGQL(v *store.ProjectV2ItemFieldValue, f *store.ProjectV2Field) map[string]interface{} {
 	out := map[string]interface{}{"kind": string(f.DataType)}
 	switch f.DataType {
-	case ProjectV2FieldText:
+	case store.ProjectV2FieldText:
 		out["text"] = v.TextValue
-	case ProjectV2FieldNumber:
+	case store.ProjectV2FieldNumber:
 		out["number"] = v.NumberValue
-	case ProjectV2FieldDate:
+	case store.ProjectV2FieldDate:
 		out["date"] = v.DateValue
-	case ProjectV2FieldIteration:
+	case store.ProjectV2FieldIteration:
 		out["iterationId"] = v.IterationID
 		if f.Iteration != nil {
 			for _, it := range f.Iteration.Iterations {
@@ -2954,7 +2955,7 @@ func projectV2FieldValueToGQL(v *ProjectV2ItemFieldValue, f *ProjectV2Field) map
 // projectV2ToGQL renders a project as a GraphQL source map. The store is not
 // embedded in the map: resolvers reach it through their *Server closure, so a
 // live *Store never flows through the resolver graph as an untyped entry.
-func projectV2ToGQL(p *ProjectV2) map[string]interface{} {
+func projectV2ToGQL(p *store.ProjectV2) map[string]interface{} {
 	return map[string]interface{}{
 		"id":     p.ID,
 		"nodeID": p.NodeID,
@@ -2978,7 +2979,7 @@ func projectV2SourceID(source interface{}) (int, error) {
 	return id, nil
 }
 
-func projectV2FieldToGQL(f *ProjectV2Field) map[string]interface{} {
+func projectV2FieldToGQL(f *store.ProjectV2Field) map[string]interface{} {
 	options := make([]map[string]interface{}, 0, len(f.Options))
 	for _, opt := range f.Options {
 		options = append(options, map[string]interface{}{
@@ -3032,7 +3033,7 @@ func projectV2FieldToGQL(f *ProjectV2Field) map[string]interface{} {
 	}
 }
 
-func projectV2ViewToGQL(v *ProjectV2View) map[string]interface{} {
+func projectV2ViewToGQL(v *store.ProjectV2View) map[string]interface{} {
 	var filter interface{}
 	if v.Filter != nil {
 		filter = *v.Filter
@@ -3052,7 +3053,7 @@ func projectV2ViewToGQL(v *ProjectV2View) map[string]interface{} {
 
 // projectItemsConnectionForIssue returns the source map for the
 // Issue.projectItems / PullRequest.projectItems connection.
-func projectItemsConnectionForIssue(st *Store, issueID int, args map[string]interface{}) map[string]interface{} {
+func projectItemsConnectionForIssue(st *store.Store, issueID int, args map[string]interface{}) map[string]interface{} {
 	items := st.ProjectsV2.ListItemsForIssue(issueID)
 	nodes := make([]map[string]interface{}, 0, len(items))
 	for _, it := range items {
@@ -3065,7 +3066,7 @@ func projectItemsConnectionForIssue(st *Store, issueID int, args map[string]inte
 // close/reopen: it records the timeline event and delivers the issues webhook,
 // but only when the state actually transitioned (so `on: issues` workflows fire
 // for the gh CLI, which mutates over GraphQL).
-func (s *Resolver) emitIssueStateChange(issue *Issue, user *User, previousState, action string) {
+func (s *Resolver) emitIssueStateChange(issue *store.Issue, user *store.User, previousState, action string) {
 	if issue == nil || user == nil {
 		return
 	}

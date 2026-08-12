@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // Checks API parity — check-run + check-suite CRUD against the
@@ -113,7 +115,7 @@ func TestCheckRunLifecycle(t *testing.T) {
 }
 
 func TestLatestCheckRunsFilter(t *testing.T) {
-	runs := []*CheckRun{
+	runs := []*store.CheckRun{
 		{ID: 1, SuiteID: 10},
 		{ID: 2, SuiteID: 20},
 		{ID: 3, SuiteID: 10},
@@ -162,7 +164,7 @@ func TestCheckSuitePreferencesIncludeRepository(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPatch,
 		"/api/v3/repos/admin/check-preferences/check-suites/preferences",
 		bytes.NewBufferString(`{"auto_trigger_checks":[]}`))
-	req.Header.Set("Authorization", "Bearer "+AdminToken())
+	req.Header.Set("Authorization", "Bearer "+store.AdminToken())
 	req.Header.Set("Content-Type", "application/json")
 	recorder := httptest.NewRecorder()
 	s.requestHandler().ServeHTTP(recorder, req)

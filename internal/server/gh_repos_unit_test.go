@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func reposTestServer(t *testing.T) *Server {
@@ -277,7 +279,7 @@ func TestUnitRepoTopics_SetViaStore(t *testing.T) {
 	s := reposTestServer(t)
 	admin := s.store.UsersByLogin["admin"]
 	repo := s.store.CreateRepo(admin, "topics-store-repo", "", false)
-	s.store.UpdateRepo("admin", "topics-store-repo", func(r *Repo) {
+	s.store.UpdateRepo("admin", "topics-store-repo", func(r *store.Repo) {
 		r.Topics = []string{"go", "testing"}
 	})
 	w := doRepoReq(s, "GET", "/api/v3/repos/"+repo.FullName, "")
@@ -329,11 +331,11 @@ func TestUnitCreateRepo_Fork(t *testing.T) {
 	s := reposTestServer(t)
 	admin := s.store.UsersByLogin["admin"]
 	parent := s.store.CreateRepo(admin, "parent-repo", "original", false)
-	s.store.UpdateRepo("admin", "parent-repo", func(r *Repo) {
+	s.store.UpdateRepo("admin", "parent-repo", func(r *store.Repo) {
 		r.Fork = false
 	})
 	child := s.store.CreateRepo(admin, "child-repo", "fork", false)
-	s.store.UpdateRepo("admin", "child-repo", func(r *Repo) {
+	s.store.UpdateRepo("admin", "child-repo", func(r *store.Repo) {
 		r.Fork = true
 	})
 	w := doRepoReq(s, "GET", "/api/v3/repos/"+parent.FullName, "")

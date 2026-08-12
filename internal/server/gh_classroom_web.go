@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
 )
 
@@ -81,10 +82,10 @@ func (s *Server) handleClassroomDashboard(w http.ResponseWriter, r *http.Request
 	})
 }
 
-func (s *Server) classroomsAdministeredBy(ctx context.Context, user *User) []*Classroom {
+func (s *Server) classroomsAdministeredBy(ctx context.Context, user *store.User) []*store.Classroom {
 	ctx = contextWithUser(ctx, user)
 	s.store.Mu.RLock()
-	all := make([]*Classroom, 0, len(s.store.Classrooms))
+	all := make([]*store.Classroom, 0, len(s.store.Classrooms))
 	for _, c := range s.store.Classrooms {
 		all = append(all, c)
 	}
@@ -100,7 +101,7 @@ func (s *Server) classroomsAdministeredBy(ctx context.Context, user *User) []*Cl
 	return out
 }
 
-func sortClassrooms(classrooms []*Classroom) {
+func sortClassrooms(classrooms []*store.Classroom) {
 	for i := 1; i < len(classrooms); i++ {
 		for j := i; j > 0 && classrooms[j-1].ID > classrooms[j].ID; j-- {
 			classrooms[j-1], classrooms[j] = classrooms[j], classrooms[j-1]
@@ -108,7 +109,7 @@ func sortClassrooms(classrooms []*Classroom) {
 	}
 }
 
-func (s *Server) classroomWebJSON(c *Classroom, base string) map[string]interface{} {
+func (s *Server) classroomWebJSON(c *store.Classroom, base string) map[string]interface{} {
 	out := s.classroomJSON(c, base)
 	if out == nil {
 		return map[string]interface{}{"id": c.ID, "name": c.Name, "archived": c.Archived}
@@ -123,7 +124,7 @@ func (s *Server) classroomWebJSON(c *Classroom, base string) map[string]interfac
 	}
 	assignments := make([]map[string]interface{}, 0)
 	s.store.Mu.RLock()
-	classroomAssignments := make([]*ClassroomAssignment, 0)
+	classroomAssignments := make([]*store.ClassroomAssignment, 0)
 	for _, assignment := range s.store.ClassroomAssignments {
 		if assignment.ClassroomID == c.ID {
 			classroomAssignments = append(classroomAssignments, assignment)
@@ -154,7 +155,7 @@ func (s *Server) handleCreateClassroom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if strings.TrimSpace(req.Name) == "" {
-		writeGHValidationError(w, "Classroom", "name", "missing_field")
+		store.WriteGHValidationError(w, "Classroom", "name", "missing_field")
 		return
 	}
 	org := s.store.GetOrg(req.Org)
@@ -182,7 +183,7 @@ func (s *Server) handleUpdateClassroom(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	c := s.store.UpdateClassroom(id, func(c *Classroom) {
+	c := s.store.UpdateClassroom(id, func(c *store.Classroom) {
 		if req.Name != nil && strings.TrimSpace(*req.Name) != "" {
 			c.Name = strings.TrimSpace(*req.Name)
 		}
@@ -227,12 +228,12 @@ func (s *Server) handleReplaceClassroomRoster(w http.ResponseWriter, r *http.Req
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	roster := make([]ClassroomStudent, 0, len(req.Students))
+	roster := make([]store.ClassroomStudent, 0, len(req.Students))
 	seenUsers := map[int]bool{}
 	seenIdentifiers := map[string]bool{}
 	for _, entry := range req.Students {
 		identifier := strings.TrimSpace(entry.Identifier)
-		var user *User
+		var user *store.User
 		if strings.TrimSpace(entry.Login) != "" {
 			user = s.store.LookupUserByLogin(entry.Login)
 		}
@@ -245,33 +246,33 @@ func (s *Server) handleReplaceClassroomRoster(w http.ResponseWriter, r *http.Req
 			userID = user.ID
 		}
 		if identifier == "" || (userID != 0 && seenUsers[userID]) || seenIdentifiers[identifier] {
-			writeGHValidationError(w, "ClassroomRoster", "students", "invalid")
+			store.WriteGHValidationError(w, "ClassroomRoster", "students", "invalid")
 			return
 		}
 		if userID != 0 {
 			seenUsers[userID] = true
 		}
 		seenIdentifiers[identifier] = true
-		roster = append(roster, ClassroomStudent{UserID: userID, RosterIdentifier: identifier})
+		roster = append(roster, store.ClassroomStudent{UserID: userID, RosterIdentifier: identifier})
 	}
-	c := s.store.UpdateClassroom(id, func(c *Classroom) { c.Roster = roster })
+	c := s.store.UpdateClassroom(id, func(c *store.Classroom) { c.Roster = roster })
 	writeJSON(w, http.StatusOK, s.classroomWebJSON(c, s.baseURL(r)))
 }
 
 type classroomAssignmentRequest struct {
-	Title                       *string                    `json:"title"`
-	Type                        *string                    `json:"type"`
-	StarterCodeRepository       *string                    `json:"starter_code_repository"`
-	PublicRepo                  *bool                      `json:"public_repo"`
-	InvitationsEnabled          *bool                      `json:"invitations_enabled"`
-	StudentsAreRepoAdmins       *bool                      `json:"students_are_repo_admins"`
-	FeedbackPullRequestsEnabled *bool                      `json:"feedback_pull_requests_enabled"`
-	MaxTeams                    *int                       `json:"max_teams"`
-	MaxMembers                  *int                       `json:"max_members"`
-	Editor                      *string                    `json:"editor"`
-	Language                    *string                    `json:"language"`
-	Deadline                    *time.Time                 `json:"deadline"`
-	AutogradingTests            []ClassroomAutogradingTest `json:"autograding_tests"`
+	Title                       *string                          `json:"title"`
+	Type                        *string                          `json:"type"`
+	StarterCodeRepository       *string                          `json:"starter_code_repository"`
+	PublicRepo                  *bool                            `json:"public_repo"`
+	InvitationsEnabled          *bool                            `json:"invitations_enabled"`
+	StudentsAreRepoAdmins       *bool                            `json:"students_are_repo_admins"`
+	FeedbackPullRequestsEnabled *bool                            `json:"feedback_pull_requests_enabled"`
+	MaxTeams                    *int                             `json:"max_teams"`
+	MaxMembers                  *int                             `json:"max_members"`
+	Editor                      *string                          `json:"editor"`
+	Language                    *string                          `json:"language"`
+	Deadline                    *time.Time                       `json:"deadline"`
+	AutogradingTests            []store.ClassroomAutogradingTest `json:"autograding_tests"`
 }
 
 func (s *Server) handleCreateClassroomAssignment(w http.ResponseWriter, r *http.Request) {
@@ -293,23 +294,23 @@ func (s *Server) handleCreateClassroomAssignment(w http.ResponseWriter, r *http.
 		return
 	}
 	if req.Title == nil || strings.TrimSpace(*req.Title) == "" {
-		writeGHValidationError(w, "ClassroomAssignment", "title", "missing_field")
+		store.WriteGHValidationError(w, "ClassroomAssignment", "title", "missing_field")
 		return
 	}
 	if req.Type == nil || (*req.Type != "individual" && *req.Type != "group") {
-		writeGHValidationError(w, "ClassroomAssignment", "type", "invalid")
+		store.WriteGHValidationError(w, "ClassroomAssignment", "type", "invalid")
 		return
 	}
 	if req.StarterCodeRepository == nil || strings.TrimSpace(*req.StarterCodeRepository) == "" {
-		writeGHValidationError(w, "ClassroomAssignment", "starter_code_repository", "missing_field")
+		store.WriteGHValidationError(w, "ClassroomAssignment", "starter_code_repository", "missing_field")
 		return
 	}
 	if (req.MaxTeams != nil && *req.MaxTeams < 1) || (req.MaxMembers != nil && *req.MaxMembers < 1) {
-		writeGHValidationError(w, "ClassroomAssignment", "team_limits", "invalid")
+		store.WriteGHValidationError(w, "ClassroomAssignment", "team_limits", "invalid")
 		return
 	}
 	if !validAutogradingTests(req.AutogradingTests) {
-		writeGHValidationError(w, "ClassroomAssignment", "autograding_tests", "invalid")
+		store.WriteGHValidationError(w, "ClassroomAssignment", "autograding_tests", "invalid")
 		return
 	}
 	starterFullName := strings.TrimSpace(*req.StarterCodeRepository)
@@ -324,7 +325,7 @@ func (s *Server) handleCreateClassroomAssignment(w http.ResponseWriter, r *http.
 		writeGHError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	a := &ClassroomAssignment{ClassroomID: classroom.ID, Title: strings.TrimSpace(*req.Title), Type: *req.Type, Slug: slugify(*req.Title), InviteCode: invite, InvitationsEnabled: true, StarterCodeRepoID: starter.ID}
+	a := &store.ClassroomAssignment{ClassroomID: classroom.ID, Title: strings.TrimSpace(*req.Title), Type: *req.Type, Slug: store.Slugify(*req.Title), InviteCode: invite, InvitationsEnabled: true, StarterCodeRepoID: starter.ID}
 	applyClassroomAssignmentRequest(a, &req)
 	a = s.store.CreateClassroomAssignment(a)
 	out := s.classroomAssignmentJSON(a, s.baseURL(r), true)
@@ -332,9 +333,9 @@ func (s *Server) handleCreateClassroomAssignment(w http.ResponseWriter, r *http.
 	writeJSON(w, http.StatusCreated, out)
 }
 
-func applyClassroomAssignmentRequest(a *ClassroomAssignment, req *classroomAssignmentRequest) {
+func applyClassroomAssignmentRequest(a *store.ClassroomAssignment, req *classroomAssignmentRequest) {
 	if req.Title != nil && strings.TrimSpace(*req.Title) != "" {
-		a.Title, a.Slug = strings.TrimSpace(*req.Title), slugify(*req.Title)
+		a.Title, a.Slug = strings.TrimSpace(*req.Title), store.Slugify(*req.Title)
 	}
 	if req.Type != nil {
 		a.Type = *req.Type
@@ -367,11 +368,11 @@ func applyClassroomAssignmentRequest(a *ClassroomAssignment, req *classroomAssig
 		a.Deadline = req.Deadline
 	}
 	if req.AutogradingTests != nil {
-		a.AutogradingTests = append([]ClassroomAutogradingTest(nil), req.AutogradingTests...)
+		a.AutogradingTests = append([]store.ClassroomAutogradingTest(nil), req.AutogradingTests...)
 	}
 }
 
-func validAutogradingTests(tests []ClassroomAutogradingTest) bool {
+func validAutogradingTests(tests []store.ClassroomAutogradingTest) bool {
 	for _, test := range tests {
 		if strings.TrimSpace(test.Name) == "" || strings.TrimSpace(test.Command) == "" || test.Points <= 0 {
 			return false
@@ -399,22 +400,22 @@ func (s *Server) handleUpdateClassroomAssignment(w http.ResponseWriter, r *http.
 		return
 	}
 	if req.Type != nil && *req.Type != "individual" && *req.Type != "group" {
-		writeGHValidationError(w, "ClassroomAssignment", "type", "invalid")
+		store.WriteGHValidationError(w, "ClassroomAssignment", "type", "invalid")
 		return
 	}
 	if req.Title != nil && strings.TrimSpace(*req.Title) == "" {
-		writeGHValidationError(w, "ClassroomAssignment", "title", "invalid")
+		store.WriteGHValidationError(w, "ClassroomAssignment", "title", "invalid")
 		return
 	}
 	if (req.MaxTeams != nil && *req.MaxTeams < 1) || (req.MaxMembers != nil && *req.MaxMembers < 1) {
-		writeGHValidationError(w, "ClassroomAssignment", "team_limits", "invalid")
+		store.WriteGHValidationError(w, "ClassroomAssignment", "team_limits", "invalid")
 		return
 	}
 	if !validAutogradingTests(req.AutogradingTests) {
-		writeGHValidationError(w, "ClassroomAssignment", "autograding_tests", "invalid")
+		store.WriteGHValidationError(w, "ClassroomAssignment", "autograding_tests", "invalid")
 		return
 	}
-	a := s.store.UpdateClassroomAssignment(id, func(a *ClassroomAssignment) { applyClassroomAssignmentRequest(a, &req) })
+	a := s.store.UpdateClassroomAssignment(id, func(a *store.ClassroomAssignment) { applyClassroomAssignmentRequest(a, &req) })
 	out := s.classroomAssignmentJSON(a, s.baseURL(r), true)
 	out["autograding_tests"] = a.AutogradingTests
 	writeJSON(w, http.StatusOK, out)
@@ -436,7 +437,7 @@ func (s *Server) handleDeleteClassroomAssignment(w http.ResponseWriter, r *http.
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) assignmentByInvite(code string) *ClassroomAssignment {
+func (s *Server) assignmentByInvite(code string) *store.ClassroomAssignment {
 	s.store.Mu.RLock()
 	defer s.store.Mu.RUnlock()
 	for _, a := range s.store.ClassroomAssignments {
@@ -485,12 +486,12 @@ func (s *Server) handleAcceptClassroomInvitation(w http.ResponseWriter, r *http.
 	}
 	req.GroupName = strings.TrimSpace(req.GroupName)
 	if a.Type == "group" && req.GroupName == "" {
-		writeGHValidationError(w, "ClassroomAssignment", "group_name", "missing_field")
+		store.WriteGHValidationError(w, "ClassroomAssignment", "group_name", "missing_field")
 		return
 	}
 	c := s.store.GetClassroom(a.ClassroomID)
 	existingAcceptances := s.store.ClassroomAcceptedFor(a.ID)
-	var groupAcceptance *ClassroomAcceptedAssignment
+	var groupAcceptance *store.ClassroomAcceptedAssignment
 	for _, existing := range existingAcceptances {
 		for _, student := range existing.Students {
 			if student.UserID == user.ID {
@@ -508,16 +509,16 @@ func (s *Server) handleAcceptClassroomInvitation(w http.ResponseWriter, r *http.
 		}
 	}
 	if groupAcceptance != nil && a.MaxMembers != nil && len(groupAcceptance.Students) >= *a.MaxMembers {
-		writeGHValidationError(w, "ClassroomAssignment", "group_name", "team_full")
+		store.WriteGHValidationError(w, "ClassroomAssignment", "group_name", "team_full")
 		return
 	}
 	if a.Type == "group" && groupAcceptance == nil && a.MaxTeams != nil && len(existingAcceptances) >= *a.MaxTeams {
-		writeGHValidationError(w, "ClassroomAssignment", "group_name", "maximum_teams_reached")
+		store.WriteGHValidationError(w, "ClassroomAssignment", "group_name", "maximum_teams_reached")
 		return
 	}
 	rosterID, err := s.claimClassroomRosterIdentifier(c, user.ID, strings.TrimSpace(req.RosterIdentifier))
 	if err != nil {
-		writeGHValidationError(w, "ClassroomRoster", "roster_identifier", err.Error())
+		store.WriteGHValidationError(w, "ClassroomRoster", "roster_identifier", err.Error())
 		return
 	}
 	if groupAcceptance != nil {
@@ -530,13 +531,13 @@ func (s *Server) handleAcceptClassroomInvitation(w http.ResponseWriter, r *http.
 		if a.StudentsAreRepoAdmins {
 			permission = "admin"
 		}
-		owner, _, _ := splitRepoFullName(repo.FullName)
+		owner, _, _ := store.SplitRepoFullName(repo.FullName)
 		if !s.store.AddRepoCollaborator(owner, repo.Name, user.Login, permission) {
 			writeGHError(w, http.StatusInternalServerError, "Could not grant student repository access")
 			return
 		}
-		s.store.UpdateClassroomAcceptedAssignment(groupAcceptance.ID, func(accepted *ClassroomAcceptedAssignment) {
-			accepted.Students = append(accepted.Students, ClassroomStudent{UserID: user.ID, RosterIdentifier: rosterID})
+		s.store.UpdateClassroomAcceptedAssignment(groupAcceptance.ID, func(accepted *store.ClassroomAcceptedAssignment) {
+			accepted.Students = append(accepted.Students, store.ClassroomStudent{UserID: user.ID, RosterIdentifier: rosterID})
 		})
 		writeJSON(w, http.StatusOK, map[string]interface{}{"id": groupAcceptance.ID, "repository": simpleClassroomRepositoryJSON(repo, s.baseURL(r))})
 		return
@@ -551,10 +552,10 @@ func (s *Server) handleAcceptClassroomInvitation(w http.ResponseWriter, r *http.
 	if a.Type == "group" {
 		repoSuffix = req.GroupName
 	}
-	repoName := a.Slug + "-" + slugify(repoSuffix)
+	repoName := a.Slug + "-" + store.Slugify(repoSuffix)
 	repo := s.store.CreateOrgRepo(org, user, repoName, "GitHub Classroom assignment: "+a.Title, !a.PublicRepo)
 	if repo == nil {
-		writeGHValidationError(w, "Repository", "name", "already_exists")
+		store.WriteGHValidationError(w, "Repository", "name", "already_exists")
 		return
 	}
 	rollback := func(cause error) {
@@ -564,13 +565,13 @@ func (s *Server) handleAcceptClassroomInvitation(w http.ResponseWriter, r *http.
 		}
 		writeGHError(w, http.StatusUnprocessableEntity, cause.Error())
 	}
-	starterOwner, _, _ := splitRepoFullName(starter.FullName)
-	sig := repoSignature(coalesceStr(user.Name, user.Login), coalesceStr(user.Email, user.Login+"@bleephub.local"))
+	starterOwner, _, _ := store.SplitRepoFullName(starter.FullName)
+	sig := repoSignature(store.CoalesceStr(user.Name, user.Login), store.CoalesceStr(user.Email, user.Login+"@bleephub.local"))
 	if err := generateFromTemplateStorage(s.store.GetGitStorage(starterOwner, starter.Name), s.store.GetGitStorage(org.Login, repo.Name), starter.DefaultBranch, false, sig); err != nil {
 		rollback(fmt.Errorf("could not generate assignment repository: %w", err))
 		return
 	}
-	s.store.UpdateRepo(org.Login, repo.Name, func(rp *Repo) {
+	s.store.UpdateRepo(org.Login, repo.Name, func(rp *store.Repo) {
 		rp.DefaultBranch = starter.DefaultBranch
 		rp.TemplateRepoID = starter.ID
 		rp.PushedAt = time.Now().UTC()
@@ -614,13 +615,13 @@ func (s *Server) handleAcceptClassroomInvitation(w http.ResponseWriter, r *http.
 		rollback(fmt.Errorf("could not resolve generated assignment branch: %w", err))
 		return
 	}
-	aa := s.store.CreateClassroomAcceptedAssignment(&ClassroomAcceptedAssignment{
-		AssignmentID: a.ID, Students: []ClassroomStudent{{UserID: user.ID, RosterIdentifier: rosterID}}, RepoID: repo.ID, GroupName: req.GroupName, AcceptedAt: time.Now().UTC(), BaselineSHA: baselineRef.Hash().String(),
+	aa := s.store.CreateClassroomAcceptedAssignment(&store.ClassroomAcceptedAssignment{
+		AssignmentID: a.ID, Students: []store.ClassroomStudent{{UserID: user.ID, RosterIdentifier: rosterID}}, RepoID: repo.ID, GroupName: req.GroupName, AcceptedAt: time.Now().UTC(), BaselineSHA: baselineRef.Hash().String(),
 	})
 	writeJSON(w, http.StatusCreated, map[string]interface{}{"id": aa.ID, "repository": simpleClassroomRepositoryJSON(s.store.GetRepoByID(repo.ID), s.baseURL(r))})
 }
 
-func classroomRosterIdentifier(classroom *Classroom, userID int) string {
+func classroomRosterIdentifier(classroom *store.Classroom, userID int) string {
 	if classroom == nil {
 		return ""
 	}
@@ -637,7 +638,7 @@ func (s *Server) classroomArchived(id int) bool {
 	return c == nil || c.Archived
 }
 
-func (s *Server) claimClassroomRosterIdentifier(classroom *Classroom, userID int, requested string) (string, error) {
+func (s *Server) claimClassroomRosterIdentifier(classroom *store.Classroom, userID int, requested string) (string, error) {
 	if classroom == nil {
 		return "", fmt.Errorf("classroom_missing")
 	}
@@ -652,7 +653,7 @@ func (s *Server) claimClassroomRosterIdentifier(classroom *Classroom, userID int
 	}
 	claimed := false
 	conflict := false
-	s.store.UpdateClassroom(classroom.ID, func(current *Classroom) {
+	s.store.UpdateClassroom(classroom.ID, func(current *store.Classroom) {
 		for index := range current.Roster {
 			entry := &current.Roster[index]
 			if entry.RosterIdentifier != requested {
@@ -676,7 +677,7 @@ func (s *Server) claimClassroomRosterIdentifier(classroom *Classroom, userID int
 	return requested, nil
 }
 
-func classroomAutogradingWorkflow(tests []ClassroomAutogradingTest) string {
+func classroomAutogradingWorkflow(tests []store.ClassroomAutogradingTest) string {
 	var body strings.Builder
 	body.WriteString("name: GitHub Classroom Workflow\non:\n  push:\n  workflow_dispatch:\njobs:\n")
 	for index, test := range tests {
@@ -705,20 +706,20 @@ type classroomTransitionStudent struct {
 }
 
 type classroomTransitionAssignment struct {
-	Title                       string                        `json:"title"`
-	Type                        string                        `json:"type"`
-	StarterCodeRepository       string                        `json:"starter_code_repository"`
-	PublicRepo                  bool                          `json:"public_repo"`
-	InvitationsEnabled          bool                          `json:"invitations_enabled"`
-	StudentsAreRepoAdmins       bool                          `json:"students_are_repo_admins"`
-	FeedbackPullRequestsEnabled bool                          `json:"feedback_pull_requests_enabled"`
-	MaxTeams                    *int                          `json:"max_teams,omitempty"`
-	MaxMembers                  *int                          `json:"max_members,omitempty"`
-	Editor                      string                        `json:"editor,omitempty"`
-	Language                    string                        `json:"language,omitempty"`
-	Deadline                    *time.Time                    `json:"deadline,omitempty"`
-	AutogradingTests            []ClassroomAutogradingTest    `json:"autograding_tests,omitempty"`
-	AcceptedRepositories        []classroomTransitionAccepted `json:"accepted_repositories,omitempty"`
+	Title                       string                           `json:"title"`
+	Type                        string                           `json:"type"`
+	StarterCodeRepository       string                           `json:"starter_code_repository"`
+	PublicRepo                  bool                             `json:"public_repo"`
+	InvitationsEnabled          bool                             `json:"invitations_enabled"`
+	StudentsAreRepoAdmins       bool                             `json:"students_are_repo_admins"`
+	FeedbackPullRequestsEnabled bool                             `json:"feedback_pull_requests_enabled"`
+	MaxTeams                    *int                             `json:"max_teams,omitempty"`
+	MaxMembers                  *int                             `json:"max_members,omitempty"`
+	Editor                      string                           `json:"editor,omitempty"`
+	Language                    string                           `json:"language,omitempty"`
+	Deadline                    *time.Time                       `json:"deadline,omitempty"`
+	AutogradingTests            []store.ClassroomAutogradingTest `json:"autograding_tests,omitempty"`
+	AcceptedRepositories        []classroomTransitionAccepted    `json:"accepted_repositories,omitempty"`
 }
 
 type classroomTransitionAccepted struct {
@@ -743,7 +744,7 @@ func (s *Server) handleExportClassrooms(w http.ResponseWriter, r *http.Request) 
 			course.Roster = append(course.Roster, classroomTransitionStudent{Login: login, Identifier: roster.RosterIdentifier})
 		}
 		s.store.Mu.RLock()
-		assignments := make([]*ClassroomAssignment, 0)
+		assignments := make([]*store.ClassroomAssignment, 0)
 		for _, assignment := range s.store.ClassroomAssignments {
 			if assignment.ClassroomID == classroom.ID {
 				assignments = append(assignments, assignment)
@@ -794,7 +795,7 @@ func (s *Server) handleImportClassrooms(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if bundle.Format != "bleephub-classroom-transition-v1" || len(bundle.Classrooms) == 0 {
-		writeGHValidationError(w, "ClassroomTransition", "format", "invalid")
+		store.WriteGHValidationError(w, "ClassroomTransition", "format", "invalid")
 		return
 	}
 	inviteCodes := make([][]string, len(bundle.Classrooms))
@@ -805,13 +806,13 @@ func (s *Server) handleImportClassrooms(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		if strings.TrimSpace(course.Name) == "" {
-			writeGHValidationError(w, "ClassroomTransition", "name", "invalid")
+			store.WriteGHValidationError(w, "ClassroomTransition", "name", "invalid")
 			return
 		}
 		seenRoster := map[string]bool{}
 		for _, roster := range course.Roster {
 			if roster.Identifier == "" || seenRoster[roster.Identifier] {
-				writeGHValidationError(w, "ClassroomTransition", "roster", "invalid")
+				store.WriteGHValidationError(w, "ClassroomTransition", "roster", "invalid")
 				return
 			}
 			seenRoster[roster.Identifier] = true
@@ -823,7 +824,7 @@ func (s *Server) handleImportClassrooms(w http.ResponseWriter, r *http.Request) 
 		inviteCodes[courseIndex] = make([]string, len(course.Assignments))
 		for assignmentIndex, assignment := range course.Assignments {
 			if assignment.Type != "individual" && assignment.Type != "group" {
-				writeGHValidationError(w, "ClassroomTransition", "assignment.type", "invalid")
+				store.WriteGHValidationError(w, "ClassroomTransition", "assignment.type", "invalid")
 				return
 			}
 			owner, name, found := strings.Cut(assignment.StarterCodeRepository, "/")
@@ -832,7 +833,7 @@ func (s *Server) handleImportClassrooms(w http.ResponseWriter, r *http.Request) 
 				return
 			}
 			if !validAutogradingTests(assignment.AutogradingTests) {
-				writeGHValidationError(w, "ClassroomTransition", "autograding_tests", "invalid")
+				store.WriteGHValidationError(w, "ClassroomTransition", "autograding_tests", "invalid")
 				return
 			}
 			for _, accepted := range assignment.AcceptedRepositories {
@@ -861,20 +862,20 @@ func (s *Server) handleImportClassrooms(w http.ResponseWriter, r *http.Request) 
 	for courseIndex, course := range bundle.Classrooms {
 		org := s.store.GetOrg(course.Organization)
 		classroom := s.store.CreateClassroom(course.Name, org.ID, course.Archived)
-		roster := make([]ClassroomStudent, 0, len(course.Roster))
+		roster := make([]store.ClassroomStudent, 0, len(course.Roster))
 		for _, entry := range course.Roster {
 			userID := 0
 			if entry.Login != "" {
 				userID = s.store.LookupUserByLogin(entry.Login).ID
 			}
-			roster = append(roster, ClassroomStudent{UserID: userID, RosterIdentifier: entry.Identifier})
+			roster = append(roster, store.ClassroomStudent{UserID: userID, RosterIdentifier: entry.Identifier})
 		}
-		s.store.UpdateClassroom(classroom.ID, func(current *Classroom) { current.Roster = roster })
+		s.store.UpdateClassroom(classroom.ID, func(current *store.Classroom) { current.Roster = roster })
 		for assignmentIndex, imported := range course.Assignments {
 			owner, name, _ := strings.Cut(imported.StarterCodeRepository, "/")
 			starter := s.store.GetRepo(owner, name)
-			assignment := s.store.CreateClassroomAssignment(&ClassroomAssignment{
-				ClassroomID: classroom.ID, Title: imported.Title, Type: imported.Type, Slug: slugify(imported.Title), InviteCode: inviteCodes[courseIndex][assignmentIndex],
+			assignment := s.store.CreateClassroomAssignment(&store.ClassroomAssignment{
+				ClassroomID: classroom.ID, Title: imported.Title, Type: imported.Type, Slug: store.Slugify(imported.Title), InviteCode: inviteCodes[courseIndex][assignmentIndex],
 				InvitationsEnabled: imported.InvitationsEnabled, PublicRepo: imported.PublicRepo, StudentsAreRepoAdmins: imported.StudentsAreRepoAdmins,
 				FeedbackPullRequestsEnabled: imported.FeedbackPullRequestsEnabled, MaxTeams: imported.MaxTeams, MaxMembers: imported.MaxMembers,
 				Editor: imported.Editor, Language: imported.Language, Deadline: imported.Deadline, StarterCodeRepoID: starter.ID, AutogradingTests: imported.AutogradingTests,
@@ -882,19 +883,19 @@ func (s *Server) handleImportClassrooms(w http.ResponseWriter, r *http.Request) 
 			for _, importedAccepted := range imported.AcceptedRepositories {
 				repoOwner, repoName, _ := strings.Cut(importedAccepted.Repository, "/")
 				repo := s.store.GetRepo(repoOwner, repoName)
-				students := make([]ClassroomStudent, 0, len(importedAccepted.Students))
+				students := make([]store.ClassroomStudent, 0, len(importedAccepted.Students))
 				for _, importedStudent := range importedAccepted.Students {
 					userID := 0
 					if importedStudent.Login != "" {
 						userID = s.store.LookupUserByLogin(importedStudent.Login).ID
 					}
-					students = append(students, ClassroomStudent{UserID: userID, RosterIdentifier: importedStudent.Identifier})
+					students = append(students, store.ClassroomStudent{UserID: userID, RosterIdentifier: importedStudent.Identifier})
 				}
 				acceptedAt := importedAccepted.AcceptedAt
 				if acceptedAt.IsZero() {
 					acceptedAt = time.Now().UTC()
 				}
-				s.store.CreateClassroomAcceptedAssignment(&ClassroomAcceptedAssignment{AssignmentID: assignment.ID, Students: students, RepoID: repo.ID, GroupName: importedAccepted.GroupName, AcceptedAt: acceptedAt, BaselineSHA: importedAccepted.BaselineSHA})
+				s.store.CreateClassroomAcceptedAssignment(&store.ClassroomAcceptedAssignment{AssignmentID: assignment.ID, Students: students, RepoID: repo.ID, GroupName: importedAccepted.GroupName, AcceptedAt: acceptedAt, BaselineSHA: importedAccepted.BaselineSHA})
 			}
 		}
 		created = append(created, s.classroomWebJSON(classroom, s.baseURL(r)))

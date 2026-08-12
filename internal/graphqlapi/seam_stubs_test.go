@@ -16,54 +16,58 @@ import (
 // stubAuthz denies everything.
 type stubAuthz struct{}
 
-func (stubAuthz) ViewerCanReadRepo(context.Context, *Repo) bool  { return false }
-func (stubAuthz) ViewerCanPushRepo(context.Context, *Repo) bool  { return false }
-func (stubAuthz) ViewerCanAdminRepo(context.Context, *Repo) bool { return false }
-func (stubAuthz) ViewerHasRepoPermission(context.Context, *Repo, permScope, permLevel) bool {
+func (stubAuthz) ViewerCanReadRepo(context.Context, *store.Repo) bool  { return false }
+func (stubAuthz) ViewerCanPushRepo(context.Context, *store.Repo) bool  { return false }
+func (stubAuthz) ViewerCanAdminRepo(context.Context, *store.Repo) bool { return false }
+func (stubAuthz) ViewerHasRepoPermission(context.Context, *store.Repo, store.PermScope, store.PermLevel) bool {
 	return false
 }
-func (stubAuthz) ViewerMayActOnRepo(context.Context, *Repo, permScope, permLevel, permLevel) bool {
+func (stubAuthz) ViewerMayActOnRepo(context.Context, *store.Repo, store.PermScope, store.PermLevel, store.PermLevel) bool {
 	return false
 }
-func (stubAuthz) CredentialGrantsRepo(context.Context, *Repo, permScope, permLevel) bool {
+func (stubAuthz) CredentialGrantsRepo(context.Context, *store.Repo, store.PermScope, store.PermLevel) bool {
 	return false
 }
-func (stubAuthz) CredentialGrantsAccount(context.Context, accountKind, string, permScope, permLevel) bool {
+func (stubAuthz) CredentialGrantsAccount(context.Context, store.AccountKind, string, store.PermScope, store.PermLevel) bool {
 	return false
 }
-func (stubAuthz) PrincipalHoldsRepoCapability(context.Context, *Repo, permLevel) bool { return false }
-func (stubAuthz) ViewerIsOrgMember(context.Context, string) bool                      { return false }
-func (stubAuthz) VisibleRepos(context.Context, []*Repo) []*Repo                       { return nil }
-func (stubAuthz) CanReadProjectV2(context.Context, *User, *projectV2Owner, *ProjectV2) bool {
+func (stubAuthz) PrincipalHoldsRepoCapability(context.Context, *store.Repo, store.PermLevel) bool {
 	return false
 }
-func (stubAuthz) CanWriteProjectV2(context.Context, *User, *projectV2Owner) bool { return false }
+func (stubAuthz) ViewerIsOrgMember(context.Context, string) bool            { return false }
+func (stubAuthz) VisibleRepos(context.Context, []*store.Repo) []*store.Repo { return nil }
+func (stubAuthz) CanReadProjectV2(context.Context, *store.User, *store.ProjectV2Owner, *store.ProjectV2) bool {
+	return false
+}
+func (stubAuthz) CanWriteProjectV2(context.Context, *store.User, *store.ProjectV2Owner) bool {
+	return false
+}
 
 // stubEvents drops every webhook event.
 type stubEvents struct{}
 
 func (stubEvents) EmitWebhookEvent(string, string, string, interface{}) {}
-func (stubEvents) BuildIssuesPayload(*Repo, *Issue, *User, string) map[string]interface{} {
+func (stubEvents) BuildIssuesPayload(*store.Repo, *store.Issue, *store.User, string) map[string]interface{} {
 	return nil
 }
-func (stubEvents) BuildPullRequestPayload(*Repo, *PullRequest, *User, string) map[string]interface{} {
+func (stubEvents) BuildPullRequestPayload(*store.Repo, *store.PullRequest, *store.User, string) map[string]interface{} {
 	return nil
 }
-func (stubEvents) RepoPayload(*Repo) map[string]interface{} { return nil }
+func (stubEvents) RepoPayload(*store.Repo) map[string]interface{} { return nil }
 
 // stubPulls refuses every merge.
 type stubPulls struct{}
 
-func (stubPulls) PRHeadSha(*Repo, *PullRequest) string                 { return "" }
-func (stubPulls) MissingRequiredChecks(*Repo, string, string) []string { return nil }
-func (stubPulls) CanMergePullRequest(context.Context, *Repo, *PullRequest) (bool, string) {
+func (stubPulls) PRHeadSha(*store.Repo, *store.PullRequest) string           { return "" }
+func (stubPulls) MissingRequiredChecks(*store.Repo, string, string) []string { return nil }
+func (stubPulls) CanMergePullRequest(context.Context, *store.Repo, *store.PullRequest) (bool, string) {
 	return false, "stubPulls refuses every merge"
 }
-func (stubPulls) CompletePullRequestMerge(*Repo, *PullRequest, *User, string, string, string) (string, string) {
+func (stubPulls) CompletePullRequestMerge(*store.Repo, *store.PullRequest, *store.User, string, string, string) (string, string) {
 	return "", ""
 }
-func (stubPulls) BranchProtectionRuleForPR(*Repo, string) map[string]interface{} { return nil }
-func (stubPulls) ChangedFiles(*Repo, *PullRequest, string) ([]map[string]interface{}, error) {
+func (stubPulls) BranchProtectionRuleForPR(*store.Repo, string) map[string]interface{} { return nil }
+func (stubPulls) ChangedFiles(*store.Repo, *store.PullRequest, string) ([]map[string]interface{}, error) {
 	return nil, nil
 }
 

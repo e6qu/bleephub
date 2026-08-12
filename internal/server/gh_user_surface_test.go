@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // ─── PATCH /user + GET /user/{account_id} ───────────────────────────────
@@ -252,7 +254,7 @@ func TestUserHovercard_FromRealMembershipsAndRepos(t *testing.T) {
 	u, tok := s.userSurfaceUser(t, "hoveruser")
 	admin := s.store.UsersByLogin["admin"]
 	org := s.store.CreateOrg(admin, "hover-org", "Hover Org", "")
-	s.store.SetMembership(org.Login, u.ID, OrgRoleMember, MembershipStateActive)
+	s.store.SetMembership(org.Login, u.ID, store.OrgRoleMember, store.MembershipStateActive)
 
 	card := decodeJSON(t, s.get(t, "/api/v3/users/hoveruser/hovercard", tok))
 	contexts, _ := card["contexts"].([]interface{})
@@ -395,7 +397,7 @@ func TestUserBillingUsage_FromRealWorkflowRuns(t *testing.T) {
 	// state the report is derived from (metered as 2 rounded-up minutes).
 	started := fixedTestTime.UTC().Add(-10 * time.Minute)
 	s.store.Mu.Lock()
-	s.store.Workflows["bill-run-1"] = &Workflow{
+	s.store.Workflows["bill-run-1"] = &store.Workflow{
 		ID:           "bill-run-1",
 		Name:         "bill",
 		RunID:        999901,
@@ -403,7 +405,7 @@ func TestUserBillingUsage_FromRealWorkflowRuns(t *testing.T) {
 		Result:       "success",
 		RepoFullName: repo.FullName,
 		CreatedAt:    started,
-		Jobs: map[string]*WorkflowJob{
+		Jobs: map[string]*store.WorkflowJob{
 			"build": {Key: "build", DisplayName: "build", Status: "completed", Result: "success",
 				StartedAt: started, CompletedAt: started.Add(90 * time.Second)},
 		},

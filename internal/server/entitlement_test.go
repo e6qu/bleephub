@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // An app credential answers two questions, not one. "Is this installation on
@@ -22,11 +24,11 @@ import (
 // installed on that account. Each test mints its own tokens from it so a token
 // carries exactly the grant the case is about.
 type entitlementFixture struct {
-	store *Store
-	owner *User
-	repo  *Repo
-	app   *App
-	inst  *Installation
+	store *store.Store
+	owner *store.User
+	repo  *store.Repo
+	app   *store.App
+	inst  *store.Installation
 }
 
 // metadataOnly is the grant every GitHub App installation carries whether it
@@ -42,7 +44,7 @@ func (s *isolatedServer) newEntitlementFixture(t *testing.T, tag string, private
 	if owner == nil {
 		st.Mu.Lock()
 		now := fixedTestTime.UTC()
-		owner = &User{
+		owner = &store.User{
 			ID:        st.NextUser,
 			NodeID:    fmt.Sprintf("U_entitle%08d", st.NextUser),
 			Login:     "entitle-owner-" + tag,
@@ -170,7 +172,7 @@ func TestAuthorExemptionDoesNotBypassTheCredential(t *testing.T) {
 
 	st.Mu.Lock()
 	now := fixedTestTime.UTC()
-	author := &User{
+	author := &store.User{
 		ID:        st.NextUser,
 		NodeID:    fmt.Sprintf("U_entitleauth%08d", st.NextUser),
 		Login:     "entitle-author",
@@ -281,7 +283,7 @@ func TestOrgMemberListingIntersectsTheCredential(t *testing.T) {
 
 	st.Mu.Lock()
 	now := fixedTestTime.UTC()
-	member := &User{
+	member := &store.User{
 		ID:        st.NextUser,
 		NodeID:    fmt.Sprintf("U_entitlemem%08d", st.NextUser),
 		Login:     "entitle-private-member",
@@ -293,7 +295,7 @@ func TestOrgMemberListingIntersectsTheCredential(t *testing.T) {
 	st.UsersByLogin[member.Login] = member
 	st.NextUser++
 	st.Mu.Unlock()
-	st.SetMembership(org.Login, member.ID, OrgRoleMember, MembershipStateActive)
+	st.SetMembership(org.Login, member.ID, store.OrgRoleMember, store.MembershipStateActive)
 
 	admin := st.LookupUserByLogin("admin")
 	if admin == nil {

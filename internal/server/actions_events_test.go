@@ -12,6 +12,7 @@ import (
 
 	"github.com/e6qu/bleephub/internal/actions"
 	"github.com/e6qu/bleephub/internal/server/testutil"
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // eventRecorder captures webhook deliveries (event + action) for
@@ -54,11 +55,11 @@ func waitUntil(t *testing.T, what string, cond func() bool) {
 
 func TestActionsEventSnapshotsAreImmutable(t *testing.T) {
 	t.Parallel()
-	wf := &Workflow{
+	wf := &store.Workflow{
 		ID:           "snapshot-run",
 		Name:         "snapshot",
 		DisplayTitle: "before",
-		Status:       WorkflowStatusRunning,
+		Status:       store.WorkflowStatusRunning,
 		EventPayload: map[string]interface{}{
 			"action": "queued",
 			"issue":  map[string]interface{}{"number": float64(1)},
@@ -66,9 +67,9 @@ func TestActionsEventSnapshotsAreImmutable(t *testing.T) {
 		TypedInputs: map[string]interface{}{"deploy": true},
 		Inputs:      map[string]string{"target": "staging"},
 	}
-	job := &WorkflowJob{
+	job := &store.WorkflowJob{
 		JobID:        "snapshot-job",
-		Status:       JobStatusQueued,
+		Status:       store.JobStatusQueued,
 		Outputs:      map[string]string{"url": "before"},
 		MatrixValues: map[string]interface{}{"os": "linux"},
 	}
@@ -77,16 +78,16 @@ func TestActionsEventSnapshotsAreImmutable(t *testing.T) {
 	jobSnapshot := actions.CloneWorkflowJobEventSnapshot(job)
 
 	wf.DisplayTitle = "after"
-	wf.Status = WorkflowStatusCompleted
+	wf.Status = store.WorkflowStatusCompleted
 	wf.EventPayload["action"] = "completed"
 	wf.EventPayload["issue"].(map[string]interface{})["number"] = float64(2)
 	wf.TypedInputs["deploy"] = false
 	wf.Inputs["target"] = "production"
-	job.Status = JobStatusCompleted
+	job.Status = store.JobStatusCompleted
 	job.Outputs["url"] = "after"
 	job.MatrixValues["os"] = "windows"
 
-	if wfSnapshot.DisplayTitle != "before" || wfSnapshot.Status != WorkflowStatusRunning {
+	if wfSnapshot.DisplayTitle != "before" || wfSnapshot.Status != store.WorkflowStatusRunning {
 		t.Fatalf("workflow scalar snapshot mutated: %+v", wfSnapshot)
 	}
 	if got := wfSnapshot.EventPayload["action"]; got != "queued" {
@@ -98,7 +99,7 @@ func TestActionsEventSnapshotsAreImmutable(t *testing.T) {
 	if wfSnapshot.TypedInputs["deploy"] != true || wfSnapshot.Inputs["target"] != "staging" {
 		t.Fatalf("input snapshots mutated: typed=%v string=%v", wfSnapshot.TypedInputs, wfSnapshot.Inputs)
 	}
-	if jobSnapshot.Status != JobStatusQueued ||
+	if jobSnapshot.Status != store.JobStatusQueued ||
 		jobSnapshot.Outputs["url"] != "before" ||
 		jobSnapshot.MatrixValues["os"] != "linux" {
 		t.Fatalf("job snapshot mutated: %+v", jobSnapshot)
@@ -126,7 +127,7 @@ jobs:
 
 	s.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/main", nil)
 
-	var wf *Workflow
+	var wf *store.Workflow
 	waitUntil(t, "workflow", func() bool {
 		s.store.Mu.RLock()
 		defer s.store.Mu.RUnlock()
@@ -140,7 +141,7 @@ jobs:
 	})
 
 	// The drain creates one check run per job, queued, under a suite.
-	var checkRun *CheckRun
+	var checkRun *store.CheckRun
 	waitUntil(t, "check run", func() bool {
 		runs := s.store.ListCheckRunsForCommit(repoKey, wf.Sha, "", "", 0)
 		if len(runs) != 1 {
@@ -152,10 +153,10 @@ jobs:
 	if checkRun.Name != "build" {
 		t.Errorf("check run name = %q, want build", checkRun.Name)
 	}
-	if checkRun.AppID != githubActionsAppID {
-		t.Errorf("check run app = %d, want %d", checkRun.AppID, githubActionsAppID)
+	if checkRun.AppID != store.GithubActionsAppID {
+		t.Errorf("check run app = %d, want %d", checkRun.AppID, store.GithubActionsAppID)
 	}
-	suites := s.store.ListCheckSuitesForCommit(repoKey, wf.Sha, githubActionsAppID)
+	suites := s.store.ListCheckSuitesForCommit(repoKey, wf.Sha, store.GithubActionsAppID)
 	if len(suites) != 1 {
 		t.Fatalf("suites = %d, want 1", len(suites))
 	}
@@ -167,7 +168,7 @@ jobs:
 
 	// Runner pickup: renew the request → in_progress. The renew route belongs
 	// to the runner the broker dispatched to, so stand one up and assign it.
-	runnerToken, runnerAgent := testAgentSession(t, s.Server, runnerScope{Repo: repoKey})
+	runnerToken, runnerAgent := testAgentSession(t, s.Server, store.RunnerScope{Repo: repoKey})
 	s.store.Mu.Lock()
 	job := s.store.Jobs[wf.Jobs["build"].JobID]
 	if job != nil {
@@ -226,7 +227,7 @@ jobs:
 `)
 	s.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/main", nil)
 
-	var wf *Workflow
+	var wf *store.Workflow
 	waitUntil(t, "workflow", func() bool {
 		s.store.Mu.RLock()
 		defer s.store.Mu.RUnlock()
@@ -258,11 +259,11 @@ func TestMergeGatingByRequiredChecks(t *testing.T) {
 	// The default branch the commit landed on serves as the PR head.
 	stor := s.store.GetGitStorage(owner, repoName)
 	headBranch := "main"
-	if resolveBranchSha(stor, "main") == "" {
+	if store.ResolveBranchSha(stor, "main") == "" {
 		headBranch = "master"
 	}
 	seedStorePullRequestBranches(t, s.store, repo, headBranch, "base")
-	headSha := resolveBranchSha(stor, headBranch)
+	headSha := store.ResolveBranchSha(stor, headBranch)
 	if headSha == "" {
 		t.Fatal("head branch sha did not resolve")
 	}
@@ -271,12 +272,12 @@ func TestMergeGatingByRequiredChecks(t *testing.T) {
 	if pr == nil {
 		t.Fatal("PR not created")
 	}
-	s.store.UpdatePullRequest(pr.ID, func(p *PullRequest) { p.Mergeable = "MERGEABLE" })
+	s.store.UpdatePullRequest(pr.ID, func(p *store.PullRequest) { p.Mergeable = "MERGEABLE" })
 
 	// Protect the base branch with a required status check.
 	s.store.Mu.Lock()
-	s.store.Misc.BranchProtection[bpKey(repo.ID, "base")] = &BranchProtection{
-		RequiredStatusChecks: &BPStatusChecks{
+	s.store.Misc.BranchProtection[store.BpKey(repo.ID, "base")] = &store.BranchProtection{
+		RequiredStatusChecks: &store.BPStatusChecks{
 			Strict:   false,
 			Contexts: []string{"ci-job"},
 		},
@@ -297,7 +298,7 @@ func TestMergeGatingByRequiredChecks(t *testing.T) {
 	resp.Body.Close()
 
 	// A pending check run with the required name still blocks.
-	cr := s.store.CreateCheckRun(repoKey, headSha, "ci-job", githubActionsAppID, 0)
+	cr := s.store.CreateCheckRun(repoKey, headSha, "ci-job", store.GithubActionsAppID, 0)
 	resp = s.put(t, fmt.Sprintf("/api/v3/repos/%s/pulls/%d/merge", repoKey, pr.Number), defaultToken, map[string]interface{}{})
 	if resp.StatusCode != http.StatusMethodNotAllowed {
 		t.Fatalf("merge with pending required check: status %d, want 405", resp.StatusCode)
@@ -306,7 +307,7 @@ func TestMergeGatingByRequiredChecks(t *testing.T) {
 
 	// Green required check → merge allowed.
 	now := fixedTestTime
-	s.store.UpdateCheckRun(cr.ID, func(c *CheckRun) {
+	s.store.UpdateCheckRun(cr.ID, func(c *store.CheckRun) {
 		c.Status = "completed"
 		c.Conclusion = "success"
 		c.CompletedAt = &now
@@ -334,20 +335,20 @@ func TestUnstableMergeableStateOnFailingNonRequired(t *testing.T) {
 	user := s.store.UsersByLogin[owner]
 	stor := s.store.GetGitStorage(owner, repoName)
 	headBranch := "main"
-	if resolveBranchSha(stor, "main") == "" {
+	if store.ResolveBranchSha(stor, "main") == "" {
 		headBranch = "master"
 	}
 	seedStorePullRequestBranches(t, s.store, repo, headBranch, "base")
-	headSha := resolveBranchSha(stor, headBranch)
+	headSha := store.ResolveBranchSha(stor, headBranch)
 	if headSha == "" {
 		t.Fatal("head branch sha did not resolve")
 	}
 	pr := s.store.CreatePullRequest(repo.ID, user.ID, "u", "", headBranch, "base", false, nil, nil, 0)
-	s.store.UpdatePullRequest(pr.ID, func(p *PullRequest) { p.Mergeable = "MERGEABLE" })
+	s.store.UpdatePullRequest(pr.ID, func(p *store.PullRequest) { p.Mergeable = "MERGEABLE" })
 
-	cr := s.store.CreateCheckRun(repoKey, headSha, "lint", githubActionsAppID, 0)
+	cr := s.store.CreateCheckRun(repoKey, headSha, "lint", store.GithubActionsAppID, 0)
 	now := fixedTestTime
-	s.store.UpdateCheckRun(cr.ID, func(c *CheckRun) {
+	s.store.UpdateCheckRun(cr.ID, func(c *store.CheckRun) {
 		c.Status = "completed"
 		c.Conclusion = "failure"
 		c.CompletedAt = &now

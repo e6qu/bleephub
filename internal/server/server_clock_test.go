@@ -4,12 +4,14 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // replaceProjectV2ClockNow installs a deterministic clock on a ProjectV2Store.
 // (Plain functions, not methods: Store types moved to internal/store and Go
 // forbids defining methods on non-local types.)
-func replaceProjectV2ClockNow(s *ProjectV2Store, clockNow func() time.Time) {
+func replaceProjectV2ClockNow(s *store.ProjectV2Store, clockNow func() time.Time) {
 	if s == nil {
 		return
 	}
@@ -18,7 +20,7 @@ func replaceProjectV2ClockNow(s *ProjectV2Store, clockNow func() time.Time) {
 	s.ClockMu.Unlock()
 }
 
-func replaceStoreClockNow(st *Store, clockNow func() time.Time) func() time.Time {
+func replaceStoreClockNow(st *store.Store, clockNow func() time.Time) func() time.Time {
 	if st == nil {
 		return nil
 	}

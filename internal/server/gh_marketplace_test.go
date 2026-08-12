@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/e6qu/bleephub/internal/server/testutil"
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 type marketplaceTestListing struct {
@@ -277,7 +278,7 @@ func TestMarketplacePlansPagination(t *testing.T) {
 	s.registerRoutes()
 	admin := s.store.UsersByLogin["admin"]
 	app := s.store.CreateApp(admin.ID, "Marketplace Plans Pagination App", "", map[string]string{}, nil)
-	listing := &MarketplaceListing{
+	listing := &store.MarketplaceListing{
 		Slug: app.Slug, Name: app.Name, Description: "Pagination listing",
 		GitHubAppID: app.ID, Published: true,
 		CreatedAt: fixedTestTime, UpdatedAt: fixedTestTime,
@@ -286,7 +287,7 @@ func TestMarketplacePlansPagination(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, name := range []string{"Community", "Team"} {
-		if _, err := s.store.CreateMarketplacePlan(&MarketplacePlan{
+		if _, err := s.store.CreateMarketplacePlan(&store.MarketplacePlan{
 			ListingSlug: app.Slug, Name: name, PriceModel: "FREE", State: "published",
 		}); err != nil {
 			t.Fatal(err)
@@ -352,15 +353,15 @@ func TestMarketplaceOrganizationIdentityDoesNotCollideWithUserID(t *testing.T) {
 		t.Fatalf("test requires colliding user/organization ids, got user=%d org=%d", admin.ID, org.ID)
 	}
 	now := fixedTestTime
-	listing := &MarketplaceListing{Slug: "identity-app", Name: "Identity App", Description: "Identity", CreatedAt: now, UpdatedAt: now}
+	listing := &store.MarketplaceListing{Slug: "identity-app", Name: "Identity App", Description: "Identity", CreatedAt: now, UpdatedAt: now}
 	if err := server.store.SaveMarketplaceListing(listing); err != nil {
 		t.Fatal(err)
 	}
-	plan, err := server.store.CreateMarketplacePlan(&MarketplacePlan{ListingSlug: listing.Slug, Name: "Free", PriceModel: "FREE", State: "published"})
+	plan, err := server.store.CreateMarketplacePlan(&store.MarketplacePlan{ListingSlug: listing.Slug, Name: "Free", PriceModel: "FREE", State: "published"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	row := server.marketplaceAccountJSON(&MarketplacePurchase{ListingSlug: listing.Slug, AccountID: org.ID, AccountType: "Organization", PlanID: plan.ID}, plan, "http://bleephub.test")
+	row := server.marketplaceAccountJSON(&store.MarketplacePurchase{ListingSlug: listing.Slug, AccountID: org.ID, AccountType: "Organization", PlanID: plan.ID}, plan, "http://bleephub.test")
 	if row["type"] != "Organization" || row["login"] != org.Login {
 		t.Fatalf("organization Marketplace identity = %v", row)
 	}

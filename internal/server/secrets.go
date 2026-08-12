@@ -50,30 +50,30 @@ func auditActor(r *http.Request) string {
 
 func (s *Server) registerSecretsRoutes() {
 	// Repository scope.
-	s.route("GET /api/v3/repos/{owner}/{repo}/actions/secrets", s.requirePerm(scopeSecrets, permRead, s.handleListSecrets))
-	s.route("GET /api/v3/repos/{owner}/{repo}/actions/secrets/public-key", s.requirePerm(scopeSecrets, permRead, s.handleGetRepoSecretsPublicKey))
-	s.route("GET /api/v3/repos/{owner}/{repo}/actions/secrets/{secret_name}", s.requirePerm(scopeSecrets, permRead, s.handleGetSecret))
-	s.route("PUT /api/v3/repos/{owner}/{repo}/actions/secrets/{secret_name}", s.requirePerm(scopeSecrets, permWrite, s.handlePutSecret))
-	s.route("DELETE /api/v3/repos/{owner}/{repo}/actions/secrets/{secret_name}", s.requirePerm(scopeSecrets, permWrite, s.handleDeleteSecret))
-	s.route("GET /api/v3/repos/{owner}/{repo}/actions/organization-secrets", s.requirePerm(scopeSecrets, permRead, s.handleListRepoOrgSecrets))
+	s.route("GET /api/v3/repos/{owner}/{repo}/actions/secrets", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleListSecrets))
+	s.route("GET /api/v3/repos/{owner}/{repo}/actions/secrets/public-key", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleGetRepoSecretsPublicKey))
+	s.route("GET /api/v3/repos/{owner}/{repo}/actions/secrets/{secret_name}", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleGetSecret))
+	s.route("PUT /api/v3/repos/{owner}/{repo}/actions/secrets/{secret_name}", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handlePutSecret))
+	s.route("DELETE /api/v3/repos/{owner}/{repo}/actions/secrets/{secret_name}", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handleDeleteSecret))
+	s.route("GET /api/v3/repos/{owner}/{repo}/actions/organization-secrets", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleListRepoOrgSecrets))
 
 	// Environment scope.
-	s.route("GET /api/v3/repos/{owner}/{repo}/environments/{env_name}/secrets", s.requirePerm(scopeSecrets, permRead, s.handleListEnvSecrets))
-	s.route("GET /api/v3/repos/{owner}/{repo}/environments/{env_name}/secrets/public-key", s.requirePerm(scopeSecrets, permRead, s.handleGetEnvSecretsPublicKey))
-	s.route("GET /api/v3/repos/{owner}/{repo}/environments/{env_name}/secrets/{secret_name}", s.requirePerm(scopeSecrets, permRead, s.handleGetEnvSecret))
-	s.route("PUT /api/v3/repos/{owner}/{repo}/environments/{env_name}/secrets/{secret_name}", s.requirePerm(scopeSecrets, permWrite, s.handlePutEnvSecret))
-	s.route("DELETE /api/v3/repos/{owner}/{repo}/environments/{env_name}/secrets/{secret_name}", s.requirePerm(scopeSecrets, permWrite, s.handleDeleteEnvSecret))
+	s.route("GET /api/v3/repos/{owner}/{repo}/environments/{env_name}/secrets", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleListEnvSecrets))
+	s.route("GET /api/v3/repos/{owner}/{repo}/environments/{env_name}/secrets/public-key", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleGetEnvSecretsPublicKey))
+	s.route("GET /api/v3/repos/{owner}/{repo}/environments/{env_name}/secrets/{secret_name}", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleGetEnvSecret))
+	s.route("PUT /api/v3/repos/{owner}/{repo}/environments/{env_name}/secrets/{secret_name}", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handlePutEnvSecret))
+	s.route("DELETE /api/v3/repos/{owner}/{repo}/environments/{env_name}/secrets/{secret_name}", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handleDeleteEnvSecret))
 
 	// Organization scope.
-	s.route("GET /api/v3/orgs/{org}/actions/secrets", s.requirePerm(scopeSecrets, permRead, s.handleListOrgSecrets))
-	s.route("GET /api/v3/orgs/{org}/actions/secrets/public-key", s.requirePerm(scopeSecrets, permRead, s.handleGetOrgSecretsPublicKey))
-	s.route("GET /api/v3/orgs/{org}/actions/secrets/{secret_name}", s.requirePerm(scopeSecrets, permRead, s.handleGetOrgSecret))
-	s.route("PUT /api/v3/orgs/{org}/actions/secrets/{secret_name}", s.requirePerm(scopeSecrets, permWrite, s.handlePutOrgSecret))
-	s.route("DELETE /api/v3/orgs/{org}/actions/secrets/{secret_name}", s.requirePerm(scopeSecrets, permWrite, s.handleDeleteOrgSecret))
-	s.route("GET /api/v3/orgs/{org}/actions/secrets/{secret_name}/repositories", s.requirePerm(scopeSecrets, permRead, s.handleListOrgSecretRepos))
-	s.route("PUT /api/v3/orgs/{org}/actions/secrets/{secret_name}/repositories", s.requirePerm(scopeSecrets, permWrite, s.handleSetOrgSecretRepos))
-	s.route("PUT /api/v3/orgs/{org}/actions/secrets/{secret_name}/repositories/{repository_id}", s.requirePerm(scopeSecrets, permWrite, s.handleAddOrgSecretRepo))
-	s.route("DELETE /api/v3/orgs/{org}/actions/secrets/{secret_name}/repositories/{repository_id}", s.requirePerm(scopeSecrets, permWrite, s.handleRemoveOrgSecretRepo))
+	s.route("GET /api/v3/orgs/{org}/actions/secrets", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleListOrgSecrets))
+	s.route("GET /api/v3/orgs/{org}/actions/secrets/public-key", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleGetOrgSecretsPublicKey))
+	s.route("GET /api/v3/orgs/{org}/actions/secrets/{secret_name}", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleGetOrgSecret))
+	s.route("PUT /api/v3/orgs/{org}/actions/secrets/{secret_name}", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handlePutOrgSecret))
+	s.route("DELETE /api/v3/orgs/{org}/actions/secrets/{secret_name}", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handleDeleteOrgSecret))
+	s.route("GET /api/v3/orgs/{org}/actions/secrets/{secret_name}/repositories", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleListOrgSecretRepos))
+	s.route("PUT /api/v3/orgs/{org}/actions/secrets/{secret_name}/repositories", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handleSetOrgSecretRepos))
+	s.route("PUT /api/v3/orgs/{org}/actions/secrets/{secret_name}/repositories/{repository_id}", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handleAddOrgSecretRepo))
+	s.route("DELETE /api/v3/orgs/{org}/actions/secrets/{secret_name}/repositories/{repository_id}", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handleRemoveOrgSecretRepo))
 
 	s.registerVariablesRoutes()
 }
@@ -127,7 +127,7 @@ func (s *Server) decryptSealedSecret(w http.ResponseWriter, encryptedValue, keyI
 	return plain, true
 }
 
-func secretJSON(sec *Secret) map[string]interface{} {
+func secretJSON(sec *store.Secret) map[string]interface{} {
 	return map[string]interface{}{
 		"name":       sec.Name,
 		"created_at": sec.CreatedAt.UTC().Format(time.RFC3339),
@@ -137,7 +137,7 @@ func secretJSON(sec *Secret) map[string]interface{} {
 
 // sortedSecretsJSON renders a scope's secrets sorted by name. Call with
 // the store lock held (it only reads).
-func sortedSecretsJSON(m map[string]*Secret) []map[string]interface{} {
+func sortedSecretsJSON(m map[string]*store.Secret) []map[string]interface{} {
 	names := make([]string, 0, len(m))
 	for n := range m {
 		names = append(names, n)
@@ -159,13 +159,13 @@ type sealedSecretBody struct {
 
 // upsertSecret creates or updates a secret in one scope map, persisting
 // the scope's collection. Returns true when the secret was created.
-func (s *Server) upsertSecret(table map[string]map[string]*Secret, bucket, key, name, value string) bool {
+func (s *Server) upsertSecret(table map[string]map[string]*store.Secret, bucket, key, name, value string) bool {
 	now := time.Now().UTC()
 	s.store.Mu.Lock()
 	defer s.store.Mu.Unlock()
 	m := table[key]
 	if m == nil {
-		m = make(map[string]*Secret)
+		m = make(map[string]*store.Secret)
 		table[key] = m
 	}
 	existing := m[name]
@@ -173,7 +173,7 @@ func (s *Server) upsertSecret(table map[string]map[string]*Secret, bucket, key, 
 		existing.Value = value
 		existing.UpdatedAt = now
 	} else {
-		m[name] = &Secret{Name: name, CreatedAt: now, UpdatedAt: now, Value: value}
+		m[name] = &store.Secret{Name: name, CreatedAt: now, UpdatedAt: now, Value: value}
 	}
 	if s.store.Persist != nil {
 		s.store.Persist.MustPut(bucket, key, m)
@@ -184,7 +184,7 @@ func (s *Server) upsertSecret(table map[string]map[string]*Secret, bucket, key, 
 // deleteSecret removes a secret from one scope map, persisting the
 // remaining collection (or deleting the row when empty). Returns whether
 // the secret existed.
-func (s *Server) deleteSecret(table map[string]map[string]*Secret, bucket, key, name string) bool {
+func (s *Server) deleteSecret(table map[string]map[string]*store.Secret, bucket, key, name string) bool {
 	s.store.Mu.Lock()
 	defer s.store.Mu.Unlock()
 	m, ok := table[key]
@@ -312,7 +312,7 @@ func (s *Server) handleListRepoOrgSecrets(w http.ResponseWriter, r *http.Request
 	list := make([]map[string]interface{}, 0)
 	if org := s.store.GetOrg(r.PathValue("owner")); org != nil {
 		s.store.Mu.RLock()
-		visible := make(map[string]*Secret)
+		visible := make(map[string]*store.Secret)
 		for name, sec := range s.store.OrgSecrets[org.Login] {
 			if actions.OrgItemVisibleToRepo(sec.Visibility, sec.SelectedRepoIDs, repo) {
 				visible[name] = &sec.Secret
@@ -450,7 +450,7 @@ func (s *Server) handleDeleteEnvSecret(w http.ResponseWriter, r *http.Request) {
 // --- organization secrets ---
 
 // resolveOrgForActions resolves {org} or writes a 404.
-func (s *Server) resolveOrgForActions(w http.ResponseWriter, r *http.Request) (*Org, bool) {
+func (s *Server) resolveOrgForActions(w http.ResponseWriter, r *http.Request) (*store.Org, bool) {
 	org := s.store.GetOrg(r.PathValue("org"))
 	if org == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -462,7 +462,7 @@ func (s *Server) resolveOrgForActions(w http.ResponseWriter, r *http.Request) (*
 // orgSecretJSON renders the organization-actions-secret shape;
 // selected_repositories_url appears only for visibility "selected", as
 // on real GitHub.
-func orgSecretJSON(sec *OrgSecret, orgLogin, baseURL string) map[string]interface{} {
+func orgSecretJSON(sec *store.OrgSecret, orgLogin, baseURL string) map[string]interface{} {
 	out := secretJSON(&sec.Secret)
 	out["visibility"] = sec.Visibility
 	if sec.Visibility == "selected" {
@@ -570,7 +570,7 @@ func (s *Server) handlePutOrgSecret(w http.ResponseWriter, r *http.Request) {
 	s.store.Mu.Lock()
 	m := s.store.OrgSecrets[org.Login]
 	if m == nil {
-		m = make(map[string]*OrgSecret)
+		m = make(map[string]*store.OrgSecret)
 		s.store.OrgSecrets[org.Login] = m
 	}
 	existing := m[name]
@@ -580,8 +580,8 @@ func (s *Server) handlePutOrgSecret(w http.ResponseWriter, r *http.Request) {
 		existing.Visibility = body.Visibility
 		existing.SelectedRepoIDs = ids
 	} else {
-		m[name] = &OrgSecret{
-			Secret:          Secret{Name: name, CreatedAt: now, UpdatedAt: now, Value: plain},
+		m[name] = &store.OrgSecret{
+			Secret:          store.Secret{Name: name, CreatedAt: now, UpdatedAt: now, Value: plain},
 			Visibility:      body.Visibility,
 			SelectedRepoIDs: ids,
 		}
@@ -638,7 +638,7 @@ func (s *Server) handleDeleteOrgSecret(w http.ResponseWriter, r *http.Request) {
 // repository no longer exists.
 func (s *Server) writeSelectedReposResponse(w http.ResponseWriter, r *http.Request, ids []int) {
 	s.store.Mu.RLock()
-	repos := make([]*Repo, 0, len(ids))
+	repos := make([]*store.Repo, 0, len(ids))
 	for _, id := range ids {
 		if repo := s.store.Repos[id]; repo != nil {
 			repos = append(repos, repo)
@@ -650,7 +650,7 @@ func (s *Server) writeSelectedReposResponse(w http.ResponseWriter, r *http.Reque
 	base := s.baseURL(r)
 	out := make([]map[string]interface{}, 0, len(repos))
 	for _, repo := range repos {
-		out = append(out, repoToJSON(repo, s.store, base))
+		out = append(out, store.RepoToJSON(repo, s.store, base))
 	}
 	paged := paginateAndLink(w, r, out)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -699,7 +699,7 @@ func (s *Server) handleSetOrgSecretRepos(w http.ResponseWriter, r *http.Request)
 	}
 	name := strings.ToUpper(r.PathValue("secret_name"))
 	s.setOrgItemSelectedRepos(w, r, name, false,
-		func() orgScopedItem {
+		func() store.OrgScopedItem {
 			if sec := s.store.OrgSecrets[org.Login][name]; sec != nil {
 				return sec
 			}
@@ -720,7 +720,7 @@ func (s *Server) handleSetOrgSecretRepos(w http.ResponseWriter, r *http.Request)
 // visibility is "selected". lookup and persistLocked run under the store
 // write lock, mirroring handleOrgSelectionChange.
 func (s *Server) setOrgItemSelectedRepos(w http.ResponseWriter, r *http.Request, name string, requireSelected bool,
-	lookup func() orgScopedItem, persistLocked func()) {
+	lookup func() store.OrgScopedItem, persistLocked func()) {
 	var body struct {
 		SelectedRepositoryIDs []int `json:"selected_repository_ids"`
 	}
@@ -761,7 +761,7 @@ func (s *Server) setOrgItemSelectedRepos(w http.ResponseWriter, r *http.Request,
 // unknown repository, 409 unless the item's visibility is "selected".
 // lookup and persistLocked run under the store write lock.
 func (s *Server) handleOrgSelectionChange(w http.ResponseWriter, r *http.Request, name string, add bool,
-	lookup func() orgScopedItem, persistLocked func()) {
+	lookup func() store.OrgScopedItem, persistLocked func()) {
 	id, ok := repoIDPathValue(w, r)
 	if !ok {
 		return
@@ -829,7 +829,7 @@ func (s *Server) orgSecretSelectionChange(w http.ResponseWriter, r *http.Request
 	}
 	name := strings.ToUpper(r.PathValue("secret_name"))
 	s.handleOrgSelectionChange(w, r, name, add,
-		func() orgScopedItem {
+		func() store.OrgScopedItem {
 			if sec := s.store.OrgSecrets[org.Login][name]; sec != nil {
 				return sec
 			}

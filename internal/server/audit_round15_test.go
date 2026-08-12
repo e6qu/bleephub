@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // tokenRequest drives a route through the /api middleware chain with an
@@ -16,9 +18,9 @@ func tokenRequest(s *Server, method, path, token string) *httptest.ResponseRecor
 }
 
 // seedTestUser inserts a fresh user and returns it.
-func seedTestUser(s *Server, login string) *User {
+func seedTestUser(s *Server, login string) *store.User {
 	s.store.Mu.Lock()
-	u := &User{ID: s.store.NextUser, Login: login, Type: "User"}
+	u := &store.User{ID: s.store.NextUser, Login: login, Type: "User"}
 	s.store.NextUser++
 	s.store.Users[u.ID] = u
 	s.store.UsersByLogin[u.Login] = u
@@ -116,7 +118,7 @@ func TestOrgAuditLogRequiresOwner(t *testing.T) {
 		t.Fatal("seeded admin should be a site admin")
 	}
 	// Site admin who is NOT the org owner → 200 (GHES operator surface).
-	if w := tokenRequest(s, "GET", "/api/v3/orgs/audit-org/audit-log", AdminToken()); w.Code != http.StatusOK {
+	if w := tokenRequest(s, "GET", "/api/v3/orgs/audit-org/audit-log", store.AdminToken()); w.Code != http.StatusOK {
 		t.Fatalf("site-admin non-owner audit-log = %d, want 200; body=%s", w.Code, w.Body.String())
 	}
 }
@@ -137,9 +139,9 @@ func TestListOrgMembersNonMemberSeesOnlyPublic(t *testing.T) {
 	// admin is an admin member (private). Add a second private member and a
 	// publicized member.
 	priv := seedTestUser(s, "priv-member")
-	s.store.SetMembership("mem-org", priv.ID, OrgRoleMember, MembershipStateActive)
+	s.store.SetMembership("mem-org", priv.ID, store.OrgRoleMember, store.MembershipStateActive)
 	pub := seedTestUser(s, "pub-member")
-	s.store.SetMembership("mem-org", pub.ID, OrgRoleMember, MembershipStateActive)
+	s.store.SetMembership("mem-org", pub.ID, store.OrgRoleMember, store.MembershipStateActive)
 	s.store.SetMembershipPublic("mem-org", pub.ID, true)
 
 	outsider := seedTestUser(s, "mem-outsider")
@@ -157,7 +159,7 @@ func TestListOrgMembersNonMemberSeesOnlyPublic(t *testing.T) {
 	}
 
 	// A member (admin) sees everyone.
-	w = tokenRequest(s, "GET", "/api/v3/orgs/mem-org/members", AdminToken())
+	w = tokenRequest(s, "GET", "/api/v3/orgs/mem-org/members", store.AdminToken())
 	json.Unmarshal(w.Body.Bytes(), &got)
 	if len(got) != 3 {
 		t.Errorf("member view count = %d, want 3", len(got))
@@ -175,7 +177,7 @@ func TestOnJobCompletedIdempotent(t *testing.T) {
 	// Put the job into a non-terminal state so the first completion is the
 	// real terminal transition.
 	s.store.Mu.Lock()
-	job.Status = JobStatusRunning
+	job.Status = store.JobStatusRunning
 	jobID := job.JobID
 	s.store.Mu.Unlock()
 

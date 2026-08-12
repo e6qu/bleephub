@@ -11,6 +11,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 
 	"github.com/e6qu/bleephub/internal/actions"
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // commitFilesToStorage commits a set of files in ONE commit at HEAD of
@@ -23,7 +24,7 @@ func commitFilesToStorage(t *testing.T, s *Server, repoFullName string, files ma
 	}
 	if s.store.UsersByLogin[parts[0]] == nil {
 		s.store.Mu.Lock()
-		user := &User{ID: s.store.NextUser, Login: parts[0], Type: "User", CreatedAt: fixedTestTime, UpdatedAt: fixedTestTime}
+		user := &store.User{ID: s.store.NextUser, Login: parts[0], Type: "User", CreatedAt: fixedTestTime, UpdatedAt: fixedTestTime}
 		s.store.NextUser++
 		s.store.Users[user.ID] = user
 		s.store.UsersByLogin[user.Login] = user
@@ -136,7 +137,7 @@ func TestWorkflowCallEndToEnd(t *testing.T) {
 	s.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/main", nil)
 
 	s.store.Mu.RLock()
-	var wf *Workflow
+	var wf *store.Workflow
 	for _, w := range s.store.Workflows {
 		if w.RepoFullName == repoKey && w.Name == "caller" {
 			wf = w
@@ -178,10 +179,10 @@ func TestWorkflowCallEndToEnd(t *testing.T) {
 	binding := publish.Def.Call
 	s.store.Mu.RUnlock()
 
-	if gateStatus != JobStatusCompleted {
+	if gateStatus != store.JobStatusCompleted {
 		t.Fatalf("gate status = %q, want completed", gateStatus)
 	}
-	if publishStatus != JobStatusQueued {
+	if publishStatus != store.JobStatusQueued {
 		t.Fatalf("publish status = %q, want queued", publishStatus)
 	}
 	resolved := binding.ResolvedInputs()
@@ -218,13 +219,13 @@ func TestWorkflowCallEndToEnd(t *testing.T) {
 	notifyStatus := notify.Status
 	s.store.Mu.RUnlock()
 
-	if collectorStatus != JobStatusCompleted {
+	if collectorStatus != store.JobStatusCompleted {
 		t.Fatalf("collector status = %q, want completed", collectorStatus)
 	}
 	if collectorURL != "https://prod.example" {
 		t.Errorf("collector output url = %q, want mapped from called job", collectorURL)
 	}
-	if notifyStatus != JobStatusQueued {
+	if notifyStatus != store.JobStatusQueued {
 		t.Fatalf("notify status = %q, want queued (needs.deploy satisfied)", notifyStatus)
 	}
 
@@ -240,7 +241,7 @@ func TestWorkflowCallEndToEnd(t *testing.T) {
 	}
 }
 
-func jobKeys(wf *Workflow) []string {
+func jobKeys(wf *store.Workflow) []string {
 	keys := make([]string, 0, len(wf.Jobs))
 	for k := range wf.Jobs {
 		keys = append(keys, k)
@@ -274,7 +275,7 @@ jobs:
 	s.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/main", nil)
 
 	s.store.Mu.RLock()
-	var wf *Workflow
+	var wf *store.Workflow
 	for _, w := range s.store.Workflows {
 		if w.RepoFullName == repoKey {
 			wf = w
@@ -292,11 +293,11 @@ jobs:
 		if j == nil {
 			t.Fatalf("missing job %q", key)
 		}
-		if j.Status != JobStatusSkipped {
+		if j.Status != store.JobStatusSkipped {
 			t.Errorf("job %q status = %q, want skipped (gate if: false must cascade)", key, j.Status)
 		}
 	}
-	if wf.Status != WorkflowStatusCompleted {
+	if wf.Status != store.WorkflowStatusCompleted {
 		t.Errorf("workflow status = %q, want completed", wf.Status)
 	}
 }
@@ -312,18 +313,18 @@ func TestWorkflowCallValidation(t *testing.T) {
 
 	cases := []struct {
 		name string
-		job  *JobDef
+		job  *store.JobDef
 		want string
 	}{
-		{"missing required input", &JobDef{Uses: "./.github/workflows/called.yml"}, "requires input"},
-		{"unknown input", &JobDef{Uses: "./.github/workflows/called.yml",
+		{"missing required input", &store.JobDef{Uses: "./.github/workflows/called.yml"}, "requires input"},
+		{"unknown input", &store.JobDef{Uses: "./.github/workflows/called.yml",
 			With: map[string]string{"env": "x", "bogus": "y"}}, "does not define input"},
-		{"not workflow_call", &JobDef{Uses: "./.github/workflows/not-called.yml",
+		{"not workflow_call", &store.JobDef{Uses: "./.github/workflows/not-called.yml",
 			With: map[string]string{}}, "does not declare on: workflow_call"},
-		{"missing file", &JobDef{Uses: "./.github/workflows/nope.yml"}, "not found"},
+		{"missing file", &store.JobDef{Uses: "./.github/workflows/nope.yml"}, "not found"},
 	}
 	for _, tc := range cases {
-		def := &WorkflowDef{Name: "v", Jobs: map[string]*JobDef{"call": tc.job}}
+		def := &store.WorkflowDef{Name: "v", Jobs: map[string]*store.JobDef{"call": tc.job}}
 		meta := &actions.WorkflowEventMeta{EventName: "push", Repo: repoKey}
 		_, err := s.actions.SubmitWorkflow(context.Background(), "http://localhost", def, "alpine:latest", meta)
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
@@ -349,7 +350,7 @@ func TestWorkflowCallNestingDepthLimit(t *testing.T) {
 	}
 	commitFilesToStorage(t, s.Server, repoKey, files)
 
-	def := &WorkflowDef{Name: "deep", Jobs: map[string]*JobDef{
+	def := &store.WorkflowDef{Name: "deep", Jobs: map[string]*store.JobDef{
 		"start": {Uses: "./.github/workflows/l2.yml"},
 	}}
 	meta := &actions.WorkflowEventMeta{EventName: "push", Repo: repoKey}
@@ -362,13 +363,13 @@ func TestWorkflowCallNestingDepthLimit(t *testing.T) {
 func TestRemapCallSecrets(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
-	binding := &WorkflowCallBinding{
+	binding := &store.WorkflowCallBinding{
 		CalledPath: "x.yml",
 		SecretsMap: map[string]string{
 			"deploy-key": "${{ secrets.PROD_KEY }}",
 		},
 	}
-	wf := &Workflow{}
+	wf := &store.Workflow{}
 	got, err := actions.RemapCallSecrets(s.actions, wf, binding, map[string]string{
 		"PROD_KEY": "sekrit",
 		"OTHER":    "hidden-from-called",
@@ -389,7 +390,7 @@ func TestRemapCallSecrets(t *testing.T) {
 
 func TestWorkflowCallInputTypingIsStrict(t *testing.T) {
 	t.Parallel()
-	boolean := &WorkflowInputDef{Type: "boolean"}
+	boolean := &store.WorkflowInputDef{Type: "boolean"}
 	if _, err := actions.TypedCallInput(boolean, "yes"); err == nil {
 		t.Fatal("boolean input accepted a truthy non-boolean value")
 	}
@@ -398,7 +399,7 @@ func TestWorkflowCallInputTypingIsStrict(t *testing.T) {
 		t.Fatalf("false boolean = %#v, %v", got, err)
 	}
 
-	number := &WorkflowInputDef{Type: "number"}
+	number := &store.WorkflowInputDef{Type: "number"}
 	if _, err := actions.TypedCallInput(number, "12abc"); err == nil {
 		t.Fatal("number input accepted a numeric prefix")
 	}
@@ -407,7 +408,7 @@ func TestWorkflowCallInputTypingIsStrict(t *testing.T) {
 		t.Fatalf("number = %#v, %v", got, err)
 	}
 
-	choice := &WorkflowInputDef{Type: "choice", Options: []interface{}{"blue", "green"}}
+	choice := &store.WorkflowInputDef{Type: "choice", Options: []interface{}{"blue", "green"}}
 	if _, err := actions.TypedCallInput(choice, "red"); err == nil {
 		t.Fatal("choice input accepted an undeclared option")
 	}
@@ -415,14 +416,14 @@ func TestWorkflowCallInputTypingIsStrict(t *testing.T) {
 
 func TestReusableWorkflowTopLevelEnvironmentReachesCalledJobs(t *testing.T) {
 	t.Parallel()
-	out := &WorkflowDef{Jobs: map[string]*JobDef{}}
-	called := &WorkflowDef{
+	out := &store.WorkflowDef{Jobs: map[string]*store.JobDef{}}
+	called := &store.WorkflowDef{
 		Env: map[string]string{"FROM_CALLED": "workflow", "OVERRIDDEN": "workflow"},
-		Jobs: map[string]*JobDef{
+		Jobs: map[string]*store.JobDef{
 			"build": {Env: map[string]string{"OVERRIDDEN": "job"}},
 		},
 	}
-	binding := &WorkflowCallBinding{CallerKey: "call"}
+	binding := &store.WorkflowCallBinding{CallerKey: "call"}
 	for key, job := range called.Jobs {
 		child := *job
 		child.Env = actions.MergedCallEnvironment(called.Env, child.Env)
@@ -438,13 +439,13 @@ func TestReusableWorkflowTopLevelEnvironmentReachesCalledJobs(t *testing.T) {
 func TestReusableWorkflowTemplateFailuresFailClosed(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
-	binding := &WorkflowCallBinding{
+	binding := &store.WorkflowCallBinding{
 		CalledPath: "called.yml",
 		With:       map[string]string{"flag": "${{ inputs.missing["},
-		InputDefs:  map[string]*WorkflowInputDef{"flag": {Type: "boolean"}},
+		InputDefs:  map[string]*store.WorkflowInputDef{"flag": {Type: "boolean"}},
 	}
-	wf := &Workflow{Jobs: map[string]*WorkflowJob{}}
-	gate := &WorkflowJob{Def: &JobDef{Call: binding}}
+	wf := &store.Workflow{Jobs: map[string]*store.WorkflowJob{}}
+	gate := &store.WorkflowJob{Def: &store.JobDef{Call: binding}}
 	if s.actions.ResolveCallInputsLocked(wf, gate) {
 		t.Fatal("broken input template succeeded")
 	}

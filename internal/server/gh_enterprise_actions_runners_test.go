@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func enterpriseActionsRequest(
@@ -81,10 +83,10 @@ func TestEnterpriseActionsRunnerInventoriesAreScopeSafe(t *testing.T) {
 		t.Fatal("create runner scope fixtures")
 	}
 
-	agents := []*Agent{
-		{ID: 7101, Name: "enterprise-runner", Enabled: true, Status: "online", Scope: runnerScope{Enterprise: "bleephub"}},
-		{ID: 7102, Name: "org-runner", Enabled: true, Status: "online", Scope: runnerScope{Org: org.Login}},
-		{ID: 7103, Name: "repo-runner", Enabled: true, Status: "online", Scope: runnerScope{Repo: repo.FullName}},
+	agents := []*store.Agent{
+		{ID: 7101, Name: "enterprise-runner", Enabled: true, Status: "online", Scope: store.RunnerScope{Enterprise: "bleephub"}},
+		{ID: 7102, Name: "org-runner", Enabled: true, Status: "online", Scope: store.RunnerScope{Org: org.Login}},
+		{ID: 7103, Name: "repo-runner", Enabled: true, Status: "online", Scope: store.RunnerScope{Repo: repo.FullName}},
 	}
 	s.store.Mu.Lock()
 	for _, agent := range agents {
@@ -157,7 +159,7 @@ func TestEnterpriseActionsRunnerRegistrationTokenCarriesEnterpriseScope(t *testi
 	if err != nil {
 		t.Fatalf("parse registration token: %v", err)
 	}
-	if claims.Scope != (runnerScope{Enterprise: "bleephub"}) {
+	if claims.Scope != (store.RunnerScope{Enterprise: "bleephub"}) {
 		t.Fatalf("scope = %#v, want enterprise bleephub", claims.Scope)
 	}
 
@@ -175,16 +177,16 @@ func TestEnterpriseActionsRunnerRegistrationTokenCarriesEnterpriseScope(t *testi
 
 func TestRunnerVisibleAt(t *testing.T) {
 	cases := []struct {
-		agent  runnerScope
-		target runnerScope
+		agent  store.RunnerScope
+		target store.RunnerScope
 		want   bool
 	}{
-		{runnerScope{Repo: "Acme/Widget"}, runnerScope{Repo: "acme/widget"}, true},
-		{runnerScope{Org: "Acme"}, runnerScope{Repo: "acme/widget"}, true},
-		{runnerScope{Enterprise: "bleephub"}, runnerScope{Repo: "acme/widget"}, false},
-		{runnerScope{Org: "Acme"}, runnerScope{Org: "acme"}, true},
-		{runnerScope{Repo: "Acme/Widget"}, runnerScope{Org: "acme"}, false},
-		{runnerScope{Enterprise: "Bleephub"}, runnerScope{Enterprise: "bleephub"}, true},
+		{store.RunnerScope{Repo: "Acme/Widget"}, store.RunnerScope{Repo: "acme/widget"}, true},
+		{store.RunnerScope{Org: "Acme"}, store.RunnerScope{Repo: "acme/widget"}, true},
+		{store.RunnerScope{Enterprise: "bleephub"}, store.RunnerScope{Repo: "acme/widget"}, false},
+		{store.RunnerScope{Org: "Acme"}, store.RunnerScope{Org: "acme"}, true},
+		{store.RunnerScope{Repo: "Acme/Widget"}, store.RunnerScope{Org: "acme"}, false},
+		{store.RunnerScope{Enterprise: "Bleephub"}, store.RunnerScope{Enterprise: "bleephub"}, true},
 	}
 	for i, tc := range cases {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
@@ -204,13 +206,13 @@ func TestEnterpriseRunnerGroupsAreOwnedAndManageOrganizations(t *testing.T) {
 	orgA := s.store.CreateOrg(admin, "enterprise-group-a", "Enterprise Group A", "")
 	orgB := s.store.CreateOrg(admin, "enterprise-group-b", "Enterprise Group B", "")
 	s.store.Mu.Lock()
-	s.store.Agents[7201] = &Agent{
+	s.store.Agents[7201] = &store.Agent{
 		ID: 7201, Name: "enterprise-group-runner", Status: "online",
-		Scope: runnerScope{Enterprise: "bleephub"},
+		Scope: store.RunnerScope{Enterprise: "bleephub"},
 	}
-	s.store.Agents[7202] = &Agent{
+	s.store.Agents[7202] = &store.Agent{
 		ID: 7202, Name: "org-group-runner", Status: "online",
-		Scope: runnerScope{Org: orgA.Login},
+		Scope: store.RunnerScope{Org: orgA.Login},
 	}
 	s.store.Mu.Unlock()
 

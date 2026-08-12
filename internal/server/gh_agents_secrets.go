@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/e6qu/bleephub/internal/actions"
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // GitHub Copilot coding agent secrets and variables — the /agents/
@@ -17,46 +18,46 @@ import (
 
 func (s *Server) registerGHAgentsSecretsRoutes() {
 	// Repository-scoped secrets.
-	s.route("GET /api/v3/repos/{owner}/{repo}/agents/secrets", s.requirePerm(scopeSecrets, permRead, s.handleListAgentsRepoSecrets))
-	s.route("GET /api/v3/repos/{owner}/{repo}/agents/secrets/public-key", s.requirePerm(scopeSecrets, permRead, s.handleGetAgentsRepoSecretsPublicKey))
-	s.route("GET /api/v3/repos/{owner}/{repo}/agents/secrets/{secret_name}", s.requirePerm(scopeSecrets, permRead, s.handleGetAgentsRepoSecret))
-	s.route("PUT /api/v3/repos/{owner}/{repo}/agents/secrets/{secret_name}", s.requirePerm(scopeSecrets, permWrite, s.handlePutAgentsRepoSecret))
-	s.route("DELETE /api/v3/repos/{owner}/{repo}/agents/secrets/{secret_name}", s.requirePerm(scopeSecrets, permWrite, s.handleDeleteAgentsRepoSecret))
-	s.route("GET /api/v3/repos/{owner}/{repo}/agents/organization-secrets", s.requirePerm(scopeSecrets, permRead, s.handleListAgentsRepoOrgSecrets))
+	s.route("GET /api/v3/repos/{owner}/{repo}/agents/secrets", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleListAgentsRepoSecrets))
+	s.route("GET /api/v3/repos/{owner}/{repo}/agents/secrets/public-key", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleGetAgentsRepoSecretsPublicKey))
+	s.route("GET /api/v3/repos/{owner}/{repo}/agents/secrets/{secret_name}", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleGetAgentsRepoSecret))
+	s.route("PUT /api/v3/repos/{owner}/{repo}/agents/secrets/{secret_name}", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handlePutAgentsRepoSecret))
+	s.route("DELETE /api/v3/repos/{owner}/{repo}/agents/secrets/{secret_name}", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handleDeleteAgentsRepoSecret))
+	s.route("GET /api/v3/repos/{owner}/{repo}/agents/organization-secrets", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleListAgentsRepoOrgSecrets))
 
 	// Repository-scoped variables.
-	s.route("GET /api/v3/repos/{owner}/{repo}/agents/variables", s.requirePerm(scopeSecrets, permRead, s.handleListAgentsRepoVariables))
-	s.route("POST /api/v3/repos/{owner}/{repo}/agents/variables", s.requirePerm(scopeSecrets, permWrite, s.handleCreateAgentsRepoVariable))
-	s.route("GET /api/v3/repos/{owner}/{repo}/agents/variables/{name}", s.requirePerm(scopeSecrets, permRead, s.handleGetAgentsRepoVariable))
-	s.route("PATCH /api/v3/repos/{owner}/{repo}/agents/variables/{name}", s.requirePerm(scopeSecrets, permWrite, s.handlePatchAgentsRepoVariable))
-	s.route("DELETE /api/v3/repos/{owner}/{repo}/agents/variables/{name}", s.requirePerm(scopeSecrets, permWrite, s.handleDeleteAgentsRepoVariable))
-	s.route("GET /api/v3/repos/{owner}/{repo}/agents/organization-variables", s.requirePerm(scopeSecrets, permRead, s.handleListAgentsRepoOrgVariables))
+	s.route("GET /api/v3/repos/{owner}/{repo}/agents/variables", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleListAgentsRepoVariables))
+	s.route("POST /api/v3/repos/{owner}/{repo}/agents/variables", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handleCreateAgentsRepoVariable))
+	s.route("GET /api/v3/repos/{owner}/{repo}/agents/variables/{name}", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleGetAgentsRepoVariable))
+	s.route("PATCH /api/v3/repos/{owner}/{repo}/agents/variables/{name}", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handlePatchAgentsRepoVariable))
+	s.route("DELETE /api/v3/repos/{owner}/{repo}/agents/variables/{name}", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handleDeleteAgentsRepoVariable))
+	s.route("GET /api/v3/repos/{owner}/{repo}/agents/organization-variables", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleListAgentsRepoOrgVariables))
 
 	// Organization-scoped secrets.
-	s.route("GET /api/v3/orgs/{org}/agents/secrets", s.requirePerm(scopeSecrets, permRead, s.handleListAgentsOrgSecrets))
-	s.route("GET /api/v3/orgs/{org}/agents/secrets/public-key", s.requirePerm(scopeSecrets, permRead, s.handleGetAgentsOrgSecretsPublicKey))
-	s.route("GET /api/v3/orgs/{org}/agents/secrets/{secret_name}", s.requirePerm(scopeSecrets, permRead, s.handleGetAgentsOrgSecret))
-	s.route("PUT /api/v3/orgs/{org}/agents/secrets/{secret_name}", s.requirePerm(scopeSecrets, permWrite, s.handlePutAgentsOrgSecret))
-	s.route("DELETE /api/v3/orgs/{org}/agents/secrets/{secret_name}", s.requirePerm(scopeSecrets, permWrite, s.handleDeleteAgentsOrgSecret))
-	s.route("GET /api/v3/orgs/{org}/agents/secrets/{secret_name}/repositories", s.requirePerm(scopeSecrets, permRead, s.handleListAgentsOrgSecretRepos))
-	s.route("PUT /api/v3/orgs/{org}/agents/secrets/{secret_name}/repositories", s.requirePerm(scopeSecrets, permWrite, s.handleSetAgentsOrgSecretRepos))
-	s.route("PUT /api/v3/orgs/{org}/agents/secrets/{secret_name}/repositories/{repository_id}", s.requirePerm(scopeSecrets, permWrite, s.handleAddAgentsOrgSecretRepo))
-	s.route("DELETE /api/v3/orgs/{org}/agents/secrets/{secret_name}/repositories/{repository_id}", s.requirePerm(scopeSecrets, permWrite, s.handleRemoveAgentsOrgSecretRepo))
+	s.route("GET /api/v3/orgs/{org}/agents/secrets", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleListAgentsOrgSecrets))
+	s.route("GET /api/v3/orgs/{org}/agents/secrets/public-key", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleGetAgentsOrgSecretsPublicKey))
+	s.route("GET /api/v3/orgs/{org}/agents/secrets/{secret_name}", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleGetAgentsOrgSecret))
+	s.route("PUT /api/v3/orgs/{org}/agents/secrets/{secret_name}", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handlePutAgentsOrgSecret))
+	s.route("DELETE /api/v3/orgs/{org}/agents/secrets/{secret_name}", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handleDeleteAgentsOrgSecret))
+	s.route("GET /api/v3/orgs/{org}/agents/secrets/{secret_name}/repositories", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleListAgentsOrgSecretRepos))
+	s.route("PUT /api/v3/orgs/{org}/agents/secrets/{secret_name}/repositories", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handleSetAgentsOrgSecretRepos))
+	s.route("PUT /api/v3/orgs/{org}/agents/secrets/{secret_name}/repositories/{repository_id}", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handleAddAgentsOrgSecretRepo))
+	s.route("DELETE /api/v3/orgs/{org}/agents/secrets/{secret_name}/repositories/{repository_id}", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handleRemoveAgentsOrgSecretRepo))
 
 	// Organization-scoped variables.
-	s.route("GET /api/v3/orgs/{org}/agents/variables", s.requirePerm(scopeSecrets, permRead, s.handleListAgentsOrgVariables))
-	s.route("POST /api/v3/orgs/{org}/agents/variables", s.requirePerm(scopeSecrets, permWrite, s.handleCreateAgentsOrgVariable))
-	s.route("GET /api/v3/orgs/{org}/agents/variables/{name}", s.requirePerm(scopeSecrets, permRead, s.handleGetAgentsOrgVariable))
-	s.route("PATCH /api/v3/orgs/{org}/agents/variables/{name}", s.requirePerm(scopeSecrets, permWrite, s.handlePatchAgentsOrgVariable))
-	s.route("DELETE /api/v3/orgs/{org}/agents/variables/{name}", s.requirePerm(scopeSecrets, permWrite, s.handleDeleteAgentsOrgVariable))
-	s.route("GET /api/v3/orgs/{org}/agents/variables/{name}/repositories", s.requirePerm(scopeSecrets, permRead, s.handleListAgentsOrgVariableRepos))
-	s.route("PUT /api/v3/orgs/{org}/agents/variables/{name}/repositories", s.requirePerm(scopeSecrets, permWrite, s.handleSetAgentsOrgVariableRepos))
-	s.route("PUT /api/v3/orgs/{org}/agents/variables/{name}/repositories/{repository_id}", s.requirePerm(scopeSecrets, permWrite, s.handleAddAgentsOrgVariableRepo))
-	s.route("DELETE /api/v3/orgs/{org}/agents/variables/{name}/repositories/{repository_id}", s.requirePerm(scopeSecrets, permWrite, s.handleRemoveAgentsOrgVariableRepo))
+	s.route("GET /api/v3/orgs/{org}/agents/variables", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleListAgentsOrgVariables))
+	s.route("POST /api/v3/orgs/{org}/agents/variables", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handleCreateAgentsOrgVariable))
+	s.route("GET /api/v3/orgs/{org}/agents/variables/{name}", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleGetAgentsOrgVariable))
+	s.route("PATCH /api/v3/orgs/{org}/agents/variables/{name}", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handlePatchAgentsOrgVariable))
+	s.route("DELETE /api/v3/orgs/{org}/agents/variables/{name}", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handleDeleteAgentsOrgVariable))
+	s.route("GET /api/v3/orgs/{org}/agents/variables/{name}/repositories", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleListAgentsOrgVariableRepos))
+	s.route("PUT /api/v3/orgs/{org}/agents/variables/{name}/repositories", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handleSetAgentsOrgVariableRepos))
+	s.route("PUT /api/v3/orgs/{org}/agents/variables/{name}/repositories/{repository_id}", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handleAddAgentsOrgVariableRepo))
+	s.route("DELETE /api/v3/orgs/{org}/agents/variables/{name}/repositories/{repository_id}", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handleRemoveAgentsOrgVariableRepo))
 }
 
 // resolveAgentsRepo resolves {owner}/{repo} or writes a 404.
-func (s *Server) resolveAgentsRepo(w http.ResponseWriter, r *http.Request) (*Repo, bool) {
+func (s *Server) resolveAgentsRepo(w http.ResponseWriter, r *http.Request) (*store.Repo, bool) {
 	repo := s.store.GetRepo(r.PathValue("owner"), r.PathValue("repo"))
 	if repo == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -174,7 +175,7 @@ func (s *Server) handleListAgentsRepoOrgSecrets(w http.ResponseWriter, r *http.R
 	list := make([]map[string]interface{}, 0)
 	if org := s.store.GetOrg(r.PathValue("owner")); org != nil {
 		s.store.Mu.RLock()
-		visible := make(map[string]*Secret)
+		visible := make(map[string]*store.Secret)
 		for name, sec := range s.store.AgentsOrgSecrets[org.Login] {
 			if actions.OrgItemVisibleToRepo(sec.Visibility, sec.SelectedRepoIDs, repo) {
 				visible[name] = &sec.Secret
@@ -195,7 +196,7 @@ func (s *Server) handleListAgentsRepoOrgSecrets(w http.ResponseWriter, r *http.R
 
 // agentsOrgSecretJSON renders the organization-actions-secret shape with
 // the /agents/ selected-repositories URL.
-func agentsOrgSecretJSON(sec *OrgSecret, orgLogin, baseURL string) map[string]interface{} {
+func agentsOrgSecretJSON(sec *store.OrgSecret, orgLogin, baseURL string) map[string]interface{} {
 	out := secretJSON(&sec.Secret)
 	out["visibility"] = sec.Visibility
 	if sec.Visibility == "selected" {
@@ -309,7 +310,7 @@ func (s *Server) handlePutAgentsOrgSecret(w http.ResponseWriter, r *http.Request
 	s.store.Mu.Lock()
 	m := s.store.AgentsOrgSecrets[org.Login]
 	if m == nil {
-		m = make(map[string]*OrgSecret)
+		m = make(map[string]*store.OrgSecret)
 		s.store.AgentsOrgSecrets[org.Login] = m
 	}
 	existing := m[name]
@@ -319,8 +320,8 @@ func (s *Server) handlePutAgentsOrgSecret(w http.ResponseWriter, r *http.Request
 		existing.Visibility = body.Visibility
 		existing.SelectedRepoIDs = ids
 	} else {
-		m[name] = &OrgSecret{
-			Secret:          Secret{Name: name, CreatedAt: now, UpdatedAt: now, Value: plain},
+		m[name] = &store.OrgSecret{
+			Secret:          store.Secret{Name: name, CreatedAt: now, UpdatedAt: now, Value: plain},
 			Visibility:      body.Visibility,
 			SelectedRepoIDs: ids,
 		}
@@ -401,7 +402,7 @@ func (s *Server) handleSetAgentsOrgSecretRepos(w http.ResponseWriter, r *http.Re
 	}
 	name := strings.ToUpper(r.PathValue("secret_name"))
 	s.setOrgItemSelectedRepos(w, r, name, false,
-		func() orgScopedItem {
+		func() store.OrgScopedItem {
 			if sec := s.store.AgentsOrgSecrets[org.Login][name]; sec != nil {
 				return sec
 			}
@@ -423,7 +424,7 @@ func (s *Server) agentsOrgSecretSelectionChange(w http.ResponseWriter, r *http.R
 	}
 	name := strings.ToUpper(r.PathValue("secret_name"))
 	s.handleOrgSelectionChange(w, r, name, add,
-		func() orgScopedItem {
+		func() store.OrgScopedItem {
 			if sec := s.store.AgentsOrgSecrets[org.Login][name]; sec != nil {
 				return sec
 			}
@@ -456,7 +457,7 @@ type agentsVariableTable struct {
 	key    string // repo full name or org login
 }
 
-func (t agentsVariableTable) rows() map[string]map[string]*ActionsVariable {
+func (t agentsVariableTable) rows() map[string]map[string]*store.ActionsVariable {
 	if t.bucket == "agents_org_variables" {
 		return t.s.store.AgentsOrgVariables
 	}
@@ -465,7 +466,7 @@ func (t agentsVariableTable) rows() map[string]map[string]*ActionsVariable {
 
 // persistLocked writes the scope's collection through (or removes the row
 // when the collection emptied). Caller holds the store write lock.
-func (t agentsVariableTable) persistLocked(m map[string]*ActionsVariable) {
+func (t agentsVariableTable) persistLocked(m map[string]*store.ActionsVariable) {
 	if t.s.store.Persist == nil {
 		return
 	}
@@ -478,7 +479,7 @@ func (t agentsVariableTable) persistLocked(m map[string]*ActionsVariable) {
 
 // list returns the scope's variables sorted by name (copies, so callers
 // can render without the lock).
-func (t agentsVariableTable) list() []*ActionsVariable {
+func (t agentsVariableTable) list() []*store.ActionsVariable {
 	t.s.store.Mu.RLock()
 	defer t.s.store.Mu.RUnlock()
 	m := t.rows()[t.key]
@@ -487,14 +488,14 @@ func (t agentsVariableTable) list() []*ActionsVariable {
 		names = append(names, n)
 	}
 	sort.Strings(names)
-	out := make([]*ActionsVariable, 0, len(names))
+	out := make([]*store.ActionsVariable, 0, len(names))
 	for _, n := range names {
 		out = append(out, cloneVariable(m[n]))
 	}
 	return out
 }
 
-func (t agentsVariableTable) get(name string) *ActionsVariable {
+func (t agentsVariableTable) get(name string) *store.ActionsVariable {
 	t.s.store.Mu.RLock()
 	defer t.s.store.Mu.RUnlock()
 	v := t.rows()[t.key][name]
@@ -505,13 +506,13 @@ func (t agentsVariableTable) get(name string) *ActionsVariable {
 }
 
 // create inserts a new variable; false when the name already exists.
-func (t agentsVariableTable) create(v *ActionsVariable) bool {
+func (t agentsVariableTable) create(v *store.ActionsVariable) bool {
 	t.s.store.Mu.Lock()
 	defer t.s.store.Mu.Unlock()
 	rows := t.rows()
 	m := rows[t.key]
 	if m == nil {
-		m = make(map[string]*ActionsVariable)
+		m = make(map[string]*store.ActionsVariable)
 		rows[t.key] = m
 	}
 	if m[v.Name] != nil {
@@ -524,7 +525,7 @@ func (t agentsVariableTable) create(v *ActionsVariable) bool {
 
 // patch mutates the named variable, optionally renaming it. Returns the
 // HTTP status to write: 204 applied, 404 unknown, 409 rename collision.
-func (t agentsVariableTable) patch(name, newName string, apply func(*ActionsVariable)) int {
+func (t agentsVariableTable) patch(name, newName string, apply func(*store.ActionsVariable)) int {
 	t.s.store.Mu.Lock()
 	defer t.s.store.Mu.Unlock()
 	m := t.rows()[t.key]
@@ -600,7 +601,7 @@ func (s *Server) handleCreateAgentsRepoVariable(w http.ResponseWriter, r *http.R
 	}
 	name := strings.ToUpper(body.Name)
 	now := time.Now().UTC()
-	if !t.create(&ActionsVariable{Name: name, Value: body.Value, CreatedAt: now, UpdatedAt: now}) {
+	if !t.create(&store.ActionsVariable{Name: name, Value: body.Value, CreatedAt: now, UpdatedAt: now}) {
 		writeGHError(w, http.StatusConflict, "Variable already exists")
 		return
 	}
@@ -633,7 +634,7 @@ func (s *Server) handlePatchAgentsRepoVariable(w http.ResponseWriter, r *http.Re
 		return
 	}
 	name := strings.ToUpper(r.PathValue("name"))
-	status := t.patch(name, newName, func(v *ActionsVariable) {
+	status := t.patch(name, newName, func(v *store.ActionsVariable) {
 		if value != nil {
 			v.Value = *value
 		}
@@ -694,7 +695,7 @@ func (s *Server) handleListAgentsRepoOrgVariables(w http.ResponseWriter, r *http
 
 // agentsOrgVariableJSON renders the organization-actions-variable shape
 // with the /agents/ selected-repositories URL.
-func agentsOrgVariableJSON(v *ActionsVariable, orgLogin, baseURL string) map[string]interface{} {
+func agentsOrgVariableJSON(v *store.ActionsVariable, orgLogin, baseURL string) map[string]interface{} {
 	out := variableJSON(v)
 	out["visibility"] = v.Visibility
 	if v.Visibility == "selected" {
@@ -758,7 +759,7 @@ func (s *Server) handleCreateAgentsOrgVariable(w http.ResponseWriter, r *http.Re
 	name := strings.ToUpper(body.Name)
 	now := time.Now().UTC()
 	t := agentsVariableTable{s, "agents_org_variables", org.Login}
-	v := &ActionsVariable{
+	v := &store.ActionsVariable{
 		Name: name, Value: body.Value,
 		Visibility: body.Visibility, SelectedRepoIDs: ids,
 		CreatedAt: now, UpdatedAt: now,
@@ -852,7 +853,7 @@ func (s *Server) handleSetAgentsOrgVariableRepos(w http.ResponseWriter, r *http.
 	}
 	name := strings.ToUpper(r.PathValue("name"))
 	s.setOrgItemSelectedRepos(w, r, name, true,
-		func() orgScopedItem {
+		func() store.OrgScopedItem {
 			if v := s.store.AgentsOrgVariables[org.Login][name]; v != nil {
 				return v
 			}
@@ -874,7 +875,7 @@ func (s *Server) agentsOrgVariableSelectionChange(w http.ResponseWriter, r *http
 	}
 	name := strings.ToUpper(r.PathValue("name"))
 	s.handleOrgSelectionChange(w, r, name, add,
-		func() orgScopedItem {
+		func() store.OrgScopedItem {
 			if v := s.store.AgentsOrgVariables[org.Login][name]; v != nil {
 				return v
 			}

@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // TestCodeScanningAlertReadsReturnDetachedSnapshots pins STORE-021 for the
@@ -21,15 +23,15 @@ func TestCodeScanningAlertReadsReturnDetachedSnapshots(t *testing.T) {
 	admin := s.store.UsersByLogin["admin"]
 	repo := s.store.CreateRepo(admin, "cs-detach", "", false)
 	alert := s.store.CreateCodeScanningAlert(repo.FullName, "detach-rule", "error", "d", "CodeQL", "guid-1", "open",
-		[]CodeScanningAlertInstance{{Ref: "refs/heads/main", Path: "a.go"}})
+		[]store.CodeScanningAlertInstance{{Ref: "refs/heads/main", Path: "a.go"}})
 
 	got := s.store.GetCodeScanningAlert(repo.FullName, alert.Number)
-	got.State = CodeScanningStateFixed
+	got.State = store.CodeScanningStateFixed
 	got.Instances[0].Path = "hacked.go"
-	got.Instances = append(got.Instances, CodeScanningAlertInstance{Path: "b.go"})
+	got.Instances = append(got.Instances, store.CodeScanningAlertInstance{Path: "b.go"})
 
 	again := s.store.GetCodeScanningAlert(repo.FullName, alert.Number)
-	if again.State != CodeScanningStateOpen {
+	if again.State != store.CodeScanningStateOpen {
 		t.Fatalf("stored state = %q, want open (getter leaked a live pointer)", again.State)
 	}
 	if len(again.Instances) != 1 || again.Instances[0].Path != "a.go" {
@@ -39,10 +41,10 @@ func TestCodeScanningAlertReadsReturnDetachedSnapshots(t *testing.T) {
 	if err := s.store.UpdateCodeScanningAlert(again, "fixed", "", ""); err != nil {
 		t.Fatalf("update: %v", err)
 	}
-	if again.State != CodeScanningStateFixed {
+	if again.State != store.CodeScanningStateFixed {
 		t.Fatalf("returned snapshot state = %q, want fixed", again.State)
 	}
-	if live := s.store.GetCodeScanningAlert(repo.FullName, alert.Number); live.State != CodeScanningStateFixed {
+	if live := s.store.GetCodeScanningAlert(repo.FullName, alert.Number); live.State != store.CodeScanningStateFixed {
 		t.Fatalf("live alert after update = %q, want fixed", live.State)
 	}
 }

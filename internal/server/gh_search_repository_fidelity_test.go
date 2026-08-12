@@ -8,6 +8,8 @@ import (
 	"sort"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func repositorySearchNames(t *testing.T, s *Server, query string) []string {
@@ -51,7 +53,7 @@ func TestSearchRepositoriesOfficialQualifierMatrix(t *testing.T) {
 		t.Fatal("create repositories")
 	}
 	created := time.Date(2025, 2, 3, 12, 0, 0, 0, time.UTC)
-	s.store.UpdateRepo(org.Login, golden.Name, func(repo *Repo) {
+	s.store.UpdateRepo(org.Login, golden.Name, func(repo *store.Repo) {
 		repo.Topics = []string{"web", "banking"}
 		repo.Language = "Go"
 		repo.StargazersCount = 7
@@ -60,7 +62,7 @@ func TestSearchRepositoriesOfficialQualifierMatrix(t *testing.T) {
 		repo.CreatedAt = created
 		repo.PushedAt = created.Add(24 * time.Hour)
 	})
-	s.store.UpdateRepo(org.Login, archived.Name, func(repo *Repo) {
+	s.store.UpdateRepo(org.Login, archived.Name, func(repo *store.Repo) {
 		repo.Topics = []string{"web"}
 		repo.Archived = true
 		repo.IsTemplate = true
@@ -68,22 +70,22 @@ func TestSearchRepositoriesOfficialQualifierMatrix(t *testing.T) {
 	if err := s.initRepoFiles(context.Background(), golden, "main", golden.Description, "", "", true); err != nil {
 		t.Fatalf("initialize README: %v", err)
 	}
-	s.store.UpsertCustomProperty(org.Login, &CustomProperty{
+	s.store.UpsertCustomProperty(org.Login, &store.CustomProperty{
 		PropertyName: "environment",
 		ValueType:    "string",
 	})
-	s.store.SetRepoCustomPropertyValues(golden.FullName, []customPropertyValuePayload{{
+	s.store.SetRepoCustomPropertyValues(golden.FullName, []store.CustomPropertyValuePayload{{
 		PropertyName: "environment",
 		Value:        "production",
 	}})
-	s.store.CreateArtifactStorageRecord(&ArtifactStorageRecord{
+	s.store.CreateArtifactStorageRecord(&store.ArtifactStorageRecord{
 		OrgID:            org.ID,
 		Name:             "golden",
 		Digest:           "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		Status:           "active",
 		GitHubRepository: golden.FullName,
 	})
-	s.store.UpsertArtifactDeploymentRecord(&ArtifactDeploymentRecord{
+	s.store.UpsertArtifactDeploymentRecord(&store.ArtifactDeploymentRecord{
 		OrgID:               org.ID,
 		Name:                "golden",
 		Digest:              "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",

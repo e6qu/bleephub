@@ -3,6 +3,8 @@ package bleephub
 import (
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func TestMetricsSubmitIncrement(t *testing.T) {
@@ -21,20 +23,20 @@ func TestMetricsSubmitIncrement(t *testing.T) {
 
 func TestMetricsCompletionByResult(t *testing.T) {
 	m := NewMetrics()
-	completed := func(result Result, d time.Duration) *WorkflowJob {
+	completed := func(result store.Result, d time.Duration) *store.WorkflowJob {
 		start := fixedTestTime.Add(-d)
-		return &WorkflowJob{Result: result, StartedAt: start, CompletedAt: start.Add(d)}
+		return &store.WorkflowJob{Result: result, StartedAt: start, CompletedAt: start.Add(d)}
 	}
-	m.RecordJobCompletion(completed(ResultSuccess, 100*time.Millisecond))
-	m.RecordJobCompletion(completed(ResultSuccess, 200*time.Millisecond))
-	m.RecordJobCompletion(completed(ResultFailure, 50*time.Millisecond))
+	m.RecordJobCompletion(completed(store.ResultSuccess, 100*time.Millisecond))
+	m.RecordJobCompletion(completed(store.ResultSuccess, 200*time.Millisecond))
+	m.RecordJobCompletion(completed(store.ResultFailure, 50*time.Millisecond))
 
 	snap := m.Snapshot()
-	if snap.JobCompletions[string(ResultSuccess)] != 2 {
-		t.Errorf("success = %d, want 2", snap.JobCompletions[string(ResultSuccess)])
+	if snap.JobCompletions[string(store.ResultSuccess)] != 2 {
+		t.Errorf("success = %d, want 2", snap.JobCompletions[string(store.ResultSuccess)])
 	}
-	if snap.JobCompletions[string(ResultFailure)] != 1 {
-		t.Errorf("failure = %d, want 1", snap.JobCompletions[string(ResultFailure)])
+	if snap.JobCompletions[string(store.ResultFailure)] != 1 {
+		t.Errorf("failure = %d, want 1", snap.JobCompletions[string(store.ResultFailure)])
 	}
 	// The durations were accumulated and then read by nothing before; assert
 	// they now reach the snapshot, so the field cannot quietly go write-only

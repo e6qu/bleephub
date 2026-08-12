@@ -3,14 +3,16 @@ package bleephub
 import (
 	"context"
 	"fmt"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // setArtifactStore replaces both references that production construction
 // deliberately keeps identical. Tests use an isolated byte store to exercise
 // restart and object-storage behavior without exposing a production mutator.
-func (s *Server) setArtifactStore(store *ArtifactStore) {
-	s.artifactStore = store
-	s.store.ActionsArtifacts = store
+func (s *Server) setArtifactStore(st *store.ArtifactStore) {
+	s.artifactStore = st
+	s.store.ActionsArtifacts = st
 }
 
 // deleteRepositoryActionsData exercises ArtifactStore's standalone durable
@@ -44,7 +46,7 @@ func (s *Server) deleteRepositoryActionsData(ctx context.Context, repoFullName s
 		s.artifactStore.Mu.Lock()
 		entry := s.artifactStore.Caches[id]
 		if entry != nil {
-			delete(s.artifactStore.CacheIndex, cacheLookupKey(entry.Repo, entry.Key, entry.Version))
+			delete(s.artifactStore.CacheIndex, store.CacheLookupKey(entry.Repo, entry.Key, entry.Version))
 			delete(s.artifactStore.Caches, id)
 		}
 		s.artifactStore.Mu.Unlock()

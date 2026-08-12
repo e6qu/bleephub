@@ -8,13 +8,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
 )
 
 // Releases API parity — release CRUD + asset upload/download + tag-based
 // lookup against /repos/{}/releases, matching the GitHub-compatible shape.
 
-func initializeReleaseTestRepo(t *testing.T, s *Server, repo *Repo, user *User) {
+func initializeReleaseTestRepo(t *testing.T, s *Server, repo *store.Repo, user *store.User) {
 	t.Helper()
 	stor, _ := s.store.GitStorageForRepoID(repo.ID)
 	if _, err := initRepoWithFiles(stor, repo.DefaultBranch, "Initial commit", map[string]string{
@@ -409,7 +410,7 @@ func TestReleases_AssetBytesUseObjectStore(t *testing.T) {
 	fs := newS3FSForTest(t)
 	objectFS := deriveS3FSForTest(t, fs.Bucket(), "objects")
 	s := newTestServer()
-	s.store.ObjectByteStore = &s3ActionsByteStore{Fs: objectFS}
+	s.store.ObjectByteStore = &store.S3ActionsByteStore{Fs: objectFS}
 	s.store.Releases.ByteStore = s.store.ObjectByteStore
 	s.registerGHReleasesRoutes()
 
@@ -440,7 +441,7 @@ func TestReleases_AssetBytesUseObjectStore(t *testing.T) {
 	_ = json.Unmarshal(rec.Body.Bytes(), &asset)
 	assetID := int(asset["id"].(float64))
 
-	got := readS3TestFile(t, objectFS, releaseAssetDataKey(assetID))
+	got := readS3TestFile(t, objectFS, store.ReleaseAssetDataKey(assetID))
 	if string(got) != "release object bytes" {
 		t.Fatalf("release asset object bytes = %q", string(got))
 	}

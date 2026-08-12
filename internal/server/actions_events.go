@@ -2,11 +2,13 @@ package bleephub
 
 import (
 	"fmt"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // ── Webhook payload emission ────────────────────────────────────────
 
-func (s *Server) actionsRepoPayload(repoKey string) (map[string]interface{}, *Repo) {
+func (s *Server) actionsRepoPayload(repoKey string) (map[string]interface{}, *store.Repo) {
 	repo := s.store.GetRepoByFullName(repoKey)
 	if repo == nil {
 		return nil, nil
@@ -15,7 +17,7 @@ func (s *Server) actionsRepoPayload(repoKey string) (map[string]interface{}, *Re
 }
 
 // WorkflowRunEvent fires the workflow_run webhook event.
-func (s *Server) WorkflowRunEvent(wf *Workflow, action string) {
+func (s *Server) WorkflowRunEvent(wf *store.Workflow, action string) {
 	repoJSON, repo := s.actionsRepoPayload(wf.RepoFullName)
 	if repo == nil {
 		return
@@ -42,7 +44,7 @@ func (s *Server) WorkflowRunEvent(wf *Workflow, action string) {
 }
 
 // WorkflowJobEvent fires the workflow_job webhook event.
-func (s *Server) WorkflowJobEvent(wf *Workflow, job *WorkflowJob, action string) {
+func (s *Server) WorkflowJobEvent(wf *store.Workflow, job *store.WorkflowJob, action string) {
 	repoJSON, repo := s.actionsRepoPayload(wf.RepoFullName)
 	if repo == nil {
 		return
@@ -97,7 +99,7 @@ func (s *Server) CheckSuiteEvent(repoKey string, suiteID int64, action string) {
 }
 
 // workflowSender resolves the user behind the run's triggering event.
-func (s *Server) workflowSender(wf *Workflow) *User {
+func (s *Server) workflowSender(wf *store.Workflow) *store.User {
 	if wf.EventPayload == nil {
 		return nil
 	}
@@ -124,14 +126,14 @@ type checksState struct {
 	AnyFailing      bool
 }
 
-func (s *Server) evaluateChecksForMerge(repo *Repo, baseBranch, headSha string) checksState {
+func (s *Server) evaluateChecksForMerge(repo *store.Repo, baseBranch, headSha string) checksState {
 	state := checksState{}
 	if headSha == "" {
 		return state
 	}
 	repoKey := repo.FullName
 	runs := s.store.ListCheckRunsForCommit(repoKey, headSha, "", "", 0)
-	byName := map[string]*CheckRun{}
+	byName := map[string]*store.CheckRun{}
 	for _, cr := range runs {
 		// Latest run per name wins (reruns create new check runs).
 		if prev, ok := byName[cr.Name]; !ok || cr.ID > prev.ID {
@@ -153,7 +155,7 @@ func (s *Server) evaluateChecksForMerge(repo *Repo, baseBranch, headSha string) 
 }
 
 // prHeadSha resolves a PR's current head commit.
-func (s *Server) prHeadSha(repo *Repo, pr *PullRequest) string {
-	stor, _ := pullRequestGitStorage(s.store, repo, pr)
-	return resolveBranchSha(stor, pr.HeadRefName)
+func (s *Server) prHeadSha(repo *store.Repo, pr *store.PullRequest) string {
+	stor, _ := store.PullRequestGitStorage(s.store, repo, pr)
+	return store.ResolveBranchSha(stor, pr.HeadRefName)
 }

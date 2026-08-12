@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
@@ -37,14 +38,14 @@ func FuzzTimelineEventRender(f *testing.F) {
 	f.Add(9, seedAdminID, 1, 0, 0, "a", "b", "too heated")
 
 	f.Fuzz(func(t *testing.T, eventIdx, actorID, labelID, assigneeID, milestoneID int, renameFrom, renameTo, lockReason string) {
-		st := NewStore()
+		st := store.NewStore()
 		st.SeedDefaultUser()
 		// One real label / milestone so resolved arms are exercised too.
-		st.Labels[1] = &IssueLabel{ID: 1, Name: "bug", Color: "f00"}
-		st.Milestones[1] = &Milestone{ID: 1, Title: "v1"}
+		st.Labels[1] = &store.IssueLabel{ID: 1, Name: "bug", Color: "f00"}
+		st.Milestones[1] = &store.Milestone{ID: 1, Title: "v1"}
 
 		ev := knownIssueEventTypes[((eventIdx%len(knownIssueEventTypes))+len(knownIssueEventTypes))%len(knownIssueEventTypes)]
-		e := &IssueEvent{
+		e := &store.IssueEvent{
 			ID:                  1,
 			NodeID:              "IE_test",
 			RepoID:              1,
@@ -63,8 +64,8 @@ func FuzzTimelineEventRender(f *testing.F) {
 			RenameFrom:          renameFrom,
 			RenameTo:            renameTo,
 		}
-		for _, render := range []func(*IssueEvent, *Store, string, string) map[string]interface{}{
-			issueEventToJSON, issueEventForIssueToJSON, issueEventForTimelineToJSON,
+		for _, render := range []func(*store.IssueEvent, *store.Store, string, string) map[string]interface{}{
+			issueEventToJSON, issueEventForIssueToJSON, store.IssueEventForTimelineToJSON,
 		} {
 			out := render(e, st, "http://x", "admin/repo")
 			if _, err := json.Marshal(out); err != nil {

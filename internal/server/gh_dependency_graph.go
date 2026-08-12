@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // Dependency graph: dependency submission (snapshots), the SPDX SBOM export,
@@ -24,7 +26,7 @@ import (
 
 func (s *Server) registerGHDependencyGraphRoutes() {
 	s.route("POST /api/v3/repos/{owner}/{repo}/dependency-graph/snapshots",
-		s.requirePerm(scopeContents, permWrite, s.handleCreateDependencySnapshot))
+		s.requirePerm(store.ScopeContents, store.PermWrite, s.handleCreateDependencySnapshot))
 	s.route("GET /api/v3/repos/{owner}/{repo}/dependency-graph/sbom", s.handleGetDependencySBOM)
 	s.route("GET /api/v3/repos/{owner}/{repo}/dependency-graph/sbom/generate-report", s.handleGenerateSBOMReport)
 	s.route("GET /api/v3/repos/{owner}/{repo}/dependency-graph/sbom/fetch-report/{sbom_uuid}", s.handleFetchSBOMReport)
@@ -41,7 +43,7 @@ func (s *Server) handleCreateDependencySnapshot(w http.ResponseWriter, r *http.R
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	var snap DependencySnapshot
+	var snap store.DependencySnapshot
 	if !decodeJSONBody(w, r, &snap) {
 		return
 	}
@@ -75,7 +77,7 @@ func (s *Server) handleCreateDependencySnapshot(w http.ResponseWriter, r *http.R
 
 // validateDependencySnapshot checks the snapshot's required members and
 // returns a message describing the first problem, or "" when well-formed.
-func validateDependencySnapshot(snap *DependencySnapshot) string {
+func validateDependencySnapshot(snap *store.DependencySnapshot) string {
 	switch {
 	case snap.Version == 0 && snap.Detector.Name == "" && snap.Job.ID == "":
 		return "snapshot is empty"
@@ -134,7 +136,7 @@ func isHexString(s string) bool {
 // counts — the dependency submission API's replacement semantics. Matching
 // is by exact sha when given, else by ref.
 func (s *Server) currentDependencies(repoID int, ref, sha string) map[string]*dependencyEntry {
-	latest := map[string]*DependencySnapshot{}
+	latest := map[string]*store.DependencySnapshot{}
 	for _, snap := range s.store.ListDependencySnapshots(repoID) {
 		if snap.Result == "INVALID" {
 			continue
@@ -207,12 +209,12 @@ func (s *Server) handleGetDependencySBOM(w http.ResponseWriter, r *http.Request)
 // buildSPDXSBOM produces a real SPDX 2.3 document from the repository's
 // recorded default-branch dependencies. With no snapshots the document
 // honestly describes only the repository package itself.
-func (s *Server) buildSPDXSBOM(repo *Repo, baseURL string) map[string]interface{} {
+func (s *Server) buildSPDXSBOM(repo *store.Repo, baseURL string) map[string]interface{} {
 	docName := "com.github." + repo.FullName
 	repoSPDXID := "SPDXRef-com.github." + strings.ReplaceAll(repo.FullName, "/", "-")
 
-	owner, name, _ := splitRepoFullName(repo.FullName)
-	headSha := resolveBranchSha(s.store.GetGitStorage(owner, name), repo.DefaultBranch)
+	owner, name, _ := store.SplitRepoFullName(repo.FullName)
+	headSha := store.ResolveBranchSha(s.store.GetGitStorage(owner, name), repo.DefaultBranch)
 	versionInfo := repo.DefaultBranch
 	if headSha != "" {
 		versionInfo = headSha
@@ -380,8 +382,8 @@ func (s *Server) handleDependencyGraphCompare(w http.ResponseWriter, r *http.Req
 // commit SHA, a branch name, or a fully qualified ref — to its recorded
 // dependency set. ok is false when the revision matches neither the git
 // storage nor any snapshot.
-func (s *Server) dependenciesForRevision(repo *Repo, rev string) (map[string]*dependencyEntry, bool) {
-	owner, name, _ := splitRepoFullName(repo.FullName)
+func (s *Server) dependenciesForRevision(repo *store.Repo, rev string) (map[string]*dependencyEntry, bool) {
+	owner, name, _ := store.SplitRepoFullName(repo.FullName)
 	gitStor := s.store.GetGitStorage(owner, name)
 
 	branch := strings.TrimPrefix(rev, "refs/heads/")
@@ -389,7 +391,7 @@ func (s *Server) dependenciesForRevision(repo *Repo, rev string) (map[string]*de
 	if len(rev) == 40 && !strings.Contains(rev, "/") {
 		sha = rev
 	} else {
-		sha = resolveBranchSha(gitStor, branch)
+		sha = store.ResolveBranchSha(gitStor, branch)
 	}
 
 	if sha != "" {

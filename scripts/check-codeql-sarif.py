@@ -38,10 +38,12 @@ ACCEPTED_FINDINGS: dict[tuple[str, str], str] = {
         "requireRegisteredRedirectURI before the redirect.",
     ("go/allocation-size-overflow", "internal/server/gh_enterprise_scim.go"):
         "Capacity hint over SCIM member lists bounded by the request body; the sum cannot overflow int.",
+    ("go/incorrect-integer-conversion", "internal/actions/expressions.go"):
+        "exprIndex bounds n in float space (0 <= n < float64(len(arr))) before "
+        "the int(n) narrowing, so the conversion is in range by construction; "
+        "CodeQL's heuristic flags any non-constant float-to-int cast regardless.",
     ("go/regex/missing-regexp-anchor", "internal/server/secret_scanning_ingest.go"):
         "Secret-scanning patterns are intentionally unanchored — a secret must match anywhere in scanned content.",
-    ("go/incorrect-integer-conversion", "internal/server/expressions.go"):
-        "Array index int(n) is range-checked (0 <= n < len) before use.",
     ("go/incorrect-integer-conversion", "internal/store/store.go"):
         "Hex option/iteration IDs are internally-generated seeds parsed at 64-bit width; "
         "additionally range-guarded before conversion.",

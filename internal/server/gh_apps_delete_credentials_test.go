@@ -3,6 +3,8 @@ package bleephub
 import (
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // TestDeleteAppLeavesNoDanglingTokens covers the credential-safety fix (P2).
@@ -18,7 +20,7 @@ func TestDeleteAppLeavesNoDanglingTokens(t *testing.T) {
 	var appID int
 	var instTok, userTok, refreshTok string
 
-	st2 := reloadedStore(t, func(p *Persistence, st *Store) {
+	st2 := reloadedStore(t, func(p *store.Persistence, st *store.Store) {
 		st.SeedDefaultUser()
 		user := st.UsersByLogin["admin"]
 

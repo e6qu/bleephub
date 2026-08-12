@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	gitStorage "github.com/go-git/go-git/v5/storage"
@@ -37,7 +38,7 @@ type secretScanningContentMatch struct {
 	secretType string
 }
 
-func (s *Server) scanCommitForSecretScanning(repo *Repo, stor gitStorage.Storer, commitHash plumbing.Hash, baseURL string) error {
+func (s *Server) scanCommitForSecretScanning(repo *store.Repo, stor gitStorage.Storer, commitHash plumbing.Hash, baseURL string) error {
 	commit, err := object.GetCommit(stor, commitHash)
 	if err != nil {
 		return fmt.Errorf("load secret scanning commit %s: %w", commitHash, err)
@@ -74,13 +75,13 @@ func (s *Server) scanCommitForSecretScanning(repo *Repo, stor gitStorage.Storer,
 	return nil
 }
 
-func (s *Server) scanSecretScanningFile(repo *Repo, commitSHA, path, blobSHA, body, baseURL string) {
+func (s *Server) scanSecretScanningFile(repo *store.Repo, commitSHA, path, blobSHA, body, baseURL string) {
 	for _, pattern := range secretScanningContentPatterns {
 		for _, match := range pattern.re.FindAllStringIndex(body, -1) {
 			startLine, startColumn, endLine, endColumn := secretScanningMatchPosition(body, match[0], match[1])
-			location := SecretScanningLocation{
+			location := store.SecretScanningLocation{
 				Type: "commit",
-				Details: SecretScanningLocationDetails{
+				Details: store.SecretScanningLocationDetails{
 					Path:        path,
 					StartLine:   startLine,
 					EndLine:     endLine,
@@ -93,7 +94,7 @@ func (s *Server) scanSecretScanningFile(repo *Repo, commitSHA, path, blobSHA, bo
 					HTMLURL:     fmt.Sprintf("%s/%s/blob/%s/%s#L%d", baseURL, repo.FullName, commitSHA, path, startLine),
 				},
 			}
-			s.store.CreateSecretScanningAlertIfNew(repo.FullName, pattern.secretType, []SecretScanningLocation{location})
+			s.store.CreateSecretScanningAlertIfNew(repo.FullName, pattern.secretType, []store.SecretScanningLocation{location})
 		}
 	}
 }
@@ -159,7 +160,7 @@ func (s *Server) secretScanningPushProtectionMatchesForCommit(stor gitStorage.St
 	return out, nil
 }
 
-func (s *Server) createSecretScanningPushProtectionPlaceholder(repo *Repo, matches []secretScanningContentMatch) *SecretScanningPushProtectionPlaceholder {
+func (s *Server) createSecretScanningPushProtectionPlaceholder(repo *store.Repo, matches []secretScanningContentMatch) *store.SecretScanningPushProtectionPlaceholder {
 	for _, match := range matches {
 		if !s.store.SecretScanningPushProtectionEnabled(repo, match.patternID) {
 			continue
@@ -172,7 +173,7 @@ func (s *Server) createSecretScanningPushProtectionPlaceholder(repo *Repo, match
 	return nil
 }
 
-func (s *Server) secretScanningPushProtectionPlaceholderForRef(repo *Repo, stor gitStorage.Storer, ref plumbing.ReferenceName, target plumbing.Hash) (*SecretScanningPushProtectionPlaceholder, error) {
+func (s *Server) secretScanningPushProtectionPlaceholderForRef(repo *store.Repo, stor gitStorage.Storer, ref plumbing.ReferenceName, target plumbing.Hash) (*store.SecretScanningPushProtectionPlaceholder, error) {
 	if !strings.HasPrefix(string(ref), "refs/heads/") {
 		return nil, nil
 	}

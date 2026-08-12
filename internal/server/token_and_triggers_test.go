@@ -15,6 +15,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 
 	"github.com/e6qu/bleephub/internal/actions"
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // --- Presented credentials that do not verify ---
@@ -139,13 +140,13 @@ func TestClassicScopesAdmitWhatTheyGrant(t *testing.T) {
 func TestClassicScopeSeparatorsBothParse(t *testing.T) {
 	t.Parallel()
 	for _, scopes := range []string{"repo,read:org", "repo read:org", "repo, read:org", " repo\tread:org "} {
-		if !classicScopeCovers(scopes, scopeContents, permWrite) {
+		if !classicScopeCovers(scopes, store.ScopeContents, store.PermWrite) {
 			t.Errorf("scopes %q did not grant contents:write", scopes)
 		}
-		if !classicScopeCovers(scopes, scopeOrgAdministration, permRead) {
+		if !classicScopeCovers(scopes, store.ScopeOrgAdministration, store.PermRead) {
 			t.Errorf("scopes %q did not grant organization_administration:read", scopes)
 		}
-		if classicScopeCovers(scopes, scopeOrgAdministration, permWrite) {
+		if classicScopeCovers(scopes, store.ScopeOrgAdministration, store.PermWrite) {
 			t.Errorf("scopes %q granted organization_administration:write", scopes)
 		}
 	}
@@ -157,11 +158,11 @@ func TestClassicScopeSeparatorsBothParse(t *testing.T) {
 // "everything" escape hatch.
 func TestUnscopedClassicTokenReadsPublicMetadataOnly(t *testing.T) {
 	t.Parallel()
-	if !classicScopeCovers("", scopeMetadata, permRead) {
+	if !classicScopeCovers("", store.ScopeMetadata, store.PermRead) {
 		t.Error("an unscoped token cannot read public metadata")
 	}
-	for _, scope := range []permScope{scopeContents, scopeIssues, scopeOrgAdministration, scopeAdministration} {
-		if classicScopeCovers("", scope, permWrite) {
+	for _, scope := range []store.PermScope{store.ScopeContents, store.ScopeIssues, store.ScopeOrgAdministration, store.ScopeAdministration} {
+		if classicScopeCovers("", scope, store.PermWrite) {
 			t.Errorf("an unscoped token was granted %s:write", scope)
 		}
 	}
@@ -292,7 +293,7 @@ func TestForkPullRequestTriggersWithTheBaseWorkflowDefinition(t *testing.T) {
 	}
 	held := 0
 	for _, run := range runs {
-		if run.Status == WorkflowStatusActionRequired {
+		if run.Status == store.WorkflowStatusActionRequired {
 			held++
 		}
 	}
@@ -365,11 +366,11 @@ jobs:
 	}
 }
 
-func (s *isolatedServer) runsForRepo(t *testing.T, repoKey string) []*Workflow {
+func (s *isolatedServer) runsForRepo(t *testing.T, repoKey string) []*store.Workflow {
 	t.Helper()
 	s.store.Mu.RLock()
 	defer s.store.Mu.RUnlock()
-	var out []*Workflow
+	var out []*store.Workflow
 	for _, wf := range s.store.Workflows {
 		if wf.RepoFullName == repoKey {
 			out = append(out, wf)
@@ -378,7 +379,7 @@ func (s *isolatedServer) runsForRepo(t *testing.T, repoKey string) []*Workflow {
 	return out
 }
 
-func runNames(runs []*Workflow) []string {
+func runNames(runs []*store.Workflow) []string {
 	names := make([]string, 0, len(runs))
 	for _, run := range runs {
 		names = append(names, run.Name)
@@ -406,7 +407,7 @@ jobs:
 `)
 	s.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/main", nil)
 
-	var wf *Workflow
+	var wf *store.Workflow
 	waitUntil(t, "dispatched run", func() bool {
 		runs := s.runsForRepo(t, repoKey)
 		if len(runs) == 0 {
@@ -477,7 +478,7 @@ jobs:
 `)
 	s.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/main", nil)
 
-	var wf *Workflow
+	var wf *store.Workflow
 	waitUntil(t, "dispatched run", func() bool {
 		runs := s.runsForRepo(t, repoKey)
 		if len(runs) == 0 {
@@ -518,7 +519,7 @@ jobs:
 	}
 }
 
-func (s *isolatedServer) pendingMessageFor(jobID string) *TaskAgentMessage {
+func (s *isolatedServer) pendingMessageFor(jobID string) *store.TaskAgentMessage {
 	s.store.Mu.RLock()
 	defer s.store.Mu.RUnlock()
 	for _, msg := range s.store.PendingMessages {

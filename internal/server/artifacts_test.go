@@ -14,6 +14,7 @@ import (
 
 	"github.com/e6qu/bleephub/internal/actions"
 	"github.com/e6qu/bleephub/internal/server/testutil"
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func TestArtifactCreateUploadFinalize(t *testing.T) {
@@ -74,21 +75,21 @@ func TestActionsArtifactAndCacheMetadataPersistence(t *testing.T) {
 	t.Setenv("BLEEPHUB_PERSIST", "true")
 	t.Setenv("BLEEPHUB_DATA_DIR", t.TempDir())
 
-	p1, err := NewPersistence()
+	p1, err := store.NewPersistence()
 	if err != nil {
 		t.Fatalf("open persistence: %v", err)
 	}
-	first := NewArtifactStoreWithByteStore("", nil)
+	first := store.NewArtifactStoreWithByteStore("", nil)
 	if err := first.SetPersistence(p1); err != nil {
 		t.Fatalf("attach persistence: %v", err)
 	}
 	first.Mu.Lock()
-	artifactID, err := first.ReserveID(actionsArtifactsBucket, &first.NextID)
+	artifactID, err := first.ReserveID(store.ActionsArtifactsBucket, &first.NextID)
 	if err != nil {
 		first.Mu.Unlock()
 		t.Fatalf("reserve artifact identifier: %v", err)
 	}
-	artifact := &Artifact{
+	artifact := &store.Artifact{
 		ID: artifactID, Name: "release", Data: []byte("release archive"), Size: int64(len("release archive")), Finalized: true,
 		RepoFullName: "octo/repo", WorkflowRunBackendID: "run-1", GitHubRunID: 17,
 		CreatedAt: fixedTestTime.UTC(),
@@ -99,18 +100,18 @@ func TestActionsArtifactAndCacheMetadataPersistence(t *testing.T) {
 		first.Mu.Unlock()
 		t.Fatalf("persist artifact: %v", err)
 	}
-	cacheID, err := first.ReserveID(actionsCachesBucket, &first.NextCacheID)
+	cacheID, err := first.ReserveID(store.ActionsCachesBucket, &first.NextCacheID)
 	if err != nil {
 		first.Mu.Unlock()
 		t.Fatalf("reserve cache identifier: %v", err)
 	}
-	cache := &CacheEntry{
+	cache := &store.CacheEntry{
 		ID: cacheID, Repo: "octo/repo", Key: "linux-go", Version: "v1",
 		Size: 456, Finalized: true, DownloadToken: "opaque", CreatedAt: fixedTestTime.UTC(),
 		LastAccessedAt: fixedTestTime.UTC().Add(time.Minute),
 	}
 	first.Caches[cache.ID] = cache
-	first.CacheIndex[cacheLookupKey(cache.Repo, cache.Key, cache.Version)] = cache.ID
+	first.CacheIndex[store.CacheLookupKey(cache.Repo, cache.Key, cache.Version)] = cache.ID
 	if err := first.PersistCacheMeta(cache); err != nil {
 		first.Mu.Unlock()
 		t.Fatalf("persist cache: %v", err)
@@ -120,12 +121,12 @@ func TestActionsArtifactAndCacheMetadataPersistence(t *testing.T) {
 		t.Fatalf("close first persistence: %v", err)
 	}
 
-	p2, err := NewPersistence()
+	p2, err := store.NewPersistence()
 	if err != nil {
 		t.Fatalf("reopen persistence: %v", err)
 	}
 	defer p2.Close()
-	reloaded := NewArtifactStoreWithByteStore("", nil)
+	reloaded := store.NewArtifactStoreWithByteStore("", nil)
 	if err := reloaded.SetPersistence(p2); err != nil {
 		t.Fatalf("reload artifact metadata: %v", err)
 	}
@@ -140,7 +141,7 @@ func TestActionsArtifactAndCacheMetadataPersistence(t *testing.T) {
 	}
 
 	reloaded.Mu.Lock()
-	nextArtifactID, err := reloaded.ReserveID(actionsArtifactsBucket, &reloaded.NextID)
+	nextArtifactID, err := reloaded.ReserveID(store.ActionsArtifactsBucket, &reloaded.NextID)
 	reloaded.Mu.Unlock()
 	if err != nil {
 		t.Fatalf("reserve post-reload artifact identifier: %v", err)
@@ -158,7 +159,7 @@ func TestActionsArtifactAndCacheMetadataPersistence(t *testing.T) {
 		t.Fatal("cache repository index did not move on rename")
 	}
 
-	renamedReload := NewArtifactStoreWithByteStore("", nil)
+	renamedReload := store.NewArtifactStoreWithByteStore("", nil)
 	if err := renamedReload.SetPersistence(p2); err != nil {
 		t.Fatalf("reload renamed metadata: %v", err)
 	}
@@ -174,7 +175,7 @@ func TestActionsArtifactAndCacheMetadataPersistence(t *testing.T) {
 	if err := s.deleteRepositoryActionsData(t.Context(), "octo/renamed"); err != nil {
 		t.Fatalf("delete repository Actions data: %v", err)
 	}
-	deletedReload := NewArtifactStoreWithByteStore("", nil)
+	deletedReload := store.NewArtifactStoreWithByteStore("", nil)
 	if err := deletedReload.SetPersistence(p2); err != nil {
 		t.Fatalf("reload deleted metadata: %v", err)
 	}
@@ -188,7 +189,7 @@ func TestArtifactUploadWritesObjectStore(t *testing.T) {
 	fs := newS3FSForTest(t)
 	objectFS := deriveS3FSForTest(t, fs.Bucket(), "objects")
 	s := newTestServer()
-	s.setArtifactStore(NewArtifactStoreWithByteStore("", &s3ActionsByteStore{Fs: objectFS}))
+	s.setArtifactStore(store.NewArtifactStoreWithByteStore("", &store.S3ActionsByteStore{Fs: objectFS}))
 	token := seedRunJobToken(t, s, "octo/repo", "run-1")
 
 	req := httptest.NewRequest("POST", "/twirp/github.actions.results.api.v1.ArtifactService/CreateArtifact", bytes.NewBufferString(`{"name":"object-artifact","version":4,"workflow_run_backend_id":"run-1"}`))
@@ -220,8 +221,8 @@ func TestArtifactListReturnsFinalized(t *testing.T) {
 
 	// Create and finalize an artifact
 	s.artifactStore.Mu.Lock()
-	s.artifactStore.Artifacts[1] = &Artifact{ID: 1, Name: "my-artifact", Size: 100, Finalized: true, WorkflowRunBackendID: "run-1"}
-	s.artifactStore.Artifacts[2] = &Artifact{ID: 2, Name: "unfinished", Size: 50, Finalized: false, WorkflowRunBackendID: "run-1"}
+	s.artifactStore.Artifacts[1] = &store.Artifact{ID: 1, Name: "my-artifact", Size: 100, Finalized: true, WorkflowRunBackendID: "run-1"}
+	s.artifactStore.Artifacts[2] = &store.Artifact{ID: 2, Name: "unfinished", Size: 50, Finalized: false, WorkflowRunBackendID: "run-1"}
 	s.artifactStore.Mu.Unlock()
 
 	req := httptest.NewRequest("POST", "/twirp/github.actions.results.api.v1.ArtifactService/ListArtifacts", bytes.NewBufferString(`{"workflow_run_backend_id":"run-1"}`))
@@ -247,8 +248,8 @@ func TestArtifactFinalizeScopesByWorkflowRunBackendID(t *testing.T) {
 	token := seedRunJobToken(t, s, "octo/repo", "run-b")
 
 	s.artifactStore.Mu.Lock()
-	s.artifactStore.Artifacts[1] = &Artifact{ID: 1, Name: "shared", WorkflowRunBackendID: "run-a"}
-	s.artifactStore.Artifacts[2] = &Artifact{ID: 2, Name: "shared", WorkflowRunBackendID: "run-b"}
+	s.artifactStore.Artifacts[1] = &store.Artifact{ID: 1, Name: "shared", WorkflowRunBackendID: "run-a"}
+	s.artifactStore.Artifacts[2] = &store.Artifact{ID: 2, Name: "shared", WorkflowRunBackendID: "run-b"}
 	s.artifactStore.Mu.Unlock()
 
 	req := httptest.NewRequest("POST",
@@ -285,8 +286,8 @@ func TestGetSignedArtifactURLScopesByWorkflowRunBackendID(t *testing.T) {
 	token := seedRunJobToken(t, s, "octo/repo", "run-b")
 
 	s.artifactStore.Mu.Lock()
-	s.artifactStore.Artifacts[1] = &Artifact{ID: 1, Name: "shared", WorkflowRunBackendID: "run-a", Finalized: true}
-	s.artifactStore.Artifacts[2] = &Artifact{ID: 2, Name: "shared", WorkflowRunBackendID: "run-b", Finalized: true}
+	s.artifactStore.Artifacts[1] = &store.Artifact{ID: 1, Name: "shared", WorkflowRunBackendID: "run-a", Finalized: true}
+	s.artifactStore.Artifacts[2] = &store.Artifact{ID: 2, Name: "shared", WorkflowRunBackendID: "run-b", Finalized: true}
 	s.artifactStore.Mu.Unlock()
 
 	req := httptest.NewRequest("POST",
@@ -312,11 +313,11 @@ func TestGetSignedArtifactURLScopesByWorkflowRunBackendID(t *testing.T) {
 func TestCacheUploadWritesObjectStore(t *testing.T) {
 	fs := newS3FSForTest(t)
 	objectFS := deriveS3FSForTest(t, fs.Bucket(), "objects")
-	store := NewArtifactStoreWithByteStore("", &s3ActionsByteStore{Fs: objectFS})
-	entry := &CacheEntry{ID: 7, Repo: "octo/repo", Key: "linux-go", Version: "v1"}
+	st := store.NewArtifactStoreWithByteStore("", &store.S3ActionsByteStore{Fs: objectFS})
+	entry := &store.CacheEntry{ID: 7, Repo: "octo/repo", Key: "linux-go", Version: "v1"}
 	entry.Data = []byte("cache archive bytes")
 
-	if err := store.WriteCacheDataAt(entry, entry.Data, 0); err != nil {
+	if err := st.WriteCacheDataAt(entry, entry.Data, 0); err != nil {
 		t.Fatalf("writeCacheDataAt: %v", err)
 	}
 	got := readS3TestFile(t, objectFS, "actions/caches/7/data")
@@ -330,7 +331,7 @@ func TestArtifactDownload(t *testing.T) {
 
 	// Create finalized artifact with data
 	s.artifactStore.Mu.Lock()
-	s.artifactStore.Artifacts[1] = &Artifact{
+	s.artifactStore.Artifacts[1] = &store.Artifact{
 		ID:           1,
 		Name:         "my-artifact",
 		Data:         []byte("artifact-data"),
@@ -388,7 +389,7 @@ func seedCacheRunJob(t *testing.T, s *Server, repo string) string {
 		t.Fatalf("marshal job message: %v", err)
 	}
 	s.store.Mu.Lock()
-	s.store.Jobs[scopeID] = &Job{ID: scopeID, Status: "running", Message: string(msgJSON)}
+	s.store.Jobs[scopeID] = &store.Job{ID: scopeID, Status: "running", Message: string(msgJSON)}
 	s.store.Mu.Unlock()
 	return makeJWT(scopeID, "actions")
 }
@@ -480,12 +481,12 @@ func cacheLookup(t *testing.T, s *Server, token, keys, version string) *httptest
 func seedFinalizedCache(s *Server, id int64, repo, key, version string, size int64) {
 	ensureSeededRepo(s, repo)
 	s.artifactStore.Mu.Lock()
-	entry := &CacheEntry{
+	entry := &store.CacheEntry{
 		ID: id, Repo: repo, Key: key, Version: version,
 		Size: size, Data: make([]byte, size), Finalized: true, CreatedAt: fixedTestTime,
 	}
 	s.artifactStore.Caches[id] = entry
-	s.artifactStore.CacheIndex[cacheLookupKey(repo, key, version)] = id
+	s.artifactStore.CacheIndex[store.CacheLookupKey(repo, key, version)] = id
 	if id >= s.artifactStore.NextCacheID {
 		s.artifactStore.NextCacheID = id + 1
 	}
@@ -688,13 +689,13 @@ func TestCacheRestoreKeyUsesNewestPrefixMatch(t *testing.T) {
 	s := newTestServer()
 	token := seedCacheRunJob(t, s, "octo/prefix")
 
-	old := &CacheEntry{ID: 1, Repo: "octo/prefix", Key: "linux-go-old", Version: "abc", Data: []byte("old"), Finalized: true, CreatedAt: fixedTestTime.Add(-time.Hour)}
-	newer := &CacheEntry{ID: 2, Repo: "octo/prefix", Key: "linux-go-main", Version: "abc", Data: []byte("new"), Finalized: true, CreatedAt: fixedTestTime}
+	old := &store.CacheEntry{ID: 1, Repo: "octo/prefix", Key: "linux-go-old", Version: "abc", Data: []byte("old"), Finalized: true, CreatedAt: fixedTestTime.Add(-time.Hour)}
+	newer := &store.CacheEntry{ID: 2, Repo: "octo/prefix", Key: "linux-go-main", Version: "abc", Data: []byte("new"), Finalized: true, CreatedAt: fixedTestTime}
 	s.artifactStore.Mu.Lock()
 	s.artifactStore.Caches[old.ID] = old
 	s.artifactStore.Caches[newer.ID] = newer
-	s.artifactStore.CacheIndex[cacheLookupKey(old.Repo, old.Key, old.Version)] = old.ID
-	s.artifactStore.CacheIndex[cacheLookupKey(newer.Repo, newer.Key, newer.Version)] = newer.ID
+	s.artifactStore.CacheIndex[store.CacheLookupKey(old.Repo, old.Key, old.Version)] = old.ID
+	s.artifactStore.CacheIndex[store.CacheLookupKey(newer.Repo, newer.Key, newer.Version)] = newer.ID
 	s.artifactStore.Mu.Unlock()
 
 	w := cacheLookup(t, s, token, "linux-go-missing,linux-go-", "abc")
@@ -861,7 +862,7 @@ func TestGetSignedArtifactURL(t *testing.T) {
 	token := seedRunJobToken(t, s, "octo/repo", "run-1")
 
 	s.artifactStore.Mu.Lock()
-	s.artifactStore.Artifacts[1] = &Artifact{
+	s.artifactStore.Artifacts[1] = &store.Artifact{
 		ID:                   1,
 		Name:                 "my-artifact",
 		Finalized:            true,

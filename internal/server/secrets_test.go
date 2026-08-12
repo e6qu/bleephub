@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // --- shared fixtures for the secrets/variables suites ---
@@ -592,7 +594,7 @@ func TestRepoOrganizationSecretsList(t *testing.T) {
 		"encrypted_value": enc, "key_id": keyID, "visibility": "private",
 	}), 201, "create private")
 
-	names := func(repo *Repo) map[string]bool {
+	names := func(repo *store.Repo) map[string]bool {
 		body := decodeJSON(t, s.get(t, "/api/v3/repos/"+repo.FullName+"/actions/organization-secrets", defaultToken))
 		out := map[string]bool{}
 		for _, raw := range body["secrets"].([]interface{}) {

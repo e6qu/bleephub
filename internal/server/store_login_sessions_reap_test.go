@@ -3,33 +3,35 @@ package bleephub
 import (
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func TestExpiredLoginSessionReapIsDurableAndDeterministic(t *testing.T) {
 	dataDir := t.TempDir()
 	persistence := openTestPersistence(t, dataDir)
-	store := NewStore()
-	replaceStoreClockNow(store, func() time.Time { return fixedTestTime })
-	if err := store.SetPersistence(persistence); err != nil {
+	st := store.NewStore()
+	replaceStoreClockNow(st, func() time.Time { return fixedTestTime })
+	if err := st.SetPersistence(persistence); err != nil {
 		t.Fatalf("set persistence: %v", err)
 	}
-	store.SeedDefaultUser()
+	st.SeedDefaultUser()
 
-	expired := &LoginSession{UserID: store.UsersByLogin["admin"].ID, ExpiresAt: fixedTestTime.Add(-time.Minute)}
-	live := &LoginSession{UserID: store.UsersByLogin["admin"].ID, ExpiresAt: fixedTestTime.Add(time.Hour)}
-	if err := store.PutLoginSession("expired", expired); err != nil {
+	expired := &store.LoginSession{UserID: st.UsersByLogin["admin"].ID, ExpiresAt: fixedTestTime.Add(-time.Minute)}
+	live := &store.LoginSession{UserID: st.UsersByLogin["admin"].ID, ExpiresAt: fixedTestTime.Add(time.Hour)}
+	if err := st.PutLoginSession("expired", expired); err != nil {
 		t.Fatalf("put expired session: %v", err)
 	}
-	if err := store.PutLoginSession("live", live); err != nil {
+	if err := st.PutLoginSession("live", live); err != nil {
 		t.Fatalf("put live session: %v", err)
 	}
-	if err := store.ReapExpiredLoginSessions(fixedTestTime); err != nil {
+	if err := st.ReapExpiredLoginSessions(fixedTestTime); err != nil {
 		t.Fatalf("reap: %v", err)
 	}
-	if session, err := store.GetLoginSession("expired"); err != nil || session != nil {
+	if session, err := st.GetLoginSession("expired"); err != nil || session != nil {
 		t.Fatalf("expired session = %#v, %v", session, err)
 	}
-	if session, err := store.GetLoginSession("live"); err != nil || session == nil {
+	if session, err := st.GetLoginSession("live"); err != nil || session == nil {
 		t.Fatalf("live session = %#v, %v", session, err)
 	}
 
@@ -38,7 +40,7 @@ func TestExpiredLoginSessionReapIsDurableAndDeterministic(t *testing.T) {
 	}
 	reopened := openTestPersistence(t, dataDir)
 	defer func() { _ = reopened.Close() }()
-	reloaded := NewStore()
+	reloaded := store.NewStore()
 	replaceStoreClockNow(reloaded, func() time.Time { return fixedTestTime })
 	if err := reloaded.SetPersistence(reopened); err != nil {
 		t.Fatalf("reload persistence: %v", err)

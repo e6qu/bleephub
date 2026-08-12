@@ -5,17 +5,18 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
 )
 
-func seedPullRequestBranches(t testing.TB, s *Server, repo *Repo, branches ...string) map[string]string {
+func seedPullRequestBranches(t testing.TB, s *Server, repo *store.Repo, branches ...string) map[string]string {
 	t.Helper()
 	return seedStorePullRequestBranches(t, s.store, repo, branches...)
 }
 
-func seedStorePullRequestBranches(t testing.TB, st *Store, repo *Repo, branches ...string) map[string]string {
+func seedStorePullRequestBranches(t testing.TB, st *store.Store, repo *store.Repo, branches ...string) map[string]string {
 	t.Helper()
-	owner, name, ok := splitRepoFullName(repo.FullName)
+	owner, name, ok := store.SplitRepoFullName(repo.FullName)
 	if !ok {
 		t.Fatalf("invalid repo name %q", repo.FullName)
 	}
@@ -26,7 +27,7 @@ func seedStorePullRequestBranches(t testing.TB, st *Store, repo *Repo, branches 
 		base = "main"
 	}
 	var baseHash plumbing.Hash
-	if existing := resolveBranchSha(stor, base); existing != "" {
+	if existing := store.ResolveBranchSha(stor, base); existing != "" {
 		baseHash = plumbing.NewHash(existing)
 	} else {
 		var err error

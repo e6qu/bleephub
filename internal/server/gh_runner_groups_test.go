@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"io"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
-func (s *isolatedServer) registerRunnerForLabels(t *testing.T, scope runnerScope) int {
+func (s *isolatedServer) registerRunnerForLabels(t *testing.T, scope store.RunnerScope) int {
 	t.Helper()
 	// Agent registration presents the scoped registration token config.sh is
 	// given, not a personal access token.
@@ -21,7 +23,7 @@ func TestRunnerLabels_Repo_ListSetDelete(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
 	repo := s.createTestRepo(t).fullName()
-	agentID := s.registerRunnerForLabels(t, runnerScope{Repo: repo})
+	agentID := s.registerRunnerForLabels(t, store.RunnerScope{Repo: repo})
 
 	// List labels: should include the two system labels.
 	listResp := s.get(t, fmt.Sprintf("/api/v3/repos/%s/actions/runners/%d/labels", repo, agentID), defaultToken)
@@ -58,7 +60,7 @@ func TestRunnerLabels_Org_ListSet(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
 	org := s.createTestOrg(t)
-	agentID := s.registerRunnerForLabels(t, runnerScope{Org: org})
+	agentID := s.registerRunnerForLabels(t, store.RunnerScope{Org: org})
 
 	listResp := s.get(t, fmt.Sprintf("/api/v3/orgs/%s/actions/runners/%d/labels", org, agentID), defaultToken)
 	listData := decodeJSONWithStatus(t, listResp, 200)
@@ -78,7 +80,7 @@ func TestRunnerLabels_Org_ListSet(t *testing.T) {
 func TestRunnerLabels_Org_UnknownOrg(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
-	agentID := s.registerRunnerForLabels(t, runnerScope{Org: "different-org"})
+	agentID := s.registerRunnerForLabels(t, store.RunnerScope{Org: "different-org"})
 	listResp := s.get(t, fmt.Sprintf("/api/v3/orgs/no-such-org-999/actions/runners/%d/labels", agentID), defaultToken)
 	if listResp.StatusCode != 404 {
 		body, _ := io.ReadAll(listResp.Body)

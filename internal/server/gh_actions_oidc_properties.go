@@ -9,15 +9,17 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func (s *Server) registerGHActionsOIDCPropertyRoutes() {
 	s.route("GET /api/v3/orgs/{org}/actions/oidc/customization/properties/repo",
-		s.requirePerm(scopeOrgAdministration, permRead, s.orgGated(s.handleListOIDCPropertyInclusions)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.orgGated(s.handleListOIDCPropertyInclusions)))
 	s.route("POST /api/v3/orgs/{org}/actions/oidc/customization/properties/repo",
-		s.requirePerm(scopeOrgAdministration, permWrite, s.orgGated(s.handleCreateOIDCPropertyInclusion)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.orgGated(s.handleCreateOIDCPropertyInclusion)))
 	s.route("DELETE /api/v3/orgs/{org}/actions/oidc/customization/properties/repo/{custom_property_name}",
-		s.requirePerm(scopeOrgAdministration, permWrite, s.orgGated(s.handleDeleteOIDCPropertyInclusion)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.orgGated(s.handleDeleteOIDCPropertyInclusion)))
 }
 
 func oidcPropertyInclusionJSON(name string) map[string]any {
@@ -49,14 +51,14 @@ func (s *Server) handleCreateOIDCPropertyInclusion(w http.ResponseWriter, r *htt
 		return
 	}
 	if req.CustomPropertyName == "" {
-		writeGHValidationError(w, "OIDCCustomPropertyInclusion", "custom_property_name", "missing_field")
+		store.WriteGHValidationError(w, "OIDCCustomPropertyInclusion", "custom_property_name", "missing_field")
 		return
 	}
 	s.store.Mu.Lock()
 	for _, name := range s.store.OrgOIDCPropertyInclusions[org] {
 		if strings.EqualFold(name, req.CustomPropertyName) {
 			s.store.Mu.Unlock()
-			writeGHValidationError(w, "OIDCCustomPropertyInclusion", "custom_property_name", "already_exists")
+			store.WriteGHValidationError(w, "OIDCCustomPropertyInclusion", "custom_property_name", "already_exists")
 			return
 		}
 	}

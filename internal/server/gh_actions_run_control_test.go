@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/e6qu/bleephub/internal/actions"
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func (s *isolatedServer) ensureTestOrgRepo(t *testing.T, repo string) {
@@ -39,33 +40,33 @@ func (s *isolatedServer) ensureTestOrgRepo(t *testing.T, repo string) {
 // seedGatedRun installs a run held in action_required (the fork-PR
 // approval gate) with one dispatchable pending job, wired so approval
 // can dispatch through the real engine.
-func (s *isolatedServer) seedGatedRun(t *testing.T, repo string) *Workflow {
+func (s *isolatedServer) seedGatedRun(t *testing.T, repo string) *store.Workflow {
 	t.Helper()
 	s.ensureTestOrgRepo(t, repo)
 	s.store.Mu.Lock()
 	runID := s.store.NextRunID
 	s.store.NextRunID++
-	wf := &Workflow{
+	wf := &store.Workflow{
 		ID:           uuid.New().String(),
 		Name:         "gated",
 		RunID:        runID,
 		RunNumber:    runID,
-		Status:       WorkflowStatusActionRequired,
+		Status:       store.WorkflowStatusActionRequired,
 		CreatedAt:    fixedTestTime,
 		EventName:    "pull_request",
 		Ref:          "refs/heads/feature",
 		Sha:          "abcdef0123456789abcdef0123456789abcdef01",
 		RepoFullName: repo,
 		Env:          map[string]string{"__serverURL": s.baseURL, "__defaultImage": "alpine:latest"},
-		Jobs:         map[string]*WorkflowJob{},
+		Jobs:         map[string]*store.WorkflowJob{},
 	}
-	wf.Jobs["build"] = &WorkflowJob{
+	wf.Jobs["build"] = &store.WorkflowJob{
 		Key:         "build",
 		JobID:       uuid.New().String(),
 		DisplayName: "Build",
-		Status:      JobStatusPending,
+		Status:      store.JobStatusPending,
 		Outputs:     map[string]string{},
-		Def:         &JobDef{RunsOn: "ubuntu-latest", Steps: []StepDef{{Run: "echo hi"}}},
+		Def:         &store.JobDef{RunsOn: "ubuntu-latest", Steps: []store.StepDef{{Run: "echo hi"}}},
 	}
 	s.store.Workflows[wf.ID] = wf
 	s.store.Mu.Unlock()
@@ -147,10 +148,10 @@ func TestForkPRApprovalGate_EngineHoldsForkRuns(t *testing.T) {
 			},
 		},
 	}
-	def := &WorkflowDef{
+	def := &store.WorkflowDef{
 		Name: "fork-gated",
-		Jobs: map[string]*JobDef{
-			"build": {RunsOn: "ubuntu-latest", Steps: []StepDef{{Run: "echo hi"}}},
+		Jobs: map[string]*store.JobDef{
+			"build": {RunsOn: "ubuntu-latest", Steps: []store.StepDef{{Run: "echo hi"}}},
 		},
 	}
 	wf, err := s.actions.SubmitWorkflow(t.Context(), "http://127.0.0.1:0", def, "alpine:latest", &actions.WorkflowEventMeta{
@@ -161,10 +162,10 @@ func TestForkPRApprovalGate_EngineHoldsForkRuns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if wf.Status != WorkflowStatusActionRequired {
+	if wf.Status != store.WorkflowStatusActionRequired {
 		t.Fatalf("fork-PR run status = %q, want action_required", wf.Status)
 	}
-	if wf.Jobs["build"].Status != JobStatusPending {
+	if wf.Jobs["build"].Status != store.JobStatusPending {
 		t.Fatalf("gated job status = %q, want pending (not dispatched)", wf.Jobs["build"].Status)
 	}
 
@@ -176,10 +177,10 @@ func TestForkPRApprovalGate_EngineHoldsForkRuns(t *testing.T) {
 			},
 		},
 	}
-	def2 := &WorkflowDef{
+	def2 := &store.WorkflowDef{
 		Name: "same-repo",
-		Jobs: map[string]*JobDef{
-			"build": {RunsOn: "ubuntu-latest", Steps: []StepDef{{Run: "echo hi"}}},
+		Jobs: map[string]*store.JobDef{
+			"build": {RunsOn: "ubuntu-latest", Steps: []store.StepDef{{Run: "echo hi"}}},
 		},
 	}
 	wf2, err := s.actions.SubmitWorkflow(t.Context(), "http://127.0.0.1:0", def2, "alpine:latest", &actions.WorkflowEventMeta{
@@ -190,7 +191,7 @@ func TestForkPRApprovalGate_EngineHoldsForkRuns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if wf2.Status == WorkflowStatusActionRequired {
+	if wf2.Status == store.WorkflowStatusActionRequired {
 		t.Fatalf("same-repo PR run gated: %q", wf2.Status)
 	}
 	s.actions.CancelWorkflow(wf2)
@@ -208,24 +209,24 @@ func TestRerunWorkflowJob_NewAttemptCarriesOtherJobs(t *testing.T) {
 	s.store.Mu.Lock()
 	runID := s.store.NextRunID
 	s.store.NextRunID++
-	wf := &Workflow{
+	wf := &store.Workflow{
 		ID:           uuid.New().String(),
 		Name:         "jobrr",
 		RunID:        runID,
 		RunNumber:    runID,
-		Status:       WorkflowStatusCompleted,
-		Result:       ResultSuccess,
+		Status:       store.WorkflowStatusCompleted,
+		Result:       store.ResultSuccess,
 		CreatedAt:    fixedTestTime,
 		EventName:    "push",
 		Ref:          "refs/heads/main",
 		Sha:          "abcdef0123456789abcdef0123456789abcdef01",
 		RepoFullName: repo,
-		Jobs:         map[string]*WorkflowJob{},
+		Jobs:         map[string]*store.WorkflowJob{},
 	}
 	for _, key := range []string{"a", "b"} {
-		wf.Jobs[key] = &WorkflowJob{
+		wf.Jobs[key] = &store.WorkflowJob{
 			Key: key, JobID: uuid.New().String(), DisplayName: key,
-			Status: JobStatusCompleted, Result: ResultSuccess,
+			Status: store.JobStatusCompleted, Result: store.ResultSuccess,
 			StartedAt: fixedTestTime.Add(-time.Minute), CompletedAt: fixedTestTime,
 			Outputs: map[string]string{},
 		}
@@ -306,30 +307,30 @@ func TestReviewCustomDeploymentProtectionRule(t *testing.T) {
 	s.store.Mu.Lock()
 	runID := s.store.NextRunID
 	s.store.NextRunID++
-	wf := &Workflow{
+	wf := &store.Workflow{
 		ID:           uuid.New().String(),
 		Name:         "deploy",
 		RunID:        runID,
 		RunNumber:    runID,
-		Status:       WorkflowStatusWaiting,
+		Status:       store.WorkflowStatusWaiting,
 		CreatedAt:    fixedTestTime,
 		EventName:    "push",
 		Ref:          "refs/heads/main",
 		Sha:          "abcdef0123456789abcdef0123456789abcdef01",
 		RepoFullName: repoKey,
 		Env:          map[string]string{"__serverURL": s.baseURL, "__defaultImage": "alpine:latest"},
-		Jobs:         map[string]*WorkflowJob{},
-		PendingDeployments: []*PendingDeployment{
+		Jobs:         map[string]*store.WorkflowJob{},
+		PendingDeployments: []*store.PendingDeployment{
 			{EnvID: env.ID, EnvName: "production", WaitTimerStartedAt: fixedTestTime.UTC()},
 		},
 	}
-	wf.Jobs["deploy"] = &WorkflowJob{
+	wf.Jobs["deploy"] = &store.WorkflowJob{
 		Key: "deploy", JobID: uuid.New().String(), DisplayName: "Deploy",
-		Status:  JobStatusWaiting,
+		Status:  store.JobStatusWaiting,
 		Outputs: map[string]string{},
-		Def: &JobDef{
+		Def: &store.JobDef{
 			RunsOn: "ubuntu-latest", Environment: "production",
-			Steps: []StepDef{{Run: "echo deploy"}},
+			Steps: []store.StepDef{{Run: "echo deploy"}},
 		},
 	}
 	s.store.Workflows[wf.ID] = wf

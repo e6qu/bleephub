@@ -14,7 +14,7 @@ import (
 //
 // The mismatch answer is 404 rather than 403 so the id cannot be probed for
 // existence in another tenant.
-func requireRepoOwns(w http.ResponseWriter, repo *Repo, ownerRepoID int) bool {
+func requireRepoOwns(w http.ResponseWriter, repo *store.Repo, ownerRepoID int) bool {
 	if repo == nil || ownerRepoID != repo.ID {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return false
@@ -24,24 +24,24 @@ func requireRepoOwns(w http.ResponseWriter, repo *Repo, ownerRepoID int) bool {
 
 // canAdminOrgAsUser checks if a user is an active admin of the given organization.
 // A pending (invited) admin has not accepted yet and holds no rights.
-func canAdminOrgAsUser(st *Store, user *User, org *Org) bool {
+func canAdminOrgAsUser(st *store.Store, user *store.User, org *store.Org) bool {
 	if user == nil || org == nil {
 		return false
 	}
 	m := st.GetMembership(org.Login, user.ID)
-	return m != nil && m.Role == OrgRoleAdmin && m.State == MembershipStateActive
+	return m != nil && m.Role == store.OrgRoleAdmin && m.State == store.MembershipStateActive
 }
 
 // isActiveOrgMemberAsUser reports whether user holds an active membership in the
 // org. Org teams (their names, members, and repo grants) are visible only to
 // org members on real GitHub — a non-member authenticated caller gets 404, the
 // same as an unknown org, so the org's internal structure never leaks.
-func isActiveOrgMemberAsUser(st *Store, user *User, orgLogin string) bool {
+func isActiveOrgMemberAsUser(st *store.Store, user *store.User, orgLogin string) bool {
 	if user == nil {
 		return false
 	}
 	m := st.GetMembership(orgLogin, user.ID)
-	return m != nil && m.State == MembershipStateActive
+	return m != nil && m.State == store.MembershipStateActive
 }
 
 // namedUserIsActiveOrgMember asks the membership question about somebody other
@@ -49,7 +49,7 @@ func isActiveOrgMemberAsUser(st *Store, user *User, orgLogin string) bool {
 // added to a resource. There is no credential to intersect for a third party,
 // which is why this is not (*Server).viewerIsOrgMember and why call sites are
 // not required to route through the credential-aware predicate.
-func namedUserIsActiveOrgMember(st *Store, subject *User, orgLogin string) bool {
+func namedUserIsActiveOrgMember(st *store.Store, subject *store.User, orgLogin string) bool {
 	return isActiveOrgMemberAsUser(st, subject, orgLogin)
 }
 
@@ -61,8 +61,8 @@ func namedUserIsActiveOrgMember(st *Store, subject *User, orgLogin string) bool 
 // including an anonymous viewer; a private one requires read access. Doing
 // this in one place means a new listing gets the rule by calling a function
 // rather than by its author remembering the rule exists.
-func (s *Server) visibleRepos(ctx context.Context, repos []*Repo) []*Repo {
-	out := make([]*Repo, 0, len(repos))
+func (s *Server) visibleRepos(ctx context.Context, repos []*store.Repo) []*store.Repo {
+	out := make([]*store.Repo, 0, len(repos))
 	for _, repo := range repos {
 		if repo == nil {
 			continue
@@ -79,14 +79,14 @@ func (s *Server) visibleRepos(ctx context.Context, repos []*Repo) []*Repo {
 // data layer. These forwarders keep the declarations inside the RBAC layer so
 // the authz chokepoint ratchet (authz_chokepoint_test.go) still guards every
 // other call site; nothing outside rbac.go / gh_apps_perms.go may call them.
-func canAdminRepo(st *Store, user *User, repo *Repo) bool {
+func canAdminRepo(st *store.Store, user *store.User, repo *store.Repo) bool {
 	return store.CanAdminRepo(st, user, repo)
 }
 
-func canPushRepo(st *Store, user *User, repo *Repo) bool {
+func canPushRepo(st *store.Store, user *store.User, repo *store.Repo) bool {
 	return store.CanPushRepo(st, user, repo)
 }
 
-func canReadRepoAsUser(st *Store, user *User, repo *Repo) bool {
+func canReadRepoAsUser(st *store.Store, user *store.User, repo *store.Repo) bool {
 	return store.CanReadRepoAsUser(st, user, repo)
 }
