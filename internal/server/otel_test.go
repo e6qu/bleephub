@@ -93,7 +93,7 @@ func TestWorkflowDispatchCreatesSpan(t *testing.T) {
 		},
 	}
 
-	_, err := s.submitWorkflow(context.Background(), "http://localhost", wf, "alpine:latest")
+	_, err := s.actions.SubmitWorkflow(context.Background(), "http://localhost", wf, "alpine:latest")
 	if err != nil {
 		t.Fatalf("submitWorkflow failed: %v", err)
 	}
@@ -129,7 +129,7 @@ func TestNoSpansWhenDisabled(t *testing.T) {
 		},
 	}
 
-	_, err := s.submitWorkflow(context.Background(), "http://localhost", wf, "alpine:latest")
+	_, err := s.actions.SubmitWorkflow(context.Background(), "http://localhost", wf, "alpine:latest")
 	if err != nil {
 		t.Fatalf("submitWorkflow with no-op tracer should not fail: %v", err)
 	}

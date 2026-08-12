@@ -22,6 +22,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/actions"
 )
 
 func (s *Server) registerGHActionsRoutes() {
@@ -417,7 +419,7 @@ func (s *Server) taskRecordsForJobLocked(jobUUID string) []*TimelineRecord {
 	}
 	if planID == "" {
 		for _, wf := range s.store.Workflows {
-			if wfJob, ok := findWorkflowJobByID(wf, jobUUID); ok {
+			if wfJob, ok := actions.FindWorkflowJobByID(wf, jobUUID); ok {
 				planID = wfJob.PlanID
 				break
 			}
@@ -534,7 +536,7 @@ func runnerJSON(a *Agent, busy bool) map[string]any {
 		"id":              int64(a.ID),
 		"runner_group_id": agentGroupID(a),
 		"name":            a.Name,
-		"os":              osFromDescription(a.OSDescription),
+		"os":              actions.OSFromDescription(a.OSDescription),
 		"status":          agentStatusForRunner(a.Status),
 		"busy":            busy,
 		"ephemeral":       false,
@@ -563,20 +565,6 @@ func versionForRunner(a *Agent) any {
 		return nil
 	}
 	return a.Version
-}
-
-func osFromDescription(desc string) string {
-	d := strings.ToLower(desc)
-	switch {
-	case strings.Contains(d, "linux"):
-		return "linux"
-	case strings.Contains(d, "windows"):
-		return "windows"
-	case strings.Contains(d, "darwin"), strings.Contains(d, "macos"):
-		return "macos"
-	default:
-		return "linux"
-	}
 }
 
 func agentStatusForRunner(internal string) string {
@@ -914,7 +902,7 @@ func (s *Server) handleCancelWorkflowRun(w http.ResponseWriter, r *http.Request)
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	s.cancelWorkflow(wf)
+	s.actions.CancelWorkflow(wf)
 	w.WriteHeader(http.StatusAccepted)
 }
 
@@ -950,7 +938,7 @@ func (s *Server) handleRerunWorkflowRun(w http.ResponseWriter, r *http.Request) 
 		writeGHError(w, http.StatusUnprocessableEntity, "parse cached YAML: "+perr.Error())
 		return
 	}
-	def = expandMatrixJobs(def)
+	def = actions.ExpandMatrixJobs(def)
 	if def.Env == nil {
 		def.Env = map[string]string{}
 	}
@@ -1008,9 +996,9 @@ func (s *Server) rerunWorkflowAsNewAttempt(r *http.Request, old *Workflow, file 
 	s.store.PersistWorkflowAttemptsRecord(old.RunID)
 	s.store.DeleteWorkflowRecord(old.ID)
 	s.store.Mu.Unlock()
-	s.stopTimeoutWatcher(old)
+	s.actions.StopTimeoutWatcher(old)
 
-	meta := WorkflowEventMeta{
+	meta := actions.WorkflowEventMeta{
 		EventName:      eventOf(old),
 		Ref:            old.Ref,
 		Sha:            old.Sha,
@@ -1027,7 +1015,7 @@ func (s *Server) rerunWorkflowAsNewAttempt(r *http.Request, old *Workflow, file 
 		meta.WorkflowFileID = file.ID
 		meta.WorkflowFilePath = file.Path
 	}
-	if _, err := s.submitWorkflow(r.Context(), serverURL, def, "", &meta); err != nil {
+	if _, err := s.actions.SubmitWorkflow(r.Context(), serverURL, def, "", &meta); err != nil {
 		// Put the old attempt back so the run doesn't vanish.
 		s.store.Mu.Lock()
 		attempts := s.store.WorkflowAttempts[old.RunID]
@@ -1162,7 +1150,7 @@ func (s *Server) handleDeleteWorkflowRun(w http.ResponseWriter, r *http.Request)
 	delete(s.store.WorkflowAttempts, runID)
 	s.store.PersistWorkflowAttemptsRecord(runID)
 	s.store.Mu.Unlock()
-	s.releaseJobLogFiles(planIDs)
+	s.actions.ReleaseJobLogFiles(planIDs)
 	w.WriteHeader(http.StatusNoContent)
 }
 

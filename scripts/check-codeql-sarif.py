@@ -24,11 +24,6 @@ ACCEPTED_FINDINGS: dict[tuple[str, str], str] = {
         "through the same dial-time SSRF address gate as webhook delivery "
         "(newAddressCheckedHTTPTransport), so it cannot reach an internal or "
         "cloud-metadata address regardless of the URL.",
-    ("go/path-injection", "internal/gitstore/git_storage.go"):
-        "Path derives from a repo full name fully sanitised by repoGitDirPath "
-        "(validateRepoStorageFullName + filepath.Abs/Join/Rel + IsLocal containment).",
-    ("go/path-injection", "internal/store/store_repos.go"):
-        "Same repoGitDirPath containment sanitiser as git_storage.go.",
     ("go/reflected-xss", "internal/server/gh_middleware.go"):
         "Generic ResponseWriter.Write wrapper; API responses are JSON with a "
         "non-HTML Content-Type, and the global securityHeadersMiddleware sets "

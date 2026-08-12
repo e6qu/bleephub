@@ -189,7 +189,7 @@ func mergeTimelineRecord(stored, incoming *TimelineRecord) {
 }
 
 func (s *Server) handleCreateLog(w http.ResponseWriter, r *http.Request) {
-	logID := s.nextLogID()
+	logID := s.actions.NextLogID()
 	// Log ids come from one counter shared by every plan, so the id alone
 	// would be the only thing standing between a job and another job's log
 	// content. Record which plan reserved it.
@@ -275,7 +275,7 @@ func (s *Server) handleWebConsoleLog(w http.ResponseWriter, r *http.Request) {
 	// Capture log lines keyed by jobID for the management dashboard.
 	// Capped at consoleLineCap; trimming appends the marker line once.
 	if planID != "" && len(lines) > 0 {
-		job := s.lookupJobByPlanID(planID)
+		job := s.actions.LookupJobByPlanID(planID)
 		s.store.Mu.Lock()
 		lines = s.store.RedactLogLinesLocked(planID, lines)
 		if job != nil {

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/actions"
 	"github.com/e6qu/bleephub/internal/server/testutil"
 )
 
@@ -72,8 +73,8 @@ func TestActionsEventSnapshotsAreImmutable(t *testing.T) {
 		MatrixValues: map[string]interface{}{"os": "linux"},
 	}
 
-	wfSnapshot := cloneWorkflowEventSnapshot(wf)
-	jobSnapshot := cloneWorkflowJobEventSnapshot(job)
+	wfSnapshot := actions.CloneWorkflowEventSnapshot(wf)
+	jobSnapshot := actions.CloneWorkflowJobEventSnapshot(job)
 
 	wf.DisplayTitle = "after"
 	wf.Status = WorkflowStatusCompleted
@@ -194,7 +195,7 @@ jobs:
 	waitUntil(t, "workflow_job in_progress", func() bool { return rec.has("workflow_job/in_progress") })
 
 	// Completion: check run success, suite completed, completed events.
-	s.onJobCompleted(context.Background(), wf.Jobs["build"].JobID, "Succeeded")
+	s.actions.OnJobCompleted(context.Background(), wf.Jobs["build"].JobID, "Succeeded")
 	waitUntil(t, "check run success", func() bool {
 		cr := s.store.GetCheckRun(checkRun.ID)
 		return cr.Status == "completed" && cr.Conclusion == "success"

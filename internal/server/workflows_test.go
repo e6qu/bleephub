@@ -7,6 +7,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/google/uuid"
+
+	"github.com/e6qu/bleephub/internal/actions"
 )
 
 func TestWorkflowSingleJobSubmit(t *testing.T) {
@@ -20,7 +24,7 @@ func TestWorkflowSingleJobSubmit(t *testing.T) {
 		},
 	}
 
-	workflow, err := s.submitWorkflow(context.Background(), "http://localhost", wf, "alpine:latest")
+	workflow, err := s.actions.SubmitWorkflow(context.Background(), "http://localhost", wf, "alpine:latest")
 	if err != nil {
 		t.Fatalf("submit: %v", err)
 	}
@@ -45,7 +49,7 @@ func TestWorkflowRunNameBecomesDisplayTitle(t *testing.T) {
 			"deploy": {Steps: []StepDef{{Run: "true"}}},
 		},
 	}
-	run, err := s.submitWorkflow(context.Background(), "http://localhost", def, "alpine:latest", &WorkflowEventMeta{
+	run, err := s.actions.SubmitWorkflow(context.Background(), "http://localhost", def, "alpine:latest", &actions.WorkflowEventMeta{
 		EventName: "workflow_dispatch",
 		Ref:       "refs/heads/main",
 		Inputs:    map[string]string{"environment": "production"},
@@ -115,7 +119,7 @@ func TestWorkflowTwoJobsWithNeeds(t *testing.T) {
 		},
 	}
 
-	workflow, err := s.submitWorkflow(context.Background(), "http://localhost", wf, "alpine:latest")
+	workflow, err := s.actions.SubmitWorkflow(context.Background(), "http://localhost", wf, "alpine:latest")
 	if err != nil {
 		t.Fatalf("submit: %v", err)
 	}
@@ -133,7 +137,7 @@ func TestWorkflowTwoJobsWithNeeds(t *testing.T) {
 
 	// Simulate build completion — store serverURL in env for re-dispatch
 	workflow.Env = map[string]string{"__serverURL": "http://localhost", "__defaultImage": "alpine:latest"}
-	s.onJobCompleted(context.Background(), buildJob.JobID, "Succeeded")
+	s.actions.OnJobCompleted(context.Background(), buildJob.JobID, "Succeeded")
 
 	if testJob.Status != "queued" {
 		t.Errorf("test status after build = %q, want queued", testJob.Status)
@@ -152,7 +156,7 @@ func TestWorkflowDiamondDependency(t *testing.T) {
 		},
 	}
 
-	workflow, err := s.submitWorkflow(context.Background(), "http://localhost", wf, "alpine:latest")
+	workflow, err := s.actions.SubmitWorkflow(context.Background(), "http://localhost", wf, "alpine:latest")
 	if err != nil {
 		t.Fatalf("submit: %v", err)
 	}
@@ -171,7 +175,7 @@ func TestWorkflowDiamondDependency(t *testing.T) {
 	}
 
 	// Complete A → B and C should dispatch
-	s.onJobCompleted(context.Background(), workflow.Jobs["a"].JobID, "Succeeded")
+	s.actions.OnJobCompleted(context.Background(), workflow.Jobs["a"].JobID, "Succeeded")
 	if workflow.Jobs["b"].Status != "queued" {
 		t.Errorf("b after a = %q, want queued", workflow.Jobs["b"].Status)
 	}
@@ -183,13 +187,13 @@ func TestWorkflowDiamondDependency(t *testing.T) {
 	}
 
 	// Complete B → D still pending (C not done)
-	s.onJobCompleted(context.Background(), workflow.Jobs["b"].JobID, "Succeeded")
+	s.actions.OnJobCompleted(context.Background(), workflow.Jobs["b"].JobID, "Succeeded")
 	if workflow.Jobs["d"].Status != "pending" {
 		t.Errorf("d after b = %q, want pending", workflow.Jobs["d"].Status)
 	}
 
 	// Complete C → D dispatches, workflow complete
-	s.onJobCompleted(context.Background(), workflow.Jobs["c"].JobID, "Succeeded")
+	s.actions.OnJobCompleted(context.Background(), workflow.Jobs["c"].JobID, "Succeeded")
 	if workflow.Jobs["d"].Status != "queued" {
 		t.Errorf("d after c = %q, want queued", workflow.Jobs["d"].Status)
 	}
@@ -205,7 +209,7 @@ func TestWorkflowFailedJobSkipsDependents(t *testing.T) {
 		},
 	}
 
-	workflow, err := s.submitWorkflow(context.Background(), "http://localhost", wf, "alpine:latest")
+	workflow, err := s.actions.SubmitWorkflow(context.Background(), "http://localhost", wf, "alpine:latest")
 	if err != nil {
 		t.Fatalf("submit: %v", err)
 	}
@@ -213,7 +217,7 @@ func TestWorkflowFailedJobSkipsDependents(t *testing.T) {
 	workflow.Env = map[string]string{"__serverURL": "http://localhost", "__defaultImage": "alpine:latest"}
 
 	// Build fails
-	s.onJobCompleted(context.Background(), workflow.Jobs["build"].JobID, "Failed")
+	s.actions.OnJobCompleted(context.Background(), workflow.Jobs["build"].JobID, "Failed")
 
 	if workflow.Jobs["test"].Status != "skipped" {
 		t.Errorf("test status = %q, want skipped", workflow.Jobs["test"].Status)
@@ -248,7 +252,7 @@ func TestWorkflowNeedsContextPropagation(t *testing.T) {
 		},
 	}
 
-	ctx := buildNeedsContext(wf, wf.Jobs["deploy"])
+	ctx := actions.BuildNeedsContext(wf, wf.Jobs["deploy"])
 	dict, ok := ctx.(map[string]interface{})
 	if !ok {
 		t.Fatalf("needs context is not a dict: %T", ctx)
@@ -279,7 +283,7 @@ func TestWorkflowUsesStepReference(t *testing.T) {
 		},
 	}
 
-	workflow, err := s.submitWorkflow(context.Background(), "http://localhost", wf, "alpine:latest")
+	workflow, err := s.actions.SubmitWorkflow(context.Background(), "http://localhost", wf, "alpine:latest")
 	if err != nil {
 		t.Fatalf("submit: %v", err)
 	}
@@ -327,7 +331,7 @@ func TestValidateJobGraphCycle(t *testing.T) {
 			"b": {Needs: []string{"a"}},
 		},
 	}
-	err := validateJobGraph(wf)
+	err := actions.ValidateJobGraph(wf)
 	if err == nil {
 		t.Error("expected cycle error")
 	}
@@ -339,7 +343,7 @@ func TestValidateJobGraphUnknownDep(t *testing.T) {
 			"a": {Needs: []string{"nonexistent"}},
 		},
 	}
-	err := validateJobGraph(wf)
+	err := actions.ValidateJobGraph(wf)
 	if err == nil {
 		t.Error("expected unknown dependency error")
 	}
@@ -356,8 +360,8 @@ func TestNormalizeResult(t *testing.T) {
 		"custom":    "custom",
 	}
 	for input, expected := range tests {
-		if got := normalizeResult(input); got != expected {
-			t.Errorf("normalizeResult(%q) = %q, want %q", input, got, expected)
+		if got := actions.NormalizeResult(input); got != expected {
+			t.Errorf("actions.NormalizeResult(%q) = %q, want %q", input, got, expected)
 		}
 	}
 }
@@ -383,7 +387,7 @@ func TestBuildJobMessageWithServices(t *testing.T) {
 		},
 	}
 
-	workflow, err := s.submitWorkflow(context.Background(), "http://localhost", wf, "alpine:latest")
+	workflow, err := s.actions.SubmitWorkflow(context.Background(), "http://localhost", wf, "alpine:latest")
 	if err != nil {
 		t.Fatalf("submit: %v", err)
 	}
@@ -490,7 +494,7 @@ func TestBuildJobMessageNoServices(t *testing.T) {
 		},
 	}
 
-	workflow, err := s.submitWorkflow(context.Background(), "http://localhost", wf, "alpine:latest")
+	workflow, err := s.actions.SubmitWorkflow(context.Background(), "http://localhost", wf, "alpine:latest")
 	if err != nil {
 		t.Fatalf("submit: %v", err)
 	}
@@ -510,8 +514,9 @@ func TestBuildJobMessageNoServices(t *testing.T) {
 }
 
 func TestBuildJobMessageRepoLessGithubContextHasNoFakeRefSha(t *testing.T) {
-	req := &SubmitRequest{HostMode: true, Steps: []SubmitStep{{Run: "echo hello"}}}
-	msg := buildJobMessage("http://localhost", "job", "plan", "timeline", 1, req)
+	req := &actions.SubmitRequest{HostMode: true, Steps: []actions.SubmitStep{{Run: "echo hello"}}}
+	scopeID := uuid.New().String()
+	msg := actions.BuildJobMessage("http://localhost", "job", "plan", "timeline", 1, req, scopeID, makeJWT(scopeID, "actions"))
 	ctx := msg["contextData"].(map[string]interface{})
 	githubCtx := pipelineContextMap(t, ctx["github"])
 	if githubCtx["repository"] != "" || githubCtx["repository_owner"] != "" {
@@ -525,7 +530,7 @@ func TestBuildJobMessageRepoLessGithubContextHasNoFakeRefSha(t *testing.T) {
 func TestGithubContextMapRepoLessHasNoFakeRefSha(t *testing.T) {
 	s := newTestServer()
 	wf := &Workflow{Name: "operator", RunID: 7, RunNumber: 7}
-	ctx := s.githubContextMap(wf)
+	ctx := s.actions.GithubContextMap(wf)
 	if ctx["repository"] != "" || ctx["repository_owner"] != "" {
 		t.Fatalf("repo-less context repository = %q owner = %q", ctx["repository"], ctx["repository_owner"])
 	}
@@ -661,8 +666,8 @@ func TestWorkflowEnvironmentApprovalGate(t *testing.T) {
 				},
 			},
 		}
-		workflow, err := s.submitWorkflow(context.Background(), "http://localhost", wf, "alpine:latest",
-			&WorkflowEventMeta{EventName: "push", Repo: repo.FullName, Ref: "refs/heads/main"})
+		workflow, err := s.actions.SubmitWorkflow(context.Background(), "http://localhost", wf, "alpine:latest",
+			&actions.WorkflowEventMeta{EventName: "push", Repo: repo.FullName, Ref: "refs/heads/main"})
 		if err != nil {
 			t.Fatalf("submit: %v", err)
 		}
@@ -681,7 +686,7 @@ func TestWorkflowEnvironmentApprovalGate(t *testing.T) {
 	t.Run("approve releases the job", func(t *testing.T) {
 		s, _, workflow, env := mkServer(t)
 		admin := s.store.Users[1]
-		s.applyDeploymentReview(context.Background(), workflow, []int{env.ID}, "approved", "ship it", admin)
+		s.actions.ApplyDeploymentReview(context.Background(), workflow, []int{env.ID}, "approved", "ship it", admin)
 
 		if workflow.Status != WorkflowStatusRunning && workflow.Status != WorkflowStatusCompleted {
 			t.Errorf("workflow status = %q, want running", workflow.Status)
@@ -700,7 +705,7 @@ func TestWorkflowEnvironmentApprovalGate(t *testing.T) {
 	t.Run("reject fails the run", func(t *testing.T) {
 		s, _, workflow, env := mkServer(t)
 		admin := s.store.Users[1]
-		s.applyDeploymentReview(context.Background(), workflow, []int{env.ID}, "rejected", "not today", admin)
+		s.actions.ApplyDeploymentReview(context.Background(), workflow, []int{env.ID}, "rejected", "not today", admin)
 
 		if workflow.Status != WorkflowStatusCompleted {
 			t.Errorf("workflow status = %q, want completed", workflow.Status)
@@ -726,8 +731,8 @@ func TestWorkflowEnvironmentApprovalGate(t *testing.T) {
 				"release": {Environment: "staging", Steps: []StepDef{{Run: "echo x"}}},
 			},
 		}
-		workflow, err := s.submitWorkflow(context.Background(), "http://localhost", wf, "alpine:latest",
-			&WorkflowEventMeta{EventName: "push", Repo: repo.FullName, Ref: "refs/heads/main"})
+		workflow, err := s.actions.SubmitWorkflow(context.Background(), "http://localhost", wf, "alpine:latest",
+			&actions.WorkflowEventMeta{EventName: "push", Repo: repo.FullName, Ref: "refs/heads/main"})
 		if err != nil {
 			t.Fatalf("submit: %v", err)
 		}

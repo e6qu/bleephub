@@ -3,6 +3,8 @@ package bleephub
 import (
 	"context"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/actions"
 )
 
 func concurrentJobWorkflow(group string, cancel bool) *WorkflowDef {
@@ -28,12 +30,12 @@ func concurrentJobWorkflow(group string, cancel bool) *WorkflowDef {
 func TestJobConcurrencyQueuesAndReleasesAcrossWorkflowRuns(t *testing.T) {
 	s := newTestServer()
 	testRepo(t, s, "admin", "concurrency-repo", false)
-	meta := &WorkflowEventMeta{Repo: "admin/concurrency-repo", Ref: "refs/heads/main", Sha: "abc"}
-	first, err := s.submitWorkflow(context.Background(), "http://localhost", concurrentJobWorkflow("deploy", false), "", meta)
+	meta := &actions.WorkflowEventMeta{Repo: "admin/concurrency-repo", Ref: "refs/heads/main", Sha: "abc"}
+	first, err := s.actions.SubmitWorkflow(context.Background(), "http://localhost", concurrentJobWorkflow("deploy", false), "", meta)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := s.submitWorkflow(context.Background(), "http://localhost", concurrentJobWorkflow("DEPLOY", false), "", meta)
+	second, err := s.actions.SubmitWorkflow(context.Background(), "http://localhost", concurrentJobWorkflow("DEPLOY", false), "", meta)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +46,7 @@ func TestJobConcurrencyQueuesAndReleasesAcrossWorkflowRuns(t *testing.T) {
 		t.Fatalf("second job = %q, want pending", second.Jobs["build"].Status)
 	}
 
-	s.onJobCompleted(context.Background(), first.Jobs["build"].JobID, "Succeeded")
+	s.actions.OnJobCompleted(context.Background(), first.Jobs["build"].JobID, "Succeeded")
 	if second.Jobs["build"].Status != JobStatusQueued {
 		t.Fatalf("second job after release = %q, want queued", second.Jobs["build"].Status)
 	}
@@ -53,12 +55,12 @@ func TestJobConcurrencyQueuesAndReleasesAcrossWorkflowRuns(t *testing.T) {
 func TestJobConcurrencyCancelInProgressCancelsHolder(t *testing.T) {
 	s := newTestServer()
 	testRepo(t, s, "admin", "concurrency-cancel", false)
-	meta := &WorkflowEventMeta{Repo: "admin/concurrency-cancel", Ref: "refs/heads/main", Sha: "def"}
-	first, err := s.submitWorkflow(context.Background(), "http://localhost", concurrentJobWorkflow("deploy", false), "", meta)
+	meta := &actions.WorkflowEventMeta{Repo: "admin/concurrency-cancel", Ref: "refs/heads/main", Sha: "def"}
+	first, err := s.actions.SubmitWorkflow(context.Background(), "http://localhost", concurrentJobWorkflow("deploy", false), "", meta)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := s.submitWorkflow(context.Background(), "http://localhost", concurrentJobWorkflow("deploy", true), "", meta)
+	second, err := s.actions.SubmitWorkflow(context.Background(), "http://localhost", concurrentJobWorkflow("deploy", true), "", meta)
 	if err != nil {
 		t.Fatal(err)
 	}

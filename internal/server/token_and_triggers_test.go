@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v5/plumbing"
+
+	"github.com/e6qu/bleephub/internal/actions"
 )
 
 // --- Presented credentials that do not verify ---
@@ -319,8 +321,8 @@ jobs:
 	if stor == nil {
 		t.Fatal("no git storage for the fixture repository")
 	}
-	mainSha := resolveRefSha(stor, "refs/heads/main")
-	if mainSha == zeroCommitSha {
+	mainSha := actions.ResolveRefSha(stor, "refs/heads/main")
+	if mainSha == actions.ZeroCommitSha {
 		t.Fatal("fixture main branch does not resolve")
 	}
 	if err := stor.SetReference(plumbing.NewHashReference(
@@ -440,7 +442,7 @@ jobs:
 	job.LockedUntil = fixedTestTime.Add(-time.Minute)
 	s.store.Mu.Unlock()
 
-	s.checkJobTimeouts(wf)
+	s.actions.CheckJobTimeouts(wf)
 
 	if s.pendingMessageFor(jobID) == nil {
 		t.Fatal("an expired lease left the job with the runner that vanished; it was never requeued")
@@ -504,7 +506,7 @@ jobs:
 	job.LockedUntil = fixedTestTime.Add(time.Hour)
 	s.store.Mu.Unlock()
 
-	s.checkJobTimeouts(wf)
+	s.actions.CheckJobTimeouts(wf)
 
 	if s.pendingMessageFor(jobID) != nil {
 		t.Fatal("a live lease was reclaimed; the job would run twice")

@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/actions"
 )
 
 // Actions extras gh CLI / Octokit hit.
@@ -239,7 +241,7 @@ func (s *Server) handleRerunFailedJobs(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnprocessableEntity, "parse cached YAML: "+perr.Error())
 		return
 	}
-	def = expandMatrixJobs(def)
+	def = actions.ExpandMatrixJobs(def)
 	if def.Env == nil {
 		def.Env = map[string]string{}
 	}
@@ -670,7 +672,7 @@ func (s *Server) handleReviewPendingDeployments(w http.ResponseWriter, r *http.R
 	}
 
 	reviewer := ghUserFromContext(r.Context())
-	names := s.applyDeploymentReview(r.Context(), wf, body.EnvironmentIDs, body.State, body.Comment, reviewer)
+	names := s.actions.ApplyDeploymentReview(r.Context(), wf, body.EnvironmentIDs, body.State, body.Comment, reviewer)
 
 	deployments := []map[string]interface{}{}
 	if body.State == "approved" {

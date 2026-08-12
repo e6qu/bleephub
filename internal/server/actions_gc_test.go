@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/actions"
 )
 
 // --- ACT-044: job-state GC + hot-path indexes ---
@@ -28,7 +30,7 @@ func gcQueueTestJob(t *testing.T, s *Server, jobID, repo string) *Job {
 	s.store.Jobs[jobID] = job
 	s.store.RegisterDispatchedJobLocked(job, msg, repo)
 	s.store.Mu.Unlock()
-	s.queueJobMessage(&TaskAgentMessage{MessageID: 1, MessageType: "PipelineAgentJobRequest", Body: message, JobID: jobID})
+	s.actions.QueueJobMessage(&TaskAgentMessage{MessageID: 1, MessageType: "PipelineAgentJobRequest", Body: message, JobID: jobID})
 	return job
 }
 
@@ -48,7 +50,7 @@ func TestUsedEphemeralAgentStaysDisqualifiedAfterJobGC(t *testing.T) {
 	session := &Session{SessionID: "gc-eph", Agent: ephemeral, MsgCh: make(chan *TaskAgentMessage, 1)}
 
 	job := gcQueueTestJob(t, s, "gc-eph-job", "octo/a")
-	if msg := s.pullPendingMessage(session, runnerScope{Repo: "octo/a"}); msg == nil {
+	if msg := s.actions.PullPendingMessage(session, runnerScope{Repo: "octo/a"}); msg == nil {
 		t.Fatal("fresh ephemeral runner was not handed its first job")
 	}
 	if !ephemeral.EverAssigned {
@@ -59,7 +61,7 @@ func TestUsedEphemeralAgentStaysDisqualifiedAfterJobGC(t *testing.T) {
 	s.store.Mu.Lock()
 	s.store.MarkJobCompletedLocked(job)
 	s.store.Mu.Unlock()
-	if swept := s.sweepRetiredActionsJobs(fixedTestTime.Add(completedJobRetention + time.Minute)); swept != 1 {
+	if swept := s.actions.SweepRetiredActionsJobs(fixedTestTime.Add(runnerTokenTTL + time.Minute)); swept != 1 {
 		t.Fatalf("sweep removed %d jobs, want 1", swept)
 	}
 	s.store.Mu.RLock()
@@ -72,7 +74,7 @@ func TestUsedEphemeralAgentStaysDisqualifiedAfterJobGC(t *testing.T) {
 	// With the stub gone, the flag alone must keep the used ephemeral runner
 	// away from the next job.
 	gcQueueTestJob(t, s, "gc-eph-second", "octo/a")
-	if msg := s.pullPendingMessage(session, runnerScope{Repo: "octo/a"}); msg != nil {
+	if msg := s.actions.PullPendingMessage(session, runnerScope{Repo: "octo/a"}); msg != nil {
 		t.Fatal("used ephemeral runner was handed a second job after its completed job was garbage-collected")
 	}
 
@@ -80,17 +82,17 @@ func TestUsedEphemeralAgentStaysDisqualifiedAfterJobGC(t *testing.T) {
 	// runner still takes the next one.
 	_, resident := testAgentSession(t, s, runnerScope{Repo: "octo/a"})
 	resSession := &Session{SessionID: "gc-res", Agent: resident, MsgCh: make(chan *TaskAgentMessage, 1)}
-	if msg := s.pullPendingMessage(resSession, runnerScope{Repo: "octo/a"}); msg == nil {
+	if msg := s.actions.PullPendingMessage(resSession, runnerScope{Repo: "octo/a"}); msg == nil {
 		t.Fatal("resident runner did not take the queued job")
 	}
 	s.store.Mu.Lock()
 	s.store.MarkJobCompletedLocked(s.store.Jobs["gc-eph-second"])
 	s.store.Mu.Unlock()
-	if swept := s.sweepRetiredActionsJobs(fixedTestTime.Add(completedJobRetention + time.Minute)); swept != 1 {
+	if swept := s.actions.SweepRetiredActionsJobs(fixedTestTime.Add(runnerTokenTTL + time.Minute)); swept != 1 {
 		t.Fatalf("second sweep removed %d jobs, want 1", swept)
 	}
 	gcQueueTestJob(t, s, "gc-res-second", "octo/a")
-	if msg := s.pullPendingMessage(resSession, runnerScope{Repo: "octo/a"}); msg == nil {
+	if msg := s.actions.PullPendingMessage(resSession, runnerScope{Repo: "octo/a"}); msg == nil {
 		t.Fatal("resident runner was refused its second job after GC of the first")
 	}
 }
@@ -108,8 +110,8 @@ func TestLateFinishJobAfterMessageGCAuthenticates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse workflow: %v", err)
 	}
-	wf, err := s.submitWorkflow(context.Background(), "http://localhost", def, "",
-		&WorkflowEventMeta{EventName: "push", Repo: "octo/gc-late", Ref: "refs/heads/main"})
+	wf, err := s.actions.SubmitWorkflow(context.Background(), "http://localhost", def, "",
+		&actions.WorkflowEventMeta{EventName: "push", Repo: "octo/gc-late", Ref: "refs/heads/main"})
 	if err != nil {
 		t.Fatalf("submit: %v", err)
 	}
@@ -128,7 +130,7 @@ func TestLateFinishJobAfterMessageGCAuthenticates(t *testing.T) {
 
 	// The run finalizes (first completion report); the finalization GC must
 	// clear the secret-bearing message.
-	s.onJobCompleted(context.Background(), wfJob.JobID, "Succeeded")
+	s.actions.OnJobCompleted(context.Background(), wfJob.JobID, "Succeeded")
 	s.store.Mu.RLock()
 	message := job.Message
 	completedAt := job.CompletedAt
@@ -176,7 +178,7 @@ func TestActionsJanitorSweepsRetiredJobState(t *testing.T) {
 	s.store.Mu.Unlock()
 	s.artifactStore.ClaimLog(77, retired.PlanID)
 
-	if swept := s.sweepRetiredActionsJobs(fixedTestTime.Add(completedJobRetention + time.Minute)); swept != 1 {
+	if swept := s.actions.SweepRetiredActionsJobs(fixedTestTime.Add(runnerTokenTTL + time.Minute)); swept != 1 {
 		t.Fatalf("sweep removed %d jobs, want 1 (live job must be kept)", swept)
 	}
 

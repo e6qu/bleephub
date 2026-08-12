@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/actions"
 )
 
 func (s *Server) registerGHActionsRunControlRoutes() {
@@ -85,11 +87,11 @@ func (s *Server) handleApproveWorkflowRun(w http.ResponseWriter, r *http.Request
 	s.store.Mu.Unlock()
 
 	if activeWf != nil && wf.CancelInProgress {
-		s.cancelWorkflow(activeWf)
+		s.actions.CancelWorkflow(activeWf)
 	}
-	s.startTimeoutWatcher(wf)
+	s.actions.StartTimeoutWatcher(wf)
 	if serverURL != "" {
-		s.dispatchReadyJobs(r.Context(), wf, serverURL, defaultImage)
+		s.actions.DispatchReadyJobs(r.Context(), wf, serverURL, defaultImage)
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{})
 }
@@ -141,7 +143,7 @@ func (s *Server) forceCancelWorkflow(wf *Workflow) {
 		wfJob.Result = ResultCancelled
 		wfJob.CompletedAt = time.Now()
 		cancelledJobIDs[wfJob.JobID] = true
-		s.queueActionsEvent(evJobCompleted, wf, wfJob)
+		s.actions.QueueEvent(actions.EvJobCompleted, wf, wfJob)
 	}
 	if len(cancelledJobIDs) > 0 {
 		kept := s.store.PendingMessages[:0:0]
@@ -156,14 +158,14 @@ func (s *Server) forceCancelWorkflow(wf *Workflow) {
 	s.store.Mu.Unlock()
 
 	for _, jobID := range runningJobIDs {
-		s.sendJobCancellation(jobID)
+		s.actions.SendJobCancellation(jobID)
 	}
 	s.logger.Info().
 		Str("workflow_id", wf.ID).
 		Str("workflow_name", wf.Name).
 		Int("signalled_running", len(runningJobIDs)).
 		Msg("workflow force-cancellation requested")
-	s.finalizeWorkflowIfDone(wf)
+	s.actions.FinalizeWorkflowIfDone(wf)
 }
 
 // handleRerunWorkflowJob — POST .../actions/jobs/{job_id}/rerun.
@@ -209,7 +211,7 @@ func (s *Server) handleRerunWorkflowJob(w http.ResponseWriter, r *http.Request) 
 		writeGHError(w, http.StatusUnprocessableEntity, "parse cached YAML: "+perr.Error())
 		return
 	}
-	def = expandMatrixJobs(def)
+	def = actions.ExpandMatrixJobs(def)
 	if def.Env == nil {
 		def.Env = map[string]string{}
 	}
@@ -331,7 +333,7 @@ func (s *Server) handleReviewCustomDeploymentProtectionRule(w http.ResponseWrite
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	s.applyDeploymentReview(r.Context(), wf, []int{envID}, body.State, body.Comment, reviewer)
+	s.actions.ApplyDeploymentReview(r.Context(), wf, []int{envID}, body.State, body.Comment, reviewer)
 	w.WriteHeader(http.StatusNoContent)
 }
 

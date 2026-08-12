@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/e6qu/bleephub/internal/actions"
 )
 
 func (s *isolatedServer) ensureTestOrgRepo(t *testing.T, repo string) {
@@ -151,7 +153,7 @@ func TestForkPRApprovalGate_EngineHoldsForkRuns(t *testing.T) {
 			"build": {RunsOn: "ubuntu-latest", Steps: []StepDef{{Run: "echo hi"}}},
 		},
 	}
-	wf, err := s.submitWorkflow(t.Context(), "http://127.0.0.1:0", def, "alpine:latest", &WorkflowEventMeta{
+	wf, err := s.actions.SubmitWorkflow(t.Context(), "http://127.0.0.1:0", def, "alpine:latest", &actions.WorkflowEventMeta{
 		EventName: "pull_request",
 		Repo:      repo,
 		Payload:   forkPayload,
@@ -180,7 +182,7 @@ func TestForkPRApprovalGate_EngineHoldsForkRuns(t *testing.T) {
 			"build": {RunsOn: "ubuntu-latest", Steps: []StepDef{{Run: "echo hi"}}},
 		},
 	}
-	wf2, err := s.submitWorkflow(t.Context(), "http://127.0.0.1:0", def2, "alpine:latest", &WorkflowEventMeta{
+	wf2, err := s.actions.SubmitWorkflow(t.Context(), "http://127.0.0.1:0", def2, "alpine:latest", &actions.WorkflowEventMeta{
 		EventName: "pull_request",
 		Repo:      repo,
 		Payload:   samePayload,
@@ -191,7 +193,7 @@ func TestForkPRApprovalGate_EngineHoldsForkRuns(t *testing.T) {
 	if wf2.Status == WorkflowStatusActionRequired {
 		t.Fatalf("same-repo PR run gated: %q", wf2.Status)
 	}
-	s.cancelWorkflow(wf2)
+	s.actions.CancelWorkflow(wf2)
 }
 
 func TestRerunWorkflowJob_NewAttemptCarriesOtherJobs(t *testing.T) {

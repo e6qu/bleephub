@@ -179,7 +179,7 @@ func TestOnJobCompletedIdempotent(t *testing.T) {
 	jobID := job.JobID
 	s.store.Mu.Unlock()
 
-	s.onJobCompleted(context.Background(), jobID, "Succeeded")
+	s.actions.OnJobCompleted(context.Background(), jobID, "Succeeded")
 	s.store.Mu.RLock()
 	firstResult := job.Result
 	firstCompleted := job.CompletedAt
@@ -189,7 +189,7 @@ func TestOnJobCompletedIdempotent(t *testing.T) {
 	}
 
 	// Duplicate completion with a DIFFERENT result must be ignored.
-	s.onJobCompleted(context.Background(), jobID, "Failed")
+	s.actions.OnJobCompleted(context.Background(), jobID, "Failed")
 	s.store.Mu.RLock()
 	secondResult := job.Result
 	secondCompleted := job.CompletedAt

@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/e6qu/bleephub/internal/actions"
 )
 
 // --- helpers ---
@@ -448,13 +450,13 @@ func TestBrokerWithholdsJobMessagesOutsideTheRunnerScope(t *testing.T) {
 
 	_, outsider := testAgentSession(t, s, runnerScope{Repo: "octo/other-repo"})
 	outsiderSession := &Session{SessionID: "s-out", Agent: outsider, MsgCh: make(chan *TaskAgentMessage, 1)}
-	if got := s.pullPendingMessage(outsiderSession, runnerScope{Repo: "octo/other-repo"}); got != nil {
+	if got := s.actions.PullPendingMessage(outsiderSession, runnerScope{Repo: "octo/other-repo"}); got != nil {
 		t.Fatal("a runner registered for another repository received the job message")
 	}
 
 	_, owner := testAgentSession(t, s, runnerScope{Org: "octo"})
 	ownerSession := &Session{SessionID: "s-own", Agent: owner, MsgCh: make(chan *TaskAgentMessage, 1)}
-	if got := s.pullPendingMessage(ownerSession, runnerScope{Org: "octo"}); got == nil {
+	if got := s.actions.PullPendingMessage(ownerSession, runnerScope{Org: "octo"}); got == nil {
 		t.Fatal("an org-scoped runner did not receive its organization's job message")
 	}
 }
@@ -472,8 +474,8 @@ func TestJobSecretsEntitlement(t *testing.T) {
 		{runnerScope{}, "octo/a", false},
 		{runnerScope{Repo: "octo/a"}, "", true},
 	} {
-		if got := jobSecretsEntitled(tc.scope, tc.repo); got != tc.want {
-			t.Errorf("jobSecretsEntitled(%+v, %q) = %v, want %v", tc.scope, tc.repo, got, tc.want)
+		if got := actions.JobSecretsEntitled(tc.scope, tc.repo); got != tc.want {
+			t.Errorf("actions.JobSecretsEntitled(%+v, %q) = %v, want %v", tc.scope, tc.repo, got, tc.want)
 		}
 	}
 }
@@ -706,7 +708,7 @@ func TestFilterPatternCacheConcurrentCompilation(t *testing.T) {
 			for round := 0; round < len(patterns); round++ {
 				i := (worker + round) % len(patterns)
 				value := fmt.Sprintf("src/x/pkg-%d/main.go", i)
-				if !filterPatternMatch(patterns[i], value) {
+				if !actions.FilterPatternMatch(patterns[i], value) {
 					t.Errorf("pattern %q did not match %q", patterns[i], value)
 				}
 			}

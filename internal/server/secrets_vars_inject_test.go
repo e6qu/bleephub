@@ -55,7 +55,7 @@ func TestCollectOrgVisibilityMatrix(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.repo.FullName, func(t *testing.T) {
-			secrets, vars, err := s.CollectJobSecretsAndVars(tc.repo.FullName, "")
+			secrets, vars, err := s.actions.CollectJobSecretsAndVars(tc.repo.FullName, "")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -108,7 +108,7 @@ func TestCollectPrecedence(t *testing.T) {
 	mustStatus(t, s.putSealedSecret(t, "/api/v3/repos/"+repo.FullName+"/environments/production/secrets/ONLY_ENV", "only-env"), 201, "only-env secret")
 
 	// With the environment: env wins, all scopes contribute.
-	secrets, vars, err := s.CollectJobSecretsAndVars(repo.FullName, "production")
+	secrets, vars, err := s.actions.CollectJobSecretsAndVars(repo.FullName, "production")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +125,7 @@ func TestCollectPrecedence(t *testing.T) {
 	}
 
 	// Without the environment: repo wins, env-only items absent.
-	secrets, vars, err = s.CollectJobSecretsAndVars(repo.FullName, "")
+	secrets, vars, err = s.actions.CollectJobSecretsAndVars(repo.FullName, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +145,7 @@ func TestCollectPrecedence(t *testing.T) {
 func TestCollectUnknownRepo(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
-	if secrets, vars, err := s.CollectJobSecretsAndVars("ghost/ghost", ""); err == nil {
+	if secrets, vars, err := s.actions.CollectJobSecretsAndVars("ghost/ghost", ""); err == nil {
 		t.Fatalf("CollectJobSecretsAndVars returned %v/%v without an error for an unknown repository", secrets, vars)
 	}
 }
@@ -166,7 +166,7 @@ func TestBuildJobMessageRejectsUnknownRepoSecretsScope(t *testing.T) {
 	}
 	wf.Jobs[job.Key] = job
 
-	if msg, err := s.buildJobMessageFromDef("http://localhost", wf, job, "plan", "timeline", 1, ""); err == nil {
+	if msg, err := s.actions.BuildJobMessageFromDef("http://localhost", wf, job, "plan", "timeline", 1, ""); err == nil {
 		t.Fatalf("buildJobMessageFromDef returned message %v without an error for an unknown repository", msg)
 	}
 }

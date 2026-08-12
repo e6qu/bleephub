@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/actions"
 	"github.com/e6qu/bleephub/internal/server/testutil"
 )
 
@@ -379,7 +380,7 @@ func seedCacheRunJob(t *testing.T, s *Server, repo string) string {
 			"scopeIdentifier": scopeID,
 		},
 		"contextData": map[string]interface{}{
-			"github": dictContextData("repository", repo),
+			"github": actions.DictContextData("repository", repo),
 		},
 	}
 	msgJSON, err := json.Marshal(msg)

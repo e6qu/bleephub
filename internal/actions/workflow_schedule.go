@@ -1,4 +1,4 @@
-package bleephub
+package actions
 
 import (
 	"context"
@@ -30,7 +30,7 @@ const maxScheduleCatchup = 10 * time.Minute
 // startScheduleDispatcher launches the minute-aligned loop that fires
 // `on: schedule:` workflows, the server-side clock real GitHub runs for
 // cron triggers.
-func (s *Server) startScheduleDispatcher(ctx context.Context) {
+func (s *Engine) startScheduleDispatcher(ctx context.Context) {
 	s.goBackground(func() {
 		// Seed the cursor at the current minute so a fresh process does not
 		// replay history; catch-up only covers minutes skipped by an overrun
@@ -47,41 +47,22 @@ func (s *Server) startScheduleDispatcher(ctx context.Context) {
 			case <-timer.C:
 			}
 			tickTime := s.currentTime()
-			if err := s.store.ReapExpiredLoginSessions(tickTime); err != nil {
-				s.logger.Error().Err(err).Msg("expired login-session reap failed")
+			// Injected per-tick hooks: the server rides its login-session
+			// reaping and org-invitation reconciliation (STORE-034) on this
+			// minute clock rather than running a second one.
+			for _, hook := range s.onScheduleTick {
+				hook(tickTime)
 			}
-			s.reconcileOrgInvitationsSafely(tickTime)
-			lastFired = s.fireSchedulesThrough(lastFired, tickTime)
+			lastFired = s.FireSchedulesThrough(lastFired, tickTime)
 		}
 	})
 }
 
-// reconcileOrgInvitationsSafely runs the org-invitation state machine on a
-// background tick so a GET never has to (STORE-034). A durable write failure
-// panics through the Must* helpers; the background goroutine has no recover
-// middleware, so catch it here, reload durable state, and continue rather than
-// letting a transient persist error kill the dispatcher.
-func (s *Server) reconcileOrgInvitationsSafely(now time.Time) {
-	defer func() {
-		if r := recover(); r != nil {
-			if pf, ok := r.(*persistenceFailure); ok {
-				s.logger.Error().Err(pf).Msg("org-invitation reconcile persist failed; reloading")
-				if err := s.store.ReloadFromPersistence(); err != nil {
-					s.logger.Error().Err(err).Msg("reload after org-invitation reconcile failure")
-				}
-				return
-			}
-			panic(r)
-		}
-	}()
-	s.store.ReconcileAllOrgInvitations(now)
-}
-
-// fireSchedulesThrough replays every whole minute in (lastFired, now] so a scan
+// FireSchedulesThrough replays every whole minute in (lastFired, now] so a scan
 // that overran a minute boundary does not drop the minutes it skipped. Catch-up
 // is bounded by maxScheduleCatchup, and the returned cursor (the last minute
 // processed) is threaded into the next tick.
-func (s *Server) fireSchedulesThrough(lastFired, now time.Time) time.Time {
+func (s *Engine) FireSchedulesThrough(lastFired, now time.Time) time.Time {
 	current := now.Truncate(time.Minute)
 	if current.Before(lastFired) { // clock skew: never move the cursor backwards
 		return lastFired
@@ -91,7 +72,7 @@ func (s *Server) fireSchedulesThrough(lastFired, now time.Time) time.Time {
 		minute = earliest
 	}
 	for ; !minute.After(current); minute = minute.Add(time.Minute) {
-		s.fireDueSchedules(minute)
+		s.FireDueSchedules(minute)
 	}
 	return current
 }
@@ -174,9 +155,9 @@ func (si *scheduleIndex) retain(live map[string]struct{}) {
 // definitionRef, validating each cron entry once (invalid crons and
 // sub-five-minute intervals are logged and dropped here, not re-warned every
 // minute).
-func (s *Server) buildScheduleIndex(repoKey, definitionRef string, stor gitStorage.Storer) []indexedWorkflowSchedule {
+func (s *Engine) buildScheduleIndex(repoKey, definitionRef string, stor gitStorage.Storer) []indexedWorkflowSchedule {
 	var out []indexedWorkflowSchedule
-	for name, content := range listWorkflowFilesAtRef(stor, definitionRef) {
+	for name, content := range ListWorkflowFilesAtRef(stor, definitionRef) {
 		on, err := ParseWorkflowOn(content)
 		if err != nil {
 			s.logger.Warn().Err(err).Str("repo", repoKey).Str("file", name).Msg("invalid scheduled workflow")
@@ -207,10 +188,10 @@ func (s *Server) buildScheduleIndex(repoKey, definitionRef string, stor gitStora
 	return out
 }
 
-// fireDueSchedules triggers every schedule-bearing workflow from each
+// FireDueSchedules triggers every schedule-bearing workflow from each
 // repository's explicit default branch whose cron matches the given minute.
 // Separated from the ticker so tests drive it with a fixed clock.
-func (s *Server) fireDueSchedules(now time.Time) {
+func (s *Engine) FireDueSchedules(now time.Time) {
 	minute := now.Truncate(time.Minute)
 	if err := s.store.RefreshFromPersistenceIfStale(); err != nil {
 		s.logger.Error().Err(err).Msg("scheduled workflow scan could not refresh shared state")
@@ -230,7 +211,7 @@ func (s *Server) fireDueSchedules(now time.Time) {
 		if repo == nil {
 			continue
 		}
-		parts := splitRepoKeyParts(repoKey)
+		parts := SplitRepoKeyParts(repoKey)
 		stor := s.store.GetGitStorage(parts[0], parts[1])
 		if stor == nil {
 			continue
@@ -240,7 +221,7 @@ func (s *Server) fireDueSchedules(now time.Time) {
 			defaultBranch = "main"
 		}
 		definitionRef := plumbing.NewBranchReferenceName(defaultBranch).String()
-		tipSHA := resolveRefSha(stor, definitionRef)
+		tipSHA := ResolveRefSha(stor, definitionRef)
 		live[repoKey] = struct{}{}
 
 		workflows := s.scheduleIndex.lookup(repoKey, defaultBranch, tipSHA, func() []indexedWorkflowSchedule {
@@ -251,7 +232,7 @@ func (s *Server) fireDueSchedules(now time.Time) {
 				s.store.SetWorkflowFileState(repoKey, ".github/workflows/"+wf.fileName, "disabled_inactivity")
 				continue
 			}
-			if s.workflowFileDisabled(repoKey, wf.fileName) {
+			if s.WorkflowFileDisabled(repoKey, wf.fileName) {
 				continue
 			}
 			for _, entry := range wf.entries {
@@ -312,7 +293,7 @@ func scheduleInactive(repo *Repo, now time.Time) bool {
 
 // markScheduleFired records a firing; false means this (key, minute)
 // already fired.
-func (s *Server) markScheduleFired(key string, minute time.Time) (bool, error) {
+func (s *Engine) markScheduleFired(key string, minute time.Time) (bool, error) {
 	s.store.Mu.RLock()
 	persist := s.store.Persist
 	s.store.Mu.RUnlock()
@@ -333,7 +314,7 @@ func (s *Server) markScheduleFired(key string, minute time.Time) (bool, error) {
 
 // releaseScheduleFiring undoes a claim taken by markScheduleFired when the
 // firing it guarded failed, so the occurrence can be retried rather than lost.
-func (s *Server) releaseScheduleFiring(key string, minute time.Time) error {
+func (s *Engine) releaseScheduleFiring(key string, minute time.Time) error {
 	s.store.Mu.RLock()
 	persist := s.store.Persist
 	s.store.Mu.RUnlock()
@@ -355,7 +336,7 @@ func (s *Server) releaseScheduleFiring(key string, minute time.Time) error {
 // whose claim the caller should release for retry. Permanent conditions (repo
 // or git storage gone, ref that does not resolve) are logged and swallowed —
 // releasing their claim would only thrash.
-func (s *Server) fireScheduledWorkflow(repoKey, fileName string, content []byte, cron string) error {
+func (s *Engine) fireScheduledWorkflow(repoKey, fileName string, content []byte, cron string) error {
 	repo := s.store.GetRepoByFullName(repoKey)
 	if repo == nil {
 		return nil
@@ -366,20 +347,20 @@ func (s *Server) fireScheduledWorkflow(repoKey, fileName string, content []byte,
 	}
 	ref := "refs/heads/" + defaultBranch
 
-	parts := splitRepoKeyParts(repoKey)
+	parts := SplitRepoKeyParts(repoKey)
 	stor := s.store.GetGitStorage(parts[0], parts[1])
 	if stor == nil {
 		// A concurrent persistence refresh can drop the storer between the
-		// scan and here; resolveRefSha would dereference a nil storer.
+		// scan and here; ResolveRefSha would dereference a nil storer.
 		s.logger.Error().Str("repo", repoKey).Str("cron", cron).Msg("scheduled workflow rejected because git storage is unavailable")
 		return nil
 	}
 
 	payload := map[string]interface{}{
 		"schedule":   cron,
-		"repository": repoPayload(repo),
+		"repository": s.repoEventPayload(repo),
 	}
-	sha := resolveRefSha(stor, ref)
+	sha := ResolveRefSha(stor, ref)
 	if sha == "0000000000000000000000000000000000000000" {
 		s.logger.Error().
 			Str("repo", repoKey).
@@ -395,7 +376,7 @@ func (s *Server) fireScheduledWorkflow(repoKey, fileName string, content []byte,
 		Repo:      repoKey,
 		Payload:   payload,
 	}
-	workflow, err := s.submitTriggeredWorkflow(fileName, content, meta)
+	workflow, err := s.SubmitTriggeredWorkflow(fileName, content, meta)
 	if err != nil {
 		s.logger.Error().Err(err).Str("file", fileName).Str("cron", cron).Msg("failed to fire scheduled workflow")
 		return err

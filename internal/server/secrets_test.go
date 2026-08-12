@@ -52,7 +52,7 @@ func TestSecretsSealedRoundTrip(t *testing.T) {
 
 	mustStatus(t, s.putSealedSecret(t, path, "v1-plain"), 201, "create")
 
-	secrets, _, err := s.CollectJobSecretsAndVars(repo.FullName, "")
+	secrets, _, err := s.actions.CollectJobSecretsAndVars(repo.FullName, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func TestSecretsSealedRoundTrip(t *testing.T) {
 
 	mustStatus(t, s.putSealedSecret(t, path, "v2-plain"), 204, "update")
 
-	secrets, _, err = s.CollectJobSecretsAndVars(repo.FullName, "")
+	secrets, _, err = s.actions.CollectJobSecretsAndVars(repo.FullName, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -513,7 +513,7 @@ func TestEnvSecretsLifecycle(t *testing.T) {
 		t.Errorf("name = %v", one["name"])
 	}
 
-	secrets, _, err := s.CollectJobSecretsAndVars(repo.FullName, "production")
+	secrets, _, err := s.actions.CollectJobSecretsAndVars(repo.FullName, "production")
 	if err != nil {
 		t.Fatal(err)
 	}

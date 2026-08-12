@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/actions"
 )
 
 func TestWorkflowRunNumbersArePerWorkflowAndRerunsReuseNumber(t *testing.T) {
@@ -15,22 +17,22 @@ func TestWorkflowRunNumbersArePerWorkflowAndRerunsReuseNumber(t *testing.T) {
 			"build": {Steps: []StepDef{{Run: "echo ok"}}},
 		}}
 	}
-	first, err := s.submitWorkflow(t.Context(), "http://localhost", definition("ci"), "")
+	first, err := s.actions.SubmitWorkflow(t.Context(), "http://localhost", definition("ci"), "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := s.submitWorkflow(t.Context(), "http://localhost", definition("ci"), "")
+	second, err := s.actions.SubmitWorkflow(t.Context(), "http://localhost", definition("ci"), "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	other, err := s.submitWorkflow(t.Context(), "http://localhost", definition("deploy"), "")
+	other, err := s.actions.SubmitWorkflow(t.Context(), "http://localhost", definition("deploy"), "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if first.RunNumber != 1 || second.RunNumber != 2 || other.RunNumber != 1 {
 		t.Fatalf("run numbers ci=%d,%d deploy=%d, want 1,2,1", first.RunNumber, second.RunNumber, other.RunNumber)
 	}
-	rerun, err := s.submitWorkflow(t.Context(), "http://localhost", definition("ci"), "", &WorkflowEventMeta{
+	rerun, err := s.actions.SubmitWorkflow(t.Context(), "http://localhost", definition("ci"), "", &actions.WorkflowEventMeta{
 		ReuseRunID: first.RunID, ReuseRunNumber: first.RunNumber, Attempt: 2,
 	})
 	if err != nil {
@@ -67,7 +69,7 @@ func TestJobMessageCarriesStepExecutionOptionsAndTypedMatrix(t *testing.T) {
 		MatrixValues: map[string]interface{}{"attempt": 2, "experimental": true},
 	}
 	wf.Jobs[job.Key] = job
-	message, err := s.buildJobMessageFromDef("http://localhost", wf, job, "plan", "timeline", 1, "")
+	message, err := s.actions.BuildJobMessageFromDef("http://localhost", wf, job, "plan", "timeline", 1, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,15 +135,15 @@ func TestConcurrencyKeepsOnlyNewestPendingRun(t *testing.T) {
 			Jobs: map[string]*JobDef{"build": {Steps: []StepDef{{Run: "echo ok"}}}},
 		}
 	}
-	holder, err := s.submitWorkflow(context.Background(), "http://localhost", makeDef("holder"), "")
+	holder, err := s.actions.SubmitWorkflow(context.Background(), "http://localhost", makeDef("holder"), "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	stale, err := s.submitWorkflow(context.Background(), "http://localhost", makeDef("stale"), "")
+	stale, err := s.actions.SubmitWorkflow(context.Background(), "http://localhost", makeDef("stale"), "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	newest, err := s.submitWorkflow(context.Background(), "http://localhost", makeDef("newest"), "")
+	newest, err := s.actions.SubmitWorkflow(context.Background(), "http://localhost", makeDef("newest"), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +154,7 @@ func TestConcurrencyKeepsOnlyNewestPendingRun(t *testing.T) {
 		t.Fatalf("newest run = %s, want pending", newest.Status)
 	}
 	for _, job := range holder.Jobs {
-		s.onJobCompleted(context.Background(), job.JobID, "Succeeded")
+		s.actions.OnJobCompleted(context.Background(), job.JobID, "Succeeded")
 	}
 	if newest.Status != WorkflowStatusRunning {
 		t.Fatalf("newest run after holder completed = %s, want running", newest.Status)

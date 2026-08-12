@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // --- repository variables ---
@@ -275,7 +277,7 @@ func TestSecretsVariablesPersistenceReload(t *testing.T) {
 
 	now := time.Date(2035, time.June, 15, 12, 0, 0, 0, time.UTC)
 	repoKey := "o/r"
-	envKey := envScopeKey(repoKey, "production")
+	envKey := store.EnvScopeKey(repoKey, "production")
 
 	// --- session 1 ---
 	p1, err := NewPersistence()

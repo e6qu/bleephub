@@ -549,7 +549,7 @@ func TestRepositorySecretHandlersKeyOffTheResolvedRepository(t *testing.T) {
 		t.Fatalf("owner PUT repository secret status = %d, want 201; body=%s", w.Code, w.Body.String())
 	}
 
-	secrets, _, err := s.CollectJobSecretsAndVars(repo.FullName, "")
+	secrets, _, err := s.actions.CollectJobSecretsAndVars(repo.FullName, "")
 	if err != nil {
 		t.Fatal(err)
 	}

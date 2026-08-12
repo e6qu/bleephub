@@ -2,12 +2,13 @@ package bleephub
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/e6qu/bleephub/internal/actions"
 )
 
 func (s *Server) registerJobRoutes() {
@@ -38,22 +39,8 @@ func (s *Server) registerJobRoutes() {
 	s.route("GET /_apis/v1/tasks/{taskId}/{versionString}", s.requireRunnerAuth(s.handleGetTask))
 }
 
-// SubmitRequest is the simplified job submission format. HostMode runs
-// the job directly on the runner (jobContainer null) — what real GitHub
-// does for jobs without `container:`.
-type SubmitRequest struct {
-	Image    string       `json:"image"`
-	HostMode bool         `json:"hostMode"`
-	Steps    []SubmitStep `json:"steps"`
-}
-
-// SubmitStep is a simplified step.
-type SubmitStep struct {
-	Run string `json:"run"`
-}
-
 func (s *Server) handleSubmitJob(w http.ResponseWriter, r *http.Request) {
-	var req SubmitRequest
+	var req actions.SubmitRequest
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
@@ -68,9 +55,13 @@ func (s *Server) handleSubmitJob(w http.ResponseWriter, r *http.Request) {
 	jobID := uuid.New().String()
 	planID := uuid.New().String()
 	timelineID := uuid.New().String()
-	requestID := s.nextRequestID()
+	requestID := s.actions.NextRequestID()
 
-	msg := buildJobMessage(serverURL, jobID, planID, timelineID, requestID, &req)
+	// The runtime token is minted here — signing stays in the auth layer —
+	// and travels into the engine's message builder.
+	scopeID := uuid.New().String()
+	jobToken := makeJWT(scopeID, "actions")
+	msg := actions.BuildJobMessage(serverURL, jobID, planID, timelineID, requestID, &req, scopeID, jobToken)
 	msgJSON, err := json.Marshal(msg)
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -97,13 +88,13 @@ func (s *Server) handleSubmitJob(w http.ResponseWriter, r *http.Request) {
 
 	// Build the envelope message
 	envelope := &TaskAgentMessage{
-		MessageID:   s.nextMessageID(),
+		MessageID:   s.actions.NextMessageID(),
 		MessageType: "PipelineAgentJobRequest",
 		Body:        string(msgJSON),
 		JobID:       jobID,
 	}
 
-	s.queueJobMessage(envelope)
+	s.actions.QueueJobMessage(envelope)
 
 	s.logger.Info().Str("jobId", jobID).Int64("requestId", requestID).Msg("job submitted")
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -222,7 +213,7 @@ func (s *Server) handleSubmitWorkflow(w http.ResponseWriter, r *http.Request) {
 				writeGHError(w, http.StatusUnprocessableEntity, "Repository git storage is not available")
 				return
 			}
-			sha = resolveRefSha(stor, ref)
+			sha = actions.ResolveRefSha(stor, ref)
 			if sha == "" || sha == zeroSha {
 				writeGHError(w, http.StatusUnprocessableEntity, "No ref found for: "+ref)
 				return
@@ -235,7 +226,7 @@ func (s *Server) handleSubmitWorkflow(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Expand matrix strategies
-	expandedDef := expandMatrixJobs(wfDef)
+	expandedDef := actions.ExpandMatrixJobs(wfDef)
 
 	// Store serverURL for re-dispatch after job completion
 	if expandedDef.Env == nil {
@@ -244,7 +235,7 @@ func (s *Server) handleSubmitWorkflow(w http.ResponseWriter, r *http.Request) {
 	expandedDef.Env["__serverURL"] = serverURL
 	expandedDef.Env["__defaultImage"] = req.Image
 
-	eventMeta := WorkflowEventMeta{
+	eventMeta := actions.WorkflowEventMeta{
 		EventName: eventName,
 		Ref:       ref,
 		Sha:       sha,
@@ -252,7 +243,7 @@ func (s *Server) handleSubmitWorkflow(w http.ResponseWriter, r *http.Request) {
 		Inputs:    req.Inputs,
 	}
 
-	workflow, err := s.submitWorkflow(r.Context(), serverURL, expandedDef, req.Image, &eventMeta)
+	workflow, err := s.actions.SubmitWorkflow(r.Context(), serverURL, expandedDef, req.Image, &eventMeta)
 	if err != nil {
 		http.Error(w, "submit: "+err.Error(), http.StatusBadRequest)
 		return
@@ -328,7 +319,7 @@ func (s *Server) handleCancelWorkflow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.cancelWorkflow(wf)
+	s.actions.CancelWorkflow(wf)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"workflowId": wf.ID,
@@ -337,238 +328,8 @@ func (s *Server) handleCancelWorkflow(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// expandMatrixJobs expands matrix strategies in a WorkflowDef, creating
-// multiple job entries per matrix combination.
-func expandMatrixJobs(wf *WorkflowDef) *WorkflowDef {
-	expanded := &WorkflowDef{
-		Name:        wf.Name,
-		RunName:     wf.RunName,
-		Env:         wf.Env,
-		Permissions: wf.Permissions,
-		Defaults:    wf.Defaults,
-		Jobs:        make(map[string]*JobDef),
-		Concurrency: wf.Concurrency,
-	}
-
-	// Two passes. The needs rewrite has to run after every job has been
-	// expanded, because it must be able to see expansions that had not been
-	// produced yet when it ran: wf.Jobs is a map, so a single interleaved pass
-	// rewrote `needs` against a partially-built result and left a dependent job
-	// pointing at a key that no longer existed whenever iteration happened to
-	// reach it before its dependency. That failed validateJobGraph on roughly
-	// half of runs, which reads as flakiness rather than as a bug.
-	expandedKeysFor := make(map[string][]string, len(wf.Jobs))
-
-	for key, jd := range wf.Jobs {
-		var combos []map[string]interface{}
-		if jd.Strategy != nil {
-			// Gate on the expansion, not on Values. A matrix declaring only
-			// `include:` has no Values and is a perfectly ordinary GitHub
-			// matrix; testing Values skipped it and emitted the job once with
-			// no matrix context at all, silently dropping every include entry.
-			combos = ExpandMatrix(&jd.Strategy.Matrix)
-		}
-		if len(combos) == 0 {
-			single := *jd
-			single.Needs = append([]string(nil), jd.Needs...)
-			expanded.Jobs[key] = &single
-			continue
-		}
-
-		keys := make([]string, 0, len(combos))
-		for i, combo := range combos {
-			newKey := fmt.Sprintf("%s_%d", key, i)
-			newJD := *jd
-			newJD.Name = MatrixJobName(key, combo, jd.Strategy.Matrix.Order)
-			newJD.Needs = append([]string(nil), jd.Needs...)
-			newJD.MatrixGroup = key
-			newJD.MatrixMaxParallel = jd.Strategy.MaxParallel
-			newJD.MatrixValues = make(map[string]interface{}, len(combo))
-			for matrixKey, matrixValue := range combo {
-				newJD.MatrixValues[matrixKey] = matrixValue
-			}
-
-			// Deep-copy the environment without smuggling internal matrix
-			// values into it. Matrix is its own typed runner context.
-			newJD.Env = make(map[string]string, len(jd.Env))
-			for k, v := range jd.Env {
-				newJD.Env[k] = v
-			}
-
-			expanded.Jobs[newKey] = &newJD
-			keys = append(keys, newKey)
-		}
-		expandedKeysFor[key] = keys
-	}
-
-	for _, jd := range expanded.Jobs {
-		newNeeds := make([]string, 0, len(jd.Needs))
-		for _, dep := range jd.Needs {
-			if keys, ok := expandedKeysFor[dep]; ok {
-				newNeeds = append(newNeeds, keys...)
-				continue
-			}
-			newNeeds = append(newNeeds, dep)
-		}
-		jd.Needs = newNeeds
-	}
-
-	return expanded
-}
-
 func (s *Server) handleGetTask(w http.ResponseWriter, r *http.Request) {
 	taskID := r.PathValue("taskId")
 	s.logger.Debug().Str("taskId", taskID).Msg("task definition requested")
 	http.Error(w, "task not found", http.StatusNotFound)
-}
-
-// jobContainerValue maps an image reference onto the job message's
-// jobContainer: a bare string for container jobs, null for host-mode
-// jobs (what real GitHub sends when the YAML has no `container:`).
-func jobContainerValue(image string) interface{} {
-	if image == "" {
-		return nil
-	}
-	return image
-}
-
-// buildJobMessage builds the AgentJobRequestMessage in the internal format
-// that the official GitHub Actions runner expects.
-// Format matches ChristopherHX/runner.server's PipelineContextData + TemplateToken serialization.
-func buildJobMessage(serverURL, jobID, planID, timelineID string, requestID int64, req *SubmitRequest) map[string]interface{} {
-	scopeID := uuid.New().String()
-
-	// Build steps — only user-defined steps. The runner adds setup/cleanup internally.
-	steps := make([]map[string]interface{}, 0, len(req.Steps))
-
-	for i, step := range req.Steps {
-		stepID := uuid.New().String()
-		displayName := fmt.Sprintf("Run %s", truncateDisplay(step.Run, 40))
-		// Step type "action" (ActionStepType.Action) with ScriptReference
-		// Inputs must be TemplateToken MappingToken: {"type":2,"map":[{"Key":k,"Value":v},...]}
-		contextName := fmt.Sprintf("__run_%d", i+1)
-		steps = append(steps, map[string]interface{}{
-			"type": "action",
-			"id":   stepID,
-			"name": contextName,
-			"reference": map[string]interface{}{
-				"type": "script",
-			},
-			"displayNameToken": displayName,
-			"contextName":      contextName,
-			"condition":        "success()",
-			"inputs": map[string]interface{}{
-				"type": 2,
-				"map": []interface{}{
-					map[string]interface{}{
-						"Key":   map[string]interface{}{"type": 0, "lit": "script"},
-						"Value": templateToken(step.Run),
-					},
-				},
-			},
-		})
-	}
-
-	// Generate a proper JSON Web Token for the job token.
-	jobToken := makeJWT(scopeID, "actions")
-
-	// Build the full message matching runner.server format
-	return map[string]interface{}{
-		"messageType": "PipelineAgentJobRequest",
-		"plan": map[string]interface{}{
-			"scopeIdentifier": scopeID,
-			"planId":          planID,
-			"planType":        "free",
-			"planGroup":       "free",
-			"version":         12,
-			"owner": map[string]interface{}{
-				"id":   0,
-				"name": "Community",
-			},
-		},
-		"timeline": map[string]interface{}{
-			"id":       timelineID,
-			"changeId": 1,
-			"location": nil,
-		},
-		"jobId":          jobID,
-		"jobDisplayName": "test",
-		"jobName":        "test",
-		"requestId":      requestID,
-		"lockedUntil":    "0001-01-01T00:00:00",
-		// jobContainer: bare string for simple image reference; null
-		// runs the job on the runner host (no `container:`).
-		"jobContainer":         jobContainerValue(req.Image),
-		"jobServiceContainers": nil,
-		"jobOutputs":           nil,
-		"resources": map[string]interface{}{
-			"endpoints": []map[string]interface{}{
-				{
-					"name": "SystemVssConnection",
-					"url":  serverURL + "/",
-					"authorization": map[string]interface{}{
-						"scheme": "OAuth",
-						"parameters": map[string]string{
-							"AccessToken": jobToken,
-						},
-					},
-					"data": map[string]string{
-						"CacheServerUrl":    serverURL + "/",
-						"ResultsServiceUrl": serverURL + "/",
-					},
-					"isShared": false,
-					"isReady":  true,
-				},
-			},
-			"repositories": []interface{}{},
-			"containers":   []interface{}{},
-		},
-		// contextData uses PipelineContextData format:
-		// String values = bare JSON strings
-		// Dictionary = {"t": 2, "d": [{"k":"key","v":<value>}, ...]}
-		"contextData": map[string]interface{}{
-			"github": dictContextData(
-				"server_url", serverURL,
-				"api_url", serverURL,
-				"repository", "",
-				"repository_owner", "",
-				"run_id", "1",
-				"run_number", "1",
-				"workflow", "test",
-				"job", "test",
-				"event_name", "push",
-				"sha", "",
-				"ref", "",
-				"action", "__run",
-				"workspace", "/github/workspace",
-				"token", jobToken,
-			),
-			// Built runner-agnostic; the broker rebinds this to the leasing
-			// agent at delivery (ACT-051, rebindRunnerContext).
-			"runner":   runnerContextData(nil),
-			"env":      dictContextData(),
-			"vars":     dictContextData(),
-			"needs":    dictContextData(),
-			"inputs":   nil,
-			"matrix":   nil,
-			"strategy": nil,
-		},
-		"variables": map[string]interface{}{
-			"system.github.job":                      varVal("test"),
-			"system.github.runid":                    varVal("1"),
-			"system.github.token":                    varSecret(jobToken),
-			"github_token":                           varSecret(jobToken),
-			"system.phaseDisplayName":                varVal("test"),
-			"system.runnerGroupName":                 varVal("Default"),
-			"DistributedTask.NewActionMetadata":      varVal("true"),
-			"DistributedTask.EnableCompositeActions": varVal("true"),
-		},
-		"mask":                 []interface{}{},
-		"steps":                steps,
-		"workspace":            map[string]interface{}{},
-		"defaults":             nil,
-		"environmentVariables": nil,
-		"actionsEnvironment":   nil,
-		"fileTable":            []string{".github/workflows/ci.yml"},
-	}
 }

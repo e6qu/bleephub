@@ -1,4 +1,4 @@
-package bleephub
+package actions
 
 import (
 	"encoding/json"
@@ -11,14 +11,17 @@ import (
 	"github.com/google/uuid"
 )
 
-// buildJobMessageFromDef builds a job message from a WorkflowDef-based job,
+// BuildJobMessageFromDef builds a job message from a WorkflowDef-based job,
 // supporting both run: and uses: steps.
-func (s *Server) buildJobMessageFromDef(serverURL string, wf *Workflow, wfJob *WorkflowJob, planID, timelineID string, requestID int64, defaultImage string) (map[string]interface{}, error) {
+func (s *Engine) BuildJobMessageFromDef(serverURL string, wf *Workflow, wfJob *WorkflowJob, planID, timelineID string, requestID int64, defaultImage string) (map[string]interface{}, error) {
 	jd := wfJob.Def
 	scopeID := uuid.New().String()
 	// GITHUB_TOKEN is scoped to this workflow's repository and the least-
 	// privilege permission set its `permissions:` block resolves to (ACT-014).
-	jobToken := makeJobJWT(scopeID, wf.RepoFullName, s.resolveJobTokenPermissions(wf, jd))
+	// Minting stays behind the server-injected seam: mint and verify share
+	// the runner MAC key, and signature drift would break every runner job
+	// at lease time.
+	jobToken := s.mintJobToken(scopeID, wf, jd)
 
 	// Determine the job container; empty means host mode (the run was
 	// submitted with hostMode and the YAML declares no container) — the
@@ -158,7 +161,7 @@ func (s *Server) buildJobMessageFromDef(serverURL string, wf *Workflow, wfJob *W
 	}
 
 	// Build needs context
-	needsCtx := buildNeedsContext(wf, wfJob)
+	needsCtx := BuildNeedsContext(wf, wfJob)
 
 	// Job outputs are evaluated by the official runner after all steps have
 	// finished. The request wire field is a mapping TemplateToken, not an
@@ -210,13 +213,15 @@ func (s *Server) buildJobMessageFromDef(serverURL string, wf *Workflow, wfJob *W
 		"DistributedTask.EnableCompositeActions": varVal("true"),
 	}
 	varsPairs := make([]string, 0)
-	if s != nil && s.store != nil && repoFullName != "" {
+	// The receiver is dereferenced unconditionally above (mintJobToken), so a
+	// nil-receiver guard here would be dead code that only misleads analysis.
+	if s.store != nil && repoFullName != "" {
 		secretsMap, varsMap, err := s.CollectJobSecretsAndVars(repoFullName, jd.EnvironmentName())
 		if err != nil {
 			return nil, err
 		}
 		if jd.Call != nil && jd.CallRole == "" && !jd.Call.SecretsInherit {
-			secretsMap, err = remapCallSecrets(s, wf, jd.Call, secretsMap)
+			secretsMap, err = RemapCallSecrets(s, wf, jd.Call, secretsMap)
 			if err != nil {
 				return nil, err
 			}
@@ -244,7 +249,7 @@ func (s *Server) buildJobMessageFromDef(serverURL string, wf *Workflow, wfJob *W
 		for k, v := range wf.Inputs {
 			inputsPairs = append(inputsPairs, k, v)
 		}
-		inputsCtx = dictContextData(inputsPairs...)
+		inputsCtx = DictContextData(inputsPairs...)
 	}
 
 	return map[string]interface{}{
@@ -299,10 +304,10 @@ func (s *Server) buildJobMessageFromDef(serverURL string, wf *Workflow, wfJob *W
 			"github": toPipelineContextData(githubRunnerContext(s, wf, wfJob, serverURL, jobToken)),
 			// Built runner-agnostic; the broker rebinds this to the leasing
 			// agent at delivery (ACT-051, rebindRunnerContext).
-			"runner":   runnerContextData(nil),
-			"env":      dictContextData(envPairs...),
-			"vars":     dictContextData(varsPairs...),
-			"secrets":  dictContextData(secretsPairs...),
+			"runner":   RunnerContextData(nil),
+			"env":      DictContextData(envPairs...),
+			"vars":     DictContextData(varsPairs...),
+			"secrets":  DictContextData(secretsPairs...),
 			"needs":    needsCtx,
 			"inputs":   inputsCtx,
 			"matrix":   matrixCtx,
@@ -399,8 +404,8 @@ func anyMap(m map[string]interface{}) map[string]interface{} { return m }
 // githubRunnerContext assembles the full `github` context the runner
 // receives: the server-side context map (including the triggering event
 // payload) plus the runner-session keys.
-func githubRunnerContext(s *Server, wf *Workflow, wfJob *WorkflowJob, serverURL, jobToken string) map[string]interface{} {
-	m := s.githubContextMap(wf)
+func githubRunnerContext(s *Engine, wf *Workflow, wfJob *WorkflowJob, serverURL, jobToken string) map[string]interface{} {
+	m := s.GithubContextMap(wf)
 	m["server_url"] = serverURL
 	m["api_url"] = serverURL
 	if wfJob != nil {
@@ -419,17 +424,17 @@ func githubRunnerContext(s *Server, wf *Workflow, wfJob *WorkflowJob, serverURL,
 	return m
 }
 
-// remapCallSecrets applies a reusable-workflow call's explicit `secrets:`
+// RemapCallSecrets applies a reusable-workflow call's explicit `secrets:`
 // map: the called job receives ONLY the mapped names, with each value
 // template (`${{ secrets.X }}`) evaluated against the caller's secrets.
-func remapCallSecrets(s *Server, wf *Workflow, binding *WorkflowCallBinding, callerSecrets map[string]string) (map[string]string, error) {
+func RemapCallSecrets(s *Engine, wf *Workflow, binding *WorkflowCallBinding, callerSecrets map[string]string) (map[string]string, error) {
 	secretsCtx := make(map[string]interface{}, len(callerSecrets))
 	for k, v := range callerSecrets {
 		secretsCtx[k] = v
 	}
 	ctx := &ExprContext{Contexts: map[string]interface{}{
 		"secrets": secretsCtx,
-		"github":  s.githubContextMap(wf),
+		"github":  s.GithubContextMap(wf),
 	}}
 	mapped := make(map[string]string, len(binding.SecretsMap))
 	for name, tmpl := range binding.SecretsMap {
@@ -597,12 +602,12 @@ func sortedServiceNames(m map[string]*ServiceDef) []string {
 	return names
 }
 
-// buildNeedsContext builds the "needs" PipelineContextData from completed
+// BuildNeedsContext builds the "needs" PipelineContextData from completed
 // dependency outputs. Jobs inside a reusable-workflow call see sibling
 // needs under their unprefixed keys; the synthetic gate never appears.
-func buildNeedsContext(wf *Workflow, wfJob *WorkflowJob) interface{} {
+func BuildNeedsContext(wf *Workflow, wfJob *WorkflowJob) interface{} {
 	if len(wfJob.Needs) == 0 {
-		return dictContextData()
+		return DictContextData()
 	}
 	var binding *WorkflowCallBinding
 	if wfJob.Def != nil && wfJob.Def.Call != nil && wfJob.Def.CallRole == "" {
@@ -657,9 +662,9 @@ func stepCondition(ifExpr string) string {
 	return "success() && (" + ifExpr + ")"
 }
 
-// dictContextData builds a PipelineContextData DictionaryContextData.
+// DictContextData builds a PipelineContextData DictionaryContextData.
 // Args are alternating key, value strings.
-func dictContextData(kvs ...string) map[string]interface{} {
+func DictContextData(kvs ...string) map[string]interface{} {
 	entries := make([]map[string]interface{}, 0, len(kvs)/2)
 	for i := 0; i+1 < len(kvs); i += 2 {
 		entries = append(entries, map[string]interface{}{
@@ -680,13 +685,13 @@ func varVal(value string) map[string]interface{} {
 	}
 }
 
-// runnerContextData builds the `runner` pipeline context (os/arch/name and the
+// RunnerContextData builds the `runner` pipeline context (os/arch/name and the
 // OS-appropriate tool_cache/temp paths). A queued job message is built before a
 // runner is known, so a nil agent yields generic defaults; the broker rebinds
 // this block to the actual leasing agent at delivery (ACT-051) so
 // `${{ runner.os }}`, `runner.arch` and `runner.name` reflect the runner that
 // ran the job rather than a fixed placeholder.
-func runnerContextData(agent *Agent) map[string]interface{} {
+func RunnerContextData(agent *Agent) map[string]interface{} {
 	osName, arch, name := "Linux", "X64", "test-runner"
 	if agent != nil {
 		if agent.Name != "" {
@@ -702,7 +707,7 @@ func runnerContextData(agent *Agent) map[string]interface{} {
 	case "macOS":
 		toolCache, temp = "/Users/runner/hostedtoolcache", "/Users/runner/work/_temp"
 	}
-	return dictContextData(
+	return DictContextData(
 		"os", osName,
 		"arch", arch,
 		"name", name,
@@ -725,7 +730,7 @@ func runnerContextOS(agent *Agent) string {
 			return "macOS"
 		}
 	}
-	switch osFromDescription(agent.OSDescription) {
+	switch OSFromDescription(agent.OSDescription) {
 	case "windows":
 		return "Windows"
 	case "macos":
@@ -777,7 +782,7 @@ func rebindRunnerContext(bodyJSON string, agent *Agent) string {
 	if !ok {
 		return bodyJSON
 	}
-	cd["runner"] = runnerContextData(agent)
+	cd["runner"] = RunnerContextData(agent)
 	out, err := json.Marshal(m)
 	if err != nil {
 		return bodyJSON

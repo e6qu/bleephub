@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/actions"
 )
 
 // Tests in this file replay the EXACT GraphQL shapes gh CLI (v2.96) sends —
@@ -604,7 +606,7 @@ func TestPRGraphQL_ViewDefaultFields(t *testing.T) {
 	s.store.Mu.Lock()
 	s.store.Workflows[wf.ID] = wf
 	s.store.Mu.Unlock()
-	s.onActionsRunRequestedSnapshot(wf, cloneWorkflowEventSnapshot(wf))
+	s.actions.OnActionsRunRequestedSnapshot(wf, actions.CloneWorkflowEventSnapshot(wf))
 	statusResp := s.post(t, "/api/v3/repos/"+owner+"/"+name+"/statuses/"+headSHA, defaultToken,
 		map[string]interface{}{
 			"state":       "failure",

@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+
+	"github.com/e6qu/bleephub/internal/actions"
 )
 
 func (s *Server) registerGHWorkflowsRoutes() {
@@ -27,7 +29,7 @@ func (s *Server) registerGHWorkflowsRoutes() {
 
 // handleSetWorkflowState backs PUT .../workflows/{id}/{enable,disable}:
 // flips the workflow FILE's state (persisted) and 204s. Disabled
-// workflows neither trigger (webhooks.go workflowFileDisabled) nor
+// workflows neither trigger (actions.WorkflowFileDisabled) nor
 // dispatch (403 below).
 func (s *Server) handleSetWorkflowState(state string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -248,7 +250,7 @@ func (s *Server) handleDispatchWorkflow(w http.ResponseWriter, r *http.Request) 
 		}
 		req.Ref = defaultBranch
 	}
-	repoParts := splitRepoKeyParts(repo)
+	repoParts := actions.SplitRepoKeyParts(repo)
 	stor := s.store.GetGitStorage(repoParts[0], repoParts[1])
 	if stor == nil {
 		writeGHError(w, http.StatusUnprocessableEntity, "Repository git storage is not available")
@@ -265,7 +267,7 @@ func (s *Server) handleDispatchWorkflow(w http.ResponseWriter, r *http.Request) 
 	// unknown inputs reject, required inputs must arrive, declared
 	// defaults apply, choice options and boolean values are enforced —
 	// matching real GitHub's 422s.
-	on, err := ParseWorkflowOn([]byte(wf.YAML))
+	on, err := actions.ParseWorkflowOn([]byte(wf.YAML))
 	if err != nil {
 		writeGHError(w, http.StatusUnprocessableEntity, "parse workflow on: "+err.Error())
 		return
@@ -287,7 +289,7 @@ func (s *Server) handleDispatchWorkflow(w http.ResponseWriter, r *http.Request) 
 		writeGHError(w, http.StatusUnprocessableEntity, "parse workflow YAML: "+err.Error())
 		return
 	}
-	def = expandMatrixJobs(def)
+	def = actions.ExpandMatrixJobs(def)
 	if def.Env == nil {
 		def.Env = map[string]string{}
 	}
@@ -313,7 +315,7 @@ func (s *Server) handleDispatchWorkflow(w http.ResponseWriter, r *http.Request) 
 		payload["repository"] = repoPayload(repoObj)
 	}
 
-	meta := WorkflowEventMeta{
+	meta := actions.WorkflowEventMeta{
 		EventName:   "workflow_dispatch",
 		Ref:         req.Ref,
 		Sha:         sha,
@@ -322,7 +324,7 @@ func (s *Server) handleDispatchWorkflow(w http.ResponseWriter, r *http.Request) 
 		TypedInputs: typedInputs,
 		Payload:     payload,
 	}
-	if _, err := s.submitWorkflow(r.Context(), serverURL, def, "", &meta); err != nil {
+	if _, err := s.actions.SubmitWorkflow(r.Context(), serverURL, def, "", &meta); err != nil {
 		writeGHError(w, http.StatusUnprocessableEntity, "submit: "+err.Error())
 		return
 	}
@@ -334,7 +336,7 @@ func (s *Server) handleDispatchWorkflow(w http.ResponseWriter, r *http.Request) 
 // string form (github.event.inputs), the typed form (the `inputs`
 // expression context, where boolean/number inputs carry real types),
 // and a GitHub-cased wire error message ("" when valid).
-func resolveDispatchInputs(td *TriggerDef, given map[string]string) (map[string]string, map[string]interface{}, string) {
+func resolveDispatchInputs(td *actions.TriggerDef, given map[string]string) (map[string]string, map[string]interface{}, string) {
 	inputs := make(map[string]string, len(given))
 	var declared map[string]*WorkflowInputDef
 	if td != nil {

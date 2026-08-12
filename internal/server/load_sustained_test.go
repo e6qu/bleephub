@@ -11,8 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/e6qu/bleephub/internal/server/testutil"
 	"github.com/rs/zerolog"
+
+	"github.com/e6qu/bleephub/internal/server/testutil"
 )
 
 // loadDuration is the steady-state duration of the sustained-load test. It is

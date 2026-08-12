@@ -9,13 +9,13 @@
       },
       {
         "event": "check_run",
-        "line": 405,
+        "line": 77,
         "producer": "emitWebhookEvent",
         "source": "internal/server/actions_events.go"
       },
       {
         "event": "check_suite",
-        "line": 424,
+        "line": 96,
         "producer": "emitWebhookEvent",
         "source": "internal/server/actions_events.go"
       },
@@ -231,7 +231,7 @@
       },
       {
         "event": "pull_request",
-        "line": 452,
+        "line": 28,
         "producer": "emitWebhookEvent",
         "source": "internal/server/workflow_triggers.go"
       },
@@ -285,7 +285,7 @@
       },
       {
         "event": "repository_dispatch",
-        "line": 77,
+        "line": 79,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_actions_extras.go"
       },
@@ -303,19 +303,19 @@
       },
       {
         "event": "workflow_job",
-        "line": 386,
+        "line": 58,
         "producer": "emitWebhookEvent",
         "source": "internal/server/actions_events.go"
       },
       {
         "event": "workflow_run",
-        "line": 369,
+        "line": 41,
         "producer": "emitWebhookEvent",
         "source": "internal/server/actions_events.go"
       }
     ],
     "scheduled_workflows": {
-      "implemented": true,
+      "implemented": false,
       "test": "internal/server/workflow_schedule_test.go"
     }
   },
@@ -6525,6 +6525,15 @@
         "severity": "M",
         "status": "fixed \u2014 taken on its own once every other change had merged, as the owner-chosen coarse modular monolith that still assembles into the one fat binary. The data layer is now its own compiler-enforced module: `internal/store` (137 files, ~41k lines \u2014 Store and every sub-store, all entity types previously scattered beside their handlers, Persistence/PersistBatch, replica refresh, object byte store) sitting on `internal/gitstore` (git object storage + s3fs), with `internal/server` (~213k lines \u2014 Server, REST, GraphQL, Actions engine, identity, webhooks, and all contract gates) importing store and never the reverse. Type-alias compatibility files keep the 2,600+ Server methods and the whole test estate compiling unchanged; every newly exported store field carries json:\"-\" so wire and persisted shapes are byte-identical; the replica reflect-copy gained an access-field skip set so exporting the lock/persist fields could not change refresh semantics. Verified as a pure refactor: full suite green except the documented MinIO host-OOM cluster, shape ratchet zero-new, deadcode/dupl/clock gates green, and a runtime smoke across REST, git contents, GraphQL, UI and a push-triggered Actions run. Further de-methodizing of the engine slices (actions, graphql, identity) out of internal/server remains available as future work but is not this row's defect: the load-bearing split \u2014 data layer vs application \u2014 is done and the compiler now enforces it",
         "status_kind": "fixed"
+      },
+      {
+        "category": "ARCH",
+        "finding": "After the ARCH-001 data-layer split the Actions engine (~5,900 lines of run lifecycle, dispatch, broker queueing, concurrency admission, scheduling, expressions and event snapshotting) still lives inside the application package as ~65 Server methods, invisible as a boundary and free to grow entangled",
+        "id": "ARCH-002",
+        "location": "internal/server",
+        "severity": "M",
+        "status": "fixed \u2014 the engine is now `internal/actions` (23 files, ~7.5k lines with tests): an Engine struct owning the run lifecycle, dispatch, broker queue, concurrency admission, schedule index and event snapshot loop, importing only the store layer \u2014 the compiler enforces the boundary. Server-owned behavior reaches it through five narrow seams: an EventSink interface (webhook/check payload rendering and delivery stay in server), MintJobToken (runner-JWT mint and verify stay on one key in the auth layer), the fixture clock, shutdown-tracked goroutine spawning, and OnScheduleTick hooks for the org-invitation and login-session piggybacks. The mixed files split along the protocol/engine line (broker handlers vs queueing, event queue/drain vs merge-gate reads and emitters, trigger parsing vs PR-synchronize firing); pure trigger/expression/matrix/cron tests moved with their code, harness tests reach the engine via the server field. Verified as a pure refactor: full suite green (the only failures were the documented Docker/MinIO host-infra class), shape ratchet zero-new at 19,371 validated responses, clock/deadcode/dupl/store-lock gates green \u2014 the store-lock AST ratchet now scans internal/actions too \u2014 and a live smoke drove a push-triggered run through the extracted engine. GraphQL extraction remains the enumerated next slice; identity deliberately stays with the auth chokepoints",
+        "status_kind": "fixed"
       }
     ],
     "summary": {
@@ -6537,9 +6546,9 @@
         },
         "ARCH": {
           "status": {
-            "fixed": 1
+            "fixed": 2
           },
-          "total": 1
+          "total": 2
         },
         "AUTH": {
           "status": {
@@ -6600,14 +6609,14 @@
       },
       "severity": {
         "blocker": 165,
-        "major": 373,
+        "major": 374,
         "minor": 147
       },
       "status": {
         "deferred": 3,
-        "fixed": 682
+        "fixed": 683
       },
-      "total": 685
+      "total": 686
     }
   },
   "rest": {
@@ -19211,7 +19220,7 @@
         "source": "internal/server/gh_runner_groups.go"
       },
       {
-        "line": 60,
+        "line": 62,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/actions/runners/{runner_id}",
         "source": "internal/server/gh_actions_rest.go"
@@ -19229,49 +19238,49 @@
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 78,
+        "line": 72,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/actions/secrets/{secret_name}",
         "source": "internal/server/secrets.go"
       },
       {
-        "line": 82,
+        "line": 76,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/actions/secrets/{secret_name}/repositories/{repository_id}",
         "source": "internal/server/secrets.go"
       },
       {
-        "line": 36,
+        "line": 38,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/actions/variables/{name}",
         "source": "internal/server/variables.go"
       },
       {
-        "line": 40,
+        "line": 42,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/actions/variables/{name}/repositories/{repository_id}",
         "source": "internal/server/variables.go"
       },
       {
-        "line": 38,
+        "line": 40,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/agents/secrets/{secret_name}",
         "source": "internal/server/gh_agents_secrets.go"
       },
       {
-        "line": 42,
+        "line": 44,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/agents/secrets/{secret_name}/repositories/{repository_id}",
         "source": "internal/server/gh_agents_secrets.go"
       },
       {
-        "line": 49,
+        "line": 51,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/agents/variables/{name}",
         "source": "internal/server/gh_agents_secrets.go"
       },
       {
-        "line": 53,
+        "line": 55,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/agents/variables/{name}/repositories/{repository_id}",
         "source": "internal/server/gh_agents_secrets.go"
@@ -19619,7 +19628,7 @@
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 45,
+        "line": 47,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/actions/artifacts/{artifact_id}",
         "source": "internal/server/gh_actions_extras.go"
@@ -19637,7 +19646,7 @@
         "source": "internal/server/artifacts.go"
       },
       {
-        "line": 49,
+        "line": 51,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/actions/runners/{runner_id}",
         "source": "internal/server/gh_actions_rest.go"
@@ -19655,7 +19664,7 @@
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 31,
+        "line": 33,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/actions/runs/{run_id}",
         "source": "internal/server/gh_actions_rest.go"
@@ -19667,25 +19676,25 @@
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 63,
+        "line": 57,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/actions/secrets/{secret_name}",
         "source": "internal/server/secrets.go"
       },
       {
-        "line": 21,
+        "line": 23,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/actions/variables/{name}",
         "source": "internal/server/variables.go"
       },
       {
-        "line": 22,
+        "line": 24,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/agents/secrets/{secret_name}",
         "source": "internal/server/gh_agents_secrets.go"
       },
       {
-        "line": 30,
+        "line": 32,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/agents/variables/{name}",
         "source": "internal/server/gh_agents_secrets.go"
@@ -19847,13 +19856,13 @@
         "source": "internal/server/gh_environment_policies.go"
       },
       {
-        "line": 71,
+        "line": 65,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/environments/{env_name}/secrets/{secret_name}",
         "source": "internal/server/secrets.go"
       },
       {
-        "line": 29,
+        "line": 31,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/environments/{env_name}/variables/{name}",
         "source": "internal/server/variables.go"
@@ -21623,19 +21632,19 @@
         "source": "internal/server/gh_runner_groups.go"
       },
       {
-        "line": 54,
+        "line": 56,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/runners",
         "source": "internal/server/gh_actions_rest.go"
       },
       {
-        "line": 56,
+        "line": 58,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/runners/downloads",
         "source": "internal/server/gh_actions_rest.go"
       },
       {
-        "line": 58,
+        "line": 60,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/runners/{runner_id}",
         "source": "internal/server/gh_actions_rest.go"
@@ -21647,85 +21656,85 @@
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 74,
+        "line": 68,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/secrets",
         "source": "internal/server/secrets.go"
       },
       {
-        "line": 75,
+        "line": 69,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/secrets/public-key",
         "source": "internal/server/secrets.go"
       },
       {
-        "line": 76,
+        "line": 70,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/secrets/{secret_name}",
         "source": "internal/server/secrets.go"
       },
       {
-        "line": 79,
+        "line": 73,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/secrets/{secret_name}/repositories",
         "source": "internal/server/secrets.go"
       },
       {
-        "line": 32,
+        "line": 34,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/variables",
         "source": "internal/server/variables.go"
       },
       {
-        "line": 34,
+        "line": 36,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/variables/{name}",
         "source": "internal/server/variables.go"
       },
       {
-        "line": 37,
+        "line": 39,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/variables/{name}/repositories",
         "source": "internal/server/variables.go"
       },
       {
-        "line": 34,
+        "line": 36,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/agents/secrets",
         "source": "internal/server/gh_agents_secrets.go"
       },
       {
-        "line": 35,
+        "line": 37,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/agents/secrets/public-key",
         "source": "internal/server/gh_agents_secrets.go"
       },
       {
-        "line": 36,
+        "line": 38,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/agents/secrets/{secret_name}",
         "source": "internal/server/gh_agents_secrets.go"
       },
       {
-        "line": 39,
+        "line": 41,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/agents/secrets/{secret_name}/repositories",
         "source": "internal/server/gh_agents_secrets.go"
       },
       {
-        "line": 45,
+        "line": 47,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/agents/variables",
         "source": "internal/server/gh_agents_secrets.go"
       },
       {
-        "line": 47,
+        "line": 49,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/agents/variables/{name}",
         "source": "internal/server/gh_agents_secrets.go"
       },
       {
-        "line": 50,
+        "line": 52,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/agents/variables/{name}/repositories",
         "source": "internal/server/gh_agents_secrets.go"
@@ -22673,19 +22682,19 @@
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 41,
+        "line": 43,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/artifacts",
         "source": "internal/server/gh_actions_extras.go"
       },
       {
-        "line": 43,
+        "line": 45,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/artifacts/{artifact_id}",
         "source": "internal/server/gh_actions_extras.go"
       },
       {
-        "line": 47,
+        "line": 49,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/artifacts/{artifact_id}/{archive_format}",
         "source": "internal/server/gh_actions_extras.go"
@@ -22733,13 +22742,13 @@
         "source": "internal/server/gh_actions_concurrency.go"
       },
       {
-        "line": 39,
+        "line": 41,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/jobs/{job_id}",
         "source": "internal/server/gh_actions_rest.go"
       },
       {
-        "line": 40,
+        "line": 42,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/jobs/{job_id}/logs",
         "source": "internal/server/gh_actions_rest.go"
@@ -22751,13 +22760,13 @@
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 64,
+        "line": 58,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/organization-secrets",
         "source": "internal/server/secrets.go"
       },
       {
-        "line": 22,
+        "line": 24,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/organization-variables",
         "source": "internal/server/variables.go"
@@ -22805,19 +22814,19 @@
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 43,
+        "line": 45,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/runners",
         "source": "internal/server/gh_actions_rest.go"
       },
       {
-        "line": 45,
+        "line": 47,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/runners/downloads",
         "source": "internal/server/gh_actions_rest.go"
       },
       {
-        "line": 47,
+        "line": 49,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/runners/{runner_id}",
         "source": "internal/server/gh_actions_rest.go"
@@ -22829,43 +22838,43 @@
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 28,
+        "line": 30,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/runs",
         "source": "internal/server/gh_actions_rest.go"
       },
       {
-        "line": 29,
+        "line": 31,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/runs/{run_id}",
         "source": "internal/server/gh_actions_rest.go"
       },
       {
-        "line": 49,
+        "line": 51,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/approvals",
         "source": "internal/server/gh_actions_extras.go"
       },
       {
-        "line": 39,
+        "line": 41,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/artifacts",
         "source": "internal/server/gh_actions_extras.go"
       },
       {
-        "line": 37,
+        "line": 39,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/attempts/{attempt_number}",
         "source": "internal/server/gh_actions_rest.go"
       },
       {
-        "line": 38,
+        "line": 40,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/attempts/{attempt_number}/jobs",
         "source": "internal/server/gh_actions_rest.go"
       },
       {
-        "line": 25,
+        "line": 27,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/attempts/{attempt_number}/logs",
         "source": "internal/server/gh_actions_run_control.go"
@@ -22877,79 +22886,79 @@
         "source": "internal/server/gh_actions_concurrency.go"
       },
       {
-        "line": 30,
+        "line": 32,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/jobs",
         "source": "internal/server/gh_actions_rest.go"
       },
       {
-        "line": 33,
+        "line": 35,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/logs",
         "source": "internal/server/gh_actions_extras.go"
       },
       {
-        "line": 51,
+        "line": 53,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/pending_deployments",
         "source": "internal/server/gh_actions_extras.go"
       },
       {
-        "line": 37,
+        "line": 39,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/timing",
         "source": "internal/server/gh_actions_extras.go"
       },
       {
-        "line": 59,
+        "line": 53,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/secrets",
         "source": "internal/server/secrets.go"
       },
       {
-        "line": 60,
+        "line": 54,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/secrets/public-key",
         "source": "internal/server/secrets.go"
       },
       {
-        "line": 61,
+        "line": 55,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/secrets/{secret_name}",
         "source": "internal/server/secrets.go"
       },
       {
-        "line": 17,
+        "line": 19,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/variables",
         "source": "internal/server/variables.go"
       },
       {
-        "line": 19,
+        "line": 21,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/variables/{name}",
         "source": "internal/server/variables.go"
       },
       {
-        "line": 17,
+        "line": 19,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/workflows",
         "source": "internal/server/gh_workflows_rest.go"
       },
       {
-        "line": 18,
+        "line": 20,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/workflows/{workflow_id}",
         "source": "internal/server/gh_workflows_rest.go"
       },
       {
-        "line": 19,
+        "line": 21,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs",
         "source": "internal/server/gh_workflows_rest.go"
       },
       {
-        "line": 27,
+        "line": 29,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/workflows/{workflow_id}/timing",
         "source": "internal/server/gh_actions_run_control.go"
@@ -22961,43 +22970,43 @@
         "source": "internal/server/gh_repos_reads.go"
       },
       {
-        "line": 23,
+        "line": 25,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/agents/organization-secrets",
         "source": "internal/server/gh_agents_secrets.go"
       },
       {
-        "line": 31,
+        "line": 33,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/agents/organization-variables",
         "source": "internal/server/gh_agents_secrets.go"
       },
       {
-        "line": 18,
+        "line": 20,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/agents/secrets",
         "source": "internal/server/gh_agents_secrets.go"
       },
       {
-        "line": 19,
+        "line": 21,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/agents/secrets/public-key",
         "source": "internal/server/gh_agents_secrets.go"
       },
       {
-        "line": 20,
+        "line": 22,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/agents/secrets/{secret_name}",
         "source": "internal/server/gh_agents_secrets.go"
       },
       {
-        "line": 26,
+        "line": 28,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/agents/variables",
         "source": "internal/server/gh_agents_secrets.go"
       },
       {
-        "line": 28,
+        "line": 30,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/agents/variables/{name}",
         "source": "internal/server/gh_agents_secrets.go"
@@ -23585,31 +23594,31 @@
         "source": "internal/server/gh_environment_policies.go"
       },
       {
-        "line": 67,
+        "line": 61,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/environments/{env_name}/secrets",
         "source": "internal/server/secrets.go"
       },
       {
-        "line": 68,
+        "line": 62,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/environments/{env_name}/secrets/public-key",
         "source": "internal/server/secrets.go"
       },
       {
-        "line": 69,
+        "line": 63,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/environments/{env_name}/secrets/{secret_name}",
         "source": "internal/server/secrets.go"
       },
       {
-        "line": 25,
+        "line": 27,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/environments/{env_name}/variables",
         "source": "internal/server/variables.go"
       },
       {
-        "line": 27,
+        "line": 29,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/environments/{env_name}/variables/{name}",
         "source": "internal/server/variables.go"
@@ -25187,13 +25196,13 @@
         "source": "internal/server/gh_runner_groups.go"
       },
       {
-        "line": 35,
+        "line": 37,
         "method": "PATCH",
         "path": "/api/v3/orgs/{org}/actions/variables/{name}",
         "source": "internal/server/variables.go"
       },
       {
-        "line": 48,
+        "line": 50,
         "method": "PATCH",
         "path": "/api/v3/orgs/{org}/agents/variables/{name}",
         "source": "internal/server/gh_agents_secrets.go"
@@ -25361,13 +25370,13 @@
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 20,
+        "line": 22,
         "method": "PATCH",
         "path": "/api/v3/repos/{owner}/{repo}/actions/variables/{name}",
         "source": "internal/server/variables.go"
       },
       {
-        "line": 29,
+        "line": 31,
         "method": "PATCH",
         "path": "/api/v3/repos/{owner}/{repo}/agents/variables/{name}",
         "source": "internal/server/gh_agents_secrets.go"
@@ -25451,7 +25460,7 @@
         "source": "internal/server/gh_security_reviews.go"
       },
       {
-        "line": 28,
+        "line": 30,
         "method": "PATCH",
         "path": "/api/v3/repos/{owner}/{repo}/environments/{env_name}/variables/{name}",
         "source": "internal/server/variables.go"
@@ -26027,19 +26036,19 @@
         "source": "internal/server/gh_runner_groups.go"
       },
       {
-        "line": 66,
+        "line": 68,
         "method": "POST",
         "path": "/api/v3/orgs/{org}/actions/runners/generate-jitconfig",
         "source": "internal/server/gh_actions_rest.go"
       },
       {
-        "line": 62,
+        "line": 64,
         "method": "POST",
         "path": "/api/v3/orgs/{org}/actions/runners/registration-token",
         "source": "internal/server/gh_actions_rest.go"
       },
       {
-        "line": 64,
+        "line": 66,
         "method": "POST",
         "path": "/api/v3/orgs/{org}/actions/runners/remove-token",
         "source": "internal/server/gh_actions_rest.go"
@@ -26051,13 +26060,13 @@
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 33,
+        "line": 35,
         "method": "POST",
         "path": "/api/v3/orgs/{org}/actions/variables",
         "source": "internal/server/variables.go"
       },
       {
-        "line": 46,
+        "line": 48,
         "method": "POST",
         "path": "/api/v3/orgs/{org}/agents/variables",
         "source": "internal/server/gh_agents_secrets.go"
@@ -26345,7 +26354,7 @@
         "source": "internal/server/gh_projects_classic.go"
       },
       {
-        "line": 21,
+        "line": 23,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/actions/jobs/{job_id}/rerun",
         "source": "internal/server/gh_actions_run_control.go"
@@ -26375,61 +26384,61 @@
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 17,
+        "line": 19,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/approve",
         "source": "internal/server/gh_actions_run_control.go"
       },
       {
-        "line": 33,
+        "line": 35,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/cancel",
         "source": "internal/server/gh_actions_rest.go"
       },
       {
-        "line": 23,
+        "line": 25,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/deployment_protection_rule",
         "source": "internal/server/gh_actions_run_control.go"
       },
       {
-        "line": 19,
+        "line": 21,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/force-cancel",
         "source": "internal/server/gh_actions_run_control.go"
       },
       {
-        "line": 53,
+        "line": 55,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/pending_deployments",
         "source": "internal/server/gh_actions_extras.go"
       },
       {
-        "line": 35,
+        "line": 37,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/rerun",
         "source": "internal/server/gh_actions_rest.go"
       },
       {
-        "line": 35,
+        "line": 37,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/rerun-failed-jobs",
         "source": "internal/server/gh_actions_extras.go"
       },
       {
-        "line": 18,
+        "line": 20,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/actions/variables",
         "source": "internal/server/variables.go"
       },
       {
-        "line": 20,
+        "line": 22,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches",
         "source": "internal/server/gh_workflows_rest.go"
       },
       {
-        "line": 27,
+        "line": 29,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/agents/variables",
         "source": "internal/server/gh_agents_secrets.go"
@@ -26579,7 +26588,7 @@
         "source": "internal/server/gh_security_reviews.go"
       },
       {
-        "line": 31,
+        "line": 33,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/dispatches",
         "source": "internal/server/gh_actions_extras.go"
@@ -26597,7 +26606,7 @@
         "source": "internal/server/gh_environment_policies.go"
       },
       {
-        "line": 26,
+        "line": 28,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/environments/{env_name}/variables",
         "source": "internal/server/variables.go"
@@ -27449,61 +27458,61 @@
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 77,
+        "line": 71,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/actions/secrets/{secret_name}",
         "source": "internal/server/secrets.go"
       },
       {
-        "line": 80,
+        "line": 74,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/actions/secrets/{secret_name}/repositories",
         "source": "internal/server/secrets.go"
       },
       {
-        "line": 81,
+        "line": 75,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/actions/secrets/{secret_name}/repositories/{repository_id}",
         "source": "internal/server/secrets.go"
       },
       {
-        "line": 38,
+        "line": 40,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/actions/variables/{name}/repositories",
         "source": "internal/server/variables.go"
       },
       {
-        "line": 39,
+        "line": 41,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/actions/variables/{name}/repositories/{repository_id}",
         "source": "internal/server/variables.go"
       },
       {
-        "line": 37,
+        "line": 39,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/agents/secrets/{secret_name}",
         "source": "internal/server/gh_agents_secrets.go"
       },
       {
-        "line": 40,
+        "line": 42,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/agents/secrets/{secret_name}/repositories",
         "source": "internal/server/gh_agents_secrets.go"
       },
       {
-        "line": 41,
+        "line": 43,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/agents/secrets/{secret_name}/repositories/{repository_id}",
         "source": "internal/server/gh_agents_secrets.go"
       },
       {
-        "line": 51,
+        "line": 53,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/agents/variables/{name}/repositories",
         "source": "internal/server/gh_agents_secrets.go"
       },
       {
-        "line": 52,
+        "line": 54,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/agents/variables/{name}/repositories/{repository_id}",
         "source": "internal/server/gh_agents_secrets.go"
@@ -27767,25 +27776,25 @@
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 62,
+        "line": 56,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/actions/secrets/{secret_name}",
         "source": "internal/server/secrets.go"
       },
       {
-        "line": 24,
+        "line": 26,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/actions/workflows/{workflow_id}/disable",
         "source": "internal/server/gh_workflows_rest.go"
       },
       {
-        "line": 22,
+        "line": 24,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/actions/workflows/{workflow_id}/enable",
         "source": "internal/server/gh_workflows_rest.go"
       },
       {
-        "line": 21,
+        "line": 23,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/agents/secrets/{secret_name}",
         "source": "internal/server/gh_agents_secrets.go"
@@ -27863,7 +27872,7 @@
         "source": "internal/server/gh_environment_policies.go"
       },
       {
-        "line": 70,
+        "line": 64,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/environments/{env_name}/secrets/{secret_name}",
         "source": "internal/server/secrets.go"

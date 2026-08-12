@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/actions"
 )
 
 // TestCancellationSignalsRunningJob verifies cancel sends
@@ -72,7 +74,7 @@ jobs:
 	s.store.PendingMessages = kept
 	s.store.Mu.Unlock()
 
-	msg := s.pullPendingMessage(sess, runnerScope{Repo: repoKey})
+	msg := s.actions.PullPendingMessage(sess, runnerScope{Repo: repoKey})
 	if msg == nil || msg.JobID != slowJobID {
 		t.Fatalf("runner did not pull the slow job: %v", msg)
 	}
@@ -116,7 +118,7 @@ jobs:
 	}
 
 	// The runner aborts and reports; the always() job then dispatches.
-	s.onJobCompleted(context.Background(), slowID, "Canceled")
+	s.actions.OnJobCompleted(context.Background(), slowID, "Canceled")
 	waitUntil(t, "cleanup dispatched", func() bool {
 		s.store.Mu.RLock()
 		defer s.store.Mu.RUnlock()
@@ -124,7 +126,7 @@ jobs:
 	})
 
 	// Cleanup completes; run concludes cancelled (not failure).
-	s.onJobCompleted(context.Background(), wf.Jobs["cleanup"].JobID, "Succeeded")
+	s.actions.OnJobCompleted(context.Background(), wf.Jobs["cleanup"].JobID, "Succeeded")
 	waitUntil(t, "run cancelled", func() bool {
 		s.store.Mu.RLock()
 		defer s.store.Mu.RUnlock()
@@ -161,7 +163,7 @@ jobs:
 		return false
 	})
 
-	s.cancelWorkflow(wf)
+	s.actions.CancelWorkflow(wf)
 
 	s.store.Mu.RLock()
 	defer s.store.Mu.RUnlock()
@@ -480,8 +482,8 @@ func TestNormalizeResultRunnerSpellings(t *testing.T) {
 	t.Parallel()
 	// The official runner reports the US spelling "Canceled".
 	for _, in := range []string{"Canceled", "canceled", "Cancelled", "cancelled"} {
-		if got := normalizeResult(in); got != "cancelled" {
-			t.Errorf("normalizeResult(%q) = %q, want cancelled", in, got)
+		if got := actions.NormalizeResult(in); got != "cancelled" {
+			t.Errorf("actions.NormalizeResult(%q) = %q, want cancelled", in, got)
 		}
 	}
 }

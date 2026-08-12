@@ -23,9 +23,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/e6qu/bleephub/internal/server/testutil"
 	"github.com/rs/zerolog"
 	"golang.org/x/crypto/ssh"
+
+	"github.com/e6qu/bleephub/internal/server/testutil"
 )
 
 var (
