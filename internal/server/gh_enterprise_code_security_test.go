@@ -1,6 +1,8 @@
 package bleephub
 
 import (
+	"github.com/e6qu/bleephub/internal/graphqlapi"
+
 	"fmt"
 	"net/http"
 	"testing"
@@ -114,7 +116,7 @@ func TestEnterpriseCodeSecurityConfigurations_OpaqueCursorValidation(t *testing.
 	t.Parallel()
 	s := newIsolatedServer(t)
 	base := enterpriseAPI + "/code-security/configurations"
-	resp := s.get(t, base+"?after="+encodeCursor(0), defaultToken)
+	resp := s.get(t, base+"?after="+graphqlapi.EncodeCursor(0), defaultToken)
 	if resp.StatusCode != http.StatusOK {
 		body := decodeResponseBodyForTest(resp)
 		t.Fatalf("opaque cursor status = %d, want 200; body=%s", resp.StatusCode, body)

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 	"testing"
 
@@ -920,18 +919,6 @@ func TestGraphQLListPullRequests(t *testing.T) {
 	tc, _ := prs["totalCount"].(float64)
 	if tc < 2 {
 		t.Fatalf("expected totalCount >= 2, got %v", tc)
-	}
-}
-
-func TestGraphQLPullRequestConverterDoesNotReenterStoreForGitStorage(t *testing.T) {
-	t.Parallel()
-	src, err := os.ReadFile("gh_pulls_graphql.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(src)
-	if strings.Contains(body, "pullRequestCommitObjects(st,") || strings.Contains(body, "pullRequestCommitObjects(s.store,") {
-		t.Fatal("pull request GraphQL conversion must not call store-locking commit helpers while rendering under Store.mu")
 	}
 }
 

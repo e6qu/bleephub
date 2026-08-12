@@ -586,17 +586,25 @@ def build_rest_semantic_contracts() -> dict[str, Any]:
 
 
 def graphql_inventory() -> dict[str, Any]:
-    directory = ROOT / "internal" / "server"
+    # ARCH-003 moved the resolver layer to internal/graphqlapi; the thin
+    # HTTP delegation (gh_graphql.go) stays in internal/server and remains
+    # excluded, exactly as it was before the move. Harness-bound GraphQL
+    # tests still live beside the server fixture, so tests are globbed from
+    # both packages.
+    resolver_dir = ROOT / "internal" / "graphqlapi"
     resolver_files = sorted(
         str(path.relative_to(ROOT))
-        for path in directory.glob("*graphql.go")
+        for path in resolver_dir.glob("*graphql.go")
         if path.name != "gh_graphql.go"
     )
     test_files = sorted(
-        str(path.relative_to(ROOT)) for path in directory.glob("*graphql*_test.go")
+        str(path.relative_to(ROOT))
+        for directory in (ROOT / "internal" / "server", resolver_dir)
+        for path in directory.glob("*graphql*_test.go")
     )
     if not resolver_files or not test_files:
         raise InventoryError("GraphQL resolver or test discovery returned nothing")
+    directory = ROOT / "internal" / "server"
     version_path = directory.parent.parent / "third_party" / "github-graphql-schema.VERSION"
     version = {}
     for line in version_path.read_text(encoding="utf-8").splitlines():

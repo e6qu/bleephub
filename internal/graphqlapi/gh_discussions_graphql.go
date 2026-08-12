@@ -1,4 +1,4 @@
-package bleephub
+package graphqlapi
 
 import (
 	"bytes"
@@ -13,7 +13,7 @@ import (
 
 // addDiscussionFieldsToSchema adds Discussion, DiscussionCategory,
 // DiscussionComment types and their connections/mutations to the GraphQL schema.
-func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *graphql.Object) {
+func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType *graphql.Object) {
 	dateTime := s.graphQLStringScalar("DateTime")
 	uri := s.graphQLStringScalar("URI")
 	htmlScalar := s.graphQLStringScalar("HTML")
@@ -326,7 +326,7 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 					if !ok {
 						return false, nil
 					}
-					viewer := ghUserFromContext(p.Context)
+					viewer := s.ghUserFromContext(p.Context)
 					if viewer == nil {
 						return false, nil
 					}
@@ -346,7 +346,7 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 					if !ok {
 						return false, nil
 					}
-					viewer := ghUserFromContext(p.Context)
+					viewer := s.ghUserFromContext(p.Context)
 					if viewer == nil {
 						return false, nil
 					}
@@ -366,7 +366,7 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 					if !ok {
 						return false, nil
 					}
-					viewer := ghUserFromContext(p.Context)
+					viewer := s.ghUserFromContext(p.Context)
 					if viewer == nil {
 						return false, nil
 					}
@@ -713,7 +713,7 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(createDiscussionInputType)},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			user := ghUserFromContext(p.Context)
+			user := s.ghUserFromContext(p.Context)
 			input, _ := p.Args["input"].(map[string]interface{})
 			repoNodeID, _ := input["repositoryId"].(string)
 			categoryNodeID, _ := input["categoryId"].(string)
@@ -736,7 +736,7 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 			s.emitWebhookEvent(repo.FullName, "discussion", "created", map[string]interface{}{
 				"action":     "created",
 				"discussion": map[string]interface{}{"number": d.Number, "title": d.Title, "body": d.Body},
-				"repository": repoPayload(repo),
+				"repository": s.repoPayload(repo),
 				"sender":     userToJSON(user),
 			})
 			return map[string]interface{}{
@@ -805,7 +805,7 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(addDiscussionCommentInputType)},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			user := ghUserFromContext(p.Context)
+			user := s.ghUserFromContext(p.Context)
 			input, _ := p.Args["input"].(map[string]interface{})
 			discussionNodeID, _ := input["discussionId"].(string)
 			body, _ := input["body"].(string)
@@ -829,7 +829,7 @@ func (s *Server) addDiscussionFieldsToSchema(userType, repoType, mutationType *g
 					"action":     "created",
 					"comment":    map[string]interface{}{"id": c.ID, "body": c.Body},
 					"discussion": map[string]interface{}{"number": d.Number, "title": d.Title},
-					"repository": repoPayload(repo),
+					"repository": s.repoPayload(repo),
 					"sender":     userToJSON(user),
 				})
 			}
@@ -1129,51 +1129,3 @@ func paginateGQLMaps(nodes []map[string]interface{}, args map[string]interface{}
 }
 
 // --- Node ID lookup helpers ---
-
-func findDiscussionByNodeID(st *Store, nodeID string) *Discussion {
-	st.Mu.RLock()
-	defer st.Mu.RUnlock()
-	if id, ok := decodeNodeDBID(nodeID, "D_kgDO"); ok {
-		if d := st.Discussions[id]; d != nil && d.NodeID == nodeID && !d.Deleted {
-			return d
-		}
-	}
-	for _, d := range st.Discussions {
-		if d.NodeID == nodeID && !d.Deleted {
-			return d
-		}
-	}
-	return nil
-}
-
-func findDiscussionCategoryByNodeID(st *Store, nodeID string) *DiscussionCategory {
-	st.Mu.RLock()
-	defer st.Mu.RUnlock()
-	if id, ok := decodeNodeDBID(nodeID, "DGC_kgDO"); ok {
-		if cat := st.DiscussionCategories[id]; cat != nil && cat.NodeID == nodeID {
-			return cat
-		}
-	}
-	for _, cat := range st.DiscussionCategories {
-		if cat.NodeID == nodeID {
-			return cat
-		}
-	}
-	return nil
-}
-
-func findDiscussionCommentByNodeID(st *Store, nodeID string) *DiscussionComment {
-	st.Mu.RLock()
-	defer st.Mu.RUnlock()
-	if id, ok := decodeNodeDBID(nodeID, "DC_kgDO"); ok {
-		if c := st.DiscussionComments[id]; c != nil && c.NodeID == nodeID && !c.Deleted {
-			return c
-		}
-	}
-	for _, c := range st.DiscussionComments {
-		if c.NodeID == nodeID && !c.Deleted {
-			return c
-		}
-	}
-	return nil
-}

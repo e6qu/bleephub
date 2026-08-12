@@ -40,6 +40,14 @@ func TestFuzzTargetsBuildTheirFixturesPerExecution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("glob test files: %v", err)
 	}
+	// The GraphQL resolver layer's fuzz targets moved to internal/graphqlapi
+	// with the resolver code (ARCH-003); this guard is source-level, so it
+	// keeps covering them from here.
+	graphqlFiles, err := filepath.Glob(filepath.Join("..", "graphqlapi", "*_test.go"))
+	if err != nil {
+		t.Fatalf("glob graphqlapi test files: %v", err)
+	}
+	files = append(files, graphqlFiles...)
 	if len(files) == 0 {
 		t.Fatal("no test files found; this guard would pass vacuously")
 	}

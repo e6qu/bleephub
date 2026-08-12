@@ -21,7 +21,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/graphql-go/graphql"
 	"github.com/rs/zerolog"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/codes"
@@ -29,6 +28,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/e6qu/bleephub/internal/actions"
+	"github.com/e6qu/bleephub/internal/graphqlapi"
 )
 
 // Server is the bleephub HTTP server implementing the GitHub Actions
@@ -38,8 +38,7 @@ type Server struct {
 	mux                    *http.ServeMux
 	logger                 zerolog.Logger
 	store                  *Store
-	graphqlSchema          graphql.Schema
-	graphqlTypes           graphQLTypeRegistry
+	graphql                *graphqlapi.Resolver
 	actionCache            *ActionCache
 	artifactStore          *ArtifactStore
 	metrics                *Metrics
@@ -180,6 +179,11 @@ func newServerState(addr string, logger zerolog.Logger, construction serverConst
 	// logger (level filter + telemetry bridge) instead of the stdlib default.
 	s.store.Logger = logger
 	s.actions = s.newActionsEngine()
+	// The GraphQL resolver is part of complete server state, exactly like the
+	// Actions engine: every constructed server — production or test fixture —
+	// can serve POST /api/graphql, and a fixture that registers routes without
+	// the full NewServer path no longer panics on a nil resolver (ARCH-003).
+	s.graphql = s.newGraphQLResolver()
 	return s
 }
 
@@ -408,8 +412,11 @@ func NewServer(addr string, logger zerolog.Logger, options ...ServerOption) *Ser
 	if s.injectedByteStore != nil {
 		byteStore = s.injectedByteStore
 		s.artifactStore = NewArtifactStoreWithByteStore(dataDir, byteStore)
-		// The engine captured the replaced artifact store at construction;
-		// rebuild it against the injected one before anything runs.
+		// The engine and the store captured the replaced artifact store at
+		// construction; re-point both before anything runs — leaving
+		// store.ActionsArtifacts on the discarded instance would silently
+		// diverge the two access paths (ACT-099).
+		s.store.ActionsArtifacts = s.artifactStore
 		s.actions = s.newActionsEngine()
 	}
 	if err := s.identity.validate(); err != nil {
@@ -450,7 +457,6 @@ func NewServer(addr string, logger zerolog.Logger, options ...ServerOption) *Ser
 	if err := s.seedConfiguredApps(); err != nil {
 		logger.Fatal().Err(err).Msg("failed to seed configured GitHub Apps")
 	}
-	s.initGraphQLSchema()
 	s.registerRoutes()
 	return s
 }

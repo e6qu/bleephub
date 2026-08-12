@@ -16,7 +16,7 @@ import (
 func graphQLFuzzServer(t *testing.T) *Server {
 	t.Helper()
 	s := newTestServer()
-	s.initGraphQLSchema()
+	s.graphql = s.newGraphQLResolver()
 	return s
 }
 
@@ -93,23 +93,6 @@ func FuzzGraphQLRawVariables(f *testing.F) {
 		req.Header.Set("Authorization", "Bearer "+defaultToken)
 		w := httptest.NewRecorder()
 		s.handleGraphQL(w, req)
-	})
-}
-
-// FuzzEncodeCursorRoundTrip checks the cursor codec round-trips for any int and
-// that decodeCursor never panics. encode(decode(x)) and decode(encode(x))
-// must be total functions.
-func FuzzEncodeCursorRoundTrip(f *testing.F) {
-	f.Add(0)
-	f.Add(-1)
-	f.Add(1 << 31)
-	f.Add(-(1 << 31))
-	f.Fuzz(func(t *testing.T, idx int) {
-		c := encodeCursor(idx)
-		got := decodeCursor(c)
-		if idx >= 0 && got != idx {
-			t.Fatalf("round-trip lost value: encode(%d) -> %q -> decode -> %d", idx, c, got)
-		}
 	})
 }
 

@@ -33,14 +33,7 @@ import (
 //     ("repo" → contents:write, "read:org" → members:read, etc.).
 //
 // Level ordering: read < write < admin. "admin" implies write; "write" implies read.
-
-type permLevel int
-
-const (
-	permRead permLevel = iota
-	permWrite
-	permAdmin
-)
+// (permLevel itself lives in internal/store as PermLevel — ARCH-003.)
 
 // permissionGrant is the typed authorization fact requirePerm passes to the
 // handler after both halves of its decision have succeeded: the credential
@@ -295,12 +288,7 @@ func repoNamedInRequest(r *http.Request) bool {
 // named `acme` administer the *organization* named `acme`, up to and including
 // minting a runner registration token for it. anyAccount is for resources that
 // hang off an account of either kind, such as a ProjectV2.
-type accountKind int
-
-const (
-	anyAccount accountKind = iota
-	organizationAccount
-)
+// (accountKind itself lives in internal/store as AccountKind — ARCH-003.)
 
 func installationOnAccount(inst *Installation, kind accountKind, login string) bool {
 	if inst == nil || login == "" {

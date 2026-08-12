@@ -1188,11 +1188,49 @@ func jsonObject[K comparable, V any](m map[K]V) map[K]V {
 	return m
 }
 
-func nullableTimePtr(t *time.Time) interface{} {
-	if t == nil || t.IsZero() {
+// repoOwnerREST returns a simple-user-shaped map for the owner of repo,
+// using snake_case keys. For org-owned repos it resolves the organization
+// from the repo's full name rather than the creating user.
+func repoOwnerREST(repo *Repo, st *Store, baseURL string) map[string]interface{} {
+	if repo == nil {
 		return nil
 	}
-	return t.UTC().Format(time.RFC3339)
+	ownerLogin, _, _ := strings.Cut(repo.FullName, "/")
+	st.Mu.RLock()
+	org := st.OrgsByLogin[ownerLogin]
+	st.Mu.RUnlock()
+	if org != nil {
+		api := baseURL + "/api/v3/orgs/" + org.Login
+		return map[string]interface{}{
+			"login":               org.Login,
+			"id":                  org.ID,
+			"node_id":             org.NodeID,
+			"avatar_url":          org.AvatarURL,
+			"gravatar_id":         "",
+			"url":                 api,
+			"html_url":            baseURL + "/" + org.Login,
+			"followers_url":       api + "/followers",
+			"following_url":       api + "/following{/other_user}",
+			"gists_url":           api + "/gists{/gist_id}",
+			"starred_url":         api + "/starred{/owner}{/repo}",
+			"subscriptions_url":   api + "/subscriptions",
+			"organizations_url":   api + "/orgs",
+			"repos_url":           api + "/repos",
+			"events_url":          api + "/events{/privacy}",
+			"received_events_url": api + "/received_events",
+			"type":                org.Type,
+			"site_admin":          false,
+			"name":                org.Name,
+			"email":               org.Email,
+			"user_view_type":      "public",
+		}
+	}
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
+	if repo.Owner != nil {
+		return userToJSON(repo.Owner)
+	}
+	return nil
 }
 
 func repoOrganizationJSON(repo *Repo, st *Store) interface{} {

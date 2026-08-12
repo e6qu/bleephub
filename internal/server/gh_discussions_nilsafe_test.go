@@ -27,10 +27,3 @@ func TestDiscussionGetReturnsDetachedSnapshot(t *testing.T) {
 		t.Fatalf("discussion mutated through GetDiscussionByNumber: %q", fresh.Body)
 	}
 }
-
-func TestDiscussionToGQLNilDiscussionReturnsNil(t *testing.T) {
-	s := newTestServer()
-	if got := discussionToGQL(nil, s.store); got != nil {
-		t.Fatalf("discussionToGQL(nil) = %#v, want nil", got)
-	}
-}

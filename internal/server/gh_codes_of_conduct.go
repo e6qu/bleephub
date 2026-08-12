@@ -1,31 +1,14 @@
 package bleephub
 
 import (
-	_ "embed"
 	"net/http"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
-// GitHub's codes-of-conduct catalog. The two entries and their body texts
-// are the real documents GitHub serves from /codes_of_conduct.
-
-//go:embed coc_contributor_covenant.md
-var cocContributorCovenantBody string
-
-//go:embed coc_citizen_code_of_conduct.md
-var cocCitizenCodeOfConductBody string
-
-type codeOfConduct struct {
-	key  string
-	name string
-	body string
-}
-
-// codesOfConductCatalog is ordered the way GitHub lists it (alphabetical by
-// key).
-var codesOfConductCatalog = []codeOfConduct{
-	{key: "citizen_code_of_conduct", name: "Citizen Code of Conduct", body: cocCitizenCodeOfConductBody},
-	{key: "contributor_covenant", name: "Contributor Covenant", body: cocContributorCovenantBody},
-}
+// GitHub's codes-of-conduct REST surface. The catalog itself (the two
+// entries and their embedded body texts) lives in internal/store so the
+// GraphQL resolver layer renders from the same data (ARCH-003).
 
 func (s *Server) registerGHCodesOfConductRoutes() {
 	s.route("GET /api/v3/codes_of_conduct", s.handleListCodesOfConduct)
@@ -34,23 +17,23 @@ func (s *Server) registerGHCodesOfConductRoutes() {
 
 // codeOfConductToJSON renders the spec `code-of-conduct` shape. The list
 // endpoint omits body (matching GitHub); the get-by-key endpoint includes it.
-func codeOfConductToJSON(c codeOfConduct, baseURL string, withBody bool) map[string]interface{} {
+func codeOfConductToJSON(c store.CodeOfConduct, baseURL string, withBody bool) map[string]interface{} {
 	out := map[string]interface{}{
-		"key":      c.key,
-		"name":     c.name,
-		"url":      baseURL + "/api/v3/codes_of_conduct/" + c.key,
+		"key":      c.Key,
+		"name":     c.Name,
+		"url":      baseURL + "/api/v3/codes_of_conduct/" + c.Key,
 		"html_url": nil,
 	}
 	if withBody {
-		out["body"] = c.body
+		out["body"] = c.Body
 	}
 	return out
 }
 
 func (s *Server) handleListCodesOfConduct(w http.ResponseWriter, r *http.Request) {
 	base := s.baseURL(r)
-	out := make([]map[string]interface{}, 0, len(codesOfConductCatalog))
-	for _, c := range codesOfConductCatalog {
+	out := make([]map[string]interface{}, 0, len(store.CodesOfConductCatalog))
+	for _, c := range store.CodesOfConductCatalog {
 		out = append(out, codeOfConductToJSON(c, base, false))
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -58,8 +41,8 @@ func (s *Server) handleListCodesOfConduct(w http.ResponseWriter, r *http.Request
 
 func (s *Server) handleGetCodeOfConduct(w http.ResponseWriter, r *http.Request) {
 	key := r.PathValue("key")
-	for _, c := range codesOfConductCatalog {
-		if c.key == key {
+	for _, c := range store.CodesOfConductCatalog {
+		if c.Key == key {
 			writeJSON(w, http.StatusOK, codeOfConductToJSON(c, s.baseURL(r), true))
 			return
 		}

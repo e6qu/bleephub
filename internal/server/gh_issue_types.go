@@ -172,30 +172,5 @@ func issueTypeJSON(it *IssueType) map[string]interface{} {
 	}
 }
 
-// --- store ---
-
-func findIssueTypeByNodeID(st *Store, nodeID string) *IssueType {
-	if nodeID == "" {
-		return nil
-	}
-	st.Mu.RLock()
-	defer st.Mu.RUnlock()
-	// O(1) fast path: the node ID embeds the globally-unique database id, so
-	// parse it and look the type up directly instead of walking every org's map
-	// under the lock (GQL-024). The NodeID equality guard rejects a decoded id
-	// that resolves to a different node shape; the scan below remains as a
-	// robustness fallback, matching the other node finders.
-	if id, ok := decodeNodeDBID(nodeID, "IT_kwDO"); ok {
-		if it := st.IssueTypesByID[id]; it != nil && it.NodeID == nodeID {
-			return it
-		}
-	}
-	for _, types := range st.OrgIssueTypes {
-		for _, it := range types {
-			if it.NodeID == nodeID {
-				return it
-			}
-		}
-	}
-	return nil
-}
+// findIssueTypeByNodeID moved to internal/graphqlapi with the GraphQL
+// resolver layer (ARCH-003); it has no REST callers.

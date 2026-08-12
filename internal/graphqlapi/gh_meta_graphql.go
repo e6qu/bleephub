@@ -1,4 +1,4 @@
-package bleephub
+package graphqlapi
 
 import (
 	"fmt"
@@ -8,6 +8,8 @@ import (
 
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/graphql/language/ast"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func stringScalar(name string) *graphql.Scalar {
@@ -26,7 +28,7 @@ func stringScalar(name string) *graphql.Scalar {
 	})
 }
 
-func (s *Server) graphQLStringScalar(name string) *graphql.Scalar {
+func (s *Resolver) graphQLStringScalar(name string) *graphql.Scalar {
 	if s.graphqlTypes.scalars == nil {
 		s.graphqlTypes.scalars = map[string]*graphql.Scalar{}
 	}
@@ -40,7 +42,7 @@ func (s *Server) graphQLStringScalar(name string) *graphql.Scalar {
 
 // addMetaFieldsToSchema implements the small, widely-used root family that
 // Octokit and schema-aware clients use for capability discovery.
-func (s *Server) addMetaFieldsToSchema(queryType *graphql.Object) {
+func (s *Resolver) addMetaFieldsToSchema(queryType *graphql.Object) {
 	dateTime := s.graphQLStringScalar("DateTime")
 	uri := s.graphQLStringScalar("URI")
 	gitObjectID := s.graphQLStringScalar("GitObjectID")
@@ -62,10 +64,10 @@ func (s *Server) addMetaFieldsToSchema(queryType *graphql.Object) {
 			"dryRun": &graphql.ArgumentConfig{Type: graphql.Boolean, DefaultValue: false},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			rate, _ := p.Context.Value(ctxAPIRateLimit).(apiRateSnapshot)
+			rate := s.apiRate(p.Context)
 			if rate.Limit == 0 {
-				rate = apiRateSnapshot{
-					Resource: "graphql", Limit: 5000, Used: 1, Remaining: 4999,
+				rate = RateSnapshot{
+					Limit: 5000, Used: 1, Remaining: 4999,
 					Reset: time.Now().UTC().Add(time.Hour).Unix(),
 				}
 			}
@@ -91,7 +93,7 @@ func (s *Server) addMetaFieldsToSchema(queryType *graphql.Object) {
 	queryType.AddFieldConfig("meta", &graphql.Field{
 		Type: graphql.NewNonNull(metaType),
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			sha := strings.ToLower(s.build.Commit)
+			sha := strings.ToLower(s.buildCommit())
 			if len(sha) != 40 {
 				sha = strings.Repeat("0", 40)
 			}
@@ -149,10 +151,10 @@ func (s *Server) addMetaFieldsToSchema(queryType *graphql.Object) {
 			"url":          &graphql.Field{Type: uri},
 		},
 	})
-	codeOfConductJSON := func(c codeOfConduct) map[string]interface{} {
+	codeOfConductJSON := func(c store.CodeOfConduct) map[string]interface{} {
 		return map[string]interface{}{
-			"body": c.body, "id": "COC_" + c.key, "key": c.key, "name": c.name,
-			"resourcePath": "/codes_of_conduct/" + c.key, "url": nil,
+			"body": c.Body, "id": "COC_" + c.Key, "key": c.Key, "name": c.Name,
+			"resourcePath": "/codes_of_conduct/" + c.Key, "url": nil,
 		}
 	}
 	queryType.AddFieldConfig("codeOfConduct", &graphql.Field{
@@ -165,8 +167,8 @@ func (s *Server) addMetaFieldsToSchema(queryType *graphql.Object) {
 			if !ok {
 				return nil, nil
 			}
-			for _, c := range codesOfConductCatalog {
-				if c.key == key {
+			for _, c := range store.CodesOfConductCatalog {
+				if c.Key == key {
 					return codeOfConductJSON(c), nil
 				}
 			}
@@ -176,8 +178,8 @@ func (s *Server) addMetaFieldsToSchema(queryType *graphql.Object) {
 	queryType.AddFieldConfig("codesOfConduct", &graphql.Field{
 		Type: graphql.NewList(codeOfConductType),
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			out := make([]interface{}, 0, len(codesOfConductCatalog))
-			for _, c := range codesOfConductCatalog {
+			out := make([]interface{}, 0, len(store.CodesOfConductCatalog))
+			for _, c := range store.CodesOfConductCatalog {
 				out = append(out, codeOfConductJSON(c))
 			}
 			return out, nil
@@ -201,7 +203,7 @@ func (s *Server) addMetaFieldsToSchema(queryType *graphql.Object) {
 // gqlLicenseType returns the shared License object type (memoized). Both
 // Query.license/licenses and Repository.licenseInfo resolve to this type —
 // matching GitHub, where licenseInfo is a full License, not a summary fork.
-func (s *Server) gqlLicenseType() *graphql.Object {
+func (s *Resolver) gqlLicenseType() *graphql.Object {
 	if s.graphqlTypes.license != nil {
 		return s.graphqlTypes.license
 	}

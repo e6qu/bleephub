@@ -1,4 +1,4 @@
-package bleephub
+package graphqlapi
 
 import (
 	"fmt"
@@ -11,7 +11,7 @@ import (
 )
 
 // addIssueFieldsToSchema adds Issue types, queries, and mutations to the schema.
-func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryType *graphql.Object, nodeInterface *graphql.Interface) (*graphql.Object, *graphql.Object) {
+func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, queryType *graphql.Object, nodeInterface *graphql.Interface) (*graphql.Object, *graphql.Object) {
 	dateTime := s.graphQLStringScalar("DateTime")
 	uri := s.graphQLStringScalar("URI")
 	lockReasonEnum := s.graphQLEnum("LockReason", "OFF_TOPIC", "RESOLVED", "SPAM", "TOO_HEATED")
@@ -903,7 +903,7 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(createIssueInputType)},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			user := ghUserFromContext(p.Context)
+			user := s.ghUserFromContext(p.Context)
 
 			input, _ := p.Args["input"].(map[string]interface{})
 			repoNodeID, _ := input["repositoryId"].(string)
@@ -978,7 +978,7 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 			// Parity with the REST create path: deliver the issues/opened
 			// webhook so `on: issues` workflows fire for GraphQL-created issues
 			// (the gh CLI uses GraphQL).
-			s.emitWebhookEvent(repo.FullName, "issues", "opened", buildIssuesPayload(s.store, repo, issue, user, "opened"))
+			s.emitWebhookEvent(repo.FullName, "issues", "opened", s.buildIssuesPayload(repo, issue, user, "opened"))
 
 			return map[string]interface{}{
 				"issue": issueToGQL(issue, s.store),
@@ -1007,7 +1007,7 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(closeIssueInputType)},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			user := ghUserFromContext(p.Context)
+			user := s.ghUserFromContext(p.Context)
 			input, _ := p.Args["input"].(map[string]interface{})
 			issueNodeID, _ := input["issueId"].(string)
 			stateReason, _ := input["stateReason"].(string)
@@ -1056,7 +1056,7 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(reopenIssueInputType)},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			user := ghUserFromContext(p.Context)
+			user := s.ghUserFromContext(p.Context)
 			input, _ := p.Args["input"].(map[string]interface{})
 			issueNodeID, _ := input["issueId"].(string)
 
@@ -1109,7 +1109,7 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(addCommentInputType)},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			user := ghUserFromContext(p.Context)
+			user := s.ghUserFromContext(p.Context)
 
 			input, _ := p.Args["input"].(map[string]interface{})
 			subjectNodeID, _ := input["subjectId"].(string)
@@ -1268,7 +1268,7 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 
 // --- GraphQL converter helpers ---
 
-func (s *Server) issueFieldValueGraphQLConnectionType() *graphql.Object {
+func (s *Resolver) issueFieldValueGraphQLConnectionType() *graphql.Object {
 	dataTypeEnum := graphql.NewEnum(graphql.EnumConfig{
 		Name: "IssueFieldDataType",
 		Values: graphql.EnumValueConfigMap{
@@ -1570,7 +1570,7 @@ func graphQLLockReason(reason string) interface{} {
 	return strings.ToUpper(strings.ReplaceAll(reason, "-", "_"))
 }
 
-func (s *Server) gqlPageInfoType() *graphql.Object {
+func (s *Resolver) gqlPageInfoType() *graphql.Object {
 	if s.graphqlTypes.pageInfo != nil {
 		return s.graphqlTypes.pageInfo
 	}
@@ -1589,7 +1589,7 @@ func (s *Server) gqlPageInfoType() *graphql.Object {
 // gqlLabelType returns the shared Label object type (memoized). Both Issue and
 // PullRequest label connections use this single type so the schema matches
 // GitHub's, where PRs and issues share one Label.
-func (s *Server) gqlLabelType() *graphql.Object {
+func (s *Resolver) gqlLabelType() *graphql.Object {
 	if s.graphqlTypes.labelType != nil {
 		return s.graphqlTypes.labelType
 	}
@@ -1615,7 +1615,7 @@ func (s *Server) gqlLabelType() *graphql.Object {
 }
 
 // gqlLabelConnectionType returns the shared LabelConnection type (memoized).
-func (s *Server) gqlLabelConnectionType() *graphql.Object {
+func (s *Resolver) gqlLabelConnectionType() *graphql.Object {
 	if s.graphqlTypes.labelConnection != nil {
 		return s.graphqlTypes.labelConnection
 	}
@@ -1633,7 +1633,7 @@ func (s *Server) gqlLabelConnectionType() *graphql.Object {
 // gqlUserConnectionType returns the shared UserConnection type (memoized).
 // Used by Issue.assignees, PullRequest.assignees, Repository.assignableUsers,
 // and Repository.watchers — the same single connection type GitHub exposes.
-func (s *Server) gqlUserConnectionType(userType *graphql.Object) *graphql.Object {
+func (s *Resolver) gqlUserConnectionType(userType *graphql.Object) *graphql.Object {
 	if s.graphqlTypes.userConnection != nil {
 		return s.graphqlTypes.userConnection
 	}
@@ -1654,7 +1654,7 @@ func (s *Server) gqlUserConnectionType(userType *graphql.Object) *graphql.Object
 // discussions all resolve reactionGroups through this one type; the source
 // maps come from reactionGroupsForGraphQL, which emits enum-shaped content
 // values and always-present users connections.
-func (s *Server) gqlReactionGroupType() *graphql.Object {
+func (s *Resolver) gqlReactionGroupType() *graphql.Object {
 	if s.graphqlTypes.reactionGroup != nil {
 		return s.graphqlTypes.reactionGroup
 	}
@@ -1684,7 +1684,7 @@ func (s *Server) gqlReactionGroupType() *graphql.Object {
 // serves both through this one type; bleephub mirrors that, so gh CLI's
 // merged Issue|PullRequest `comments` fragments select a single type. The
 // resolvers read the source maps built by commentToGQLLocked.
-func (s *Server) gqlIssueCommentType() *graphql.Object {
+func (s *Resolver) gqlIssueCommentType() *graphql.Object {
 	if s.graphqlTypes.issueComment != nil {
 		return s.graphqlTypes.issueComment
 	}
@@ -1805,7 +1805,7 @@ func (s *Server) gqlIssueCommentType() *graphql.Object {
 					if !ok {
 						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
 					}
-					viewer := ghUserFromContext(p.Context)
+					viewer := s.ghUserFromContext(p.Context)
 					authorID, _ := c["authorID"].(int)
 					return viewer != nil && authorID == viewer.ID, nil
 				},
@@ -1817,7 +1817,7 @@ func (s *Server) gqlIssueCommentType() *graphql.Object {
 
 // gqlIssueCommentConnectionType returns the shared IssueCommentConnection
 // type (memoized), used by Issue.comments and PullRequest.comments.
-func (s *Server) gqlIssueCommentConnectionType() *graphql.Object {
+func (s *Resolver) gqlIssueCommentConnectionType() *graphql.Object {
 	if s.graphqlTypes.issueCommentConnection != nil {
 		return s.graphqlTypes.issueCommentConnection
 	}
@@ -1834,7 +1834,7 @@ func (s *Server) gqlIssueCommentConnectionType() *graphql.Object {
 
 // gqlIssueConnectionType returns the shared IssueConnection type (memoized).
 // Used by Repository.issues and PullRequest.closingIssuesReferences.
-func (s *Server) gqlIssueConnectionType(issueType *graphql.Object) *graphql.Object {
+func (s *Resolver) gqlIssueConnectionType(issueType *graphql.Object) *graphql.Object {
 	if s.graphqlTypes.issueConnection != nil {
 		return s.graphqlTypes.issueConnection
 	}
@@ -1857,7 +1857,7 @@ func (s *Server) gqlIssueConnectionType(issueType *graphql.Object) *graphql.Obje
 	return s.graphqlTypes.issueConnection
 }
 
-func (s *Server) graphQLEnum(name string, values ...string) *graphql.Enum {
+func (s *Resolver) graphQLEnum(name string, values ...string) *graphql.Enum {
 	if s.graphqlTypes.enums == nil {
 		s.graphqlTypes.enums = make(map[string]*graphql.Enum)
 	}
@@ -1873,7 +1873,7 @@ func (s *Server) graphQLEnum(name string, values ...string) *graphql.Enum {
 	return enum
 }
 
-func (s *Server) gqlIssueOrderType(fieldType, directionType graphql.Input) *graphql.InputObject {
+func (s *Resolver) gqlIssueOrderType(fieldType, directionType graphql.Input) *graphql.InputObject {
 	if s.graphqlTypes.issueOrder != nil {
 		return s.graphqlTypes.issueOrder
 	}
@@ -2227,70 +2227,6 @@ func reactionGroupsForGraphQL(rs *ReactionStore, parentType string, parentID int
 
 // --- Node ID lookup helpers ---
 
-func findRepoByNodeID(st *Store, nodeID string) *Repo {
-	st.Mu.RLock()
-	defer st.Mu.RUnlock()
-	if id, ok := decodeNodeDBID(nodeID, "R_kgDO"); ok {
-		if r := st.Repos[id]; r != nil && r.NodeID == nodeID {
-			return r
-		}
-	}
-	for _, r := range st.Repos {
-		if r.NodeID == nodeID {
-			return r
-		}
-	}
-	return nil
-}
-
-func findIssueByNodeID(st *Store, nodeID string) *Issue {
-	st.Mu.RLock()
-	defer st.Mu.RUnlock()
-	if id, ok := decodeNodeDBID(nodeID, "I_kgDO"); ok {
-		if i := st.Issues[id]; i != nil && i.NodeID == nodeID {
-			return i
-		}
-	}
-	for _, i := range st.Issues {
-		if i.NodeID == nodeID {
-			return i
-		}
-	}
-	return nil
-}
-
-func findLabelByNodeID(st *Store, nodeID string) *IssueLabel {
-	st.Mu.RLock()
-	defer st.Mu.RUnlock()
-	if id, ok := decodeNodeDBID(nodeID, "LA_kgDO"); ok {
-		if l := st.Labels[id]; l != nil && l.NodeID == nodeID {
-			return l
-		}
-	}
-	for _, l := range st.Labels {
-		if l.NodeID == nodeID {
-			return l
-		}
-	}
-	return nil
-}
-
-func findMilestoneByNodeID(st *Store, nodeID string) *Milestone {
-	st.Mu.RLock()
-	defer st.Mu.RUnlock()
-	if id, ok := decodeNodeDBID(nodeID, "MI_kgDO"); ok {
-		if ms := st.Milestones[id]; ms != nil && ms.NodeID == nodeID {
-			return ms
-		}
-	}
-	for _, ms := range st.Milestones {
-		if ms.NodeID == nodeID {
-			return ms
-		}
-	}
-	return nil
-}
-
 // resolveGQLLabelIDs maps a mutation's labelIds onto store ids. A nil argument
 // — absent, or an explicit null — means "leave the labels alone" and yields a
 // nil result; an id that names no label of repoID is refused rather than
@@ -2369,22 +2305,6 @@ func applyIssueState(i *Issue, state string) {
 	i.StateReason = ""
 }
 
-func findUserByNodeID(st *Store, nodeID string) *User {
-	st.Mu.RLock()
-	defer st.Mu.RUnlock()
-	if id, ok := decodeNodeDBID(nodeID, "U_kgDO"); ok {
-		if u := st.Users[id]; u != nil && u.NodeID == nodeID {
-			return u
-		}
-	}
-	for _, u := range st.Users {
-		if u.NodeID == nodeID {
-			return u
-		}
-	}
-	return nil
-}
-
 // paginateIssuesGQL implements Relay-style cursor pagination for issues.
 func paginateIssuesGQL(issues []*Issue, st *Store, first int, after string) map[string]interface{} {
 	return paginateGQL(issues, first, after, func(i *Issue) map[string]interface{} {
@@ -2442,7 +2362,7 @@ type graphQLTypeRegistry struct {
 	projectV2ItemFieldValueUnionMemo *graphql.Union
 }
 
-func (s *Server) projectV2GraphQLTypes() *graphql.Object {
+func (s *Resolver) projectV2GraphQLTypes() *graphql.Object {
 	if s.graphqlTypes.projectV2Type != nil {
 		return s.graphqlTypes.projectV2Type
 	}
@@ -2501,7 +2421,7 @@ func (s *Server) projectV2GraphQLTypes() *graphql.Object {
 	return s.graphqlTypes.projectV2Type
 }
 
-func (s *Server) ensureProjectV2ItemsField() {
+func (s *Resolver) ensureProjectV2ItemsField() {
 	if s.graphqlTypes.projectV2Type == nil || s.graphqlTypes.projectV2ItemConnectionTypeMemo == nil || s.graphqlTypes.projectV2ItemsFieldAdded {
 		return
 	}
@@ -2531,7 +2451,7 @@ func (s *Server) ensureProjectV2ItemsField() {
 // ProjectV2MultiSelectField), the ProjectV2FieldConfiguration union, and its
 // connection. Field source maps come from projectV2FieldToGQL, whose
 // "dataType" key drives ResolveType for both the interface and the union.
-func (s *Server) projectV2FieldConnectionType() *graphql.Object {
+func (s *Resolver) projectV2FieldConnectionType() *graphql.Object {
 	if s.graphqlTypes.projectV2FieldConnectionMemo != nil {
 		return s.graphqlTypes.projectV2FieldConnectionMemo
 	}
@@ -2681,12 +2601,12 @@ func (s *Server) projectV2FieldConnectionType() *graphql.Object {
 
 // projectV2FieldConfigurationUnion returns the ProjectV2FieldConfiguration
 // union, building the field wiring (which owns the memo) on first use.
-func (s *Server) projectV2FieldConfigurationUnion() *graphql.Union {
+func (s *Resolver) projectV2FieldConfigurationUnion() *graphql.Union {
 	s.projectV2FieldConnectionType()
 	return s.graphqlTypes.projectV2FieldConfigUnionMemo
 }
 
-func (s *Server) projectV2ViewConnectionType() *graphql.Object {
+func (s *Resolver) projectV2ViewConnectionType() *graphql.Object {
 	if s.graphqlTypes.projectV2ViewConnectionMemo != nil {
 		return s.graphqlTypes.projectV2ViewConnectionMemo
 	}
@@ -2763,12 +2683,12 @@ func (s *Server) projectV2ViewConnectionType() *graphql.Object {
 // connection wiring (which owns the memo) on first use. Mutation payloads
 // (addProjectV2ItemById, updateProjectV2ItemFieldValue) reuse this type so
 // their `item` fields match GitHub's ProjectV2Item instead of private forks.
-func (s *Server) projectV2ItemType() *graphql.Object {
+func (s *Resolver) projectV2ItemType() *graphql.Object {
 	s.projectV2ItemConnectionType()
 	return s.graphqlTypes.projectV2ItemTypeMemo
 }
 
-func (s *Server) projectV2ItemConnectionType() *graphql.Object {
+func (s *Resolver) projectV2ItemConnectionType() *graphql.Object {
 	if s.graphqlTypes.projectV2ItemConnectionTypeMemo != nil {
 		return s.graphqlTypes.projectV2ItemConnectionTypeMemo
 	}
@@ -3145,7 +3065,7 @@ func projectItemsConnectionForIssue(st *Store, issueID int, args map[string]inte
 // close/reopen: it records the timeline event and delivers the issues webhook,
 // but only when the state actually transitioned (so `on: issues` workflows fire
 // for the gh CLI, which mutates over GraphQL).
-func (s *Server) emitIssueStateChange(issue *Issue, user *User, previousState, action string) {
+func (s *Resolver) emitIssueStateChange(issue *Issue, user *User, previousState, action string) {
 	if issue == nil || user == nil {
 		return
 	}
@@ -3166,5 +3086,5 @@ func (s *Server) emitIssueStateChange(issue *Issue, user *User, previousState, a
 		return
 	}
 	s.store.RecordIssueEvent(repo.ID, issue.ID, user.ID, action, nil)
-	s.emitWebhookEvent(repo.FullName, "issues", action, buildIssuesPayload(s.store, repo, issue, user, action))
+	s.emitWebhookEvent(repo.FullName, "issues", action, s.buildIssuesPayload(repo, issue, user, action))
 }

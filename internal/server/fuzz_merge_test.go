@@ -26,7 +26,7 @@ import (
 func fuzzRoutedServer(t *testing.T) *Server {
 	t.Helper()
 	s := newTestServer()
-	s.initGraphQLSchema()
+	s.graphql = s.newGraphQLResolver()
 	s.registerRoutes()
 	return s
 }

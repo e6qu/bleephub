@@ -245,35 +245,6 @@ func TestPaginationRepoList(t *testing.T) {
 	}
 }
 
-func TestRelayPaginationCombinesDirectionalBounds(t *testing.T) {
-	nodes := make([]map[string]interface{}, 8)
-	for index := range nodes {
-		nodes[index] = map[string]interface{}{"index": index}
-	}
-
-	connection := repaginateConnection(
-		map[string]interface{}{"nodes": nodes},
-		map[string]interface{}{"first": 2, "after": encodeCursor(1), "before": encodeCursor(6)},
-	).(map[string]interface{})
-	page := connection["nodes"].([]map[string]interface{})
-	if len(page) != 2 || page[0]["index"] != 2 || page[1]["index"] != 3 {
-		t.Fatalf("first/after/before window = %v, want indexes 2 and 3", page)
-	}
-	pageInfo := connection["pageInfo"].(map[string]interface{})
-	if pageInfo["hasPreviousPage"] != true || pageInfo["hasNextPage"] != true {
-		t.Fatalf("bounded forward pageInfo = %v, want both directions", pageInfo)
-	}
-
-	connection = repaginateConnection(
-		map[string]interface{}{"nodes": nodes},
-		map[string]interface{}{"last": 2, "after": encodeCursor(1), "before": encodeCursor(6)},
-	).(map[string]interface{})
-	page = connection["nodes"].([]map[string]interface{})
-	if len(page) != 2 || page[0]["index"] != 4 || page[1]["index"] != 5 {
-		t.Fatalf("last/after/before window = %v, want indexes 4 and 5", page)
-	}
-}
-
 func TestCommentSinceFilterIsSharedAndStrict(t *testing.T) {
 	type item struct {
 		id      int

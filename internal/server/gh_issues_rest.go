@@ -1512,29 +1512,8 @@ func issueEventForIssueToJSON(e *IssueEvent, st *Store, baseURL, repoFullName st
 	return out
 }
 
-// issueHasAllLabels checks if an issue has all the given label names.
-func issueHasAllLabels(st *Store, issue *Issue, labelNames []string, repoID int) bool {
-	return labelIDsCoverNames(st, issue.LabelIDs, labelNames)
-}
-
-// labelIDsCoverNames is the label filter itself: it asks about label ids, not
-// about issues, so pull requests can be filtered by the same predicate.
-func labelIDsCoverNames(st *Store, labelIDs []int, labelNames []string) bool {
-	for _, name := range labelNames {
-		found := false
-		for _, lid := range labelIDs {
-			l := st.GetLabel(lid)
-			if l != nil && l.Name == strings.TrimSpace(name) {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return false
-		}
-	}
-	return true
-}
+// issueHasAllLabels / labelIDsCoverNames moved to internal/store
+// (ARCH-003): pure label predicates shared by REST and GraphQL.
 
 // handleListOrgIssues implements GET /orgs/{org}/issues: issues across the
 // organization's repositories that involve the authenticated user, selected
