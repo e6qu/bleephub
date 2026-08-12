@@ -22,17 +22,16 @@ FROM golang:1.26.5@sha256:2005724102f45917a63e9d092fc0e4ea56ea575048ce147caad5f5
 
 WORKDIR /src
 
-# --- Build the cloud simulators (job containers run as sim cloud tasks) ---
+# --- Install the cloud simulators (job containers run as sim cloud tasks) ---
 # One image serves multiple backends; run-integration.sh picks via
-# BLEEPHUB_BACKEND (ecs → AWS sim, aca → Azure sim, …).
-COPY --from=sockerless simulators/realexec/ /realexec/
-COPY --from=sockerless simulators/ui-auth/ /ui-auth/
-COPY --from=sockerless simulators/aws/ /sim-aws/
-RUN cd /sim-aws && GOWORK=off go build -tags noui -o /out/simulator-aws .
-COPY --from=sockerless simulators/azure/ /sim-azure/
-RUN cd /sim-azure && GOWORK=off go build -tags noui -o /out/simulator-azure .
-COPY --from=sockerless simulators/gcp/ /sim-gcp/
-RUN cd /sim-gcp && GOWORK=off go build -tags noui -o /out/simulator-gcp .
+# BLEEPHUB_BACKEND (ecs → AWS sim, aca → Azure sim, …). The simulators live
+# in github.com/e6qu/sockerless-cloud, pinned at a release commit (go install
+# of a subdirectory module needs a commit-ish, not the repository-root
+# release tag). This is the v0.2.0 release commit.
+ARG SOCKERLESS_CLOUD_VERSION=3e333cfb3cbd2d0b9fe141365543c8b25544aa30
+RUN GOBIN=/out go install -tags noui github.com/e6qu/sockerless-cloud/simulator-aws@${SOCKERLESS_CLOUD_VERSION} && \
+    GOBIN=/out go install -tags noui github.com/e6qu/sockerless-cloud/simulator-azure@${SOCKERLESS_CLOUD_VERSION} && \
+    GOBIN=/out go install -tags noui github.com/e6qu/sockerless-cloud/simulator-gcp@${SOCKERLESS_CLOUD_VERSION}
 
 # --- Build the backends + agent (the runner's DOCKER_HOST target) ---
 COPY --from=sockerless api/ api/

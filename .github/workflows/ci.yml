@@ -536,7 +536,7 @@ jobs:
         with:
           persist-credentials: false
           repository: e6qu/sockerless
-          ref: 2e6966f7982e6d908a4beb1e59e0973ac892b6b1
+          ref: 5f8763b94e4febb85eddf3a732a9e55980b93830
           path: sockerless
       - name: Exercise the official runner against the real simulator and backend
         run: timeout --foreground --kill-after=1m 14m env SOCKERLESS_ROOT="$GITHUB_WORKSPACE/sockerless" make runner-sockerless-test
