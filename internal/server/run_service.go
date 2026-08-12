@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/actions"
 )
 
 func (s *Server) registerRunServiceRoutes() {
@@ -45,7 +47,7 @@ func (s *Server) requireAssignedAgent(next http.HandlerFunc) http.HandlerFunc {
 			http.Error(w, "invalid request ID", http.StatusBadRequest)
 			return
 		}
-		job := s.lookupJobByRequestID(reqID)
+		job := s.actions.LookupJobByRequestID(reqID)
 		if job == nil {
 			http.Error(w, "request not found", http.StatusNotFound)
 			return
@@ -70,7 +72,7 @@ func (s *Server) requireAssignedAgent(next http.HandlerFunc) http.HandlerFunc {
 func (s *Server) requirePlanJob(next http.HandlerFunc) http.HandlerFunc {
 	return s.requireJobToken(func(w http.ResponseWriter, r *http.Request) {
 		planID := r.PathValue("planId")
-		job := s.lookupJobByPlanID(planID)
+		job := s.actions.LookupJobByPlanID(planID)
 		if job == nil {
 			http.Error(w, "plan not found", http.StatusNotFound)
 			return
@@ -98,7 +100,7 @@ func (s *Server) handleGetRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	job := s.lookupJobByRequestID(reqID)
+	job := s.actions.LookupJobByRequestID(reqID)
 	if job == nil {
 		http.Error(w, "request not found", http.StatusNotFound)
 		return
@@ -119,7 +121,7 @@ func (s *Server) handleRenewRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	job := s.lookupJobByRequestID(reqID)
+	job := s.actions.LookupJobByRequestID(reqID)
 	if job == nil {
 		http.Error(w, "request not found", http.StatusNotFound)
 		return
@@ -140,12 +142,12 @@ func (s *Server) handleRenewRequest(w http.ResponseWriter, r *http.Request) {
 	// the checks layer report in_progress from this moment.
 	if startedRunning {
 		for _, wf := range s.store.Workflows {
-			if wfJob, ok := findWorkflowJobByID(wf, job.ID); ok {
+			if wfJob, ok := actions.FindWorkflowJobByID(wf, job.ID); ok {
 				if wfJob.Status == JobStatusQueued {
 					wfJob.Status = JobStatusRunning
 					wfJob.StartedAt = time.Now()
 					s.store.PersistWorkflowRecord(wf)
-					s.queueActionsEvent(evJobInProgress, wf, wfJob)
+					s.actions.QueueEvent(actions.EvJobInProgress, wf, wfJob)
 				}
 				break
 			}
@@ -182,7 +184,7 @@ func (s *Server) handleCompleteRequest(w http.ResponseWriter, r *http.Request) {
 
 	result := r.URL.Query().Get("result")
 
-	job := s.lookupJobByRequestID(reqID)
+	job := s.actions.LookupJobByRequestID(reqID)
 	if job == nil {
 		http.Error(w, "request not found", http.StatusNotFound)
 		return
@@ -207,7 +209,7 @@ func (s *Server) handleCompleteRequest(w http.ResponseWriter, r *http.Request) {
 		Msg("job request completed (DELETE)")
 
 	// Notify workflow engine of job completion
-	s.onJobCompleted(r.Context(), jobIDSnap, jobResultSnap)
+	s.actions.OnJobCompleted(r.Context(), jobIDSnap, jobResultSnap)
 
 	w.WriteHeader(http.StatusOK)
 }
@@ -243,7 +245,7 @@ func (s *Server) handleFinishJob(w http.ResponseWriter, r *http.Request) {
 	// The plan names the job. A jobId in the body may confirm it but never
 	// select a different one: completing whatever job the body pointed at was
 	// a way to finish another runner's work.
-	job := s.lookupJobByPlanID(planID)
+	job := s.actions.LookupJobByPlanID(planID)
 	if job == nil {
 		http.Error(w, "plan not found", http.StatusNotFound)
 		return
@@ -256,7 +258,7 @@ func (s *Server) handleFinishJob(w http.ResponseWriter, r *http.Request) {
 	// Store the official runner's evaluated outputs before completing the
 	// workflow job. Completion can synchronously dispatch a downstream
 	// job whose needs context must already contain these values.
-	s.captureResolvedJobOutputs(job.ID, body.Outputs)
+	s.actions.CaptureResolvedJobOutputs(job.ID, body.Outputs)
 
 	s.store.Mu.Lock()
 	s.store.MarkJobCompletedLocked(job)
@@ -270,63 +272,9 @@ func (s *Server) handleFinishJob(w http.ResponseWriter, r *http.Request) {
 	s.logger.Info().Str("jobId", jobIDSnap).Str("result", jobResultSnap).Msg("job status updated")
 
 	// Notify workflow engine of job completion
-	s.onJobCompleted(r.Context(), jobIDSnap, jobResultSnap)
+	s.actions.OnJobCompleted(r.Context(), jobIDSnap, jobResultSnap)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"status": "ok"})
-}
-
-// captureResolvedJobOutputs stores the output names and values evaluated by
-// actions/runner. The JobCompleted event already contains the declared output
-// names (for example, "version"), so resolving step expressions a second time
-// on the server would discard the official runner result.
-func (s *Server) captureResolvedJobOutputs(jobID string, outputs map[string]runnerVariableValue) {
-	if len(outputs) == 0 {
-		return
-	}
-
-	resolved := make(map[string]string, len(outputs))
-	for name, output := range outputs {
-		resolved[name] = output.Value
-	}
-
-	s.store.Mu.Lock()
-	var wfJob *WorkflowJob
-	var workflow *Workflow
-	for _, wf := range s.store.Workflows {
-		if job, ok := findWorkflowJobByID(wf, jobID); ok {
-			wfJob = job
-			workflow = wf
-			break
-		}
-	}
-	if wfJob != nil {
-		if wfJob.Outputs == nil {
-			wfJob.Outputs = make(map[string]string, len(resolved))
-		}
-		for name, value := range resolved {
-			wfJob.Outputs[name] = value
-		}
-		s.store.PersistWorkflowRecord(workflow)
-	}
-	s.store.Mu.Unlock()
-
-	if wfJob != nil {
-		s.logger.Info().
-			Str("jobId", jobID).
-			Interface("outputs", resolved).
-			Msg("job outputs captured")
-	}
-}
-
-// findWorkflowJobByID scans a workflow's jobs for the given engine job
-// UUID. Callers hold the store lock.
-func findWorkflowJobByID(wf *Workflow, jobID string) (*WorkflowJob, bool) {
-	for _, wfJob := range wf.Jobs {
-		if wfJob.JobID == jobID {
-			return wfJob, true
-		}
-	}
-	return nil, false
 }
 
 func (s *Server) handleJobEvents(w http.ResponseWriter, r *http.Request) {
@@ -342,7 +290,7 @@ func (s *Server) handleJobEvents(w http.ResponseWriter, r *http.Request) {
 	if body.Name == "JobCompleted" {
 		// As on FinishJob: the plan names the job, and a jobId in the body may
 		// only confirm it.
-		job := s.lookupJobByPlanID(planID)
+		job := s.actions.LookupJobByPlanID(planID)
 		if job == nil {
 			http.Error(w, "plan not found", http.StatusNotFound)
 			return
@@ -352,7 +300,7 @@ func (s *Server) handleJobEvents(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		s.captureResolvedJobOutputs(job.ID, body.Outputs)
+		s.actions.CaptureResolvedJobOutputs(job.ID, body.Outputs)
 		result, err := runnerJobResult(body.Result)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -363,23 +311,18 @@ func (s *Server) handleJobEvents(w http.ResponseWriter, r *http.Request) {
 		job.Result = result
 		jobIDSnap := job.ID
 		s.store.Mu.Unlock()
-		s.onJobCompleted(r.Context(), jobIDSnap, result)
+		s.actions.OnJobCompleted(r.Context(), jobIDSnap, result)
 	}
 
 	w.WriteHeader(http.StatusOK)
 }
 
-type runnerVariableValue struct {
-	Value    string `json:"value"`
-	IsSecret bool   `json:"isSecret"`
-}
-
 type runnerJobEvent struct {
-	Name      string                         `json:"name"`
-	JobID     string                         `json:"jobId"`
-	RequestID int64                          `json:"requestId"`
-	Result    json.RawMessage                `json:"result"`
-	Outputs   map[string]runnerVariableValue `json:"outputs"`
+	Name      string                                 `json:"name"`
+	JobID     string                                 `json:"jobId"`
+	RequestID int64                                  `json:"requestId"`
+	Result    json.RawMessage                        `json:"result"`
+	Outputs   map[string]actions.RunnerVariableValue `json:"outputs"`
 }
 
 // runnerJobResult maps the official actions/runner TaskResult JSON value onto

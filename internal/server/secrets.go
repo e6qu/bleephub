@@ -7,16 +7,10 @@ import (
 	"strconv"
 	"strings"
 	"time"
-)
 
-// envScopeKey keys Store.EnvSecrets / Store.EnvVariables. Environment
-// scopes are per (repository, environment name); the unit separator can
-// appear in neither an "owner/repo" key nor an environment name, so the
-// pair packs into one collision-free string. Deliberately NOT NUL: these
-// composites are also persistence bucket keys and must stay text-safe.
-func envScopeKey(repoKey, envName string) string {
-	return repoKey + "\x1f" + envName
-}
+	"github.com/e6qu/bleephub/internal/actions"
+	"github.com/e6qu/bleephub/internal/store"
+)
 
 // actionsItemNameRe is real GitHub's name rule for Actions secrets and
 // variables: alphanumeric or underscores only, not starting with a digit.
@@ -320,7 +314,7 @@ func (s *Server) handleListRepoOrgSecrets(w http.ResponseWriter, r *http.Request
 		s.store.Mu.RLock()
 		visible := make(map[string]*Secret)
 		for name, sec := range s.store.OrgSecrets[org.Login] {
-			if orgItemVisibleToRepo(sec.Visibility, sec.SelectedRepoIDs, repo) {
+			if actions.OrgItemVisibleToRepo(sec.Visibility, sec.SelectedRepoIDs, repo) {
 				visible[name] = &sec.Secret
 			}
 		}
@@ -355,7 +349,7 @@ func (s *Server) resolveEnvScope(w http.ResponseWriter, r *http.Request) (repoKe
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return "", "", "", false
 	}
-	return repo.FullName, envScopeKey(repo.FullName, envName), envName, true
+	return repo.FullName, store.EnvScopeKey(repo.FullName, envName), envName, true
 }
 
 func (s *Server) handleListEnvSecrets(w http.ResponseWriter, r *http.Request) {

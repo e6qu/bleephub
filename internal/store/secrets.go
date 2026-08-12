@@ -2,6 +2,15 @@ package store
 
 import "time"
 
+// EnvScopeKey keys Store.EnvSecrets / Store.EnvVariables. Environment
+// scopes are per (repository, environment name); the unit separator can
+// appear in neither an "owner/repo" key nor an environment name, so the
+// pair packs into one collision-free string. Deliberately NOT NUL: these
+// composites are also persistence bucket keys and must stay text-safe.
+func EnvScopeKey(repoKey, envName string) string {
+	return repoKey + "\x1f" + envName
+}
+
 // Secret represents an Actions secret at any scope (repository or
 // environment; OrgSecret embeds it for the organization scope).
 //

@@ -5,6 +5,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/actions"
 )
 
 // GitHub Actions configuration variables (plaintext counterpart of
@@ -68,7 +70,7 @@ func orgVariableJSON(v *ActionsVariable, orgLogin, baseURL string) map[string]in
 type variableTable struct {
 	s      *Server
 	bucket string // "repo_variables" | "org_variables" | "env_variables"
-	key    string // repo full name, org login, or envScopeKey(...)
+	key    string // repo full name, org login, or store.EnvScopeKey(...)
 }
 
 func (s *Server) repoVariableTableFor(w http.ResponseWriter, r *http.Request) (variableTable, bool) {
@@ -347,7 +349,7 @@ func (s *Server) handleListRepoOrgVariables(w http.ResponseWriter, r *http.Reque
 		m := s.store.OrgVariables[org.Login]
 		names := make([]string, 0, len(m))
 		for name, v := range m {
-			if orgItemVisibleToRepo(v.Visibility, v.SelectedRepoIDs, repo) {
+			if actions.OrgItemVisibleToRepo(v.Visibility, v.SelectedRepoIDs, repo) {
 				names = append(names, name)
 			}
 		}

@@ -376,7 +376,7 @@ func (s *Server) handleAgentRefreshMessage(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	s.sendAgentRefreshMessage(agentID, req.TargetVersion, timeout)
+	s.actions.SendAgentRefreshMessage(agentID, req.TargetVersion, timeout)
 	w.WriteHeader(http.StatusAccepted)
 }
 

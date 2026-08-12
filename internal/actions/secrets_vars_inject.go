@@ -1,15 +1,15 @@
-package bleephub
+package actions
 
 import (
 	"fmt"
 	"strings"
 )
 
-// orgItemVisibleToRepo reports whether an organization-level secret or
+// OrgItemVisibleToRepo reports whether an organization-level secret or
 // variable applies to a repository under real GitHub's visibility rules:
 // "all" applies to every repo in the org, "private" only to private (and
 // internal) repos, "selected" only to the explicitly selected repo IDs.
-func orgItemVisibleToRepo(visibility string, selectedIDs []int, repo *Repo) bool {
+func OrgItemVisibleToRepo(visibility string, selectedIDs []int, repo *Repo) bool {
 	switch visibility {
 	case "all":
 		return true
@@ -51,7 +51,7 @@ func jobSecretsEntitled(scope runnerScope, repoFullName string) bool {
 // environment-level items override both. Secrets and variables merge
 // independently. The returned maps are fresh copies safe to hand to the
 // runner-message builder.
-func (s *Server) CollectJobSecretsAndVars(repoFullName, envName string) (secrets map[string]string, vars map[string]string, err error) {
+func (s *Engine) CollectJobSecretsAndVars(repoFullName, envName string) (secrets map[string]string, vars map[string]string, err error) {
 	s.store.Mu.RLock()
 	defer s.store.Mu.RUnlock()
 	return s.collectJobSecretsAndVarsLocked(repoFullName, envName)
@@ -60,7 +60,7 @@ func (s *Server) CollectJobSecretsAndVars(repoFullName, envName string) (secrets
 // collectJobSecretsAndVarsLocked is the lock-free core of
 // CollectJobSecretsAndVars for callers already holding the store lock
 // (job dispatch evaluates `if:` expressions under it).
-func (s *Server) collectJobSecretsAndVarsLocked(repoFullName, envName string) (secrets map[string]string, vars map[string]string, err error) {
+func (s *Engine) collectJobSecretsAndVarsLocked(repoFullName, envName string) (secrets map[string]string, vars map[string]string, err error) {
 	secrets = make(map[string]string)
 	vars = make(map[string]string)
 
@@ -74,12 +74,12 @@ func (s *Server) collectJobSecretsAndVarsLocked(repoFullName, envName string) (s
 	owner, _, _ := strings.Cut(repoFullName, "/")
 	if org := s.store.OrgsByLogin[owner]; org != nil {
 		for name, sec := range s.store.OrgSecrets[org.Login] {
-			if orgItemVisibleToRepo(sec.Visibility, sec.SelectedRepoIDs, repo) {
+			if OrgItemVisibleToRepo(sec.Visibility, sec.SelectedRepoIDs, repo) {
 				secrets[name] = sec.Value
 			}
 		}
 		for name, v := range s.store.OrgVariables[org.Login] {
-			if orgItemVisibleToRepo(v.Visibility, v.SelectedRepoIDs, repo) {
+			if OrgItemVisibleToRepo(v.Visibility, v.SelectedRepoIDs, repo) {
 				vars[name] = v.Value
 			}
 		}

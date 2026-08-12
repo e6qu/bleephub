@@ -27,6 +27,8 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/e6qu/bleephub/internal/actions"
 )
 
 // Server is the bleephub HTTP server implementing the GitHub Actions
@@ -46,16 +48,16 @@ type Server struct {
 	// overrides the env-derived object byte store. It lets a test stand up a
 	// fully persistent server (BLEEPHUB_PERSIST=true) with an in-memory object
 	// store instead of requiring a live S3/MinIO endpoint.
-	injectedByteStore     actionsByteStore
-	scheduleFired         scheduleFiredKeys // cron-firing dedup (on: schedule)
-	scheduleIndex         scheduleIndex     // parsed-schedule cache keyed by default-branch tip (on: schedule)
-	actionsEvents         actionsEventLoop  // checks/webhook fan-out for run+job transitions
+	injectedByteStore actionsByteStore
+	// actions is the extracted Actions execution engine (ARCH-002). It owns
+	// workflow submission/dispatch, the broker queue, concurrency admission,
+	// scheduling, and the checks/webhook event loop; the server reaches it
+	// exclusively through its exported surface.
+	actions               *actions.Engine
 	registryUploadsMu     sync.Mutex
 	registryUploads       map[string]*containerRegistryUpload
 	classroomMu           sync.Mutex // serializes multi-resource Classroom browser transactions
 	marketplaceMu         sync.Mutex // serializes Marketplace billing transitions and webhook emission
-	workflowConcurrencyMu sync.Mutex // serializes concurrency-group admission and queue promotion
-	workflowTimeoutMu     sync.Mutex // serializes timeout watcher replacement and cancellation
 	rateLimitsMu          sync.Mutex
 	rateLimits            map[string]*apiRateWindow // hashed credential + resource -> current primary-limit window
 	routePatterns         []string                  // every pattern registered via route(), for fidelity enumeration
@@ -177,7 +179,63 @@ func newServerState(addr string, logger zerolog.Logger, construction serverConst
 	// Route the store's own error logging through the configured structured
 	// logger (level filter + telemetry bridge) instead of the stdlib default.
 	s.store.Logger = logger
+	s.actions = s.newActionsEngine()
 	return s
+}
+
+// newActionsEngine wires the Actions engine to this server's store and
+// injected seams. Re-invoked by NewServer when a test-injected byte store
+// replaces the artifact store before anything has run.
+func (s *Server) newActionsEngine() *actions.Engine {
+	return actions.NewEngine(actions.Config{
+		Store:     s.store,
+		Artifacts: s.artifactStore,
+		Logger:    s.logger,
+		Metrics:   s.metrics,
+		Addr:      s.addr,
+		Events:    s,
+		// GITHUB_TOKEN minting stays in the auth layer: mint and verify share
+		// the runner MAC key (auth.go), and signature drift would break every
+		// runner job at lease time.
+		MintJobToken: func(scopeID string, wf *Workflow, jd *JobDef) string {
+			return makeJobJWT(scopeID, wf.RepoFullName, s.resolveJobTokenPermissions(wf, jd))
+		},
+		RepoEventPayload: repoPayload,
+		Now:              s.currentTime,
+		Go:               s.goBackground,
+		// The engine's minute tick carries the server-side housekeeping that
+		// rode the schedule dispatcher before the extraction.
+		OnScheduleTick: []func(time.Time){
+			func(now time.Time) {
+				if err := s.store.ReapExpiredLoginSessions(now); err != nil {
+					s.logger.Error().Err(err).Msg("expired login-session reap failed")
+				}
+			},
+			s.reconcileOrgInvitationsSafely,
+		},
+		CompletedJobRetention: runnerTokenTTL,
+	})
+}
+
+// reconcileOrgInvitationsSafely runs the org-invitation state machine on a
+// background tick so a GET never has to (STORE-034). A durable write failure
+// panics through the Must* helpers; the background goroutine has no recover
+// middleware, so catch it here, reload durable state, and continue rather than
+// letting a transient persist error kill the dispatcher.
+func (s *Server) reconcileOrgInvitationsSafely(now time.Time) {
+	defer func() {
+		if r := recover(); r != nil {
+			if pf, ok := r.(*persistenceFailure); ok {
+				s.logger.Error().Err(pf).Msg("org-invitation reconcile persist failed; reloading")
+				if err := s.store.ReloadFromPersistence(); err != nil {
+					s.logger.Error().Err(err).Msg("reload after org-invitation reconcile failure")
+				}
+				return
+			}
+			panic(r)
+		}
+	}()
+	s.store.ReconcileAllOrgInvitations(now)
 }
 
 // route registers a handler AND records its "METHOD /path" pattern so the
@@ -350,6 +408,9 @@ func NewServer(addr string, logger zerolog.Logger, options ...ServerOption) *Ser
 	if s.injectedByteStore != nil {
 		byteStore = s.injectedByteStore
 		s.artifactStore = NewArtifactStoreWithByteStore(dataDir, byteStore)
+		// The engine captured the replaced artifact store at construction;
+		// rebuild it against the injected one before anything runs.
+		s.actions = s.newActionsEngine()
 	}
 	if err := s.identity.validate(); err != nil {
 		logger.Fatal().Err(err).Msg("invalid Bleephub external identity configuration")
@@ -757,8 +818,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	if err := s.startGitSSH(ctx); err != nil {
 		return err
 	}
-	s.startScheduleDispatcher(ctx)
-	s.startActionsJanitor(ctx)
+	s.actions.Start(ctx)
 	handler := s.requestHandler()
 
 	srv := &http.Server{

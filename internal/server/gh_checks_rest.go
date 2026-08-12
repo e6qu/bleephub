@@ -49,7 +49,7 @@ func (s *Server) handleRerequestCheckRun(w http.ResponseWriter, r *http.Request)
 		c.Conclusion = ""
 		c.CompletedAt = nil
 	})
-	s.emitCheckRunEvent(cr.RepoKey, cr.ID, "rerequested")
+	s.CheckRunEvent(cr.RepoKey, cr.ID, "rerequested")
 	writeJSON(w, http.StatusCreated, map[string]interface{}{})
 }
 
@@ -64,7 +64,7 @@ func (s *Server) handleRerequestCheckSuite(w http.ResponseWriter, r *http.Reques
 		cs.Status = "queued"
 		cs.Conclusion = ""
 	})
-	s.emitCheckSuiteEvent(suite.RepoKey, suite.ID, "rerequested")
+	s.CheckSuiteEvent(suite.RepoKey, suite.ID, "rerequested")
 	writeJSON(w, http.StatusCreated, map[string]interface{}{})
 }
 

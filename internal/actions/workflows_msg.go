@@ -1,4 +1,4 @@
-package bleephub
+package actions
 
 import (
 	"encoding/json"
@@ -13,12 +13,15 @@ import (
 
 // buildJobMessageFromDef builds a job message from a WorkflowDef-based job,
 // supporting both run: and uses: steps.
-func (s *Server) buildJobMessageFromDef(serverURL string, wf *Workflow, wfJob *WorkflowJob, planID, timelineID string, requestID int64, defaultImage string) (map[string]interface{}, error) {
+func (s *Engine) buildJobMessageFromDef(serverURL string, wf *Workflow, wfJob *WorkflowJob, planID, timelineID string, requestID int64, defaultImage string) (map[string]interface{}, error) {
 	jd := wfJob.Def
 	scopeID := uuid.New().String()
 	// GITHUB_TOKEN is scoped to this workflow's repository and the least-
 	// privilege permission set its `permissions:` block resolves to (ACT-014).
-	jobToken := makeJobJWT(scopeID, wf.RepoFullName, s.resolveJobTokenPermissions(wf, jd))
+	// Minting stays behind the server-injected seam: mint and verify share
+	// the runner MAC key, and signature drift would break every runner job
+	// at lease time.
+	jobToken := s.mintJobToken(scopeID, wf, jd)
 
 	// Determine the job container; empty means host mode (the run was
 	// submitted with hostMode and the YAML declares no container) — the
@@ -399,7 +402,7 @@ func anyMap(m map[string]interface{}) map[string]interface{} { return m }
 // githubRunnerContext assembles the full `github` context the runner
 // receives: the server-side context map (including the triggering event
 // payload) plus the runner-session keys.
-func githubRunnerContext(s *Server, wf *Workflow, wfJob *WorkflowJob, serverURL, jobToken string) map[string]interface{} {
+func githubRunnerContext(s *Engine, wf *Workflow, wfJob *WorkflowJob, serverURL, jobToken string) map[string]interface{} {
 	m := s.githubContextMap(wf)
 	m["server_url"] = serverURL
 	m["api_url"] = serverURL
@@ -422,7 +425,7 @@ func githubRunnerContext(s *Server, wf *Workflow, wfJob *WorkflowJob, serverURL,
 // remapCallSecrets applies a reusable-workflow call's explicit `secrets:`
 // map: the called job receives ONLY the mapped names, with each value
 // template (`${{ secrets.X }}`) evaluated against the caller's secrets.
-func remapCallSecrets(s *Server, wf *Workflow, binding *WorkflowCallBinding, callerSecrets map[string]string) (map[string]string, error) {
+func remapCallSecrets(s *Engine, wf *Workflow, binding *WorkflowCallBinding, callerSecrets map[string]string) (map[string]string, error) {
 	secretsCtx := make(map[string]interface{}, len(callerSecrets))
 	for k, v := range callerSecrets {
 		secretsCtx[k] = v
@@ -725,7 +728,7 @@ func runnerContextOS(agent *Agent) string {
 			return "macOS"
 		}
 	}
-	switch osFromDescription(agent.OSDescription) {
+	switch OSFromDescription(agent.OSDescription) {
 	case "windows":
 		return "Windows"
 	case "macos":

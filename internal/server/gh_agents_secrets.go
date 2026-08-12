@@ -5,6 +5,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/actions"
 )
 
 // GitHub Copilot coding agent secrets and variables — the /agents/
@@ -174,7 +176,7 @@ func (s *Server) handleListAgentsRepoOrgSecrets(w http.ResponseWriter, r *http.R
 		s.store.Mu.RLock()
 		visible := make(map[string]*Secret)
 		for name, sec := range s.store.AgentsOrgSecrets[org.Login] {
-			if orgItemVisibleToRepo(sec.Visibility, sec.SelectedRepoIDs, repo) {
+			if actions.OrgItemVisibleToRepo(sec.Visibility, sec.SelectedRepoIDs, repo) {
 				visible[name] = &sec.Secret
 			}
 		}
@@ -675,7 +677,7 @@ func (s *Server) handleListAgentsRepoOrgVariables(w http.ResponseWriter, r *http
 		m := s.store.AgentsOrgVariables[org.Login]
 		names := make([]string, 0, len(m))
 		for name, v := range m {
-			if orgItemVisibleToRepo(v.Visibility, v.SelectedRepoIDs, repo) {
+			if actions.OrgItemVisibleToRepo(v.Visibility, v.SelectedRepoIDs, repo) {
 				names = append(names, name)
 			}
 		}

@@ -1,4 +1,4 @@
-package bleephub
+package actions
 
 import (
 	"context"
@@ -33,12 +33,12 @@ import (
 
 // --- garbage collection ---
 
-// releaseJobLogFiles releases the in-memory log bytes claimed by the given
+// ReleaseJobLogFiles releases the in-memory log bytes claimed by the given
 // plans: the ArtifactStore claim registry maps log ids to the plan that
 // reserved them. Durable byte-store log objects are left alone — GC here is
 // purely in-memory. Must be called without the store lock held (the
 // ArtifactStore has its own mutex).
-func (s *Server) releaseJobLogFiles(planIDs []string) {
+func (s *Engine) ReleaseJobLogFiles(planIDs []string) {
 	if len(planIDs) == 0 || s.artifactStore == nil {
 		return
 	}
@@ -56,17 +56,17 @@ func (s *Server) releaseJobLogFiles(planIDs []string) {
 // actionsJanitorInterval is how often the janitor sweeps retired job state.
 const actionsJanitorInterval = 10 * time.Minute
 
-// completedJobRetention is how long a completed job's replica-local runtime
-// state stays addressable. runnerTokenTTL bounds the lifetime of the job's
-// runtime token and the agent session token that could still name it, and
-// completed-job teardown calls (DELETE AgentRequest, late log flushes) can
-// arrive that late — so nothing valid can reach the job afterwards.
-const completedJobRetention = runnerTokenTTL
+// Engine.completedJobRetention is how long a completed job's replica-local
+// runtime state stays addressable. The server wires it to its runner token
+// TTL: that bounds the lifetime of the job's runtime token and the agent
+// session token that could still name it, and completed-job teardown calls
+// (DELETE AgentRequest, late log flushes) can arrive that late — so nothing
+// valid can reach the job afterwards.
 
 // startActionsJanitor runs the periodic sweep of retired Actions job state for
 // the server's lifetime. There is deliberately one janitor per process,
 // started with the server and stopped through ctx at shutdown.
-func (s *Server) startActionsJanitor(ctx context.Context) {
+func (s *Engine) startActionsJanitor(ctx context.Context) {
 	s.goBackground(func() {
 		ticker := time.NewTicker(actionsJanitorInterval)
 		defer ticker.Stop()
@@ -84,7 +84,7 @@ func (s *Server) startActionsJanitor(ctx context.Context) {
 // sweepRetiredActionsJobs deletes the replica-local state of every job whose
 // retirement stamp is older than completedJobRetention. Returns how many jobs
 // were swept (for tests and logging).
-func (s *Server) sweepRetiredActionsJobs(now time.Time) int {
+func (s *Engine) sweepRetiredActionsJobs(now time.Time) int {
 	var planIDs []string
 	s.store.Mu.Lock()
 	var retired []*Job
@@ -92,7 +92,7 @@ func (s *Server) sweepRetiredActionsJobs(now time.Time) int {
 		if job.CompletedAt.IsZero() {
 			continue
 		}
-		if now.Sub(job.CompletedAt) < completedJobRetention {
+		if now.Sub(job.CompletedAt) < s.completedJobRetention {
 			continue
 		}
 		retired = append(retired, job)
@@ -104,7 +104,7 @@ func (s *Server) sweepRetiredActionsJobs(now time.Time) int {
 	}
 	s.store.Mu.Unlock()
 
-	s.releaseJobLogFiles(planIDs)
+	s.ReleaseJobLogFiles(planIDs)
 
 	if len(retired) > 0 {
 		s.logger.Info().Int("jobs", len(retired)).Msg("actions janitor swept retired job state")

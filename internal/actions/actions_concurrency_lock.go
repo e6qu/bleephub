@@ -1,4 +1,4 @@
-package bleephub
+package actions
 
 import (
 	"crypto/sha256"
@@ -64,7 +64,7 @@ const actionsJobConcurrencyLockName = "actions/concurrency/job-admission"
 // a logged warning rather than failing the run: the exposure is the same
 // bounded window the TTL already accepts, and refusing the submission would
 // turn a database hiccup into a lost run.
-func (s *Server) acquireConcurrencyAdmissionLock(name string) (release func()) {
+func (s *Engine) acquireConcurrencyAdmissionLock(name string) (release func()) {
 	s.store.Mu.RLock()
 	persist := s.store.Persist
 	s.store.Mu.RUnlock()
@@ -109,13 +109,13 @@ func (s *Server) acquireConcurrencyAdmissionLock(name string) (release func()) {
 }
 
 // acquireJobConcurrencyAdmissionLock is acquireConcurrencyAdmissionLock for
-// the job-level admission inside dispatchReadyJobs, plus one repair step: wf
+// the job-level admission inside DispatchReadyJobs, plus one repair step: wf
 // may have been submitted moments ago with no runtime job dispatched yet, in
 // which case the snapshot refresh cannot recognize it as locally owned and
 // replaces its map entry with a detached copy. This process is actively
 // driving wf, so its object identity is restored before the dispatch loop
 // mutates it.
-func (s *Server) acquireJobConcurrencyAdmissionLock(wf *Workflow) (release func()) {
+func (s *Engine) acquireJobConcurrencyAdmissionLock(wf *Workflow) (release func()) {
 	s.store.Mu.RLock()
 	persist := s.store.Persist
 	s.store.Mu.RUnlock()

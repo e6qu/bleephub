@@ -15,6 +15,8 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	gitStorage "github.com/go-git/go-git/v5/storage"
+
+	"github.com/e6qu/bleephub/internal/actions"
 )
 
 // ActionCache stores downloaded action tarballs in memory.
@@ -295,7 +297,7 @@ func (s *Server) localActionTarball(owner, repo, ref string) (*ActionCacheEntry,
 func resolveActionRefSha(stor gitStorage.Storer, ref string) string {
 	const zeroSha = "0000000000000000000000000000000000000000"
 	if ref == "" {
-		return resolveRefSha(stor, "")
+		return actions.ResolveRefSha(stor, "")
 	}
 	for _, name := range []string{ref, "refs/heads/" + ref, "refs/tags/" + ref} {
 		if sha := strictGitRefSha(stor, plumbing.ReferenceName(name)); sha != zeroSha {
