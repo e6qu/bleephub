@@ -751,7 +751,11 @@ func exprFilterValues(v interface{}) interface{} {
 func exprIndex(v, idx interface{}) interface{} {
 	if arr, ok := v.([]interface{}); ok {
 		n := exprToNumber(idx)
-		if math.IsNaN(n) || n < 0 || int(n) >= len(arr) {
+		// Bound n as a float before narrowing to int: a float larger than the
+		// int range would overflow the conversion, so comparing int(n) after
+		// the cast is unsafe. Once 0 <= n < len(arr) holds in float space, the
+		// int conversion is in range by construction.
+		if math.IsNaN(n) || n < 0 || n >= float64(len(arr)) {
 			return nil
 		}
 		return arr[int(n)]

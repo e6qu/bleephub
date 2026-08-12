@@ -40,8 +40,6 @@ ACCEPTED_FINDINGS: dict[tuple[str, str], str] = {
         "Capacity hint over SCIM member lists bounded by the request body; the sum cannot overflow int.",
     ("go/regex/missing-regexp-anchor", "internal/server/secret_scanning_ingest.go"):
         "Secret-scanning patterns are intentionally unanchored — a secret must match anywhere in scanned content.",
-    ("go/incorrect-integer-conversion", "internal/server/expressions.go"):
-        "Array index int(n) is range-checked (0 <= n < len) before use.",
     ("go/incorrect-integer-conversion", "internal/store/store.go"):
         "Hex option/iteration IDs are internally-generated seeds parsed at 64-bit width; "
         "additionally range-guarded before conversion.",
