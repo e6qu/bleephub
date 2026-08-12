@@ -114,8 +114,21 @@ type Resolver struct {
 // NewResolver builds a resolver and assembles the schema. It panics when
 // the schema cannot be built or a mutation lacks an authorization policy
 // row — both are programming errors that must stop the process at startup
-// rather than ship an open mutation.
+// rather than ship an open mutation. It likewise panics when a required
+// seam is nil: Authz, Events, and Pulls are dereferenced without nil guards
+// by the resolver closures, so a resolver constructed without them would
+// serve requests until the first authorization check, webhook emission, or
+// merge crashes it mid-query instead of failing at wiring time.
 func NewResolver(cfg Config) *Resolver {
+	if cfg.Authz == nil {
+		panic("graphqlapi.NewResolver: Config.Authz is nil — every repository-visibility and Projects-v2 access decision delegates to it; wire the server's authz seam or a stub")
+	}
+	if cfg.Events == nil {
+		panic("graphqlapi.NewResolver: Config.Events is nil — every mutation's webhook emission and payload rendering delegates to it; wire the server's event seam or a no-op stub")
+	}
+	if cfg.Pulls == nil {
+		panic("graphqlapi.NewResolver: Config.Pulls is nil — the merge gate and PR diff renderer delegate to it; wire the server's pulls seam or a stub")
+	}
 	r := &Resolver{
 		store:           cfg.Store,
 		logger:          cfg.Logger,
