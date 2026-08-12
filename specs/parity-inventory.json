@@ -56,18 +56,6 @@
         "source": "internal/server/gh_deployments.go"
       },
       {
-        "event": "discussion",
-        "line": 736,
-        "producer": "emitWebhookEvent",
-        "source": "internal/server/gh_discussions_graphql.go"
-      },
-      {
-        "event": "discussion_comment",
-        "line": 828,
-        "producer": "emitWebhookEvent",
-        "source": "internal/server/gh_discussions_graphql.go"
-      },
-      {
         "event": "fork",
         "line": 62,
         "producer": "emitWebhookEvent",
@@ -90,18 +78,6 @@
         "line": 616,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_issues_rest.go"
-      },
-      {
-        "event": "issues",
-        "line": 981,
-        "producer": "emitWebhookEvent",
-        "source": "internal/server/gh_issues_graphql.go"
-      },
-      {
-        "event": "issues",
-        "line": 3169,
-        "producer": "emitWebhookEvent",
-        "source": "internal/server/gh_issues_graphql.go"
       },
       {
         "event": "issues",
@@ -207,12 +183,6 @@
       },
       {
         "event": "pull_request",
-        "line": 1604,
-        "producer": "emitWebhookEvent",
-        "source": "internal/server/gh_pulls_graphql.go"
-      },
-      {
-        "event": "pull_request",
         "line": 128,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
@@ -297,7 +267,7 @@
       },
       {
         "event": "watch",
-        "line": 1246,
+        "line": 1284,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_repos_rest.go"
       },
@@ -336,14 +306,14 @@
       "source": "https://docs.github.com/public/fpt/schema.docs.graphql"
     },
     "resolver_files": [
-      "internal/server/gh_discussions_graphql.go",
-      "internal/server/gh_issues_graphql.go",
-      "internal/server/gh_meta_graphql.go",
-      "internal/server/gh_moderation_graphql.go",
-      "internal/server/gh_orgs_graphql.go",
-      "internal/server/gh_projects_v2_graphql.go",
-      "internal/server/gh_pulls_graphql.go",
-      "internal/server/gh_repos_graphql.go"
+      "internal/graphqlapi/gh_discussions_graphql.go",
+      "internal/graphqlapi/gh_issues_graphql.go",
+      "internal/graphqlapi/gh_meta_graphql.go",
+      "internal/graphqlapi/gh_moderation_graphql.go",
+      "internal/graphqlapi/gh_orgs_graphql.go",
+      "internal/graphqlapi/gh_projects_v2_graphql.go",
+      "internal/graphqlapi/gh_pulls_graphql.go",
+      "internal/graphqlapi/gh_repos_graphql.go"
     ],
     "test_files": [
       "internal/server/gh_discussions_graphql_test.go",
@@ -6534,21 +6504,39 @@
         "severity": "M",
         "status": "fixed \u2014 the engine is now `internal/actions` (23 files, ~7.5k lines with tests): an Engine struct owning the run lifecycle, dispatch, broker queue, concurrency admission, schedule index and event snapshot loop, importing only the store layer \u2014 the compiler enforces the boundary. Server-owned behavior reaches it through five narrow seams: an EventSink interface (webhook/check payload rendering and delivery stay in server), MintJobToken (runner-JWT mint and verify stay on one key in the auth layer), the fixture clock, shutdown-tracked goroutine spawning, and OnScheduleTick hooks for the org-invitation and login-session piggybacks. The mixed files split along the protocol/engine line (broker handlers vs queueing, event queue/drain vs merge-gate reads and emitters, trigger parsing vs PR-synchronize firing); pure trigger/expression/matrix/cron tests moved with their code, harness tests reach the engine via the server field. Verified as a pure refactor: full suite green (the only failures were the documented Docker/MinIO host-infra class), shape ratchet zero-new at 19,371 validated responses, clock/deadcode/dupl/store-lock gates green \u2014 the store-lock AST ratchet now scans internal/actions too \u2014 and a live smoke drove a push-triggered run through the extracted engine. GraphQL extraction remains the enumerated next slice; identity deliberately stays with the auth chokepoints",
         "status_kind": "fixed"
+      },
+      {
+        "category": "ARCH",
+        "finding": "After ARCH-002 the GraphQL resolver layer (9 files, ~11k lines: schema assembly, type registry, every resolver and mutation) still lives inside the application package, its narrow dependency profile (store access, a handful of authz predicates, webhook emission) invisible as a boundary",
+        "id": "ARCH-003",
+        "location": "internal/server",
+        "severity": "M",
+        "status": "fixed \u2014 the resolver layer is now `internal/graphqlapi` (~11.5k lines): a Resolver owning the nine resolver files, the type registry, schema assembly and the mutation-authz table, importing only the store layer \u2014 the compiler enforces the boundary, and the server keeps a ~90-line delegation handler with auth context extraction. Server-owned behavior enters through three narrow interfaces (Authz with twelve predicates, Events with four payload emitters, Pulls with six merge-gate operations) plus a few injected funcs (viewer-from-context, rate snapshot, lazy build commit). Helpers both surfaces need (node-ID codecs, git ref/merge-base plumbing, permission vocabulary, markdown renderer) moved down into the store layer under the ARCH-001 alias idiom. Every gate moved or stayed at full strength: the schema/official ratchets and goldens stay in server against the delegated schema, the mutation-authz panic contract and policy-table checks moved beside the table, the authz matrix and harness fuzzes stay on the fixture, five pure fuzz targets moved, and the parity generator discovers resolvers from the new module. Verified as a pure refactor: full suite green outside the documented host-infra class, shape ratchet zero-new at 19,704 validated responses, deadcode/dupl/clock gates green, and a live smoke ran a GraphQL query and createIssue mutation through the extracted resolver. With this the modularization campaign is complete: gitstore, store, actions and graphqlapi are compiler-enforced modules and internal/server is handlers, identity and assembly by design",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "ACT",
+        "finding": "When a test injects a byte store, NewServer replaces s.artifactStore and re-points the Actions engine, but store.ActionsArtifacts still references the discarded ArtifactStore \u2014 a stale pointer that diverges the two access paths",
+        "id": "ACT-099",
+        "location": "server.go",
+        "severity": "m",
+        "status": "fixed \u2014 the injection block re-points store.ActionsArtifacts alongside the engine rebuild, so both access paths reach the injected byte store",
+        "status_kind": "fixed"
       }
     ],
     "summary": {
       "categories": {
         "ACT": {
           "status": {
-            "fixed": 61
+            "fixed": 62
           },
-          "total": 61
+          "total": 62
         },
         "ARCH": {
           "status": {
-            "fixed": 2
+            "fixed": 3
           },
-          "total": 2
+          "total": 3
         },
         "AUTH": {
           "status": {
@@ -6609,14 +6597,14 @@
       },
       "severity": {
         "blocker": 165,
-        "major": 374,
-        "minor": 147
+        "major": 375,
+        "minor": 148
       },
       "status": {
         "deferred": 3,
-        "fixed": 683
+        "fixed": 685
       },
-      "total": 686
+      "total": 688
     }
   },
   "rest": {
@@ -19532,7 +19520,7 @@
         "source": "internal/server/gh_private_registries.go"
       },
       {
-        "line": 29,
+        "line": 31,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/projectsV2/{project_number}/items/{item_id}",
         "source": "internal/server/gh_projects_v2_rest.go"
@@ -20246,7 +20234,7 @@
         "source": "internal/server/gh_packages.go"
       },
       {
-        "line": 45,
+        "line": 47,
         "method": "DELETE",
         "path": "/api/v3/users/{username}/projectsV2/{project_number}/items/{item_id}",
         "source": "internal/server/gh_projects_v2_rest.go"
@@ -20468,13 +20456,13 @@
         "source": "internal/server/gh_classroom.go"
       },
       {
-        "line": 31,
+        "line": 14,
         "method": "GET",
         "path": "/api/v3/codes_of_conduct",
         "source": "internal/server/gh_codes_of_conduct.go"
       },
       {
-        "line": 32,
+        "line": 15,
         "method": "GET",
         "path": "/api/v3/codes_of_conduct/{key}",
         "source": "internal/server/gh_codes_of_conduct.go"
@@ -22400,43 +22388,43 @@
         "source": "internal/server/gh_private_registries.go"
       },
       {
-        "line": 19,
+        "line": 21,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/projectsV2",
         "source": "internal/server/gh_projects_v2_rest.go"
       },
       {
-        "line": 20,
+        "line": 22,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/projectsV2/{project_number}",
         "source": "internal/server/gh_projects_v2_rest.go"
       },
       {
-        "line": 22,
+        "line": 24,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/projectsV2/{project_number}/fields",
         "source": "internal/server/gh_projects_v2_rest.go"
       },
       {
-        "line": 24,
+        "line": 26,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/projectsV2/{project_number}/fields/{field_id}",
         "source": "internal/server/gh_projects_v2_rest.go"
       },
       {
-        "line": 25,
+        "line": 27,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/projectsV2/{project_number}/items",
         "source": "internal/server/gh_projects_v2_rest.go"
       },
       {
-        "line": 27,
+        "line": 29,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/projectsV2/{project_number}/items/{item_id}",
         "source": "internal/server/gh_projects_v2_rest.go"
       },
       {
-        "line": 31,
+        "line": 33,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/projectsV2/{project_number}/views/{view_number}/items",
         "source": "internal/server/gh_projects_v2_rest.go"
@@ -22730,13 +22718,13 @@
         "source": "internal/server/artifacts.go"
       },
       {
-        "line": 22,
+        "line": 24,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/concurrency_groups",
         "source": "internal/server/gh_actions_concurrency.go"
       },
       {
-        "line": 23,
+        "line": 25,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/concurrency_groups/{concurrency_group_name}",
         "source": "internal/server/gh_actions_concurrency.go"
@@ -22880,7 +22868,7 @@
         "source": "internal/server/gh_actions_run_control.go"
       },
       {
-        "line": 24,
+        "line": 26,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/concurrency_groups",
         "source": "internal/server/gh_actions_concurrency.go"
@@ -24848,43 +24836,43 @@
         "source": "internal/server/gh_packages.go"
       },
       {
-        "line": 36,
+        "line": 38,
         "method": "GET",
         "path": "/api/v3/users/{username}/projectsV2",
         "source": "internal/server/gh_projects_v2_rest.go"
       },
       {
-        "line": 37,
+        "line": 39,
         "method": "GET",
         "path": "/api/v3/users/{username}/projectsV2/{project_number}",
         "source": "internal/server/gh_projects_v2_rest.go"
       },
       {
-        "line": 38,
+        "line": 40,
         "method": "GET",
         "path": "/api/v3/users/{username}/projectsV2/{project_number}/fields",
         "source": "internal/server/gh_projects_v2_rest.go"
       },
       {
-        "line": 40,
+        "line": 42,
         "method": "GET",
         "path": "/api/v3/users/{username}/projectsV2/{project_number}/fields/{field_id}",
         "source": "internal/server/gh_projects_v2_rest.go"
       },
       {
-        "line": 41,
+        "line": 43,
         "method": "GET",
         "path": "/api/v3/users/{username}/projectsV2/{project_number}/items",
         "source": "internal/server/gh_projects_v2_rest.go"
       },
       {
-        "line": 43,
+        "line": 45,
         "method": "GET",
         "path": "/api/v3/users/{username}/projectsV2/{project_number}/items/{item_id}",
         "source": "internal/server/gh_projects_v2_rest.go"
       },
       {
-        "line": 47,
+        "line": 49,
         "method": "GET",
         "path": "/api/v3/users/{username}/projectsV2/{project_number}/views/{view_number}/items",
         "source": "internal/server/gh_projects_v2_rest.go"
@@ -25286,7 +25274,7 @@
         "source": "internal/server/gh_private_registries.go"
       },
       {
-        "line": 28,
+        "line": 30,
         "method": "PATCH",
         "path": "/api/v3/orgs/{org}/projectsV2/{project_number}/items/{item_id}",
         "source": "internal/server/gh_projects_v2_rest.go"
@@ -25658,7 +25646,7 @@
         "source": "internal/server/gh_invitations_rest.go"
       },
       {
-        "line": 44,
+        "line": 46,
         "method": "PATCH",
         "path": "/api/v3/users/{username}/projectsV2/{project_number}/items/{item_id}",
         "source": "internal/server/gh_projects_v2_rest.go"
@@ -26000,13 +25988,13 @@
         "source": "internal/server/gh_gists_rest.go"
       },
       {
-        "line": 60,
+        "line": 61,
         "method": "POST",
         "path": "/api/v3/markdown",
         "source": "internal/server/gh_markdown.go"
       },
       {
-        "line": 61,
+        "line": 62,
         "method": "POST",
         "path": "/api/v3/markdown/raw",
         "source": "internal/server/gh_markdown.go"
@@ -26270,25 +26258,25 @@
         "source": "internal/server/gh_private_registries.go"
       },
       {
-        "line": 21,
+        "line": 23,
         "method": "POST",
         "path": "/api/v3/orgs/{org}/projectsV2/{project_number}/drafts",
         "source": "internal/server/gh_projects_v2_rest.go"
       },
       {
-        "line": 23,
+        "line": 25,
         "method": "POST",
         "path": "/api/v3/orgs/{org}/projectsV2/{project_number}/fields",
         "source": "internal/server/gh_projects_v2_rest.go"
       },
       {
-        "line": 26,
+        "line": 28,
         "method": "POST",
         "path": "/api/v3/orgs/{org}/projectsV2/{project_number}/items",
         "source": "internal/server/gh_projects_v2_rest.go"
       },
       {
-        "line": 30,
+        "line": 32,
         "method": "POST",
         "path": "/api/v3/orgs/{org}/projectsV2/{project_number}/views",
         "source": "internal/server/gh_projects_v2_rest.go"
@@ -27050,13 +27038,13 @@
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 48,
+        "line": 50,
         "method": "POST",
         "path": "/api/v3/user/{user_id}/projectsV2/{project_number}/drafts",
         "source": "internal/server/gh_projects_v2_rest.go"
       },
       {
-        "line": 46,
+        "line": 48,
         "method": "POST",
         "path": "/api/v3/users/{user_id}/projectsV2/{project_number}/views",
         "source": "internal/server/gh_projects_v2_rest.go"
@@ -27104,13 +27092,13 @@
         "source": "internal/server/gh_packages.go"
       },
       {
-        "line": 39,
+        "line": 41,
         "method": "POST",
         "path": "/api/v3/users/{username}/projectsV2/{project_number}/fields",
         "source": "internal/server/gh_projects_v2_rest.go"
       },
       {
-        "line": 42,
+        "line": 44,
         "method": "POST",
         "path": "/api/v3/users/{username}/projectsV2/{project_number}/items",
         "source": "internal/server/gh_projects_v2_rest.go"
