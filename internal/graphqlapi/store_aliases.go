@@ -48,7 +48,6 @@ type (
 	Workflow                        = store.Workflow
 
 	accountKind    = store.AccountKind
-	codeOfConduct  = store.CodeOfConduct
 	permLevel      = store.PermLevel
 	permScope      = store.PermScope
 	projectV2Owner = store.ProjectV2Owner
@@ -77,9 +76,7 @@ var (
 	ErrOpenPullRequestExists = store.ErrOpenPullRequestExists
 
 	actorUserLocked                     = store.ActorUserLocked
-	authorAssociation                   = store.AuthorAssociation
 	commentCountKey                     = store.CommentCountKey
-	decodeNodeDBID                      = store.DecodeNodeDBID
 	findDiscussionByNodeID              = store.FindDiscussionByNodeID
 	findDiscussionCategoryByNodeID      = store.FindDiscussionCategoryByNodeID
 	findDiscussionCommentByNodeID       = store.FindDiscussionCommentByNodeID

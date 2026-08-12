@@ -441,13 +441,11 @@ var (
 	nilOrString                             = store.NilOrString
 	normalizeAppPermissions                 = store.NormalizeAppPermissions
 	normalizeYAMLValue                      = store.NormalizeYAMLValue
-	nullableTimestamp                       = store.NullableTimestamp
 	orgAsSimpleUserJSON                     = store.OrgAsSimpleUserJSON
 	orgLoginForIssueTypeRepo                = store.OrgLoginForIssueTypeRepo
 	packageRegistryBlobDataKey              = store.PackageRegistryBlobDataKey
 	parseSigstoreBundleSubjects             = store.ParseSigstoreBundleSubjects
 	pendingUserDeletionKey                  = store.PendingUserDeletionKey
-	permissionAtLeast                       = store.PermissionAtLeast
 	randomBytes                             = store.RandomBytes
 	randomHex                               = store.RandomHex
 	repoCollaboratorPermissionAtLeastLocked = store.RepoCollaboratorPermissionAtLeastLocked
@@ -488,7 +486,6 @@ var (
 	stableWorkflowFileID                    = store.StableWorkflowFileID
 	teamSlugKey                             = store.TeamSlugKey
 	timelineCommentToJSON                   = store.TimelineCommentToJSON
-	toStringSlice                           = store.ToStringSlice
 	userToJSON                              = store.UserToJSON
 	validAdvisorySeverity                   = store.ValidAdvisorySeverity
 	validAdvisoryState                      = store.ValidAdvisoryState
