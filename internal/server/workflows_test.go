@@ -73,8 +73,8 @@ func TestInternalSubmitJobRequiresExplicitImageOrHostMode(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400; body=%s", w.Code, w.Body.String())
 	}
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	if len(s.store.Jobs) != 0 {
 		t.Fatalf("queued %d jobs for invalid submission", len(s.store.Jobs))
 	}
@@ -93,8 +93,8 @@ func TestInternalSubmitWorkflowRequiresExplicitImageOrHostMode(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400; body=%s", w.Code, w.Body.String())
 	}
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	if len(s.store.Workflows) != 0 {
 		t.Fatalf("queued %d workflows for invalid submission", len(s.store.Workflows))
 	}
@@ -285,9 +285,9 @@ func TestWorkflowUsesStepReference(t *testing.T) {
 	}
 
 	// Verify the job message contains a repository reference
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	job := s.store.Jobs[workflow.Jobs["build"].JobID]
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	if job == nil {
 		t.Fatal("job not found in store")
@@ -388,9 +388,9 @@ func TestBuildJobMessageWithServices(t *testing.T) {
 		t.Fatalf("submit: %v", err)
 	}
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	job := s.store.Jobs[workflow.Jobs["test"].JobID]
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	var msg map[string]interface{}
 	if err := json.Unmarshal([]byte(job.Message), &msg); err != nil {
@@ -495,9 +495,9 @@ func TestBuildJobMessageNoServices(t *testing.T) {
 		t.Fatalf("submit: %v", err)
 	}
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	job := s.store.Jobs[workflow.Jobs["test"].JobID]
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	var msg map[string]interface{}
 	if err := json.Unmarshal([]byte(job.Message), &msg); err != nil {
@@ -566,9 +566,9 @@ func TestSubmitWorkflowRepoRefResolution(t *testing.T) {
 	if wfID == "" {
 		t.Fatalf("submit response missing workflowId: %v", data)
 	}
-	srv.store.mu.RLock()
+	srv.store.Mu.RLock()
 	wf := srv.store.Workflows[wfID]
-	srv.store.mu.RUnlock()
+	srv.store.Mu.RUnlock()
 	if wf == nil {
 		t.Fatalf("workflow %q not stored", wfID)
 	}

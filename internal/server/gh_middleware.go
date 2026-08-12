@@ -57,17 +57,6 @@ func githubAPIVersionFromContext(ctx context.Context) string {
 // that do not verify are rejected, never downgraded to anonymous.
 const ctxInvalidCredential contextKey = "gh-invalid-credential" // #nosec G101 -- typed context key, not a credential.
 
-// GitHub token prefixes. Each prefix selects a different lookup table and
-// auth shape in authenticateRequest; using the named constants keeps the
-// middleware, stores and handlers agreeing on the exact prefix bytes.
-const (
-	// #nosec G101 -- public token type prefix, not a credential.
-	tokenPrefixInstallation = "ghs_"
-	tokenPrefixOAuthUser    = "gho_" // classic OAuth-App user token
-	tokenPrefixAppUser      = "ghu_" // GitHub-App user-to-server token
-	tokenPrefixRefresh      = "ghr_" // refresh token (never valid as auth)
-)
-
 // ghUserFromContext extracts the authenticated user from the request context.
 func ghUserFromContext(ctx context.Context) *User {
 	u, _ := ctx.Value(ctxUser).(*User)
@@ -291,7 +280,7 @@ func authScheme(auth string) (scheme, credential string) {
 func (s *Server) resolveBearerCredential(ctx context.Context, tokenStr string) (context.Context, *User, bool) {
 	switch {
 	case looksLikeJWT(tokenStr):
-		if app, err := s.store.parseAndVerifyAppJWT(tokenStr); err == nil {
+		if app, err := s.store.ParseAndVerifyAppJWT(tokenStr); err == nil {
 			return context.WithValue(ctx, ctxApp, app), nil, true
 		}
 		// A workflow's GITHUB_TOKEN is an HS256 job runtime token, not an App

@@ -56,9 +56,9 @@ func TestGHESGlobalAnnouncementAliasAndHiddenAuthorization(t *testing.T) {
 	}
 
 	member := seedTestUser(s, "stats-member")
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.Tokens["stats-member-token"] = &Token{Value: "stats-member-token", UserID: member.ID}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	rec = enterpriseBearerRequest(t, s, http.MethodGet, "/api/v3/enterprise/stats/users", nil, "stats-member-token")
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("non-admin stats = %d, want hidden 404", rec.Code)

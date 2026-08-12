@@ -277,7 +277,7 @@ func (s *Server) graphQLNodeByID(ctx context.Context, nodeID string) interface{}
 	if user := findUserByNodeID(s.store, nodeID); user != nil {
 		return userToGraphQL(user)
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	var organization *Org
 	for _, candidate := range s.store.Orgs {
 		if candidate.NodeID == nodeID {
@@ -286,7 +286,7 @@ func (s *Server) graphQLNodeByID(ctx context.Context, nodeID string) interface{}
 			break
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if organization != nil {
 		return orgToGraphQL(organization)
 	}
@@ -294,7 +294,7 @@ func (s *Server) graphQLNodeByID(ctx context.Context, nodeID string) interface{}
 		if repo.Private && !s.viewerCanReadRepo(ctx, repo) {
 			return nil
 		}
-		return repoToGraphQL(s.store, s.store.snapRepo(repo))
+		return repoToGraphQL(s.store, s.store.SnapRepo(repo))
 	}
 	if issue := findIssueByNodeID(s.store, nodeID); issue != nil {
 		repo := s.store.GetRepoByID(issue.RepoID)

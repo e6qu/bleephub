@@ -39,13 +39,13 @@ func (s *Server) registerGHSearchRoutes() {
 // installation, user-to-server, and fine-grained PAT selections and takes its
 // own store locks.
 func (s *Server) searchAccessibleRepoIDs(ctx context.Context) map[int]struct{} {
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	repositories := make([]*Repo, 0, len(s.store.Repos))
 	for _, repo := range s.store.Repos {
 		snapshot := *repo
 		repositories = append(repositories, &snapshot)
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	accessible := make(map[int]struct{}, len(repositories))
 	for _, repo := range repositories {
@@ -375,7 +375,7 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 	var issueRows []issueRow
 	var prRows []prRow
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 
 	for _, issue := range s.store.Issues {
 		repo := s.store.Repos[issue.RepoID]
@@ -541,7 +541,7 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 		prRows = append(prRows, prRow{pr, repo, authorAssociationLocked(s.store, pr.AuthorID, repo), pr.Title, pr.Body, pr.CreatedAt, pr.UpdatedAt})
 	}
 
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	base := s.baseURL(r)
 
@@ -705,8 +705,8 @@ func issueToJSONForPR(pr *PullRequest, st *Store, baseURL, repoFullName string) 
 // Must not be called with st.mu held: it takes the read lock itself and
 // derives milestone issue counts via milestoneToJSON, which locks too.
 func issueToJSONForPullRequest(pr *PullRequest, st *Store, baseURL, repoFullName string) map[string]interface{} {
-	pr = st.snapPR(pr)
-	st.mu.RLock()
+	pr = st.SnapPR(pr)
+	st.Mu.RLock()
 	authorJSON := userToJSON(actorUserLocked(st, pr.AuthorID))
 	repo := st.Repos[pr.RepoID]
 
@@ -732,8 +732,8 @@ func issueToJSONForPullRequest(pr *PullRequest, st *Store, baseURL, repoFullName
 	if pr.MilestoneID > 0 {
 		milestone = st.Milestones[pr.MilestoneID]
 	}
-	commentCount := st.countCommentsForLocked("pull_request", pr.ID)
-	st.mu.RUnlock()
+	commentCount := st.CountCommentsForLocked("pull_request", pr.ID)
+	st.Mu.RUnlock()
 
 	var milestoneJSON interface{}
 	if milestone != nil {
@@ -795,51 +795,13 @@ func pullRequestClosedByJSON(st *Store, pr *PullRequest) interface{} {
 			}
 		}
 	}
-	st.mu.RLock()
-	defer st.mu.RUnlock()
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
 	actor := actorUserLocked(st, actorID)
 	if actor == nil {
 		return nil
 	}
 	return userToJSON(actor)
-}
-
-// authorAssociation returns the author_association value for the author of
-// an issue, pull request or comment within repo. Must not be called with
-// st.mu held; it takes the read lock itself.
-func authorAssociation(st *Store, authorID int, repo *Repo) string {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-	return authorAssociationLocked(st, authorID, repo)
-}
-
-// authorAssociationLocked is authorAssociation for callers that already hold
-// st.mu; it never acquires the lock itself.
-func authorAssociationLocked(st *Store, authorID int, repo *Repo) string {
-	author := st.Users[authorID]
-	if author == nil {
-		return "NONE"
-	}
-	if repo.Owner != nil && repo.Owner.ID == author.ID {
-		return "OWNER"
-	}
-	if repo.Owner != nil && repo.Owner.Type == "Organization" {
-		if membership := st.Memberships[membershipKey(repo.Owner.Login, author.ID)]; membership != nil &&
-			membership.State == MembershipStateActive {
-			return "MEMBER"
-		}
-	}
-	if collaborators := st.RepoCollaborators[repo.FullName]; collaborators != nil {
-		if collaborators[author.Login] != "" {
-			return "COLLABORATOR"
-		}
-	}
-	for _, pr := range st.PullRequests {
-		if pr.RepoID == repo.ID && pr.AuthorID == author.ID && pr.State == "MERGED" {
-			return "CONTRIBUTOR"
-		}
-	}
-	return "NONE"
 }
 
 // issueHasLabelNames reports whether the issue carries every named label.
@@ -904,7 +866,7 @@ func (s *Server) handleSearchRepositories(w http.ResponseWriter, r *http.Request
 	// store themselves.
 	var candidates []*Repo
 	accessibleRepoIDs := s.searchAccessibleRepoIDs(r.Context())
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	for _, repo := range s.store.Repos {
 		if _, accessible := accessibleRepoIDs[repo.ID]; !accessible {
 			continue
@@ -917,7 +879,7 @@ func (s *Server) handleSearchRepositories(w http.ResponseWriter, r *http.Request
 		}
 		candidates = append(candidates, &snapshot)
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	var matched []*Repo
 	for _, repo := range candidates {
@@ -939,8 +901,8 @@ func (s *Server) handleSearchRepositories(w http.ResponseWriter, r *http.Request
 }
 
 func repoIssueLabelCount(st *Store, repoID int, labelName string) int {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
 	count := 0
 	for _, issue := range st.Issues {
 		if issue == nil || issue.RepoID != repoID || !strings.EqualFold(issue.State, "open") {
@@ -980,7 +942,7 @@ func (s *Server) handleSearchCode(w http.ResponseWriter, r *http.Request) {
 	}
 	var searchRepos []codeSearchRepo
 	accessibleRepoIDs := s.searchAccessibleRepoIDs(r.Context())
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	for _, repo := range s.store.Repos {
 		if _, accessible := accessibleRepoIDs[repo.ID]; !accessible {
 			continue
@@ -1016,7 +978,7 @@ func (s *Server) handleSearchCode(w http.ResponseWriter, r *http.Request) {
 		}
 		searchRepos = append(searchRepos, codeSearchRepo{repo, stor})
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	// Scan repositories in a fixed order: the 1000-result cap below otherwise
 	// truncates a different subset on every request.
 	sort.Slice(searchRepos, func(i, j int) bool { return searchRepos[i].repo.ID < searchRepos[j].repo.ID })
@@ -1134,7 +1096,7 @@ func (s *Server) handleSearchUsers(w http.ResponseWriter, r *http.Request) {
 	// counts under the store and misc locks itself.
 	var users []*User
 	var orgs []*Org
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	for _, u := range s.store.Users {
 		if q.Type == "org" {
 			continue
@@ -1161,7 +1123,7 @@ func (s *Server) handleSearchUsers(w http.ResponseWriter, r *http.Request) {
 		}
 		orgs = append(orgs, org)
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	var results []map[string]interface{}
 	for _, u := range users {
@@ -1472,7 +1434,7 @@ func (s *Server) handleSearchCommits(w http.ResponseWriter, r *http.Request) {
 	}
 	var searchRepos []commitSearchRepo
 	accessibleRepoIDs := s.searchAccessibleRepoIDs(r.Context())
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	for _, repo := range s.store.Repos {
 		if _, accessible := accessibleRepoIDs[repo.ID]; !accessible {
 			continue
@@ -1500,7 +1462,7 @@ func (s *Server) handleSearchCommits(w http.ResponseWriter, r *http.Request) {
 		}
 		searchRepos = append(searchRepos, commitSearchRepo{repo, stor})
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	// Scan repositories in a fixed order: the 1000-result cap below otherwise
 	// truncates a different subset on every request.
 	sort.Slice(searchRepos, func(i, j int) bool { return searchRepos[i].repo.ID < searchRepos[j].repo.ID })
@@ -1576,8 +1538,8 @@ func commitAuthorMatches(st *Store, commit *object.Commit, author string) bool {
 	if strings.EqualFold(commit.Author.Email, author) {
 		return true
 	}
-	st.mu.RLock()
-	defer st.mu.RUnlock()
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
 	for _, u := range st.Users {
 		if strings.EqualFold(u.Login, author) && strings.EqualFold(u.Email, commit.Author.Email) {
 			return true
@@ -1599,14 +1561,14 @@ func (s *Server) commitSearchItemJSON(commit *object.Commit, repo *Repo, base st
 	// The top-level author is the GitHub account behind the commit author
 	// email (null when the email matches no account).
 	var authorJSON interface{}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	for _, u := range s.store.Users {
 		if u.Email != "" && strings.EqualFold(u.Email, commit.Author.Email) {
 			authorJSON = userToJSON(u)
 			break
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	parents := make([]map[string]interface{}, 0, len(commit.ParentHashes))
 	for _, p := range commit.ParentHashes {
@@ -1708,7 +1670,7 @@ func (s *Server) handleSearchLabels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	labels := make([]*IssueLabel, 0)
 	for _, l := range s.store.Labels {
 		if l.RepoID != repo.ID {
@@ -1719,7 +1681,7 @@ func (s *Server) handleSearchLabels(w http.ResponseWriter, r *http.Request) {
 		}
 		labels = append(labels, l)
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	sort.Slice(labels, func(i, j int) bool { return labels[i].ID < labels[j].ID })
 
 	base := s.baseURL(r)
@@ -1758,7 +1720,7 @@ func (s *Server) handleSearchTopics(w http.ResponseWriter, r *http.Request) {
 		updatedAt time.Time
 	}
 	accessibleRepoIDs := s.searchAccessibleRepoIDs(r.Context())
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	agg := map[string]*topicAgg{}
 	for _, repo := range s.store.Repos {
 		if _, accessible := accessibleRepoIDs[repo.ID]; !accessible {
@@ -1782,7 +1744,7 @@ func (s *Server) handleSearchTopics(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	topics := make([]*topicAgg, 0, len(agg))
 	for _, t := range agg {

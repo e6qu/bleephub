@@ -24,10 +24,10 @@ func gcQueueTestJob(t *testing.T, s *Server, jobID, repo string) *Job {
 	if err := json.Unmarshal([]byte(message), &msg); err != nil {
 		t.Fatalf("unmarshal seeded job message: %v", err)
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.Jobs[jobID] = job
-	s.store.registerDispatchedJobLocked(job, msg, repo)
-	s.store.mu.Unlock()
+	s.store.RegisterDispatchedJobLocked(job, msg, repo)
+	s.store.Mu.Unlock()
 	s.queueJobMessage(&TaskAgentMessage{MessageID: 1, MessageType: "PipelineAgentJobRequest", Body: message, JobID: jobID})
 	return job
 }
@@ -42,9 +42,9 @@ func TestUsedEphemeralAgentStaysDisqualifiedAfterJobGC(t *testing.T) {
 	s := newTestServer()
 
 	_, ephemeral := testAgentSession(t, s, runnerScope{Repo: "octo/a"})
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	ephemeral.Ephemeral = true
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	session := &Session{SessionID: "gc-eph", Agent: ephemeral, MsgCh: make(chan *TaskAgentMessage, 1)}
 
 	job := gcQueueTestJob(t, s, "gc-eph-job", "octo/a")
@@ -56,15 +56,15 @@ func TestUsedEphemeralAgentStaysDisqualifiedAfterJobGC(t *testing.T) {
 	}
 
 	// The job completes and, runnerTokenTTL later, the janitor sweeps its stub.
-	s.store.mu.Lock()
-	s.store.markJobCompletedLocked(job)
-	s.store.mu.Unlock()
+	s.store.Mu.Lock()
+	s.store.MarkJobCompletedLocked(job)
+	s.store.Mu.Unlock()
 	if swept := s.sweepRetiredActionsJobs(fixedTestTime.Add(completedJobRetention + time.Minute)); swept != 1 {
 		t.Fatalf("sweep removed %d jobs, want 1", swept)
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	_, stubRemains := s.store.Jobs[job.ID]
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if stubRemains {
 		t.Fatal("swept job stub is still in store.Jobs")
 	}
@@ -83,9 +83,9 @@ func TestUsedEphemeralAgentStaysDisqualifiedAfterJobGC(t *testing.T) {
 	if msg := s.pullPendingMessage(resSession, runnerScope{Repo: "octo/a"}); msg == nil {
 		t.Fatal("resident runner did not take the queued job")
 	}
-	s.store.mu.Lock()
-	s.store.markJobCompletedLocked(s.store.Jobs["gc-eph-second"])
-	s.store.mu.Unlock()
+	s.store.Mu.Lock()
+	s.store.MarkJobCompletedLocked(s.store.Jobs["gc-eph-second"])
+	s.store.Mu.Unlock()
 	if swept := s.sweepRetiredActionsJobs(fixedTestTime.Add(completedJobRetention + time.Minute)); swept != 1 {
 		t.Fatalf("second sweep removed %d jobs, want 1", swept)
 	}
@@ -118,10 +118,10 @@ func TestLateFinishJobAfterMessageGCAuthenticates(t *testing.T) {
 		t.Fatalf("job was not dispatched: %+v", wfJob)
 	}
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	job := s.store.Jobs[wfJob.JobID]
 	scopeID, _ := jobMessageScopeAndRepo(job.Message)
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if scopeID == "" {
 		t.Fatal("dispatched job message carries no plan scope")
 	}
@@ -129,10 +129,10 @@ func TestLateFinishJobAfterMessageGCAuthenticates(t *testing.T) {
 	// The run finalizes (first completion report); the finalization GC must
 	// clear the secret-bearing message.
 	s.onJobCompleted(context.Background(), wfJob.JobID, "Succeeded")
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	message := job.Message
 	completedAt := job.CompletedAt
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if message != "" {
 		t.Fatal("run finalization did not clear the job message")
 	}
@@ -168,27 +168,27 @@ func TestActionsJanitorSweepsRetiredJobState(t *testing.T) {
 	retired := gcQueueTestJob(t, s, "sweep-retired", "octo/a")
 	live := gcQueueTestJob(t, s, "sweep-live", "octo/a")
 
-	s.store.mu.Lock()
-	s.store.markJobCompletedLocked(retired)
+	s.store.Mu.Lock()
+	s.store.MarkJobCompletedLocked(retired)
 	s.store.LogMasks[retired.PlanID] = []string{"hunter2"}
 	s.store.LogLines[retired.ID] = []string{"line"}
 	s.store.LogFiles[77] = []byte("log bytes")
-	s.store.mu.Unlock()
-	s.artifactStore.claimLog(77, retired.PlanID)
+	s.store.Mu.Unlock()
+	s.artifactStore.ClaimLog(77, retired.PlanID)
 
 	if swept := s.sweepRetiredActionsJobs(fixedTestTime.Add(completedJobRetention + time.Minute)); swept != 1 {
 		t.Fatalf("sweep removed %d jobs, want 1 (live job must be kept)", swept)
 	}
 
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	if _, ok := s.store.Jobs[retired.ID]; ok {
 		t.Error("retired job stub survived the sweep")
 	}
-	if _, ok := s.store.planScopes[retired.PlanID]; ok {
+	if _, ok := s.store.PlanScopes[retired.PlanID]; ok {
 		t.Error("retired job's plan scope survived the sweep")
 	}
-	if _, ok := s.store.planIDByScope["scope-sweep-retired"]; ok {
+	if _, ok := s.store.PlanIDByScope["scope-sweep-retired"]; ok {
 		t.Error("retired job's scope index entry survived the sweep")
 	}
 	if _, ok := s.store.LogMasks[retired.PlanID]; ok {
@@ -200,14 +200,14 @@ func TestActionsJanitorSweepsRetiredJobState(t *testing.T) {
 	if _, ok := s.store.LogFiles[77]; ok {
 		t.Error("retired job's in-memory log bytes survived the sweep")
 	}
-	if s.store.jobsByPlanID[retired.PlanID] != nil {
+	if s.store.JobsByPlanID[retired.PlanID] != nil {
 		t.Error("retired job's plan-id index entry survived the sweep")
 	}
 	// The live job's state is intact and still indexed.
-	if s.store.Jobs[live.ID] == nil || s.store.jobsByPlanID[live.PlanID] != live {
+	if s.store.Jobs[live.ID] == nil || s.store.JobsByPlanID[live.PlanID] != live {
 		t.Error("live job state was damaged by the sweep")
 	}
-	if _, ok := s.store.planScopes[live.PlanID]; !ok {
+	if _, ok := s.store.PlanScopes[live.PlanID]; !ok {
 		t.Error("live job's plan scope was removed by the sweep")
 	}
 }

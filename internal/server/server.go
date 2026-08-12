@@ -173,10 +173,10 @@ func newServerState(addr string, logger zerolog.Logger, construction serverConst
 		build:                       construction.build,
 		allowPrivateOutboundTargets: construction.allowPrivateOutboundTarget,
 	}
-	s.store.actionsArtifacts = s.artifactStore
+	s.store.ActionsArtifacts = s.artifactStore
 	// Route the store's own error logging through the configured structured
 	// logger (level filter + telemetry bridge) instead of the stdlib default.
-	s.store.logger = logger
+	s.store.Logger = logger
 	return s
 }
 
@@ -358,7 +358,7 @@ func NewServer(addr string, logger zerolog.Logger, options ...ServerOption) *Ser
 		logger.Fatal().Err(err).Msg("invalid Bleephub external identity configuration")
 	}
 	s.store.ObjectByteStore = byteStore
-	s.store.Releases.byteStore = byteStore
+	s.store.Releases.ByteStore = byteStore
 	if dataDir != "" {
 		s.store.PackageDataDir = dataDir
 	}
@@ -376,7 +376,7 @@ func NewServer(addr string, logger zerolog.Logger, options ...ServerOption) *Ser
 		if err := s.store.SetPersistence(persist); err != nil {
 			logger.Fatal().Err(err).Msg("failed to load persisted state")
 		}
-		s.logger.Info().Str("dialect", persist.dialect.name).Str("data_dir", dataDir).Msg("bleephub persistence enabled")
+		s.logger.Info().Str("dialect", persist.Dialect.Name).Str("data_dir", dataDir).Msg("bleephub persistence enabled")
 	}
 
 	// Seed default user only if the store didn't load one from disk.
@@ -669,7 +669,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
-	if err := s.store.persistenceReady(ctx); err != nil {
+	if err := s.store.PersistenceReady(ctx); err != nil {
 		s.logger.Warn().Err(err).Msg("readiness check failed")
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "unavailable"})
 		return
@@ -682,7 +682,7 @@ func (s *Server) handleInternalMetrics(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleInternalStatus(w http.ResponseWriter, r *http.Request) {
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	activeWfs := 0
 	jobsByStatus := make(map[string]int)
 	for _, wf := range s.store.Workflows {
@@ -694,7 +694,7 @@ func (s *Server) handleInternalStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	sessions := len(s.store.Sessions)
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"active_workflows":  activeWfs,
@@ -713,9 +713,9 @@ func (s *Server) handleInternalStatus(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleInternalStorage(w http.ResponseWriter, r *http.Request) {
 	persistenceBackend := "none"
 	dialectName := ""
-	if s.store.persist != nil {
-		persistenceBackend = s.store.persist.dialect.name
-		dialectName = s.store.persist.dialect.name
+	if s.store.Persist != nil {
+		persistenceBackend = s.store.Persist.Dialect.Name
+		dialectName = s.store.Persist.Dialect.Name
 	}
 
 	gitBackend := "memory"

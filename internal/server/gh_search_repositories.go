@@ -207,8 +207,8 @@ func repositoryHasCustomPropertyValue(st *Store, repo *Repo, propertyName, wante
 }
 
 func repositoryHasLinkedArtifactState(st *Store, fullName string, deployment bool) bool {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
 	if deployment {
 		for _, record := range st.ArtifactDeploymentRecords {
 			if strings.EqualFold(record.GitHubRepository, fullName) && record.Status == "deployed" {

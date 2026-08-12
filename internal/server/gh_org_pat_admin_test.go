@@ -432,9 +432,9 @@ func TestFineGrainedPATExpirationStopsAuthentication(t *testing.T) {
 	}
 	resp.Body.Close()
 	past := fixedTestTime.UTC().Add(-time.Second)
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.Tokens[token.Value].ExpiresAt = &past
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	resp = s.get(t, "/api/v3/user", token.Value)
 	if resp.StatusCode != http.StatusUnauthorized {
 		resp.Body.Close()

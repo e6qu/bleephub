@@ -55,15 +55,6 @@ type workflowCallOutputDef struct {
 	Value       string `yaml:"value"`
 }
 
-// WorkflowInputDef is a declared workflow_dispatch / workflow_call input.
-type WorkflowInputDef struct {
-	Description string        `yaml:"description"`
-	Required    bool          `yaml:"required"`
-	Default     interface{}   `yaml:"default"`
-	Type        string        `yaml:"type"` // string | choice | boolean | number | environment
-	Options     []interface{} `yaml:"options"`
-}
-
 // triggerEvent describes a concrete event occurrence to match against
 // workflow `on:` definitions.
 type triggerEvent struct {
@@ -436,33 +427,18 @@ func changedFilesBetween(stor gitStorage.Storer, beforeSha, afterSha string) (fi
 	return files, true
 }
 
-// normalizeYAMLValue maps YAML-decoded scalars into the expression value
-// space (ints become float64 like every other expression number).
-func normalizeYAMLValue(v interface{}) interface{} {
-	switch t := v.(type) {
-	case int:
-		return float64(t)
-	case int64:
-		return float64(t)
-	case uint64:
-		return float64(t)
-	default:
-		return v
-	}
-}
-
 // firePullRequestSynchronize emits pull_request "synchronize" (webhook +
 // workflow triggers) for every open PR whose head branch just received a
 // push — real GitHub's behavior for pushes to a PR's source branch.
 func (s *Server) firePullRequestSynchronize(repo *Repo, repoKey, branch string) {
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	var prs []*PullRequest
 	for _, pr := range s.store.PullRequests {
 		if pullRequestHeadRepoID(pr) == repo.ID && pr.State == "OPEN" && pr.HeadRefName == branch {
 			prs = append(prs, pr)
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	for _, pr := range prs {
 		baseRepo := s.store.GetRepoByID(pr.RepoID)
@@ -475,17 +451,4 @@ func (s *Server) firePullRequestSynchronize(repo *Repo, repoKey, branch string) 
 		payload := buildPullRequestPayload(s.store, baseRepo, pr, nil, "synchronize")
 		s.emitWebhookEvent(baseRepo.FullName, "pull_request", "synchronize", payload)
 	}
-}
-
-// resolveBranchSha resolves a branch name to its commit sha in git
-// storage; empty when unknown.
-func resolveBranchSha(stor gitStorage.Storer, branch string) string {
-	if stor == nil || branch == "" {
-		return ""
-	}
-	ref, err := stor.Reference(plumbing.NewBranchReferenceName(branch))
-	if err != nil {
-		return ""
-	}
-	return ref.Hash().String()
 }

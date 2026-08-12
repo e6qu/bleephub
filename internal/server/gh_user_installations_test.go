@@ -43,12 +43,12 @@ func TestUserInstallations_List(t *testing.T) {
 	s.registerGHAppsRoutes()
 	user := s.store.UsersByLogin["admin"]
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	other := &User{ID: s.store.NextUser, Login: "outsider", Type: "User"}
 	s.store.NextUser++
 	s.store.Users[other.ID] = other
 	s.store.UsersByLogin[other.Login] = other
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	memberOrg := s.store.CreateOrg(user, "octo-org", "Octo", "")
 	otherOrg := s.store.CreateOrg(other, "other-org", "Other", "")
@@ -144,12 +144,12 @@ func TestUserInstallationRepos_ListBindsUserAndSelection(t *testing.T) {
 		t.Fatalf("selected list = %#v, want only repository %d", response, selected.ID)
 	}
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	outsider := &User{ID: s.store.NextUser, Login: "list-outsider", Type: "User"}
 	s.store.NextUser++
 	s.store.Users[outsider.ID] = outsider
 	s.store.UsersByLogin[outsider.Login] = outsider
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	if denied := runWithUser(s, "GET", fmt.Sprintf("/api/v3/user/installations/%d/repositories", inst.ID), outsider); denied.Code != http.StatusNotFound {
 		t.Fatalf("foreign user list status = %d, want 404", denied.Code)
 	}

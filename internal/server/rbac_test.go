@@ -17,7 +17,7 @@ func TestSiteAdministratorCanAccessOrganizationRepository(t *testing.T) {
 		t.Fatal("CreateOrgRepo returned nil")
 	}
 
-	store.mu.Lock()
+	store.Mu.Lock()
 	siteAdmin := &User{
 		ID:           store.NextUser,
 		Login:        "external-site-admin",
@@ -28,7 +28,7 @@ func TestSiteAdministratorCanAccessOrganizationRepository(t *testing.T) {
 	store.NextUser++
 	store.Users[siteAdmin.ID] = siteAdmin
 	store.UsersByLogin[siteAdmin.Login] = siteAdmin
-	store.mu.Unlock()
+	store.Mu.Unlock()
 
 	if !canReadRepoAsUser(store, siteAdmin, repo) {
 		t.Fatal("site administrator could not read organization repository")
@@ -51,12 +51,12 @@ func TestOrganizationBaseRepositoryPermissionControlsMemberCapabilities(t *testi
 		t.Fatal("failed to create organization repository")
 	}
 
-	store.mu.Lock()
+	store.Mu.Lock()
 	member := &User{ID: store.NextUser, Login: "ordinary-member", Type: "User"}
 	store.NextUser++
 	store.Users[member.ID] = member
 	store.UsersByLogin[member.Login] = member
-	store.mu.Unlock()
+	store.Mu.Unlock()
 	store.SetMembership(org.Login, member.ID, OrgRoleMember, MembershipStateActive)
 
 	tests := []struct {

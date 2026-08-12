@@ -106,9 +106,9 @@ func TestTimelineSummaryPersistsOnWorkflowJob(t *testing.T) {
 	wf := &Workflow{ID: "summary-run", Jobs: map[string]*WorkflowJob{
 		"build": {JobID: "job", PlanID: "plan", Summary: ""},
 	}}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.Workflows[wf.ID] = wf
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	req := httptest.NewRequest(http.MethodPut, "/summary", bytes.NewBufferString("## Results\n\nAll green"))
 	req.SetPathValue("planId", "plan")

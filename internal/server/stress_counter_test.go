@@ -142,11 +142,11 @@ func TestStressCounterIntegrity(t *testing.T) {
 			t.Fatal("CreateOrg nil")
 		}
 		member := &User{ID: st.NextUser, Login: "cnt-member", Type: "User"}
-		st.mu.Lock()
+		st.Mu.Lock()
 		st.Users[member.ID] = member
 		st.UsersByLogin[member.Login] = member
 		st.NextUser++
-		st.mu.Unlock()
+		st.Mu.Unlock()
 
 		var wg sync.WaitGroup
 		for w := 0; w < workers; w++ {
@@ -169,10 +169,10 @@ func TestStressCounterIntegrity(t *testing.T) {
 
 		// Exactly one membership row for (org, member) — upsert must not
 		// create duplicates under contention.
-		st.mu.RLock()
+		st.Mu.RLock()
 		count := len(st.Memberships)
 		m := st.Memberships[membershipKey(org.Login, member.ID)]
-		st.mu.RUnlock()
+		st.Mu.RUnlock()
 		if m == nil {
 			t.Fatal("membership missing after upsert storm")
 		}

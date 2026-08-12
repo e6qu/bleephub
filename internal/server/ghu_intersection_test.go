@@ -46,8 +46,8 @@ func (s *isolatedServer) newGhuFixture(t *testing.T, tag string) *ghuFixture {
 	now := fixedTestTime.UTC()
 
 	mkUser := func(login string) *User {
-		store.mu.Lock()
-		defer store.mu.Unlock()
+		store.Mu.Lock()
+		defer store.Mu.Unlock()
 		u := &User{ID: store.NextUser, Login: login, Type: "User", CreatedAt: now, UpdatedAt: now}
 		store.Users[u.ID] = u
 		store.UsersByLogin[u.Login] = u

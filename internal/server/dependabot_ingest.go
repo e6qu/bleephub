@@ -14,7 +14,7 @@ func (s *Server) deriveDependabotAlertsForRepository(repo *Repo) {
 	if len(deps) == 0 {
 		return
 	}
-	for _, advisory := range s.store.listGlobalAdvisories() {
+	for _, advisory := range s.store.ListGlobalAdvisories() {
 		s.deriveDependabotAlertsForRepositoryAdvisory(repo, deps, advisory)
 	}
 }
@@ -23,12 +23,12 @@ func (s *Server) deriveDependabotAlertsForPublishedAdvisory(advisory *SecurityAd
 	if advisory == nil || advisory.PublishedAt == nil || advisory.State != "published" {
 		return
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	repos := make([]*Repo, 0, len(s.store.Repos))
 	for _, repo := range s.store.Repos {
 		repos = append(repos, repo)
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	for _, repo := range repos {
 		deps := s.currentDependencies(repo.ID, "refs/heads/"+repo.DefaultBranch, "")

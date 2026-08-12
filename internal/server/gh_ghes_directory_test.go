@@ -12,7 +12,7 @@ func TestGHESDirectoryMappingsOrganizationRenameAndReplicaCaches(t *testing.T) {
 	s.registerGHESAdminStatsRoutes()
 	fixed := time.Date(2026, time.July, 30, 14, 0, 0, 0, time.UTC)
 	s.replaceClockNow(func() time.Time { return fixed })
-	s.store.replaceClockNow(func() time.Time { return fixed })
+	replaceStoreClockNow(s.store, func() time.Time { return fixed })
 	admin := s.store.LookupUserByLogin("admin")
 	org := s.store.CreateOrg(admin, "directory-old", "Directory", "")
 	team := s.store.CreateTeam(org.Login, "Platform", TeamOptions{})
@@ -85,11 +85,11 @@ func TestGHESLDAPMappingsPersist(t *testing.T) {
 	if err := st1.SetPersistence(p1); err != nil {
 		t.Fatal(err)
 	}
-	st1.mu.Lock()
+	st1.Mu.Lock()
 	st1.EnterpriseSettings.GHESLDAPUserMappings["octocat"] = "uid=octocat,dc=example,dc=test"
 	st1.EnterpriseSettings.GHESLDAPTeamMappings[42] = "cn=platform,dc=example,dc=test"
-	st1.persistEnterpriseSettings()
-	st1.mu.Unlock()
+	st1.PersistEnterpriseSettings()
+	st1.Mu.Unlock()
 	if err := p1.Close(); err != nil {
 		t.Fatal(err)
 	}

@@ -22,7 +22,7 @@ func TestProjectItemAddRefusesContentTheCallerCannotRead(t *testing.T) {
 	store := srv.store
 
 	now := fixedTestTime.UTC()
-	store.mu.Lock()
+	store.Mu.Lock()
 	victim := &User{ID: store.NextUser, Login: "projcontent-victim", Type: "User", CreatedAt: now, UpdatedAt: now}
 	store.Users[victim.ID] = victim
 	store.UsersByLogin[victim.Login] = victim
@@ -31,7 +31,7 @@ func TestProjectItemAddRefusesContentTheCallerCannotRead(t *testing.T) {
 	store.Users[snooper.ID] = snooper
 	store.UsersByLogin[snooper.Login] = snooper
 	store.NextUser++
-	store.mu.Unlock()
+	store.Mu.Unlock()
 
 	private := store.CreateRepo(victim, "projcontent-private", "private fixture", true)
 	if private == nil {

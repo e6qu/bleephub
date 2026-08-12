@@ -19,9 +19,9 @@ func TestGetCopilotCodingAgentPermsDoesNotMaterializeDefault(t *testing.T) {
 	if p == nil || p.EnabledRepositories != "all" {
 		t.Fatalf("default perms = %+v, want EnabledRepositories=all", p)
 	}
-	st.mu.RLock()
+	st.Mu.RLock()
 	_, exists := st.CopilotCodingAgentPerms["acme"]
-	st.mu.RUnlock()
+	st.Mu.RUnlock()
 	if exists {
 		t.Fatal("a pure read materialized a phantom perms entry")
 	}

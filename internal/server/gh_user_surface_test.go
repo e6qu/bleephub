@@ -394,7 +394,7 @@ func TestUserBillingUsage_FromRealWorkflowRuns(t *testing.T) {
 	// Record a completed workflow run with one 90-second job — the real
 	// state the report is derived from (metered as 2 rounded-up minutes).
 	started := fixedTestTime.UTC().Add(-10 * time.Minute)
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.Workflows["bill-run-1"] = &Workflow{
 		ID:           "bill-run-1",
 		Name:         "bill",
@@ -408,11 +408,11 @@ func TestUserBillingUsage_FromRealWorkflowRuns(t *testing.T) {
 				StartedAt: started, CompletedAt: started.Add(90 * time.Second)},
 		},
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	t.Cleanup(func() {
-		s.store.mu.Lock()
+		s.store.Mu.Lock()
 		delete(s.store.Workflows, "bill-run-1")
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 	})
 
 	report := decodeJSON(t, s.get(t, "/api/v3/users/billuser/settings/billing/usage", tok))

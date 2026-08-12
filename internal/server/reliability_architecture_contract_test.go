@@ -9,8 +9,10 @@ import (
 )
 
 var (
-	directPersistenceWrite  = regexp.MustCompile(`\.Must(?:Put|Delete)\(`)
-	batchedPersistenceWrite = regexp.MustCompile(`\bnewPersistBatch\(`)
+	directPersistenceWrite = regexp.MustCompile(`\.Must(?:Put|Delete)\(`)
+	// ARCH-001 moved the data layer to internal/store, where the helper is the
+	// exported NewPersistBatch; the server-side alias keeps the old spelling.
+	batchedPersistenceWrite = regexp.MustCompile(`\b(?:new|New)PersistBatch\(`)
 	sharedHarnessReference  = regexp.MustCompile(`\b(?:testServer|testBaseURL|testSSHAddr)\b`)
 )
 
@@ -64,38 +66,46 @@ func TestReliabilityDebtOnlyShrinks(t *testing.T) {
 
 	directWrites, batchedMutations := 0, 0
 	sharedFiles, sharedReferences := 0, 0
-	err := filepath.WalkDir(".", func(path string, entry os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if entry.IsDir() || !strings.HasSuffix(path, ".go") {
-			return nil
-		}
-		body, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		if strings.HasSuffix(path, "_test.go") {
-			// The contract test names the shared-harness symbols to detect them,
-			// and isolated_server_test.go is the migration infrastructure that
-			// replaces the shared harness (TEST-008) — it references the shared
-			// symbols only to document what it supersedes. Neither is shared-
-			// harness *usage*, so exclude both from the count.
-			if entry.Name() == "reliability_architecture_contract_test.go" ||
-				entry.Name() == "isolated_server_test.go" {
+	// The persistence-write debt lives in the data layer, which ARCH-001 moved
+	// to internal/store; both packages stay under the same ratchet.
+	walk := func(root string) error {
+		return filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if entry.IsDir() || !strings.HasSuffix(path, ".go") {
 				return nil
 			}
-			references := len(sharedHarnessReference.FindAll(body, -1))
-			if references > 0 {
-				sharedFiles++
-				sharedReferences += references
+			body, err := os.ReadFile(path)
+			if err != nil {
+				return err
 			}
+			if strings.HasSuffix(path, "_test.go") {
+				// The contract test names the shared-harness symbols to detect them,
+				// and isolated_server_test.go is the migration infrastructure that
+				// replaces the shared harness (TEST-008) — it references the shared
+				// symbols only to document what it supersedes. Neither is shared-
+				// harness *usage*, so exclude both from the count.
+				if entry.Name() == "reliability_architecture_contract_test.go" ||
+					entry.Name() == "isolated_server_test.go" {
+					return nil
+				}
+				references := len(sharedHarnessReference.FindAll(body, -1))
+				if references > 0 {
+					sharedFiles++
+					sharedReferences += references
+				}
+				return nil
+			}
+			directWrites += len(directPersistenceWrite.FindAll(body, -1))
+			batchedMutations += len(batchedPersistenceWrite.FindAll(body, -1))
 			return nil
-		}
-		directWrites += len(directPersistenceWrite.FindAll(body, -1))
-		batchedMutations += len(batchedPersistenceWrite.FindAll(body, -1))
-		return nil
-	})
+		})
+	}
+	err := walk(".")
+	if err == nil {
+		err = walk("../store")
+	}
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -10,30 +10,6 @@ import (
 	"time"
 )
 
-// OrgCustomRepositoryRole is an organization-defined repository role.
-type OrgCustomRepositoryRole struct {
-	ID          int       `json:"id"`
-	Name        string    `json:"name"`
-	Description *string   `json:"description"`
-	BaseRole    string    `json:"base_role"`
-	Permissions []string  `json:"permissions"`
-	OrgLogin    string    `json:"-"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
-}
-
-// OrgCustomOrganizationRole is an organization-defined organization role.
-type OrgCustomOrganizationRole struct {
-	ID          int       `json:"id"`
-	Name        string    `json:"name"`
-	Description *string   `json:"description"`
-	BaseRole    *string   `json:"base_role"`
-	Permissions []string  `json:"permissions"`
-	OrgLogin    string    `json:"-"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
-}
-
 type fineGrainedPermission struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
@@ -131,9 +107,9 @@ func (s *Server) handleGetOrgAnnouncement(w http.ResponseWriter, r *http.Request
 	if org == nil {
 		return
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	announcement := copyAnnouncement(s.store.OrgAnnouncements[org.Login])
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	writeJSON(w, http.StatusOK, announcement)
 }
 
@@ -164,12 +140,12 @@ func (s *Server) handleSetOrgAnnouncement(w http.ResponseWriter, r *http.Request
 	if req.UserDismissible != nil {
 		announcement.UserDismissible = *req.UserDismissible
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.OrgAnnouncements[org.Login] = announcement
-	if s.store.persist != nil {
-		s.store.persist.MustPut("org_announcements", org.Login, announcement)
+	if s.store.Persist != nil {
+		s.store.Persist.MustPut("org_announcements", org.Login, announcement)
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusOK, announcement)
 }
 
@@ -178,12 +154,12 @@ func (s *Server) handleDeleteOrgAnnouncement(w http.ResponseWriter, r *http.Requ
 	if org == nil {
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	delete(s.store.OrgAnnouncements, org.Login)
-	if s.store.persist != nil {
-		s.store.persist.MustDelete("org_announcements", org.Login)
+	if s.store.Persist != nil {
+		s.store.Persist.MustDelete("org_announcements", org.Login)
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -288,28 +264,15 @@ func validateCustomRepositoryRoleRequest(w http.ResponseWriter, req customReposi
 	return true
 }
 
-func (st *Store) reserveOrgCustomRoleIDLocked() int {
-	id := st.NextOrgCustomRoleID
-	if st.persist != nil {
-		reserved, err := st.persist.AllocateCounterValue("next_org_custom_role_id", int64(id))
-		if err != nil {
-			panic(&persistenceFailure{op: "counter", bucket: "counters", key: "next_org_custom_role_id", err: err})
-		}
-		id = int(reserved)
-	}
-	st.NextOrgCustomRoleID = id + 1
-	return id
-}
-
 func (s *Server) listCustomRepositoryRoles(w http.ResponseWriter, r *http.Request, org *Org) {
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	roles := make([]*OrgCustomRepositoryRole, 0, len(s.store.OrgCustomRepoRoles[org.Login]))
 	for _, role := range s.store.OrgCustomRepoRoles[org.Login] {
 		copyRole := *role
 		copyRole.Permissions = append([]string(nil), role.Permissions...)
 		roles = append(roles, &copyRole)
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	sort.Slice(roles, func(i, j int) bool { return roles[i].ID < roles[j].ID })
 	result := make([]map[string]interface{}, 0, len(roles))
 	for _, role := range roles {
@@ -357,23 +320,23 @@ func (s *Server) handleCreateCustomRepositoryRole(w http.ResponseWriter, r *http
 	if req.Description.Set {
 		role.Description = req.Description.Value
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	if s.store.OrgCustomRepoRoles[org.Login] == nil {
 		s.store.OrgCustomRepoRoles[org.Login] = map[int]*OrgCustomRepositoryRole{}
 	}
 	for _, existing := range s.store.OrgCustomRepoRoles[org.Login] {
 		if strings.EqualFold(existing.Name, role.Name) {
-			s.store.mu.Unlock()
+			s.store.Mu.Unlock()
 			writeGHValidationError(w, "CustomRepositoryRole", "name", "already_exists")
 			return
 		}
 	}
-	role.ID = s.store.reserveOrgCustomRoleIDLocked()
+	role.ID = s.store.ReserveOrgCustomRoleIDLocked()
 	s.store.OrgCustomRepoRoles[org.Login][role.ID] = role
-	if s.store.persist != nil {
-		s.store.persist.MustPut("org_custom_repo_roles", org.Login, s.store.OrgCustomRepoRoles[org.Login])
+	if s.store.Persist != nil {
+		s.store.Persist.MustPut("org_custom_repo_roles", org.Login, s.store.OrgCustomRepoRoles[org.Login])
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusCreated, customRepositoryRoleJSON(role, org, s.baseURL(r)))
 }
 
@@ -387,8 +350,8 @@ func parseRoleID(w http.ResponseWriter, r *http.Request) (int, bool) {
 }
 
 func (s *Server) getCustomRepositoryRole(orgLogin string, id int) *OrgCustomRepositoryRole {
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	role := s.store.OrgCustomRepoRoles[orgLogin][id]
 	if role == nil {
 		return nil
@@ -428,17 +391,17 @@ func (s *Server) handleUpdateCustomRepositoryRole(w http.ResponseWriter, r *http
 	if !decodeJSONBody(w, r, &req) || !validateCustomRepositoryRoleRequest(w, req, false) {
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	role := s.store.OrgCustomRepoRoles[org.Login][id]
 	if role == nil {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 	if req.Name != nil {
 		for existingID, existing := range s.store.OrgCustomRepoRoles[org.Login] {
 			if existingID != id && strings.EqualFold(existing.Name, strings.TrimSpace(*req.Name)) {
-				s.store.mu.Unlock()
+				s.store.Mu.Unlock()
 				writeGHValidationError(w, "CustomRepositoryRole", "name", "already_exists")
 				return
 			}
@@ -455,12 +418,12 @@ func (s *Server) handleUpdateCustomRepositoryRole(w http.ResponseWriter, r *http
 		role.Permissions = append([]string(nil), (*req.Permissions)...)
 	}
 	role.UpdatedAt = s.currentTime()
-	if s.store.persist != nil {
-		s.store.persist.MustPut("org_custom_repo_roles", org.Login, s.store.OrgCustomRepoRoles[org.Login])
+	if s.store.Persist != nil {
+		s.store.Persist.MustPut("org_custom_repo_roles", org.Login, s.store.OrgCustomRepoRoles[org.Login])
 	}
 	result := *role
 	result.Permissions = append([]string(nil), role.Permissions...)
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusOK, customRepositoryRoleJSON(&result, org, s.baseURL(r)))
 }
 
@@ -473,17 +436,17 @@ func (s *Server) handleDeleteCustomRepositoryRole(w http.ResponseWriter, r *http
 	if !ok {
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	if s.store.OrgCustomRepoRoles[org.Login][id] == nil {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 	delete(s.store.OrgCustomRepoRoles[org.Login], id)
-	if s.store.persist != nil {
-		s.store.persist.MustPut("org_custom_repo_roles", org.Login, s.store.OrgCustomRepoRoles[org.Login])
+	if s.store.Persist != nil {
+		s.store.Persist.MustPut("org_custom_repo_roles", org.Login, s.store.OrgCustomRepoRoles[org.Login])
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -566,23 +529,23 @@ func (s *Server) handleCreateOrganizationRole(w http.ResponseWriter, r *http.Req
 		baseRole := *req.BaseRole
 		role.BaseRole = &baseRole
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	if s.store.OrgCustomRoles[org.Login] == nil {
 		s.store.OrgCustomRoles[org.Login] = map[int]*OrgCustomOrganizationRole{}
 	}
 	for _, existing := range s.store.OrgCustomRoles[org.Login] {
 		if strings.EqualFold(existing.Name, role.Name) {
-			s.store.mu.Unlock()
+			s.store.Mu.Unlock()
 			writeGHError(w, http.StatusConflict, "An organization role with this name already exists.")
 			return
 		}
 	}
-	role.ID = s.store.reserveOrgCustomRoleIDLocked()
+	role.ID = s.store.ReserveOrgCustomRoleIDLocked()
 	s.store.OrgCustomRoles[org.Login][role.ID] = role
-	if s.store.persist != nil {
-		s.store.persist.MustPut("org_custom_roles", org.Login, s.store.OrgCustomRoles[org.Login])
+	if s.store.Persist != nil {
+		s.store.Persist.MustPut("org_custom_roles", org.Login, s.store.OrgCustomRoles[org.Login])
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusCreated, orgRoleJSON(customOrgRoleView(role), org, s.baseURL(r)))
 }
 
@@ -599,17 +562,17 @@ func (s *Server) handleUpdateOrganizationRole(w http.ResponseWriter, r *http.Req
 	if !decodeJSONBody(w, r, &req) || !validateCustomOrganizationRoleRequest(w, req, false) {
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	role := s.store.OrgCustomRoles[org.Login][id]
 	if role == nil {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 	if req.Name != nil {
 		for existingID, existing := range s.store.OrgCustomRoles[org.Login] {
 			if existingID != id && strings.EqualFold(existing.Name, strings.TrimSpace(*req.Name)) {
-				s.store.mu.Unlock()
+				s.store.Mu.Unlock()
 				writeGHError(w, http.StatusConflict, "An organization role with this name already exists.")
 				return
 			}
@@ -631,12 +594,12 @@ func (s *Server) handleUpdateOrganizationRole(w http.ResponseWriter, r *http.Req
 		role.Permissions = append([]string(nil), (*req.Permissions)...)
 	}
 	role.UpdatedAt = s.currentTime()
-	if s.store.persist != nil {
-		s.store.persist.MustPut("org_custom_roles", org.Login, s.store.OrgCustomRoles[org.Login])
+	if s.store.Persist != nil {
+		s.store.Persist.MustPut("org_custom_roles", org.Login, s.store.OrgCustomRoles[org.Login])
 	}
 	result := *role
 	result.Permissions = append([]string(nil), role.Permissions...)
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusOK, orgRoleJSON(customOrgRoleView(&result), org, s.baseURL(r)))
 }
 
@@ -649,9 +612,9 @@ func (s *Server) handleDeleteOrganizationRole(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	if s.store.OrgCustomRoles[org.Login][id] == nil {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -662,14 +625,14 @@ func (s *Server) handleDeleteOrganizationRole(w http.ResponseWriter, r *http.Req
 	// together, so a crash cannot leave a dangling assignment to a deleted role
 	// (STORE-001/002). Unlock before any panic so recovery's reload is not
 	// deadlocked by a still-held write lock (this handler unlocks explicitly).
-	batch := newPersistBatch(s.store.persist)
+	batch := newPersistBatch(s.store.Persist)
 	batch.Put("org_custom_roles", org.Login, s.store.OrgCustomRoles[org.Login])
 	batch.Put("org_role_team_assignments", org.Login, s.store.OrgRoleTeamAssignments[org.Login])
 	batch.Put("org_role_user_assignments", org.Login, s.store.OrgRoleUserAssignments[org.Login])
 	commitErr := batch.Commit()
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	if commitErr != nil {
-		panic(&persistenceFailure{op: "batch", bucket: "org_custom_roles", err: commitErr})
+		panic(&persistenceFailure{Op: "batch", Bucket: "org_custom_roles", Err: commitErr})
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

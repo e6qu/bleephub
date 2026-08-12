@@ -7,10 +7,6 @@ import (
 	"time"
 )
 
-// githubActionsAppID is the well-known app id real GitHub attributes
-// Actions check suites/runs to (the "github-actions" app).
-const githubActionsAppID = 15368
-
 // actionsEventKind enumerates workflow/job lifecycle transitions that
 // drive the checks layer and its webhook events.
 type actionsEventKind int
@@ -186,27 +182,27 @@ func (s *Server) onActionsRunRequestedSnapshot(wf, snapshot *Workflow) {
 		cs.WorkflowFileID = wf.WorkflowFileID
 		cs.WorkflowFilePath = wf.WorkflowFilePath
 	})
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.actionsEvents.snapshotMu.Lock()
 	wf.CheckSuiteID = suite.ID
 	s.actionsEvents.snapshotMu.Unlock()
-	s.store.persistWorkflowRecord(wf)
-	s.store.mu.Unlock()
+	s.store.PersistWorkflowRecord(wf)
+	s.store.Mu.Unlock()
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	jobs := make([]*WorkflowJob, 0, len(wf.Jobs))
 	for _, j := range wf.Jobs {
 		if !j.Hidden {
 			jobs = append(jobs, j)
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	for _, j := range jobs {
 		cr := s.store.CreateCheckRun(repoKey, wf.Sha, j.DisplayName, githubActionsAppID, suite.ID)
-		s.store.mu.RLock()
+		s.store.Mu.RLock()
 		jobStatus, jobResult := j.Status, j.Result
-		s.store.mu.RUnlock()
+		s.store.Mu.RUnlock()
 		now := time.Now().UTC()
 		s.store.UpdateCheckRun(cr.ID, func(c *CheckRun) {
 			c.ExternalID = j.JobID
@@ -219,11 +215,11 @@ func (s *Server) onActionsRunRequestedSnapshot(wf, snapshot *Workflow) {
 				c.CompletedAt = &now
 			}
 		})
-		s.store.mu.Lock()
+		s.store.Mu.Lock()
 		s.actionsEvents.snapshotMu.Lock()
 		j.CheckRunID = cr.ID
 		s.actionsEvents.snapshotMu.Unlock()
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		s.emitCheckRunEvent(repoKey, cr.ID, "created")
 	}
 
@@ -236,7 +232,7 @@ func (s *Server) onActionsRunRequestedSnapshot(wf, snapshot *Workflow) {
 func (s *Server) onActionsRunCompletedSnapshot(wf, snapshot *Workflow) {
 	repoKey := wf.RepoFullName
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	suiteID := wf.CheckSuiteID
 	for _, j := range wf.Jobs {
 		if j.CheckRunID != 0 {
@@ -247,20 +243,20 @@ func (s *Server) onActionsRunCompletedSnapshot(wf, snapshot *Workflow) {
 		}
 	}
 	result := wf.Result
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	if suiteID != 0 {
 		now := time.Now().UTC()
-		s.store.mu.Lock()
+		s.store.Mu.Lock()
 		if suite := s.store.CheckSuites[suiteID]; suite != nil {
 			suite.Status = "completed"
 			suite.Conclusion = resultToConclusion(result)
 			suite.UpdatedAt = now
-			if s.store.persist != nil {
-				s.store.persist.MustPut("check_suites", strconv.FormatInt(suiteID, 10), suite)
+			if s.store.Persist != nil {
+				s.store.Persist.MustPut("check_suites", strconv.FormatInt(suiteID, 10), suite)
 			}
 		}
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		s.emitCheckSuiteEvent(repoKey, suiteID, "completed")
 	}
 	s.emitWorkflowRunEvent(snapshot, "completed")
@@ -287,9 +283,9 @@ func (s *Server) completeJobCheckRun(wf *Workflow, job *WorkflowJob) {
 	if id == 0 {
 		return
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	result := job.Result
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	now := time.Now().UTC()
 	s.store.UpdateCheckRun(id, func(c *CheckRun) {
 		c.Status = "completed"
@@ -300,8 +296,8 @@ func (s *Server) completeJobCheckRun(wf *Workflow, job *WorkflowJob) {
 }
 
 func jobCheckRunID(s *Server, job *WorkflowJob) int64 {
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	return job.CheckRunID
 }
 
@@ -353,13 +349,13 @@ func (s *Server) emitWorkflowRunEvent(wf *Workflow, action string) {
 		return
 	}
 	base := fmt.Sprintf("http://%s", s.addr)
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	runJSON := workflowRunJSON(wf, base, wf.RepoFullName, repoJSON)
 	var wfFileJSON map[string]any
 	if f := s.store.WorkflowFiles[wf.WorkflowFileID]; f != nil {
 		wfFileJSON = workflowFileJSON(f, base, wf.RepoFullName)
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	payload := map[string]interface{}{
 		"action":       action,
@@ -441,8 +437,8 @@ func (s *Server) workflowSender(wf *Workflow) *User {
 	if login == "" {
 		return nil
 	}
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	return s.store.UsersByLogin[login]
 }
 

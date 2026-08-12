@@ -11,32 +11,6 @@ import (
 	"github.com/google/uuid"
 )
 
-type VisualStudioSubscription struct {
-	SubscriptionID string `json:"subscription_id"`
-	Email          string `json:"email"`
-	Username       string `json:"username,omitempty"`
-	ManualMatch    bool   `json:"manual_match"`
-}
-
-type EnterpriseInnerSourceSyncResult struct {
-	ExternalID string `json:"external_id"`
-	Status     string `json:"status"`
-	GHSAID     string `json:"ghsa_id,omitempty"`
-}
-
-type EnterpriseInnerSourceSyncJob struct {
-	ID        string                            `json:"id"`
-	Status    string                            `json:"status"`
-	Processed int                               `json:"processed"`
-	Created   int                               `json:"created"`
-	Updated   int                               `json:"updated"`
-	Withdrawn int                               `json:"withdrawn"`
-	Errors    int                               `json:"errors"`
-	Results   []EnterpriseInnerSourceSyncResult `json:"results"`
-	CreatedAt time.Time                         `json:"created_at"`
-	UpdatedAt time.Time                         `json:"updated_at"`
-}
-
 func (s *Server) registerGHEnterpriseLicensingRoutes() {
 	s.route("GET /api/v3/enterprise-installation/{enterprise_or_org}/server-statistics", s.handleEnterpriseServerStatistics)
 	s.route("GET /api/v3/enterprises/{enterprise}/consumed-licenses", s.requireEnterpriseOwner(s.handleEnterpriseConsumedLicenses))
@@ -154,7 +128,7 @@ func visualStudioSubscriptionJSON(subscription *VisualStudioSubscription) map[st
 
 func (s *Server) handleListVisualStudioSubscriptions(w http.ResponseWriter, r *http.Request) {
 	unmatchedOnly := r.URL.Query().Get("is_unmatched_only") == "true"
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	subscriptions := make([]*VisualStudioSubscription, 0, len(s.store.EnterpriseSettings.VisualStudioSubscriptions))
 	for _, subscription := range s.store.EnterpriseSettings.VisualStudioSubscriptions {
 		if unmatchedOnly && subscription.ManualMatch {
@@ -163,7 +137,7 @@ func (s *Server) handleListVisualStudioSubscriptions(w http.ResponseWriter, r *h
 		copy := *subscription
 		subscriptions = append(subscriptions, &copy)
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	sort.Slice(subscriptions, func(i, j int) bool {
 		return subscriptions[i].SubscriptionID < subscriptions[j].SubscriptionID
 	})
@@ -210,27 +184,27 @@ func (s *Server) handlePutVisualStudioSubscription(w http.ResponseWriter, r *htt
 	subscription := &VisualStudioSubscription{
 		SubscriptionID: id, Email: user.Email, Username: user.Login, ManualMatch: true,
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.EnterpriseSettings.VisualStudioSubscriptions[id] = subscription
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusOK, visualStudioSubscriptionJSON(subscription))
 }
 
 func (s *Server) handleDeleteVisualStudioSubscription(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("visual_studio_subscription_id")
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	subscription := s.store.EnterpriseSettings.VisualStudioSubscriptions[id]
 	if subscription == nil {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 	subscription.Username = ""
 	subscription.ManualMatch = false
-	s.store.persistEnterpriseSettings()
+	s.store.PersistEnterpriseSettings()
 	copy := *subscription
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusOK, visualStudioSubscriptionJSON(&copy))
 }
 
@@ -249,7 +223,7 @@ func (s *Server) handleSyncEnterpriseInnerSourceVulnerabilities(w http.ResponseW
 		return
 	}
 	seen := map[string]bool{}
-	now := s.store.currentTime()
+	now := s.store.CurrentTime()
 	job := &EnterpriseInnerSourceSyncJob{
 		ID: "external-vulnerability-sync-" + uuid.NewString(), Status: "queued",
 		Results:   make([]EnterpriseInnerSourceSyncResult, 0, len(req.Vulnerabilities)),
@@ -272,10 +246,10 @@ func (s *Server) handleSyncEnterpriseInnerSourceVulnerabilities(w http.ResponseW
 		job.Results = append(job.Results, result)
 	}
 	job.Processed = len(job.Results)
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.EnterpriseSettings.InnerSourceSyncJobs[job.ID] = job
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	url := s.baseURL(r) + "/api/v3/enterprises/" + s.enterpriseSlug() +
 		"/innersource-vulnerabilities/sync/status/" + job.ID
 	w.Header().Set("Location", url)
@@ -284,25 +258,25 @@ func (s *Server) handleSyncEnterpriseInnerSourceVulnerabilities(w http.ResponseW
 
 func (s *Server) handleGetEnterpriseInnerSourceSync(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("job_id")
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	job := s.store.EnterpriseSettings.InnerSourceSyncJobs[id]
 	if job == nil {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 	if job.Status == "queued" {
 		job.Status = "completed"
-		job.UpdatedAt = s.store.currentTime()
-		s.store.persistEnterpriseSettings()
-		s.store.mu.Unlock()
+		job.UpdatedAt = s.store.CurrentTime()
+		s.store.PersistEnterpriseSettings()
+		s.store.Mu.Unlock()
 		w.Header().Set("Retry-After", "1")
 		writeJSON(w, http.StatusAccepted, map[string]interface{}{"id": job.ID, "status": "queued"})
 		return
 	}
 	copy := *job
 	copy.Results = append([]EnterpriseInnerSourceSyncResult(nil), job.Results...)
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"processed": copy.Processed, "created": copy.Created, "updated": copy.Updated,
 		"withdrawn": copy.Withdrawn, "errors": copy.Errors, "results": copy.Results,
@@ -320,14 +294,14 @@ func (s *Server) handleEnterpriseServerStatistics(w http.ResponseWriter, r *http
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	totalRepos, totalTeams := len(s.store.Repos), len(s.store.Teams)+len(s.store.EnterpriseTeams)
 	totalOrgs := len(s.store.Orgs)
 	users := make([]*User, 0, len(s.store.Users))
 	for _, candidate := range s.store.Users {
 		users = append(users, candidate)
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	admins, suspended := 0, 0
 	for _, candidate := range users {
 		if candidate.SiteAdmin {
@@ -338,7 +312,7 @@ func (s *Server) handleEnterpriseServerStatistics(w http.ResponseWriter, r *http
 		}
 	}
 	writeJSON(w, http.StatusOK, []map[string]interface{}{{
-		"server_id": "bleephub", "collection_date": s.store.currentTime().Format(time.RFC3339),
+		"server_id": "bleephub", "collection_date": s.store.CurrentTime().Format(time.RFC3339),
 		"schema_version": "20230306", "ghes_version": s.build.Version, "host_name": r.Host,
 		"github_connect": map[string]interface{}{"features_enabled": []string{"license_usage_sync"}},
 		"ghe_stats": map[string]interface{}{

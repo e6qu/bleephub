@@ -24,14 +24,14 @@ func TestOrganizationGovernanceStatePersistenceReload(t *testing.T) {
 	admin := st1.LookupUserByLogin("admin")
 	org := st1.CreateOrg(admin, "governance-reload", "Governance", "")
 	repo := st1.CreateOrgRepo(org, admin, "lfs-reload", "", false)
-	st1.mu.Lock()
+	st1.Mu.Lock()
 	repo.LFSEnabled = true
-	st1.persist.MustPut("repos", strconv.Itoa(repo.ID), repo)
-	st1.mu.Unlock()
+	st1.Persist.MustPut("repos", strconv.Itoa(repo.ID), repo)
+	st1.Mu.Unlock()
 	now := fixedTestTime
 	description := "persists"
 	baseRole := "read"
-	st1.mu.Lock()
+	st1.Mu.Lock()
 	st1.OrgAnnouncements[org.Login] = &EnterpriseAnnouncement{Announcement: "Persistent banner", UserDismissible: true}
 	st1.OrgCustomRepoRoles[org.Login] = map[int]*OrgCustomRepositoryRole{
 		1001: {
@@ -71,14 +71,14 @@ func TestOrganizationGovernanceStatePersistenceReload(t *testing.T) {
 			}},
 		},
 	}
-	st1.persist.MustPut("org_announcements", org.Login, st1.OrgAnnouncements[org.Login])
-	st1.persist.MustPut("org_custom_repo_roles", org.Login, st1.OrgCustomRepoRoles[org.Login])
-	st1.persist.MustPut("org_custom_roles", org.Login, st1.OrgCustomRoles[org.Login])
-	st1.persist.MustPut("org_scim_users", org.Login, st1.OrgSCIMUsers[org.Login])
-	st1.persist.MustPut("org_external_groups", org.Login, st1.OrgExternalGroups[org.Login])
-	st1.persist.MustPut("team_external_group_ids", "71", st1.TeamExternalGroupIDs[71])
-	st1.persist.MustPut("security_review_requests", reviewScope, st1.SecurityReviewRequests[reviewScope])
-	st1.mu.Unlock()
+	st1.Persist.MustPut("org_announcements", org.Login, st1.OrgAnnouncements[org.Login])
+	st1.Persist.MustPut("org_custom_repo_roles", org.Login, st1.OrgCustomRepoRoles[org.Login])
+	st1.Persist.MustPut("org_custom_roles", org.Login, st1.OrgCustomRoles[org.Login])
+	st1.Persist.MustPut("org_scim_users", org.Login, st1.OrgSCIMUsers[org.Login])
+	st1.Persist.MustPut("org_external_groups", org.Login, st1.OrgExternalGroups[org.Login])
+	st1.Persist.MustPut("team_external_group_ids", "71", st1.TeamExternalGroupIDs[71])
+	st1.Persist.MustPut("security_review_requests", reviewScope, st1.SecurityReviewRequests[reviewScope])
+	st1.Mu.Unlock()
 	if err := p1.Close(); err != nil {
 		t.Fatalf("close persistence: %v", err)
 	}

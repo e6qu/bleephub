@@ -1178,12 +1178,12 @@ func TestGraphQLViewerPermissionNotHardcoded(t *testing.T) {
 	// refused" — an authenticated non-owner tests the same property and is a
 	// request GitHub would actually serve.
 	store := s.store
-	store.mu.Lock()
+	store.Mu.Lock()
 	outsider := &User{ID: store.NextUser, Login: "gql-viewer-perm-outsider", Type: "User"}
 	store.Users[outsider.ID] = outsider
 	store.UsersByLogin[outsider.Login] = outsider
 	store.NextUser++
-	store.mu.Unlock()
+	store.Mu.Unlock()
 	outsiderToken := store.CreateToken(outsider.ID, "repo")
 
 	resp := s.post(t, "/api/graphql", outsiderToken.Value, map[string]interface{}{

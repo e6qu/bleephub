@@ -35,7 +35,7 @@ func ensureSeededRepo(s *Server, fullName string) *Repo {
 	}
 	user := s.store.LookupUserByLogin(owner)
 	if user == nil {
-		s.store.mu.Lock()
+		s.store.Mu.Lock()
 		user = &User{ID: s.store.NextUser, Login: owner, Type: "User", CreatedAt: fixedTestTime.UTC()}
 		s.store.Users[user.ID] = user
 		s.store.UsersByLogin[owner] = user
@@ -43,10 +43,10 @@ func ensureSeededRepo(s *Server, fullName string) *Repo {
 		// Persist the owner too: a repository row referencing a user that was
 		// never written cannot be reloaded, and the reload fixtures do exactly
 		// that round trip.
-		if s.store.persist != nil {
-			s.store.persist.MustPut("users", strconv.Itoa(user.ID), user)
+		if s.store.Persist != nil {
+			s.store.Persist.MustPut("users", strconv.Itoa(user.ID), user)
 		}
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 	}
 	return s.store.CreateRepo(user, name, "", false)
 }
@@ -54,7 +54,7 @@ func ensureSeededRepo(s *Server, fullName string) *Repo {
 func seedRun(t *testing.T, s *Server, repo string, status, result string) (*Workflow, *WorkflowJob) {
 	t.Helper()
 	ensureSeededRepo(s, repo)
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	runID := s.store.NextRunID
 	s.store.NextRunID++
 	jobID := uuid.New().String()
@@ -83,7 +83,7 @@ func seedRun(t *testing.T, s *Server, repo string, status, result string) (*Work
 	wf.Jobs["build"] = wfJob
 	s.store.Workflows[wf.ID] = wf
 	s.store.LogLines[jobID] = []string{"line one", "line two\n"}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	return wf, wfJob
 }
 
@@ -101,8 +101,8 @@ func runAuthedRequest(s *Server, method, path string) *httptest.ResponseRecorder
 }
 
 func seedFinalizedArtifact(s *Server, id int64, wf *Workflow, name string, createdAt time.Time) {
-	s.artifactStore.mu.Lock()
-	s.artifactStore.artifacts[id] = &Artifact{
+	s.artifactStore.Mu.Lock()
+	s.artifactStore.Artifacts[id] = &Artifact{
 		ID:                   id,
 		Name:                 name,
 		Size:                 int64(len("artifact-data")),
@@ -114,10 +114,10 @@ func seedFinalizedArtifact(s *Server, id int64, wf *Workflow, name string, creat
 		WorkflowRunBackendID: wf.ID,
 		CreatedAt:            createdAt,
 	}
-	if id >= s.artifactStore.nextID {
-		s.artifactStore.nextID = id + 1
+	if id >= s.artifactStore.NextID {
+		s.artifactStore.NextID = id + 1
 	}
-	s.artifactStore.mu.Unlock()
+	s.artifactStore.Mu.Unlock()
 }
 
 func TestActionsRuns_List(t *testing.T) {
@@ -626,7 +626,7 @@ func TestActionsRunners_List(t *testing.T) {
 	s := newTestServer()
 	s.registerGHActionsRoutes()
 	ensureSeededRepo(s, "octo/repo")
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.Agents[1] = &Agent{
 		ID: 1, Name: "runner-a", OSDescription: "Linux", Status: "online",
 		Labels: []Label{{ID: 10, Name: "self-hosted", Type: "system"}, {ID: 11, Name: "linux", Type: "custom"}},
@@ -636,7 +636,7 @@ func TestActionsRunners_List(t *testing.T) {
 		ID: 2, Name: "runner-b", OSDescription: "Darwin", Status: "offline",
 		Scope: runnerScope{Repo: "octo/repo"},
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	// The runner list requires administration:read — authenticate.
 	w := runAuthedRequest(s, "GET", "/api/v3/repos/octo/repo/actions/runners")
@@ -689,19 +689,19 @@ func TestActionsRunners_Delete(t *testing.T) {
 	s := newTestServer()
 	s.registerGHActionsRoutes()
 	ensureSeededRepo(s, "octo/repo")
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.Agents[42] = &Agent{
 		ID: 42, Name: "to-delete", Status: "online", Scope: runnerScope{Repo: "octo/repo"},
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	w := runAuthedRequest(s, "DELETE", "/api/v3/repos/octo/repo/actions/runners/42")
 	if w.Code != http.StatusNoContent {
 		t.Errorf("status = %d, want 204", w.Code)
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	_, exists := s.store.Agents[42]
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if exists {
 		t.Error("runner 42 should be deleted")
 	}
@@ -769,9 +769,9 @@ func TestActionsJob_StepsAndCompletedAt(t *testing.T) {
 	s.registerGHActionsRoutes()
 	s.registerTimelineRoutes()
 	_, wfJob := seedRun(t, s, "octo/repo", "completed", "success")
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	wfJob.CompletedAt = wfJob.StartedAt.Add(30 * time.Second)
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	planID, timelineID := linkJobToPlan(t, s, wfJob)
 
 	// Report the job + step records the way the runner does (job record
@@ -845,12 +845,12 @@ func TestActionsRunners_ExtraFields(t *testing.T) {
 	s := newTestServer()
 	s.registerGHActionsRoutes()
 	ensureSeededRepo(s, "octo/repo")
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.Agents[7] = &Agent{
 		ID: 7, Name: "r", OSDescription: "Linux", Status: "online", Version: "2.300.0",
 		Scope: runnerScope{Repo: "octo/repo"},
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	w := runAuthedRequest(s, "GET", "/api/v3/repos/octo/repo/actions/runners")
 	if w.Code != http.StatusOK {
@@ -1459,24 +1459,24 @@ func TestActionsRunLogs_Delete(t *testing.T) {
 	wf, wfJob := seedRun(t, s, repo, "completed", "success")
 	planID, _ := linkJobToPlan(t, s, wfJob)
 	// Seed a timeline record with a log file so deletion has something to remove.
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.TimelineRecords[planID] = append(s.store.TimelineRecords[planID], &TimelineRecord{
 		Type: "Task",
 		Name: "Step",
 		Log:  &TimelineLogRef{ID: 1},
 	})
 	s.store.LogFiles[1] = []byte("step log")
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	w := runAuthedRequest(s, "DELETE", fmt.Sprintf("/api/v3/repos/%s/actions/runs/%d/logs", repo, wf.RunID))
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("delete logs status = %d, body=%s", w.Code, w.Body.String())
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	_, hasLogLines := s.store.LogLines[wfJob.JobID]
 	_, hasTimeline := s.store.TimelineRecords[planID]
 	_, hasLogFile := s.store.LogFiles[1]
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if hasLogLines {
 		t.Error("log lines should be deleted")
 	}

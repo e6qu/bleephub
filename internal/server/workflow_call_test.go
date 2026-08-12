@@ -20,12 +20,12 @@ func commitFilesToStorage(t *testing.T, s *Server, repoFullName string, files ma
 		t.Fatalf("expected owner/repo, got %q", repoFullName)
 	}
 	if s.store.UsersByLogin[parts[0]] == nil {
-		s.store.mu.Lock()
+		s.store.Mu.Lock()
 		user := &User{ID: s.store.NextUser, Login: parts[0], Type: "User", CreatedAt: fixedTestTime, UpdatedAt: fixedTestTime}
 		s.store.NextUser++
 		s.store.Users[user.ID] = user
 		s.store.UsersByLogin[user.Login] = user
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 	}
 	if s.store.GetRepo(parts[0], parts[1]) == nil {
 		s.store.CreateRepo(s.store.UsersByLogin[parts[0]], parts[1], "", false)
@@ -133,14 +133,14 @@ func TestWorkflowCallEndToEnd(t *testing.T) {
 
 	s.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/main", nil)
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	var wf *Workflow
 	for _, w := range s.store.Workflows {
 		if w.RepoFullName == repoKey && w.Name == "caller" {
 			wf = w
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if wf == nil {
 		t.Fatal("caller workflow not triggered")
 	}
@@ -162,19 +162,19 @@ func TestWorkflowCallEndToEnd(t *testing.T) {
 	}
 
 	// Complete setup with an output; the gate must resolve `with:`.
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	wf.Jobs["setup"].Outputs["version"] = "1.2.3"
 	setupID := wf.Jobs["setup"].JobID
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	s.onJobCompleted(context.Background(), setupID, "Succeeded")
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	gate := wf.Jobs["deploy/__call"]
 	publish := wf.Jobs["deploy/publish"]
 	gateStatus := gate.Status
 	publishStatus := publish.Status
 	binding := publish.Def.Call
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	if gateStatus != JobStatusCompleted {
 		t.Fatalf("gate status = %q, want completed", gateStatus)
@@ -202,19 +202,19 @@ func TestWorkflowCallEndToEnd(t *testing.T) {
 	}
 
 	// Complete publish with the url output; the collector must map it.
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	publish.Outputs["url"] = "https://prod.example"
 	publishID := publish.JobID
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	s.onJobCompleted(context.Background(), publishID, "Succeeded")
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	collector := wf.Jobs["deploy"]
 	notify := wf.Jobs["notify"]
 	collectorStatus := collector.Status
 	collectorURL := collector.Outputs["url"]
 	notifyStatus := notify.Status
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	if collectorStatus != JobStatusCompleted {
 		t.Fatalf("collector status = %q, want completed", collectorStatus)
@@ -271,20 +271,20 @@ jobs:
 
 	s.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/main", nil)
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	var wf *Workflow
 	for _, w := range s.store.Workflows {
 		if w.RepoFullName == repoKey {
 			wf = w
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if wf == nil {
 		t.Fatal("workflow not triggered")
 	}
 
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	for _, key := range []string{"deploy/__call", "deploy/publish", "deploy", "notify"} {
 		j := wf.Jobs[key]
 		if j == nil {

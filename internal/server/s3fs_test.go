@@ -19,6 +19,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/e6qu/bleephub/internal/gitstore"
 	"github.com/e6qu/bleephub/internal/server/testutil"
 )
 
@@ -106,34 +107,15 @@ func testBinaryAlive(pid int) bool {
 
 func resetS3FSCacheForTest(t *testing.T) {
 	t.Helper()
-	s3FSMu.Lock()
-	s3FSCache = nil
-	s3FSErr = nil
-	s3FSInited = false
-	s3FSMu.Unlock()
-	t.Cleanup(func() {
-		s3FSMu.Lock()
-		s3FSCache = nil
-		s3FSErr = nil
-		s3FSInited = false
-		s3FSMu.Unlock()
-	})
-}
-
-func TestBleephubS3Region(t *testing.T) {
-	t.Setenv("BLEEPHUB_S3_REGION", "eu-west-1")
-	t.Setenv("AWS_REGION", "us-east-1")
-	if got := bleephubS3Region(); got != "eu-west-1" {
-		t.Fatalf("explicit Bleephub S3 region = %q, want eu-west-1", got)
+	reset := func() {
+		gitstore.S3FSCache.Mu.Lock()
+		gitstore.S3FSCache.FS = nil
+		gitstore.S3FSCache.Err = nil
+		gitstore.S3FSCache.Inited = false
+		gitstore.S3FSCache.Mu.Unlock()
 	}
-	t.Setenv("BLEEPHUB_S3_REGION", "")
-	if got := bleephubS3Region(); got != "us-east-1" {
-		t.Fatalf("AWS S3 region = %q, want us-east-1", got)
-	}
-	t.Setenv("AWS_REGION", "")
-	if got := bleephubS3Region(); got != "us-east-1" {
-		t.Fatalf("default S3 region = %q, want us-east-1", got)
-	}
+	reset()
+	t.Cleanup(reset)
 }
 
 func newS3FSForTest(t *testing.T) *s3FS {
@@ -157,7 +139,7 @@ func newS3FSForTest(t *testing.T) *s3FS {
 	if err != nil {
 		t.Fatalf("newS3FS: %v", err)
 	}
-	if _, err := fs.client.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: aws.String(fs.bucket)}); err != nil {
+	if _, err := fs.Client().CreateBucket(ctx, &s3.CreateBucketInput{Bucket: aws.String(fs.Bucket())}); err != nil {
 		t.Fatalf("CreateBucket: %v", err)
 	}
 	return fs
@@ -166,8 +148,23 @@ func newS3FSForTest(t *testing.T) *s3FS {
 func newObjectByteStoreForTest(t *testing.T) (*s3FS, actionsByteStore) {
 	t.Helper()
 	fs := newS3FSForTest(t)
-	objectFS := &s3FS{client: fs.client, bucket: fs.bucket, prefix: "objects"}
-	return objectFS, &s3ActionsByteStore{fs: objectFS}
+	objectFS := deriveS3FSForTest(t, fs.Bucket(), "objects")
+	return objectFS, &s3ActionsByteStore{Fs: objectFS}
+}
+
+// deriveS3FSForTest builds a sibling S3FS handle on the shared MinIO server.
+// The type's unexported fields moved to internal/gitstore, so tests derive a
+// fresh handle from the shared endpoint instead of copying fields into a
+// composite literal.
+func deriveS3FSForTest(t *testing.T, bucket, prefix string) *s3FS {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	fs, err := newS3FS(ctx, s3ServerEndpoint, bucket, prefix)
+	if err != nil {
+		t.Fatalf("newS3FS: %v", err)
+	}
+	return fs
 }
 
 func startS3ServerForTest(t *testing.T) string {
@@ -208,8 +205,8 @@ func putS3RawObject(t *testing.T, fs *s3FS, key string, content []byte) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	if _, err := fs.client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket: aws.String(fs.bucket),
+	if _, err := fs.Client().PutObject(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(fs.Bucket()),
 		Key:    aws.String(key),
 		Body:   bytes.NewReader(content),
 	}); err != nil {
@@ -224,8 +221,8 @@ func listS3RawKeys(t *testing.T, fs *s3FS, prefix string) []string {
 	var keys []string
 	var continuation *string
 	for {
-		resp, err := fs.client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
-			Bucket:            aws.String(fs.bucket),
+		resp, err := fs.Client().ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:            aws.String(fs.Bucket()),
 			Prefix:            aws.String(prefix),
 			ContinuationToken: continuation,
 		})
@@ -614,7 +611,7 @@ func TestS3FSDeleteRepoPrefix(t *testing.T) {
 	}
 	putS3RawObject(t, fs, "git/owner/other/keep", []byte("data"))
 
-	if err := fs.deleteRepoPrefix("owner/repo"); err != nil {
+	if err := fs.DeleteRepoPrefix("owner/repo"); err != nil {
 		t.Fatalf("deleteRepoPrefix: %v", err)
 	}
 
@@ -636,7 +633,7 @@ func TestS3FSRenameRepoPrefix(t *testing.T) {
 	putS3RawObject(t, fs, "git/owner/repo/refs/heads/main", []byte("sha-main"))
 	putS3RawObject(t, fs, "git/owner/other/refs/heads/main", []byte("keep"))
 
-	if err := fs.renameRepoPrefix("owner/repo", "new-owner/new-repo"); err != nil {
+	if err := fs.RenameRepoPrefix("owner/repo", "new-owner/new-repo"); err != nil {
 		t.Fatalf("renameRepoPrefix: %v", err)
 	}
 
@@ -662,10 +659,10 @@ func TestS3FSRenameRepoPrefix(t *testing.T) {
 }
 
 func TestS3FSDeleteRepoPrefixPropagatesListError(t *testing.T) {
-	fs := newS3FSForTest(t)
-	fs.bucket = "missing-bucket"
+	newS3FSForTest(t)
+	fs := deriveS3FSForTest(t, "missing-bucket", "git")
 
-	if err := fs.deleteRepoPrefix("owner/repo"); err == nil {
+	if err := fs.DeleteRepoPrefix("owner/repo"); err == nil {
 		t.Fatal("deleteRepoPrefix returned nil, want list error propagated")
 	}
 }

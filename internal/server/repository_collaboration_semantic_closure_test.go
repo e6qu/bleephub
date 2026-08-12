@@ -268,13 +268,13 @@ func TestCompareAndReferenceListsFailLoudlyWithoutGitStorage(t *testing.T) {
 	admin := s.store.UsersByLogin["admin"]
 	repo := s.store.CreateRepo(admin, "missing-read-storage", "", false)
 	stor := s.store.GetGitStorage("admin", repo.Name)
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	delete(s.store.GitStorages, repo.FullName)
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	t.Cleanup(func() {
-		s.store.mu.Lock()
+		s.store.Mu.Lock()
 		s.store.GitStorages[repo.FullName] = stor
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 	})
 
 	for _, path := range []string{
@@ -414,10 +414,10 @@ func TestBranchRestrictionSubresourcesAddSetAndRemoveRequestedEntries(t *testing
 		CreatedAt: fixedTestTime,
 		UpdatedAt: fixedTestTime,
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.Users[reviewer.ID] = reviewer
 	s.store.UsersByLogin[reviewer.Login] = reviewer
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	repo := s.store.CreateRepo(admin, "restriction-semantics", "", false)
 
 	put := doBPReq(s, adminPAT, http.MethodPut, "/api/v3/repos/"+repo.FullName+"/branches/main/protection",
@@ -465,10 +465,10 @@ func TestCommentAuthorAssociationUsesRepositoryRelationship(t *testing.T) {
 	s := newTestServer()
 	admin := s.store.UsersByLogin["admin"]
 	contributor := &User{ID: 7411, Login: "comment-contributor", Type: "User", CreatedAt: fixedTestTime, UpdatedAt: fixedTestTime}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.Users[contributor.ID] = contributor
 	s.store.UsersByLogin[contributor.Login] = contributor
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	repo := s.store.CreateRepo(admin, "comment-association", "", false)
 	if !s.store.AddRepoCollaborator(admin.Login, repo.Name, contributor.Login, "push") {
 		t.Fatal("add repository collaborator")

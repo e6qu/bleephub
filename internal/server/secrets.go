@@ -9,23 +9,6 @@ import (
 	"time"
 )
 
-// Secret represents an Actions secret at any scope (repository or
-// environment; OrgSecret embeds it for the organization scope).
-//
-// Value carries a real json name so persistence round-trips it (workflow
-// runs need the plaintext after a restart). Client responses never marshal
-// this struct — the secrets handlers emit name/created_at/updated_at maps,
-// matching real GitHub's never-return-the-value contract. On the wire the
-// value only ever arrives as a libsodium sealed box ({encrypted_value,
-// key_id} against the key from the public-key endpoint); the server opens
-// the box once at PUT time and stores the plaintext for job injection.
-type Secret struct {
-	Name      string    `json:"name"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	Value     string    `json:"value"`
-}
-
 // envScopeKey keys Store.EnvSecrets / Store.EnvVariables. Environment
 // scopes are per (repository, environment name); the unit separator can
 // appear in neither an "owner/repo" key nor an environment name, so the
@@ -184,8 +167,8 @@ type sealedSecretBody struct {
 // the scope's collection. Returns true when the secret was created.
 func (s *Server) upsertSecret(table map[string]map[string]*Secret, bucket, key, name, value string) bool {
 	now := time.Now().UTC()
-	s.store.mu.Lock()
-	defer s.store.mu.Unlock()
+	s.store.Mu.Lock()
+	defer s.store.Mu.Unlock()
 	m := table[key]
 	if m == nil {
 		m = make(map[string]*Secret)
@@ -198,8 +181,8 @@ func (s *Server) upsertSecret(table map[string]map[string]*Secret, bucket, key, 
 	} else {
 		m[name] = &Secret{Name: name, CreatedAt: now, UpdatedAt: now, Value: value}
 	}
-	if s.store.persist != nil {
-		s.store.persist.MustPut(bucket, key, m)
+	if s.store.Persist != nil {
+		s.store.Persist.MustPut(bucket, key, m)
 	}
 	return existing == nil
 }
@@ -208,18 +191,18 @@ func (s *Server) upsertSecret(table map[string]map[string]*Secret, bucket, key, 
 // remaining collection (or deleting the row when empty). Returns whether
 // the secret existed.
 func (s *Server) deleteSecret(table map[string]map[string]*Secret, bucket, key, name string) bool {
-	s.store.mu.Lock()
-	defer s.store.mu.Unlock()
+	s.store.Mu.Lock()
+	defer s.store.Mu.Unlock()
 	m, ok := table[key]
 	if !ok || m[name] == nil {
 		return false
 	}
 	delete(m, name)
-	if s.store.persist != nil {
+	if s.store.Persist != nil {
 		if len(m) > 0 {
-			s.store.persist.MustPut(bucket, key, m)
+			s.store.Persist.MustPut(bucket, key, m)
 		} else {
-			s.store.persist.MustDelete(bucket, key)
+			s.store.Persist.MustDelete(bucket, key)
 		}
 	}
 	return true
@@ -233,9 +216,9 @@ func (s *Server) handleListSecrets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	list := sortedSecretsJSON(s.store.RepoSecrets[repo.FullName])
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	paged := paginateAndLink(w, r, list)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -258,13 +241,13 @@ func (s *Server) handleGetSecret(w http.ResponseWriter, r *http.Request) {
 	}
 	name := strings.ToUpper(r.PathValue("secret_name"))
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	sec := s.store.RepoSecrets[repo.FullName][name]
 	var body map[string]interface{}
 	if sec != nil {
 		body = secretJSON(sec)
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	if body == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -334,7 +317,7 @@ func (s *Server) handleListRepoOrgSecrets(w http.ResponseWriter, r *http.Request
 
 	list := make([]map[string]interface{}, 0)
 	if org := s.store.GetOrg(r.PathValue("owner")); org != nil {
-		s.store.mu.RLock()
+		s.store.Mu.RLock()
 		visible := make(map[string]*Secret)
 		for name, sec := range s.store.OrgSecrets[org.Login] {
 			if orgItemVisibleToRepo(sec.Visibility, sec.SelectedRepoIDs, repo) {
@@ -342,7 +325,7 @@ func (s *Server) handleListRepoOrgSecrets(w http.ResponseWriter, r *http.Request
 			}
 		}
 		list = sortedSecretsJSON(visible)
-		s.store.mu.RUnlock()
+		s.store.Mu.RUnlock()
 	}
 
 	paged := paginateAndLink(w, r, list)
@@ -381,9 +364,9 @@ func (s *Server) handleListEnvSecrets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	list := sortedSecretsJSON(s.store.EnvSecrets[scopeKey])
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	paged := paginateAndLink(w, r, list)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -406,13 +389,13 @@ func (s *Server) handleGetEnvSecret(w http.ResponseWriter, r *http.Request) {
 	}
 	name := strings.ToUpper(r.PathValue("secret_name"))
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	sec := s.store.EnvSecrets[scopeKey][name]
 	var body map[string]interface{}
 	if sec != nil {
 		body = secretJSON(sec)
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	if body == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -501,7 +484,7 @@ func (s *Server) handleListOrgSecrets(w http.ResponseWriter, r *http.Request) {
 	}
 	base := s.baseURL(r)
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	m := s.store.OrgSecrets[org.Login]
 	names := make([]string, 0, len(m))
 	for n := range m {
@@ -512,7 +495,7 @@ func (s *Server) handleListOrgSecrets(w http.ResponseWriter, r *http.Request) {
 	for _, n := range names {
 		list = append(list, orgSecretJSON(m[n], org.Login, base))
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	paged := paginateAndLink(w, r, list)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -536,13 +519,13 @@ func (s *Server) handleGetOrgSecret(w http.ResponseWriter, r *http.Request) {
 	name := strings.ToUpper(r.PathValue("secret_name"))
 	base := s.baseURL(r)
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	sec := s.store.OrgSecrets[org.Login][name]
 	var body map[string]interface{}
 	if sec != nil {
 		body = orgSecretJSON(sec, org.Login, base)
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	if body == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -590,7 +573,7 @@ func (s *Server) handlePutOrgSecret(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := time.Now().UTC()
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	m := s.store.OrgSecrets[org.Login]
 	if m == nil {
 		m = make(map[string]*OrgSecret)
@@ -609,10 +592,10 @@ func (s *Server) handlePutOrgSecret(w http.ResponseWriter, r *http.Request) {
 			SelectedRepoIDs: ids,
 		}
 	}
-	if s.store.persist != nil {
-		s.store.persist.MustPut("org_secrets", org.Login, m)
+	if s.store.Persist != nil {
+		s.store.Persist.MustPut("org_secrets", org.Login, m)
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	s.recordAuditEvent("secret.create", auditActor(r), org.Login, map[string]interface{}{
 		"scope": "organization", "org": org.Login, "secret_name": name, "visibility": body.Visibility,
@@ -631,20 +614,20 @@ func (s *Server) handleDeleteOrgSecret(w http.ResponseWriter, r *http.Request) {
 	}
 	name := strings.ToUpper(r.PathValue("secret_name"))
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	m := s.store.OrgSecrets[org.Login]
 	existed := m[name] != nil
 	if existed {
 		delete(m, name)
-		if s.store.persist != nil {
+		if s.store.Persist != nil {
 			if len(m) > 0 {
-				s.store.persist.MustPut("org_secrets", org.Login, m)
+				s.store.Persist.MustPut("org_secrets", org.Login, m)
 			} else {
-				s.store.persist.MustDelete("org_secrets", org.Login)
+				s.store.Persist.MustDelete("org_secrets", org.Login)
 			}
 		}
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	if !existed {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -660,14 +643,14 @@ func (s *Server) handleDeleteOrgSecret(w http.ResponseWriter, r *http.Request) {
 // org secret/variable selected-repositories endpoints, dropping ids whose
 // repository no longer exists.
 func (s *Server) writeSelectedReposResponse(w http.ResponseWriter, r *http.Request, ids []int) {
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	repos := make([]*Repo, 0, len(ids))
 	for _, id := range ids {
 		if repo := s.store.Repos[id]; repo != nil {
 			repos = append(repos, repo)
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	sort.Slice(repos, func(i, j int) bool { return repos[i].ID < repos[j].ID })
 
 	base := s.baseURL(r)
@@ -700,13 +683,13 @@ func (s *Server) handleListOrgSecretRepos(w http.ResponseWriter, r *http.Request
 	}
 	name := strings.ToUpper(r.PathValue("secret_name"))
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	sec := s.store.OrgSecrets[org.Login][name]
 	var ids []int
 	if sec != nil {
 		ids = append([]int(nil), sec.SelectedRepoIDs...)
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	if sec == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -729,8 +712,8 @@ func (s *Server) handleSetOrgSecretRepos(w http.ResponseWriter, r *http.Request)
 			return nil
 		},
 		func() {
-			if s.store.persist != nil {
-				s.store.persist.MustPut("org_secrets", org.Login, s.store.OrgSecrets[org.Login])
+			if s.store.Persist != nil {
+				s.store.Persist.MustPut("org_secrets", org.Login, s.store.OrgSecrets[org.Login])
 			}
 		})
 }
@@ -751,53 +734,32 @@ func (s *Server) setOrgItemSelectedRepos(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	item := lookup()
 	if item == nil {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if requireSelected && item.itemVisibility() != "selected" {
-		s.store.mu.Unlock()
+	if requireSelected && item.ItemVisibility() != "selected" {
+		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusConflict, "Conflict: visibility of "+name+" is not set to selected")
 		return
 	}
 	for _, id := range body.SelectedRepositoryIDs {
 		if s.store.Repos[id] == nil {
-			s.store.mu.Unlock()
+			s.store.Mu.Unlock()
 			writeGHError(w, http.StatusNotFound, "Not Found")
 			return
 		}
 	}
-	item.setSelectedIDs(append([]int(nil), body.SelectedRepositoryIDs...))
-	item.touchUpdated(time.Now().UTC())
+	item.SetSelectedIDs(append([]int(nil), body.SelectedRepositoryIDs...))
+	item.TouchUpdated(time.Now().UTC())
 	persistLocked()
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	w.WriteHeader(http.StatusNoContent)
 }
-
-// orgScopedItem abstracts the selected-repositories surface shared by
-// organization secrets and organization variables, so the per-repo
-// add/remove endpoints run through one core.
-type orgScopedItem interface {
-	itemVisibility() string
-	selectedIDs() []int
-	setSelectedIDs([]int)
-	touchUpdated(time.Time)
-}
-
-func (sec *OrgSecret) itemVisibility() string     { return sec.Visibility }
-func (sec *OrgSecret) selectedIDs() []int         { return sec.SelectedRepoIDs }
-func (sec *OrgSecret) setSelectedIDs(ids []int)   { sec.SelectedRepoIDs = ids }
-func (sec *OrgSecret) touchUpdated(now time.Time) { sec.UpdatedAt = now }
-func (v *ActionsVariable) itemVisibility() string { return v.Visibility }
-func (v *ActionsVariable) selectedIDs() []int     { return v.SelectedRepoIDs }
-func (v *ActionsVariable) setSelectedIDs(ids []int) {
-	v.SelectedRepoIDs = ids
-}
-func (v *ActionsVariable) touchUpdated(now time.Time) { v.UpdatedAt = now }
 
 // handleOrgSelectionChange implements the per-repository add/remove
 // endpoints (PUT/DELETE .../{name}/repositories/{repository_id}) for both
@@ -811,25 +773,25 @@ func (s *Server) handleOrgSelectionChange(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	item := lookup()
 	if item == nil {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if item.itemVisibility() != "selected" {
-		s.store.mu.Unlock()
+	if item.ItemVisibility() != "selected" {
+		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusConflict, "Conflict: visibility of "+name+" is not set to selected")
 		return
 	}
 	if add && s.store.Repos[id] == nil {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 
-	ids := item.selectedIDs()
+	ids := item.SelectedIDs()
 	changed := false
 	if add {
 		present := false
@@ -856,11 +818,11 @@ func (s *Server) handleOrgSelectionChange(w http.ResponseWriter, r *http.Request
 		}
 	}
 	if changed {
-		item.setSelectedIDs(ids)
-		item.touchUpdated(time.Now().UTC())
+		item.SetSelectedIDs(ids)
+		item.TouchUpdated(time.Now().UTC())
 		persistLocked()
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -880,8 +842,8 @@ func (s *Server) orgSecretSelectionChange(w http.ResponseWriter, r *http.Request
 			return nil
 		},
 		func() {
-			if s.store.persist != nil {
-				s.store.persist.MustPut("org_secrets", org.Login, s.store.OrgSecrets[org.Login])
+			if s.store.Persist != nil {
+				s.store.Persist.MustPut("org_secrets", org.Login, s.store.OrgSecrets[org.Login])
 			}
 		})
 }

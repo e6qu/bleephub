@@ -17,78 +17,9 @@ import (
 	"strings"
 )
 
-// OrgActionsPermissions models the organization-level Actions settings.
-type OrgActionsPermissions struct {
-	EnabledRepositories     string          `json:"enabled_repositories"`
-	SelectedRepositoriesURL string          `json:"selected_repositories_url,omitempty"`
-	AllowedActions          string          `json:"allowed_actions"`
-	SelectedActionsURL      string          `json:"selected_actions_url,omitempty"`
-	SelectedRepositoryIDs   []int           `json:"selected_repository_ids,omitempty"`
-	ActionsAllowed          *ActionsAllowed `json:"actions_allowed,omitempty"`
-	WorkflowPermissions     *WorkflowPermissions
-	CacheRetentionLimitDays int
-	CacheStorageLimitGB     int64
-	// ArtifactAndLogRetentionDays is the org-wide artifact/log retention
-	// setting (GET/PUT /orgs/{org}/actions/permissions/artifact-and-log-retention).
-	ArtifactAndLogRetentionDays int
-	// ForkPRApprovalPolicy controls when fork PR workflows require
-	// maintainer approval (actions-fork-pr-contributor-approval enum).
-	ForkPRApprovalPolicy string
-	// ForkPRWorkflowsPrivateRepos holds the org's fork-PR-workflow policy
-	// for private repositories (four booleans).
-	ForkPRWorkflowsPrivateRepos *ForkPRWorkflowsPrivateRepos
-	// SelfHostedRunnersEnabledRepositories is the org policy controlling
-	// which repositories may use repository-level self-hosted runners
-	// (all | selected | none) with its selected repository ids.
-	SelfHostedRunnersEnabledRepositories string
-	SelfHostedRunnersSelectedRepoIDs     []int
-	// MaxCacheRetentionDays / MaxCacheSizeGB back the
-	// /organizations/{org}/actions/cache/{retention,storage}-limit
-	// policy endpoints.
-	MaxCacheRetentionDays int
-	MaxCacheSizeGB        int
-}
-
 // artifactRetentionMaximumDays is the ceiling GitHub reports beside the
 // configured value; the description declares both as required.
 const artifactRetentionMaximumDays = 90
-
-// ForkPRWorkflowsPrivateRepos is the actions-fork-pr-workflows-private-repos
-// settings shape.
-type ForkPRWorkflowsPrivateRepos struct {
-	RunWorkflowsFromForkPullRequests  bool `json:"run_workflows_from_fork_pull_requests"`
-	SendWriteTokensToWorkflows        bool `json:"send_write_tokens_to_workflows"`
-	SendSecretsAndVariables           bool `json:"send_secrets_and_variables"`
-	RequireApprovalForForkPRWorkflows bool `json:"require_approval_for_fork_pr_workflows"`
-}
-
-// RepoActionsPermissions models the repository-level Actions settings.
-type RepoActionsPermissions struct {
-	Enabled                     bool            `json:"enabled"`
-	AllowedActions              string          `json:"allowed_actions"`
-	SelectedActionsURL          string          `json:"selected_actions_url,omitempty"`
-	ActionsAllowed              *ActionsAllowed `json:"actions_allowed,omitempty"`
-	AccessLevel                 string          `json:"access_level"`
-	WorkflowPermissions         *WorkflowPermissions
-	ForkPRContributorApproval   string                       `json:"fork_pull_request_member_approval"`
-	ForkPRWorkflowsPrivateRepos *ForkPRWorkflowsPrivateRepos `json:"fork_pull_request_workflows_private_repos,omitempty"`
-	ArtifactAndLogRetentionDays int                          `json:"artifact_and_log_retention_days"`
-	CacheRetentionLimitDays     int
-	CacheStorageLimitGB         int64
-}
-
-// ActionsAllowed is the "selected actions" allow-list shape.
-type ActionsAllowed struct {
-	GithubOwnedAllowed bool     `json:"github_owned_allowed"`
-	VerifiedAllowed    bool     `json:"verified_allowed"`
-	PatternsAllowed    []string `json:"patterns_allowed"`
-}
-
-// WorkflowPermissions is the default workflow-token permissions shape.
-type WorkflowPermissions struct {
-	DefaultWorkflowPermissions   string `json:"default_workflow_permissions"`
-	CanApprovePullRequestReviews bool   `json:"can_approve_pull_request_reviews"`
-}
 
 // githubTokenDefaultScopes is the standard set of GITHUB_TOKEN API permission
 // scopes a workflow receives when it declares no `permissions:` block (or uses
@@ -153,294 +84,9 @@ func (s *Server) resolveJobTokenPermissions(wf *Workflow, jd *JobDef) map[string
 	return perms
 }
 
-// defaultOrgActionsPermissions returns the GitHub-default org settings.
-func defaultOrgActionsPermissions() *OrgActionsPermissions {
-	return &OrgActionsPermissions{
-		EnabledRepositories:                  "all",
-		AllowedActions:                       "all",
-		SelectedRepositoryIDs:                []int{},
-		CacheRetentionLimitDays:              90,
-		CacheStorageLimitGB:                  0,
-		ArtifactAndLogRetentionDays:          90,
-		ForkPRApprovalPolicy:                 "first_time_contributors",
-		SelfHostedRunnersEnabledRepositories: "all",
-		MaxCacheRetentionDays:                90,
-		MaxCacheSizeGB:                       10,
-	}
-}
-
 // orgArtifactAndLogRetentionMaxDays is the maximum artifact/log
 // retention GitHub allows an organization to configure.
 const orgArtifactAndLogRetentionMaxDays = 400
-
-// defaultRepoActionsPermissions returns the GitHub-default repo settings.
-func defaultRepoActionsPermissions() *RepoActionsPermissions {
-	return &RepoActionsPermissions{
-		Enabled:                     true,
-		AllowedActions:              "all",
-		AccessLevel:                 "none",
-		ForkPRContributorApproval:   "none",
-		ForkPRWorkflowsPrivateRepos: &ForkPRWorkflowsPrivateRepos{},
-		ArtifactAndLogRetentionDays: 90,
-		CacheRetentionLimitDays:     0,
-		CacheStorageLimitGB:         0,
-	}
-}
-
-// lookupOrgActionsPermissionsLocked returns an org's stored Actions settings
-// without creating or amending them, and is therefore safe to call while
-// holding only a read lock. It returns nil when the org has never been
-// configured; callers that need a value should fall back to
-// defaultOrgActionsPermissions rather than materializing one here.
-func (st *Store) lookupOrgActionsPermissionsLocked(orgLogin string) *OrgActionsPermissions {
-	if st.OrgActionsPermissions == nil {
-		return nil
-	}
-	return st.OrgActionsPermissions[orgLogin]
-}
-
-// getOrgActionsPermissionsLocked materializes an org's Actions settings,
-// creating the entry and filling in defaults for fields whose zero value is not
-// a valid configuration. It writes to the store, so the caller must hold the
-// WRITE lock — a read lock here is a concurrent map write, which is fatal and
-// unrecoverable rather than a recoverable panic.
-func (st *Store) getOrgActionsPermissionsLocked(orgLogin string) *OrgActionsPermissions {
-	if st.OrgActionsPermissions == nil {
-		st.OrgActionsPermissions = map[string]*OrgActionsPermissions{}
-	}
-	if p, ok := st.OrgActionsPermissions[orgLogin]; ok && p != nil {
-		// Materialize defaults for settings whose zero value is not a
-		// valid configuration (enum-shaped policies and limits).
-		if p.ArtifactAndLogRetentionDays == 0 {
-			p.ArtifactAndLogRetentionDays = 90
-		}
-		if p.ForkPRApprovalPolicy == "" {
-			p.ForkPRApprovalPolicy = "first_time_contributors"
-		}
-		if p.SelfHostedRunnersEnabledRepositories == "" {
-			p.SelfHostedRunnersEnabledRepositories = "all"
-		}
-		if p.MaxCacheRetentionDays == 0 {
-			p.MaxCacheRetentionDays = 90
-		}
-		if p.MaxCacheSizeGB == 0 {
-			p.MaxCacheSizeGB = 10
-		}
-		return p
-	}
-	p := defaultOrgActionsPermissions()
-	st.OrgActionsPermissions[orgLogin] = p
-	return p
-}
-
-// GetOrgActionsPermissions returns the org's Actions settings, materializing
-// defaults on first read.
-func (st *Store) GetOrgActionsPermissions(orgLogin string) *OrgActionsPermissions {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	return st.getOrgActionsPermissionsLocked(orgLogin)
-}
-
-// SetOrgActionsPermissions stores the org's Actions settings and persists.
-func (st *Store) SetOrgActionsPermissions(orgLogin string, p *OrgActionsPermissions) {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	if st.OrgActionsPermissions == nil {
-		st.OrgActionsPermissions = map[string]*OrgActionsPermissions{}
-	}
-	st.OrgActionsPermissions[orgLogin] = p
-	if st.persist != nil {
-		st.persist.MustPut("org_actions_permissions", orgLogin, p)
-	}
-}
-
-func (st *Store) getRepoActionsPermissionsLocked(repoKey string) *RepoActionsPermissions {
-	if st.RepoActionsPermissions == nil {
-		st.RepoActionsPermissions = map[string]*RepoActionsPermissions{}
-	}
-	if p, ok := st.RepoActionsPermissions[repoKey]; ok && p != nil {
-		return p
-	}
-	p := defaultRepoActionsPermissions()
-	st.RepoActionsPermissions[repoKey] = p
-	return p
-}
-
-// GetRepoActionsPermissions returns the repo's Actions settings, materializing
-// defaults on first read.
-func (st *Store) GetRepoActionsPermissions(repoKey string) *RepoActionsPermissions {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	return st.getRepoActionsPermissionsLocked(repoKey)
-}
-
-// SetRepoActionsPermissions stores the repo's Actions settings and persists.
-func (st *Store) SetRepoActionsPermissions(repoKey string, p *RepoActionsPermissions) {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	if st.RepoActionsPermissions == nil {
-		st.RepoActionsPermissions = map[string]*RepoActionsPermissions{}
-	}
-	st.RepoActionsPermissions[repoKey] = p
-	if st.persist != nil {
-		st.persist.MustPut("repo_actions_permissions", repoKey, p)
-	}
-}
-
-// persistOrgActionsPermissionsLocked writes the org permissions when the store
-// lock is already held.
-func (st *Store) persistOrgActionsPermissionsLocked(orgLogin string) {
-	if st.persist == nil {
-		return
-	}
-	if p := st.getOrgActionsPermissionsLocked(orgLogin); p != nil {
-		st.persist.MustPut("org_actions_permissions", orgLogin, p)
-	}
-}
-
-// AddOrgSelectedRepo adds a repository to the org's selected list (no-op if
-// already present).
-func (st *Store) AddOrgSelectedRepo(orgLogin string, repoID int) {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	p := st.getOrgActionsPermissionsLocked(orgLogin)
-	for _, id := range p.SelectedRepositoryIDs {
-		if id == repoID {
-			return
-		}
-	}
-	p.SelectedRepositoryIDs = append(p.SelectedRepositoryIDs, repoID)
-	st.persistOrgActionsPermissionsLocked(orgLogin)
-}
-
-// RemoveOrgSelectedRepo drops a repository from the org's selected list.
-func (st *Store) RemoveOrgSelectedRepo(orgLogin string, repoID int) {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	p := st.getOrgActionsPermissionsLocked(orgLogin)
-	// A fresh slice rather than the in-place s[:0] idiom: the old backing
-	// array is still referenced by any list a reader was handed earlier, and
-	// rewriting it in place mutates their copy retroactively.
-	kept := make([]int, 0, len(p.SelectedRepositoryIDs))
-	for _, id := range p.SelectedRepositoryIDs {
-		if id != repoID {
-			kept = append(kept, id)
-		}
-	}
-	p.SelectedRepositoryIDs = kept
-	st.persistOrgActionsPermissionsLocked(orgLogin)
-}
-
-// SetOrgSelectedRepos replaces the org's selected repository list.
-func (st *Store) SetOrgSelectedRepos(orgLogin string, repoIDs []int) {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	p := st.getOrgActionsPermissionsLocked(orgLogin)
-	p.SelectedRepositoryIDs = append([]int(nil), repoIDs...)
-	st.persistOrgActionsPermissionsLocked(orgLogin)
-}
-
-// ListOrgSelectedRepos returns the org's selected repository IDs. An org that
-// has never been configured has no selected list; reporting that as empty is
-// correct and, unlike materializing a default here, does not write to the
-// store from underneath a read lock.
-func (st *Store) ListOrgSelectedRepos(orgLogin string) []int {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-	p := st.lookupOrgActionsPermissionsLocked(orgLogin)
-	if p == nil {
-		return nil
-	}
-	out := make([]int, len(p.SelectedRepositoryIDs))
-	copy(out, p.SelectedRepositoryIDs)
-	return out
-}
-
-// SetLabels replaces all custom labels on an agent while preserving system
-// (read-only) labels. Names supplied that are system labels are treated as
-// system labels.
-func (a *Agent) SetLabels(names []string) {
-	custom := []Label{}
-	for _, l := range a.Labels {
-		if l.Type == "system" {
-			custom = append(custom, l)
-		}
-	}
-	nextID := a.nextLabelID()
-	for _, name := range names {
-		custom = append(custom, Label{
-			ID:   nextID,
-			Name: name,
-			Type: a.labelTypeForName(name),
-		})
-		nextID++
-	}
-	a.Labels = custom
-}
-
-// AddLabels appends custom labels, deduplicating by name.
-func (a *Agent) AddLabels(names []string) {
-	have := map[string]bool{}
-	for _, l := range a.Labels {
-		have[l.Name] = true
-	}
-	for _, name := range names {
-		if have[name] {
-			continue
-		}
-		a.Labels = append(a.Labels, Label{
-			ID:   a.nextLabelID(),
-			Name: name,
-			Type: a.labelTypeForName(name),
-		})
-		have[name] = true
-	}
-}
-
-// RemoveLabels removes custom labels by name; system labels are never removed.
-func (a *Agent) RemoveLabels(names []string) {
-	drop := map[string]bool{}
-	for _, n := range names {
-		drop[n] = true
-	}
-	kept := a.Labels[:0:0]
-	for _, l := range a.Labels {
-		if l.Type == "system" || !drop[l.Name] {
-			kept = append(kept, l)
-		}
-	}
-	a.Labels = kept
-}
-
-// ClearLabels removes every custom label, leaving system labels in place.
-func (a *Agent) ClearLabels() {
-	kept := a.Labels[:0:0]
-	for _, l := range a.Labels {
-		if l.Type == "system" {
-			kept = append(kept, l)
-		}
-	}
-	a.Labels = kept
-}
-
-func (a *Agent) labelTypeForName(name string) string {
-	for _, l := range a.Labels {
-		if l.Name == name {
-			return l.Type
-		}
-	}
-	return "custom"
-}
-
-func (a *Agent) nextLabelID() int {
-	max := 0
-	for _, l := range a.Labels {
-		if l.ID > max {
-			max = l.ID
-		}
-	}
-	return max + 1
-}
 
 func (s *Server) registerGHActionsPermissionsRoutes() {
 	// Org permissions.
@@ -607,9 +253,9 @@ func (s *Server) handleListOrgSelectedRepos(w http.ResponseWriter, r *http.Reque
 	base := s.baseURL(r)
 	repos := make([]map[string]any, 0, len(ids))
 	for _, id := range ids {
-		s.store.mu.RLock()
+		s.store.Mu.RLock()
 		repo := s.store.Repos[id]
-		s.store.mu.RUnlock()
+		s.store.Mu.RUnlock()
 		if repo != nil {
 			repos = append(repos, repoToJSON(repo, s.store, base))
 		}
@@ -640,9 +286,9 @@ func (s *Server) handleAddOrgSelectedRepo(w http.ResponseWriter, r *http.Request
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	exists := s.store.Repos[repoID] != nil
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if !exists {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -851,9 +497,9 @@ func (s *Server) handleListOrgSelfHostedRunnerRepos(w http.ResponseWriter, r *ht
 	base := s.baseURL(r)
 	repos := make([]map[string]any, 0, len(p.SelfHostedRunnersSelectedRepoIDs))
 	for _, id := range p.SelfHostedRunnersSelectedRepoIDs {
-		s.store.mu.RLock()
+		s.store.Mu.RLock()
 		repo := s.store.Repos[id]
-		s.store.mu.RUnlock()
+		s.store.Mu.RUnlock()
 		if repo != nil {
 			repos = append(repos, repoToJSON(repo, s.store, base))
 		}
@@ -890,9 +536,9 @@ func (s *Server) handleAddOrgSelfHostedRunnerRepo(w http.ResponseWriter, r *http
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	exists := s.store.Repos[repoID] != nil
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if !exists {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -942,8 +588,8 @@ func (s *Server) orgCacheUsageByRepo(org string) (map[string]struct {
 		Bytes int64
 	}{}
 	prefix := strings.ToLower(org) + "/"
-	s.artifactStore.mu.RLock()
-	for _, entry := range s.artifactStore.caches {
+	s.artifactStore.Mu.RLock()
+	for _, entry := range s.artifactStore.Caches {
 		if !entry.Finalized || !strings.HasPrefix(strings.ToLower(entry.Repo), prefix) {
 			continue
 		}
@@ -952,7 +598,7 @@ func (s *Server) orgCacheUsageByRepo(org string) (map[string]struct {
 		u.Bytes += entry.Size
 		usage[entry.Repo] = u
 	}
-	s.artifactStore.mu.RUnlock()
+	s.artifactStore.Mu.RUnlock()
 	names := make([]string, 0, len(usage))
 	for name := range usage {
 		names = append(names, name)
@@ -1275,9 +921,9 @@ func (s *Server) handleGetRepoCacheUsagePolicy(w http.ResponseWriter, r *http.Re
 	p := s.store.GetRepoActionsPermissions(repoFullName(r))
 	cacheSizeGB := p.CacheStorageLimitGB
 	if cacheSizeGB == 0 {
-		s.store.mu.RLock()
+		s.store.Mu.RLock()
 		cacheSizeGB = int64(s.store.EnterpriseSettings.ActionsDefaultCacheSizeGB)
-		s.store.mu.RUnlock()
+		s.store.Mu.RUnlock()
 	}
 	writeJSON(w, http.StatusOK, map[string]int64{
 		"repo_cache_size_limit_in_gb": cacheSizeGB,
@@ -1291,9 +937,9 @@ func (s *Server) handleUpdateRepoCacheUsagePolicy(w http.ResponseWriter, r *http
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	maxGB := int64(s.store.EnterpriseSettings.ActionsCacheSizeGB)
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if req.RepoCacheSizeLimitGB == nil || *req.RepoCacheSizeLimitGB <= 0 || *req.RepoCacheSizeLimitGB > maxGB {
 		writeGHError(w, http.StatusBadRequest, "Invalid cache usage policy.")
 		return
@@ -1320,7 +966,7 @@ func (s *Server) handleDeleteRunLogs(w http.ResponseWriter, r *http.Request) {
 	}
 	var logIDs []int
 	var planIDs []string
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	for _, j := range wf.Jobs {
 		planID := j.PlanID
 		if job := s.store.Jobs[j.JobID]; job != nil && job.PlanID != "" {
@@ -1337,14 +983,14 @@ func (s *Server) handleDeleteRunLogs(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	for _, logID := range logIDs {
-		if err := s.artifactStore.deleteLogData(r.Context(), logID); err != nil {
+		if err := s.artifactStore.DeleteLogData(r.Context(), logID); err != nil {
 			writeGHError(w, http.StatusInternalServerError, "log byte-store delete: "+err.Error())
 			return
 		}
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	for _, j := range wf.Jobs {
 		delete(s.store.LogLines, j.JobID)
 	}
@@ -1357,11 +1003,11 @@ func (s *Server) handleDeleteRunLogs(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		delete(s.store.TimelineRecords, planID)
-		if s.store.persist != nil {
-			s.store.persist.MustDelete("timeline_records", planID)
+		if s.store.Persist != nil {
+			s.store.Persist.MustDelete("timeline_records", planID)
 		}
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -1377,9 +1023,9 @@ func (s *Server) handleListRunnerLabels(w http.ResponseWriter, r *http.Request) 
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	a := s.store.Agents[id]
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if a == nil || !runnerVisibleAt(a.Scope, target) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -1403,14 +1049,14 @@ func (s *Server) handleSetRunnerLabels(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	a := s.store.Agents[id]
 	if a != nil && runnerVisibleAt(a.Scope, target) {
 		a.SetLabels(req.Labels)
 	} else {
 		a = nil
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	if a == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -1428,14 +1074,14 @@ func (s *Server) handleRemoveAllRunnerLabels(w http.ResponseWriter, r *http.Requ
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	a := s.store.Agents[id]
 	if a != nil && runnerVisibleAt(a.Scope, target) {
 		a.ClearLabels()
 	} else {
 		a = nil
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	if a == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -1466,14 +1112,14 @@ func (s *Server) handleAddRunnerLabels(w http.ResponseWriter, r *http.Request) {
 		writeGHValidationErrorSimple(w, "labels is missing")
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	a := s.store.Agents[id]
 	if a != nil && runnerVisibleAt(a.Scope, target) {
 		a.AddLabels(req.Labels)
 	} else {
 		a = nil
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	if a == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -1495,7 +1141,7 @@ func (s *Server) handleRemoveRunnerLabel(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	name := r.PathValue("name")
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	a := s.store.Agents[id]
 	found := false
 	readOnly := false
@@ -1513,7 +1159,7 @@ func (s *Server) handleRemoveRunnerLabel(w http.ResponseWriter, r *http.Request)
 	} else {
 		a = nil
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	if a == nil || !found {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return

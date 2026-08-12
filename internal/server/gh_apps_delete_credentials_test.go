@@ -71,7 +71,7 @@ func TestDeleteAppLeavesNoDanglingTokens(t *testing.T) {
 	if tok, _ := st2.LookupUserToServerToken(userTok); tok != nil {
 		t.Error("user-to-server token resurrected from persistence (dangling ghu_ credential)")
 	}
-	st2.mu.RLock()
+	st2.Mu.RLock()
 	if _, ok := st2.RefreshTokens[refreshTok]; ok {
 		t.Error("refresh token resurrected from persistence (dangling ghr_ credential)")
 	}
@@ -85,5 +85,5 @@ func TestDeleteAppLeavesNoDanglingTokens(t *testing.T) {
 			t.Errorf("user-to-server token %s for deleted app survived reload", tok)
 		}
 	}
-	st2.mu.RUnlock()
+	st2.Mu.RUnlock()
 }

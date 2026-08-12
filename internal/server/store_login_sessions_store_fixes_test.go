@@ -17,7 +17,7 @@ func TestPutLoginSessionConcurrentSameIDStaysConsistent(t *testing.T) {
 	persistence := openTestPersistence(t, dataDir)
 	defer persistence.Close()
 	store := NewStore()
-	store.replaceClockNow(func() time.Time { return fixedTestTime })
+	replaceStoreClockNow(store, func() time.Time { return fixedTestTime })
 	if err := store.SetPersistence(persistence); err != nil {
 		t.Fatalf("set persistence: %v", err)
 	}
@@ -39,14 +39,14 @@ func TestPutLoginSessionConcurrentSameIDStaysConsistent(t *testing.T) {
 	}
 	wg.Wait()
 
-	mapKey := loginSessionMapKey(store.persist, "shared")
-	store.mu.RLock()
+	mapKey := loginSessionMapKey(store.Persist, "shared")
+	store.Mu.RLock()
 	mem := store.LoginSessions[mapKey]
-	store.mu.RUnlock()
+	store.Mu.RUnlock()
 	if mem == nil {
 		t.Fatal("in-memory session missing after concurrent writes")
 	}
-	raw, err := store.persist.Get(loginSessionsBucket, mapKey)
+	raw, err := store.Persist.Get(loginSessionsBucket, mapKey)
 	if err != nil {
 		t.Fatalf("read durable session: %v", err)
 	}
@@ -71,7 +71,7 @@ func TestReapDropsLoginSessionsOfDeletedUsers(t *testing.T) {
 	persistence := openTestPersistence(t, dataDir)
 	defer persistence.Close()
 	store := NewStore()
-	store.replaceClockNow(func() time.Time { return fixedTestTime })
+	replaceStoreClockNow(store, func() time.Time { return fixedTestTime })
 	if err := store.SetPersistence(persistence); err != nil {
 		t.Fatalf("set persistence: %v", err)
 	}
@@ -102,8 +102,8 @@ func TestReapDropsLoginSessionsOfDeletedUsers(t *testing.T) {
 	}
 
 	// The orphan must also be gone from durable storage.
-	orphanKey := loginSessionMapKey(store.persist, "orphan")
-	if raw, err := store.persist.Get(loginSessionsBucket, orphanKey); err != nil {
+	orphanKey := loginSessionMapKey(store.Persist, "orphan")
+	if raw, err := store.Persist.Get(loginSessionsBucket, orphanKey); err != nil {
 		t.Fatalf("read durable orphan session: %v", err)
 	} else if raw != nil {
 		t.Fatal("orphaned session survived in durable storage")

@@ -71,9 +71,9 @@ func (s *Server) handleListAgentsRepoSecrets(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	list := sortedSecretsJSON(s.store.AgentsRepoSecrets[repo.FullName])
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	paged := paginateAndLink(w, r, list)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -96,13 +96,13 @@ func (s *Server) handleGetAgentsRepoSecret(w http.ResponseWriter, r *http.Reques
 	}
 	name := strings.ToUpper(r.PathValue("secret_name"))
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	sec := s.store.AgentsRepoSecrets[repo.FullName][name]
 	var body map[string]interface{}
 	if sec != nil {
 		body = secretJSON(sec)
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	if body == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -171,7 +171,7 @@ func (s *Server) handleListAgentsRepoOrgSecrets(w http.ResponseWriter, r *http.R
 
 	list := make([]map[string]interface{}, 0)
 	if org := s.store.GetOrg(r.PathValue("owner")); org != nil {
-		s.store.mu.RLock()
+		s.store.Mu.RLock()
 		visible := make(map[string]*Secret)
 		for name, sec := range s.store.AgentsOrgSecrets[org.Login] {
 			if orgItemVisibleToRepo(sec.Visibility, sec.SelectedRepoIDs, repo) {
@@ -179,7 +179,7 @@ func (s *Server) handleListAgentsRepoOrgSecrets(w http.ResponseWriter, r *http.R
 			}
 		}
 		list = sortedSecretsJSON(visible)
-		s.store.mu.RUnlock()
+		s.store.Mu.RUnlock()
 	}
 
 	paged := paginateAndLink(w, r, list)
@@ -209,7 +209,7 @@ func (s *Server) handleListAgentsOrgSecrets(w http.ResponseWriter, r *http.Reque
 	}
 	base := s.baseURL(r)
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	m := s.store.AgentsOrgSecrets[org.Login]
 	names := make([]string, 0, len(m))
 	for n := range m {
@@ -220,7 +220,7 @@ func (s *Server) handleListAgentsOrgSecrets(w http.ResponseWriter, r *http.Reque
 	for _, n := range names {
 		list = append(list, agentsOrgSecretJSON(m[n], org.Login, base))
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	paged := paginateAndLink(w, r, list)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -244,13 +244,13 @@ func (s *Server) handleGetAgentsOrgSecret(w http.ResponseWriter, r *http.Request
 	name := strings.ToUpper(r.PathValue("secret_name"))
 	base := s.baseURL(r)
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	sec := s.store.AgentsOrgSecrets[org.Login][name]
 	var body map[string]interface{}
 	if sec != nil {
 		body = agentsOrgSecretJSON(sec, org.Login, base)
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	if body == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -304,7 +304,7 @@ func (s *Server) handlePutAgentsOrgSecret(w http.ResponseWriter, r *http.Request
 	}
 
 	now := time.Now().UTC()
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	m := s.store.AgentsOrgSecrets[org.Login]
 	if m == nil {
 		m = make(map[string]*OrgSecret)
@@ -323,10 +323,10 @@ func (s *Server) handlePutAgentsOrgSecret(w http.ResponseWriter, r *http.Request
 			SelectedRepoIDs: ids,
 		}
 	}
-	if s.store.persist != nil {
-		s.store.persist.MustPut("agents_org_secrets", org.Login, m)
+	if s.store.Persist != nil {
+		s.store.Persist.MustPut("agents_org_secrets", org.Login, m)
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	s.recordAuditEvent("agents_secret.create", auditActor(r), org.Login, map[string]interface{}{
 		"scope": "organization", "org": org.Login, "secret_name": name, "visibility": body.Visibility,
@@ -345,20 +345,20 @@ func (s *Server) handleDeleteAgentsOrgSecret(w http.ResponseWriter, r *http.Requ
 	}
 	name := strings.ToUpper(r.PathValue("secret_name"))
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	m := s.store.AgentsOrgSecrets[org.Login]
 	existed := m[name] != nil
 	if existed {
 		delete(m, name)
-		if s.store.persist != nil {
+		if s.store.Persist != nil {
 			if len(m) > 0 {
-				s.store.persist.MustPut("agents_org_secrets", org.Login, m)
+				s.store.Persist.MustPut("agents_org_secrets", org.Login, m)
 			} else {
-				s.store.persist.MustDelete("agents_org_secrets", org.Login)
+				s.store.Persist.MustDelete("agents_org_secrets", org.Login)
 			}
 		}
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	if !existed {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -377,13 +377,13 @@ func (s *Server) handleListAgentsOrgSecretRepos(w http.ResponseWriter, r *http.R
 	}
 	name := strings.ToUpper(r.PathValue("secret_name"))
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	sec := s.store.AgentsOrgSecrets[org.Login][name]
 	var ids []int
 	if sec != nil {
 		ids = append([]int(nil), sec.SelectedRepoIDs...)
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	if sec == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -406,8 +406,8 @@ func (s *Server) handleSetAgentsOrgSecretRepos(w http.ResponseWriter, r *http.Re
 			return nil
 		},
 		func() {
-			if s.store.persist != nil {
-				s.store.persist.MustPut("agents_org_secrets", org.Login, s.store.AgentsOrgSecrets[org.Login])
+			if s.store.Persist != nil {
+				s.store.Persist.MustPut("agents_org_secrets", org.Login, s.store.AgentsOrgSecrets[org.Login])
 			}
 		})
 }
@@ -428,8 +428,8 @@ func (s *Server) agentsOrgSecretSelectionChange(w http.ResponseWriter, r *http.R
 			return nil
 		},
 		func() {
-			if s.store.persist != nil {
-				s.store.persist.MustPut("agents_org_secrets", org.Login, s.store.AgentsOrgSecrets[org.Login])
+			if s.store.Persist != nil {
+				s.store.Persist.MustPut("agents_org_secrets", org.Login, s.store.AgentsOrgSecrets[org.Login])
 			}
 		})
 }
@@ -464,21 +464,21 @@ func (t agentsVariableTable) rows() map[string]map[string]*ActionsVariable {
 // persistLocked writes the scope's collection through (or removes the row
 // when the collection emptied). Caller holds the store write lock.
 func (t agentsVariableTable) persistLocked(m map[string]*ActionsVariable) {
-	if t.s.store.persist == nil {
+	if t.s.store.Persist == nil {
 		return
 	}
 	if len(m) > 0 {
-		t.s.store.persist.MustPut(t.bucket, t.key, m)
+		t.s.store.Persist.MustPut(t.bucket, t.key, m)
 	} else {
-		t.s.store.persist.MustDelete(t.bucket, t.key)
+		t.s.store.Persist.MustDelete(t.bucket, t.key)
 	}
 }
 
 // list returns the scope's variables sorted by name (copies, so callers
 // can render without the lock).
 func (t agentsVariableTable) list() []*ActionsVariable {
-	t.s.store.mu.RLock()
-	defer t.s.store.mu.RUnlock()
+	t.s.store.Mu.RLock()
+	defer t.s.store.Mu.RUnlock()
 	m := t.rows()[t.key]
 	names := make([]string, 0, len(m))
 	for n := range m {
@@ -493,8 +493,8 @@ func (t agentsVariableTable) list() []*ActionsVariable {
 }
 
 func (t agentsVariableTable) get(name string) *ActionsVariable {
-	t.s.store.mu.RLock()
-	defer t.s.store.mu.RUnlock()
+	t.s.store.Mu.RLock()
+	defer t.s.store.Mu.RUnlock()
 	v := t.rows()[t.key][name]
 	if v == nil {
 		return nil
@@ -504,8 +504,8 @@ func (t agentsVariableTable) get(name string) *ActionsVariable {
 
 // create inserts a new variable; false when the name already exists.
 func (t agentsVariableTable) create(v *ActionsVariable) bool {
-	t.s.store.mu.Lock()
-	defer t.s.store.mu.Unlock()
+	t.s.store.Mu.Lock()
+	defer t.s.store.Mu.Unlock()
 	rows := t.rows()
 	m := rows[t.key]
 	if m == nil {
@@ -523,8 +523,8 @@ func (t agentsVariableTable) create(v *ActionsVariable) bool {
 // patch mutates the named variable, optionally renaming it. Returns the
 // HTTP status to write: 204 applied, 404 unknown, 409 rename collision.
 func (t agentsVariableTable) patch(name, newName string, apply func(*ActionsVariable)) int {
-	t.s.store.mu.Lock()
-	defer t.s.store.mu.Unlock()
+	t.s.store.Mu.Lock()
+	defer t.s.store.Mu.Unlock()
 	m := t.rows()[t.key]
 	v := m[name]
 	if v == nil {
@@ -546,8 +546,8 @@ func (t agentsVariableTable) patch(name, newName string, apply func(*ActionsVari
 
 // remove deletes the named variable; false when it did not exist.
 func (t agentsVariableTable) remove(name string) bool {
-	t.s.store.mu.Lock()
-	defer t.s.store.mu.Unlock()
+	t.s.store.Mu.Lock()
+	defer t.s.store.Mu.Unlock()
 	m := t.rows()[t.key]
 	if m[name] == nil {
 		return false
@@ -671,7 +671,7 @@ func (s *Server) handleListAgentsRepoOrgVariables(w http.ResponseWriter, r *http
 
 	list := make([]map[string]interface{}, 0)
 	if org := s.store.GetOrg(r.PathValue("owner")); org != nil {
-		s.store.mu.RLock()
+		s.store.Mu.RLock()
 		m := s.store.AgentsOrgVariables[org.Login]
 		names := make([]string, 0, len(m))
 		for name, v := range m {
@@ -683,7 +683,7 @@ func (s *Server) handleListAgentsRepoOrgVariables(w http.ResponseWriter, r *http
 		for _, n := range names {
 			list = append(list, variableJSON(m[n]))
 		}
-		s.store.mu.RUnlock()
+		s.store.Mu.RUnlock()
 	}
 	writeVariablesList(w, list)
 }
@@ -822,7 +822,7 @@ func (s *Server) handleListAgentsOrgVariableRepos(w http.ResponseWriter, r *http
 	}
 	name := strings.ToUpper(r.PathValue("name"))
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	v := s.store.AgentsOrgVariables[org.Login][name]
 	var visibility string
 	var ids []int
@@ -830,7 +830,7 @@ func (s *Server) handleListAgentsOrgVariableRepos(w http.ResponseWriter, r *http
 		visibility = v.Visibility
 		ids = append([]int(nil), v.SelectedRepoIDs...)
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	if v == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -857,8 +857,8 @@ func (s *Server) handleSetAgentsOrgVariableRepos(w http.ResponseWriter, r *http.
 			return nil
 		},
 		func() {
-			if s.store.persist != nil {
-				s.store.persist.MustPut("agents_org_variables", org.Login, s.store.AgentsOrgVariables[org.Login])
+			if s.store.Persist != nil {
+				s.store.Persist.MustPut("agents_org_variables", org.Login, s.store.AgentsOrgVariables[org.Login])
 			}
 		})
 }
@@ -879,8 +879,8 @@ func (s *Server) agentsOrgVariableSelectionChange(w http.ResponseWriter, r *http
 			return nil
 		},
 		func() {
-			if s.store.persist != nil {
-				s.store.persist.MustPut("agents_org_variables", org.Login, s.store.AgentsOrgVariables[org.Login])
+			if s.store.Persist != nil {
+				s.store.Persist.MustPut("agents_org_variables", org.Login, s.store.AgentsOrgVariables[org.Login])
 			}
 		})
 }

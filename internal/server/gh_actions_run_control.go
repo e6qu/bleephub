@@ -45,9 +45,9 @@ func (s *Server) handleApproveWorkflowRun(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	if wf.Status != WorkflowStatusActionRequired {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusForbidden, "This workflow run is not waiting for approval")
 		return
 	}
@@ -66,8 +66,8 @@ func (s *Server) handleApproveWorkflowRun(w http.ResponseWriter, r *http.Request
 	}
 	if activeWf != nil && !wf.CancelInProgress {
 		wf.Status = WorkflowStatusPendingConcurrency
-		s.store.persistWorkflowRecord(wf)
-		s.store.mu.Unlock()
+		s.store.PersistWorkflowRecord(wf)
+		s.store.Mu.Unlock()
 		writeJSON(w, http.StatusCreated, map[string]any{})
 		return
 	}
@@ -81,8 +81,8 @@ func (s *Server) handleApproveWorkflowRun(w http.ResponseWriter, r *http.Request
 		serverURL = wf.Env["__serverURL"]
 		defaultImage = wf.Env["__defaultImage"]
 	}
-	s.store.persistWorkflowRecord(wf)
-	s.store.mu.Unlock()
+	s.store.PersistWorkflowRecord(wf)
+	s.store.Mu.Unlock()
 
 	if activeWf != nil && wf.CancelInProgress {
 		s.cancelWorkflow(activeWf)
@@ -110,9 +110,9 @@ func (s *Server) handleForceCancelWorkflowRun(w http.ResponseWriter, r *http.Req
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	completed := wf.Status == WorkflowStatusCompleted
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if completed {
 		writeGHError(w, http.StatusConflict, "Cannot force cancel a workflow run that is completed.")
 		return
@@ -126,7 +126,7 @@ func (s *Server) handleForceCancelWorkflowRun(w http.ResponseWriter, r *http.Req
 // eligible for dispatch and does not wait for runners to report back;
 // running jobs are still signalled so their runners abort.
 func (s *Server) forceCancelWorkflow(wf *Workflow) {
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	wf.CancelRequested = true
 	cancelledJobIDs := map[string]bool{}
 	var runningJobIDs []string
@@ -152,8 +152,8 @@ func (s *Server) forceCancelWorkflow(wf *Workflow) {
 		}
 		s.store.PendingMessages = kept
 	}
-	s.store.persistWorkflowRecord(wf)
-	s.store.mu.Unlock()
+	s.store.PersistWorkflowRecord(wf)
+	s.store.Mu.Unlock()
 
 	for _, jobID := range runningJobIDs {
 		s.sendJobCancellation(jobID)
@@ -187,9 +187,9 @@ func (s *Server) handleRerunWorkflowJob(w http.ResponseWriter, r *http.Request) 
 	}
 	_ = json.NewDecoder(r.Body).Decode(&body)
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	inProgress := wf.Status != WorkflowStatusCompleted
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if inProgress {
 		writeGHError(w, http.StatusForbidden, "This workflow run is still in progress and its jobs cannot be re-run")
 		return
@@ -221,13 +221,13 @@ func (s *Server) handleRerunWorkflowJob(w http.ResponseWriter, r *http.Request) 
 	// dependents (they must re-run because their inputs change).
 	rerunKeys := dependentJobKeys(wf, target.Key)
 	carryOver := map[string]*WorkflowJob{}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	for key, j := range wf.Jobs {
 		if !rerunKeys[key] {
 			carryOver[key] = j
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	if err := s.rerunWorkflowAsNewAttempt(r, wf, match, def, serverURL, carryOver); err != nil {
 		writeGHError(w, http.StatusUnprocessableEntity, "rerun submit: "+err.Error())
@@ -294,7 +294,7 @@ func (s *Server) handleReviewCustomDeploymentProtectionRule(w http.ResponseWrite
 		return
 	}
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	envID := 0
 	for _, p := range wf.PendingDeployments {
 		if p.EnvName == body.EnvironmentName {
@@ -302,7 +302,7 @@ func (s *Server) handleReviewCustomDeploymentProtectionRule(w http.ResponseWrite
 			break
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if envID == 0 {
 		writeGHError(w, http.StatusUnprocessableEntity,
 			"environment "+body.EnvironmentName+" has no pending deployment for this run")
@@ -317,7 +317,7 @@ func (s *Server) handleReviewCustomDeploymentProtectionRule(w http.ResponseWrite
 		if reviewer != nil {
 			reviewerID = reviewer.ID
 		}
-		s.store.mu.Lock()
+		s.store.Mu.Lock()
 		wf.EnvApprovals = append(wf.EnvApprovals, &EnvApproval{
 			State:     "pending",
 			Comment:   body.Comment,
@@ -326,8 +326,8 @@ func (s *Server) handleReviewCustomDeploymentProtectionRule(w http.ResponseWrite
 			EnvNames:  []string{body.EnvironmentName},
 			CreatedAt: time.Now().UTC(),
 		})
-		s.store.persistWorkflowRecord(wf)
-		s.store.mu.Unlock()
+		s.store.PersistWorkflowRecord(wf)
+		s.store.Mu.Unlock()
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -391,7 +391,7 @@ func (s *Server) handleWorkflowFileTiming(w http.ResponseWriter, r *http.Request
 			totalMs += end.Sub(j.StartedAt).Milliseconds()
 		}
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	for _, wf := range s.store.Workflows {
 		sumRun(wf)
 	}
@@ -400,7 +400,7 @@ func (s *Server) handleWorkflowFileTiming(w http.ResponseWriter, r *http.Request
 			sumRun(wf)
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"billable": map[string]any{

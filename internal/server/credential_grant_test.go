@@ -125,7 +125,7 @@ func (s *isolatedServer) newCredGrantFixture(t *testing.T, tag string) *credGran
 	t.Helper()
 	st := s.store
 
-	st.mu.Lock()
+	st.Mu.Lock()
 	now := fixedTestTime.UTC()
 	owner := &User{
 		ID:        st.NextUser,
@@ -138,7 +138,7 @@ func (s *isolatedServer) newCredGrantFixture(t *testing.T, tag string) *credGran
 	st.Users[owner.ID] = owner
 	st.UsersByLogin[owner.Login] = owner
 	st.NextUser++
-	st.mu.Unlock()
+	st.Mu.Unlock()
 
 	// CreateOrg makes the creator an active admin, which is what leaves the
 	// credential as the only thing standing on the organization routes.
@@ -206,14 +206,14 @@ func (f *credGrantFixture) fineGrainedToken(t *testing.T, perms map[string]strin
 		ids = append(ids, repo.ID)
 		names = append(names, repo.Name)
 	}
-	st.mu.Lock()
+	st.Mu.Lock()
 	tok.FineGrained = true
 	tok.FineGrainedID = f.owner.ID*100 + f.seq
 	tok.ResourceOwner = f.owner.Login
 	tok.RepositorySelection = "subset"
 	tok.RepositoryIDs = ids
 	tok.Permissions = OrgPATPermissions{Repository: perms}
-	st.mu.Unlock()
+	st.Mu.Unlock()
 	return credGrantCaller{srv: f.srv, name: "fine-grained selecting " + strings.Join(names, ","), token: tok.Value}
 }
 

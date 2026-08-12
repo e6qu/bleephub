@@ -13,8 +13,8 @@ import (
 // seedOIDCRepoOwner creates a user with the given login so a repo can be
 // created under it (the OIDC mint requires the repo to actually exist).
 func seedOIDCRepoOwner(s *Server, login string) *User {
-	s.store.mu.Lock()
-	defer s.store.mu.Unlock()
+	s.store.Mu.Lock()
+	defer s.store.Mu.Unlock()
 	u := &User{ID: s.store.NextUser, Login: login, Type: "User", CreatedAt: fixedTestTime.UTC(), UpdatedAt: fixedTestTime.UTC()}
 	s.store.NextUser++
 	s.store.Users[u.ID] = u

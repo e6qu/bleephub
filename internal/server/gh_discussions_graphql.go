@@ -959,8 +959,8 @@ func discussionToGQL(d *Discussion, st *Store) map[string]interface{} {
 		return nil
 	}
 
-	st.mu.RLock()
-	defer st.mu.RUnlock()
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
 
 	repo := st.Repos[d.RepoID]
 	url := ""
@@ -1011,8 +1011,8 @@ func discussionToGQL(d *Discussion, st *Store) map[string]interface{} {
 }
 
 func discussionCommentToGQL(c *DiscussionComment, st *Store) map[string]interface{} {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
 
 	var author map[string]interface{}
 	if u, ok := st.Users[c.AuthorID]; ok {
@@ -1131,8 +1131,8 @@ func paginateGQLMaps(nodes []map[string]interface{}, args map[string]interface{}
 // --- Node ID lookup helpers ---
 
 func findDiscussionByNodeID(st *Store, nodeID string) *Discussion {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
 	if id, ok := decodeNodeDBID(nodeID, "D_kgDO"); ok {
 		if d := st.Discussions[id]; d != nil && d.NodeID == nodeID && !d.Deleted {
 			return d
@@ -1147,8 +1147,8 @@ func findDiscussionByNodeID(st *Store, nodeID string) *Discussion {
 }
 
 func findDiscussionCategoryByNodeID(st *Store, nodeID string) *DiscussionCategory {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
 	if id, ok := decodeNodeDBID(nodeID, "DGC_kgDO"); ok {
 		if cat := st.DiscussionCategories[id]; cat != nil && cat.NodeID == nodeID {
 			return cat
@@ -1163,8 +1163,8 @@ func findDiscussionCategoryByNodeID(st *Store, nodeID string) *DiscussionCategor
 }
 
 func findDiscussionCommentByNodeID(st *Store, nodeID string) *DiscussionComment {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
 	if id, ok := decodeNodeDBID(nodeID, "DC_kgDO"); ok {
 		if c := st.DiscussionComments[id]; c != nil && c.NodeID == nodeID && !c.Deleted {
 			return c

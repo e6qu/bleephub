@@ -173,14 +173,14 @@ func TestForkPullRequestRESTAndGraphQL(t *testing.T) {
 	}
 	seedPullRequestBranches(t, s.Server, source)
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	forker := &User{ID: s.store.NextUser, Login: "pr-forker", Type: "User", CreatedAt: fixedTestTime, UpdatedAt: fixedTestTime}
 	s.store.NextUser++
 	s.store.Users[forker.ID] = forker
 	s.store.UsersByLogin[forker.Login] = forker
 	tok := &Token{Value: "pr-forker-token", UserID: forker.ID, Scopes: "repo", CreatedAt: fixedTestTime}
 	s.store.Tokens[tok.Value] = tok
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	forkResp := s.post(t, "/api/v3/repos/admin/"+sourceName+"/forks", tok.Value, map[string]interface{}{})
 	if forkResp.StatusCode != http.StatusAccepted {

@@ -120,7 +120,7 @@ func (s *Server) writeRunLogsZip(ctx context.Context, w http.ResponseWriter, wf 
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	jobKeys := make([]string, 0, len(wf.Jobs))
 	for jobKey := range wf.Jobs {
 		jobKeys = append(jobKeys, jobKey)
@@ -145,7 +145,7 @@ func (s *Server) writeRunLogsZip(ctx context.Context, w http.ResponseWriter, wf 
 			memoryLogs: s.memoryLogFilesForDownloadLocked(refs),
 		})
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	wroteAny := false
 	for _, job := range jobs {
@@ -248,13 +248,13 @@ func (s *Server) handleRerunFailedJobs(w http.ResponseWriter, r *http.Request) {
 	def.Env["__defaultImage"] = ""
 
 	carryOver := map[string]*WorkflowJob{}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	for key, j := range wf.Jobs {
 		if j.Result == ResultSuccess || j.Result == ResultSkipped {
 			carryOver[key] = j
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	if err := s.rerunWorkflowAsNewAttempt(r, wf, match, def, serverURL, carryOver); err != nil {
 		writeGHError(w, http.StatusUnprocessableEntity, "rerun submit: "+err.Error())
@@ -352,7 +352,7 @@ func (s *Server) handleDeleteArtifact(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	deleted, err := s.artifactStore.deleteArtifact(r.Context(), art.ID)
+	deleted, err := s.artifactStore.DeleteArtifact(r.Context(), art.ID)
 	if err != nil {
 		writeGHError(w, http.StatusInternalServerError, "artifact byte-store delete: "+err.Error())
 		return
@@ -382,7 +382,7 @@ func (s *Server) getRepoArtifact(w http.ResponseWriter, r *http.Request) (*Artif
 		writeGHError(w, http.StatusBadRequest, "invalid artifact_id")
 		return nil, false
 	}
-	art, ok := s.artifactStore.artifactByID(artifactID)
+	art, ok := s.artifactStore.ArtifactByID(artifactID)
 	if !ok || !s.artifactBelongsToRepo(art, repoFullName(r)) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil, false
@@ -392,7 +392,7 @@ func (s *Server) getRepoArtifact(w http.ResponseWriter, r *http.Request) (*Artif
 
 func (s *Server) filterArtifacts(r *http.Request, keep func(*Artifact) bool) []*Artifact {
 	nameFilter := r.URL.Query().Get("name")
-	artifacts := s.artifactStore.finalizedArtifacts()
+	artifacts := s.artifactStore.FinalizedArtifacts()
 	matching := make([]*Artifact, 0, len(artifacts))
 	for _, art := range artifacts {
 		if nameFilter != "" && art.Name != nameFilter {
@@ -497,8 +497,8 @@ func (s *Server) workflowForArtifact(art *Artifact) *Workflow {
 	if art == nil {
 		return nil
 	}
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	for _, wf := range s.store.Workflows {
 		if s.artifactBelongsToRun(art, wf) {
 			return wf
@@ -511,8 +511,8 @@ func (s *Server) findWorkflowByBackendID(backendID string) *Workflow {
 	if backendID == "" {
 		return nil
 	}
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	// The Workflows map is keyed by wf.ID; the run-id index resolves the
 	// strconv.Itoa(wf.RunID) form the toolkit sometimes sends. The linear scan
 	// remains only as a fallback for directly-seeded stores.
@@ -520,7 +520,7 @@ func (s *Server) findWorkflowByBackendID(backendID string) *Workflow {
 		return wf
 	}
 	if runID, err := strconv.Atoi(backendID); err == nil {
-		if wf := s.store.workflowsByRunID[runID]; wf != nil {
+		if wf := s.store.WorkflowsByRunID[runID]; wf != nil {
 			return wf
 		}
 	}
@@ -533,8 +533,8 @@ func (s *Server) findWorkflowByBackendID(backendID string) *Workflow {
 }
 
 func (s *Server) repoIDByFullName(fullName string) int {
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	if repo := s.store.ReposByName[fullName]; repo != nil {
 		return repo.ID
 	}
@@ -557,9 +557,9 @@ func (s *Server) handleRunApprovals(w http.ResponseWriter, r *http.Request) {
 	}
 	base := s.baseURL(r)
 	out := []map[string]interface{}{}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	approvals := append([]*EnvApproval(nil), wf.EnvApprovals...)
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	for _, a := range approvals {
 		envs := []map[string]interface{}{}
 		for _, id := range a.EnvIDs {
@@ -578,11 +578,11 @@ func (s *Server) handleRunApprovals(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		var user map[string]interface{}
-		s.store.mu.RLock()
+		s.store.Mu.RLock()
 		if u := s.store.Users[a.UserID]; u != nil {
 			user = userToJSON(u)
 		}
-		s.store.mu.RUnlock()
+		s.store.Mu.RUnlock()
 		out = append(out, map[string]interface{}{
 			"environments": envs,
 			"state":        a.State,
@@ -603,9 +603,9 @@ func (s *Server) handleGetPendingDeployments(w http.ResponseWriter, r *http.Requ
 	}
 	base := s.baseURL(r)
 	out := []map[string]interface{}{}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	pending := append([]*PendingDeployment(nil), wf.PendingDeployments...)
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	for _, p := range pending {
 		env := s.store.Deployments.GetEnvironmentByID(p.EnvID)
 		if env == nil {
@@ -655,12 +655,12 @@ func (s *Server) handleReviewPendingDeployments(w http.ResponseWriter, r *http.R
 		writeGHError(w, http.StatusUnprocessableEntity, "environment_ids is required")
 		return
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	pendingByID := map[int]bool{}
 	for _, p := range wf.PendingDeployments {
 		pendingByID[p.EnvID] = true
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	for _, id := range body.EnvironmentIDs {
 		if !pendingByID[id] {
 			writeGHError(w, http.StatusUnprocessableEntity,

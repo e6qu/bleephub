@@ -30,7 +30,7 @@ func TestListWorkflowsWithData(t *testing.T) {
 	t.Parallel()
 	srv := newIsolatedServer(t)
 	// Seed a workflow
-	srv.store.mu.Lock()
+	srv.store.Mu.Lock()
 	srv.store.Workflows["test-wf-1"] = &Workflow{
 		ID:        "test-wf-1",
 		Name:      "CI Pipeline",
@@ -43,12 +43,12 @@ func TestListWorkflowsWithData(t *testing.T) {
 			"build": {Key: "build", JobID: "j1", DisplayName: "Build", Status: "completed", Result: "success"},
 		},
 	}
-	srv.store.mu.Unlock()
+	srv.store.Mu.Unlock()
 
 	defer func() {
-		srv.store.mu.Lock()
+		srv.store.Mu.Lock()
 		delete(srv.store.Workflows, "test-wf-1")
-		srv.store.mu.Unlock()
+		srv.store.Mu.Unlock()
 	}()
 
 	resp := srv.authedGet(t, "/internal/workflows")
@@ -135,7 +135,7 @@ func TestGetWorkflowLogs(t *testing.T) {
 	t.Parallel()
 	srv := newIsolatedServer(t)
 	// Seed a workflow with log lines
-	srv.store.mu.Lock()
+	srv.store.Mu.Lock()
 	srv.store.Workflows["test-wf-logs"] = &Workflow{
 		ID:        "test-wf-logs",
 		Name:      "Log Test",
@@ -148,13 +148,13 @@ func TestGetWorkflowLogs(t *testing.T) {
 		},
 	}
 	srv.store.LogLines["j-log-1"] = []string{"line 1", "line 2"}
-	srv.store.mu.Unlock()
+	srv.store.Mu.Unlock()
 
 	defer func() {
-		srv.store.mu.Lock()
+		srv.store.Mu.Lock()
 		delete(srv.store.Workflows, "test-wf-logs")
 		delete(srv.store.LogLines, "j-log-1")
-		srv.store.mu.Unlock()
+		srv.store.Mu.Unlock()
 	}()
 
 	resp := srv.authedGet(t, "/internal/workflows/test-wf-logs/logs")

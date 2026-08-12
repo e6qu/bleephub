@@ -42,7 +42,7 @@ func (s *Server) handleListBrowserOAuthGrants(w http.ResponseWriter, r *http.Req
 		CreatedAt string   `json:"created_at"`
 	}
 	byClient := map[string]*grant{}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	for _, token := range s.store.UserToServerTokens {
 		if token.UserID != user.ID || time.Now().After(token.ExpiresAt) {
 			continue
@@ -66,7 +66,7 @@ func (s *Server) handleListBrowserOAuthGrants(w http.ResponseWriter, r *http.Req
 			}
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	out := make([]*grant, 0, len(byClient))
 	for _, item := range byClient {
 		out = append(out, item)

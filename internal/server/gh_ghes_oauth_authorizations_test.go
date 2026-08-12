@@ -153,11 +153,11 @@ func TestLegacyAuthorizationMetadataPersists(t *testing.T) {
 	admin := st1.LookupUserByLogin("admin")
 	app := st1.CreateOAuthApp(admin.ID, "Persistent OAuth", "", "https://example.test", "https://example.test/cb")
 	token, _ := st1.CreateUserToServerToken(admin.ID, 0, app.ClientID, "repo", 8*time.Hour, false)
-	st1.mu.Lock()
+	st1.Mu.Lock()
 	token.Note = "persist me"
 	token.Fingerprint = "laptop"
-	st1.persist.MustPut("user_to_server_tokens", token.Token, token)
-	st1.mu.Unlock()
+	st1.Persist.MustPut("user_to_server_tokens", token.Token, token)
+	st1.Mu.Unlock()
 	if err := p1.Close(); err != nil {
 		t.Fatal(err)
 	}

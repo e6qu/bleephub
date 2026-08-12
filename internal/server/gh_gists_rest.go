@@ -3,7 +3,6 @@ package bleephub
 import (
 	"context"
 	"net/http"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -523,8 +522,8 @@ func (s *Server) snapshotGist(g *Gist) *Gist {
 	if g == nil {
 		return nil
 	}
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	view := *g
 	view.Files = make(map[string]*GistFile, len(g.Files))
 	for name, f := range g.Files {
@@ -671,10 +670,4 @@ func parseSince(r *http.Request) time.Time {
 		}
 	}
 	return time.Time{}
-}
-
-func sortHistory(history []*GistHistory) {
-	sort.Slice(history, func(i, j int) bool {
-		return history[i].CommittedAt.After(history[j].CommittedAt)
-	})
 }

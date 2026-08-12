@@ -20,14 +20,14 @@ func TestRenameRepoObjectCopyDoesNotHoldStoreLock(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
 	var copied [2]string
-	st.repoPrefixCopy = func(oldFull, newFull string) error {
+	st.RepoPrefixCopy = func(oldFull, newFull string) error {
 		copied[0], copied[1] = oldFull, newFull
 		close(started)
 		<-release
 		return nil
 	}
 	purged := make(chan string, 1)
-	st.repoPrefixDelete = func(fullName string) error {
+	st.RepoPrefixDelete = func(fullName string) error {
 		purged <- fullName
 		return nil
 	}
@@ -61,11 +61,11 @@ func TestRenameRepoObjectCopyDoesNotHoldStoreLock(t *testing.T) {
 	if copied[0] != "admin/rename-lock" || copied[1] != "admin/renamed" {
 		t.Fatalf("copied prefixes = %v, want [admin/rename-lock admin/renamed]", copied)
 	}
-	st.mu.Lock()
+	st.Mu.Lock()
 	_, oldStillThere := st.ReposByName["admin/rename-lock"]
 	live, newThere := st.ReposByName["admin/renamed"]
-	reserved := st.pendingRepoCreations["admin/renamed"]
-	st.mu.Unlock()
+	reserved := st.PendingRepoCreations["admin/renamed"]
+	st.Mu.Unlock()
 	if oldStillThere {
 		t.Fatal("old name still registered after rename")
 	}
@@ -83,7 +83,7 @@ func TestRenameRepoObjectCopyDoesNotHoldStoreLock(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("old object prefix was not purged after the swap")
 	}
-	if raw, _ := st.persist.Get(pendingRenamesBucket, pendingRepoRenameKey("admin/renamed")); len(raw) != 0 {
+	if raw, _ := st.Persist.Get(pendingRenamesBucket, pendingRepoRenameKey("admin/renamed")); len(raw) != 0 {
 		t.Fatal("rename intent was not cleared")
 	}
 }
@@ -109,7 +109,7 @@ func TestInterruptedRepoRenameRecoveryPurgesUnpublishedPrefix(t *testing.T) {
 	defer func() { _ = p2.Close() }()
 	st := NewStore()
 	purged := make(chan string, 1)
-	st.repoPrefixDelete = func(fullName string) error {
+	st.RepoPrefixDelete = func(fullName string) error {
 		purged <- fullName
 		return nil
 	}

@@ -277,7 +277,7 @@ func (s *Server) publishPagesArtifact(ctx context.Context, repoID int, environme
 	if err := s.store.ObjectByteStore.Put(ctx, key, artifact); err != nil {
 		return nil, fmt.Errorf("publish Pages artifact: %w", err)
 	}
-	previous := s.store.latestPublishedPagesDeployment(repoID)
+	previous := s.store.LatestPublishedPagesDeployment(repoID)
 	if previous != nil && previous.ArtifactKey != "" && previous.ArtifactKey != key {
 		if err := s.store.ObjectByteStore.Delete(ctx, previous.ArtifactKey); err != nil {
 			rollbackErr := s.store.ObjectByteStore.Delete(ctx, key)

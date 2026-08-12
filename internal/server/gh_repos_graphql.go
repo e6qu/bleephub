@@ -143,7 +143,7 @@ func (s *Server) addRepoFieldsToSchema(
 			if parent == nil {
 				return nil, fmt.Errorf("repository parent %d not found", parentID)
 			}
-			return repoToGraphQL(s.store, s.store.snapRepo(parent)), nil
+			return repoToGraphQL(s.store, s.store.SnapRepo(parent)), nil
 		},
 	})
 	repoType.AddFieldConfig("templateRepository", &graphql.Field{
@@ -164,7 +164,7 @@ func (s *Server) addRepoFieldsToSchema(
 			if templateRepo == nil {
 				return nil, nil
 			}
-			return repoToGraphQL(s.store, s.store.snapRepo(templateRepo)), nil
+			return repoToGraphQL(s.store, s.store.SnapRepo(templateRepo)), nil
 		},
 	})
 	repoType.AddFieldConfig("homepageUrl", &graphql.Field{
@@ -340,7 +340,7 @@ func (s *Server) addRepoFieldsToSchema(
 			if repo == nil {
 				return map[string]interface{}{"edges": []interface{}{}, "totalCount": 0}, nil
 			}
-			counts := s.store.computeRepoLanguages(repo)
+			counts := s.store.ComputeRepoLanguages(repo)
 			first := 100
 			if n, ok := intArg(p.Args, "first"); ok && n > 0 && n < first {
 				first = n
@@ -866,7 +866,7 @@ func (s *Server) addRepoFieldsToSchema(
 			if repo == nil || (repo.Private && !s.viewerCanReadRepo(p.Context, repo)) {
 				return nil, nil
 			}
-			return repoToGraphQL(s.store, s.store.snapRepo(repo)), nil
+			return repoToGraphQL(s.store, s.store.SnapRepo(repo)), nil
 		},
 	}
 	userType.AddFieldConfig("repository", ownerRepositoryField)
@@ -895,7 +895,7 @@ func (s *Server) addRepoFieldsToSchema(
 					message: fmt.Sprintf("Could not resolve to a Repository with the name '%s/%s'.", owner, name),
 				}
 			}
-			return repoToGraphQL(s.store, s.store.snapRepo(repo)), nil
+			return repoToGraphQL(s.store, s.store.SnapRepo(repo)), nil
 		},
 	})
 
@@ -911,9 +911,9 @@ func (s *Server) addRepoFieldsToSchema(
 			if u := s.store.LookupUserByLogin(login); u != nil {
 				return userToGraphQL(u), nil
 			}
-			s.store.mu.RLock()
+			s.store.Mu.RLock()
 			org := s.store.OrgsByLogin[login]
-			s.store.mu.RUnlock()
+			s.store.Mu.RUnlock()
 			if org != nil {
 				return orgToGraphQL(org), nil
 			}
@@ -1009,7 +1009,7 @@ func (s *Server) addRepoFieldsToSchema(
 			}
 
 			return map[string]interface{}{
-				"repository": repoToGraphQL(s.store, s.store.snapRepo(repo)),
+				"repository": repoToGraphQL(s.store, s.store.SnapRepo(repo)),
 			}, nil
 		},
 	})
@@ -1143,8 +1143,8 @@ func (s *Server) createRepositoryOwner(p graphql.ResolveParams, input map[string
 	if ownerID == "" || ownerID == user.NodeID {
 		return anyAccount, user.Login, nil
 	}
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	for _, candidate := range s.store.Orgs {
 		if candidate.NodeID == ownerID {
 			return organizationAccount, candidate.Login, nil
@@ -1653,9 +1653,9 @@ func repoOwnerREST(repo *Repo, st *Store, baseURL string) map[string]interface{}
 		return nil
 	}
 	ownerLogin, _, _ := strings.Cut(repo.FullName, "/")
-	st.mu.RLock()
+	st.Mu.RLock()
 	org := st.OrgsByLogin[ownerLogin]
-	st.mu.RUnlock()
+	st.Mu.RUnlock()
 	if org != nil {
 		api := baseURL + "/api/v3/orgs/" + org.Login
 		return map[string]interface{}{
@@ -1682,8 +1682,8 @@ func repoOwnerREST(repo *Repo, st *Store, baseURL string) map[string]interface{}
 			"user_view_type":      "public",
 		}
 	}
-	st.mu.RLock()
-	defer st.mu.RUnlock()
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
 	if repo.Owner != nil {
 		return userToJSON(repo.Owner)
 	}

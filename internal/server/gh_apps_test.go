@@ -18,7 +18,7 @@ import (
 
 func newAppTestStore() *Store {
 	store := NewStore()
-	store.clockNow = func() time.Time { return fixedTestTime }
+	store.ClockNow = func() time.Time { return fixedTestTime }
 	return store
 }
 
@@ -169,9 +169,9 @@ func TestInstallationTokenExpiry(t *testing.T) {
 	token := st.CreateInstallationToken(inst.ID, app.ID, nil, nil)
 
 	// Force expire
-	st.mu.Lock()
+	st.Mu.Lock()
 	st.InstallationTokens[token.Token].ExpiresAt = fixedTestTime.Add(-1 * time.Hour)
-	st.mu.Unlock()
+	st.Mu.Unlock()
 
 	tok, _ := st.LookupInstallationToken(token.Token)
 	if tok != nil {
@@ -210,7 +210,7 @@ func TestJSONWebTokenSignAndVerify(t *testing.T) {
 		t.Fatalf("signAppJSONWebToken: %v", err)
 	}
 
-	got, err := st.parseAndVerifyAppJWT(jwt)
+	got, err := st.ParseAndVerifyAppJWT(jwt)
 	if err != nil {
 		t.Fatalf("parseAndVerifyAppJSONWebToken: %v", err)
 	}
@@ -232,7 +232,7 @@ func TestJSONWebTokenAcceptsOctokitAndClientIDIssuers(t *testing.T) {
 			if err != nil {
 				t.Fatalf("sign JWT: %v", err)
 			}
-			got, err := st.parseAndVerifyAppJWT(token)
+			got, err := st.ParseAndVerifyAppJWT(token)
 			if err != nil {
 				t.Fatalf("verify JWT issuer %s: %v", issuer, err)
 			}
@@ -247,7 +247,7 @@ func TestJSONWebTokenAcceptsOctokitAndClientIDIssuers(t *testing.T) {
 		if err != nil {
 			t.Fatalf("sign invalid issuer %s: %v", issuer, err)
 		}
-		if _, err := st.parseAndVerifyAppJWT(token); err == nil {
+		if _, err := st.ParseAndVerifyAppJWT(token); err == nil {
 			t.Errorf("issuer %s was accepted", issuer)
 		}
 	}
@@ -263,7 +263,7 @@ func TestJSONWebTokenExpiredRejected(t *testing.T) {
 		t.Fatalf("signAppJSONWebToken: %v", err)
 	}
 
-	_, err = st.parseAndVerifyAppJWT(jwt)
+	_, err = st.ParseAndVerifyAppJWT(jwt)
 	if err == nil {
 		t.Fatal("expected error for expired JSON Web Token")
 	}
@@ -299,7 +299,7 @@ func TestJSONWebTokenExpWindow(t *testing.T) {
 	now := fixedTestTime.Unix()
 
 	// exp beyond now+600+drift → rejected.
-	if _, err := st.parseAndVerifyAppJWT(mintJSONWebToken(now, now+700)); err == nil {
+	if _, err := st.ParseAndVerifyAppJWT(mintJSONWebToken(now, now+700)); err == nil {
 		t.Fatal("expected error for exp too far in the future")
 	} else if !strings.Contains(err.Error(), "too far in the future") {
 		t.Fatalf("expected 'too far in the future' in error, got: %v", err)
@@ -307,12 +307,12 @@ func TestJSONWebTokenExpWindow(t *testing.T) {
 
 	// Backdated iat with exp inside the window → valid even though
 	// exp-iat exceeds 600 (matches real GitHub).
-	if _, err := st.parseAndVerifyAppJWT(mintJSONWebToken(now-300, now+500)); err != nil {
+	if _, err := st.ParseAndVerifyAppJWT(mintJSONWebToken(now-300, now+500)); err != nil {
 		t.Fatalf("backdated-iat JSON Web Token inside the exp window must verify, got: %v", err)
 	}
 
 	// iat in the future beyond drift → rejected.
-	if _, err := st.parseAndVerifyAppJWT(mintJSONWebToken(now+120, now+500)); err == nil {
+	if _, err := st.ParseAndVerifyAppJWT(mintJSONWebToken(now+120, now+500)); err == nil {
 		t.Fatal("expected error for future iat")
 	}
 }
@@ -327,7 +327,7 @@ func TestJSONWebTokenWrongAppIdentifier(t *testing.T) {
 		t.Fatalf("signAppJSONWebToken: %v", err)
 	}
 
-	_, err = st.parseAndVerifyAppJWT(jwt)
+	_, err = st.ParseAndVerifyAppJWT(jwt)
 	if err == nil {
 		t.Fatal("expected error for wrong app ID")
 	}
@@ -356,7 +356,7 @@ func TestJSONWebTokenInvalidSignature(t *testing.T) {
 	sig[0] ^= 0xff
 	tampered := parts[0] + "." + parts[1] + "." + testBase64urlEncode(sig)
 
-	_, err = st.parseAndVerifyAppJWT(tampered)
+	_, err = st.ParseAndVerifyAppJWT(tampered)
 	if err == nil {
 		t.Fatal("expected error for invalid signature")
 	}
@@ -867,7 +867,7 @@ func TestJSONWebTokenAlgorithmRejection(t *testing.T) {
 	for _, alg := range []string{"none", "HS256", "RS512"} {
 		header := testBase64urlEncode([]byte(`{"alg":"` + alg + `","typ":"JWT"}`))
 		jwt := header + "." + claims + "." + testBase64urlEncode([]byte("sig"))
-		if _, err := st.parseAndVerifyAppJWT(jwt); err == nil {
+		if _, err := st.ParseAndVerifyAppJWT(jwt); err == nil {
 			t.Errorf("alg=%s: expected rejection", alg)
 		} else if !strings.Contains(err.Error(), "unsupported algorithm") {
 			t.Errorf("alg=%s: expected 'unsupported algorithm', got: %v", alg, err)
@@ -877,7 +877,7 @@ func TestJSONWebTokenAlgorithmRejection(t *testing.T) {
 	// Non-numeric iss never resolves.
 	header := testBase64urlEncode([]byte(`{"alg":"RS256","typ":"JWT"}`))
 	badIss := testBase64urlEncode([]byte(fmt.Sprintf(`{"iss":"not-a-number","iat":%d,"exp":%d}`, now, now+540)))
-	if _, err := st.parseAndVerifyAppJWT(header + "." + badIss + "." + testBase64urlEncode([]byte("sig"))); err == nil {
+	if _, err := st.ParseAndVerifyAppJWT(header + "." + badIss + "." + testBase64urlEncode([]byte("sig"))); err == nil {
 		t.Error("non-numeric iss: expected rejection")
 	}
 }

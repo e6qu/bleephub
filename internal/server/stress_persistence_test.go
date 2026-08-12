@@ -25,7 +25,7 @@ type storeCensus struct {
 // cardinality of every resource class the persistence storm creates plus the
 // monotonic Next* allocators.
 func snapshotStoreCensus(st *Store) storeCensus {
-	st.mu.RLock()
+	st.Mu.RLock()
 	c := storeCensus{
 		repos:         len(st.Repos),
 		issues:        len(st.Issues),
@@ -57,12 +57,12 @@ func snapshotStoreCensus(st *Store) storeCensus {
 	for login := range st.OrgsByLogin {
 		c.orgLogins[login] = true
 	}
-	st.mu.RUnlock()
+	st.Mu.RUnlock()
 
-	st.Reactions.mu.RLock()
-	c.reactions = len(st.Reactions.byID)
-	c.nextReaction = st.Reactions.nextID
-	st.Reactions.mu.RUnlock()
+	st.Reactions.Mu.RLock()
+	c.reactions = len(st.Reactions.ByID)
+	c.nextReaction = st.Reactions.NextID
+	st.Reactions.Mu.RUnlock()
 	return c
 }
 

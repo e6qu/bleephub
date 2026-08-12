@@ -313,8 +313,8 @@ jobs:
 `)
 
 	countRuns := func(name string) int {
-		s.store.mu.RLock()
-		defer s.store.mu.RUnlock()
+		s.store.Mu.RLock()
+		defer s.store.Mu.RUnlock()
 		n := 0
 		for _, w := range s.store.Workflows {
 			if w.RepoFullName == repoKey && w.Name == name {
@@ -336,14 +336,14 @@ jobs:
 	// The triggering payload becomes github.event on the run.
 	s.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/main",
 		map[string]interface{}{"head_commit": map[string]interface{}{"message": "x"}})
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	var withPayload *Workflow
 	for _, w := range s.store.Workflows {
 		if w.RepoFullName == repoKey && w.EventPayload != nil {
 			withPayload = w
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if withPayload == nil {
 		t.Fatal("no run carried the event payload")
 	}
@@ -377,8 +377,8 @@ jobs:
 
 	s.emitWebhookEvent(repoKey, "issues", "opened", payload)
 
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	var matched *Workflow
 	for _, workflow := range s.store.Workflows {
 		if workflow.RepoFullName == repoKey && workflow.Name == "issue-events" {
@@ -408,8 +408,8 @@ jobs:
 	s.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/main", map[string]interface{}{
 		"head_commit": map[string]interface{}{"message": "docs: update [skip ci]"},
 	})
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	for _, workflow := range s.store.Workflows {
 		if workflow.RepoFullName == repoKey {
 			t.Fatalf("skip directive created workflow %#v", workflow)
@@ -441,8 +441,8 @@ jobs:
 		t.Fatalf("create comment status = %d body=%s", commented.Code, commented.Body.String())
 	}
 
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	for _, workflow := range s.store.Workflows {
 		if workflow.RepoFullName == repoKey && workflow.Name == "comments" {
 			if workflow.EventName != "issue_comment" ||
@@ -487,8 +487,8 @@ jobs:
 		t.Fatalf("created review state = %v, want APPROVED", review["state"])
 	}
 
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	for _, workflow := range s.store.Workflows {
 		if workflow.RepoFullName == repoKey && workflow.Name == "reviews" {
 			if workflow.EventName != "pull_request_review" ||
@@ -515,8 +515,8 @@ jobs:
 
 	s.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/missing", nil)
 
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	for _, wf := range s.store.Workflows {
 		if wf.RepoFullName == repoKey {
 			t.Fatalf("unresolved ref created workflow run with sha %q", wf.Sha)
@@ -554,13 +554,13 @@ jobs:
 
 	var found *Workflow
 	ok := testutil.TestEventually(2*time.Second, 20*time.Millisecond, func() bool {
-		s.store.mu.RLock()
+		s.store.Mu.RLock()
 		for _, w := range s.store.Workflows {
 			if w.RepoFullName == repoKey && w.EventName == "pull_request" {
 				found = w
 			}
 		}
-		s.store.mu.RUnlock()
+		s.store.Mu.RUnlock()
 		return found != nil
 	})
 	if !ok {

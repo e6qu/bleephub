@@ -580,9 +580,9 @@ func (s *Server) handleListCopilotCodingAgentRepos(w http.ResponseWriter, r *htt
 	base := s.baseURL(r)
 	repos := make([]map[string]interface{}, 0, len(ids))
 	for _, id := range ids {
-		s.store.mu.RLock()
+		s.store.Mu.RLock()
 		repo := s.store.Repos[id]
-		s.store.mu.RUnlock()
+		s.store.Mu.RUnlock()
 		if repo != nil {
 			repos = append(repos, repoToJSON(repo, s.store, base))
 		}
@@ -600,9 +600,9 @@ func (s *Server) handleListCopilotCodingAgentRepos(w http.ResponseWriter, r *htt
 func (s *Server) copilotOrgRepoIDs(w http.ResponseWriter, org *Org, ids []int) bool {
 	var invalid []string
 	for _, id := range ids {
-		s.store.mu.RLock()
+		s.store.Mu.RLock()
 		repo := s.store.Repos[id]
-		s.store.mu.RUnlock()
+		s.store.Mu.RUnlock()
 		if repo == nil || !strings.HasPrefix(repo.FullName, org.Login+"/") {
 			invalid = append(invalid, strconv.Itoa(id))
 		}
@@ -653,9 +653,9 @@ func (s *Server) handleEnableCopilotCodingAgentRepo(w http.ResponseWriter, r *ht
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	repo := s.store.Repos[id]
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if repo == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -680,9 +680,9 @@ func (s *Server) handleDisableCopilotCodingAgentRepo(w http.ResponseWriter, r *h
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	repo := s.store.Repos[id]
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if repo == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return

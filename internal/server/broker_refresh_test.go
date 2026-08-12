@@ -15,7 +15,7 @@ func TestAgentRefreshMessageDelivery(t *testing.T) {
 	t.Parallel()
 	srv := newIsolatedServer(t)
 	agentID := 4242
-	srv.store.mu.Lock()
+	srv.store.Mu.Lock()
 	srv.store.Agents[agentID] = &Agent{
 		ID:      agentID,
 		Name:    "refresh-runner",
@@ -23,12 +23,12 @@ func TestAgentRefreshMessageDelivery(t *testing.T) {
 		Status:  "online",
 		Labels:  []Label{{Name: "self-hosted"}},
 	}
-	srv.store.mu.Unlock()
+	srv.store.Mu.Unlock()
 	defer func() {
-		srv.store.mu.Lock()
+		srv.store.Mu.Lock()
 		delete(srv.store.Agents, agentID)
 		delete(srv.store.Sessions, "refresh-sess")
-		srv.store.mu.Unlock()
+		srv.store.Mu.Unlock()
 	}()
 
 	sess := &Session{
@@ -36,9 +36,9 @@ func TestAgentRefreshMessageDelivery(t *testing.T) {
 		Agent:     &Agent{ID: agentID, Labels: []Label{{Name: "self-hosted"}}},
 		MsgCh:     make(chan *TaskAgentMessage, 10),
 	}
-	srv.store.mu.Lock()
+	srv.store.Mu.Lock()
 	srv.store.Sessions["refresh-sess"] = sess
-	srv.store.mu.Unlock()
+	srv.store.Mu.Unlock()
 
 	targetVersion := "2.320.0"
 	resp := srv.post(t, fmt.Sprintf("/internal/agents/%d/refresh-message", agentID), defaultToken, map[string]interface{}{
@@ -85,27 +85,27 @@ func TestAgentRefreshMessageAdminOnly(t *testing.T) {
 	t.Parallel()
 	srv := newIsolatedServer(t)
 	agentID := 4243
-	srv.store.mu.Lock()
+	srv.store.Mu.Lock()
 	srv.store.Agents[agentID] = &Agent{ID: agentID, Name: "r"}
-	srv.store.mu.Unlock()
+	srv.store.Mu.Unlock()
 	defer func() {
-		srv.store.mu.Lock()
+		srv.store.Mu.Lock()
 		delete(srv.store.Agents, agentID)
-		srv.store.mu.Unlock()
+		srv.store.Mu.Unlock()
 	}()
 
 	// Create a non-admin user + token.
 	nonAdmin := &User{ID: 9001, Login: "nobody", Type: "User"}
-	srv.store.mu.Lock()
+	srv.store.Mu.Lock()
 	srv.store.Users[nonAdmin.ID] = nonAdmin
 	tok := &Token{Value: "ghp_nonadmin", UserID: nonAdmin.ID, Scopes: "repo"}
 	srv.store.Tokens[tok.Value] = tok
-	srv.store.mu.Unlock()
+	srv.store.Mu.Unlock()
 	defer func() {
-		srv.store.mu.Lock()
+		srv.store.Mu.Lock()
 		delete(srv.store.Users, nonAdmin.ID)
 		delete(srv.store.Tokens, tok.Value)
-		srv.store.mu.Unlock()
+		srv.store.Mu.Unlock()
 	}()
 
 	resp := srv.post(t, fmt.Sprintf("/internal/agents/%d/refresh-message", agentID), tok.Value, map[string]interface{}{

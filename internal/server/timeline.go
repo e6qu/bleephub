@@ -123,8 +123,8 @@ func decodeTimelineRecords(body []byte) ([]*TimelineRecord, error) {
 // set, keyed by record ID. Returns copies of the post-merge records for
 // the response body.
 func (s *Server) upsertTimelineRecords(planID string, records []*TimelineRecord) []*TimelineRecord {
-	s.store.mu.Lock()
-	defer s.store.mu.Unlock()
+	s.store.Mu.Lock()
+	defer s.store.Mu.Unlock()
 	out := make([]*TimelineRecord, 0, len(records))
 	for _, rec := range records {
 		if rec == nil || rec.ID == "" {
@@ -145,8 +145,8 @@ func (s *Server) upsertTimelineRecords(planID string, records []*TimelineRecord)
 		cp := *stored
 		out = append(out, &cp)
 	}
-	if s.store.persist != nil && planID != "" {
-		s.store.persist.MustPut("timeline_records", planID, s.store.TimelineRecords[planID])
+	if s.store.Persist != nil && planID != "" {
+		s.store.Persist.MustPut("timeline_records", planID, s.store.TimelineRecords[planID])
 	}
 	return out
 }
@@ -193,7 +193,7 @@ func (s *Server) handleCreateLog(w http.ResponseWriter, r *http.Request) {
 	// Log ids come from one counter shared by every plan, so the id alone
 	// would be the only thing standing between a job and another job's log
 	// content. Record which plan reserved it.
-	s.artifactStore.claimLog(logID, r.PathValue("planId"))
+	s.artifactStore.ClaimLog(logID, r.PathValue("planId"))
 	s.logger.Debug().Int("logId", logID).Msg("create log container")
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -210,7 +210,7 @@ func (s *Server) handleUploadLog(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid log ID", http.StatusBadRequest)
 		return
 	}
-	if !s.artifactStore.logBelongsToPlan(logID, r.PathValue("planId")) {
+	if !s.artifactStore.LogBelongsToPlan(logID, r.PathValue("planId")) {
 		http.Error(w, "log not found", http.StatusNotFound)
 		return
 	}
@@ -223,10 +223,10 @@ func (s *Server) handleUploadLog(w http.ResponseWriter, r *http.Request) {
 
 	// The runner may upload a log in multiple blocks — append. Bound the
 	// stored size at logFileCap, keeping the head and marking the cut.
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	existing := s.store.LogFiles[logID]
 	next := append(append([]byte(nil), existing...), body...)
-	next = s.store.redactLogBytesLocked(r.PathValue("planId"), next)
+	next = s.store.RedactLogBytesLocked(r.PathValue("planId"), next)
 	switch {
 	case bytes.HasSuffix(existing, logTruncationMarker):
 		// Already capped; later blocks are dropped past the marker.
@@ -239,13 +239,13 @@ func (s *Server) handleUploadLog(w http.ResponseWriter, r *http.Request) {
 	storedData := append([]byte(nil), next...)
 	stored := len(next)
 
-	if err := s.artifactStore.writeLogData(r.Context(), logID, storedData); err != nil {
-		s.store.mu.Unlock()
+	if err := s.artifactStore.WriteLogData(r.Context(), logID, storedData); err != nil {
+		s.store.Mu.Unlock()
 		http.Error(w, "log byte-store write: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	s.store.LogFiles[logID] = next
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	s.logger.Debug().Int("logId", logID).Int("uploadBytes", len(body)).Int("storedBytes", stored).Msg("log upload")
 
@@ -276,8 +276,8 @@ func (s *Server) handleWebConsoleLog(w http.ResponseWriter, r *http.Request) {
 	// Capped at consoleLineCap; trimming appends the marker line once.
 	if planID != "" && len(lines) > 0 {
 		job := s.lookupJobByPlanID(planID)
-		s.store.mu.Lock()
-		lines = s.store.redactLogLinesLocked(planID, lines)
+		s.store.Mu.Lock()
+		lines = s.store.RedactLogLinesLocked(planID, lines)
 		if job != nil {
 			existing := s.store.LogLines[job.ID]
 			switch {
@@ -292,7 +292,7 @@ func (s *Server) handleWebConsoleLog(w http.ResponseWriter, r *http.Request) {
 				s.store.LogLines[job.ID] = append(existing, consoleTruncationMarker)
 			}
 		}
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 	}
 	for _, line := range lines {
 		s.logger.Info().Str("recordId", recordID).Str("line", line).Msg("console")
@@ -336,7 +336,7 @@ func (s *Server) handleTimelineAttachment(w http.ResponseWriter, r *http.Request
 	}
 	if strings.Contains(strings.ToLower(attachType), "summary") {
 		planID := r.PathValue("planId")
-		s.store.mu.Lock()
+		s.store.Mu.Lock()
 		for _, wf := range s.store.Workflows {
 			for _, job := range wf.Jobs {
 				if job.PlanID != planID {
@@ -346,18 +346,18 @@ func (s *Server) handleTimelineAttachment(w http.ResponseWriter, r *http.Request
 					body = append([]byte{'\n'}, body...)
 				}
 				if len(job.Summary)+len(body) > stepSummaryCap {
-					s.store.mu.Unlock()
+					s.store.Mu.Unlock()
 					writeJSON(w, http.StatusRequestEntityTooLarge, map[string]interface{}{"status": "error", "message": "job summary exceeds 1 MiB"})
 					return
 				}
 				job.Summary += string(body)
-				s.store.persistWorkflowRecord(wf)
-				s.store.mu.Unlock()
+				s.store.PersistWorkflowRecord(wf)
+				s.store.Mu.Unlock()
 				writeJSON(w, http.StatusOK, map[string]interface{}{"status": "ok"})
 				return
 			}
 		}
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"status": "ok"})
 }

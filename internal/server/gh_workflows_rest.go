@@ -160,7 +160,7 @@ func (s *Server) handleListWorkflowFileRuns(w http.ResponseWriter, r *http.Reque
 	branchFilter := r.URL.Query().Get("branch")
 	eventFilter := r.URL.Query().Get("event")
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	matching := []*Workflow{}
 	for _, run := range s.store.Workflows {
 		if run.RepoFullName != "" && run.RepoFullName != repo {
@@ -189,7 +189,7 @@ func (s *Server) handleListWorkflowFileRuns(w http.ResponseWriter, r *http.Reque
 		}
 		matching = append(matching, run)
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	sortRunsNewestFirst(matching)
 	page := paginateAndLink(w, r, matching)

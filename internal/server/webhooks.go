@@ -418,22 +418,6 @@ func webhookQueueKey(h *Webhook) string {
 	return h.RepoKey + "\x00" + h.OrgLogin + "\x00" + h.MarketplaceSlug + "\x00" + global + "\x00" + strconv.Itoa(h.ID)
 }
 
-// SnapshotHook copies the configuration a delivery reads, under the store
-// lock. Hook edits mutate the stored *Webhook in place, so a delivery holding
-// the shared pointer races every PATCH of the hook it is delivering — and a
-// delivery is addressed and signed by the configuration as of the moment it
-// was queued, not by whatever the hook becomes mid-flight.
-func (st *Store) SnapshotHook(h *Webhook) *Webhook {
-	if h == nil {
-		return nil
-	}
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-	snapshot := cloneWebhook(h)
-	snapshot.LastResponse = nil
-	return snapshot
-}
-
 // appWebhookPseudoHook is the Webhook view of a GitHub App's single webhook
 // configuration. The negative id is what marks an app-level delivery
 // throughout the delivery path.
@@ -485,16 +469,16 @@ func (s *Server) recordHookLastResponse(hook *Webhook, delivery *WebhookDelivery
 	case hook.OrgLogin != "":
 		s.store.SetOrgHookLastResponse(hook.OrgLogin, hook.ID, deliveryLastResponse(delivery))
 	case hook.Global:
-		s.store.mu.Lock()
+		s.store.Mu.Lock()
 		for _, stored := range s.store.EnterpriseSettings.GHESGlobalHooks {
 			if stored.ID == hook.ID {
 				stored.LastResponse = deliveryLastResponse(delivery)
-				stored.UpdatedAt = s.store.currentTime()
+				stored.UpdatedAt = s.store.CurrentTime()
 				break
 			}
 		}
-		s.store.persistEnterpriseSettings()
-		s.store.mu.Unlock()
+		s.store.PersistEnterpriseSettings()
+		s.store.Mu.Unlock()
 	}
 }
 
@@ -875,8 +859,8 @@ func (s *Server) actionsEnabledForRepo(repoKey string) bool {
 		return false
 	}
 
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	if repo.OwnerType == "Organization" {
 		enterprise := s.store.EnterpriseSettings
 		switch enterprise.ActionsEnabledOrganizations {
@@ -887,7 +871,7 @@ func (s *Server) actionsEnabledForRepo(repoKey string) bool {
 				return false
 			}
 		}
-		if orgPolicy := s.store.lookupOrgActionsPermissionsLocked(owner); orgPolicy != nil {
+		if orgPolicy := s.store.LookupOrgActionsPermissionsLocked(owner); orgPolicy != nil {
 			switch orgPolicy.EnabledRepositories {
 			case "none":
 				return false
@@ -1297,12 +1281,12 @@ func (s *Server) createStartupFailureRun(fileName string, content []byte, meta *
 	// section, matching every other queueActionsEvent call site. Doing this
 	// after Unlock left the terminal run's fields readable lock-free — a data
 	// race, even though the run is already completed so a writer is unlikely.
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.Workflows[wf.ID] = wf
-	s.store.persistWorkflowRecord(wf)
+	s.store.PersistWorkflowRecord(wf)
 	s.queueActionsEvent(evRunRequested, wf, nil)
 	s.queueActionsEvent(evRunCompleted, wf, nil)
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 }
 
 // workflowNameFromYAML extracts just the workflow's name, tolerating

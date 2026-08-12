@@ -21,8 +21,8 @@ func makeLocalPasswordUser(t *testing.T, s *Server, login, password string) *Use
 	if err != nil {
 		t.Fatalf("bcrypt: %v", err)
 	}
-	s.store.mu.Lock()
-	defer s.store.mu.Unlock()
+	s.store.Mu.Lock()
+	defer s.store.Mu.Unlock()
 	if _, exists := s.store.UsersByLogin[login]; exists {
 		t.Fatalf("user %q already exists", login)
 	}

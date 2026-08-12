@@ -26,13 +26,13 @@ func authflowName(prefix string) string {
 // the user together with a classic token for it.
 func authflowStranger(t *testing.T, s *Server, login string) (*User, string) {
 	t.Helper()
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	now := fixedTestTime.UTC()
 	user := &User{ID: s.store.NextUser, Login: login, Type: "User", StarredRepos: map[string]bool{}, CreatedAt: now, UpdatedAt: now}
 	s.store.Users[user.ID] = user
 	s.store.UsersByLogin[login] = user
 	s.store.NextUser++
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	return user, s.store.CreateToken(user.ID, "repo,workflow").Value
 }
 
@@ -476,9 +476,9 @@ func TestRepositorySecretWriteRefusesAStranger(t *testing.T) {
 		t.Errorf("handlePutSecret for a stranger status = %d, want 403; body=%s", dw.Code, dw.Body.String())
 	}
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	written := len(s.store.RepoSecrets[repo.FullName])
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if written != 0 {
 		t.Errorf("stranger wrote %d secrets into %s", written, repo.FullName)
 	}
@@ -513,10 +513,10 @@ func TestRepositorySecretRejectsCaseVariantScope(t *testing.T) {
 	if w.Code == http.StatusCreated || w.Code == http.StatusNoContent {
 		t.Errorf("case-variant secret PUT status = %d; a write nothing reads must fail loudly", w.Code)
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	shadow := len(s.store.RepoSecrets[variantOwner+"/"+repo.Name])
 	real := len(s.store.RepoSecrets[repo.FullName])
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if shadow != 0 {
 		t.Errorf("case-variant path wrote %d secrets under the shadow key %q", shadow, variantOwner+"/"+repo.Name)
 	}

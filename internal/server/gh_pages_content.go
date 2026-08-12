@@ -5,7 +5,6 @@ import (
 	"archive/zip"
 	"bytes"
 	"compress/gzip"
-	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -13,7 +12,6 @@ import (
 	"mime"
 	"net/http"
 	"path"
-	"sort"
 	"strings"
 )
 
@@ -214,14 +212,14 @@ func (s *Server) handlePagesContent(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	s.store.Misc.mu.RLock()
-	site := s.store.Misc.pagesByRepo[repo.ID]
-	s.store.Misc.mu.RUnlock()
+	s.store.Misc.Mu.RLock()
+	site := s.store.Misc.PagesByRepo[repo.ID]
+	s.store.Misc.Mu.RUnlock()
 	if site != nil && !site.Public && !s.viewerCanReadRepo(r.Context(), repo) {
 		http.NotFound(w, r)
 		return
 	}
-	deployment := s.store.latestPublishedPagesDeployment(repo.ID)
+	deployment := s.store.LatestPublishedPagesDeployment(repo.ID)
 	if site == nil || site.Status != "built" || deployment == nil || deployment.ArtifactKey == "" {
 		http.NotFound(w, r)
 		return
@@ -273,54 +271,4 @@ func (s *Server) handlePagesContent(w http.ResponseWriter, r *http.Request) {
 		// opaque-origin CSP sandbox above, matching a dedicated Pages origin.
 		_, _ = w.Write(content)
 	}
-}
-
-func (st *Store) latestPublishedPagesDeployment(repoID int) *PagesDeploymentRecord {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-	var deployments []*PagesDeploymentRecord
-	for _, deployment := range st.PagesDeployments[repoID] {
-		if deployment.Status == "succeed" && deployment.ArtifactKey != "" {
-			deployments = append(deployments, deployment)
-		}
-	}
-	if len(deployments) == 0 {
-		return nil
-	}
-	sort.Slice(deployments, func(i, j int) bool { return deployments[i].ID > deployments[j].ID })
-	copy := *deployments[0]
-	return &copy
-}
-
-func (st *Store) deletePagesPublicationData(ctx context.Context, repoID int) error {
-	st.mu.RLock()
-	keys, hasDeployments := st.pagesPublicationKeysLocked(repoID)
-	st.mu.RUnlock()
-	return st.deletePagesPublicationKeys(ctx, keys, hasDeployments)
-}
-
-func (st *Store) pagesPublicationKeysLocked(repoID int) (map[string]struct{}, bool) {
-	deployments := st.PagesDeployments[repoID]
-	keys := map[string]struct{}{}
-	for _, deployment := range deployments {
-		if deployment.ArtifactKey != "" {
-			keys[deployment.ArtifactKey] = struct{}{}
-		}
-	}
-	return keys, len(deployments) > 0
-}
-
-func (st *Store) deletePagesPublicationKeys(ctx context.Context, keys map[string]struct{}, hasDeployments bool) error {
-	if st.ObjectByteStore == nil {
-		if !hasDeployments {
-			return nil
-		}
-		return errors.New("pages publication deletion requires configured object storage")
-	}
-	for key := range keys {
-		if err := st.ObjectByteStore.Delete(ctx, key); err != nil {
-			return fmt.Errorf("delete Pages artifact %s: %w", key, err)
-		}
-	}
-	return nil
 }

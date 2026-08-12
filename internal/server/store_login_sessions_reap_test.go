@@ -9,7 +9,7 @@ func TestExpiredLoginSessionReapIsDurableAndDeterministic(t *testing.T) {
 	dataDir := t.TempDir()
 	persistence := openTestPersistence(t, dataDir)
 	store := NewStore()
-	store.replaceClockNow(func() time.Time { return fixedTestTime })
+	replaceStoreClockNow(store, func() time.Time { return fixedTestTime })
 	if err := store.SetPersistence(persistence); err != nil {
 		t.Fatalf("set persistence: %v", err)
 	}
@@ -39,7 +39,7 @@ func TestExpiredLoginSessionReapIsDurableAndDeterministic(t *testing.T) {
 	reopened := openTestPersistence(t, dataDir)
 	defer func() { _ = reopened.Close() }()
 	reloaded := NewStore()
-	reloaded.replaceClockNow(func() time.Time { return fixedTestTime })
+	replaceStoreClockNow(reloaded, func() time.Time { return fixedTestTime })
 	if err := reloaded.SetPersistence(reopened); err != nil {
 		t.Fatalf("reload persistence: %v", err)
 	}

@@ -87,13 +87,13 @@ func (s *Server) handleSubmitJob(w http.ResponseWriter, r *http.Request) {
 		LockedUntil: time.Now().Add(1 * time.Hour),
 	}
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.Jobs[jobID] = job
 	// Operator-submitted jobs name no repository; the empty repo scope is the
 	// narrowest one there is (see repoForJobScope).
-	s.store.registerDispatchedJobLocked(job, msg, "")
-	s.store.registerJobLogMasksLocked(planID, msg)
-	s.store.mu.Unlock()
+	s.store.RegisterDispatchedJobLocked(job, msg, "")
+	s.store.RegisterJobLogMasksLocked(planID, msg)
+	s.store.Mu.Unlock()
 
 	// Build the envelope message
 	envelope := &TaskAgentMessage{
@@ -116,9 +116,9 @@ func (s *Server) handleSubmitJob(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleGetJobStatus(w http.ResponseWriter, r *http.Request) {
 	jobID := r.PathValue("jobId")
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	job, ok := s.store.Jobs[jobID]
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	if !ok {
 		http.Error(w, "job not found", http.StatusNotFound)
@@ -162,14 +162,14 @@ func (s *Server) handleSubmitWorkflow(w http.ResponseWriter, r *http.Request) {
 
 	// Enforce concurrent workflow limit
 	if s.maxConcurrentWorkflows > 0 {
-		s.store.mu.RLock()
+		s.store.Mu.RLock()
 		active := 0
 		for _, wf := range s.store.Workflows {
 			if wf.Status == "running" {
 				active++
 			}
 		}
-		s.store.mu.RUnlock()
+		s.store.Mu.RUnlock()
 		if active >= s.maxConcurrentWorkflows {
 			http.Error(w, "too many concurrent workflows", http.StatusTooManyRequests)
 			return
@@ -284,9 +284,9 @@ func (s *Server) handleSubmitWorkflow(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleGetWorkflowStatus(w http.ResponseWriter, r *http.Request) {
 	wfID := r.PathValue("workflowId")
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	wf, ok := s.store.Workflows[wfID]
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	if !ok {
 		http.Error(w, "workflow not found", http.StatusNotFound)
@@ -314,9 +314,9 @@ func (s *Server) handleGetWorkflowStatus(w http.ResponseWriter, r *http.Request)
 func (s *Server) handleCancelWorkflow(w http.ResponseWriter, r *http.Request) {
 	wfID := r.PathValue("workflowId")
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	wf, ok := s.store.Workflows[wfID]
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	if !ok {
 		http.Error(w, "workflow not found", http.StatusNotFound)

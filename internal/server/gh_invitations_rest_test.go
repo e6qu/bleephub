@@ -22,12 +22,12 @@ func doInvitationReq(s *Server, token, method, path string, body []byte) *httpte
 }
 
 func makeOtherUser(s *Server, login string) (*User, string) {
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	u := &User{ID: s.store.NextUser, Login: login, Type: "User", Email: login + "@bleephub.local"}
 	s.store.NextUser++
 	s.store.Users[u.ID] = u
 	s.store.UsersByLogin[u.Login] = u
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	tok := s.store.CreateToken(u.ID, "repo")
 	return u, tok.Value
 }

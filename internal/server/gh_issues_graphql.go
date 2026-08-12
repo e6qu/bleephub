@@ -307,9 +307,9 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 				return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
 			}
 			issueID, _ := i["databaseId"].(int)
-			s.store.mu.RLock()
+			s.store.Mu.RLock()
 			parentID, hasParent := s.store.SubIssueParent[issueID]
-			s.store.mu.RUnlock()
+			s.store.Mu.RUnlock()
 			if !hasParent {
 				return nil, nil
 			}
@@ -329,9 +329,9 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 				return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
 			}
 			issueID, _ := i["databaseId"].(int)
-			s.store.mu.RLock()
+			s.store.Mu.RLock()
 			childIDs := append([]int(nil), s.store.SubIssueLists[issueID]...)
-			s.store.mu.RUnlock()
+			s.store.Mu.RUnlock()
 			nodes := make([]map[string]interface{}, 0, len(childIDs))
 			for _, childID := range childIDs {
 				if child := s.store.GetIssue(childID); child != nil {
@@ -359,7 +359,7 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 			if repo == nil {
 				return nil, fmt.Errorf("repository %d not found", issue.RepoID)
 			}
-			return repoToGraphQL(s.store, s.store.snapRepo(repo)), nil
+			return repoToGraphQL(s.store, s.store.SnapRepo(repo)), nil
 		},
 	})
 
@@ -503,7 +503,7 @@ func (s *Server) addIssueFieldsToSchema(userType, repoType, mutationType, queryT
 			storedIssues := s.store.ListIssues(repoID, "")
 			issues := make([]*Issue, 0, len(storedIssues))
 			for _, issue := range storedIssues {
-				issues = append(issues, s.store.snapIssue(issue))
+				issues = append(issues, s.store.SnapIssue(issue))
 			}
 
 			// Filter by states arg
@@ -1412,8 +1412,8 @@ func (s *Server) issueFieldValueGraphQLConnectionType() *graphql.Object {
 }
 
 func issueToGQL(issue *Issue, st *Store) map[string]interface{} {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
 
 	// Author
 	var author map[string]interface{}
@@ -1445,7 +1445,7 @@ func issueToGQL(issue *Issue, st *Store) map[string]interface{} {
 		}
 	}
 	var issueType map[string]interface{}
-	if it := st.issueTypeForIssueLocked(issue); it != nil {
+	if it := st.IssueTypeForIssueLocked(issue); it != nil {
 		color := "GRAY"
 		if it.Color != nil && *it.Color != "" {
 			color = strings.ToUpper(*it.Color)
@@ -2082,8 +2082,8 @@ func milestoneToGQL(ms *Milestone) map[string]interface{} {
 }
 
 func commentToGQL(c *Comment, st *Store) map[string]interface{} {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
 	return commentToGQLLocked(c, st)
 }
 
@@ -2227,28 +2227,9 @@ func reactionGroupsForGraphQL(rs *ReactionStore, parentType string, parentID int
 
 // --- Node ID lookup helpers ---
 
-// decodeNodeDBID extracts the trailing database id from a GraphQL node ID of the
-// form "<prefix><digits>" (e.g. "R_kgDO00000123", prefix "R_kgDO"). It returns
-// false when the id lacks that prefix or does not end in digits — so a legacy or
-// foreign-shaped id (e.g. the "U_bleephub_<login>" identifiers) falls through to
-// a scan rather than being mis-resolved. Callers pair the O(1) map lookup with a
-// node-id equality check, keeping behavior identical to the old full scan
-// (GQL-024).
-func decodeNodeDBID(nodeID, prefix string) (int, bool) {
-	rest, ok := strings.CutPrefix(nodeID, prefix)
-	if !ok {
-		return 0, false
-	}
-	id, err := strconv.Atoi(rest)
-	if err != nil {
-		return 0, false
-	}
-	return id, true
-}
-
 func findRepoByNodeID(st *Store, nodeID string) *Repo {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
 	if id, ok := decodeNodeDBID(nodeID, "R_kgDO"); ok {
 		if r := st.Repos[id]; r != nil && r.NodeID == nodeID {
 			return r
@@ -2263,8 +2244,8 @@ func findRepoByNodeID(st *Store, nodeID string) *Repo {
 }
 
 func findIssueByNodeID(st *Store, nodeID string) *Issue {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
 	if id, ok := decodeNodeDBID(nodeID, "I_kgDO"); ok {
 		if i := st.Issues[id]; i != nil && i.NodeID == nodeID {
 			return i
@@ -2279,8 +2260,8 @@ func findIssueByNodeID(st *Store, nodeID string) *Issue {
 }
 
 func findLabelByNodeID(st *Store, nodeID string) *IssueLabel {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
 	if id, ok := decodeNodeDBID(nodeID, "LA_kgDO"); ok {
 		if l := st.Labels[id]; l != nil && l.NodeID == nodeID {
 			return l
@@ -2295,8 +2276,8 @@ func findLabelByNodeID(st *Store, nodeID string) *IssueLabel {
 }
 
 func findMilestoneByNodeID(st *Store, nodeID string) *Milestone {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
 	if id, ok := decodeNodeDBID(nodeID, "MI_kgDO"); ok {
 		if ms := st.Milestones[id]; ms != nil && ms.NodeID == nodeID {
 			return ms
@@ -2389,8 +2370,8 @@ func applyIssueState(i *Issue, state string) {
 }
 
 func findUserByNodeID(st *Store, nodeID string) *User {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
 	if id, ok := decodeNodeDBID(nodeID, "U_kgDO"); ok {
 		if u := st.Users[id]; u != nil && u.NodeID == nodeID {
 			return u

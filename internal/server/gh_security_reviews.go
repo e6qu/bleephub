@@ -2,7 +2,6 @@ package bleephub
 
 import (
 	"net/http"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -15,30 +14,6 @@ const (
 	reviewKindDependabot      = "dependabot"
 	reviewKindSecretDismissal = "secret-scanning-dismissal"
 )
-
-type SecurityReviewResponse struct {
-	ID         int       `json:"id"`
-	ReviewerID int       `json:"reviewer_id"`
-	Message    string    `json:"message"`
-	Status     string    `json:"status"`
-	CreatedAt  time.Time `json:"created_at"`
-}
-
-type SecurityReviewRequest struct {
-	ID               int                      `json:"id"`
-	Number           int                      `json:"number"`
-	RepoKey          string                   `json:"repo_key"`
-	OrgLogin         string                   `json:"org_login"`
-	Kind             string                   `json:"kind"`
-	RequesterID      int                      `json:"requester_id"`
-	ResourceID       string                   `json:"resource_identifier"`
-	Status           string                   `json:"status"`
-	RequesterComment *string                  `json:"requester_comment"`
-	Data             []map[string]interface{} `json:"data"`
-	Responses        []SecurityReviewResponse `json:"responses"`
-	ExpiresAt        time.Time                `json:"expires_at"`
-	CreatedAt        time.Time                `json:"created_at"`
-}
 
 func securityReviewScope(repoKey, kind string) string { return repoKey + "|" + kind }
 
@@ -76,40 +51,6 @@ func (s *Server) registerGHSecurityReviewRoutes() {
 	s.route("GET /api/v3/repos/{owner}/{repo}/dismissal-requests/secret-scanning", read(s.repoSecurityReviewList(reviewKindSecretDismissal)))
 	s.route("GET /api/v3/repos/{owner}/{repo}/dismissal-requests/secret-scanning/{alert_number}", read(s.repoSecurityReviewGet(reviewKindSecretDismissal, "alert_number")))
 	s.route("PATCH /api/v3/repos/{owner}/{repo}/dismissal-requests/secret-scanning/{alert_number}", write(s.repoSecurityReviewDecision(reviewKindSecretDismissal, "alert_number", false)))
-}
-
-func copySecurityReviewRequest(request *SecurityReviewRequest) *SecurityReviewRequest {
-	if request == nil {
-		return nil
-	}
-	result := *request
-	result.Data = append([]map[string]interface{}(nil), request.Data...)
-	result.Responses = append([]SecurityReviewResponse(nil), request.Responses...)
-	return &result
-}
-
-func (st *Store) listSecurityReviewRequests(repoKey, orgLogin, kind string) []*SecurityReviewRequest {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-	result := []*SecurityReviewRequest{}
-	for scope, requests := range st.SecurityReviewRequests {
-		scopeRepo, scopeKind, ok := strings.Cut(scope, "|")
-		if !ok || scopeKind != kind || (repoKey != "" && scopeRepo != repoKey) {
-			continue
-		}
-		for _, request := range requests {
-			if orgLogin == "" || request.OrgLogin == orgLogin {
-				result = append(result, copySecurityReviewRequest(request))
-			}
-		}
-	}
-	sort.Slice(result, func(i, j int) bool {
-		if result[i].CreatedAt.Equal(result[j].CreatedAt) {
-			return result[i].ID > result[j].ID
-		}
-		return result[i].CreatedAt.After(result[j].CreatedAt)
-	})
-	return result
 }
 
 func (s *Server) securityReviewJSON(r *http.Request, request *SecurityReviewRequest) map[string]interface{} {
@@ -182,7 +123,7 @@ func (s *Server) orgSecurityReviewList(kind string) http.HandlerFunc {
 			writeGHError(w, http.StatusNotFound, "Not Found")
 			return
 		}
-		s.writeSecurityReviewList(w, r, s.store.listSecurityReviewRequests("", org.Login, kind))
+		s.writeSecurityReviewList(w, r, s.store.ListSecurityReviewRequests("", org.Login, kind))
 	}
 }
 
@@ -192,7 +133,7 @@ func (s *Server) repoSecurityReviewList(kind string) http.HandlerFunc {
 		if repo == nil {
 			return
 		}
-		s.writeSecurityReviewList(w, r, s.store.listSecurityReviewRequests(repo.FullName, "", kind))
+		s.writeSecurityReviewList(w, r, s.store.ListSecurityReviewRequests(repo.FullName, "", kind))
 	}
 }
 
@@ -215,9 +156,9 @@ func (s *Server) repoSecurityReviewGet(kind, parameter string) http.HandlerFunc 
 		if !ok {
 			return
 		}
-		s.store.mu.RLock()
+		s.store.Mu.RLock()
 		request := copySecurityReviewRequest(s.store.SecurityReviewRequests[securityReviewScope(repo.FullName, kind)][number])
-		s.store.mu.RUnlock()
+		s.store.Mu.RUnlock()
 		if request == nil {
 			writeGHError(w, http.StatusNotFound, "Not Found")
 			return
@@ -262,10 +203,10 @@ func (s *Server) repoSecurityReviewDecision(kind, parameter string, bypass bool)
 			return
 		}
 		user := ghUserFromContext(r.Context())
-		s.store.mu.Lock()
+		s.store.Mu.Lock()
 		request := s.store.SecurityReviewRequests[securityReviewScope(repo.FullName, kind)][number]
 		if request == nil {
-			s.store.mu.Unlock()
+			s.store.Mu.Unlock()
 			writeGHError(w, http.StatusNotFound, "Not Found")
 			return
 		}
@@ -275,11 +216,11 @@ func (s *Server) repoSecurityReviewDecision(kind, parameter string, bypass bool)
 		request.Responses = append(request.Responses, SecurityReviewResponse{
 			ID: responseID, ReviewerID: user.ID, Message: req.Message, Status: status, CreatedAt: s.currentTime(),
 		})
-		if s.store.persist != nil {
+		if s.store.Persist != nil {
 			scope := securityReviewScope(repo.FullName, kind)
-			s.store.persist.MustPut("security_review_requests", scope, s.store.SecurityReviewRequests[scope])
+			s.store.Persist.MustPut("security_review_requests", scope, s.store.SecurityReviewRequests[scope])
 		}
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		key := "dismissal_review_id"
 		if bypass {
 			key = "bypass_review_id"
@@ -332,22 +273,22 @@ func (s *Server) handleCreateDependabotDismissalRequest(w http.ResponseWriter, r
 		CreatedAt: now, ExpiresAt: now.Add(7 * 24 * time.Hour),
 	}
 	scope := securityReviewScope(repo.FullName, reviewKindDependabot)
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	if s.store.SecurityReviewRequests[scope] == nil {
 		s.store.SecurityReviewRequests[scope] = map[int]*SecurityReviewRequest{}
 	}
 	if existing := s.store.SecurityReviewRequests[scope][number]; existing != nil && existing.Status == "pending" {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeGHValidationError(w, "DependabotDismissalRequest", "alert_number", "already_exists")
 		return
 	}
 	request.ID = s.store.NextSecurityReviewRequestID
 	s.store.NextSecurityReviewRequestID++
 	s.store.SecurityReviewRequests[scope][number] = request
-	if s.store.persist != nil {
-		s.store.persist.MustPut("security_review_requests", scope, s.store.SecurityReviewRequests[scope])
+	if s.store.Persist != nil {
+		s.store.Persist.MustPut("security_review_requests", scope, s.store.SecurityReviewRequests[scope])
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusCreated, s.securityReviewJSON(r, request))
 }
 
@@ -361,17 +302,17 @@ func (s *Server) handleCancelDependabotDismissalRequest(w http.ResponseWriter, r
 		return
 	}
 	scope := securityReviewScope(repo.FullName, reviewKindDependabot)
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	if s.store.SecurityReviewRequests[scope][number] == nil {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 	delete(s.store.SecurityReviewRequests[scope], number)
-	if s.store.persist != nil {
-		s.store.persist.MustPut("security_review_requests", scope, s.store.SecurityReviewRequests[scope])
+	if s.store.Persist != nil {
+		s.store.Persist.MustPut("security_review_requests", scope, s.store.SecurityReviewRequests[scope])
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -385,7 +326,7 @@ func (s *Server) handleDismissSecretScanningBypassResponse(w http.ResponseWriter
 		return
 	}
 	scope := securityReviewScope(repo.FullName, reviewKindSecretBypass)
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	found := false
 	for _, request := range s.store.SecurityReviewRequests[scope] {
 		for index := range request.Responses {
@@ -397,13 +338,13 @@ func (s *Server) handleDismissSecretScanningBypassResponse(w http.ResponseWriter
 		}
 	}
 	if !found {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if s.store.persist != nil {
-		s.store.persist.MustPut("security_review_requests", scope, s.store.SecurityReviewRequests[scope])
+	if s.store.Persist != nil {
+		s.store.Persist.MustPut("security_review_requests", scope, s.store.SecurityReviewRequests[scope])
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }

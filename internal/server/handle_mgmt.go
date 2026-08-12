@@ -97,7 +97,7 @@ type authCodeView struct {
 }
 
 func (s *Server) handleOAuthStateInternal(w http.ResponseWriter, r *http.Request) {
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	dcs := make([]deviceCodeView, 0, len(s.store.DeviceCodes))
 	for _, dc := range s.store.DeviceCodes {
 		dcs = append(dcs, deviceCodeView{
@@ -121,7 +121,7 @@ func (s *Server) handleOAuthStateInternal(w http.ResponseWriter, r *http.Request
 			ExpiresAt:   ac.ExpiresAt.Format("2006-01-02T15:04:05Z"),
 		})
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	writeJSON(w, http.StatusOK, oauthStateView{DeviceCodes: dcs, AuthCodes: acs})
 }
 
@@ -144,17 +144,17 @@ type workflowFileView struct {
 func (s *Server) handleListWorkflowFilesInternal(w http.ResponseWriter, r *http.Request) {
 	// Discover from every repo's git storage so files newly pushed
 	// since last poll show up. Cheap — the discovery is idempotent.
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	repoNames := make([]string, 0, len(s.store.Repos))
 	for _, repo := range s.store.Repos {
 		repoNames = append(repoNames, repo.FullName)
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	for _, name := range repoNames {
 		s.store.DiscoverWorkflowFilesFromGit(name)
 	}
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	files := make([]workflowFileView, 0, len(s.store.WorkflowFiles))
 	for _, wf := range s.store.WorkflowFiles {
 		files = append(files, workflowFileView{
@@ -168,7 +168,7 @@ func (s *Server) handleListWorkflowFilesInternal(w http.ResponseWriter, r *http.
 			UpdatedAt:    wf.UpdatedAt.Format("2006-01-02T15:04:05Z"),
 		})
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	sort.Slice(files, func(i, j int) bool {
 		if files[i].RepoFullName != files[j].RepoFullName {
@@ -208,12 +208,12 @@ func workflowToView(wf *Workflow) workflowView {
 }
 
 func (s *Server) handleListWorkflows(w http.ResponseWriter, r *http.Request) {
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	workflows := make([]workflowView, 0, len(s.store.Workflows))
 	for _, wf := range s.store.Workflows {
 		workflows = append(workflows, workflowToView(wf))
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	// Sort by CreatedAt descending
 	sort.Slice(workflows, func(i, j int) bool {
@@ -226,15 +226,15 @@ func (s *Server) handleListWorkflows(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleGetWorkflow(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("workflowId")
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	wf, ok := s.store.Workflows[id]
 	if !ok {
-		s.store.mu.RUnlock()
+		s.store.Mu.RUnlock()
 		http.Error(w, "workflow not found", http.StatusNotFound)
 		return
 	}
 	view := workflowToView(wf)
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	writeJSON(w, http.StatusOK, view)
 }
@@ -242,10 +242,10 @@ func (s *Server) handleGetWorkflow(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleGetWorkflowLogs(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("workflowId")
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	_, ok := s.store.Workflows[id]
 	if !ok {
-		s.store.mu.RUnlock()
+		s.store.Mu.RUnlock()
 		http.Error(w, "workflow not found", http.StatusNotFound)
 		return
 	}
@@ -262,7 +262,7 @@ func (s *Server) handleGetWorkflowLogs(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	writeJSON(w, http.StatusOK, logs)
 }
@@ -276,7 +276,7 @@ type sessionView struct {
 }
 
 func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	sessions := make([]sessionView, 0, len(s.store.Sessions))
 	for _, sess := range s.store.Sessions {
 		pending := 0
@@ -290,7 +290,7 @@ func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
 			PendingMessages: pending,
 		})
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	writeJSON(w, http.StatusOK, sessions)
 }
@@ -309,7 +309,7 @@ type repoView struct {
 }
 
 func (s *Server) handleListRepos(w http.ResponseWriter, r *http.Request) {
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	repos := make([]repoView, 0, len(s.store.Repos))
 	for _, repo := range s.store.Repos {
 		repos = append(repos, repoView{
@@ -324,7 +324,7 @@ func (s *Server) handleListRepos(w http.ResponseWriter, r *http.Request) {
 			UpdatedAt:     repo.UpdatedAt.Format("2006-01-02T15:04:05Z"),
 		})
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	writeJSON(w, http.StatusOK, repos)
 }
@@ -368,9 +368,9 @@ func (s *Server) handleAgentRefreshMessage(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	_, exists := s.store.Agents[agentID]
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if !exists {
 		writeGHError(w, http.StatusNotFound, "agent not found")
 		return
@@ -393,12 +393,12 @@ func (s *Server) handleListUsersInternal(w http.ResponseWriter, r *http.Request)
 	if s.requireSiteAdmin(w, r) == nil {
 		return
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	users := make([]*User, 0, len(s.store.Users))
 	for _, u := range s.store.Users {
 		users = append(users, u)
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	sort.Slice(users, func(i, j int) bool { return users[i].ID < users[j].ID })
 
 	out := make([]map[string]interface{}, len(users))
@@ -456,9 +456,9 @@ func (s *Server) handleCreateUserInternal(w http.ResponseWriter, r *http.Request
 		passwordHash = string(encoded)
 	}
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	if _, exists := s.store.UsersByLogin[req.Login]; exists {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeGHValidationError(w, "User", "login", "already_exists")
 		return
 	}
@@ -468,7 +468,7 @@ func (s *Server) handleCreateUserInternal(w http.ResponseWriter, r *http.Request
 	if req.SiteAdmin != nil {
 		siteAdmin = *req.SiteAdmin
 	}
-	userID := s.store.reserveGlobalID("next_user", &s.store.NextUser)
+	userID := s.store.ReserveGlobalID("next_user", &s.store.NextUser)
 	u := &User{
 		ID:           userID,
 		NodeID:       fmt.Sprintf("U_kgDO%08d", userID),
@@ -486,10 +486,10 @@ func (s *Server) handleCreateUserInternal(w http.ResponseWriter, r *http.Request
 	}
 	s.store.Users[u.ID] = u
 	s.store.UsersByLogin[u.Login] = u
-	if s.store.persist != nil {
-		s.store.persist.MustPut("users", strconv.Itoa(u.ID), u)
+	if s.store.Persist != nil {
+		s.store.Persist.MustPut("users", strconv.Itoa(u.ID), u)
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	userJSON := s.fullUserJSON(u)
 	writeJSONCreated(w, jsonStringField(userJSON, "url"), userJSON)
@@ -530,10 +530,10 @@ func (s *Server) handleUpdateUserInternal(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	u := s.store.Users[id]
 	if u == nil {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -547,10 +547,10 @@ func (s *Server) handleUpdateUserInternal(w http.ResponseWriter, r *http.Request
 		u.SiteAdmin = *req.SiteAdmin
 	}
 	u.UpdatedAt = time.Now().UTC()
-	if s.store.persist != nil {
-		s.store.persist.MustPut("users", strconv.Itoa(u.ID), u)
+	if s.store.Persist != nil {
+		s.store.Persist.MustPut("users", strconv.Itoa(u.ID), u)
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	writeJSON(w, http.StatusOK, s.fullUserJSON(u))
 }
@@ -565,25 +565,25 @@ func (s *Server) handleDeleteUserInternal(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	u := s.store.Users[id]
 	if u == nil {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 	delete(s.store.Users, u.ID)
 	delete(s.store.UsersByLogin, u.Login)
-	s.store.forgetExternalIdentitiesLocked(u)
+	s.store.ForgetExternalIdentitiesLocked(u)
 	for val, t := range s.store.Tokens {
 		if t.UserID == u.ID {
-			s.store.deleteTokenMapKeyLocked(val)
+			s.store.DeleteTokenMapKeyLocked(val)
 		}
 	}
-	if s.store.persist != nil {
-		s.store.persist.MustDelete("users", strconv.Itoa(u.ID))
+	if s.store.Persist != nil {
+		s.store.Persist.MustDelete("users", strconv.Itoa(u.ID))
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	if err := s.store.DeleteLoginSessionsForUser(u.ID); err != nil {
 		s.logger.Error().Err(err).Msg("delete user browser sessions")
 		writeGHError(w, http.StatusServiceUnavailable, "browser sessions could not be revoked")
@@ -597,12 +597,12 @@ func (s *Server) handleListOrgsInternal(w http.ResponseWriter, r *http.Request) 
 	if s.requireSiteAdmin(w, r) == nil {
 		return
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	orgs := make([]*Org, 0, len(s.store.Orgs))
 	for _, org := range s.store.Orgs {
 		orgs = append(orgs, org)
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	sort.Slice(orgs, func(i, j int) bool { return orgs[i].ID < orgs[j].ID })
 
 	base := s.baseURL(r)
@@ -647,10 +647,10 @@ func (s *Server) handleUpdateOrgInternal(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	org := s.store.Orgs[id]
 	if org == nil {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -661,10 +661,10 @@ func (s *Server) handleUpdateOrgInternal(w http.ResponseWriter, r *http.Request)
 		org.Description = *req.Description
 	}
 	org.UpdatedAt = time.Now().UTC()
-	if s.store.persist != nil {
-		s.store.persist.MustPut("orgs", strconv.Itoa(org.ID), org)
+	if s.store.Persist != nil {
+		s.store.Persist.MustPut("orgs", strconv.Itoa(org.ID), org)
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	writeJSON(w, http.StatusOK, orgToJSON(org, s.store, s.baseURL(r)))
 }
@@ -684,7 +684,7 @@ func (s *Server) handleDeleteOrgInternal(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	var repoNames []string
 	prefix := org.Login + "/"
 	for fullName := range s.store.ReposByName {
@@ -693,7 +693,7 @@ func (s *Server) handleDeleteOrgInternal(w http.ResponseWriter, r *http.Request)
 			repoNames = append(repoNames, name)
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	for _, name := range repoNames {
 		if _, err := s.store.DeleteRepo(org.Login, name); err != nil {
@@ -710,19 +710,19 @@ func (s *Server) handleListTeamsInternal(w http.ResponseWriter, r *http.Request)
 	if s.requireSiteAdmin(w, r) == nil {
 		return
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	teams := make([]*Team, 0, len(s.store.Teams))
 	for _, team := range s.store.Teams {
 		teams = append(teams, team)
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	sort.Slice(teams, func(i, j int) bool { return teams[i].ID < teams[j].ID })
 
 	out := make([]map[string]interface{}, 0, len(teams))
 	for _, team := range teams {
-		s.store.mu.RLock()
+		s.store.Mu.RLock()
 		org := s.store.Orgs[team.OrgID]
-		s.store.mu.RUnlock()
+		s.store.Mu.RUnlock()
 		if org == nil {
 			continue
 		}
@@ -875,9 +875,9 @@ func (s *Server) handleListAuditLogInternal(w http.ResponseWriter, r *http.Reque
 		toTime, _ = time.Parse(time.RFC3339, v)
 	}
 
-	s.store.Misc.mu.RLock()
-	entries := make([]*AuditLogEvent, 0, len(s.store.Misc.auditLogEvents))
-	for _, e := range s.store.Misc.auditLogEvents {
+	s.store.Misc.Mu.RLock()
+	entries := make([]*AuditLogEvent, 0, len(s.store.Misc.AuditLogEvents))
+	for _, e := range s.store.Misc.AuditLogEvents {
 		if orgFilter != "" && e.Org != orgFilter {
 			continue
 		}
@@ -887,26 +887,26 @@ func (s *Server) handleListAuditLogInternal(w http.ResponseWriter, r *http.Reque
 		if actionFilter != "" && e.Action != actionFilter {
 			continue
 		}
-		if !fromTime.IsZero() && e.createdAt.Before(fromTime) {
+		if !fromTime.IsZero() && e.CreatedAt.Before(fromTime) {
 			continue
 		}
-		if !toTime.IsZero() && e.createdAt.After(toTime) {
+		if !toTime.IsZero() && e.CreatedAt.After(toTime) {
 			continue
 		}
 		entries = append(entries, e)
 	}
-	s.store.Misc.mu.RUnlock()
+	s.store.Misc.Mu.RUnlock()
 
 	writeJSON(w, http.StatusOK, entries)
 }
 
 func (s *Server) recordInternalAuditEvent(actor, action, targetType, targetID, org string, details map[string]interface{}) *AuditLogEvent {
-	s.store.Misc.mu.Lock()
-	defer s.store.Misc.mu.Unlock()
-	s.store.Misc.nextAdminAuditID++
+	s.store.Misc.Mu.Lock()
+	defer s.store.Misc.Mu.Unlock()
+	s.store.Misc.NextAdminAuditID++
 	now := s.currentTime()
 	e := &AuditLogEvent{
-		ID:         s.store.Misc.nextAdminAuditID,
+		ID:         s.store.Misc.NextAdminAuditID,
 		Timestamp:  now.Format(time.RFC3339Nano),
 		Actor:      actor,
 		Action:     action,
@@ -914,14 +914,14 @@ func (s *Server) recordInternalAuditEvent(actor, action, targetType, targetID, o
 		TargetID:   targetID,
 		Org:        org,
 		Details:    details,
-		createdAt:  now,
+		CreatedAt:  now,
 	}
-	s.store.Misc.auditLogEvents = append([]*AuditLogEvent{e}, s.store.Misc.auditLogEvents...)
-	if len(s.store.Misc.auditLogEvents) > maxAuditLogEntries {
-		s.store.Misc.auditLogEvents = s.store.Misc.auditLogEvents[:maxAuditLogEntries]
+	s.store.Misc.AuditLogEvents = append([]*AuditLogEvent{e}, s.store.Misc.AuditLogEvents...)
+	if len(s.store.Misc.AuditLogEvents) > maxAuditLogEntries {
+		s.store.Misc.AuditLogEvents = s.store.Misc.AuditLogEvents[:maxAuditLogEntries]
 	}
-	if s.store.Misc.persist != nil {
-		s.store.Misc.persist.MustPut("admin_audit_log", strconv.FormatInt(e.ID, 10), e)
+	if s.store.Misc.Persist != nil {
+		s.store.Misc.Persist.MustPut("admin_audit_log", strconv.FormatInt(e.ID, 10), e)
 	}
 	return e
 }

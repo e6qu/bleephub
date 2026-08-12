@@ -36,12 +36,12 @@ func TestEnterpriseRemainderJourneys(t *testing.T) {
 	expectStatus(t, srv.delete(t, "/api/v3/orgs/enterprise-remainder/credential-authorizations/"+
 		strconv.Itoa(sshCredentialID), defaultToken), http.StatusNoContent, "revoke SSH authorization")
 
-	srv.store.mu.Lock()
+	srv.store.Mu.Lock()
 	srv.store.EnterpriseSettings.OrganizationCustomProperties["cost_center"] = &CustomProperty{
 		PropertyName: "cost_center", ValueType: "string",
 	}
-	srv.store.persistEnterpriseSettings()
-	srv.store.mu.Unlock()
+	srv.store.PersistEnterpriseSettings()
+	srv.store.Mu.Unlock()
 	propertyPath := "/api/v3/organizations/" + strconv.Itoa(org.ID) + "/org-properties/values"
 	expectStatus(t, srv.patch(t, propertyPath, defaultToken, map[string]interface{}{
 		"properties": []map[string]interface{}{{"property_name": "cost_center", "value": "engineering"}},
@@ -64,14 +64,14 @@ func TestEnterpriseRemainderJourneys(t *testing.T) {
 		t.Fatalf("repository after disabling LFS = %#v", stored)
 	}
 
-	srv.store.mu.Lock()
+	srv.store.Mu.Lock()
 	configID := srv.store.NextCodeSecurityConfigID
 	srv.store.NextCodeSecurityConfigID++
 	srv.store.CodeSecurityConfigs[org.Login] = map[int]*CodeSecurityConfiguration{
 		configID: {ID: configID, OrgLogin: org.Login, Name: "advanced", AdvancedSecurity: "enabled"},
 	}
 	srv.store.CodeSecurityRepoAttachments[org.Login] = map[int]int{repoID: configID}
-	srv.store.mu.Unlock()
+	srv.store.Mu.Unlock()
 	billing := decodeJSON(t, srv.get(t,
 		"/api/v3/orgs/enterprise-remainder/settings/billing/advanced-security", defaultToken))
 	if billing["total_count"] != float64(1) || len(billing["repositories"].([]interface{})) != 1 {

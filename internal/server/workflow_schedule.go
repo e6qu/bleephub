@@ -217,12 +217,12 @@ func (s *Server) fireDueSchedules(now time.Time) {
 		return
 	}
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	repoKeys := make([]string, 0, len(s.store.ReposByName))
 	for key := range s.store.ReposByName {
 		repoKeys = append(repoKeys, key)
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	live := make(map[string]struct{}, len(repoKeys))
 	for _, repoKey := range repoKeys {
@@ -313,9 +313,9 @@ func scheduleInactive(repo *Repo, now time.Time) bool {
 // markScheduleFired records a firing; false means this (key, minute)
 // already fired.
 func (s *Server) markScheduleFired(key string, minute time.Time) (bool, error) {
-	s.store.mu.RLock()
-	persist := s.store.persist
-	s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	persist := s.store.Persist
+	s.store.Mu.RUnlock()
 	if persist != nil {
 		return persist.ClaimScheduleFiring(key, minute)
 	}
@@ -334,9 +334,9 @@ func (s *Server) markScheduleFired(key string, minute time.Time) (bool, error) {
 // releaseScheduleFiring undoes a claim taken by markScheduleFired when the
 // firing it guarded failed, so the occurrence can be retried rather than lost.
 func (s *Server) releaseScheduleFiring(key string, minute time.Time) error {
-	s.store.mu.RLock()
-	persist := s.store.persist
-	s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	persist := s.store.Persist
+	s.store.Mu.RUnlock()
 	if persist != nil {
 		return persist.ReleaseScheduleFiring(key, minute)
 	}

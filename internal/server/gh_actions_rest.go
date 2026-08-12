@@ -117,8 +117,6 @@ func sortRunsNewestFirst(runs []*Workflow) {
 	sort.Slice(runs, func(i, j int) bool { return runs[i].RunID > runs[j].RunID })
 }
 
-const maxJSONSafeInteger = uint64(1<<53 - 1)
-
 // stableJobID maps a WorkflowJob's UUID to a stable positive GitHub-shape
 // `id`. IDs stay within JavaScript's exact integer range because GitHub API
 // consumers commonly parse and return them through JSON number values.
@@ -126,14 +124,6 @@ func stableJobID(uuid string) int64 {
 	h := fnv.New64a()
 	_, _ = h.Write([]byte(uuid))
 	return jsonSafePositiveID(h.Sum64())
-}
-
-func jsonSafePositiveID(hash uint64) int64 {
-	id := hash & maxJSONSafeInteger
-	if id == 0 {
-		id = 1
-	}
-	return int64(id)
 }
 
 // runStatus maps a Workflow → GitHub's run statuses (`queued`,
@@ -329,8 +319,8 @@ func (s *Server) workflowJobJSON(wf *Workflow, wfJob *WorkflowJob, baseURL, repo
 	// renderer runs both on request goroutines and on the async webhook-drain
 	// goroutine. Hold the read lock across the whole render so those reads are
 	// synchronized with the engine's writes.
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	return s.workflowJobJSONLocked(wf, wfJob, baseURL, repoName)
 }
 
@@ -600,9 +590,9 @@ func agentStatusForRunner(internal string) string {
 // Returns nil if not present. Bleephub keys workflows by UUID
 // internally; the GitHub-facing run_id is the int RunID.
 func (s *Server) findWorkflowByRunID(runID int) *Workflow {
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
-	if wf := s.store.workflowsByRunID[runID]; wf != nil {
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
+	if wf := s.store.WorkflowsByRunID[runID]; wf != nil {
 		return wf
 	}
 	// Fallback scan for directly-seeded stores (tests) only; every engine
@@ -631,8 +621,8 @@ func workflowBelongsToRepo(wf *Workflow, repo string) bool {
 // back to (workflow, job). Returns (nil, nil) if no job in any
 // workflow hashes to this ID.
 func (s *Server) findJobByStableID(jobID int64) (*Workflow, *WorkflowJob) {
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	for _, wf := range s.store.Workflows {
 		for _, j := range wf.Jobs {
 			if stableJobID(j.JobID) == jobID {
@@ -664,7 +654,7 @@ func (s *Server) handleListWorkflowRuns(w http.ResponseWriter, r *http.Request) 
 	branchFilter := r.URL.Query().Get("branch")
 	eventFilter := r.URL.Query().Get("event")
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	matching := []*Workflow{}
 	for _, wf := range s.store.Workflows {
 		if wf.RepoFullName != "" && wf.RepoFullName != repo {
@@ -681,7 +671,7 @@ func (s *Server) handleListWorkflowRuns(w http.ResponseWriter, r *http.Request) 
 		}
 		matching = append(matching, wf)
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	sortRunsNewestFirst(matching)
 	page := paginateAndLink(w, r, matching)
@@ -734,7 +724,7 @@ func (s *Server) handleListWorkflowRunJobs(w http.ResponseWriter, r *http.Reques
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	allJobs := make([]*WorkflowJob, 0, len(wf.Jobs))
 	for _, j := range wf.Jobs {
 		// Synthetic reusable-workflow gate/collector nodes are engine
@@ -744,7 +734,7 @@ func (s *Server) handleListWorkflowRunJobs(w http.ResponseWriter, r *http.Reques
 		}
 		allJobs = append(allJobs, j)
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	page := paginateAndLink(w, r, allJobs)
 	base := s.baseURL(r)
@@ -823,9 +813,9 @@ func (s *Server) handleGetWorkflowJobSummary(w http.ResponseWriter, r *http.Requ
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	summary := job.Summary
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	writeJSON(w, http.StatusOK, map[string]string{"summary": summary})
 }
 
@@ -839,10 +829,10 @@ type jobLogRef struct {
 // Order. Live console capture is not a durable log artifact and is never
 // used as a download substitute.
 func (s *Server) jobLogContent(ctx context.Context, jobUUID string) ([]byte, bool, error) {
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	refs := s.jobLogRefsLocked(jobUUID)
 	memoryLogs := s.memoryLogFilesForDownloadLocked(refs)
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	var buf bytes.Buffer
 	for _, ref := range refs {
@@ -882,7 +872,7 @@ func (s *Server) jobLogRefsLocked(jobUUID string) []jobLogRef {
 // when no object byte store is configured. Production object-store mode
 // reads logs back from the byte store, proving the durable path works.
 func (s *Server) memoryLogFilesForDownloadLocked(refs []jobLogRef) map[int][]byte {
-	if s.artifactStore.byteStore != nil {
+	if s.artifactStore.ByteStore != nil {
 		return nil
 	}
 	out := make(map[int][]byte, len(refs))
@@ -895,8 +885,8 @@ func (s *Server) memoryLogFilesForDownloadLocked(refs []jobLogRef) map[int][]byt
 }
 
 func (s *Server) logFileContent(ctx context.Context, logID int, memoryContent []byte) ([]byte, bool, error) {
-	if s.artifactStore.byteStore != nil {
-		content, err := s.artifactStore.byteStore.Get(ctx, logDataKey(logID))
+	if s.artifactStore.ByteStore != nil {
+		content, err := s.artifactStore.ByteStore.Get(ctx, logDataKey(logID))
 		if err != nil {
 			return nil, false, err
 		}
@@ -1011,13 +1001,13 @@ func (s *Server) cachedWorkflowFileForRun(repo string, wf *Workflow) (*WorkflowF
 // attempt's results (rerun-failed-jobs).
 func (s *Server) rerunWorkflowAsNewAttempt(r *http.Request, old *Workflow, file *WorkflowFile, def *WorkflowDef, serverURL string, carryOver map[string]*WorkflowJob) error {
 	// Archive + remove the old attempt first; restore on submit failure.
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.WorkflowAttempts[old.RunID] = append(s.store.WorkflowAttempts[old.RunID], old)
 	delete(s.store.Workflows, old.ID)
-	s.store.unindexWorkflowLocked(old)
-	s.store.persistWorkflowAttemptsRecord(old.RunID)
-	s.store.deleteWorkflowRecord(old.ID)
-	s.store.mu.Unlock()
+	s.store.UnindexWorkflowLocked(old)
+	s.store.PersistWorkflowAttemptsRecord(old.RunID)
+	s.store.DeleteWorkflowRecord(old.ID)
+	s.store.Mu.Unlock()
 	s.stopTimeoutWatcher(old)
 
 	meta := WorkflowEventMeta{
@@ -1039,15 +1029,15 @@ func (s *Server) rerunWorkflowAsNewAttempt(r *http.Request, old *Workflow, file 
 	}
 	if _, err := s.submitWorkflow(r.Context(), serverURL, def, "", &meta); err != nil {
 		// Put the old attempt back so the run doesn't vanish.
-		s.store.mu.Lock()
+		s.store.Mu.Lock()
 		attempts := s.store.WorkflowAttempts[old.RunID]
 		if n := len(attempts); n > 0 && attempts[n-1] == old {
 			s.store.WorkflowAttempts[old.RunID] = attempts[:n-1]
 		}
 		s.store.Workflows[old.ID] = old
-		s.store.persistWorkflowAttemptsRecord(old.RunID)
-		s.store.persistWorkflowRecord(old)
-		s.store.mu.Unlock()
+		s.store.PersistWorkflowAttemptsRecord(old.RunID)
+		s.store.PersistWorkflowRecord(old)
+		s.store.Mu.Unlock()
 		return err
 	}
 	return nil
@@ -1060,8 +1050,8 @@ func (s *Server) findRunAttempt(runID, attempt int, repo string) *Workflow {
 	if current != nil && current.AttemptNumber() == attempt {
 		return current
 	}
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	for _, archived := range s.store.WorkflowAttempts[runID] {
 		if archived.AttemptNumber() == attempt && workflowBelongsToRepo(archived, repo) {
 			return archived
@@ -1115,7 +1105,7 @@ func (s *Server) handleListRunAttemptJobs(w http.ResponseWriter, r *http.Request
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	allJobs := make([]*WorkflowJob, 0, len(wf.Jobs))
 	for _, j := range wf.Jobs {
 		if j.Hidden {
@@ -1123,7 +1113,7 @@ func (s *Server) handleListRunAttemptJobs(w http.ResponseWriter, r *http.Request
 		}
 		allJobs = append(allJobs, j)
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	page := paginateAndLink(w, r, allJobs)
 	base := s.baseURL(r)
 	repo := repoFullName(r)
@@ -1146,7 +1136,7 @@ func (s *Server) handleDeleteWorkflowRun(w http.ResponseWriter, r *http.Request)
 		writeGHError(w, http.StatusBadRequest, "invalid run_id")
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	var foundKey string
 	for k, wf := range s.store.Workflows {
 		if wf.RunID == runID && workflowBelongsToRepo(wf, repoFullName(r)) {
@@ -1155,23 +1145,23 @@ func (s *Server) handleDeleteWorkflowRun(w http.ResponseWriter, r *http.Request)
 		}
 	}
 	if foundKey == "" {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 	deleted := s.store.Workflows[foundKey]
 	delete(s.store.Workflows, foundKey)
-	s.store.unindexWorkflowLocked(deleted)
+	s.store.UnindexWorkflowLocked(deleted)
 	// Eagerly tear down the run's replica-local job runtime state (job stubs,
 	// plan scopes, log masks/lines) rather than waiting for the janitor.
-	planIDs := s.store.dropWorkflowJobStateLocked(deleted)
+	planIDs := s.store.DropWorkflowJobStateLocked(deleted)
 	for _, attempt := range s.store.WorkflowAttempts[runID] {
-		planIDs = append(planIDs, s.store.dropWorkflowJobStateLocked(attempt)...)
+		planIDs = append(planIDs, s.store.DropWorkflowJobStateLocked(attempt)...)
 	}
-	s.store.deleteWorkflowRecord(foundKey)
+	s.store.DeleteWorkflowRecord(foundKey)
 	delete(s.store.WorkflowAttempts, runID)
-	s.store.persistWorkflowAttemptsRecord(runID)
-	s.store.mu.Unlock()
+	s.store.PersistWorkflowAttemptsRecord(runID)
+	s.store.Mu.Unlock()
 	s.releaseJobLogFiles(planIDs)
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -1185,7 +1175,7 @@ func (s *Server) handleListRunners(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	all := make([]*Agent, 0, len(s.store.Agents))
 	for _, a := range s.store.Agents {
 		if runnerVisibleAt(a.Scope, target) {
@@ -1193,7 +1183,7 @@ func (s *Server) handleListRunners(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	busy := s.busyAgentIDsLocked()
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	sort.Slice(all, func(i, j int) bool { return all[i].ID < all[j].ID })
 
 	page := paginateAndLink(w, r, all)
@@ -1218,10 +1208,10 @@ func (s *Server) handleGetRunner(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	a := s.store.Agents[id]
 	busy := s.busyAgentIDsLocked()
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if a == nil || !runnerVisibleAt(a.Scope, target) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -1242,15 +1232,15 @@ func (s *Server) handleDeleteRunner(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusBadRequest, "invalid runner_id")
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	agent := s.store.Agents[runnerID]
 	if agent == nil || !runnerVisibleAt(agent.Scope, target) {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 	delete(s.store.Agents, runnerID)
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
 

@@ -428,8 +428,8 @@ func TestGitHubClassroomPersistenceReloadPreservesTransitionState(t *testing.T) 
 	if err := st2.SetPersistence(p2); err != nil {
 		t.Fatalf("reload persistence: %v", err)
 	}
-	gotClassroom := st2.getClassroom(classroom.ID)
-	gotAssignment := st2.getClassroomAssignment(assignment.ID)
+	gotClassroom := st2.GetClassroom(classroom.ID)
+	gotAssignment := st2.GetClassroomAssignment(assignment.ID)
 	gotAccepted := st2.ClassroomAcceptedAssignments[accepted.ID]
 	if gotClassroom == nil || len(gotClassroom.Roster) != 1 || gotClassroom.Roster[0].RosterIdentifier != "student-42" {
 		t.Fatalf("reloaded classroom = %+v", gotClassroom)

@@ -50,7 +50,7 @@ type credentialAuthorizationRecord struct {
 }
 
 func (s *Server) orgCredentialAuthorizationRecords(org *Org) []credentialAuthorizationRecord {
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	memberIDs := map[int]bool{}
 	users := map[int]*User{}
 	for key, membership := range s.store.Memberships {
@@ -77,10 +77,10 @@ func (s *Server) orgCredentialAuthorizationRecords(org *Org) []credentialAuthori
 			users[userID] = &copyUser
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
-	s.store.Misc.mu.RLock()
-	for _, key := range s.store.Misc.userKeys {
+	s.store.Misc.Mu.RLock()
+	for _, key := range s.store.Misc.UserKeys {
 		if key == nil || !memberIDs[key.UserID] {
 			continue
 		}
@@ -91,7 +91,7 @@ func (s *Server) orgCredentialAuthorizationRecords(org *Org) []credentialAuthori
 			})
 		}
 	}
-	s.store.Misc.mu.RUnlock()
+	s.store.Misc.Mu.RUnlock()
 	sort.Slice(records, func(i, j int) bool { return records[i].ID < records[j].ID })
 	return records
 }
@@ -177,23 +177,23 @@ func (s *Server) handleDeleteOrgCredentialAuthorization(w http.ResponseWriter, r
 		return
 	}
 	if selected.Kind == "ssh" {
-		s.store.Misc.mu.Lock()
-		delete(s.store.Misc.userKeys, selected.UserKey.ID)
-		keys := s.store.Misc.keysByUser[selected.UserKey.UserID]
+		s.store.Misc.Mu.Lock()
+		delete(s.store.Misc.UserKeys, selected.UserKey.ID)
+		keys := s.store.Misc.KeysByUser[selected.UserKey.UserID]
 		for i, key := range keys {
 			if key.ID == selected.UserKey.ID {
-				s.store.Misc.keysByUser[selected.UserKey.UserID] = append(keys[:i], keys[i+1:]...)
+				s.store.Misc.KeysByUser[selected.UserKey.UserID] = append(keys[:i], keys[i+1:]...)
 				break
 			}
 		}
-		if s.store.Misc.persist != nil {
-			s.store.Misc.persist.MustDelete("user_keys", strconv.Itoa(selected.UserKey.ID))
+		if s.store.Misc.Persist != nil {
+			s.store.Misc.Persist.MustDelete("user_keys", strconv.Itoa(selected.UserKey.ID))
 		}
-		s.store.Misc.mu.Unlock()
+		s.store.Misc.Mu.Unlock()
 	} else {
-		s.store.mu.Lock()
-		s.store.deleteTokenMapKeyLocked(selected.MapKey)
-		s.store.mu.Unlock()
+		s.store.Mu.Lock()
+		s.store.DeleteTokenMapKeyLocked(selected.MapKey)
+		s.store.Mu.Unlock()
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -217,7 +217,7 @@ func (s *Server) handleGetOrganizationPropertyValuesByID(w http.ResponseWriter, 
 	if org == nil {
 		return
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	values := s.store.EnterpriseSettings.OrganizationPropertyValues[org.Login]
 	names := make([]string, 0, len(values))
 	for name := range values {
@@ -230,7 +230,7 @@ func (s *Server) handleGetOrganizationPropertyValuesByID(w http.ResponseWriter, 
 			"property_name": name, "value": cloneCustomPropertyValue(values[name]),
 		})
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	writeJSON(w, http.StatusOK, result)
 }
 
@@ -249,11 +249,11 @@ func (s *Server) handleSetOrganizationPropertyValuesByID(w http.ResponseWriter, 
 		writeGHValidationError(w, "CustomPropertyValues", "properties", "missing_field")
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	for _, value := range *req.Properties {
 		definition := s.store.EnterpriseSettings.OrganizationCustomProperties[value.PropertyName]
 		if definition == nil || validateCustomPropertyValue(definition, value.Value) != nil {
-			s.store.mu.Unlock()
+			s.store.Mu.Unlock()
 			writeGHValidationError(w, "CustomPropertyValues", "properties", "invalid")
 			return
 		}
@@ -270,8 +270,8 @@ func (s *Server) handleSetOrganizationPropertyValuesByID(w http.ResponseWriter, 
 			values[value.PropertyName] = cloneCustomPropertyValue(value.Value)
 		}
 	}
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -282,7 +282,7 @@ func (s *Server) handleOrgAdvancedSecurityBilling(w http.ResponseWriter, r *http
 		return
 	}
 	repos := s.store.ListReposForOrg(org.Login, RepoListOptions{})
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	repositories := make([]map[string]interface{}, 0)
 	uniqueCommitters := map[int]bool{}
 	maximum := 0
@@ -307,7 +307,7 @@ func (s *Server) handleOrgAdvancedSecurityBilling(w http.ResponseWriter, r *http
 			"advanced_security_committers_breakdown": breakdown,
 		})
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"total_advanced_security_committers": len(uniqueCommitters),
 		"total_count":                        len(repositories), "maximum_advanced_security_committers": maximum,

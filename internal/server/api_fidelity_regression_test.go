@@ -143,11 +143,11 @@ func TestPullListValidatesAndAppliesDocumentedSortOptions(t *testing.T) {
 	if older == nil || newer == nil {
 		t.Fatal("create pull requests")
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	older.CreatedAt = older.CreatedAt.Add(-2 * 24 * time.Hour)
 	older.UpdatedAt = older.UpdatedAt.Add(2 * time.Hour)
 	newer.UpdatedAt = newer.UpdatedAt.Add(-2 * time.Hour)
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	assertOrder := func(query string, wantFirst int) {
 		t.Helper()

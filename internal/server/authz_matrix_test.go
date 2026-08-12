@@ -70,7 +70,7 @@ func TestPrivateRepoMutationsRejectAnUnrelatedUser(t *testing.T) {
 	store := srv.store
 
 	now := fixedTestTime.UTC()
-	store.mu.Lock()
+	store.Mu.Lock()
 	owner := &User{ID: store.NextUser, Login: ownerLogin, Type: "User", CreatedAt: now, UpdatedAt: now}
 	store.Users[owner.ID] = owner
 	store.UsersByLogin[owner.Login] = owner
@@ -79,7 +79,7 @@ func TestPrivateRepoMutationsRejectAnUnrelatedUser(t *testing.T) {
 	store.Users[stranger.ID] = stranger
 	store.UsersByLogin[stranger.Login] = stranger
 	store.NextUser++
-	store.mu.Unlock()
+	store.Mu.Unlock()
 
 	if store.CreateRepo(owner, repoName, "private fixture", true) == nil {
 		t.Fatalf("could not create the private fixture repository")
@@ -202,12 +202,12 @@ func TestPrivateRepoReadsRejectAnUnrelatedUser(t *testing.T) {
 	store := srv.store
 
 	now := fixedTestTime.UTC()
-	store.mu.Lock()
+	store.Mu.Lock()
 	owner := &User{ID: store.NextUser, Login: ownerLogin, Type: "User", CreatedAt: now, UpdatedAt: now}
 	store.Users[owner.ID] = owner
 	store.UsersByLogin[owner.Login] = owner
 	store.NextUser++
-	store.mu.Unlock()
+	store.Mu.Unlock()
 
 	if store.CreateRepo(owner, repoName, "private fixture", true) == nil {
 		t.Fatalf("could not create the private fixture repository")
@@ -309,7 +309,7 @@ func TestGraphQLDeleteRepositoryRejectsANonAdmin(t *testing.T) {
 	store := srv.store
 
 	now := fixedTestTime.UTC()
-	store.mu.Lock()
+	store.Mu.Lock()
 	owner := &User{ID: store.NextUser, Login: "gqldel-owner", Type: "User", CreatedAt: now, UpdatedAt: now}
 	store.Users[owner.ID] = owner
 	store.UsersByLogin[owner.Login] = owner
@@ -318,7 +318,7 @@ func TestGraphQLDeleteRepositoryRejectsANonAdmin(t *testing.T) {
 	store.Users[stranger.ID] = stranger
 	store.UsersByLogin[stranger.Login] = stranger
 	store.NextUser++
-	store.mu.Unlock()
+	store.Mu.Unlock()
 
 	repo := store.CreateRepo(owner, "gqldel-target", "", false)
 	if repo == nil {
@@ -364,7 +364,7 @@ func TestInstallationTokenCannotReachAnotherAccountsRepo(t *testing.T) {
 	store := srv.store
 
 	now := fixedTestTime.UTC()
-	store.mu.Lock()
+	store.Mu.Lock()
 	attacker := &User{ID: store.NextUser, Login: "instscope-attacker", Type: "User", CreatedAt: now, UpdatedAt: now}
 	store.Users[attacker.ID] = attacker
 	store.UsersByLogin[attacker.Login] = attacker
@@ -373,7 +373,7 @@ func TestInstallationTokenCannotReachAnotherAccountsRepo(t *testing.T) {
 	store.Users[victim.ID] = victim
 	store.UsersByLogin[victim.Login] = victim
 	store.NextUser++
-	store.mu.Unlock()
+	store.Mu.Unlock()
 
 	victimRepo := store.CreateRepo(victim, "instscope-private", "", true)
 	attackerRepo := store.CreateRepo(attacker, "instscope-own", "", true)
@@ -441,7 +441,7 @@ func TestOrgMutationsRejectAnUnrelatedUser(t *testing.T) {
 	store := srv.store
 
 	now := fixedTestTime.UTC()
-	store.mu.Lock()
+	store.Mu.Lock()
 	stranger := &User{ID: store.NextUser, Login: "orgsweep-stranger", Type: "User", CreatedAt: now, UpdatedAt: now}
 	store.Users[stranger.ID] = stranger
 	store.UsersByLogin[stranger.Login] = stranger
@@ -450,7 +450,7 @@ func TestOrgMutationsRejectAnUnrelatedUser(t *testing.T) {
 	store.Users[victim.ID] = victim
 	store.UsersByLogin[victim.Login] = victim
 	store.NextUser++
-	store.mu.Unlock()
+	store.Mu.Unlock()
 
 	org := store.CreateOrg(victim, "orgsweep-org", "Orgsweep", "")
 	if org == nil {
@@ -538,7 +538,7 @@ func TestPublicRepositoryBypassIsKeyedOnTheScope(t *testing.T) {
 	store := srv.store
 
 	now := fixedTestTime.UTC()
-	store.mu.Lock()
+	store.Mu.Lock()
 	owner := &User{ID: store.NextUser, Login: "scopebypass-owner", Type: "User", CreatedAt: now, UpdatedAt: now}
 	store.Users[owner.ID] = owner
 	store.UsersByLogin[owner.Login] = owner
@@ -547,7 +547,7 @@ func TestPublicRepositoryBypassIsKeyedOnTheScope(t *testing.T) {
 	store.Users[outsider.ID] = outsider
 	store.UsersByLogin[outsider.Login] = outsider
 	store.NextUser++
-	store.mu.Unlock()
+	store.Mu.Unlock()
 
 	repo := store.CreateRepo(owner, "scopebypass-public", "", false)
 	if repo == nil {
@@ -555,11 +555,11 @@ func TestPublicRepositoryBypassIsKeyedOnTheScope(t *testing.T) {
 	}
 	// A fine-grained PAT for a different owner, scoped to nothing at all.
 	tok := store.CreateToken(outsider.ID, "")
-	store.mu.Lock()
+	store.Mu.Lock()
 	tok.FineGrained = true
 	tok.ResourceOwner = outsider.Login
 	tok.RepositorySelection = "subset"
-	store.mu.Unlock()
+	store.Mu.Unlock()
 
 	handler := srv.requestHandler()
 	base := "/api/v3/repos/" + owner.Login + "/" + repo.Name

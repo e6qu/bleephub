@@ -6,25 +6,28 @@ import (
 	"time"
 )
 
-func (s *ProjectV2Store) replaceClockNow(clockNow func() time.Time) {
+// replaceProjectV2ClockNow installs a deterministic clock on a ProjectV2Store.
+// (Plain functions, not methods: Store types moved to internal/store and Go
+// forbids defining methods on non-local types.)
+func replaceProjectV2ClockNow(s *ProjectV2Store, clockNow func() time.Time) {
 	if s == nil {
 		return
 	}
-	s.clockMu.Lock()
-	s.clockNow = clockNow
-	s.clockMu.Unlock()
+	s.ClockMu.Lock()
+	s.ClockNow = clockNow
+	s.ClockMu.Unlock()
 }
 
-func (st *Store) replaceClockNow(clockNow func() time.Time) func() time.Time {
+func replaceStoreClockNow(st *Store, clockNow func() time.Time) func() time.Time {
 	if st == nil {
 		return nil
 	}
-	st.clockMu.Lock()
-	previous := st.clockNow
-	st.clockNow = clockNow
-	st.clockMu.Unlock()
+	st.ClockMu.Lock()
+	previous := st.ClockNow
+	st.ClockNow = clockNow
+	st.ClockMu.Unlock()
 	if st.ProjectsV2 != nil {
-		st.ProjectsV2.replaceClockNow(clockNow)
+		replaceProjectV2ClockNow(st.ProjectsV2, clockNow)
 	}
 	return previous
 }
@@ -42,7 +45,7 @@ func (s *Server) replaceClockNow(clockNow func() time.Time) func() time.Time {
 	s.clockNow = clockNow
 	s.clockMu.Unlock()
 	if s.store != nil {
-		s.store.replaceClockNow(clockNow)
+		replaceStoreClockNow(s.store, clockNow)
 	}
 	return previous
 }

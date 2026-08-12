@@ -282,8 +282,8 @@ func (s *Server) initRepoFiles(ctx context.Context, repo *Repo, branch, descript
 			if key, ok := normalizeLicenseKey(licenseTemplate); ok {
 				tmpl := licenseTemplates[key]
 				r.LicenseKey = key
-				r.LicenseName = tmpl.name
-				r.LicenseSPDX = tmpl.spdxID
+				r.LicenseName = tmpl.Name
+				r.LicenseSPDX = tmpl.SpdxID
 			}
 		}
 	})
@@ -302,14 +302,6 @@ func userDisplayName(repo *Repo) string {
 		return parts[0]
 	}
 	return "bleephub"
-}
-
-func splitRepoFullName(fullName string) (owner, name string, ok bool) {
-	parts := strings.SplitN(fullName, "/", 2)
-	if len(parts) != 2 {
-		return "", "", false
-	}
-	return parts[0], parts[1], true
 }
 
 func renderReadme(repoName, description string) string {

@@ -165,9 +165,9 @@ func TestEnterpriseActionsPermissionsRoundTrip(t *testing.T) {
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("set OIDC issuer: got %d %q", rec.Code, rec.Body.String())
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	includeSlug := s.store.EnterpriseSettings.OIDCIncludeEnterpriseSlug
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if !includeSlug {
 		t.Fatal("OIDC enterprise slug policy was not persisted in memory")
 	}
@@ -220,17 +220,17 @@ func TestActionsEnablementIsMonotonicAcrossPolicyScopes(t *testing.T) {
 	if !s.actionsEnabledForRepo(repoA.FullName) || !s.actionsEnabledForRepo(repoB.FullName) {
 		t.Fatal("default enterprise policy should enable both repositories")
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.EnterpriseSettings.ActionsEnabledOrganizations = "none"
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	if s.actionsEnabledForRepo(repoA.FullName) {
 		t.Fatal("repository was re-enabled beneath enterprise policy none")
 	}
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.EnterpriseSettings.ActionsEnabledOrganizations = "selected"
 	s.store.EnterpriseSettings.ActionsSelectedOrganizationIDs = []int{orgA.ID}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	if !s.actionsEnabledForRepo(repoA.FullName) || s.actionsEnabledForRepo(repoB.FullName) {
 		t.Fatal("enterprise selected-organizations policy was not enforced")
 	}
@@ -271,9 +271,9 @@ func TestRepositoryRunnerRegistrationHonorsEnterpriseAndOrganizationPolicy(t *te
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("default repository runner registration: got %d %q", rec.Code, rec.Body.String())
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.EnterpriseSettings.ActionsDisableSelfHostedRunners = true
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	rec = enterpriseActionsRequest(t, s, http.MethodPost, repoTokenPath, nil)
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("enterprise-disabled repository runner: got %d %q, want 403", rec.Code, rec.Body.String())
@@ -283,9 +283,9 @@ func TestRepositoryRunnerRegistrationHonorsEnterpriseAndOrganizationPolicy(t *te
 		t.Fatalf("organization runner should remain allowed: got %d %q", rec.Code, rec.Body.String())
 	}
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.EnterpriseSettings.ActionsDisableSelfHostedRunners = false
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	orgPolicy := defaultOrgActionsPermissions()
 	orgPolicy.SelfHostedRunnersEnabledRepositories = "none"
 	s.store.SetOrgActionsPermissions(org.Login, orgPolicy)

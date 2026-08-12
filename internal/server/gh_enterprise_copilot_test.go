@@ -44,9 +44,9 @@ func TestEnterpriseCopilotCodingAgentPolicy(t *testing.T) {
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("add orgs: got %d, want 204", resp.StatusCode)
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	enabled := append([]string(nil), s.store.EnterpriseSettings.CopilotCodingAgentOrgs...)
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if len(enabled) != 1 || enabled[0] != "ent-copilot-org" {
 		t.Fatalf("enabled orgs after add = %v, want [ent-copilot-org]", enabled)
 	}
@@ -57,9 +57,9 @@ func TestEnterpriseCopilotCodingAgentPolicy(t *testing.T) {
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("remove orgs: got %d, want 204", resp.StatusCode)
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	remaining := len(s.store.EnterpriseSettings.CopilotCodingAgentOrgs)
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if remaining != 0 {
 		t.Fatalf("enabled orgs after remove = %d, want 0", remaining)
 	}

@@ -20,15 +20,15 @@ func TestListDeploymentsDeterministicOrder(t *testing.T) {
 
 	// Simulate a reload: byRepo comes back in arbitrary order. Apply a fixed
 	// non-sorted permutation so the test does not depend on map iteration.
-	ds.mu.Lock()
-	src := ds.byRepo[repoID]
+	ds.Mu.Lock()
+	src := ds.ByRepo[repoID]
 	perm := []int{2, 5, 0, 3, 1, 4}
 	scrambled := make([]*Deployment, len(src))
 	for i, p := range perm {
 		scrambled[i] = src[p]
 	}
-	ds.byRepo[repoID] = scrambled
-	ds.mu.Unlock()
+	ds.ByRepo[repoID] = scrambled
+	ds.Mu.Unlock()
 
 	got := ds.ListDeployments(repoID)
 	if len(got) != len(ids) {

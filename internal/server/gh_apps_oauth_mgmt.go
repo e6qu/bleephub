@@ -493,8 +493,8 @@ func tokenMatchesClient(tok *UserToServerToken, clientID string, st *Store) bool
 }
 
 func (s *Server) userByID(id int) *User {
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	return s.store.Users[id]
 }
 

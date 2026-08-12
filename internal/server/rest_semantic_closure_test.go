@@ -56,9 +56,9 @@ func TestMemberRepositoryCreationHonorsOrganizationPolicy(t *testing.T) {
 	s.store.SetMembership(org.Login, member.ID, OrgRoleMember, MembershipStateActive)
 	memberToken := s.store.CreateToken(member.ID, "repo")
 	disabled := false
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	org.MembersCanCreateRepositories = &disabled
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	denied := teamCredentialRequest(t, s, http.MethodPost,
 		"/api/v3/orgs/"+org.Login+"/repos", memberToken.Value, `{"name":"denied"}`)
@@ -301,12 +301,12 @@ func TestCustomPropertyValuesDoNotAliasAcrossRepositories(t *testing.T) {
 	s.store.SetRepoCustomPropertyValues("acme/one", payload)
 	s.store.SetRepoCustomPropertyValues("acme/two", payload)
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	first := s.store.RepoCustomPropertyValues["acme/one"]["targets"].([]interface{})
 	second := s.store.RepoCustomPropertyValues["acme/two"]["targets"].([]interface{})
 	first[0] = "mutated"
 	gotSecond := second[0]
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	if gotSecond != "linux" {
 		t.Fatalf("second repository value changed through first repository alias: %v", gotSecond)
 	}

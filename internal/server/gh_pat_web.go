@@ -1,7 +1,6 @@
 package bleephub
 
 import (
-	"crypto/rand"
 	"net/http"
 	"sort"
 	"strconv"
@@ -33,8 +32,8 @@ func (s *Server) fineGrainedPATStatus(token *Token) string {
 	if s.store.GetOrg(token.ResourceOwner) == nil {
 		return "active"
 	}
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	for _, grant := range s.store.OrgPATGrants[token.ResourceOwner] {
 		if grant.TokenID == token.FineGrainedID {
 			return "active"
@@ -67,7 +66,7 @@ func (s *Server) handleListPersonalAccessTokensWeb(w http.ResponseWriter, r *htt
 		return
 	}
 	tokens := make([]*Token, 0)
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	for _, token := range s.store.Tokens {
 		if token.UserID == user.ID && token.FineGrained {
 			copy := *token
@@ -75,7 +74,7 @@ func (s *Server) handleListPersonalAccessTokensWeb(w http.ResponseWriter, r *htt
 			tokens = append(tokens, &copy)
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	sort.Slice(tokens, func(i, j int) bool { return tokens[i].FineGrainedID < tokens[j].FineGrainedID })
 	rows := make([]map[string]interface{}, 0, len(tokens))
 	for _, token := range tokens {
@@ -89,12 +88,12 @@ func (s *Server) handleListPersonalAccessTokensWeb(w http.ResponseWriter, r *htt
 		owners = append(owners, map[string]interface{}{"login": org.Login, "type": "Organization"})
 		repositories[org.Login] = s.personalAccessTokenRepositories(org.Login)
 		if s.viewerCanAdminOrg(r.Context(), org.Login) {
-			s.store.mu.RLock()
+			s.store.Mu.RLock()
 			requests := make([]*OrgPATGrantRequest, 0, len(s.store.OrgPATGrantRequests[org.Login]))
 			for _, request := range s.store.OrgPATGrantRequests[org.Login] {
 				requests = append(requests, request)
 			}
-			s.store.mu.RUnlock()
+			s.store.Mu.RUnlock()
 			sort.Slice(requests, func(i, j int) bool { return requests[i].ID < requests[j].ID })
 			for _, request := range requests {
 				row := s.patGrantRequestJSON(request, s.baseURL(r))
@@ -114,29 +113,19 @@ func (s *Server) personalAccessTokenRepositories(owner string) []map[string]inte
 		private bool
 	}
 	typed := []repositoryRow{}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	for _, repo := range s.store.ReposByName {
 		if strings.HasPrefix(repo.FullName, owner+"/") {
 			typed = append(typed, repositoryRow{id: repo.ID, name: repo.Name, private: repo.Private})
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	sort.Slice(typed, func(i, j int) bool { return typed[i].name < typed[j].name })
 	rows := make([]map[string]interface{}, 0, len(typed))
 	for _, repo := range typed {
 		rows = append(rows, map[string]interface{}{"id": repo.id, "name": repo.name, "private": repo.private})
 	}
 	return rows
-}
-
-type createPersonalAccessTokenWebRequest struct {
-	Name                string            `json:"name"`
-	ResourceOwner       string            `json:"resource_owner"`
-	RepositorySelection string            `json:"repository_selection"`
-	RepositoryIDs       []int             `json:"repository_ids"`
-	Permissions         OrgPATPermissions `json:"permissions"`
-	ExpiresAt           *time.Time        `json:"expires_at"`
-	Reason              *string           `json:"reason"`
 }
 
 func (s *Server) handleCreatePersonalAccessTokenWeb(w http.ResponseWriter, r *http.Request) {
@@ -223,32 +212,6 @@ func validPATPermissions(perms OrgPATPermissions) bool {
 	return true
 }
 
-func (st *Store) CreateUserFineGrainedPAT(userID int, body createPersonalAccessTokenWebRequest) (*Token, error) {
-	value, err := newFineGrainedPATTokenFromReader(rand.Reader)
-	if err != nil {
-		return nil, err
-	}
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	token := &Token{Value: value, UserID: userID, CreatedAt: time.Now().UTC(), FineGrained: true, FineGrainedID: st.NextPATTokenID, Name: body.Name, ResourceOwner: body.ResourceOwner, RepositorySelection: body.RepositorySelection, RepositoryIDs: append([]int(nil), body.RepositoryIDs...), Permissions: body.Permissions, ExpiresAt: body.ExpiresAt}
-	st.NextPATTokenID++
-	st.Tokens[st.tokenMapKey(value)] = token
-	st.persistTokenLocked(token)
-	return token, nil
-}
-
-func (st *Store) CountFineGrainedPATs(userID int) int {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-	count := 0
-	for _, token := range st.Tokens {
-		if token.UserID == userID && token.FineGrained {
-			count++
-		}
-	}
-	return count
-}
-
 func (s *Server) handleDeletePersonalAccessTokenWeb(w http.ResponseWriter, r *http.Request) {
 	user, _ := s.personalAccessTokenWebUser(w, r)
 	if user == nil {
@@ -260,39 +223,6 @@ func (s *Server) handleDeletePersonalAccessTokenWeb(w http.ResponseWriter, r *ht
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func (st *Store) DeleteFineGrainedPAT(userID, tokenID int) bool {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	value := ""
-	for candidate, token := range st.Tokens {
-		if token.UserID == userID && token.FineGrained && token.FineGrainedID == tokenID {
-			value = candidate
-			break
-		}
-	}
-	if value == "" {
-		return false
-	}
-	st.deleteTokenMapKeyLocked(value)
-	for org, requests := range st.OrgPATGrantRequests {
-		for id, request := range requests {
-			if request.TokenID == tokenID {
-				delete(requests, id)
-				st.persistOrgPATGrantRequestsLocked(org)
-			}
-		}
-	}
-	for org, grants := range st.OrgPATGrants {
-		for id, grant := range grants {
-			if grant.TokenID == tokenID {
-				delete(grants, id)
-				st.persistOrgPATGrantsLocked(org)
-			}
-		}
-	}
-	return true
 }
 
 func (s *Server) handleReviewPersonalAccessTokenWeb(w http.ResponseWriter, r *http.Request) {

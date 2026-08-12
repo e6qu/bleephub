@@ -219,9 +219,9 @@ func TestPagesDeployments_CreateStatusCancel(t *testing.T) {
 	if err := byteStore.Put(context.Background(), artifactDataKey(4241), invalidArtifact); err != nil {
 		t.Fatalf("put invalid Pages artifact: %v", err)
 	}
-	s.artifactStore.mu.Lock()
-	s.artifactStore.artifacts[4241] = &Artifact{ID: 4241, Name: "invalid-pages", Size: int64(len(invalidArtifact)), Finalized: true, RepoFullName: "admin/" + repo, CreatedAt: fixedTestTime}
-	s.artifactStore.mu.Unlock()
+	s.artifactStore.Mu.Lock()
+	s.artifactStore.Artifacts[4241] = &Artifact{ID: 4241, Name: "invalid-pages", Size: int64(len(invalidArtifact)), Finalized: true, RepoFullName: "admin/" + repo, CreatedAt: fixedTestTime}
+	s.artifactStore.Mu.Unlock()
 	resp = s.post(t, "/api/v3/repos/admin/"+repo+"/pages/deployments", defaultToken, map[string]interface{}{
 		"artifact_id":         4241,
 		"pages_build_version": "invalid-archive",
@@ -236,8 +236,8 @@ func TestPagesDeployments_CreateStatusCancel(t *testing.T) {
 	if err := byteStore.Put(context.Background(), artifactDataKey(4242), artifactBytes); err != nil {
 		t.Fatalf("put object-backed artifact: %v", err)
 	}
-	s.artifactStore.mu.Lock()
-	s.artifactStore.artifacts[4242] = &Artifact{
+	s.artifactStore.Mu.Lock()
+	s.artifactStore.Artifacts[4242] = &Artifact{
 		ID:           4242,
 		Name:         "pages-object-artifact",
 		Size:         int64(len(artifactBytes)),
@@ -245,8 +245,8 @@ func TestPagesDeployments_CreateStatusCancel(t *testing.T) {
 		RepoFullName: "admin/" + repo,
 		CreatedAt:    fixedTestTime,
 	}
-	s.artifactStore.nextID = 4243
-	s.artifactStore.mu.Unlock()
+	s.artifactStore.NextID = 4243
+	s.artifactStore.Mu.Unlock()
 	resp = s.post(t, "/api/v3/repos/admin/"+repo+"/pages/deployments", defaultToken, map[string]interface{}{
 		"artifact_url":        s.baseURL + "/_apis/v1/artifacts/4242/download",
 		"pages_build_version": buildVersion,
@@ -305,7 +305,7 @@ func TestPagesDeployments_CreateStatusCancel(t *testing.T) {
 	if deployment.ArtifactKey == "" {
 		t.Fatal("deployment did not retain Pages artifact object key")
 	}
-	if got := readS3TestFile(t, byteStore.(*s3ActionsByteStore).fs, deployment.ArtifactKey); !bytes.Equal(got, artifactBytes) {
+	if got := readS3TestFile(t, byteStore.(*s3ActionsByteStore).Fs, deployment.ArtifactKey); !bytes.Equal(got, artifactBytes) {
 		t.Fatal("published Pages artifact bytes differ from deployment artifact")
 	}
 	for requestPath, want := range map[string]struct {
@@ -346,9 +346,9 @@ func TestPagesDeployments_CreateStatusCancel(t *testing.T) {
 	if err := byteStore.Put(context.Background(), artifactDataKey(4242), replacementBytes); err != nil {
 		t.Fatalf("replace object-backed artifact: %v", err)
 	}
-	s.artifactStore.mu.Lock()
-	s.artifactStore.artifacts[4242].Size = int64(len(replacementBytes))
-	s.artifactStore.mu.Unlock()
+	s.artifactStore.Mu.Lock()
+	s.artifactStore.Artifacts[4242].Size = int64(len(replacementBytes))
+	s.artifactStore.Mu.Unlock()
 	resp = s.post(t, "/api/v3/repos/admin/"+repo+"/pages/deployments", defaultToken, map[string]interface{}{
 		"artifact_id":         4242,
 		"pages_build_version": objectBuildVersion,

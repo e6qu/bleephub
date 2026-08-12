@@ -132,9 +132,9 @@ func TestOrgInvitationsCancelAndEmail(t *testing.T) {
 	srv.createOrg(t, "people-inv2-org")
 
 	emailUser, _ := srv.newUser(t, "people-emailuser")
-	srv.store.mu.Lock()
+	srv.store.Mu.Lock()
 	emailUser.Email = "people-emailuser@example.com"
-	srv.store.mu.Unlock()
+	srv.store.Mu.Unlock()
 
 	// An email invitation addressed to an existing account resolves it.
 	created := srv.post(t, "/api/v3/orgs/people-inv2-org/invitations", defaultToken,
@@ -199,9 +199,9 @@ func TestOrgFailedInvitations(t *testing.T) {
 	invID := int(decodeJSON(t, created)["id"].(float64))
 
 	// Age the invitation past the 7-day TTL.
-	srv.store.mu.Lock()
+	srv.store.Mu.Lock()
 	srv.store.OrgInvitations[invID].CreatedAt = fixedTestTime.UTC().Add(-8 * 24 * time.Hour)
-	srv.store.mu.Unlock()
+	srv.store.Mu.Unlock()
 
 	// Expiry is applied by the background reconciler (dispatcher tick), not on a
 	// read. Drive it directly with the fixed clock.

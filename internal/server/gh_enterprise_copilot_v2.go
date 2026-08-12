@@ -72,7 +72,7 @@ func enterpriseCopilotSeatKey(userID, teamID int) string {
 }
 
 func (s *Server) expireEnterpriseCopilotSeatsLocked() {
-	today := s.store.currentTime().Format("2006-01-02")
+	today := s.store.CurrentTime().Format("2006-01-02")
 	for key, seat := range s.store.EnterpriseSettings.EnterpriseCopilotSeats {
 		if seat.PendingCancellationDate != "" && seat.PendingCancellationDate <= today {
 			delete(s.store.EnterpriseSettings.EnterpriseCopilotSeats, key)
@@ -86,7 +86,7 @@ func (s *Server) addEnterpriseCopilotSeatLocked(userID int, team *EnterpriseTeam
 		teamID, teamSlug = team.ID, team.Slug
 	}
 	key := enterpriseCopilotSeatKey(userID, teamID)
-	now := s.store.currentTime()
+	now := s.store.CurrentTime()
 	if seat := s.store.EnterpriseSettings.EnterpriseCopilotSeats[key]; seat != nil {
 		if seat.PendingCancellationDate != "" {
 			seat.PendingCancellationDate = ""
@@ -126,14 +126,14 @@ func (s *Server) enterpriseCopilotSeatJSON(seat *CopilotSeat, baseURL string) ma
 }
 
 func (s *Server) enterpriseCopilotSeatRows() []*CopilotSeat {
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.expireEnterpriseCopilotSeatsLocked()
 	rows := make([]*CopilotSeat, 0, len(s.store.EnterpriseSettings.EnterpriseCopilotSeats))
 	for _, seat := range s.store.EnterpriseSettings.EnterpriseCopilotSeats {
 		copy := *seat
 		rows = append(rows, &copy)
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	sort.Slice(rows, func(i, j int) bool {
 		if rows[i].UserID != rows[j].UserID {
 			return rows[i].UserID < rows[j].UserID
@@ -202,7 +202,7 @@ func (s *Server) handleAddEnterpriseCopilotUsers(w http.ResponseWriter, r *http.
 	if users == nil {
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.expireEnterpriseCopilotSeatsLocked()
 	created := 0
 	for _, user := range users {
@@ -210,8 +210,8 @@ func (s *Server) handleAddEnterpriseCopilotUsers(w http.ResponseWriter, r *http.
 			created++
 		}
 	}
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusCreated, map[string]interface{}{"seats_created": created})
 }
 
@@ -226,8 +226,8 @@ func (s *Server) handleDeleteEnterpriseCopilotUsers(w http.ResponseWriter, r *ht
 	if users == nil {
 		return
 	}
-	s.store.mu.Lock()
-	now := s.store.currentTime()
+	s.store.Mu.Lock()
+	now := s.store.CurrentTime()
 	cancelled := 0
 	for _, user := range users {
 		if seat := s.store.EnterpriseSettings.EnterpriseCopilotSeats[enterpriseCopilotSeatKey(user.ID, 0)]; seat != nil &&
@@ -237,8 +237,8 @@ func (s *Server) handleDeleteEnterpriseCopilotUsers(w http.ResponseWriter, r *ht
 			cancelled++
 		}
 	}
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusOK, map[string]interface{}{"seats_cancelled": cancelled})
 }
 
@@ -253,7 +253,7 @@ func (s *Server) handleAddEnterpriseCopilotTeams(w http.ResponseWriter, r *http.
 	if teams == nil {
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.expireEnterpriseCopilotSeatsLocked()
 	created := 0
 	for _, team := range teams {
@@ -263,8 +263,8 @@ func (s *Server) handleAddEnterpriseCopilotTeams(w http.ResponseWriter, r *http.
 			}
 		}
 	}
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusCreated, map[string]interface{}{"seats_created": created})
 }
 
@@ -279,8 +279,8 @@ func (s *Server) handleDeleteEnterpriseCopilotTeams(w http.ResponseWriter, r *ht
 	if teams == nil {
 		return
 	}
-	s.store.mu.Lock()
-	now := s.store.currentTime()
+	s.store.Mu.Lock()
+	now := s.store.CurrentTime()
 	cancelled := 0
 	for _, team := range teams {
 		for _, userID := range team.MemberIDs {
@@ -292,8 +292,8 @@ func (s *Server) handleDeleteEnterpriseCopilotTeams(w http.ResponseWriter, r *ht
 			}
 		}
 	}
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusOK, map[string]interface{}{"seats_cancelled": cancelled})
 }
 
@@ -343,9 +343,9 @@ func (s *Server) handlePutEnterpriseCopilotContentExclusion(w http.ResponseWrite
 }
 
 func (s *Server) enterpriseCustomAgentSource() (*Org, *Repo) {
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	org := s.store.Orgs[s.store.EnterpriseSettings.CopilotCustomAgentsSourceOrgID]
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if org == nil {
 		return nil, nil
 	}
@@ -376,9 +376,9 @@ func (s *Server) handlePutEnterpriseCopilotCustomAgentsSource(w http.ResponseWri
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	org := s.store.Orgs[req.OrganizationID]
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if org == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -389,11 +389,11 @@ func (s *Server) handlePutEnterpriseCopilotCustomAgentsSource(w http.ResponseWri
 		return
 	}
 	createRuleset := req.CreateRuleset == nil || *req.CreateRuleset
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.EnterpriseSettings.CopilotCustomAgentsSourceOrgID = org.ID
 	needsRuleset := createRuleset && s.store.EnterpriseSettings.CopilotCustomAgentsRulesetID == 0
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	if needsRuleset {
 		ruleset := s.store.CreateEnterpriseRuleset(s.enterpriseSlug(), &Ruleset{
 			Name: "Protect Copilot custom agents", Target: "branch", Enforcement: "active",
@@ -402,24 +402,24 @@ func (s *Server) handlePutEnterpriseCopilotCustomAgentsSource(w http.ResponseWri
 				"repository_id":         repo.ID,
 			}}},
 		})
-		s.store.mu.Lock()
+		s.store.Mu.Lock()
 		s.store.EnterpriseSettings.CopilotCustomAgentsRulesetID = ruleset.ID
-		s.store.persistEnterpriseSettings()
-		s.store.mu.Unlock()
+		s.store.PersistEnterpriseSettings()
+		s.store.Mu.Unlock()
 	}
 	writeJSON(w, http.StatusOK, customAgentSourceJSON(org, repo))
 }
 
 func (s *Server) handleDeleteEnterpriseCopilotCustomAgentsSource(w http.ResponseWriter, _ *http.Request) {
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	if s.store.EnterpriseSettings.CopilotCustomAgentsSourceOrgID == 0 {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 	s.store.EnterpriseSettings.CopilotCustomAgentsSourceOrgID = 0
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
 

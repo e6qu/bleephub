@@ -76,9 +76,9 @@ func TestLeasedJobRebindsRunnerContext(t *testing.T) {
 		Agent:     &Agent{ID: 42, Name: "prod-runner-7", Labels: []Label{{Name: "self-hosted"}, {Name: "Windows"}, {Name: "ARM64"}}},
 		MsgCh:     make(chan *TaskAgentMessage, 1),
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.Sessions[sess.SessionID] = sess
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	// A queued job message carries the runner-agnostic placeholder.
 	body, _ := json.Marshal(map[string]interface{}{
@@ -115,7 +115,7 @@ func TestBusyRunnerNeverReceivesJobs(t *testing.T) {
 		Agent:     &Agent{ID: 901, Labels: []Label{{Name: "self-hosted"}}},
 		MsgCh:     make(chan *TaskAgentMessage, 10),
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.Sessions["busy-sess"] = sess
 	// An assigned, unfinished job marks the agent busy. Mirror what
 	// recordJobAgentLocked writes on delivery: the job's AgentID and the
@@ -124,7 +124,7 @@ func TestBusyRunnerNeverReceivesJobs(t *testing.T) {
 	s.store.Jobs["job-2"] = &Job{ID: "job-2", Status: "queued"}
 	sess.Agent.AssignedJobID = "job-1"
 	sess.Agent.EverAssigned = true
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	s.queueJobMessage(&TaskAgentMessage{MessageID: 7, JobID: "job-2", Labels: []string{"self-hosted"}})
 
@@ -134,17 +134,17 @@ func TestBusyRunnerNeverReceivesJobs(t *testing.T) {
 	}
 
 	// Job finishes → the next poll pulls the pending message.
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.Jobs["job-1"].Status = "completed"
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	got := s.pullPendingMessage(sess, runnerScope{Org: "octo"})
 	if got == nil || got.MessageID != 7 {
 		t.Fatalf("free runner's poll did not pull the pending job: %v", got)
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	agentID := s.store.Jobs["job-2"].AgentID
 	pending := len(s.store.PendingMessages)
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if agentID != 901 {
 		t.Errorf("pulled job not associated with the agent: AgentID=%d", agentID)
 	}
@@ -166,9 +166,9 @@ func TestLabelRoutingQueuesUntilMatch(t *testing.T) {
 			Agent:     &Agent{ID: len(id), Labels: ls},
 			MsgCh:     make(chan *TaskAgentMessage, 10),
 		}
-		s.store.mu.Lock()
+		s.store.Mu.Lock()
 		s.store.Sessions[id] = sess
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		return sess
 	}
 	plain := mkSession("a-plain", "self-hosted", "linux")
@@ -198,8 +198,8 @@ func (s *isolatedServer) seedRerunRepo(t *testing.T, repoKey, yaml string) *Work
 	s.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/main", nil)
 	var wf *Workflow
 	waitUntil(t, "triggered run", func() bool {
-		s.store.mu.RLock()
-		defer s.store.mu.RUnlock()
+		s.store.Mu.RLock()
+		defer s.store.Mu.RUnlock()
 		for _, w := range s.store.Workflows {
 			if w.RepoFullName == repoKey {
 				wf = w
@@ -256,7 +256,7 @@ func TestRerunKeepsRunIDAndBumpsAttempt(t *testing.T) {
 	if int(run["id"].(float64)) != origRunID {
 		t.Errorf("rerun id = %v, want %d (same run id)", run["id"], origRunID)
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	var attempt2 *Workflow
 	for _, w := range s.store.Workflows {
 		if w.RepoFullName == repoKey && w.RunID == origRunID {
@@ -264,7 +264,7 @@ func TestRerunKeepsRunIDAndBumpsAttempt(t *testing.T) {
 			break
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if attempt2 == nil {
 		t.Fatal("rerun attempt 2 not found")
 	}
@@ -308,9 +308,9 @@ func TestRerunFailedJobsCarriesSuccesses(t *testing.T) {
 	runID := wf.RunID
 	s.assertWorkflowJobsUseHostMode(t, wf)
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	wf.Jobs["good"].Outputs["artifact"] = "kept"
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	s.onJobCompleted(context.Background(), wf.Jobs["good"].JobID, "Succeeded")
 	s.onJobCompleted(context.Background(), wf.Jobs["bad"].JobID, "Failed")
 
@@ -322,8 +322,8 @@ func TestRerunFailedJobsCarriesSuccesses(t *testing.T) {
 
 	var attempt2 *Workflow
 	waitUntil(t, "attempt 2", func() bool {
-		s.store.mu.RLock()
-		defer s.store.mu.RUnlock()
+		s.store.Mu.RLock()
+		defer s.store.Mu.RUnlock()
 		for _, w := range s.store.Workflows {
 			if w.RepoFullName == repoKey && w.RunID == runID {
 				attempt2 = w
@@ -333,12 +333,12 @@ func TestRerunFailedJobsCarriesSuccesses(t *testing.T) {
 		return false
 	})
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	good := attempt2.Jobs["good"]
 	bad := attempt2.Jobs["bad"]
 	goodStatus, goodResult, goodOut := good.Status, good.Result, good.Outputs["artifact"]
 	badStatus := bad.Status
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	if goodStatus != JobStatusCompleted || goodResult != ResultSuccess {
 		t.Errorf("good carried over: status=%q result=%q", goodStatus, goodResult)
@@ -413,8 +413,8 @@ jobs:
 }
 
 func (s *isolatedServer) countRepoRuns(repoKey string) int {
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	n := 0
 	for _, w := range s.store.Workflows {
 		if w.RepoFullName == repoKey {
@@ -432,12 +432,12 @@ func TestOrgRunnerEndpoints(t *testing.T) {
 		map[string]interface{}{"login": "runner-org", "admin": "admin"})
 	resp.Body.Close()
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	agentID := s.store.NextAgent
 	s.store.NextAgent++
 	s.store.Agents[agentID] = &Agent{ID: agentID, Name: "org-agent", Status: "online",
 		Labels: []Label{{Name: "self-hosted"}}, Scope: runnerScope{Org: "runner-org"}}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	get := func(path string) (int, map[string]interface{}) {
 		req, _ := http.NewRequest("GET", s.baseURL+path, nil)

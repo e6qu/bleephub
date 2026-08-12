@@ -14,18 +14,18 @@ func TestActionsCacheEvictsLRUOverRepoBudget(t *testing.T) {
 	t.Parallel()
 	srv := newIsolatedServer(t)
 	as := srv.artifactStore
-	as.maxRepoCacheBytes = 1000
+	as.MaxRepoCacheBytes = 1000
 
 	base := fixedTestTime.UTC()
 	add := func(id int64, key string, size int64, accessed time.Time) {
-		as.mu.Lock()
+		as.Mu.Lock()
 		e := &CacheEntry{
 			ID: id, Repo: "admin/r", Key: key, Version: "v1", Size: size,
 			Finalized: true, LastAccessedAt: accessed,
 		}
-		as.caches[id] = e
-		as.cacheIndex[cacheLookupKey(e.Repo, e.Key, e.Version)] = id
-		as.mu.Unlock()
+		as.Caches[id] = e
+		as.CacheIndex[cacheLookupKey(e.Repo, e.Key, e.Version)] = id
+		as.Mu.Unlock()
 	}
 	// Total 1500 > budget 1000. Evicting the oldest (id=1, 600 bytes) alone
 	// brings the repo to 900 <= 1000, so exactly and only the LRU entry goes.
@@ -35,25 +35,25 @@ func TestActionsCacheEvictsLRUOverRepoBudget(t *testing.T) {
 
 	srv.evictRepoCacheOverLimit(context.Background(), "admin/r")
 
-	as.mu.RLock()
-	defer as.mu.RUnlock()
-	if _, present := as.caches[1]; present {
+	as.Mu.RLock()
+	defer as.Mu.RUnlock()
+	if _, present := as.Caches[1]; present {
 		t.Fatal("LRU entry (id=1) was not evicted")
 	}
-	if _, ok := as.caches[2]; !ok {
+	if _, ok := as.Caches[2]; !ok {
 		t.Fatal("id=2 was wrongly evicted (not LRU)")
 	}
-	if _, ok := as.caches[3]; !ok {
+	if _, ok := as.Caches[3]; !ok {
 		t.Fatal("id=3 was wrongly evicted (most recently used)")
 	}
-	if _, ok := as.cacheIndex[cacheLookupKey("admin/r", "oldest", "v1")]; ok {
+	if _, ok := as.CacheIndex[cacheLookupKey("admin/r", "oldest", "v1")]; ok {
 		t.Fatal("evicted entry's cacheIndex entry remains")
 	}
 	// A repo already under budget is left untouched.
-	as.mu.RUnlock()
+	as.Mu.RUnlock()
 	srv.evictRepoCacheOverLimit(context.Background(), "admin/r")
-	as.mu.RLock()
-	if len(as.caches) != 2 {
-		t.Fatalf("under-budget repo mutated: %d caches remain, want 2", len(as.caches))
+	as.Mu.RLock()
+	if len(as.Caches) != 2 {
+		t.Fatalf("under-budget repo mutated: %d caches remain, want 2", len(as.Caches))
 	}
 }

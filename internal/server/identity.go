@@ -964,19 +964,6 @@ func (s *Server) handleTokenLogin(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.fullUserJSON(user))
 }
 
-// externalIdentityKey is the durable key for a federated identity: the
-// (issuer, subject) pair the provider guarantees stable, never the mutable
-// username. An empty issuer or subject collapses to "" so the caller falls
-// back to the username index rather than silently keying on half a pair.
-func externalIdentityKey(issuer, subject string) string {
-	issuer = strings.TrimSpace(issuer)
-	subject = strings.TrimSpace(subject)
-	if issuer == "" || subject == "" {
-		return ""
-	}
-	return issuer + "\x00" + subject
-}
-
 // errFederatedLogin marks a federated sign-in that must not provision or resolve
 // a local account. Callers surface it as a 403 without disclosing which of the
 // closed conditions applied, so it is not a login-enumeration oracle.
@@ -1005,16 +992,16 @@ func (s *Server) upsertExternalUser(issuer, subject, login, name, email, avatarU
 		// username is exactly what must not happen, so fail closed.
 		return nil, errFederatedLogin
 	}
-	s.store.mu.Lock()
-	defer s.store.mu.Unlock()
+	s.store.Mu.Lock()
+	defer s.store.Mu.Unlock()
 	if user := s.store.UsersByExternalID[externalKey]; user != nil {
 		user.Name, user.Email, user.AvatarURL, user.UpdatedAt = name, email, avatarURL, time.Now().UTC()
 		if roleAuthoritative {
 			user.SiteAdmin = siteAdmin
 		}
 		s.bindExternalIdentityLocked(user, externalKey)
-		if s.store.persist != nil {
-			s.store.persist.MustPut("users", fmt.Sprint(user.ID), user)
+		if s.store.Persist != nil {
+			s.store.Persist.MustPut("users", fmt.Sprint(user.ID), user)
 		}
 		return user, nil
 	}
@@ -1032,17 +1019,17 @@ func (s *Server) upsertExternalUser(issuer, subject, login, name, email, avatarU
 		existing.Name, existing.Email, existing.AvatarURL, existing.UpdatedAt = name, email, avatarURL, time.Now().UTC()
 		existing.SiteAdmin = siteAdmin
 		s.bindExternalIdentityLocked(existing, externalKey)
-		if s.store.persist != nil {
-			s.store.persist.MustPut("users", fmt.Sprint(existing.ID), existing)
+		if s.store.Persist != nil {
+			s.store.Persist.MustPut("users", fmt.Sprint(existing.ID), existing)
 		}
 		return existing, nil
 	}
 	now := time.Now().UTC()
-	user := &User{ID: s.store.reserveGlobalID("next_user", &s.store.NextUser), NodeID: "U_bleephub_" + login, Login: login, Name: name, Email: email, AvatarURL: avatarURL, Type: "User", SiteAdmin: siteAdmin, StarredRepos: map[string]bool{}, CreatedAt: now, UpdatedAt: now}
+	user := &User{ID: s.store.ReserveGlobalID("next_user", &s.store.NextUser), NodeID: "U_bleephub_" + login, Login: login, Name: name, Email: email, AvatarURL: avatarURL, Type: "User", SiteAdmin: siteAdmin, StarredRepos: map[string]bool{}, CreatedAt: now, UpdatedAt: now}
 	s.store.Users[user.ID], s.store.UsersByLogin[user.Login] = user, user
 	s.bindExternalIdentityLocked(user, externalKey)
-	if s.store.persist != nil {
-		s.store.persist.MustPut("users", fmt.Sprint(user.ID), user)
+	if s.store.Persist != nil {
+		s.store.Persist.MustPut("users", fmt.Sprint(user.ID), user)
 	}
 	return user, nil
 }

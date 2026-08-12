@@ -12,7 +12,7 @@ func TestGHESPreReceivePolicyJourney(t *testing.T) {
 	s.registerGHESAdminStatsRoutes()
 	fixed := time.Date(2026, time.July, 30, 12, 0, 0, 0, time.UTC)
 	s.replaceClockNow(func() time.Time { return fixed })
-	s.store.replaceClockNow(func() time.Time { return fixed })
+	replaceStoreClockNow(s.store, func() time.Time { return fixed })
 	admin := s.store.LookupUserByLogin("admin")
 	org := s.store.CreateOrg(admin, "pre-receive-org", "Pre Receive", "")
 	repo := s.store.CreateOrgRepo(org, admin, "hooks", "", false)
@@ -102,7 +102,7 @@ func TestGHESPreReceivePolicyPersists(t *testing.T) {
 	if err := st1.SetPersistence(p1); err != nil {
 		t.Fatal(err)
 	}
-	st1.mu.Lock()
+	st1.Mu.Lock()
 	st1.EnterpriseSettings.GHESPreReceiveEnvironments[4] = &GHESPreReceiveEnvironment{
 		ID: 4, Name: "Node", ImageURL: "https://images.example.test/node.tar.gz", CreatedAt: fixed,
 	}
@@ -118,8 +118,8 @@ func TestGHESPreReceivePolicyPersists(t *testing.T) {
 	}
 	st1.EnterpriseSettings.NextGHESPreReceiveEnvironmentID = 5
 	st1.EnterpriseSettings.NextGHESPreReceiveHookID = 7
-	st1.persistEnterpriseSettings()
-	st1.mu.Unlock()
+	st1.PersistEnterpriseSettings()
+	st1.Mu.Unlock()
 	if err := p1.Close(); err != nil {
 		t.Fatal(err)
 	}

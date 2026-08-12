@@ -779,9 +779,9 @@ func (s *Server) validateCopilotSpaceResource(resourceType string, metadata map[
 		if !ok {
 			return "metadata.repository_id"
 		}
-		s.store.mu.RLock()
+		s.store.Mu.RLock()
 		repo := s.store.Repos[int(id)]
-		s.store.mu.RUnlock()
+		s.store.Mu.RUnlock()
 		if repo == nil {
 			return "metadata.repository_id"
 		}

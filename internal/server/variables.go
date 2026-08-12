@@ -94,13 +94,13 @@ func (t variableTable) rows() map[string]map[string]*ActionsVariable {
 // persistLocked writes the scope's collection through (or removes the row
 // when the collection emptied). Caller holds the store write lock.
 func (t variableTable) persistLocked(m map[string]*ActionsVariable) {
-	if t.s.store.persist == nil {
+	if t.s.store.Persist == nil {
 		return
 	}
 	if len(m) > 0 {
-		t.s.store.persist.MustPut(t.bucket, t.key, m)
+		t.s.store.Persist.MustPut(t.bucket, t.key, m)
 	} else {
-		t.s.store.persist.MustDelete(t.bucket, t.key)
+		t.s.store.Persist.MustDelete(t.bucket, t.key)
 	}
 }
 
@@ -113,8 +113,8 @@ func cloneVariable(v *ActionsVariable) *ActionsVariable {
 // list returns the scope's variables sorted by name (copies, so callers
 // can render without the lock).
 func (t variableTable) list() []*ActionsVariable {
-	t.s.store.mu.RLock()
-	defer t.s.store.mu.RUnlock()
+	t.s.store.Mu.RLock()
+	defer t.s.store.Mu.RUnlock()
 	m := t.rows()[t.key]
 	names := make([]string, 0, len(m))
 	for n := range m {
@@ -129,8 +129,8 @@ func (t variableTable) list() []*ActionsVariable {
 }
 
 func (t variableTable) get(name string) *ActionsVariable {
-	t.s.store.mu.RLock()
-	defer t.s.store.mu.RUnlock()
+	t.s.store.Mu.RLock()
+	defer t.s.store.Mu.RUnlock()
 	v := t.rows()[t.key][name]
 	if v == nil {
 		return nil
@@ -140,8 +140,8 @@ func (t variableTable) get(name string) *ActionsVariable {
 
 // create inserts a new variable; false when the name already exists.
 func (t variableTable) create(v *ActionsVariable) bool {
-	t.s.store.mu.Lock()
-	defer t.s.store.mu.Unlock()
+	t.s.store.Mu.Lock()
+	defer t.s.store.Mu.Unlock()
 	rows := t.rows()
 	m := rows[t.key]
 	if m == nil {
@@ -159,8 +159,8 @@ func (t variableTable) create(v *ActionsVariable) bool {
 // patch mutates the named variable, optionally renaming it. Returns the
 // HTTP status to write: 204 applied, 404 unknown, 409 rename collision.
 func (t variableTable) patch(name, newName string, apply func(*ActionsVariable)) int {
-	t.s.store.mu.Lock()
-	defer t.s.store.mu.Unlock()
+	t.s.store.Mu.Lock()
+	defer t.s.store.Mu.Unlock()
 	m := t.rows()[t.key]
 	v := m[name]
 	if v == nil {
@@ -182,8 +182,8 @@ func (t variableTable) patch(name, newName string, apply func(*ActionsVariable))
 
 // remove deletes the named variable; false when it did not exist.
 func (t variableTable) remove(name string) bool {
-	t.s.store.mu.Lock()
-	defer t.s.store.mu.Unlock()
+	t.s.store.Mu.Lock()
+	defer t.s.store.Mu.Unlock()
 	m := t.rows()[t.key]
 	if m[name] == nil {
 		return false
@@ -343,7 +343,7 @@ func (s *Server) handleListRepoOrgVariables(w http.ResponseWriter, r *http.Reque
 
 	list := make([]map[string]interface{}, 0)
 	if org := s.store.GetOrg(r.PathValue("owner")); org != nil {
-		s.store.mu.RLock()
+		s.store.Mu.RLock()
 		m := s.store.OrgVariables[org.Login]
 		names := make([]string, 0, len(m))
 		for name, v := range m {
@@ -355,7 +355,7 @@ func (s *Server) handleListRepoOrgVariables(w http.ResponseWriter, r *http.Reque
 		for _, n := range names {
 			list = append(list, variableJSON(m[n]))
 		}
-		s.store.mu.RUnlock()
+		s.store.Mu.RUnlock()
 	}
 	writeVariablesList(w, list)
 }
@@ -630,7 +630,7 @@ func (s *Server) handleListOrgVariableRepos(w http.ResponseWriter, r *http.Reque
 	}
 	name := strings.ToUpper(r.PathValue("name"))
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	v := s.store.OrgVariables[org.Login][name]
 	var visibility string
 	var ids []int
@@ -638,7 +638,7 @@ func (s *Server) handleListOrgVariableRepos(w http.ResponseWriter, r *http.Reque
 		visibility = v.Visibility
 		ids = append([]int(nil), v.SelectedRepoIDs...)
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	if v == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -665,8 +665,8 @@ func (s *Server) handleSetOrgVariableRepos(w http.ResponseWriter, r *http.Reques
 			return nil
 		},
 		func() {
-			if s.store.persist != nil {
-				s.store.persist.MustPut("org_variables", org.Login, s.store.OrgVariables[org.Login])
+			if s.store.Persist != nil {
+				s.store.Persist.MustPut("org_variables", org.Login, s.store.OrgVariables[org.Login])
 			}
 		})
 }
@@ -687,8 +687,8 @@ func (s *Server) orgVariableSelectionChange(w http.ResponseWriter, r *http.Reque
 			return nil
 		},
 		func() {
-			if s.store.persist != nil {
-				s.store.persist.MustPut("org_variables", org.Login, s.store.OrgVariables[org.Login])
+			if s.store.Persist != nil {
+				s.store.Persist.MustPut("org_variables", org.Login, s.store.OrgVariables[org.Login])
 			}
 		})
 }

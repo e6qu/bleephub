@@ -43,7 +43,7 @@ func TestPersistenceHTTPRoundTrip(t *testing.T) {
 	// Second process: a fresh server over the same durable state must serve the
 	// repository it never created in memory.
 	s2 := NewServer("127.0.0.1:0", zerolog.Nop(), inject)
-	if s2.store.persist == nil {
+	if s2.store.Persist == nil {
 		t.Fatal("second server did not enable persistence")
 	}
 	ts2 := httptest.NewServer(s2.requestHandler())

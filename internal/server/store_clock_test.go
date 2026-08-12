@@ -102,7 +102,7 @@ func TestStoreModulesUseInjectedClock(t *testing.T) {
 func TestStoreClockControlsIndependentStoreModules(t *testing.T) {
 	st := NewStore()
 	want := time.Date(2077, time.November, 3, 4, 5, 6, 0, time.UTC)
-	st.replaceClockNow(func() time.Time { return want })
+	replaceStoreClockNow(st, func() time.Time { return want })
 	st.SeedDefaultUser()
 
 	user := st.LookupUserByLogin("admin")

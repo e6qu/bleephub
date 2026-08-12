@@ -89,7 +89,7 @@ func persistRoundTrip(t *testing.T, open func() (*Persistence, error)) {
 	if err := st1.PutLoginSession("persisted-browser-session", loginSession); err != nil {
 		t.Fatalf("persist login session: %v", err)
 	}
-	rows, err := p1.db.Query(`SELECT bucket, key, value FROM kv`)
+	rows, err := p1.Db.Query(`SELECT bucket, key, value FROM kv`)
 	if err != nil {
 		t.Fatalf("inspect raw persistence: %v", err)
 	}
@@ -252,12 +252,12 @@ func TestPersistence_MigratesLegacySensitiveRowsAndRejectsWrongKey(t *testing.T)
 		t.Fatal(err)
 	}
 	legacySession := []byte(`{"UserID":1,"CSRFToken":"legacy-csrf","ExpiresAt":"2099-01-01T00:00:00Z"}`)
-	if _, err := p.db.Exec(p.dialect.putSQL, loginSessionsBucket, "legacy-cookie", legacySession); err != nil {
+	if _, err := p.Db.Exec(p.Dialect.PutSQL, loginSessionsBucket, "legacy-cookie", legacySession); err != nil {
 		t.Fatal(err)
 	}
 	const legacyPAT = "ghp_legacy-persistence-token"
 	legacyToken := []byte(`{"UserID":1,"Scopes":"repo","CreatedAt":"2026-07-29T00:00:00Z"}`)
-	if _, err := p.db.Exec(p.dialect.putSQL, "tokens", legacyPAT, legacyToken); err != nil {
+	if _, err := p.Db.Exec(p.Dialect.PutSQL, "tokens", legacyPAT, legacyToken); err != nil {
 		t.Fatal(err)
 	}
 	if err := p.Close(); err != nil {
@@ -270,7 +270,7 @@ func TestPersistence_MigratesLegacySensitiveRowsAndRejectsWrongKey(t *testing.T)
 	}
 	var storedKey string
 	var storedValue []byte
-	if err := p.db.QueryRow(p.dialect.listSQL, loginSessionsBucket).Scan(&storedKey, &storedValue); err != nil {
+	if err := p.Db.QueryRow(p.Dialect.ListSQL, loginSessionsBucket).Scan(&storedKey, &storedValue); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.HasPrefix(storedKey, opaquePersistenceKeyPrefix) || strings.Contains(storedKey, "legacy-cookie") {
@@ -285,7 +285,7 @@ func TestPersistence_MigratesLegacySensitiveRowsAndRejectsWrongKey(t *testing.T)
 	}
 	var storedTokenKey string
 	var storedTokenValue []byte
-	if err := p.db.QueryRow(p.dialect.listSQL, "tokens").Scan(&storedTokenKey, &storedTokenValue); err != nil {
+	if err := p.Db.QueryRow(p.Dialect.ListSQL, "tokens").Scan(&storedTokenKey, &storedTokenValue); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.HasPrefix(storedTokenKey, opaquePersistenceKeyPrefix) || strings.Contains(storedTokenKey, legacyPAT) {

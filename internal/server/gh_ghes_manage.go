@@ -12,38 +12,6 @@ import (
 	"github.com/google/uuid"
 )
 
-type GHESMaintenanceState struct {
-	Enabled                bool     `json:"enabled"`
-	ScheduledTime          string   `json:"scheduled_time,omitempty"`
-	IPExceptionList        []string `json:"ip_exception_list"`
-	MaintenanceModeMessage string   `json:"maintenance_mode_message"`
-}
-
-type GHESManagementState struct {
-	SSHKeys      []string                 `json:"ssh_keys"`
-	Settings     map[string]interface{}   `json:"settings"`
-	License      map[string]interface{}   `json:"license,omitempty"`
-	Maintenance  GHESMaintenanceState     `json:"maintenance"`
-	ConfigStatus string                   `json:"config_status"`
-	ConfigRunID  string                   `json:"config_run_id,omitempty"`
-	ConfigEvents []map[string]interface{} `json:"config_events,omitempty"`
-	Initialized  bool                     `json:"initialized"`
-}
-
-func defaultGHESManagementState() *GHESManagementState {
-	return &GHESManagementState{
-		SSHKeys: []string{},
-		Settings: map[string]interface{}{
-			"private_mode": true, "public_pages": false, "subdomain_isolation": true,
-			"signup_enabled": false, "github_hostname": "bleephub.local",
-			"auth_mode": "default", "expire_sessions": false,
-		},
-		Maintenance:  GHESMaintenanceState{IPExceptionList: []string{}},
-		ConfigStatus: "idle",
-		ConfigEvents: []map[string]interface{}{},
-	}
-}
-
 func (s *Server) registerGHESManageRoutes() {
 	auth := s.requireGHESManagementAuth
 	s.route("GET /manage/v1/access/ssh", auth(s.handleManageSSHKeys))
@@ -106,9 +74,9 @@ func managementFingerprint(key string) string {
 
 func (s *Server) handleManageSSHKeys(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
-		s.store.mu.RLock()
+		s.store.Mu.RLock()
 		keys := append([]string(nil), s.store.EnterpriseSettings.GHESManagement.SSHKeys...)
-		s.store.mu.RUnlock()
+		s.store.Mu.RUnlock()
 		rows := make([]map[string]interface{}, len(keys))
 		for i, key := range keys {
 			rows[i] = map[string]interface{}{"key": key, "fingerprint": managementFingerprint(key)}
@@ -128,7 +96,7 @@ func (s *Server) handleManageSSHKeys(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	modified := false
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	keys := s.store.EnterpriseSettings.GHESManagement.SSHKeys
 	index := -1
 	for i, key := range keys {
@@ -149,8 +117,8 @@ func (s *Server) handleManageSSHKeys(w http.ResponseWriter, r *http.Request) {
 			modified = true
 		}
 	}
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusOK, []map[string]interface{}{{
 		"hostname": "bleephub-primary", "uuid": "00000000-0000-0000-0000-000000000001",
 		"message": message, "modified": modified,
@@ -184,15 +152,15 @@ func (s *Server) completeConfigApplyLocked() {
 		"body": "Configuration applied successfully", "event_name": "Enterprise::ConfigApply::Completed",
 		"topology": "standalone", "hostname": "bleephub-primary", "config_run_id": state.ConfigRunID,
 	})
-	s.store.persistEnterpriseSettings()
+	s.store.PersistEnterpriseSettings()
 }
 
 func (s *Server) handleManageConfigApply(w http.ResponseWriter, r *http.Request) {
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	state := s.store.EnterpriseSettings.GHESManagement
 	if r.Method == http.MethodPost {
 		if state.ConfigStatus == "running" {
-			s.store.mu.Unlock()
+			s.store.Mu.Unlock()
 			writeGHError(w, http.StatusConflict, "Configuration apply is already running")
 			return
 		}
@@ -203,25 +171,25 @@ func (s *Server) handleManageConfigApply(w http.ResponseWriter, r *http.Request)
 			"body": "Starting configuration apply", "event_name": "Enterprise::ConfigApply::Started",
 			"topology": "standalone", "hostname": "bleephub-primary", "config_run_id": state.ConfigRunID,
 		}}
-		s.store.persistEnterpriseSettings()
+		s.store.PersistEnterpriseSettings()
 		runID := state.ConfigRunID
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeJSON(w, http.StatusAccepted, map[string]interface{}{"run_id": runID, "status": "running"})
 		return
 	}
 	s.completeConfigApplyLocked()
 	out := map[string]interface{}{"run_id": state.ConfigRunID, "status": state.ConfigStatus}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) handleManageConfigApplyEvents(w http.ResponseWriter, _ *http.Request) {
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.completeConfigApplyLocked()
 	state := s.store.EnterpriseSettings.GHESManagement
 	events := append([]map[string]interface{}(nil), state.ConfigEvents...)
 	runID := state.ConfigRunID
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	lastID := runID + ":0000000000000000"
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"nodes": []map[string]interface{}{{
@@ -241,10 +209,10 @@ func (s *Server) handleManageConfigInit(w http.ResponseWriter, r *http.Request) 
 		writeGHError(w, http.StatusBadRequest, "license and password are required")
 		return
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	state := s.store.EnterpriseSettings.GHESManagement
 	if state.Initialized {
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusConflict, "Instance is already initialized")
 		return
 	}
@@ -253,8 +221,8 @@ func (s *Server) handleManageConfigInit(w http.ResponseWriter, r *http.Request) 
 		"seats": 0, "evaluation": false, "perpetual": true, "unlimited_seating": true,
 		"uploaded_at": s.currentTime().Format(time.RFC3339),
 	}
-	s.store.persistEnterpriseSettings()
-	s.store.mu.Unlock()
+	s.store.PersistEnterpriseSettings()
+	s.store.Mu.Unlock()
 	w.WriteHeader(http.StatusAccepted)
 }
 
@@ -268,16 +236,16 @@ func (s *Server) handleManageLicense(w http.ResponseWriter, r *http.Request) {
 			writeGHError(w, http.StatusBadRequest, "License is required")
 			return
 		}
-		s.store.mu.Lock()
+		s.store.Mu.Lock()
 		s.store.EnterpriseSettings.GHESManagement.License = req
-		s.store.persistEnterpriseSettings()
-		s.store.mu.Unlock()
+		s.store.PersistEnterpriseSettings()
+		s.store.Mu.Unlock()
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	license := cloneInterfaceMap(s.store.EnterpriseSettings.GHESManagement.License)
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if license == nil {
 		license = map[string]interface{}{"seats": 0, "evaluation": false, "perpetual": true, "unlimited_seating": true}
 	}
@@ -285,9 +253,9 @@ func (s *Server) handleManageLicense(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleManageLicenseCheck(w http.ResponseWriter, _ *http.Request) {
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	installed := s.store.EnterpriseSettings.GHESManagement.License != nil
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	writeJSON(w, http.StatusOK, map[string]interface{}{"valid": installed, "errors": []string{}})
 }
 
@@ -314,18 +282,18 @@ func (s *Server) handleManageSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		delete(req, "password")
 		delete(req, "root_password")
-		s.store.mu.Lock()
+		s.store.Mu.Lock()
 		for key, value := range req {
 			s.store.EnterpriseSettings.GHESManagement.Settings[key] = value
 		}
-		s.store.persistEnterpriseSettings()
-		s.store.mu.Unlock()
+		s.store.PersistEnterpriseSettings()
+		s.store.Mu.Unlock()
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	settings := cloneInterfaceMap(s.store.EnterpriseSettings.GHESManagement.Settings)
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	writeJSON(w, http.StatusOK, settings)
 }
 
@@ -367,7 +335,7 @@ func (s *Server) handleManageMaintenance(w http.ResponseWriter, r *http.Request)
 				return
 			}
 		}
-		s.store.mu.Lock()
+		s.store.Mu.Lock()
 		state := &s.store.EnterpriseSettings.GHESManagement.Maintenance
 		state.Enabled = *req.Enabled && (req.When == "" || req.When == "now")
 		state.ScheduledTime = ""
@@ -377,14 +345,14 @@ func (s *Server) handleManageMaintenance(w http.ResponseWriter, r *http.Request)
 		state.IPExceptionList = append([]string(nil), req.IPExceptionList...)
 		state.MaintenanceModeMessage = req.MaintenanceModeMessage
 		copy := *state
-		s.store.persistEnterpriseSettings()
-		s.store.mu.Unlock()
+		s.store.PersistEnterpriseSettings()
+		s.store.Mu.Unlock()
 		writeJSON(w, http.StatusOK, []map[string]interface{}{s.maintenanceNodeJSON(copy)})
 		return
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	state := s.store.EnterpriseSettings.GHESManagement.Maintenance
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	writeJSON(w, http.StatusOK, []map[string]interface{}{s.maintenanceNodeJSON(state)})
 }
 

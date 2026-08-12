@@ -86,14 +86,14 @@ func (s *Server) handleListEnterpriseOrganizationAccessibleRepositories(w http.R
 }
 
 func (s *Server) organizationInstallations(org string) []*Installation {
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	out := make([]*Installation, 0)
 	for _, installation := range s.store.Installations {
 		if installation.TargetType == "Organization" && installation.TargetLogin == org {
 			out = append(out, cloneInstallation(installation))
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	sortInstallations(out)
 	return out
 }

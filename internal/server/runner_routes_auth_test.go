@@ -37,15 +37,15 @@ func seedDispatchedJob(t *testing.T, s *Server, repoFullName string, agentID int
 		Message:   message,
 		AgentID:   agentID,
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.Jobs[job.ID] = job
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	return job, scopeID
 }
 
 func brokerJobStatus(s *Server, jobID string) string {
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	if job := s.store.Jobs[jobID]; job != nil {
 		return job.Status
 	}
@@ -309,10 +309,10 @@ func TestTimelineRoutesRefuseAnotherJobsPlan(t *testing.T) {
 		}
 	}
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	forgedRecords := len(s.store.TimelineRecords[victim.PlanID])
 	forgedConsole := len(s.store.LogLines[victim.ID])
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if forgedRecords != 0 {
 		t.Fatalf("another job's token wrote %d timeline records into the victim's plan", forgedRecords)
 	}
@@ -327,10 +327,10 @@ func TestTimelineRoutesRefuseAnotherJobsPlan(t *testing.T) {
 	if w := runnerRequest(s, "POST", "/_apis/v1/TimeLineWebConsoleLog/"+scopeA+"/build/"+own.PlanID+"/timeline-1/rec-1", tokenA, console); w.Code != http.StatusOK {
 		t.Fatalf("owning job console log = %d, want 200; body=%s", w.Code, w.Body.String())
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	ownRecords := len(s.store.TimelineRecords[own.PlanID])
 	ownConsole := len(s.store.LogLines[own.ID])
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if ownRecords != 1 || ownConsole != 1 {
 		t.Fatalf("owning job wrote %d records / %d console lines, want 1 / 1", ownRecords, ownConsole)
 	}
@@ -371,9 +371,9 @@ func TestLogUploadRefusesAnotherPlansContainer(t *testing.T) {
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("upload into another plan's log container = %d, want 404; body=%s", w.Code, w.Body.String())
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	forged := len(s.store.LogFiles[victimLog])
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if forged != 0 {
 		t.Fatalf("another plan's job wrote %d bytes into log %d", forged, victimLog)
 	}
@@ -381,9 +381,9 @@ func TestLogUploadRefusesAnotherPlansContainer(t *testing.T) {
 	if w := runnerRequest(s, "POST", fmt.Sprintf("/_apis/v1/Logfiles/%s/build/%s/%d", scopeA, own.PlanID, ownLog), tokenA, "real log content"); w.Code != http.StatusOK {
 		t.Fatalf("upload into its own log container = %d, want 200; body=%s", w.Code, w.Body.String())
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	stored := string(s.store.LogFiles[ownLog])
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if stored != "real log content" {
 		t.Fatalf("own log content = %q", stored)
 	}
@@ -426,9 +426,9 @@ func TestOperatorSubmittedJobTokenReportsItsOwnPlanOnly(t *testing.T) {
 	if w := runnerRequest(s, "POST", "/_apis/artifactcache/caches", token, `{"key":"k","version":"v"}`); w.Code != http.StatusUnauthorized {
 		t.Fatalf("operator job token reserving a cache = %d, want 401; body=%s", w.Code, w.Body.String())
 	}
-	s.artifactStore.mu.Lock()
-	s.artifactStore.artifacts[1] = &Artifact{ID: 1, Name: "build", Data: []byte("secret"), Size: 6, Finalized: true, RepoFullName: "octo/a"}
-	s.artifactStore.mu.Unlock()
+	s.artifactStore.Mu.Lock()
+	s.artifactStore.Artifacts[1] = &Artifact{ID: 1, Name: "build", Data: []byte("secret"), Size: 6, Finalized: true, RepoFullName: "octo/a"}
+	s.artifactStore.Mu.Unlock()
 	if w := runnerRequest(s, "GET", "/_apis/v1/artifacts/1/download", token, ""); w.Code != http.StatusNotFound {
 		t.Fatalf("operator job token downloading a repository artifact = %d, want 404; body=%s", w.Code, w.Body.String())
 	}
@@ -441,15 +441,15 @@ func TestEphemeralRunnerFinishesItsOwnTeardown(t *testing.T) {
 	s.registerRoutes()
 
 	sessionToken, agent := testAgentSession(t, s, runnerScope{Repo: "octo/a"})
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	agent.Ephemeral = true
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	job, scopeID := seedDispatchedJob(t, s, "octo/a", agent.ID, 97)
 
 	session := &Session{SessionID: "eph-session", Agent: agent, MsgCh: make(chan *TaskAgentMessage, 1)}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.Sessions[session.SessionID] = session
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	// The worker reports completion first, on the job runtime token.
 	if w := runnerRequest(s, "POST", "/_apis/v1/FinishJob/"+scopeID+"/free/"+job.PlanID,
@@ -466,9 +466,9 @@ func TestEphemeralRunnerFinishesItsOwnTeardown(t *testing.T) {
 		t.Fatalf("listener session delete = %d, want 200; body=%s", w.Code, w.Body.String())
 	}
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	_, stillRegistered := s.store.Agents[agent.ID]
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if stillRegistered {
 		t.Fatal("ephemeral runner is still registered after its session went away")
 	}
@@ -480,11 +480,11 @@ func TestEphemeralRunnerTakesExactlyOneJob(t *testing.T) {
 
 	queue := func(jobID, repo string) {
 		message := fmt.Sprintf(`{"plan":{"scopeIdentifier":%q},"contextData":{"github":{"t":2,"d":[{"k":"repository","v":%q}]}}}`, "scope-"+jobID, repo)
-		s.store.mu.Lock()
+		s.store.Mu.Lock()
 		s.store.Jobs[jobID] = &Job{ID: jobID, Status: "queued", Message: message}
 		s.store.PendingMessages = append(s.store.PendingMessages,
 			&TaskAgentMessage{MessageID: 1, MessageType: "PipelineAgentJobRequest", Body: message, JobID: jobID})
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 	}
 
 	// An ephemeral runner that has already finished one job is done. Mirror
@@ -492,12 +492,12 @@ func TestEphemeralRunnerTakesExactlyOneJob(t *testing.T) {
 	// is what disqualifies a used ephemeral runner, and it must keep doing so
 	// even after the completed job's stub is garbage-collected.
 	_, ephemeral := testAgentSession(t, s, runnerScope{Repo: "octo/a"})
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	ephemeral.Ephemeral = true
 	s.store.Jobs["done-eph"] = &Job{ID: "done-eph", Status: "completed", AgentID: ephemeral.ID}
 	ephemeral.AssignedJobID = "done-eph"
 	ephemeral.EverAssigned = true
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	queue("next-eph", "octo/a")
 	ephSession := &Session{SessionID: "s-eph", Agent: ephemeral, MsgCh: make(chan *TaskAgentMessage, 1)}
 	if msg := s.pullPendingMessage(ephSession, runnerScope{Repo: "octo/a"}); msg != nil {
@@ -506,9 +506,9 @@ func TestEphemeralRunnerTakesExactlyOneJob(t *testing.T) {
 
 	// A resident runner that finished one takes the next.
 	_, resident := testAgentSession(t, s, runnerScope{Repo: "octo/a"})
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.Jobs["done-res"] = &Job{ID: "done-res", Status: "completed", AgentID: resident.ID}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	resSession := &Session{SessionID: "s-res", Agent: resident, MsgCh: make(chan *TaskAgentMessage, 1)}
 	if msg := s.pullPendingMessage(resSession, runnerScope{Repo: "octo/a"}); msg == nil {
 		t.Fatal("a resident runner that finished a job was not handed the next one")

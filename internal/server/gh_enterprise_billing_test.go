@@ -131,14 +131,14 @@ func TestEnterpriseBillingUsageAndReportExportJourney(t *testing.T) {
 		t.Fatal("seed usage repo")
 	}
 	started := time.Date(2026, time.March, 10, 12, 0, 0, 0, time.UTC)
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.Workflows["enterprise-usage-run"] = &Workflow{
 		ID: "enterprise-usage-run", RepoFullName: repo.FullName, Status: WorkflowStatusCompleted,
 		Jobs: map[string]*WorkflowJob{
 			"test": {JobID: "enterprise-usage-job", StartedAt: started, CompletedAt: started.Add(70 * time.Second)},
 		},
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	base := "/api/v3/enterprises/bleephub/settings/billing"
 
 	// Unallocated usage is the default detailed report.
@@ -216,11 +216,11 @@ func TestEnterpriseBillingValidationAndAuthorization(t *testing.T) {
 		t.Fatalf("overlong detailed export = %d", rec.Code)
 	}
 	member := seedTestUser(s, "enterprise-billing-member")
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.Tokens["enterprise-billing-member-token"] = &Token{
 		Value: "enterprise-billing-member-token", UserID: member.ID,
 	}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	rec = enterpriseBearerRequest(t, s, http.MethodGet, base+"/budgets", nil, "enterprise-billing-member-token")
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("member budgets = %d", rec.Code)

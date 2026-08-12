@@ -492,7 +492,7 @@ func (s *Server) handleListMilestoneLabels(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	seen := map[int]bool{}
 	var labels []*IssueLabel
 	collect := func(labelIDs []int) {
@@ -516,7 +516,7 @@ func (s *Server) handleListMilestoneLabels(w http.ResponseWriter, r *http.Reques
 			collect(pr.LabelIDs)
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	sort.Slice(labels, func(i, j int) bool { return labels[i].ID < labels[j].ID })
 	base := s.baseURL(r)
@@ -555,7 +555,7 @@ func milestoneToJSON(ms *Milestone, st *Store, baseURL, repoFullName string) map
 		closedAt = ms.ClosedAt.Format(time.RFC3339)
 	}
 
-	st.mu.RLock()
+	st.Mu.RLock()
 	var creatorJSON interface{}
 	if u, ok := st.Users[ms.CreatorID]; ok {
 		creatorJSON = userToJSON(u)
@@ -581,7 +581,7 @@ func milestoneToJSON(ms *Milestone, st *Store, baseURL, repoFullName string) map
 			closedIssues++
 		}
 	}
-	st.mu.RUnlock()
+	st.Mu.RUnlock()
 
 	return map[string]interface{}{
 		"id":            ms.ID,
@@ -707,14 +707,14 @@ func (s *Server) handleListIssueLabels(w http.ResponseWriter, r *http.Request) {
 	if issue == nil {
 		return
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	labels := make([]*IssueLabel, 0, len(issue.LabelIDs))
 	for _, id := range issue.LabelIDs {
 		if label := s.store.Labels[id]; label != nil {
 			labels = append(labels, label)
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	out := make([]map[string]interface{}, 0, len(labels))
 	for _, label := range labels {
 		out = append(out, issueLabelToJSON(label, s.baseURL(r), repo.FullName))

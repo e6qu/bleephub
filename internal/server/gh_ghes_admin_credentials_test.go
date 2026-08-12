@@ -29,9 +29,9 @@ func TestGHESAdminSurfaceRejectsNarrowCredentials(t *testing.T) {
 
 	// A fine-grained PAT owned by the site admin.
 	fg := s.store.CreateToken(admin.ID, "")
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	fg.FineGrained = true
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	// An OAuth-App user-to-server token owned by the site admin.
 	app := s.store.CreateOAuthApp(admin.ID, "Narrow", "", "https://x.test", "https://x.test/cb")
@@ -56,10 +56,10 @@ func TestGHESGlobalHooksAndAdministrativeCredentials(t *testing.T) {
 	s.registerGHESAdminStatsRoutes()
 	fixed := time.Date(2026, time.July, 30, 9, 15, 0, 0, time.UTC)
 	restoreServer := s.replaceClockNow(func() time.Time { return fixed })
-	restoreStore := s.store.replaceClockNow(func() time.Time { return fixed })
+	restoreStore := replaceStoreClockNow(s.store, func() time.Time { return fixed })
 	t.Cleanup(func() {
 		s.replaceClockNow(restoreServer)
-		s.store.replaceClockNow(restoreStore)
+		replaceStoreClockNow(s.store, restoreStore)
 	})
 
 	rec := enterpriseActionsRequest(t, s, http.MethodPost, "/api/v3/admin/hooks", map[string]interface{}{
@@ -83,14 +83,14 @@ func TestGHESGlobalHooksAndAdministrativeCredentials(t *testing.T) {
 	}
 
 	admin := s.store.LookupUserByLogin("admin")
-	s.store.Misc.mu.Lock()
+	s.store.Misc.Mu.Lock()
 	key := &UserKey{
 		ID: 41, Key: "ssh-ed25519 AAAAGHESAdmin", Title: "site-admin",
 		Verified: true, UserID: admin.ID, CreatedAt: fixed,
 	}
-	s.store.Misc.userKeys[key.ID] = key
-	s.store.Misc.keysByUser[admin.ID] = []*UserKey{key}
-	s.store.Misc.mu.Unlock()
+	s.store.Misc.UserKeys[key.ID] = key
+	s.store.Misc.KeysByUser[admin.ID] = []*UserKey{key}
+	s.store.Misc.Mu.Unlock()
 	rec = enterpriseActionsRequest(t, s, http.MethodGet, "/api/v3/admin/keys", nil)
 	if got := decodeGHESRecorderArray(t, rec); rec.Code != http.StatusOK || len(got) != 1 ||
 		got[0]["user_id"] != float64(admin.ID) {
@@ -140,22 +140,22 @@ func TestGHESGlobalHooksAndImpersonationTokensPersist(t *testing.T) {
 		t.Fatal(err)
 	}
 	st1 := NewStore()
-	st1.replaceClockNow(func() time.Time { return fixed })
+	replaceStoreClockNow(st1, func() time.Time { return fixed })
 	if err := st1.SetPersistence(p1); err != nil {
 		t.Fatal(err)
 	}
 	st1.SeedDefaultUser()
-	st1.mu.Lock()
+	st1.Mu.Lock()
 	st1.EnterpriseSettings.GHESGlobalHooks = []*Webhook{{
 		ID: 77, URL: "https://hooks.example.test/persisted", Events: []string{"user"},
 		Active: true, Global: true, CreatedAt: fixed, UpdatedAt: fixed,
 	}}
 	st1.NextHookID = 78
-	token := st1.createTokenLocked(st1.UsersByLogin["admin"].ID, "repo")
+	token := st1.CreateTokenLocked(st1.UsersByLogin["admin"].ID, "repo")
 	token.Impersonation = true
-	st1.persistTokenLocked(token)
-	st1.persistEnterpriseSettings()
-	st1.mu.Unlock()
+	st1.PersistTokenLocked(token)
+	st1.PersistEnterpriseSettings()
+	st1.Mu.Unlock()
 	if err := p1.Close(); err != nil {
 		t.Fatal(err)
 	}

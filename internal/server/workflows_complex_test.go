@@ -116,9 +116,9 @@ func TestMaxParallelLimitsDispatch(t *testing.T) {
 		}
 	}
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.Workflows[workflow.ID] = workflow
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	s.dispatchReadyJobs(context.Background(), workflow, "http://localhost", "alpine:latest")
 
@@ -161,9 +161,9 @@ func TestMaxParallelZeroMeansUnlimited(t *testing.T) {
 		}
 	}
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.Workflows[workflow.ID] = workflow
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	s.dispatchReadyJobs(context.Background(), workflow, "http://localhost", "alpine:latest")
 
@@ -205,9 +205,9 @@ func TestJobTimeoutFailsJobFromExecutionStart(t *testing.T) {
 		Def:       &JobDef{TimeoutMinutes: 1, Steps: []StepDef{{Run: "sleep 999"}}},
 	}
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.Workflows[workflow.ID] = workflow
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	s.checkJobTimeouts(workflow)
 
@@ -226,9 +226,9 @@ func TestQueuedJobsSpreadAcrossPollingRunners(t *testing.T) {
 
 	mk := func(id string, agentID int) *Session {
 		sess := &Session{SessionID: id, Agent: &Agent{ID: agentID}, MsgCh: make(chan *TaskAgentMessage, 10)}
-		s.store.mu.Lock()
+		s.store.Mu.Lock()
 		s.store.Sessions[id] = sess
-		s.store.mu.Unlock()
+		s.store.Mu.Unlock()
 		return sess
 	}
 	s1 := mk("s1", 11)
@@ -236,10 +236,10 @@ func TestQueuedJobsSpreadAcrossPollingRunners(t *testing.T) {
 
 	// Queue two jobs; each runner's poll pulls one, and the pulled job's
 	// agent association marks the runner busy so it can't take the second.
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.Jobs["j1"] = &Job{ID: "j1", Status: "queued"}
 	s.store.Jobs["j2"] = &Job{ID: "j2", Status: "queued"}
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	s.queueJobMessage(&TaskAgentMessage{MessageID: 1, JobID: "j1"})
 	s.queueJobMessage(&TaskAgentMessage{MessageID: 2, JobID: "j2"})
 
@@ -264,26 +264,26 @@ func TestQueuedMessagePulledByFirstPollAfterConnect(t *testing.T) {
 	// Queue a job with no sessions connected.
 	s.queueJobMessage(&TaskAgentMessage{MessageID: 42})
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	pendingCount := len(s.store.PendingMessages)
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if pendingCount != 1 {
 		t.Fatalf("pending = %d, want 1", pendingCount)
 	}
 
 	// A session connects; its first poll pulls the queued message.
 	sess := &Session{SessionID: "new-sess", Agent: &Agent{ID: 31}, MsgCh: make(chan *TaskAgentMessage, 10)}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.Sessions["new-sess"] = sess
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	got := s.pullPendingMessage(sess, runnerScope{Org: "octo"})
 	if got == nil || got.MessageID != 42 {
 		t.Fatalf("first poll pulled %v, want message 42", got)
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	pendingCount = len(s.store.PendingMessages)
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if pendingCount != 0 {
 		t.Errorf("pending after pull = %d, want 0", pendingCount)
 	}
@@ -318,14 +318,14 @@ func TestConcurrentWorkflowLimit(t *testing.T) {
 	}
 
 	// Count active workflows
-	s2.store.mu.RLock()
+	s2.store.Mu.RLock()
 	active := 0
 	for _, wf := range s2.store.Workflows {
 		if wf.Status == "running" {
 			active++
 		}
 	}
-	s2.store.mu.RUnlock()
+	s2.store.Mu.RUnlock()
 	if active != 1 {
 		t.Fatalf("active = %d, want 1", active)
 	}
@@ -648,9 +648,9 @@ func TestFailFastCancelsSiblings(t *testing.T) {
 		}
 	}
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.Workflows[workflow.ID] = workflow
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	// First job fails → siblings should be cancelled
 	s.onJobCompleted(context.Background(), "j0", "Failed")
@@ -696,9 +696,9 @@ func TestFailFastFalseNoCancel(t *testing.T) {
 		}
 	}
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.Workflows[workflow.ID] = workflow
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	s.onJobCompleted(context.Background(), "j0", "Failed")
 
@@ -745,9 +745,9 @@ func TestFailFastDefaultTrue(t *testing.T) {
 		}
 	}
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.Workflows[workflow.ID] = workflow
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	s.onJobCompleted(context.Background(), "j0", "Failed")
 
@@ -794,9 +794,9 @@ func TestFailFastOnlySameGroup(t *testing.T) {
 		Def:     &JobDef{Steps: []StepDef{{Run: "echo"}}},
 	}
 
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	s.store.Workflows[workflow.ID] = workflow
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 
 	s.onJobCompleted(context.Background(), "jt0", "Failed")
 

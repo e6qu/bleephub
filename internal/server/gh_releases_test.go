@@ -407,10 +407,10 @@ func TestReleases_AssetLifecycle(t *testing.T) {
 
 func TestReleases_AssetBytesUseObjectStore(t *testing.T) {
 	fs := newS3FSForTest(t)
-	objectFS := &s3FS{client: fs.client, bucket: fs.bucket, prefix: "objects"}
+	objectFS := deriveS3FSForTest(t, fs.Bucket(), "objects")
 	s := newTestServer()
-	s.store.ObjectByteStore = &s3ActionsByteStore{fs: objectFS}
-	s.store.Releases.byteStore = s.store.ObjectByteStore
+	s.store.ObjectByteStore = &s3ActionsByteStore{Fs: objectFS}
+	s.store.Releases.ByteStore = s.store.ObjectByteStore
 	s.registerGHReleasesRoutes()
 
 	user := s.store.UsersByLogin["admin"]

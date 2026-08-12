@@ -83,12 +83,12 @@ func (s *Server) handleClassroomDashboard(w http.ResponseWriter, r *http.Request
 
 func (s *Server) classroomsAdministeredBy(ctx context.Context, user *User) []*Classroom {
 	ctx = contextWithUser(ctx, user)
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	all := make([]*Classroom, 0, len(s.store.Classrooms))
 	for _, c := range s.store.Classrooms {
 		all = append(all, c)
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	sortClassrooms(all)
 	out := all[:0]
 	for _, c := range all {
@@ -122,14 +122,14 @@ func (s *Server) classroomWebJSON(c *Classroom, base string) map[string]interfac
 		roster = append(roster, item)
 	}
 	assignments := make([]map[string]interface{}, 0)
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	classroomAssignments := make([]*ClassroomAssignment, 0)
 	for _, assignment := range s.store.ClassroomAssignments {
 		if assignment.ClassroomID == c.ID {
 			classroomAssignments = append(classroomAssignments, assignment)
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	for _, assignment := range classroomAssignments {
 		item := s.classroomAssignmentJSON(assignment, base, true)
 		item["autograding_tests"] = assignment.AutogradingTests
@@ -390,7 +390,7 @@ func (s *Server) handleUpdateClassroomAssignment(w http.ResponseWriter, r *http.
 	if existing == nil {
 		return
 	}
-	if classroom := s.store.getClassroom(existing.ClassroomID); classroom != nil && classroom.Archived {
+	if classroom := s.store.GetClassroom(existing.ClassroomID); classroom != nil && classroom.Archived {
 		writeGHError(w, http.StatusUnprocessableEntity, "Archived classrooms cannot edit assignments.")
 		return
 	}
@@ -437,8 +437,8 @@ func (s *Server) handleDeleteClassroomAssignment(w http.ResponseWriter, r *http.
 }
 
 func (s *Server) assignmentByInvite(code string) *ClassroomAssignment {
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	for _, a := range s.store.ClassroomAssignments {
 		if a.InviteCode == code {
 			return a
@@ -460,7 +460,7 @@ func (s *Server) handleGetClassroomInvitation(w http.ResponseWriter, r *http.Req
 	out := s.classroomAssignmentJSON(a, s.baseURL(r), true)
 	out["autograding_tests"] = a.AutogradingTests
 	user := ghUserFromContext(r.Context())
-	classroom := s.store.getClassroom(a.ClassroomID)
+	classroom := s.store.GetClassroom(a.ClassroomID)
 	out["roster_identifier_required"] = classroomRosterIdentifier(classroom, user.ID) == "" && len(classroom.Roster) > 0
 	writeJSON(w, http.StatusOK, out)
 }
@@ -488,8 +488,8 @@ func (s *Server) handleAcceptClassroomInvitation(w http.ResponseWriter, r *http.
 		writeGHValidationError(w, "ClassroomAssignment", "group_name", "missing_field")
 		return
 	}
-	c := s.store.getClassroom(a.ClassroomID)
-	existingAcceptances := s.store.classroomAcceptedFor(a.ID)
+	c := s.store.GetClassroom(a.ClassroomID)
+	existingAcceptances := s.store.ClassroomAcceptedFor(a.ID)
 	var groupAcceptance *ClassroomAcceptedAssignment
 	for _, existing := range existingAcceptances {
 		for _, student := range existing.Students {
@@ -633,7 +633,7 @@ func classroomRosterIdentifier(classroom *Classroom, userID int) string {
 }
 
 func (s *Server) classroomArchived(id int) bool {
-	c := s.store.getClassroom(id)
+	c := s.store.GetClassroom(id)
 	return c == nil || c.Archived
 }
 
@@ -742,14 +742,14 @@ func (s *Server) handleExportClassrooms(w http.ResponseWriter, r *http.Request) 
 			}
 			course.Roster = append(course.Roster, classroomTransitionStudent{Login: login, Identifier: roster.RosterIdentifier})
 		}
-		s.store.mu.RLock()
+		s.store.Mu.RLock()
 		assignments := make([]*ClassroomAssignment, 0)
 		for _, assignment := range s.store.ClassroomAssignments {
 			if assignment.ClassroomID == classroom.ID {
 				assignments = append(assignments, assignment)
 			}
 		}
-		s.store.mu.RUnlock()
+		s.store.Mu.RUnlock()
 		for _, assignment := range assignments {
 			starter := s.store.GetRepoByID(assignment.StarterCodeRepoID)
 			if starter == nil {
@@ -763,7 +763,7 @@ func (s *Server) handleExportClassrooms(w http.ResponseWriter, r *http.Request) 
 				MaxTeams: assignment.MaxTeams, MaxMembers: assignment.MaxMembers, Editor: assignment.Editor, Language: assignment.Language,
 				Deadline: assignment.Deadline, AutogradingTests: assignment.AutogradingTests,
 			}
-			for _, accepted := range s.store.classroomAcceptedFor(assignment.ID) {
+			for _, accepted := range s.store.ClassroomAcceptedFor(assignment.ID) {
 				repo := s.store.GetRepoByID(accepted.RepoID)
 				if repo == nil {
 					writeGHError(w, http.StatusInternalServerError, "Classroom acceptance references a missing repository")

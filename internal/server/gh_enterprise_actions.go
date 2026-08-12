@@ -88,9 +88,9 @@ func (s *Server) handleGetEnterpriseActionsCacheRetentionLimit(w http.ResponseWr
 	if _, ok := s.enterpriseFromRequest(w, r); !ok {
 		return
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	days := s.store.EnterpriseSettings.ActionsCacheRetentionDays
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"max_cache_retention_days": days,
 	})
@@ -118,9 +118,9 @@ func (s *Server) handleGetEnterpriseActionsCacheStorageLimit(w http.ResponseWrit
 	if _, ok := s.enterpriseFromRequest(w, r); !ok {
 		return
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	gb := s.store.EnterpriseSettings.ActionsCacheSizeGB
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"max_cache_size_gb": gb,
 	})
@@ -148,10 +148,10 @@ func (s *Server) handleGetEnterpriseActionsCacheUsagePolicy(w http.ResponseWrite
 	if _, ok := s.enterpriseFromRequest(w, r); !ok {
 		return
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	defaultGB := s.store.EnterpriseSettings.ActionsDefaultCacheSizeGB
 	maxGB := s.store.EnterpriseSettings.ActionsCacheSizeGB
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	writeJSON(w, http.StatusOK, map[string]int{
 		"repo_cache_size_limit_in_gb":     defaultGB,
 		"max_repo_cache_size_limit_in_gb": maxGB,
@@ -169,10 +169,10 @@ func (s *Server) handleUpdateEnterpriseActionsCacheUsagePolicy(w http.ResponseWr
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	defaultGB := s.store.EnterpriseSettings.ActionsDefaultCacheSizeGB
 	maxGB := s.store.EnterpriseSettings.ActionsCacheSizeGB
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if req.RepoCacheSizeLimitGB != nil {
 		defaultGB = *req.RepoCacheSizeLimitGB
 	}
@@ -200,9 +200,9 @@ func (s *Server) handleListEnterpriseOIDCCustomProperties(w http.ResponseWriter,
 	if _, ok := s.enterpriseFromRequest(w, r); !ok {
 		return
 	}
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	names := append([]string(nil), s.store.EnterpriseSettings.OIDCCustomProperties...)
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	out := make([]map[string]interface{}, 0, len(names))
 	for _, name := range names {
 		out = append(out, enterpriseOIDCCustomPropertyJSON(name))

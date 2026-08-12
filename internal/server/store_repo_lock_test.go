@@ -15,7 +15,7 @@ func TestRepositoryStorageInitializationDoesNotHoldStoreLock(t *testing.T) {
 	owner := store.UsersByLogin["admin"]
 	started := make(chan struct{})
 	release := make(chan struct{})
-	store.repoStorageOpen = func(context.Context, string) (gitStorage.Storer, error) {
+	store.RepoStorageOpen = func(context.Context, string) (gitStorage.Storer, error) {
 		close(started)
 		<-release
 		return memory.NewStorage(), nil
@@ -55,7 +55,7 @@ func TestRepositoryForkCopyDoesNotHoldStoreLock(t *testing.T) {
 
 	started := make(chan struct{})
 	release := make(chan struct{})
-	store.repoStorageOpen = func(context.Context, string) (gitStorage.Storer, error) {
+	store.RepoStorageOpen = func(context.Context, string) (gitStorage.Storer, error) {
 		close(started)
 		<-release
 		return memory.NewStorage(), nil

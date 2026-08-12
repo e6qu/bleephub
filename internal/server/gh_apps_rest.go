@@ -622,9 +622,9 @@ func appToJSON(st *Store, app *App, includePEM bool) map[string]interface{} {
 // GET /apps/{slug}. App loading and creation validate OwnerID, so a missing
 // owner is corrupt state and is exposed as null rather than a fabricated user.
 func appOwnerJSON(st *Store, app *App) map[string]interface{} {
-	st.mu.RLock()
+	st.Mu.RLock()
 	owner := st.Users[app.OwnerID]
-	st.mu.RUnlock()
+	st.Mu.RUnlock()
 	if owner == nil {
 		return nil
 	}
@@ -1062,8 +1062,8 @@ func (s *Server) handleListInstallationRepositories(w http.ResponseWriter, r *ht
 // snapshotInstallations returns a slice copy of every installation under
 // a single RLock; lets handlers iterate without holding the store lock.
 func (s *Server) snapshotInstallations() []*Installation {
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	out := make([]*Installation, 0, len(s.store.Installations))
 	for _, inst := range s.store.Installations {
 		out = append(out, inst)
@@ -1072,8 +1072,8 @@ func (s *Server) snapshotInstallations() []*Installation {
 }
 
 func (s *Server) snapshotGitHubApps() []*App {
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	out := make([]*App, 0, len(s.store.Apps))
 	for _, app := range s.store.Apps {
 		out = append(out, app)

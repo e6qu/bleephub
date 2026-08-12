@@ -64,7 +64,7 @@ func activityEventOrgJSON(org *Org) map[string]interface{} {
 // lock and rendered outside it — the JSON builders (issueToJSON and
 // friends) take the store lock themselves.
 func (s *Server) deriveActivityEvents(base string, repos map[int]*Repo, org *Org) []activityEvent {
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	var issues []*Issue
 	for _, issue := range s.store.Issues {
 		if repos[issue.RepoID] != nil {
@@ -95,7 +95,7 @@ func (s *Server) deriveActivityEvents(base string, repos map[int]*Repo, org *Org
 			}
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	repoJSON := func(repo *Repo) map[string]interface{} {
 		return map[string]interface{}{
@@ -214,8 +214,8 @@ func newestActivityTime(events []activityEvent) time.Time {
 // publicReposByID returns every non-private repository keyed by ID — the
 // repository universe of the public activity feeds.
 func (s *Server) publicReposByID() map[int]*Repo {
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	repos := map[int]*Repo{}
 	for _, repo := range s.store.Repos {
 		if !repo.Private {
@@ -238,14 +238,14 @@ func (s *Server) handleListOrgEvents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// The public feed covers the org's non-private repositories.
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	orgRepos := map[int]*Repo{}
 	for _, repo := range s.store.Repos {
 		if repo.OwnerType == "Organization" && repo.OwnerID == org.ID && !repo.Private {
 			orgRepos[repo.ID] = repo
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	events := s.deriveActivityEvents(s.baseURL(r), orgRepos, org)
 	sortActivityEvents(events)

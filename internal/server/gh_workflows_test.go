@@ -38,12 +38,12 @@ func commitWorkflowYAMLToStorage(t *testing.T, s *Server, repoFullName, path, bo
 	// To make GetGitStorage(parts[0], parts[1]) hit, create a user whose
 	// Login matches the test-fixture owner instead of using the default
 	// admin user.
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	user := &User{ID: s.store.NextUser, Login: parts[0], Type: "User", CreatedAt: fixedTestTime, UpdatedAt: fixedTestTime}
 	s.store.NextUser++
 	s.store.Users[user.ID] = user
 	s.store.UsersByLogin[user.Login] = user
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	s.store.CreateRepo(user, parts[1], "", false) // creates the GitStorage entry too
 	storer := s.store.GetGitStorage(parts[0], parts[1])
 	if storer == nil {
@@ -278,20 +278,20 @@ jobs:
 	}
 
 	// Dispatch must have created a run.
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	count := 0
 	for _, run := range s.store.Workflows {
 		if run.Name == "ci" {
 			count++
 		}
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if count != 1 {
 		t.Errorf("after dispatch: %d ci runs, want 1", count)
 	}
 
 	var run *Workflow
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	for _, candidate := range s.store.Workflows {
 		if candidate.Name == "ci" {
 			run = candidate
@@ -299,11 +299,11 @@ jobs:
 		}
 	}
 	if run == nil || len(run.Jobs) != 1 {
-		s.store.mu.RUnlock()
+		s.store.Mu.RUnlock()
 		t.Fatalf("dispatch run jobs = %v, want one job", run)
 	}
 	if run.Sha != wantSHA {
-		s.store.mu.RUnlock()
+		s.store.Mu.RUnlock()
 		t.Fatalf("dispatch run sha = %q, want committed workflow sha %q", run.Sha, wantSHA)
 	}
 	var job *WorkflowJob
@@ -311,7 +311,7 @@ jobs:
 		job = candidate
 		break
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	msg, err := s.buildJobMessageFromDef("http://example.test", run, job, "plan", "timeline", 1, run.Env["__defaultImage"])
 	if err != nil {
 		t.Fatal(err)
@@ -371,8 +371,8 @@ jobs:
 				t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
 			}
 
-			s.store.mu.RLock()
-			defer s.store.mu.RUnlock()
+			s.store.Mu.RLock()
+			defer s.store.Mu.RUnlock()
 			for _, run := range s.store.Workflows {
 				if run.Name != "ci" {
 					continue

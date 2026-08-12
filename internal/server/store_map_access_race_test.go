@@ -23,12 +23,12 @@ func TestTokenMatchesClientUsesTheStoreLock(t *testing.T) {
 	go func() {
 		defer writers.Done()
 		for i := 0; i < 1_000; i++ {
-			st.mu.Lock()
+			st.Mu.Lock()
 			st.AppsByClientID[clientID] = app
-			st.mu.Unlock()
-			st.mu.Lock()
+			st.Mu.Unlock()
+			st.Mu.Lock()
 			delete(st.AppsByClientID, clientID)
-			st.mu.Unlock()
+			st.Mu.Unlock()
 		}
 	}()
 	for i := 0; i < 1_000; i++ {
@@ -36,9 +36,9 @@ func TestTokenMatchesClientUsesTheStoreLock(t *testing.T) {
 	}
 	writers.Wait()
 
-	st.mu.Lock()
+	st.Mu.Lock()
 	st.AppsByClientID[clientID] = app
-	st.mu.Unlock()
+	st.Mu.Unlock()
 	if !tokenMatchesClient(token, clientID, st) {
 		t.Fatal("matching App client was not recognized after concurrent access")
 	}
@@ -58,18 +58,18 @@ func TestUserGraphReadersUseStoreLock(t *testing.T) {
 	blocked := &User{ID: 9002, Login: "blocked"}
 	follower := &User{ID: 9003, Login: "follower"}
 	followee := &User{ID: 9004, Login: "followee"}
-	st.mu.Lock()
+	st.Mu.Lock()
 	for _, u := range []*User{blocker, blocked, follower, followee} {
 		st.Users[u.ID] = u
 		st.UsersByLogin[u.Login] = u
 	}
-	st.mu.Unlock()
+	st.Mu.Unlock()
 
 	st.BlockUser(blocker.ID, blocked.ID)
 
-	st.Misc.mu.Lock()
-	st.Misc.follows[follower.Login] = map[string]bool{followee.Login: true}
-	st.Misc.mu.Unlock()
+	st.Misc.Mu.Lock()
+	st.Misc.Follows[follower.Login] = map[string]bool{followee.Login: true}
+	st.Misc.Mu.Unlock()
 
 	pub, err := ssh.NewPublicKey(testSSHKey.Public())
 	if err != nil {
@@ -79,9 +79,9 @@ func TestUserGraphReadersUseStoreLock(t *testing.T) {
 	if err := cacheParsedKey(uk); err != nil {
 		t.Fatalf("cache parsed key: %v", err)
 	}
-	st.Misc.mu.Lock()
-	st.Misc.keysByUser[followee.ID] = []*UserKey{uk}
-	st.Misc.mu.Unlock()
+	st.Misc.Mu.Lock()
+	st.Misc.KeysByUser[followee.ID] = []*UserKey{uk}
+	st.Misc.Mu.Unlock()
 
 	// Writer churns st.Users under st.mu.Lock for as long as the readers run.
 	var stop atomic.Bool
@@ -91,14 +91,14 @@ func TestUserGraphReadersUseStoreLock(t *testing.T) {
 		defer writers.Done()
 		churn := &User{ID: 9999, Login: "churn"}
 		for !stop.Load() {
-			st.mu.Lock()
+			st.Mu.Lock()
 			st.Users[churn.ID] = churn
 			st.UsersByLogin[churn.Login] = churn
-			st.mu.Unlock()
-			st.mu.Lock()
+			st.Mu.Unlock()
+			st.Mu.Lock()
 			delete(st.Users, churn.ID)
 			delete(st.UsersByLogin, churn.Login)
-			st.mu.Unlock()
+			st.Mu.Unlock()
 		}
 	}()
 

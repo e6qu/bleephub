@@ -54,11 +54,11 @@ func TestEnterpriseStatePersistenceReload(t *testing.T) {
 	}
 	// Attach directly (the repo is user-owned; the association mechanism is
 	// what reload must preserve).
-	st1.mu.Lock()
+	st1.Mu.Lock()
 	st1.EnterpriseCodeSecurityRepoConfigs[repo.ID] = cfg.ID
-	st1.persist.MustPut("enterprise_code_security_attachments", "1",
+	st1.Persist.MustPut("enterprise_code_security_attachments", "1",
 		&EnterpriseCodeSecurityAttachment{RepoID: repo.ID, ConfigID: cfg.ID})
-	st1.mu.Unlock()
+	st1.Mu.Unlock()
 
 	st1.SetEnterpriseDependabotRepoAccess([]int{repo.ID})
 	st1.SetEnterpriseDependabotDefaultLevel("internal")
@@ -70,7 +70,7 @@ func TestEnterpriseStatePersistenceReload(t *testing.T) {
 	}
 	st1.SetEnterpriseCopilotCodingAgentPolicy("enabled_for_selected_orgs")
 	st1.AddEnterpriseCopilotCodingAgentOrgs([]string{"reload-org"})
-	st1.mu.Lock()
+	st1.Mu.Lock()
 	expiry := "2030-01-02T03:04:05Z"
 	customLink := "https://example.test/security"
 	st1.EnterpriseSettings.Announcement = &EnterpriseAnnouncement{
@@ -81,7 +81,7 @@ func TestEnterpriseStatePersistenceReload(t *testing.T) {
 		AdvancedSecurityEnabledForNewRepositories: true,
 		SecretScanningPushProtectionCustomLink:    &customLink,
 	}
-	pausedAt := st1.currentTime()
+	pausedAt := st1.CurrentTime()
 	st1.EnterpriseSettings.AuditLogStreams = []*EnterpriseAuditLogStream{{
 		ID: 7, StreamType: "Datadog", StreamDetails: "EU1", Enabled: false,
 		VendorSpecific: map[string]interface{}{"site": "EU1", "encrypted_token": "sealed"},
@@ -98,12 +98,12 @@ func TestEnterpriseStatePersistenceReload(t *testing.T) {
 	st1.EnterpriseSettings.SCIMUsers["scim-user-reload"] = &EnterpriseSCIMUser{
 		Schemas: []string{scimUserSchema}, ID: "scim-user-reload", ExternalID: "directory-user-reload",
 		UserName: admin.Login, DisplayName: "Reload SCIM User", Active: true,
-		UserID: admin.ID, CreatedAt: st1.currentTime(), UpdatedAt: st1.currentTime(),
+		UserID: admin.ID, CreatedAt: st1.CurrentTime(), UpdatedAt: st1.CurrentTime(),
 	}
 	st1.EnterpriseSettings.SCIMGroups["scim-group-reload"] = &EnterpriseSCIMGroup{
 		Schemas: []string{scimGroupSchema}, ID: "scim-group-reload", ExternalID: "directory-group-reload",
 		DisplayName: "Reload Crew", Members: []EnterpriseSCIMMember{{Value: "scim-user-reload"}},
-		TeamID: team.ID, CreatedAt: st1.currentTime(), UpdatedAt: st1.currentTime(),
+		TeamID: team.ID, CreatedAt: st1.CurrentTime(), UpdatedAt: st1.CurrentTime(),
 	}
 	st1.EnterpriseSettings.EnterpriseRoleTeamAssignments[8030] = []int{team.ID}
 	st1.EnterpriseSettings.EnterpriseRoleUserAssignments[8031] = []int{admin.ID}
@@ -116,27 +116,27 @@ func TestEnterpriseStatePersistenceReload(t *testing.T) {
 		Results: []EnterpriseInnerSourceSyncResult{{
 			ExternalID: "MVS-reload", Status: "created", GHSAID: "GHIS-reload",
 		}},
-		CreatedAt: st1.currentTime(), UpdatedAt: st1.currentTime(),
+		CreatedAt: st1.CurrentTime(), UpdatedAt: st1.CurrentTime(),
 	}
 	st1.EnterpriseSettings.EnterpriseCopilotSeats["user:1"] = &CopilotSeat{
 		OrgLogin: "enterprise:bleephub", UserID: admin.ID,
-		CreatedAt: st1.currentTime(), UpdatedAt: st1.currentTime(),
+		CreatedAt: st1.CurrentTime(), UpdatedAt: st1.CurrentTime(),
 	}
 	st1.EnterpriseSettings.CopilotCustomAgentsSourceOrgID = 42
 	st1.EnterpriseSettings.CopilotCustomAgentsRulesetID = 73
 	st1.EnterpriseSettings.EnterpriseBudgets["reload-budget"] = &OrgBudget{
 		ID: "reload-budget", BudgetScope: "enterprise", BudgetAmount: 500,
-		BudgetProductSKU: "actions", BudgetType: "ProductPricing", CreatedAt: st1.currentTime(),
+		BudgetProductSKU: "actions", BudgetType: "ProductPricing", CreatedAt: st1.CurrentTime(),
 	}
 	st1.EnterpriseSettings.EnterpriseCostCenters["reload-cost-center"] = &EnterpriseCostCenter{
 		ID: "reload-cost-center", Name: "Reload Engineering", State: "active",
 		Resources: []EnterpriseCostCenterResource{{Type: "User", Name: admin.Login}},
-		CreatedAt: st1.currentTime(), UpdatedAt: st1.currentTime(),
+		CreatedAt: st1.CurrentTime(), UpdatedAt: st1.CurrentTime(),
 	}
 	st1.EnterpriseSettings.EnterpriseBillingReports["reload-report"] = &EnterpriseBillingReport{
 		ID: "reload-report", ReportType: "summarized", StartDate: "2026-01-01",
 		EndDate: "2026-01-31", Status: "completed", Actor: admin.Login,
-		CreatedAt: st1.currentTime(), DownloadURLs: []string{"https://example.test/report.csv"},
+		CreatedAt: st1.CurrentTime(), DownloadURLs: []string{"https://example.test/report.csv"},
 	}
 	st1.EnterpriseSettings.GHESManagement.SSHKeys = []string{"ssh-ed25519 reload"}
 	st1.EnterpriseSettings.GHESManagement.Settings["github_hostname"] = "reload.example.test"
@@ -163,8 +163,8 @@ func TestEnterpriseStatePersistenceReload(t *testing.T) {
 		RunWorkflowsFromForkPullRequests: true,
 	}
 	st1.EnterpriseSettings.ActionsDisableSelfHostedRunners = true
-	st1.persistEnterpriseSettings()
-	st1.mu.Unlock()
+	st1.PersistEnterpriseSettings()
+	st1.Mu.Unlock()
 	enterpriseNetworkScope := "enterprise:bleephub"
 	enterpriseNetworkSettings, err := st1.CreateNetworkSettings(
 		enterpriseNetworkScope, "reload-enterprise-network", "/subscriptions/reload/subnets/actions", "eastus")
@@ -185,16 +185,16 @@ func TestEnterpriseStatePersistenceReload(t *testing.T) {
 	if !st1.AddHostedRunnerCustomImageVersion(enterpriseImage.ID, "1.0.0", 30) {
 		t.Fatal("add enterprise custom image version")
 	}
-	st1.mu.Lock()
+	st1.Mu.Lock()
 	hostedRunnerID := st1.NextHostedRunnerID
 	st1.NextHostedRunnerID++
 	st1.HostedRunners[hostedRunnerID] = &HostedRunner{
 		ID: hostedRunnerID, Enterprise: "bleephub", Name: "reload-enterprise-hosted",
 		RunnerGroupID: 47, ImageID: "ubuntu-24.04", ImageSource: "github",
-		MachineSizeID: "4-core", MaximumRunners: 3, CreatedAt: st1.currentTime(),
+		MachineSizeID: "4-core", MaximumRunners: 3, CreatedAt: st1.CurrentTime(),
 	}
-	st1.persistHostedRunnerLocked(st1.HostedRunners[hostedRunnerID])
-	st1.mu.Unlock()
+	st1.PersistHostedRunnerLocked(st1.HostedRunners[hostedRunnerID])
+	st1.Mu.Unlock()
 
 	if err := p1.Close(); err != nil {
 		t.Fatalf("close: %v", err)

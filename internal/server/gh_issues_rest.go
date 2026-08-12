@@ -268,7 +268,7 @@ func (s *Server) handleListIssues(w http.ResponseWriter, r *http.Request) {
 	}
 	var rows []issueRow
 	for _, storedIssue := range s.store.ListIssues(repo.ID, stateFilter) {
-		issue := s.store.snapIssue(storedIssue)
+		issue := s.store.SnapIssue(storedIssue)
 		if !selected(issue.LabelIDs, issue.AssigneeIDs) ||
 			!matchesCommon(issue.AuthorID, issue.MilestoneID, issue.UpdatedAt, issue.Body, "issue", issue.ID) {
 			continue
@@ -280,7 +280,7 @@ func (s *Server) handleListIssues(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	for _, storedPR := range s.store.ListPullRequests(repo.ID, stateFilter) {
-		pr := s.store.snapPR(storedPR)
+		pr := s.store.SnapPR(storedPR)
 		if !selected(pr.LabelIDs, pr.AssigneeIDs) ||
 			!matchesCommon(pr.AuthorID, pr.MilestoneID, pr.UpdatedAt, pr.Body, "pull_request", pr.ID) {
 			continue
@@ -499,9 +499,9 @@ func (s *Server) handleUpdateIssue(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	previousState := issue.State
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	s.store.UpdateIssue(issue.ID, func(i *Issue) {
 		if v, ok := req["title"].(string); ok {
 			i.Title = v
@@ -1245,7 +1245,7 @@ func issueToJSON(issue *Issue, st *Store, baseURL, repoFullName string) map[stri
 	// fields under st.mu.Lock, so reading them after RUnlock (title, body,
 	// state, lock flags, timestamps) would race a concurrent writer.
 	var authorJSON map[string]interface{}
-	st.mu.RLock()
+	st.Mu.RLock()
 	if u, ok := st.Users[issue.AuthorID]; ok {
 		authorJSON = userToJSON(u)
 	}
@@ -1274,12 +1274,12 @@ func issueToJSON(issue *Issue, st *Store, baseURL, repoFullName string) map[stri
 	}
 	repo := st.Repos[issue.RepoID]
 	var issueType *IssueType
-	if storedType := st.issueTypeForIssueLocked(issue); storedType != nil {
+	if storedType := st.IssueTypeForIssueLocked(issue); storedType != nil {
 		copied := *storedType
 		issueType = &copied
 	}
 	// Count comments via the maintained index while holding the lock.
-	commentCount := st.countCommentsForLocked("issue", issue.ID)
+	commentCount := st.CountCommentsForLocked("issue", issue.ID)
 
 	// Snapshot the mutable scalar fields before releasing the lock.
 	issueID := issue.ID
@@ -1302,7 +1302,7 @@ func issueToJSON(issue *Issue, st *Store, baseURL, repoFullName string) map[stri
 		c := *issue.ClosedAt
 		closedAtCopy = &c
 	}
-	st.mu.RUnlock()
+	st.Mu.RUnlock()
 
 	reactions := st.Reactions.SummarizeReactions("issue", issueID)
 	reactions["url"] = baseURL + "/api/v3/repos/" + repoFullName + "/issues/" + strconv.Itoa(issueNumber) + "/reactions"
@@ -1396,109 +1396,22 @@ func issueClosedByJSON(st *Store, repoID, issueID int, state string) interface{}
 		if events[i].Event != "closed" {
 			continue
 		}
-		st.mu.RLock()
+		st.Mu.RLock()
 		actor := actorUserLocked(st, events[i].ActorID)
 		var out interface{}
 		if actor != nil {
 			out = userToJSON(actor)
 		}
-		st.mu.RUnlock()
+		st.Mu.RUnlock()
 		return out
 	}
 	return nil
 }
 
-func commentToJSON(c *Comment, st *Store, baseURL, repoFullName string, issueNumber int) map[string]interface{} {
-	c = st.snapComment(c)
-	var authorJSON map[string]interface{}
-	st.mu.RLock()
-	if u, ok := st.Users[c.AuthorID]; ok {
-		authorJSON = userToJSON(u)
-	}
-	st.mu.RUnlock()
-
-	reactions := st.Reactions.SummarizeReactions("issue_comment", c.ID)
-	reactions["url"] = baseURL + "/api/v3/repos/" + repoFullName + "/issues/comments/" + strconv.Itoa(c.ID) + "/reactions"
-
-	return map[string]interface{}{
-		"id":         c.ID,
-		"node_id":    c.NodeID,
-		"url":        baseURL + "/api/v3/repos/" + repoFullName + "/issues/comments/" + strconv.Itoa(c.ID),
-		"html_url":   baseURL + "/" + repoFullName + "/issues/" + strconv.Itoa(issueNumber) + "#issuecomment-" + strconv.Itoa(c.ID),
-		"issue_url":  baseURL + "/api/v3/repos/" + repoFullName + "/issues/" + strconv.Itoa(issueNumber),
-		"body":       c.Body,
-		"user":       authorJSON,
-		"created_at": c.CreatedAt.Format(time.RFC3339),
-		"updated_at": c.UpdatedAt.Format(time.RFC3339),
-		"reactions":  reactions,
-	}
-}
-
-// timelineCommentToJSON renders a comment as it appears inside an issue
-// timeline, including the "event": "commented" discriminator.
-func timelineCommentToJSON(c *Comment, st *Store, baseURL, repoFullName string, issueNumber int, repo *Repo) map[string]interface{} {
-	out := commentToJSON(c, st, baseURL, repoFullName, issueNumber)
-	out["event"] = "commented"
-	out["actor"] = out["user"]
-	out["author_association"] = authorAssociation(st, c.AuthorID, repo)
-	out["performed_via_github_app"] = nil
-	return out
-}
-
-// issueEventBase returns the common fields shared by every issue-event
-// response shape.
-func issueEventBase(e *IssueEvent, st *Store, baseURL, repoFullName string) map[string]interface{} {
-	st.mu.RLock()
-	var actorJSON map[string]interface{}
-	if u, ok := st.Users[e.ActorID]; ok {
-		actorJSON = userToJSON(u)
-	}
-	st.mu.RUnlock()
-
-	var commitID interface{}
-	if e.CommitID != "" {
-		commitID = e.CommitID
-	}
-	var commitURL interface{}
-	if e.CommitURL != "" {
-		commitURL = e.CommitURL
-	} else if e.CommitID != "" {
-		commitURL = baseURL + "/api/v3/repos/" + repoFullName + "/commits/" + e.CommitID
-	}
-
-	return map[string]interface{}{
-		"id":         e.ID,
-		"node_id":    e.NodeID,
-		"url":        baseURL + "/api/v3/repos/" + repoFullName + "/issues/events/" + strconv.Itoa(e.ID),
-		"actor":      actorJSON,
-		"event":      e.Event,
-		"commit_id":  commitID,
-		"commit_url": commitURL,
-		"created_at": e.CreatedAt.Format(time.RFC3339),
-	}
-}
-
-// issueEventLabelToJSON returns the slim label shape used inside issue
-// events (name + color only).
-func issueEventLabelToJSON(l *IssueLabel) map[string]interface{} {
-	return map[string]interface{}{
-		"name":  l.Name,
-		"color": l.Color,
-	}
-}
-
-// issueEventMilestoneToJSON returns the slim milestone shape used inside
-// issue events (title only).
-func issueEventMilestoneToJSON(ms *Milestone) map[string]interface{} {
-	return map[string]interface{}{
-		"title": ms.Title,
-	}
-}
-
 // issueEventToJSON renders an IssueEvent to the repo-level GitHub
 // issue-event shape.
 func issueEventToJSON(e *IssueEvent, st *Store, baseURL, repoFullName string) map[string]interface{} {
-	st.mu.RLock()
+	st.Mu.RLock()
 	var labelJSON interface{}
 	if l, ok := st.Labels[e.LabelID]; ok {
 		labelJSON = issueEventLabelToJSON(l)
@@ -1515,7 +1428,7 @@ func issueEventToJSON(e *IssueEvent, st *Store, baseURL, repoFullName string) ma
 	if ms, ok := st.Milestones[e.MilestoneID]; ok {
 		milestoneJSON = issueEventMilestoneToJSON(ms)
 	}
-	st.mu.RUnlock()
+	st.Mu.RUnlock()
 
 	out := issueEventBase(e, st, baseURL, repoFullName)
 	out["performed_via_github_app"] = nil
@@ -1541,15 +1454,15 @@ func issueEventForIssueToJSON(e *IssueEvent, st *Store, baseURL, repoFullName st
 
 	switch e.Event {
 	case "labeled", "unlabeled":
-		st.mu.RLock()
+		st.Mu.RLock()
 		var labelJSON interface{}
 		if l, ok := st.Labels[e.LabelID]; ok {
 			labelJSON = issueEventLabelToJSON(l)
 		}
-		st.mu.RUnlock()
+		st.Mu.RUnlock()
 		out["label"] = labelJSON
 	case "assigned", "unassigned":
-		st.mu.RLock()
+		st.Mu.RLock()
 		var assigneeJSON, assignerJSON interface{}
 		if u, ok := st.Users[e.AssigneeID]; ok {
 			assigneeJSON = userToJSON(u)
@@ -1557,16 +1470,16 @@ func issueEventForIssueToJSON(e *IssueEvent, st *Store, baseURL, repoFullName st
 		if u, ok := st.Users[e.AssignerID]; ok {
 			assignerJSON = userToJSON(u)
 		}
-		st.mu.RUnlock()
+		st.Mu.RUnlock()
 		out["assignee"] = assigneeJSON
 		out["assigner"] = assignerJSON
 	case "milestoned", "demilestoned":
-		st.mu.RLock()
+		st.Mu.RLock()
 		var milestoneJSON interface{}
 		if ms, ok := st.Milestones[e.MilestoneID]; ok {
 			milestoneJSON = issueEventMilestoneToJSON(ms)
 		}
-		st.mu.RUnlock()
+		st.Mu.RUnlock()
 		out["milestone"] = milestoneJSON
 	case "renamed":
 		out["rename"] = map[string]interface{}{
@@ -1574,7 +1487,7 @@ func issueEventForIssueToJSON(e *IssueEvent, st *Store, baseURL, repoFullName st
 			"to":   e.RenameTo,
 		}
 	case "review_requested", "review_request_removed":
-		st.mu.RLock()
+		st.Mu.RLock()
 		var requesterJSON, reviewerJSON interface{}
 		if u, ok := st.Users[e.ActorID]; ok {
 			requesterJSON = userToJSON(u)
@@ -1582,7 +1495,7 @@ func issueEventForIssueToJSON(e *IssueEvent, st *Store, baseURL, repoFullName st
 		if u, ok := st.Users[e.RequestedReviewerID]; ok {
 			reviewerJSON = userToJSON(u)
 		}
-		st.mu.RUnlock()
+		st.Mu.RUnlock()
 		// GitHub's actor on review-request events is the requester.
 		out["review_requester"] = requesterJSON
 		out["requested_reviewer"] = reviewerJSON
@@ -1595,69 +1508,6 @@ func issueEventForIssueToJSON(e *IssueEvent, st *Store, baseURL, repoFullName st
 			lockReason = e.LockReason
 		}
 		out["lock_reason"] = lockReason
-	}
-	return out
-}
-
-// issueEventForTimelineToJSON renders an IssueEvent to the timeline-event
-// shape (timeline-issue-events union).
-func issueEventForTimelineToJSON(e *IssueEvent, st *Store, baseURL, repoFullName string) map[string]interface{} {
-	out := issueEventBase(e, st, baseURL, repoFullName)
-	out["performed_via_github_app"] = nil
-
-	switch e.Event {
-	case "labeled", "unlabeled":
-		st.mu.RLock()
-		var labelJSON interface{}
-		if l, ok := st.Labels[e.LabelID]; ok {
-			labelJSON = issueEventLabelToJSON(l)
-		}
-		st.mu.RUnlock()
-		out["label"] = labelJSON
-	case "assigned", "unassigned":
-		st.mu.RLock()
-		var assigneeJSON interface{}
-		if u, ok := st.Users[e.AssigneeID]; ok {
-			assigneeJSON = userToJSON(u)
-		}
-		st.mu.RUnlock()
-		out["assignee"] = assigneeJSON
-	case "milestoned", "demilestoned":
-		st.mu.RLock()
-		var milestoneJSON interface{}
-		if ms, ok := st.Milestones[e.MilestoneID]; ok {
-			milestoneJSON = issueEventMilestoneToJSON(ms)
-		}
-		st.mu.RUnlock()
-		out["milestone"] = milestoneJSON
-	case "renamed":
-		out["rename"] = map[string]interface{}{
-			"from": e.RenameFrom,
-			"to":   e.RenameTo,
-		}
-	case "locked", "unlocked":
-		lockReason := interface{}(nil)
-		if e.Event == "locked" && e.LockReason != "" {
-			lockReason = e.LockReason
-		}
-		out["lock_reason"] = lockReason
-	case "review_requested", "review_request_removed":
-		st.mu.RLock()
-		var requesterJSON, reviewerJSON interface{}
-		if u, ok := st.Users[e.ActorID]; ok {
-			requesterJSON = userToJSON(u)
-		}
-		if u, ok := st.Users[e.RequestedReviewerID]; ok {
-			reviewerJSON = userToJSON(u)
-		}
-		st.mu.RUnlock()
-		// GitHub's actor on review-request events is the requester.
-		out["review_requester"] = requesterJSON
-		out["requested_reviewer"] = reviewerJSON
-	default:
-		// opened, closed, reopened, merged, etc. map to
-		// state-change-issue-event.
-		out["state_reason"] = nil
 	}
 	return out
 }
@@ -1726,7 +1576,7 @@ func (s *Server) handleListOrgIssues(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Gather the org's issues under the read lock, render outside it.
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	orgRepos := map[int]*Repo{}
 	for _, repo := range s.store.Repos {
 		if repo.OwnerType == "Organization" && repo.OwnerID == org.ID {
@@ -1795,7 +1645,7 @@ func (s *Server) handleListOrgIssues(w http.ResponseWriter, r *http.Request) {
 		}
 		rows = append(rows, issueRow{issue: issue, repo: repo})
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 
 	if len(labelNames) > 0 {
 		kept := rows[:0]

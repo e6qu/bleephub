@@ -28,9 +28,9 @@ func doLogin(t *testing.T, s *Server, login string) http.CookieJar {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	user.PasswordHash = string(passwordHash)
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	form := url.Values{}
 	form.Set("login", login)
 	form.Set("password", credential)
@@ -153,11 +153,11 @@ func issueDeviceCode(t *testing.T, s *Server, clientID, scope string) (deviceCod
 func pollDeviceToken(t *testing.T, s *Server, deviceCode, accept string) *httptest.ResponseRecorder {
 	t.Helper()
 	var clientID string
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	if dc := s.store.DeviceCodes[deviceCode]; dc != nil {
 		clientID = dc.ClientID
 	}
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	form := url.Values{
 		"client_id":   {clientID},
 		"grant_type":  {"urn:ietf:params:oauth:grant-type:device_code"},
@@ -211,8 +211,8 @@ func postLogin(t *testing.T, s *Server, login, credential string) *httptest.Resp
 
 func seedOAuthTestUser(t *testing.T, s *Server, login string) *User {
 	t.Helper()
-	s.store.mu.Lock()
-	defer s.store.mu.Unlock()
+	s.store.Mu.Lock()
+	defer s.store.Mu.Unlock()
 	user := &User{ID: s.store.NextUser, Login: login, Type: "User"}
 	s.store.NextUser++
 	s.store.Users[user.ID] = user
@@ -283,9 +283,9 @@ func TestOAuth_LoginPost_RejectsSuspendedUser(t *testing.T) {
 	s.store.SeedDefaultUser()
 	u := seedOAuthTestUser(t, s, "login-suspended")
 	token := s.store.CreateToken(u.ID, "repo").Value
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	u.Suspended = true
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	s.registerGHOAuthRoutes()
 
 	w := postLogin(t, s, u.Login, token)
@@ -357,12 +357,12 @@ func TestOAuth_ConformantWebFlow_BindsCodeToSessionUser(t *testing.T) {
 	s := newTestServer()
 	s.store.SeedDefaultUser()
 	// Seed a second non-admin user.
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	alice := &User{ID: s.store.NextUser, Login: "alice", Type: "User", SiteAdmin: false}
 	s.store.NextUser++
 	s.store.Users[alice.ID] = alice
 	s.store.UsersByLogin[alice.Login] = alice
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	app := createOAuthTestApp(t, s, "http://cb/")
 	s.registerGHOAuthRoutes()
 
@@ -636,12 +636,12 @@ func TestOAuth_DeviceFlow_StillWorks(t *testing.T) {
 	// (both routes share the /login/oauth/access_token endpoint).
 	s := newTestServer()
 	s.store.SeedDefaultUser()
-	s.store.mu.Lock()
+	s.store.Mu.Lock()
 	alice := &User{ID: s.store.NextUser, Login: "device-alice", Type: "User"}
 	s.store.NextUser++
 	s.store.Users[alice.ID] = alice
 	s.store.UsersByLogin[alice.Login] = alice
-	s.store.mu.Unlock()
+	s.store.Mu.Unlock()
 	app := createOAuthTestApp(t, s, "http://device-callback/")
 	s.registerGHOAuthRoutes()
 

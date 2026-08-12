@@ -67,9 +67,9 @@ func (s *Server) resolveCopilotCodingAgentOrgs(sel copilotCodingAgentOrgSelectio
 // enabled_for_selected_orgs — the documented precondition for editing the
 // organization selection.
 func (s *Server) requireSelectedOrgsPolicy(w http.ResponseWriter) bool {
-	s.store.mu.RLock()
+	s.store.Mu.RLock()
 	policy := s.store.EnterpriseSettings.CopilotCodingAgentPolicy
-	s.store.mu.RUnlock()
+	s.store.Mu.RUnlock()
 	if policy != "enabled_for_selected_orgs" {
 		writeGHError(w, http.StatusBadRequest, "The enterprise's coding agent policy must be set to enabled_for_selected_orgs before using this endpoint.")
 		return false

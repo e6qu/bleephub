@@ -193,7 +193,7 @@ func (s *Server) handleActionTarball(w http.ResponseWriter, r *http.Request) {
 	}
 	if actionRepo.Private {
 		caller, err := s.callerRunner(r)
-		if err != nil || !caller.Scope.coversRepo(actionRepo.FullName) {
+		if err != nil || !caller.Scope.CoversRepo(actionRepo.FullName) {
 			s.logger.Warn().Str("action", nameWithOwner).Msg("action tarball denied: private repository outside the job's scope")
 			http.Error(w, "action repository "+nameWithOwner+" is not hosted in bleephub", http.StatusNotFound)
 			return
