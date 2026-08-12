@@ -408,8 +408,11 @@ func NewServer(addr string, logger zerolog.Logger, options ...ServerOption) *Ser
 	if s.injectedByteStore != nil {
 		byteStore = s.injectedByteStore
 		s.artifactStore = NewArtifactStoreWithByteStore(dataDir, byteStore)
-		// The engine captured the replaced artifact store at construction;
-		// rebuild it against the injected one before anything runs.
+		// The engine and the store captured the replaced artifact store at
+		// construction; re-point both before anything runs — leaving
+		// store.ActionsArtifacts on the discarded instance would silently
+		// diverge the two access paths (ACT-099).
+		s.store.ActionsArtifacts = s.artifactStore
 		s.actions = s.newActionsEngine()
 	}
 	if err := s.identity.validate(); err != nil {
