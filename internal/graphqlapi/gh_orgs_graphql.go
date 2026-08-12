@@ -5,6 +5,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/graphql-go/graphql"
 )
 
@@ -113,7 +114,7 @@ func (s *Resolver) addOrgFieldsToSchema(userType, queryType *graphql.Object, nod
 }
 
 // orgToGraphQL converts an Org to a map for GraphQL resolvers.
-func orgToGraphQL(org *Org) map[string]interface{} {
+func orgToGraphQL(org *store.Org) map[string]interface{} {
 	return map[string]interface{}{
 		"nodeID":       org.NodeID,
 		"databaseId":   org.ID,

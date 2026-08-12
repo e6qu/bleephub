@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/graphql-go/graphql"
 )
 
@@ -19,8 +20,8 @@ import (
 // membership decides write access, and the project itself when the input names
 // one rather than creating it.
 type projectMutationTarget struct {
-	owner   *projectV2Owner
-	project *ProjectV2
+	owner   *store.ProjectV2Owner
+	project *store.ProjectV2
 	// missing answers both "no such project" and "you may not see it", for the
 	// same reason the repository rule keeps them indistinguishable.
 	missing error
@@ -96,19 +97,19 @@ func projectTargetProject(key string) func(*Resolver, map[string]interface{}) pr
 // project's stored owner, which is how the GraphQL lane reaches them: there is
 // no request path to parse. An owner that no longer resolves yields nil and the
 // caller denies, rather than an owner record nobody controls.
-func (s *Resolver) projectV2OwnerByID(ownerID int, ownerType string) *projectV2Owner {
+func (s *Resolver) projectV2OwnerByID(ownerID int, ownerType string) *store.ProjectV2Owner {
 	if ownerType == "Organization" {
 		org := s.store.GetOrgByID(ownerID)
 		if org == nil {
 			return nil
 		}
-		return &projectV2Owner{ID: org.ID, OwnerType: "Organization", Login: org.Login, Org: org}
+		return &store.ProjectV2Owner{ID: org.ID, OwnerType: "Organization", Login: org.Login, Org: org}
 	}
 	u := s.store.GetUserByID(ownerID)
 	if u == nil {
 		return nil
 	}
-	return &projectV2Owner{ID: u.ID, OwnerType: "User", Login: u.Login, User: u}
+	return &store.ProjectV2Owner{ID: u.ID, OwnerType: "User", Login: u.Login, User: u}
 }
 
 // viewerCanReadProjectContent reports whether the request may read the issue or
@@ -297,20 +298,20 @@ func (s *Resolver) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 			dataType, _ := input["dataType"].(string)
 			rawOptions, _ := input["singleSelectOptions"].([]interface{})
 			rawIteration, _ := input["iterationConfiguration"].(map[string]interface{})
-			options := make([]*ProjectV2SingleSelectOption, 0, len(rawOptions))
+			options := make([]*store.ProjectV2SingleSelectOption, 0, len(rawOptions))
 			for _, raw := range rawOptions {
 				m, ok := raw.(map[string]interface{})
 				if !ok {
 					continue
 				}
 				n, _ := m["name"].(string)
-				options = append(options, &ProjectV2SingleSelectOption{Name: n})
+				options = append(options, &store.ProjectV2SingleSelectOption{Name: n})
 			}
-			var iteration *ProjectV2IterationConfiguration
+			var iteration *store.ProjectV2IterationConfiguration
 			if rawIteration != nil {
 				startDate, _ := rawIteration["startDate"].(string)
 				duration, _ := rawIteration["duration"].(int)
-				iteration = &ProjectV2IterationConfiguration{StartDate: startDate, Duration: duration}
+				iteration = &store.ProjectV2IterationConfiguration{StartDate: startDate, Duration: duration}
 				rawIterations, _ := rawIteration["iterations"].([]interface{})
 				for _, raw := range rawIterations {
 					m, ok := raw.(map[string]interface{})
@@ -323,7 +324,7 @@ func (s *Resolver) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 					if d, ok := m["duration"].(int); ok && d > 0 {
 						iterDuration = d
 					}
-					iteration.Iterations = append(iteration.Iterations, &ProjectV2Iteration{
+					iteration.Iterations = append(iteration.Iterations, &store.ProjectV2Iteration{
 						Title:     title,
 						StartDate: start,
 						Duration:  iterDuration,
@@ -335,10 +336,10 @@ func (s *Resolver) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 			if proj == nil {
 				return nil, &ghNotFoundError{message: fmt.Sprintf("Could not resolve to a project with the global id of '%s'.", projectNodeID)}
 			}
-			if dataType == string(ProjectV2FieldIteration) && iteration == nil {
+			if dataType == string(store.ProjectV2FieldIteration) && iteration == nil {
 				return nil, fmt.Errorf("iterationConfiguration is required for ITERATION fields")
 			}
-			field := s.store.ProjectsV2.CreateField(proj.ID, name, ProjectV2FieldDataType(dataType), options, iteration)
+			field := s.store.ProjectsV2.CreateField(proj.ID, name, store.ProjectV2FieldDataType(dataType), options, iteration)
 			return map[string]interface{}{
 				"projectV2Field": projectV2FieldToGQL(field),
 			}, nil
@@ -421,7 +422,7 @@ func (s *Resolver) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 	})
 }
 
-func projectV2GraphQLFieldValueInput(field *ProjectV2Field, value map[string]interface{}) (interface{}, error) {
+func projectV2GraphQLFieldValueInput(field *store.ProjectV2Field, value map[string]interface{}) (interface{}, error) {
 	if value == nil {
 		return nil, fmt.Errorf("value is required")
 	}
@@ -441,17 +442,17 @@ func projectV2GraphQLFieldValueInput(field *ProjectV2Field, value map[string]int
 		return nil, fmt.Errorf("exactly one field value must be provided")
 	}
 	got := candidates[0]
-	want := map[ProjectV2FieldDataType]string{
-		ProjectV2FieldSingleSelect: "singleSelectOptionId",
-		ProjectV2FieldText:         "text",
-		ProjectV2FieldNumber:       "number",
-		ProjectV2FieldDate:         "date",
-		ProjectV2FieldIteration:    "iterationId",
+	want := map[store.ProjectV2FieldDataType]string{
+		store.ProjectV2FieldSingleSelect: "singleSelectOptionId",
+		store.ProjectV2FieldText:         "text",
+		store.ProjectV2FieldNumber:       "number",
+		store.ProjectV2FieldDate:         "date",
+		store.ProjectV2FieldIteration:    "iterationId",
 	}[field.DataType]
 	if got.name != want {
 		return nil, fmt.Errorf("field %q expects %s", field.Name, want)
 	}
-	if field.DataType == ProjectV2FieldNumber {
+	if field.DataType == store.ProjectV2FieldNumber {
 		switch n := got.value.(type) {
 		case float64:
 			return n, nil
@@ -470,7 +471,7 @@ func projectV2GraphQLFieldValueInput(field *ProjectV2Field, value map[string]int
 
 // resolveProjectOwner maps a GraphQL node ID to (ownerID, ownerType).
 // Supports User + Organization nodes.
-func resolveProjectOwner(st *Store, nodeID string) (int, string, bool) {
+func resolveProjectOwner(st *store.Store, nodeID string) (int, string, bool) {
 	if nodeID == "" {
 		return 0, "", false
 	}
@@ -491,11 +492,11 @@ func resolveProjectOwner(st *Store, nodeID string) (int, string, bool) {
 
 // resolveContentByNodeID maps a GraphQL node ID to either an Issue or
 // PullRequest. Returns (contentType, contentID, ok).
-func resolveContentByNodeID(st *Store, nodeID string) (string, int, bool) {
-	if issue := findIssueByNodeID(st, nodeID); issue != nil {
+func resolveContentByNodeID(st *store.Store, nodeID string) (string, int, bool) {
+	if issue := store.FindIssueByNodeID(st, nodeID); issue != nil {
 		return "Issue", issue.ID, true
 	}
-	if pr := findPullRequestByNodeID(st, nodeID); pr != nil {
+	if pr := store.FindPullRequestByNodeID(st, nodeID); pr != nil {
 		return "PullRequest", pr.ID, true
 	}
 	return "", 0, false

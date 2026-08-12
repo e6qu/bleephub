@@ -13,7 +13,7 @@ import (
 // newSeededTestStore is a store with the default admin user and no HTTP
 // server around it — the moved tests only exercise store-pure resolver
 // helpers.
-func newSeededTestStore() *Store {
+func newSeededTestStore() *store.Store {
 	st := store.NewStore()
 	st.SeedDefaultUser()
 	return st
@@ -106,7 +106,7 @@ func TestRequestedReviewerTypeName(t *testing.T) {
 // source map must not embed a live *Store, and the id is still extractable
 // without one.
 func TestProjectV2SourceNoLongerCarriesStore(t *testing.T) {
-	m := projectV2ToGQL(&ProjectV2{ID: 7, NodeID: "PVT_x", Number: 3, Title: "Roadmap"})
+	m := projectV2ToGQL(&store.ProjectV2{ID: 7, NodeID: "PVT_x", Number: 3, Title: "Roadmap"})
 	if _, ok := m["store"]; ok {
 		t.Fatal("projectV2ToGQL still embeds a *Store in the source map")
 	}
@@ -151,7 +151,7 @@ func TestRelayPaginationCombinesDirectionalBounds(t *testing.T) {
 func TestRepoGraphQLURLUsesConfiguredExternalURL(t *testing.T) {
 	t.Setenv("BLEEPHUB_EXTERNAL_URL", "https://bleephub.example.test/")
 	st := newSeededTestStore()
-	repo := &Repo{FullName: "octo/example", Name: "example"}
+	repo := &store.Repo{FullName: "octo/example", Name: "example"}
 	if got := repoToGraphQL(st, repo)["url"]; got != "https://bleephub.example.test/octo/example" {
 		t.Fatalf("repository GraphQL url = %v", got)
 	}

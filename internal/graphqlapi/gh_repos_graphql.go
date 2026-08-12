@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/graphql-go/graphql"
 )
@@ -639,9 +640,9 @@ func (s *Resolver) addRepoFieldsToSchema(
 			}
 			after, _ := p.Args["after"].(string)
 
-			return paginateGQL(releases, first, after, func(rel *Release) map[string]interface{} {
+			return paginateGQL(releases, first, after, func(rel *store.Release) map[string]interface{} {
 				return releaseToGQL(rel, latestID, repoFullName, immutable)
-			}, func(rel *Release) string { return rel.NodeID }), nil
+			}, func(rel *store.Release) string { return rel.NodeID }), nil
 		},
 	})
 
@@ -727,14 +728,14 @@ func (s *Resolver) addRepoFieldsToSchema(
 			if values := graphQLRepositoryAffiliations(p.Args["ownerAffiliations"]); len(values) != 0 {
 				ownerAffiliations = values
 			}
-			var repos []*Repo
+			var repos []*store.Repo
 			if user != nil {
-				repos = s.store.ListReposForAuthUser(user, RepoListOptions{
+				repos = s.store.ListReposForAuthUser(user, store.RepoListOptions{
 					Affiliation: strings.Join(ownerAffiliations, ","),
 					NoPaginate:  true,
 				})
 			} else {
-				repos = s.store.ListReposForOrg(org.Login, RepoListOptions{NoPaginate: true})
+				repos = s.store.ListReposForOrg(org.Login, store.RepoListOptions{NoPaginate: true})
 			}
 
 			// Drop what the viewer cannot see, before any other filter.
@@ -744,7 +745,7 @@ func (s *Resolver) addRepoFieldsToSchema(
 				if viewer == nil {
 					repos = nil
 				} else {
-					visibleByAffiliation := s.store.ListReposForAuthUser(viewer, RepoListOptions{
+					visibleByAffiliation := s.store.ListReposForAuthUser(viewer, store.RepoListOptions{
 						Affiliation: strings.Join(affiliations, ","),
 						NoPaginate:  true,
 					})
@@ -752,7 +753,7 @@ func (s *Resolver) addRepoFieldsToSchema(
 					for _, repo := range visibleByAffiliation {
 						allowed[repo.ID] = true
 					}
-					repos = filterRepos(repos, func(repo *Repo) bool { return allowed[repo.ID] })
+					repos = filterRepos(repos, func(repo *store.Repo) bool { return allowed[repo.ID] })
 				}
 			}
 
@@ -763,7 +764,7 @@ func (s *Resolver) addRepoFieldsToSchema(
 				}
 			}
 			if privacy, ok := p.Args["privacy"].(string); ok {
-				var filtered []*Repo
+				var filtered []*store.Repo
 				for _, r := range repos {
 					switch strings.ToUpper(privacy) {
 					case "PUBLIC":
@@ -781,7 +782,7 @@ func (s *Resolver) addRepoFieldsToSchema(
 
 			// Filter by isFork
 			if isFork, ok := p.Args["isFork"].(bool); ok {
-				var filtered []*Repo
+				var filtered []*store.Repo
 				for _, r := range repos {
 					if r.Fork == isFork {
 						filtered = append(filtered, r)
@@ -790,17 +791,17 @@ func (s *Resolver) addRepoFieldsToSchema(
 				repos = filtered
 			}
 			if archived, ok := p.Args["isArchived"].(bool); ok {
-				repos = filterRepos(repos, func(repo *Repo) bool { return repo.Archived == archived })
+				repos = filterRepos(repos, func(repo *store.Repo) bool { return repo.Archived == archived })
 			}
 			if hasIssues, ok := p.Args["hasIssuesEnabled"].(bool); ok {
-				repos = filterRepos(repos, func(repo *Repo) bool { return repo.HasIssues == hasIssues })
+				repos = filterRepos(repos, func(repo *store.Repo) bool { return repo.HasIssues == hasIssues })
 			}
 			if locked, ok := p.Args["isLocked"].(bool); ok && locked {
 				// Bleephub does not currently create locked repositories.
 				repos = nil
 			}
 			if visibility, ok := p.Args["visibility"].(string); ok {
-				repos = filterRepos(repos, func(repo *Repo) bool {
+				repos = filterRepos(repos, func(repo *store.Repo) bool {
 					return strings.EqualFold(repo.Visibility, visibility)
 				})
 			}
@@ -980,8 +981,8 @@ func (s *Resolver) addRepoFieldsToSchema(
 			if err != nil {
 				return nil, err
 			}
-			var repo *Repo
-			if kind == organizationAccount {
+			var repo *store.Repo
+			if kind == store.OrganizationAccount {
 				owner := s.store.GetOrg(ownerLogin)
 				if owner == nil {
 					return nil, fmt.Errorf("repository creation for another owner is not authorized")
@@ -993,7 +994,7 @@ func (s *Resolver) addRepoFieldsToSchema(
 			if repo == nil {
 				return nil, fmt.Errorf("repository creation failed")
 			}
-			if !s.store.UpdateRepo(ownerLogin, name, func(r *Repo) {
+			if !s.store.UpdateRepo(ownerLogin, name, func(r *store.Repo) {
 				if v, ok := graphQLInputBool(input, "hasIssuesEnabled"); ok {
 					r.HasIssues = v
 				}
@@ -1023,7 +1024,7 @@ func (s *Resolver) addRepoFieldsToSchema(
 			input, _ := p.Args["input"].(map[string]interface{})
 			repoID, _ := input["repositoryId"].(string)
 
-			found := findRepoByNodeID(s.store, repoID)
+			found := store.FindRepoByNodeID(s.store, repoID)
 			if found == nil {
 				return nil, fmt.Errorf("could not resolve to a Repository with the global id of '%s'", repoID)
 			}
@@ -1041,8 +1042,8 @@ func (s *Resolver) addRepoFieldsToSchema(
 	return repoType, mutationType, ownerRepositoriesField, ownerRepositoryField
 }
 
-func filterRepos(repos []*Repo, keep func(*Repo) bool) []*Repo {
-	filtered := make([]*Repo, 0, len(repos))
+func filterRepos(repos []*store.Repo, keep func(*store.Repo) bool) []*store.Repo {
+	filtered := make([]*store.Repo, 0, len(repos))
 	for _, repo := range repos {
 		if keep(repo) {
 			filtered = append(filtered, repo)
@@ -1099,7 +1100,7 @@ const (
 
 // mutationTarget is the repository a mutation acts on.
 type mutationTarget struct {
-	repo     *Repo
+	repo     *store.Repo
 	authorID int
 	// missing answers both "no such node" and "you may not reach it". They have
 	// to be the same answer, or a mutation becomes an existence oracle for
@@ -1125,10 +1126,10 @@ func (repoCreationRule) authorize(s *Resolver, p graphql.ResolveParams, input ma
 	if err != nil {
 		return err
 	}
-	if !s.credentialGrantsAccount(p.Context, kind, login, scopeAdministration, permWrite) {
+	if !s.credentialGrantsAccount(p.Context, kind, login, store.ScopeAdministration, store.PermWrite) {
 		return fmt.Errorf("resource not accessible by integration")
 	}
-	if kind == organizationAccount && !s.viewerIsOrgMember(p.Context, login) {
+	if kind == store.OrganizationAccount && !s.viewerIsOrgMember(p.Context, login) {
 		return fmt.Errorf("repository creation for another owner is not authorized")
 	}
 	return nil
@@ -1137,20 +1138,20 @@ func (repoCreationRule) authorize(s *Resolver, p graphql.ResolveParams, input ma
 // createRepositoryOwner resolves the account a createRepository input names. The
 // policy row and the resolver both call it, so the owner the entitlement is
 // checked against is by construction the owner the repository is created under.
-func (s *Resolver) createRepositoryOwner(p graphql.ResolveParams, input map[string]interface{}) (accountKind, string, error) {
+func (s *Resolver) createRepositoryOwner(p graphql.ResolveParams, input map[string]interface{}) (store.AccountKind, string, error) {
 	user := s.ghUserFromContext(p.Context)
 	ownerID, _ := input["ownerId"].(string)
 	if ownerID == "" || ownerID == user.NodeID {
-		return anyAccount, user.Login, nil
+		return store.AnyAccount, user.Login, nil
 	}
 	s.store.Mu.RLock()
 	defer s.store.Mu.RUnlock()
 	for _, candidate := range s.store.Orgs {
 		if candidate.NodeID == ownerID {
-			return organizationAccount, candidate.Login, nil
+			return store.OrganizationAccount, candidate.Login, nil
 		}
 	}
-	return anyAccount, "", fmt.Errorf("repository creation for another owner is not authorized")
+	return store.AnyAccount, "", fmt.Errorf("repository creation for another owner is not authorized")
 }
 
 // repoRule is the policy for a mutation whose subject belongs to a repository.
@@ -1160,7 +1161,7 @@ type repoRule struct {
 	// issue triage at issues:write and pull-request triage at
 	// pull_requests:write. One scope for the whole table would refuse apps
 	// GitHub allows.
-	scope permScope
+	scope store.PermScope
 	level mutationLevel
 	// authorMayAct admits the author of the targeted content whatever their
 	// repository access: editing your own issue or hiding your own comment
@@ -1191,7 +1192,7 @@ func (r repoRule) authorize(s *Resolver, p graphql.ResolveParams, input map[stri
 	// app's grant is not a fact about the bearer. Ordering these the other way
 	// round let a bearer who had merely filed the issue retitle it through an
 	// app installed nowhere.
-	if !s.credentialGrantsRepo(p.Context, target.repo, r.scope, permWrite) {
+	if !s.credentialGrantsRepo(p.Context, target.repo, r.scope, store.PermWrite) {
 		return fmt.Errorf("resource not accessible by integration")
 	}
 	user := s.ghUserFromContext(p.Context)
@@ -1200,11 +1201,11 @@ func (r repoRule) authorize(s *Resolver, p graphql.ResolveParams, input map[stri
 	}
 	switch r.level {
 	case mutationPushRepo:
-		if !s.principalHoldsRepoCapability(p.Context, target.repo, permWrite) {
+		if !s.principalHoldsRepoCapability(p.Context, target.repo, store.PermWrite) {
 			return fmt.Errorf("must have push access to Repository")
 		}
 	case mutationAdminRepo:
-		if !s.principalHoldsRepoCapability(p.Context, target.repo, permAdmin) {
+		if !s.principalHoldsRepoCapability(p.Context, target.repo, store.PermAdmin) {
 			return fmt.Errorf("must have admin rights to Repository")
 		}
 	}
@@ -1226,42 +1227,42 @@ func (r repoRule) authorize(s *Resolver, p graphql.ResolveParams, input map[stri
 // else's discussion needs admin.
 var graphqlMutationAuthz = map[string]mutationRule{
 	"createRepository": repoCreationRule{},
-	"deleteRepository": repoRule{scope: scopeAdministration, level: mutationAdminRepo, target: mutationTargetRepo("repositoryId")},
+	"deleteRepository": repoRule{scope: store.ScopeAdministration, level: mutationAdminRepo, target: mutationTargetRepo("repositoryId")},
 
 	// Comments on a pull request are stored and served as issue comments, and
 	// GitHub gates the issue-comment endpoints on Issues however the subject was
 	// opened, so addComment and the comment moderation mutations are scopeIssues
 	// even where the subject resolves to a pull request.
-	"createIssue": repoRule{scope: scopeIssues, level: mutationReadRepo, target: mutationTargetRepo("repositoryId")},
-	"addComment":  repoRule{scope: scopeIssues, level: mutationReadRepo, target: mutationTargetIssueOrPullRequest("subjectId")},
-	"closeIssue":  repoRule{scope: scopeIssues, level: mutationPushRepo, authorMayAct: true, target: mutationTargetIssue("issueId")},
-	"reopenIssue": repoRule{scope: scopeIssues, level: mutationPushRepo, authorMayAct: true, target: mutationTargetIssue("issueId")},
-	"updateIssue": repoRule{scope: scopeIssues, level: mutationPushRepo, authorMayAct: true, target: mutationTargetIssue("id")},
+	"createIssue": repoRule{scope: store.ScopeIssues, level: mutationReadRepo, target: mutationTargetRepo("repositoryId")},
+	"addComment":  repoRule{scope: store.ScopeIssues, level: mutationReadRepo, target: mutationTargetIssueOrPullRequest("subjectId")},
+	"closeIssue":  repoRule{scope: store.ScopeIssues, level: mutationPushRepo, authorMayAct: true, target: mutationTargetIssue("issueId")},
+	"reopenIssue": repoRule{scope: store.ScopeIssues, level: mutationPushRepo, authorMayAct: true, target: mutationTargetIssue("issueId")},
+	"updateIssue": repoRule{scope: store.ScopeIssues, level: mutationPushRepo, authorMayAct: true, target: mutationTargetIssue("id")},
 
-	"createDiscussion":                repoRule{scope: scopeDiscussions, level: mutationReadRepo, target: mutationTargetRepo("repositoryId")},
-	"addDiscussionComment":            repoRule{scope: scopeDiscussions, level: mutationReadRepo, target: mutationTargetDiscussion("discussionId")},
-	"updateDiscussion":                repoRule{scope: scopeDiscussions, level: mutationAdminRepo, authorMayAct: true, target: mutationTargetDiscussion("discussionId")},
-	"deleteDiscussion":                repoRule{scope: scopeDiscussions, level: mutationAdminRepo, authorMayAct: true, target: mutationTargetDiscussion("id")},
-	"updateDiscussionComment":         repoRule{scope: scopeDiscussions, level: mutationAdminRepo, authorMayAct: true, target: mutationTargetDiscussionComment("commentId")},
-	"deleteDiscussionComment":         repoRule{scope: scopeDiscussions, level: mutationAdminRepo, authorMayAct: true, target: mutationTargetDiscussionComment("id")},
-	"markDiscussionCommentAsAnswer":   repoRule{scope: scopeDiscussions, level: mutationPushRepo, authorMayAct: true, target: mutationTargetAnsweredDiscussion("id")},
-	"unmarkDiscussionCommentAsAnswer": repoRule{scope: scopeDiscussions, level: mutationPushRepo, authorMayAct: true, target: mutationTargetAnsweredDiscussion("id")},
+	"createDiscussion":                repoRule{scope: store.ScopeDiscussions, level: mutationReadRepo, target: mutationTargetRepo("repositoryId")},
+	"addDiscussionComment":            repoRule{scope: store.ScopeDiscussions, level: mutationReadRepo, target: mutationTargetDiscussion("discussionId")},
+	"updateDiscussion":                repoRule{scope: store.ScopeDiscussions, level: mutationAdminRepo, authorMayAct: true, target: mutationTargetDiscussion("discussionId")},
+	"deleteDiscussion":                repoRule{scope: store.ScopeDiscussions, level: mutationAdminRepo, authorMayAct: true, target: mutationTargetDiscussion("id")},
+	"updateDiscussionComment":         repoRule{scope: store.ScopeDiscussions, level: mutationAdminRepo, authorMayAct: true, target: mutationTargetDiscussionComment("commentId")},
+	"deleteDiscussionComment":         repoRule{scope: store.ScopeDiscussions, level: mutationAdminRepo, authorMayAct: true, target: mutationTargetDiscussionComment("id")},
+	"markDiscussionCommentAsAnswer":   repoRule{scope: store.ScopeDiscussions, level: mutationPushRepo, authorMayAct: true, target: mutationTargetAnsweredDiscussion("id")},
+	"unmarkDiscussionCommentAsAnswer": repoRule{scope: store.ScopeDiscussions, level: mutationPushRepo, authorMayAct: true, target: mutationTargetAnsweredDiscussion("id")},
 
-	"minimizeComment":   repoRule{scope: scopeIssues, level: mutationPushRepo, authorMayAct: true, target: mutationTargetIssueComment("subjectId")},
-	"unminimizeComment": repoRule{scope: scopeIssues, level: mutationPushRepo, authorMayAct: true, target: mutationTargetIssueComment("subjectId")},
-	"lockLockable":      repoRule{scope: scopeIssues, level: mutationPushRepo, target: mutationTargetIssueOrPullRequest("lockableId")},
-	"unlockLockable":    repoRule{scope: scopeIssues, level: mutationPushRepo, target: mutationTargetIssueOrPullRequest("lockableId")},
+	"minimizeComment":   repoRule{scope: store.ScopeIssues, level: mutationPushRepo, authorMayAct: true, target: mutationTargetIssueComment("subjectId")},
+	"unminimizeComment": repoRule{scope: store.ScopeIssues, level: mutationPushRepo, authorMayAct: true, target: mutationTargetIssueComment("subjectId")},
+	"lockLockable":      repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: mutationTargetIssueOrPullRequest("lockableId")},
+	"unlockLockable":    repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: mutationTargetIssueOrPullRequest("lockableId")},
 
-	"createPullRequest":             repoRule{scope: scopePullRequests, level: mutationReadRepo, target: mutationTargetRepo("repositoryId")},
-	"addPullRequestReview":          repoRule{scope: scopePullRequests, level: mutationReadRepo, target: mutationTargetPullRequest("pullRequestId")},
-	"closePullRequest":              repoRule{scope: scopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetPullRequest("pullRequestId")},
-	"reopenPullRequest":             repoRule{scope: scopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetPullRequest("pullRequestId")},
-	"updatePullRequest":             repoRule{scope: scopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetPullRequest("pullRequestId")},
-	"markPullRequestReadyForReview": repoRule{scope: scopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetPullRequest("pullRequestId")},
-	"convertPullRequestToDraft":     repoRule{scope: scopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetPullRequest("pullRequestId")},
-	"mergePullRequest":              repoRule{scope: scopePullRequests, level: mutationPushRepo, target: mutationTargetPullRequest("pullRequestId")},
-	"resolveReviewThread":           repoRule{scope: scopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetReviewThread("threadId")},
-	"unresolveReviewThread":         repoRule{scope: scopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetReviewThread("threadId")},
+	"createPullRequest":             repoRule{scope: store.ScopePullRequests, level: mutationReadRepo, target: mutationTargetRepo("repositoryId")},
+	"addPullRequestReview":          repoRule{scope: store.ScopePullRequests, level: mutationReadRepo, target: mutationTargetPullRequest("pullRequestId")},
+	"closePullRequest":              repoRule{scope: store.ScopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetPullRequest("pullRequestId")},
+	"reopenPullRequest":             repoRule{scope: store.ScopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetPullRequest("pullRequestId")},
+	"updatePullRequest":             repoRule{scope: store.ScopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetPullRequest("pullRequestId")},
+	"markPullRequestReadyForReview": repoRule{scope: store.ScopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetPullRequest("pullRequestId")},
+	"convertPullRequestToDraft":     repoRule{scope: store.ScopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetPullRequest("pullRequestId")},
+	"mergePullRequest":              repoRule{scope: store.ScopePullRequests, level: mutationPushRepo, target: mutationTargetPullRequest("pullRequestId")},
+	"resolveReviewThread":           repoRule{scope: store.ScopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetReviewThread("threadId")},
+	"unresolveReviewThread":         repoRule{scope: store.ScopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetReviewThread("threadId")},
 
 	// Projects v2. A project belongs to a user or an organization, not to a
 	// repository, so write is the owner-scoped predicate the REST surface uses:
@@ -1400,7 +1401,7 @@ func mutationTargetRepo(key string) func(*Resolver, map[string]interface{}) muta
 	return func(s *Resolver, input map[string]interface{}) mutationTarget {
 		nodeID, _ := input[key].(string)
 		return mutationTarget{
-			repo:    findRepoByNodeID(s.store, nodeID),
+			repo:    store.FindRepoByNodeID(s.store, nodeID),
 			missing: gqlMissingNode("Repository", nodeID),
 		}
 	}
@@ -1410,7 +1411,7 @@ func mutationTargetIssue(key string) func(*Resolver, map[string]interface{}) mut
 	return func(s *Resolver, input map[string]interface{}) mutationTarget {
 		nodeID, _ := input[key].(string)
 		target := mutationTarget{missing: gqlMissingNode("Issue", nodeID)}
-		if issue := findIssueByNodeID(s.store, nodeID); issue != nil {
+		if issue := store.FindIssueByNodeID(s.store, nodeID); issue != nil {
 			target.repo = s.store.GetRepoByID(issue.RepoID)
 			target.authorID = issue.AuthorID
 		}
@@ -1422,7 +1423,7 @@ func mutationTargetPullRequest(key string) func(*Resolver, map[string]interface{
 	return func(s *Resolver, input map[string]interface{}) mutationTarget {
 		nodeID, _ := input[key].(string)
 		target := mutationTarget{missing: gqlMissingNode("PullRequest", nodeID)}
-		if pr := findPullRequestByNodeID(s.store, nodeID); pr != nil {
+		if pr := store.FindPullRequestByNodeID(s.store, nodeID); pr != nil {
 			target.repo = s.store.GetRepoByID(pr.RepoID)
 			target.authorID = pr.AuthorID
 		}
@@ -1437,12 +1438,12 @@ func mutationTargetIssueOrPullRequest(key string) func(*Resolver, map[string]int
 	return func(s *Resolver, input map[string]interface{}) mutationTarget {
 		nodeID, _ := input[key].(string)
 		target := mutationTarget{missing: gqlMissingNode("node", nodeID)}
-		if issue := findIssueByNodeID(s.store, nodeID); issue != nil {
+		if issue := store.FindIssueByNodeID(s.store, nodeID); issue != nil {
 			target.repo = s.store.GetRepoByID(issue.RepoID)
 			target.authorID = issue.AuthorID
 			return target
 		}
-		if pr := findPullRequestByNodeID(s.store, nodeID); pr != nil {
+		if pr := store.FindPullRequestByNodeID(s.store, nodeID); pr != nil {
 			target.repo = s.store.GetRepoByID(pr.RepoID)
 			target.authorID = pr.AuthorID
 		}
@@ -1476,7 +1477,7 @@ func mutationTargetDiscussion(key string) func(*Resolver, map[string]interface{}
 	return func(s *Resolver, input map[string]interface{}) mutationTarget {
 		nodeID, _ := input[key].(string)
 		target := mutationTarget{missing: gqlMissingNode("Discussion", nodeID)}
-		if d := findDiscussionByNodeID(s.store, nodeID); d != nil {
+		if d := store.FindDiscussionByNodeID(s.store, nodeID); d != nil {
 			target.repo = s.store.GetRepoByID(d.RepoID)
 			target.authorID = d.AuthorID
 		}
@@ -1488,7 +1489,7 @@ func mutationTargetDiscussionComment(key string) func(*Resolver, map[string]inte
 	return func(s *Resolver, input map[string]interface{}) mutationTarget {
 		nodeID, _ := input[key].(string)
 		target := mutationTarget{missing: gqlMissingNode("DiscussionComment", nodeID)}
-		c := findDiscussionCommentByNodeID(s.store, nodeID)
+		c := store.FindDiscussionCommentByNodeID(s.store, nodeID)
 		if c == nil {
 			return target
 		}
@@ -1507,7 +1508,7 @@ func mutationTargetAnsweredDiscussion(key string) func(*Resolver, map[string]int
 	return func(s *Resolver, input map[string]interface{}) mutationTarget {
 		nodeID, _ := input[key].(string)
 		target := mutationTarget{missing: gqlMissingNode("DiscussionComment", nodeID)}
-		c := findDiscussionCommentByNodeID(s.store, nodeID)
+		c := store.FindDiscussionCommentByNodeID(s.store, nodeID)
 		if c == nil {
 			return target
 		}
@@ -1523,7 +1524,7 @@ func mutationTargetReviewThread(key string) func(*Resolver, map[string]interface
 	return func(s *Resolver, input map[string]interface{}) mutationTarget {
 		nodeID, _ := input[key].(string)
 		target := mutationTarget{missing: gqlMissingNode("PullRequestReviewThread", nodeID)}
-		threadID, ok := parsePRReviewThreadNodeID(nodeID)
+		threadID, ok := store.ParsePRReviewThreadNodeID(nodeID)
 		if !ok {
 			return target
 		}
@@ -1547,16 +1548,16 @@ func mutationTargetReviewThread(key string) func(*Resolver, map[string]interface
 // the store lock over — never the live shared pointer off-lock, which would
 // race a concurrent UpdateRepo. Under-lock callers (the *Locked GraphQL paths)
 // pass the live pointer; off-lock resolvers pass a snapshot.
-func repoToGraphQL(st *Store, repo *Repo) map[string]interface{} {
+func repoToGraphQL(st *store.Store, repo *store.Repo) map[string]interface{} {
 	return repoToGraphQLWithOrg(repo, st.GetOrgByID)
 }
 
 // repoToGraphQLLocked is repoToGraphQL for callers that already hold st.mu.
-func repoToGraphQLLocked(st *Store, repo *Repo) map[string]interface{} {
-	return repoToGraphQLWithOrg(repo, func(id int) *Org { return st.Orgs[id] })
+func repoToGraphQLLocked(st *store.Store, repo *store.Repo) map[string]interface{} {
+	return repoToGraphQLWithOrg(repo, func(id int) *store.Org { return st.Orgs[id] })
 }
 
-func repoToGraphQLWithOrg(repo *Repo, getOrg func(int) *Org) map[string]interface{} {
+func repoToGraphQLWithOrg(repo *store.Repo, getOrg func(int) *store.Org) map[string]interface{} {
 	var ownerMap map[string]interface{}
 	if repo.OwnerType == "Organization" {
 		if org := getOrg(repo.OwnerID); org != nil {
@@ -1574,7 +1575,7 @@ func repoToGraphQLWithOrg(repo *Repo, getOrg func(int) *Org) map[string]interfac
 		"nameWithOwner":       repo.FullName,
 		"description":         repo.Description,
 		"url":                 webURL,
-		"sshUrl":              sshGitURL(repo.FullName),
+		"sshUrl":              store.SshGitURL(repo.FullName),
 		"isPrivate":           repo.Private,
 		"isFork":              repo.Fork,
 		"isArchived":          repo.Archived,
@@ -1590,7 +1591,7 @@ func repoToGraphQLWithOrg(repo *Repo, getOrg func(int) *Org) map[string]interfac
 		"hasIssues":           repo.HasIssues,
 		"hasProjects":         repo.HasProjects,
 		"hasWiki":             repo.HasWiki,
-		"hasDiscussions":      repoHasDiscussions(repo),
+		"hasDiscussions":      store.RepoHasDiscussions(repo),
 		"parentID":            repo.ParentID,
 		"templateRepoID":      repo.TemplateRepoID,
 		"allowSquashMerge":    repo.AllowSquashMerge,
@@ -1601,7 +1602,7 @@ func repoToGraphQLWithOrg(repo *Repo, getOrg func(int) *Org) map[string]interfac
 		"owner":               ownerMap,
 		"createdAt":           repo.CreatedAt.Format(time.RFC3339),
 		"updatedAt":           repo.UpdatedAt.Format(time.RFC3339),
-		"pushedAt":            nullableTimestamp(repo.PushedAt),
+		"pushedAt":            store.NullableTimestamp(repo.PushedAt),
 		"archivedAt":          nullableTimePtr(repo.ArchivedAt),
 	}
 }
@@ -1630,7 +1631,7 @@ func graphQLInputBool(input map[string]interface{}, key string) (bool, bool) {
 
 // repoOwnerGraphQLLocked returns the concrete User or Organization source for
 // the RepositoryOwner interface. Callers already hold st.mu.
-func repoOwnerGraphQLLocked(repo *Repo, st *Store) map[string]interface{} {
+func repoOwnerGraphQLLocked(repo *store.Repo, st *store.Store) map[string]interface{} {
 	if repo == nil {
 		return nil
 	}
@@ -1648,7 +1649,7 @@ func repoOwnerGraphQLLocked(repo *Repo, st *Store) map[string]interface{} {
 // releaseToGQL renders a stored Release as the GraphQL source map for the
 // Release type. latestID is the id of the repo's latest published release
 // (0 when none) so isLatest reflects the same derivation REST uses.
-func releaseToGQL(rel *Release, latestID int, repoFullName string, immutable bool) map[string]interface{} {
+func releaseToGQL(rel *store.Release, latestID int, repoFullName string, immutable bool) map[string]interface{} {
 	var publishedAt interface{}
 	if rel.PublishedAt != nil {
 		publishedAt = rel.PublishedAt.Format(time.RFC3339)

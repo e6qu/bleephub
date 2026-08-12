@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -899,9 +900,9 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 					issues := closingIssuesForPullRequest(s.store, repo, pr)
 					first, _ := intArg(p.Args, "first")
 					after, _ := p.Args["after"].(string)
-					return paginateGQL(issues, first, after, func(issue *Issue) map[string]interface{} {
+					return paginateGQL(issues, first, after, func(issue *store.Issue) map[string]interface{} {
 						return issueToGQL(issue, s.store)
-					}, func(issue *Issue) string { return issue.NodeID }), nil
+					}, func(issue *store.Issue) string { return issue.NodeID }), nil
 				},
 			},
 			"mergeCommit": &graphql.Field{
@@ -1030,7 +1031,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 				for _, st := range states {
 					stateMap[fmt.Sprintf("%v", st)] = true
 				}
-				var filtered []*PullRequest
+				var filtered []*store.PullRequest
 				for _, pr := range prs {
 					if stateMap[pr.State] {
 						filtered = append(filtered, pr)
@@ -1045,7 +1046,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 				for _, ln := range labelNames {
 					names = append(names, fmt.Sprintf("%v", ln))
 				}
-				var filtered []*PullRequest
+				var filtered []*store.PullRequest
 				for _, pr := range prs {
 					if prHasAllLabels(s.store, pr, names) {
 						filtered = append(filtered, pr)
@@ -1056,7 +1057,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 
 			// Filter by headRefName
 			if head, ok := p.Args["headRefName"].(string); ok && head != "" {
-				var filtered []*PullRequest
+				var filtered []*store.PullRequest
 				for _, pr := range prs {
 					if pr.HeadRefName == head {
 						filtered = append(filtered, pr)
@@ -1067,7 +1068,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 
 			// Filter by baseRefName
 			if base, ok := p.Args["baseRefName"].(string); ok && base != "" {
-				var filtered []*PullRequest
+				var filtered []*store.PullRequest
 				for _, pr := range prs {
 					if pr.BaseRefName == base {
 						filtered = append(filtered, pr)
@@ -1292,20 +1293,20 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			draft, _ := input["draft"].(bool)
 			maintainerCanModify, _ := input["maintainerCanModify"].(bool)
 
-			repo := findRepoByNodeID(s.store, repoNodeID)
+			repo := store.FindRepoByNodeID(s.store, repoNodeID)
 			if repo == nil {
 				return nil, fmt.Errorf("could not resolve to a Repository with the global id of '%s'", repoNodeID)
 			}
 
-			headRepo, headRefName := resolvePullRequestHead(s.store, repo, headRefName)
+			headRepo, headRefName := store.ResolvePullRequestHead(s.store, repo, headRefName)
 			if headRepo == nil || headRefName == "" {
 				return nil, fmt.Errorf("pull request creation failed")
 			}
-			pr, err := s.store.CreatePullRequestChecked(repo.ID, user.ID, title, body, headRefName, baseRefName, draft, nil, nil, 0, PullRequestOptions{
+			pr, err := s.store.CreatePullRequestChecked(repo.ID, user.ID, title, body, headRefName, baseRefName, draft, nil, nil, 0, store.PullRequestOptions{
 				HeadRepoID:          headRepo.ID,
 				MaintainerCanModify: maintainerCanModify,
 			})
-			if errors.Is(err, ErrOpenPullRequestExists) {
+			if errors.Is(err, store.ErrOpenPullRequestExists) {
 				return nil, fmt.Errorf("a pull request already exists for this head and base")
 			}
 			if pr == nil {
@@ -1343,13 +1344,13 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			input, _ := p.Args["input"].(map[string]interface{})
 			prNodeID, _ := input["pullRequestId"].(string)
 
-			pr := findPullRequestByNodeID(s.store, prNodeID)
+			pr := store.FindPullRequestByNodeID(s.store, prNodeID)
 			if pr == nil {
 				return nil, fmt.Errorf("could not resolve to a PullRequest")
 			}
 
 			priorState := pr.State
-			s.store.UpdatePullRequest(pr.ID, func(p *PullRequest) {
+			s.store.UpdatePullRequest(pr.ID, func(p *store.PullRequest) {
 				p.State = "CLOSED"
 				now := time.Now()
 				p.ClosedAt = &now
@@ -1388,12 +1389,12 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			user := s.ghUserFromContext(p.Context)
 			input, _ := p.Args["input"].(map[string]interface{})
 			prNodeID, _ := input["pullRequestId"].(string)
-			pr := findPullRequestByNodeID(s.store, prNodeID)
+			pr := store.FindPullRequestByNodeID(s.store, prNodeID)
 			if pr == nil {
 				return nil, fmt.Errorf("could not resolve to a PullRequest")
 			}
 			wasDraft := pr.IsDraft
-			s.store.UpdatePullRequest(pr.ID, func(p *PullRequest) { p.IsDraft = false })
+			s.store.UpdatePullRequest(pr.ID, func(p *store.PullRequest) { p.IsDraft = false })
 			if wasDraft && user != nil {
 				s.store.RecordPullRequestEvent(pr.RepoID, pr.ID, user.ID, "ready_for_review", "", 0)
 			}
@@ -1427,12 +1428,12 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			user := s.ghUserFromContext(p.Context)
 			input, _ := p.Args["input"].(map[string]interface{})
 			prNodeID, _ := input["pullRequestId"].(string)
-			pr := findPullRequestByNodeID(s.store, prNodeID)
+			pr := store.FindPullRequestByNodeID(s.store, prNodeID)
 			if pr == nil {
 				return nil, fmt.Errorf("could not resolve to a PullRequest")
 			}
 			wasReady := !pr.IsDraft
-			s.store.UpdatePullRequest(pr.ID, func(p *PullRequest) { p.IsDraft = true })
+			s.store.UpdatePullRequest(pr.ID, func(p *store.PullRequest) { p.IsDraft = true })
 			if wasReady && user != nil {
 				s.store.RecordPullRequestEvent(pr.RepoID, pr.ID, user.ID, "convert_to_draft", "", 0)
 			}
@@ -1468,7 +1469,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			input, _ := p.Args["input"].(map[string]interface{})
 			prNodeID, _ := input["pullRequestId"].(string)
 
-			pr := findPullRequestByNodeID(s.store, prNodeID)
+			pr := store.FindPullRequestByNodeID(s.store, prNodeID)
 			if pr == nil {
 				return nil, fmt.Errorf("could not resolve to a PullRequest")
 			}
@@ -1478,7 +1479,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			}
 
 			priorState := pr.State
-			s.store.UpdatePullRequest(pr.ID, func(p *PullRequest) {
+			s.store.UpdatePullRequest(pr.ID, func(p *store.PullRequest) {
 				p.State = "OPEN"
 				p.ClosedAt = nil
 			})
@@ -1537,7 +1538,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			input, _ := p.Args["input"].(map[string]interface{})
 			prNodeID, _ := input["pullRequestId"].(string)
 
-			pr := findPullRequestByNodeID(s.store, prNodeID)
+			pr := store.FindPullRequestByNodeID(s.store, prNodeID)
 			if pr == nil {
 				return nil, fmt.Errorf("could not resolve to a PullRequest")
 			}
@@ -1670,7 +1671,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			event, _ := input["event"].(string)
 			body, _ := input["body"].(string)
 
-			pr := findPullRequestByNodeID(s.store, prNodeID)
+			pr := store.FindPullRequestByNodeID(s.store, prNodeID)
 			if pr == nil {
 				return nil, &ghNotFoundError{
 					message: fmt.Sprintf("Could not resolve to a node with the global id of '%s'", prNodeID),
@@ -1780,7 +1781,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			input, _ := p.Args["input"].(map[string]interface{})
 			prNodeID, _ := input["pullRequestId"].(string)
 
-			pr := findPullRequestByNodeID(s.store, prNodeID)
+			pr := store.FindPullRequestByNodeID(s.store, prNodeID)
 			if pr == nil {
 				return nil, fmt.Errorf("could not resolve to a PullRequest")
 			}
@@ -1802,7 +1803,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 				return nil, err
 			}
 
-			s.store.UpdatePullRequest(pr.ID, func(p *PullRequest) {
+			s.store.UpdatePullRequest(pr.ID, func(p *store.PullRequest) {
 				if v, ok := input["title"].(string); ok {
 					p.Title = v
 				}
@@ -1839,7 +1840,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 
 // --- GraphQL converter helpers ---
 
-func pullRequestAndRepoFromGQLSource(src interface{}, st *Store) (*PullRequest, *Repo, error) {
+func pullRequestAndRepoFromGQLSource(src interface{}, st *store.Store) (*store.PullRequest, *store.Repo, error) {
 	prMap, ok := src.(map[string]interface{})
 	if !ok {
 		return nil, nil, fmt.Errorf("resolve source: unexpected type %T", src)
@@ -1888,7 +1889,7 @@ var (
 	closingIssueRE   = regexp.MustCompile(`(?i)(?:\b([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+))?#([0-9]+)`)
 )
 
-func closingIssuesForPullRequest(st *Store, repo *Repo, pr *PullRequest) []*Issue {
+func closingIssuesForPullRequest(st *store.Store, repo *store.Repo, pr *store.PullRequest) []*store.Issue {
 	refs := closingIssueRefs(repo.FullName, pr.Body)
 	if len(refs) == 0 {
 		return nil
@@ -1896,7 +1897,7 @@ func closingIssuesForPullRequest(st *Store, repo *Repo, pr *PullRequest) []*Issu
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 
-	issues := make([]*Issue, 0, len(refs))
+	issues := make([]*store.Issue, 0, len(refs))
 	seen := map[int]bool{}
 	for _, ref := range refs {
 		targetRepo := st.ReposByName[ref.repoFullName]
@@ -1943,13 +1944,13 @@ func closingIssueRefs(defaultRepoFullName, body string) []closingIssueRef {
 	return refs
 }
 
-func pullRequestToGQL(pr *PullRequest, st *Store) map[string]interface{} {
+func pullRequestToGQL(pr *store.PullRequest, st *store.Store) map[string]interface{} {
 	baseRepo := st.GetRepoByID(pr.RepoID)
-	stor, repoFullNameForCommits := pullRequestGitStorage(st, baseRepo, pr)
+	stor, repoFullNameForCommits := store.PullRequestGitStorage(st, baseRepo, pr)
 	realCommits := []*object.Commit(nil)
 	var realMergeCommit *object.Commit
 	if stor != nil {
-		if commits, err := pullRequestCommitObjectsFromStorage(stor, pr); err == nil {
+		if commits, err := store.PullRequestCommitObjectsFromStorage(stor, pr); err == nil {
 			realCommits = commits
 		}
 		if pr.MergeCommitSHA != "" {
@@ -1964,7 +1965,7 @@ func pullRequestToGQL(pr *PullRequest, st *Store) map[string]interface{} {
 
 	// Author
 	var author map[string]interface{}
-	if u := actorUserLocked(st, pr.AuthorID); u != nil {
+	if u := store.ActorUserLocked(st, pr.AuthorID); u != nil {
 		author = userToGraphQL(u)
 	}
 
@@ -2001,7 +2002,7 @@ func pullRequestToGQL(pr *PullRequest, st *Store) map[string]interface{} {
 	sortGQLNodesByCreatedAt(reviewNodes)
 
 	// latestReviews — the newest review per author.
-	latestByAuthor := map[int]*PullRequestReview{}
+	latestByAuthor := map[int]*store.PullRequestReview{}
 	for _, r := range prReviews {
 		if cur, ok := latestByAuthor[r.AuthorID]; !ok || r.CreatedAt.After(cur.CreatedAt) {
 			latestByAuthor[r.AuthorID] = r
@@ -2045,7 +2046,7 @@ func pullRequestToGQL(pr *PullRequest, st *Store) map[string]interface{} {
 		url = externalURL("/" + repo.FullName + "/pull/" + strconv.Itoa(pr.Number))
 	}
 
-	sha := pullRequestHeadSHALocked(pr, st)
+	sha := store.PullRequestHeadSHALocked(pr, st)
 	baseSha := pr.BaseSHA
 
 	var closedAt interface{}
@@ -2068,7 +2069,7 @@ func pullRequestToGQL(pr *PullRequest, st *Store) map[string]interface{} {
 	}
 
 	var headRepository map[string]interface{}
-	headRepo := pullRequestHeadRepoLocked(st, pr)
+	headRepo := store.PullRequestHeadRepoLocked(st, pr)
 	if headRepo != nil {
 		headRepository = repoToGraphQLLocked(st, headRepo)
 	}
@@ -2076,7 +2077,7 @@ func pullRequestToGQL(pr *PullRequest, st *Store) map[string]interface{} {
 
 	commitNodes := make([]map[string]interface{}, 0)
 	var commitAuthors []interface{}
-	if u := actorUserLocked(st, pr.AuthorID); u != nil {
+	if u := store.ActorUserLocked(st, pr.AuthorID); u != nil {
 		commitAuthors = append(commitAuthors, map[string]interface{}{
 			"name":  u.Name,
 			"email": u.Email,
@@ -2178,7 +2179,7 @@ func pullRequestToGQL(pr *PullRequest, st *Store) map[string]interface{} {
 		},
 		"headRepository":      headRepository,
 		"headRepositoryOwner": headRepositoryOwner,
-		"isCrossRepository":   pullRequestHeadRepoID(pr) != pr.RepoID,
+		"isCrossRepository":   store.PullRequestHeadRepoID(pr) != pr.RepoID,
 		"maintainerCanModify": pr.MaintainerCanModify,
 		"reviewRequests": map[string]interface{}{
 			"nodes":      pullRequestReviewRequestNodesLocked(pr, st),
@@ -2210,7 +2211,7 @@ func pullRequestToGQL(pr *PullRequest, st *Store) map[string]interface{} {
 // records as the GraphQL source map shape expected by the
 // PullRequestReviewThread / PullRequestReviewComment types below.
 // Caller must hold st.mu.RLock.
-func reviewThreadsForGraphQL(threads []*ReviewThread, st *Store) []map[string]interface{} {
+func reviewThreadsForGraphQL(threads []*store.ReviewThread, st *store.Store) []map[string]interface{} {
 	out := make([]map[string]interface{}, 0, len(threads))
 	for _, t := range threads {
 		commentNodes := make([]map[string]interface{}, 0, len(t.Comments))
@@ -2258,7 +2259,7 @@ func reviewThreadsForGraphQL(threads []*ReviewThread, st *Store) []map[string]in
 			}
 		}
 		out = append(out, map[string]interface{}{
-			"id":         prReviewThreadNodeID(t.ID),
+			"id":         store.PRReviewThreadNodeID(t.ID),
 			"isResolved": t.IsResolved,
 			"isOutdated": false,
 			"resolvedBy": resolvedBy,
@@ -2280,7 +2281,7 @@ func reviewThreadsForGraphQL(threads []*ReviewThread, st *Store) []map[string]in
 func (s *Resolver) resolveReviewThreadGraphQL(p graphql.ResolveParams, resolved bool) (interface{}, error) {
 	input, _ := p.Args["input"].(map[string]interface{})
 	threadNodeID, _ := input["threadId"].(string)
-	threadID, ok := parsePRReviewThreadNodeID(threadNodeID)
+	threadID, ok := store.ParsePRReviewThreadNodeID(threadNodeID)
 	if !ok {
 		return nil, &ghNotFoundError{
 			message: fmt.Sprintf("Could not resolve to a PullRequestReviewThread with the global id of '%s'", threadNodeID),
@@ -2302,7 +2303,7 @@ func (s *Resolver) resolveReviewThreadGraphQL(p graphql.ResolveParams, resolved 
 		}
 	}
 	s.store.Mu.RLock()
-	nodes := reviewThreadsForGraphQL([]*ReviewThread{thread}, s.store)
+	nodes := reviewThreadsForGraphQL([]*store.ReviewThread{thread}, s.store)
 	s.store.Mu.RUnlock()
 	var gqlThread interface{}
 	if len(nodes) == 1 {
@@ -2322,7 +2323,7 @@ func (s *Resolver) resolveReviewThreadGraphQL(p graphql.ResolveParams, resolved 
 // milestone, or nil when the PR has no milestone or the referenced
 // milestone has been deleted. Real GitHub shares the Milestone table
 // between Issues and PRs; bleephub mirrors that.
-func prMilestoneToGQLLocked(pr *PullRequest, st *Store) interface{} {
+func prMilestoneToGQLLocked(pr *store.PullRequest, st *store.Store) interface{} {
 	if pr.MilestoneID == 0 {
 		return nil
 	}
@@ -2344,8 +2345,8 @@ func prMilestoneToGQLLocked(pr *PullRequest, st *Store) interface{} {
 
 // deriveReviewDecisionLocked derives the review decision from reviews.
 // Must be called while holding st.mu.RLock().
-func deriveReviewDecisionLocked(st *Store, prID int) string {
-	latest := map[int]*PullRequestReview{}
+func deriveReviewDecisionLocked(st *store.Store, prID int) string {
+	latest := map[int]*store.PullRequestReview{}
 	for _, review := range st.PRReviewsByPR[prID] {
 		switch review.State {
 		case "APPROVED", "CHANGES_REQUESTED", "DISMISSED":
@@ -2377,7 +2378,7 @@ func deriveReviewDecisionLocked(st *Store, prID int) string {
 	return ""
 }
 
-func prHasAllLabels(st *Store, pr *PullRequest, labelNames []string) bool {
+func prHasAllLabels(st *store.Store, pr *store.PullRequest, labelNames []string) bool {
 	for _, name := range labelNames {
 		found := false
 		for _, lid := range pr.LabelIDs {
@@ -2398,7 +2399,7 @@ func prHasAllLabels(st *Store, pr *PullRequest, labelNames []string) bool {
 // Caller must hold st.mu.RLock. submittedAt mirrors createdAt (bleephub
 // reviews are submitted on creation) and commit carries the PR head the
 // review was recorded against — the same oid REST's commit_id reports.
-func prReviewSourceLocked(r *PullRequestReview, st *Store) map[string]interface{} {
+func prReviewSourceLocked(r *store.PullRequestReview, st *store.Store) map[string]interface{} {
 	var reviewAuthor map[string]interface{}
 	if u, ok := st.Users[r.AuthorID]; ok {
 		reviewAuthor = userToGraphQL(u)
@@ -2406,7 +2407,7 @@ func prReviewSourceLocked(r *PullRequestReview, st *Store) map[string]interface{
 	commitSHA := ""
 	repoID := 0
 	if pr := st.PullRequests[r.PRID]; pr != nil {
-		commitSHA = pullRequestHeadSHALocked(pr, st)
+		commitSHA = store.PullRequestHeadSHALocked(pr, st)
 		repoID = pr.RepoID
 	}
 	return map[string]interface{}{
@@ -2444,7 +2445,7 @@ func requestedReviewerTypeName(source interface{}) string {
 	}
 }
 
-func pullRequestReviewRequestNodesLocked(pr *PullRequest, st *Store) []interface{} {
+func pullRequestReviewRequestNodesLocked(pr *store.PullRequest, st *store.Store) []interface{} {
 	nodes := make([]interface{}, 0, len(pr.RequestedReviewerIDs))
 	for _, id := range pr.RequestedReviewerIDs {
 		if u := st.Users[id]; u != nil {
@@ -2458,7 +2459,7 @@ func pullRequestReviewRequestNodesLocked(pr *PullRequest, st *Store) []interface
 	return nodes
 }
 
-func gitCommitToGQLLocked(c *object.Commit, st *Store, repoFullName string) map[string]interface{} {
+func gitCommitToGQLLocked(c *object.Commit, st *store.Store, repoFullName string) map[string]interface{} {
 	authors := []interface{}{
 		map[string]interface{}{
 			"name":  c.Author.Name,
@@ -2477,7 +2478,7 @@ func gitCommitToGQLLocked(c *object.Commit, st *Store, repoFullName string) map[
 	}
 }
 
-func userGraphQLByEmailLocked(st *Store, email string) map[string]interface{} {
+func userGraphQLByEmailLocked(st *store.Store, email string) map[string]interface{} {
 	for _, u := range st.Users {
 		if strings.EqualFold(u.Email, email) {
 			return userToGraphQL(u)
@@ -2496,7 +2497,7 @@ func commitMessageBody(message string) string {
 }
 
 // prReviewToGQL is the unlocked wrapper around prReviewSourceLocked.
-func prReviewToGQL(r *PullRequestReview, st *Store) map[string]interface{} {
+func prReviewToGQL(r *store.PullRequestReview, st *store.Store) map[string]interface{} {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 	return prReviewSourceLocked(r, st)
@@ -2507,12 +2508,12 @@ func prReviewToGQL(r *PullRequestReview, st *Store) map[string]interface{} {
 // per latest REST status context and one CheckRun node per stored check run.
 // Returns nil when neither store has data, matching real GitHub for a commit
 // with no statuses or check runs. Caller must hold st.mu.RLock.
-func statusCheckRollupSourceLocked(st *Store, repoKey, sha string) interface{} {
+func statusCheckRollupSourceLocked(st *store.Store, repoKey, sha string) interface{} {
 	if repoKey == "" {
 		return nil
 	}
 	_, _, statuses := st.CommitStatuses.Combined(repoKey, sha)
-	var runs []*CheckRun
+	var runs []*store.CheckRun
 	for _, cr := range st.CheckRuns {
 		if cr.RepoKey == repoKey && cr.HeadSHA == sha {
 			runs = append(runs, cr)
@@ -2610,7 +2611,7 @@ func statusCheckRollupSourceLocked(st *Store, repoKey, sha string) interface{} {
 	}
 }
 
-func checkRunCountState(cr *CheckRun) string {
+func checkRunCountState(cr *store.CheckRun) string {
 	if cr == nil {
 		return "PENDING"
 	}
@@ -2657,7 +2658,7 @@ func stateCountNodes(states []string, counts map[string]int) []interface{} {
 	return out
 }
 
-func checkSuiteGraphQLSourceLocked(st *Store, suite *CheckSuite) map[string]interface{} {
+func checkSuiteGraphQLSourceLocked(st *store.Store, suite *store.CheckSuite) map[string]interface{} {
 	// workflowRun defaults to an untyped nil: a typed-nil map would pass
 	// graphql-go's isNullish check and then fail WorkflowRun.workflow's
 	// non-null contract on a nil source map.
@@ -2668,7 +2669,7 @@ func checkSuiteGraphQLSourceLocked(st *Store, suite *CheckSuite) map[string]inte
 	return source
 }
 
-func checkSuiteWorkflowRunSourceLocked(st *Store, suite *CheckSuite) map[string]interface{} {
+func checkSuiteWorkflowRunSourceLocked(st *store.Store, suite *store.CheckSuite) map[string]interface{} {
 	if suite == nil || suite.WorkflowRunID == 0 {
 		return nil
 	}
@@ -2695,7 +2696,7 @@ func checkSuiteWorkflowRunSourceLocked(st *Store, suite *CheckSuite) map[string]
 // graph. A qualifier bleephub cannot evaluate at all yields honest empty
 // results (never an over-matching ignore). Bare keywords match title/body
 // substrings.
-func (s *Resolver) searchIssuesAndPRs(query string, viewer *User) []gqlConnItem {
+func (s *Resolver) searchIssuesAndPRs(query string, viewer *store.User) []gqlConnItem {
 	type searchSpec struct {
 		repos      []string // repo full names; empty = all
 		states     []string // OPEN / CLOSED / MERGED; empty = all
@@ -2804,7 +2805,7 @@ func (s *Resolver) searchIssuesAndPRs(query string, viewer *User) []gqlConnItem 
 	// must never contribute issues/PRs. Mirror canReadRepoAsUser's logic inline
 	// (the store RLock is already held here, so we access its maps directly
 	// rather than calling the helpers, which take the lock themselves).
-	repoReadable := func(repo *Repo) bool {
+	repoReadable := func(repo *store.Repo) bool {
 		if repo == nil {
 			return false
 		}
@@ -2821,13 +2822,13 @@ func (s *Resolver) searchIssuesAndPRs(query string, viewer *User) []gqlConnItem 
 		if len(parts) != 2 {
 			return false
 		}
-		if m := s.store.Memberships[membershipKey(parts[0], viewer.ID)]; m != nil && m.State == MembershipStateActive {
+		if m := s.store.Memberships[store.MembershipKey(parts[0], viewer.ID)]; m != nil && m.State == store.MembershipStateActive {
 			return true
 		}
 		// Team-level pull access.
 		if org := s.store.OrgsByLogin[parts[0]]; org != nil {
 			for _, team := range s.store.TeamsBySlug {
-				if team.OrgID != org.ID || !permissionAtLeast(team.Permission, TeamPermissionPull) {
+				if team.OrgID != org.ID || !store.PermissionAtLeast(team.Permission, store.TeamPermissionPull) {
 					continue
 				}
 				inRepo := false
@@ -2927,8 +2928,8 @@ func (s *Resolver) searchIssuesAndPRs(query string, viewer *User) []gqlConnItem 
 		return true
 	}
 
-	var matchedIssues []*Issue
-	var matchedPRs []*PullRequest
+	var matchedIssues []*store.Issue
+	var matchedPRs []*store.PullRequest
 
 	if (spec.entity == "" || spec.entity == "issue") && spec.draft == nil {
 		for _, issue := range s.store.Issues {
