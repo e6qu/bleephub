@@ -1,8 +1,6 @@
 package bleephub
 
 import (
-	"github.com/e6qu/bleephub/internal/graphqlapi"
-
 	"context"
 	"fmt"
 	"net/http"
@@ -667,40 +665,30 @@ func TestGraphQLEveryMutationIsCoveredByThePolicyTable(t *testing.T) {
 		t.Fatalf("the schema exposes no mutation type")
 	}
 	fields := mutation.Fields()
-	// The policy table lives in the graphqlapi package (ARCH-003); its rows
-	// (name → account-scoped) come through MutationAuthzPolicy so this gate
-	// keeps asserting over the real table, at full strength.
-	policy := graphqlapi.MutationAuthzPolicy()
-	// A rename or a refactor that stopped registering mutations would
-	// otherwise turn this into a green check over nothing.
-	if len(fields) != len(policy) {
-		t.Fatalf("the schema exposes %d mutations but the policy table has %d rows", len(fields), len(policy))
+	// The policy table itself lives in the graphqlapi package (ARCH-003).
+	// TestMutationAuthzTableMatchesSchema there asserts schema fields and
+	// table rows are identical sets, so iterating the schema's mutation
+	// fields here iterates exactly the table's rows.
+	if len(fields) == 0 {
+		t.Fatalf("the schema exposes no mutations")
 	}
-	for name := range fields {
-		if _, covered := policy[name]; !covered {
-			t.Errorf("mutation %s reaches the store with no row in graphqlMutationAuthz", name)
-		}
-	}
-	for name := range policy {
-		if _, ok := fields[name]; !ok {
-			t.Errorf("graphqlMutationAuthz has a row for %s, which the schema does not expose", name)
-		}
-	}
-	// Every row whose subject is an existing repository or project must be
-	// exercised by a refusal case in one of the two tables above, so a mutation
-	// cannot be authorized on paper and untested in practice. createRepository
-	// has no such subject — its entitlement is over an account (account-scoped
-	// in the policy report) — and is covered by the account-scoped cases
-	// instead.
-	inCases := map[string]bool{}
+	// Every mutation whose subject is an existing repository or project must
+	// be exercised by a refusal case in one of the two tables above, so a
+	// mutation cannot be authorized on paper and untested in practice.
+	// createRepository has no such subject — its entitlement is over an
+	// account — and is covered by the account-scoped cases instead. The
+	// graphqlapi-side TestMutationAuthzAccountScopedRowsArePinned pins that
+	// createRepository is the only account-scoped row, so this exemption
+	// list cannot drift silently.
+	inCases := map[string]bool{"createRepository": true}
 	for _, tc := range gqlMutationCases {
 		inCases[tc.name] = true
 	}
 	for _, tc := range gqlProjectMutationCases {
 		inCases[tc.name] = true
 	}
-	for name, accountScoped := range policy {
-		if accountScoped || inCases[name] {
+	for name := range fields {
+		if inCases[name] {
 			continue
 		}
 		t.Errorf("mutation %s is authorized but no refusal case exercises it", name)

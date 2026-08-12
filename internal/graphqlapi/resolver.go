@@ -246,18 +246,3 @@ func (s *Resolver) ghUserFromContext(ctx context.Context) *User {
 func (s *Resolver) apiRate(ctx context.Context) RateSnapshot {
 	return s.apiRateFn(ctx)
 }
-
-// MutationAuthzPolicy reports the mutation-authorization policy table's row
-// names, and for each row whether it is account-scoped (createRepository's
-// entitlement is over an account, not an existing repository or project).
-// Consumed by the server-side policy-coverage gate test, which asserts that
-// every schema mutation has a row and every repo/project-scoped row is
-// exercised by a refusal case.
-func MutationAuthzPolicy() map[string]bool {
-	out := make(map[string]bool, len(graphqlMutationAuthz))
-	for name, rule := range graphqlMutationAuthz {
-		_, accountScoped := rule.(repoCreationRule)
-		out[name] = accountScoped
-	}
-	return out
-}
