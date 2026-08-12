@@ -1,6 +1,7 @@
 package bleephub
 
 import (
+	"fmt"
 	"reflect"
 	"sync"
 	"testing"
@@ -363,4 +364,99 @@ func TestReplicaRefreshFieldClassificationsAreValid(t *testing.T) {
 			}
 		}
 	}
+}
+
+// TestReplicaRefreshClassificationsCoverDangerousKinds is the ratchet for
+// ARCH-004: the snapshot reconciler (store.RefreshFromPersistenceBeforeApply)
+// reflect-copies EVERY exported Store field that is not named in one of the
+// three classification sets, so an exported field of a dangerous kind — a
+// mutex it would overwrite while locked, an injected callback or channel it
+// would wipe with the candidate's nil, or the Persistence handle itself —
+// must be classified or the copy silently corrupts the live store. The test
+// enumerates every exported field (the copier skips unexported fields via
+// field.PkgPath, so only exported ones can be copied) and fails with an
+// actionable message when an unclassified field is of a dangerous kind.
+// Plain durable data (maps/slices/ints of entity state) is exactly what the
+// reconciler exists to copy and is deliberately NOT required to be
+// classified.
+func TestReplicaRefreshClassificationsCoverDangerousKinds(t *testing.T) {
+	storeType := reflect.TypeOf(Store{})
+	for i := 0; i < storeType.NumField(); i++ {
+		field := storeType.Field(i)
+		if field.PkgPath != "" {
+			// The reconciler's copy loop skips unexported fields; they are
+			// handled explicitly and cannot be clobbered by the reflect copy.
+			continue
+		}
+		if _, ok := replicaLocalStoreFields[field.Name]; ok {
+			continue
+		}
+		if _, ok := replicaInfrastructureStoreFields[field.Name]; ok {
+			continue
+		}
+		if _, ok := replicaServerAccessStoreFields[field.Name]; ok {
+			continue
+		}
+		if reason := replicaDangerousKind(field.Type, map[reflect.Type]bool{}); reason != "" {
+			t.Errorf("store.Store exported field %q is %s, which the replica snapshot reconciler must never copy, "+
+				"but it is not named in any classification set. Add %q to the set matching its role in "+
+				"internal/store/store_replica_refresh.go: ReplicaLocalStoreFields (process-local runner/session state), "+
+				"ReplicaInfrastructureStoreFields (storage handles shared with the candidate), or "+
+				"ReplicaServerAccessStoreFields (locks, clock overrides, injected callbacks, derived indexes, the Persistence handle). "+
+				"Alternatively make the field unexported if only internal/store needs it — the reconciler skips unexported fields.",
+				field.Name, reason, field.Name)
+		}
+	}
+}
+
+// replicaDangerousKind reports why copying a value of type t from a freshly
+// loaded candidate snapshot over the live store would be unsafe, or "" when
+// the type is plain data. It follows value containment only: struct fields,
+// and map/slice/array elements are part of the copied value, while a plain
+// pointer swap replaces the whole referent wholesale (the reconciler's
+// intended design for sub-stores like *ReactionStore), so pointers are not
+// followed — except *store.Persistence itself, which the live store must
+// keep as its own handle.
+func replicaDangerousKind(t reflect.Type, seen map[reflect.Type]bool) string {
+	if seen[t] {
+		return ""
+	}
+	seen[t] = true
+	persistenceType := reflect.TypeOf(Persistence{})
+	if t == persistenceType {
+		return "the Persistence handle"
+	}
+	if t.Kind() == reflect.Ptr && t.Elem() == persistenceType {
+		return "a reference to the Persistence handle"
+	}
+	switch t {
+	case reflect.TypeOf(sync.Mutex{}):
+		return "a sync.Mutex"
+	case reflect.TypeOf(sync.RWMutex{}):
+		return "a sync.RWMutex"
+	}
+	switch t.Kind() {
+	case reflect.Func:
+		return "a func"
+	case reflect.Chan:
+		return "a channel"
+	case reflect.Struct:
+		for i := 0; i < t.NumField(); i++ {
+			if reason := replicaDangerousKind(t.Field(i).Type, seen); reason != "" {
+				return fmt.Sprintf("a struct containing %s (via field %s.%s)", reason, t.Name(), t.Field(i).Name)
+			}
+		}
+	case reflect.Map:
+		if reason := replicaDangerousKind(t.Key(), seen); reason != "" {
+			return fmt.Sprintf("a map keyed by %s", reason)
+		}
+		if reason := replicaDangerousKind(t.Elem(), seen); reason != "" {
+			return fmt.Sprintf("a map of %s", reason)
+		}
+	case reflect.Slice, reflect.Array:
+		if reason := replicaDangerousKind(t.Elem(), seen); reason != "" {
+			return fmt.Sprintf("a sequence of %s", reason)
+		}
+	}
+	return ""
 }
