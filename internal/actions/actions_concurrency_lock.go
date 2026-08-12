@@ -37,10 +37,10 @@ const (
 	actionsConcurrencyLockPoll = 25 * time.Millisecond
 )
 
-// actionsConcurrencyLockName names the shared-database lock for one workflow
+// ActionsConcurrencyLockName names the shared-database lock for one workflow
 // concurrency group. Group strings are user-controlled and unbounded, so they
 // are digested.
-func actionsConcurrencyLockName(group string) string {
+func ActionsConcurrencyLockName(group string) string {
 	digest := sha256.Sum256([]byte(group))
 	return "actions/concurrency/" + hex.EncodeToString(digest[:])
 }

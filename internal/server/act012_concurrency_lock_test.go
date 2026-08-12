@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/actions"
 )
 
 // TestConcurrencyAdmissionSerializesAcrossReplicas pins the ACT-012 wiring:
@@ -35,14 +37,14 @@ func TestConcurrencyAdmissionSerializesAcrossReplicas(t *testing.T) {
 		}
 		return wd
 	}
-	lockName := actionsConcurrencyLockName("deploy")
+	lockName := actions.ActionsConcurrencyLockName("deploy")
 
 	// Exclusively owned (sqlite): a held database lock is irrelevant — the
 	// single-process path must skip the lock entirely.
 	if ok, err := p.AcquireLock(lockName, "peer", time.Minute); err != nil || !ok {
 		t.Fatalf("peer AcquireLock: ok=%v err=%v", ok, err)
 	}
-	if _, err := s.submitWorkflow(context.Background(), "http://localhost", def("solo"), ""); err != nil {
+	if _, err := s.actions.SubmitWorkflow(context.Background(), "http://localhost", def("solo"), ""); err != nil {
 		t.Fatalf("submit on exclusive database: %v", err)
 	}
 	if err := p.ReleaseLock(lockName, "peer"); err != nil {
@@ -58,7 +60,7 @@ func TestConcurrencyAdmissionSerializesAcrossReplicas(t *testing.T) {
 	}
 	submitted := make(chan error, 1)
 	go func() {
-		_, err := s.submitWorkflow(context.Background(), "http://localhost", def("blocked"), "")
+		_, err := s.actions.SubmitWorkflow(context.Background(), "http://localhost", def("blocked"), "")
 		submitted <- err
 	}()
 

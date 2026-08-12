@@ -63,7 +63,7 @@ func (s *Engine) expandReusableWorkflows(def *WorkflowDef, repoKey string, depth
 			return nil, fmt.Errorf("job %q: %w", key, err)
 		}
 	}
-	if err := validateJobGraph(out); err != nil {
+	if err := ValidateJobGraph(out); err != nil {
 		return nil, fmt.Errorf("reusable-workflow expansion produced an invalid graph: %w", err)
 	}
 	return out, nil
@@ -176,7 +176,7 @@ func (s *Engine) expandOneCall(out *WorkflowDef, callerKey string, caller *JobDe
 		if child.Call == nil {
 			child.Call = binding
 		}
-		child.Env = mergedCallEnvironment(calledDef.Env, child.Env)
+		child.Env = MergedCallEnvironment(calledDef.Env, child.Env)
 		out.Jobs[childKey] = &child
 		binding.CalledJobKeys = append(binding.CalledJobKeys, childKey)
 		collectorNeeds = append(collectorNeeds, childKey)
@@ -290,7 +290,7 @@ func (s *Engine) completeServerJobLocked(wf *Workflow, wfJob *WorkflowJob) {
 	jd := wfJob.Def
 	switch jd.CallRole {
 	case "gate":
-		if !s.resolveCallInputsLocked(wf, wfJob) {
+		if !s.ResolveCallInputsLocked(wf, wfJob) {
 			wfJob.Status = JobStatusCompleted
 			wfJob.Result = ResultFailure
 			break
@@ -309,10 +309,10 @@ func (s *Engine) completeServerJobLocked(wf *Workflow, wfJob *WorkflowJob) {
 	}
 }
 
-// resolveCallInputsLocked evaluates the caller's `with:` templates with
+// ResolveCallInputsLocked evaluates the caller's `with:` templates with
 // the contexts available to jobs.<id>.with (github, needs, vars, inputs,
 // matrix) and applies the called workflow's defaults and typing.
-func (s *Engine) resolveCallInputsLocked(wf *Workflow, gate *WorkflowJob) bool {
+func (s *Engine) ResolveCallInputsLocked(wf *Workflow, gate *WorkflowJob) bool {
 	binding := gate.Def.Call
 	if binding == nil {
 		return true
@@ -339,7 +339,7 @@ func (s *Engine) resolveCallInputsLocked(wf *Workflow, gate *WorkflowJob) bool {
 				Msg("workflow_call input template failed")
 			return false
 		}
-		typed, err := typedCallInput(binding.InputDefs[name], val)
+		typed, err := TypedCallInput(binding.InputDefs[name], val)
 		if err != nil {
 			s.logger.Warn().Err(err).Str("input", name).Str("workflow", binding.CalledPath).
 				Msg("workflow_call input validation failed")
@@ -361,9 +361,9 @@ func (s *Engine) resolveCallInputsLocked(wf *Workflow, gate *WorkflowJob) bool {
 	return true
 }
 
-// typedCallInput converts a resolved string input to the declared type without
+// TypedCallInput converts a resolved string input to the declared type without
 // accepting prefixes or truthy spellings that GitHub's input contract rejects.
-func typedCallInput(def *WorkflowInputDef, val string) (interface{}, error) {
+func TypedCallInput(def *WorkflowInputDef, val string) (interface{}, error) {
 	if def == nil {
 		return val, nil
 	}
@@ -438,7 +438,7 @@ func (s *Engine) collectCallOutputsLocked(wf *Workflow, collector *WorkflowJob) 
 	}
 	ctx := &ExprContext{Contexts: map[string]interface{}{
 		"jobs":   jobsCtx,
-		"github": s.githubContextMap(wf),
+		"github": s.GithubContextMap(wf),
 		"inputs": binding.ResolvedInputs(),
 	}}
 	for name, tmpl := range binding.OutputDefs {
@@ -458,7 +458,7 @@ func parseJSONNumber(s string) (float64, error) {
 	return strconv.ParseFloat(strings.TrimSpace(s), 64)
 }
 
-func mergedCallEnvironment(workflowEnv, jobEnv map[string]string) map[string]string {
+func MergedCallEnvironment(workflowEnv, jobEnv map[string]string) map[string]string {
 	if len(workflowEnv) == 0 && len(jobEnv) == 0 {
 		return nil
 	}

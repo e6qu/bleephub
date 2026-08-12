@@ -18,18 +18,29 @@ import (
 // GetRepoByFullName or visibly hold s.store.Mu in the same function.
 func TestHandlersNeverReadRepositoryIndexWithoutStoreLock(t *testing.T) {
 	fset := token.NewFileSet()
-	entries, err := os.ReadDir(".")
-	if err != nil {
-		t.Fatalf("reading package directory: %v", err)
+
+	// The engine files moved to internal/actions (ARCH-002) keep the same
+	// `s.store` receiver-field spelling, so the ratchet scans both packages.
+	type scanned struct{ dir, name string }
+	var files []scanned
+	for _, dir := range []string{".", "../actions"} {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatalf("reading package directory %s: %v", dir, err)
+		}
+		for _, entry := range entries {
+			name := entry.Name()
+			if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") || strings.HasPrefix(name, "store") {
+				continue
+			}
+			files = append(files, scanned{dir, name})
+		}
 	}
 
 	guardedReads := 0
-	for _, entry := range entries {
-		name := entry.Name()
-		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") || strings.HasPrefix(name, "store") {
-			continue
-		}
-		file, err := parser.ParseFile(fset, filepath.Join(".", name), nil, 0)
+	for _, sf := range files {
+		name := sf.name
+		file, err := parser.ParseFile(fset, filepath.Join(sf.dir, name), nil, 0)
 		if err != nil {
 			t.Fatalf("parsing %s: %v", name, err)
 		}

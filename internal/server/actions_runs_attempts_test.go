@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/actions"
 	"github.com/e6qu/bleephub/internal/server/testutil"
 )
 
@@ -30,14 +31,14 @@ func TestAgentSatisfiesLabels(t *testing.T) {
 		{[]string{"ubuntu-latest", "tpu"}, false}, // custom label still strict
 	}
 	for _, tc := range cases {
-		if got := agentSatisfiesLabels(agent, tc.required); got != tc.want {
-			t.Errorf("agentSatisfiesLabels(%v) = %v, want %v", tc.required, got, tc.want)
+		if got := actions.AgentSatisfiesLabels(agent, tc.required); got != tc.want {
+			t.Errorf("actions.AgentSatisfiesLabels(%v) = %v, want %v", tc.required, got, tc.want)
 		}
 	}
-	if agentSatisfiesLabels(nil, []string{"self-hosted"}) {
+	if actions.AgentSatisfiesLabels(nil, []string{"self-hosted"}) {
 		t.Error("nil agent must not satisfy strict labels")
 	}
-	if !agentSatisfiesLabels(nil, []string{"ubuntu-latest"}) {
+	if !actions.AgentSatisfiesLabels(nil, []string{"ubuntu-latest"}) {
 		t.Error("nil agent satisfies hosted aliases")
 	}
 }
@@ -57,7 +58,7 @@ func TestRunnerContextDerivedFromAgent(t *testing.T) {
 		{"macos label", &Agent{Name: "mac", Labels: []Label{{Name: "macOS"}, {Name: "X64"}}}, "macOS", "X64", "mac"},
 		{"fallback to os description", &Agent{Name: "d", OSDescription: "Linux 6.1 aarch64"}, "Linux", "ARM64", "d"},
 	} {
-		got := runnerContextData(tc.agent)
+		got := actions.RunnerContextData(tc.agent)
 		entries, _ := got["d"].([]map[string]interface{})
 		vals := map[string]string{}
 		for _, e := range entries {
@@ -83,12 +84,12 @@ func TestLeasedJobRebindsRunnerContext(t *testing.T) {
 	// A queued job message carries the runner-agnostic placeholder.
 	body, _ := json.Marshal(map[string]interface{}{
 		"contextData": map[string]interface{}{
-			"runner": runnerContextData(nil),
+			"runner": actions.RunnerContextData(nil),
 		},
 	})
-	s.queueJobMessage(&TaskAgentMessage{MessageID: 5, JobID: "j5", MessageType: "PipelineAgentJobRequest", Body: string(body)})
+	s.actions.QueueJobMessage(&TaskAgentMessage{MessageID: 5, JobID: "j5", MessageType: "PipelineAgentJobRequest", Body: string(body)})
 
-	msg := s.pullPendingMessage(sess, runnerScope{Org: "octo"})
+	msg := s.actions.PullPendingMessage(sess, runnerScope{Org: "octo"})
 	if msg == nil {
 		t.Fatal("free runner did not pull the queued job")
 	}
@@ -126,10 +127,10 @@ func TestBusyRunnerNeverReceivesJobs(t *testing.T) {
 	sess.Agent.EverAssigned = true
 	s.store.Mu.Unlock()
 
-	s.queueJobMessage(&TaskAgentMessage{MessageID: 7, JobID: "job-2", Labels: []string{"self-hosted"}})
+	s.actions.QueueJobMessage(&TaskAgentMessage{MessageID: 7, JobID: "job-2", Labels: []string{"self-hosted"}})
 
 	// While busy, polls must not pull the queued job.
-	if got := s.pullPendingMessage(sess, runnerScope{Org: "octo"}); got != nil {
+	if got := s.actions.PullPendingMessage(sess, runnerScope{Org: "octo"}); got != nil {
 		t.Fatal("busy runner's poll pulled a job message")
 	}
 
@@ -137,7 +138,7 @@ func TestBusyRunnerNeverReceivesJobs(t *testing.T) {
 	s.store.Mu.Lock()
 	s.store.Jobs["job-1"].Status = "completed"
 	s.store.Mu.Unlock()
-	got := s.pullPendingMessage(sess, runnerScope{Org: "octo"})
+	got := s.actions.PullPendingMessage(sess, runnerScope{Org: "octo"})
 	if got == nil || got.MessageID != 7 {
 		t.Fatalf("free runner's poll did not pull the pending job: %v", got)
 	}
@@ -173,20 +174,20 @@ func TestLabelRoutingQueuesUntilMatch(t *testing.T) {
 	}
 	plain := mkSession("a-plain", "self-hosted", "linux")
 
-	s.queueJobMessage(&TaskAgentMessage{MessageID: 1, Labels: []string{"self-hosted", "gpu"}})
+	s.actions.QueueJobMessage(&TaskAgentMessage{MessageID: 1, Labels: []string{"self-hosted", "gpu"}})
 
 	// A poll from a non-matching runner must not pull the job.
-	if got := s.pullPendingMessage(plain, runnerScope{Org: "octo"}); got != nil {
+	if got := s.actions.PullPendingMessage(plain, runnerScope{Org: "octo"}); got != nil {
 		t.Fatal("job pulled by a runner without the required labels")
 	}
 
 	// A matching runner's poll pulls it.
 	gpu := mkSession("b-gpu", "self-hosted", "linux", "gpu")
-	got := s.pullPendingMessage(gpu, runnerScope{Org: "octo"})
+	got := s.actions.PullPendingMessage(gpu, runnerScope{Org: "octo"})
 	if got == nil || got.MessageID != 1 {
 		t.Fatalf("matching runner's poll did not pull the job: %v", got)
 	}
-	if again := s.pullPendingMessage(gpu, runnerScope{Org: "octo"}); again != nil {
+	if again := s.actions.PullPendingMessage(gpu, runnerScope{Org: "octo"}); again != nil {
 		t.Fatal("message pulled twice")
 	}
 }
@@ -233,8 +234,8 @@ func TestRerunKeepsRunIDAndBumpsAttempt(t *testing.T) {
 	s.assertWorkflowJobsUseHostMode(t, wf)
 
 	// Finish both jobs (one failure) so the run completes.
-	s.onJobCompleted(context.Background(), wf.Jobs["good"].JobID, "Succeeded")
-	s.onJobCompleted(context.Background(), wf.Jobs["bad"].JobID, "Failed")
+	s.actions.OnJobCompleted(context.Background(), wf.Jobs["good"].JobID, "Succeeded")
+	s.actions.OnJobCompleted(context.Background(), wf.Jobs["bad"].JobID, "Failed")
 
 	resp := s.post(t, fmt.Sprintf("/api/v3/repos/%s/actions/runs/%d/rerun", repoKey, origRunID), defaultToken, map[string]interface{}{})
 	if resp.StatusCode != http.StatusCreated {
@@ -311,8 +312,8 @@ func TestRerunFailedJobsCarriesSuccesses(t *testing.T) {
 	s.store.Mu.Lock()
 	wf.Jobs["good"].Outputs["artifact"] = "kept"
 	s.store.Mu.Unlock()
-	s.onJobCompleted(context.Background(), wf.Jobs["good"].JobID, "Succeeded")
-	s.onJobCompleted(context.Background(), wf.Jobs["bad"].JobID, "Failed")
+	s.actions.OnJobCompleted(context.Background(), wf.Jobs["good"].JobID, "Succeeded")
+	s.actions.OnJobCompleted(context.Background(), wf.Jobs["bad"].JobID, "Failed")
 
 	resp := s.post(t, fmt.Sprintf("/api/v3/repos/%s/actions/runs/%d/rerun-failed-jobs", repoKey, runID), defaultToken, map[string]interface{}{})
 	if resp.StatusCode != http.StatusCreated {

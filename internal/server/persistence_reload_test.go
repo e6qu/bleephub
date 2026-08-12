@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // TestPersistenceReload_OwnerAndCountersAndState exercises the reload-path
@@ -1823,7 +1825,7 @@ func TestPersistenceReload_RenameRepoMovesRepoScopedMetadata(t *testing.T) {
 		p.MustPut("repo_secrets", oldKey, st.RepoSecrets[oldKey])
 		st.RepoVariables[oldKey] = map[string]*ActionsVariable{"VAR": {Name: "VAR", Value: "v", CreatedAt: now, UpdatedAt: now}}
 		p.MustPut("repo_variables", oldKey, st.RepoVariables[oldKey])
-		envKey := envScopeKey(oldKey, "prod")
+		envKey := store.EnvScopeKey(oldKey, "prod")
 		st.EnvSecrets[envKey] = map[string]*Secret{"ENV_TOKEN": {Name: "ENV_TOKEN", Value: "v", CreatedAt: now, UpdatedAt: now}}
 		p.MustPut("env_secrets", envKey, st.EnvSecrets[envKey])
 		st.EnvVariables[envKey] = map[string]*ActionsVariable{"ENV_VAR": {Name: "ENV_VAR", Value: "v", CreatedAt: now, UpdatedAt: now}}
@@ -1925,7 +1927,7 @@ func assertRepoKeyMoved(t *testing.T, st *Store, repoKey string) {
 	if st.RepoSecrets[repoKey]["TOKEN"] == nil || st.RepoVariables[repoKey]["VAR"] == nil {
 		t.Fatalf("actions secrets/variables did not move to %s", repoKey)
 	}
-	if st.EnvSecrets[envScopeKey(repoKey, "prod")]["ENV_TOKEN"] == nil || st.EnvVariables[envScopeKey(repoKey, "prod")]["ENV_VAR"] == nil {
+	if st.EnvSecrets[store.EnvScopeKey(repoKey, "prod")]["ENV_TOKEN"] == nil || st.EnvVariables[store.EnvScopeKey(repoKey, "prod")]["ENV_VAR"] == nil {
 		t.Fatalf("environment secrets/variables did not move to %s", repoKey)
 	}
 	if len(st.CheckSuitePrefs[repoKey]) != 1 || len(st.CommitStatuses.List(repoKey, "0123456789abcdef")) != 1 {
@@ -1991,7 +1993,7 @@ func assertNoRepoKeyResidue(t *testing.T, st *Store, repoKey string) {
 	if len(st.RepoSecrets[repoKey]) != 0 || len(st.RepoVariables[repoKey]) != 0 || len(st.CheckSuitePrefs[repoKey]) != 0 {
 		t.Fatalf("basic repo-key residue survived for %s", repoKey)
 	}
-	if len(st.EnvSecrets[envScopeKey(repoKey, "prod")]) != 0 || len(st.EnvVariables[envScopeKey(repoKey, "prod")]) != 0 {
+	if len(st.EnvSecrets[store.EnvScopeKey(repoKey, "prod")]) != 0 || len(st.EnvVariables[store.EnvScopeKey(repoKey, "prod")]) != 0 {
 		t.Fatalf("environment repo-key residue survived for %s", repoKey)
 	}
 	if st.GetCodeScanningDefaultSetup(repoKey) != nil || st.GetSARIFUpload(repoKey, "sarif-rename") != nil {

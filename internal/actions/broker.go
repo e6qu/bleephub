@@ -19,14 +19,14 @@ func (s *Engine) PullPendingMessage(session *Session, scope runnerScope) *TaskAg
 		return nil
 	}
 	for i, msg := range s.store.PendingMessages {
-		if !agentSatisfiesLabels(session.Agent, msg.Labels) {
+		if !AgentSatisfiesLabels(session.Agent, msg.Labels) {
 			continue
 		}
-		if !jobSecretsEntitled(scope, jobMessageRepoName(msg.Body)) {
+		if !JobSecretsEntitled(scope, jobMessageRepoName(msg.Body)) {
 			continue
 		}
 		s.store.PendingMessages = append(s.store.PendingMessages[:i], s.store.PendingMessages[i+1:]...)
-		s.recordJobAgentLocked(msg, session)
+		s.RecordJobAgentLocked(msg, session)
 		// Late-bind the runner context (os/arch/name) to the agent that
 		// actually leased this job — it was unknown when the message was
 		// queued (ACT-051). Idempotent, so a requeue+redeliver to another
@@ -92,9 +92,9 @@ func (s *Engine) AgentTakesAJobLocked(agent *Agent) bool {
 	return true
 }
 
-// recordJobAgentLocked associates a delivered job with the agent that
+// RecordJobAgentLocked associates a delivered job with the agent that
 // took it (busy tracking + the runners API's `busy`).
-func (s *Engine) recordJobAgentLocked(msg *TaskAgentMessage, session *Session) {
+func (s *Engine) RecordJobAgentLocked(msg *TaskAgentMessage, session *Session) {
 	if msg.JobID == "" || session.Agent == nil {
 		return
 	}
@@ -118,13 +118,13 @@ func (s *Engine) QueueJobMessage(msg *TaskAgentMessage) {
 	s.store.Mu.Unlock()
 }
 
-// agentSatisfiesLabels reports whether an agent's registered labels
+// AgentSatisfiesLabels reports whether an agent's registered labels
 // cover every runs-on requirement (case-insensitive). GitHub-hosted
 // pool aliases (ubuntu-*, macos-*, windows-*) are satisfiable by ANY
 // agent: bleephub has no hosted pool, so a hosted-alias job runs on
 // whatever runner connects — the same accommodation act/nektos makes.
 // All other labels (self-hosted, custom) match strictly.
-func agentSatisfiesLabels(agent *Agent, required []string) bool {
+func AgentSatisfiesLabels(agent *Agent, required []string) bool {
 	if len(required) == 0 {
 		return true
 	}

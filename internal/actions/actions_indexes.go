@@ -75,16 +75,16 @@ func (s *Engine) startActionsJanitor(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				s.sweepRetiredActionsJobs(s.store.CurrentTime())
+				s.SweepRetiredActionsJobs(s.store.CurrentTime())
 			}
 		}
 	})
 }
 
-// sweepRetiredActionsJobs deletes the replica-local state of every job whose
+// SweepRetiredActionsJobs deletes the replica-local state of every job whose
 // retirement stamp is older than completedJobRetention. Returns how many jobs
 // were swept (for tests and logging).
-func (s *Engine) sweepRetiredActionsJobs(now time.Time) int {
+func (s *Engine) SweepRetiredActionsJobs(now time.Time) int {
 	var planIDs []string
 	s.store.Mu.Lock()
 	var retired []*Job

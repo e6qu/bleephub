@@ -49,11 +49,11 @@ type WorkflowEventMeta struct {
 // SubmitWorkflow creates a Workflow from a WorkflowDef and begins dispatching jobs.
 
 func (s *Engine) SubmitWorkflow(ctx context.Context, serverURL string, wf *WorkflowDef, defaultImage string, eventMeta ...*WorkflowEventMeta) (*Workflow, error) {
-	ctx, span := otel.Tracer("bleephub").Start(ctx, "SubmitWorkflow",
+	ctx, span := otel.Tracer("bleephub").Start(ctx, "submitWorkflow",
 		trace.WithAttributes(attribute.String("workflow.name", wf.Name)))
 	defer span.End()
 	// Validate no cycles in the job dependency graph
-	if err := validateJobGraph(wf); err != nil {
+	if err := ValidateJobGraph(wf); err != nil {
 		return nil, err
 	}
 
@@ -171,7 +171,7 @@ func (s *Engine) SubmitWorkflow(ctx context.Context, serverURL string, wf *Workf
 			inputsCtx[key] = value
 		}
 		displayTitle, err := EvalTemplate(wf.RunName, &ExprContext{Contexts: map[string]interface{}{
-			"github": s.githubContextMap(workflow),
+			"github": s.GithubContextMap(workflow),
 			"inputs": inputsCtx,
 		}})
 		if err != nil {
@@ -188,7 +188,7 @@ func (s *Engine) SubmitWorkflow(ctx context.Context, serverURL string, wf *Workf
 			inputsCtx[k] = v
 		}
 		group, err := EvalTemplate(workflow.ConcurrencyGroup, &ExprContext{Contexts: map[string]interface{}{
-			"github": s.githubContextMap(workflow),
+			"github": s.GithubContextMap(workflow),
 			"inputs": inputsCtx,
 		}})
 		if err != nil {
@@ -231,7 +231,7 @@ func (s *Engine) SubmitWorkflow(ctx context.Context, serverURL string, wf *Workf
 	// in, so two replicas cannot both admit (ACT-012).
 	var cancelForConcurrency []*Workflow
 	if workflow.ConcurrencyGroup != "" {
-		releaseGroupLock := s.acquireConcurrencyAdmissionLock(actionsConcurrencyLockName(workflow.ConcurrencyGroup))
+		releaseGroupLock := s.acquireConcurrencyAdmissionLock(ActionsConcurrencyLockName(workflow.ConcurrencyGroup))
 		s.workflowConcurrencyMu.Lock()
 		s.store.Mu.Lock()
 		var active bool
@@ -321,7 +321,7 @@ func (s *Engine) ResolveWorkflowFileForRun(wf *Workflow) (int64, string) {
 // DispatchReadyJobs finds pending jobs whose dependencies are all satisfied
 // and dispatches them to the runner. Loops until stable (skipping cascades).
 func (s *Engine) DispatchReadyJobs(ctx context.Context, wf *Workflow, serverURL string, defaultImage string) {
-	ctx, span := otel.Tracer("bleephub").Start(ctx, "DispatchReadyJobs",
+	ctx, span := otel.Tracer("bleephub").Start(ctx, "dispatchReadyJobs",
 		trace.WithAttributes(attribute.String("workflow.id", wf.ID)))
 	defer span.End()
 	// Job-level concurrency admission must be serialized across replicas on a
@@ -634,7 +634,7 @@ func (s *Engine) dispatchWorkflowJob(ctx context.Context, wf *Workflow, wfJob *W
 	timelineID := uuid.New().String()
 	requestID := s.NextRequestID()
 
-	msg, err := s.buildJobMessageFromDef(serverURL, wf, wfJob, planID, timelineID, requestID, defaultImage)
+	msg, err := s.BuildJobMessageFromDef(serverURL, wf, wfJob, planID, timelineID, requestID, defaultImage)
 	if err != nil {
 		s.store.Mu.Lock()
 		wfJob.Status = JobStatusCompleted
@@ -694,7 +694,7 @@ func (s *Engine) dispatchWorkflowJob(ctx context.Context, wf *Workflow, wfJob *W
 // OnJobCompleted is called when a job finishes. It updates the workflow
 // and dispatches any newly-ready dependent jobs.
 func (s *Engine) OnJobCompleted(ctx context.Context, jobID, result string) {
-	ctx, span := otel.Tracer("bleephub").Start(ctx, "OnJobCompleted",
+	ctx, span := otel.Tracer("bleephub").Start(ctx, "onJobCompleted",
 		trace.WithAttributes(
 			attribute.String("job.id", jobID),
 			attribute.String("job.result", result)))
@@ -734,7 +734,7 @@ func (s *Engine) OnJobCompleted(ctx context.Context, jobID, result string) {
 	}
 
 	foundJob.Status = JobStatusCompleted
-	foundJob.Result = Result(normalizeResult(result))
+	foundJob.Result = Result(NormalizeResult(result))
 	foundJob.CompletedAt = time.Now()
 	s.QueueEvent(EvJobCompleted, foundWf, foundJob)
 
@@ -1137,7 +1137,7 @@ func (s *Engine) startPendingConcurrencyWorkflow(group string) {
 	// The database lock is released as soon as the promotion decision is
 	// committed (before stale-run cancellation, which can recurse into this
 	// function for the same group).
-	releaseGroupLock := s.acquireConcurrencyAdmissionLock(actionsConcurrencyLockName(group))
+	releaseGroupLock := s.acquireConcurrencyAdmissionLock(ActionsConcurrencyLockName(group))
 	s.workflowConcurrencyMu.Lock()
 	s.store.Mu.Lock()
 	var pendingWf *Workflow
@@ -1207,8 +1207,8 @@ func workflowNeedsForkPRApproval(wf *Workflow, st *Store) bool {
 	return policy != "" && policy != "none"
 }
 
-// normalizeResult converts runner result strings to consistent format.
-func normalizeResult(result string) string {
+// NormalizeResult converts runner result strings to consistent format.
+func NormalizeResult(result string) string {
 	switch result {
 	case "Succeeded", "succeeded":
 		return "success"
@@ -1244,7 +1244,7 @@ func (s *Engine) StartTimeoutWatcher(wf *Workflow) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				s.checkJobTimeouts(wf)
+				s.CheckJobTimeouts(wf)
 			}
 		}
 	}()
@@ -1327,9 +1327,9 @@ func (s *Engine) reclaimExpiredJobLeases(wf *Workflow) {
 	}
 }
 
-// checkJobTimeouts cancels jobs that have exceeded their timeout, and hands
+// CheckJobTimeouts cancels jobs that have exceeded their timeout, and hands
 // back any job whose runner stopped renewing its lease.
-func (s *Engine) checkJobTimeouts(wf *Workflow) {
+func (s *Engine) CheckJobTimeouts(wf *Workflow) {
 	s.reclaimExpiredJobLeases(wf)
 
 	s.store.Mu.Lock()
@@ -1451,7 +1451,7 @@ func (s *Engine) jobExprContext(wf *Workflow, wfJob *WorkflowJob) (*ExprContext,
 		DepResults:        deps,
 		WorkflowCancelled: wf.CancelRequested || wf.Result == ResultCancelled,
 		Contexts: map[string]interface{}{
-			"github": s.githubContextMap(wf),
+			"github": s.GithubContextMap(wf),
 			"needs":  needsCtx,
 			"inputs": inputsCtx,
 			"vars":   varsCtx,
@@ -1459,10 +1459,10 @@ func (s *Engine) jobExprContext(wf *Workflow, wfJob *WorkflowJob) (*ExprContext,
 	}, nil
 }
 
-// githubContextMap assembles the server-side `github` context for
+// GithubContextMap assembles the server-side `github` context for
 // expression evaluation, mirroring the fields the runner receives in the
-// job message's contextData (same defaults as buildJobMessageFromDef).
-func (s *Engine) githubContextMap(wf *Workflow) map[string]interface{} {
+// job message's contextData (same defaults as BuildJobMessageFromDef).
+func (s *Engine) GithubContextMap(wf *Workflow) map[string]interface{} {
 	eventName := wf.EventName
 	if eventName == "" {
 		eventName = "push"
@@ -1527,8 +1527,8 @@ func (s *Engine) githubContextMap(wf *Workflow) map[string]interface{} {
 	return m
 }
 
-// validateJobGraph checks for cycles in the job dependency graph.
-func validateJobGraph(wf *WorkflowDef) error {
+// ValidateJobGraph checks for cycles in the job dependency graph.
+func ValidateJobGraph(wf *WorkflowDef) error {
 	// Topological sort via DFS
 	visited := make(map[string]int) // 0=unvisited, 1=visiting, 2=visited
 	var visit func(key string) error

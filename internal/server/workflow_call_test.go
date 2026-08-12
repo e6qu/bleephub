@@ -9,6 +9,8 @@ import (
 	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+
+	"github.com/e6qu/bleephub/internal/actions"
 )
 
 // commitFilesToStorage commits a set of files in ONE commit at HEAD of
@@ -166,7 +168,7 @@ func TestWorkflowCallEndToEnd(t *testing.T) {
 	wf.Jobs["setup"].Outputs["version"] = "1.2.3"
 	setupID := wf.Jobs["setup"].JobID
 	s.store.Mu.Unlock()
-	s.onJobCompleted(context.Background(), setupID, "Succeeded")
+	s.actions.OnJobCompleted(context.Background(), setupID, "Succeeded")
 
 	s.store.Mu.RLock()
 	gate := wf.Jobs["deploy/__call"]
@@ -192,7 +194,7 @@ func TestWorkflowCallEndToEnd(t *testing.T) {
 
 	// The called job's runner message carries the call inputs and the
 	// caller-view needs context (no gate, unprefixed keys).
-	msg, err := s.buildJobMessageFromDef("http://localhost", wf, publish, "p", "t", 1, "alpine:latest")
+	msg, err := s.actions.BuildJobMessageFromDef("http://localhost", wf, publish, "p", "t", 1, "alpine:latest")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,7 +208,7 @@ func TestWorkflowCallEndToEnd(t *testing.T) {
 	publish.Outputs["url"] = "https://prod.example"
 	publishID := publish.JobID
 	s.store.Mu.Unlock()
-	s.onJobCompleted(context.Background(), publishID, "Succeeded")
+	s.actions.OnJobCompleted(context.Background(), publishID, "Succeeded")
 
 	s.store.Mu.RLock()
 	collector := wf.Jobs["deploy"]
@@ -227,7 +229,7 @@ func TestWorkflowCallEndToEnd(t *testing.T) {
 	}
 
 	// notify's needs context exposes the caller key with the mapped outputs.
-	nmsg, err := s.buildJobMessageFromDef("http://localhost", wf, notify, "p2", "t2", 2, "alpine:latest")
+	nmsg, err := s.actions.BuildJobMessageFromDef("http://localhost", wf, notify, "p2", "t2", 2, "alpine:latest")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -322,8 +324,8 @@ func TestWorkflowCallValidation(t *testing.T) {
 	}
 	for _, tc := range cases {
 		def := &WorkflowDef{Name: "v", Jobs: map[string]*JobDef{"call": tc.job}}
-		meta := &WorkflowEventMeta{EventName: "push", Repo: repoKey}
-		_, err := s.submitWorkflow(context.Background(), "http://localhost", def, "alpine:latest", meta)
+		meta := &actions.WorkflowEventMeta{EventName: "push", Repo: repoKey}
+		_, err := s.actions.SubmitWorkflow(context.Background(), "http://localhost", def, "alpine:latest", meta)
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s: err = %v, want containing %q", tc.name, err, tc.want)
 		}
@@ -350,8 +352,8 @@ func TestWorkflowCallNestingDepthLimit(t *testing.T) {
 	def := &WorkflowDef{Name: "deep", Jobs: map[string]*JobDef{
 		"start": {Uses: "./.github/workflows/l2.yml"},
 	}}
-	meta := &WorkflowEventMeta{EventName: "push", Repo: repoKey}
-	_, err := s.submitWorkflow(context.Background(), "http://localhost", def, "alpine:latest", meta)
+	meta := &actions.WorkflowEventMeta{EventName: "push", Repo: repoKey}
+	_, err := s.actions.SubmitWorkflow(context.Background(), "http://localhost", def, "alpine:latest", meta)
 	if err == nil || !strings.Contains(err.Error(), "nested deeper") {
 		t.Errorf("err = %v, want nesting-depth error", err)
 	}
@@ -367,7 +369,7 @@ func TestRemapCallSecrets(t *testing.T) {
 		},
 	}
 	wf := &Workflow{}
-	got, err := remapCallSecrets(s.Server, wf, binding, map[string]string{
+	got, err := actions.RemapCallSecrets(s.actions, wf, binding, map[string]string{
 		"PROD_KEY": "sekrit",
 		"OTHER":    "hidden-from-called",
 	})
@@ -388,25 +390,25 @@ func TestRemapCallSecrets(t *testing.T) {
 func TestWorkflowCallInputTypingIsStrict(t *testing.T) {
 	t.Parallel()
 	boolean := &WorkflowInputDef{Type: "boolean"}
-	if _, err := typedCallInput(boolean, "yes"); err == nil {
+	if _, err := actions.TypedCallInput(boolean, "yes"); err == nil {
 		t.Fatal("boolean input accepted a truthy non-boolean value")
 	}
-	got, err := typedCallInput(boolean, "false")
+	got, err := actions.TypedCallInput(boolean, "false")
 	if err != nil || got != false {
 		t.Fatalf("false boolean = %#v, %v", got, err)
 	}
 
 	number := &WorkflowInputDef{Type: "number"}
-	if _, err := typedCallInput(number, "12abc"); err == nil {
+	if _, err := actions.TypedCallInput(number, "12abc"); err == nil {
 		t.Fatal("number input accepted a numeric prefix")
 	}
-	got, err = typedCallInput(number, "12.5")
+	got, err = actions.TypedCallInput(number, "12.5")
 	if err != nil || got != float64(12.5) {
 		t.Fatalf("number = %#v, %v", got, err)
 	}
 
 	choice := &WorkflowInputDef{Type: "choice", Options: []interface{}{"blue", "green"}}
-	if _, err := typedCallInput(choice, "red"); err == nil {
+	if _, err := actions.TypedCallInput(choice, "red"); err == nil {
 		t.Fatal("choice input accepted an undeclared option")
 	}
 }
@@ -423,7 +425,7 @@ func TestReusableWorkflowTopLevelEnvironmentReachesCalledJobs(t *testing.T) {
 	binding := &WorkflowCallBinding{CallerKey: "call"}
 	for key, job := range called.Jobs {
 		child := *job
-		child.Env = mergedCallEnvironment(called.Env, child.Env)
+		child.Env = actions.MergedCallEnvironment(called.Env, child.Env)
 		child.Call = binding
 		out.Jobs["call/"+key] = &child
 	}
@@ -443,12 +445,12 @@ func TestReusableWorkflowTemplateFailuresFailClosed(t *testing.T) {
 	}
 	wf := &Workflow{Jobs: map[string]*WorkflowJob{}}
 	gate := &WorkflowJob{Def: &JobDef{Call: binding}}
-	if s.resolveCallInputsLocked(wf, gate) {
+	if s.actions.ResolveCallInputsLocked(wf, gate) {
 		t.Fatal("broken input template succeeded")
 	}
 
 	binding.SecretsMap = map[string]string{"TOKEN": "${{ secrets.MISSING["}
-	if _, err := remapCallSecrets(s.Server, wf, binding, map[string]string{}); err == nil {
+	if _, err := actions.RemapCallSecrets(s.actions, wf, binding, map[string]string{}); err == nil {
 		t.Fatal("broken secret template succeeded")
 	}
 }

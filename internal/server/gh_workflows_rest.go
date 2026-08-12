@@ -29,7 +29,7 @@ func (s *Server) registerGHWorkflowsRoutes() {
 
 // handleSetWorkflowState backs PUT .../workflows/{id}/{enable,disable}:
 // flips the workflow FILE's state (persisted) and 204s. Disabled
-// workflows neither trigger (webhooks.go workflowFileDisabled) nor
+// workflows neither trigger (actions.WorkflowFileDisabled) nor
 // dispatch (403 below).
 func (s *Server) handleSetWorkflowState(state string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

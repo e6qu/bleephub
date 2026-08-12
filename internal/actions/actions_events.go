@@ -41,15 +41,15 @@ type actionsEventLoop struct {
 	once sync.Once
 	mu   sync.Mutex
 	cond *sync.Cond
-	// snapshotMu guards the struct-value copies in cloneWorkflowEventSnapshot
-	// and cloneWorkflowJobEventSnapshot against concurrent field writes by the
+	// snapshotMu guards the struct-value copies in CloneWorkflowEventSnapshot
+	// and CloneWorkflowJobEventSnapshot against concurrent field writes by the
 	// drain goroutine (CheckSuiteID on the workflow, CheckRunID on jobs).
 	// Lock order is always store.mu before snapshotMu.
 	snapshotMu sync.RWMutex
 	queue      []actionsEvent
 }
 
-func cloneWorkflowEventSnapshot(wf *Workflow) *Workflow {
+func CloneWorkflowEventSnapshot(wf *Workflow) *Workflow {
 	if wf == nil {
 		return nil
 	}
@@ -62,7 +62,7 @@ func cloneWorkflowEventSnapshot(wf *Workflow) *Workflow {
 	return &snapshot
 }
 
-func cloneWorkflowJobEventSnapshot(job *WorkflowJob) *WorkflowJob {
+func CloneWorkflowJobEventSnapshot(job *WorkflowJob) *WorkflowJob {
 	if job == nil {
 		return nil
 	}
@@ -130,8 +130,8 @@ func (s *Engine) QueueEvent(kind EventKind, wf *Workflow, job *WorkflowJob) {
 		kind:        kind,
 		wf:          wf,
 		job:         job,
-		wfSnapshot:  cloneWorkflowEventSnapshot(wf),
-		jobSnapshot: cloneWorkflowJobEventSnapshot(job),
+		wfSnapshot:  CloneWorkflowEventSnapshot(wf),
+		jobSnapshot: CloneWorkflowJobEventSnapshot(job),
 	}
 	s.actionsEvents.snapshotMu.RUnlock()
 	s.actionsEvents.mu.Lock()
@@ -157,10 +157,10 @@ func (s *Engine) drainActionsEvents() {
 
 		switch ev.kind {
 		case EvRunRequested:
-			s.onActionsRunRequestedSnapshot(ev.wf, ev.wfSnapshot)
+			s.OnActionsRunRequestedSnapshot(ev.wf, ev.wfSnapshot)
 		case EvRunCompleted:
 			delete(runInProgress, ev.wf.ID)
-			s.onActionsRunCompletedSnapshot(ev.wf, ev.wfSnapshot)
+			s.OnActionsRunCompletedSnapshot(ev.wf, ev.wfSnapshot)
 		case EvJobQueued:
 			s.sink.WorkflowJobEvent(ev.wfSnapshot, ev.jobSnapshot, "queued")
 		case EvJobWaiting:
@@ -179,10 +179,10 @@ func (s *Engine) drainActionsEvents() {
 	}
 }
 
-// onActionsRunRequestedSnapshot creates the run's check suite plus one check
+// OnActionsRunRequestedSnapshot creates the run's check suite plus one check
 // run per visible job, then emits check_suite + workflow_run "requested"
 // events from the immutable transition snapshot queued by the scheduler.
-func (s *Engine) onActionsRunRequestedSnapshot(wf, snapshot *Workflow) {
+func (s *Engine) OnActionsRunRequestedSnapshot(wf, snapshot *Workflow) {
 	repoKey := wf.RepoFullName
 	branch := refShortName(wf.Ref)
 
@@ -239,9 +239,9 @@ func (s *Engine) onActionsRunRequestedSnapshot(wf, snapshot *Workflow) {
 	s.sink.WorkflowRunEvent(snapshot, "requested")
 }
 
-// onActionsRunCompletedSnapshot rolls the suite up and emits completed events
+// OnActionsRunCompletedSnapshot rolls the suite up and emits completed events
 // from the immutable transition snapshot queued by the scheduler.
-func (s *Engine) onActionsRunCompletedSnapshot(wf, snapshot *Workflow) {
+func (s *Engine) OnActionsRunCompletedSnapshot(wf, snapshot *Workflow) {
 	repoKey := wf.RepoFullName
 
 	s.store.Mu.RLock()

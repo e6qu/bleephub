@@ -1,4 +1,4 @@
-package bleephub
+package actions
 
 import (
 	"testing"
@@ -134,7 +134,7 @@ jobs:
 	if len(order) != 2 || order[0] != "os" || order[1] != "version" {
 		t.Fatalf("matrix order = %#v", order)
 	}
-	expanded := expandMatrixJobs(def)
+	expanded := ExpandMatrixJobs(def)
 	if got := expanded.Jobs["test_0"].Name; got != "test (ubuntu, 1)" {
 		t.Fatalf("first matrix display name = %q", got)
 	}

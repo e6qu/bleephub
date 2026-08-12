@@ -28,7 +28,7 @@ func OrgItemVisibleToRepo(visibility string, selectedIDs []int, repo *Repo) bool
 	return false
 }
 
-// jobSecretsEntitled reports whether a runner registered for scope may
+// JobSecretsEntitled reports whether a runner registered for scope may
 // receive the job message of repoFullName. That message carries the
 // repository's, its organization's and its environment's secrets in
 // plaintext, so the entitlement is the registration scope: the repository
@@ -36,7 +36,7 @@ func OrgItemVisibleToRepo(visibility string, selectedIDs []int, repo *Repo) bool
 //
 // A job message that names no repository — the operator /internal/exec/submit
 // path — carries none of those secrets and is therefore not scope-restricted.
-func jobSecretsEntitled(scope runnerScope, repoFullName string) bool {
+func JobSecretsEntitled(scope runnerScope, repoFullName string) bool {
 	if repoFullName == "" {
 		return true
 	}

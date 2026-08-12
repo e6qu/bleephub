@@ -38,7 +38,7 @@ func ExpandMatrixJobs(wf *WorkflowDef) *WorkflowDef {
 	// produced yet when it ran: wf.Jobs is a map, so a single interleaved pass
 	// rewrote `needs` against a partially-built result and left a dependent job
 	// pointing at a key that no longer existed whenever iteration happened to
-	// reach it before its dependency. That failed validateJobGraph on roughly
+	// reach it before its dependency. That failed ValidateJobGraph on roughly
 	// half of runs, which reads as flakiness rather than as a bug.
 	expandedKeysFor := make(map[string][]string, len(wf.Jobs))
 
@@ -202,7 +202,7 @@ func BuildJobMessage(serverURL, jobID, planID, timelineID string, requestID int6
 		// String values = bare JSON strings
 		// Dictionary = {"t": 2, "d": [{"k":"key","v":<value>}, ...]}
 		"contextData": map[string]interface{}{
-			"github": dictContextData(
+			"github": DictContextData(
 				"server_url", serverURL,
 				"api_url", serverURL,
 				"repository", "",
@@ -220,10 +220,10 @@ func BuildJobMessage(serverURL, jobID, planID, timelineID string, requestID int6
 			),
 			// Built runner-agnostic; the broker rebinds this to the leasing
 			// agent at delivery (ACT-051, rebindRunnerContext).
-			"runner":   runnerContextData(nil),
-			"env":      dictContextData(),
-			"vars":     dictContextData(),
-			"needs":    dictContextData(),
+			"runner":   RunnerContextData(nil),
+			"env":      DictContextData(),
+			"vars":     DictContextData(),
+			"needs":    DictContextData(),
 			"inputs":   nil,
 			"matrix":   nil,
 			"strategy": nil,

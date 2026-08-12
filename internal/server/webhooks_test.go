@@ -18,13 +18,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/e6qu/bleephub/internal/server/testutil"
 	memfs "github.com/go-git/go-billy/v5/memfs"
 	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/go-git/go-git/v5/storage/memory"
+
+	"github.com/e6qu/bleephub/internal/actions"
+	"github.com/e6qu/bleephub/internal/server/testutil"
 )
 
 func (s *isolatedServer) createWebhookTestRepo(t *testing.T, name string) {
@@ -1674,7 +1676,7 @@ func TestPushPayloadCarriesCommitDetails(t *testing.T) {
 	sha := commitWorkflowYAMLToStorage(t, s, repoKey, "docs/README.md", "payload")
 	repo := s.store.GetRepoByFullName(repoKey)
 	payload := buildPushPayload(s.store, repo, s.store.LookupUserByLogin("push-payload"),
-		"refs/heads/main", zeroCommitSha, sha)
+		"refs/heads/main", actions.ZeroCommitSha, sha)
 
 	if payload["created"] != true || payload["forced"] != false {
 		t.Fatalf("push flags = created:%v forced:%v", payload["created"], payload["forced"])

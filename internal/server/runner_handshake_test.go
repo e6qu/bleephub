@@ -666,7 +666,7 @@ func TestEphemeralRunnerTeardownStaysAuthenticated(t *testing.T) {
 	// Queue one job for it, the way the workflow engine does.
 	planID := fmt.Sprintf("handshake-ephemeral-plan-%d", runner.agentID)
 	jobID := "handshake-ephemeral-job-" + planID
-	requestID := s.nextRequestID()
+	requestID := s.actions.NextRequestID()
 	message := fmt.Sprintf(
 		`{"plan":{"scopeIdentifier":%q,"planId":%q},"requestId":%d,`+
 			`"contextData":{"github":{"t":2,"d":[{"k":"repository","v":"admin/handshake-ephemeral"}]}}}`,
@@ -678,7 +678,7 @@ func TestEphemeralRunnerTeardownStaysAuthenticated(t *testing.T) {
 	}
 	s.store.Mu.Unlock()
 	queued := &TaskAgentMessage{
-		MessageID:   s.nextMessageID(),
+		MessageID:   s.actions.NextMessageID(),
 		MessageType: "PipelineAgentJobRequest",
 		Body:        message,
 		JobID:       jobID,

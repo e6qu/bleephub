@@ -312,7 +312,7 @@ jobs:
 		break
 	}
 	s.store.Mu.RUnlock()
-	msg, err := s.buildJobMessageFromDef("http://example.test", run, job, "plan", "timeline", 1, run.Env["__defaultImage"])
+	msg, err := s.actions.BuildJobMessageFromDef("http://example.test", run, job, "plan", "timeline", 1, run.Env["__defaultImage"])
 	if err != nil {
 		t.Fatal(err)
 	}

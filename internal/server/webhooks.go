@@ -1115,9 +1115,9 @@ func (s *Server) createStartupFailureRun(fileName string, content []byte, meta *
 	wf.WorkflowFileID, wf.WorkflowFilePath = s.actions.ResolveWorkflowFileForRun(wf)
 	wf.RunNumber = s.store.ReserveWorkflowRunNumber(wf)
 	// Once wf is published into s.store.Workflows another goroutine can resolve
-	// and mutate it under store.mu, so the queueActionsEvent snapshots (which
+	// and mutate it under store.mu, so the QueueEvent snapshots (which
 	// copy *wf while holding only snapshotMu) must run inside the same critical
-	// section, matching every other queueActionsEvent call site. Doing this
+	// section, matching every other QueueEvent call site. Doing this
 	// after Unlock left the terminal run's fields readable lock-free — a data
 	// race, even though the run is already completed so a writer is unlikely.
 	s.store.Mu.Lock()

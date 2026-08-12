@@ -500,7 +500,7 @@ func TestEphemeralRunnerTakesExactlyOneJob(t *testing.T) {
 	s.store.Mu.Unlock()
 	queue("next-eph", "octo/a")
 	ephSession := &Session{SessionID: "s-eph", Agent: ephemeral, MsgCh: make(chan *TaskAgentMessage, 1)}
-	if msg := s.pullPendingMessage(ephSession, runnerScope{Repo: "octo/a"}); msg != nil {
+	if msg := s.actions.PullPendingMessage(ephSession, runnerScope{Repo: "octo/a"}); msg != nil {
 		t.Fatal("an ephemeral runner was handed a second job")
 	}
 
@@ -510,7 +510,7 @@ func TestEphemeralRunnerTakesExactlyOneJob(t *testing.T) {
 	s.store.Jobs["done-res"] = &Job{ID: "done-res", Status: "completed", AgentID: resident.ID}
 	s.store.Mu.Unlock()
 	resSession := &Session{SessionID: "s-res", Agent: resident, MsgCh: make(chan *TaskAgentMessage, 1)}
-	if msg := s.pullPendingMessage(resSession, runnerScope{Repo: "octo/a"}); msg == nil {
+	if msg := s.actions.PullPendingMessage(resSession, runnerScope{Repo: "octo/a"}); msg == nil {
 		t.Fatal("a resident runner that finished a job was not handed the next one")
 	}
 }

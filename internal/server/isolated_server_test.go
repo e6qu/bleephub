@@ -15,8 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/e6qu/bleephub/internal/server/testutil"
 	"github.com/rs/zerolog"
+
+	"github.com/e6qu/bleephub/internal/server/testutil"
 )
 
 // TEST-008 migration scaffolding.
@@ -1096,7 +1097,7 @@ func (s *isolatedServer) cancelRepoRunsCleanup(t *testing.T, repoKey string) {
 		}
 		s.store.Mu.RUnlock()
 		for _, w := range runs {
-			s.cancelWorkflow(w)
+			s.actions.CancelWorkflow(w)
 		}
 	})
 }

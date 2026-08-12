@@ -69,7 +69,7 @@ func TestConcurrencyCancelInProgress(t *testing.T) {
 			"build": {Steps: []StepDef{{Run: "sleep 999"}}},
 		},
 	}
-	workflow1, err := s.submitWorkflow(context.Background(), "http://localhost", wf1, "alpine:latest")
+	workflow1, err := s.actions.SubmitWorkflow(context.Background(), "http://localhost", wf1, "alpine:latest")
 	if err != nil {
 		t.Fatalf("submit wf1: %v", err)
 	}
@@ -85,7 +85,7 @@ func TestConcurrencyCancelInProgress(t *testing.T) {
 			"build": {Steps: []StepDef{{Run: "echo build"}}},
 		},
 	}
-	workflow2, err := s.submitWorkflow(context.Background(), "http://localhost", wf2, "alpine:latest")
+	workflow2, err := s.actions.SubmitWorkflow(context.Background(), "http://localhost", wf2, "alpine:latest")
 	if err != nil {
 		t.Fatalf("submit wf2: %v", err)
 	}
@@ -113,7 +113,7 @@ func TestConcurrencyGroupIsolation(t *testing.T) {
 			"build": {Steps: []StepDef{{Run: "sleep 999"}}},
 		},
 	}
-	workflow1, err := s.submitWorkflow(context.Background(), "http://localhost", wf1, "alpine:latest")
+	workflow1, err := s.actions.SubmitWorkflow(context.Background(), "http://localhost", wf1, "alpine:latest")
 	if err != nil {
 		t.Fatalf("submit wf-a: %v", err)
 	}
@@ -126,7 +126,7 @@ func TestConcurrencyGroupIsolation(t *testing.T) {
 			"build": {Steps: []StepDef{{Run: "echo build"}}},
 		},
 	}
-	_, err = s.submitWorkflow(context.Background(), "http://localhost", wf2, "alpine:latest")
+	_, err = s.actions.SubmitWorkflow(context.Background(), "http://localhost", wf2, "alpine:latest")
 	if err != nil {
 		t.Fatalf("submit wf-b: %v", err)
 	}
@@ -149,7 +149,7 @@ func TestConcurrencyQueueWhenNotCancel(t *testing.T) {
 			"build": {Steps: []StepDef{{Run: "sleep 999"}}},
 		},
 	}
-	workflow1, err := s.submitWorkflow(context.Background(), "http://localhost", wf1, "alpine:latest")
+	workflow1, err := s.actions.SubmitWorkflow(context.Background(), "http://localhost", wf1, "alpine:latest")
 	if err != nil {
 		t.Fatalf("submit wf1: %v", err)
 	}
@@ -164,7 +164,7 @@ func TestConcurrencyQueueWhenNotCancel(t *testing.T) {
 		},
 		Env: map[string]string{"__serverURL": "http://localhost", "__defaultImage": "alpine:latest"},
 	}
-	workflow2, err := s.submitWorkflow(context.Background(), "http://localhost", wf2, "alpine:latest")
+	workflow2, err := s.actions.SubmitWorkflow(context.Background(), "http://localhost", wf2, "alpine:latest")
 	if err != nil {
 		t.Fatalf("submit wf2: %v", err)
 	}
@@ -180,7 +180,7 @@ func TestConcurrencyQueueWhenNotCancel(t *testing.T) {
 
 	// Complete first workflow
 	for _, j := range workflow1.Jobs {
-		s.onJobCompleted(context.Background(), j.JobID, "Succeeded")
+		s.actions.OnJobCompleted(context.Background(), j.JobID, "Succeeded")
 	}
 
 	// Second workflow should now be running

@@ -53,16 +53,16 @@ func (s *Engine) startScheduleDispatcher(ctx context.Context) {
 			for _, hook := range s.onScheduleTick {
 				hook(tickTime)
 			}
-			lastFired = s.fireSchedulesThrough(lastFired, tickTime)
+			lastFired = s.FireSchedulesThrough(lastFired, tickTime)
 		}
 	})
 }
 
-// fireSchedulesThrough replays every whole minute in (lastFired, now] so a scan
+// FireSchedulesThrough replays every whole minute in (lastFired, now] so a scan
 // that overran a minute boundary does not drop the minutes it skipped. Catch-up
 // is bounded by maxScheduleCatchup, and the returned cursor (the last minute
 // processed) is threaded into the next tick.
-func (s *Engine) fireSchedulesThrough(lastFired, now time.Time) time.Time {
+func (s *Engine) FireSchedulesThrough(lastFired, now time.Time) time.Time {
 	current := now.Truncate(time.Minute)
 	if current.Before(lastFired) { // clock skew: never move the cursor backwards
 		return lastFired
@@ -72,7 +72,7 @@ func (s *Engine) fireSchedulesThrough(lastFired, now time.Time) time.Time {
 		minute = earliest
 	}
 	for ; !minute.After(current); minute = minute.Add(time.Minute) {
-		s.fireDueSchedules(minute)
+		s.FireDueSchedules(minute)
 	}
 	return current
 }
@@ -188,10 +188,10 @@ func (s *Engine) buildScheduleIndex(repoKey, definitionRef string, stor gitStora
 	return out
 }
 
-// fireDueSchedules triggers every schedule-bearing workflow from each
+// FireDueSchedules triggers every schedule-bearing workflow from each
 // repository's explicit default branch whose cron matches the given minute.
 // Separated from the ticker so tests drive it with a fixed clock.
-func (s *Engine) fireDueSchedules(now time.Time) {
+func (s *Engine) FireDueSchedules(now time.Time) {
 	minute := now.Truncate(time.Minute)
 	if err := s.store.RefreshFromPersistenceIfStale(); err != nil {
 		s.logger.Error().Err(err).Msg("scheduled workflow scan could not refresh shared state")

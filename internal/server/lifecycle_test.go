@@ -14,8 +14,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/e6qu/bleephub/internal/server/testutil"
 	"github.com/rs/zerolog"
+
+	"github.com/e6qu/bleephub/internal/server/testutil"
 )
 
 // lifecycleServer starts a server of its own on a free port and returns it with
@@ -133,7 +134,7 @@ func TestShutdownIsBoundedByItsGrace(t *testing.T) {
 func TestShutdownStopsTheScheduleDispatcher(t *testing.T) {
 	srv := NewServer("127.0.0.1:0", zerolog.New(io.Discard))
 	ctx, stop := context.WithCancel(context.Background())
-	srv.startScheduleDispatcher(ctx)
+	srv.actions.Start(ctx)
 
 	stopped := make(chan struct{})
 	go func() {

@@ -303,12 +303,12 @@ func filterPatternsMatch(patterns []string, value string) bool {
 	matched := false
 	for _, p := range patterns {
 		if neg, ok := strings.CutPrefix(p, "!"); ok {
-			if matched && filterPatternMatch(neg, value) {
+			if matched && FilterPatternMatch(neg, value) {
 				matched = false
 			}
 			continue
 		}
-		if !matched && filterPatternMatch(p, value) {
+		if !matched && FilterPatternMatch(p, value) {
 			matched = true
 		}
 	}
@@ -321,10 +321,10 @@ func filterPatternsMatch(patterns []string, value string) bool {
 // handler could survive.
 var filterPatternCache sync.Map // pattern string → *regexp.Regexp
 
-// filterPatternMatch matches one GitHub filter pattern: `*` (any except
+// FilterPatternMatch matches one GitHub filter pattern: `*` (any except
 // '/'), `**` (any), `?` / `+` (zero-or-one / one-or-more of the
 // preceding token), `[...]` character classes.
-func filterPatternMatch(pattern, value string) bool {
+func FilterPatternMatch(pattern, value string) bool {
 	re, err := compileFilterPattern(pattern)
 	if err != nil {
 		return false
