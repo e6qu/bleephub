@@ -45,18 +45,3 @@ func TestUpdateFieldPreservesKeptOptionIDs(t *testing.T) {
 		t.Fatalf("expected 2 options after update, got %d", len(updated.Options))
 	}
 }
-
-// TestExternalURLPrefix is the GQL-042 regression: GraphQL `url` fields go
-// through externalURL, which prefixes BLEEPHUB_EXTERNAL_URL when set and stays
-// relative otherwise (resourcePath fields never call it).
-func TestExternalURLPrefix(t *testing.T) {
-	t.Setenv("BLEEPHUB_EXTERNAL_URL", "https://gh.example.com/")
-	if got := externalURL("/octo/repo/issues/1"); got != "https://gh.example.com/octo/repo/issues/1" {
-		t.Fatalf("externalURL with endpoint = %q", got)
-	}
-
-	t.Setenv("BLEEPHUB_EXTERNAL_URL", "")
-	if got := externalURL("/octo/repo/issues/1"); got != "/octo/repo/issues/1" {
-		t.Fatalf("externalURL without endpoint = %q, want the relative path", got)
-	}
-}

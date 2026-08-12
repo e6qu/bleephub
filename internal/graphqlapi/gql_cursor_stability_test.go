@@ -1,4 +1,4 @@
-package bleephub
+package graphqlapi
 
 import (
 	"reflect"

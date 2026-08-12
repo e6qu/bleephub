@@ -3,6 +3,7 @@ package store
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/go-git/go-git/v5/plumbing"
@@ -297,4 +298,24 @@ func PullRequestHeadSHALocked(pr *PullRequest, st *Store) string {
 		return ""
 	}
 	return ResolveBranchSha(st.GitStorages[repo.FullName], pr.HeadRefName)
+}
+
+// PRReviewThreadNodeID renders the GraphQL node id of a PR review thread
+// (node-ID codecs live in store so both API surfaces and their tests share
+// one format — ARCH-003).
+func PRReviewThreadNodeID(threadID int) string {
+	return fmt.Sprintf("PRT_kgDO%08d", threadID)
+}
+
+// ParsePRReviewThreadNodeID decodes a PR review thread node id.
+func ParsePRReviewThreadNodeID(nodeID string) (int, bool) {
+	const prefix = "PRT_kgDO"
+	if !strings.HasPrefix(nodeID, prefix) {
+		return 0, false
+	}
+	id, err := strconv.Atoi(strings.TrimPrefix(nodeID, prefix))
+	if err != nil || id <= 0 {
+		return 0, false
+	}
+	return id, true
 }

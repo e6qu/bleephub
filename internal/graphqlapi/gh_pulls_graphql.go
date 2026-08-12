@@ -2318,22 +2318,6 @@ func (s *Resolver) resolveReviewThreadGraphQL(p graphql.ResolveParams, resolved 
 	}, nil
 }
 
-func prReviewThreadNodeID(threadID int) string {
-	return fmt.Sprintf("PRT_kgDO%08d", threadID)
-}
-
-func parsePRReviewThreadNodeID(nodeID string) (int, bool) {
-	const prefix = "PRT_kgDO"
-	if !strings.HasPrefix(nodeID, prefix) {
-		return 0, false
-	}
-	id, err := strconv.Atoi(strings.TrimPrefix(nodeID, prefix))
-	if err != nil || id <= 0 {
-		return 0, false
-	}
-	return id, true
-}
-
 // prMilestoneToGQLLocked returns the GraphQL source map for the PR's
 // milestone, or nil when the PR has no milestone or the referenced
 // milestone has been deleted. Real GitHub shares the Milestone table
@@ -2391,22 +2375,6 @@ func deriveReviewDecisionLocked(st *Store, prID int) string {
 		return "APPROVED"
 	}
 	return ""
-}
-
-func findPullRequestByNodeID(st *Store, nodeID string) *PullRequest {
-	st.Mu.RLock()
-	defer st.Mu.RUnlock()
-	if id, ok := decodeNodeDBID(nodeID, "PR_kgDO"); ok {
-		if pr := st.PullRequests[id]; pr != nil && pr.NodeID == nodeID {
-			return pr
-		}
-	}
-	for _, pr := range st.PullRequests {
-		if pr.NodeID == nodeID {
-			return pr
-		}
-	}
-	return nil
 }
 
 func prHasAllLabels(st *Store, pr *PullRequest, labelNames []string) bool {

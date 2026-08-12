@@ -1,6 +1,9 @@
 package bleephub
 
 import (
+	"github.com/e6qu/bleephub/internal/graphqlapi"
+	"github.com/graphql-go/graphql"
+
 	"bytes"
 	"context"
 	"encoding/json"
@@ -51,13 +54,13 @@ func TestGraphQLDocumentCostLimitsDepthAndFields(t *testing.T) {
 
 	deep := "{ viewer" + strings.Repeat(" { viewer", 21) + " { login }" + strings.Repeat(" }", 22)
 	deepDocument := parse(deep)
-	if err := graphqlCheckDocumentLimits(deepDocument, nil, 20, 5000); err == nil {
+	if err := graphqlapi.CheckDocumentLimits(deepDocument, nil, 20, 5000); err == nil {
 		t.Fatal("deep query passed the depth limit")
 	}
 
 	wide := "{ viewer { " + strings.Repeat("login ", 101) + "} }"
 	wideDocument := parse(wide)
-	if err := graphqlCheckDocumentLimits(wideDocument, nil, 20, 100); err == nil {
+	if err := graphqlapi.CheckDocumentLimits(wideDocument, nil, 20, 100); err == nil {
 		t.Fatal("wide query passed the field-count limit")
 	}
 }
@@ -70,17 +73,22 @@ func TestGraphQLSchemasBuildWithServerLocalTypeRegistries(t *testing.T) {
 		wait.Add(1)
 		go func(server *Server) {
 			defer wait.Done()
-			server.initGraphQLSchema()
+			server.graphql = server.newGraphQLResolver()
 		}(server)
 	}
 	wait.Wait()
-	if servers[0].graphqlTypes.pageInfo == nil || servers[1].graphqlTypes.pageInfo == nil {
+	// The registry itself is unexported in graphqlapi (ARCH-003); the schema
+	// type map exposes the same instances, so distinct pointers there prove
+	// the registries are server-local.
+	schemas := []graphql.Schema{servers[0].graphql.Schema(), servers[1].graphql.Schema()}
+	typeMaps := []map[string]graphql.Type{schemas[0].TypeMap(), schemas[1].TypeMap()}
+	if typeMaps[0]["PageInfo"] == nil || typeMaps[1]["PageInfo"] == nil {
 		t.Fatal("schema build did not initialize PageInfo")
 	}
-	if servers[0].graphqlTypes.pageInfo == servers[1].graphqlTypes.pageInfo {
+	if typeMaps[0]["PageInfo"] == typeMaps[1]["PageInfo"] {
 		t.Fatal("independent servers share a mutable GraphQL type registry")
 	}
-	if servers[0].graphqlTypes.projectV2Type == servers[1].graphqlTypes.projectV2Type {
+	if typeMaps[0]["ProjectV2"] == typeMaps[1]["ProjectV2"] {
 		t.Fatal("independent servers share mutable ProjectV2 types")
 	}
 }
@@ -100,12 +108,12 @@ func TestGraphQLDocumentLimitsRejectInvalidRelayWindows(t *testing.T) {
 		"{ viewer { repositories(first: 101) { totalCount } } }",
 		"{ viewer { repositories(after: \"not-a-cursor\") { totalCount } } }",
 	} {
-		if err := graphqlCheckDocumentLimits(parse(query), nil, 20, 5000); err == nil {
+		if err := graphqlapi.CheckDocumentLimits(parse(query), nil, 20, 5000); err == nil {
 			t.Fatalf("invalid Relay window passed: %s", query)
 		}
 	}
-	valid := "{ viewer { repositories(first: 1, after: \"" + encodeCursor(0) + "\") { totalCount } } }"
-	if err := graphqlCheckDocumentLimits(parse(valid), nil, 20, 5000); err != nil {
+	valid := "{ viewer { repositories(first: 1, after: \"" + graphqlapi.EncodeCursor(0) + "\") { totalCount } } }"
+	if err := graphqlapi.CheckDocumentLimits(parse(valid), nil, 20, 5000); err != nil {
 		t.Fatalf("valid Relay window rejected: %v", err)
 	}
 }
@@ -173,7 +181,7 @@ func TestGraphQLRepositoryConnectionHonorsAffiliationOrderAndBackwardPagination(
 		t.Fatalf("first pageInfo = %v", pageInfo)
 	}
 
-	before := encodeCursor(2)
+	before := graphqlapi.EncodeCursor(2)
 	result = graphQLRequestOnServer(t, server, admin, `{
 		viewer {
 			repositories(

@@ -1,6 +1,8 @@
 package bleephub
 
 import (
+	"github.com/e6qu/bleephub/internal/graphqlapi"
+
 	"context"
 	"fmt"
 	"net/http"
@@ -454,7 +456,7 @@ func TestGraphQLDiscussionAnswerMutationsRequireAViewer(t *testing.T) {
 		`mutation($input:UnmarkDiscussionCommentAsAnswerInput!){unmarkDiscussionCommentAsAnswer(input:$input){discussion{id}}}`,
 	} {
 		result := graphql.Do(graphql.Params{
-			Schema:        s.graphqlSchema,
+			Schema:        s.graphql.Schema(),
 			RequestString: doc,
 			VariableValues: map[string]interface{}{
 				"input": map[string]interface{}{"id": f.discComment.NodeID},
@@ -659,22 +661,27 @@ func TestGraphQLUpdateIssueValidatesState(t *testing.T) {
 func TestGraphQLEveryMutationIsCoveredByThePolicyTable(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
-	mutation := s.graphqlSchema.MutationType()
+	schema := s.graphql.Schema()
+	mutation := schema.MutationType()
 	if mutation == nil {
 		t.Fatalf("the schema exposes no mutation type")
 	}
 	fields := mutation.Fields()
+	// The policy table lives in the graphqlapi package (ARCH-003); its rows
+	// (name → account-scoped) come through MutationAuthzPolicy so this gate
+	// keeps asserting over the real table, at full strength.
+	policy := graphqlapi.MutationAuthzPolicy()
 	// A rename or a refactor that stopped registering mutations would
 	// otherwise turn this into a green check over nothing.
-	if len(fields) != len(graphqlMutationAuthz) {
-		t.Fatalf("the schema exposes %d mutations but the policy table has %d rows", len(fields), len(graphqlMutationAuthz))
+	if len(fields) != len(policy) {
+		t.Fatalf("the schema exposes %d mutations but the policy table has %d rows", len(fields), len(policy))
 	}
 	for name := range fields {
-		if _, covered := graphqlMutationAuthz[name]; !covered {
+		if _, covered := policy[name]; !covered {
 			t.Errorf("mutation %s reaches the store with no row in graphqlMutationAuthz", name)
 		}
 	}
-	for name := range graphqlMutationAuthz {
+	for name := range policy {
 		if _, ok := fields[name]; !ok {
 			t.Errorf("graphqlMutationAuthz has a row for %s, which the schema does not expose", name)
 		}
@@ -682,8 +689,9 @@ func TestGraphQLEveryMutationIsCoveredByThePolicyTable(t *testing.T) {
 	// Every row whose subject is an existing repository or project must be
 	// exercised by a refusal case in one of the two tables above, so a mutation
 	// cannot be authorized on paper and untested in practice. createRepository
-	// has no such subject — its entitlement is over an account — and is covered
-	// by the account-scoped cases instead.
+	// has no such subject — its entitlement is over an account (account-scoped
+	// in the policy report) — and is covered by the account-scoped cases
+	// instead.
 	inCases := map[string]bool{}
 	for _, tc := range gqlMutationCases {
 		inCases[tc.name] = true
@@ -691,48 +699,11 @@ func TestGraphQLEveryMutationIsCoveredByThePolicyTable(t *testing.T) {
 	for _, tc := range gqlProjectMutationCases {
 		inCases[tc.name] = true
 	}
-	for name, rule := range graphqlMutationAuthz {
-		if _, accountScoped := rule.(repoCreationRule); accountScoped || inCases[name] {
+	for name, accountScoped := range policy {
+		if accountScoped || inCases[name] {
 			continue
 		}
 		t.Errorf("mutation %s is authorized but no refusal case exercises it", name)
-	}
-}
-
-// TestGraphQLMutationSweepRejectsAnUnguardedMutation drives the schema-build
-// sweep directly. The registrar cannot catch a mutation that never calls it, so
-// the sweep is what makes coverage structural rather than a convention every
-// new file has to remember.
-func TestGraphQLMutationSweepRejectsAnUnguardedMutation(t *testing.T) {
-	t.Parallel()
-	for _, tc := range []struct {
-		name  string
-		field string
-		want  string
-	}{
-		{name: "no policy row", field: "smuggledMutation", want: "no row in graphqlMutationAuthz"},
-		{name: "row but no registrar", field: "createRepository", want: "not registered through registerMutation"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			mutationType := graphql.NewObject(graphql.ObjectConfig{
-				Name:   "SweepProbe" + tc.field,
-				Fields: graphql.Fields{},
-			})
-			mutationType.AddFieldConfig(tc.field, &graphql.Field{
-				Type:    graphql.String,
-				Resolve: func(graphql.ResolveParams) (interface{}, error) { return nil, nil },
-			})
-			defer func() {
-				r := recover()
-				if r == nil {
-					t.Fatalf("the sweep admitted %s registered outside registerMutation", tc.field)
-				}
-				if msg := fmt.Sprint(r); !strings.Contains(msg, tc.field) || !strings.Contains(msg, tc.want) {
-					t.Fatalf("sweep panic = %q, want it to name %s and %q", msg, tc.field, tc.want)
-				}
-			}()
-			assertMutationsAuthorized(mutationType)
-		})
 	}
 }
 

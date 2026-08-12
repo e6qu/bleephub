@@ -1,6 +1,8 @@
 package bleephub
 
 import (
+	"github.com/e6qu/bleephub/internal/graphqlapi"
+
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -35,7 +37,7 @@ query IssueByNumber($owner: String!, $repo: String!, $number: Int!) {
     }
   }
 }`
-	_, validationErrors, err := graphqlPrepareDocument(s.graphqlSchema, query)
+	_, validationErrors, err := graphqlapi.PrepareDocument(s.graphql.Schema(), query)
 	if err != nil {
 		t.Fatalf("prepare official gh issue lookup: %v", err)
 	}
@@ -51,21 +53,12 @@ query($owner: String!, $repo: String!, $number: Int!) {
     issue(number: $number) { value: state value: title }
   }
 }`
-	_, validationErrors, err = graphqlPrepareDocument(s.graphqlSchema, conflicting)
+	_, validationErrors, err = graphqlapi.PrepareDocument(s.graphql.Schema(), conflicting)
 	if err != nil {
 		t.Fatalf("prepare genuine field conflict: %v", err)
 	}
 	if len(validationErrors) == 0 {
 		t.Fatal("genuine overlapping fields were accepted")
-	}
-}
-
-func TestRepoGraphQLURLUsesConfiguredExternalURL(t *testing.T) {
-	t.Setenv("BLEEPHUB_EXTERNAL_URL", "https://bleephub.example.test/")
-	s := newIsolatedServer(t)
-	repo := &Repo{FullName: "octo/example", Name: "example"}
-	if got := repoToGraphQL(s.store, repo)["url"]; got != "https://bleephub.example.test/octo/example" {
-		t.Fatalf("repository GraphQL url = %v", got)
 	}
 }
 

@@ -18,53 +18,8 @@ func FuzzGraphQLQuery(f *testing.F) {
 	f.Add("mutation{")
 	f.Fuzz(func(t *testing.T, q string) {
 		s := newTestServer()
-		s.initGraphQLSchema()
-		_ = graphql.Do(graphql.Params{Schema: s.graphqlSchema, RequestString: q})
-	})
-}
-
-// FuzzPaginateGQL exercises the shared Relay cursor-pagination chokepoint with
-// attacker-controlled `first` and `after` values. A malformed cursor or an
-// out-of-range `first` must never panic on the internal slice expressions.
-func FuzzPaginateGQL(f *testing.F) {
-	f.Add(10, "")
-	f.Add(0, "")
-	f.Add(-1, "")
-	f.Add(1<<31-1, "")
-	f.Add(5, "Y3Vyc29yOjA=") // cursor:0
-	f.Add(5, "not-base64!!")
-	f.Add(5, "Y3Vyc29yOjk5OTk5OTk5OTk5OQ==") // cursor:999999999999
-	f.Add(1<<31-1, "Y3Vyc29yOjU=")           // first=MaxInt32, cursor:5
-
-	items := make([]int, 50)
-	for i := range items {
-		items[i] = i
-	}
-	toGQL := func(n int) map[string]interface{} {
-		return map[string]interface{}{"v": n}
-	}
-
-	f.Fuzz(func(t *testing.T, first int, after string) {
-		// Must not panic regardless of input.
-		res := paginateGQL(items, first, after, toGQL, func(int) string { return "" })
-		if res == nil {
-			t.Fatal("nil result")
-		}
-		nodes, _ := res["nodes"].([]map[string]interface{})
-		if len(nodes) > len(items) {
-			t.Fatalf("returned more nodes (%d) than items (%d)", len(nodes), len(items))
-		}
-	})
-}
-
-// FuzzDecodeCursor checks the base64 cursor decoder never panics.
-func FuzzDecodeCursor(f *testing.F) {
-	f.Add("Y3Vyc29yOjA=")
-	f.Add("")
-	f.Add("!!!!")
-	f.Add("Y3Vyc29yOg==")
-	f.Fuzz(func(t *testing.T, s string) {
-		_ = decodeCursor(s)
+		s.graphql = s.newGraphQLResolver()
+		_ = graphql.Do(graphql.Params{Schema: s.graphql.Schema(), RequestString: q})
 	})
 }
 

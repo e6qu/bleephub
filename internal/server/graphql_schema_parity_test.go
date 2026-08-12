@@ -193,9 +193,9 @@ func TestVendoredGitHubGraphQLSchemaMatchesRecordedPin(t *testing.T) {
 func bleephubIntrospectionShape(t *testing.T) schemaShape {
 	t.Helper()
 	server := newTestServer()
-	server.initGraphQLSchema()
+	server.graphql = server.newGraphQLResolver()
 	result := graphql.Do(graphql.Params{
-		Schema:        server.graphqlSchema,
+		Schema:        server.graphql.Schema(),
 		RequestString: schemaIntrospectionQuery,
 	})
 	if len(result.Errors) != 0 {

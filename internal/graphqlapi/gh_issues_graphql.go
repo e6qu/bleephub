@@ -2227,70 +2227,6 @@ func reactionGroupsForGraphQL(rs *ReactionStore, parentType string, parentID int
 
 // --- Node ID lookup helpers ---
 
-func findRepoByNodeID(st *Store, nodeID string) *Repo {
-	st.Mu.RLock()
-	defer st.Mu.RUnlock()
-	if id, ok := decodeNodeDBID(nodeID, "R_kgDO"); ok {
-		if r := st.Repos[id]; r != nil && r.NodeID == nodeID {
-			return r
-		}
-	}
-	for _, r := range st.Repos {
-		if r.NodeID == nodeID {
-			return r
-		}
-	}
-	return nil
-}
-
-func findIssueByNodeID(st *Store, nodeID string) *Issue {
-	st.Mu.RLock()
-	defer st.Mu.RUnlock()
-	if id, ok := decodeNodeDBID(nodeID, "I_kgDO"); ok {
-		if i := st.Issues[id]; i != nil && i.NodeID == nodeID {
-			return i
-		}
-	}
-	for _, i := range st.Issues {
-		if i.NodeID == nodeID {
-			return i
-		}
-	}
-	return nil
-}
-
-func findLabelByNodeID(st *Store, nodeID string) *IssueLabel {
-	st.Mu.RLock()
-	defer st.Mu.RUnlock()
-	if id, ok := decodeNodeDBID(nodeID, "LA_kgDO"); ok {
-		if l := st.Labels[id]; l != nil && l.NodeID == nodeID {
-			return l
-		}
-	}
-	for _, l := range st.Labels {
-		if l.NodeID == nodeID {
-			return l
-		}
-	}
-	return nil
-}
-
-func findMilestoneByNodeID(st *Store, nodeID string) *Milestone {
-	st.Mu.RLock()
-	defer st.Mu.RUnlock()
-	if id, ok := decodeNodeDBID(nodeID, "MI_kgDO"); ok {
-		if ms := st.Milestones[id]; ms != nil && ms.NodeID == nodeID {
-			return ms
-		}
-	}
-	for _, ms := range st.Milestones {
-		if ms.NodeID == nodeID {
-			return ms
-		}
-	}
-	return nil
-}
-
 // resolveGQLLabelIDs maps a mutation's labelIds onto store ids. A nil argument
 // — absent, or an explicit null — means "leave the labels alone" and yields a
 // nil result; an id that names no label of repoID is refused rather than
@@ -2367,22 +2303,6 @@ func applyIssueState(i *Issue, state string) {
 	i.State = "OPEN"
 	i.ClosedAt = nil
 	i.StateReason = ""
-}
-
-func findUserByNodeID(st *Store, nodeID string) *User {
-	st.Mu.RLock()
-	defer st.Mu.RUnlock()
-	if id, ok := decodeNodeDBID(nodeID, "U_kgDO"); ok {
-		if u := st.Users[id]; u != nil && u.NodeID == nodeID {
-			return u
-		}
-	}
-	for _, u := range st.Users {
-		if u.NodeID == nodeID {
-			return u
-		}
-	}
-	return nil
 }
 
 // paginateIssuesGQL implements Relay-style cursor pagination for issues.
@@ -3167,32 +3087,4 @@ func (s *Resolver) emitIssueStateChange(issue *Issue, user *User, previousState,
 	}
 	s.store.RecordIssueEvent(repo.ID, issue.ID, user.ID, action, nil)
 	s.emitWebhookEvent(repo.FullName, "issues", action, s.buildIssuesPayload(repo, issue, user, action))
-}
-
-// findIssueTypeByNodeID resolves an issue-type node id (moved here from the
-// issue-types REST file in ARCH-003; it has no REST callers).
-func findIssueTypeByNodeID(st *Store, nodeID string) *IssueType {
-	if nodeID == "" {
-		return nil
-	}
-	st.Mu.RLock()
-	defer st.Mu.RUnlock()
-	// O(1) fast path: the node ID embeds the globally-unique database id, so
-	// parse it and look the type up directly instead of walking every org's map
-	// under the lock (GQL-024). The NodeID equality guard rejects a decoded id
-	// that resolves to a different node shape; the scan below remains as a
-	// robustness fallback, matching the other node finders.
-	if id, ok := decodeNodeDBID(nodeID, "IT_kwDO"); ok {
-		if it := st.IssueTypesByID[id]; it != nil && it.NodeID == nodeID {
-			return it
-		}
-	}
-	for _, types := range st.OrgIssueTypes {
-		for _, it := range types {
-			if it.NodeID == nodeID {
-				return it
-			}
-		}
-	}
-	return nil
 }
