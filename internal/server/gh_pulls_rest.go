@@ -1310,41 +1310,6 @@ func pullRequestCommitObjects(st *Store, repo *Repo, pr *PullRequest) ([]*object
 	return pullRequestCommitObjectsFromStorage(stor, pr)
 }
 
-func pullRequestCommitObjectsFromStorage(stor gitStorage.Storer, pr *PullRequest) ([]*object.Commit, error) {
-	headHash, err := resolveGitRef(stor, pr.HeadRefName)
-	if err != nil {
-		return nil, nil
-	}
-	var baseHash plumbing.Hash
-	if pr.BaseSHA != "" {
-		baseHash = plumbing.NewHash(pr.BaseSHA)
-	} else {
-		baseHash, err = resolveGitRef(stor, pr.BaseRefName)
-		if err != nil {
-			return nil, nil
-		}
-	}
-	mergeBase, err := findMergeBase(stor, baseHash, headHash)
-	if err != nil {
-		return nil, err
-	}
-	if mergeBase.IsZero() {
-		return nil, nil
-	}
-	if mergeBase == headHash {
-		return nil, nil
-	}
-	commits, err := commitsBetween(stor, mergeBase, headHash)
-	if err != nil {
-		return nil, err
-	}
-	// commitsBetween is newest-first; the API lists oldest first.
-	for i, j := 0, len(commits)-1; i < j; i, j = i+1, j-1 {
-		commits[i], commits[j] = commits[j], commits[i]
-	}
-	return commits, nil
-}
-
 // timelineCommittedEventJSON renders a real git commit as the GitHub
 // timeline-committed-event shape ("event": "committed").
 func timelineCommittedEventJSON(c *object.Commit, repoFullName, baseURL string) map[string]interface{} {
@@ -1522,95 +1487,6 @@ func (s *Server) handleUpdateBranch(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func pullRequestHeadRepoID(pr *PullRequest) int {
-	if pr == nil {
-		return 0
-	}
-	if pr.HeadRepoID != 0 {
-		return pr.HeadRepoID
-	}
-	return pr.RepoID
-}
-
-func pullRequestHeadRepo(st *Store, pr *PullRequest) *Repo {
-	st.Mu.RLock()
-	defer st.Mu.RUnlock()
-	return pullRequestHeadRepoLocked(st, pr)
-}
-
-func pullRequestHeadRepoLocked(st *Store, pr *PullRequest) *Repo {
-	if pr == nil {
-		return nil
-	}
-	return st.Repos[pullRequestHeadRepoID(pr)]
-}
-
-func resolvePullRequestHead(st *Store, baseRepo *Repo, head string) (*Repo, string) {
-	if baseRepo == nil || strings.TrimSpace(head) == "" {
-		return nil, ""
-	}
-	ownerLogin := ""
-	branch := head
-	if idx := strings.Index(head, ":"); idx >= 0 {
-		ownerLogin = head[:idx]
-		branch = head[idx+1:]
-	}
-	if branch == "" {
-		return nil, ""
-	}
-	if ownerLogin == "" || (baseRepo.Owner != nil && ownerLogin == baseRepo.Owner.Login) {
-		return baseRepo, branch
-	}
-
-	st.Mu.RLock()
-	defer st.Mu.RUnlock()
-	var matches []*Repo
-	networkSourceID := baseRepo.ID
-	if baseRepo.SourceID != 0 {
-		networkSourceID = baseRepo.SourceID
-	}
-	for _, repo := range st.Repos {
-		if repo == nil || repo.Owner == nil || repo.Owner.Login != ownerLogin {
-			continue
-		}
-		if repo.ID == baseRepo.ID {
-			matches = append(matches, repo)
-			continue
-		}
-		sourceID := repo.SourceID
-		if sourceID == 0 {
-			sourceID = repo.ID
-		}
-		if repo.ParentID == baseRepo.ID || sourceID == networkSourceID {
-			matches = append(matches, repo)
-		}
-	}
-	if len(matches) == 1 {
-		return matches[0], branch
-	}
-	for _, repo := range matches {
-		if repo.Name == baseRepo.Name {
-			return repo, branch
-		}
-	}
-	return nil, ""
-}
-
-func pullRequestGitStorage(st *Store, repo *Repo, pr *PullRequest) (gitStorage.Storer, string) {
-	if repo == nil || pr == nil {
-		return nil, ""
-	}
-	headRepo := pullRequestHeadRepo(st, pr)
-	if headRepo == nil {
-		return nil, ""
-	}
-	owner, name, ok := splitRepoFullName(headRepo.FullName)
-	if !ok {
-		return nil, ""
-	}
-	return st.GetGitStorage(owner, name), headRepo.FullName
-}
-
 // reviewerIDsFromRequest normalises the GitHub request reviewers field,
 // which may be an array of logins (strings) or objects with an id/login key.
 func reviewerIDsFromRequest(st *Store, reviewers []interface{}) []int {
@@ -1679,17 +1555,6 @@ func pullRequestHeadSHA(pr *PullRequest, st *Store) string {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 	return pullRequestHeadSHALocked(pr, st)
-}
-
-func pullRequestHeadSHALocked(pr *PullRequest, st *Store) string {
-	if pr == nil {
-		return ""
-	}
-	repo := pullRequestHeadRepoLocked(st, pr)
-	if repo == nil {
-		return ""
-	}
-	return resolveBranchSha(st.GitStorages[repo.FullName], pr.HeadRefName)
 }
 
 func pullRequestReviewCommitSHA(review *PullRequestReview, st *Store) string {
