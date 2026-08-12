@@ -179,6 +179,11 @@ func newServerState(addr string, logger zerolog.Logger, construction serverConst
 	// logger (level filter + telemetry bridge) instead of the stdlib default.
 	s.store.Logger = logger
 	s.actions = s.newActionsEngine()
+	// The GraphQL resolver is part of complete server state, exactly like the
+	// Actions engine: every constructed server — production or test fixture —
+	// can serve POST /api/graphql, and a fixture that registers routes without
+	// the full NewServer path no longer panics on a nil resolver (ARCH-003).
+	s.graphql = s.newGraphQLResolver()
 	return s
 }
 
@@ -452,7 +457,6 @@ func NewServer(addr string, logger zerolog.Logger, options ...ServerOption) *Ser
 	if err := s.seedConfiguredApps(); err != nil {
 		logger.Fatal().Err(err).Msg("failed to seed configured GitHub Apps")
 	}
-	s.graphql = s.newGraphQLResolver()
 	s.registerRoutes()
 	return s
 }

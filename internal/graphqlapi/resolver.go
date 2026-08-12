@@ -89,8 +89,10 @@ type Config struct {
 	UserFromContext func(ctx context.Context) *store.User
 	// APIRate reads the request's rate-limit snapshot from the context.
 	APIRate func(ctx context.Context) RateSnapshot
-	// BuildCommit is the server build's commit SHA (Query.meta).
-	BuildCommit string
+	// BuildCommit reports the server build's commit SHA (Query.meta). It is
+	// a func because the server may receive its build identity (options)
+	// after the resolver is constructed.
+	BuildCommit func() string
 }
 
 // Resolver owns the assembled GraphQL schema, its type registry, and every
@@ -103,7 +105,7 @@ type Resolver struct {
 	pulls           Pulls
 	userFromContext func(ctx context.Context) *store.User
 	apiRateFn       func(ctx context.Context) RateSnapshot
-	buildCommit     string
+	buildCommit     func() string
 
 	graphqlTypes  graphQLTypeRegistry
 	graphqlSchema graphql.Schema
@@ -123,6 +125,9 @@ func NewResolver(cfg Config) *Resolver {
 		userFromContext: cfg.UserFromContext,
 		apiRateFn:       cfg.APIRate,
 		buildCommit:     cfg.BuildCommit,
+	}
+	if r.buildCommit == nil {
+		r.buildCommit = func() string { return "" }
 	}
 	r.initGraphQLSchema()
 	return r

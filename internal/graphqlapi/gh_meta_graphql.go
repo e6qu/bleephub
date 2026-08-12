@@ -93,7 +93,7 @@ func (s *Resolver) addMetaFieldsToSchema(queryType *graphql.Object) {
 	queryType.AddFieldConfig("meta", &graphql.Field{
 		Type: graphql.NewNonNull(metaType),
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			sha := strings.ToLower(s.buildCommit)
+			sha := strings.ToLower(s.buildCommit())
 			if len(sha) != 40 {
 				sha = strings.Repeat("0", 40)
 			}

@@ -35,7 +35,7 @@ func (s *Server) newGraphQLResolver() *graphqlapi.Resolver {
 				Reset:     rate.Reset,
 			}
 		},
-		BuildCommit: s.build.Commit,
+		BuildCommit: func() string { return s.build.Commit },
 	})
 }
 
