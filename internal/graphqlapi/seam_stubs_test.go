@@ -1,6 +1,10 @@
 package graphqlapi
 
-import "context"
+import (
+	"context"
+
+	"github.com/e6qu/bleephub/internal/store"
+)
 
 // Minimal no-op seam stubs for tests that construct a Resolver directly
 // (NewResolver panics on nil Authz/Events/Pulls — ARCH-005). They deny
@@ -67,9 +71,11 @@ func (stubPulls) ChangedFiles(*Repo, *PullRequest, string) ([]map[string]interfa
 // newGraphQLResolver: a resolver over a seeded store with the no-op seams.
 func newStubbedResolver() *Resolver {
 	return NewResolver(Config{
-		Store:  newSeededTestStore(),
-		Authz:  stubAuthz{},
-		Events: stubEvents{},
-		Pulls:  stubPulls{},
+		Store:           newSeededTestStore(),
+		Authz:           stubAuthz{},
+		Events:          stubEvents{},
+		Pulls:           stubPulls{},
+		UserFromContext: func(context.Context) *store.User { return nil },
+		APIRate:         func(context.Context) RateSnapshot { return RateSnapshot{} },
 	})
 }

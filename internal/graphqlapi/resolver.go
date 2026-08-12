@@ -129,6 +129,12 @@ func NewResolver(cfg Config) *Resolver {
 	if cfg.Pulls == nil {
 		panic("graphqlapi.NewResolver: Config.Pulls is nil — the merge gate and PR diff renderer delegate to it; wire the server's pulls seam or a stub")
 	}
+	if cfg.UserFromContext == nil {
+		panic("graphqlapi.NewResolver: Config.UserFromContext is nil — viewer resolution dereferences it on every request; wire the server's context extractor or a stub")
+	}
+	if cfg.APIRate == nil {
+		panic("graphqlapi.NewResolver: Config.APIRate is nil — the rateLimit resolver dereferences it; wire the server's rate snapshot or a stub")
+	}
 	r := &Resolver{
 		store:           cfg.Store,
 		logger:          cfg.Logger,
