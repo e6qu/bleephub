@@ -340,12 +340,17 @@ func RepoGitDirPath(gitDir, fullName string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve git directory %q: %w", gitDir, err)
 	}
-	repoDir := filepath.Join(root, filepath.FromSlash(fullName))
-	relative, err := filepath.Rel(root, repoDir)
-	if err != nil || !filepath.IsLocal(relative) {
+	// The containment guard sits directly on the value that feeds
+	// filepath.Join — not on a derived variable after the join — so the
+	// barrier is visible to dataflow analysis (CodeQL models a
+	// filepath.IsLocal guard as a tainted-path sanitizer). The rejection set
+	// is identical to the previous post-join Rel+IsLocal check: a local
+	// relative path joined onto an absolute root cannot escape it.
+	relative := filepath.FromSlash(fullName)
+	if !filepath.IsLocal(relative) {
 		return "", fmt.Errorf("repository storage name %q escapes git directory", fullName)
 	}
-	return repoDir, nil
+	return filepath.Join(root, relative), nil
 }
 
 func newGitStorage(ctx context.Context, fullName string) (gitStorage.Storer, error) {
