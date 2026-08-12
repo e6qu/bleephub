@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/e6qu/bleephub/internal/store"
 	gitStorage "github.com/go-git/go-git/v5/storage"
 	"github.com/rs/zerolog"
 )
@@ -16,8 +17,8 @@ import (
 // bridge) as discrete fields, not stdlib log.Printf with an interpolated
 // plain-text message.
 func TestStoreErrorsLogThroughStructuredLogger(t *testing.T) {
-	st := NewStore()
-	admin := &User{ID: 1, Login: "admin", Type: "User"}
+	st := store.NewStore()
+	admin := &store.User{ID: 1, Login: "admin", Type: "User"}
 	st.Users[admin.ID] = admin
 	st.UsersByLogin[admin.Login] = admin
 
@@ -48,7 +49,7 @@ func TestStoreErrorsLogThroughStructuredLogger(t *testing.T) {
 // write to stderr — the logger defaults to nop until NewServer wires the
 // configured one.
 func TestNewStoreLoggerIsNopByDefault(t *testing.T) {
-	st := NewStore()
+	st := store.NewStore()
 	if st.Logger.GetLevel() != zerolog.Disabled {
 		t.Fatalf("NewStore logger level = %v, want Disabled (nop)", st.Logger.GetLevel())
 	}

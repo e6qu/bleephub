@@ -14,6 +14,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/e6qu/bleephub/internal/server/testutil"
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // loadDuration is the steady-state duration of the sustained-load test. It is
@@ -248,7 +249,7 @@ func TestLoadWebhookDeliveryBounded(t *testing.T) {
 
 	got := len(s.store.ListDeliveries(hook.ID))
 	t.Logf("emitted %d events, sink received %d, retained deliveries=%d (cap %d)",
-		events, received.Load(), got, maxHookDeliveries)
+		events, received.Load(), got, store.MaxHookDeliveries)
 	t.Logf("goroutines: baseline=%d final=%d", baseGoros, finalGoros)
 
 	// Every emitted event must reach the sink: it returns 200 on the first
@@ -260,8 +261,8 @@ func TestLoadWebhookDeliveryBounded(t *testing.T) {
 			rec, events, int64(events)-rec, settled)
 	}
 
-	if got > maxHookDeliveries {
-		t.Errorf("retained %d deliveries, expected <= cap %d (unbounded growth)", got, maxHookDeliveries)
+	if got > store.MaxHookDeliveries {
+		t.Errorf("retained %d deliveries, expected <= cap %d (unbounded growth)", got, store.MaxHookDeliveries)
 	}
 	if got == 0 {
 		t.Fatal("no deliveries recorded — webhook path not exercised")

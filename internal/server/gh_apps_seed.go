@@ -4,12 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // loadAppSeedSpecs reads seed specs from BLEEPHUB_SEED_APPS_FILE (a JSON file)
 // and BLEEPHUB_SEED_APPS (inline JSON), concatenating both when present.
-func loadAppSeedSpecs() ([]AppSeedSpec, error) {
-	var specs []AppSeedSpec
+func loadAppSeedSpecs() ([]store.AppSeedSpec, error) {
+	var specs []store.AppSeedSpec
 	if path := os.Getenv("BLEEPHUB_SEED_APPS_FILE"); path != "" {
 		// #nosec G304,G703 -- this is an operator-selected startup config file,
 		// never a path supplied by an HTTP client.
@@ -17,14 +19,14 @@ func loadAppSeedSpecs() ([]AppSeedSpec, error) {
 		if err != nil {
 			return nil, fmt.Errorf("BLEEPHUB_SEED_APPS_FILE: %w", err)
 		}
-		var fileSpecs []AppSeedSpec
+		var fileSpecs []store.AppSeedSpec
 		if err := json.Unmarshal(b, &fileSpecs); err != nil {
 			return nil, fmt.Errorf("BLEEPHUB_SEED_APPS_FILE: invalid JSON: %w", err)
 		}
 		specs = append(specs, fileSpecs...)
 	}
 	if inline := os.Getenv("BLEEPHUB_SEED_APPS"); inline != "" {
-		var inlineSpecs []AppSeedSpec
+		var inlineSpecs []store.AppSeedSpec
 		if err := json.Unmarshal([]byte(inline), &inlineSpecs); err != nil {
 			return nil, fmt.Errorf("BLEEPHUB_SEED_APPS: invalid JSON: %w", err)
 		}
@@ -103,7 +105,7 @@ func (s *Server) seedConfiguredApps() error {
 // resolveSeedInstallTarget resolves an installation account login to a real
 // target type + id. Seed configuration must name an existing account; startup
 // fails instead of inventing an organization or silently installing on id 0.
-func (s *Server) resolveSeedInstallTarget(ins InstallationSeedSpec) (string, int, error) {
+func (s *Server) resolveSeedInstallTarget(ins store.InstallationSeedSpec) (string, int, error) {
 	if ins.TargetType != "" && ins.TargetType != "Organization" && ins.TargetType != "User" {
 		return "", 0, fmt.Errorf("installation account %q: target_type must be Organization or User", ins.Account)
 	}

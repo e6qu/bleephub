@@ -3,6 +3,8 @@ package bleephub
 import (
 	"net/http"
 	"sort"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func (s *Server) registerGHEnterpriseDependabotRoutes() {
@@ -16,7 +18,7 @@ func (s *Server) registerGHEnterpriseDependabotRoutes() {
 // organization-owned repository on the instance. Matching real GitHub,
 // alerts surface only for organizations the caller owns.
 func (s *Server) handleListEnterpriseDependabotAlerts(w http.ResponseWriter, r *http.Request) {
-	var alerts []*DependabotAlert
+	var alerts []*store.DependabotAlert
 	adminAny := false
 	for _, org := range s.store.ListOrgsAll(0) {
 		if !s.viewerCanAdminOrg(r.Context(), org.Login) {
@@ -149,9 +151,9 @@ func (s *Server) handleSetEnterpriseDependabotDefaultLevel(w http.ResponseWriter
 		return
 	}
 	if req.DefaultLevel != "public" && req.DefaultLevel != "internal" {
-		writeGHValidationError(w, "DependabotRepositoryAccess", "default_level", "invalid")
+		store.WriteGHValidationError(w, "DependabotRepositoryAccess", "default_level", "invalid")
 		return
 	}
-	s.store.SetEnterpriseDependabotDefaultLevel(DependabotDefaultLevel(req.DefaultLevel))
+	s.store.SetEnterpriseDependabotDefaultLevel(store.DependabotDefaultLevel(req.DefaultLevel))
 	w.WriteHeader(http.StatusNoContent)
 }

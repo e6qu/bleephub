@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // The GraphQL mutation lane reads through the credential-aware choke point and
@@ -19,16 +21,16 @@ import (
 func TestGraphQLWriteMutationsIntersectTheCredential(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
-	store := s.store
+	st := s.store
 	now := fixedTestTime.UTC()
 
-	mkUser := func(login string) *User {
-		store.Mu.Lock()
-		defer store.Mu.Unlock()
-		u := &User{ID: store.NextUser, Login: login, Type: "User", CreatedAt: now, UpdatedAt: now}
-		store.Users[u.ID] = u
-		store.UsersByLogin[u.Login] = u
-		store.NextUser++
+	mkUser := func(login string) *store.User {
+		st.Mu.Lock()
+		defer st.Mu.Unlock()
+		u := &store.User{ID: st.NextUser, Login: login, Type: "User", CreatedAt: now, UpdatedAt: now}
+		st.Users[u.ID] = u
+		st.UsersByLogin[u.Login] = u
+		st.NextUser++
 		return u
 	}
 
@@ -43,33 +45,33 @@ func TestGraphQLWriteMutationsIntersectTheCredential(t *testing.T) {
 	//
 	// The bearer genuinely holds push. That is what makes the borrowed access
 	// plausible: the user really can write, the app really cannot.
-	repo := store.CreateRepo(victim, "gqlcred-repo", "fixture", false)
+	repo := st.CreateRepo(victim, "gqlcred-repo", "fixture", false)
 	if repo == nil {
 		t.Fatalf("could not create the victim's repository")
 	}
-	if !store.AddRepoCollaborator(victim.Login, "gqlcred-repo", bearer.Login, "push") {
+	if !st.AddRepoCollaborator(victim.Login, "gqlcred-repo", bearer.Login, "push") {
 		t.Fatalf("could not give the bearer push")
 	}
 	// Authored by the victim, so the author-may-act arm cannot admit the write.
-	issue := store.CreateIssue(repo.ID, victim.ID, "original title", "", nil, nil, 0)
+	issue := st.CreateIssue(repo.ID, victim.ID, "original title", "", nil, nil, 0)
 	if issue == nil {
 		t.Fatalf("could not create the issue")
 	}
 
 	// An app holding admin on paper and installed nowhere at all.
 	perms := map[string]string{"administration": "admin", "contents": "write", "issues": "write", "metadata": "read"}
-	app := store.CreateApp(bearer.ID, "Gqlcred App", "", perms, nil)
+	app := st.CreateApp(bearer.ID, "Gqlcred App", "", perms, nil)
 	if app == nil {
 		t.Fatalf("could not create the app")
 	}
-	if insts := store.ListAppInstallations(app.ID); len(insts) != 0 {
+	if insts := st.ListAppInstallations(app.ID); len(insts) != 0 {
 		t.Fatalf("the fixture app must have no installations, got %d", len(insts))
 	}
-	ghu, _ := store.CreateUserToServerToken(bearer.ID, app.ID, "", "", time.Hour, false)
+	ghu, _ := st.CreateUserToServerToken(bearer.ID, app.ID, "", "", time.Hour, false)
 	if ghu == nil {
 		t.Fatalf("could not mint the ghu_ token")
 	}
-	ghs := store.CreateInstallationToken(0, app.ID, perms, nil)
+	ghs := st.CreateInstallationToken(0, app.ID, perms, nil)
 	if ghs == nil {
 		t.Fatalf("could not mint the ghs_ token")
 	}
@@ -114,14 +116,14 @@ func TestGraphQLWriteMutationsIntersectTheCredential(t *testing.T) {
 		t.Errorf("updateIssue with a ghu_ of an app installed nowhere was served (%d) where its ghs_ was refused: %s",
 			ghuStatus, ghuBody)
 	}
-	if refreshed := store.GetIssue(issue.ID); refreshed != nil && refreshed.Title != "original title" {
+	if refreshed := st.GetIssue(issue.ID); refreshed != nil && refreshed.Title != "original title" {
 		t.Errorf("the issue title is now %q — the mutation took effect through a credential that cannot reach the repository", refreshed.Title)
 	}
 
 	// Positive control: the same bearer's own personal access token holds push
 	// and must still be served, or this would pass against a lane that refuses
 	// everything.
-	pat := store.CreateToken(bearer.ID, "repo")
+	pat := st.CreateToken(bearer.ID, "repo")
 	if pat == nil {
 		t.Fatalf("could not mint the bearer's PAT")
 	}

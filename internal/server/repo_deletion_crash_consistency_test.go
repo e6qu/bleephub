@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 type blockingDeleteByteStore struct {
@@ -46,7 +48,7 @@ func (s *blockingDeleteByteStore) Delete(_ context.Context, key string) error {
 }
 
 func TestDeleteRepoExternalCleanupDoesNotHoldStoreLock(t *testing.T) {
-	st := NewStore()
+	st := store.NewStore()
 	st.SeedDefaultUser()
 	admin := st.UsersByLogin["admin"]
 	repo := st.CreateRepo(admin, "cleanup-lock", "", false)
@@ -56,7 +58,7 @@ func TestDeleteRepoExternalCleanupDoesNotHoldStoreLock(t *testing.T) {
 	bytes := &blockingDeleteByteStore{started: make(chan string, 1), release: make(chan struct{})}
 	st.ObjectByteStore = bytes
 	st.Mu.Lock()
-	st.Attestations[1] = &Attestation{ID: 1, RepoID: repo.ID, StoragePath: "attestations/cleanup-lock"}
+	st.Attestations[1] = &store.Attestation{ID: 1, RepoID: repo.ID, StoragePath: "attestations/cleanup-lock"}
 	st.Mu.Unlock()
 
 	deleted := make(chan error, 1)
@@ -99,7 +101,7 @@ func TestInterruptedRepoDeleteReplaysRecordedExternalCleanup(t *testing.T) {
 	}
 
 	p1 := openTestPersistence(t, dataDir)
-	if err := p1.Put(pendingDeletionsBucket, pendingRepoDeletionKey("admin/interrupted"), pendingDeletion{
+	if err := p1.Put(store.PendingDeletionsBucket, store.PendingRepoDeletionKey("admin/interrupted"), store.PendingDeletion{
 		Kind:       "repo",
 		Name:       "admin/interrupted",
 		StartedAt:  fixedTestTime,
@@ -113,14 +115,14 @@ func TestInterruptedRepoDeleteReplaysRecordedExternalCleanup(t *testing.T) {
 
 	p2 := openTestPersistence(t, dataDir)
 	defer func() { _ = p2.Close() }()
-	st := NewStore()
+	st := store.NewStore()
 	if err := st.SetPersistence(p2); err != nil {
 		t.Fatalf("resume deletion: %v", err)
 	}
 	if _, err := os.Stat(orphan); !os.IsNotExist(err) {
 		t.Fatalf("recorded external file survived replay: %v", err)
 	}
-	rows, err := p2.List(pendingDeletionsBucket)
+	rows, err := p2.List(store.PendingDeletionsBucket)
 	if err != nil {
 		t.Fatalf("list deletion intents: %v", err)
 	}
@@ -139,26 +141,26 @@ func TestDeleteRepoAtomicallyIncludesActionsArtifactsAndCaches(t *testing.T) {
 	bytes := &recordingDeleteByteStore{deleted: map[string]bool{}}
 	s.artifactStore.ByteStore = bytes
 	s.artifactStore.Mu.Lock()
-	s.artifactStore.Artifacts[41] = &Artifact{
+	s.artifactStore.Artifacts[41] = &store.Artifact{
 		ID: 41, Name: "build", Finalized: true, RepoFullName: repo.FullName,
 	}
-	s.artifactStore.Caches[42] = &CacheEntry{
+	s.artifactStore.Caches[42] = &store.CacheEntry{
 		ID: 42, Repo: repo.FullName, Key: "deps", Version: "v1", Finalized: true,
 	}
-	s.artifactStore.CacheIndex[cacheLookupKey(repo.FullName, "deps", "v1")] = 42
+	s.artifactStore.CacheIndex[store.CacheLookupKey(repo.FullName, "deps", "v1")] = 42
 	s.artifactStore.Mu.Unlock()
 
 	deleted, err := s.store.DeleteRepo("admin", repo.Name)
 	if err != nil || !deleted {
 		t.Fatalf("delete repository = %v, %v", deleted, err)
 	}
-	if !bytes.deleted[artifactDataKey(41)] || !bytes.deleted[cacheDataKey(42)] {
+	if !bytes.deleted[store.ArtifactDataKey(41)] || !bytes.deleted[store.CacheDataKey(42)] {
 		t.Fatalf("Actions bytes not deleted: %#v", bytes.deleted)
 	}
 	s.artifactStore.Mu.RLock()
 	artifact := s.artifactStore.Artifacts[41]
 	cache := s.artifactStore.Caches[42]
-	_, indexed := s.artifactStore.CacheIndex[cacheLookupKey(repo.FullName, "deps", "v1")]
+	_, indexed := s.artifactStore.CacheIndex[store.CacheLookupKey(repo.FullName, "deps", "v1")]
 	s.artifactStore.Mu.RUnlock()
 	if artifact != nil || cache != nil || indexed {
 		t.Fatalf("Actions metadata survived: artifact=%#v cache=%#v indexed=%v", artifact, cache, indexed)

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func TestPublicUserOrganizationsExcludeConcealedMemberships(t *testing.T) {
@@ -14,8 +16,8 @@ func TestPublicUserOrganizationsExcludeConcealedMemberships(t *testing.T) {
 	subject := seedTestUser(s, "public-org-subject")
 	hidden := s.store.CreateOrg(admin, "concealed-membership-org", "", "")
 	public := s.store.CreateOrg(admin, "public-membership-org", "", "")
-	s.store.SetMembership(hidden.Login, subject.ID, OrgRoleMember, MembershipStateActive)
-	s.store.SetMembership(public.Login, subject.ID, OrgRoleMember, MembershipStateActive)
+	s.store.SetMembership(hidden.Login, subject.ID, store.OrgRoleMember, store.MembershipStateActive)
+	s.store.SetMembership(public.Login, subject.ID, store.OrgRoleMember, store.MembershipStateActive)
 	if !s.store.SetMembershipPublic(public.Login, subject.ID, true) {
 		t.Fatal("publicize membership")
 	}
@@ -53,7 +55,7 @@ func TestMemberRepositoryCreationHonorsOrganizationPolicy(t *testing.T) {
 	admin := s.store.LookupUserByLogin("admin")
 	org := s.store.CreateOrg(admin, "member-create-policy", "", "")
 	member := seedTestUser(s, "member-create-policy-user")
-	s.store.SetMembership(org.Login, member.ID, OrgRoleMember, MembershipStateActive)
+	s.store.SetMembership(org.Login, member.ID, store.OrgRoleMember, store.MembershipStateActive)
 	memberToken := s.store.CreateToken(member.ID, "repo")
 	disabled := false
 	s.store.Mu.Lock()
@@ -66,7 +68,7 @@ func TestMemberRepositoryCreationHonorsOrganizationPolicy(t *testing.T) {
 		t.Fatalf("member repository create = %d: %s", denied.Code, denied.Body.String())
 	}
 	allowed := teamCredentialRequest(t, s, http.MethodPost,
-		"/api/v3/orgs/"+org.Login+"/repos", AdminToken(), `{"name":"owner-allowed"}`)
+		"/api/v3/orgs/"+org.Login+"/repos", store.AdminToken(), `{"name":"owner-allowed"}`)
 	if allowed.Code != http.StatusCreated {
 		t.Fatalf("owner repository create = %d: %s", allowed.Code, allowed.Body.String())
 	}
@@ -78,8 +80,8 @@ func TestChildTeamsRequireOrganizationReach(t *testing.T) {
 
 	admin := s.store.LookupUserByLogin("admin")
 	org := s.store.CreateOrg(admin, "private-team-tree", "", "")
-	parent := s.store.CreateTeam(org.Login, "Secret Parent", TeamOptions{Privacy: TeamPrivacySecret})
-	s.store.CreateTeam(org.Login, "Secret Child", TeamOptions{Privacy: TeamPrivacySecret, ParentID: parent.ID})
+	parent := s.store.CreateTeam(org.Login, "Secret Parent", store.TeamOptions{Privacy: store.TeamPrivacySecret})
+	s.store.CreateTeam(org.Login, "Secret Child", store.TeamOptions{Privacy: store.TeamPrivacySecret, ParentID: parent.ID})
 	outsider := seedTestUser(s, "private-team-tree-outsider")
 	outsiderToken := s.store.CreateToken(outsider.ID, "read:org")
 
@@ -112,7 +114,7 @@ func TestStarredRepositoryListingsRespectViewerReach(t *testing.T) {
 	if got.Code != http.StatusOK || got.Body.String() != "[]\n" {
 		t.Fatalf("anonymous starred listing = %d %s, want empty", got.Code, got.Body.String())
 	}
-	got = tokenRequest(s, http.MethodGet, path, AdminToken())
+	got = tokenRequest(s, http.MethodGet, path, store.AdminToken())
 	if got.Code != http.StatusOK {
 		t.Fatalf("owner-visible starred listing = %d: %s", got.Code, got.Body.String())
 	}
@@ -158,7 +160,7 @@ func TestReactionDeletionRequiresCreator(t *testing.T) {
 	otherToken := s.store.CreateToken(other.ID, "repo")
 	path := "/api/v3/repos/" + repo.FullName + "/issues/" + itoa(issue.Number) + "/reactions"
 
-	created := teamCredentialRequest(t, s, http.MethodPost, path, AdminToken(), `{"content":"heart"}`)
+	created := teamCredentialRequest(t, s, http.MethodPost, path, store.AdminToken(), `{"content":"heart"}`)
 	if created.Code != http.StatusCreated {
 		t.Fatalf("create reaction = %d: %s", created.Code, created.Body.String())
 	}
@@ -170,7 +172,7 @@ func TestReactionDeletionRequiresCreator(t *testing.T) {
 	if got := tokenRequest(s, http.MethodDelete, deletePath, otherToken.Value); got.Code != http.StatusNotFound {
 		t.Fatalf("non-owner delete reaction = %d: %s", got.Code, got.Body.String())
 	}
-	if got := tokenRequest(s, http.MethodDelete, deletePath, AdminToken()); got.Code != http.StatusNoContent {
+	if got := tokenRequest(s, http.MethodDelete, deletePath, store.AdminToken()); got.Code != http.StatusNoContent {
 		t.Fatalf("owner delete reaction = %d: %s", got.Code, got.Body.String())
 	}
 }
@@ -195,8 +197,8 @@ func TestInternalNetworkSettingsSeedRequiresSiteAdmin(t *testing.T) {
 
 func TestZeroRequiredApprovalsKeepsReviewProtectionEnabled(t *testing.T) {
 	s := newTestServer()
-	got := s.applyBranchProtectionRequest(&BranchProtection{}, &bpRequest{
-		RequiredPullRequestReviews: &BPPullRequestReviews{
+	got := s.applyBranchProtectionRequest(&store.BranchProtection{}, &bpRequest{
+		RequiredPullRequestReviews: &store.BPPullRequestReviews{
 			RequiredApprovingReviewCount: 0,
 		},
 	})
@@ -216,7 +218,7 @@ func TestRepositoryActionsPermissionsRequireEnabled(t *testing.T) {
 	before := s.store.GetRepoActionsPermissions(repo.FullName)
 
 	got := teamCredentialRequest(t, s, http.MethodPut,
-		"/api/v3/repos/"+repo.FullName+"/actions/permissions", AdminToken(), `{"allowed_actions":"selected"}`)
+		"/api/v3/repos/"+repo.FullName+"/actions/permissions", store.AdminToken(), `{"allowed_actions":"selected"}`)
 	if got.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("missing enabled = %d: %s", got.Code, got.Body.String())
 	}
@@ -238,11 +240,11 @@ func TestCreatePullRequestReviewValidatesBeforeMutation(t *testing.T) {
 	}
 	path := "/api/v3/repos/" + repo.FullName + "/pulls/" + itoa(pr.Number) + "/reviews"
 
-	got := teamCredentialRequest(t, s, http.MethodPost, path, AdminToken(), `{"event":"APPROVED"}`)
+	got := teamCredentialRequest(t, s, http.MethodPost, path, store.AdminToken(), `{"event":"APPROVED"}`)
 	if got.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("invalid review event = %d: %s", got.Code, got.Body.String())
 	}
-	got = teamCredentialRequest(t, s, http.MethodPost, path, AdminToken(),
+	got = teamCredentialRequest(t, s, http.MethodPost, path, store.AdminToken(),
 		`{"comments":[{"path":"one.go","body":"valid"},{"path":"","body":"invalid"}]}`)
 	if got.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("invalid review comment batch = %d: %s", got.Code, got.Body.String())
@@ -273,7 +275,7 @@ func TestReleaseListingHidesDraftsFromReaders(t *testing.T) {
 		t.Fatalf("anonymous release list = %v, want published release only", releases)
 	}
 
-	got = tokenRequest(s, http.MethodGet, path, AdminToken())
+	got = tokenRequest(s, http.MethodGet, path, store.AdminToken())
 	if err := json.Unmarshal(got.Body.Bytes(), &releases); err != nil {
 		t.Fatal(err)
 	}
@@ -283,7 +285,7 @@ func TestReleaseListingHidesDraftsFromReaders(t *testing.T) {
 }
 
 func TestSetRunnerLabelsAssignsDistinctIDs(t *testing.T) {
-	agent := &Agent{Labels: []Label{{ID: 1, Name: "self-hosted", Type: "system"}}}
+	agent := &store.Agent{Labels: []store.Label{{ID: 1, Name: "self-hosted", Type: "system"}}}
 	agent.SetLabels([]string{"gpu", "arm64", "large"})
 	seen := map[int]bool{}
 	for _, label := range agent.Labels {
@@ -297,7 +299,7 @@ func TestSetRunnerLabelsAssignsDistinctIDs(t *testing.T) {
 func TestCustomPropertyValuesDoNotAliasAcrossRepositories(t *testing.T) {
 	s := newTestServer()
 	value := []interface{}{"linux", "arm64"}
-	payload := []customPropertyValuePayload{{PropertyName: "targets", Value: value}}
+	payload := []store.CustomPropertyValuePayload{{PropertyName: "targets", Value: value}}
 	s.store.SetRepoCustomPropertyValues("acme/one", payload)
 	s.store.SetRepoCustomPropertyValues("acme/two", payload)
 
@@ -317,11 +319,11 @@ func TestTeamRenameCannotShadowExistingSlug(t *testing.T) {
 	s.registerGHTeamRoutes()
 	admin := s.store.LookupUserByLogin("admin")
 	org := s.store.CreateOrg(admin, "team-rename-collision", "", "")
-	first := s.store.CreateTeam(org.Login, "Platform", TeamOptions{})
-	second := s.store.CreateTeam(org.Login, "Security", TeamOptions{})
+	first := s.store.CreateTeam(org.Login, "Platform", store.TeamOptions{})
+	second := s.store.CreateTeam(org.Login, "Security", store.TeamOptions{})
 
 	got := teamCredentialRequest(t, s, http.MethodPatch,
-		"/api/v3/orgs/"+org.Login+"/teams/"+second.Slug, AdminToken(), `{"name":"Platform"}`)
+		"/api/v3/orgs/"+org.Login+"/teams/"+second.Slug, store.AdminToken(), `{"name":"Platform"}`)
 	if got.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("colliding team rename = %d: %s", got.Code, got.Body.String())
 	}
@@ -346,7 +348,7 @@ func TestDeletingPullRequestReviewCommentDeletesItsReactions(t *testing.T) {
 	}
 
 	path := "/api/v3/repos/" + repo.FullName + "/pulls/comments/" + itoa(comment.ID)
-	if got := tokenRequest(s, http.MethodDelete, path, AdminToken()); got.Code != http.StatusNoContent {
+	if got := tokenRequest(s, http.MethodDelete, path, store.AdminToken()); got.Code != http.StatusNoContent {
 		t.Fatalf("delete review comment = %d: %s", got.Code, got.Body.String())
 	}
 	if reactions := s.store.Reactions.ListReactions("pull_request_review_comment", comment.ID, ""); len(reactions) != 0 {

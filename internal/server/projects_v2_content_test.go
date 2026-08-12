@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // Write on a project is not read on what goes into it. Adding an issue to a
@@ -19,36 +21,36 @@ import (
 func TestProjectItemAddRefusesContentTheCallerCannotRead(t *testing.T) {
 	t.Parallel()
 	srv := newIsolatedServer(t)
-	store := srv.store
+	st := srv.store
 
 	now := fixedTestTime.UTC()
-	store.Mu.Lock()
-	victim := &User{ID: store.NextUser, Login: "projcontent-victim", Type: "User", CreatedAt: now, UpdatedAt: now}
-	store.Users[victim.ID] = victim
-	store.UsersByLogin[victim.Login] = victim
-	store.NextUser++
-	snooper := &User{ID: store.NextUser, Login: "projcontent-snooper", Type: "User", CreatedAt: now, UpdatedAt: now}
-	store.Users[snooper.ID] = snooper
-	store.UsersByLogin[snooper.Login] = snooper
-	store.NextUser++
-	store.Mu.Unlock()
+	st.Mu.Lock()
+	victim := &store.User{ID: st.NextUser, Login: "projcontent-victim", Type: "User", CreatedAt: now, UpdatedAt: now}
+	st.Users[victim.ID] = victim
+	st.UsersByLogin[victim.Login] = victim
+	st.NextUser++
+	snooper := &store.User{ID: st.NextUser, Login: "projcontent-snooper", Type: "User", CreatedAt: now, UpdatedAt: now}
+	st.Users[snooper.ID] = snooper
+	st.UsersByLogin[snooper.Login] = snooper
+	st.NextUser++
+	st.Mu.Unlock()
 
-	private := store.CreateRepo(victim, "projcontent-private", "private fixture", true)
+	private := st.CreateRepo(victim, "projcontent-private", "private fixture", true)
 	if private == nil {
 		t.Fatalf("could not create the victim's private repository")
 	}
-	secret := store.CreateIssue(private.ID, victim.ID, "TOP-SECRET-ISSUE-TITLE", "", nil, nil, 0)
+	secret := st.CreateIssue(private.ID, victim.ID, "TOP-SECRET-ISSUE-TITLE", "", nil, nil, 0)
 	if secret == nil {
 		t.Fatalf("could not create the private issue")
 	}
 
 	// The snooper owns a project of their own, so they genuinely hold project
 	// write — the point is that it buys them nothing on the victim's content.
-	project := store.ProjectsV2.CreateProject(snooper.ID, "User", "snooper board", snooper.ID)
+	project := st.ProjectsV2.CreateProject(snooper.ID, "User", "snooper board", snooper.ID)
 	if project == nil {
 		t.Fatalf("could not create the snooper's project")
 	}
-	token := store.CreateToken(snooper.ID, "repo, project")
+	token := st.CreateToken(snooper.ID, "repo, project")
 
 	handler := srv.requestHandler()
 	add := func(body map[string]any) *httptest.ResponseRecorder {
@@ -79,17 +81,17 @@ func TestProjectItemAddRefusesContentTheCallerCannotRead(t *testing.T) {
 		}
 	}
 
-	if items := store.ProjectsV2.ListItemsForProject(project.ID); len(items) != 0 {
+	if items := st.ProjectsV2.ListItemsForProject(project.ID); len(items) != 0 {
 		t.Errorf("the project holds %d items, want 0 — the private issue was indexed against it", len(items))
 	}
 
 	// Positive control: content the caller can genuinely read still goes in, or
 	// this would pass just as well against a handler that refuses everything.
-	own := store.CreateRepo(snooper, "projcontent-own", "", false)
+	own := st.CreateRepo(snooper, "projcontent-own", "", false)
 	if own == nil {
 		t.Fatalf("could not create the snooper's own repository")
 	}
-	mine := store.CreateIssue(own.ID, snooper.ID, "my own issue", "", nil, nil, 0)
+	mine := st.CreateIssue(own.ID, snooper.ID, "my own issue", "", nil, nil, 0)
 	if mine == nil {
 		t.Fatalf("could not create the snooper's own issue")
 	}

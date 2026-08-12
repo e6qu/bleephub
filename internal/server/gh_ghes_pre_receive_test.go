@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func TestGHESPreReceivePolicyJourney(t *testing.T) {
@@ -94,26 +96,26 @@ func TestGHESPreReceivePolicyPersists(t *testing.T) {
 	t.Setenv("BLEEPHUB_PERSIST", "true")
 	t.Setenv("BLEEPHUB_DATA_DIR", dir)
 	fixed := time.Date(2026, time.July, 30, 13, 0, 0, 0, time.UTC)
-	p1, err := NewPersistence()
+	p1, err := store.NewPersistence()
 	if err != nil {
 		t.Fatal(err)
 	}
-	st1 := NewStore()
+	st1 := store.NewStore()
 	if err := st1.SetPersistence(p1); err != nil {
 		t.Fatal(err)
 	}
 	st1.Mu.Lock()
-	st1.EnterpriseSettings.GHESPreReceiveEnvironments[4] = &GHESPreReceiveEnvironment{
+	st1.EnterpriseSettings.GHESPreReceiveEnvironments[4] = &store.GHESPreReceiveEnvironment{
 		ID: 4, Name: "Node", ImageURL: "https://images.example.test/node.tar.gz", CreatedAt: fixed,
 	}
-	st1.EnterpriseSettings.GHESPreReceiveHooks[6] = &GHESPreReceiveHook{
+	st1.EnterpriseSettings.GHESPreReceiveHooks[6] = &store.GHESPreReceiveHook{
 		ID: 6, Name: "policy", Script: "policy.sh", EnvironmentID: 4,
 		ScriptRepositoryID: 12, Enforcement: "enabled", AllowDownstreamConfiguration: true,
 	}
-	st1.EnterpriseSettings.GHESOrgPreReceiveOverrides["acme"] = map[int]*GHESPreReceiveOverride{
+	st1.EnterpriseSettings.GHESOrgPreReceiveOverrides["acme"] = map[int]*store.GHESPreReceiveOverride{
 		6: {Enforcement: "testing", AllowDownstreamConfiguration: true},
 	}
-	st1.EnterpriseSettings.GHESRepoPreReceiveOverrides["acme/service"] = map[int]*GHESPreReceiveOverride{
+	st1.EnterpriseSettings.GHESRepoPreReceiveOverrides["acme/service"] = map[int]*store.GHESPreReceiveOverride{
 		6: {Enforcement: "disabled"},
 	}
 	st1.EnterpriseSettings.NextGHESPreReceiveEnvironmentID = 5
@@ -124,12 +126,12 @@ func TestGHESPreReceivePolicyPersists(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	p2, err := NewPersistence()
+	p2, err := store.NewPersistence()
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer p2.Close()
-	st2 := NewStore()
+	st2 := store.NewStore()
 	if err := st2.SetPersistence(p2); err != nil {
 		t.Fatal(err)
 	}

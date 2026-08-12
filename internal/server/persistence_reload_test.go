@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/gitstore"
 	"github.com/e6qu/bleephub/internal/store"
 )
 
@@ -27,11 +28,11 @@ func TestPersistenceReload_OwnerAndCountersAndState(t *testing.T) {
 	t.Setenv("BLEEPHUB_DATA_DIR", dir)
 
 	// --- session 1: create state, then close ---
-	p1, err := NewPersistence()
+	p1, err := store.NewPersistence()
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	st1 := NewStore()
+	st1 := store.NewStore()
 	if err := st1.SetPersistence(p1); err != nil {
 		t.Fatalf("SetPersistence: %v", err)
 	}
@@ -58,24 +59,24 @@ func TestPersistenceReload_OwnerAndCountersAndState(t *testing.T) {
 	// Misc.persist is wired by SetPersistence; write the two MiscStore
 	// buckets the handlers persist (user_keys, branch_protection) the same
 	// way handleCreateUserKey / handleBranchProtectionPut do.
-	key := &UserKey{ID: st1.Misc.NextKeyID, Title: "laptop", Key: "ssh-ed25519 AAAA", Verified: true, UserID: user.ID}
+	key := &store.UserKey{ID: st1.Misc.NextKeyID, Title: "laptop", Key: "ssh-ed25519 AAAA", Verified: true, UserID: user.ID}
 	st1.Misc.UserKeys[key.ID] = key
 	st1.Misc.KeysByUser[user.ID] = append(st1.Misc.KeysByUser[user.ID], key)
 	p1.MustPut("user_keys", "1", key)
-	bp := &BranchProtection{}
-	st1.Misc.BranchProtection[bpKey(repo.ID, "main")] = bp
-	p1.MustPut("branch_protection", bpKey(repo.ID, "main"), bp)
+	bp := &store.BranchProtection{}
+	st1.Misc.BranchProtection[store.BpKey(repo.ID, "main")] = bp
+	p1.MustPut("branch_protection", store.BpKey(repo.ID, "main"), bp)
 
 	if err := p1.Close(); err != nil {
 		t.Fatalf("close: %v", err)
 	}
 
 	// --- session 2: reload, assert everything came back coherently ---
-	p2, err := NewPersistence()
+	p2, err := store.NewPersistence()
 	if err != nil {
 		t.Fatalf("re-open: %v", err)
 	}
-	st2 := NewStore()
+	st2 := store.NewStore()
 	if err := st2.SetPersistence(p2); err != nil {
 		t.Fatalf("re-load SetPersistence: %v", err)
 	}
@@ -125,13 +126,13 @@ func TestPersistenceReload_OwnerAndCountersAndState(t *testing.T) {
 	if len(st2.Misc.KeysByUser[user.ID]) == 0 {
 		t.Error("user SSH key did not persist (BUG-1612)")
 	}
-	if _, ok := st2.Misc.BranchProtection[bpKey(got.ID, "main")]; !ok {
+	if _, ok := st2.Misc.BranchProtection[store.BpKey(got.ID, "main")]; !ok {
 		t.Error("branch protection did not persist (BUG-1612)")
 	}
 }
 
 func TestPersistenceReload_OrganizationRepositoryOwnerIsValidated(t *testing.T) {
-	st2 := reloadedStore(t, func(_ *Persistence, st *Store) {
+	st2 := reloadedStore(t, func(_ *store.Persistence, st *store.Store) {
 		st.SeedDefaultUser()
 		admin := st.UsersByLogin["admin"]
 		org := st.CreateOrg(admin, "persist-owner-org", "Persist Owner", "")
@@ -154,7 +155,7 @@ func TestPersistenceReload_OrganizationRepositoryOwnerIsValidated(t *testing.T) 
 	if org == nil || org.Login != "persist-owner-org" {
 		t.Fatalf("organization owner id=%d resolved to %#v", repo.OwnerID, org)
 	}
-	if repos := st2.ListReposForOrg("persist-owner-org", RepoListOptions{}); len(repos) != 1 || repos[0].FullName != repo.FullName {
+	if repos := st2.ListReposForOrg("persist-owner-org", store.RepoListOptions{}); len(repos) != 1 || repos[0].FullName != repo.FullName {
 		t.Fatalf("ListReposForOrg returned %#v", repos)
 	}
 }
@@ -183,11 +184,11 @@ func reloadWithMutatedPersistedRepo(t *testing.T, mutate func(map[string]interfa
 	t.Setenv("BLEEPHUB_PERSIST", "true")
 	t.Setenv("BLEEPHUB_DATA_DIR", dir)
 
-	p1, err := NewPersistence()
+	p1, err := store.NewPersistence()
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	st1 := NewStore()
+	st1 := store.NewStore()
 	if err := st1.SetPersistence(p1); err != nil {
 		t.Fatalf("SetPersistence: %v", err)
 	}
@@ -221,28 +222,28 @@ func reloadWithMutatedPersistedRepo(t *testing.T, mutate func(map[string]interfa
 		t.Fatalf("close: %v", err)
 	}
 
-	p2, err := NewPersistence()
+	p2, err := store.NewPersistence()
 	if err != nil {
 		t.Fatalf("re-open: %v", err)
 	}
 	defer p2.Close()
-	return NewStore().SetPersistence(p2)
+	return store.NewStore().SetPersistence(p2)
 }
 
 // reloadedStore runs build against a fresh persisted store, closes the
 // database, and returns a second store loaded from the same database —
 // the standard restart simulation for reload round-trip tests.
-func reloadedStore(t *testing.T, build func(p *Persistence, st *Store)) *Store {
+func reloadedStore(t *testing.T, build func(p *store.Persistence, st *store.Store)) *store.Store {
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("BLEEPHUB_PERSIST", "true")
 	t.Setenv("BLEEPHUB_DATA_DIR", dir)
 
-	p1, err := NewPersistence()
+	p1, err := store.NewPersistence()
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	st1 := NewStore()
+	st1 := store.NewStore()
 	if err := st1.SetPersistence(p1); err != nil {
 		t.Fatalf("SetPersistence: %v", err)
 	}
@@ -251,11 +252,11 @@ func reloadedStore(t *testing.T, build func(p *Persistence, st *Store)) *Store {
 		t.Fatalf("close: %v", err)
 	}
 
-	p2, err := NewPersistence()
+	p2, err := store.NewPersistence()
 	if err != nil {
 		t.Fatalf("re-open: %v", err)
 	}
-	st2 := NewStore()
+	st2 := store.NewStore()
 	if err := st2.SetPersistence(p2); err != nil {
 		t.Fatalf("re-load SetPersistence: %v", err)
 	}
@@ -265,9 +266,9 @@ func reloadedStore(t *testing.T, build func(p *Persistence, st *Store)) *Store {
 
 // addTestUser inserts (and persists) a non-admin user the way the user
 // management surface does.
-func addTestUser(p *Persistence, st *Store, login string) *User {
+func addTestUser(p *store.Persistence, st *store.Store, login string) *store.User {
 	now := fixedTestTime.UTC()
-	u := &User{ID: st.NextUser, Login: login, Name: login, Type: "User", CreatedAt: now, UpdatedAt: now}
+	u := &store.User{ID: st.NextUser, Login: login, Name: login, Type: "User", CreatedAt: now, UpdatedAt: now}
 	st.Users[u.ID] = u
 	st.UsersByLogin[u.Login] = u
 	st.NextUser++
@@ -283,15 +284,15 @@ func addTestUser(p *Persistence, st *Store, login string) *User {
 func TestPersistenceReload_ExpiredBypassLeavesNoTombstone(t *testing.T) {
 	const repoKey = "octo/hello"
 
-	st2 := reloadedStore(t, func(p *Persistence, st *Store) {
-		expired := &SecretScanningPushProtectionBypass{
+	st2 := reloadedStore(t, func(p *store.Persistence, st *store.Store) {
+		expired := &store.SecretScanningPushProtectionBypass{
 			PlaceholderID: "ph-1",
 			RepoKey:       repoKey,
 			TokenType:     "github_pat",
 			ExpireAt:      fixedTestTime.Add(-time.Hour),
 			CreatedAt:     fixedTestTime.Add(-3 * time.Hour),
 		}
-		st.SecretScanningPushBypasses[repoKey] = []*SecretScanningPushProtectionBypass{expired}
+		st.SecretScanningPushBypasses[repoKey] = []*store.SecretScanningPushProtectionBypass{expired}
 		p.MustPut("secret_scanning_push_bypasses", repoKey, st.SecretScanningPushBypasses[repoKey])
 
 		// Pruning the last (expired) bypass must remove the row durably.
@@ -309,12 +310,12 @@ func TestPersistenceReload_GistsCommentsStarsAndForks(t *testing.T) {
 	var gistID, forkID string
 	var commentID int
 
-	st2 := reloadedStore(t, func(p *Persistence, st *Store) {
+	st2 := reloadedStore(t, func(p *store.Persistence, st *store.Store) {
 		st.SeedDefaultUser()
 		admin := st.UsersByLogin["admin"]
 		alice := addTestUser(p, st, "alice")
 
-		g, err := st.CreateGistE(admin, "persisted gist", true, map[string]*GistFile{
+		g, err := st.CreateGistE(admin, "persisted gist", true, map[string]*store.GistFile{
 			"hello.txt": {Filename: "hello.txt", Content: "hello"},
 		})
 		if err != nil {
@@ -322,7 +323,7 @@ func TestPersistenceReload_GistsCommentsStarsAndForks(t *testing.T) {
 		}
 		gistID = g.ID
 		nextDescription := "updated gist"
-		if _, ok, err := st.UpdateGistE(g.ID, &nextDescription, map[string]*GistFile{
+		if _, ok, err := st.UpdateGistE(g.ID, &nextDescription, map[string]*store.GistFile{
 			"second.txt": {Filename: "second.txt", Content: "second"},
 		}, nil); err != nil || !ok {
 			t.Fatalf("UpdateGistE ok=%v err=%v", ok, err)
@@ -344,7 +345,7 @@ func TestPersistenceReload_GistsCommentsStarsAndForks(t *testing.T) {
 			t.Fatal("UpdateGistComment returned false")
 		}
 
-		deleted, err := st.CreateGistE(admin, "deleted gist", true, map[string]*GistFile{
+		deleted, err := st.CreateGistE(admin, "deleted gist", true, map[string]*store.GistFile{
 			"gone.txt": {Filename: "gone.txt", Content: "gone"},
 		})
 		if err != nil {
@@ -402,7 +403,7 @@ func TestPersistenceReload_DeleteRepoPurgesIssueAndPullChildren(t *testing.T) {
 	var oldRepoID, oldIssueID, oldPRID, projectID int
 	const orgLogin = "delete-cascade-org"
 
-	st2 := reloadedStore(t, func(_ *Persistence, st *Store) {
+	st2 := reloadedStore(t, func(_ *store.Persistence, st *store.Store) {
 		_, byteStore := newObjectByteStoreForTest(t)
 		st.ObjectByteStore = byteStore
 		st.SeedDefaultUser()
@@ -427,10 +428,10 @@ func TestPersistenceReload_DeleteRepoPurgesIssueAndPullChildren(t *testing.T) {
 		}
 		st.SetIssueFieldValues(parent.ID, map[int]interface{}{1: "High"})
 		st.MarkNotificationsRead(admin.ID, now, repo.FullName)
-		issueThreadID := notificationThreadID("Issue", parent.ID)
+		issueThreadID := store.NotificationThreadID("Issue", parent.ID)
 		st.MarkThreadRead(admin.ID, issueThreadID, now)
 		st.MarkThreadDone(admin.ID, issueThreadID)
-		st.SetThreadSubscription(admin.ID, issueThreadID, &ThreadSubscription{Subscribed: true, Reason: "manual", CreatedAt: now})
+		st.SetThreadSubscription(admin.ID, issueThreadID, &store.ThreadSubscription{Subscribed: true, Reason: "manual", CreatedAt: now})
 		if err := st.AddSubIssue(parent.ID, child.ID, false); err != nil {
 			t.Fatalf("AddSubIssue: %v", err)
 		}
@@ -450,7 +451,7 @@ func TestPersistenceReload_DeleteRepoPurgesIssueAndPullChildren(t *testing.T) {
 		}
 
 		st.Mu.Lock()
-		inst := &Installation{
+		inst := &store.Installation{
 			ID:                  st.NextInstallationID,
 			AppID:               1,
 			AppSlug:             "cascade-app",
@@ -464,7 +465,7 @@ func TestPersistenceReload_DeleteRepoPurgesIssueAndPullChildren(t *testing.T) {
 		}
 		st.NextInstallationID++
 		st.Installations[inst.ID] = inst
-		token := &InstallationToken{
+		token := &store.InstallationToken{
 			Token:          "cascade-installation-token",
 			ExpiresAt:      now.Add(time.Hour),
 			RepositoryIDs:  []int{repo.ID},
@@ -475,32 +476,32 @@ func TestPersistenceReload_DeleteRepoPurgesIssueAndPullChildren(t *testing.T) {
 		orgActions := st.GetOrgActionsPermissionsLocked(org.Login)
 		orgActions.SelectedRepositoryIDs = []int{repo.ID}
 		orgActions.SelfHostedRunnersSelectedRepoIDs = []int{repo.ID}
-		st.RunnerGroups[99] = &RunnerGroup{ID: 99, Name: "cascade", Visibility: "selected", SelectedRepoIDs: []int{repo.ID}, CreatedAt: now}
-		st.OrgSecrets[org.Login] = map[string]*OrgSecret{
-			"ORG_SECRET": {Secret: Secret{Name: "ORG_SECRET", Value: "secret", CreatedAt: now, UpdatedAt: now}, Visibility: "selected", SelectedRepoIDs: []int{repo.ID}},
+		st.RunnerGroups[99] = &store.RunnerGroup{ID: 99, Name: "cascade", Visibility: "selected", SelectedRepoIDs: []int{repo.ID}, CreatedAt: now}
+		st.OrgSecrets[org.Login] = map[string]*store.OrgSecret{
+			"ORG_SECRET": {Secret: store.Secret{Name: "ORG_SECRET", Value: "secret", CreatedAt: now, UpdatedAt: now}, Visibility: "selected", SelectedRepoIDs: []int{repo.ID}},
 		}
-		st.OrgVariables[org.Login] = map[string]*ActionsVariable{
+		st.OrgVariables[org.Login] = map[string]*store.ActionsVariable{
 			"ORG_VAR": {Name: "ORG_VAR", Value: "value", Visibility: "selected", SelectedRepoIDs: []int{repo.ID}, CreatedAt: now, UpdatedAt: now},
 		}
-		st.AgentsOrgSecrets[org.Login] = map[string]*OrgSecret{
-			"AGENT_SECRET": {Secret: Secret{Name: "AGENT_SECRET", Value: "secret", CreatedAt: now, UpdatedAt: now}, Visibility: "selected", SelectedRepoIDs: []int{repo.ID}},
+		st.AgentsOrgSecrets[org.Login] = map[string]*store.OrgSecret{
+			"AGENT_SECRET": {Secret: store.Secret{Name: "AGENT_SECRET", Value: "secret", CreatedAt: now, UpdatedAt: now}, Visibility: "selected", SelectedRepoIDs: []int{repo.ID}},
 		}
-		st.AgentsOrgVariables[org.Login] = map[string]*ActionsVariable{
+		st.AgentsOrgVariables[org.Login] = map[string]*store.ActionsVariable{
 			"AGENT_VAR": {Name: "AGENT_VAR", Value: "value", Visibility: "selected", SelectedRepoIDs: []int{repo.ID}, CreatedAt: now, UpdatedAt: now},
 		}
 		st.DependabotRepositoryAccess[org.Login] = []int{repo.ID}
-		st.DependabotOrgSecrets[org.Login] = map[string]*DependabotOrgSecret{
-			"DEPENDABOT_SECRET": {DependabotSecret: DependabotSecret{Name: "DEPENDABOT_SECRET", Value: "secret", KeyID: "key", CreatedAt: now, UpdatedAt: now}, Visibility: "selected", SelectedRepoIDs: []int{repo.ID}},
+		st.DependabotOrgSecrets[org.Login] = map[string]*store.DependabotOrgSecret{
+			"DEPENDABOT_SECRET": {DependabotSecret: store.DependabotSecret{Name: "DEPENDABOT_SECRET", Value: "secret", KeyID: "key", CreatedAt: now, UpdatedAt: now}, Visibility: "selected", SelectedRepoIDs: []int{repo.ID}},
 		}
-		codespaceScope := codespaceSecretScopeKey("org", org.Login)
-		st.CodespaceSecrets[codespaceScope] = map[string]*CodespaceSecret{
+		codespaceScope := store.CodespaceSecretScopeKey("org", org.Login)
+		st.CodespaceSecrets[codespaceScope] = map[string]*store.CodespaceSecret{
 			"CODESPACE_SECRET": {Name: "CODESPACE_SECRET", Key: "CODESPACE_SECRET", Visibility: "selected", SelectedRepoIDs: []int{repo.ID}, CreatedAt: now, UpdatedAt: now},
 		}
-		st.CopilotCodingAgentPerms[org.Login] = &CopilotCodingAgentPermissions{OrgLogin: org.Login, EnabledRepositories: "selected", SelectedRepositoryIDs: []int{repo.ID}}
-		st.OrgPrivateRegistries[org.Login] = map[string]*PrivateRegistryConfiguration{
+		st.CopilotCodingAgentPerms[org.Login] = &store.CopilotCodingAgentPermissions{OrgLogin: org.Login, EnabledRepositories: "selected", SelectedRepositoryIDs: []int{repo.ID}}
+		st.OrgPrivateRegistries[org.Login] = map[string]*store.PrivateRegistryConfiguration{
 			"registry": {Name: "registry", Visibility: "selected", SelectedRepositoryIDs: []int{repo.ID}, CreatedAt: now, UpdatedAt: now},
 		}
-		st.OrgImmutableReleases[org.Login] = &OrgImmutableReleasesSettings{EnforcedRepositories: "selected", SelectedRepositoryIDs: []int{repo.ID}}
+		st.OrgImmutableReleases[org.Login] = &store.OrgImmutableReleasesSettings{EnforcedRepositories: "selected", SelectedRepositoryIDs: []int{repo.ID}}
 		st.CodeSecurityRepoAttachments[org.Login] = map[int]int{repo.ID: 321}
 		st.EnterpriseCodeSecurityRepoConfigs[repo.ID] = 654
 		if st.Persist != nil {
@@ -519,9 +520,9 @@ func TestPersistenceReload_DeleteRepoPurgesIssueAndPullChildren(t *testing.T) {
 			st.PersistPrivateRegistries(org.Login)
 			st.Persist.MustPut("org_immutable_releases", org.Login, st.OrgImmutableReleases[org.Login])
 			st.Persist.MustPut("code_security_repo_attachments", org.Login, st.CodeSecurityRepoAttachments[org.Login])
-			st.Persist.MustPut("enterprise_code_security_attachments", strconv.Itoa(repo.ID), &EnterpriseCodeSecurityAttachment{RepoID: repo.ID, ConfigID: 654})
+			st.Persist.MustPut("enterprise_code_security_attachments", strconv.Itoa(repo.ID), &store.EnterpriseCodeSecurityAttachment{RepoID: repo.ID, ConfigID: 654})
 		}
-		pr := &PullRequest{
+		pr := &store.PullRequest{
 			ID:          st.NextPR,
 			NodeID:      "PR_kgDOdelete",
 			Number:      repo.NextIssueNumber,
@@ -547,10 +548,10 @@ func TestPersistenceReload_DeleteRepoPurgesIssueAndPullChildren(t *testing.T) {
 		}
 		st.Mu.Unlock()
 		oldPRID = pr.ID
-		prThreadID := notificationThreadID("PullRequest", pr.ID)
+		prThreadID := store.NotificationThreadID("PullRequest", pr.ID)
 		st.MarkThreadRead(admin.ID, prThreadID, now)
 		st.MarkThreadDone(admin.ID, prThreadID)
-		st.SetThreadSubscription(admin.ID, prThreadID, &ThreadSubscription{Subscribed: true, Reason: "manual", CreatedAt: now})
+		st.SetThreadSubscription(admin.ID, prThreadID, &store.ThreadSubscription{Subscribed: true, Reason: "manual", CreatedAt: now})
 		st.ProjectsV2.AddItem(projectID, "PullRequest", pr.ID, admin.ID)
 		if _, _, err := st.Reactions.AddReaction("pull_request", pr.ID, admin.ID, "rocket"); err != nil {
 			t.Fatalf("AddReaction pull request: %v", err)
@@ -594,7 +595,7 @@ func TestPersistenceReload_DeleteRepoPurgesIssueAndPullChildren(t *testing.T) {
 	if values := st2.IssueFieldValues[oldIssueID]; len(values) != 0 {
 		t.Fatalf("issue field values survived deleted repo reload: %#v", values)
 	}
-	assertNotificationStateAbsent(t, st2, "admin", orgLogin+"/deleted-issue-children", notificationThreadID("Issue", oldIssueID), notificationThreadID("PullRequest", oldPRID))
+	assertNotificationStateAbsent(t, st2, "admin", orgLogin+"/deleted-issue-children", store.NotificationThreadID("Issue", oldIssueID), store.NotificationThreadID("PullRequest", oldPRID))
 	if got := st2.ProjectsV2.ListItemsForIssue(oldIssueID); len(got) != 0 {
 		t.Fatalf("Projects v2 issue items survived deleted repo reload: %#v", got)
 	}
@@ -645,7 +646,7 @@ func TestPersistenceReload_DeleteRepoPurgesIssueAndPullChildren(t *testing.T) {
 	if got := st2.CountCommentsFor("issue", fresh.ID); got != 0 {
 		t.Fatalf("fresh issue inherited stale comment count = %d", got)
 	}
-	if thread := st2.GetNotificationThreadFor(admin, "http://example.test", notificationThreadID("Issue", fresh.ID), func(repo *Repo) bool {
+	if thread := st2.GetNotificationThreadFor(admin, "http://example.test", store.NotificationThreadID("Issue", fresh.ID), func(repo *store.Repo) bool {
 		return canReadRepoAsUser(st2, admin, repo)
 	}); thread == nil {
 		t.Fatal("fresh issue did not create a notification thread")
@@ -657,7 +658,7 @@ func TestPersistenceReload_DeleteRepoPurgesIssueAndPullChildren(t *testing.T) {
 	}
 }
 
-func assertNotificationStateAbsent(t *testing.T, st *Store, login, repoKey string, threadIDs ...string) {
+func assertNotificationStateAbsent(t *testing.T, st *store.Store, login, repoKey string, threadIDs ...string) {
 	t.Helper()
 	user := st.UsersByLogin[login]
 	if user == nil {
@@ -683,13 +684,13 @@ func assertNotificationStateAbsent(t *testing.T, st *Store, login, repoKey strin
 	}
 }
 
-func reactionStoreCount(st *Store) int {
+func reactionStoreCount(st *store.Store) int {
 	st.Reactions.Mu.RLock()
 	defer st.Reactions.Mu.RUnlock()
 	return len(st.Reactions.ByID)
 }
 
-func assertRepoIDAbsentFromCascadeLists(t *testing.T, st *Store, orgLogin string, repoID int) {
+func assertRepoIDAbsentFromCascadeLists(t *testing.T, st *store.Store, orgLogin string, repoID int) {
 	t.Helper()
 	assertNoRepoID := func(name string, ids []int) {
 		t.Helper()
@@ -728,7 +729,7 @@ func assertRepoIDAbsentFromCascadeLists(t *testing.T, st *Store, orgLogin string
 	for _, sec := range st.DependabotOrgSecrets[orgLogin] {
 		assertNoRepoID("Dependabot organization secret selected repositories", sec.SelectedRepoIDs)
 	}
-	for _, sec := range st.CodespaceSecrets[codespaceSecretScopeKey("org", orgLogin)] {
+	for _, sec := range st.CodespaceSecrets[store.CodespaceSecretScopeKey("org", orgLogin)] {
 		assertNoRepoID("Codespaces organization secret selected repositories", sec.SelectedRepoIDs)
 	}
 	if p := st.CopilotCodingAgentPerms[orgLogin]; p != nil {
@@ -753,12 +754,12 @@ func assertRepoIDAbsentFromCascadeLists(t *testing.T, st *Store, orgLogin string
 // G1: app credentials + webhook config survive a restart — JWT auth (PEM),
 // OAuth client-secret auth, and app webhook delivery config all depend on them.
 func TestPersistenceReload_AppCredentialsAndWebhookConfig(t *testing.T) {
-	var app *App
-	st2 := reloadedStore(t, func(p *Persistence, st *Store) {
+	var app *store.App
+	st2 := reloadedStore(t, func(p *store.Persistence, st *store.Store) {
 		st.SeedDefaultUser()
 		user := st.UsersByLogin["admin"]
 		app = st.CreateApp(user.ID, "Cred App", "", map[string]string{"checks": "write"}, []string{"push"})
-		st.UpdateAppHookConfig(app.ID, func(a *App) {
+		st.UpdateAppHookConfig(app.ID, func(a *store.App) {
 			a.WebhookURL = "http://sink.localhost/hook"
 			a.WebhookEvents = []string{"push", "issues"}
 			a.WebhookContentType = "json"
@@ -802,7 +803,7 @@ func TestPersistenceReload_HookSecretSignatureAndRepoKey(t *testing.T) {
 	const repoKey = "admin/hooked"
 	payload := []byte(`{"action":"opened"}`)
 	var wantSig string
-	st2 := reloadedStore(t, func(p *Persistence, st *Store) {
+	st2 := reloadedStore(t, func(p *store.Persistence, st *store.Store) {
 		st.SeedDefaultUser()
 		user := st.UsersByLogin["admin"]
 		if st.CreateRepo(user, "hooked", "", false) == nil {
@@ -831,7 +832,7 @@ func TestPersistenceReload_HookSecretSignatureAndRepoKey(t *testing.T) {
 // G3: secret VALUES reload, not just names.
 func TestPersistenceReload_SecretValue(t *testing.T) {
 	const repoKey = "admin/sealed"
-	st2 := reloadedStore(t, func(p *Persistence, st *Store) {
+	st2 := reloadedStore(t, func(p *store.Persistence, st *store.Store) {
 		st.SeedDefaultUser()
 		user := st.UsersByLogin["admin"]
 		if st.CreateRepo(user, "sealed", "", false) == nil {
@@ -839,7 +840,7 @@ func TestPersistenceReload_SecretValue(t *testing.T) {
 		}
 		// Mirror handlePutSecret's store mutation + write-through.
 		now := fixedTestTime.UTC()
-		st.RepoSecrets[repoKey] = map[string]*Secret{
+		st.RepoSecrets[repoKey] = map[string]*store.Secret{
 			"TOKEN": {Name: "TOKEN", Value: "hunter2", CreatedAt: now, UpdatedAt: now},
 		}
 		p.MustPut("repo_secrets", repoKey, st.RepoSecrets[repoKey])
@@ -857,7 +858,7 @@ func TestPersistenceReload_SecretValue(t *testing.T) {
 // G4: releases re-index under their repo (not byRepo[0]) and keep their author.
 func TestPersistenceReload_ReleasesByRepo(t *testing.T) {
 	var repoID, relID, authorID int
-	st2 := reloadedStore(t, func(p *Persistence, st *Store) {
+	st2 := reloadedStore(t, func(p *store.Persistence, st *store.Store) {
 		st.SeedDefaultUser()
 		user := st.UsersByLogin["admin"]
 		repo := st.CreateRepo(user, "released", "", false)
@@ -886,7 +887,7 @@ func TestPersistenceReload_ReleasesByRepo(t *testing.T) {
 // timer (deployment-approval gating) under the bucket key.
 func TestPersistenceReload_DeploymentsStatusesEnvironments(t *testing.T) {
 	var repoID, depID, creatorID int
-	st2 := reloadedStore(t, func(p *Persistence, st *Store) {
+	st2 := reloadedStore(t, func(p *store.Persistence, st *store.Store) {
 		st.SeedDefaultUser()
 		user := st.UsersByLogin["admin"]
 		repo := st.CreateRepo(user, "deployed", "", false)
@@ -935,7 +936,7 @@ func TestPersistenceReload_DeploymentsStatusesEnvironments(t *testing.T) {
 // G6: reactions re-index under their parent with their user.
 func TestPersistenceReload_Reactions(t *testing.T) {
 	var issueID, userID int
-	st2 := reloadedStore(t, func(p *Persistence, st *Store) {
+	st2 := reloadedStore(t, func(p *store.Persistence, st *store.Store) {
 		st.SeedDefaultUser()
 		user := st.UsersByLogin["admin"]
 		repo := st.CreateRepo(user, "reacted", "", false)
@@ -964,7 +965,7 @@ func TestPersistenceReload_Reactions(t *testing.T) {
 }
 
 func TestPersistenceReload_ReactionParentDeletion(t *testing.T) {
-	st2 := reloadedStore(t, func(_ *Persistence, st *Store) {
+	st2 := reloadedStore(t, func(_ *store.Persistence, st *store.Store) {
 		st.SeedDefaultUser()
 		user := st.UsersByLogin["admin"]
 		repo := st.CreateRepo(user, "reaction-delete", "", false)
@@ -994,7 +995,7 @@ func TestPersistenceReload_ReactionParentDeletion(t *testing.T) {
 // resolved state intact.
 func TestPersistenceReload_PRReviewComments(t *testing.T) {
 	var prID, rootID, replyID, authorID int
-	st2 := reloadedStore(t, func(p *Persistence, st *Store) {
+	st2 := reloadedStore(t, func(p *store.Persistence, st *store.Store) {
 		st.SeedDefaultUser()
 		user := st.UsersByLogin["admin"]
 		repo := st.CreateRepo(user, "reviewed", "", false)
@@ -1037,7 +1038,7 @@ func TestPersistenceReload_PRReviewComments(t *testing.T) {
 func TestPersistenceReload_InstallationPullAuthorRemainsAppBot(t *testing.T) {
 	var prID int
 	var appSlug string
-	st2 := reloadedStore(t, func(_ *Persistence, st *Store) {
+	st2 := reloadedStore(t, func(_ *store.Persistence, st *store.Store) {
 		st.SeedDefaultUser()
 		admin := st.UsersByLogin["admin"]
 		repo := st.CreateRepo(admin, "installation-author", "", false)
@@ -1077,7 +1078,7 @@ func TestPersistenceReload_CheckRunsAndSuites(t *testing.T) {
 	const repoKey = "admin/checked"
 	const sha = "deadbeefcafe"
 	var runID, suiteID int64
-	st2 := reloadedStore(t, func(p *Persistence, st *Store) {
+	st2 := reloadedStore(t, func(p *store.Persistence, st *store.Store) {
 		st.SeedDefaultUser()
 		user := st.UsersByLogin["admin"]
 		if st.CreateRepo(user, "checked", "", false) == nil {
@@ -1086,19 +1087,19 @@ func TestPersistenceReload_CheckRunsAndSuites(t *testing.T) {
 		app := st.CreateApp(user.ID, "CI App", "", nil, nil)
 		cr := st.CreateCheckRun(repoKey, sha, "build", app.ID, 0)
 		runID, suiteID = cr.ID, cr.SuiteID
-		st.UpdateCheckRun(cr.ID, func(c *CheckRun) {
+		st.UpdateCheckRun(cr.ID, func(c *store.CheckRun) {
 			c.Status = "completed"
 			c.Conclusion = "failure"
-			c.Output = &CheckRunOutput{
+			c.Output = &store.CheckRunOutput{
 				Title:            "1 failure",
 				Summary:          "boom",
 				AnnotationsCount: 1,
-				Annotations: []*CheckAnnotation{
+				Annotations: []*store.CheckAnnotation{
 					{Path: "main.go", StartLine: 3, EndLine: 3, AnnotationLevel: "failure", Message: "nil deref"},
 				},
 			}
 		})
-		st.UpdateCheckSuite(cr.SuiteID, func(s *CheckSuite) {
+		st.UpdateCheckSuite(cr.SuiteID, func(s *store.CheckSuite) {
 			s.WorkflowRunID = 42
 			s.WorkflowRunBackendID = "workflow-backend-42"
 			s.WorkflowName = "ci"
@@ -1129,32 +1130,32 @@ func TestPersistenceReload_WorkflowRunsAndAttempts(t *testing.T) {
 	const repoKey = "admin/actions-persist"
 	now := fixedTestTime.UTC()
 	var completedRunID, runningRunID int
-	st2 := reloadedStore(t, func(p *Persistence, st *Store) {
+	st2 := reloadedStore(t, func(p *store.Persistence, st *store.Store) {
 		st.SeedDefaultUser()
 		user := st.UsersByLogin["admin"]
 		if st.CreateRepo(user, "actions-persist", "", false) == nil {
 			t.Fatal("CreateRepo returned nil")
 		}
 		completedRunID = st.ReserveRunID()
-		completed := &Workflow{
+		completed := &store.Workflow{
 			ID:           "completed-run",
 			Name:         "ci",
 			RunID:        completedRunID,
 			RunNumber:    completedRunID,
-			Status:       WorkflowStatusCompleted,
-			Result:       ResultSuccess,
+			Status:       store.WorkflowStatusCompleted,
+			Result:       store.ResultSuccess,
 			CreatedAt:    now,
 			EventName:    "push",
 			Ref:          "refs/heads/main",
 			Sha:          "1111111111111111111111111111111111111111",
 			RepoFullName: repoKey,
-			Jobs: map[string]*WorkflowJob{
+			Jobs: map[string]*store.WorkflowJob{
 				"build": {
 					Key:         "build",
 					JobID:       "job-completed",
 					DisplayName: "build",
-					Status:      JobStatusCompleted,
-					Result:      ResultSuccess,
+					Status:      store.JobStatusCompleted,
+					Result:      store.ResultSuccess,
 					StartedAt:   now,
 					CompletedAt: now,
 				},
@@ -1165,32 +1166,32 @@ func TestPersistenceReload_WorkflowRunsAndAttempts(t *testing.T) {
 		attempt := *completed
 		attempt.ID = "completed-run-attempt-1"
 		attempt.Attempt = 1
-		attempt.Result = ResultFailure
+		attempt.Result = store.ResultFailure
 		runningRunID = st.ReserveRunID()
-		running := &Workflow{
+		running := &store.Workflow{
 			ID:           "running-run",
 			Name:         "deploy",
 			RunID:        runningRunID,
 			RunNumber:    runningRunID,
-			Status:       WorkflowStatusRunning,
+			Status:       store.WorkflowStatusRunning,
 			CreatedAt:    now,
 			EventName:    "workflow_dispatch",
 			Ref:          "refs/heads/main",
 			Sha:          "2222222222222222222222222222222222222222",
 			RepoFullName: repoKey,
-			Jobs: map[string]*WorkflowJob{
+			Jobs: map[string]*store.WorkflowJob{
 				"deploy": {
 					Key:         "deploy",
 					JobID:       "job-running",
 					DisplayName: "deploy",
-					Status:      JobStatusRunning,
+					Status:      store.JobStatusRunning,
 					StartedAt:   now,
 				},
 			},
 		}
 		st.Workflows[completed.ID] = completed
 		st.Workflows[running.ID] = running
-		st.WorkflowAttempts[completedRunID] = []*Workflow{&attempt}
+		st.WorkflowAttempts[completedRunID] = []*store.Workflow{&attempt}
 		st.PersistWorkflowRecord(completed)
 		st.PersistWorkflowRecord(running)
 		st.PersistWorkflowAttemptsRecord(completedRunID)
@@ -1198,23 +1199,23 @@ func TestPersistenceReload_WorkflowRunsAndAttempts(t *testing.T) {
 
 	completed := st2.Workflows["completed-run"]
 	if completed == nil || completed.RunID != completedRunID || completed.RepoFullName != repoKey ||
-		completed.Status != WorkflowStatusCompleted || completed.Result != ResultSuccess ||
+		completed.Status != store.WorkflowStatusCompleted || completed.Result != store.ResultSuccess ||
 		completed.WorkflowFilePath != ".github/workflows/ci.yml" {
 		t.Fatalf("completed workflow after reload = %+v", completed)
 	}
-	if got := completed.Jobs["build"]; got == nil || got.Status != JobStatusCompleted || got.Result != ResultSuccess {
+	if got := completed.Jobs["build"]; got == nil || got.Status != store.JobStatusCompleted || got.Result != store.ResultSuccess {
 		t.Fatalf("completed job after reload = %+v", got)
 	}
 	attempts := st2.WorkflowAttempts[completedRunID]
-	if len(attempts) != 1 || attempts[0].ID != "completed-run-attempt-1" || attempts[0].Result != ResultFailure {
+	if len(attempts) != 1 || attempts[0].ID != "completed-run-attempt-1" || attempts[0].Result != store.ResultFailure {
 		t.Fatalf("workflow attempts after reload = %+v", attempts)
 	}
 	running := st2.Workflows["running-run"]
-	if running == nil || running.RunID != runningRunID || running.Status != WorkflowStatusCompleted ||
-		running.Result != ResultCancelled || !running.CancelRequested {
+	if running == nil || running.RunID != runningRunID || running.Status != store.WorkflowStatusCompleted ||
+		running.Result != store.ResultCancelled || !running.CancelRequested {
 		t.Fatalf("running workflow after reload = %+v, want completed/cancelled abandoned run", running)
 	}
-	if got := running.Jobs["deploy"]; got == nil || got.Status != JobStatusCompleted || got.Result != ResultCancelled ||
+	if got := running.Jobs["deploy"]; got == nil || got.Status != store.JobStatusCompleted || got.Result != store.ResultCancelled ||
 		got.CompletedAt.IsZero() {
 		t.Fatalf("running job after reload = %+v, want completed/cancelled", got)
 	}
@@ -1225,27 +1226,27 @@ func TestPersistenceReload_WorkflowTimelineMetadataAndLogCounter(t *testing.T) {
 		jobID  = "01098f3b-0f5c-4428-b8f9-038d6597ac43"
 		planID = "48a7f786-b1f4-4f88-b538-ec3de02e5256"
 	)
-	st2 := reloadedStore(t, func(p *Persistence, st *Store) {
+	st2 := reloadedStore(t, func(p *store.Persistence, st *store.Store) {
 		st.SeedDefaultUser()
-		wf := &Workflow{
+		wf := &store.Workflow{
 			ID:           "durable-job-log-run",
 			Name:         "ci",
 			RunID:        st.ReserveRunID(),
-			Status:       WorkflowStatusCompleted,
-			Result:       ResultSuccess,
+			Status:       store.WorkflowStatusCompleted,
+			Result:       store.ResultSuccess,
 			RepoFullName: "admin/test",
-			Jobs: map[string]*WorkflowJob{
+			Jobs: map[string]*store.WorkflowJob{
 				"deploy": {
 					Key: "deploy", JobID: jobID, PlanID: planID,
-					Status: JobStatusCompleted, Result: ResultSuccess,
+					Status: store.JobStatusCompleted, Result: store.ResultSuccess,
 				},
 			},
 		}
 		st.Workflows[wf.ID] = wf
 		st.PersistWorkflowRecord(wf)
-		st.TimelineRecords[planID] = []*TimelineRecord{{
+		st.TimelineRecords[planID] = []*store.TimelineRecord{{
 			ID: "step-deploy", Type: "Task", Name: "deploy", Order: 1,
-			State: "completed", Result: "succeeded", Log: &TimelineLogRef{ID: 41},
+			State: "completed", Result: "succeeded", Log: &store.TimelineLogRef{ID: 41},
 		}}
 		p.MustPut("timeline_records", planID, st.TimelineRecords[planID])
 		st.NextLog = 42
@@ -1275,7 +1276,7 @@ func TestPersistenceReload_WorkflowTimelineMetadataAndLogCounter(t *testing.T) {
 func TestPersistenceReload_InstallationSelectedRepos(t *testing.T) {
 	var instID, r1ID, r2ID int
 	var tokValue string
-	st2 := reloadedStore(t, func(p *Persistence, st *Store) {
+	st2 := reloadedStore(t, func(p *store.Persistence, st *store.Store) {
 		st.SeedDefaultUser()
 		user := st.UsersByLogin["admin"]
 		r1 := st.CreateRepo(user, "sel-one", "", false)
@@ -1319,7 +1320,7 @@ func TestPersistenceReload_InstallationSelectedRepos(t *testing.T) {
 // survive a restart.
 func TestPersistenceReload_OrgMembershipAndTeams(t *testing.T) {
 	var devID, adminID, teamID int
-	st2 := reloadedStore(t, func(p *Persistence, st *Store) {
+	st2 := reloadedStore(t, func(p *store.Persistence, st *store.Store) {
 		st.SeedDefaultUser()
 		admin := st.UsersByLogin["admin"]
 		adminID = admin.ID
@@ -1329,15 +1330,15 @@ func TestPersistenceReload_OrgMembershipAndTeams(t *testing.T) {
 		if org == nil {
 			t.Fatal("CreateOrg returned nil")
 		}
-		if st.SetMembership("acme", dev.ID, OrgRoleMember, MembershipStateActive) == nil {
+		if st.SetMembership("acme", dev.ID, store.OrgRoleMember, store.MembershipStateActive) == nil {
 			t.Fatal("SetMembership failed")
 		}
-		team := st.CreateTeam("acme", "Platform", TeamOptions{Privacy: TeamPrivacyClosed, Permission: TeamPermissionPush})
+		team := st.CreateTeam("acme", "Platform", store.TeamOptions{Privacy: store.TeamPrivacyClosed, Permission: store.TeamPermissionPush})
 		teamID = team.ID
 		st.CreateOrgRepo(org, admin, "infra", "", false)
 		st.CreateOrgRepo(org, admin, "app", "", false)
-		st.SetTeamMembership("acme", "platform", admin.ID, TeamRoleMaintainer)
-		st.SetTeamMembership("acme", "platform", dev.ID, TeamRoleMember)
+		st.SetTeamMembership("acme", "platform", admin.ID, store.TeamRoleMaintainer)
+		st.SetTeamMembership("acme", "platform", dev.ID, store.TeamRoleMember)
 		st.SetTeamRepoPermission("acme", "platform", "acme/infra", "")
 		st.SetTeamRepoPermission("acme", "platform", "acme/app", "")
 		st.RemoveTeamRepo("acme", "platform", "acme/infra")
@@ -1369,7 +1370,7 @@ func TestPersistenceReload_OrgMembershipAndTeams(t *testing.T) {
 // must stay dead after a restart.
 func TestPersistenceReload_RevokedAndRotatedTokensStayDead(t *testing.T) {
 	var oldTok, oldRefresh, newTok, revokedTok, revokedRefresh string
-	st2 := reloadedStore(t, func(p *Persistence, st *Store) {
+	st2 := reloadedStore(t, func(p *store.Persistence, st *store.Store) {
 		st.SeedDefaultUser()
 		user := st.UsersByLogin["admin"]
 		appA := st.CreateOAuthApp(user.ID, "Rotator", "", "", "")
@@ -1411,12 +1412,12 @@ func TestPersistenceReload_RevokedAndRotatedTokensStayDead(t *testing.T) {
 // the synthetic delivery HookID.
 func TestPersistenceReload_AppHookDeliveries(t *testing.T) {
 	var appID int
-	st2 := reloadedStore(t, func(p *Persistence, st *Store) {
+	st2 := reloadedStore(t, func(p *store.Persistence, st *store.Store) {
 		st.SeedDefaultUser()
 		user := st.UsersByLogin["admin"]
 		app := st.CreateApp(user.ID, "Delivery App", "", nil, nil)
 		appID = app.ID
-		st.AddAppDelivery(app.ID, &WebhookDelivery{
+		st.AddAppDelivery(app.ID, &store.WebhookDelivery{
 			HookID:      -app.ID, // app-level synthetic hook id
 			AppID:       app.ID,
 			TargetURL:   "http://sink.localhost/app",
@@ -1441,18 +1442,18 @@ func TestPersistenceReload_AppHookDeliveries(t *testing.T) {
 // map-iteration order.
 func TestPersistenceReload_AuditLogOrdering(t *testing.T) {
 	const n = 8
-	st2 := reloadedStore(t, func(p *Persistence, st *Store) {
+	st2 := reloadedStore(t, func(p *store.Persistence, st *store.Store) {
 		// Mirror recordAuditEvent's mutation + write-through.
 		for i := 0; i < n; i++ {
 			st.Misc.NextAuditID++
-			entry := &AuditEntry{
+			entry := &store.AuditEntry{
 				ID:        st.Misc.NextAuditID,
 				Timestamp: fmt.Sprintf("2035-06-15T12:00:%02dZ", i),
 				Action:    "repo.create",
 				Actor:     "admin",
 				Version:   "1.1",
 			}
-			st.Misc.AuditLog = append([]*AuditEntry{entry}, st.Misc.AuditLog...)
+			st.Misc.AuditLog = append([]*store.AuditEntry{entry}, st.Misc.AuditLog...)
 			p.MustPut("audit_log", strconv.FormatInt(entry.ID, 10), entry)
 		}
 	})
@@ -1471,20 +1472,20 @@ func TestPersistenceReload_AuditLogOrdering(t *testing.T) {
 }
 
 func TestPersistenceReload_PagesBuildIDSequence(t *testing.T) {
-	st2 := reloadedStore(t, func(p *Persistence, st *Store) {
+	st2 := reloadedStore(t, func(p *store.Persistence, st *store.Store) {
 		st.SeedDefaultUser()
 		user := st.UsersByLogin["admin"]
 		repo := st.CreateRepo(user, "pages", "", false)
 		if repo == nil {
 			t.Fatal("CreateRepo returned nil")
 		}
-		st.Misc.PagesBuilds[repo.FullName] = []*PagesBuild{
+		st.Misc.PagesBuilds[repo.FullName] = []*store.PagesBuild{
 			{ID: 41, URL: "http://127.0.0.1/api/v3/repos/admin/pages/pages/builds/41", Status: "built"},
 			{ID: 9, URL: "http://127.0.0.1/api/v3/repos/admin/pages/pages/builds/9", Status: "built"},
 		}
 		p.MustPut("pages_builds", repo.FullName, st.Misc.PagesBuilds[repo.FullName])
 		st.Misc.NextAuditID = 7
-		p.MustPut("audit_log", "7", &AuditEntry{ID: 7, Timestamp: "2035-06-15T12:00:00Z", Action: "repo.create", Actor: "admin", Version: "1.1"})
+		p.MustPut("audit_log", "7", &store.AuditEntry{ID: 7, Timestamp: "2035-06-15T12:00:00Z", Action: "repo.create", Actor: "admin", Version: "1.1"})
 	})
 
 	if st2.Misc.NextPagesBuildID != 42 {
@@ -1503,10 +1504,10 @@ func TestPersistenceReload_DeleteRepoLeavesNoResidue(t *testing.T) {
 	const controllerKey = "admin/variant-controller"
 	var oldRepoID int
 	var codespaceWorkspace string
-	var objectFS *s3FS
+	var objectFS *gitstore.S3FS
 	var codeQLDBPath string
-	st2 := reloadedStore(t, func(p *Persistence, st *Store) {
-		var objectStore actionsByteStore
+	st2 := reloadedStore(t, func(p *store.Persistence, st *store.Store) {
+		var objectStore store.ActionsByteStore
 		objectFS, objectStore = newObjectByteStoreForTest(t)
 		st.ObjectByteStore = objectStore
 		st.SeedDefaultUser()
@@ -1517,24 +1518,24 @@ func TestPersistenceReload_DeleteRepoLeavesNoResidue(t *testing.T) {
 		now := fixedTestTime.UTC()
 
 		org := st.CreateOrg(user, "delete-cascade-org", "Delete Cascade Org", "")
-		team := st.CreateTeam(org.Login, "Reviewers", TeamOptions{Permission: TeamPermissionPull})
+		team := st.CreateTeam(org.Login, "Reviewers", store.TeamOptions{Permission: store.TeamPermissionPull})
 		if team == nil {
 			t.Fatal("CreateTeam returned nil")
 		}
 		team.RepoNames = append(team.RepoNames, repoKey)
-		team.RepoPermissions = map[string]TeamPermission{repoKey: TeamPermissionPush}
+		team.RepoPermissions = map[string]store.TeamPermission{repoKey: store.TeamPermissionPush}
 		p.MustPut("teams", strconv.Itoa(team.ID), team)
-		st.CreateArtifactStorageRecord(&ArtifactStorageRecord{OrgID: org.ID, Name: "build", Digest: "sha256:" + strings.Repeat("a", 64), Status: "active", GitHubRepository: repoKey})
-		st.UpsertArtifactDeploymentRecord(&ArtifactDeploymentRecord{OrgID: org.ID, Name: "deploy", Digest: "sha256:" + strings.Repeat("b", 64), Status: "deployed", LogicalEnvironment: "prod", PhysicalEnvironment: "us", Cluster: "cluster", DeploymentName: "web", GitHubRepository: repoKey})
+		st.CreateArtifactStorageRecord(&store.ArtifactStorageRecord{OrgID: org.ID, Name: "build", Digest: "sha256:" + strings.Repeat("a", 64), Status: "active", GitHubRepository: repoKey})
+		st.UpsertArtifactDeploymentRecord(&store.ArtifactDeploymentRecord{OrgID: org.ID, Name: "deploy", Digest: "sha256:" + strings.Repeat("b", 64), Status: "deployed", LogicalEnvironment: "prod", PhysicalEnvironment: "us", Cluster: "cluster", DeploymentName: "web", GitHubRepository: repoKey})
 		importPercent := 100
-		st.PutRepoImport(&RepoImport{RepoID: repo.ID, VCS: "git", VCSURL: "https://example.invalid/repo.git", Status: "complete", ImportPercent: &importPercent, CreatedAt: now})
-		st.AddDependencySnapshot(&DependencySnapshot{
+		st.PutRepoImport(&store.RepoImport{RepoID: repo.ID, VCS: "git", VCSURL: "https://example.invalid/repo.git", Status: "complete", ImportPercent: &importPercent, CreatedAt: now})
+		st.AddDependencySnapshot(&store.DependencySnapshot{
 			RepoID:   repo.ID,
 			Version:  1,
 			Ref:      "refs/heads/main",
 			Sha:      strings.Repeat("1", 40),
-			Job:      SnapshotJob{ID: "job", Correlator: "job"},
-			Detector: SnapshotDetector{Name: "detector", Version: "1", URL: "https://example.invalid/detector"},
+			Job:      store.SnapshotJob{ID: "job", Correlator: "job"},
+			Detector: store.SnapshotDetector{Name: "detector", Version: "1", URL: "https://example.invalid/detector"},
 			Scanned:  now.Format(time.RFC3339),
 			Result:   "SUCCESS",
 		})
@@ -1542,18 +1543,18 @@ func TestPersistenceReload_DeleteRepoLeavesNoResidue(t *testing.T) {
 		st.SetEnterpriseDependabotRepoAccess([]int{repo.ID})
 
 		hook := st.CreateHook(repoKey, "http://sink.localhost/h", "sec", "json", "0", []string{"push"}, true)
-		st.AddDelivery(&WebhookDelivery{HookID: hook.ID, Event: "push", DeliveredAt: fixedTestTime.UTC()})
-		st.RepoSecrets[repoKey] = map[string]*Secret{"TOKEN": {Name: "TOKEN", Value: "v", CreatedAt: now, UpdatedAt: now}}
+		st.AddDelivery(&store.WebhookDelivery{HookID: hook.ID, Event: "push", DeliveredAt: fixedTestTime.UTC()})
+		st.RepoSecrets[repoKey] = map[string]*store.Secret{"TOKEN": {Name: "TOKEN", Value: "v", CreatedAt: now, UpdatedAt: now}}
 		p.MustPut("repo_secrets", repoKey, st.RepoSecrets[repoKey])
-		st.RepoVariables[repoKey] = map[string]*ActionsVariable{"VAR": {Name: "VAR", Value: "v", CreatedAt: now, UpdatedAt: now}}
+		st.RepoVariables[repoKey] = map[string]*store.ActionsVariable{"VAR": {Name: "VAR", Value: "v", CreatedAt: now, UpdatedAt: now}}
 		p.MustPut("repo_variables", repoKey, st.RepoVariables[repoKey])
-		st.SetCodeScanningDefaultSetup(&CodeScanningDefaultSetup{RepoKey: repoKey, State: "configured", QuerySuite: "default", Languages: []string{"go"}})
-		st.SetCodeQualitySetup(&CodeQualitySetup{RepoFullName: repoKey, State: "configured", Languages: []string{"go"}, UpdatedAt: &now})
-		st.SetRepoCustomPropertyValues(repoKey, []customPropertyValuePayload{{PropertyName: "team", Value: "platform"}})
+		st.SetCodeScanningDefaultSetup(&store.CodeScanningDefaultSetup{RepoKey: repoKey, State: "configured", QuerySuite: "default", Languages: []string{"go"}})
+		st.SetCodeQualitySetup(&store.CodeQualitySetup{RepoFullName: repoKey, State: "configured", Languages: []string{"go"}, UpdatedAt: &now})
+		st.SetRepoCustomPropertyValues(repoKey, []store.CustomPropertyValuePayload{{PropertyName: "team", Value: "platform"}})
 		st.SetRepoImmutableReleases(repoKey, true)
-		st.AgentsRepoSecrets[repoKey] = map[string]*Secret{"AGENT": {Name: "AGENT", Value: "v", CreatedAt: now, UpdatedAt: now}}
+		st.AgentsRepoSecrets[repoKey] = map[string]*store.Secret{"AGENT": {Name: "AGENT", Value: "v", CreatedAt: now, UpdatedAt: now}}
 		p.MustPut("agents_repo_secrets", repoKey, st.AgentsRepoSecrets[repoKey])
-		st.AgentsRepoVariables[repoKey] = map[string]*ActionsVariable{"AGENT_VAR": {Name: "AGENT_VAR", Value: "v", CreatedAt: now, UpdatedAt: now}}
+		st.AgentsRepoVariables[repoKey] = map[string]*store.ActionsVariable{"AGENT_VAR": {Name: "AGENT_VAR", Value: "v", CreatedAt: now, UpdatedAt: now}}
 		p.MustPut("agents_repo_variables", repoKey, st.AgentsRepoVariables[repoKey])
 		st.CreateAgentTask(repo, user, "fix stale repository state", "claude-sonnet-4.6", false, "", "")
 		db, err := st.UpsertCodeQLDatabase(repoKey, "go", "db.zip", "application/zip", "reload-sha", []byte("db"), user.ID)
@@ -1578,7 +1579,7 @@ func TestPersistenceReload_DeleteRepoLeavesNoResidue(t *testing.T) {
 		if err := os.WriteFile(codespaceWorkspace+"/workspace.txt", []byte("workspace"), 0o644); err != nil {
 			t.Fatalf("seed codespace workspace: %v", err)
 		}
-		codespace := &Codespace{
+		codespace := &store.Codespace{
 			ID:             st.NextCodespaceID,
 			Name:           "delete-cascade-codespace",
 			OwnerLogin:     user.Login,
@@ -1594,15 +1595,15 @@ func TestPersistenceReload_DeleteRepoLeavesNoResidue(t *testing.T) {
 		st.Codespaces[codespace.ID] = codespace
 		st.CodespacesByName[codespace.Name] = codespace
 		p.MustPut("codespaces", strconv.Itoa(codespace.ID), codespace)
-		st.SetCheckSuitePreferences(repoKey, []*CheckSuitePref{{AppID: 1, Setting: true}})
-		st.Misc.BranchProtection[bpKey(repo.ID, "main")] = &BranchProtection{}
-		p.MustPut("branch_protection", bpKey(repo.ID, "main"), st.Misc.BranchProtection[bpKey(repo.ID, "main")])
-		st.Misc.PagesBuilds[repoKey] = []*PagesBuild{{ID: 1, Status: "built"}}
+		st.SetCheckSuitePreferences(repoKey, []*store.CheckSuitePref{{AppID: 1, Setting: true}})
+		st.Misc.BranchProtection[store.BpKey(repo.ID, "main")] = &store.BranchProtection{}
+		p.MustPut("branch_protection", store.BpKey(repo.ID, "main"), st.Misc.BranchProtection[store.BpKey(repo.ID, "main")])
+		st.Misc.PagesBuilds[repoKey] = []*store.PagesBuild{{ID: 1, Status: "built"}}
 		p.MustPut("pages_builds", repoKey, st.Misc.PagesBuilds[repoKey])
 		dep := st.Deployments.CreateDeployment(repo.ID, user.ID, "main", "abc123", "deploy", "production", "", nil, true, false)
 		st.Deployments.AddStatus(dep.ID, user.ID, "success", "", "", "", "", "production", false)
 		env := st.Deployments.UpsertEnvironment(repo.ID, "production")
-		st.Deployments.SetEnvironmentBranchPolicyConfig(repo.ID, "production", &DeploymentBranchPolicy{CustomBranchPolicies: true})
+		st.Deployments.SetEnvironmentBranchPolicyConfig(repo.ID, "production", &store.DeploymentBranchPolicy{CustomBranchPolicies: true})
 		st.CreateEnvBranchPolicy(env.ID, "main", "branch")
 		st.CreateEnvProtectionRule(env.ID, 1)
 		st.CreatePagesDeployment(repo.ID, "github-pages", "pages-build", "succeed", int64(len("pages artifact")), "sha256:"+strings.Repeat("b", 64), "pages/sites/test/artifact")
@@ -1657,7 +1658,7 @@ func TestPersistenceReload_DeleteRepoLeavesNoResidue(t *testing.T) {
 	if len(st2.CheckSuitePrefs[repoKey]) != 0 {
 		t.Error("check suite prefs survived repo deletion")
 	}
-	if _, ok := st2.Misc.BranchProtection[bpKey(oldRepoID, "main")]; ok {
+	if _, ok := st2.Misc.BranchProtection[store.BpKey(oldRepoID, "main")]; ok {
 		t.Error("branch protection survived repo deletion")
 	}
 	if len(st2.Misc.PagesBuilds[repoKey]) != 0 {
@@ -1775,7 +1776,7 @@ func TestPersistenceReload_DeleteRepoLeavesNoResidue(t *testing.T) {
 
 func TestPersistenceReload_DeleteDeploymentPurgesStatuses(t *testing.T) {
 	var depID int
-	st2 := reloadedStore(t, func(_ *Persistence, st *Store) {
+	st2 := reloadedStore(t, func(_ *store.Persistence, st *store.Store) {
 		st.SeedDefaultUser()
 		user := st.UsersByLogin["admin"]
 		repo := st.CreateRepo(user, "deployment-delete", "", false)
@@ -1801,7 +1802,7 @@ func TestPersistenceReload_RenameRepoMovesRepoScopedMetadata(t *testing.T) {
 	const newKey = "admin/rename-target"
 	now := fixedTestTime.UTC()
 
-	st2 := reloadedStore(t, func(p *Persistence, st *Store) {
+	st2 := reloadedStore(t, func(p *store.Persistence, st *store.Store) {
 		_, objectStore := newObjectByteStoreForTest(t)
 		st.ObjectByteStore = objectStore
 		st.SeedDefaultUser()
@@ -1811,27 +1812,27 @@ func TestPersistenceReload_RenameRepoMovesRepoScopedMetadata(t *testing.T) {
 			t.Fatal("CreateRepo returned nil")
 		}
 		org := st.CreateOrg(user, "rename-cascade-org", "Rename Cascade Org", "")
-		team := st.CreateTeam(org.Login, "Reviewers", TeamOptions{Permission: TeamPermissionPull})
+		team := st.CreateTeam(org.Login, "Reviewers", store.TeamOptions{Permission: store.TeamPermissionPull})
 		if team == nil {
 			t.Fatal("CreateTeam returned nil")
 		}
 		team.RepoNames = append(team.RepoNames, oldKey)
-		team.RepoPermissions = map[string]TeamPermission{oldKey: TeamPermissionAdmin}
+		team.RepoPermissions = map[string]store.TeamPermission{oldKey: store.TeamPermissionAdmin}
 		p.MustPut("teams", strconv.Itoa(team.ID), team)
-		st.CreateArtifactStorageRecord(&ArtifactStorageRecord{OrgID: org.ID, Name: "build", Digest: "sha256:" + strings.Repeat("c", 64), Status: "active", GitHubRepository: oldKey})
-		st.UpsertArtifactDeploymentRecord(&ArtifactDeploymentRecord{OrgID: org.ID, Name: "deploy", Digest: "sha256:" + strings.Repeat("d", 64), Status: "deployed", LogicalEnvironment: "prod", PhysicalEnvironment: "us", Cluster: "cluster", DeploymentName: "web", GitHubRepository: oldKey})
+		st.CreateArtifactStorageRecord(&store.ArtifactStorageRecord{OrgID: org.ID, Name: "build", Digest: "sha256:" + strings.Repeat("c", 64), Status: "active", GitHubRepository: oldKey})
+		st.UpsertArtifactDeploymentRecord(&store.ArtifactDeploymentRecord{OrgID: org.ID, Name: "deploy", Digest: "sha256:" + strings.Repeat("d", 64), Status: "deployed", LogicalEnvironment: "prod", PhysicalEnvironment: "us", Cluster: "cluster", DeploymentName: "web", GitHubRepository: oldKey})
 
-		st.RepoSecrets[oldKey] = map[string]*Secret{"TOKEN": {Name: "TOKEN", Value: "v", CreatedAt: now, UpdatedAt: now}}
+		st.RepoSecrets[oldKey] = map[string]*store.Secret{"TOKEN": {Name: "TOKEN", Value: "v", CreatedAt: now, UpdatedAt: now}}
 		p.MustPut("repo_secrets", oldKey, st.RepoSecrets[oldKey])
-		st.RepoVariables[oldKey] = map[string]*ActionsVariable{"VAR": {Name: "VAR", Value: "v", CreatedAt: now, UpdatedAt: now}}
+		st.RepoVariables[oldKey] = map[string]*store.ActionsVariable{"VAR": {Name: "VAR", Value: "v", CreatedAt: now, UpdatedAt: now}}
 		p.MustPut("repo_variables", oldKey, st.RepoVariables[oldKey])
 		envKey := store.EnvScopeKey(oldKey, "prod")
-		st.EnvSecrets[envKey] = map[string]*Secret{"ENV_TOKEN": {Name: "ENV_TOKEN", Value: "v", CreatedAt: now, UpdatedAt: now}}
+		st.EnvSecrets[envKey] = map[string]*store.Secret{"ENV_TOKEN": {Name: "ENV_TOKEN", Value: "v", CreatedAt: now, UpdatedAt: now}}
 		p.MustPut("env_secrets", envKey, st.EnvSecrets[envKey])
-		st.EnvVariables[envKey] = map[string]*ActionsVariable{"ENV_VAR": {Name: "ENV_VAR", Value: "v", CreatedAt: now, UpdatedAt: now}}
+		st.EnvVariables[envKey] = map[string]*store.ActionsVariable{"ENV_VAR": {Name: "ENV_VAR", Value: "v", CreatedAt: now, UpdatedAt: now}}
 		p.MustPut("env_variables", envKey, st.EnvVariables[envKey])
 
-		st.SetCheckSuitePreferences(oldKey, []*CheckSuitePref{{AppID: 1, Setting: true}})
+		st.SetCheckSuitePreferences(oldKey, []*store.CheckSuitePref{{AppID: 1, Setting: true}})
 		suite := st.CreateCheckSuite(oldKey, "main", "0123456789abcdef", 1)
 		st.CreateCheckRun(oldKey, "0123456789abcdef", "build", 1, suite.ID)
 		st.CommitStatuses.Create(oldKey, "0123456789abcdef", user.ID, "success", "", "ok", "ci")
@@ -1839,23 +1840,23 @@ func TestPersistenceReload_RenameRepoMovesRepoScopedMetadata(t *testing.T) {
 		st.RegisterWorkflowFile(oldKey, ".github/workflows/ci.yml", "ci", "name: ci\non: push\njobs: {}", "submitted")
 		st.MarkNotificationsRead(user.ID, now, oldKey)
 
-		st.SetCodeScanningDefaultSetup(&CodeScanningDefaultSetup{RepoKey: oldKey, State: "configured", QuerySuite: "default", Languages: []string{"go"}})
-		alert := st.CreateCodeScanningAlert(oldKey, "rule", "error", "desc", "CodeQL", "", "open", []CodeScanningAlertInstance{{Path: "main.go", StartLine: 1}})
+		st.SetCodeScanningDefaultSetup(&store.CodeScanningDefaultSetup{RepoKey: oldKey, State: "configured", QuerySuite: "default", Languages: []string{"go"}})
+		alert := st.CreateCodeScanningAlert(oldKey, "rule", "error", "desc", "CodeQL", "", "open", []store.CodeScanningAlertInstance{{Path: "main.go", StartLine: 1}})
 		st.CreateCodeScanningAutofix(alert)
-		upload := &SARIFUpload{ID: "sarif-rename", RepoKey: oldKey, Status: "complete", CreatedAt: now}
+		upload := &store.SARIFUpload{ID: "sarif-rename", RepoKey: oldKey, Status: "complete", CreatedAt: now}
 		st.SARIFUploads[upload.ID] = upload
 		p.MustPut("sarif_uploads", upload.ID, upload)
 
-		st.SetCodeQualitySetup(&CodeQualitySetup{RepoFullName: oldKey, State: "configured", Languages: []string{"go"}, UpdatedAt: &now})
-		st.SetRepoCustomPropertyValues(oldKey, []customPropertyValuePayload{{PropertyName: "team", Value: "platform"}})
+		st.SetCodeQualitySetup(&store.CodeQualitySetup{RepoFullName: oldKey, State: "configured", Languages: []string{"go"}, UpdatedAt: &now})
+		st.SetRepoCustomPropertyValues(oldKey, []store.CustomPropertyValuePayload{{PropertyName: "team", Value: "platform"}})
 		st.SetRepoImmutableReleases(oldKey, true)
-		st.AgentsRepoSecrets[oldKey] = map[string]*Secret{"AGENT": {Name: "AGENT", Value: "v", CreatedAt: now, UpdatedAt: now}}
+		st.AgentsRepoSecrets[oldKey] = map[string]*store.Secret{"AGENT": {Name: "AGENT", Value: "v", CreatedAt: now, UpdatedAt: now}}
 		p.MustPut("agents_repo_secrets", oldKey, st.AgentsRepoSecrets[oldKey])
-		st.AgentsRepoVariables[oldKey] = map[string]*ActionsVariable{"AGENT_VAR": {Name: "AGENT_VAR", Value: "v", CreatedAt: now, UpdatedAt: now}}
+		st.AgentsRepoVariables[oldKey] = map[string]*store.ActionsVariable{"AGENT_VAR": {Name: "AGENT_VAR", Value: "v", CreatedAt: now, UpdatedAt: now}}
 		p.MustPut("agents_repo_variables", oldKey, st.AgentsRepoVariables[oldKey])
 		st.CreateSecretScanningPushProtectionPlaceholder(oldKey, "token")
-		bypass := &SecretScanningPushProtectionBypass{PlaceholderID: "ph", RepoKey: oldKey, Reason: "false_positive", TokenType: "token", CreatedAt: now, ExpireAt: now.Add(time.Hour)}
-		st.SecretScanningPushBypasses[oldKey] = []*SecretScanningPushProtectionBypass{bypass}
+		bypass := &store.SecretScanningPushProtectionBypass{PlaceholderID: "ph", RepoKey: oldKey, Reason: "false_positive", TokenType: "token", CreatedAt: now, ExpireAt: now.Add(time.Hour)}
+		st.SecretScanningPushBypasses[oldKey] = []*store.SecretScanningPushProtectionBypass{bypass}
 		p.MustPut("secret_scanning_push_bypasses", oldKey, st.SecretScanningPushBypasses[oldKey])
 
 		if _, err := st.UpsertCodeQLDatabase(oldKey, "go", "db.zip", "application/zip", "0123456789abcdef", []byte("db"), user.ID); err != nil {
@@ -1864,9 +1865,9 @@ func TestPersistenceReload_RenameRepoMovesRepoScopedMetadata(t *testing.T) {
 		if _, err := st.CreateCodeQLVariantAnalysis(oldKey, user.ID, "go", []byte("pack"), []string{oldKey}); err != nil {
 			t.Fatalf("CreateCodeQLVariantAnalysis: %v", err)
 		}
-		st.CreateRuleset(repo, &Ruleset{Name: "protect"})
+		st.CreateRuleset(repo, &store.Ruleset{Name: "protect"})
 		st.CreateProjectClassic(repo, user.ID, "board", "", "open")
-		st.Codespaces[1] = &Codespace{ID: 1, Name: "cs", OwnerLogin: user.Login, RepoKey: oldKey, State: "Available", CreatedAt: now, UpdatedAt: now}
+		st.Codespaces[1] = &store.Codespace{ID: 1, Name: "cs", OwnerLogin: user.Login, RepoKey: oldKey, State: "Available", CreatedAt: now, UpdatedAt: now}
 		st.CodespacesByName["cs"] = st.Codespaces[1]
 		p.MustPut("codespaces", "1", st.Codespaces[1])
 		if _, created := st.CreatePackage("Repository", oldKey, "container", "image", "private"); !created {
@@ -1893,7 +1894,7 @@ func TestPersistenceReload_TransferRepoMovesRepoScopedMetadata(t *testing.T) {
 	const newKey = "bob/transfer-source"
 	now := fixedTestTime.UTC()
 
-	st2 := reloadedStore(t, func(p *Persistence, st *Store) {
+	st2 := reloadedStore(t, func(p *store.Persistence, st *store.Store) {
 		st.SeedDefaultUser()
 		user := st.UsersByLogin["admin"]
 		addTestUser(p, st, "bob")
@@ -1901,7 +1902,7 @@ func TestPersistenceReload_TransferRepoMovesRepoScopedMetadata(t *testing.T) {
 		if repo == nil {
 			t.Fatal("CreateRepo returned nil")
 		}
-		st.RepoSecrets[oldKey] = map[string]*Secret{"TOKEN": {Name: "TOKEN", Value: "v", CreatedAt: now, UpdatedAt: now}}
+		st.RepoSecrets[oldKey] = map[string]*store.Secret{"TOKEN": {Name: "TOKEN", Value: "v", CreatedAt: now, UpdatedAt: now}}
 		p.MustPut("repo_secrets", oldKey, st.RepoSecrets[oldKey])
 		if !st.TransferRepo("admin", "transfer-source", "bob") {
 			t.Fatal("TransferRepo failed")
@@ -1922,7 +1923,7 @@ func TestPersistenceReload_TransferRepoMovesRepoScopedMetadata(t *testing.T) {
 	}
 }
 
-func assertRepoKeyMoved(t *testing.T, st *Store, repoKey string) {
+func assertRepoKeyMoved(t *testing.T, st *store.Store, repoKey string) {
 	t.Helper()
 	if st.RepoSecrets[repoKey]["TOKEN"] == nil || st.RepoVariables[repoKey]["VAR"] == nil {
 		t.Fatalf("actions secrets/variables did not move to %s", repoKey)
@@ -1950,7 +1951,7 @@ func assertRepoKeyMoved(t *testing.T, st *Store, repoKey string) {
 	}
 	foundTeamGrant := false
 	for _, team := range st.Teams {
-		if slices.Contains(team.RepoNames, repoKey) && team.RepoPermissions[repoKey] == TeamPermissionAdmin {
+		if slices.Contains(team.RepoNames, repoKey) && team.RepoPermissions[repoKey] == store.TeamPermissionAdmin {
 			foundTeamGrant = true
 			break
 		}
@@ -1988,7 +1989,7 @@ func assertRepoKeyMoved(t *testing.T, st *Store, repoKey string) {
 	t.Fatalf("notification repo read marker did not move to %s", repoKey)
 }
 
-func assertNoRepoKeyResidue(t *testing.T, st *Store, repoKey string) {
+func assertNoRepoKeyResidue(t *testing.T, st *store.Store, repoKey string) {
 	t.Helper()
 	if len(st.RepoSecrets[repoKey]) != 0 || len(st.RepoVariables[repoKey]) != 0 || len(st.CheckSuitePrefs[repoKey]) != 0 {
 		t.Fatalf("basic repo-key residue survived for %s", repoKey)
@@ -2040,17 +2041,17 @@ func assertNoRepoKeyResidue(t *testing.T, st *Store, repoKey string) {
 // instead of restarting (and colliding) at seed 1.
 func TestPersistenceReload_ProjectV2OptionSeed(t *testing.T) {
 	var projID int
-	st2 := reloadedStore(t, func(p *Persistence, st *Store) {
+	st2 := reloadedStore(t, func(p *store.Persistence, st *store.Store) {
 		st.SeedDefaultUser()
 		user := st.UsersByLogin["admin"]
 		proj := st.ProjectsV2.CreateProject(user.ID, "User", "Roadmap", user.ID)
 		projID = proj.ID
-		st.ProjectsV2.CreateField(proj.ID, "Status", ProjectV2FieldSingleSelect,
-			[]*ProjectV2SingleSelectOption{{Name: "Todo"}, {Name: "Done"}}, nil)
+		st.ProjectsV2.CreateField(proj.ID, "Status", store.ProjectV2FieldSingleSelect,
+			[]*store.ProjectV2SingleSelectOption{{Name: "Todo"}, {Name: "Done"}}, nil)
 	})
 
-	f2 := st2.ProjectsV2.CreateField(projID, "Priority", ProjectV2FieldSingleSelect,
-		[]*ProjectV2SingleSelectOption{{Name: "High"}}, nil)
+	f2 := st2.ProjectsV2.CreateField(projID, "Priority", store.ProjectV2FieldSingleSelect,
+		[]*store.ProjectV2SingleSelectOption{{Name: "High"}}, nil)
 	if f2 == nil {
 		t.Fatal("CreateField after reload failed")
 	}
@@ -2073,7 +2074,7 @@ func TestPersistenceReload_ProjectV2OptionSeed(t *testing.T) {
 // org-level webhooks must all survive a restart.
 func TestPersistenceReload_OrgProfileMembershipFlagsAndOrgHooks(t *testing.T) {
 	var devID, parentID, childID, hookID int
-	st2 := reloadedStore(t, func(p *Persistence, st *Store) {
+	st2 := reloadedStore(t, func(p *store.Persistence, st *store.Store) {
 		st.SeedDefaultUser()
 		admin := st.UsersByLogin["admin"]
 		dev := addTestUser(p, st, "orgdev")
@@ -2083,7 +2084,7 @@ func TestPersistenceReload_OrgProfileMembershipFlagsAndOrgHooks(t *testing.T) {
 			t.Fatal("CreateOrg returned nil")
 		}
 		canCreate := false
-		if !st.UpdateOrg("persist-org", func(o *Org) {
+		if !st.UpdateOrg("persist-org", func(o *store.Org) {
 			o.Company = "ACME"
 			o.BillingEmail = "bill@example.test"
 			o.DefaultRepositoryPermission = "write"
@@ -2093,21 +2094,21 @@ func TestPersistenceReload_OrgProfileMembershipFlagsAndOrgHooks(t *testing.T) {
 		}
 
 		// Pending membership + a publicized admin membership.
-		if st.SetMembership("persist-org", dev.ID, OrgRoleMember, MembershipStatePending) == nil {
+		if st.SetMembership("persist-org", dev.ID, store.OrgRoleMember, store.MembershipStatePending) == nil {
 			t.Fatal("SetMembership failed")
 		}
 		if !st.SetMembershipPublic("persist-org", admin.ID, true) {
 			t.Fatal("SetMembershipPublic failed")
 		}
 
-		parent := st.CreateTeam("persist-org", "Core", TeamOptions{
-			Permission:          TeamPermissionPush,
-			NotificationSetting: TeamNotificationsDisabled,
+		parent := st.CreateTeam("persist-org", "Core", store.TeamOptions{
+			Permission:          store.TeamPermissionPush,
+			NotificationSetting: store.TeamNotificationsDisabled,
 		})
 		parentID = parent.ID
-		child := st.CreateTeam("persist-org", "Core Infra", TeamOptions{ParentID: parent.ID})
+		child := st.CreateTeam("persist-org", "Core Infra", store.TeamOptions{ParentID: parent.ID})
 		childID = child.ID
-		st.SetTeamMembership("persist-org", "core", admin.ID, TeamRoleMaintainer)
+		st.SetTeamMembership("persist-org", "core", admin.ID, store.TeamRoleMaintainer)
 
 		hook := st.CreateOrgHook("persist-org", "https://hooks.example.test/x", "s3cret", "json", "0", []string{"push", "organization"}, true)
 		hookID = hook.ID
@@ -2125,7 +2126,7 @@ func TestPersistenceReload_OrgProfileMembershipFlagsAndOrgHooks(t *testing.T) {
 	}
 
 	dev := st2.GetMembership("persist-org", devID)
-	if dev == nil || dev.State != MembershipStatePending {
+	if dev == nil || dev.State != store.MembershipStatePending {
 		t.Errorf("pending membership after reload = %+v, want pending", dev)
 	}
 	adminM := st2.GetMembership("persist-org", st2.UsersByLogin["admin"].ID)
@@ -2134,10 +2135,10 @@ func TestPersistenceReload_OrgProfileMembershipFlagsAndOrgHooks(t *testing.T) {
 	}
 
 	parent := st2.GetTeamByID(parentID)
-	if parent == nil || parent.NotificationSetting != TeamNotificationsDisabled {
+	if parent == nil || parent.NotificationSetting != store.TeamNotificationsDisabled {
 		t.Errorf("team notification setting after reload = %+v", parent)
 	}
-	if role, ok := parent.RoleOf(st2.UsersByLogin["admin"].ID); !ok || role != TeamRoleMaintainer {
+	if role, ok := parent.RoleOf(st2.UsersByLogin["admin"].ID); !ok || role != store.TeamRoleMaintainer {
 		t.Errorf("maintainer role after reload = %v/%v, want maintainer/true", role, ok)
 	}
 	child := st2.GetTeamByID(childID)
@@ -2164,15 +2165,15 @@ func TestPersistenceReload_OrgProfileMembershipFlagsAndOrgHooks(t *testing.T) {
 // codespace reports the real Docker container state.
 func TestPersistenceReload_CodespacesAndSecrets(t *testing.T) {
 	var (
-		cs        *Codespace
+		cs        *store.Codespace
 		userScope string
-		orgScope  = codespaceSecretScopeKey("org", "cs-reload-org")
+		orgScope  = store.CodespaceSecretScopeKey("org", "cs-reload-org")
 		repoID    int
 	)
-	st2 := reloadedStore(t, func(p *Persistence, st *Store) {
+	st2 := reloadedStore(t, func(p *store.Persistence, st *store.Store) {
 		st.SeedDefaultUser()
 		user := st.UsersByLogin["admin"]
-		userScope = codespaceSecretScopeKey("user", user.Login)
+		userScope = store.CodespaceSecretScopeKey("user", user.Login)
 		repo := st.CreateRepo(user, "cs-reload-repo", "", false)
 		if repo == nil {
 			t.Fatal("CreateRepo returned nil")
@@ -2185,7 +2186,7 @@ func TestPersistenceReload_CodespacesAndSecrets(t *testing.T) {
 			t.Fatalf("init repo files: %v", err)
 		}
 		var err error
-		cs, err = st.CreateCodespace(user.Login, repo.FullName, "", "local", codespaceCreateOptions{
+		cs, err = st.CreateCodespace(user.Login, repo.FullName, "", "local", store.CodespaceCreateOptions{
 			MachineName: "basicLinux32",
 			DisplayName: "Reload Codespace",
 		})
@@ -2228,7 +2229,7 @@ func TestPersistenceReload_CodespacesAndSecrets(t *testing.T) {
 		// Once the container is gone the codespace honestly reports the
 		// container-lost state instead of the stale persisted one.
 		ctx, cancel := contextWithTimeout(30 * time.Second)
-		err := dockerRemoveContainer(ctx, got.ContainerID)
+		err := store.DockerRemoveContainer(ctx, got.ContainerID)
 		cancel()
 		if err != nil {
 			t.Fatalf("remove container: %v", err)
@@ -2254,14 +2255,14 @@ func TestPersistenceReload_CodespacesAndSecrets(t *testing.T) {
 
 // Code scanning default setup configuration survives a restart.
 func TestPersistenceReload_CodeScanningDefaultSetup(t *testing.T) {
-	st2 := reloadedStore(t, func(p *Persistence, st *Store) {
+	st2 := reloadedStore(t, func(p *store.Persistence, st *store.Store) {
 		st.SeedDefaultUser()
 		user := st.UsersByLogin["admin"]
 		repo := st.CreateRepo(user, "csds-reload", "", false)
 		if repo == nil {
 			t.Fatal("CreateRepo returned nil")
 		}
-		st.SetCodeScanningDefaultSetup(&CodeScanningDefaultSetup{
+		st.SetCodeScanningDefaultSetup(&store.CodeScanningDefaultSetup{
 			RepoKey:    repo.FullName,
 			State:      "configured",
 			QuerySuite: "extended",
@@ -2286,17 +2287,17 @@ func TestPersistenceReload_CodeScanningDefaultSetup(t *testing.T) {
 // log of only the row keys is not a credential compromise.
 func TestPersistedRowKeyIsNotACredential(t *testing.T) {
 	var tokenValue, sessionID, tokenRowKey, sessionRowKey string
-	st := reloadedStore(t, func(p *Persistence, st *Store) {
+	st := reloadedStore(t, func(p *store.Persistence, st *store.Store) {
 		st.SeedDefaultUser()
 		admin := st.UsersByLogin["admin"]
 		tok := st.CreateToken(admin.ID, "repo")
 		tokenValue = tok.Value
 		tokenRowKey = p.StorageKey("tokens", tok.Value)
 		sessionID = "session-secret-value"
-		if err := st.PutLoginSession(sessionID, &LoginSession{UserID: admin.ID, ExpiresAt: st.CurrentTime().Add(time.Hour)}); err != nil {
+		if err := st.PutLoginSession(sessionID, &store.LoginSession{UserID: admin.ID, ExpiresAt: st.CurrentTime().Add(time.Hour)}); err != nil {
 			t.Fatal(err)
 		}
-		sessionRowKey = p.StorageKey(loginSessionsBucket, sessionID)
+		sessionRowKey = p.StorageKey(store.LoginSessionsBucket, sessionID)
 	})
 
 	// The real credentials still resolve after reload.
@@ -2308,7 +2309,7 @@ func TestPersistedRowKeyIsNotACredential(t *testing.T) {
 	}
 
 	// The persisted digest row keys must not be usable as credentials.
-	if !strings.HasPrefix(tokenRowKey, opaquePersistenceKeyPrefix) || !strings.HasPrefix(sessionRowKey, opaquePersistenceKeyPrefix) {
+	if !strings.HasPrefix(tokenRowKey, store.OpaquePersistenceKeyPrefix) || !strings.HasPrefix(sessionRowKey, store.OpaquePersistenceKeyPrefix) {
 		t.Fatalf("expected digested row keys, got token=%q session=%q", tokenRowKey, sessionRowKey)
 	}
 	if tok, _ := st.LookupToken(tokenRowKey); tok != nil {
@@ -2324,7 +2325,7 @@ func TestPersistedRowKeyIsNotACredential(t *testing.T) {
 // rendering a page of issues no longer scans every comment.
 func TestCommentIndexConsistencyAndReload(t *testing.T) {
 	// Cross-check the index against a full scan of st.Comments.
-	scanMatchesIndex := func(t *testing.T, st *Store, parentType string, parentID int) {
+	scanMatchesIndex := func(t *testing.T, st *store.Store, parentType string, parentID int) {
 		t.Helper()
 		st.Mu.RLock()
 		defer st.Mu.RUnlock()
@@ -2335,7 +2336,7 @@ func TestCommentIndexConsistencyAndReload(t *testing.T) {
 			}
 		}
 		got := map[int]bool{}
-		for _, c := range st.CommentsByParent[commentCountKey(parentType, parentID)] {
+		for _, c := range st.CommentsByParent[store.CommentCountKey(parentType, parentID)] {
 			got[c.ID] = true
 		}
 		if len(got) != len(want) {
@@ -2349,7 +2350,7 @@ func TestCommentIndexConsistencyAndReload(t *testing.T) {
 	}
 
 	var issueID int
-	st := reloadedStore(t, func(p *Persistence, st *Store) {
+	st := reloadedStore(t, func(p *store.Persistence, st *store.Store) {
 		owner := addTestUser(p, st, "alice")
 		repo := st.CreateRepo(owner, "proj", "", false)
 		issue := st.CreateIssue(repo.ID, owner.ID, "t", "b", nil, nil, 0)
@@ -2379,7 +2380,7 @@ func TestCommentIndexConsistencyAndReload(t *testing.T) {
 // operation works immediately after a reload for all repos, not just some.
 func TestPersistenceReload_OpensEveryRepoGitStorage(t *testing.T) {
 	const repoCount = 12
-	st := reloadedStore(t, func(p *Persistence, st *Store) {
+	st := reloadedStore(t, func(p *store.Persistence, st *store.Store) {
 		owner := addTestUser(p, st, "repo-owner")
 		for i := 0; i < repoCount; i++ {
 			if st.CreateRepo(owner, "repo-"+strconv.Itoa(i), "", false) == nil {

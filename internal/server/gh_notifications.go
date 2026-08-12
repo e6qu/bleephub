@@ -3,6 +3,8 @@ package bleephub
 import (
 	"net/http"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func (s *Server) registerGHNotificationsRoutes() {
@@ -18,16 +20,16 @@ func (s *Server) registerGHNotificationsRoutes() {
 	s.route("DELETE /api/v3/notifications/threads/{thread_id}/subscription", s.handleDeleteThreadSubscription)
 }
 
-func parseNotificationListOptions(w http.ResponseWriter, r *http.Request) (NotificationListOptions, bool) {
-	opts := NotificationListOptions{}
+func parseNotificationListOptions(w http.ResponseWriter, r *http.Request) (store.NotificationListOptions, bool) {
+	opts := store.NotificationListOptions{}
 	q := r.URL.Query()
 	for name, target := range map[string]*bool{
 		"all": &opts.All, "participating": &opts.Participating,
 	} {
 		if value := q.Get(name); value != "" {
 			if value != "true" && value != "false" {
-				writeGHValidationError(w, "Notification", name, "invalid")
-				return NotificationListOptions{}, false
+				store.WriteGHValidationError(w, "Notification", name, "invalid")
+				return store.NotificationListOptions{}, false
 			}
 			*target = value == "true"
 		}
@@ -35,30 +37,30 @@ func parseNotificationListOptions(w http.ResponseWriter, r *http.Request) (Notif
 	if v := q.Get("since"); v != "" {
 		t, err := time.Parse(time.RFC3339, v)
 		if err != nil {
-			writeGHValidationError(w, "Notification", "since", "invalid")
-			return NotificationListOptions{}, false
+			store.WriteGHValidationError(w, "Notification", "since", "invalid")
+			return store.NotificationListOptions{}, false
 		}
 		opts.Since = t
 	}
 	if v := q.Get("before"); v != "" {
 		t, err := time.Parse(time.RFC3339, v)
 		if err != nil {
-			writeGHValidationError(w, "Notification", "before", "invalid")
-			return NotificationListOptions{}, false
+			store.WriteGHValidationError(w, "Notification", "before", "invalid")
+			return store.NotificationListOptions{}, false
 		}
 		opts.Before = t
 	}
 	return opts, true
 }
 
-func (s *Server) notificationRows(r *http.Request, user *User, opts NotificationListOptions) []notificationThreadRow {
-	return s.store.NotificationRowsFor(user, opts, func(repo *Repo) bool {
+func (s *Server) notificationRows(r *http.Request, user *store.User, opts store.NotificationListOptions) []store.NotificationThreadRow {
+	return s.store.NotificationRowsFor(user, opts, func(repo *store.Repo) bool {
 		return s.viewerCanReadRepo(r.Context(), repo)
 	})
 }
 
-func (s *Server) notificationThread(r *http.Request, user *User, threadID string) *NotificationThread {
-	return s.store.GetNotificationThreadFor(user, s.baseURL(r), threadID, func(repo *Repo) bool {
+func (s *Server) notificationThread(r *http.Request, user *store.User, threadID string) *store.NotificationThread {
+	return s.store.GetNotificationThreadFor(user, s.baseURL(r), threadID, func(repo *store.Repo) bool {
 		return s.viewerCanReadRepo(r.Context(), repo)
 	})
 }
@@ -85,7 +87,7 @@ func (s *Server) handleListNotifications(w http.ResponseWriter, r *http.Request)
 // conditional GET with a 304 (REST-031). Threads are sorted newest-first, so
 // the page-one client (the polling case) sees the exact global modification
 // time.
-func writeNotificationThreads(w http.ResponseWriter, r *http.Request, threads []*NotificationThread) {
+func writeNotificationThreads(w http.ResponseWriter, r *http.Request, threads []*store.NotificationThread) {
 	var newest time.Time
 	out := make([]map[string]interface{}, len(threads))
 	for i, t := range threads {
@@ -117,7 +119,7 @@ func (s *Server) handleMarkNotificationsRead(w http.ResponseWriter, r *http.Requ
 	if body.LastReadAt != "" {
 		t, err := time.Parse(time.RFC3339, body.LastReadAt)
 		if err != nil {
-			writeGHValidationError(w, "Notification", "last_read_at", "invalid")
+			store.WriteGHValidationError(w, "Notification", "last_read_at", "invalid")
 			return
 		}
 		at = t
@@ -175,7 +177,7 @@ func (s *Server) handleMarkRepoNotificationsRead(w http.ResponseWriter, r *http.
 	if body.LastReadAt != "" {
 		t, err := time.Parse(time.RFC3339, body.LastReadAt)
 		if err != nil {
-			writeGHValidationError(w, "Notification", "last_read_at", "invalid")
+			store.WriteGHValidationError(w, "Notification", "last_read_at", "invalid")
 			return
 		}
 		at = t
@@ -267,7 +269,7 @@ func (s *Server) handleSetThreadSubscription(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	sub := &ThreadSubscription{
+	sub := &store.ThreadSubscription{
 		Subscribed: body.Subscribed,
 		Ignored:    body.Ignored,
 		Reason:     thread.Reason,
@@ -294,7 +296,7 @@ func (s *Server) handleDeleteThreadSubscription(w http.ResponseWriter, r *http.R
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func threadToJSON(t *NotificationThread) map[string]interface{} {
+func threadToJSON(t *store.NotificationThread) map[string]interface{} {
 	m := map[string]interface{}{
 		"id":         t.ID,
 		"repository": t.Repository,
@@ -317,7 +319,7 @@ func threadToJSON(t *NotificationThread) map[string]interface{} {
 	return m
 }
 
-func threadSubscriptionToJSON(sub *ThreadSubscription, url string) map[string]interface{} {
+func threadSubscriptionToJSON(sub *store.ThreadSubscription, url string) map[string]interface{} {
 	return map[string]interface{}{
 		"subscribed": sub.Subscribed,
 		"ignored":    sub.Ignored,

@@ -3,6 +3,8 @@ package bleephub
 import (
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func TestRepoCodeQualitySetup_DefaultAndRoundTrip(t *testing.T) {
@@ -103,10 +105,10 @@ func TestRepoCodeQualitySetup_Validation(t *testing.T) {
 
 func TestStoreCodeQualitySetup_SnapshotsStoreBoundary(t *testing.T) {
 	t.Parallel()
-	st := NewStore()
+	st := store.NewStore()
 	now := fixedTestTime.UTC()
 	wantUpdatedAt := now
-	input := &CodeQualitySetup{
+	input := &store.CodeQualitySetup{
 		RepoFullName: "admin/code-quality-boundary",
 		State:        "configured",
 		Languages:    []string{"go"},

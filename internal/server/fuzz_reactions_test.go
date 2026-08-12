@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // FuzzReactionCreate fuzzes the reaction content body and the parent id in the
@@ -50,7 +52,7 @@ func FuzzReactionCreate(f *testing.F) {
 			t.Fatalf("reaction POST content=%q number=%d -> %d: %s", content, number, w.Code, w.Body.String())
 		}
 
-		valid := validReactionContent[content]
+		valid := store.ValidReactionContent[content]
 		exists := number == realNumber
 
 		switch {

@@ -7,58 +7,60 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func (s *Server) registerGHDependabotRoutes() {
 	// Alerts
 	s.route("GET /api/v3/repos/{owner}/{repo}/dependabot/alerts",
-		s.requirePerm(scopeSecurityEvents, permRead, s.handleListDependabotAlerts))
+		s.requirePerm(store.ScopeSecurityEvents, store.PermRead, s.handleListDependabotAlerts))
 	s.route("GET /api/v3/repos/{owner}/{repo}/dependabot/alerts/{alert_number}",
-		s.requirePerm(scopeSecurityEvents, permRead, s.handleGetDependabotAlert))
+		s.requirePerm(store.ScopeSecurityEvents, store.PermRead, s.handleGetDependabotAlert))
 	s.route("PATCH /api/v3/repos/{owner}/{repo}/dependabot/alerts/{alert_number}",
-		s.requirePerm(scopeSecurityEvents, permWrite, s.handleUpdateDependabotAlert))
+		s.requirePerm(store.ScopeSecurityEvents, store.PermWrite, s.handleUpdateDependabotAlert))
 
 	// Repository-scoped secrets
 	s.route("GET /api/v3/repos/{owner}/{repo}/dependabot/secrets",
-		s.requirePerm(scopeDependabotSecrets, permRead, s.handleListDependabotRepoSecrets))
+		s.requirePerm(store.ScopeDependabotSecrets, store.PermRead, s.handleListDependabotRepoSecrets))
 	s.route("GET /api/v3/repos/{owner}/{repo}/dependabot/secrets/public-key",
-		s.requirePerm(scopeDependabotSecrets, permRead, s.handleGetDependabotRepoSecretsPublicKey))
+		s.requirePerm(store.ScopeDependabotSecrets, store.PermRead, s.handleGetDependabotRepoSecretsPublicKey))
 	s.route("GET /api/v3/repos/{owner}/{repo}/dependabot/secrets/{secret_name}",
-		s.requirePerm(scopeDependabotSecrets, permRead, s.handleGetDependabotRepoSecret))
+		s.requirePerm(store.ScopeDependabotSecrets, store.PermRead, s.handleGetDependabotRepoSecret))
 	s.route("PUT /api/v3/repos/{owner}/{repo}/dependabot/secrets/{secret_name}",
-		s.requirePerm(scopeDependabotSecrets, permWrite, s.handlePutDependabotRepoSecret))
+		s.requirePerm(store.ScopeDependabotSecrets, store.PermWrite, s.handlePutDependabotRepoSecret))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/dependabot/secrets/{secret_name}",
-		s.requirePerm(scopeDependabotSecrets, permWrite, s.handleDeleteDependabotRepoSecret))
+		s.requirePerm(store.ScopeDependabotSecrets, store.PermWrite, s.handleDeleteDependabotRepoSecret))
 
 	// Organization-scoped secrets
 	s.route("GET /api/v3/orgs/{org}/dependabot/secrets",
-		s.requirePerm(scopeDependabotSecrets, permRead, s.handleListDependabotOrgSecrets))
+		s.requirePerm(store.ScopeDependabotSecrets, store.PermRead, s.handleListDependabotOrgSecrets))
 	s.route("GET /api/v3/orgs/{org}/dependabot/secrets/public-key",
-		s.requirePerm(scopeDependabotSecrets, permRead, s.handleGetDependabotOrgSecretsPublicKey))
+		s.requirePerm(store.ScopeDependabotSecrets, store.PermRead, s.handleGetDependabotOrgSecretsPublicKey))
 	s.route("GET /api/v3/orgs/{org}/dependabot/secrets/{secret_name}",
-		s.requirePerm(scopeDependabotSecrets, permRead, s.handleGetDependabotOrgSecret))
+		s.requirePerm(store.ScopeDependabotSecrets, store.PermRead, s.handleGetDependabotOrgSecret))
 	s.route("PUT /api/v3/orgs/{org}/dependabot/secrets/{secret_name}",
-		s.requirePerm(scopeDependabotSecrets, permWrite, s.handlePutDependabotOrgSecret))
+		s.requirePerm(store.ScopeDependabotSecrets, store.PermWrite, s.handlePutDependabotOrgSecret))
 	s.route("DELETE /api/v3/orgs/{org}/dependabot/secrets/{secret_name}",
-		s.requirePerm(scopeDependabotSecrets, permWrite, s.handleDeleteDependabotOrgSecret))
+		s.requirePerm(store.ScopeDependabotSecrets, store.PermWrite, s.handleDeleteDependabotOrgSecret))
 	s.route("GET /api/v3/orgs/{org}/dependabot/secrets/{secret_name}/repositories",
-		s.requirePerm(scopeDependabotSecrets, permRead, s.handleListDependabotOrgSecretRepos))
+		s.requirePerm(store.ScopeDependabotSecrets, store.PermRead, s.handleListDependabotOrgSecretRepos))
 	s.route("PUT /api/v3/orgs/{org}/dependabot/secrets/{secret_name}/repositories",
-		s.requirePerm(scopeDependabotSecrets, permWrite, s.handleSetDependabotOrgSecretRepos))
+		s.requirePerm(store.ScopeDependabotSecrets, store.PermWrite, s.handleSetDependabotOrgSecretRepos))
 	s.route("PUT /api/v3/orgs/{org}/dependabot/secrets/{secret_name}/repositories/{repository_id}",
-		s.requirePerm(scopeDependabotSecrets, permWrite, s.handleAddDependabotOrgSecretRepo))
+		s.requirePerm(store.ScopeDependabotSecrets, store.PermWrite, s.handleAddDependabotOrgSecretRepo))
 	s.route("DELETE /api/v3/orgs/{org}/dependabot/secrets/{secret_name}/repositories/{repository_id}",
-		s.requirePerm(scopeDependabotSecrets, permWrite, s.handleRemoveDependabotOrgSecretRepo))
+		s.requirePerm(store.ScopeDependabotSecrets, store.PermWrite, s.handleRemoveDependabotOrgSecretRepo))
 
 	// Organization-level alerts and repository access
 	s.route("GET /api/v3/orgs/{org}/dependabot/alerts",
-		s.requireOrgAdmin(scopeSecurityEvents, permRead, s.handleListDependabotOrgAlerts))
+		s.requireOrgAdmin(store.ScopeSecurityEvents, store.PermRead, s.handleListDependabotOrgAlerts))
 	s.route("GET /api/v3/orgs/{org}/dependabot/repository-access",
-		s.requireOrgAdmin(scopeOrgAdministration, permRead, s.handleGetDependabotRepositoryAccess))
+		s.requireOrgAdmin(store.ScopeOrgAdministration, store.PermRead, s.handleGetDependabotRepositoryAccess))
 	s.route("PATCH /api/v3/orgs/{org}/dependabot/repository-access",
-		s.requireOrgAdmin(scopeOrgAdministration, permWrite, s.handleUpdateDependabotRepositoryAccess))
+		s.requireOrgAdmin(store.ScopeOrgAdministration, store.PermWrite, s.handleUpdateDependabotRepositoryAccess))
 	s.route("PUT /api/v3/orgs/{org}/dependabot/repository-access/default-level",
-		s.requireOrgAdmin(scopeOrgAdministration, permWrite, s.handleSetDependabotRepositoryAccessDefaultLevel))
+		s.requireOrgAdmin(store.ScopeOrgAdministration, store.PermWrite, s.handleSetDependabotRepositoryAccessDefaultLevel))
 }
 
 // --- alerts ---
@@ -108,7 +110,7 @@ func (s *Server) handleUpdateDependabotAlert(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	user := ghUserFromContext(r.Context())
-	if !s.viewerMayActOnRepo(r.Context(), repo, scopeSecurityEvents, permWrite, permAdmin) {
+	if !s.viewerMayActOnRepo(r.Context(), repo, store.ScopeSecurityEvents, store.PermWrite, store.PermAdmin) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -137,7 +139,7 @@ func (s *Server) handleUpdateDependabotAlert(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, dependabotAlertToJSON(a, s.baseURL(r), repo))
 }
 
-func (s *Server) lookupDependabotAlert(w http.ResponseWriter, r *http.Request, repo *Repo) *DependabotAlert {
+func (s *Server) lookupDependabotAlert(w http.ResponseWriter, r *http.Request, repo *store.Repo) *store.DependabotAlert {
 	number, err := strconv.Atoi(r.PathValue("alert_number"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -151,7 +153,7 @@ func (s *Server) lookupDependabotAlert(w http.ResponseWriter, r *http.Request, r
 	return a
 }
 
-func dependabotAlertToJSON(a *DependabotAlert, baseURL string, repo *Repo) map[string]interface{} {
+func dependabotAlertToJSON(a *store.DependabotAlert, baseURL string, repo *store.Repo) map[string]interface{} {
 	apiURL := fmt.Sprintf("%s/api/v3/repos/%s/dependabot/alerts/%d", baseURL, repo.FullName, a.Number)
 	htmlURL := fmt.Sprintf("%s/%s/security/dependabot/%d", baseURL, repo.FullName, a.Number)
 	published := a.CreatedAt.UTC().Format(time.RFC3339)
@@ -351,7 +353,7 @@ func (s *Server) handleDeleteDependabotRepoSecret(w http.ResponseWriter, r *http
 
 // --- organization secrets ---
 
-func (s *Server) resolveOrgForDependabot(w http.ResponseWriter, r *http.Request) (*Org, bool) {
+func (s *Server) resolveOrgForDependabot(w http.ResponseWriter, r *http.Request) (*store.Org, bool) {
 	org := s.store.GetOrg(r.PathValue("org"))
 	if org == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -564,7 +566,7 @@ func (s *Server) validateDependabotSecretKeyID(w http.ResponseWriter, keyID stri
 	return true
 }
 
-func dependabotSecretJSON(sec *DependabotSecret) map[string]interface{} {
+func dependabotSecretJSON(sec *store.DependabotSecret) map[string]interface{} {
 	return map[string]interface{}{
 		"name":       sec.Name,
 		"created_at": sec.CreatedAt.UTC().Format(time.RFC3339),
@@ -572,7 +574,7 @@ func dependabotSecretJSON(sec *DependabotSecret) map[string]interface{} {
 	}
 }
 
-func dependabotOrgSecretJSON(sec *DependabotOrgSecret, orgLogin, baseURL string) map[string]interface{} {
+func dependabotOrgSecretJSON(sec *store.DependabotOrgSecret, orgLogin, baseURL string) map[string]interface{} {
 	out := dependabotSecretJSON(&sec.DependabotSecret)
 	out["visibility"] = sec.Visibility
 	if sec.Visibility == "selected" {
@@ -581,7 +583,7 @@ func dependabotOrgSecretJSON(sec *DependabotOrgSecret, orgLogin, baseURL string)
 	return out
 }
 
-func sortedDependabotSecretsJSON(m map[string]*DependabotSecret) []map[string]interface{} {
+func sortedDependabotSecretsJSON(m map[string]*store.DependabotSecret) []map[string]interface{} {
 	names := make([]string, 0, len(m))
 	for n := range m {
 		names = append(names, n)
@@ -596,7 +598,7 @@ func sortedDependabotSecretsJSON(m map[string]*DependabotSecret) []map[string]in
 
 func (s *Server) writeDependabotSelectedReposResponse(w http.ResponseWriter, r *http.Request, ids []int) {
 	s.store.Mu.RLock()
-	repos := make([]*Repo, 0, len(ids))
+	repos := make([]*store.Repo, 0, len(ids))
 	for _, id := range ids {
 		if repo := s.store.Repos[id]; repo != nil {
 			repos = append(repos, repo)
@@ -619,8 +621,8 @@ func (s *Server) writeDependabotSelectedReposResponse(w http.ResponseWriter, r *
 
 // dependabotMinimalRepoJSON renders a minimal-repository-compatible shape so
 // the selected-repositories response passes the OpenAPI validator.
-func dependabotMinimalRepoJSON(repo *Repo, st *Store, baseURL string) map[string]interface{} {
-	out := repoToJSON(repo, st, baseURL)
+func dependabotMinimalRepoJSON(repo *store.Repo, st *store.Store, baseURL string) map[string]interface{} {
+	out := store.RepoToJSON(repo, st, baseURL)
 	delete(out, "has_pull_requests")
 	return out
 }
@@ -678,7 +680,7 @@ func (s *Server) handleSetDependabotRepositoryAccessDefaultLevel(w http.Response
 		return
 	}
 	if body.DefaultLevel != "public" && body.DefaultLevel != "internal" {
-		writeGHValidationError(w, "DependabotRepositoryAccess", "default_level", "invalid")
+		store.WriteGHValidationError(w, "DependabotRepositoryAccess", "default_level", "invalid")
 		return
 	}
 	s.store.SetDependabotRepositoryAccessDefaultLevel(org.Login, body.DefaultLevel)
@@ -696,7 +698,7 @@ func (s *Server) dependabotOrgSecretSelectionChange(w http.ResponseWriter, r *ht
 	}
 	name := strings.ToUpper(r.PathValue("secret_name"))
 	s.handleOrgSelectionChange(w, r, name, add,
-		func() orgScopedItem {
+		func() store.OrgScopedItem {
 			if sec := s.store.DependabotOrgSecrets[org.Login][name]; sec != nil {
 				return sec
 			}
@@ -760,7 +762,7 @@ func (s *Server) handleUpdateDependabotRepositoryAccess(w http.ResponseWriter, r
 // for the given repository IDs, omitting IDs that do not resolve.
 func (s *Server) dependabotAccessibleRepos(r *http.Request, ids []int) []map[string]interface{} {
 	s.store.Mu.RLock()
-	repos := make([]*Repo, 0, len(ids))
+	repos := make([]*store.Repo, 0, len(ids))
 	for _, id := range ids {
 		if repo := s.store.Repos[id]; repo != nil {
 			repos = append(repos, repo)

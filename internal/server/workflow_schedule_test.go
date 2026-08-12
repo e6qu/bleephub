@@ -3,6 +3,8 @@ package bleephub
 import (
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // scheduleRunCounter counts schedule-triggered runs for one repo.
@@ -145,7 +147,7 @@ jobs:
 
 	// The run carries schedule event metadata.
 	s.store.Mu.RLock()
-	var run *Workflow
+	var run *store.Workflow
 	for _, w := range s.store.Workflows {
 		if w.RepoFullName == repoKey && w.EventName == "schedule" {
 			run = w

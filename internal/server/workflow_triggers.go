@@ -1,16 +1,18 @@
 package bleephub
 
+import "github.com/e6qu/bleephub/internal/store"
+
 // Trigger parsing/matching moved to internal/actions (ARCH-002); what stays
 // is the PR/webhook-domain fan-out below.
 
 // firePullRequestSynchronize emits pull_request "synchronize" (webhook +
 // workflow triggers) for every open PR whose head branch just received a
 // push — real GitHub's behavior for pushes to a PR's source branch.
-func (s *Server) firePullRequestSynchronize(repo *Repo, repoKey, branch string) {
+func (s *Server) firePullRequestSynchronize(repo *store.Repo, repoKey, branch string) {
 	s.store.Mu.RLock()
-	var prs []*PullRequest
+	var prs []*store.PullRequest
 	for _, pr := range s.store.PullRequests {
-		if pullRequestHeadRepoID(pr) == repo.ID && pr.State == "OPEN" && pr.HeadRefName == branch {
+		if store.PullRequestHeadRepoID(pr) == repo.ID && pr.State == "OPEN" && pr.HeadRefName == branch {
 			prs = append(prs, pr)
 		}
 	}

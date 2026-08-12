@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // GitHub organization private registries: Dependabot registry credentials
@@ -13,17 +15,17 @@ import (
 
 func (s *Server) registerGHPrivateRegistryRoutes() {
 	s.route("GET /api/v3/orgs/{org}/private-registries",
-		s.requirePerm(scopeOrgAdministration, permRead, s.orgGated(s.handleListOrgPrivateRegistries)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.orgGated(s.handleListOrgPrivateRegistries)))
 	s.route("POST /api/v3/orgs/{org}/private-registries",
-		s.requirePerm(scopeOrgAdministration, permWrite, s.orgGated(s.handleCreateOrgPrivateRegistry)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.orgGated(s.handleCreateOrgPrivateRegistry)))
 	s.route("GET /api/v3/orgs/{org}/private-registries/public-key",
-		s.requirePerm(scopeOrgAdministration, permRead, s.orgGated(s.handleGetOrgPrivateRegistriesPublicKey)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.orgGated(s.handleGetOrgPrivateRegistriesPublicKey)))
 	s.route("GET /api/v3/orgs/{org}/private-registries/{secret_name}",
-		s.requirePerm(scopeOrgAdministration, permRead, s.orgGated(s.handleGetOrgPrivateRegistry)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.orgGated(s.handleGetOrgPrivateRegistry)))
 	s.route("PATCH /api/v3/orgs/{org}/private-registries/{secret_name}",
-		s.requirePerm(scopeOrgAdministration, permWrite, s.orgGated(s.handleUpdateOrgPrivateRegistry)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.orgGated(s.handleUpdateOrgPrivateRegistry)))
 	s.route("DELETE /api/v3/orgs/{org}/private-registries/{secret_name}",
-		s.requirePerm(scopeOrgAdministration, permWrite, s.orgGated(s.handleDeleteOrgPrivateRegistry)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.orgGated(s.handleDeleteOrgPrivateRegistry)))
 }
 
 var privateRegistryTypes = map[string]bool{
@@ -60,33 +62,33 @@ func (s *Server) handleListOrgPrivateRegistries(w http.ResponseWriter, r *http.R
 
 func (s *Server) handleCreateOrgPrivateRegistry(w http.ResponseWriter, r *http.Request) {
 	org := r.PathValue("org")
-	var req privateRegistryRequest
+	var req store.PrivateRegistryRequest
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	if req.RegistryType == nil || !privateRegistryTypes[*req.RegistryType] {
-		writeGHValidationError(w, "PrivateRegistry", "registry_type", "invalid")
+		store.WriteGHValidationError(w, "PrivateRegistry", "registry_type", "invalid")
 		return
 	}
 	if req.URL == nil || *req.URL == "" {
-		writeGHValidationError(w, "PrivateRegistry", "url", "missing_field")
+		store.WriteGHValidationError(w, "PrivateRegistry", "url", "missing_field")
 		return
 	}
 	if req.Visibility == nil || !validOrgItemVisibility(*req.Visibility) {
-		writeGHValidationError(w, "PrivateRegistry", "visibility", "invalid")
+		store.WriteGHValidationError(w, "PrivateRegistry", "visibility", "invalid")
 		return
 	}
 	authType := "token"
 	if req.AuthType != nil {
 		if !privateRegistryAuthTypes[*req.AuthType] {
-			writeGHValidationError(w, "PrivateRegistry", "auth_type", "invalid")
+			store.WriteGHValidationError(w, "PrivateRegistry", "auth_type", "invalid")
 			return
 		}
 		authType = *req.AuthType
 	}
 	if privateRegistryAuthIsOIDC(authType) {
 		if req.EncryptedValue != nil || req.KeyID != nil {
-			writeGHValidationError(w, "PrivateRegistry", "encrypted_value", "invalid")
+			store.WriteGHValidationError(w, "PrivateRegistry", "encrypted_value", "invalid")
 			return
 		}
 	} else {
@@ -95,7 +97,7 @@ func (s *Server) handleCreateOrgPrivateRegistry(w http.ResponseWriter, r *http.R
 			return
 		}
 		if _, err := base64.StdEncoding.DecodeString(*req.EncryptedValue); err != nil {
-			writeGHValidationError(w, "PrivateRegistry", "encrypted_value", "invalid")
+			store.WriteGHValidationError(w, "PrivateRegistry", "encrypted_value", "invalid")
 			return
 		}
 		keyID := ""
@@ -111,7 +113,7 @@ func (s *Server) handleCreateOrgPrivateRegistry(w http.ResponseWriter, r *http.R
 		return
 	}
 	if len(req.SelectedRepositoryIDs) > 0 && *req.Visibility != "selected" {
-		writeGHValidationError(w, "PrivateRegistry", "selected_repository_ids", "invalid")
+		store.WriteGHValidationError(w, "PrivateRegistry", "selected_repository_ids", "invalid")
 		return
 	}
 	for _, id := range req.SelectedRepositoryIDs {
@@ -144,31 +146,31 @@ func (s *Server) handleUpdateOrgPrivateRegistry(w http.ResponseWriter, r *http.R
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	var req privateRegistryRequest
+	var req store.PrivateRegistryRequest
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	if req.RegistryType != nil && !privateRegistryTypes[*req.RegistryType] {
-		writeGHValidationError(w, "PrivateRegistry", "registry_type", "invalid")
+		store.WriteGHValidationError(w, "PrivateRegistry", "registry_type", "invalid")
 		return
 	}
 	// The authentication type cannot change after creation; a provided value
 	// must match the existing one.
 	if req.AuthType != nil && *req.AuthType != reg.AuthType {
-		writeGHValidationError(w, "PrivateRegistry", "auth_type", "invalid")
+		store.WriteGHValidationError(w, "PrivateRegistry", "auth_type", "invalid")
 		return
 	}
 	if req.Visibility != nil && !validOrgItemVisibility(*req.Visibility) {
-		writeGHValidationError(w, "PrivateRegistry", "visibility", "invalid")
+		store.WriteGHValidationError(w, "PrivateRegistry", "visibility", "invalid")
 		return
 	}
 	if req.EncryptedValue != nil {
 		if privateRegistryAuthIsOIDC(reg.AuthType) {
-			writeGHValidationError(w, "PrivateRegistry", "encrypted_value", "invalid")
+			store.WriteGHValidationError(w, "PrivateRegistry", "encrypted_value", "invalid")
 			return
 		}
 		if _, err := base64.StdEncoding.DecodeString(*req.EncryptedValue); err != nil {
-			writeGHValidationError(w, "PrivateRegistry", "encrypted_value", "invalid")
+			store.WriteGHValidationError(w, "PrivateRegistry", "encrypted_value", "invalid")
 			return
 		}
 		keyID := ""
@@ -200,7 +202,7 @@ func (s *Server) handleDeleteOrgPrivateRegistry(w http.ResponseWriter, r *http.R
 // privateRegistryJSON renders the org-private-registry-configuration shape;
 // withSelected additionally carries selected_repository_ids (the create
 // response shape). The sealed secret value is never emitted.
-func privateRegistryJSON(reg *PrivateRegistryConfiguration, withSelected bool) map[string]interface{} {
+func privateRegistryJSON(reg *store.PrivateRegistryConfiguration, withSelected bool) map[string]interface{} {
 	out := map[string]interface{}{
 		"name":          reg.Name,
 		"registry_type": reg.RegistryType,

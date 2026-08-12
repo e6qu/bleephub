@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // jitRunnerPrivateKey reads `.credentials_rsaparams` the way the runner does —
@@ -102,7 +104,7 @@ func TestRegistrationTokenRandom(t *testing.T) {
 }
 
 func TestAgentRSAPublicKeyRequiresProtocolStandardBase64(t *testing.T) {
-	pub, err := agentRSAPublicKey(&AgentPublicKey{
+	pub, err := agentRSAPublicKey(&store.AgentPublicKey{
 		Modulus:  base64.StdEncoding.EncodeToString([]byte{0x01, 0x02, 0x03}),
 		Exponent: base64.StdEncoding.EncodeToString([]byte{0x01, 0x00, 0x01}),
 	})
@@ -113,7 +115,7 @@ func TestAgentRSAPublicKeyRequiresProtocolStandardBase64(t *testing.T) {
 		t.Fatalf("exponent = %d, want 65537", pub.E)
 	}
 
-	for name, pk := range map[string]*AgentPublicKey{
+	for name, pk := range map[string]*store.AgentPublicKey{
 		"url-safe modulus": {
 			Modulus:  base64.URLEncoding.EncodeToString([]byte{0xff, 0xff}),
 			Exponent: base64.StdEncoding.EncodeToString([]byte{0x01, 0x00, 0x01}),

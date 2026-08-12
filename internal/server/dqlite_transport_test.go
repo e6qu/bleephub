@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/e6qu/bleephub/internal/dqliteaddr"
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // dqliteUpgradeServer runs a listener that answers one /dqlite request with the
@@ -87,7 +88,7 @@ func (s *dqliteUpgradeServer) request(t *testing.T) *http.Request {
 func TestDqliteHTTPDialUpgrades(t *testing.T) {
 	server := newDqliteUpgradeServer(t, "HTTP/1.1 101 Switching Protocols", "dqlite")
 
-	conn, err := dqliteHTTPDial(context.Background(), server.address, "cluster-secret")
+	conn, err := store.DqliteHTTPDial(context.Background(), server.address, "cluster-secret")
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
@@ -142,7 +143,7 @@ func TestDqliteHTTPDialRejectsUnupgradedResponses(t *testing.T) {
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			server := newDqliteUpgradeServer(t, testCase.statusLine, testCase.upgradeToken)
-			conn, err := dqliteHTTPDial(context.Background(), server.address, "cluster-secret")
+			conn, err := store.DqliteHTTPDial(context.Background(), server.address, "cluster-secret")
 			if err == nil {
 				_ = conn.Close()
 				t.Fatal("dial accepted a response that never upgraded to dqlite")
@@ -164,7 +165,7 @@ func TestDqliteHTTPDialReportsUnreachableMembers(t *testing.T) {
 		t.Fatalf("close listener: %v", err)
 	}
 
-	conn, err := dqliteHTTPDial(context.Background(), address, "cluster-secret")
+	conn, err := store.DqliteHTTPDial(context.Background(), address, "cluster-secret")
 	if err == nil {
 		_ = conn.Close()
 		t.Fatal("dial reported success against a closed port")
@@ -176,7 +177,7 @@ func TestDqliteHTTPDialReportsUnreachableMembers(t *testing.T) {
 
 func TestDqliteHTTPDialRejectsAnotherClusterTLSIdentity(t *testing.T) {
 	server := newDqliteUpgradeServer(t, "HTTP/1.1 101 Switching Protocols", "dqlite")
-	conn, err := dqliteHTTPDial(context.Background(), server.address, "different-cluster-secret")
+	conn, err := store.DqliteHTTPDial(context.Background(), server.address, "different-cluster-secret")
 	if err == nil {
 		_ = conn.Close()
 		t.Fatal("dial authenticated a dqlite endpoint derived from another cluster secret")
@@ -228,7 +229,7 @@ func TestOpenDqliteRefusesIncompleteConfiguration(t *testing.T) {
 			t.Setenv(dqliteaddr.Environment, testCase.addressMap)
 			t.Setenv(dqliteaddr.SecretEnvironment, testCase.secret)
 
-			db, err := openDqlite(testCase.addresses)
+			db, err := store.OpenDqlite(testCase.addresses)
 			if err == nil {
 				_ = db.Close()
 				t.Fatal("openDqlite accepted an incomplete configuration")
@@ -252,7 +253,7 @@ func TestDqliteDialerResolvesDurableAddresses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse address map: %v", err)
 	}
-	conn, err := dqliteDialer(addresses, "cluster-secret")(context.Background(), durable)
+	conn, err := store.DqliteDialer(addresses, "cluster-secret")(context.Background(), durable)
 	if err != nil {
 		t.Fatalf("dial mapped address: %v", err)
 	}

@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // --- Issue handlers ---
@@ -37,7 +39,7 @@ func (s *Server) handleCreateIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Title == "" {
-		writeGHValidationError(w, "Issue", "title", "missing_field")
+		store.WriteGHValidationError(w, "Issue", "title", "missing_field")
 		return
 	}
 
@@ -72,7 +74,7 @@ func (s *Server) handleCreateIssue(w http.ResponseWriter, r *http.Request) {
 	if req.IssueTypeID != nil && *req.IssueTypeID > 0 {
 		it := s.store.GetAssignableIssueTypeForRepo(repo, *req.IssueTypeID)
 		if it == nil {
-			writeGHValidationError(w, "Issue", "issue_type_id", "invalid")
+			store.WriteGHValidationError(w, "Issue", "issue_type_id", "invalid")
 			return
 		}
 		issueTypeID = it.ID
@@ -84,7 +86,7 @@ func (s *Server) handleCreateIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if issueTypeID > 0 {
-		s.store.UpdateIssue(issue.ID, func(i *Issue) {
+		s.store.UpdateIssue(issue.ID, func(i *store.Issue) {
 			i.IssueTypeID = issueTypeID
 		})
 		issue = s.store.GetIssue(issue.ID)
@@ -125,7 +127,7 @@ func (s *Server) handleListIssues(w http.ResponseWriter, r *http.Request) {
 	case "all":
 		stateFilter = "all"
 	default:
-		writeGHValidationError(w, "Issue", "state", "invalid")
+		store.WriteGHValidationError(w, "Issue", "state", "invalid")
 		return
 	}
 
@@ -146,7 +148,7 @@ func (s *Server) handleListIssues(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	selected := func(labelIDs, assigneeIDs []int) bool {
-		if !labelIDsCoverNames(s.store, labelIDs, labelNames) {
+		if !store.LabelIDsCoverNames(s.store, labelIDs, labelNames) {
 			return false
 		}
 		switch assignee {
@@ -178,7 +180,7 @@ func (s *Server) handleListIssues(w http.ResponseWriter, r *http.Request) {
 	if milestoneFilter != "" && milestoneFilter != "*" && milestoneFilter != "none" {
 		number, err := strconv.Atoi(milestoneFilter)
 		if err != nil || number < 1 {
-			writeGHValidationError(w, "Issue", "milestone", "invalid")
+			store.WriteGHValidationError(w, "Issue", "milestone", "invalid")
 			return
 		}
 		milestone := s.store.GetMilestoneByNumber(repo.ID, number)
@@ -194,7 +196,7 @@ func (s *Server) handleListIssues(w http.ResponseWriter, r *http.Request) {
 	if rawSince := query.Get("since"); rawSince != "" {
 		parsed, err := time.Parse(time.RFC3339, rawSince)
 		if err != nil {
-			writeGHValidationError(w, "Issue", "since", "invalid")
+			store.WriteGHValidationError(w, "Issue", "since", "invalid")
 			return
 		}
 		since = parsed
@@ -204,7 +206,7 @@ func (s *Server) handleListIssues(w http.ResponseWriter, r *http.Request) {
 		sortField = "created"
 	}
 	if sortField != "created" && sortField != "updated" && sortField != "comments" {
-		writeGHValidationError(w, "Issue", "sort", "invalid")
+		store.WriteGHValidationError(w, "Issue", "sort", "invalid")
 		return
 	}
 	direction := query.Get("direction")
@@ -212,7 +214,7 @@ func (s *Server) handleListIssues(w http.ResponseWriter, r *http.Request) {
 		direction = "desc"
 	}
 	if direction != "asc" && direction != "desc" {
-		writeGHValidationError(w, "Issue", "direction", "invalid")
+		store.WriteGHValidationError(w, "Issue", "direction", "invalid")
 		return
 	}
 	mentioned := strings.ToLower(strings.TrimSpace(query.Get("mentioned")))
@@ -415,12 +417,12 @@ func (s *Server) handleUpdateIssue(w http.ResponseWriter, r *http.Request) {
 		case float64:
 			ms := s.store.GetMilestoneByNumber(repo.ID, int(mv))
 			if ms == nil {
-				writeGHValidationError(w, "Issue", "milestone", "invalid")
+				store.WriteGHValidationError(w, "Issue", "milestone", "invalid")
 				return
 			}
 			milestoneID = &ms.ID
 		default:
-			writeGHValidationError(w, "Issue", "milestone", "invalid")
+			store.WriteGHValidationError(w, "Issue", "milestone", "invalid")
 			return
 		}
 	}
@@ -428,7 +430,7 @@ func (s *Server) handleUpdateIssue(w http.ResponseWriter, r *http.Request) {
 	if v, present := req["labels"]; present {
 		entries, ok := v.([]interface{})
 		if !ok {
-			writeGHValidationError(w, "Issue", "labels", "invalid")
+			store.WriteGHValidationError(w, "Issue", "labels", "invalid")
 			return
 		}
 		ids := make([]int, 0, len(entries))
@@ -440,11 +442,11 @@ func (s *Server) handleUpdateIssue(w http.ResponseWriter, r *http.Request) {
 			if !ok {
 				obj, isObj := entry.(map[string]interface{})
 				if !isObj {
-					writeGHValidationError(w, "Issue", "labels", "invalid")
+					store.WriteGHValidationError(w, "Issue", "labels", "invalid")
 					return
 				}
 				if name, ok = obj["name"].(string); !ok {
-					writeGHValidationError(w, "Issue", "labels", "invalid")
+					store.WriteGHValidationError(w, "Issue", "labels", "invalid")
 					return
 				}
 			}
@@ -458,14 +460,14 @@ func (s *Server) handleUpdateIssue(w http.ResponseWriter, r *http.Request) {
 	if v, present := req["assignees"]; present {
 		entries, ok := v.([]interface{})
 		if !ok {
-			writeGHValidationError(w, "Issue", "assignees", "invalid")
+			store.WriteGHValidationError(w, "Issue", "assignees", "invalid")
 			return
 		}
 		ids := make([]int, 0, len(entries))
 		for _, entry := range entries {
 			login, ok := entry.(string)
 			if !ok {
-				writeGHValidationError(w, "Issue", "assignees", "invalid")
+				store.WriteGHValidationError(w, "Issue", "assignees", "invalid")
 				return
 			}
 			if u := s.store.LookupUserByLogin(login); u != nil {
@@ -488,13 +490,13 @@ func (s *Server) handleUpdateIssue(w http.ResponseWriter, r *http.Request) {
 			}
 			it := s.store.GetAssignableIssueTypeForRepo(repo, int(tv))
 			if it == nil {
-				writeGHValidationError(w, "Issue", "issue_type_id", "invalid")
+				store.WriteGHValidationError(w, "Issue", "issue_type_id", "invalid")
 				return
 			}
 			resolved := it.ID
 			issueTypeID = &resolved
 		default:
-			writeGHValidationError(w, "Issue", "issue_type_id", "invalid")
+			store.WriteGHValidationError(w, "Issue", "issue_type_id", "invalid")
 			return
 		}
 	}
@@ -502,7 +504,7 @@ func (s *Server) handleUpdateIssue(w http.ResponseWriter, r *http.Request) {
 	s.store.Mu.RLock()
 	previousState := issue.State
 	s.store.Mu.RUnlock()
-	s.store.UpdateIssue(issue.ID, func(i *Issue) {
+	s.store.UpdateIssue(issue.ID, func(i *store.Issue) {
 		if v, ok := req["title"].(string); ok {
 			i.Title = v
 		}
@@ -615,7 +617,7 @@ func (s *Server) handleCreateIssueComment(w http.ResponseWriter, r *http.Request
 
 	s.emitWebhookEvent(repo.FullName, "issue_comment", "created",
 		buildIssueCommentPayload(s.store, repo, comment, user, "created", s.baseURL(r), parentNumber))
-	commentJSON := commentToJSON(comment, s.store, s.baseURL(r), repo.FullName, parentNumber)
+	commentJSON := store.CommentToJSON(comment, s.store, s.baseURL(r), repo.FullName, parentNumber)
 	writeJSONCreated(w, jsonStringField(commentJSON, "url"), commentJSON)
 }
 
@@ -652,7 +654,7 @@ func (s *Server) handleListIssueComments(w http.ResponseWriter, r *http.Request)
 	}
 
 	comments := s.store.ListCommentsFor(parentType, parentID)
-	comments, ok := filterSince(w, r, "IssueComment", comments, func(comment *Comment) time.Time {
+	comments, ok := filterSince(w, r, "IssueComment", comments, func(comment *store.Comment) time.Time {
 		return comment.UpdatedAt
 	})
 	if !ok {
@@ -661,7 +663,7 @@ func (s *Server) handleListIssueComments(w http.ResponseWriter, r *http.Request)
 	base := s.baseURL(r)
 	result := make([]map[string]interface{}, 0, len(comments))
 	for _, c := range comments {
-		result = append(result, commentToJSON(c, s.store, base, repo.FullName, parentNumber))
+		result = append(result, store.CommentToJSON(c, s.store, base, repo.FullName, parentNumber))
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, result))
 }
@@ -703,7 +705,7 @@ func (s *Server) handleAddIssueLabels(w http.ResponseWriter, r *http.Request) {
 	}
 
 	issue := s.store.GetIssueByNumber(repo.ID, num)
-	pr := (*PullRequest)(nil)
+	pr := (*store.PullRequest)(nil)
 	if issue == nil {
 		if pr = s.store.GetPullRequestByNumber(repo.ID, num); pr == nil {
 			writeGHError(w, http.StatusNotFound, "Not Found")
@@ -735,7 +737,7 @@ func (s *Server) handleAddIssueLabels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.store.UpdateIssue(issue.ID, func(i *Issue) {
+	s.store.UpdateIssue(issue.ID, func(i *store.Issue) {
 		for _, lid := range newLabelIDs {
 			found := false
 			for _, existing := range i.LabelIDs {
@@ -779,7 +781,7 @@ func (s *Server) handleRemoveIssueLabel(w http.ResponseWriter, r *http.Request) 
 	}
 
 	issue := s.store.GetIssueByNumber(repo.ID, num)
-	pr := (*PullRequest)(nil)
+	pr := (*store.PullRequest)(nil)
 	if issue == nil {
 		if pr = s.store.GetPullRequestByNumber(repo.ID, num); pr == nil {
 			writeGHError(w, http.StatusNotFound, "Not Found")
@@ -799,7 +801,7 @@ func (s *Server) handleRemoveIssueLabel(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	s.store.UpdateIssue(issue.ID, func(i *Issue) {
+	s.store.UpdateIssue(issue.ID, func(i *store.Issue) {
 		for idx, lid := range i.LabelIDs {
 			if lid == label.ID {
 				i.LabelIDs = append(i.LabelIDs[:idx], i.LabelIDs[idx+1:]...)
@@ -827,7 +829,7 @@ func (s *Server) handleListRepoIssueComments(w http.ResponseWriter, r *http.Requ
 	}
 
 	comments := s.store.ListRepoIssueComments(repo.ID)
-	comments, ok := filterSince(w, r, "IssueComment", comments, func(comment *Comment) time.Time {
+	comments, ok := filterSince(w, r, "IssueComment", comments, func(comment *store.Comment) time.Time {
 		return comment.UpdatedAt
 	})
 	if !ok {
@@ -840,7 +842,7 @@ func (s *Server) handleListRepoIssueComments(w http.ResponseWriter, r *http.Requ
 		if issue := s.store.GetIssue(c.IssueID); issue != nil {
 			parentNumber = issue.Number
 		}
-		result = append(result, commentToJSON(c, s.store, base, repo.FullName, parentNumber))
+		result = append(result, store.CommentToJSON(c, s.store, base, repo.FullName, parentNumber))
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, result))
 }
@@ -872,7 +874,7 @@ func (s *Server) handleGetIssueComment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	parentNumber := commentParentNumber(s.store, comment)
-	writeJSON(w, http.StatusOK, commentToJSON(comment, s.store, s.baseURL(r), repo.FullName, parentNumber))
+	writeJSON(w, http.StatusOK, store.CommentToJSON(comment, s.store, s.baseURL(r), repo.FullName, parentNumber))
 }
 
 // --- Issue label set/clear handlers ---
@@ -900,7 +902,7 @@ func (s *Server) handleSetIssueLabels(w http.ResponseWriter, r *http.Request) {
 	}
 
 	issue := s.store.GetIssueByNumber(repo.ID, num)
-	pr := (*PullRequest)(nil)
+	pr := (*store.PullRequest)(nil)
 	if issue == nil {
 		if pr = s.store.GetPullRequestByNumber(repo.ID, num); pr == nil {
 			writeGHError(w, http.StatusNotFound, "Not Found")
@@ -1023,7 +1025,7 @@ func (s *Server) handlePinIssueComment(w http.ResponseWriter, r *http.Request) {
 
 	s.store.PinIssueComment(comment.ID)
 	parentNumber := commentParentNumber(s.store, comment)
-	writeJSON(w, http.StatusOK, commentToJSON(s.store.GetIssueComment(comment.ID), s.store, s.baseURL(r), repo.FullName, parentNumber))
+	writeJSON(w, http.StatusOK, store.CommentToJSON(s.store.GetIssueComment(comment.ID), s.store, s.baseURL(r), repo.FullName, parentNumber))
 }
 
 func (s *Server) handleUnpinIssueComment(w http.ResponseWriter, r *http.Request) {
@@ -1034,12 +1036,12 @@ func (s *Server) handleUnpinIssueComment(w http.ResponseWriter, r *http.Request)
 
 	s.store.UnpinIssueComment(comment.ID)
 	parentNumber := commentParentNumber(s.store, comment)
-	writeJSON(w, http.StatusOK, commentToJSON(s.store.GetIssueComment(comment.ID), s.store, s.baseURL(r), repo.FullName, parentNumber))
+	writeJSON(w, http.StatusOK, store.CommentToJSON(s.store.GetIssueComment(comment.ID), s.store, s.baseURL(r), repo.FullName, parentNumber))
 }
 
 // resolveRepoIssue resolves owner/repo/{number} and returns the repo + issue,
 // writing the appropriate error response on failure.
-func (s *Server) resolveRepoIssue(w http.ResponseWriter, r *http.Request) (*Repo, *Issue, bool) {
+func (s *Server) resolveRepoIssue(w http.ResponseWriter, r *http.Request) (*store.Repo, *store.Issue, bool) {
 	owner := r.PathValue("owner")
 	repoName := r.PathValue("repo")
 	numStr := r.PathValue("number")
@@ -1065,7 +1067,7 @@ func (s *Server) resolveRepoIssue(w http.ResponseWriter, r *http.Request) (*Repo
 
 // resolveRepoIssueComment resolves owner/repo/{comment_id} and returns the repo
 // + issue comment, writing the appropriate error response on failure.
-func (s *Server) resolveRepoIssueComment(w http.ResponseWriter, r *http.Request) (*Repo, *Comment, bool) {
+func (s *Server) resolveRepoIssueComment(w http.ResponseWriter, r *http.Request) (*store.Repo, *store.Comment, bool) {
 	owner := r.PathValue("owner")
 	repoName := r.PathValue("repo")
 	idStr := r.PathValue("comment_id")
@@ -1094,7 +1096,7 @@ func (s *Server) resolveRepoIssueComment(w http.ResponseWriter, r *http.Request)
 	return repo, comment, true
 }
 
-func resolveUserIDs(st *Store, logins []string) []int {
+func resolveUserIDs(st *store.Store, logins []string) []int {
 	var ids []int
 	for _, login := range logins {
 		if u := st.LookupUserByLogin(login); u != nil {
@@ -1168,7 +1170,7 @@ func (s *Server) handleListIssueEvents(w http.ResponseWriter, r *http.Request) {
 
 	// Pull requests share the issue number space; their events serve
 	// through this endpoint too, as on real GitHub.
-	var events []*IssueEvent
+	var events []*store.IssueEvent
 	if issue := s.store.GetIssueByNumber(repo.ID, num); issue != nil {
 		events = s.store.ListIssueEvents(repo.ID, issue.ID)
 	} else if pr := s.store.GetPullRequestByNumber(repo.ID, num); pr != nil {
@@ -1239,7 +1241,7 @@ func (s *Server) handleGetIssueEvent(w http.ResponseWriter, r *http.Request) {
 
 // --- JSON converters ---
 
-func issueToJSON(issue *Issue, st *Store, baseURL, repoFullName string) map[string]interface{} {
+func issueToJSON(issue *store.Issue, st *store.Store, baseURL, repoFullName string) map[string]interface{} {
 	// Every mutable field of *issue is read under the store read lock and
 	// captured into locals here: UpdateIssue / SetIssueOrPRLock mutate these
 	// fields under st.mu.Lock, so reading them after RUnlock (title, body,
@@ -1247,7 +1249,7 @@ func issueToJSON(issue *Issue, st *Store, baseURL, repoFullName string) map[stri
 	var authorJSON map[string]interface{}
 	st.Mu.RLock()
 	if u, ok := st.Users[issue.AuthorID]; ok {
-		authorJSON = userToJSON(u)
+		authorJSON = store.UserToJSON(u)
 	}
 
 	// Resolve labels
@@ -1262,18 +1264,18 @@ func issueToJSON(issue *Issue, st *Store, baseURL, repoFullName string) map[stri
 	assignees := make([]map[string]interface{}, 0)
 	for _, aid := range issue.AssigneeIDs {
 		if u, ok := st.Users[aid]; ok {
-			assignees = append(assignees, userToJSON(u))
+			assignees = append(assignees, store.UserToJSON(u))
 		}
 	}
 
 	// Grab the milestone pointer; conversion happens after unlock because
 	// milestoneToJSON derives issue counts under its own lock.
-	var milestone *Milestone
+	var milestone *store.Milestone
 	if issue.MilestoneID > 0 {
 		milestone = st.Milestones[issue.MilestoneID]
 	}
 	repo := st.Repos[issue.RepoID]
-	var issueType *IssueType
+	var issueType *store.IssueType
 	if storedType := st.IssueTypeForIssueLocked(issue); storedType != nil {
 		copied := *storedType
 		issueType = &copied
@@ -1372,7 +1374,7 @@ func issueToJSON(issue *Issue, st *Store, baseURL, repoFullName string) map[stri
 		"updated_at":         updatedAt.Format(time.RFC3339),
 		"closed_at":          closedAt,
 		"closed_by":          issueClosedByJSON(st, repoID, issueID, rawState),
-		"author_association": authorAssociation(st, authorID, repo),
+		"author_association": store.AuthorAssociation(st, authorID, repo),
 		"draft":              false,
 		"sub_issues_summary": map[string]interface{}{
 			"total":             len(subIssueIDs),
@@ -1387,7 +1389,7 @@ func issueToJSON(issue *Issue, st *Store, baseURL, repoFullName string) map[stri
 	return out
 }
 
-func issueClosedByJSON(st *Store, repoID, issueID int, state string) interface{} {
+func issueClosedByJSON(st *store.Store, repoID, issueID int, state string) interface{} {
 	if state != "CLOSED" {
 		return nil
 	}
@@ -1397,10 +1399,10 @@ func issueClosedByJSON(st *Store, repoID, issueID int, state string) interface{}
 			continue
 		}
 		st.Mu.RLock()
-		actor := actorUserLocked(st, events[i].ActorID)
+		actor := store.ActorUserLocked(st, events[i].ActorID)
 		var out interface{}
 		if actor != nil {
-			out = userToJSON(actor)
+			out = store.UserToJSON(actor)
 		}
 		st.Mu.RUnlock()
 		return out
@@ -1410,27 +1412,27 @@ func issueClosedByJSON(st *Store, repoID, issueID int, state string) interface{}
 
 // issueEventToJSON renders an IssueEvent to the repo-level GitHub
 // issue-event shape.
-func issueEventToJSON(e *IssueEvent, st *Store, baseURL, repoFullName string) map[string]interface{} {
+func issueEventToJSON(e *store.IssueEvent, st *store.Store, baseURL, repoFullName string) map[string]interface{} {
 	st.Mu.RLock()
 	var labelJSON interface{}
 	if l, ok := st.Labels[e.LabelID]; ok {
-		labelJSON = issueEventLabelToJSON(l)
+		labelJSON = store.IssueEventLabelToJSON(l)
 	}
 	var assigneeJSON interface{}
 	if u, ok := st.Users[e.AssigneeID]; ok {
-		assigneeJSON = userToJSON(u)
+		assigneeJSON = store.UserToJSON(u)
 	}
 	var assignerJSON interface{}
 	if u, ok := st.Users[e.AssignerID]; ok {
-		assignerJSON = userToJSON(u)
+		assignerJSON = store.UserToJSON(u)
 	}
 	var milestoneJSON interface{}
 	if ms, ok := st.Milestones[e.MilestoneID]; ok {
-		milestoneJSON = issueEventMilestoneToJSON(ms)
+		milestoneJSON = store.IssueEventMilestoneToJSON(ms)
 	}
 	st.Mu.RUnlock()
 
-	out := issueEventBase(e, st, baseURL, repoFullName)
+	out := store.IssueEventBase(e, st, baseURL, repoFullName)
 	out["performed_via_github_app"] = nil
 	// label and milestone are optional, non-nullable on the generic issue-event
 	// schema: present only on the events that carry them, omitted otherwise.
@@ -1448,8 +1450,8 @@ func issueEventToJSON(e *IssueEvent, st *Store, baseURL, repoFullName string) ma
 // issueEventForIssueToJSON renders an IssueEvent to the per-issue
 // issue-event-for-issue shape, which is a discriminated union of specific
 // event schemas rather than a generic object.
-func issueEventForIssueToJSON(e *IssueEvent, st *Store, baseURL, repoFullName string) map[string]interface{} {
-	out := issueEventBase(e, st, baseURL, repoFullName)
+func issueEventForIssueToJSON(e *store.IssueEvent, st *store.Store, baseURL, repoFullName string) map[string]interface{} {
+	out := store.IssueEventBase(e, st, baseURL, repoFullName)
 	out["performed_via_github_app"] = nil
 
 	switch e.Event {
@@ -1457,7 +1459,7 @@ func issueEventForIssueToJSON(e *IssueEvent, st *Store, baseURL, repoFullName st
 		st.Mu.RLock()
 		var labelJSON interface{}
 		if l, ok := st.Labels[e.LabelID]; ok {
-			labelJSON = issueEventLabelToJSON(l)
+			labelJSON = store.IssueEventLabelToJSON(l)
 		}
 		st.Mu.RUnlock()
 		out["label"] = labelJSON
@@ -1465,10 +1467,10 @@ func issueEventForIssueToJSON(e *IssueEvent, st *Store, baseURL, repoFullName st
 		st.Mu.RLock()
 		var assigneeJSON, assignerJSON interface{}
 		if u, ok := st.Users[e.AssigneeID]; ok {
-			assigneeJSON = userToJSON(u)
+			assigneeJSON = store.UserToJSON(u)
 		}
 		if u, ok := st.Users[e.AssignerID]; ok {
-			assignerJSON = userToJSON(u)
+			assignerJSON = store.UserToJSON(u)
 		}
 		st.Mu.RUnlock()
 		out["assignee"] = assigneeJSON
@@ -1477,7 +1479,7 @@ func issueEventForIssueToJSON(e *IssueEvent, st *Store, baseURL, repoFullName st
 		st.Mu.RLock()
 		var milestoneJSON interface{}
 		if ms, ok := st.Milestones[e.MilestoneID]; ok {
-			milestoneJSON = issueEventMilestoneToJSON(ms)
+			milestoneJSON = store.IssueEventMilestoneToJSON(ms)
 		}
 		st.Mu.RUnlock()
 		out["milestone"] = milestoneJSON
@@ -1490,10 +1492,10 @@ func issueEventForIssueToJSON(e *IssueEvent, st *Store, baseURL, repoFullName st
 		st.Mu.RLock()
 		var requesterJSON, reviewerJSON interface{}
 		if u, ok := st.Users[e.ActorID]; ok {
-			requesterJSON = userToJSON(u)
+			requesterJSON = store.UserToJSON(u)
 		}
 		if u, ok := st.Users[e.RequestedReviewerID]; ok {
-			reviewerJSON = userToJSON(u)
+			reviewerJSON = store.UserToJSON(u)
 		}
 		st.Mu.RUnlock()
 		// GitHub's actor on review-request events is the requester.
@@ -1544,7 +1546,7 @@ func (s *Server) handleListOrgIssues(w http.ResponseWriter, r *http.Request) {
 	if v := q.Get("since"); v != "" {
 		t, err := time.Parse(time.RFC3339, v)
 		if err != nil {
-			writeGHValidationError(w, "Issue", "since", "invalid")
+			store.WriteGHValidationError(w, "Issue", "since", "invalid")
 			return
 		}
 		since = t
@@ -1556,15 +1558,15 @@ func (s *Server) handleListOrgIssues(w http.ResponseWriter, r *http.Request) {
 
 	// Gather the org's issues under the read lock, render outside it.
 	s.store.Mu.RLock()
-	orgRepos := map[int]*Repo{}
+	orgRepos := map[int]*store.Repo{}
 	for _, repo := range s.store.Repos {
 		if repo.OwnerType == "Organization" && repo.OwnerID == org.ID {
 			orgRepos[repo.ID] = repo
 		}
 	}
 	type issueRow struct {
-		issue *Issue
-		repo  *Repo
+		issue *store.Issue
+		repo  *store.Repo
 	}
 	commentedIssueIDs := map[int]bool{}
 	for _, c := range s.store.Comments {
@@ -1629,7 +1631,7 @@ func (s *Server) handleListOrgIssues(w http.ResponseWriter, r *http.Request) {
 	if len(labelNames) > 0 {
 		kept := rows[:0]
 		for _, row := range rows {
-			if issueHasAllLabels(s.store, row.issue, labelNames, row.repo.ID) {
+			if store.IssueHasAllLabels(s.store, row.issue, labelNames, row.repo.ID) {
 				kept = append(kept, row)
 			}
 		}
@@ -1666,7 +1668,7 @@ func (s *Server) handleListOrgIssues(w http.ResponseWriter, r *http.Request) {
 	out := make([]map[string]interface{}, 0, len(rows))
 	for _, row := range rows {
 		issueJSON := issueToJSON(row.issue, s.store, base, row.repo.FullName)
-		issueJSON["repository"] = repoToJSON(row.repo, s.store, base)
+		issueJSON["repository"] = store.RepoToJSON(row.repo, s.store, base)
 		out = append(out, issueJSON)
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))

@@ -3,6 +3,8 @@ package bleephub
 import (
 	"fmt"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // TestPersistencePermanentErrorClassification covers the STORE-036 classifier:
@@ -10,16 +12,16 @@ import (
 // an ordinary transient error is not — so MustNewPersistence fails fast on
 // misconfiguration and only retries genuine "waiting for quorum" failures.
 func TestPersistencePermanentErrorClassification(t *testing.T) {
-	if !isPermanentPersistenceError(permanentErrf("bad config")) {
+	if !store.IsPermanentPersistenceError(store.PermanentErrf("bad config")) {
 		t.Fatal("permanentErrf was not classified as permanent")
 	}
-	if !isPermanentPersistenceError(fmt.Errorf("startup: %w", permanentErrf("bad config"))) {
+	if !store.IsPermanentPersistenceError(fmt.Errorf("startup: %w", store.PermanentErrf("bad config"))) {
 		t.Fatal("a wrapped permanent error was not detected through the chain")
 	}
-	if isPermanentPersistenceError(fmt.Errorf("ping dqlite: connection refused")) {
+	if store.IsPermanentPersistenceError(fmt.Errorf("ping dqlite: connection refused")) {
 		t.Fatal("a transient error was misclassified as permanent")
 	}
-	if isPermanentPersistenceError(nil) {
+	if store.IsPermanentPersistenceError(nil) {
 		t.Fatal("nil was classified as permanent")
 	}
 }
@@ -33,11 +35,11 @@ func TestMalformedDqliteConfigIsPermanent(t *testing.T) {
 	t.Setenv("BLEEPHUB_DQLITE_SERVERS", "1.2.3.4:9000")
 	t.Setenv("BLEEPHUB_DQLITE_ADDRESS_MAP", "garbage-with-no-equals-sign")
 
-	_, err := NewPersistence()
+	_, err := store.NewPersistence()
 	if err == nil {
 		t.Fatal("NewPersistence accepted a malformed dqlite address map")
 	}
-	if !isPermanentPersistenceError(err) {
+	if !store.IsPermanentPersistenceError(err) {
 		t.Fatalf("STORE-036: a malformed dqlite address map must be permanent, got: %v", err)
 	}
 }
@@ -52,11 +54,11 @@ func TestDiscussionNumberCounterSurvivesReload(t *testing.T) {
 	t.Setenv("BLEEPHUB_PERSIST", "true")
 	t.Setenv("BLEEPHUB_DATA_DIR", dir)
 
-	p1, err := NewPersistence()
+	p1, err := store.NewPersistence()
 	if err != nil || p1 == nil {
 		t.Fatalf("persistence: %v", err)
 	}
-	st1 := NewStore()
+	st1 := store.NewStore()
 	if err := st1.SetPersistence(p1); err != nil {
 		t.Fatalf("set persistence: %v", err)
 	}
@@ -73,12 +75,12 @@ func TestDiscussionNumberCounterSurvivesReload(t *testing.T) {
 	_ = p1.Close()
 
 	// Reload into a fresh store.
-	p2, err := NewPersistence()
+	p2, err := store.NewPersistence()
 	if err != nil || p2 == nil {
 		t.Fatalf("reopen persistence: %v", err)
 	}
 	defer func() { _ = p2.Close() }()
-	st2 := NewStore()
+	st2 := store.NewStore()
 	if err := st2.SetPersistence(p2); err != nil {
 		t.Fatalf("reload persistence: %v", err)
 	}

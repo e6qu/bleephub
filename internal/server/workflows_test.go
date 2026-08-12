@@ -11,15 +11,16 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/e6qu/bleephub/internal/actions"
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func TestWorkflowSingleJobSubmit(t *testing.T) {
 	s := newTestServer()
-	wf := &WorkflowDef{
+	wf := &store.WorkflowDef{
 		Name: "test",
-		Jobs: map[string]*JobDef{
+		Jobs: map[string]*store.JobDef{
 			"build": {
-				Steps: []StepDef{{Run: "echo hello"}},
+				Steps: []store.StepDef{{Run: "echo hello"}},
 			},
 		},
 	}
@@ -42,11 +43,11 @@ func TestWorkflowSingleJobSubmit(t *testing.T) {
 
 func TestWorkflowRunNameBecomesDisplayTitle(t *testing.T) {
 	s := newTestServer()
-	def := &WorkflowDef{
+	def := &store.WorkflowDef{
 		Name:    "Deploy",
 		RunName: "Deploy ${{ inputs.environment }} from ${{ github.ref_name }}",
-		Jobs: map[string]*JobDef{
-			"deploy": {Steps: []StepDef{{Run: "true"}}},
+		Jobs: map[string]*store.JobDef{
+			"deploy": {Steps: []store.StepDef{{Run: "true"}}},
 		},
 	}
 	run, err := s.actions.SubmitWorkflow(context.Background(), "http://localhost", def, "alpine:latest", &actions.WorkflowEventMeta{
@@ -106,15 +107,15 @@ func TestInternalSubmitWorkflowRequiresExplicitImageOrHostMode(t *testing.T) {
 
 func TestWorkflowTwoJobsWithNeeds(t *testing.T) {
 	s := newTestServer()
-	wf := &WorkflowDef{
+	wf := &store.WorkflowDef{
 		Name: "test",
-		Jobs: map[string]*JobDef{
+		Jobs: map[string]*store.JobDef{
 			"build": {
-				Steps: []StepDef{{Run: "make build"}},
+				Steps: []store.StepDef{{Run: "make build"}},
 			},
 			"test": {
 				Needs: []string{"build"},
-				Steps: []StepDef{{Run: "make test"}},
+				Steps: []store.StepDef{{Run: "make test"}},
 			},
 		},
 	}
@@ -146,13 +147,13 @@ func TestWorkflowTwoJobsWithNeeds(t *testing.T) {
 
 func TestWorkflowDiamondDependency(t *testing.T) {
 	s := newTestServer()
-	wf := &WorkflowDef{
+	wf := &store.WorkflowDef{
 		Name: "diamond",
-		Jobs: map[string]*JobDef{
-			"a": {Steps: []StepDef{{Run: "echo a"}}},
-			"b": {Needs: []string{"a"}, Steps: []StepDef{{Run: "echo b"}}},
-			"c": {Needs: []string{"a"}, Steps: []StepDef{{Run: "echo c"}}},
-			"d": {Needs: []string{"b", "c"}, Steps: []StepDef{{Run: "echo d"}}},
+		Jobs: map[string]*store.JobDef{
+			"a": {Steps: []store.StepDef{{Run: "echo a"}}},
+			"b": {Needs: []string{"a"}, Steps: []store.StepDef{{Run: "echo b"}}},
+			"c": {Needs: []string{"a"}, Steps: []store.StepDef{{Run: "echo c"}}},
+			"d": {Needs: []string{"b", "c"}, Steps: []store.StepDef{{Run: "echo d"}}},
 		},
 	}
 
@@ -201,11 +202,11 @@ func TestWorkflowDiamondDependency(t *testing.T) {
 
 func TestWorkflowFailedJobSkipsDependents(t *testing.T) {
 	s := newTestServer()
-	wf := &WorkflowDef{
+	wf := &store.WorkflowDef{
 		Name: "fail-test",
-		Jobs: map[string]*JobDef{
-			"build": {Steps: []StepDef{{Run: "exit 1"}}},
-			"test":  {Needs: []string{"build"}, Steps: []StepDef{{Run: "echo test"}}},
+		Jobs: map[string]*store.JobDef{
+			"build": {Steps: []store.StepDef{{Run: "exit 1"}}},
+			"test":  {Needs: []string{"build"}, Steps: []store.StepDef{{Run: "echo test"}}},
 		},
 	}
 
@@ -231,10 +232,10 @@ func TestWorkflowFailedJobSkipsDependents(t *testing.T) {
 }
 
 func TestWorkflowNeedsContextPropagation(t *testing.T) {
-	wf := &Workflow{
+	wf := &store.Workflow{
 		ID:   "test-wf",
 		Name: "test",
-		Jobs: map[string]*WorkflowJob{
+		Jobs: map[string]*store.WorkflowJob{
 			"build": {
 				Key:    "build",
 				JobID:  "j1",
@@ -271,11 +272,11 @@ func TestWorkflowNeedsContextPropagation(t *testing.T) {
 
 func TestWorkflowUsesStepReference(t *testing.T) {
 	s := newTestServer()
-	wf := &WorkflowDef{
+	wf := &store.WorkflowDef{
 		Name: "uses-test",
-		Jobs: map[string]*JobDef{
+		Jobs: map[string]*store.JobDef{
 			"build": {
-				Steps: []StepDef{
+				Steps: []store.StepDef{
 					{Uses: "actions/checkout@v4"},
 					{Run: "echo done"},
 				},
@@ -325,8 +326,8 @@ func TestWorkflowUsesStepReference(t *testing.T) {
 }
 
 func TestValidateJobGraphCycle(t *testing.T) {
-	wf := &WorkflowDef{
-		Jobs: map[string]*JobDef{
+	wf := &store.WorkflowDef{
+		Jobs: map[string]*store.JobDef{
 			"a": {Needs: []string{"b"}},
 			"b": {Needs: []string{"a"}},
 		},
@@ -338,8 +339,8 @@ func TestValidateJobGraphCycle(t *testing.T) {
 }
 
 func TestValidateJobGraphUnknownDep(t *testing.T) {
-	wf := &WorkflowDef{
-		Jobs: map[string]*JobDef{
+	wf := &store.WorkflowDef{
+		Jobs: map[string]*store.JobDef{
 			"a": {Needs: []string{"nonexistent"}},
 		},
 	}
@@ -368,11 +369,11 @@ func TestNormalizeResult(t *testing.T) {
 
 func TestBuildJobMessageWithServices(t *testing.T) {
 	s := newTestServer()
-	wf := &WorkflowDef{
+	wf := &store.WorkflowDef{
 		Name: "svc-test",
-		Jobs: map[string]*JobDef{
+		Jobs: map[string]*store.JobDef{
 			"test": {
-				Services: map[string]*ServiceDef{
+				Services: map[string]*store.ServiceDef{
 					"redis": {
 						Image: "redis:7",
 						Ports: []interface{}{"6379:6379"},
@@ -382,7 +383,7 @@ func TestBuildJobMessageWithServices(t *testing.T) {
 						Env:   map[string]string{"POSTGRES_PASSWORD": "test"},
 					},
 				},
-				Steps: []StepDef{{Run: "echo hello"}},
+				Steps: []store.StepDef{{Run: "echo hello"}},
 			},
 		},
 	}
@@ -485,11 +486,11 @@ func tokenLit(tok interface{}) interface{} {
 
 func TestBuildJobMessageNoServices(t *testing.T) {
 	s := newTestServer()
-	wf := &WorkflowDef{
+	wf := &store.WorkflowDef{
 		Name: "no-svc",
-		Jobs: map[string]*JobDef{
+		Jobs: map[string]*store.JobDef{
 			"test": {
-				Steps: []StepDef{{Run: "echo hello"}},
+				Steps: []store.StepDef{{Run: "echo hello"}},
 			},
 		},
 	}
@@ -529,7 +530,7 @@ func TestBuildJobMessageRepoLessGithubContextHasNoFakeRefSha(t *testing.T) {
 
 func TestGithubContextMapRepoLessHasNoFakeRefSha(t *testing.T) {
 	s := newTestServer()
-	wf := &Workflow{Name: "operator", RunID: 7, RunNumber: 7}
+	wf := &store.Workflow{Name: "operator", RunID: 7, RunNumber: 7}
 	ctx := s.actions.GithubContextMap(wf)
 	if ctx["repository"] != "" || ctx["repository_owner"] != "" {
 		t.Fatalf("repo-less context repository = %q owner = %q", ctx["repository"], ctx["repository_owner"])
@@ -642,7 +643,7 @@ func jsonUnmarshal(data []byte, v interface{}) error {
 // A job targeting a reviewer-protected environment must wait for a
 // deployment review; approval releases it, rejection fails the run.
 func TestWorkflowEnvironmentApprovalGate(t *testing.T) {
-	mkServer := func(t *testing.T) (*Server, *Repo, *Workflow, *Environment) {
+	mkServer := func(t *testing.T) (*Server, *store.Repo, *store.Workflow, *store.Environment) {
 		t.Helper()
 		s := newTestServer()
 		admin := s.store.Users[1]
@@ -654,15 +655,15 @@ func TestWorkflowEnvironmentApprovalGate(t *testing.T) {
 		s.store.Deployments.SetEnvironmentProtection(repo.ID, "production", nil,
 			[]map[string]interface{}{{"type": "User", "id": admin.ID}})
 
-		wf := &WorkflowDef{
+		wf := &store.WorkflowDef{
 			Name: "deploy",
 			// The HTTP submit path stashes the dispatch wiring in Env;
 			// direct submitWorkflow callers carry the same contract.
 			Env: map[string]string{"__serverURL": "http://localhost", "__defaultImage": "alpine:latest"},
-			Jobs: map[string]*JobDef{
+			Jobs: map[string]*store.JobDef{
 				"release": {
 					Environment: "production",
-					Steps:       []StepDef{{Run: "echo deploy"}},
+					Steps:       []store.StepDef{{Run: "echo deploy"}},
 				},
 			},
 		}
@@ -671,10 +672,10 @@ func TestWorkflowEnvironmentApprovalGate(t *testing.T) {
 		if err != nil {
 			t.Fatalf("submit: %v", err)
 		}
-		if workflow.Status != WorkflowStatusWaiting {
+		if workflow.Status != store.WorkflowStatusWaiting {
 			t.Fatalf("workflow status = %q, want waiting", workflow.Status)
 		}
-		if got := workflow.Jobs["release"].Status; got != JobStatusWaiting {
+		if got := workflow.Jobs["release"].Status; got != store.JobStatusWaiting {
 			t.Fatalf("job status = %q, want waiting", got)
 		}
 		if len(workflow.PendingDeployments) != 1 || workflow.PendingDeployments[0].EnvName != "production" {
@@ -688,10 +689,10 @@ func TestWorkflowEnvironmentApprovalGate(t *testing.T) {
 		admin := s.store.Users[1]
 		s.actions.ApplyDeploymentReview(context.Background(), workflow, []int{env.ID}, "approved", "ship it", admin)
 
-		if workflow.Status != WorkflowStatusRunning && workflow.Status != WorkflowStatusCompleted {
+		if workflow.Status != store.WorkflowStatusRunning && workflow.Status != store.WorkflowStatusCompleted {
 			t.Errorf("workflow status = %q, want running", workflow.Status)
 		}
-		if got := workflow.Jobs["release"].Status; got != JobStatusQueued {
+		if got := workflow.Jobs["release"].Status; got != store.JobStatusQueued {
 			t.Errorf("job status = %q, want queued after approval", got)
 		}
 		if len(workflow.PendingDeployments) != 0 {
@@ -707,13 +708,13 @@ func TestWorkflowEnvironmentApprovalGate(t *testing.T) {
 		admin := s.store.Users[1]
 		s.actions.ApplyDeploymentReview(context.Background(), workflow, []int{env.ID}, "rejected", "not today", admin)
 
-		if workflow.Status != WorkflowStatusCompleted {
+		if workflow.Status != store.WorkflowStatusCompleted {
 			t.Errorf("workflow status = %q, want completed", workflow.Status)
 		}
-		if workflow.Result != ResultFailure {
+		if workflow.Result != store.ResultFailure {
 			t.Errorf("workflow result = %q, want failure", workflow.Result)
 		}
-		if got := workflow.Jobs["release"].Result; got != ResultFailure {
+		if got := workflow.Jobs["release"].Result; got != store.ResultFailure {
 			t.Errorf("job result = %q, want failure", got)
 		}
 	})
@@ -725,10 +726,10 @@ func TestWorkflowEnvironmentApprovalGate(t *testing.T) {
 		if repo == nil {
 			t.Fatal("create repo failed")
 		}
-		wf := &WorkflowDef{
+		wf := &store.WorkflowDef{
 			Name: "deploy",
-			Jobs: map[string]*JobDef{
-				"release": {Environment: "staging", Steps: []StepDef{{Run: "echo x"}}},
+			Jobs: map[string]*store.JobDef{
+				"release": {Environment: "staging", Steps: []store.StepDef{{Run: "echo x"}}},
 			},
 		}
 		workflow, err := s.actions.SubmitWorkflow(context.Background(), "http://localhost", wf, "alpine:latest",
@@ -736,7 +737,7 @@ func TestWorkflowEnvironmentApprovalGate(t *testing.T) {
 		if err != nil {
 			t.Fatalf("submit: %v", err)
 		}
-		if got := workflow.Jobs["release"].Status; got != JobStatusQueued {
+		if got := workflow.Jobs["release"].Status; got != store.JobStatusQueued {
 			t.Errorf("job status = %q, want queued (no reviewers)", got)
 		}
 		// Referencing the environment auto-created it, like real GitHub.

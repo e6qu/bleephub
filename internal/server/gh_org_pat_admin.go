@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // Fine-grained personal access token administration for organizations
@@ -20,14 +22,14 @@ import (
 // public organization REST surface remains GitHub App-only.
 
 func (s *Server) registerGHOrgPATAdminRoutes() {
-	s.route("GET /api/v3/orgs/{org}/personal-access-token-requests", s.requireOrgPATApp(scopePATRequests, permRead, s.handleListOrgPATGrantRequests))
-	s.route("POST /api/v3/orgs/{org}/personal-access-token-requests", s.requireOrgPATApp(scopePATRequests, permWrite, s.handleReviewOrgPATGrantRequestsInBulk))
-	s.route("POST /api/v3/orgs/{org}/personal-access-token-requests/{pat_request_id}", s.requireOrgPATApp(scopePATRequests, permWrite, s.handleReviewOrgPATGrantRequest))
-	s.route("GET /api/v3/orgs/{org}/personal-access-token-requests/{pat_request_id}/repositories", s.requireOrgPATApp(scopePATRequests, permRead, s.handleListOrgPATGrantRequestRepositories))
-	s.route("GET /api/v3/orgs/{org}/personal-access-tokens", s.requireOrgPATApp(scopePATs, permRead, s.handleListOrgPATGrants))
-	s.route("POST /api/v3/orgs/{org}/personal-access-tokens", s.requireOrgPATApp(scopePATs, permWrite, s.handleUpdateOrgPATAccesses))
-	s.route("POST /api/v3/orgs/{org}/personal-access-tokens/{pat_id}", s.requireOrgPATApp(scopePATs, permWrite, s.handleUpdateOrgPATAccess))
-	s.route("GET /api/v3/orgs/{org}/personal-access-tokens/{pat_id}/repositories", s.requireOrgPATApp(scopePATs, permRead, s.handleListOrgPATGrantRepositories))
+	s.route("GET /api/v3/orgs/{org}/personal-access-token-requests", s.requireOrgPATApp(store.ScopePATRequests, store.PermRead, s.handleListOrgPATGrantRequests))
+	s.route("POST /api/v3/orgs/{org}/personal-access-token-requests", s.requireOrgPATApp(store.ScopePATRequests, store.PermWrite, s.handleReviewOrgPATGrantRequestsInBulk))
+	s.route("POST /api/v3/orgs/{org}/personal-access-token-requests/{pat_request_id}", s.requireOrgPATApp(store.ScopePATRequests, store.PermWrite, s.handleReviewOrgPATGrantRequest))
+	s.route("GET /api/v3/orgs/{org}/personal-access-token-requests/{pat_request_id}/repositories", s.requireOrgPATApp(store.ScopePATRequests, store.PermRead, s.handleListOrgPATGrantRequestRepositories))
+	s.route("GET /api/v3/orgs/{org}/personal-access-tokens", s.requireOrgPATApp(store.ScopePATs, store.PermRead, s.handleListOrgPATGrants))
+	s.route("POST /api/v3/orgs/{org}/personal-access-tokens", s.requireOrgPATApp(store.ScopePATs, store.PermWrite, s.handleUpdateOrgPATAccesses))
+	s.route("POST /api/v3/orgs/{org}/personal-access-tokens/{pat_id}", s.requireOrgPATApp(store.ScopePATs, store.PermWrite, s.handleUpdateOrgPATAccess))
+	s.route("GET /api/v3/orgs/{org}/personal-access-tokens/{pat_id}/repositories", s.requireOrgPATApp(store.ScopePATs, store.PermRead, s.handleListOrgPATGrantRepositories))
 
 	s.route("GET /settings/personal-access-tokens", s.handleListPersonalAccessTokensWeb)
 	s.route("POST /settings/personal-access-tokens", s.handleCreatePersonalAccessTokenWeb)
@@ -39,7 +41,7 @@ func (s *Server) registerGHOrgPATAdminRoutes() {
 // contract: only GitHub App installation and user access tokens may call the
 // REST endpoints. An organization owner's personal access token is not an
 // alternate authentication shape for this API.
-func (s *Server) requireOrgPATApp(scope permScope, level permLevel, next http.HandlerFunc) http.HandlerFunc {
+func (s *Server) requireOrgPATApp(scope store.PermScope, level store.PermLevel, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		org := s.store.GetOrg(r.PathValue("org"))
 		if org == nil {
@@ -71,7 +73,7 @@ func (s *Server) requireOrgPATApp(scope permScope, level permLevel, next http.Ha
 	}
 }
 
-func (s *Server) userAccessTokenCanAdminPATs(token *UserToServerToken, orgLogin string, scope permScope, level permLevel) bool {
+func (s *Server) userAccessTokenCanAdminPATs(token *store.UserToServerToken, orgLogin string, scope store.PermScope, level store.PermLevel) bool {
 	allowed := map[int]bool{}
 	for _, id := range token.InstallationIDs {
 		allowed[id] = true
@@ -96,7 +98,7 @@ func (s *Server) userAccessTokenCanAdminPATs(token *UserToServerToken, orgLogin 
 
 // ─── rendering ───────────────────────────────────────────────────────────
 
-func patPermissionsJSON(p OrgPATPermissions) map[string]interface{} {
+func patPermissionsJSON(p store.OrgPATPermissions) map[string]interface{} {
 	out := map[string]interface{}{}
 	if len(p.Organization) > 0 {
 		out["organization"] = p.Organization
@@ -117,10 +119,10 @@ func patTokenExpiryJSON(expiresAt *time.Time) (expired bool, expiresJSON interfa
 	return expiresAt.Before(time.Now()), expiresAt.UTC().Format(time.RFC3339)
 }
 
-func (s *Server) patGrantRequestJSON(req *OrgPATGrantRequest, baseURL string) map[string]interface{} {
+func (s *Server) patGrantRequestJSON(req *store.OrgPATGrantRequest, baseURL string) map[string]interface{} {
 	owner := map[string]interface{}(nil)
 	if u := s.store.GetUserByID(req.OwnerUserID); u != nil {
-		owner = userToJSON(u)
+		owner = store.UserToJSON(u)
 	}
 	expired, expiresJSON := patTokenExpiryJSON(req.TokenExpiresAt)
 	var reason interface{}
@@ -143,10 +145,10 @@ func (s *Server) patGrantRequestJSON(req *OrgPATGrantRequest, baseURL string) ma
 	}
 }
 
-func (s *Server) patGrantJSON(g *OrgPATGrant, baseURL string) map[string]interface{} {
+func (s *Server) patGrantJSON(g *store.OrgPATGrant, baseURL string) map[string]interface{} {
 	owner := map[string]interface{}(nil)
 	if u := s.store.GetUserByID(g.OwnerUserID); u != nil {
-		owner = userToJSON(u)
+		owner = store.UserToJSON(u)
 	}
 	expired, expiresJSON := patTokenExpiryJSON(g.TokenExpiresAt)
 	return map[string]interface{}{
@@ -227,7 +229,7 @@ func (s *Server) handleListOrgPATGrantRequests(w http.ResponseWriter, r *http.Re
 	base := s.baseURL(r)
 
 	s.store.Mu.RLock()
-	requests := make([]*OrgPATGrantRequest, 0, len(s.store.OrgPATGrantRequests[orgLogin]))
+	requests := make([]*store.OrgPATGrantRequest, 0, len(s.store.OrgPATGrantRequests[orgLogin]))
 	for _, req := range s.store.OrgPATGrantRequests[orgLogin] {
 		requests = append(requests, req)
 	}
@@ -254,7 +256,7 @@ func (s *Server) handleListOrgPATGrants(w http.ResponseWriter, r *http.Request) 
 	base := s.baseURL(r)
 
 	s.store.Mu.RLock()
-	grants := make([]*OrgPATGrant, 0, len(s.store.OrgPATGrants[orgLogin]))
+	grants := make([]*store.OrgPATGrant, 0, len(s.store.OrgPATGrants[orgLogin]))
 	for _, g := range s.store.OrgPATGrants[orgLogin] {
 		grants = append(grants, g)
 	}
@@ -289,11 +291,11 @@ func (s *Server) handleReviewOrgPATGrantRequestsInBulk(w http.ResponseWriter, r 
 		return
 	}
 	if !validPATReviewAction(req.Action) {
-		writeGHValidationError(w, "OrganizationProgrammaticAccessGrantRequest", "action", "invalid")
+		store.WriteGHValidationError(w, "OrganizationProgrammaticAccessGrantRequest", "action", "invalid")
 		return
 	}
 	if len(req.PATRequestIDs) < 1 || len(req.PATRequestIDs) > 100 {
-		writeGHValidationError(w, "OrganizationProgrammaticAccessGrantRequest", "pat_request_ids", "invalid")
+		store.WriteGHValidationError(w, "OrganizationProgrammaticAccessGrantRequest", "pat_request_ids", "invalid")
 		return
 	}
 	for _, id := range req.PATRequestIDs {
@@ -323,7 +325,7 @@ func (s *Server) handleReviewOrgPATGrantRequest(w http.ResponseWriter, r *http.R
 		return
 	}
 	if !validPATReviewAction(req.Action) {
-		writeGHValidationError(w, "OrganizationProgrammaticAccessGrantRequest", "action", "invalid")
+		store.WriteGHValidationError(w, "OrganizationProgrammaticAccessGrantRequest", "action", "invalid")
 		return
 	}
 	if !s.store.ReviewOrgPATGrantRequest(orgLogin, requestID, req.Action == "approve") {
@@ -343,11 +345,11 @@ func (s *Server) handleUpdateOrgPATAccesses(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if req.Action != "revoke" {
-		writeGHValidationError(w, "OrganizationProgrammaticAccessGrant", "action", "invalid")
+		store.WriteGHValidationError(w, "OrganizationProgrammaticAccessGrant", "action", "invalid")
 		return
 	}
 	if len(req.PATIDs) < 1 || len(req.PATIDs) > 100 {
-		writeGHValidationError(w, "OrganizationProgrammaticAccessGrant", "pat_ids", "invalid")
+		store.WriteGHValidationError(w, "OrganizationProgrammaticAccessGrant", "pat_ids", "invalid")
 		return
 	}
 	for _, id := range req.PATIDs {
@@ -376,7 +378,7 @@ func (s *Server) handleUpdateOrgPATAccess(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if req.Action != "revoke" {
-		writeGHValidationError(w, "OrganizationProgrammaticAccessGrant", "action", "invalid")
+		store.WriteGHValidationError(w, "OrganizationProgrammaticAccessGrant", "action", "invalid")
 		return
 	}
 	if !s.store.RevokeOrgPATGrant(orgLogin, grantID) {
@@ -389,8 +391,8 @@ func (s *Server) handleUpdateOrgPATAccess(w http.ResponseWriter, r *http.Request
 // writePATRepositoriesResponse renders the repositories a grant/request can
 // access: every org repository for "all", the selected subset for "subset",
 // none otherwise.
-func (s *Server) writePATRepositoriesResponse(w http.ResponseWriter, r *http.Request, org *Org, selection string, repositoryIDs []int) {
-	var repos []*Repo
+func (s *Server) writePATRepositoriesResponse(w http.ResponseWriter, r *http.Request, org *store.Org, selection string, repositoryIDs []int) {
+	var repos []*store.Repo
 	switch selection {
 	case "all":
 		s.store.Mu.RLock()

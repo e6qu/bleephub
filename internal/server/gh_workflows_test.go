@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/e6qu/bleephub/internal/store"
 	memfs "github.com/go-git/go-billy/v5/memfs"
 	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -39,7 +40,7 @@ func commitWorkflowYAMLToStorage(t *testing.T, s *Server, repoFullName, path, bo
 	// Login matches the test-fixture owner instead of using the default
 	// admin user.
 	s.store.Mu.Lock()
-	user := &User{ID: s.store.NextUser, Login: parts[0], Type: "User", CreatedAt: fixedTestTime, UpdatedAt: fixedTestTime}
+	user := &store.User{ID: s.store.NextUser, Login: parts[0], Type: "User", CreatedAt: fixedTestTime, UpdatedAt: fixedTestTime}
 	s.store.NextUser++
 	s.store.Users[user.ID] = user
 	s.store.UsersByLogin[user.Login] = user
@@ -290,7 +291,7 @@ jobs:
 		t.Errorf("after dispatch: %d ci runs, want 1", count)
 	}
 
-	var run *Workflow
+	var run *store.Workflow
 	s.store.Mu.RLock()
 	for _, candidate := range s.store.Workflows {
 		if candidate.Name == "ci" {
@@ -306,7 +307,7 @@ jobs:
 		s.store.Mu.RUnlock()
 		t.Fatalf("dispatch run sha = %q, want committed workflow sha %q", run.Sha, wantSHA)
 	}
-	var job *WorkflowJob
+	var job *store.WorkflowJob
 	for _, candidate := range run.Jobs {
 		job = candidate
 		break
@@ -457,8 +458,8 @@ func TestWorkflows_Rerun_ViaCachedYAML(t *testing.T) {
 }
 
 func TestRepositoryDispatchPayload_IncludesBranch(t *testing.T) {
-	repo := &Repo{FullName: "octo/repo", DefaultBranch: "trunk"}
-	user := &User{Login: "octocat"}
+	repo := &store.Repo{FullName: "octo/repo", DefaultBranch: "trunk"}
+	user := &store.User{Login: "octocat"}
 	payload := repositoryDispatchPayload(repo, user, "deploy", map[string]interface{}{"v": "1"})
 	if payload["branch"] != "trunk" {
 		t.Errorf("branch = %v, want trunk (repo default branch)", payload["branch"])
@@ -472,9 +473,9 @@ func TestRepositoryDispatchPayload_IncludesBranch(t *testing.T) {
 }
 
 func TestStableWorkflowFileID_DeterministicPositiveAndJSONSafe(t *testing.T) {
-	a := stableWorkflowFileID("octo/repo", ".github/workflows/ci.yml")
-	b := stableWorkflowFileID("octo/repo", ".github/workflows/ci.yml")
-	c := stableWorkflowFileID("octo/repo", ".github/workflows/release.yml")
+	a := store.StableWorkflowFileID("octo/repo", ".github/workflows/ci.yml")
+	b := store.StableWorkflowFileID("octo/repo", ".github/workflows/ci.yml")
+	c := store.StableWorkflowFileID("octo/repo", ".github/workflows/release.yml")
 	if a != b {
 		t.Errorf("not deterministic")
 	}
@@ -484,7 +485,7 @@ func TestStableWorkflowFileID_DeterministicPositiveAndJSONSafe(t *testing.T) {
 	if a <= 0 || c <= 0 {
 		t.Errorf("non-positive IDs returned")
 	}
-	if uint64(a) > maxJSONSafeInteger || uint64(c) > maxJSONSafeInteger {
+	if uint64(a) > store.MaxJSONSafeInteger || uint64(c) > store.MaxJSONSafeInteger {
 		t.Fatalf("IDs exceed exact JSON integer range: a=%d c=%d", a, c)
 	}
 }
@@ -502,7 +503,7 @@ func TestIsWorkflowYAMLPath(t *testing.T) {
 		{"README.md", false},
 	}
 	for _, c := range cases {
-		if got := isWorkflowYAMLPath(c.in); got != c.want {
+		if got := store.IsWorkflowYAMLPath(c.in); got != c.want {
 			t.Errorf("isWorkflowYAMLPath(%q) = %v, want %v", c.in, got, c.want)
 		}
 	}

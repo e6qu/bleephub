@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/e6qu/bleephub/internal/server/testutil"
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // App-level webhook config + deliveries — GET/PATCH /app/hook/config + the
@@ -90,13 +91,13 @@ func TestAppHookDeliveries_ListGetRedeliver(t *testing.T) {
 	s.registerGHAppsRoutes()
 	s.registerGHAppHookRoutes()
 	app := s.store.CreateApp(1, "Deliveries App", "", nil, nil)
-	s.store.UpdateAppHookConfig(app.ID, func(a *App) {
+	s.store.UpdateAppHookConfig(app.ID, func(a *store.App) {
 		a.WebhookURL = sink.URL
 		a.WebhookActive = true
 	})
 
 	// Record an original delivery as if it had fired earlier.
-	original := &WebhookDelivery{
+	original := &store.WebhookDelivery{
 		HookID:      -app.ID,
 		AppID:       app.ID,
 		Event:       "installation",
@@ -104,8 +105,8 @@ func TestAppHookDeliveries_ListGetRedeliver(t *testing.T) {
 		GUID:        "test-guid",
 		StatusCode:  200,
 		Duration:    0.01,
-		Request:     &DeliveryRequest{Headers: map[string]string{"X-GitHub-Event": "installation"}, Payload: json.RawMessage(`{"action":"created"}`)},
-		Response:    &DeliveryResponse{StatusCode: 200, Body: "ok"},
+		Request:     &store.DeliveryRequest{Headers: map[string]string{"X-GitHub-Event": "installation"}, Payload: json.RawMessage(`{"action":"created"}`)},
+		Response:    &store.DeliveryResponse{StatusCode: 200, Body: "ok"},
 		DeliveredAt: fixedTestTime,
 	}
 	s.store.AddAppDelivery(app.ID, original)

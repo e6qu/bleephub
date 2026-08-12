@@ -7,6 +7,8 @@ import (
 	"net/url"
 	"sort"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 type installationSearchEnvelope struct {
@@ -139,12 +141,12 @@ func TestInstallationTokenWorksAcrossRepositoryBackedSearch(t *testing.T) {
 	if repo == nil || outside == nil {
 		t.Fatal("create private search repositories")
 	}
-	for _, candidate := range []*Repo{repo, outside} {
+	for _, candidate := range []*store.Repo{repo, outside} {
 		if err := s.initRepoFiles(context.Background(), candidate, "main", candidate.Description, "", "", true); err != nil {
 			t.Fatalf("initialize %s: %v", candidate.FullName, err)
 		}
 	}
-	s.store.UpdateRepo(installedOrg.Login, repo.Name, func(current *Repo) {
+	s.store.UpdateRepo(installedOrg.Login, repo.Name, func(current *store.Repo) {
 		current.Topics = []string{"octokit-installation-topic"}
 	})
 	label := s.store.CreateLabel(repo.ID, "octokit-installation-label", "searchable label", "123456")

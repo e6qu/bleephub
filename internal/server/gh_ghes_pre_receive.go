@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func (s *Server) registerGHESPreReceiveRoutes(admin func(http.HandlerFunc) http.HandlerFunc) {
@@ -42,7 +44,7 @@ func validPreReceiveEnforcement(value string) bool {
 	return value == "enabled" || value == "disabled" || value == "testing"
 }
 
-func (s *Server) preReceiveEnvironmentJSON(env *GHESPreReceiveEnvironment, r *http.Request, hooksCount int) map[string]interface{} {
+func (s *Server) preReceiveEnvironmentJSON(env *store.GHESPreReceiveEnvironment, r *http.Request, hooksCount int) map[string]interface{} {
 	base := s.baseURL(r) + "/api/v3/admin/pre-receive-environments/" + strconv.Itoa(env.ID)
 	return map[string]interface{}{
 		"id": env.ID, "name": env.Name, "image_url": env.ImageURL,
@@ -54,7 +56,7 @@ func (s *Server) preReceiveEnvironmentJSON(env *GHESPreReceiveEnvironment, r *ht
 	}
 }
 
-func (s *Server) preReceiveDownloadJSON(env *GHESPreReceiveEnvironment, r *http.Request) map[string]interface{} {
+func (s *Server) preReceiveDownloadJSON(env *store.GHESPreReceiveEnvironment, r *http.Request) map[string]interface{} {
 	state := "not_started"
 	var downloadedAt interface{}
 	var message interface{}
@@ -74,7 +76,7 @@ func (s *Server) preReceiveDownloadJSON(env *GHESPreReceiveEnvironment, r *http.
 	}
 }
 
-func (s *Server) snapshotPreReceiveEnvironment(id int) (*GHESPreReceiveEnvironment, int) {
+func (s *Server) snapshotPreReceiveEnvironment(id int) (*store.GHESPreReceiveEnvironment, int) {
 	s.store.Mu.RLock()
 	defer s.store.Mu.RUnlock()
 	env := s.store.EnterpriseSettings.GHESPreReceiveEnvironments[id]
@@ -95,7 +97,7 @@ func (s *Server) snapshotPreReceiveEnvironment(id int) (*GHESPreReceiveEnvironme
 	return &copy, count
 }
 
-func (s *Server) requirePreReceiveEnvironment(w http.ResponseWriter, r *http.Request) (*GHESPreReceiveEnvironment, int) {
+func (s *Server) requirePreReceiveEnvironment(w http.ResponseWriter, r *http.Request) (*store.GHESPreReceiveEnvironment, int) {
 	id, ok := preReceiveID(r, "pre_receive_environment_id")
 	if !ok {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -133,21 +135,21 @@ func (s *Server) handleCreateGHESPreReceiveEnvironment(w http.ResponseWriter, r 
 		return
 	}
 	if strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.ImageURL) == "" {
-		writeGHValidationError(w, "PreReceiveEnvironment", "name", "missing_field")
+		store.WriteGHValidationError(w, "PreReceiveEnvironment", "name", "missing_field")
 		return
 	}
 	s.store.Mu.Lock()
 	for _, env := range s.store.EnterpriseSettings.GHESPreReceiveEnvironments {
 		if strings.EqualFold(env.Name, req.Name) {
 			s.store.Mu.Unlock()
-			writeGHValidationError(w, "PreReceiveEnvironment", "name", "already_exists")
+			store.WriteGHValidationError(w, "PreReceiveEnvironment", "name", "already_exists")
 			return
 		}
 	}
-	env := &GHESPreReceiveEnvironment{
+	env := &store.GHESPreReceiveEnvironment{
 		ID:   s.store.EnterpriseSettings.NextGHESPreReceiveEnvironmentID,
 		Name: req.Name, ImageURL: req.ImageURL, CreatedAt: s.currentTime(),
-		Download: &GHESPreReceiveDownload{State: "not_started"},
+		Download: &store.GHESPreReceiveDownload{State: "not_started"},
 	}
 	s.store.EnterpriseSettings.NextGHESPreReceiveEnvironmentID++
 	s.store.EnterpriseSettings.GHESPreReceiveEnvironments[env.ID] = env
@@ -177,7 +179,7 @@ func (s *Server) handleUpdateGHESPreReceiveEnvironment(w http.ResponseWriter, r 
 		return
 	}
 	if req.Name != nil && strings.TrimSpace(*req.Name) == "" {
-		writeGHValidationError(w, "PreReceiveEnvironment", "name", "invalid")
+		store.WriteGHValidationError(w, "PreReceiveEnvironment", "name", "invalid")
 		return
 	}
 	s.store.Mu.Lock()
@@ -186,7 +188,7 @@ func (s *Server) handleUpdateGHESPreReceiveEnvironment(w http.ResponseWriter, r 
 		for id, candidate := range s.store.EnterpriseSettings.GHESPreReceiveEnvironments {
 			if id != env.ID && strings.EqualFold(candidate.Name, *req.Name) {
 				s.store.Mu.Unlock()
-				writeGHValidationError(w, "PreReceiveEnvironment", "name", "already_exists")
+				store.WriteGHValidationError(w, "PreReceiveEnvironment", "name", "already_exists")
 				return
 			}
 		}
@@ -194,7 +196,7 @@ func (s *Server) handleUpdateGHESPreReceiveEnvironment(w http.ResponseWriter, r 
 	}
 	if req.ImageURL != nil {
 		stored.ImageURL = *req.ImageURL
-		stored.Download = &GHESPreReceiveDownload{State: "not_started"}
+		stored.Download = &store.GHESPreReceiveDownload{State: "not_started"}
 	}
 	s.store.PersistEnterpriseSettings()
 	s.store.Mu.Unlock()
@@ -208,7 +210,7 @@ func (s *Server) handleDeleteGHESPreReceiveEnvironment(w http.ResponseWriter, r 
 		return
 	}
 	if count > 0 || env.DefaultEnvironment {
-		writeGHValidationError(w, "PreReceiveEnvironment", "id", "unprocessable")
+		store.WriteGHValidationError(w, "PreReceiveEnvironment", "id", "unprocessable")
 		return
 	}
 	s.store.Mu.Lock()
@@ -226,7 +228,7 @@ func (s *Server) handleStartGHESPreReceiveEnvironmentDownload(w http.ResponseWri
 	now := s.currentTime()
 	s.store.Mu.Lock()
 	stored := s.store.EnterpriseSettings.GHESPreReceiveEnvironments[env.ID]
-	stored.Download = &GHESPreReceiveDownload{State: "success", DownloadedAt: &now}
+	stored.Download = &store.GHESPreReceiveDownload{State: "success", DownloadedAt: &now}
 	s.store.PersistEnterpriseSettings()
 	s.store.Mu.Unlock()
 	updated, _ := s.snapshotPreReceiveEnvironment(env.ID)
@@ -262,7 +264,7 @@ func numberMember(values map[string]interface{}, name string) int {
 	return 0
 }
 
-func (s *Server) resolvePreReceiveScriptRepo(values map[string]interface{}) *Repo {
+func (s *Server) resolvePreReceiveScriptRepo(values map[string]interface{}) *store.Repo {
 	if id := numberMember(values, "id"); id > 0 {
 		return s.store.GetRepoByID(id)
 	}
@@ -274,7 +276,7 @@ func (s *Server) resolvePreReceiveScriptRepo(values map[string]interface{}) *Rep
 	return s.store.GetRepo(owner, name)
 }
 
-func (s *Server) preReceiveHookJSON(hook *GHESPreReceiveHook, r *http.Request) map[string]interface{} {
+func (s *Server) preReceiveHookJSON(hook *store.GHESPreReceiveHook, r *http.Request) map[string]interface{} {
 	repo := s.store.GetRepoByID(hook.ScriptRepositoryID)
 	env, count := s.snapshotPreReceiveEnvironment(hook.EnvironmentID)
 	var repoJSON interface{}
@@ -296,7 +298,7 @@ func (s *Server) preReceiveHookJSON(hook *GHESPreReceiveHook, r *http.Request) m
 	}
 }
 
-func (s *Server) snapshotPreReceiveHook(id int) *GHESPreReceiveHook {
+func (s *Server) snapshotPreReceiveHook(id int) *store.GHESPreReceiveHook {
 	s.store.Mu.RLock()
 	defer s.store.Mu.RUnlock()
 	hook := s.store.EnterpriseSettings.GHESPreReceiveHooks[id]
@@ -307,7 +309,7 @@ func (s *Server) snapshotPreReceiveHook(id int) *GHESPreReceiveHook {
 	return &copy
 }
 
-func (s *Server) requirePreReceiveHook(w http.ResponseWriter, r *http.Request) *GHESPreReceiveHook {
+func (s *Server) requirePreReceiveHook(w http.ResponseWriter, r *http.Request) *store.GHESPreReceiveHook {
 	id, ok := preReceiveID(r, "pre_receive_hook_id")
 	if !ok {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -341,14 +343,14 @@ func (s *Server) handleCreateGHESPreReceiveHook(w http.ResponseWriter, r *http.R
 		return
 	}
 	if req.Name == nil || strings.TrimSpace(*req.Name) == "" || req.Script == nil || *req.Script == "" {
-		writeGHValidationError(w, "PreReceiveHook", "name", "missing_field")
+		store.WriteGHValidationError(w, "PreReceiveHook", "name", "missing_field")
 		return
 	}
 	repo := s.resolvePreReceiveScriptRepo(req.ScriptRepository)
 	envID := numberMember(req.Environment, "id")
 	env, _ := s.snapshotPreReceiveEnvironment(envID)
 	if repo == nil || env == nil {
-		writeGHValidationError(w, "PreReceiveHook", "script_repository", "invalid")
+		store.WriteGHValidationError(w, "PreReceiveHook", "script_repository", "invalid")
 		return
 	}
 	enforcement := "disabled"
@@ -356,7 +358,7 @@ func (s *Server) handleCreateGHESPreReceiveHook(w http.ResponseWriter, r *http.R
 		enforcement = *req.Enforcement
 	}
 	if !validPreReceiveEnforcement(enforcement) {
-		writeGHValidationError(w, "PreReceiveHook", "enforcement", "invalid")
+		store.WriteGHValidationError(w, "PreReceiveHook", "enforcement", "invalid")
 		return
 	}
 	allow := false
@@ -364,7 +366,7 @@ func (s *Server) handleCreateGHESPreReceiveHook(w http.ResponseWriter, r *http.R
 		allow = *req.AllowDownstreamConfiguration
 	}
 	s.store.Mu.Lock()
-	hook := &GHESPreReceiveHook{
+	hook := &store.GHESPreReceiveHook{
 		ID: s.store.EnterpriseSettings.NextGHESPreReceiveHookID, Name: *req.Name,
 		Script: *req.Script, ScriptRepositoryID: repo.ID, EnvironmentID: env.ID,
 		Enforcement: enforcement, AllowDownstreamConfiguration: allow,
@@ -394,14 +396,14 @@ func (s *Server) handleUpdateGHESPreReceiveHook(w http.ResponseWriter, r *http.R
 		return
 	}
 	if req.Enforcement != nil && !validPreReceiveEnforcement(*req.Enforcement) {
-		writeGHValidationError(w, "PreReceiveHook", "enforcement", "invalid")
+		store.WriteGHValidationError(w, "PreReceiveHook", "enforcement", "invalid")
 		return
 	}
-	var repo *Repo
+	var repo *store.Repo
 	if req.ScriptRepository != nil {
 		repo = s.resolvePreReceiveScriptRepo(req.ScriptRepository)
 		if repo == nil {
-			writeGHValidationError(w, "PreReceiveHook", "script_repository", "invalid")
+			store.WriteGHValidationError(w, "PreReceiveHook", "script_repository", "invalid")
 			return
 		}
 	}
@@ -409,7 +411,7 @@ func (s *Server) handleUpdateGHESPreReceiveHook(w http.ResponseWriter, r *http.R
 	if req.Environment != nil {
 		envID = numberMember(req.Environment, "id")
 		if env, _ := s.snapshotPreReceiveEnvironment(envID); env == nil {
-			writeGHValidationError(w, "PreReceiveHook", "environment", "invalid")
+			store.WriteGHValidationError(w, "PreReceiveHook", "environment", "invalid")
 			return
 		}
 	}
@@ -457,7 +459,7 @@ func (s *Server) handleDeleteGHESPreReceiveHook(w http.ResponseWriter, r *http.R
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) requirePreReceiveOrgAdmin(w http.ResponseWriter, r *http.Request) *Org {
+func (s *Server) requirePreReceiveOrgAdmin(w http.ResponseWriter, r *http.Request) *store.Org {
 	org := s.store.GetOrg(r.PathValue("org"))
 	if org == nil || !s.viewerCanAdminOrg(r.Context(), r.PathValue("org")) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -466,7 +468,7 @@ func (s *Server) requirePreReceiveOrgAdmin(w http.ResponseWriter, r *http.Reques
 	return org
 }
 
-func (s *Server) requirePreReceiveRepoAdmin(w http.ResponseWriter, r *http.Request) *Repo {
+func (s *Server) requirePreReceiveRepoAdmin(w http.ResponseWriter, r *http.Request) *store.Repo {
 	repo := s.store.GetRepo(r.PathValue("owner"), r.PathValue("repo"))
 	if repo == nil || !s.viewerCanAdminRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -475,8 +477,8 @@ func (s *Server) requirePreReceiveRepoAdmin(w http.ResponseWriter, r *http.Reque
 	return repo
 }
 
-func (s *Server) effectiveOrgPreReceive(hook *GHESPreReceiveHook, org string) GHESPreReceiveOverride {
-	result := GHESPreReceiveOverride{
+func (s *Server) effectiveOrgPreReceive(hook *store.GHESPreReceiveHook, org string) store.GHESPreReceiveOverride {
+	result := store.GHESPreReceiveOverride{
 		Enforcement: hook.Enforcement, AllowDownstreamConfiguration: hook.AllowDownstreamConfiguration,
 	}
 	s.store.Mu.RLock()
@@ -487,7 +489,7 @@ func (s *Server) effectiveOrgPreReceive(hook *GHESPreReceiveHook, org string) GH
 	return result
 }
 
-func (s *Server) orgPreReceiveJSON(hook *GHESPreReceiveHook, org string, r *http.Request) map[string]interface{} {
+func (s *Server) orgPreReceiveJSON(hook *store.GHESPreReceiveHook, org string, r *http.Request) map[string]interface{} {
 	effective := s.effectiveOrgPreReceive(hook, org)
 	return map[string]interface{}{
 		"id": hook.ID, "name": hook.Name, "enforcement": effective.Enforcement,
@@ -547,7 +549,7 @@ func (s *Server) handleUpdateGHESOrgPreReceiveHook(w http.ResponseWriter, r *htt
 		return
 	}
 	if !validPreReceiveEnforcement(req.Enforcement) {
-		writeGHValidationError(w, "PreReceiveHook", "enforcement", "invalid")
+		store.WriteGHValidationError(w, "PreReceiveHook", "enforcement", "invalid")
 		return
 	}
 	allow := hook.AllowDownstreamConfiguration
@@ -556,9 +558,9 @@ func (s *Server) handleUpdateGHESOrgPreReceiveHook(w http.ResponseWriter, r *htt
 	}
 	s.store.Mu.Lock()
 	if s.store.EnterpriseSettings.GHESOrgPreReceiveOverrides[org.Login] == nil {
-		s.store.EnterpriseSettings.GHESOrgPreReceiveOverrides[org.Login] = map[int]*GHESPreReceiveOverride{}
+		s.store.EnterpriseSettings.GHESOrgPreReceiveOverrides[org.Login] = map[int]*store.GHESPreReceiveOverride{}
 	}
-	s.store.EnterpriseSettings.GHESOrgPreReceiveOverrides[org.Login][hook.ID] = &GHESPreReceiveOverride{
+	s.store.EnterpriseSettings.GHESOrgPreReceiveOverrides[org.Login][hook.ID] = &store.GHESPreReceiveOverride{
 		Enforcement: req.Enforcement, AllowDownstreamConfiguration: allow,
 	}
 	s.store.PersistEnterpriseSettings()
@@ -582,8 +584,8 @@ func (s *Server) handleDeleteGHESOrgPreReceiveHook(w http.ResponseWriter, r *htt
 	writeJSON(w, http.StatusOK, s.orgPreReceiveJSON(hook, org.Login, r))
 }
 
-func (s *Server) effectiveRepoPreReceive(hook *GHESPreReceiveHook, repo *Repo) GHESPreReceiveOverride {
-	parent := GHESPreReceiveOverride{
+func (s *Server) effectiveRepoPreReceive(hook *store.GHESPreReceiveHook, repo *store.Repo) store.GHESPreReceiveOverride {
+	parent := store.GHESPreReceiveOverride{
 		Enforcement: hook.Enforcement, AllowDownstreamConfiguration: hook.AllowDownstreamConfiguration,
 	}
 	if repo.OwnerType == "Organization" {
@@ -598,7 +600,7 @@ func (s *Server) effectiveRepoPreReceive(hook *GHESPreReceiveHook, repo *Repo) G
 	return parent
 }
 
-func (s *Server) repoPreReceiveJSON(hook *GHESPreReceiveHook, repo *Repo, r *http.Request) map[string]interface{} {
+func (s *Server) repoPreReceiveJSON(hook *store.GHESPreReceiveHook, repo *store.Repo, r *http.Request) map[string]interface{} {
 	effective := s.effectiveRepoPreReceive(hook, repo)
 	return map[string]interface{}{
 		"id": hook.ID, "name": hook.Name, "enforcement": effective.Enforcement,
@@ -646,7 +648,7 @@ func (s *Server) handleUpdateGHESRepoPreReceiveHook(w http.ResponseWriter, r *ht
 	if hook == nil {
 		return
 	}
-	parent := GHESPreReceiveOverride{
+	parent := store.GHESPreReceiveOverride{
 		Enforcement: hook.Enforcement, AllowDownstreamConfiguration: hook.AllowDownstreamConfiguration,
 	}
 	if repo.OwnerType == "Organization" {
@@ -664,15 +666,15 @@ func (s *Server) handleUpdateGHESRepoPreReceiveHook(w http.ResponseWriter, r *ht
 		return
 	}
 	if !validPreReceiveEnforcement(req.Enforcement) {
-		writeGHValidationError(w, "PreReceiveHook", "enforcement", "invalid")
+		store.WriteGHValidationError(w, "PreReceiveHook", "enforcement", "invalid")
 		return
 	}
 	s.store.Mu.Lock()
 	if s.store.EnterpriseSettings.GHESRepoPreReceiveOverrides[repo.FullName] == nil {
-		s.store.EnterpriseSettings.GHESRepoPreReceiveOverrides[repo.FullName] = map[int]*GHESPreReceiveOverride{}
+		s.store.EnterpriseSettings.GHESRepoPreReceiveOverrides[repo.FullName] = map[int]*store.GHESPreReceiveOverride{}
 	}
 	s.store.EnterpriseSettings.GHESRepoPreReceiveOverrides[repo.FullName][hook.ID] =
-		&GHESPreReceiveOverride{Enforcement: req.Enforcement}
+		&store.GHESPreReceiveOverride{Enforcement: req.Enforcement}
 	s.store.PersistEnterpriseSettings()
 	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusOK, s.repoPreReceiveJSON(hook, repo, r))

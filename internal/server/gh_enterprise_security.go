@@ -3,6 +3,8 @@ package bleephub
 import (
 	"net/http"
 	"sort"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func (s *Server) registerGHEnterpriseSecurityRoutes() {
@@ -48,7 +50,7 @@ func (s *Server) handleUpdateEnterpriseSecretScanningPatternConfigurations(w htt
 }
 
 func (s *Server) handleListEnterpriseSecretScanningAlerts(w http.ResponseWriter, r *http.Request) {
-	var alerts []*SecretScanningAlert
+	var alerts []*store.SecretScanningAlert
 	for _, org := range s.store.ListOrgsAll(0) {
 		alerts = append(alerts, s.store.ListSecretScanningAlertsByOrg(org.ID, "", "", "", "", "")...)
 	}
@@ -78,7 +80,7 @@ func (s *Server) handleListEnterpriseSecretScanningAlerts(w http.ResponseWriter,
 
 func (s *Server) handleListEnterpriseCodeScanningAlerts(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	var alerts []*CodeScanningAlert
+	var alerts []*store.CodeScanningAlert
 	for _, org := range s.store.ListOrgsAll(0) {
 		alerts = append(alerts, s.store.ListCodeScanningAlertsByOrg(
 			org.ID, q.Get("state"), q.Get("severity"), q.Get("tool_name"), q.Get("sort"), q.Get("direction"))...)

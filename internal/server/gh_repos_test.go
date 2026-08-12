@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/e6qu/bleephub/internal/store"
 	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -569,7 +570,7 @@ func TestGitStorageInitFailure(t *testing.T) {
 	}
 	t.Setenv("BLEEPHUB_GIT_DIR", readOnlyDir)
 
-	repo := s.store.CreateRepo(&User{Login: "admin", ID: 1}, "git-init-fail", "", false)
+	repo := s.store.CreateRepo(&store.User{Login: "admin", ID: 1}, "git-init-fail", "", false)
 	if repo != nil {
 		t.Fatal("expected nil repo when git storage init fails")
 	}
@@ -580,7 +581,7 @@ func TestGitDeleteCleanup(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("BLEEPHUB_GIT_DIR", tmpDir)
 
-	repo := s.store.CreateRepo(&User{Login: "admin", ID: 1}, "git-cleanup", "", false)
+	repo := s.store.CreateRepo(&store.User{Login: "admin", ID: 1}, "git-cleanup", "", false)
 	if repo == nil {
 		t.Fatal("expected repo to be created")
 	}
@@ -608,7 +609,7 @@ func TestDeleteRepoReportsS3GitCleanupFailure(t *testing.T) {
 	t.Setenv("BLEEPHUB_GIT_DIR", "")
 	t.Setenv("BLEEPHUB_S3_BUCKET", "")
 
-	st := NewStore()
+	st := store.NewStore()
 	st.SeedDefaultUser()
 	admin := st.UsersByLogin["admin"]
 	repo := st.CreateRepo(admin, "s3-cleanup-fail", "", false)
@@ -698,7 +699,7 @@ func TestGitPushNoAuth(t *testing.T) {
 func TestGitPushWithAuth(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
-	repo := s.store.CreateRepo(&User{Login: "admin", ID: 1}, "auth-push", "", false)
+	repo := s.store.CreateRepo(&store.User{Login: "admin", ID: 1}, "auth-push", "", false)
 	if repo == nil {
 		t.Fatal("expected repo to be created")
 	}
@@ -737,7 +738,7 @@ func TestGitPushWithAuth(t *testing.T) {
 func TestGitFetchPrivateRepoWithAuth(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
-	repo := s.store.CreateRepo(&User{Login: "admin", ID: 1}, "private-auth-fetch", "", true)
+	repo := s.store.CreateRepo(&store.User{Login: "admin", ID: 1}, "private-auth-fetch", "", true)
 	if repo == nil {
 		t.Fatal("expected repo to be created")
 	}

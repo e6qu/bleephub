@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
 	"github.com/rs/zerolog"
@@ -190,7 +191,7 @@ func TestIdentitySessionReportsAuthenticationWithoutExpectedNetworkErrors(t *tes
 		t.Fatal("anonymous session reported authenticated")
 	}
 
-	s.store.LoginSessions["browser-session"] = &LoginSession{UserID: 1, ExpiresAt: fixedShauthTestTime.Add(time.Hour)}
+	s.store.LoginSessions["browser-session"] = &store.LoginSession{UserID: 1, ExpiresAt: fixedShauthTestTime.Add(time.Hour)}
 	request = httptest.NewRequest(http.MethodGet, "/auth/session", nil)
 	request.AddCookie(&http.Cookie{Name: "_gh_sess", Value: "browser-session"})
 	response = httptest.NewRecorder()
@@ -224,7 +225,7 @@ func TestIdentityValidationRequiresAuthenticationAndExposesSignOut(t *testing.T)
 		t.Fatalf("anonymous validation = %d location %q", response.Code, response.Header().Get("Location"))
 	}
 
-	if err := s.store.PutLoginSession("browser-session", &LoginSession{UserID: 1, ExpiresAt: fixedShauthTestTime.Add(time.Hour)}); err != nil {
+	if err := s.store.PutLoginSession("browser-session", &store.LoginSession{UserID: 1, ExpiresAt: fixedShauthTestTime.Add(time.Hour)}); err != nil {
 		t.Fatal(err)
 	}
 	request = httptest.NewRequest(http.MethodGet, "/auth/validation", nil)
@@ -260,7 +261,7 @@ func TestShauthLogoutClearsLocalSessionAndStartsIssuerLogout(t *testing.T) {
 	s := NewServer("127.0.0.1:0", zerolog.Nop())
 	s.externalURL = "https://bleephub.example.test"
 	s.identity = completeShauthIdentityConfig(provider.server.URL)
-	s.store.LoginSessions["browser-session"] = &LoginSession{UserID: 1, ExpiresAt: fixedShauthTestTime.Add(time.Hour), OIDCProvider: "shauth", OIDCIssuer: provider.server.URL, OIDCSubject: "subject-1", OIDCSID: "sid-1", OIDCIDToken: "signed.id.token"}
+	s.store.LoginSessions["browser-session"] = &store.LoginSession{UserID: 1, ExpiresAt: fixedShauthTestTime.Add(time.Hour), OIDCProvider: "shauth", OIDCIssuer: provider.server.URL, OIDCSubject: "subject-1", OIDCSID: "sid-1", OIDCIDToken: "signed.id.token"}
 	request := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
 	request.Header.Set("Origin", s.externalURL)
 	// A secure (HTTPS) deployment carries the session in the __Host- cookie.
@@ -330,7 +331,7 @@ func TestLogoutOfNonShauthSessionDoesNotStartGlobalLogout(t *testing.T) {
 	s.externalURL = "https://bleephub.example.test"
 	s.identity = completeShauthIdentityConfig(provider.server.URL)
 	// A local (non-OIDC) browser session.
-	if err := s.store.PutLoginSession("local-session", &LoginSession{UserID: 1, ExpiresAt: fixedShauthTestTime.Add(time.Hour)}); err != nil {
+	if err := s.store.PutLoginSession("local-session", &store.LoginSession{UserID: 1, ExpiresAt: fixedShauthTestTime.Add(time.Hour)}); err != nil {
 		t.Fatal(err)
 	}
 	request := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
@@ -352,7 +353,7 @@ func TestShauthLogoutRevokesLocalSessionBeforeDiscoveryFailure(t *testing.T) {
 	s := NewServer("127.0.0.1:0", zerolog.Nop())
 	s.externalURL = "https://bleephub.example.test"
 	s.identity = completeShauthIdentityConfig(provider.server.URL)
-	if err := s.store.PutLoginSession("browser-session", &LoginSession{UserID: 1, ExpiresAt: fixedShauthTestTime.Add(time.Hour), OIDCProvider: "shauth", OIDCIDToken: "signed.id.token"}); err != nil {
+	if err := s.store.PutLoginSession("browser-session", &store.LoginSession{UserID: 1, ExpiresAt: fixedShauthTestTime.Add(time.Hour), OIDCProvider: "shauth", OIDCIDToken: "signed.id.token"}); err != nil {
 		t.Fatal(err)
 	}
 	request := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
@@ -556,7 +557,7 @@ func TestShauthBackChannelLogoutVerifiesAndRevokesSessions(t *testing.T) {
 	s := NewServer("127.0.0.1:0", zerolog.Nop())
 	useFixedShauthServerClock(s)
 	s.identity = completeShauthIdentityConfig(provider.server.URL)
-	base := LoginSession{UserID: 1, ExpiresAt: fixedShauthTestTime.Add(time.Hour), OIDCProvider: "shauth", OIDCIssuer: provider.server.URL, OIDCSubject: "subject-1"}
+	base := store.LoginSession{UserID: 1, ExpiresAt: fixedShauthTestTime.Add(time.Hour), OIDCProvider: "shauth", OIDCIssuer: provider.server.URL, OIDCSubject: "subject-1"}
 	revoked := base
 	revoked.OIDCSID = "sid-1"
 	kept := base
@@ -582,7 +583,7 @@ func TestShauthBackChannelLogoutVerifiesAndRevokesSessions(t *testing.T) {
 	if response.Code != http.StatusNoContent {
 		t.Fatalf("back-channel logout = %d: %s", response.Code, response.Body.String())
 	}
-	replayKey := oidcLogoutReplayKey("shauth", provider.server.URL, "bleephub", "logout-sid")
+	replayKey := store.OidcLogoutReplayKey("shauth", provider.server.URL, "bleephub", "logout-sid")
 	if replayExpiry := s.store.OIDCLogoutClaims[replayKey]; !replayExpiry.Equal(logoutExpiry) {
 		t.Fatalf("replay expiry = %s, want logout-token expiry %s", replayExpiry, logoutExpiry)
 	}
@@ -716,7 +717,7 @@ func TestShauthFrontChannelLogoutRevokesOnlyTrustedSession(t *testing.T) {
 	s := NewServer("127.0.0.1:0", zerolog.Nop())
 	s.identity = completeShauthIdentityConfig("https://auth.example.test")
 	for id, sid := range map[string]string{"revoked": "sid-1", "kept": "sid-2"} {
-		if err := s.store.PutLoginSession(id, &LoginSession{UserID: 1, ExpiresAt: fixedShauthTestTime.Add(time.Hour), OIDCProvider: "shauth", OIDCIssuer: s.identity.shauthIssuer, OIDCSID: sid}); err != nil {
+		if err := s.store.PutLoginSession(id, &store.LoginSession{UserID: 1, ExpiresAt: fixedShauthTestTime.Add(time.Hour), OIDCProvider: "shauth", OIDCIssuer: s.identity.shauthIssuer, OIDCSID: sid}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -775,7 +776,7 @@ func TestShauthFrontChannelLogoutRevokesOnlyTrustedSession(t *testing.T) {
 
 func TestShauthFrontChannelLogoutDoesNothingWhenShauthIsDisabled(t *testing.T) {
 	s := NewServer("127.0.0.1:0", zerolog.Nop())
-	if err := s.store.PutLoginSession("kept", &LoginSession{UserID: 1, ExpiresAt: fixedShauthTestTime.Add(time.Hour), OIDCProvider: "shauth", OIDCSID: "sid-1"}); err != nil {
+	if err := s.store.PutLoginSession("kept", &store.LoginSession{UserID: 1, ExpiresAt: fixedShauthTestTime.Add(time.Hour), OIDCProvider: "shauth", OIDCSID: "sid-1"}); err != nil {
 		t.Fatal(err)
 	}
 	request := httptest.NewRequest(http.MethodGet, "/auth/shauth/frontchannel-logout?iss=&sid=sid-1", nil)
@@ -821,7 +822,7 @@ func TestShauthBackChannelLogoutPreservesTrailingSlashIssuer(t *testing.T) {
 	s := NewServer("127.0.0.1:0", zerolog.Nop())
 	useFixedShauthServerClock(s)
 	s.identity = completeShauthIdentityConfig(provider.issuer)
-	session := &LoginSession{
+	session := &store.LoginSession{
 		UserID: 1, ExpiresAt: fixedShauthTestTime.Add(time.Hour), OIDCProvider: "shauth",
 		OIDCIssuer: provider.issuer, OIDCSubject: "subject-1", OIDCSID: "sid-1",
 	}
@@ -880,7 +881,7 @@ func TestSignedOutLandingRevokesLocalSessionWithoutStartingLogin(t *testing.T) {
 	s := NewServer("127.0.0.1:0", zerolog.Nop())
 	s.externalURL = "https://bleephub.example.test"
 	s.identity = completeShauthIdentityConfig("https://auth.example.test")
-	if err := s.store.PutLoginSession("browser-session", &LoginSession{UserID: 1, ExpiresAt: fixedShauthTestTime.Add(time.Hour)}); err != nil {
+	if err := s.store.PutLoginSession("browser-session", &store.LoginSession{UserID: 1, ExpiresAt: fixedShauthTestTime.Add(time.Hour)}); err != nil {
 		t.Fatal(err)
 	}
 	request := httptest.NewRequest(http.MethodPost, "/ui/signed-out", nil)

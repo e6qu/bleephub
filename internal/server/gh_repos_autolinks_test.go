@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func autolinksTestServer(t *testing.T) *Server {
@@ -105,7 +107,7 @@ func TestAutolinks_NonAdminCannotCreate(t *testing.T) {
 	admin := s.store.UsersByLogin["admin"]
 	repo := s.store.CreateRepo(admin, "autolink-priv", "", true)
 	s.store.Mu.Lock()
-	other := &User{ID: s.store.NextUser, Login: "other", Type: "User", Email: "other@bleephub.local"}
+	other := &store.User{ID: s.store.NextUser, Login: "other", Type: "User", Email: "other@bleephub.local"}
 	s.store.NextUser++
 	s.store.Users[other.ID] = other
 	s.store.UsersByLogin[other.Login] = other

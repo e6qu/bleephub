@@ -6,11 +6,13 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // seedProjectV2Org creates an org (admin as owner) and an org-owned
 // Projects v2 project through the shared store.
-func (s *isolatedServer) seedProjectV2Org(t *testing.T, orgLogin, title string) (*Org, *ProjectV2) {
+func (s *isolatedServer) seedProjectV2Org(t *testing.T, orgLogin, title string) (*store.Org, *store.ProjectV2) {
 	t.Helper()
 	admin := s.store.UsersByLogin["admin"]
 	org := s.store.GetOrg(orgLogin)
@@ -347,10 +349,10 @@ func TestOrgProjectV2Items_AddGetPatchDelete(t *testing.T) {
 	}
 
 	// Field values: text + single select set via PATCH, read back.
-	textField := s.store.ProjectsV2.CreateField(p.ID, "Notes", ProjectV2FieldText, nil, nil)
-	ssField := s.store.ProjectsV2.CreateField(p.ID, "Status", ProjectV2FieldSingleSelect,
-		[]*ProjectV2SingleSelectOption{{Name: "Todo"}, {Name: "Done"}}, nil)
-	numField := s.store.ProjectsV2.CreateField(p.ID, "Points", ProjectV2FieldNumber, nil, nil)
+	textField := s.store.ProjectsV2.CreateField(p.ID, "Notes", store.ProjectV2FieldText, nil, nil)
+	ssField := s.store.ProjectsV2.CreateField(p.ID, "Status", store.ProjectV2FieldSingleSelect,
+		[]*store.ProjectV2SingleSelectOption{{Name: "Todo"}, {Name: "Done"}}, nil)
+	numField := s.store.ProjectsV2.CreateField(p.ID, "Points", store.ProjectV2FieldNumber, nil, nil)
 	resp = s.patch(t, base+"/items/"+strconv.Itoa(itemID), defaultToken, map[string]interface{}{
 		"fields": []map[string]interface{}{
 			{"id": textField.ID, "value": "needs review"},
@@ -473,7 +475,7 @@ func TestOrgProjectV2Views_CreateAndListItems(t *testing.T) {
 	issue := s.store.CreateIssue(repo.ID, admin.ID, "An issue", "", nil, nil, 0)
 	s.store.ProjectsV2.AddItem(p.ID, "Issue", issue.ID, admin.ID)
 	s.store.ProjectsV2.AddDraftItem(p.ID, "A draft", "", admin.ID)
-	field := s.store.ProjectsV2.CreateField(p.ID, "Stage", ProjectV2FieldText, nil, nil)
+	field := s.store.ProjectsV2.CreateField(p.ID, "Stage", store.ProjectV2FieldText, nil, nil)
 	base := "/api/v3/orgs/" + org.Login + "/projectsV2/" + strconv.Itoa(p.Number)
 
 	resp := s.post(t, base+"/views", defaultToken, map[string]interface{}{

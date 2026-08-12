@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 type fineGrainedPermission struct {
@@ -73,31 +75,31 @@ var organizationFineGrainedPermissions = []fineGrainedPermission{
 }
 
 func (s *Server) registerGHOrgGovernanceRoutes() {
-	s.route("GET /api/v3/orgs/{org}/announcement", s.requirePerm(scopeOrgAdministration, permRead, s.handleGetOrgAnnouncement))
-	s.route("PATCH /api/v3/orgs/{org}/announcement", s.requirePerm(scopeOrgAdministration, permWrite, s.handleSetOrgAnnouncement))
-	s.route("DELETE /api/v3/orgs/{org}/announcement", s.requirePerm(scopeOrgAdministration, permWrite, s.handleDeleteOrgAnnouncement))
+	s.route("GET /api/v3/orgs/{org}/announcement", s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.handleGetOrgAnnouncement))
+	s.route("PATCH /api/v3/orgs/{org}/announcement", s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.handleSetOrgAnnouncement))
+	s.route("DELETE /api/v3/orgs/{org}/announcement", s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.handleDeleteOrgAnnouncement))
 
-	s.route("GET /api/v3/orgs/{org}/custom-repository-roles", s.requirePerm(scopeOrgAdministration, permRead, s.handleListCustomRepositoryRoles))
-	s.route("POST /api/v3/orgs/{org}/custom-repository-roles", s.requirePerm(scopeOrgAdministration, permWrite, s.handleCreateCustomRepositoryRole))
-	s.route("GET /api/v3/orgs/{org}/custom-repository-roles/{role_id}", s.requirePerm(scopeOrgAdministration, permRead, s.handleGetCustomRepositoryRole))
-	s.route("PATCH /api/v3/orgs/{org}/custom-repository-roles/{role_id}", s.requirePerm(scopeOrgAdministration, permWrite, s.handleUpdateCustomRepositoryRole))
-	s.route("DELETE /api/v3/orgs/{org}/custom-repository-roles/{role_id}", s.requirePerm(scopeOrgAdministration, permWrite, s.handleDeleteCustomRepositoryRole))
+	s.route("GET /api/v3/orgs/{org}/custom-repository-roles", s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.handleListCustomRepositoryRoles))
+	s.route("POST /api/v3/orgs/{org}/custom-repository-roles", s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.handleCreateCustomRepositoryRole))
+	s.route("GET /api/v3/orgs/{org}/custom-repository-roles/{role_id}", s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.handleGetCustomRepositoryRole))
+	s.route("PATCH /api/v3/orgs/{org}/custom-repository-roles/{role_id}", s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.handleUpdateCustomRepositoryRole))
+	s.route("DELETE /api/v3/orgs/{org}/custom-repository-roles/{role_id}", s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.handleDeleteCustomRepositoryRole))
 
 	// Deprecated aliases remain part of GitHub's Enterprise Cloud contract.
-	s.route("GET /api/v3/organizations/{organization_id}/custom_roles", s.requirePerm(scopeOrgAdministration, permRead, s.handleListCustomRepositoryRolesByOrgID))
-	s.route("POST /api/v3/orgs/{org}/custom_roles", s.requirePerm(scopeOrgAdministration, permWrite, s.handleCreateCustomRepositoryRole))
-	s.route("GET /api/v3/orgs/{org}/custom_roles/{role_id}", s.requirePerm(scopeOrgAdministration, permRead, s.handleGetCustomRepositoryRole))
-	s.route("PATCH /api/v3/orgs/{org}/custom_roles/{role_id}", s.requirePerm(scopeOrgAdministration, permWrite, s.handleUpdateCustomRepositoryRole))
-	s.route("DELETE /api/v3/orgs/{org}/custom_roles/{role_id}", s.requirePerm(scopeOrgAdministration, permWrite, s.handleDeleteCustomRepositoryRole))
+	s.route("GET /api/v3/organizations/{organization_id}/custom_roles", s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.handleListCustomRepositoryRolesByOrgID))
+	s.route("POST /api/v3/orgs/{org}/custom_roles", s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.handleCreateCustomRepositoryRole))
+	s.route("GET /api/v3/orgs/{org}/custom_roles/{role_id}", s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.handleGetCustomRepositoryRole))
+	s.route("PATCH /api/v3/orgs/{org}/custom_roles/{role_id}", s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.handleUpdateCustomRepositoryRole))
+	s.route("DELETE /api/v3/orgs/{org}/custom_roles/{role_id}", s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.handleDeleteCustomRepositoryRole))
 
-	s.route("GET /api/v3/orgs/{org}/fine_grained_permissions", s.requirePerm(scopeOrgAdministration, permRead, s.handleListRepositoryFineGrainedPermissions))
-	s.route("GET /api/v3/orgs/{org}/repository-fine-grained-permissions", s.requirePerm(scopeOrgAdministration, permRead, s.handleListRepositoryFineGrainedPermissions))
-	s.route("GET /api/v3/orgs/{org}/organization-fine-grained-permissions", s.requirePerm(scopeOrgAdministration, permRead, s.handleListOrganizationFineGrainedPermissions))
+	s.route("GET /api/v3/orgs/{org}/fine_grained_permissions", s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.handleListRepositoryFineGrainedPermissions))
+	s.route("GET /api/v3/orgs/{org}/repository-fine-grained-permissions", s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.handleListRepositoryFineGrainedPermissions))
+	s.route("GET /api/v3/orgs/{org}/organization-fine-grained-permissions", s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.handleListOrganizationFineGrainedPermissions))
 }
 
-func copyAnnouncement(value *EnterpriseAnnouncement) EnterpriseAnnouncement {
+func copyAnnouncement(value *store.EnterpriseAnnouncement) store.EnterpriseAnnouncement {
 	if value == nil {
-		return EnterpriseAnnouncement{}
+		return store.EnterpriseAnnouncement{}
 	}
 	return *value
 }
@@ -123,16 +125,16 @@ func (s *Server) handleSetOrgAnnouncement(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if req.Announcement == nil {
-		writeGHValidationError(w, "Announcement", "announcement", "missing_field")
+		store.WriteGHValidationError(w, "Announcement", "announcement", "missing_field")
 		return
 	}
 	if req.ExpiresAt != nil && *req.ExpiresAt != "" {
 		if _, err := time.Parse(time.RFC3339, *req.ExpiresAt); err != nil {
-			writeGHValidationError(w, "Announcement", "expires_at", "invalid")
+			store.WriteGHValidationError(w, "Announcement", "expires_at", "invalid")
 			return
 		}
 	}
-	announcement := &EnterpriseAnnouncement{Announcement: *req.Announcement}
+	announcement := &store.EnterpriseAnnouncement{Announcement: *req.Announcement}
 	if req.ExpiresAt != nil && *req.ExpiresAt != "" {
 		expiry := *req.ExpiresAt
 		announcement.ExpiresAt = &expiry
@@ -163,7 +165,7 @@ func (s *Server) handleDeleteOrgAnnouncement(w http.ResponseWriter, r *http.Requ
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func orgRoleOrganizationJSON(org *Org, baseURL string) map[string]interface{} {
+func orgRoleOrganizationJSON(org *store.Org, baseURL string) map[string]interface{} {
 	apiURL := baseURL + "/api/v3"
 	return map[string]interface{}{
 		"login":               org.Login,
@@ -188,7 +190,7 @@ func orgRoleOrganizationJSON(org *Org, baseURL string) map[string]interface{} {
 	}
 }
 
-func customRepositoryRoleJSON(role *OrgCustomRepositoryRole, org *Org, baseURL string) map[string]interface{} {
+func customRepositoryRoleJSON(role *store.OrgCustomRepositoryRole, org *store.Org, baseURL string) map[string]interface{} {
 	permissions := append([]string(nil), role.Permissions...)
 	return map[string]interface{}{
 		"id":           role.ID,
@@ -238,35 +240,35 @@ type customRepositoryRoleRequest struct {
 
 func validateCustomRepositoryRoleRequest(w http.ResponseWriter, req customRepositoryRoleRequest, create bool) bool {
 	if create && req.Name == nil {
-		writeGHValidationError(w, "CustomRepositoryRole", "name", "missing_field")
+		store.WriteGHValidationError(w, "CustomRepositoryRole", "name", "missing_field")
 		return false
 	}
 	if req.Name != nil && strings.TrimSpace(*req.Name) == "" {
-		writeGHValidationError(w, "CustomRepositoryRole", "name", "invalid")
+		store.WriteGHValidationError(w, "CustomRepositoryRole", "name", "invalid")
 		return false
 	}
 	if create && req.BaseRole == nil {
-		writeGHValidationError(w, "CustomRepositoryRole", "base_role", "missing_field")
+		store.WriteGHValidationError(w, "CustomRepositoryRole", "base_role", "missing_field")
 		return false
 	}
 	if req.BaseRole != nil && !validBaseRepositoryRole(*req.BaseRole) {
-		writeGHValidationError(w, "CustomRepositoryRole", "base_role", "invalid")
+		store.WriteGHValidationError(w, "CustomRepositoryRole", "base_role", "invalid")
 		return false
 	}
 	if create && req.Permissions == nil {
-		writeGHValidationError(w, "CustomRepositoryRole", "permissions", "missing_field")
+		store.WriteGHValidationError(w, "CustomRepositoryRole", "permissions", "missing_field")
 		return false
 	}
 	if req.Permissions != nil && !validPermissions(*req.Permissions, repositoryFineGrainedPermissions) {
-		writeGHValidationError(w, "CustomRepositoryRole", "permissions", "invalid")
+		store.WriteGHValidationError(w, "CustomRepositoryRole", "permissions", "invalid")
 		return false
 	}
 	return true
 }
 
-func (s *Server) listCustomRepositoryRoles(w http.ResponseWriter, r *http.Request, org *Org) {
+func (s *Server) listCustomRepositoryRoles(w http.ResponseWriter, r *http.Request, org *store.Org) {
 	s.store.Mu.RLock()
-	roles := make([]*OrgCustomRepositoryRole, 0, len(s.store.OrgCustomRepoRoles[org.Login]))
+	roles := make([]*store.OrgCustomRepositoryRole, 0, len(s.store.OrgCustomRepoRoles[org.Login]))
 	for _, role := range s.store.OrgCustomRepoRoles[org.Login] {
 		copyRole := *role
 		copyRole.Permissions = append([]string(nil), role.Permissions...)
@@ -312,7 +314,7 @@ func (s *Server) handleCreateCustomRepositoryRole(w http.ResponseWriter, r *http
 		return
 	}
 	now := s.currentTime()
-	role := &OrgCustomRepositoryRole{
+	role := &store.OrgCustomRepositoryRole{
 		Name: strings.TrimSpace(*req.Name), BaseRole: *req.BaseRole,
 		Permissions: append([]string(nil), (*req.Permissions)...),
 		OrgLogin:    org.Login, CreatedAt: now, UpdatedAt: now,
@@ -322,12 +324,12 @@ func (s *Server) handleCreateCustomRepositoryRole(w http.ResponseWriter, r *http
 	}
 	s.store.Mu.Lock()
 	if s.store.OrgCustomRepoRoles[org.Login] == nil {
-		s.store.OrgCustomRepoRoles[org.Login] = map[int]*OrgCustomRepositoryRole{}
+		s.store.OrgCustomRepoRoles[org.Login] = map[int]*store.OrgCustomRepositoryRole{}
 	}
 	for _, existing := range s.store.OrgCustomRepoRoles[org.Login] {
 		if strings.EqualFold(existing.Name, role.Name) {
 			s.store.Mu.Unlock()
-			writeGHValidationError(w, "CustomRepositoryRole", "name", "already_exists")
+			store.WriteGHValidationError(w, "CustomRepositoryRole", "name", "already_exists")
 			return
 		}
 	}
@@ -349,7 +351,7 @@ func parseRoleID(w http.ResponseWriter, r *http.Request) (int, bool) {
 	return id, true
 }
 
-func (s *Server) getCustomRepositoryRole(orgLogin string, id int) *OrgCustomRepositoryRole {
+func (s *Server) getCustomRepositoryRole(orgLogin string, id int) *store.OrgCustomRepositoryRole {
 	s.store.Mu.RLock()
 	defer s.store.Mu.RUnlock()
 	role := s.store.OrgCustomRepoRoles[orgLogin][id]
@@ -402,7 +404,7 @@ func (s *Server) handleUpdateCustomRepositoryRole(w http.ResponseWriter, r *http
 		for existingID, existing := range s.store.OrgCustomRepoRoles[org.Login] {
 			if existingID != id && strings.EqualFold(existing.Name, strings.TrimSpace(*req.Name)) {
 				s.store.Mu.Unlock()
-				writeGHValidationError(w, "CustomRepositoryRole", "name", "already_exists")
+				store.WriteGHValidationError(w, "CustomRepositoryRole", "name", "already_exists")
 				return
 			}
 		}
@@ -486,23 +488,23 @@ func validBaseOrganizationRole(value string, update bool) bool {
 
 func validateCustomOrganizationRoleRequest(w http.ResponseWriter, req customOrganizationRoleRequest, create bool) bool {
 	if create && req.Name == nil {
-		writeGHValidationError(w, "CustomOrganizationRole", "name", "missing_field")
+		store.WriteGHValidationError(w, "CustomOrganizationRole", "name", "missing_field")
 		return false
 	}
 	if req.Name != nil && strings.TrimSpace(*req.Name) == "" {
-		writeGHValidationError(w, "CustomOrganizationRole", "name", "invalid")
+		store.WriteGHValidationError(w, "CustomOrganizationRole", "name", "invalid")
 		return false
 	}
 	if create && req.Permissions == nil {
-		writeGHValidationError(w, "CustomOrganizationRole", "permissions", "missing_field")
+		store.WriteGHValidationError(w, "CustomOrganizationRole", "permissions", "missing_field")
 		return false
 	}
 	if req.Permissions != nil && !validPermissions(*req.Permissions, organizationFineGrainedPermissions) {
-		writeGHValidationError(w, "CustomOrganizationRole", "permissions", "invalid")
+		store.WriteGHValidationError(w, "CustomOrganizationRole", "permissions", "invalid")
 		return false
 	}
 	if req.BaseRole != nil && !validBaseOrganizationRole(*req.BaseRole, !create) {
-		writeGHValidationError(w, "CustomOrganizationRole", "base_role", "invalid")
+		store.WriteGHValidationError(w, "CustomOrganizationRole", "base_role", "invalid")
 		return false
 	}
 	return true
@@ -518,7 +520,7 @@ func (s *Server) handleCreateOrganizationRole(w http.ResponseWriter, r *http.Req
 		return
 	}
 	now := s.currentTime()
-	role := &OrgCustomOrganizationRole{
+	role := &store.OrgCustomOrganizationRole{
 		Name: strings.TrimSpace(*req.Name), Permissions: append([]string(nil), (*req.Permissions)...),
 		OrgLogin: org.Login, CreatedAt: now, UpdatedAt: now,
 	}
@@ -531,7 +533,7 @@ func (s *Server) handleCreateOrganizationRole(w http.ResponseWriter, r *http.Req
 	}
 	s.store.Mu.Lock()
 	if s.store.OrgCustomRoles[org.Login] == nil {
-		s.store.OrgCustomRoles[org.Login] = map[int]*OrgCustomOrganizationRole{}
+		s.store.OrgCustomRoles[org.Login] = map[int]*store.OrgCustomOrganizationRole{}
 	}
 	for _, existing := range s.store.OrgCustomRoles[org.Login] {
 		if strings.EqualFold(existing.Name, role.Name) {
@@ -625,14 +627,14 @@ func (s *Server) handleDeleteOrganizationRole(w http.ResponseWriter, r *http.Req
 	// together, so a crash cannot leave a dangling assignment to a deleted role
 	// (STORE-001/002). Unlock before any panic so recovery's reload is not
 	// deadlocked by a still-held write lock (this handler unlocks explicitly).
-	batch := newPersistBatch(s.store.Persist)
+	batch := store.NewPersistBatch(s.store.Persist)
 	batch.Put("org_custom_roles", org.Login, s.store.OrgCustomRoles[org.Login])
 	batch.Put("org_role_team_assignments", org.Login, s.store.OrgRoleTeamAssignments[org.Login])
 	batch.Put("org_role_user_assignments", org.Login, s.store.OrgRoleUserAssignments[org.Login])
 	commitErr := batch.Commit()
 	s.store.Mu.Unlock()
 	if commitErr != nil {
-		panic(&persistenceFailure{Op: "batch", Bucket: "org_custom_roles", Err: commitErr})
+		panic(&store.PersistenceFailure{Op: "batch", Bucket: "org_custom_roles", Err: commitErr})
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

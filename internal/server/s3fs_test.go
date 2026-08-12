@@ -22,6 +22,7 @@ import (
 
 	"github.com/e6qu/bleephub/internal/gitstore"
 	"github.com/e6qu/bleephub/internal/server/testutil"
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 var (
@@ -119,7 +120,7 @@ func resetS3FSCacheForTest(t *testing.T) {
 	t.Cleanup(reset)
 }
 
-func newS3FSForTest(t *testing.T) *s3FS {
+func newS3FSForTest(t *testing.T) *gitstore.S3FS {
 	t.Helper()
 	endpoint := startS3ServerForTest(t)
 
@@ -136,7 +137,7 @@ func newS3FSForTest(t *testing.T) *s3FS {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	bucket := fmt.Sprintf("bleephub-test-%d", testutil.NextTestID())
-	fs, err := newS3FS(ctx, endpoint, bucket, "git")
+	fs, err := gitstore.NewS3FS(ctx, endpoint, bucket, "git")
 	if err != nil {
 		t.Fatalf("newS3FS: %v", err)
 	}
@@ -146,22 +147,22 @@ func newS3FSForTest(t *testing.T) *s3FS {
 	return fs
 }
 
-func newObjectByteStoreForTest(t *testing.T) (*s3FS, actionsByteStore) {
+func newObjectByteStoreForTest(t *testing.T) (*gitstore.S3FS, store.ActionsByteStore) {
 	t.Helper()
 	fs := newS3FSForTest(t)
 	objectFS := deriveS3FSForTest(t, fs.Bucket(), "objects")
-	return objectFS, &s3ActionsByteStore{Fs: objectFS}
+	return objectFS, &store.S3ActionsByteStore{Fs: objectFS}
 }
 
 // deriveS3FSForTest builds a sibling S3FS handle on the shared MinIO server.
 // The type's unexported fields moved to internal/gitstore, so tests derive a
 // fresh handle from the shared endpoint instead of copying fields into a
 // composite literal.
-func deriveS3FSForTest(t *testing.T, bucket, prefix string) *s3FS {
+func deriveS3FSForTest(t *testing.T, bucket, prefix string) *gitstore.S3FS {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	fs, err := newS3FS(ctx, s3ServerEndpoint, bucket, prefix)
+	fs, err := gitstore.NewS3FS(ctx, s3ServerEndpoint, bucket, prefix)
 	if err != nil {
 		t.Fatalf("newS3FS: %v", err)
 	}
@@ -202,7 +203,7 @@ func startS3ServerForTest(t *testing.T) string {
 	return s3ServerEndpoint
 }
 
-func putS3RawObject(t *testing.T, fs *s3FS, key string, content []byte) {
+func putS3RawObject(t *testing.T, fs *gitstore.S3FS, key string, content []byte) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -215,7 +216,7 @@ func putS3RawObject(t *testing.T, fs *s3FS, key string, content []byte) {
 	}
 }
 
-func listS3RawKeys(t *testing.T, fs *s3FS, prefix string) []string {
+func listS3RawKeys(t *testing.T, fs *gitstore.S3FS, prefix string) []string {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -240,7 +241,7 @@ func listS3RawKeys(t *testing.T, fs *s3FS, prefix string) []string {
 	}
 }
 
-func writeS3TestFile(t *testing.T, fs *s3FS, name string, content []byte) {
+func writeS3TestFile(t *testing.T, fs *gitstore.S3FS, name string, content []byte) {
 	t.Helper()
 	f, err := fs.Create(name)
 	if err != nil {
@@ -254,7 +255,7 @@ func writeS3TestFile(t *testing.T, fs *s3FS, name string, content []byte) {
 	}
 }
 
-func readS3TestFile(t *testing.T, fs *s3FS, name string) []byte {
+func readS3TestFile(t *testing.T, fs *gitstore.S3FS, name string) []byte {
 	t.Helper()
 	f, err := fs.Open(name)
 	if err != nil {

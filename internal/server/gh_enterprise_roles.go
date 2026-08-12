@@ -5,6 +5,8 @@ import (
 	"sort"
 	"strconv"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 type predefinedEnterpriseRole struct {
@@ -101,7 +103,7 @@ func (s *Server) handleListEnterpriseRoleTeams(w http.ResponseWriter, r *http.Re
 	}
 	s.store.Mu.RLock()
 	ids := append([]int(nil), s.store.EnterpriseSettings.EnterpriseRoleTeamAssignments[role.ID]...)
-	teams := make([]*EnterpriseTeam, 0, len(ids))
+	teams := make([]*store.EnterpriseTeam, 0, len(ids))
 	for _, id := range ids {
 		if team := s.store.EnterpriseTeams[id]; team != nil {
 			teams = append(teams, team)
@@ -122,7 +124,7 @@ func (s *Server) handleListEnterpriseRoleUsers(w http.ResponseWriter, r *http.Re
 		return
 	}
 	s.store.Mu.RLock()
-	assignments := map[int][]*EnterpriseTeam{}
+	assignments := map[int][]*store.EnterpriseTeam{}
 	for _, userID := range s.store.EnterpriseSettings.EnterpriseRoleUserAssignments[role.ID] {
 		assignments[userID] = nil
 	}
@@ -149,7 +151,7 @@ func (s *Server) handleListEnterpriseRoleUsers(w http.ResponseWriter, r *http.Re
 		if user == nil {
 			continue
 		}
-		item := userToJSON(user)
+		item := store.UserToJSON(user)
 		inherited := assignments[id]
 		if inherited == nil {
 			item["assignment"] = "direct"

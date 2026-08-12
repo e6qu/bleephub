@@ -77,11 +77,11 @@ func TestDerivedRefMutationsUseCompareAndSwap(t *testing.T) {
 func TestRefLifecycleMutationsKeepAtomicStorageBoundaries(t *testing.T) {
 	expectations := map[string]map[string]string{
 		"gh_repos_git.go": {
-			"commitRootBranchWithFiles": "initializeRepositoryReferences",
-			"handleCreateRef":           "createReferenceIfAbsent",
+			"commitRootBranchWithFiles": "InitializeRepositoryReferences",
+			"handleCreateRef":           "CreateReferenceIfAbsent",
 		},
 		"gh_repos_refs.go": {
-			"handleDeleteRef": "removeReferenceCAS",
+			"handleDeleteRef": "RemoveReferenceCAS",
 		},
 		"git_http.go": {
 			"applyPushCommandAtomic": "CheckAndSetReference",

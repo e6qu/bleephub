@@ -2,6 +2,8 @@ package bleephub
 
 import (
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // TestCollectOrgVisibilityMatrix drives the full org-item visibility
@@ -43,7 +45,7 @@ func TestCollectOrgVisibilityMatrix(t *testing.T) {
 	put("M_SEL", "selected", []int{selRepo.ID})
 
 	cases := []struct {
-		repo *Repo
+		repo *store.Repo
 		want map[string]bool // item name → visible
 	}{
 		{pubRepo, map[string]bool{"M_ALL": true, "M_PRIV": false, "M_SEL": false}},
@@ -152,17 +154,17 @@ func TestCollectUnknownRepo(t *testing.T) {
 
 func TestBuildJobMessageRejectsUnknownRepoSecretsScope(t *testing.T) {
 	s := newTestServer()
-	wf := &Workflow{
+	wf := &store.Workflow{
 		ID:           "wf-unknown-repo",
 		RepoFullName: "ghost/ghost",
 		RunID:        1,
-		Jobs:         map[string]*WorkflowJob{},
+		Jobs:         map[string]*store.WorkflowJob{},
 	}
-	job := &WorkflowJob{
+	job := &store.WorkflowJob{
 		Key:         "build",
 		JobID:       "job-unknown-repo",
 		DisplayName: "build",
-		Def:         &JobDef{Steps: []StepDef{{Run: "echo hi"}}},
+		Def:         &store.JobDef{Steps: []store.StepDef{{Run: "echo hi"}}},
 	}
 	wf.Jobs[job.Key] = job
 

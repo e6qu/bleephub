@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/e6qu/bleephub/internal/actions"
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func (s *Server) registerRunServiceRoutes() {
@@ -143,8 +144,8 @@ func (s *Server) handleRenewRequest(w http.ResponseWriter, r *http.Request) {
 	if startedRunning {
 		for _, wf := range s.store.Workflows {
 			if wfJob, ok := actions.FindWorkflowJobByID(wf, job.ID); ok {
-				if wfJob.Status == JobStatusQueued {
-					wfJob.Status = JobStatusRunning
+				if wfJob.Status == store.JobStatusQueued {
+					wfJob.Status = store.JobStatusRunning
 					wfJob.StartedAt = time.Now()
 					s.store.PersistWorkflowRecord(wf)
 					s.actions.QueueEvent(actions.EvJobInProgress, wf, wfJob)

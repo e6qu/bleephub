@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	gitStorage "github.com/go-git/go-git/v5/storage"
@@ -38,7 +39,7 @@ func gitDataTestServer(t *testing.T) *Server {
 	s.registerGHRepoRoutes()
 	s.registerGHRepoReadsRoutes()
 	admin := s.store.UsersByLogin["admin"]
-	s.store.Tokens[adminPAT] = &Token{Value: adminPAT, UserID: admin.ID, Scopes: "repo"}
+	s.store.Tokens[adminPAT] = &store.Token{Value: adminPAT, UserID: admin.ID, Scopes: "repo"}
 	return s
 }
 
@@ -583,8 +584,8 @@ func TestGitDataReadRequiresContentsRead(t *testing.T) {
 	commitHash, _ := initRepoWithFiles(stor, "main", "init", map[string]string{"a.txt": "a"}, sig)
 
 	// Create an installation token with metadata:read only (no contents)
-	s.store.Installations[1] = &Installation{ID: 1, AppID: 1, TargetID: admin.ID, Permissions: map[string]string{"metadata": "read"}}
-	s.store.InstallationTokens["ghs_notallowed"] = &InstallationToken{Token: "ghs_notallowed", InstallationID: 1, AppID: 1, Permissions: map[string]string{"metadata": "read"}, ExpiresAt: fixedTestTime.Add(time.Hour)}
+	s.store.Installations[1] = &store.Installation{ID: 1, AppID: 1, TargetID: admin.ID, Permissions: map[string]string{"metadata": "read"}}
+	s.store.InstallationTokens["ghs_notallowed"] = &store.InstallationToken{Token: "ghs_notallowed", InstallationID: 1, AppID: 1, Permissions: map[string]string{"metadata": "read"}, ExpiresAt: fixedTestTime.Add(time.Hour)}
 
 	req, _ := http.NewRequest("GET", "/api/v3/repos/"+repo.FullName+"/git/commits/"+commitHash.String(), nil)
 	req.Header.Set("Authorization", "Bearer ghs_notallowed")

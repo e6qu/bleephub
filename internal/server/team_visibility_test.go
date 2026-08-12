@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // TestTeamVisibilityNonMember asserts that an org's teams (and their members /
@@ -19,7 +21,7 @@ func TestTeamVisibilityNonMember(t *testing.T) {
 	if s.store.CreateOrg(admin, "team-org", "Team Org", "") == nil {
 		t.Fatal("CreateOrg nil")
 	}
-	team := s.store.CreateTeam("team-org", "Secret Squad", TeamOptions{})
+	team := s.store.CreateTeam("team-org", "Secret Squad", store.TeamOptions{})
 	if team == nil {
 		t.Fatal("CreateTeam nil")
 	}
@@ -39,14 +41,14 @@ func TestTeamVisibilityNonMember(t *testing.T) {
 			t.Errorf("outsider GET %s = %d, want 404 (body=%s)", p, w.Code, w.Body.String())
 		}
 		// Member (admin) is allowed.
-		wa := tokenRequest(s, "GET", p, AdminToken())
+		wa := tokenRequest(s, "GET", p, store.AdminToken())
 		if wa.Code == http.StatusNotFound {
 			t.Errorf("member GET %s = 404, want visible", p)
 		}
 	}
 
 	// The team list, for a member, includes the team.
-	w := tokenRequest(s, "GET", "/api/v3/orgs/team-org/teams", AdminToken())
+	w := tokenRequest(s, "GET", "/api/v3/orgs/team-org/teams", store.AdminToken())
 	var teams []map[string]any
 	json.Unmarshal(w.Body.Bytes(), &teams)
 	if len(teams) == 0 {

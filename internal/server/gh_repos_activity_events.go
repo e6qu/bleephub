@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
 	gitStorage "github.com/go-git/go-git/v5/storage"
 )
@@ -23,7 +24,7 @@ func classifyRefUpdate(stor gitStorage.Storer, oldHash, newHash plumbing.Hash) s
 	case newHash.IsZero():
 		return "branch_deletion"
 	}
-	base, err := findMergeBase(stor, oldHash, newHash)
+	base, err := store.FindMergeBase(stor, oldHash, newHash)
 	if err == nil && base == oldHash {
 		return "push"
 	}
@@ -92,7 +93,7 @@ func (s *Server) handleListRepoActivity(w http.ResponseWriter, r *http.Request) 
 		}
 		var actorJSON interface{}
 		if actor != nil {
-			actorJSON = userToJSON(actor)
+			actorJSON = store.UserToJSON(actor)
 		}
 		out = append(out, map[string]interface{}{
 			"id":            a.ID,
@@ -122,7 +123,7 @@ type repoEventEntry struct {
 }
 
 // eventActorAbsJSON renders the GitHub `actor` shape with absolute URLs.
-func eventActorAbsJSON(u *User, base string) map[string]interface{} {
+func eventActorAbsJSON(u *store.User, base string) map[string]interface{} {
 	return map[string]interface{}{
 		"id":          u.ID,
 		"login":       u.Login,
@@ -136,7 +137,7 @@ func eventActorAbsJSON(u *User, base string) map[string]interface{} {
 // recorded ref updates (PushEvent / CreateEvent / DeleteEvent), issues
 // (IssuesEvent), pull requests (PullRequestEvent), and issue comments
 // (IssueCommentEvent).
-func (s *Server) repoEvents(repo *Repo, base string) []repoEventEntry {
+func (s *Server) repoEvents(repo *store.Repo, base string) []repoEventEntry {
 	repoJSON := map[string]interface{}{
 		"id":   repo.ID,
 		"name": repo.FullName,
@@ -144,7 +145,7 @@ func (s *Server) repoEvents(repo *Repo, base string) []repoEventEntry {
 	}
 	public := !repo.Private
 	var out []repoEventEntry
-	add := func(id, typ string, actor *User, payload map[string]interface{}, when time.Time) {
+	add := func(id, typ string, actor *store.User, payload map[string]interface{}, when time.Time) {
 		if actor == nil {
 			return
 		}
@@ -205,7 +206,7 @@ func (s *Server) repoEvents(repo *Repo, base string) []repoEventEntry {
 			add(strconv.Itoa(3_000_000_000+c.ID), "IssueCommentEvent", commentAuthor, map[string]interface{}{
 				"action":  "created",
 				"issue":   issueToJSON(issue, s.store, base, repo.FullName),
-				"comment": commentToJSON(c, s.store, base, repo.FullName, issue.Number),
+				"comment": store.CommentToJSON(c, s.store, base, repo.FullName, issue.Number),
 			}, c.CreatedAt)
 		}
 	}
@@ -226,7 +227,7 @@ func (s *Server) repoEvents(repo *Repo, base string) []repoEventEntry {
 
 // pullRequestMinimalJSON renders the GitHub pull-request-minimal shape, with
 // head/base SHAs resolved live from git storage.
-func pullRequestMinimalJSON(pr *PullRequest, repo *Repo, stor gitStorage.Storer, base string) map[string]interface{} {
+func pullRequestMinimalJSON(pr *store.PullRequest, repo *store.Repo, stor gitStorage.Storer, base string) map[string]interface{} {
 	api := base + "/api/v3/repos/" + repo.FullName
 	repoRef := map[string]interface{}{
 		"id":   repo.ID,
@@ -237,7 +238,7 @@ func pullRequestMinimalJSON(pr *PullRequest, repo *Repo, stor gitStorage.Storer,
 		if stor == nil {
 			return ""
 		}
-		h, err := resolveGitRef(stor, ref)
+		h, err := store.ResolveGitRef(stor, ref)
 		if err != nil {
 			return ""
 		}
@@ -292,7 +293,7 @@ func (s *Server) handleListNetworkEvents(w http.ResponseWriter, r *http.Request)
 	}
 	base := s.baseURL(r)
 	entries := s.repoEvents(repo, base)
-	for _, fork := range s.store.ListForks(repo.ID, RepoListOptions{NoPaginate: true}) {
+	for _, fork := range s.store.ListForks(repo.ID, store.RepoListOptions{NoPaginate: true}) {
 		if fork.Private {
 			continue
 		}
@@ -315,12 +316,12 @@ func trafficWeekStart(t time.Time) time.Time {
 
 // trafficRepo resolves the repo and enforces GitHub's traffic access rule:
 // the caller needs push access.
-func (s *Server) trafficRepo(w http.ResponseWriter, r *http.Request) *Repo {
+func (s *Server) trafficRepo(w http.ResponseWriter, r *http.Request) *store.Repo {
 	repo := s.lookupReadableRepoFromPath(w, r)
 	if repo == nil {
 		return nil
 	}
-	if !s.viewerMayActOnRepo(r.Context(), repo, scopeAdministration, permRead, permWrite) {
+	if !s.viewerMayActOnRepo(r.Context(), repo, store.ScopeAdministration, store.PermRead, store.PermWrite) {
 		writeGHError(w, http.StatusForbidden, "Must have push access to repository")
 		return nil
 	}
@@ -337,7 +338,7 @@ func (s *Server) handleTrafficClones(w http.ResponseWriter, r *http.Request) {
 		per = "day"
 	}
 	if per != "day" && per != "week" {
-		writeGHValidationError(w, "Traffic", "per", "invalid")
+		store.WriteGHValidationError(w, "Traffic", "per", "invalid")
 		return
 	}
 	buckets := s.store.ListRepoCloneTraffic(repo.ID, time.Now().UTC().AddDate(0, 0, -14))
@@ -399,7 +400,7 @@ func (s *Server) handleTrafficViews(w http.ResponseWriter, r *http.Request) {
 	}
 	per := r.URL.Query().Get("per")
 	if per != "" && per != "day" && per != "week" {
-		writeGHValidationError(w, "Traffic", "per", "invalid")
+		store.WriteGHValidationError(w, "Traffic", "per", "invalid")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{

@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // registerGHAppSettingsRoutes exposes the browser-owned settings lifecycle.
@@ -95,7 +97,7 @@ func (s *Server) handleDeleteBrowserOAuthGrant(w http.ResponseWriter, r *http.Re
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) browserOwnedApp(w http.ResponseWriter, r *http.Request) (*App, bool) {
+func (s *Server) browserOwnedApp(w http.ResponseWriter, r *http.Request) (*store.App, bool) {
 	r, user := s.authenticatedBrowserRequest(r)
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
@@ -109,7 +111,7 @@ func (s *Server) browserOwnedApp(w http.ResponseWriter, r *http.Request) (*App, 
 	return app, true
 }
 
-func (s *Server) browserOwnedOAuthApp(w http.ResponseWriter, r *http.Request) (*OAuthApp, bool) {
+func (s *Server) browserOwnedOAuthApp(w http.ResponseWriter, r *http.Request) (*store.OAuthApp, bool) {
 	r, user := s.authenticatedBrowserRequest(r)
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
@@ -123,7 +125,7 @@ func (s *Server) browserOwnedOAuthApp(w http.ResponseWriter, r *http.Request) (*
 	return app, true
 }
 
-func appSettingsJSON(st *Store, app *App) map[string]interface{} {
+func appSettingsJSON(st *store.Store, app *store.App) map[string]interface{} {
 	out := appToJSON(st, app, false)
 	out["callback_url"] = app.CallbackURL
 	out["webhook_url"] = app.WebhookURL
@@ -164,39 +166,39 @@ func (s *Server) handleUpdateBrowserGitHubApp(w http.ResponseWriter, r *http.Req
 	}
 	req.Name = strings.TrimSpace(req.Name)
 	if req.Name == "" {
-		writeGHValidationError(w, "GitHubApp", "name", "missing_field")
+		store.WriteGHValidationError(w, "GitHubApp", "name", "missing_field")
 		return
 	}
 	req.CallbackURL = strings.TrimSpace(req.CallbackURL)
-	if err := validateClientCallbackURL(req.CallbackURL); err != nil {
-		writeGHValidationError(w, "GitHubApp", "callback_url", "invalid")
+	if err := store.ValidateClientCallbackURL(req.CallbackURL); err != nil {
+		store.WriteGHValidationError(w, "GitHubApp", "callback_url", "invalid")
 		return
 	}
 	req.URL = strings.TrimSpace(req.URL)
 	if req.URL == "" {
-		writeGHValidationError(w, "GitHubApp", "url", "missing_field")
+		store.WriteGHValidationError(w, "GitHubApp", "url", "missing_field")
 		return
 	}
-	if err := validateClientCallbackURL(req.URL); err != nil {
-		writeGHValidationError(w, "GitHubApp", "url", "invalid")
+	if err := store.ValidateClientCallbackURL(req.URL); err != nil {
+		store.WriteGHValidationError(w, "GitHubApp", "url", "invalid")
 		return
 	}
 	req.WebhookURL = strings.TrimSpace(req.WebhookURL)
-	if err := validateClientCallbackURL(req.WebhookURL); err != nil {
-		writeGHValidationError(w, "GitHubApp", "webhook_url", "invalid")
+	if err := store.ValidateClientCallbackURL(req.WebhookURL); err != nil {
+		store.WriteGHValidationError(w, "GitHubApp", "webhook_url", "invalid")
 		return
 	}
 	if req.WebhookContentType != "json" && req.WebhookContentType != "form" {
-		writeGHValidationError(w, "GitHubApp", "webhook_content_type", "invalid")
+		store.WriteGHValidationError(w, "GitHubApp", "webhook_content_type", "invalid")
 		return
 	}
 	for scope, level := range req.Permissions {
 		if !validPermLevelString(level) {
-			writeGHValidationError(w, "GitHubApp", "permissions."+scope, "invalid")
+			store.WriteGHValidationError(w, "GitHubApp", "permissions."+scope, "invalid")
 			return
 		}
 	}
-	s.store.UpdateApp(app.ID, func(current *App) {
+	s.store.UpdateApp(app.ID, func(current *store.App) {
 		current.Name = req.Name
 		current.Description = req.Description
 		current.ExternalURL = req.URL
@@ -269,7 +271,7 @@ func (s *Server) handleUpdateBrowserOAuthApp(w http.ResponseWriter, r *http.Requ
 	if !valid {
 		return
 	}
-	s.store.UpdateOAuthApp(app.ClientID, func(current *OAuthApp) {
+	s.store.UpdateOAuthApp(app.ClientID, func(current *store.OAuthApp) {
 		current.Name = req.Name
 		current.Description = req.Description
 		current.URL = req.URL

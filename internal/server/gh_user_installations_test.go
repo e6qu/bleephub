@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // /user/installations + /installation/token surface — listing the
@@ -17,7 +19,7 @@ import (
 // avoid wiring the full middleware chain in unit tests, we inject the
 // context value directly via the request's WithContext.
 
-func runWithUser(s *Server, method, path string, user *User) *httptest.ResponseRecorder {
+func runWithUser(s *Server, method, path string, user *store.User) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(method, path, nil)
 	req = req.WithContext(context.WithValue(req.Context(), ctxUser, user))
 	w := httptest.NewRecorder()
@@ -44,7 +46,7 @@ func TestUserInstallations_List(t *testing.T) {
 	user := s.store.UsersByLogin["admin"]
 
 	s.store.Mu.Lock()
-	other := &User{ID: s.store.NextUser, Login: "outsider", Type: "User"}
+	other := &store.User{ID: s.store.NextUser, Login: "outsider", Type: "User"}
 	s.store.NextUser++
 	s.store.Users[other.ID] = other
 	s.store.UsersByLogin[other.Login] = other
@@ -145,7 +147,7 @@ func TestUserInstallationRepos_ListBindsUserAndSelection(t *testing.T) {
 	}
 
 	s.store.Mu.Lock()
-	outsider := &User{ID: s.store.NextUser, Login: "list-outsider", Type: "User"}
+	outsider := &store.User{ID: s.store.NextUser, Login: "list-outsider", Type: "User"}
 	s.store.NextUser++
 	s.store.Users[outsider.ID] = outsider
 	s.store.UsersByLogin[outsider.Login] = outsider

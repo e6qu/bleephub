@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // Organization artifact metadata REST API: storage and deployment
@@ -37,25 +39,25 @@ type artifactDeploymentJobRequest struct {
 
 func validateArtifactDeploymentJob(w http.ResponseWriter, req *artifactDeploymentJobRequest) bool {
 	if req.LogicalEnvironment == "" {
-		writeGHValidationError(w, "ArtifactDeploymentJob", "logical_environment", "missing_field")
+		store.WriteGHValidationError(w, "ArtifactDeploymentJob", "logical_environment", "missing_field")
 		return false
 	}
 	if len(req.Deployments) > 5000 {
-		writeGHValidationError(w, "ArtifactDeploymentJob", "deployments", "too_many")
+		store.WriteGHValidationError(w, "ArtifactDeploymentJob", "deployments", "too_many")
 		return false
 	}
 	for _, deployment := range req.Deployments {
 		if deployment.Name == "" || deployment.DeploymentName == "" ||
-			!artifactDigestPattern.MatchString(deployment.Digest) {
-			writeGHValidationError(w, "ArtifactDeploymentJob", "deployments", "invalid")
+			!store.ArtifactDigestPattern.MatchString(deployment.Digest) {
+			store.WriteGHValidationError(w, "ArtifactDeploymentJob", "deployments", "invalid")
 			return false
 		}
 		if deployment.Status != "" && deployment.Status != "deployed" && deployment.Status != "decommissioned" {
-			writeGHValidationError(w, "ArtifactDeploymentJob", "deployments.status", "invalid")
+			store.WriteGHValidationError(w, "ArtifactDeploymentJob", "deployments.status", "invalid")
 			return false
 		}
 		if !validArtifactRuntimeRisks(deployment.RuntimeRisks) {
-			writeGHValidationError(w, "ArtifactDeploymentJob", "deployments.runtime_risks", "invalid")
+			store.WriteGHValidationError(w, "ArtifactDeploymentJob", "deployments.runtime_risks", "invalid")
 			return false
 		}
 	}
@@ -77,7 +79,7 @@ func (s *Server) handleOrgCreateClusterDeploymentJob(w http.ResponseWriter, r *h
 		if status == "" {
 			status = "deployed"
 		}
-		s.store.UpsertArtifactDeploymentRecord(&ArtifactDeploymentRecord{
+		s.store.UpsertArtifactDeploymentRecord(&store.ArtifactDeploymentRecord{
 			OrgID:               org.ID,
 			Name:                deployment.Name,
 			Digest:              deployment.Digest,
@@ -92,7 +94,7 @@ func (s *Server) handleOrgCreateClusterDeploymentJob(w http.ResponseWriter, r *h
 			RuntimeRisks:        deployment.RuntimeRisks,
 		})
 	}
-	job := s.store.CreateArtifactDeploymentJob(&ArtifactDeploymentJob{
+	job := s.store.CreateArtifactDeploymentJob(&store.ArtifactDeploymentJob{
 		OrgID: org.ID, Cluster: cluster, Status: "completed",
 		StartedAt: time.Now().UTC(), TotalCount: len(req.Deployments), Errors: []any{},
 	})
@@ -124,7 +126,7 @@ func (s *Server) handleOrgGetClusterDeploymentJob(w http.ResponseWriter, r *http
 // requireOrgArtifactMetadataWrite resolves {org} and enforces org-admin
 // rights for metadata writes; 404 for an unknown org, 401/403 on auth
 // failures (the documented denial for these endpoints).
-func (s *Server) requireOrgArtifactMetadataWrite(w http.ResponseWriter, r *http.Request) (*Org, bool) {
+func (s *Server) requireOrgArtifactMetadataWrite(w http.ResponseWriter, r *http.Request) (*store.Org, bool) {
 	org := s.store.GetOrg(r.PathValue("org"))
 	if org == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -145,7 +147,7 @@ func (s *Server) requireOrgArtifactMetadataWrite(w http.ResponseWriter, r *http.
 // requireOrgArtifactMetadataRead resolves {org} and hides it (404) from
 // callers without an active membership, matching how org-internal
 // resources are concealed.
-func (s *Server) requireOrgArtifactMetadataRead(w http.ResponseWriter, r *http.Request) (*Org, bool) {
+func (s *Server) requireOrgArtifactMetadataRead(w http.ResponseWriter, r *http.Request) (*store.Org, bool) {
 	org := s.store.GetOrg(r.PathValue("org"))
 	if org == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -159,7 +161,7 @@ func (s *Server) requireOrgArtifactMetadataRead(w http.ResponseWriter, r *http.R
 	return org, true
 }
 
-func artifactStorageRecordJSON(rec *ArtifactStorageRecord) map[string]interface{} {
+func artifactStorageRecordJSON(rec *store.ArtifactStorageRecord) map[string]interface{} {
 	var artifactURL, repository interface{}
 	if rec.ArtifactURL != "" {
 		artifactURL = rec.ArtifactURL
@@ -183,7 +185,7 @@ func artifactStorageRecordJSON(rec *ArtifactStorageRecord) map[string]interface{
 // artifactDeploymentRecordJSON renders the artifact-deployment-record
 // shape. attestation_id links the deployment to the org's provenance
 // attestation for the same digest when one exists.
-func (s *Server) artifactDeploymentRecordJSON(rec *ArtifactDeploymentRecord, orgLogin string) map[string]interface{} {
+func (s *Server) artifactDeploymentRecordJSON(rec *store.ArtifactDeploymentRecord, orgLogin string) map[string]interface{} {
 	tags := rec.Tags
 	if tags == nil {
 		tags = map[string]string{}
@@ -247,15 +249,15 @@ func (s *Server) handleOrgCreateArtifactStorageRecord(w http.ResponseWriter, r *
 		return
 	}
 	if req.Name == "" {
-		writeGHValidationError(w, "ArtifactStorageRecord", "name", "missing_field")
+		store.WriteGHValidationError(w, "ArtifactStorageRecord", "name", "missing_field")
 		return
 	}
-	if !artifactDigestPattern.MatchString(req.Digest) {
-		writeGHValidationError(w, "ArtifactStorageRecord", "digest", "invalid")
+	if !store.ArtifactDigestPattern.MatchString(req.Digest) {
+		store.WriteGHValidationError(w, "ArtifactStorageRecord", "digest", "invalid")
 		return
 	}
 	if req.RegistryURL == "" {
-		writeGHValidationError(w, "ArtifactStorageRecord", "registry_url", "missing_field")
+		store.WriteGHValidationError(w, "ArtifactStorageRecord", "registry_url", "missing_field")
 		return
 	}
 	status := "active"
@@ -264,11 +266,11 @@ func (s *Server) handleOrgCreateArtifactStorageRecord(w http.ResponseWriter, r *
 		case "active", "eol", "deleted":
 			status = *req.Status
 		default:
-			writeGHValidationError(w, "ArtifactStorageRecord", "status", "invalid")
+			store.WriteGHValidationError(w, "ArtifactStorageRecord", "status", "invalid")
 			return
 		}
 	}
-	rec := s.store.CreateArtifactStorageRecord(&ArtifactStorageRecord{
+	rec := s.store.CreateArtifactStorageRecord(&store.ArtifactStorageRecord{
 		OrgID:            org.ID,
 		Name:             req.Name,
 		Digest:           req.Digest,
@@ -310,34 +312,34 @@ func (s *Server) handleOrgCreateArtifactDeploymentRecord(w http.ResponseWriter, 
 		return
 	}
 	if req.Name == "" {
-		writeGHValidationError(w, "ArtifactDeploymentRecord", "name", "missing_field")
+		store.WriteGHValidationError(w, "ArtifactDeploymentRecord", "name", "missing_field")
 		return
 	}
-	if !artifactDigestPattern.MatchString(req.Digest) {
-		writeGHValidationError(w, "ArtifactDeploymentRecord", "digest", "invalid")
+	if !store.ArtifactDigestPattern.MatchString(req.Digest) {
+		store.WriteGHValidationError(w, "ArtifactDeploymentRecord", "digest", "invalid")
 		return
 	}
 	if req.Status != "deployed" && req.Status != "decommissioned" {
-		writeGHValidationError(w, "ArtifactDeploymentRecord", "status", "invalid")
+		store.WriteGHValidationError(w, "ArtifactDeploymentRecord", "status", "invalid")
 		return
 	}
 	if req.LogicalEnvironment == "" {
-		writeGHValidationError(w, "ArtifactDeploymentRecord", "logical_environment", "missing_field")
+		store.WriteGHValidationError(w, "ArtifactDeploymentRecord", "logical_environment", "missing_field")
 		return
 	}
 	if req.DeploymentName == "" {
-		writeGHValidationError(w, "ArtifactDeploymentRecord", "deployment_name", "missing_field")
+		store.WriteGHValidationError(w, "ArtifactDeploymentRecord", "deployment_name", "missing_field")
 		return
 	}
 	if len(req.Tags) > 5 {
-		writeGHValidationError(w, "ArtifactDeploymentRecord", "tags", "invalid")
+		store.WriteGHValidationError(w, "ArtifactDeploymentRecord", "tags", "invalid")
 		return
 	}
 	if !validArtifactRuntimeRisks(req.RuntimeRisks) {
-		writeGHValidationError(w, "ArtifactDeploymentRecord", "runtime_risks", "invalid")
+		store.WriteGHValidationError(w, "ArtifactDeploymentRecord", "runtime_risks", "invalid")
 		return
 	}
-	rec := s.store.UpsertArtifactDeploymentRecord(&ArtifactDeploymentRecord{
+	rec := s.store.UpsertArtifactDeploymentRecord(&store.ArtifactDeploymentRecord{
 		OrgID:               org.ID,
 		Name:                req.Name,
 		Digest:              req.Digest,
@@ -383,36 +385,36 @@ func (s *Server) handleOrgSetClusterDeploymentRecords(w http.ResponseWriter, r *
 		return
 	}
 	if req.LogicalEnvironment == "" {
-		writeGHValidationError(w, "ArtifactDeploymentRecord", "logical_environment", "missing_field")
+		store.WriteGHValidationError(w, "ArtifactDeploymentRecord", "logical_environment", "missing_field")
 		return
 	}
 	if len(req.Deployments) == 0 || len(req.Deployments) > 1000 {
-		writeGHValidationError(w, "ArtifactDeploymentRecord", "deployments", "invalid")
+		store.WriteGHValidationError(w, "ArtifactDeploymentRecord", "deployments", "invalid")
 		return
 	}
 	seenNames := map[string]bool{}
 	for _, d := range req.Deployments {
 		if d.Name == "" || d.DeploymentName == "" {
-			writeGHValidationError(w, "ArtifactDeploymentRecord", "deployments", "missing_field")
+			store.WriteGHValidationError(w, "ArtifactDeploymentRecord", "deployments", "missing_field")
 			return
 		}
-		if !artifactDigestPattern.MatchString(d.Digest) {
-			writeGHValidationError(w, "ArtifactDeploymentRecord", "digest", "invalid")
+		if !store.ArtifactDigestPattern.MatchString(d.Digest) {
+			store.WriteGHValidationError(w, "ArtifactDeploymentRecord", "digest", "invalid")
 			return
 		}
 		key := strings.ToLower(d.DeploymentName)
 		if seenNames[key] {
 			// deployment_name must be unique across the deployments array.
-			writeGHValidationError(w, "ArtifactDeploymentRecord", "deployment_name", "already_exists")
+			store.WriteGHValidationError(w, "ArtifactDeploymentRecord", "deployment_name", "already_exists")
 			return
 		}
 		seenNames[key] = true
 		if d.Status != "" && d.Status != "deployed" && d.Status != "decommissioned" {
-			writeGHValidationError(w, "ArtifactDeploymentRecord", "status", "invalid")
+			store.WriteGHValidationError(w, "ArtifactDeploymentRecord", "status", "invalid")
 			return
 		}
 		if !validArtifactRuntimeRisks(d.RuntimeRisks) {
-			writeGHValidationError(w, "ArtifactDeploymentRecord", "runtime_risks", "invalid")
+			store.WriteGHValidationError(w, "ArtifactDeploymentRecord", "runtime_risks", "invalid")
 			return
 		}
 	}
@@ -423,7 +425,7 @@ func (s *Server) handleOrgSetClusterDeploymentRecords(w http.ResponseWriter, r *
 		if status == "" {
 			status = "deployed"
 		}
-		rec := s.store.UpsertArtifactDeploymentRecord(&ArtifactDeploymentRecord{
+		rec := s.store.UpsertArtifactDeploymentRecord(&store.ArtifactDeploymentRecord{
 			OrgID:               org.ID,
 			Name:                d.Name,
 			Digest:              d.Digest,

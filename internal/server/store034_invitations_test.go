@@ -3,6 +3,8 @@ package bleephub
 import (
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // TestPullRequestGetIsDetached pins STORE-021 for the pull-request getter.
@@ -12,7 +14,7 @@ func TestPullRequestGetIsDetached(t *testing.T) {
 	repo := s.store.CreateRepo(admin, "pr-detach", "", false)
 	s.store.Mu.Lock()
 	prID := s.store.NextPR
-	s.store.PullRequests[prID] = &PullRequest{
+	s.store.PullRequests[prID] = &store.PullRequest{
 		ID: prID, Number: 1, RepoID: repo.ID, State: "OPEN",
 		LabelIDs: []int{1}, AssigneeIDs: []int{admin.ID},
 	}
@@ -65,7 +67,7 @@ func TestPullRequestReviewGetIsDetached(t *testing.T) {
 	repo := s.store.CreateRepo(admin, "review-detach", "", false)
 	s.store.Mu.Lock()
 	prID := s.store.NextPR
-	s.store.PullRequests[prID] = &PullRequest{ID: prID, Number: 1, RepoID: repo.ID, State: "OPEN"}
+	s.store.PullRequests[prID] = &store.PullRequest{ID: prID, Number: 1, RepoID: repo.ID, State: "OPEN"}
 	s.store.NextPR++
 	s.store.Mu.Unlock()
 	review := s.store.CreatePRReview(prID, admin.ID, "APPROVED", "lgtm")
@@ -96,7 +98,7 @@ func TestOrgGetsAreDetached(t *testing.T) {
 	admin := s.store.UsersByLogin["admin"]
 	org := s.store.CreateOrg(admin, "org-detach", "Name", "")
 	allowed := true
-	s.store.UpdateOrg(org.Login, func(o *Org) {
+	s.store.UpdateOrg(org.Login, func(o *store.Org) {
 		o.MembersCanCreateRepositories = &allowed
 		o.Description = "orig"
 	})
@@ -120,8 +122,8 @@ func TestTeamGetsAreDetached(t *testing.T) {
 	s := newTestServer()
 	admin := s.store.UsersByLogin["admin"]
 	org := s.store.CreateOrg(admin, "team-detach-org", "T", "")
-	team := s.store.CreateTeam(org.Login, "Crew", TeamOptions{})
-	s.store.SetTeamMembership(org.Login, team.Slug, admin.ID, TeamRoleMember)
+	team := s.store.CreateTeam(org.Login, "Crew", store.TeamOptions{})
+	s.store.SetTeamMembership(org.Login, team.Slug, admin.ID, store.TeamRoleMember)
 
 	got := s.store.GetTeam(org.Login, team.Slug)
 	got.Name = "hacked"
@@ -142,17 +144,17 @@ func TestMembershipGetIsDetached(t *testing.T) {
 	s := newTestServer()
 	admin := s.store.UsersByLogin["admin"]
 	org := s.store.CreateOrg(admin, "mem-detach-org", "M", "")
-	u := &User{ID: s.store.NextUser, Login: "mem-detach-user", Type: "User"}
+	u := &store.User{ID: s.store.NextUser, Login: "mem-detach-user", Type: "User"}
 	s.store.Mu.Lock()
 	s.store.Users[u.ID] = u
 	s.store.UsersByLogin[u.Login] = u
 	s.store.NextUser++
 	s.store.Mu.Unlock()
-	s.store.SetMembership(org.Login, u.ID, OrgRoleAdmin, MembershipStateActive)
+	s.store.SetMembership(org.Login, u.ID, store.OrgRoleAdmin, store.MembershipStateActive)
 
 	got := s.store.GetMembership(org.Login, u.ID)
-	got.State = MembershipStatePending
-	if fresh := s.store.GetMembership(org.Login, u.ID); fresh.State != MembershipStateActive {
+	got.State = store.MembershipStatePending
+	if fresh := s.store.GetMembership(org.Login, u.ID); fresh.State != store.MembershipStateActive {
 		t.Fatalf("membership mutated through the getter: state=%v", fresh.State)
 	}
 }
@@ -190,7 +192,7 @@ func TestOrgInvitationAndInteractionLimitGetsAreDetached(t *testing.T) {
 	st := s.store
 	admin := st.UsersByLogin["admin"]
 	org := st.CreateOrg(admin, "detach-org", "Detach", "")
-	invitee := &User{ID: st.NextUser, Login: "detach-invitee", Type: "User"}
+	invitee := &store.User{ID: st.NextUser, Login: "detach-invitee", Type: "User"}
 	st.Mu.Lock()
 	st.Users[invitee.ID] = invitee
 	st.UsersByLogin[invitee.Login] = invitee
@@ -230,7 +232,7 @@ func TestOrgInvitationReadsAreNonMutating(t *testing.T) {
 	admin := st.UsersByLogin["admin"]
 	org := st.CreateOrg(admin, "inv-pure-org", "Invitations", "")
 
-	invitee := &User{ID: st.NextUser, Login: "invitee-pure", Type: "User"}
+	invitee := &store.User{ID: st.NextUser, Login: "invitee-pure", Type: "User"}
 	st.Mu.Lock()
 	st.Users[invitee.ID] = invitee
 	st.UsersByLogin[invitee.Login] = invitee
@@ -253,7 +255,7 @@ func TestOrgInvitationReadsAreNonMutating(t *testing.T) {
 	_ = st.GetOrgInvitation(org.Login, inv.ID)
 	st.Mu.RLock()
 	failedAfterRead := st.OrgInvitations[inv.ID].FailedAt
-	_, membershipAfterRead := st.Memberships[membershipKey(org.Login, invitee.ID)]
+	_, membershipAfterRead := st.Memberships[store.MembershipKey(org.Login, invitee.ID)]
 	st.Mu.RUnlock()
 	if failedAfterRead != nil {
 		t.Fatal("STORE-034: a read durably marked the invitation failed")
@@ -266,7 +268,7 @@ func TestOrgInvitationReadsAreNonMutating(t *testing.T) {
 	st.ReconcileAllOrgInvitations(st.CurrentTime())
 	st.Mu.RLock()
 	failedAfter := st.OrgInvitations[inv.ID].FailedAt
-	_, membershipAfter := st.Memberships[membershipKey(org.Login, invitee.ID)]
+	_, membershipAfter := st.Memberships[store.MembershipKey(org.Login, invitee.ID)]
 	st.Mu.RUnlock()
 	if failedAfter == nil {
 		t.Fatal("reconciler did not mark the expired invitation failed")
@@ -311,7 +313,7 @@ func TestEnterpriseTeamGetIsDetached(t *testing.T) {
 func TestEnterpriseCodeSecurityConfigGetIsDetached(t *testing.T) {
 	s := newTestServer()
 	adv := true
-	cfg := s.store.CreateEnterpriseCodeSecurityConfig(&EnterpriseCodeSecurityConfiguration{
+	cfg := s.store.CreateEnterpriseCodeSecurityConfig(&store.EnterpriseCodeSecurityConfiguration{
 		Name:                      "baseline",
 		CodeScanningAllowAdvanced: &adv,
 	})
@@ -414,7 +416,7 @@ func TestSmallStoreGetsAreDetached(t *testing.T) {
 	}
 
 	// Code-scanning default setup: Set stamps UpdatedAt on the configuration.
-	s.store.SetCodeScanningDefaultSetup(&CodeScanningDefaultSetup{
+	s.store.SetCodeScanningDefaultSetup(&store.CodeScanningDefaultSetup{
 		RepoKey: "admin/x", State: "configured", Languages: []string{"go"},
 	})
 	setup := s.store.GetCodeScanningDefaultSetup("admin/x")
@@ -439,7 +441,7 @@ func TestCopilotSpaceGetIsDetached(t *testing.T) {
 
 	got := s.store.GetCopilotSpace("User", "admin", created.Number)
 	got.Name = "TAMPERED"
-	got.Resources = append(got.Resources, &CopilotSpaceResource{ID: 99, ResourceType: "repo"})
+	got.Resources = append(got.Resources, &store.CopilotSpaceResource{ID: 99, ResourceType: "repo"})
 
 	fresh := s.store.GetCopilotSpace("User", "admin", created.Number)
 	if fresh.Name != "space" {

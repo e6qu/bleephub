@@ -3,6 +3,8 @@ package bleephub
 import (
 	"net/http"
 	"strconv"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func (s *Server) handleCreateFork(w http.ResponseWriter, r *http.Request) {
@@ -62,7 +64,7 @@ func (s *Server) handleCreateFork(w http.ResponseWriter, r *http.Request) {
 	s.emitWebhookEvent(sourceRepo.FullName, "fork", "", map[string]interface{}{
 		"forkee":     fullRepoJSONForViewer(fork, s.store, s.baseURL(r), user),
 		"repository": repoPayload(sourceRepo),
-		"sender":     userToJSON(user),
+		"sender":     store.UserToJSON(user),
 	})
 	writeJSON(w, http.StatusAccepted, fullRepoJSONForViewer(fork, s.store, s.baseURL(r), user))
 }
@@ -96,7 +98,7 @@ func (s *Server) handleListForks(w http.ResponseWriter, r *http.Request) {
 		repoSort = "stargazers"
 	}
 
-	opts := RepoListOptions{Sort: repoSort, Direction: direction, NoPaginate: true}
+	opts := store.RepoListOptions{Sort: repoSort, Direction: direction, NoPaginate: true}
 	if raw := r.URL.Query().Get("per_page"); raw != "" {
 		perPage, err := strconv.Atoi(raw)
 		if err != nil {
@@ -122,7 +124,7 @@ func (s *Server) handleListForks(w http.ResponseWriter, r *http.Request) {
 	result := make([]map[string]interface{}, 0, len(forks))
 	base := s.baseURL(r)
 	for _, fork := range forks {
-		result = append(result, repoToJSONForViewer(fork, s.store, base, user))
+		result = append(result, store.RepoToJSONForViewer(fork, s.store, base, user))
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, result))
 }

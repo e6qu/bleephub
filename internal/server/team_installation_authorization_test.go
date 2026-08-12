@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func teamCredentialRequest(t *testing.T, s *Server, method, path, token, body string) *httptest.ResponseRecorder {
@@ -100,7 +102,7 @@ func TestInstallationTeamAuthorizationRequiresMembersGrantAndTargetOrg(t *testin
 	admin := s.store.LookupUserByLogin("admin")
 	installed := s.store.CreateOrg(admin, "team-grant-installed", "", "")
 	other := s.store.CreateOrg(admin, "team-grant-other", "", "")
-	team := s.store.CreateTeam(installed.Login, "Visible", TeamOptions{})
+	team := s.store.CreateTeam(installed.Login, "Visible", store.TeamOptions{})
 	app := s.store.CreateApp(admin.ID, "Team Grant Boundary", "", map[string]string{"members": "write"}, nil)
 	installation := s.store.CreateInstallation(app.ID, "Organization", installed.ID, installed.Login, app.Permissions, nil)
 	readToken := s.store.CreateInstallationToken(installation.ID, app.ID, map[string]string{"members": "read"}, nil)
@@ -193,7 +195,7 @@ func TestOrganizationMembersCreateTeamsAndMaintainersManageThem(t *testing.T) {
 	admin := s.store.LookupUserByLogin("admin")
 	org := s.store.CreateOrg(admin, "human-team-standing", "", "")
 	member := seedTestUser(s, "human-team-member")
-	s.store.SetMembership(org.Login, member.ID, OrgRoleMember, MembershipStateActive)
+	s.store.SetMembership(org.Login, member.ID, store.OrgRoleMember, store.MembershipStateActive)
 	token := s.store.CreateToken(member.ID, "admin:org").Value
 
 	created := teamCredentialRequest(t, s, http.MethodPost, "/api/v3/orgs/"+org.Login+"/teams", token, `{"name":"Member Created"}`)

@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func (s *Server) registerGHOrgRoutes() {
@@ -16,8 +18,8 @@ func (s *Server) registerGHOrgRoutes() {
 	s.route("GET /api/v3/user/orgs", s.handleListAuthUserOrgs)
 	s.route("GET /api/v3/organizations", s.handleListAllOrgs)
 	s.route("GET /api/v3/orgs/{org}", s.handleGetOrg)
-	s.route("PATCH /api/v3/orgs/{org}", s.requirePerm(scopeOrgAdministration, permWrite, s.handleUpdateOrg))
-	s.route("DELETE /api/v3/orgs/{org}", s.requirePerm(scopeOrgAdministration, permWrite, s.handleDeleteOrg))
+	s.route("PATCH /api/v3/orgs/{org}", s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.handleUpdateOrg))
+	s.route("DELETE /api/v3/orgs/{org}", s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.handleDeleteOrg))
 	s.route("GET /api/v3/users/{username}/orgs", s.handleListUserOrgs)
 	s.route("POST /api/v3/orgs/{org}/repos", s.handleCreateOrgRepo)
 
@@ -145,12 +147,12 @@ func (s *Server) handleUpdateOrg(w http.ResponseWriter, r *http.Request) {
 		switch v {
 		case "read", "write", "admin", "none":
 		default:
-			writeGHValidationError(w, "Organization", "default_repository_permission", "invalid")
+			store.WriteGHValidationError(w, "Organization", "default_repository_permission", "invalid")
 			return
 		}
 	}
 
-	s.store.UpdateOrg(login, func(o *Org) {
+	s.store.UpdateOrg(login, func(o *store.Org) {
 		setStr := func(key string, dst *string) {
 			if v, ok := req[key].(string); ok {
 				*dst = v
@@ -279,7 +281,7 @@ func (s *Server) handleCreateOrgRepo(w http.ResponseWriter, r *http.Request) {
 			inst.TargetType != "Organization" ||
 			inst.TargetID != org.ID ||
 			!strings.EqualFold(inst.TargetLogin, org.Login) ||
-			!hasPerm(instTok.Permissions, scopeAdministration, permWrite) {
+			!hasPerm(instTok.Permissions, store.ScopeAdministration, store.PermWrite) {
 			writeGHError(w, http.StatusForbidden, "Resource not accessible by integration")
 			return
 		}
@@ -333,7 +335,7 @@ func (s *Server) handleCreateOrgRepo(w http.ResponseWriter, r *http.Request) {
 		case "private", "internal":
 			private = true
 		default:
-			writeGHValidationError(w, "Repository", "visibility", "invalid")
+			store.WriteGHValidationError(w, "Repository", "visibility", "invalid")
 			return
 		}
 	}
@@ -349,7 +351,7 @@ func (s *Server) handleCreateOrgRepo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.store.UpdateRepo(org.Login, req.Name, func(r *Repo) {
+	s.store.UpdateRepo(org.Login, req.Name, func(r *store.Repo) {
 		r.Homepage = req.Homepage
 		if req.HasIssues != nil {
 			r.HasIssues = *req.HasIssues
@@ -361,7 +363,7 @@ func (s *Server) handleCreateOrgRepo(w http.ResponseWriter, r *http.Request) {
 			r.HasWiki = *req.HasWiki
 		}
 		if req.HasDiscussions != nil {
-			r.HasDiscussions = boolPointer(*req.HasDiscussions)
+			r.HasDiscussions = store.BoolPointer(*req.HasDiscussions)
 		}
 		if req.HasPullRequests != nil {
 			r.HasPullRequests = *req.HasPullRequests
@@ -387,7 +389,7 @@ func (s *Server) handleCreateOrgRepo(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if defaultBranch != "main" {
-		s.store.UpdateRepo(org.Login, req.Name, func(r *Repo) {
+		s.store.UpdateRepo(org.Login, req.Name, func(r *store.Repo) {
 			r.DefaultBranch = defaultBranch
 		})
 	}
@@ -411,7 +413,7 @@ func (s *Server) handleCreateOrgRepo(w http.ResponseWriter, r *http.Request) {
 // shape — the org object used in org list responses. The schema
 // enumerates exactly these twelve members; profile fields belong to
 // organization-full (orgToJSON).
-func orgSimpleJSON(org *Org, baseURL string) map[string]interface{} {
+func orgSimpleJSON(org *store.Org, baseURL string) map[string]interface{} {
 	api := baseURL + "/api/v3/orgs/" + org.Login
 	return map[string]interface{}{
 		"login":              org.Login,
@@ -435,7 +437,7 @@ func orgSimpleJSON(org *Org, baseURL string) map[string]interface{} {
 // follower graph, so archived_at is null and those counters are 0. The
 // has_*_projects toggles are false because bleephub serves no classic
 // projects surface. Must not be called with st.mu held.
-func orgToJSON(org *Org, st *Store, baseURL string) map[string]interface{} {
+func orgToJSON(org *store.Org, st *store.Store, baseURL string) map[string]interface{} {
 	out := orgSimpleJSON(org, baseURL)
 	out["name"] = org.Name
 	out["email"] = org.Email

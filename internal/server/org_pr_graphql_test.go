@@ -2,6 +2,8 @@ package bleephub
 
 import (
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func TestPRGraphQL_OrgOwnedHeadRepositoryOwner(t *testing.T) {
@@ -17,7 +19,7 @@ func TestPRGraphQL_OrgOwnedHeadRepositoryOwner(t *testing.T) {
 		s.store.Mu.Lock()
 		delete(s.store.Orgs, org.ID)
 		delete(s.store.OrgsByLogin, orgLogin)
-		delete(s.store.Memberships, membershipKey(orgLogin, admin.ID))
+		delete(s.store.Memberships, store.MembershipKey(orgLogin, admin.ID))
 		s.store.Mu.Unlock()
 	}()
 

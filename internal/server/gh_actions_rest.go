@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/e6qu/bleephub/internal/actions"
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func (s *Server) registerGHActionsRoutes() {
@@ -31,11 +32,11 @@ func (s *Server) registerGHActionsRoutes() {
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/runs/{run_id}", s.handleGetWorkflowRun)
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/jobs", s.handleListWorkflowRunJobs)
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/actions/runs/{run_id}",
-		s.requirePerm(scopeActions, permWrite, s.handleDeleteWorkflowRun))
+		s.requirePerm(store.ScopeActions, store.PermWrite, s.handleDeleteWorkflowRun))
 	s.route("POST /api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/cancel",
-		s.requirePerm(scopeActions, permWrite, s.handleCancelWorkflowRun))
+		s.requirePerm(store.ScopeActions, store.PermWrite, s.handleCancelWorkflowRun))
 	s.route("POST /api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/rerun",
-		s.requirePerm(scopeActions, permWrite, s.handleRerunWorkflowRun))
+		s.requirePerm(store.ScopeActions, store.PermWrite, s.handleRerunWorkflowRun))
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/attempts/{attempt_number}", s.handleGetRunAttempt)
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/runs/{run_id}/attempts/{attempt_number}/jobs", s.handleListRunAttemptJobs)
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/jobs/{job_id}", s.handleGetWorkflowJob)
@@ -43,30 +44,30 @@ func (s *Server) registerGHActionsRoutes() {
 	s.route("GET /internal/repos/{owner}/{repo}/actions/jobs/{job_id}/summary", s.handleGetWorkflowJobSummary)
 	// List/get runners require administration:read on real GitHub.
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/runners",
-		s.requirePerm(scopeAdministration, permRead, s.handleListRunners))
+		s.requirePerm(store.ScopeAdministration, store.PermRead, s.handleListRunners))
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/runners/downloads",
-		s.requirePerm(scopeAdministration, permRead, s.handleListRunnerApplications))
+		s.requirePerm(store.ScopeAdministration, store.PermRead, s.handleListRunnerApplications))
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/runners/{runner_id}",
-		s.requirePerm(scopeAdministration, permRead, s.handleGetRunner))
+		s.requirePerm(store.ScopeAdministration, store.PermRead, s.handleGetRunner))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/actions/runners/{runner_id}",
-		s.requirePerm(scopeAdministration, permWrite, s.handleDeleteRunner))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleDeleteRunner))
 
 	// Org-scoped runner surface: bleephub's pool is global, so the org
 	// scope serves the same agents (404 only for unknown orgs).
 	s.route("GET /api/v3/orgs/{org}/actions/runners",
-		s.requirePerm(scopeAdministration, permRead, s.handleListRunners))
+		s.requirePerm(store.ScopeAdministration, store.PermRead, s.handleListRunners))
 	s.route("GET /api/v3/orgs/{org}/actions/runners/downloads",
-		s.requirePerm(scopeAdministration, permRead, s.handleListRunnerApplications))
+		s.requirePerm(store.ScopeAdministration, store.PermRead, s.handleListRunnerApplications))
 	s.route("GET /api/v3/orgs/{org}/actions/runners/{runner_id}",
-		s.requirePerm(scopeAdministration, permRead, s.handleGetRunner))
+		s.requirePerm(store.ScopeAdministration, store.PermRead, s.handleGetRunner))
 	s.route("DELETE /api/v3/orgs/{org}/actions/runners/{runner_id}",
-		s.requirePerm(scopeAdministration, permWrite, s.handleDeleteRunner))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleDeleteRunner))
 	s.route("POST /api/v3/orgs/{org}/actions/runners/registration-token",
-		s.requirePerm(scopeAdministration, permWrite, s.handleOrgRegistrationToken))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleOrgRegistrationToken))
 	s.route("POST /api/v3/orgs/{org}/actions/runners/remove-token",
-		s.requirePerm(scopeAdministration, permWrite, s.handleOrgRemoveToken))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleOrgRemoveToken))
 	s.route("POST /api/v3/orgs/{org}/actions/runners/generate-jitconfig",
-		s.requirePerm(scopeAdministration, permWrite, s.handleOrgGenerateJITConfig))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleOrgGenerateJITConfig))
 }
 
 func (s *Server) handleListRunnerApplications(w http.ResponseWriter, r *http.Request) {
@@ -115,7 +116,7 @@ func repoFullName(r *http.Request) string {
 // sortRunsNewestFirst orders runs the way real GitHub lists them
 // (most recent run first). Run lists are collected from a map, so
 // without an explicit sort the page boundaries shift between requests.
-func sortRunsNewestFirst(runs []*Workflow) {
+func sortRunsNewestFirst(runs []*store.Workflow) {
 	sort.Slice(runs, func(i, j int) bool { return runs[i].RunID > runs[j].RunID })
 }
 
@@ -125,7 +126,7 @@ func sortRunsNewestFirst(runs []*Workflow) {
 func stableJobID(uuid string) int64 {
 	h := fnv.New64a()
 	_, _ = h.Write([]byte(uuid))
-	return jsonSafePositiveID(h.Sum64())
+	return store.JsonSafePositiveID(h.Sum64())
 }
 
 // runStatus maps a Workflow → GitHub's run statuses (`queued`,
@@ -134,13 +135,13 @@ func stableJobID(uuid string) int64 {
 // `queued` until a job actually STARTS executing — pollers that gate
 // on `?status=queued` (the github-runner dispatcher, ARC-style
 // autoscalers) depend on that distinction to see label-stranded runs.
-func runStatus(wf *Workflow) string {
+func runStatus(wf *store.Workflow) string {
 	switch string(wf.Status) {
 	case "completed":
 		return "completed"
 	case "running":
 		for _, j := range wf.Jobs {
-			if j.Status == JobStatusRunning || j.Status == JobStatusCompleted {
+			if j.Status == store.JobStatusRunning || j.Status == store.JobStatusCompleted {
 				return "in_progress"
 			}
 		}
@@ -208,10 +209,10 @@ func (s *Server) runRepoJSON(fullName, baseURL string) map[string]interface{} {
 	if repo == nil {
 		return nil
 	}
-	return repoToJSON(repo, s.store, baseURL)
+	return store.RepoToJSON(repo, s.store, baseURL)
 }
 
-func workflowRunJSON(wf *Workflow, baseURL, repoName string, repoJSON map[string]interface{}) map[string]any {
+func workflowRunJSON(wf *store.Workflow, baseURL, repoName string, repoJSON map[string]interface{}) map[string]any {
 	repoPath := repoName
 	if wf.RepoFullName != "" {
 		repoPath = wf.RepoFullName
@@ -230,7 +231,7 @@ func workflowRunJSON(wf *Workflow, baseURL, repoName string, repoJSON map[string
 		filePath = ".github/workflows/" + wf.Name + ".yml"
 	}
 	if fileID == 0 {
-		fileID = stableWorkflowFileID(wf.RepoFullName, filePath)
+		fileID = store.StableWorkflowFileID(wf.RepoFullName, filePath)
 	}
 	created := wf.CreatedAt.UTC().Format("2006-01-02T15:04:05Z")
 	run := map[string]any{
@@ -288,7 +289,7 @@ func workflowRunJSON(wf *Workflow, baseURL, repoName string, repoJSON map[string
 // runActorJSON resolves the run's actor from the triggering event's
 // sender payload (already user-shaped); nil when the run has no
 // originating user (directly seeded runs).
-func runActorJSON(wf *Workflow) any {
+func runActorJSON(wf *store.Workflow) any {
 	if wf.EventPayload == nil {
 		return nil
 	}
@@ -298,14 +299,14 @@ func runActorJSON(wf *Workflow) any {
 	return nil
 }
 
-func headBranchOf(wf *Workflow) string {
+func headBranchOf(wf *store.Workflow) string {
 	if wf.Ref == "" {
 		return "main"
 	}
 	return strings.TrimPrefix(wf.Ref, "refs/heads/")
 }
 
-func eventOf(wf *Workflow) string {
+func eventOf(wf *store.Workflow) string {
 	if wf.EventName == "" {
 		return "workflow_dispatch"
 	}
@@ -315,7 +316,7 @@ func eventOf(wf *Workflow) string {
 // workflowJobJSON converts a WorkflowJob to GitHub's `Job` shape. Step
 // detail comes from the timeline records the runner reported for the
 // job's plan.
-func (s *Server) workflowJobJSON(wf *Workflow, wfJob *WorkflowJob, baseURL, repoName string) map[string]any {
+func (s *Server) workflowJobJSON(wf *store.Workflow, wfJob *store.WorkflowJob, baseURL, repoName string) map[string]any {
 	// The job's mutable fields (Status/Result/StartedAt/CompletedAt/
 	// DisplayName) are written by the workflow engine under store.mu, and this
 	// renderer runs both on request goroutines and on the async webhook-drain
@@ -328,7 +329,7 @@ func (s *Server) workflowJobJSON(wf *Workflow, wfJob *WorkflowJob, baseURL, repo
 
 // workflowJobJSONLocked renders the job payload assuming the caller already
 // holds store.mu (read or write).
-func (s *Server) workflowJobJSONLocked(wf *Workflow, wfJob *WorkflowJob, baseURL, repoName string) map[string]any {
+func (s *Server) workflowJobJSONLocked(wf *store.Workflow, wfJob *store.WorkflowJob, baseURL, repoName string) map[string]any {
 	repoPath := repoName
 	if wf.RepoFullName != "" {
 		repoPath = wf.RepoFullName
@@ -394,7 +395,7 @@ func (s *Server) workflowJobJSONLocked(wf *Workflow, wfJob *WorkflowJob, baseURL
 // A job whose runner hasn't reported records yet has no step truth to
 // serve, so the array is empty — step state is never fabricated. The caller
 // holds store.mu (the only caller is workflowJobJSONLocked).
-func (s *Server) jobStepsJSONLocked(wfJob *WorkflowJob) []map[string]any {
+func (s *Server) jobStepsJSONLocked(wfJob *store.WorkflowJob) []map[string]any {
 	tasks := s.taskRecordsForJobLocked(wfJob.JobID)
 	steps := make([]map[string]any, 0, len(tasks))
 	for i, rec := range tasks {
@@ -412,7 +413,7 @@ func (s *Server) jobStepsJSONLocked(wfJob *WorkflowJob) []map[string]any {
 
 // taskRecordsForJobLocked returns the job's "Task" (step) timeline records
 // sorted by Order. Caller must hold store.mu.
-func (s *Server) taskRecordsForJobLocked(jobUUID string) []*TimelineRecord {
+func (s *Server) taskRecordsForJobLocked(jobUUID string) []*store.TimelineRecord {
 	planID := ""
 	if job := s.store.Jobs[jobUUID]; job != nil {
 		planID = job.PlanID
@@ -428,7 +429,7 @@ func (s *Server) taskRecordsForJobLocked(jobUUID string) []*TimelineRecord {
 	if planID == "" {
 		return nil
 	}
-	var tasks []*TimelineRecord
+	var tasks []*store.TimelineRecord
 	for _, rec := range s.store.TimelineRecords[planID] {
 		if rec.Type == "Task" {
 			tasks = append(tasks, rec)
@@ -486,7 +487,7 @@ func stepTimestamp(ts string) any {
 	return ts
 }
 
-func labelsForJob(wfJob *WorkflowJob) []string {
+func labelsForJob(wfJob *store.WorkflowJob) []string {
 	// JobDef.RunsOn is `interface{}` because YAML allows either a
 	// scalar ("ubuntu-latest") or a sequence (["self-hosted", "linux"]).
 	// Normalize both into the GitHub-shape `labels` array.
@@ -519,7 +520,7 @@ func labelsForJob(wfJob *WorkflowJob) []string {
 // runnerJSON converts a registered Agent to GitHub's `Runner` shape
 // (`/repos/{o}/{r}/actions/runners`). GitHub's Runner.id is int64;
 // bleephub Agent.ID is int — direct cast is safe.
-func runnerJSON(a *Agent, busy bool) map[string]any {
+func runnerJSON(a *store.Agent, busy bool) map[string]any {
 	labels := make([]map[string]any, 0, len(a.Labels))
 	for _, l := range a.Labels {
 		labelType := "custom"
@@ -560,7 +561,7 @@ func (s *Server) busyAgentIDsLocked() map[int]bool {
 
 // versionForRunner reports the agent's reported version, or nil when the
 // agent never advertised one (GitHub renders absent versions as null).
-func versionForRunner(a *Agent) any {
+func versionForRunner(a *store.Agent) any {
 	if a.Version == "" {
 		return nil
 	}
@@ -577,7 +578,7 @@ func agentStatusForRunner(internal string) string {
 // findWorkflowByRunID looks up a workflow in the store by RunID.
 // Returns nil if not present. Bleephub keys workflows by UUID
 // internally; the GitHub-facing run_id is the int RunID.
-func (s *Server) findWorkflowByRunID(runID int) *Workflow {
+func (s *Server) findWorkflowByRunID(runID int) *store.Workflow {
 	s.store.Mu.RLock()
 	defer s.store.Mu.RUnlock()
 	if wf := s.store.WorkflowsByRunID[runID]; wf != nil {
@@ -593,7 +594,7 @@ func (s *Server) findWorkflowByRunID(runID int) *Workflow {
 	return nil
 }
 
-func (s *Server) findWorkflowByRunIDInRepo(runID int, repo string) *Workflow {
+func (s *Server) findWorkflowByRunIDInRepo(runID int, repo string) *store.Workflow {
 	wf := s.findWorkflowByRunID(runID)
 	if wf == nil || !workflowBelongsToRepo(wf, repo) {
 		return nil
@@ -601,14 +602,14 @@ func (s *Server) findWorkflowByRunIDInRepo(runID int, repo string) *Workflow {
 	return wf
 }
 
-func workflowBelongsToRepo(wf *Workflow, repo string) bool {
+func workflowBelongsToRepo(wf *store.Workflow, repo string) bool {
 	return wf != nil && wf.RepoFullName == repo
 }
 
 // findJobByStableID resolves the stable int64 GitHub-shape job ID
 // back to (workflow, job). Returns (nil, nil) if no job in any
 // workflow hashes to this ID.
-func (s *Server) findJobByStableID(jobID int64) (*Workflow, *WorkflowJob) {
+func (s *Server) findJobByStableID(jobID int64) (*store.Workflow, *store.WorkflowJob) {
 	s.store.Mu.RLock()
 	defer s.store.Mu.RUnlock()
 	for _, wf := range s.store.Workflows {
@@ -621,7 +622,7 @@ func (s *Server) findJobByStableID(jobID int64) (*Workflow, *WorkflowJob) {
 	return nil, nil
 }
 
-func (s *Server) findJobByStableIDInRepo(jobID int64, repo string) (*Workflow, *WorkflowJob) {
+func (s *Server) findJobByStableIDInRepo(jobID int64, repo string) (*store.Workflow, *store.WorkflowJob) {
 	wf, job := s.findJobByStableID(jobID)
 	if job == nil || !workflowBelongsToRepo(wf, repo) {
 		return nil, nil
@@ -643,7 +644,7 @@ func (s *Server) handleListWorkflowRuns(w http.ResponseWriter, r *http.Request) 
 	eventFilter := r.URL.Query().Get("event")
 
 	s.store.Mu.RLock()
-	matching := []*Workflow{}
+	matching := []*store.Workflow{}
 	for _, wf := range s.store.Workflows {
 		if wf.RepoFullName != "" && wf.RepoFullName != repo {
 			continue
@@ -713,7 +714,7 @@ func (s *Server) handleListWorkflowRunJobs(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	s.store.Mu.RLock()
-	allJobs := make([]*WorkflowJob, 0, len(wf.Jobs))
+	allJobs := make([]*store.WorkflowJob, 0, len(wf.Jobs))
 	for _, j := range wf.Jobs {
 		// Synthetic reusable-workflow gate/collector nodes are engine
 		// bookkeeping; real GitHub lists only the called jobs.
@@ -874,7 +875,7 @@ func (s *Server) memoryLogFilesForDownloadLocked(refs []jobLogRef) map[int][]byt
 
 func (s *Server) logFileContent(ctx context.Context, logID int, memoryContent []byte) ([]byte, bool, error) {
 	if s.artifactStore.ByteStore != nil {
-		content, err := s.artifactStore.ByteStore.Get(ctx, logDataKey(logID))
+		content, err := s.artifactStore.ByteStore.Get(ctx, store.LogDataKey(logID))
 		if err != nil {
 			return nil, false, err
 		}
@@ -933,7 +934,7 @@ func (s *Server) handleRerunWorkflowRun(w http.ResponseWriter, r *http.Request) 
 		writeGHError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
-	def, perr := ParseWorkflow([]byte(match.YAML))
+	def, perr := store.ParseWorkflow([]byte(match.YAML))
 	if perr != nil {
 		writeGHError(w, http.StatusUnprocessableEntity, "parse cached YAML: "+perr.Error())
 		return
@@ -952,7 +953,7 @@ func (s *Server) handleRerunWorkflowRun(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(http.StatusCreated)
 }
 
-func (s *Server) cachedWorkflowFileForRun(repo string, wf *Workflow) (*WorkflowFile, error) {
+func (s *Server) cachedWorkflowFileForRun(repo string, wf *store.Workflow) (*store.WorkflowFile, error) {
 	s.store.DiscoverWorkflowFilesFromGit(repo)
 	if wf.WorkflowFileID != 0 {
 		if f := s.store.GetWorkflowFile(repo, wf.WorkflowFileID); f != nil && f.YAML != "" {
@@ -966,7 +967,7 @@ func (s *Server) cachedWorkflowFileForRun(repo string, wf *Workflow) (*WorkflowF
 			}
 		}
 	}
-	var matches []*WorkflowFile
+	var matches []*store.WorkflowFile
 	for _, f := range s.store.ListWorkflowFiles(repo) {
 		if f.Name == wf.Name && f.YAML != "" {
 			matches = append(matches, f)
@@ -987,7 +988,7 @@ func (s *Server) cachedWorkflowFileForRun(repo string, wf *Workflow) (*WorkflowF
 // run_attempt+1 (real GitHub never mints a new run id for a re-run).
 // carryOver pre-completes the listed job keys with the previous
 // attempt's results (rerun-failed-jobs).
-func (s *Server) rerunWorkflowAsNewAttempt(r *http.Request, old *Workflow, file *WorkflowFile, def *WorkflowDef, serverURL string, carryOver map[string]*WorkflowJob) error {
+func (s *Server) rerunWorkflowAsNewAttempt(r *http.Request, old *store.Workflow, file *store.WorkflowFile, def *store.WorkflowDef, serverURL string, carryOver map[string]*store.WorkflowJob) error {
 	// Archive + remove the old attempt first; restore on submit failure.
 	s.store.Mu.Lock()
 	s.store.WorkflowAttempts[old.RunID] = append(s.store.WorkflowAttempts[old.RunID], old)
@@ -1033,7 +1034,7 @@ func (s *Server) rerunWorkflowAsNewAttempt(r *http.Request, old *Workflow, file 
 
 // findRunAttempt resolves a run's specific attempt: the live run when
 // attempt matches its number, else the archived attempt.
-func (s *Server) findRunAttempt(runID, attempt int, repo string) *Workflow {
+func (s *Server) findRunAttempt(runID, attempt int, repo string) *store.Workflow {
 	current := s.findWorkflowByRunIDInRepo(runID, repo)
 	if current != nil && current.AttemptNumber() == attempt {
 		return current
@@ -1094,7 +1095,7 @@ func (s *Server) handleListRunAttemptJobs(w http.ResponseWriter, r *http.Request
 		return
 	}
 	s.store.Mu.RLock()
-	allJobs := make([]*WorkflowJob, 0, len(wf.Jobs))
+	allJobs := make([]*store.WorkflowJob, 0, len(wf.Jobs))
 	for _, j := range wf.Jobs {
 		if j.Hidden {
 			continue
@@ -1164,7 +1165,7 @@ func (s *Server) handleListRunners(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.store.Mu.RLock()
-	all := make([]*Agent, 0, len(s.store.Agents))
+	all := make([]*store.Agent, 0, len(s.store.Agents))
 	for _, a := range s.store.Agents {
 		if runnerVisibleAt(a.Scope, target) {
 			all = append(all, a)
@@ -1236,16 +1237,16 @@ func (s *Server) handleDeleteRunner(w http.ResponseWriter, r *http.Request) {
 // A repository inventory can see its own repository runner and runners
 // registered at its organization; organization and enterprise inventories
 // contain only runners registered at that exact level.
-func (s *Server) runnerTargetFromRequest(w http.ResponseWriter, r *http.Request) (runnerScope, bool) {
+func (s *Server) runnerTargetFromRequest(w http.ResponseWriter, r *http.Request) (store.RunnerScope, bool) {
 	target, err := s.runnerScopeFromRequest(r)
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
-		return runnerScope{}, false
+		return store.RunnerScope{}, false
 	}
 	return target, true
 }
 
-func runnerVisibleAt(agentScope, target runnerScope) bool {
+func runnerVisibleAt(agentScope, target store.RunnerScope) bool {
 	switch {
 	case target.Repo != "":
 		if strings.EqualFold(agentScope.Repo, target.Repo) {

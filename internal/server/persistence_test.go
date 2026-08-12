@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func TestPersistence_RoundTripAppsInstallationsTokensRepos(t *testing.T) {
@@ -15,12 +17,12 @@ func TestPersistence_RoundTripAppsInstallationsTokensRepos(t *testing.T) {
 	t.Setenv("BLEEPHUB_PERSIST", "true")
 	t.Setenv("BLEEPHUB_DATA_DIR", dir)
 
-	persistRoundTrip(t, func() (*Persistence, error) { return NewPersistence() })
+	persistRoundTrip(t, func() (*store.Persistence, error) { return store.NewPersistence() })
 }
 
 func TestPersistence_DatabaseURLFailsLoud(t *testing.T) {
 	t.Setenv("BLEEPHUB_DATABASE_URL", "postgres://ci:ci@localhost:5432/postgres?sslmode=disable")
-	p, err := NewPersistence()
+	p, err := store.NewPersistence()
 	if err == nil {
 		t.Fatalf("NewPersistence succeeded with obsolete BLEEPHUB_DATABASE_URL: %#v", p)
 	}
@@ -29,14 +31,14 @@ func TestPersistence_DatabaseURLFailsLoud(t *testing.T) {
 	}
 }
 
-func persistRoundTrip(t *testing.T, open func() (*Persistence, error)) {
+func persistRoundTrip(t *testing.T, open func() (*store.Persistence, error)) {
 	t.Helper()
 
 	p1, err := open()
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	st1 := NewStore()
+	st1 := store.NewStore()
 	if err := st1.SetPersistence(p1); err != nil {
 		t.Fatalf("SetPersistence: %v", err)
 	}
@@ -53,17 +55,17 @@ func persistRoundTrip(t *testing.T, open func() (*Persistence, error)) {
 	if !st1.ScopeUserToServerToken(scopedTok.Token, []int{inst.ID}, map[string]string{"issues": "read"}, []int{repo.ID}) {
 		t.Fatal("scope persisted user-to-server token")
 	}
-	repoSecret := &Secret{Name: "DATABASE_PASSWORD", Value: "persisted-database-password", CreatedAt: fixedTestTime.UTC(), UpdatedAt: fixedTestTime.UTC()}
-	st1.RepoSecrets[repo.FullName] = map[string]*Secret{repoSecret.Name: repoSecret}
+	repoSecret := &store.Secret{Name: "DATABASE_PASSWORD", Value: "persisted-database-password", CreatedAt: fixedTestTime.UTC(), UpdatedAt: fixedTestTime.UTC()}
+	st1.RepoSecrets[repo.FullName] = map[string]*store.Secret{repoSecret.Name: repoSecret}
 	p1.MustPut("repo_secrets", repo.FullName, st1.RepoSecrets[repo.FullName])
 	keyPair, err := st1.ActionsKeyPair()
 	if err != nil {
 		t.Fatalf("create Actions secrets keypair: %v", err)
 	}
 	expiresAt := fixedTestTime.UTC().Add(24 * time.Hour)
-	fineGrained, err := st1.CreateUserFineGrainedPAT(user.ID, createPersonalAccessTokenWebRequest{
+	fineGrained, err := st1.CreateUserFineGrainedPAT(user.ID, store.CreatePersonalAccessTokenWebRequest{
 		Name: "persist fine-grained", ResourceOwner: user.Login, RepositorySelection: "subset",
-		RepositoryIDs: []int{repo.ID}, Permissions: OrgPATPermissions{Repository: map[string]string{"contents": "read"}}, ExpiresAt: &expiresAt,
+		RepositoryIDs: []int{repo.ID}, Permissions: store.OrgPATPermissions{Repository: map[string]string{"contents": "read"}}, ExpiresAt: &expiresAt,
 	})
 	if err != nil {
 		t.Fatalf("create fine-grained personal access token: %v", err)
@@ -73,7 +75,7 @@ func persistRoundTrip(t *testing.T, open func() (*Persistence, error)) {
 		t.Fatalf("list persisted personal access tokens: %v", err)
 	}
 	for key, raw := range tokenRows {
-		if !strings.HasPrefix(key, opaquePersistenceKeyPrefix) {
+		if !strings.HasPrefix(key, store.OpaquePersistenceKeyPrefix) {
 			t.Errorf("personal access token persistence key %q is not a keyed digest", key)
 		}
 		for _, credential := range []string{defaultToken, fineGrained.Value} {
@@ -82,7 +84,7 @@ func persistRoundTrip(t *testing.T, open func() (*Persistence, error)) {
 			}
 		}
 	}
-	loginSession := &LoginSession{
+	loginSession := &store.LoginSession{
 		UserID: user.ID, CSRFToken: "persisted-csrf", ExpiresAt: fixedTestTime.UTC().Add(time.Hour),
 		OIDCProvider: "shauth", OIDCIssuer: "https://auth.example.test", OIDCSubject: "subject-1", OIDCSID: "sid-1", OIDCIDToken: "signed.id.token",
 	}
@@ -101,11 +103,11 @@ func persistRoundTrip(t *testing.T, open func() (*Persistence, error)) {
 			_ = rows.Close()
 			t.Fatal(err)
 		}
-		if !isSensitivePersistenceBucket(bucket) {
+		if !store.IsSensitivePersistenceBucket(bucket) {
 			continue
 		}
 		protectedRows++
-		if !strings.HasPrefix(string(raw), sealedPersistenceValuePrefix) {
+		if !strings.HasPrefix(string(raw), store.SealedPersistenceValuePrefix) {
 			t.Errorf("sensitive persistence row %s/%s is plaintext: %q", bucket, key, raw)
 		}
 		for _, credential := range []string{
@@ -129,8 +131,8 @@ func persistRoundTrip(t *testing.T, open func() (*Persistence, error)) {
 	if protectedRows < 7 {
 		t.Fatalf("inspected %d encrypted rows, want credentials from every exercised bucket", protectedRows)
 	}
-	st1.UpdateRepo(user.Login, repo.Name, func(r *Repo) {
-		r.HasDiscussions = boolPointer(false)
+	st1.UpdateRepo(user.Login, repo.Name, func(r *store.Repo) {
+		r.HasDiscussions = store.BoolPointer(false)
 	})
 	if err := p1.Close(); err != nil {
 		t.Fatalf("close: %v", err)
@@ -140,7 +142,7 @@ func persistRoundTrip(t *testing.T, open func() (*Persistence, error)) {
 	if err != nil {
 		t.Fatalf("re-open: %v", err)
 	}
-	st2 := NewStore()
+	st2 := store.NewStore()
 	if err := st2.SetPersistence(p2); err != nil {
 		t.Fatalf("re-load SetPersistence: %v", err)
 	}
@@ -222,7 +224,7 @@ func persistRoundTrip(t *testing.T, open func() (*Persistence, error)) {
 		t.Fatal("repo did not persist")
 	} else if got.ID != repo.ID {
 		t.Errorf("repo ID round-trip: got %d want %d", got.ID, repo.ID)
-	} else if repoHasDiscussions(got) {
+	} else if store.RepoHasDiscussions(got) {
 		t.Error("repo has_discussions=false did not persist")
 	}
 }
@@ -230,15 +232,15 @@ func persistRoundTrip(t *testing.T, open func() (*Persistence, error)) {
 func TestPersistence_RequiresStableEncryptionKey(t *testing.T) {
 	t.Setenv("BLEEPHUB_PERSIST", "true")
 	t.Setenv("BLEEPHUB_DATA_DIR", t.TempDir())
-	t.Setenv(persistenceEncryptionKeyEnvironment, "")
-	p, err := NewPersistence()
+	t.Setenv(store.PersistenceEncryptionKeyEnvironment, "")
+	p, err := store.NewPersistence()
 	if err == nil {
 		if p != nil {
 			_ = p.Close()
 		}
 		t.Fatal("persistent mode accepted an empty encryption key")
 	}
-	if !strings.Contains(err.Error(), persistenceEncryptionKeyEnvironment+" is required") {
+	if !strings.Contains(err.Error(), store.PersistenceEncryptionKeyEnvironment+" is required") {
 		t.Fatalf("unexpected missing-key error: %v", err)
 	}
 }
@@ -247,12 +249,12 @@ func TestPersistence_MigratesLegacySensitiveRowsAndRejectsWrongKey(t *testing.T)
 	dir := t.TempDir()
 	t.Setenv("BLEEPHUB_PERSIST", "true")
 	t.Setenv("BLEEPHUB_DATA_DIR", dir)
-	p, err := NewPersistence()
+	p, err := store.NewPersistence()
 	if err != nil {
 		t.Fatal(err)
 	}
 	legacySession := []byte(`{"UserID":1,"CSRFToken":"legacy-csrf","ExpiresAt":"2099-01-01T00:00:00Z"}`)
-	if _, err := p.Db.Exec(p.Dialect.PutSQL, loginSessionsBucket, "legacy-cookie", legacySession); err != nil {
+	if _, err := p.Db.Exec(p.Dialect.PutSQL, store.LoginSessionsBucket, "legacy-cookie", legacySession); err != nil {
 		t.Fatal(err)
 	}
 	const legacyPAT = "ghp_legacy-persistence-token"
@@ -264,22 +266,22 @@ func TestPersistence_MigratesLegacySensitiveRowsAndRejectsWrongKey(t *testing.T)
 		t.Fatal(err)
 	}
 
-	p, err = NewPersistence()
+	p, err = store.NewPersistence()
 	if err != nil {
 		t.Fatalf("migrate legacy sensitive row: %v", err)
 	}
 	var storedKey string
 	var storedValue []byte
-	if err := p.Db.QueryRow(p.Dialect.ListSQL, loginSessionsBucket).Scan(&storedKey, &storedValue); err != nil {
+	if err := p.Db.QueryRow(p.Dialect.ListSQL, store.LoginSessionsBucket).Scan(&storedKey, &storedValue); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(storedKey, opaquePersistenceKeyPrefix) || strings.Contains(storedKey, "legacy-cookie") {
+	if !strings.HasPrefix(storedKey, store.OpaquePersistenceKeyPrefix) || strings.Contains(storedKey, "legacy-cookie") {
 		t.Fatalf("legacy bearer key was not replaced by a keyed digest: %q", storedKey)
 	}
-	if !strings.HasPrefix(string(storedValue), sealedPersistenceValuePrefix) || bytes.Contains(storedValue, []byte("legacy-csrf")) {
+	if !strings.HasPrefix(string(storedValue), store.SealedPersistenceValuePrefix) || bytes.Contains(storedValue, []byte("legacy-csrf")) {
 		t.Fatalf("legacy sensitive value was not encrypted: %q", storedValue)
 	}
-	raw, err := p.Get(loginSessionsBucket, "legacy-cookie")
+	raw, err := p.Get(store.LoginSessionsBucket, "legacy-cookie")
 	if err != nil || !bytes.Equal(raw, legacySession) {
 		t.Fatalf("migrated row did not decrypt: raw=%q err=%v", raw, err)
 	}
@@ -288,10 +290,10 @@ func TestPersistence_MigratesLegacySensitiveRowsAndRejectsWrongKey(t *testing.T)
 	if err := p.Db.QueryRow(p.Dialect.ListSQL, "tokens").Scan(&storedTokenKey, &storedTokenValue); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(storedTokenKey, opaquePersistenceKeyPrefix) || strings.Contains(storedTokenKey, legacyPAT) {
+	if !strings.HasPrefix(storedTokenKey, store.OpaquePersistenceKeyPrefix) || strings.Contains(storedTokenKey, legacyPAT) {
 		t.Fatalf("legacy personal access token key was not replaced by a keyed digest: %q", storedTokenKey)
 	}
-	if !strings.HasPrefix(string(storedTokenValue), sealedPersistenceValuePrefix) ||
+	if !strings.HasPrefix(string(storedTokenValue), store.SealedPersistenceValuePrefix) ||
 		bytes.Contains(storedTokenValue, []byte(legacyPAT)) {
 		t.Fatalf("legacy personal access token row was not protected: %q", storedTokenValue)
 	}
@@ -303,8 +305,8 @@ func TestPersistence_MigratesLegacySensitiveRowsAndRejectsWrongKey(t *testing.T)
 		t.Fatal(err)
 	}
 
-	t.Setenv(persistenceEncryptionKeyEnvironment, "ZmVkY2JhOTg3NjU0MzIxMGZlZGNiYTk4NzY1NDMyMTA=")
-	if wrong, err := NewPersistence(); err == nil {
+	t.Setenv(store.PersistenceEncryptionKeyEnvironment, "ZmVkY2JhOTg3NjU0MzIxMGZlZGNiYTk4NzY1NDMyMTA=")
+	if wrong, err := store.NewPersistence(); err == nil {
 		_ = wrong.Close()
 		t.Fatal("database opened with the wrong persistence encryption key")
 	} else if !strings.Contains(err.Error(), "wrong key or corrupted data") {
@@ -314,7 +316,7 @@ func TestPersistence_MigratesLegacySensitiveRowsAndRejectsWrongKey(t *testing.T)
 
 func TestPersistence_DisabledWhenEnvUnset(t *testing.T) {
 	t.Setenv("BLEEPHUB_PERSIST", "")
-	p, err := NewPersistence()
+	p, err := store.NewPersistence()
 	if err != nil {
 		t.Fatalf("NewPersistence: %v", err)
 	}
@@ -333,7 +335,7 @@ func TestPersistence_BadPathFailsLoud(t *testing.T) {
 	t.Setenv("BLEEPHUB_PERSIST", "true")
 	t.Setenv("BLEEPHUB_DATA_DIR", filepath.Join(blocker, "subdir"))
 
-	if _, err := NewPersistence(); err == nil {
+	if _, err := store.NewPersistence(); err == nil {
 		t.Fatal("expected error when data dir cannot be created")
 	}
 }
@@ -342,26 +344,26 @@ func TestPersistentOIDCLogoutReplayCannotRevokeLaterSession(t *testing.T) {
 	t.Setenv("BLEEPHUB_PERSIST", "true")
 	t.Setenv("BLEEPHUB_DATA_DIR", t.TempDir())
 
-	p1, err := NewPersistence()
+	p1, err := store.NewPersistence()
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer p1.Close()
-	p2, err := NewPersistence()
+	p2, err := store.NewPersistence()
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer p2.Close()
-	first := NewStore()
+	first := store.NewStore()
 	if err := first.SetPersistence(p1); err != nil {
 		t.Fatal(err)
 	}
-	second := NewStore()
+	second := store.NewStore()
 	if err := second.SetPersistence(p2); err != nil {
 		t.Fatal(err)
 	}
 
-	session := &LoginSession{
+	session := &store.LoginSession{
 		UserID: 1, ExpiresAt: fixedTestTime.Add(time.Hour), OIDCProvider: "shauth",
 		OIDCIssuer: "https://auth.example.test/", OIDCSubject: "subject-1", OIDCSID: "sid-1",
 	}
@@ -403,18 +405,18 @@ func TestPersistentOIDCLogoutReplayCannotRevokeLaterSession(t *testing.T) {
 func TestPersistentOIDCLogoutClaimIsExclusiveAcrossConnections(t *testing.T) {
 	t.Setenv("BLEEPHUB_PERSIST", "true")
 	t.Setenv("BLEEPHUB_DATA_DIR", t.TempDir())
-	p1, err := NewPersistence()
+	p1, err := store.NewPersistence()
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer p1.Close()
-	p2, err := NewPersistence()
+	p2, err := store.NewPersistence()
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer p2.Close()
-	stores := []*Store{NewStore(), NewStore()}
-	for index, persistence := range []*Persistence{p1, p2} {
+	stores := []*store.Store{store.NewStore(), store.NewStore()}
+	for index, persistence := range []*store.Persistence{p1, p2} {
 		if err := stores[index].SetPersistence(persistence); err != nil {
 			t.Fatal(err)
 		}
@@ -428,17 +430,17 @@ func TestPersistentOIDCLogoutClaimIsExclusiveAcrossConnections(t *testing.T) {
 	start := make(chan struct{})
 	var ready sync.WaitGroup
 	ready.Add(2)
-	for _, store := range stores {
-		go func(store *Store) {
+	for _, st := range stores {
+		go func(st *store.Store) {
 			ready.Done()
 			<-start
 			now := fixedTestTime
-			claimed, err := store.ClaimOIDCLogoutAndDeleteSessions(
+			claimed, err := st.ClaimOIDCLogoutAndDeleteSessions(
 				"shauth", "https://auth.example.test/", "bleephub", "concurrent-jti",
 				now.Add(10*time.Minute), now, "sid-1", "subject-1",
 			)
 			results <- result{claimed: claimed, err: err}
-		}(store)
+		}(st)
 	}
 	ready.Wait()
 	close(start)
@@ -460,7 +462,7 @@ func TestPersistentOIDCLogoutClaimIsExclusiveAcrossConnections(t *testing.T) {
 // The single-node store must fsync the WAL at every commit so acknowledged
 // writes survive power loss, not only a process crash.
 func TestSQLiteDurabilityIsSynchronousFull(t *testing.T) {
-	db, err := openSQLite(t.TempDir())
+	db, err := store.OpenSQLite(t.TempDir())
 	if err != nil {
 		t.Fatalf("openSQLite: %v", err)
 	}

@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/gitstore"
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
 	git "github.com/go-git/go-git/v5"
@@ -89,7 +91,7 @@ func commitRootBranchWithFiles(stor gitStorage.Storer, branch, message string, f
 			return plumbing.ZeroHash, err
 		}
 	}
-	if err := initializeRepositoryReferences(stor, branchRef, requireEmpty); err != nil {
+	if err := gitstore.InitializeRepositoryReferences(stor, branchRef, requireEmpty); err != nil {
 		return plumbing.ZeroHash, fmt.Errorf("initialize refs: %w", err)
 	}
 	return commitHash, nil
@@ -243,8 +245,8 @@ func writeFileToWorktree(fs billy.Filesystem, wt *git.Worktree, path, body strin
 // ensureRepoInitialized creates git storage for a repo that does not yet
 // have any. It is used by org repo creation, which historically registered
 // the Repo row before allocating storage.
-func (s *Server) initRepoFiles(ctx context.Context, repo *Repo, branch, description, gitignoreTemplate, licenseTemplate string, includeReadme bool) error {
-	owner, name, ok := splitRepoFullName(repo.FullName)
+func (s *Server) initRepoFiles(ctx context.Context, repo *store.Repo, branch, description, gitignoreTemplate, licenseTemplate string, includeReadme bool) error {
+	owner, name, ok := store.SplitRepoFullName(repo.FullName)
 	if !ok {
 		return fmt.Errorf("invalid full name %q", repo.FullName)
 	}
@@ -276,11 +278,11 @@ func (s *Server) initRepoFiles(ctx context.Context, repo *Repo, branch, descript
 	if err != nil {
 		return err
 	}
-	s.store.UpdateRepo(owner, name, func(r *Repo) {
+	s.store.UpdateRepo(owner, name, func(r *store.Repo) {
 		r.PushedAt = time.Now().UTC()
 		if licenseTemplate != "" {
 			if key, ok := normalizeLicenseKey(licenseTemplate); ok {
-				tmpl := licenseTemplates[key]
+				tmpl := store.LicenseTemplates[key]
 				r.LicenseKey = key
 				r.LicenseName = tmpl.Name
 				r.LicenseSPDX = tmpl.SpdxID
@@ -290,7 +292,7 @@ func (s *Server) initRepoFiles(ctx context.Context, repo *Repo, branch, descript
 	return nil
 }
 
-func userDisplayName(repo *Repo) string {
+func userDisplayName(repo *store.Repo) string {
 	if repo.Owner != nil && repo.Owner.Name != "" {
 		return repo.Owner.Name
 	}
@@ -314,19 +316,19 @@ func renderReadme(repoName, description string) string {
 }
 
 func (s *Server) registerGHGitDataRoutes() {
-	s.route("GET /api/v3/repos/{owner}/{repo}/git/blobs/{sha}", s.requirePerm(scopeContents, permRead, s.handleGetBlob))
-	s.route("POST /api/v3/repos/{owner}/{repo}/git/blobs", s.requirePerm(scopeContents, permWrite, s.requireRepoPush(s.handleCreateBlob)))
-	s.route("GET /api/v3/repos/{owner}/{repo}/git/trees/{sha...}", s.requirePerm(scopeContents, permRead, s.handleGetTree))
-	s.route("POST /api/v3/repos/{owner}/{repo}/git/trees", s.requirePerm(scopeContents, permWrite, s.requireRepoPush(s.handleCreateTree)))
-	s.route("GET /api/v3/repos/{owner}/{repo}/git/commits/{sha}", s.requirePerm(scopeContents, permRead, s.handleGetCommit))
-	s.route("POST /api/v3/repos/{owner}/{repo}/git/commits", s.requirePerm(scopeContents, permWrite, s.requireRepoPush(s.handleCreateCommit)))
-	s.route("GET /api/v3/repos/{owner}/{repo}/git/tags/{sha}", s.requirePerm(scopeContents, permRead, s.handleGetTag))
-	s.route("POST /api/v3/repos/{owner}/{repo}/git/tags", s.requirePerm(scopeContents, permWrite, s.requireRepoPush(s.handleCreateTag)))
-	s.route("GET /api/v3/repos/{owner}/{repo}/git/refs/{ref...}", s.requirePerm(scopeContents, permRead, s.handleGetRefs))
-	s.route("POST /api/v3/repos/{owner}/{repo}/git/refs", s.requirePerm(scopeContents, permWrite, s.requireRepoPush(s.handleCreateRef)))
-	s.route("PATCH /api/v3/repos/{owner}/{repo}/git/refs/{ref...}", s.requirePerm(scopeContents, permWrite, s.requireRepoPush(s.handleUpdateRef)))
+	s.route("GET /api/v3/repos/{owner}/{repo}/git/blobs/{sha}", s.requirePerm(store.ScopeContents, store.PermRead, s.handleGetBlob))
+	s.route("POST /api/v3/repos/{owner}/{repo}/git/blobs", s.requirePerm(store.ScopeContents, store.PermWrite, s.requireRepoPush(s.handleCreateBlob)))
+	s.route("GET /api/v3/repos/{owner}/{repo}/git/trees/{sha...}", s.requirePerm(store.ScopeContents, store.PermRead, s.handleGetTree))
+	s.route("POST /api/v3/repos/{owner}/{repo}/git/trees", s.requirePerm(store.ScopeContents, store.PermWrite, s.requireRepoPush(s.handleCreateTree)))
+	s.route("GET /api/v3/repos/{owner}/{repo}/git/commits/{sha}", s.requirePerm(store.ScopeContents, store.PermRead, s.handleGetCommit))
+	s.route("POST /api/v3/repos/{owner}/{repo}/git/commits", s.requirePerm(store.ScopeContents, store.PermWrite, s.requireRepoPush(s.handleCreateCommit)))
+	s.route("GET /api/v3/repos/{owner}/{repo}/git/tags/{sha}", s.requirePerm(store.ScopeContents, store.PermRead, s.handleGetTag))
+	s.route("POST /api/v3/repos/{owner}/{repo}/git/tags", s.requirePerm(store.ScopeContents, store.PermWrite, s.requireRepoPush(s.handleCreateTag)))
+	s.route("GET /api/v3/repos/{owner}/{repo}/git/refs/{ref...}", s.requirePerm(store.ScopeContents, store.PermRead, s.handleGetRefs))
+	s.route("POST /api/v3/repos/{owner}/{repo}/git/refs", s.requirePerm(store.ScopeContents, store.PermWrite, s.requireRepoPush(s.handleCreateRef)))
+	s.route("PATCH /api/v3/repos/{owner}/{repo}/git/refs/{ref...}", s.requirePerm(store.ScopeContents, store.PermWrite, s.requireRepoPush(s.handleUpdateRef)))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/git/refs/{ref...}",
-		s.requirePerm(scopeContents, permWrite, s.requireRepoPush(s.requireRefDeletionAllowed(s.handleDeleteRef))))
+		s.requirePerm(store.ScopeContents, store.PermWrite, s.requireRepoPush(s.requireRefDeletionAllowed(s.handleDeleteRef))))
 }
 
 // requireRepoAdmin resolves the repository named in the path and admits only a
@@ -337,7 +339,7 @@ func (s *Server) registerGHGitDataRoutes() {
 // Handlers must take the returned *Repo as the scope key rather than
 // re-deriving one from the path values: a path-derived key addresses a scope no
 // other code path reads.
-func (s *Server) requireRepoAdmin(w http.ResponseWriter, r *http.Request) (*Repo, bool) {
+func (s *Server) requireRepoAdmin(w http.ResponseWriter, r *http.Request) (*store.Repo, bool) {
 	repo := s.store.GetRepo(r.PathValue("owner"), r.PathValue("repo"))
 	if repo == nil || !s.viewerCanReadRepo(r.Context(), repo) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -347,7 +349,7 @@ func (s *Server) requireRepoAdmin(w http.ResponseWriter, r *http.Request) (*Repo
 	// repository-secret handler, and GitHub grants those at secrets:write while
 	// still demanding repository admin of a human. Naming administration here
 	// would refuse an app GitHub allows.
-	if !s.viewerMayActOnRepo(r.Context(), repo, scopeSecrets, permWrite, permAdmin) {
+	if !s.viewerMayActOnRepo(r.Context(), repo, store.ScopeSecrets, store.PermWrite, store.PermAdmin) {
 		writeGHError(w, http.StatusForbidden, "Must have admin rights to Repository.")
 		return nil, false
 	}
@@ -396,7 +398,7 @@ func refUpdateIsFastForward(stor storer.Storer, current, target plumbing.Hash) (
 // refWriteRefusal decides a REST ref write against the branch's protection
 // rule, through the same predicate the git transports push through. Push
 // access — required by the route gate — is enough for an unprotected ref.
-func (s *Server) refWriteRefusal(r *http.Request, repo *Repo, ref plumbing.ReferenceName, kind refWriteKind, target plumbing.Hash) string {
+func (s *Server) refWriteRefusal(r *http.Request, repo *store.Repo, ref plumbing.ReferenceName, kind refWriteKind, target plumbing.Hash) string {
 	stor, _ := s.store.GitStorageForRepoID(repo.ID)
 	return s.protectedRefWriteRefusal(r.Context(), repo, stor, ref, kind, target)
 }
@@ -420,7 +422,7 @@ func (s *Server) requireRefDeletionAllowed(next http.HandlerFunc) http.HandlerFu
 	}
 }
 
-func (s *Server) gitDataContext(w http.ResponseWriter, r *http.Request) (owner, repoName string, repo *Repo, stor gitStorage.Storer) {
+func (s *Server) gitDataContext(w http.ResponseWriter, r *http.Request) (owner, repoName string, repo *store.Repo, stor gitStorage.Storer) {
 	owner = r.PathValue("owner")
 	repoName = r.PathValue("repo")
 	repo = s.store.GetRepo(owner, repoName)
@@ -449,14 +451,14 @@ func (s *Server) handleCreateBlob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Content == nil {
-		writeGHValidationError(w, "Blob", "content", "missing_field")
+		store.WriteGHValidationError(w, "Blob", "content", "missing_field")
 		return
 	}
 	if req.Encoding == "" {
 		req.Encoding = "utf-8"
 	}
 	if req.Encoding != "utf-8" && req.Encoding != "base64" {
-		writeGHValidationError(w, "Blob", "encoding", "invalid")
+		store.WriteGHValidationError(w, "Blob", "encoding", "invalid")
 		return
 	}
 	data := []byte(*req.Content)
@@ -464,7 +466,7 @@ func (s *Server) handleCreateBlob(w http.ResponseWriter, r *http.Request) {
 		var err error
 		data, err = base64.StdEncoding.DecodeString(*req.Content)
 		if err != nil {
-			writeGHValidationError(w, "Blob", "content", "invalid")
+			store.WriteGHValidationError(w, "Blob", "content", "invalid")
 			return
 		}
 	}
@@ -501,14 +503,14 @@ func (s *Server) handleCreateTree(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Tree == nil {
-		writeGHValidationError(w, "Tree", "tree", "missing_field")
+		store.WriteGHValidationError(w, "Tree", "tree", "missing_field")
 		return
 	}
 
 	var baseTree *object.Tree
 	if req.BaseTree != "" {
 		if !validGitObjectID(req.BaseTree) {
-			writeGHValidationError(w, "Tree", "base_tree", "invalid")
+			store.WriteGHValidationError(w, "Tree", "base_tree", "invalid")
 			return
 		}
 		var err error
@@ -535,7 +537,7 @@ func (s *Server) handleCreateTree(w http.ResponseWriter, r *http.Request) {
 
 	for _, ent := range req.Tree {
 		if !validGitTreePath(ent.Path) {
-			writeGHValidationError(w, "Tree", "path", "invalid")
+			store.WriteGHValidationError(w, "Tree", "path", "invalid")
 			return
 		}
 
@@ -574,23 +576,23 @@ func (s *Server) handleCreateTree(w http.ResponseWriter, r *http.Request) {
 		switch ent.Type {
 		case "", "blob":
 			if mode == filemode.Dir || mode == filemode.Submodule {
-				writeGHValidationError(w, "Tree", "mode", "invalid")
+				store.WriteGHValidationError(w, "Tree", "mode", "invalid")
 				return
 			}
 		case "tree":
 			if modeProvided && mode != filemode.Dir {
-				writeGHValidationError(w, "Tree", "mode", "invalid")
+				store.WriteGHValidationError(w, "Tree", "mode", "invalid")
 				return
 			}
 			mode = filemode.Dir
 		case "commit":
 			if modeProvided && mode != filemode.Submodule {
-				writeGHValidationError(w, "Tree", "mode", "invalid")
+				store.WriteGHValidationError(w, "Tree", "mode", "invalid")
 				return
 			}
 			mode = filemode.Submodule
 		default:
-			writeGHValidationError(w, "Tree", "type", "invalid")
+			store.WriteGHValidationError(w, "Tree", "type", "invalid")
 			return
 		}
 
@@ -598,7 +600,7 @@ func (s *Server) handleCreateTree(w http.ResponseWriter, r *http.Request) {
 		if hasSHA {
 			var sha string
 			if err := json.Unmarshal(ent.SHA, &sha); err != nil || !validGitObjectID(sha) {
-				writeGHValidationError(w, "Tree", "sha", "invalid")
+				store.WriteGHValidationError(w, "Tree", "sha", "invalid")
 				return
 			}
 			hash = plumbing.NewHash(sha)
@@ -612,12 +614,12 @@ func (s *Server) handleCreateTree(w http.ResponseWriter, r *http.Request) {
 				wantType = "blob"
 			}
 			if objectTypeName(obj.Type()) != wantType {
-				writeGHValidationError(w, "Tree", "type", "invalid")
+				store.WriteGHValidationError(w, "Tree", "type", "invalid")
 				return
 			}
 		} else if ent.Content != nil {
 			if ent.Type != "" && ent.Type != "blob" {
-				writeGHValidationError(w, "Tree", "type", "invalid")
+				store.WriteGHValidationError(w, "Tree", "type", "invalid")
 				return
 			}
 			hash, err = encodeBlob(stor, []byte(*ent.Content))
@@ -770,7 +772,7 @@ func (s *Server) handleCreateCommit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !validGitObjectID(req.Tree) {
-		writeGHValidationError(w, "Commit", "tree", "invalid")
+		store.WriteGHValidationError(w, "Commit", "tree", "invalid")
 		return
 	}
 
@@ -783,7 +785,7 @@ func (s *Server) handleCreateCommit(w http.ResponseWriter, r *http.Request) {
 	var parentHashes []plumbing.Hash
 	for _, p := range req.Parents {
 		if !validGitObjectID(p) {
-			writeGHValidationError(w, "Commit", "parents", "invalid")
+			store.WriteGHValidationError(w, "Commit", "parents", "invalid")
 			return
 		}
 		h := plumbing.NewHash(p)
@@ -797,14 +799,14 @@ func (s *Server) handleCreateCommit(w http.ResponseWriter, r *http.Request) {
 	sig := repoSignature(userDisplayName(repo), "bleephub@local")
 	if req.Author != nil {
 		if err := applyGitPerson(sig, *req.Author); err != nil {
-			writeGHValidationError(w, "Commit", "author", "invalid")
+			store.WriteGHValidationError(w, "Commit", "author", "invalid")
 			return
 		}
 	}
 	committerSig := *sig
 	if req.Committer != nil {
 		if err := applyGitPerson(&committerSig, *req.Committer); err != nil {
-			writeGHValidationError(w, "Commit", "committer", "invalid")
+			store.WriteGHValidationError(w, "Commit", "committer", "invalid")
 			return
 		}
 	}
@@ -859,7 +861,7 @@ func (s *Server) handleCreateTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !validGitObjectID(req.Object) {
-		writeGHValidationError(w, "Tag", "object", "invalid")
+		store.WriteGHValidationError(w, "Tag", "object", "invalid")
 		return
 	}
 
@@ -873,18 +875,18 @@ func (s *Server) handleCreateTag(w http.ResponseWriter, r *http.Request) {
 	case "blob":
 		objType = plumbing.BlobObject
 	default:
-		writeGHValidationError(w, "Tag", "type", "invalid")
+		store.WriteGHValidationError(w, "Tag", "type", "invalid")
 		return
 	}
 	if _, err := stor.EncodedObject(objType, targetHash); err != nil {
-		writeGHValidationError(w, "Tag", "object", "invalid")
+		store.WriteGHValidationError(w, "Tag", "object", "invalid")
 		return
 	}
 
 	tagger := repoSignature(userDisplayName(repo), "bleephub@local")
 	if req.Tagger != nil {
 		if err := applyGitPerson(tagger, *req.Tagger); err != nil {
-			writeGHValidationError(w, "Tag", "tagger", "invalid")
+			store.WriteGHValidationError(w, "Tag", "tagger", "invalid")
 			return
 		}
 	}
@@ -921,7 +923,7 @@ func (s *Server) handleGetTag(w http.ResponseWriter, r *http.Request) {
 // buildRefLifecyclePayload assembles the shared body of GitHub's `create` and
 // `delete` webhook events so `on: create` / `on: delete` workflows fire for
 // branch and tag creation/deletion (ACT-026).
-func buildRefLifecyclePayload(repo *Repo, fullRef plumbing.ReferenceName, sender *User) map[string]interface{} {
+func buildRefLifecyclePayload(repo *store.Repo, fullRef plumbing.ReferenceName, sender *store.User) map[string]interface{} {
 	refType := "tag"
 	if fullRef.IsBranch() {
 		refType = "branch"
@@ -931,7 +933,7 @@ func buildRefLifecyclePayload(repo *Repo, fullRef plumbing.ReferenceName, sender
 		"ref_type":    refType,
 		"pusher_type": "user",
 		"repository":  repoPayload(repo),
-		"sender":      userToJSON(sender),
+		"sender":      store.UserToJSON(sender),
 	}
 }
 
@@ -952,11 +954,11 @@ func (s *Server) handleCreateRef(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !validFullyQualifiedGitRef(req.Ref) {
-		writeGHValidationError(w, "Reference", "ref", "invalid")
+		store.WriteGHValidationError(w, "Reference", "ref", "invalid")
 		return
 	}
 	if !validGitObjectID(req.SHA) {
-		writeGHValidationError(w, "Reference", "sha", "invalid")
+		store.WriteGHValidationError(w, "Reference", "sha", "invalid")
 		return
 	}
 	fullRef := plumbing.ReferenceName(req.Ref)
@@ -976,8 +978,8 @@ func (s *Server) handleCreateRef(w http.ResponseWriter, r *http.Request) {
 		writeSecretScanningPushProtectionBlocked(w, ph)
 		return
 	}
-	if err := createReferenceIfAbsent(stor, plumbing.NewHashReference(fullRef, target)); err != nil {
-		if errors.Is(err, errReferenceAlreadyExists) {
+	if err := gitstore.CreateReferenceIfAbsent(stor, plumbing.NewHashReference(fullRef, target)); err != nil {
+		if errors.Is(err, gitstore.ErrReferenceAlreadyExists) {
 			writeGHError(w, http.StatusUnprocessableEntity, "Reference already exists")
 			return
 		}
@@ -1017,11 +1019,11 @@ func (s *Server) handleUpdateRef(w http.ResponseWriter, r *http.Request) {
 	}
 	fullRef := plumbing.ReferenceName("refs/" + refPath)
 	if req.SHA == "" {
-		writeGHValidationError(w, "Reference", "sha", "missing_field")
+		store.WriteGHValidationError(w, "Reference", "sha", "missing_field")
 		return
 	}
 	if !validFullyQualifiedGitRef(fullRef.String()) || !validGitObjectID(req.SHA) {
-		writeGHValidationError(w, "Reference", "sha", "invalid")
+		store.WriteGHValidationError(w, "Reference", "sha", "invalid")
 		return
 	}
 	kind := refFastForward
@@ -1079,7 +1081,7 @@ func (s *Server) handleUpdateRef(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, refToJSON(stor, s.baseURL(r), repo.FullName, ref))
 }
 
-func (s *Server) scanRefForSecretScanning(repo *Repo, stor gitStorage.Storer, ref plumbing.ReferenceName, target plumbing.Hash, baseURL string) error {
+func (s *Server) scanRefForSecretScanning(repo *store.Repo, stor gitStorage.Storer, ref plumbing.ReferenceName, target plumbing.Hash, baseURL string) error {
 	if !strings.HasPrefix(string(ref), "refs/heads/") {
 		return nil
 	}

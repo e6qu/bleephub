@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 type ghesGlobalHookRequest struct {
@@ -22,9 +24,9 @@ type ghesGlobalHookRequest struct {
 
 func (s *Server) handleListGHESGlobalHooks(w http.ResponseWriter, r *http.Request) {
 	s.store.Mu.RLock()
-	hooks := make([]*Webhook, 0, len(s.store.EnterpriseSettings.GHESGlobalHooks))
+	hooks := make([]*store.Webhook, 0, len(s.store.EnterpriseSettings.GHESGlobalHooks))
 	for _, hook := range s.store.EnterpriseSettings.GHESGlobalHooks {
-		hooks = append(hooks, cloneWebhook(hook))
+		hooks = append(hooks, store.CloneWebhook(hook))
 	}
 	s.store.Mu.RUnlock()
 	sort.Slice(hooks, func(i, j int) bool { return hooks[i].ID < hooks[j].ID })
@@ -41,11 +43,11 @@ func (s *Server) handleCreateGHESGlobalHook(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if req.Name != "web" {
-		writeGHValidationError(w, "Hook", "name", "invalid")
+		store.WriteGHValidationError(w, "Hook", "name", "invalid")
 		return
 	}
 	if req.Config == nil || strings.TrimSpace(req.Config.URL) == "" {
-		writeGHValidationError(w, "Hook", "url", "missing_field")
+		store.WriteGHValidationError(w, "Hook", "url", "missing_field")
 		return
 	}
 	if s.rejectUndeliverableHookURL(w, req.Config.URL) {
@@ -61,7 +63,7 @@ func (s *Server) handleCreateGHESGlobalHook(w http.ResponseWriter, r *http.Reque
 	}
 	now := s.currentTime()
 	s.store.Mu.Lock()
-	hook := &Webhook{
+	hook := &store.Webhook{
 		ID: s.store.NextHookID, URL: req.Config.URL, Secret: req.Config.Secret,
 		ContentType: req.Config.ContentType, InsecureSSL: normalizeInsecureSSL(req.Config.InsecureSSL),
 		Events: append([]string(nil), events...), Active: active, Global: true,
@@ -76,7 +78,7 @@ func (s *Server) handleCreateGHESGlobalHook(w http.ResponseWriter, r *http.Reque
 	s.store.NextHookID++
 	s.store.EnterpriseSettings.GHESGlobalHooks = append(s.store.EnterpriseSettings.GHESGlobalHooks, hook)
 	s.store.PersistEnterpriseSettings()
-	rendered := cloneWebhook(hook)
+	rendered := store.CloneWebhook(hook)
 	s.store.Mu.Unlock()
 	if rendered.Active {
 		s.enqueueWebhookDelivery(rendered, "ping", "", mustMarshal(map[string]interface{}{
@@ -86,7 +88,7 @@ func (s *Server) handleCreateGHESGlobalHook(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusCreated, s.ghesGlobalHookJSON(rendered, r))
 }
 
-func (s *Server) ghesGlobalHookFromRequest(w http.ResponseWriter, r *http.Request) (*Webhook, int) {
+func (s *Server) ghesGlobalHookFromRequest(w http.ResponseWriter, r *http.Request) (*store.Webhook, int) {
 	id, err := strconv.Atoi(r.PathValue("hook_id"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -96,7 +98,7 @@ func (s *Server) ghesGlobalHookFromRequest(w http.ResponseWriter, r *http.Reques
 	defer s.store.Mu.RUnlock()
 	for index, hook := range s.store.EnterpriseSettings.GHESGlobalHooks {
 		if hook.ID == id {
-			return cloneWebhook(hook), index
+			return store.CloneWebhook(hook), index
 		}
 	}
 	writeGHError(w, http.StatusNotFound, "Not Found")
@@ -121,7 +123,7 @@ func (s *Server) handleUpdateGHESGlobalHook(w http.ResponseWriter, r *http.Reque
 	}
 	if req.Config != nil {
 		if strings.TrimSpace(req.Config.URL) == "" {
-			writeGHValidationError(w, "Hook", "url", "missing_field")
+			store.WriteGHValidationError(w, "Hook", "url", "missing_field")
 			return
 		}
 		if s.rejectUndeliverableHookURL(w, req.Config.URL) {
@@ -187,7 +189,7 @@ func (s *Server) handlePingGHESGlobalHook(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) ghesGlobalHookJSON(hook *Webhook, r *http.Request) map[string]interface{} {
+func (s *Server) ghesGlobalHookJSON(hook *store.Webhook, r *http.Request) map[string]interface{} {
 	base := s.baseURL(r) + "/api/v3/admin/hooks/" + strconv.Itoa(hook.ID)
 	contentType := hook.ContentType
 	if contentType == "" {
@@ -212,7 +214,7 @@ func (s *Server) ghesGlobalHookJSON(hook *Webhook, r *http.Request) map[string]i
 func (s *Server) handleListGHESPublicKeys(w http.ResponseWriter, r *http.Request) {
 	base := s.baseURL(r)
 	s.store.Misc.Mu.RLock()
-	keys := make([]*UserKey, 0, len(s.store.Misc.UserKeys))
+	keys := make([]*store.UserKey, 0, len(s.store.Misc.UserKeys))
 	for _, key := range s.store.Misc.UserKeys {
 		copy := *key
 		keys = append(keys, &copy)
@@ -270,8 +272,8 @@ func (s *Server) handleDeleteGHESPublicKeys(w http.ResponseWriter, r *http.Reque
 func (s *Server) handleListGHESPersonalAccessTokens(w http.ResponseWriter, r *http.Request) {
 	type row struct {
 		key   string
-		token Token
-		user  *User
+		token store.Token
+		user  *store.User
 	}
 	s.store.Mu.RLock()
 	rows := make([]row, 0, len(s.store.Tokens))
@@ -364,14 +366,14 @@ func (s *Server) handleDeleteGHESImpersonationToken(w http.ResponseWriter, r *ht
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func tokenIdentity(key string, token *Token) string {
+func tokenIdentity(key string, token *store.Token) string {
 	if token.Value != "" {
 		return token.Value
 	}
 	return key
 }
 
-func classicAuthorizationJSON(key string, token *Token, user *User, revealToken bool) map[string]interface{} {
+func classicAuthorizationJSON(key string, token *store.Token, user *store.User, revealToken bool) map[string]interface{} {
 	identity := tokenIdentity(key, token)
 	value := ""
 	if revealToken {
@@ -389,6 +391,6 @@ func classicAuthorizationJSON(key string, token *Token, user *User, revealToken 
 		"note":         nullableString(token.Note), "note_url": nullableString(token.NoteURL),
 		"updated_at":  token.CreatedAt.UTC().Format(time.RFC3339),
 		"created_at":  token.CreatedAt.UTC().Format(time.RFC3339),
-		"fingerprint": nullableString(token.Fingerprint), "user": userToJSON(user), "installation": nil, "expires_at": expires,
+		"fingerprint": nullableString(token.Fingerprint), "user": store.UserToJSON(user), "installation": nil, "expires_at": expires,
 	}
 }

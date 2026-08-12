@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"reflect"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // TestBranchProtectionCloneCoversEveryField keeps the clone in step with the
@@ -24,7 +26,7 @@ func TestBranchProtectionCloneCoversEveryField(t *testing.T) {
 		"RequiredSignatures":             true,
 		"URL":                            true,
 	}
-	model := reflect.TypeOf(BranchProtection{})
+	model := reflect.TypeOf(store.BranchProtection{})
 	if model.NumField() != len(wantFields) {
 		t.Fatalf("BranchProtection has %d fields, clone guard names %d", model.NumField(), len(wantFields))
 	}
@@ -35,23 +37,23 @@ func TestBranchProtectionCloneCoversEveryField(t *testing.T) {
 	}
 
 	appID := int64(42)
-	original := &BranchProtection{
-		RequiredStatusChecks: &BPStatusChecks{
+	original := &store.BranchProtection{
+		RequiredStatusChecks: &store.BPStatusChecks{
 			Contexts: []string{"ci"},
-			Checks:   []BPCheck{{Context: "build", AppID: &appID}},
+			Checks:   []store.BPCheck{{Context: "build", AppID: &appID}},
 		},
-		RequiredPullRequestReviews: &BPPullRequestReviews{
-			DismissalRestrictions:       &BPRestrictions{Users: []BPActor{{Login: "reviewer"}}},
-			BypassPullRequestAllowances: &BPBypassAllowances{Apps: []BPActor{{Login: "release-app"}}},
+		RequiredPullRequestReviews: &store.BPPullRequestReviews{
+			DismissalRestrictions:       &store.BPRestrictions{Users: []store.BPActor{{Login: "reviewer"}}},
+			BypassPullRequestAllowances: &store.BPBypassAllowances{Apps: []store.BPActor{{Login: "release-app"}}},
 		},
-		EnforceAdmins:                  &BPEnforceAdmins{Enabled: true},
-		Restrictions:                   &BPRestrictions{Teams: []BPActor{{Login: "maintainers"}}},
-		RequiredLinearHistory:          &BPEnabled{Enabled: true},
-		AllowForcePushes:               &BPEnabled{Enabled: true},
-		AllowDeletions:                 &BPEnabled{Enabled: true},
-		BlockCreations:                 &BPEnabled{Enabled: true},
-		RequiredConversationResolution: &BPEnabled{Enabled: true},
-		RequiredSignatures:             &BPEnabledURL{Enabled: true},
+		EnforceAdmins:                  &store.BPEnforceAdmins{Enabled: true},
+		Restrictions:                   &store.BPRestrictions{Teams: []store.BPActor{{Login: "maintainers"}}},
+		RequiredLinearHistory:          &store.BPEnabled{Enabled: true},
+		AllowForcePushes:               &store.BPEnabled{Enabled: true},
+		AllowDeletions:                 &store.BPEnabled{Enabled: true},
+		BlockCreations:                 &store.BPEnabled{Enabled: true},
+		RequiredConversationResolution: &store.BPEnabled{Enabled: true},
+		RequiredSignatures:             &store.BPEnabledURL{Enabled: true},
 		URL:                            "https://one.example/protection",
 	}
 	before, err := json.Marshal(original)
@@ -88,12 +90,12 @@ func TestRestrictedPusherRecognizesInstallationApp(t *testing.T) {
 	admin := s.store.LookupUserByLogin("admin")
 	repo := s.store.CreateRepo(admin, "app-restricted-push", "", false)
 	app := s.store.CreateApp(admin.ID, "Release App", "", map[string]string{"contents": "write"}, nil)
-	token := &InstallationToken{AppID: app.ID}
-	bot := &User{ID: -app.ID, Login: app.Slug + "[bot]", Type: "Bot"}
+	token := &store.InstallationToken{AppID: app.ID}
+	bot := &store.User{ID: -app.ID, Login: app.Slug + "[bot]", Type: "Bot"}
 	ctx := context.WithValue(context.Background(), ctxInstallationToken, token)
 	ctx = contextWithUser(ctx, bot)
 
-	restrictions := &BPRestrictions{Apps: []BPActor{{Login: app.Slug, ID: app.ID}}}
+	restrictions := &store.BPRestrictions{Apps: []store.BPActor{{Login: app.Slug, ID: app.ID}}}
 	if !s.viewerIsRestrictedPusher(ctx, repo, restrictions) {
 		t.Fatal("installation token was not recognized as its app in branch push restrictions")
 	}

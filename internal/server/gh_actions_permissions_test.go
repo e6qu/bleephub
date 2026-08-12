@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strconv"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func TestOrgActionsPermissions_ArtifactAndLogRetention(t *testing.T) {
@@ -227,11 +229,11 @@ func TestOrgCacheUsage_ComputedFromRealCacheStore(t *testing.T) {
 		as.Mu.Lock()
 		id := as.NextCacheID
 		as.NextCacheID++
-		as.Caches[id] = &CacheEntry{
+		as.Caches[id] = &store.CacheEntry{
 			ID: id, Repo: repo, Key: key, Version: "v1",
 			Size: size, Finalized: true, CreatedAt: fixedTestTime,
 		}
-		as.CacheIndex[cacheLookupKey(repo, key, "v1")] = id
+		as.CacheIndex[store.CacheLookupKey(repo, key, "v1")] = id
 		as.Mu.Unlock()
 	}
 	seedCache(org+"/repo-a", "npm-cache", 1000)
@@ -274,12 +276,12 @@ func TestRunnerLabels_AddAndRemoveSingle(t *testing.T) {
 	// Register a runner with a system label through the real agent
 	// registration path.
 	srv.store.Mu.Lock()
-	agent := &Agent{
+	agent := &store.Agent{
 		ID:     srv.store.NextAgent,
 		Name:   "labels-test-runner",
 		Status: "online",
-		Labels: []Label{{ID: 1, Name: "self-hosted", Type: "system"}},
-		Scope:  runnerScope{Org: org},
+		Labels: []store.Label{{ID: 1, Name: "self-hosted", Type: "system"}},
+		Scope:  store.RunnerScope{Org: org},
 	}
 	srv.store.NextAgent++
 	srv.store.Agents[agent.ID] = agent

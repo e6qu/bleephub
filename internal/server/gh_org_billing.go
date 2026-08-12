@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/google/uuid"
 )
 
@@ -29,16 +30,16 @@ var budgetTypes = map[string]bool{
 }
 
 func (s *Server) registerGHOrgBillingRoutes() {
-	s.route("GET /api/v3/organizations/{org}/settings/billing/budgets", s.requireOrgAdmin(scopeOrgAdministration, permRead, s.handleListOrgBudgets))
-	s.route("POST /api/v3/organizations/{org}/settings/billing/budgets", s.requireOrgAdmin(scopeOrgAdministration, permWrite, s.handleCreateOrgBudget))
-	s.route("GET /api/v3/organizations/{org}/settings/billing/budgets/{budget_id}", s.requireOrgAdmin(scopeOrgAdministration, permRead, s.handleGetOrgBudget))
-	s.route("PATCH /api/v3/organizations/{org}/settings/billing/budgets/{budget_id}", s.requireOrgAdmin(scopeOrgAdministration, permWrite, s.handleUpdateOrgBudget))
-	s.route("DELETE /api/v3/organizations/{org}/settings/billing/budgets/{budget_id}", s.requireOrgAdmin(scopeOrgAdministration, permWrite, s.handleDeleteOrgBudget))
+	s.route("GET /api/v3/organizations/{org}/settings/billing/budgets", s.requireOrgAdmin(store.ScopeOrgAdministration, store.PermRead, s.handleListOrgBudgets))
+	s.route("POST /api/v3/organizations/{org}/settings/billing/budgets", s.requireOrgAdmin(store.ScopeOrgAdministration, store.PermWrite, s.handleCreateOrgBudget))
+	s.route("GET /api/v3/organizations/{org}/settings/billing/budgets/{budget_id}", s.requireOrgAdmin(store.ScopeOrgAdministration, store.PermRead, s.handleGetOrgBudget))
+	s.route("PATCH /api/v3/organizations/{org}/settings/billing/budgets/{budget_id}", s.requireOrgAdmin(store.ScopeOrgAdministration, store.PermWrite, s.handleUpdateOrgBudget))
+	s.route("DELETE /api/v3/organizations/{org}/settings/billing/budgets/{budget_id}", s.requireOrgAdmin(store.ScopeOrgAdministration, store.PermWrite, s.handleDeleteOrgBudget))
 
-	s.route("GET /api/v3/organizations/{org}/settings/billing/usage", s.requireOrgAdmin(scopeOrgAdministration, permRead, s.handleOrgBillingUsage))
-	s.route("GET /api/v3/organizations/{org}/settings/billing/usage/summary", s.requireOrgAdmin(scopeOrgAdministration, permRead, s.handleOrgBillingUsageSummary))
-	s.route("GET /api/v3/organizations/{org}/settings/billing/premium_request/usage", s.requireOrgAdmin(scopeOrgAdministration, permRead, s.handleOrgBillingPremiumRequestUsage))
-	s.route("GET /api/v3/organizations/{org}/settings/billing/ai_credit/usage", s.requireOrgAdmin(scopeOrgAdministration, permRead, s.handleOrgBillingAICreditUsage))
+	s.route("GET /api/v3/organizations/{org}/settings/billing/usage", s.requireOrgAdmin(store.ScopeOrgAdministration, store.PermRead, s.handleOrgBillingUsage))
+	s.route("GET /api/v3/organizations/{org}/settings/billing/usage/summary", s.requireOrgAdmin(store.ScopeOrgAdministration, store.PermRead, s.handleOrgBillingUsageSummary))
+	s.route("GET /api/v3/organizations/{org}/settings/billing/premium_request/usage", s.requireOrgAdmin(store.ScopeOrgAdministration, store.PermRead, s.handleOrgBillingPremiumRequestUsage))
+	s.route("GET /api/v3/organizations/{org}/settings/billing/ai_credit/usage", s.requireOrgAdmin(store.ScopeOrgAdministration, store.PermRead, s.handleOrgBillingAICreditUsage))
 }
 
 // ─── budget store methods ────────────────────────────────────────────────
@@ -59,7 +60,7 @@ type orgBudgetBody struct {
 	} `json:"budget_alerting"`
 }
 
-func budgetJSON(b *OrgBudget) map[string]interface{} {
+func budgetJSON(b *store.OrgBudget) map[string]interface{} {
 	recipients := b.BudgetAlerting.AlertRecipients
 	if recipients == nil {
 		recipients = []string{}
@@ -121,7 +122,7 @@ func (s *Server) handleCreateOrgBudget(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONBodyOptional(w, r, &req) {
 		return
 	}
-	b := &OrgBudget{
+	b := &store.OrgBudget{
 		ID:          uuid.New().String(),
 		BudgetScope: "organization",
 		BudgetType:  "ProductPricing",
@@ -129,26 +130,26 @@ func (s *Server) handleCreateOrgBudget(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.BudgetScope != nil {
 		if !budgetScopes[*req.BudgetScope] {
-			writeGHValidationError(w, "Budget", "budget_scope", "invalid")
+			store.WriteGHValidationError(w, "Budget", "budget_scope", "invalid")
 			return
 		}
 		b.BudgetScope = *req.BudgetScope
 	}
 	if req.BudgetType != nil {
 		if !budgetTypes[*req.BudgetType] {
-			writeGHValidationError(w, "Budget", "budget_type", "invalid")
+			store.WriteGHValidationError(w, "Budget", "budget_type", "invalid")
 			return
 		}
 		b.BudgetType = *req.BudgetType
 	}
 	if req.BudgetProductSKU == nil || *req.BudgetProductSKU == "" {
-		writeGHValidationError(w, "Budget", "budget_product_sku", "missing_field")
+		store.WriteGHValidationError(w, "Budget", "budget_product_sku", "missing_field")
 		return
 	}
 	b.BudgetProductSKU = *req.BudgetProductSKU
 	if req.BudgetAmount != nil {
 		if *req.BudgetAmount < 0 {
-			writeGHValidationError(w, "Budget", "budget_amount", "invalid")
+			store.WriteGHValidationError(w, "Budget", "budget_amount", "invalid")
 			return
 		}
 		b.BudgetAmount = *req.BudgetAmount
@@ -166,13 +167,13 @@ func (s *Server) handleCreateOrgBudget(w http.ResponseWriter, r *http.Request) {
 			name = orgLogin + "/" + name
 		}
 		if s.store.GetRepoByFullName(name) == nil {
-			writeGHValidationError(w, "Budget", "budget_entity_name", "invalid")
+			store.WriteGHValidationError(w, "Budget", "budget_entity_name", "invalid")
 			return
 		}
 	case "user", "multi_user_customer":
 		// The spec requires prevent_further_usage to be true for these scopes.
 		if !b.PreventFurtherUsage {
-			writeGHValidationError(w, "Budget", "prevent_further_usage", "invalid")
+			store.WriteGHValidationError(w, "Budget", "prevent_further_usage", "invalid")
 			return
 		}
 	}
@@ -207,18 +208,18 @@ func (s *Server) handleUpdateOrgBudget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.BudgetScope != nil && !budgetScopes[*req.BudgetScope] {
-		writeGHValidationError(w, "Budget", "budget_scope", "invalid")
+		store.WriteGHValidationError(w, "Budget", "budget_scope", "invalid")
 		return
 	}
 	if req.BudgetType != nil && !budgetTypes[*req.BudgetType] {
-		writeGHValidationError(w, "Budget", "budget_type", "invalid")
+		store.WriteGHValidationError(w, "Budget", "budget_type", "invalid")
 		return
 	}
 	if req.BudgetAmount != nil && *req.BudgetAmount < 0 {
-		writeGHValidationError(w, "Budget", "budget_amount", "invalid")
+		store.WriteGHValidationError(w, "Budget", "budget_amount", "invalid")
 		return
 	}
-	b := s.store.UpdateOrgBudget(orgLogin, id, func(b *OrgBudget) {
+	b := s.store.UpdateOrgBudget(orgLogin, id, func(b *store.OrgBudget) {
 		if req.BudgetAmount != nil {
 			b.BudgetAmount = *req.BudgetAmount
 		}

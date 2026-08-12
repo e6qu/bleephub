@@ -10,11 +10,12 @@ import (
 
 	"github.com/e6qu/bleephub/internal/actions"
 	"github.com/e6qu/bleephub/internal/server/testutil"
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func TestAgentSatisfiesLabels(t *testing.T) {
 	t.Parallel()
-	agent := &Agent{Labels: []Label{{Name: "self-hosted"}, {Name: "Linux"}, {Name: "gpu"}}}
+	agent := &store.Agent{Labels: []store.Label{{Name: "self-hosted"}, {Name: "Linux"}, {Name: "gpu"}}}
 	cases := []struct {
 		required []string
 		want     bool
@@ -49,14 +50,14 @@ func TestRunnerContextDerivedFromAgent(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		name             string
-		agent            *Agent
+		agent            *store.Agent
 		wantOS, wantArch string
 		wantName         string
 	}{
 		{"nil is generic default", nil, "Linux", "X64", "test-runner"},
-		{"os+arch from labels", &Agent{Name: "win-box", Labels: []Label{{Name: "self-hosted"}, {Name: "Windows"}, {Name: "ARM64"}}}, "Windows", "ARM64", "win-box"},
-		{"macos label", &Agent{Name: "mac", Labels: []Label{{Name: "macOS"}, {Name: "X64"}}}, "macOS", "X64", "mac"},
-		{"fallback to os description", &Agent{Name: "d", OSDescription: "Linux 6.1 aarch64"}, "Linux", "ARM64", "d"},
+		{"os+arch from labels", &store.Agent{Name: "win-box", Labels: []store.Label{{Name: "self-hosted"}, {Name: "Windows"}, {Name: "ARM64"}}}, "Windows", "ARM64", "win-box"},
+		{"macos label", &store.Agent{Name: "mac", Labels: []store.Label{{Name: "macOS"}, {Name: "X64"}}}, "macOS", "X64", "mac"},
+		{"fallback to os description", &store.Agent{Name: "d", OSDescription: "Linux 6.1 aarch64"}, "Linux", "ARM64", "d"},
 	} {
 		got := actions.RunnerContextData(tc.agent)
 		entries, _ := got["d"].([]map[string]interface{})
@@ -72,10 +73,10 @@ func TestRunnerContextDerivedFromAgent(t *testing.T) {
 
 func TestLeasedJobRebindsRunnerContext(t *testing.T) {
 	s := newTestServer()
-	sess := &Session{
+	sess := &store.Session{
 		SessionID: "lease-sess",
-		Agent:     &Agent{ID: 42, Name: "prod-runner-7", Labels: []Label{{Name: "self-hosted"}, {Name: "Windows"}, {Name: "ARM64"}}},
-		MsgCh:     make(chan *TaskAgentMessage, 1),
+		Agent:     &store.Agent{ID: 42, Name: "prod-runner-7", Labels: []store.Label{{Name: "self-hosted"}, {Name: "Windows"}, {Name: "ARM64"}}},
+		MsgCh:     make(chan *store.TaskAgentMessage, 1),
 	}
 	s.store.Mu.Lock()
 	s.store.Sessions[sess.SessionID] = sess
@@ -87,9 +88,9 @@ func TestLeasedJobRebindsRunnerContext(t *testing.T) {
 			"runner": actions.RunnerContextData(nil),
 		},
 	})
-	s.actions.QueueJobMessage(&TaskAgentMessage{MessageID: 5, JobID: "j5", MessageType: "PipelineAgentJobRequest", Body: string(body)})
+	s.actions.QueueJobMessage(&store.TaskAgentMessage{MessageID: 5, JobID: "j5", MessageType: "PipelineAgentJobRequest", Body: string(body)})
 
-	msg := s.actions.PullPendingMessage(sess, runnerScope{Org: "octo"})
+	msg := s.actions.PullPendingMessage(sess, store.RunnerScope{Org: "octo"})
 	if msg == nil {
 		t.Fatal("free runner did not pull the queued job")
 	}
@@ -111,26 +112,26 @@ func TestLeasedJobRebindsRunnerContext(t *testing.T) {
 
 func TestBusyRunnerNeverReceivesJobs(t *testing.T) {
 	s := newTestServer()
-	sess := &Session{
+	sess := &store.Session{
 		SessionID: "busy-sess",
-		Agent:     &Agent{ID: 901, Labels: []Label{{Name: "self-hosted"}}},
-		MsgCh:     make(chan *TaskAgentMessage, 10),
+		Agent:     &store.Agent{ID: 901, Labels: []store.Label{{Name: "self-hosted"}}},
+		MsgCh:     make(chan *store.TaskAgentMessage, 10),
 	}
 	s.store.Mu.Lock()
 	s.store.Sessions["busy-sess"] = sess
 	// An assigned, unfinished job marks the agent busy. Mirror what
 	// recordJobAgentLocked writes on delivery: the job's AgentID and the
 	// agent's own assignment bookkeeping.
-	s.store.Jobs["job-1"] = &Job{ID: "job-1", AgentID: 901, Status: "running"}
-	s.store.Jobs["job-2"] = &Job{ID: "job-2", Status: "queued"}
+	s.store.Jobs["job-1"] = &store.Job{ID: "job-1", AgentID: 901, Status: "running"}
+	s.store.Jobs["job-2"] = &store.Job{ID: "job-2", Status: "queued"}
 	sess.Agent.AssignedJobID = "job-1"
 	sess.Agent.EverAssigned = true
 	s.store.Mu.Unlock()
 
-	s.actions.QueueJobMessage(&TaskAgentMessage{MessageID: 7, JobID: "job-2", Labels: []string{"self-hosted"}})
+	s.actions.QueueJobMessage(&store.TaskAgentMessage{MessageID: 7, JobID: "job-2", Labels: []string{"self-hosted"}})
 
 	// While busy, polls must not pull the queued job.
-	if got := s.actions.PullPendingMessage(sess, runnerScope{Org: "octo"}); got != nil {
+	if got := s.actions.PullPendingMessage(sess, store.RunnerScope{Org: "octo"}); got != nil {
 		t.Fatal("busy runner's poll pulled a job message")
 	}
 
@@ -138,7 +139,7 @@ func TestBusyRunnerNeverReceivesJobs(t *testing.T) {
 	s.store.Mu.Lock()
 	s.store.Jobs["job-1"].Status = "completed"
 	s.store.Mu.Unlock()
-	got := s.actions.PullPendingMessage(sess, runnerScope{Org: "octo"})
+	got := s.actions.PullPendingMessage(sess, store.RunnerScope{Org: "octo"})
 	if got == nil || got.MessageID != 7 {
 		t.Fatalf("free runner's poll did not pull the pending job: %v", got)
 	}
@@ -157,15 +158,15 @@ func TestBusyRunnerNeverReceivesJobs(t *testing.T) {
 func TestLabelRoutingQueuesUntilMatch(t *testing.T) {
 	s := newTestServer()
 
-	mkSession := func(id string, labels ...string) *Session {
-		ls := make([]Label, 0, len(labels))
+	mkSession := func(id string, labels ...string) *store.Session {
+		ls := make([]store.Label, 0, len(labels))
 		for _, l := range labels {
-			ls = append(ls, Label{Name: l})
+			ls = append(ls, store.Label{Name: l})
 		}
-		sess := &Session{
+		sess := &store.Session{
 			SessionID: id,
-			Agent:     &Agent{ID: len(id), Labels: ls},
-			MsgCh:     make(chan *TaskAgentMessage, 10),
+			Agent:     &store.Agent{ID: len(id), Labels: ls},
+			MsgCh:     make(chan *store.TaskAgentMessage, 10),
 		}
 		s.store.Mu.Lock()
 		s.store.Sessions[id] = sess
@@ -174,30 +175,30 @@ func TestLabelRoutingQueuesUntilMatch(t *testing.T) {
 	}
 	plain := mkSession("a-plain", "self-hosted", "linux")
 
-	s.actions.QueueJobMessage(&TaskAgentMessage{MessageID: 1, Labels: []string{"self-hosted", "gpu"}})
+	s.actions.QueueJobMessage(&store.TaskAgentMessage{MessageID: 1, Labels: []string{"self-hosted", "gpu"}})
 
 	// A poll from a non-matching runner must not pull the job.
-	if got := s.actions.PullPendingMessage(plain, runnerScope{Org: "octo"}); got != nil {
+	if got := s.actions.PullPendingMessage(plain, store.RunnerScope{Org: "octo"}); got != nil {
 		t.Fatal("job pulled by a runner without the required labels")
 	}
 
 	// A matching runner's poll pulls it.
 	gpu := mkSession("b-gpu", "self-hosted", "linux", "gpu")
-	got := s.actions.PullPendingMessage(gpu, runnerScope{Org: "octo"})
+	got := s.actions.PullPendingMessage(gpu, store.RunnerScope{Org: "octo"})
 	if got == nil || got.MessageID != 1 {
 		t.Fatalf("matching runner's poll did not pull the job: %v", got)
 	}
-	if again := s.actions.PullPendingMessage(gpu, runnerScope{Org: "octo"}); again != nil {
+	if again := s.actions.PullPendingMessage(gpu, store.RunnerScope{Org: "octo"}); again != nil {
 		t.Fatal("message pulled twice")
 	}
 }
 
-func (s *isolatedServer) seedRerunRepo(t *testing.T, repoKey, yaml string) *Workflow {
+func (s *isolatedServer) seedRerunRepo(t *testing.T, repoKey, yaml string) *store.Workflow {
 	t.Helper()
 	s.cancelRepoRunsCleanup(t, repoKey)
 	commitWorkflowYAMLToStorage(t, s.Server, repoKey, ".github/workflows/ci.yml", yaml)
 	s.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/main", nil)
-	var wf *Workflow
+	var wf *store.Workflow
 	waitUntil(t, "triggered run", func() bool {
 		s.store.Mu.RLock()
 		defer s.store.Mu.RUnlock()
@@ -258,7 +259,7 @@ func TestRerunKeepsRunIDAndBumpsAttempt(t *testing.T) {
 		t.Errorf("rerun id = %v, want %d (same run id)", run["id"], origRunID)
 	}
 	s.store.Mu.RLock()
-	var attempt2 *Workflow
+	var attempt2 *store.Workflow
 	for _, w := range s.store.Workflows {
 		if w.RepoFullName == repoKey && w.RunID == origRunID {
 			attempt2 = w
@@ -321,7 +322,7 @@ func TestRerunFailedJobsCarriesSuccesses(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	var attempt2 *Workflow
+	var attempt2 *store.Workflow
 	waitUntil(t, "attempt 2", func() bool {
 		s.store.Mu.RLock()
 		defer s.store.Mu.RUnlock()
@@ -341,13 +342,13 @@ func TestRerunFailedJobsCarriesSuccesses(t *testing.T) {
 	badStatus := bad.Status
 	s.store.Mu.RUnlock()
 
-	if goodStatus != JobStatusCompleted || goodResult != ResultSuccess {
+	if goodStatus != store.JobStatusCompleted || goodResult != store.ResultSuccess {
 		t.Errorf("good carried over: status=%q result=%q", goodStatus, goodResult)
 	}
 	if goodOut != "kept" {
 		t.Errorf("good outputs not carried: %q", goodOut)
 	}
-	if badStatus != JobStatusQueued {
+	if badStatus != store.JobStatusQueued {
 		t.Errorf("bad job should re-dispatch (queued), got %q", badStatus)
 	}
 	s.assertWorkflowJobsUseHostMode(t, attempt2, "bad")
@@ -436,8 +437,8 @@ func TestOrgRunnerEndpoints(t *testing.T) {
 	s.store.Mu.Lock()
 	agentID := s.store.NextAgent
 	s.store.NextAgent++
-	s.store.Agents[agentID] = &Agent{ID: agentID, Name: "org-agent", Status: "online",
-		Labels: []Label{{Name: "self-hosted"}}, Scope: runnerScope{Org: "runner-org"}}
+	s.store.Agents[agentID] = &store.Agent{ID: agentID, Name: "org-agent", Status: "online",
+		Labels: []store.Label{{Name: "self-hosted"}}, Scope: store.RunnerScope{Org: "runner-org"}}
 	s.store.Mu.Unlock()
 
 	get := func(path string) (int, map[string]interface{}) {

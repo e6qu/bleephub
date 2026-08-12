@@ -3,6 +3,8 @@ package bleephub
 import (
 	"strings"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func TestOrgArtifactMetadata_StorageRecords(t *testing.T) {
@@ -295,7 +297,7 @@ func TestOrgArtifactMetadata_ClusterDeploymentRecords(t *testing.T) {
 func TestArtifactMetadataAndAttestationPersistenceReload(t *testing.T) {
 	var attID, storageID, deployID, viewID, viewNumber, projID int
 	digest := testSubjectDigest("reload-artifact")
-	st2 := reloadedStore(t, func(p *Persistence, st *Store) {
+	st2 := reloadedStore(t, func(p *store.Persistence, st *store.Store) {
 		_, byteStore := newObjectByteStoreForTest(t)
 		st.ObjectByteStore = byteStore
 		st.SeedDefaultUser()
@@ -307,11 +309,11 @@ func TestArtifactMetadataAndAttestationPersistenceReload(t *testing.T) {
 			t.Fatalf("CreateAttestation: %v", err)
 		}
 		attID = att.ID
-		storage := st.CreateArtifactStorageRecord(&ArtifactStorageRecord{
+		storage := st.CreateArtifactStorageRecord(&store.ArtifactStorageRecord{
 			OrgID: 42, Name: "libfoo", Digest: digest, RegistryURL: "https://reg/", Status: "active",
 		})
 		storageID = storage.ID
-		deploy := st.UpsertArtifactDeploymentRecord(&ArtifactDeploymentRecord{
+		deploy := st.UpsertArtifactDeploymentRecord(&store.ArtifactDeploymentRecord{
 			OrgID: 42, Name: "libfoo", Digest: digest, Status: "deployed",
 			LogicalEnvironment: "prod", Cluster: "c1", DeploymentName: "d1",
 		})
@@ -345,7 +347,7 @@ func TestArtifactMetadataAndAttestationPersistenceReload(t *testing.T) {
 
 	// Upserting the same deployment identity after reload updates, not
 	// duplicates.
-	updated := st2.UpsertArtifactDeploymentRecord(&ArtifactDeploymentRecord{
+	updated := st2.UpsertArtifactDeploymentRecord(&store.ArtifactDeploymentRecord{
 		OrgID: 42, Name: "libfoo", Digest: digest, Status: "decommissioned",
 		LogicalEnvironment: "prod", Cluster: "c1", DeploymentName: "d1",
 	})

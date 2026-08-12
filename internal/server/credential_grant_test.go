@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // Two credential shapes reached the self-gating surfaces — /api/graphql, which
@@ -75,7 +77,7 @@ func (c credGrantCaller) do(t *testing.T, method, path, body string) (int, strin
 
 // gitStatus advertises refs for one service, which is where both transports
 // make their access decision.
-func (c credGrantCaller) gitStatus(t *testing.T, repo *Repo, service string) int {
+func (c credGrantCaller) gitStatus(t *testing.T, repo *store.Repo, service string) int {
 	t.Helper()
 	status, _ := c.do(t, http.MethodGet, "/"+repo.FullName+".git/info/refs?service="+service, "")
 	return status
@@ -116,8 +118,8 @@ const (
 // the outcome of the next one.
 type credGrantFixture struct {
 	srv   *isolatedServer
-	owner *User
-	org   *Org
+	owner *store.User
+	org   *store.Org
 	seq   int
 }
 
@@ -127,7 +129,7 @@ func (s *isolatedServer) newCredGrantFixture(t *testing.T, tag string) *credGran
 
 	st.Mu.Lock()
 	now := fixedTestTime.UTC()
-	owner := &User{
+	owner := &store.User{
 		ID:        st.NextUser,
 		NodeID:    fmt.Sprintf("U_credgrant%08d", st.NextUser),
 		Login:     "credgrant-" + tag,
@@ -152,7 +154,7 @@ func (s *isolatedServer) newCredGrantFixture(t *testing.T, tag string) *credGran
 // repo creates a private repository owned by the fixture's account. Private,
 // because a public one is readable by every credential ahead of the grant and
 // the case would pass with the gate removed entirely.
-func (f *credGrantFixture) repo(t *testing.T, name string) *Repo {
+func (f *credGrantFixture) repo(t *testing.T, name string) *store.Repo {
 	t.Helper()
 	f.seq++
 	repo := f.srv.store.CreateRepo(f.owner, fmt.Sprintf("%s-%d", name, f.seq), "", true)
@@ -162,7 +164,7 @@ func (f *credGrantFixture) repo(t *testing.T, name string) *Repo {
 	return repo
 }
 
-func (f *credGrantFixture) issue(t *testing.T, repo *Repo) *Issue {
+func (f *credGrantFixture) issue(t *testing.T, repo *store.Repo) *store.Issue {
 	t.Helper()
 	issue := f.srv.store.CreateIssue(repo.ID, f.owner.ID, "before", "", nil, nil, 0)
 	if issue == nil {
@@ -192,7 +194,7 @@ func (f *credGrantFixture) oauthToken(t *testing.T, scopes string) credGrantCall
 
 // fineGrainedToken mints a fine-grained PAT over the owner's account, selecting
 // exactly selected and holding perms over them.
-func (f *credGrantFixture) fineGrainedToken(t *testing.T, perms map[string]string, selected ...*Repo) credGrantCaller {
+func (f *credGrantFixture) fineGrainedToken(t *testing.T, perms map[string]string, selected ...*store.Repo) credGrantCaller {
 	t.Helper()
 	st := f.srv.store
 	f.seq++
@@ -212,7 +214,7 @@ func (f *credGrantFixture) fineGrainedToken(t *testing.T, perms map[string]strin
 	tok.ResourceOwner = f.owner.Login
 	tok.RepositorySelection = "subset"
 	tok.RepositoryIDs = ids
-	tok.Permissions = OrgPATPermissions{Repository: perms}
+	tok.Permissions = store.OrgPATPermissions{Repository: perms}
 	st.Mu.Unlock()
 	return credGrantCaller{srv: f.srv, name: "fine-grained selecting " + strings.Join(names, ","), token: tok.Value}
 }
@@ -230,7 +232,7 @@ func (f *credGrantFixture) session(t *testing.T) credGrantCaller {
 	t.Helper()
 	f.seq++
 	id := fmt.Sprintf("credgrant-sess-%s-%d", f.owner.Login, f.seq)
-	if err := f.srv.store.PutLoginSession(id, &LoginSession{
+	if err := f.srv.store.PutLoginSession(id, &store.LoginSession{
 		UserID:    f.owner.ID,
 		ExpiresAt: fixedTestTime.Add(time.Hour),
 	}); err != nil {
@@ -241,7 +243,7 @@ func (f *credGrantFixture) session(t *testing.T) credGrantCaller {
 
 // credGrantServedRepo asserts the caller reaches the repository on both
 // transports and through the mutation lane, and that the mutation landed.
-func (s *isolatedServer) credGrantServedRepo(t *testing.T, c credGrantCaller, repo *Repo, issue *Issue) {
+func (s *isolatedServer) credGrantServedRepo(t *testing.T, c credGrantCaller, repo *store.Repo, issue *store.Issue) {
 	t.Helper()
 	if got := c.gitStatus(t, repo, "git-upload-pack"); got != http.StatusOK {
 		t.Errorf("%s: upload-pack on %s = %d, want 200", c.name, repo.FullName, got)
@@ -260,7 +262,7 @@ func (s *isolatedServer) credGrantServedRepo(t *testing.T, c credGrantCaller, re
 
 // credGrantRefusedRepo is its mirror: both transports refuse, and the mutation
 // leaves the issue alone.
-func (s *isolatedServer) credGrantRefusedRepo(t *testing.T, c credGrantCaller, repo *Repo, issue *Issue) {
+func (s *isolatedServer) credGrantRefusedRepo(t *testing.T, c credGrantCaller, repo *store.Repo, issue *store.Issue) {
 	t.Helper()
 	if got := c.gitStatus(t, repo, "git-upload-pack"); got == http.StatusOK {
 		t.Errorf("%s: upload-pack on %s = 200; it cloned a private repository", c.name, repo.FullName)

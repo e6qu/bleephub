@@ -18,6 +18,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/e6qu/bleephub/internal/server/testutil"
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // TEST-008 migration scaffolding.
@@ -195,7 +196,7 @@ func (s *isolatedServer) createTestRepo(t *testing.T) repoRef {
 	return repoRef{owner: "admin", name: name}
 }
 
-func (s *isolatedServer) createTestUser(t *testing.T, login string) *User {
+func (s *isolatedServer) createTestUser(t *testing.T, login string) *store.User {
 	t.Helper()
 	resp, err := s.authedPost("/internal/users", "application/json", bytes.NewReader(mustJSON(map[string]interface{}{
 		"login": login,
@@ -293,11 +294,11 @@ func (s *isolatedServer) sweepPR(t *testing.T, repo repoRef, title string) (int,
 func (s *isolatedServer) createEnterpriseTestUser(t *testing.T, login string) string {
 	t.Helper()
 	s.store.Mu.Lock()
-	u := &User{ID: s.store.NextUser, Login: login, NodeID: "U_ent" + strconv.Itoa(s.store.NextUser), Type: "User"}
+	u := &store.User{ID: s.store.NextUser, Login: login, NodeID: "U_ent" + strconv.Itoa(s.store.NextUser), Type: "User"}
 	s.store.NextUser++
 	s.store.Users[u.ID] = u
 	s.store.UsersByLogin[u.Login] = u
-	tok := &Token{Value: "ghp_" + login + "0000000000000000000000000000", UserID: u.ID, Scopes: "repo"}
+	tok := &store.Token{Value: "ghp_" + login + "0000000000000000000000000000", UserID: u.ID, Scopes: "repo"}
 	s.store.Tokens[tok.Value] = tok
 	s.store.Mu.Unlock()
 	return tok.Value
@@ -328,7 +329,7 @@ func (s *isolatedServer) activateOrgMember(t *testing.T, orgLogin, login, member
 
 // newUser mirrors the package newSharedServerUser helper against this instance's
 // store: a fresh user with a deterministic token, provisioned directly.
-func (s *isolatedServer) newUser(t *testing.T, login string) (*User, string) {
+func (s *isolatedServer) newUser(t *testing.T, login string) (*store.User, string) {
 	t.Helper()
 	st := s.store
 	st.Mu.Lock()
@@ -336,11 +337,11 @@ func (s *isolatedServer) newUser(t *testing.T, login string) (*User, string) {
 	if existing := st.UsersByLogin[login]; existing != nil {
 		t.Fatalf("user %q already exists", login)
 	}
-	u := &User{ID: st.NextUser, Login: login, Type: "User"}
+	u := &store.User{ID: st.NextUser, Login: login, Type: "User"}
 	st.NextUser++
 	st.Users[u.ID] = u
 	st.UsersByLogin[login] = u
-	tok := &Token{Value: "ghp_" + login + "0000000000000000000000000000000000", UserID: u.ID, Scopes: "repo,read:org"}
+	tok := &store.Token{Value: "ghp_" + login + "0000000000000000000000000000000000", UserID: u.ID, Scopes: "repo,read:org"}
 	st.Tokens[tok.Value] = tok
 	return u, tok.Value
 }
@@ -348,7 +349,7 @@ func (s *isolatedServer) newUser(t *testing.T, login string) (*User, string) {
 // seedRepo mirrors the package seedTestRepo helper on this instance's own
 // store: an admin-owned repo, created idempotently so a converted test can call
 // it without coupling to any shared fixture.
-func (s *isolatedServer) seedRepo(t *testing.T, name string, private bool) *Repo {
+func (s *isolatedServer) seedRepo(t *testing.T, name string, private bool) *store.Repo {
 	t.Helper()
 	admin := s.store.LookupUserByLogin("admin")
 	if admin == nil {
@@ -366,7 +367,7 @@ func (s *isolatedServer) seedRepo(t *testing.T, name string, private bool) *Repo
 
 // seedTestOrg/seedOrgRepo mirror the package helpers against this instance's
 // store: an org owned by admin and an org-owned repo, both idempotent.
-func (s *isolatedServer) seedTestOrg(t *testing.T, login string) *Org {
+func (s *isolatedServer) seedTestOrg(t *testing.T, login string) *store.Org {
 	t.Helper()
 	if org := s.store.GetOrg(login); org != nil {
 		return org
@@ -379,7 +380,7 @@ func (s *isolatedServer) seedTestOrg(t *testing.T, login string) *Org {
 	return org
 }
 
-func (s *isolatedServer) seedOrgRepo(t *testing.T, org *Org, name string, private bool) *Repo {
+func (s *isolatedServer) seedOrgRepo(t *testing.T, org *store.Org, name string, private bool) *store.Repo {
 	t.Helper()
 	if repo := s.store.GetRepo(org.Login, name); repo != nil {
 		return repo
@@ -910,29 +911,29 @@ func (s *isolatedServer) uploadAttestation(t *testing.T, ownerRepo, token string
 // userSurfaceUser mirrors the package helper (still used by
 // gh_marketplace_test.go): a user plus a broad-scope token, on this isolated
 // server.
-func (s *isolatedServer) userSurfaceUser(t *testing.T, login string) (*User, string) {
+func (s *isolatedServer) userSurfaceUser(t *testing.T, login string) (*store.User, string) {
 	t.Helper()
 	u := s.createTestUser(t, login)
 	tok := "ghp_" + login + "0000000000token"
 	s.store.Mu.Lock()
-	s.store.Tokens[tok] = &Token{Value: tok, UserID: u.ID, Scopes: "repo, workflow, read:org, admin:org, gist, user", CreatedAt: fixedTestTime}
+	s.store.Tokens[tok] = &store.Token{Value: tok, UserID: u.ID, Scopes: "repo, workflow, read:org, admin:org, gist, user", CreatedAt: fixedTestTime}
 	s.store.Mu.Unlock()
 	return u, tok
 }
 
 // copilotTestOrg mirrors the package helper (still used by gh_copilot_test.go):
 // an org owned by admin with optional active members, on this isolated server.
-func (s *isolatedServer) copilotTestOrg(t *testing.T, login string, memberLogins ...string) (*Org, []*User) {
+func (s *isolatedServer) copilotTestOrg(t *testing.T, login string, memberLogins ...string) (*store.Org, []*store.User) {
 	t.Helper()
 	admin := s.store.LookupUserByLogin("admin")
 	org := s.store.CreateOrg(admin, login, login, "")
 	if org == nil {
 		t.Fatalf("CreateOrg(%q) returned nil", login)
 	}
-	members := make([]*User, 0, len(memberLogins))
+	members := make([]*store.User, 0, len(memberLogins))
 	for _, ml := range memberLogins {
 		u := seedTestUser(s.Server, ml)
-		s.store.SetMembership(org.Login, u.ID, OrgRoleMember, MembershipStateActive)
+		s.store.SetMembership(org.Login, u.ID, store.OrgRoleMember, store.MembershipStateActive)
 		members = append(members, u)
 	}
 	return org, members
@@ -1063,7 +1064,7 @@ func (s *isolatedServer) cleanupCodespaceContainer(t *testing.T, name string) {
 	}
 	ctx, cancel := contextWithTimeout(30 * time.Second)
 	defer cancel()
-	_ = dockerRemoveContainer(ctx, codespaceContainerName(name))
+	_ = store.DockerRemoveContainer(ctx, store.CodespaceContainerName(name))
 }
 
 // createTestPRRepo mirrors the package helper (still used by four other
@@ -1089,9 +1090,9 @@ func (s *isolatedServer) cancelRepoRunsCleanup(t *testing.T, repoKey string) {
 	t.Helper()
 	t.Cleanup(func() {
 		s.store.Mu.RLock()
-		var runs []*Workflow
+		var runs []*store.Workflow
 		for _, w := range s.store.Workflows {
-			if w.RepoFullName == repoKey && w.Status != WorkflowStatusCompleted {
+			if w.RepoFullName == repoKey && w.Status != store.WorkflowStatusCompleted {
 				runs = append(runs, w)
 			}
 		}
@@ -1105,7 +1106,7 @@ func (s *isolatedServer) cancelRepoRunsCleanup(t *testing.T, repoKey string) {
 // assertWorkflowJobsUseHostMode mirrors the package helper (still used by
 // gh_actions_run_control_test.go): each workflow job has a stored runner job
 // whose message runs in host mode (no jobContainer), read from s.store.
-func (s *isolatedServer) assertWorkflowJobsUseHostMode(t *testing.T, wf *Workflow, keys ...string) {
+func (s *isolatedServer) assertWorkflowJobsUseHostMode(t *testing.T, wf *store.Workflow, keys ...string) {
 	t.Helper()
 	if len(keys) == 0 {
 		for key := range wf.Jobs {
@@ -1158,7 +1159,7 @@ func (s *isolatedServer) createTestGist(t *testing.T, token string, public bool)
 
 // createTestCodespaceRepo mirrors the package helper: an admin repo seeded with
 // a devcontainer.json pointing at the fast test image.
-func (s *isolatedServer) createTestCodespaceRepo(t *testing.T, name string) *Repo {
+func (s *isolatedServer) createTestCodespaceRepo(t *testing.T, name string) *store.Repo {
 	t.Helper()
 	admin := s.store.UsersByLogin["admin"]
 	repo := s.store.CreateRepo(admin, name, "codespace test repo", false)

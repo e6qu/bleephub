@@ -4,12 +4,14 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func (s *Server) registerGHRepoInvitationRoutes() {
-	s.route("GET /api/v3/repos/{owner}/{repo}/invitations", s.requirePerm(scopeAdministration, permWrite, s.handleListRepoInvitations))
-	s.route("PATCH /api/v3/repos/{owner}/{repo}/invitations/{invitation_id}", s.requirePerm(scopeAdministration, permWrite, s.handleUpdateRepoInvitation))
-	s.route("DELETE /api/v3/repos/{owner}/{repo}/invitations/{invitation_id}", s.requirePerm(scopeAdministration, permWrite, s.handleCancelRepoInvitation))
+	s.route("GET /api/v3/repos/{owner}/{repo}/invitations", s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleListRepoInvitations))
+	s.route("PATCH /api/v3/repos/{owner}/{repo}/invitations/{invitation_id}", s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleUpdateRepoInvitation))
+	s.route("DELETE /api/v3/repos/{owner}/{repo}/invitations/{invitation_id}", s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleCancelRepoInvitation))
 	s.route("GET /api/v3/user/repository_invitations", s.handleListUserRepoInvitations)
 	s.route("PATCH /api/v3/user/repository_invitations/{invitation_id}", s.handleAcceptRepoInvitation)
 	s.route("DELETE /api/v3/user/repository_invitations/{invitation_id}", s.handleDeclineRepoInvitation)
@@ -63,7 +65,7 @@ func (s *Server) handleUpdateRepoInvitation(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if req.Permissions == "" {
-		writeGHValidationError(w, "RepositoryInvitation", "permissions", "missing_field")
+		store.WriteGHValidationError(w, "RepositoryInvitation", "permissions", "missing_field")
 		return
 	}
 
@@ -140,9 +142,9 @@ func (s *Server) handleAcceptRepoInvitation(w http.ResponseWriter, r *http.Reque
 	if repo := s.store.GetRepoByFullName(repoKey); repo != nil {
 		s.emitWebhookEvent(repoKey, "member", "added", map[string]interface{}{
 			"action":     "added",
-			"member":     userToJSON(user),
+			"member":     store.UserToJSON(user),
 			"repository": repoPayload(repo),
-			"sender":     userToJSON(user),
+			"sender":     store.UserToJSON(user),
 		})
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -167,16 +169,16 @@ func (s *Server) handleDeclineRepoInvitation(w http.ResponseWriter, r *http.Requ
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func invitationJSON(inv *RepoInvitation, repo *Repo, st *Store, baseURL string) map[string]interface{} {
+func invitationJSON(inv *store.RepoInvitation, repo *store.Repo, st *store.Store, baseURL string) map[string]interface{} {
 	invitee := map[string]interface{}(nil)
 	if inv.InviteeLogin != "" {
 		if u := st.LookupUserByLogin(inv.InviteeLogin); u != nil {
-			invitee = userToJSON(u)
+			invitee = store.UserToJSON(u)
 		}
 	}
 	inviter := map[string]interface{}(nil)
 	if u := st.GetUserByID(inv.InviterID); u != nil {
-		inviter = userToJSON(u)
+		inviter = store.UserToJSON(u)
 	}
 	perm := inv.Permissions
 	if perm == "" {
@@ -187,7 +189,7 @@ func invitationJSON(inv *RepoInvitation, repo *Repo, st *Store, baseURL string) 
 	return map[string]interface{}{
 		"id":          inv.ID,
 		"node_id":     inv.NodeID,
-		"repository":  repoToJSON(repo, st, baseURL),
+		"repository":  store.RepoToJSON(repo, st, baseURL),
 		"invitee":     invitee,
 		"inviter":     inviter,
 		"permissions": roleName,

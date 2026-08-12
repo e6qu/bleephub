@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
+	"github.com/e6qu/bleephub/internal/store"
 	"golang.org/x/oauth2"
 	"golang.org/x/text/unicode/norm"
 )
@@ -461,7 +462,7 @@ func (s *Server) handleShauthCallback(w http.ResponseWriter, r *http.Request) {
 	if maximum := time.Now().Add(12 * time.Hour); expiresAt.After(maximum) {
 		expiresAt = maximum
 	}
-	if err := s.createOIDCBrowserSession(w, r, user, LoginSession{
+	if err := s.createOIDCBrowserSession(w, r, user, store.LoginSession{
 		OIDCProvider: "shauth",
 		OIDCIssuer:   s.identity.shauthIssuer,
 		OIDCSubject:  idToken.Subject,
@@ -515,7 +516,7 @@ func (s *Server) handleIdentitySession(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleIdentityValidation(w http.ResponseWriter, r *http.Request) {
 	session := s.sessionFromRequest(r)
-	var user *User
+	var user *store.User
 	if session != nil {
 		user = s.store.GetUserByID(session.UserID)
 	}
@@ -906,7 +907,7 @@ func (s *Server) handleLocalLogin(w http.ResponseWriter, r *http.Request) {
 	// A disallowed login and a wrong credential return the identical 401 so an
 	// anonymous caller cannot enumerate BLEEPHUB_ALLOWED_LOGINS membership from
 	// the status code.
-	var user *User
+	var user *store.User
 	if s.identity.loginAllowed(login) {
 		user = s.browserLoginUser(login, request.Password)
 	}
@@ -978,7 +979,7 @@ var errFederatedLogin = errors.New("federated login is not permitted on this ins
 // a non-SiteAdmin account regardless of what it adopted. A secondary provider,
 // and any account already bound to a different federated identity, are refused,
 // so no one can seize another's account (preserves AUTH-021).
-func (s *Server) upsertExternalUser(issuer, subject, login, name, email, avatarURL string, siteAdmin, roleAuthoritative bool) (*User, error) {
+func (s *Server) upsertExternalUser(issuer, subject, login, name, email, avatarURL string, siteAdmin, roleAuthoritative bool) (*store.User, error) {
 	login, err := normalizeLogin(login)
 	if err != nil || login == "" {
 		return nil, errFederatedLogin
@@ -986,7 +987,7 @@ func (s *Server) upsertExternalUser(issuer, subject, login, name, email, avatarU
 	if !s.identity.loginAllowed(login) {
 		return nil, errFederatedLogin
 	}
-	externalKey := externalIdentityKey(issuer, subject)
+	externalKey := store.ExternalIdentityKey(issuer, subject)
 	if externalKey == "" {
 		// Without a stable subject there is no safe federated key; adopting by
 		// username is exactly what must not happen, so fail closed.
@@ -1025,7 +1026,7 @@ func (s *Server) upsertExternalUser(issuer, subject, login, name, email, avatarU
 		return existing, nil
 	}
 	now := time.Now().UTC()
-	user := &User{ID: s.store.ReserveGlobalID("next_user", &s.store.NextUser), NodeID: "U_bleephub_" + login, Login: login, Name: name, Email: email, AvatarURL: avatarURL, Type: "User", SiteAdmin: siteAdmin, StarredRepos: map[string]bool{}, CreatedAt: now, UpdatedAt: now}
+	user := &store.User{ID: s.store.ReserveGlobalID("next_user", &s.store.NextUser), NodeID: "U_bleephub_" + login, Login: login, Name: name, Email: email, AvatarURL: avatarURL, Type: "User", SiteAdmin: siteAdmin, StarredRepos: map[string]bool{}, CreatedAt: now, UpdatedAt: now}
 	s.store.Users[user.ID], s.store.UsersByLogin[user.Login] = user, user
 	s.bindExternalIdentityLocked(user, externalKey)
 	if s.store.Persist != nil {
@@ -1037,23 +1038,23 @@ func (s *Server) upsertExternalUser(issuer, subject, login, name, email, avatarU
 // bindExternalIdentityLocked records the (issuer, subject) binding on user and
 // indexes it. Callers hold st.mu. A binding already present is a no-op, so the
 // same provider re-authenticating does not accumulate duplicate entries.
-func (s *Server) bindExternalIdentityLocked(user *User, externalKey string) {
+func (s *Server) bindExternalIdentityLocked(user *store.User, externalKey string) {
 	if externalKey == "" || user == nil {
 		return
 	}
 	for _, identity := range user.ExternalIdentities {
-		if externalIdentityKey(identity.Issuer, identity.Subject) == externalKey {
+		if store.ExternalIdentityKey(identity.Issuer, identity.Subject) == externalKey {
 			s.store.UsersByExternalID[externalKey] = user
 			return
 		}
 	}
 	issuer, subject, _ := strings.Cut(externalKey, "\x00")
-	user.ExternalIdentities = append(user.ExternalIdentities, ExternalIdentity{Issuer: issuer, Subject: subject})
+	user.ExternalIdentities = append(user.ExternalIdentities, store.ExternalIdentity{Issuer: issuer, Subject: subject})
 	s.store.UsersByExternalID[externalKey] = user
 }
 
-func (s *Server) createBrowserSession(w http.ResponseWriter, r *http.Request, user *User) error {
-	return s.createOIDCBrowserSession(w, r, user, LoginSession{ExpiresAt: time.Now().Add(12 * time.Hour)})
+func (s *Server) createBrowserSession(w http.ResponseWriter, r *http.Request, user *store.User) error {
+	return s.createOIDCBrowserSession(w, r, user, store.LoginSession{ExpiresAt: time.Now().Add(12 * time.Hour)})
 }
 
 // createOIDCBrowserSession issues the browser session cookie.
@@ -1061,7 +1062,7 @@ func (s *Server) createBrowserSession(w http.ResponseWriter, r *http.Request, us
 // The CSRF token is drawn separately from the cookie value. Reusing the cookie
 // value made every page that prints an authenticity_token a disclosure of the
 // session identifier, which is the one thing HttpOnly exists to withhold.
-func (s *Server) createOIDCBrowserSession(w http.ResponseWriter, r *http.Request, user *User, session LoginSession) error {
+func (s *Server) createOIDCBrowserSession(w http.ResponseWriter, r *http.Request, user *store.User, session store.LoginSession) error {
 	if user == nil {
 		return errors.New("cannot issue a browser session for a nil user")
 	}
@@ -1347,7 +1348,7 @@ func (s *Server) handlePrivateControl(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	session := s.sessionFromRequest(r)
-	var user *User
+	var user *store.User
 	if session != nil {
 		user = s.store.GetUserByID(session.UserID)
 	}

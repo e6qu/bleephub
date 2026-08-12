@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // GET /issues — issues involving the authenticated user across every
@@ -30,7 +32,7 @@ func (s *Server) handleListGlobalUserIssues(w http.ResponseWriter, r *http.Reque
 	switch filter {
 	case "assigned", "created", "mentioned", "subscribed", "repos", "all":
 	default:
-		writeGHValidationError(w, "Issue", "filter", "invalid")
+		store.WriteGHValidationError(w, "Issue", "filter", "invalid")
 		return
 	}
 	state := q.Get("state")
@@ -40,7 +42,7 @@ func (s *Server) handleListGlobalUserIssues(w http.ResponseWriter, r *http.Reque
 	switch state {
 	case "open", "closed", "all":
 	default:
-		writeGHValidationError(w, "Issue", "state", "invalid")
+		store.WriteGHValidationError(w, "Issue", "state", "invalid")
 		return
 	}
 	var labelFilter []string
@@ -51,15 +53,15 @@ func (s *Server) handleListGlobalUserIssues(w http.ResponseWriter, r *http.Reque
 	if v := q.Get("since"); v != "" {
 		t, err := time.Parse(time.RFC3339, v)
 		if err != nil {
-			writeGHValidationError(w, "Issue", "since", "invalid")
+			store.WriteGHValidationError(w, "Issue", "since", "invalid")
 			return
 		}
 		since = t
 	}
 
 	type row struct {
-		issue *Issue
-		repo  *Repo
+		issue *store.Issue
+		repo  *store.Repo
 	}
 	s.store.Mu.RLock()
 	rows := make([]row, 0)
@@ -113,7 +115,7 @@ func (s *Server) handleListGlobalUserIssues(w http.ResponseWriter, r *http.Reque
 		item := issueToJSON(rw.issue, s.store, base, rw.repo.FullName)
 		// GET /issues additionally carries the repository each issue lives
 		// in, since results span repositories.
-		item["repository"] = repoToJSON(rw.repo, s.store, base)
+		item["repository"] = store.RepoToJSON(rw.repo, s.store, base)
 		out = append(out, item)
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -121,7 +123,7 @@ func (s *Server) handleListGlobalUserIssues(w http.ResponseWriter, r *http.Reque
 
 // issueMatchesUserFilter implements the documented `filter` values. Callers
 // hold the store read lock.
-func issueMatchesUserFilter(st *Store, issue *Issue, repo *Repo, user *User, filter string) bool {
+func issueMatchesUserFilter(st *store.Store, issue *store.Issue, repo *store.Repo, user *store.User, filter string) bool {
 	assigned := false
 	for _, id := range issue.AssigneeIDs {
 		if id == user.ID {
@@ -140,12 +142,12 @@ func issueMatchesUserFilter(st *Store, issue *Issue, repo *Repo, user *User, fil
 	case "subscribed":
 		// Subscribed = issues in repositories the user watches, plus issues
 		// the user participates in.
-		if _, watching := st.RepoSubscriptions[repoSubscriptionKey(user.ID, repo.ID)]; watching {
+		if _, watching := st.RepoSubscriptions[store.RepoSubscriptionKey(user.ID, repo.ID)]; watching {
 			return true
 		}
 		return assigned || created || issueMentionsUser(st, issue, user)
 	case "repos":
-		return repo.OwnerID == user.ID || repoCollaboratorPermissionAtLeastLocked(st, repo.FullName, user.Login, "pull")
+		return repo.OwnerID == user.ID || store.RepoCollaboratorPermissionAtLeastLocked(st, repo.FullName, user.Login, "pull")
 	case "all":
 		return assigned || created || issueMentionsUser(st, issue, user)
 	}
@@ -154,7 +156,7 @@ func issueMatchesUserFilter(st *Store, issue *Issue, repo *Repo, user *User, fil
 
 // issueMentionsUser reports whether the issue body or any of its comments
 // mentions @user. Callers hold the store read lock.
-func issueMentionsUser(st *Store, issue *Issue, user *User) bool {
+func issueMentionsUser(st *store.Store, issue *store.Issue, user *store.User) bool {
 	mention := "@" + user.Login
 	if strings.Contains(issue.Body, mention) {
 		return true

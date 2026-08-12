@@ -1,6 +1,10 @@
 package bleephub
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
+)
 
 // TestFindIssueTypeByNodeIDUsesIndex pins GQL-024's fix: the issue-type node-ID
 // finder resolves through the O(1) IssueTypesByID index (populated on create,
@@ -17,15 +21,15 @@ func TestFindIssueTypeByNodeIDUsesIndex(t *testing.T) {
 	if st.IssueTypesByID[it.ID] != it {
 		t.Fatalf("IssueTypesByID missing id %d after create", it.ID)
 	}
-	if got := findIssueTypeByNodeID(st, it.NodeID); got == nil || got.ID != it.ID {
+	if got := store.FindIssueTypeByNodeID(st, it.NodeID); got == nil || got.ID != it.ID {
 		t.Fatalf("finder = %#v, want id %d", got, it.ID)
 	}
 	// Decode succeeds but no such id → guard/lookup returns nil, not a wrong type.
-	if got := findIssueTypeByNodeID(st, "IT_kwDO99999999"); got != nil {
+	if got := store.FindIssueTypeByNodeID(st, "IT_kwDO99999999"); got != nil {
 		t.Fatalf("unknown node id resolved to %#v", got)
 	}
 	// Wrong prefix decodes to nothing and the scan finds no match.
-	if got := findIssueTypeByNodeID(st, "R_kgDO00000001"); got != nil {
+	if got := store.FindIssueTypeByNodeID(st, "R_kgDO00000001"); got != nil {
 		t.Fatalf("wrong-prefix node id resolved to %#v", got)
 	}
 
@@ -35,7 +39,7 @@ func TestFindIssueTypeByNodeIDUsesIndex(t *testing.T) {
 	if _, ok := st.IssueTypesByID[it.ID]; ok {
 		t.Fatal("IssueTypesByID retained a deleted id")
 	}
-	if got := findIssueTypeByNodeID(st, it.NodeID); got != nil {
+	if got := store.FindIssueTypeByNodeID(st, it.NodeID); got != nil {
 		t.Fatalf("deleted issue type still found: %#v", got)
 	}
 }
@@ -47,11 +51,11 @@ func TestIssueTypeNodeIDIndexRebuiltOnReload(t *testing.T) {
 	t.Setenv("BLEEPHUB_PERSIST", "true")
 	t.Setenv("BLEEPHUB_DATA_DIR", dir)
 
-	p1, err := NewPersistence()
+	p1, err := store.NewPersistence()
 	if err != nil {
 		t.Fatalf("open persistence: %v", err)
 	}
-	st1 := NewStore()
+	st1 := store.NewStore()
 	if err := st1.SetPersistence(p1); err != nil {
 		t.Fatalf("attach persistence: %v", err)
 	}
@@ -64,19 +68,19 @@ func TestIssueTypeNodeIDIndexRebuiltOnReload(t *testing.T) {
 		t.Fatalf("close persistence: %v", err)
 	}
 
-	p2, err := NewPersistence()
+	p2, err := store.NewPersistence()
 	if err != nil {
 		t.Fatalf("reopen persistence: %v", err)
 	}
 	defer p2.Close()
-	st2 := NewStore()
+	st2 := store.NewStore()
 	if err := st2.SetPersistence(p2); err != nil {
 		t.Fatalf("reload persistence: %v", err)
 	}
 	if st2.IssueTypesByID[id] == nil {
 		t.Fatal("IssueTypesByID was not rebuilt on reload")
 	}
-	if got := findIssueTypeByNodeID(st2, nodeID); got == nil || got.ID != id {
+	if got := store.FindIssueTypeByNodeID(st2, nodeID); got == nil || got.ID != id {
 		t.Fatalf("finder after reload = %#v, want id %d", got, id)
 	}
 }

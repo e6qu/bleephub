@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func TestNotifications_ListAndRead(t *testing.T) {
@@ -215,7 +217,7 @@ func TestNotifications_ParticipatingFilter(t *testing.T) {
 
 	admin := s.store.UsersByLogin["admin"]
 	s.store.Mu.Lock()
-	other := &User{ID: s.store.NextUser, Login: "other", Type: "User"}
+	other := &store.User{ID: s.store.NextUser, Login: "other", Type: "User"}
 	s.store.NextUser++
 	s.store.Users[other.ID] = other
 	s.store.UsersByLogin[other.Login] = other

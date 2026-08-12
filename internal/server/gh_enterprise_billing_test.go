@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func TestEnterpriseBillingBudgetAndCostCenterJourney(t *testing.T) {
@@ -132,9 +134,9 @@ func TestEnterpriseBillingUsageAndReportExportJourney(t *testing.T) {
 	}
 	started := time.Date(2026, time.March, 10, 12, 0, 0, 0, time.UTC)
 	s.store.Mu.Lock()
-	s.store.Workflows["enterprise-usage-run"] = &Workflow{
-		ID: "enterprise-usage-run", RepoFullName: repo.FullName, Status: WorkflowStatusCompleted,
-		Jobs: map[string]*WorkflowJob{
+	s.store.Workflows["enterprise-usage-run"] = &store.Workflow{
+		ID: "enterprise-usage-run", RepoFullName: repo.FullName, Status: store.WorkflowStatusCompleted,
+		Jobs: map[string]*store.WorkflowJob{
 			"test": {JobID: "enterprise-usage-job", StartedAt: started, CompletedAt: started.Add(70 * time.Second)},
 		},
 	}
@@ -217,7 +219,7 @@ func TestEnterpriseBillingValidationAndAuthorization(t *testing.T) {
 	}
 	member := seedTestUser(s, "enterprise-billing-member")
 	s.store.Mu.Lock()
-	s.store.Tokens["enterprise-billing-member-token"] = &Token{
+	s.store.Tokens["enterprise-billing-member-token"] = &store.Token{
 		Value: "enterprise-billing-member-token", UserID: member.ID,
 	}
 	s.store.Mu.Unlock()

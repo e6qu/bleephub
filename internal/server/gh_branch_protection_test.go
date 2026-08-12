@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/stretchr/testify/require"
 )
 
@@ -14,7 +15,7 @@ func bpTestServer(t *testing.T) *Server {
 	s := newTestServer()
 	s.registerRoutes()
 	admin := s.store.UsersByLogin["admin"]
-	s.store.Tokens[adminPAT] = &Token{Value: adminPAT, UserID: admin.ID, Scopes: "repo,admin:org"}
+	s.store.Tokens[adminPAT] = &store.Token{Value: adminPAT, UserID: admin.ID, Scopes: "repo,admin:org"}
 	return s
 }
 
@@ -40,7 +41,7 @@ func TestBranchProtection_CRUD(t *testing.T) {
 	w = doBPReq(s, adminPAT, "PUT", "/api/v3/repos/"+repo.FullName+"/branches/main/protection", body)
 	require.Equal(t, http.StatusOK, w.Code)
 
-	var bp BranchProtection
+	var bp store.BranchProtection
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &bp))
 	require.NotNil(t, bp.RequiredStatusChecks)
 	require.True(t, bp.RequiredStatusChecks.Strict)
@@ -74,7 +75,7 @@ func TestBranchProtection_RequiredStatusChecksSubresource(t *testing.T) {
 
 	w := doBPReq(s, adminPAT, "PATCH", "/api/v3/repos/"+repo.FullName+"/branches/main/protection/required_status_checks", `{"strict": true, "contexts": ["ci", "lint"]}`)
 	require.Equal(t, http.StatusOK, w.Code)
-	var sc BPStatusChecks
+	var sc store.BPStatusChecks
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &sc))
 	require.True(t, sc.Strict)
 	require.Equal(t, []string{"ci", "lint"}, sc.Contexts)
@@ -113,7 +114,7 @@ func TestBranchProtection_RequiredReviewsSubresource(t *testing.T) {
 
 	w := doBPReq(s, adminPAT, "PATCH", "/api/v3/repos/"+repo.FullName+"/branches/main/protection/required_pull_request_reviews", `{"required_approving_review_count": 1, "dismiss_stale_reviews": true}`)
 	require.Equal(t, http.StatusOK, w.Code)
-	var rev BPPullRequestReviews
+	var rev store.BPPullRequestReviews
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &rev))
 	require.Equal(t, 1, rev.RequiredApprovingReviewCount)
 	require.True(t, rev.DismissStaleReviews)
@@ -133,7 +134,7 @@ func TestBranchProtection_EnforceAdminsSubresource(t *testing.T) {
 
 	w := doBPReq(s, adminPAT, "POST", "/api/v3/repos/"+repo.FullName+"/branches/main/protection/enforce_admins", ``)
 	require.Equal(t, http.StatusOK, w.Code)
-	var ea BPEnforceAdmins
+	var ea store.BPEnforceAdmins
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &ea))
 	require.True(t, ea.Enabled)
 
@@ -156,7 +157,7 @@ func TestBranchProtection_RestrictionsSubresource(t *testing.T) {
 	body := `{"restrictions":{"users":[{"login":"admin","id":1,"type":"User"}]}}`
 	w := doBPReq(s, adminPAT, "PUT", "/api/v3/repos/"+repo.FullName+"/branches/main/protection", body)
 	require.Equal(t, http.StatusOK, w.Code)
-	var protection BranchProtection
+	var protection store.BranchProtection
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &protection))
 	require.NotNil(t, protection.Restrictions)
 	require.Len(t, protection.Restrictions.Users, 1)
@@ -164,7 +165,7 @@ func TestBranchProtection_RestrictionsSubresource(t *testing.T) {
 
 	w = doBPReq(s, adminPAT, "GET", "/api/v3/repos/"+repo.FullName+"/branches/main/protection/restrictions/users", "")
 	require.Equal(t, http.StatusOK, w.Code)
-	var users []BPActor
+	var users []store.BPActor
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &users))
 	require.Len(t, users, 1)
 
@@ -216,7 +217,7 @@ func TestBranchProtection_MergeEnforcesRequestedChanges(t *testing.T) {
 		"title": "To merge", "head": "feat", "base": "main",
 	}).Body.Close()
 
-	reviewer := &User{ID: 1000, Login: "reviewer", Type: "User", CreatedAt: fixedTestTime, UpdatedAt: fixedTestTime}
+	reviewer := &store.User{ID: 1000, Login: "reviewer", Type: "User", CreatedAt: fixedTestTime, UpdatedAt: fixedTestTime}
 	s.store.Users[reviewer.ID] = reviewer
 	s.store.UsersByLogin[reviewer.Login] = reviewer
 	tok := s.store.CreateToken(reviewer.ID, "repo")

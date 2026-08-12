@@ -3,6 +3,8 @@ package bleephub
 import (
 	"net/http"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func TestGHESAdminStatsAndLicenseReflectStore(t *testing.T) {
@@ -57,7 +59,7 @@ func TestGHESGlobalAnnouncementAliasAndHiddenAuthorization(t *testing.T) {
 
 	member := seedTestUser(s, "stats-member")
 	s.store.Mu.Lock()
-	s.store.Tokens["stats-member-token"] = &Token{Value: "stats-member-token", UserID: member.ID}
+	s.store.Tokens["stats-member-token"] = &store.Token{Value: "stats-member-token", UserID: member.ID}
 	s.store.Mu.Unlock()
 	rec = enterpriseBearerRequest(t, s, http.MethodGet, "/api/v3/enterprise/stats/users", nil, "stats-member-token")
 	if rec.Code != http.StatusNotFound {

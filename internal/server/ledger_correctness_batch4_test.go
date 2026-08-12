@@ -2,6 +2,8 @@ package bleephub
 
 import (
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // TestCopilotSeatReadsAreNonMutating covers the copilot half of STORE-034: the
@@ -68,7 +70,7 @@ func TestRepoDeletePurgesSoftDeletedPackages(t *testing.T) {
 	}
 	st.Mu.RLock()
 	_, inPrimary := st.Packages[pkg.ID]
-	_, inIndex := st.PackagesByOwnerKey[repo.FullName][packageKey("container", "app")]
+	_, inIndex := st.PackagesByOwnerKey[repo.FullName][store.PackageKey("container", "app")]
 	st.Mu.RUnlock()
 	if !inPrimary || inIndex {
 		t.Fatalf("soft-delete precondition wrong: primary=%v index=%v", inPrimary, inIndex)

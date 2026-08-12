@@ -4,6 +4,8 @@ import (
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func TestOrganizationGovernanceStatePersistenceReload(t *testing.T) {
@@ -12,11 +14,11 @@ func TestOrganizationGovernanceStatePersistenceReload(t *testing.T) {
 	t.Setenv("BLEEPHUB_DATA_DIR", dir)
 	t.Setenv("BLEEPHUB_ADMIN_TOKEN", defaultToken)
 
-	p1, err := NewPersistence()
+	p1, err := store.NewPersistence()
 	if err != nil {
 		t.Fatalf("open persistence: %v", err)
 	}
-	st1 := NewStore()
+	st1 := store.NewStore()
 	if err := st1.SetPersistence(p1); err != nil {
 		t.Fatalf("set persistence: %v", err)
 	}
@@ -32,28 +34,28 @@ func TestOrganizationGovernanceStatePersistenceReload(t *testing.T) {
 	description := "persists"
 	baseRole := "read"
 	st1.Mu.Lock()
-	st1.OrgAnnouncements[org.Login] = &EnterpriseAnnouncement{Announcement: "Persistent banner", UserDismissible: true}
-	st1.OrgCustomRepoRoles[org.Login] = map[int]*OrgCustomRepositoryRole{
+	st1.OrgAnnouncements[org.Login] = &store.EnterpriseAnnouncement{Announcement: "Persistent banner", UserDismissible: true}
+	st1.OrgCustomRepoRoles[org.Login] = map[int]*store.OrgCustomRepositoryRole{
 		1001: {
 			ID: 1001, Name: "persistent repo role", Description: &description, BaseRole: "write",
 			Permissions: []string{"create_tag"}, OrgLogin: org.Login, CreatedAt: now, UpdatedAt: now,
 		},
 	}
-	st1.OrgCustomRoles[org.Login] = map[int]*OrgCustomOrganizationRole{
+	st1.OrgCustomRoles[org.Login] = map[int]*store.OrgCustomOrganizationRole{
 		1002: {
 			ID: 1002, Name: "persistent org role", Description: &description, BaseRole: &baseRole,
 			Permissions: []string{"read_organization_custom_properties"}, OrgLogin: org.Login,
 			CreatedAt: now, UpdatedAt: now,
 		},
 	}
-	st1.OrgSCIMUsers[org.Login] = map[string]*EnterpriseSCIMUser{
+	st1.OrgSCIMUsers[org.Login] = map[string]*store.EnterpriseSCIMUser{
 		"persistent-scim-user": {
 			Schemas: []string{scimUserSchema}, ID: "persistent-scim-user",
 			ExternalID: "directory-persistent", UserName: "admin", Active: true,
 			UserID: admin.ID, CreatedAt: now, UpdatedAt: now,
 		},
 	}
-	st1.OrgExternalGroups[org.Login] = map[string]*OrgExternalIdentityGroup{
+	st1.OrgExternalGroups[org.Login] = map[string]*store.OrgExternalIdentityGroup{
 		"persistent-group": {
 			ID: "persistent-group", NumericID: 17, Name: "Persistent Group",
 			Description: "survives reload", MemberIDs: []int{admin.ID}, UpdatedAt: now,
@@ -61,12 +63,12 @@ func TestOrganizationGovernanceStatePersistenceReload(t *testing.T) {
 	}
 	st1.TeamExternalGroupIDs[71] = []string{"persistent-group"}
 	reviewScope := securityReviewScope(repo.FullName, reviewKindSecretBypass)
-	st1.SecurityReviewRequests[reviewScope] = map[int]*SecurityReviewRequest{
+	st1.SecurityReviewRequests[reviewScope] = map[int]*store.SecurityReviewRequest{
 		9: {
 			ID: 21, Number: 9, RepoKey: repo.FullName, OrgLogin: org.Login,
 			Kind: reviewKindSecretBypass, RequesterID: admin.ID, ResourceID: "deadbeef",
 			Status: "approved", CreatedAt: now, ExpiresAt: now.Add(7 * 24 * time.Hour),
-			Responses: []SecurityReviewResponse{{
+			Responses: []store.SecurityReviewResponse{{
 				ID: 34, ReviewerID: admin.ID, Status: "approved", CreatedAt: now,
 			}},
 		},
@@ -83,12 +85,12 @@ func TestOrganizationGovernanceStatePersistenceReload(t *testing.T) {
 		t.Fatalf("close persistence: %v", err)
 	}
 
-	p2, err := NewPersistence()
+	p2, err := store.NewPersistence()
 	if err != nil {
 		t.Fatalf("reopen persistence: %v", err)
 	}
 	defer p2.Close()
-	st2 := NewStore()
+	st2 := store.NewStore()
 	if err := st2.SetPersistence(p2); err != nil {
 		t.Fatalf("reload persistence: %v", err)
 	}

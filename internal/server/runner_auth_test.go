@@ -17,17 +17,18 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/e6qu/bleephub/internal/actions"
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // --- helpers ---
 
-func testUser(t *testing.T, s *Server, login string) *User {
+func testUser(t *testing.T, s *Server, login string) *store.User {
 	t.Helper()
 	if u := s.store.LookupUserByLogin(login); u != nil {
 		return u
 	}
 	s.store.Mu.Lock()
-	user := &User{ID: s.store.NextUser, Login: login, Type: "User", CreatedAt: fixedTestTime, UpdatedAt: fixedTestTime}
+	user := &store.User{ID: s.store.NextUser, Login: login, Type: "User", CreatedAt: fixedTestTime, UpdatedAt: fixedTestTime}
 	s.store.NextUser++
 	s.store.Users[user.ID] = user
 	s.store.UsersByLogin[user.Login] = user
@@ -35,7 +36,7 @@ func testUser(t *testing.T, s *Server, login string) *User {
 	return user
 }
 
-func testRepo(t *testing.T, s *Server, owner, name string, private bool) *Repo {
+func testRepo(t *testing.T, s *Server, owner, name string, private bool) *store.Repo {
 	t.Helper()
 	user := testUser(t, s, owner)
 	if repo := s.store.GetRepo(owner, name); repo != nil {
@@ -58,7 +59,7 @@ func testJobToken(t *testing.T, s *Server, repoFullName string) (token, scopeID 
 		scopeID, repoFullName)
 	jobID := "job-" + scopeID
 	s.store.Mu.Lock()
-	s.store.Jobs[jobID] = &Job{ID: jobID, PlanID: "plan-" + scopeID, Status: "queued", Message: message}
+	s.store.Jobs[jobID] = &store.Job{ID: jobID, PlanID: "plan-" + scopeID, Status: "queued", Message: message}
 	s.store.Mu.Unlock()
 	return makeJWT(scopeID, runnerAudJob), scopeID
 }
@@ -74,7 +75,7 @@ func seedRunJobToken(t *testing.T, s *Server, repoFullName, backendID string) st
 	}
 	testRepo(t, s, owner, name, false)
 	s.store.Mu.Lock()
-	s.store.Workflows[backendID] = &Workflow{ID: backendID, RepoFullName: repoFullName}
+	s.store.Workflows[backendID] = &store.Workflow{ID: backendID, RepoFullName: repoFullName}
 	s.store.Mu.Unlock()
 	token, _ := testJobToken(t, s, repoFullName)
 	return token
@@ -92,7 +93,7 @@ func seedPlanScopeToken(t *testing.T, s *Server, planID, repoFullName string) st
 	// The plan's job may already be installed (linkJobToPlan does it). The
 	// token is minted against that job, not a second one claiming the same
 	// plan — the routes resolve a plan to exactly one job.
-	var job *Job
+	var job *store.Job
 	for _, existing := range s.store.Jobs {
 		if existing.PlanID == planID {
 			job = existing
@@ -100,7 +101,7 @@ func seedPlanScopeToken(t *testing.T, s *Server, planID, repoFullName string) st
 		}
 	}
 	if job == nil {
-		job = &Job{ID: "plan-scope-job-" + planID, PlanID: planID, Status: "running"}
+		job = &store.Job{ID: "plan-scope-job-" + planID, PlanID: planID, Status: "running"}
 		s.store.Jobs[job.ID] = job
 	}
 	job.Message = message
@@ -110,17 +111,17 @@ func seedPlanScopeToken(t *testing.T, s *Server, planID, repoFullName string) st
 
 // testAgentSession registers an agent scoped to scope and returns its session
 // bearer token and the stored agent.
-func testAgentSession(t *testing.T, s *Server, scope runnerScope, labels ...string) (string, *Agent) {
+func testAgentSession(t *testing.T, s *Server, scope store.RunnerScope, labels ...string) (string, *store.Agent) {
 	t.Helper()
 	clientID, err := newAgentClientID(scope)
 	if err != nil {
 		t.Fatalf("newAgentClientID: %v", err)
 	}
-	agent := &Agent{Enabled: true, Status: "online", CreatedOn: fixedTestTime,
+	agent := &store.Agent{Enabled: true, Status: "online", CreatedOn: fixedTestTime,
 		Scope:         scope,
-		Authorization: &AgentAuthorization{ClientID: clientID}}
+		Authorization: &store.AgentAuthorization{ClientID: clientID}}
 	for _, l := range labels {
-		agent.Labels = append(agent.Labels, Label{Name: l, Type: "custom"})
+		agent.Labels = append(agent.Labels, store.Label{Name: l, Type: "custom"})
 	}
 	s.store.Mu.Lock()
 	agent.ID = s.store.NextAgent
@@ -131,7 +132,7 @@ func testAgentSession(t *testing.T, s *Server, scope runnerScope, labels ...stri
 }
 
 // mustRunnerRegistrationToken mints the credential config.sh presents.
-func mustRunnerRegistrationToken(t *testing.T, scope runnerScope) string {
+func mustRunnerRegistrationToken(t *testing.T, scope store.RunnerScope) string {
 	t.Helper()
 	token, err := newRunnerRegistrationToken(scope, runnerPurposeRegistration)
 	if err != nil {
@@ -365,7 +366,7 @@ func TestAgentRegistrationRequiresRegistrationToken(t *testing.T) {
 	}
 
 	// A removal token is not a registration token.
-	removal, err := newRunnerRegistrationToken(runnerScope{Repo: "octo/repo"}, runnerPurposeRemoval)
+	removal, err := newRunnerRegistrationToken(store.RunnerScope{Repo: "octo/repo"}, runnerPurposeRemoval)
 	if err != nil {
 		t.Fatalf("newRunnerRegistrationToken: %v", err)
 	}
@@ -373,7 +374,7 @@ func TestAgentRegistrationRequiresRegistrationToken(t *testing.T) {
 		t.Fatalf("removal-token registration status = %d, want 401", w.Code)
 	}
 
-	registration, err := newRunnerRegistrationToken(runnerScope{Repo: "octo/repo"}, runnerPurposeRegistration)
+	registration, err := newRunnerRegistrationToken(store.RunnerScope{Repo: "octo/repo"}, runnerPurposeRegistration)
 	if err != nil {
 		t.Fatalf("newRunnerRegistrationToken: %v", err)
 	}
@@ -385,7 +386,7 @@ func TestAgentRegistrationRequiresRegistrationToken(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("registration status = %d, want 200; body=%s", w.Code, w.Body.String())
 	}
-	var agent Agent
+	var agent store.Agent
 	if err := json.Unmarshal(w.Body.Bytes(), &agent); err != nil {
 		t.Fatalf("decode agent: %v", err)
 	}
@@ -412,10 +413,10 @@ func TestAgentSessionTokenCannotReachAnotherRunnersSession(t *testing.T) {
 	s := newTestServer()
 	s.registerRoutes()
 
-	tokenA, agentA := testAgentSession(t, s, runnerScope{Repo: "octo/a"})
-	tokenB, _ := testAgentSession(t, s, runnerScope{Repo: "octo/b"})
+	tokenA, agentA := testAgentSession(t, s, store.RunnerScope{Repo: "octo/a"})
+	tokenB, _ := testAgentSession(t, s, store.RunnerScope{Repo: "octo/b"})
 
-	session := &Session{SessionID: "session-a", Agent: agentA, MsgCh: make(chan *TaskAgentMessage, 1)}
+	session := &store.Session{SessionID: "session-a", Agent: agentA, MsgCh: make(chan *store.TaskAgentMessage, 1)}
 	s.store.Mu.Lock()
 	s.store.Sessions[session.SessionID] = session
 	s.store.Mu.Unlock()
@@ -442,37 +443,37 @@ func TestAgentSessionTokenCannotReachAnotherRunnersSession(t *testing.T) {
 func TestBrokerWithholdsJobMessagesOutsideTheRunnerScope(t *testing.T) {
 	s := newTestServer()
 	message := `{"plan":{"scopeIdentifier":"scope-1"},"contextData":{"github":{"t":2,"d":[{"k":"repository","v":"octo/secret-repo"}]}}}`
-	msg := &TaskAgentMessage{MessageID: 1, MessageType: "PipelineAgentJobRequest", Body: message, JobID: "job-1"}
+	msg := &store.TaskAgentMessage{MessageID: 1, MessageType: "PipelineAgentJobRequest", Body: message, JobID: "job-1"}
 	s.store.Mu.Lock()
-	s.store.Jobs["job-1"] = &Job{ID: "job-1", Status: "queued", Message: message}
+	s.store.Jobs["job-1"] = &store.Job{ID: "job-1", Status: "queued", Message: message}
 	s.store.PendingMessages = append(s.store.PendingMessages, msg)
 	s.store.Mu.Unlock()
 
-	_, outsider := testAgentSession(t, s, runnerScope{Repo: "octo/other-repo"})
-	outsiderSession := &Session{SessionID: "s-out", Agent: outsider, MsgCh: make(chan *TaskAgentMessage, 1)}
-	if got := s.actions.PullPendingMessage(outsiderSession, runnerScope{Repo: "octo/other-repo"}); got != nil {
+	_, outsider := testAgentSession(t, s, store.RunnerScope{Repo: "octo/other-repo"})
+	outsiderSession := &store.Session{SessionID: "s-out", Agent: outsider, MsgCh: make(chan *store.TaskAgentMessage, 1)}
+	if got := s.actions.PullPendingMessage(outsiderSession, store.RunnerScope{Repo: "octo/other-repo"}); got != nil {
 		t.Fatal("a runner registered for another repository received the job message")
 	}
 
-	_, owner := testAgentSession(t, s, runnerScope{Org: "octo"})
-	ownerSession := &Session{SessionID: "s-own", Agent: owner, MsgCh: make(chan *TaskAgentMessage, 1)}
-	if got := s.actions.PullPendingMessage(ownerSession, runnerScope{Org: "octo"}); got == nil {
+	_, owner := testAgentSession(t, s, store.RunnerScope{Org: "octo"})
+	ownerSession := &store.Session{SessionID: "s-own", Agent: owner, MsgCh: make(chan *store.TaskAgentMessage, 1)}
+	if got := s.actions.PullPendingMessage(ownerSession, store.RunnerScope{Org: "octo"}); got == nil {
 		t.Fatal("an org-scoped runner did not receive its organization's job message")
 	}
 }
 
 func TestJobSecretsEntitlement(t *testing.T) {
 	for _, tc := range []struct {
-		scope runnerScope
+		scope store.RunnerScope
 		repo  string
 		want  bool
 	}{
-		{runnerScope{Repo: "octo/a"}, "octo/a", true},
-		{runnerScope{Repo: "octo/a"}, "octo/b", false},
-		{runnerScope{Org: "octo"}, "octo/b", true},
-		{runnerScope{Org: "octo"}, "other/b", false},
-		{runnerScope{}, "octo/a", false},
-		{runnerScope{Repo: "octo/a"}, "", true},
+		{store.RunnerScope{Repo: "octo/a"}, "octo/a", true},
+		{store.RunnerScope{Repo: "octo/a"}, "octo/b", false},
+		{store.RunnerScope{Org: "octo"}, "octo/b", true},
+		{store.RunnerScope{Org: "octo"}, "other/b", false},
+		{store.RunnerScope{}, "octo/a", false},
+		{store.RunnerScope{Repo: "octo/a"}, "", true},
 	} {
 		if got := actions.JobSecretsEntitled(tc.scope, tc.repo); got != tc.want {
 			t.Errorf("actions.JobSecretsEntitled(%+v, %q) = %v, want %v", tc.scope, tc.repo, got, tc.want)
@@ -489,7 +490,7 @@ func TestArtifactDownloadRejectsCrossRepository(t *testing.T) {
 	testRepo(t, s, "octo", "other-repo", true)
 
 	s.artifactStore.Mu.Lock()
-	s.artifactStore.Artifacts[1] = &Artifact{
+	s.artifactStore.Artifacts[1] = &store.Artifact{
 		ID: 1, Name: "build", Data: []byte("secret bytes"), Size: 12,
 		Finalized: true, RepoFullName: "octo/owner-repo", CreatedAt: fixedTestTime,
 	}
@@ -521,7 +522,7 @@ func TestArtifactUploadRejectsCrossRepository(t *testing.T) {
 	testRepo(t, s, "octo", "other-repo", true)
 
 	s.artifactStore.Mu.Lock()
-	s.artifactStore.Artifacts[1] = &Artifact{ID: 1, Name: "build", RepoFullName: "octo/owner-repo", CreatedAt: fixedTestTime}
+	s.artifactStore.Artifacts[1] = &store.Artifact{ID: 1, Name: "build", RepoFullName: "octo/owner-repo", CreatedAt: fixedTestTime}
 	s.artifactStore.Mu.Unlock()
 
 	otherToken, _ := testJobToken(t, s, "octo/other-repo")
@@ -544,8 +545,8 @@ func TestListArtifactsRequiresARunID(t *testing.T) {
 	token, _ := testJobToken(t, s, "octo/repo")
 
 	s.artifactStore.Mu.Lock()
-	s.artifactStore.Artifacts[1] = &Artifact{ID: 1, Name: "a", Finalized: true, RepoFullName: "octo/repo", WorkflowRunBackendID: "run-1"}
-	s.artifactStore.Artifacts[2] = &Artifact{ID: 2, Name: "b", Finalized: true, RepoFullName: "other/repo", WorkflowRunBackendID: "run-2"}
+	s.artifactStore.Artifacts[1] = &store.Artifact{ID: 1, Name: "a", Finalized: true, RepoFullName: "octo/repo", WorkflowRunBackendID: "run-1"}
+	s.artifactStore.Artifacts[2] = &store.Artifact{ID: 2, Name: "b", Finalized: true, RepoFullName: "other/repo", WorkflowRunBackendID: "run-2"}
 	s.artifactStore.Mu.Unlock()
 
 	w := runnerRequest(s, "POST", "/twirp/github.actions.results.api.v1.ArtifactService/ListArtifacts", token, "{}")
@@ -591,7 +592,7 @@ func TestActionTarballRejectsPrivateRepositoryOutsideScope(t *testing.T) {
 	// And the basic form is a credential, not a bypass: an unverifiable token,
 	// an agent session, and the right token under the wrong user are all
 	// refused before the repository is even resolved.
-	session, _ := testAgentSession(t, s, runnerScope{Repo: "octo/private-action"})
+	session, _ := testAgentSession(t, s, store.RunnerScope{Repo: "octo/private-action"})
 	for name, tc := range map[string]struct {
 		authorization string
 		want          int
@@ -737,19 +738,19 @@ func (f *failingResponseWriter) Write([]byte) (int, error) { return 0, fmt.Error
 
 func TestPendingMessageSurvivesAFailedDelivery(t *testing.T) {
 	s := newTestServer()
-	token, agent := testAgentSession(t, s, runnerScope{Repo: "octo/repo"})
+	token, agent := testAgentSession(t, s, store.RunnerScope{Repo: "octo/repo"})
 	claims, err := parseRunnerToken(token)
 	if err != nil {
 		t.Fatalf("parseRunnerToken: %v", err)
 	}
-	principal := &runnerPrincipal{Claims: claims, Agent: agent, Scope: runnerScope{Repo: "octo/repo"}}
+	principal := &runnerPrincipal{Claims: claims, Agent: agent, Scope: store.RunnerScope{Repo: "octo/repo"}}
 
-	session := &Session{SessionID: "s1", Agent: agent, MsgCh: make(chan *TaskAgentMessage, 1)}
+	session := &store.Session{SessionID: "s1", Agent: agent, MsgCh: make(chan *store.TaskAgentMessage, 1)}
 	message := `{"plan":{"scopeIdentifier":"scope-1"},"contextData":{"github":{"t":2,"d":[{"k":"repository","v":"octo/repo"}]}}}`
-	msg := &TaskAgentMessage{MessageID: 9, MessageType: "PipelineAgentJobRequest", Body: message, JobID: "job-9"}
+	msg := &store.TaskAgentMessage{MessageID: 9, MessageType: "PipelineAgentJobRequest", Body: message, JobID: "job-9"}
 	s.store.Mu.Lock()
 	s.store.Sessions["s1"] = session
-	s.store.Jobs["job-9"] = &Job{ID: "job-9", Status: "queued", Message: message}
+	s.store.Jobs["job-9"] = &store.Job{ID: "job-9", Status: "queued", Message: message}
 	s.store.PendingMessages = append(s.store.PendingMessages, msg)
 	s.store.Mu.Unlock()
 

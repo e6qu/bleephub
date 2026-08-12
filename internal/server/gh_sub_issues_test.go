@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strconv"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // createIssueForTest creates an issue and returns (databaseID, number).
@@ -101,7 +103,7 @@ func TestSubIssues_AddListReprioritizeRemove(t *testing.T) {
 
 func TestSubIssues_ReplaceParentPersistsOldParent(t *testing.T) {
 	var firstParentID, secondParentID, childID int
-	st2 := reloadedStore(t, func(_ *Persistence, st *Store) {
+	st2 := reloadedStore(t, func(_ *store.Persistence, st *store.Store) {
 		st.SeedDefaultUser()
 		admin := st.UsersByLogin["admin"]
 		repo := st.CreateRepo(admin, "subissue-replace-reload", "", false)

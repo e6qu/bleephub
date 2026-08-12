@@ -29,6 +29,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/e6qu/bleephub/internal/actions"
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func computeHMACSignature(secret string, payload []byte) string {
@@ -411,7 +412,7 @@ func (s *Server) webhookDispatch() *webhookDispatcher {
 // webhookQueueKey identifies the delivery order domain a hook belongs to.
 // Hook ids are unique across repository, organization and app hooks, but the
 // owner is included so a reloaded hook cannot collide with a live one.
-func webhookQueueKey(h *Webhook) string {
+func webhookQueueKey(h *store.Webhook) string {
 	global := ""
 	if h.Global {
 		global = "global"
@@ -422,8 +423,8 @@ func webhookQueueKey(h *Webhook) string {
 // appWebhookPseudoHook is the Webhook view of a GitHub App's single webhook
 // configuration. The negative id is what marks an app-level delivery
 // throughout the delivery path.
-func appWebhookPseudoHook(app *App) *Webhook {
-	return &Webhook{
+func appWebhookPseudoHook(app *store.App) *store.Webhook {
+	return &store.Webhook{
 		ID:     -app.ID,
 		URL:    app.WebhookURL,
 		Secret: app.WebhookSecret,
@@ -432,7 +433,7 @@ func appWebhookPseudoHook(app *App) *Webhook {
 	}
 }
 
-func appWebhookQueueKey(app *App) string {
+func appWebhookQueueKey(app *store.App) string {
 	return "app\x00" + strconv.Itoa(app.ID)
 }
 
@@ -445,7 +446,7 @@ func (s *Server) enqueueWebhookJob(key string, job func()) {
 // enqueueWebhookDelivery is the asynchronous form of deliverWebhook. Every
 // event fan-out goes through here rather than a bare `go`, so an event storm
 // cannot spawn a goroutine per hook per event.
-func (s *Server) enqueueWebhookDelivery(hook *Webhook, event, action string, payloadBytes []byte) {
+func (s *Server) enqueueWebhookDelivery(hook *store.Webhook, event, action string, payloadBytes []byte) {
 	queued := s.store.SnapshotHook(hook)
 	s.enqueueWebhookJob(webhookQueueKey(queued), func() {
 		s.deliverWebhook(queued, event, action, payloadBytes)
@@ -453,7 +454,7 @@ func (s *Server) enqueueWebhookDelivery(hook *Webhook, event, action string, pay
 }
 
 // redeliverWebhook re-runs one recorded delivery and stores the new attempt.
-func (s *Server) redeliverWebhook(hook *Webhook, event, action, guid string, payloadBytes []byte) {
+func (s *Server) redeliverWebhook(hook *store.Webhook, event, action, guid string, payloadBytes []byte) {
 	hook = s.store.SnapshotHook(hook)
 	delivery := s.doDeliverAttempt(hook, event, action, guid, payloadBytes, true)
 	s.store.AddDelivery(delivery)
@@ -463,7 +464,7 @@ func (s *Server) redeliverWebhook(hook *Webhook, event, action, guid string, pay
 // recordHookLastResponse writes the attempt outcome to whichever hook table
 // owns the hook. Repository and organization hooks both have a last_response,
 // and each redelivery path used to update only its own half.
-func (s *Server) recordHookLastResponse(hook *Webhook, delivery *WebhookDelivery) {
+func (s *Server) recordHookLastResponse(hook *store.Webhook, delivery *store.WebhookDelivery) {
 	switch {
 	case hook.RepoKey != "":
 		s.store.SetHookLastResponse(hook.RepoKey, hook.ID, deliveryLastResponse(delivery))
@@ -567,7 +568,7 @@ func (s *Server) triggerWorkflowsForWebhookEvent(repoKey, eventType, action stri
 	case "deployment", "deployment_status":
 		if deployment, _ := payload["deployment"].(map[string]interface{}); deployment != nil {
 			if deploymentRef, _ := deployment["ref"].(string); deploymentRef != "" {
-				owner, name, _ := splitRepoFullName(repo.FullName)
+				owner, name, _ := store.SplitRepoFullName(repo.FullName)
 				stor := s.store.GetGitStorage(owner, name)
 				if stor != nil {
 					if normalized, sha := resolveGitHubRefInput(stor, deploymentRef); sha != actions.ZeroCommitSha {
@@ -580,7 +581,7 @@ func (s *Server) triggerWorkflowsForWebhookEvent(repoKey, eventType, action stri
 	s.triggerWorkflowsForEvent(repoKey, eventType, action, ref, payload)
 }
 
-func hookMatchesEvent(hook *Webhook, eventType string) bool {
+func hookMatchesEvent(hook *store.Webhook, eventType string) bool {
 	for _, e := range hook.Events {
 		if e == eventType || e == "*" {
 			return true
@@ -590,7 +591,7 @@ func hookMatchesEvent(hook *Webhook, eventType string) bool {
 }
 
 // deliverWebhook sends an HTTP POST with retries (3 attempts, exponential backoff).
-func (s *Server) deliverWebhook(hook *Webhook, event, action string, payloadBytes []byte) {
+func (s *Server) deliverWebhook(hook *store.Webhook, event, action string, payloadBytes []byte) {
 	hook = s.store.SnapshotHook(hook)
 	guid := uuid.New().String()
 	backoffs := []time.Duration{0, 1 * time.Second, 5 * time.Second}
@@ -618,14 +619,14 @@ func (s *Server) deliverWebhook(hook *Webhook, event, action string, payloadByte
 }
 
 // deliveryLastResponse maps a delivery attempt to the hook.last_response shape.
-func deliveryLastResponse(d *WebhookDelivery) *HookLastResponse {
+func deliveryLastResponse(d *store.WebhookDelivery) *store.HookLastResponse {
 	msg := http.StatusText(d.StatusCode)
 	if d.StatusCode >= 200 && d.StatusCode < 300 {
 		msg = "OK"
 	} else if d.StatusCode == 0 {
 		msg = "failed to connect"
 	}
-	return &HookLastResponse{
+	return &store.HookLastResponse{
 		Code:    d.StatusCode,
 		Status:  deliveryStatus(d.StatusCode),
 		Message: msg,
@@ -633,7 +634,7 @@ func deliveryLastResponse(d *WebhookDelivery) *HookLastResponse {
 }
 
 // doDeliverAttempt performs a single webhook delivery attempt.
-func (s *Server) doDeliverAttempt(hook *Webhook, event, action, guid string, payloadBytes []byte, redelivery bool) *WebhookDelivery {
+func (s *Server) doDeliverAttempt(hook *store.Webhook, event, action, guid string, payloadBytes []byte, redelivery bool) *store.WebhookDelivery {
 	hook = s.store.SnapshotHook(hook)
 	start := time.Now()
 
@@ -685,8 +686,8 @@ func (s *Server) doDeliverAttempt(hook *Webhook, event, action, guid string, pay
 	}
 
 	// undelivered records an attempt that never reached the network.
-	undelivered := func(err error) *WebhookDelivery {
-		return &WebhookDelivery{
+	undelivered := func(err error) *store.WebhookDelivery {
+		return &store.WebhookDelivery{
 			HookID:      hook.ID,
 			TargetURL:   hook.URL,
 			GUID:        guid,
@@ -694,8 +695,8 @@ func (s *Server) doDeliverAttempt(hook *Webhook, event, action, guid string, pay
 			Action:      action,
 			StatusCode:  0,
 			Duration:    time.Since(start).Seconds(),
-			Request:     &DeliveryRequest{Headers: reqHeaders, Payload: json.RawMessage(payloadBytes)},
-			Response:    &DeliveryResponse{StatusCode: 0, Body: err.Error()},
+			Request:     &store.DeliveryRequest{Headers: reqHeaders, Payload: json.RawMessage(payloadBytes)},
+			Response:    &store.DeliveryResponse{StatusCode: 0, Body: err.Error()},
 			Redelivery:  redelivery,
 			DeliveredAt: time.Now(),
 		}
@@ -729,7 +730,7 @@ func (s *Server) doDeliverAttempt(hook *Webhook, event, action, guid string, pay
 	resp, err := s.webhookDeliveryClient(hook.InsecureSSL == "1").Do(httpReq)
 	elapsed := time.Since(start).Seconds()
 
-	delivery := &WebhookDelivery{
+	delivery := &store.WebhookDelivery{
 		HookID:      hook.ID,
 		TargetURL:   hook.URL,
 		GUID:        guid,
@@ -738,12 +739,12 @@ func (s *Server) doDeliverAttempt(hook *Webhook, event, action, guid string, pay
 		Redelivery:  redelivery,
 		DeliveredAt: time.Now(),
 		Duration:    elapsed,
-		Request:     &DeliveryRequest{Headers: reqHeaders, Payload: json.RawMessage(payloadBytes)},
+		Request:     &store.DeliveryRequest{Headers: reqHeaders, Payload: json.RawMessage(payloadBytes)},
 	}
 
 	if err != nil {
 		delivery.StatusCode = 0
-		delivery.Response = &DeliveryResponse{StatusCode: 0, Body: err.Error()}
+		delivery.Response = &store.DeliveryResponse{StatusCode: 0, Body: err.Error()}
 		return delivery
 	}
 	defer resp.Body.Close()
@@ -755,7 +756,7 @@ func (s *Server) doDeliverAttempt(hook *Webhook, event, action, guid string, pay
 	}
 
 	delivery.StatusCode = resp.StatusCode
-	delivery.Response = &DeliveryResponse{
+	delivery.Response = &store.DeliveryResponse{
 		StatusCode: resp.StatusCode,
 		Headers:    respHeaders,
 		Body:       string(respBody),
@@ -1040,14 +1041,14 @@ func (s *Server) buildTriggerEvent(stor gitStorage.Storer, eventType, action, re
 					ev.Ref = "refs/heads/" + baseRef
 					baseSha, _ := base["sha"].(string)
 					if baseSha == "" {
-						baseSha = resolveBranchSha(stor, baseRef)
+						baseSha = store.ResolveBranchSha(stor, baseRef)
 					}
 					var headSha string
 					if head, _ := pr["head"].(map[string]interface{}); head != nil {
 						headSha, _ = head["sha"].(string)
 						if headSha == "" {
 							if headRef, _ := head["ref"].(string); headRef != "" {
-								headSha = resolveBranchSha(stor, headRef)
+								headSha = store.ResolveBranchSha(stor, headRef)
 							}
 						}
 					}
@@ -1098,13 +1099,13 @@ func (s *Server) createStartupFailureRun(fileName string, content []byte, meta *
 	if name == "" {
 		name = strings.TrimSuffix(strings.TrimSuffix(fileName, ".yml"), ".yaml")
 	}
-	wf := &Workflow{
+	wf := &store.Workflow{
 		ID:           uuid.New().String(),
 		Name:         name,
 		RunID:        s.store.ReserveRunID(),
-		Jobs:         map[string]*WorkflowJob{},
-		Status:       WorkflowStatusCompleted,
-		Result:       ResultStartupFailure,
+		Jobs:         map[string]*store.WorkflowJob{},
+		Status:       store.WorkflowStatusCompleted,
+		Result:       store.ResultStartupFailure,
 		CreatedAt:    time.Now(),
 		EventName:    meta.EventName,
 		Ref:          meta.Ref,

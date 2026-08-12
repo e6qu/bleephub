@@ -1,6 +1,10 @@
 package bleephub
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
+)
 
 func TestResponseFacingStoreReadsAreDetached(t *testing.T) {
 	s := newTestServer()
@@ -22,9 +26,9 @@ func TestResponseFacingStoreReadsAreDetached(t *testing.T) {
 		t.Fatalf("migration getter leaked nested store ownership: %#v", got)
 	}
 
-	ruleset := s.store.CreateRuleset(repo, &Ruleset{
+	ruleset := s.store.CreateRuleset(repo, &store.Ruleset{
 		Name: "detached",
-		Rules: []Rule{{
+		Rules: []store.Rule{{
 			Type: "required_status_checks",
 			Parameters: map[string]interface{}{
 				"required_status_checks": []interface{}{map[string]interface{}{"context": "build"}},

@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
@@ -218,9 +219,9 @@ func TestRulesets_ListIncludesParentsTargetsAndPagination(t *testing.T) {
 	admin := s.store.UsersByLogin["admin"]
 	org := s.store.CreateOrg(admin, "ruleset-list-org", "", "")
 	repo := s.store.CreateOrgRepo(org, admin, "ruleset-list-repo", "", false)
-	parent := s.store.CreateOrgRuleset(org.ID, "parent-tags", "tag", "active", RulesetConditions{}, []Rule{{Type: "deletion"}})
-	local := s.store.CreateRuleset(repo, &Ruleset{
-		Name: "local-branches", Target: "branch", Enforcement: "active", Rules: []Rule{{Type: "deletion"}},
+	parent := s.store.CreateOrgRuleset(org.ID, "parent-tags", "tag", "active", store.RulesetConditions{}, []store.Rule{{Type: "deletion"}})
+	local := s.store.CreateRuleset(repo, &store.Ruleset{
+		Name: "local-branches", Target: "branch", Enforcement: "active", Rules: []store.Rule{{Type: "deletion"}},
 	})
 
 	request := func(query string) *httptest.ResponseRecorder {
@@ -427,10 +428,10 @@ func TestRulesets_OrgNonAdminCannotCreate(t *testing.T) {
 	_ = org
 
 	// Create a non-admin member.
-	member := &User{ID: 999, Login: "member-user", Email: "member@example.com"}
+	member := &store.User{ID: 999, Login: "member-user", Email: "member@example.com"}
 	s.store.Users[member.ID] = member
 	s.store.UsersByLogin[member.Login] = member
-	s.store.SetMembership("rules-org2", member.ID, OrgRoleMember, MembershipStateActive)
+	s.store.SetMembership("rules-org2", member.ID, store.OrgRoleMember, store.MembershipStateActive)
 	tok := s.store.CreateToken(member.ID, "repo,read:org")
 
 	body, _ := json.Marshal(map[string]any{
@@ -511,14 +512,14 @@ func TestRulesets_ActiveRulesBlockRefWritesAndRecordOfficialSuiteShape(t *testin
 	if err != nil {
 		t.Fatalf("seed repository: %v", err)
 	}
-	s.store.CreateRuleset(repo, &Ruleset{
+	s.store.CreateRuleset(repo, &store.Ruleset{
 		Name:        "no-feature-creation",
 		Target:      "branch",
 		Enforcement: "active",
-		Conditions: RulesetConditions{RefName: RefNameCondition{
+		Conditions: store.RulesetConditions{RefName: store.RefNameCondition{
 			Include: []string{"feature"},
 		}},
-		Rules: []Rule{{Type: "creation"}},
+		Rules: []store.Rule{{Type: "creation"}},
 	})
 
 	body, _ := json.Marshal(map[string]interface{}{
@@ -644,14 +645,14 @@ func TestRulesets_ContentsAPIUsesTheSameRefWriteGate(t *testing.T) {
 	if !ok {
 		t.Fatal("seeded README was not readable")
 	}
-	s.store.CreateRuleset(repo, &Ruleset{
+	s.store.CreateRuleset(repo, &store.Ruleset{
 		Name:        "no-direct-updates",
 		Target:      "branch",
 		Enforcement: "active",
-		Conditions: RulesetConditions{RefName: RefNameCondition{
+		Conditions: store.RulesetConditions{RefName: store.RefNameCondition{
 			Include: []string{"main"},
 		}},
-		Rules: []Rule{{Type: "update"}},
+		Rules: []store.Rule{{Type: "update"}},
 	})
 
 	body, _ := json.Marshal(map[string]interface{}{
@@ -691,14 +692,14 @@ func TestRulesets_EvaluateModeRecordsFailureWithoutBlocking(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seed repository: %v", err)
 	}
-	s.store.CreateRuleset(repo, &Ruleset{
+	s.store.CreateRuleset(repo, &store.Ruleset{
 		Name:        "observe-feature-creation",
 		Target:      "branch",
 		Enforcement: "evaluate",
-		Conditions: RulesetConditions{RefName: RefNameCondition{
+		Conditions: store.RulesetConditions{RefName: store.RefNameCondition{
 			Include: []string{"feature"},
 		}},
-		Rules: []Rule{{Type: "creation"}},
+		Rules: []store.Rule{{Type: "creation"}},
 	})
 
 	ctx := contextWithUser(context.Background(), admin)
@@ -723,14 +724,14 @@ func TestRulesets_BypassAndMixedModeSuiteSemantics(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seed repository: %v", err)
 	}
-	s.store.CreateRuleset(repo, &Ruleset{
+	s.store.CreateRuleset(repo, &store.Ruleset{
 		Name: "bypass-create", Target: "branch", Enforcement: "active",
-		BypassActors: []RulesetBypassActor{{ActorID: admin.ID, ActorType: "User", BypassMode: "always"}},
-		Rules:        []Rule{{Type: "creation"}},
+		BypassActors: []store.RulesetBypassActor{{ActorID: admin.ID, ActorType: "User", BypassMode: "always"}},
+		Rules:        []store.Rule{{Type: "creation"}},
 	})
-	s.store.CreateRuleset(repo, &Ruleset{
+	s.store.CreateRuleset(repo, &store.Ruleset{
 		Name: "observe-create", Target: "branch", Enforcement: "evaluate",
-		Rules: []Rule{{Type: "creation"}},
+		Rules: []store.Rule{{Type: "creation"}},
 	})
 
 	ctx := contextWithUser(context.Background(), admin)
@@ -784,11 +785,11 @@ func TestRulesets_HistoryAndSuitesSurvivePersistenceReload(t *testing.T) {
 	t.Setenv("BLEEPHUB_PERSIST", "true")
 	t.Setenv("BLEEPHUB_DATA_DIR", dataDir)
 
-	p1, err := NewPersistence()
+	p1, err := store.NewPersistence()
 	if err != nil {
 		t.Fatalf("open persistence: %v", err)
 	}
-	st1 := NewStore()
+	st1 := store.NewStore()
 	if err := st1.SetPersistence(p1); err != nil {
 		t.Fatalf("attach persistence: %v", err)
 	}
@@ -796,15 +797,15 @@ func TestRulesets_HistoryAndSuitesSurvivePersistenceReload(t *testing.T) {
 	admin := st1.UsersByLogin["admin"]
 	org := st1.CreateOrg(admin, "ruleset-persist-org", "", "")
 	repo := st1.CreateOrgRepo(org, admin, "ruleset-persist-repo", "", false)
-	ruleset := st1.CreateRuleset(repo, &Ruleset{
+	ruleset := st1.CreateRuleset(repo, &store.Ruleset{
 		Name: "persisted", Target: "branch", Enforcement: "active",
-		Rules: []Rule{{Type: "deletion"}},
+		Rules: []store.Rule{{Type: "deletion"}},
 	})
-	st1.UpdateRuleset(repo, ruleset, &Ruleset{Enforcement: "evaluate"}, admin.ID)
+	st1.UpdateRuleset(repo, ruleset, &store.Ruleset{Enforcement: "evaluate"}, admin.ID)
 	st1.RecordRulesetSuite(
 		repo, admin, "refs/heads/main", strings.Repeat("1", 40), strings.Repeat("2", 40),
-		"pass", nil, []RulesetEvaluation{{
-			RuleSource:  RulesetEvaluationSource{Type: "ruleset", ID: intPointer(ruleset.ID), Name: stringPointer(ruleset.Name)},
+		"pass", nil, []store.RulesetEvaluation{{
+			RuleSource:  store.RulesetEvaluationSource{Type: "ruleset", ID: intPointer(ruleset.ID), Name: stringPointer(ruleset.Name)},
 			Enforcement: "active", Result: "pass", RuleType: "deletion",
 		}}, fixedRulesetTestTime,
 	)
@@ -812,12 +813,12 @@ func TestRulesets_HistoryAndSuitesSurvivePersistenceReload(t *testing.T) {
 		t.Fatalf("close persistence: %v", err)
 	}
 
-	p2, err := NewPersistence()
+	p2, err := store.NewPersistence()
 	if err != nil {
 		t.Fatalf("reopen persistence: %v", err)
 	}
 	defer p2.Close()
-	st2 := NewStore()
+	st2 := store.NewStore()
 	if err := st2.SetPersistence(p2); err != nil {
 		t.Fatalf("reload persistence: %v", err)
 	}

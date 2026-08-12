@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // ─── helpers ─────────────────────────────────────────────────────────────
@@ -88,7 +90,7 @@ func searchItemIDs(t *testing.T, w *httptest.ResponseRecorder) []float64 {
 // ─── deleted users render as ghost, never a nil dereference ──────────────
 
 func TestUserToJSONNilRendersGhostAccount(t *testing.T) {
-	got := userToJSON(nil)
+	got := store.UserToJSON(nil)
 	if got["login"] != "ghost" {
 		t.Fatalf("login = %v, want ghost", got["login"])
 	}
@@ -143,7 +145,7 @@ func TestSearchIssuesWithDeletedPullRequestAuthorRendersGhost(t *testing.T) {
 
 // ─── a card whose column vanished is gone, not a nil dereference ─────────
 
-func seedProjectCard(t *testing.T, s *Server) (*ProjectCard, *ProjectColumn) {
+func seedProjectCard(t *testing.T, s *Server) (*store.ProjectCard, *store.ProjectColumn) {
 	t.Helper()
 	admin := s.store.UsersByLogin["admin"]
 	repo := s.store.CreateRepo(admin, "cards-repo", "", false)
@@ -246,7 +248,7 @@ func TestUpdateNetworkConfigurationLosingTargetIsNotFound(t *testing.T) {
 	if org == nil {
 		t.Fatal("CreateOrg returned nil")
 	}
-	c, err := s.store.CreateNetworkConfiguration(org.Login, &networkConfigurationRequest{Name: strPtr("primary")})
+	c, err := s.store.CreateNetworkConfiguration(org.Login, &store.NetworkConfigurationRequest{Name: strPtr("primary")})
 	if err != nil {
 		t.Fatalf("CreateNetworkConfiguration: %v", err)
 	}
@@ -267,7 +269,7 @@ func TestSetCodeSecurityConfigurationDefaultLosingTargetIsNotFound(t *testing.T)
 	if org == nil {
 		t.Fatal("CreateOrg returned nil")
 	}
-	c := s.store.CreateCodeSecurityConfiguration(org.Login, &codeSecurityConfigurationRequest{Name: strPtr("baseline")})
+	c := s.store.CreateCodeSecurityConfiguration(org.Login, &store.CodeSecurityConfigurationRequest{Name: strPtr("baseline")})
 	if c == nil {
 		t.Fatal("CreateCodeSecurityConfiguration returned nil")
 	}
@@ -445,7 +447,7 @@ func TestSearchUsersPaginationIsTotallyOrdered(t *testing.T) {
 	total := 0
 	s.store.Mu.Lock()
 	for i := 0; i < searchOrderCorpus; i++ {
-		u := &User{
+		u := &store.User{
 			ID:           s.store.NextUser,
 			NodeID:       fmt.Sprintf("U_kgDO%08d", s.store.NextUser),
 			Login:        fmt.Sprintf("orderable-user-%d", i),

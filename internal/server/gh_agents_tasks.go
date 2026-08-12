@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // GitHub Copilot coding agent tasks — the /agents/tasks and
@@ -27,7 +29,7 @@ func (s *Server) registerGHAgentsTasksRoutes() {
 
 // --- JSON rendering ---
 
-func (s *Server) agentTaskJSON(t *AgentTask, baseURL string) map[string]interface{} {
+func (s *Server) agentTaskJSON(t *store.AgentTask, baseURL string) map[string]interface{} {
 	repo := s.store.GetRepoByID(t.RepoID)
 	fullName := ""
 	if repo != nil {
@@ -57,7 +59,7 @@ func (s *Server) agentTaskJSON(t *AgentTask, baseURL string) map[string]interfac
 	}
 }
 
-func agentTaskSessionJSON(t *AgentTask, sess AgentTaskSession) map[string]interface{} {
+func agentTaskSessionJSON(t *store.AgentTask, sess store.AgentTaskSession) map[string]interface{} {
 	out := map[string]interface{}{
 		"id":         sess.ID,
 		"name":       sess.Name,
@@ -82,7 +84,7 @@ func agentTaskSessionJSON(t *AgentTask, sess AgentTaskSession) map[string]interf
 	return out
 }
 
-func (s *Server) agentTaskDetailJSON(t *AgentTask, baseURL string) map[string]interface{} {
+func (s *Server) agentTaskDetailJSON(t *store.AgentTask, baseURL string) map[string]interface{} {
 	out := s.agentTaskJSON(t, baseURL)
 	sessions := make([]map[string]interface{}, 0, len(t.Sessions))
 	for _, sess := range t.Sessions {
@@ -95,9 +97,9 @@ func (s *Server) agentTaskDetailJSON(t *AgentTask, baseURL string) map[string]in
 // --- handlers ---
 
 // parseAgentTaskFilter reads the documented list query parameters.
-func parseAgentTaskFilter(r *http.Request) agentTaskFilter {
+func parseAgentTaskFilter(r *http.Request) store.AgentTaskFilter {
 	q := r.URL.Query()
-	f := agentTaskFilter{
+	f := store.AgentTaskFilter{
 		SortField: q.Get("sort"),
 		Direction: q.Get("direction"),
 	}
@@ -124,7 +126,7 @@ func parseAgentTaskFilter(r *http.Request) agentTaskFilter {
 	return f
 }
 
-func (s *Server) writeAgentTaskList(w http.ResponseWriter, r *http.Request, f agentTaskFilter) {
+func (s *Server) writeAgentTaskList(w http.ResponseWriter, r *http.Request, f store.AgentTaskFilter) {
 	tasks, totalActive, totalArchived := s.store.ListAgentTasks(f)
 	page := paginateAndLink(w, r, tasks)
 	baseURL := s.baseURL(r)

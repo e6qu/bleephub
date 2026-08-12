@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/e6qu/bleephub/internal/actions"
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // TestCancellationSignalsRunningJob verifies cancel sends
@@ -39,7 +40,7 @@ jobs:
 `)
 	s.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/main", nil)
 
-	var wf *Workflow
+	var wf *store.Workflow
 	waitUntil(t, "run", func() bool {
 		s.store.Mu.RLock()
 		defer s.store.Mu.RUnlock()
@@ -53,10 +54,10 @@ jobs:
 	})
 
 	// A runner session pulls the slow job and starts running it.
-	sess := &Session{
+	sess := &store.Session{
 		SessionID: "cancel-sess",
-		Agent:     &Agent{ID: 7001, Labels: []Label{{Name: "self-hosted"}}},
-		MsgCh:     make(chan *TaskAgentMessage, 10),
+		Agent:     &store.Agent{ID: 7001, Labels: []store.Label{{Name: "self-hosted"}}},
+		MsgCh:     make(chan *store.TaskAgentMessage, 10),
 	}
 	s.store.Mu.Lock()
 	s.store.Sessions["cancel-sess"] = sess
@@ -74,14 +75,14 @@ jobs:
 	s.store.PendingMessages = kept
 	s.store.Mu.Unlock()
 
-	msg := s.actions.PullPendingMessage(sess, runnerScope{Repo: repoKey})
+	msg := s.actions.PullPendingMessage(sess, store.RunnerScope{Repo: repoKey})
 	if msg == nil || msg.JobID != slowJobID {
 		t.Fatalf("runner did not pull the slow job: %v", msg)
 	}
 	s.store.Mu.Lock()
 	slowID := wf.Jobs["slow"].JobID
 	s.store.Jobs[slowID].Status = "running"
-	wf.Jobs["slow"].Status = JobStatusRunning
+	wf.Jobs["slow"].Status = store.JobStatusRunning
 	s.store.Mu.Unlock()
 
 	// Cancel via the REST API.
@@ -89,7 +90,7 @@ jobs:
 	resp.Body.Close()
 
 	// The runner receives a JobCancellation for the running job.
-	var cancelMsg *TaskAgentMessage
+	var cancelMsg *store.TaskAgentMessage
 	select {
 	case cancelMsg = <-sess.MsgCh:
 	default:
@@ -110,10 +111,10 @@ jobs:
 	slowStatus := wf.Jobs["slow"].Status
 	cleanupStatus := wf.Jobs["cleanup"].Status
 	s.store.Mu.RUnlock()
-	if slowStatus != JobStatusRunning {
+	if slowStatus != store.JobStatusRunning {
 		t.Errorf("running job force-completed server-side: %q (the runner reports the cancel)", slowStatus)
 	}
-	if cleanupStatus == JobStatusCompleted && wf.Jobs["cleanup"].Result == ResultCancelled {
+	if cleanupStatus == store.JobStatusCompleted && wf.Jobs["cleanup"].Result == store.ResultCancelled {
 		t.Error("always() job was cancelled instead of left runnable")
 	}
 
@@ -122,7 +123,7 @@ jobs:
 	waitUntil(t, "cleanup dispatched", func() bool {
 		s.store.Mu.RLock()
 		defer s.store.Mu.RUnlock()
-		return wf.Jobs["cleanup"].Status == JobStatusQueued
+		return wf.Jobs["cleanup"].Status == store.JobStatusQueued
 	})
 
 	// Cleanup completes; run concludes cancelled (not failure).
@@ -130,7 +131,7 @@ jobs:
 	waitUntil(t, "run cancelled", func() bool {
 		s.store.Mu.RLock()
 		defer s.store.Mu.RUnlock()
-		return wf.Status == WorkflowStatusCompleted && wf.Result == ResultCancelled
+		return wf.Status == store.WorkflowStatusCompleted && wf.Result == store.ResultCancelled
 	})
 }
 
@@ -150,7 +151,7 @@ jobs:
       - run: echo a
 `)
 	s.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/main", nil)
-	var wf *Workflow
+	var wf *store.Workflow
 	waitUntil(t, "run", func() bool {
 		s.store.Mu.RLock()
 		defer s.store.Mu.RUnlock()
@@ -172,10 +173,10 @@ jobs:
 			t.Fatal("cancelled job's message still pending")
 		}
 	}
-	if wf.Jobs["a"].Result != ResultCancelled {
+	if wf.Jobs["a"].Result != store.ResultCancelled {
 		t.Errorf("job result = %q, want cancelled", wf.Jobs["a"].Result)
 	}
-	if wf.Result != ResultCancelled {
+	if wf.Result != store.ResultCancelled {
 		t.Errorf("run result = %q, want cancelled", wf.Result)
 	}
 }
@@ -195,7 +196,7 @@ jobs:
 `)
 	s.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/main", nil)
 
-	var wf *Workflow
+	var wf *store.Workflow
 	waitUntil(t, "startup_failure run", func() bool {
 		s.store.Mu.RLock()
 		defer s.store.Mu.RUnlock()
@@ -207,7 +208,7 @@ jobs:
 		}
 		return false
 	})
-	if wf.Result != ResultStartupFailure || wf.Status != WorkflowStatusCompleted {
+	if wf.Result != store.ResultStartupFailure || wf.Status != store.WorkflowStatusCompleted {
 		t.Fatalf("run = %q/%q, want completed/startup_failure", wf.Status, wf.Result)
 	}
 	if len(wf.Jobs) != 0 {
@@ -229,7 +230,7 @@ jobs:
 		t.Errorf("API name = %v, want broken-call", run["name"])
 	}
 	waitUntil(t, "startup failure check suite", func() bool {
-		suites := s.store.ListCheckSuitesForCommit(repoKey, wf.Sha, githubActionsAppID)
+		suites := s.store.ListCheckSuitesForCommit(repoKey, wf.Sha, store.GithubActionsAppID)
 		return len(suites) == 1 && suites[0].Status == "completed" &&
 			suites[0].Conclusion == "startup_failure"
 	})
@@ -246,8 +247,8 @@ func TestRunnerGroupsCRUD(t *testing.T) {
 	s.store.Mu.Lock()
 	agentID := s.store.NextAgent
 	s.store.NextAgent++
-	s.store.Agents[agentID] = &Agent{
-		ID: agentID, Name: "rg-agent", Status: "online", Scope: runnerScope{Org: "rg-org"},
+	s.store.Agents[agentID] = &store.Agent{
+		ID: agentID, Name: "rg-agent", Status: "online", Scope: store.RunnerScope{Org: "rg-org"},
 	}
 	s.store.Mu.Unlock()
 

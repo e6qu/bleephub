@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	gitStorage "github.com/go-git/go-git/v5/storage"
@@ -46,7 +47,7 @@ func (s *Server) redirectArchive(w http.ResponseWriter, r *http.Request, format 
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if _, err := resolveGitRef(stor, ref); err != nil {
+	if _, err := store.ResolveGitRef(stor, ref); err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -103,7 +104,7 @@ func (s *Server) serveArchive(w http.ResponseWriter, r *http.Request, format, ow
 	if ref == "" {
 		ref = repo.DefaultBranch
 	}
-	hash, err := resolveGitRef(stor, ref)
+	hash, err := store.ResolveGitRef(stor, ref)
 	if err != nil {
 		http.NotFound(w, r)
 		return

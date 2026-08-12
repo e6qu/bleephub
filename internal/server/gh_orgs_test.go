@@ -7,6 +7,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func ghPut(t *testing.T, path string, token string, body interface{}) *http.Response {
@@ -610,11 +612,11 @@ func TestAdminCreateOrg_RequiresSiteAdmin(t *testing.T) {
 
 	// Token for a non-site-admin user → 403.
 	s.store.Mu.Lock()
-	regularUser := &User{ID: s.store.NextUser, Login: "regular", Type: "User", SiteAdmin: false}
+	regularUser := &store.User{ID: s.store.NextUser, Login: "regular", Type: "User", SiteAdmin: false}
 	s.store.NextUser++
 	s.store.Users[regularUser.ID] = regularUser
 	s.store.UsersByLogin[regularUser.Login] = regularUser
-	regularTok := &Token{Value: "ghp_regularusertoken0000000000000000000000", UserID: regularUser.ID, Scopes: "repo"}
+	regularTok := &store.Token{Value: "ghp_regularusertoken0000000000000000000000", UserID: regularUser.ID, Scopes: "repo"}
 	s.store.Tokens[regularTok.Value] = regularTok
 	s.store.Mu.Unlock()
 

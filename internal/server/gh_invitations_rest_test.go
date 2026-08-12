@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func invitationsTestServer(t *testing.T) *Server {
@@ -21,9 +23,9 @@ func doInvitationReq(s *Server, token, method, path string, body []byte) *httpte
 	return serveTestRequest(s, bearerHeader(token), method, path, body)
 }
 
-func makeOtherUser(s *Server, login string) (*User, string) {
+func makeOtherUser(s *Server, login string) (*store.User, string) {
 	s.store.Mu.Lock()
-	u := &User{ID: s.store.NextUser, Login: login, Type: "User", Email: login + "@bleephub.local"}
+	u := &store.User{ID: s.store.NextUser, Login: login, Type: "User", Email: login + "@bleephub.local"}
 	s.store.NextUser++
 	s.store.Users[u.ID] = u
 	s.store.UsersByLogin[u.Login] = u

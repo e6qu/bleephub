@@ -8,28 +8,30 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func (s *Server) registerGHEnterpriseRemainderRoutes() {
 	s.registerGHSecurityReviewRoutes()
 
 	s.route("GET /api/v3/orgs/{org}/credential-authorizations",
-		s.requirePerm(scopeOrgAdministration, permRead, s.handleListOrgCredentialAuthorizations))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.handleListOrgCredentialAuthorizations))
 	s.route("DELETE /api/v3/orgs/{org}/credential-authorizations/{credential_id}",
-		s.requirePerm(scopeOrgAdministration, permWrite, s.handleDeleteOrgCredentialAuthorization))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.handleDeleteOrgCredentialAuthorization))
 
 	s.route("GET /api/v3/organizations/{organization_id}/org-properties/values",
-		s.requirePerm(scopeOrgAdministration, permRead, s.handleGetOrganizationPropertyValuesByID))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.handleGetOrganizationPropertyValuesByID))
 	s.route("PATCH /api/v3/organizations/{organization_id}/org-properties/values",
-		s.requirePerm(scopeOrgAdministration, permWrite, s.handleSetOrganizationPropertyValuesByID))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.handleSetOrganizationPropertyValuesByID))
 
 	s.route("GET /api/v3/orgs/{org}/settings/billing/advanced-security",
-		s.requireOrgAdmin(scopeOrgAdministration, permRead, s.handleOrgAdvancedSecurityBilling))
+		s.requireOrgAdmin(store.ScopeOrgAdministration, store.PermRead, s.handleOrgAdvancedSecurityBilling))
 
 	s.route("PUT /api/v3/repos/{owner}/{repo}/lfs",
-		s.requirePerm(scopeAdministration, permWrite, s.handleEnableRepoLFS))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleEnableRepoLFS))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/lfs",
-		s.requirePerm(scopeAdministration, permWrite, s.handleDisableRepoLFS))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleDisableRepoLFS))
 }
 
 func stableCredentialAuthorizationID(kind, key string) int {
@@ -44,17 +46,17 @@ type credentialAuthorizationRecord struct {
 	ID      int
 	Kind    string
 	MapKey  string
-	Token   *Token
-	User    *User
-	UserKey *UserKey
+	Token   *store.Token
+	User    *store.User
+	UserKey *store.UserKey
 }
 
-func (s *Server) orgCredentialAuthorizationRecords(org *Org) []credentialAuthorizationRecord {
+func (s *Server) orgCredentialAuthorizationRecords(org *store.Org) []credentialAuthorizationRecord {
 	s.store.Mu.RLock()
 	memberIDs := map[int]bool{}
-	users := map[int]*User{}
+	users := map[int]*store.User{}
 	for key, membership := range s.store.Memberships {
-		if strings.HasPrefix(key, org.Login+"/") && membership.State == MembershipStateActive {
+		if strings.HasPrefix(key, org.Login+"/") && membership.State == store.MembershipStateActive {
 			memberIDs[membership.UserID] = true
 		}
 	}
@@ -96,10 +98,10 @@ func (s *Server) orgCredentialAuthorizationRecords(org *Org) []credentialAuthori
 	return records
 }
 
-func tokenLastEight(token *Token, mapKey string) string {
+func tokenLastEight(token *store.Token, mapKey string) string {
 	value := token.Value
 	if value == "" {
-		value = strings.TrimPrefix(mapKey, opaquePersistenceKeyPrefix)
+		value = strings.TrimPrefix(mapKey, store.OpaquePersistenceKeyPrefix)
 	}
 	if len(value) > 8 {
 		return value[len(value)-8:]
@@ -198,7 +200,7 @@ func (s *Server) handleDeleteOrgCredentialAuthorization(w http.ResponseWriter, r
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) resolveOrganizationByNumericPath(w http.ResponseWriter, r *http.Request) *Org {
+func (s *Server) resolveOrganizationByNumericPath(w http.ResponseWriter, r *http.Request) *store.Org {
 	id, err := strconv.Atoi(r.PathValue("organization_id"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -227,7 +229,7 @@ func (s *Server) handleGetOrganizationPropertyValuesByID(w http.ResponseWriter, 
 	result := make([]map[string]interface{}, 0, len(names))
 	for _, name := range names {
 		result = append(result, map[string]interface{}{
-			"property_name": name, "value": cloneCustomPropertyValue(values[name]),
+			"property_name": name, "value": store.CloneCustomPropertyValue(values[name]),
 		})
 	}
 	s.store.Mu.RUnlock()
@@ -240,13 +242,13 @@ func (s *Server) handleSetOrganizationPropertyValuesByID(w http.ResponseWriter, 
 		return
 	}
 	var req struct {
-		Properties *[]customPropertyValuePayload `json:"properties"`
+		Properties *[]store.CustomPropertyValuePayload `json:"properties"`
 	}
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	if req.Properties == nil {
-		writeGHValidationError(w, "CustomPropertyValues", "properties", "missing_field")
+		store.WriteGHValidationError(w, "CustomPropertyValues", "properties", "missing_field")
 		return
 	}
 	s.store.Mu.Lock()
@@ -254,7 +256,7 @@ func (s *Server) handleSetOrganizationPropertyValuesByID(w http.ResponseWriter, 
 		definition := s.store.EnterpriseSettings.OrganizationCustomProperties[value.PropertyName]
 		if definition == nil || validateCustomPropertyValue(definition, value.Value) != nil {
 			s.store.Mu.Unlock()
-			writeGHValidationError(w, "CustomPropertyValues", "properties", "invalid")
+			store.WriteGHValidationError(w, "CustomPropertyValues", "properties", "invalid")
 			return
 		}
 	}
@@ -267,7 +269,7 @@ func (s *Server) handleSetOrganizationPropertyValuesByID(w http.ResponseWriter, 
 		if value.Value == nil {
 			delete(values, value.PropertyName)
 		} else {
-			values[value.PropertyName] = cloneCustomPropertyValue(value.Value)
+			values[value.PropertyName] = store.CloneCustomPropertyValue(value.Value)
 		}
 	}
 	s.store.PersistEnterpriseSettings()
@@ -281,7 +283,7 @@ func (s *Server) handleOrgAdvancedSecurityBilling(w http.ResponseWriter, r *http
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	repos := s.store.ListReposForOrg(org.Login, RepoListOptions{})
+	repos := s.store.ListReposForOrg(org.Login, store.RepoListOptions{})
 	s.store.Mu.RLock()
 	repositories := make([]map[string]interface{}, 0)
 	uniqueCommitters := map[int]bool{}
@@ -321,13 +323,13 @@ func (s *Server) setRepoLFS(w http.ResponseWriter, r *http.Request, enabled bool
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !s.viewerMayActOnRepo(r.Context(), repo, scopeAdministration, permWrite, permAdmin) {
+	if !s.viewerMayActOnRepo(r.Context(), repo, store.ScopeAdministration, store.PermWrite, store.PermAdmin) {
 		writeGHError(w, http.StatusForbidden, "Must have admin rights to Repository.")
 		return
 	}
 	// repo is a detached snapshot from GetRepo; mutate the live row through the
 	// copy-on-write UpdateRepo path so the change is observed and persisted.
-	s.store.UpdateRepo(r.PathValue("owner"), r.PathValue("repo"), func(rp *Repo) {
+	s.store.UpdateRepo(r.PathValue("owner"), r.PathValue("repo"), func(rp *store.Repo) {
 		rp.LFSEnabled = enabled
 	})
 	w.WriteHeader(http.StatusNoContent)

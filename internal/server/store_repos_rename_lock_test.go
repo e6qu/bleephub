@@ -3,6 +3,8 @@ package bleephub
 import (
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // TestRenameRepoObjectCopyDoesNotHoldStoreLock proves the STORE-013 property for
@@ -10,7 +12,7 @@ import (
 // unrelated read proceeds while it blocks, and the metadata swap + old-prefix
 // purge + intent clearing all happen correctly once the copy completes.
 func TestRenameRepoObjectCopyDoesNotHoldStoreLock(t *testing.T) {
-	st := NewStore()
+	st := store.NewStore()
 	st.SeedDefaultUser()
 	admin := st.UsersByLogin["admin"]
 	if st.CreateRepo(admin, "rename-lock", "", false) == nil {
@@ -83,7 +85,7 @@ func TestRenameRepoObjectCopyDoesNotHoldStoreLock(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("old object prefix was not purged after the swap")
 	}
-	if raw, _ := st.Persist.Get(pendingRenamesBucket, pendingRepoRenameKey("admin/renamed")); len(raw) != 0 {
+	if raw, _ := st.Persist.Get(store.PendingRenamesBucket, store.PendingRepoRenameKey("admin/renamed")); len(raw) != 0 {
 		t.Fatal("rename intent was not cleared")
 	}
 }
@@ -94,7 +96,7 @@ func TestRenameRepoObjectCopyDoesNotHoldStoreLock(t *testing.T) {
 func TestInterruptedRepoRenameRecoveryPurgesUnpublishedPrefix(t *testing.T) {
 	dataDir := t.TempDir()
 	p1 := openTestPersistence(t, dataDir)
-	if err := p1.Put(pendingRenamesBucket, pendingRepoRenameKey("admin/newname"), pendingRename{
+	if err := p1.Put(store.PendingRenamesBucket, store.PendingRepoRenameKey("admin/newname"), store.PendingRename{
 		From:      "admin/oldname",
 		To:        "admin/newname",
 		StartedAt: fixedTestTime,
@@ -107,7 +109,7 @@ func TestInterruptedRepoRenameRecoveryPurgesUnpublishedPrefix(t *testing.T) {
 
 	p2 := openTestPersistence(t, dataDir)
 	defer func() { _ = p2.Close() }()
-	st := NewStore()
+	st := store.NewStore()
 	purged := make(chan string, 1)
 	st.RepoPrefixDelete = func(fullName string) error {
 		purged <- fullName
@@ -125,7 +127,7 @@ func TestInterruptedRepoRenameRecoveryPurgesUnpublishedPrefix(t *testing.T) {
 	default:
 		t.Fatal("recovery did not purge the leftover prefix")
 	}
-	if raw, _ := p2.Get(pendingRenamesBucket, pendingRepoRenameKey("admin/newname")); len(raw) != 0 {
+	if raw, _ := p2.Get(store.PendingRenamesBucket, store.PendingRepoRenameKey("admin/newname")); len(raw) != 0 {
 		t.Fatal("rename intent was not cleared by recovery")
 	}
 }

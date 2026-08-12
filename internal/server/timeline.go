@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 const (
@@ -105,14 +107,14 @@ func (s *Server) handleUpdateRecords(w http.ResponseWriter, r *http.Request) {
 // actions/runner wraps the records in a VssJsonCollectionWrapper
 // ({"count": N, "value": [...]}); a bare array is accepted too so direct
 // callers don't have to build the wrapper.
-func decodeTimelineRecords(body []byte) ([]*TimelineRecord, error) {
+func decodeTimelineRecords(body []byte) ([]*store.TimelineRecord, error) {
 	var wrapper struct {
-		Value []*TimelineRecord `json:"value"`
+		Value []*store.TimelineRecord `json:"value"`
 	}
 	if err := json.Unmarshal(body, &wrapper); err == nil && wrapper.Value != nil {
 		return wrapper.Value, nil
 	}
-	var bare []*TimelineRecord
+	var bare []*store.TimelineRecord
 	if err := json.Unmarshal(body, &bare); err != nil {
 		return nil, err
 	}
@@ -122,15 +124,15 @@ func decodeTimelineRecords(body []byte) ([]*TimelineRecord, error) {
 // upsertTimelineRecords folds the PATCHed records into the plan's stored
 // set, keyed by record ID. Returns copies of the post-merge records for
 // the response body.
-func (s *Server) upsertTimelineRecords(planID string, records []*TimelineRecord) []*TimelineRecord {
+func (s *Server) upsertTimelineRecords(planID string, records []*store.TimelineRecord) []*store.TimelineRecord {
 	s.store.Mu.Lock()
 	defer s.store.Mu.Unlock()
-	out := make([]*TimelineRecord, 0, len(records))
+	out := make([]*store.TimelineRecord, 0, len(records))
 	for _, rec := range records {
 		if rec == nil || rec.ID == "" {
 			continue
 		}
-		var stored *TimelineRecord
+		var stored *store.TimelineRecord
 		for _, existing := range s.store.TimelineRecords[planID] {
 			if existing.ID == rec.ID {
 				stored = existing
@@ -138,7 +140,7 @@ func (s *Server) upsertTimelineRecords(planID string, records []*TimelineRecord)
 			}
 		}
 		if stored == nil {
-			stored = &TimelineRecord{ID: rec.ID}
+			stored = &store.TimelineRecord{ID: rec.ID}
 			s.store.TimelineRecords[planID] = append(s.store.TimelineRecords[planID], stored)
 		}
 		mergeTimelineRecord(stored, rec)
@@ -155,7 +157,7 @@ func (s *Server) upsertTimelineRecords(planID string, records []*TimelineRecord)
 // The runner PATCHes the same record repeatedly as state advances and a
 // later update may omit fields it isn't changing, so a present field never
 // regresses to empty.
-func mergeTimelineRecord(stored, incoming *TimelineRecord) {
+func mergeTimelineRecord(stored, incoming *store.TimelineRecord) {
 	if incoming.ParentID != "" {
 		stored.ParentID = incoming.ParentID
 	}

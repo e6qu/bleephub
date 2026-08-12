@@ -4,6 +4,8 @@ import (
 	"net/http/httptest"
 	"sync"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // TestHookLastResponseRace drives SetHookLastResponse (the async
@@ -20,7 +22,7 @@ func TestHookLastResponseRace(t *testing.T) {
 		wg.Add(2)
 		go func(n int) {
 			defer wg.Done()
-			s.store.SetHookLastResponse(repoKey, hook.ID, &HookLastResponse{Code: 200 + n, Status: "ok"})
+			s.store.SetHookLastResponse(repoKey, hook.ID, &store.HookLastResponse{Code: 200 + n, Status: "ok"})
 		}(i)
 		go func() {
 			defer wg.Done()

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func TestEnterpriseRepositoryPropertySchemaLifecycleAndPromotion(t *testing.T) {
@@ -30,7 +32,7 @@ func TestEnterpriseRepositoryPropertySchemaLifecycleAndPromotion(t *testing.T) {
 	admin := s.store.LookupUserByLogin("admin")
 	org := s.store.CreateOrg(admin, "property-promotion-org", "Property Promotion", "")
 	description := "Owned by the organization"
-	s.store.UpsertCustomProperty(org.Login, &CustomProperty{
+	s.store.UpsertCustomProperty(org.Login, &store.CustomProperty{
 		PropertyName: "service", ValueType: "string", Description: &description, ValuesEditableBy: "org_actors",
 	})
 	rec = enterpriseActionsRequest(t, s, http.MethodPut,

@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // Commit Statuses API.
@@ -19,7 +21,7 @@ import (
 func (s *Server) registerGHStatusesRoutes() {
 	s.route("GET /api/v3/repos/{owner}/{repo}/commits/{ref}/status", s.handleGetCombinedStatus)
 	s.route("GET /api/v3/repos/{owner}/{repo}/commits/{ref}/statuses", s.handleListCommitStatuses)
-	s.route("POST /api/v3/repos/{owner}/{repo}/statuses/{sha}", s.requirePerm(scopeContents, permWrite, s.handleCreateCommitStatus))
+	s.route("POST /api/v3/repos/{owner}/{repo}/statuses/{sha}", s.requirePerm(store.ScopeContents, store.PermWrite, s.handleCreateCommitStatus))
 }
 
 func (s *Server) handleGetCombinedStatus(w http.ResponseWriter, r *http.Request) {
@@ -39,7 +41,7 @@ func (s *Server) handleGetCombinedStatus(w http.ResponseWriter, r *http.Request)
 		"sha":         ref,
 		"total_count": total,
 		"statuses":    out,
-		"repository":  repoToJSON(repo, s.store, s.baseURL(r)),
+		"repository":  store.RepoToJSON(repo, s.store, s.baseURL(r)),
 	})
 }
 
@@ -79,13 +81,13 @@ func (s *Server) handleCreateCommitStatus(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if req.State == "" {
-		writeGHValidationError(w, "Status", "state", "missing_field")
+		store.WriteGHValidationError(w, "Status", "state", "missing_field")
 		return
 	}
 	switch strings.ToLower(req.State) {
 	case "error", "failure", "pending", "success":
 	default:
-		writeGHValidationError(w, "Status", "state", "invalid")
+		store.WriteGHValidationError(w, "Status", "state", "invalid")
 		return
 	}
 	sha := s.canonicalCommitStatusRef(repo, r.PathValue("sha"))
@@ -97,37 +99,37 @@ func (s *Server) handleCreateCommitStatus(w http.ResponseWriter, r *http.Request
 		"context":     st.Context,
 		"description": st.Description,
 		"target_url":  st.TargetURL,
-		"repository":  repoToJSON(repo, s.store, s.baseURL(r)),
-		"sender":      userToJSON(user),
+		"repository":  store.RepoToJSON(repo, s.store, s.baseURL(r)),
+		"sender":      store.UserToJSON(user),
 	})
 	statusJSON := commitStatusToJSON(st, s.store, s.baseURL(r), repo.FullName)
 	writeJSONCreated(w, jsonStringField(statusJSON, "url"), statusJSON)
 }
 
-func (s *Server) canonicalCommitStatusRef(repo *Repo, ref string) string {
+func (s *Server) canonicalCommitStatusRef(repo *store.Repo, ref string) string {
 	if repo == nil {
 		return ref
 	}
-	owner, name, ok := splitRepoFullName(repo.FullName)
+	owner, name, ok := store.SplitRepoFullName(repo.FullName)
 	if !ok {
 		return ref
 	}
 	if stor := s.store.GetGitStorage(owner, name); stor != nil {
-		if hash, err := resolveGitRef(stor, ref); err == nil {
+		if hash, err := store.ResolveGitRef(stor, ref); err == nil {
 			return hash.String()
 		}
 	}
 	return ref
 }
 
-func commitStatusToJSON(st *CommitStatus, stStore *Store, baseURL, repoKey string) map[string]interface{} {
+func commitStatusToJSON(st *store.CommitStatus, stStore *store.Store, baseURL, repoKey string) map[string]interface{} {
 	if st == nil {
 		return nil
 	}
 	var creator map[string]interface{}
 	stStore.Mu.RLock()
 	if u := stStore.Users[st.CreatorID]; u != nil {
-		creator = userToJSON(u)
+		creator = store.UserToJSON(u)
 	}
 	stStore.Mu.RUnlock()
 	return map[string]interface{}{

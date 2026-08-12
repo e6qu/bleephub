@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
 )
 
@@ -118,11 +119,11 @@ func TestRepoTopicsREST_PrivateRequiresRead(t *testing.T) {
 	})
 
 	s.store.Mu.Lock()
-	other := &User{ID: s.store.NextUser, Login: "other", Type: "User"}
+	other := &store.User{ID: s.store.NextUser, Login: "other", Type: "User"}
 	s.store.NextUser++
 	s.store.Users[other.ID] = other
 	s.store.UsersByLogin[other.Login] = other
-	otherTok := &Token{Value: "ghp_otherusertoken000000000000000000000000", UserID: other.ID, Scopes: "repo"}
+	otherTok := &store.Token{Value: "ghp_otherusertoken000000000000000000000000", UserID: other.ID, Scopes: "repo"}
 	s.store.Tokens[otherTok.Value] = otherTok
 	s.store.Mu.Unlock()
 
@@ -240,11 +241,11 @@ func TestDeleteContentsFile_RequiresPush(t *testing.T) {
 	})
 
 	s.store.Mu.Lock()
-	other := &User{ID: s.store.NextUser, Login: "other", Type: "User"}
+	other := &store.User{ID: s.store.NextUser, Login: "other", Type: "User"}
 	s.store.NextUser++
 	s.store.Users[other.ID] = other
 	s.store.UsersByLogin[other.Login] = other
-	otherTok := &Token{Value: "ghp_otherusertoken000000000000000000000000", UserID: other.ID, Scopes: "repo"}
+	otherTok := &store.Token{Value: "ghp_otherusertoken000000000000000000000000", UserID: other.ID, Scopes: "repo"}
 	s.store.Tokens[otherTok.Value] = otherTok
 	s.store.Mu.Unlock()
 
@@ -371,11 +372,11 @@ func TestRepoStargazersPagination(t *testing.T) {
 
 	st := s.store
 	st.Mu.Lock()
-	other := &User{ID: st.NextUser, Login: "stargazer-user", Type: "User", StarredRepos: map[string]bool{}}
+	other := &store.User{ID: st.NextUser, Login: "stargazer-user", Type: "User", StarredRepos: map[string]bool{}}
 	st.NextUser++
 	st.Users[other.ID] = other
 	st.UsersByLogin[other.Login] = other
-	otherTok := &Token{Value: "ghp_stargazerusertoken00000000000000000", UserID: other.ID, Scopes: "repo"}
+	otherTok := &store.Token{Value: "ghp_stargazerusertoken00000000000000000", UserID: other.ID, Scopes: "repo"}
 	st.Tokens[otherTok.Value] = otherTok
 	st.Mu.Unlock()
 
@@ -427,11 +428,11 @@ func TestRepoCollaboratorsREST(t *testing.T) {
 
 	// Create another user.
 	s.store.Mu.Lock()
-	other := &User{ID: s.store.NextUser, Login: "collab-user", Type: "User", StarredRepos: map[string]bool{}}
+	other := &store.User{ID: s.store.NextUser, Login: "collab-user", Type: "User", StarredRepos: map[string]bool{}}
 	s.store.NextUser++
 	s.store.Users[other.ID] = other
 	s.store.UsersByLogin[other.Login] = other
-	otherTok := &Token{Value: "ghp_collabusertoken000000000000000000000", UserID: other.ID, Scopes: "repo"}
+	otherTok := &store.Token{Value: "ghp_collabusertoken000000000000000000000", UserID: other.ID, Scopes: "repo"}
 	s.store.Tokens[otherTok.Value] = otherTok
 	s.store.Mu.Unlock()
 
@@ -546,11 +547,11 @@ func TestRepoCollaboratorsPagination(t *testing.T) {
 
 	st := s.store
 	st.Mu.Lock()
-	other := &User{ID: st.NextUser, Login: "collab-pg-user", Type: "User", StarredRepos: map[string]bool{}}
+	other := &store.User{ID: st.NextUser, Login: "collab-pg-user", Type: "User", StarredRepos: map[string]bool{}}
 	st.NextUser++
 	st.Users[other.ID] = other
 	st.UsersByLogin[other.Login] = other
-	otherTok := &Token{Value: "ghp_collabpgusertoken000000000000000000", UserID: other.ID, Scopes: "repo"}
+	otherTok := &store.Token{Value: "ghp_collabpgusertoken000000000000000000", UserID: other.ID, Scopes: "repo"}
 	st.Tokens[otherTok.Value] = otherTok
 	st.Mu.Unlock()
 
@@ -750,11 +751,11 @@ func TestRepoForksREST(t *testing.T) {
 
 	// Create a second user to fork into.
 	s.store.Mu.Lock()
-	forker := &User{ID: s.store.NextUser, Login: "forker", Type: "User", CreatedAt: fixedTestTime, UpdatedAt: fixedTestTime}
+	forker := &store.User{ID: s.store.NextUser, Login: "forker", Type: "User", CreatedAt: fixedTestTime, UpdatedAt: fixedTestTime}
 	s.store.NextUser++
 	s.store.Users[forker.ID] = forker
 	s.store.UsersByLogin[forker.Login] = forker
-	tok := &Token{Value: "forker-token", UserID: forker.ID, Scopes: "repo", CreatedAt: fixedTestTime}
+	tok := &store.Token{Value: "forker-token", UserID: forker.ID, Scopes: "repo", CreatedAt: fixedTestTime}
 	s.store.Tokens[tok.Value] = tok
 	s.store.Mu.Unlock()
 

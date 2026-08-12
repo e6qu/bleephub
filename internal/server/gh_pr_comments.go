@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strconv"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // PR review comments (inline / file-line / range).
@@ -31,11 +33,11 @@ func (s *Server) registerGHPRCommentsRoutes() {
 		s.handleListRepoPRComments)
 	// `/pulls/{number}/comments` (3 segments, literal "comments" at pos 3)
 	s.route("POST /api/v3/repos/{owner}/{repo}/pulls/{number}/comments",
-		s.requirePerm(scopePullRequests, permWrite, s.handleCreatePRComment))
+		s.requirePerm(store.ScopePullRequests, store.PermWrite, s.handleCreatePRComment))
 	s.route("GET /api/v3/repos/{owner}/{repo}/pulls/{number}/comments",
 		s.handleListPRComments)
 	s.route("POST /api/v3/repos/{owner}/{repo}/pulls/{number}/comments/{comment_id}/replies",
-		s.requirePerm(scopePullRequests, permWrite, s.handleReplyPRComment))
+		s.requirePerm(store.ScopePullRequests, store.PermWrite, s.handleReplyPRComment))
 
 	// `/pulls/{number}/reviews/{review_id}/comments` (4 segments; no clash
 	// with the 3-segment dispatch in gh_reactions.go)
@@ -64,8 +66,8 @@ func (s *Server) handleListRepoPRComments(w http.ResponseWriter, r *http.Request
 	}
 	prs := s.store.ListPullRequests(repo.ID, "all")
 	type row struct {
-		comment *PRReviewComment
-		pr      *PullRequest
+		comment *store.PRReviewComment
+		pr      *store.PullRequest
 	}
 	var rows []row
 	for _, pr := range prs {
@@ -109,9 +111,9 @@ func (s *Server) handlePRCommentTwoSegDispatch(method string) http.HandlerFunc {
 		case "GET":
 			s.handleGetPRComment(w, r)
 		case "PATCH":
-			s.requirePerm(scopePullRequests, permWrite, s.handleUpdatePRComment)(w, r)
+			s.requirePerm(store.ScopePullRequests, store.PermWrite, s.handleUpdatePRComment)(w, r)
 		case "DELETE":
-			s.requirePerm(scopePullRequests, permWrite, s.handleDeletePRComment)(w, r)
+			s.requirePerm(store.ScopePullRequests, store.PermWrite, s.handleDeletePRComment)(w, r)
 		}
 	}
 }
@@ -147,10 +149,10 @@ func (s *Server) handleCreatePRComment(w http.ResponseWriter, r *http.Request) {
 		InReplyTo flexInt `json:"in_reply_to"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Body == "" {
-		writeGHValidationError(w, "PullRequestReviewComment", "body", "missing_field")
+		store.WriteGHValidationError(w, "PullRequestReviewComment", "body", "missing_field")
 		return
 	}
-	var c *PRReviewComment
+	var c *store.PRReviewComment
 	if int(req.InReplyTo) > 0 {
 		c = s.store.PRReviewComments.Reply(pr.ID, int(req.InReplyTo), user.ID, req.Body)
 		if c == nil {
@@ -159,7 +161,7 @@ func (s *Server) handleCreatePRComment(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		if req.Path == "" {
-			writeGHValidationError(w, "PullRequestReviewComment", "path", "missing_field")
+			store.WriteGHValidationError(w, "PullRequestReviewComment", "path", "missing_field")
 			return
 		}
 		c = s.store.PRReviewComments.CreateRootComment(pr.ID, user.ID, req.Path, req.Body, req.CommitID, req.Side, int(req.Line), int(req.StartLine))
@@ -186,7 +188,7 @@ func (s *Server) handleListPRComments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	comments := s.store.PRReviewComments.ListForPR(pr.ID)
-	comments, ok := filterSince(w, r, "PullRequestReviewComment", comments, func(comment *PRReviewComment) time.Time {
+	comments, ok := filterSince(w, r, "PullRequestReviewComment", comments, func(comment *store.PRReviewComment) time.Time {
 		return comment.UpdatedAt
 	})
 	if !ok {
@@ -204,7 +206,7 @@ func (s *Server) handleListPRComments(w http.ResponseWriter, r *http.Request) {
 // the pull request that owns it, answering 404 unless that pull request lives
 // in repo. Review comment ids are global, so every by-id handler has to walk
 // back to the repository before it acts.
-func (s *Server) prReviewCommentInRepo(w http.ResponseWriter, r *http.Request, repo *Repo) (*PRReviewComment, *PullRequest) {
+func (s *Server) prReviewCommentInRepo(w http.ResponseWriter, r *http.Request, repo *store.Repo) (*store.PRReviewComment, *store.PullRequest) {
 	id, err := strconv.Atoi(r.PathValue("comment_id"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -326,7 +328,7 @@ func (s *Server) handleReplyPRComment(w http.ResponseWriter, r *http.Request) {
 		Body string `json:"body"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Body == "" {
-		writeGHValidationError(w, "PullRequestReviewComment", "body", "missing_field")
+		store.WriteGHValidationError(w, "PullRequestReviewComment", "body", "missing_field")
 		return
 	}
 	c := s.store.PRReviewComments.Reply(pr.ID, rootID, user.ID, req.Body)
@@ -376,14 +378,14 @@ func (s *Server) handleListPRReviewCommentsForReview(w http.ResponseWriter, r *h
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
 
-func prReviewCommentToJSON(c *PRReviewComment, st *Store, baseURL string, repo *Repo, pr *PullRequest) map[string]interface{} {
+func prReviewCommentToJSON(c *store.PRReviewComment, st *store.Store, baseURL string, repo *store.Repo, pr *store.PullRequest) map[string]interface{} {
 	if c == nil {
 		return nil
 	}
 	var author map[string]interface{}
 	st.Mu.RLock()
 	if u := st.Users[c.AuthorID]; u != nil {
-		author = userToJSON(u)
+		author = store.UserToJSON(u)
 	}
 	st.Mu.RUnlock()
 	reactions := st.Reactions.SummarizeReactions("pull_request_review_comment", c.ID)
@@ -410,7 +412,7 @@ func prReviewCommentToJSON(c *PRReviewComment, st *Store, baseURL string, repo *
 		"created_at":             c.CreatedAt.UTC().Format(time.RFC3339),
 		"updated_at":             c.UpdatedAt.UTC().Format(time.RFC3339),
 		"reactions":              reactions,
-		"author_association":     authorAssociation(st, c.AuthorID, repo),
+		"author_association":     store.AuthorAssociation(st, c.AuthorID, repo),
 	}
 	if c.InReplyToID > 0 {
 		out["in_reply_to_id"] = c.InReplyToID
@@ -427,7 +429,7 @@ func prReviewCommentToJSON(c *PRReviewComment, st *Store, baseURL string, repo *
 	return out
 }
 
-func buildPRReviewCommentEventPayload(repo *Repo, pr *PullRequest, c *PRReviewComment, sender *User, action string) map[string]interface{} {
+func buildPRReviewCommentEventPayload(repo *store.Repo, pr *store.PullRequest, c *store.PRReviewComment, sender *store.User, action string) map[string]interface{} {
 	return attachInstallationBlock(map[string]interface{}{
 		"action":  action,
 		"comment": map[string]interface{}{"id": c.ID, "body": c.Body, "path": c.Path},

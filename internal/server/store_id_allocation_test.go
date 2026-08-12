@@ -3,22 +3,24 @@ package bleephub
 import (
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // newReplicaStore opens a store backed by a persistence over dataDir that
 // behaves like one dqlite replica: several of these share the same durable
 // database, so ID allocation must coordinate through the counters table rather
 // than each replica's private in-memory NextX.
-func newReplicaStore(t *testing.T, dataDir string) (*Store, *Persistence) {
+func newReplicaStore(t *testing.T, dataDir string) (*store.Store, *store.Persistence) {
 	t.Helper()
 	persistence := openTestPersistence(t, dataDir)
 	persistence.Dialect.Name = "dqlite"
-	store := NewStore()
-	replaceStoreClockNow(store, func() time.Time { return fixedTestTime })
-	if err := store.SetPersistence(persistence); err != nil {
+	st := store.NewStore()
+	replaceStoreClockNow(st, func() time.Time { return fixedTestTime })
+	if err := st.SetPersistence(persistence); err != nil {
 		t.Fatalf("set persistence: %v", err)
 	}
-	return store, persistence
+	return st, persistence
 }
 
 // TestCoreEntityIDsDoNotCollideAcrossReplicas is a regression guard: two
@@ -61,8 +63,8 @@ func TestCoreEntityIDsDoNotCollideAcrossReplicas(t *testing.T) {
 		t.Fatalf("next_org counter = %d, want >= max minted id (%d, %d)", v, orgA.ID, orgB.ID)
 	}
 
-	teamA := first.CreateTeam("org-a", "team-a", TeamOptions{})
-	teamB := second.CreateTeam("org-b", "team-b", TeamOptions{})
+	teamA := first.CreateTeam("org-a", "team-a", store.TeamOptions{})
+	teamB := second.CreateTeam("org-b", "team-b", store.TeamOptions{})
 	if teamA == nil || teamB == nil {
 		t.Fatalf("team creation failed: %v %v", teamA, teamB)
 	}
@@ -90,7 +92,7 @@ func TestCoreEntityIDsAreDurableAcrossReload(t *testing.T) {
 	admin := first.LookupUserByLogin("admin")
 
 	org := first.CreateOrg(admin, "acme", "Acme", "")
-	team := first.CreateTeam("acme", "core", TeamOptions{})
+	team := first.CreateTeam("acme", "core", store.TeamOptions{})
 	repo := first.CreateRepo(admin, "widgets", "", false)
 	if org == nil || team == nil || repo == nil {
 		t.Fatalf("fixture creation failed: org=%v team=%v repo=%v", org, team, repo)
@@ -111,7 +113,7 @@ func TestCoreEntityIDsAreDurableAcrossReload(t *testing.T) {
 	admin2 := second.LookupUserByLogin("admin")
 
 	org2 := second.CreateOrg(admin2, "beta", "Beta", "")
-	team2 := second.CreateTeam("beta", "core", TeamOptions{})
+	team2 := second.CreateTeam("beta", "core", store.TeamOptions{})
 	repo2 := second.CreateRepo(admin2, "gadgets", "", false)
 	issue2 := second.CreateIssue(repo2.ID, admin2.ID, "second issue", "", nil, nil, 0)
 	if org2 == nil || team2 == nil || repo2 == nil || issue2 == nil {

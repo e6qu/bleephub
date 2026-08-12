@@ -7,6 +7,8 @@ import (
 	"net/url"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // These are semantic compatibility vectors, not response-shape snapshots.
@@ -59,10 +61,10 @@ func TestSearchRepositoriesTopicQualifierUsesExactTopicMatches(t *testing.T) {
 	if golden == nil || partial == nil {
 		t.Fatal("create repositories")
 	}
-	s.store.UpdateRepo(org.Login, golden.Name, func(repo *Repo) {
+	s.store.UpdateRepo(org.Login, golden.Name, func(repo *store.Repo) {
 		repo.Topics = []string{"golden-path", "banking"}
 	})
-	s.store.UpdateRepo(org.Login, partial.Name, func(repo *Repo) {
+	s.store.UpdateRepo(org.Login, partial.Name, func(repo *store.Repo) {
 		repo.Topics = []string{"golden"}
 	})
 
@@ -110,7 +112,7 @@ func TestPullListHeadQualifierAndLabelsUseOwnerColonRef(t *testing.T) {
 		t.Fatal("create head repository")
 	}
 	seedPullRequestBranches(t, s, headRepo, "feature")
-	pr := s.store.CreatePullRequest(baseRepo.ID, admin.ID, "Organization head", "", "feature", "main", false, nil, nil, 0, PullRequestOptions{
+	pr := s.store.CreatePullRequest(baseRepo.ID, admin.ID, "Organization head", "", "feature", "main", false, nil, nil, 0, store.PullRequestOptions{
 		HeadRepoID: headRepo.ID,
 	})
 	if pr == nil {

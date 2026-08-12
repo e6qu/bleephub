@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 type legacyAuthorizationRequest struct {
@@ -22,13 +24,13 @@ type legacyAuthorizationRequest struct {
 type legacyAuthorizationRef struct {
 	kind     string
 	mapKey   string
-	pat      *Token
-	oauth    *UserToServerToken
-	user     *User
+	pat      *store.Token
+	oauth    *store.UserToServerToken
+	user     *store.User
 	identity string
 }
 
-func (s *Server) legacyAuthorizationUser(w http.ResponseWriter, r *http.Request) *User {
+func (s *Server) legacyAuthorizationUser(w http.ResponseWriter, r *http.Request) *store.User {
 	ctx := r.Context()
 	user := ghUserFromContext(ctx)
 	if user == nil {
@@ -70,7 +72,7 @@ func (s *Server) listLegacyAuthorizationRefs(userID int) []legacyAuthorizationRe
 		if token.UserID != userID {
 			continue
 		}
-		copy := cloneUserToServerToken(token)
+		copy := store.CloneUserToServerToken(token)
 		refs = append(refs, legacyAuthorizationRef{
 			kind: "oauth", mapKey: key, oauth: copy, user: user, identity: key,
 		})
@@ -159,7 +161,7 @@ func (s *Server) handleGetOrCreateLegacyAuthorization(w http.ResponseWriter, r *
 func (s *Server) createLegacyOAuthAuthorization(
 	w http.ResponseWriter,
 	r *http.Request,
-	user *User,
+	user *store.User,
 	clientID string,
 	req legacyAuthorizationRequest,
 	getOrCreate bool,
@@ -206,14 +208,14 @@ func (s *Server) createLegacyOAuthAuthorization(
 	if s.store.Persist != nil {
 		s.store.Persist.MustPut("user_to_server_tokens", stored.Token, stored)
 	}
-	copy := cloneUserToServerToken(stored)
+	copy := store.CloneUserToServerToken(stored)
 	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusCreated, s.legacyAuthorizationJSON(legacyAuthorizationRef{
 		kind: "oauth", mapKey: copy.Token, oauth: copy, user: user, identity: copy.Token,
 	}, true))
 }
 
-func legacyOAuthClientID(st *Store, token *UserToServerToken) string {
+func legacyOAuthClientID(st *store.Store, token *store.UserToServerToken) string {
 	if token.OAuthAppClientID != "" {
 		return token.OAuthAppClientID
 	}
@@ -294,7 +296,7 @@ func (s *Server) handleUpdateLegacyAuthorization(w http.ResponseWriter, r *http.
 		if s.store.Persist != nil {
 			s.store.Persist.MustPut("user_to_server_tokens", stored.Token, stored)
 		}
-		ref.oauth = cloneUserToServerToken(stored)
+		ref.oauth = store.CloneUserToServerToken(stored)
 	}
 	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusOK, s.legacyAuthorizationJSON(ref, false))
@@ -376,13 +378,13 @@ type legacyGrantRef struct {
 	ClientID  string
 	Name      string
 	URL       string
-	User      *User
+	User      *store.User
 	Scopes    []string
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
 
-func (s *Server) listLegacyGrants(user *User) []legacyGrantRef {
+func (s *Server) listLegacyGrants(user *store.User) []legacyGrantRef {
 	byClient := map[string]*legacyGrantRef{}
 	for _, ref := range s.listLegacyAuthorizationRefs(user.ID) {
 		if ref.oauth == nil {
@@ -434,7 +436,7 @@ func (s *Server) legacyGrantJSON(grant legacyGrantRef, r *http.Request) map[stri
 		"app":        map[string]interface{}{"client_id": grant.ClientID, "name": grant.Name, "url": grant.URL},
 		"created_at": grant.CreatedAt.UTC().Format(time.RFC3339),
 		"updated_at": grant.UpdatedAt.UTC().Format(time.RFC3339),
-		"scopes":     grant.Scopes, "user": userToJSON(grant.User),
+		"scopes":     grant.Scopes, "user": store.UserToJSON(grant.User),
 	}
 }
 
@@ -451,7 +453,7 @@ func (s *Server) handleListLegacyOAuthGrants(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
 
-func (s *Server) legacyGrantFromRequest(w http.ResponseWriter, r *http.Request, user *User) (legacyGrantRef, bool) {
+func (s *Server) legacyGrantFromRequest(w http.ResponseWriter, r *http.Request, user *store.User) (legacyGrantRef, bool) {
 	id, err := strconv.Atoi(r.PathValue("grant_id"))
 	if err == nil {
 		for _, grant := range s.listLegacyGrants(user) {

@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // User-account surface: profile updates, email addresses, account
@@ -71,7 +73,7 @@ func (s *Server) handleUpdateAuthenticatedUser(w http.ResponseWriter, r *http.Re
 	if !decodeJSONBodyOptional(w, r, &req) {
 		return
 	}
-	updated := s.store.UpdateUserProfile(user.ID, func(u *User) {
+	updated := s.store.UpdateUserProfile(user.ID, func(u *store.User) {
 		if req.Name != nil {
 			u.Name = *req.Name
 		}
@@ -127,7 +129,7 @@ func (s *Server) handleGetUserByAccountID(w http.ResponseWriter, r *http.Request
 // authenticated user's own account view. The private counters are
 // derived live from store state; two_factor_authentication is false
 // because bleephub does not model two-factor authentication.
-func (s *Server) privateUserJSON(u *User) map[string]interface{} {
+func (s *Server) privateUserJSON(u *store.User) map[string]interface{} {
 	out := s.fullUserJSON(u)
 	out["user_view_type"] = "private"
 	privateRepos := s.store.CountPrivateRepos(u.Login)
@@ -144,7 +146,7 @@ func (s *Server) privateUserJSON(u *User) map[string]interface{} {
 
 // userEmailJSON renders one email address in GitHub's `email` schema.
 // An unset visibility is null on the wire.
-func userEmailJSON(e UserEmail) map[string]interface{} {
+func userEmailJSON(e store.UserEmail) map[string]interface{} {
 	return map[string]interface{}{
 		"email":      e.Email,
 		"primary":    e.Primary,
@@ -186,18 +188,18 @@ func (s *Server) handleAddUserEmails(w http.ResponseWriter, r *http.Request) {
 	}
 	emails, ok := decodeEmailsBody(r)
 	if !ok || len(emails) == 0 {
-		writeGHValidationError(w, "Email", "emails", "missing_field")
+		store.WriteGHValidationError(w, "Email", "emails", "missing_field")
 		return
 	}
 	for _, e := range emails {
 		if strings.TrimSpace(e) == "" {
-			writeGHValidationError(w, "Email", "emails", "invalid")
+			store.WriteGHValidationError(w, "Email", "emails", "invalid")
 			return
 		}
 	}
 	added, ok := s.store.AddUserEmails(user.ID, emails)
 	if !ok {
-		writeGHValidationError(w, "Email", "emails", "already_exists")
+		store.WriteGHValidationError(w, "Email", "emails", "already_exists")
 		return
 	}
 	out := make([]map[string]interface{}, len(added))
@@ -215,14 +217,14 @@ func (s *Server) handleDeleteUserEmails(w http.ResponseWriter, r *http.Request) 
 	}
 	emails, ok := decodeEmailsBody(r)
 	if !ok || len(emails) == 0 {
-		writeGHValidationError(w, "Email", "emails", "missing_field")
+		store.WriteGHValidationError(w, "Email", "emails", "missing_field")
 		return
 	}
 	switch s.store.DeleteUserEmails(user.ID, emails) {
-	case deleteEmailsOK:
+	case store.DeleteEmailsOK:
 		w.WriteHeader(http.StatusNoContent)
-	case deleteEmailsPrimary:
-		writeGHValidationError(w, "Email", "emails", "invalid")
+	case store.DeleteEmailsPrimary:
+		store.WriteGHValidationError(w, "Email", "emails", "invalid")
 	default:
 		writeGHError(w, http.StatusNotFound, "Not Found")
 	}
@@ -256,7 +258,7 @@ func (s *Server) handleSetUserEmailVisibility(w http.ResponseWriter, r *http.Req
 		return
 	}
 	if req.Visibility != "public" && req.Visibility != "private" {
-		writeGHValidationError(w, "Email", "visibility", "invalid")
+		store.WriteGHValidationError(w, "Email", "visibility", "invalid")
 		return
 	}
 	updated := s.store.SetPrimaryEmailVisibility(user.ID, req.Visibility)
@@ -287,7 +289,7 @@ func (s *Server) handleGetMySSHSigningKey(w http.ResponseWriter, r *http.Request
 		return
 	}
 	for _, entry := range s.store.ListUserSSHSigningKeys(user.ID) {
-		if sshSigningKeyEntryID(entry) == id {
+		if store.SshSigningKeyEntryID(entry) == id {
 			writeJSON(w, http.StatusOK, entry)
 			return
 		}
@@ -355,16 +357,16 @@ func (s *Server) handleSetUserInteractionLimits(w http.ResponseWriter, r *http.R
 		return
 	}
 	if req.Limit == "" {
-		writeGHValidationError(w, "InteractionLimit", "limit", "missing_field")
+		store.WriteGHValidationError(w, "InteractionLimit", "limit", "missing_field")
 		return
 	}
 	if !isInteractionGroup(req.Limit) {
-		writeGHValidationError(w, "InteractionLimit", "limit", "invalid")
+		store.WriteGHValidationError(w, "InteractionLimit", "limit", "invalid")
 		return
 	}
 	expiresAt, ok := interactionLimitExpiry(req.Expiry, s.currentTime())
 	if !ok {
-		writeGHValidationError(w, "InteractionLimit", "expiry", "invalid")
+		store.WriteGHValidationError(w, "InteractionLimit", "expiry", "invalid")
 		return
 	}
 	if !s.store.SetUserInteractionLimit(user.ID, req.Limit, &expiresAt) {
@@ -414,7 +416,7 @@ func (s *Server) handleListUserMarketplacePurchases(w http.ResponseWriter, r *ht
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
 
-func (s *Server) userMarketplacePurchaseJSON(p *MarketplacePurchase, plan *MarketplacePlan, account *User, baseURL string) map[string]interface{} {
+func (s *Server) userMarketplacePurchaseJSON(p *store.MarketplacePurchase, plan *store.MarketplacePlan, account *store.User, baseURL string) map[string]interface{} {
 	var nextBilling, updatedAt, freeTrialEnds interface{}
 	if p.NextBillingDate != nil {
 		nextBilling = p.NextBillingDate.UTC().Format(time.RFC3339)
@@ -449,7 +451,7 @@ func (s *Server) userMarketplacePurchaseJSON(p *MarketplacePurchase, plan *Marke
 
 // marketplacePlanJSON renders the full marketplace-listing-plan schema.
 // The plan number is its listing identifier, which bleephub keys by ID.
-func marketplacePlanJSON(p *MarketplacePlan, baseURL string) map[string]interface{} {
+func marketplacePlanJSON(p *store.MarketplacePlan, baseURL string) map[string]interface{} {
 	planURL := baseURL + "/api/v3/marketplace_listing/plans/" + strconv.Itoa(p.ID)
 	return map[string]interface{}{
 		"url":                    planURL,
@@ -487,11 +489,11 @@ func (s *Server) handleGetUserHovercard(w http.ResponseWriter, r *http.Request) 
 		switch subjectType {
 		case "organization", "repository", "issue", "pull_request":
 		default:
-			writeGHValidationError(w, "Hovercard", "subject_type", "invalid")
+			store.WriteGHValidationError(w, "Hovercard", "subject_type", "invalid")
 			return
 		}
 		if subjectID == "" {
-			writeGHValidationError(w, "Hovercard", "subject_id", "missing_field")
+			store.WriteGHValidationError(w, "Hovercard", "subject_id", "missing_field")
 			return
 		}
 	}
@@ -538,7 +540,7 @@ func (s *Server) handleListAuthUserIssues(w http.ResponseWriter, r *http.Request
 
 	pairs := s.store.ListUserFilteredIssues(user, filter)
 
-	var filtered []issueWithRepo
+	var filtered []store.IssueWithRepo
 	since := parseSinceTime(r)
 	var labelNames []string
 	if labelsParam := q.Get("labels"); labelsParam != "" {
@@ -561,7 +563,7 @@ func (s *Server) handleListAuthUserIssues(w http.ResponseWriter, r *http.Request
 		if !since.IsZero() && p.Issue.UpdatedAt.Before(since) {
 			continue
 		}
-		if len(labelNames) > 0 && !issueHasAllLabels(s.store, p.Issue, labelNames, p.Repo.ID) {
+		if len(labelNames) > 0 && !store.IssueHasAllLabels(s.store, p.Issue, labelNames, p.Repo.ID) {
 			continue
 		}
 		filtered = append(filtered, p)
@@ -590,7 +592,7 @@ func (s *Server) handleListAuthUserIssues(w http.ResponseWriter, r *http.Request
 	out := make([]map[string]interface{}, 0, len(filtered))
 	for _, p := range filtered {
 		item := issueToJSON(p.Issue, s.store, base, p.Repo.FullName)
-		item["repository"] = repoToJSON(p.Repo, s.store, base)
+		item["repository"] = store.RepoToJSON(p.Repo, s.store, base)
 		out = append(out, item)
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
@@ -643,7 +645,7 @@ func (f billingTimeFilter) matches(t time.Time) bool {
 
 // resolveBillingUser authorizes the billing report request: only the
 // account owner or a site administrator can read a user's usage.
-func (s *Server) resolveBillingUser(w http.ResponseWriter, r *http.Request) *User {
+func (s *Server) resolveBillingUser(w http.ResponseWriter, r *http.Request) *store.User {
 	viewer := ghUserFromContext(r.Context())
 	if viewer == nil {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
@@ -658,7 +660,7 @@ func (s *Server) resolveBillingUser(w http.ResponseWriter, r *http.Request) *Use
 }
 
 // filteredBillingItems applies time/repository/product/sku query filters.
-func (s *Server) filteredBillingItems(w http.ResponseWriter, r *http.Request, user *User, defaultMonth bool) ([]billingUsageItem, *billingTimeFilter) {
+func (s *Server) filteredBillingItems(w http.ResponseWriter, r *http.Request, user *store.User, defaultMonth bool) ([]store.BillingUsageItem, *billingTimeFilter) {
 	f, err := parseBillingTimeFilter(r, defaultMonth, s.currentTime())
 	if err != nil {
 		writeGHError(w, http.StatusBadRequest, err.Error())

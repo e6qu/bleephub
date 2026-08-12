@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	gitStorage "github.com/go-git/go-git/v5/storage"
@@ -15,7 +16,7 @@ import (
 // qualifier set against real repository state. Every parsed qualifier reaches
 // this function, including exclusions; no accepted qualifier is silently
 // dropped.
-func repositoryMatchesSearch(st *Store, repo *Repo, query searchQuery) bool {
+func repositoryMatchesSearch(st *store.Store, repo *store.Repo, query searchQuery) bool {
 	hasForkQualifier := false
 	for _, qualifier := range query.Qualifiers {
 		if qualifier.Key == "fork" {
@@ -77,7 +78,7 @@ func repositorySearchTextFields(query searchQuery) map[string]bool {
 	return fields
 }
 
-func repositorySearchText(st *Store, repo *Repo, fields map[string]bool) string {
+func repositorySearchText(st *store.Store, repo *store.Repo, fields map[string]bool) string {
 	parts := make([]string, 0, 4)
 	if fields["name"] {
 		parts = append(parts, repo.Name)
@@ -94,7 +95,7 @@ func repositorySearchText(st *Store, repo *Repo, fields map[string]bool) string 
 	return strings.Join(parts, " ")
 }
 
-func repositoryMatchesQualifier(st *Store, repo *Repo, qualifier searchQualifier) bool {
+func repositoryMatchesQualifier(st *store.Store, repo *store.Repo, qualifier searchQualifier) bool {
 	value := strings.ToLower(qualifier.Value)
 	owner, _, _ := strings.Cut(repo.FullName, "/")
 	switch qualifier.Key {
@@ -174,7 +175,7 @@ func repositoryMatchesQualifier(st *Store, repo *Repo, qualifier searchQualifier
 	return false
 }
 
-func repositoryHasCustomPropertyValue(st *Store, repo *Repo, propertyName, wanted string) bool {
+func repositoryHasCustomPropertyValue(st *store.Store, repo *store.Repo, propertyName, wanted string) bool {
 	owner, _, _ := strings.Cut(repo.FullName, "/")
 	for _, property := range st.EffectiveRepoCustomPropertyValues(owner, repo.FullName) {
 		name, _ := property["property_name"].(string)
@@ -206,7 +207,7 @@ func repositoryHasCustomPropertyValue(st *Store, repo *Repo, propertyName, wante
 	return false
 }
 
-func repositoryHasLinkedArtifactState(st *Store, fullName string, deployment bool) bool {
+func repositoryHasLinkedArtifactState(st *store.Store, fullName string, deployment bool) bool {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 	if deployment {
@@ -225,7 +226,7 @@ func repositoryHasLinkedArtifactState(st *Store, fullName string, deployment boo
 	return false
 }
 
-func repoHasTopic(repo *Repo, wanted string) bool {
+func repoHasTopic(repo *store.Repo, wanted string) bool {
 	for _, topic := range repo.Topics {
 		if strings.EqualFold(topic, wanted) {
 			return true
@@ -244,7 +245,7 @@ func matchesDateQualifier(expression string, value time.Time) bool {
 	return err == nil && constraint.matches(value)
 }
 
-func repositoryDefaultTree(st *Store, repo *Repo) (gitStorage.Storer, *object.Tree, bool) {
+func repositoryDefaultTree(st *store.Store, repo *store.Repo) (gitStorage.Storer, *object.Tree, bool) {
 	owner, name, ok := strings.Cut(repo.FullName, "/")
 	if !ok {
 		return nil, nil, false
@@ -265,7 +266,7 @@ func repositoryDefaultTree(st *Store, repo *Repo) (gitStorage.Storer, *object.Tr
 	return stor, tree, err == nil
 }
 
-func repositoryReadme(st *Store, repo *Repo) string {
+func repositoryReadme(st *store.Store, repo *store.Repo) string {
 	stor, tree, ok := repositoryDefaultTree(st, repo)
 	if !ok {
 		return ""
@@ -277,7 +278,7 @@ func repositoryReadme(st *Store, repo *Repo) string {
 	return string(content)
 }
 
-func repositoryHasFundingFile(st *Store, repo *Repo) bool {
+func repositoryHasFundingFile(st *store.Store, repo *store.Repo) bool {
 	stor, tree, ok := repositoryDefaultTree(st, repo)
 	if !ok {
 		return false

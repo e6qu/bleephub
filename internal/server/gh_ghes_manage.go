@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/google/uuid"
 )
 
@@ -39,7 +40,7 @@ func managementPassword() string {
 	if value := os.Getenv("BLEEPHUB_MANAGEMENT_PASSWORD"); value != "" {
 		return value
 	}
-	return AdminToken()
+	return store.AdminToken()
 }
 
 func (s *Server) requireGHESManagementAuth(next http.HandlerFunc) http.HandlerFunc {
@@ -297,7 +298,7 @@ func (s *Server) handleManageSettings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, settings)
 }
 
-func (s *Server) maintenanceNodeJSON(state GHESMaintenanceState) map[string]interface{} {
+func (s *Server) maintenanceNodeJSON(state store.GHESMaintenanceState) map[string]interface{} {
 	status := "off"
 	if state.Enabled {
 		status = "on"

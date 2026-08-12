@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/url"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // FuzzCustomPropertyDefinition fuzzes the definition-write body decoded by
@@ -97,7 +99,7 @@ func FuzzCustomPropertyValues(f *testing.F) {
 		if repo == nil {
 			t.Fatalf("CreateOrgRepo returned nil")
 		}
-		for _, def := range []*CustomProperty{
+		for _, def := range []*store.CustomProperty{
 			{PropertyName: "team", ValueType: "string", ValuesEditableBy: "org_actors"},
 			{PropertyName: "link", ValueType: "url", ValuesEditableBy: "org_actors"},
 			{PropertyName: "flag", ValueType: "true_false", ValuesEditableBy: "org_actors"},

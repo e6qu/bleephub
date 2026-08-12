@@ -13,19 +13,21 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func (s *Server) registerAgentRoutes() {
 	// Registration token (for config.sh). Real GitHub gates this on
 	// administration:write — 401/403 without it.
 	s.route("POST /api/v3/repos/{owner}/{repo}/actions/runners/registration-token",
-		s.requirePerm(scopeAdministration, permWrite, s.handleRegistrationToken))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleRegistrationToken))
 	// Removal token (config.sh remove --token) — also administration:write.
 	s.route("POST /api/v3/repos/{owner}/{repo}/actions/runners/remove-token",
-		s.requirePerm(scopeAdministration, permWrite, s.handleRemoveToken))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleRemoveToken))
 	// JIT config (ephemeral just-in-time runner registration).
 	s.route("POST /api/v3/repos/{owner}/{repo}/actions/runners/generate-jitconfig",
-		s.requirePerm(scopeAdministration, permWrite, s.handleGenerateJITConfig))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleGenerateJITConfig))
 
 	// Agent pools. config.sh reads the pool list with its registration token,
 	// before it has a session.
@@ -142,15 +144,15 @@ func (s *Server) handleGenerateJITConfig(w http.ResponseWriter, r *http.Request)
 	// Build the Agent the same way handleRegisterAgent does, so the
 	// JIT runner appears in the runners list and the broker can route to
 	// it. JIT runners are always ephemeral (auto-removed after one job).
-	var agent Agent
+	var agent store.Agent
 	agent.Name = req.Name
 	agent.Ephemeral = true
 	agent.RunnerGroupID = *req.RunnerGroupID
 	for _, l := range req.Labels {
-		agent.Labels = append(agent.Labels, Label{Name: l, Type: "custom"})
+		agent.Labels = append(agent.Labels, store.Label{Name: l, Type: "custom"})
 	}
 
-	jitScope := coalesceStr(coalesceStr(scope.Repo, scope.Org), scope.Enterprise)
+	jitScope := store.CoalesceStr(store.CoalesceStr(scope.Repo, scope.Org), scope.Enterprise)
 	clientID, err := newAgentClientID(scope)
 	if err != nil {
 		writeGHError(w, http.StatusInternalServerError, err.Error())
@@ -169,7 +171,7 @@ func (s *Server) handleGenerateJITConfig(w http.ResponseWriter, r *http.Request)
 	agent.Status = "online"
 	agent.CreatedOn = time.Now()
 	agent.Scope = scope
-	agent.Authorization = &AgentAuthorization{
+	agent.Authorization = &store.AgentAuthorization{
 		AuthorizationURL: s.agentAuthorizationURL(r),
 		ClientID:         clientID,
 		PublicKey:        publicKey,
@@ -215,7 +217,7 @@ func (s *Server) handleGenerateJITConfig(w http.ResponseWriter, r *http.Request)
 	})
 }
 
-func (s *Server) repositoryRunnerRegistrationAllowed(scope runnerScope) bool {
+func (s *Server) repositoryRunnerRegistrationAllowed(scope store.RunnerScope) bool {
 	if scope.Repo == "" {
 		return true
 	}
@@ -287,7 +289,7 @@ type rsaParametersJSON struct {
 // path — it writes `.credentials_rsaparams` from the config it was given and
 // reads its signing key straight back out of that file — so a JIT agent whose
 // record carries no public key can never have its client_assertion verified.
-func newJITRunnerKey() (*AgentPublicKey, *rsaParametersJSON, error) {
+func newJITRunnerKey() (*store.AgentPublicKey, *rsaParametersJSON, error) {
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		return nil, nil, fmt.Errorf("generate JIT runner key: %w", err)
@@ -307,7 +309,7 @@ func newJITRunnerKey() (*AgentPublicKey, *rsaParametersJSON, error) {
 		P:        key.Primes[0].FillBytes(make([]byte, half)),
 		Q:        key.Primes[1].FillBytes(make([]byte, half)),
 	}
-	public := &AgentPublicKey{
+	public := &store.AgentPublicKey{
 		Exponent: base64.StdEncoding.EncodeToString(exponent),
 		Modulus:  base64.StdEncoding.EncodeToString(params.Modulus),
 	}
@@ -345,7 +347,7 @@ func (s *Server) handleRegisterAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var agent Agent
+	var agent store.Agent
 	if name, ok := raw["name"].(string); ok {
 		agent.Name = name
 	}
@@ -365,7 +367,7 @@ func (s *Server) handleRegisterAgent(w http.ResponseWriter, r *http.Request) {
 	if labelsRaw, ok := raw["labels"].([]interface{}); ok {
 		for _, l := range labelsRaw {
 			if lm, ok := l.(map[string]interface{}); ok {
-				label := Label{}
+				label := store.Label{}
 				if n, ok := lm["name"].(string); ok {
 					label.Name = n
 				}
@@ -378,9 +380,9 @@ func (s *Server) handleRegisterAgent(w http.ResponseWriter, r *http.Request) {
 	}
 	// Preserve authorization (RSA public key) from the runner
 	if authRaw, ok := raw["authorization"].(map[string]interface{}); ok {
-		agent.Authorization = &AgentAuthorization{}
+		agent.Authorization = &store.AgentAuthorization{}
 		if pk, ok := authRaw["publicKey"].(map[string]interface{}); ok {
-			agent.Authorization.PublicKey = &AgentPublicKey{}
+			agent.Authorization.PublicKey = &store.AgentPublicKey{}
 			if exp, ok := pk["exponent"].(string); ok {
 				agent.Authorization.PublicKey.Exponent = exp
 			}
@@ -404,7 +406,7 @@ func (s *Server) handleRegisterAgent(w http.ResponseWriter, r *http.Request) {
 	agent.CreatedOn = time.Now()
 
 	if agent.Authorization == nil {
-		agent.Authorization = &AgentAuthorization{}
+		agent.Authorization = &store.AgentAuthorization{}
 	}
 	agent.Scope = scope
 	agent.Authorization.AuthorizationURL = s.agentAuthorizationURL(r)
@@ -422,7 +424,7 @@ func (s *Server) handleListAgents(w http.ResponseWriter, r *http.Request) {
 	caller, _ := s.callerRunner(r)
 
 	s.store.Mu.RLock()
-	agents := make([]*Agent, 0)
+	agents := make([]*store.Agent, 0)
 	for _, a := range s.store.Agents {
 		if nameFilter != "" && !strings.EqualFold(a.Name, nameFilter) {
 			continue
@@ -449,7 +451,7 @@ func (s *Server) handleListAgents(w http.ResponseWriter, r *http.Request) {
 // forbidden so an agent id cannot be probed for existence across tenants.
 // An agent record without an authorization has no clientId, so it has no
 // identity and no scope to compare against; it is addressable by nobody.
-func callerSeesAgent(caller *runnerPrincipal, agent *Agent) bool {
+func callerSeesAgent(caller *runnerPrincipal, agent *store.Agent) bool {
 	if caller == nil || agent == nil || agent.Authorization == nil {
 		return false
 	}
@@ -492,7 +494,7 @@ func (s *Server) handleUpdateAgent(w http.ResponseWriter, r *http.Request) {
 	}
 	caller, _ := s.callerRunner(r)
 
-	var update Agent
+	var update store.Agent
 	if !decodeJSONBody(w, r, &update) {
 		return
 	}

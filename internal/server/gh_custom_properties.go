@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strings"
 	"unicode"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // validCustomPropertyName reports whether name is an acceptable custom-property
@@ -31,22 +33,22 @@ func validCustomPropertyName(name string) bool {
 
 func (s *Server) registerGHCustomPropertyRoutes() {
 	s.route("GET /api/v3/orgs/{org}/properties/schema",
-		s.requirePerm(scopeOrgAdministration, permRead, s.orgGated(s.handleGetOrgCustomProperties)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.orgGated(s.handleGetOrgCustomProperties)))
 	s.route("PATCH /api/v3/orgs/{org}/properties/schema",
-		s.requirePerm(scopeOrgAdministration, permWrite, s.orgGated(s.handleBatchUpsertOrgCustomProperties)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.orgGated(s.handleBatchUpsertOrgCustomProperties)))
 	s.route("GET /api/v3/orgs/{org}/properties/schema/{custom_property_name}",
-		s.requirePerm(scopeOrgAdministration, permRead, s.orgGated(s.handleGetOrgCustomProperty)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.orgGated(s.handleGetOrgCustomProperty)))
 	s.route("PUT /api/v3/orgs/{org}/properties/schema/{custom_property_name}",
-		s.requirePerm(scopeOrgAdministration, permWrite, s.orgGated(s.handleUpsertOrgCustomProperty)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.orgGated(s.handleUpsertOrgCustomProperty)))
 	s.route("DELETE /api/v3/orgs/{org}/properties/schema/{custom_property_name}",
-		s.requirePerm(scopeOrgAdministration, permWrite, s.orgGated(s.handleDeleteOrgCustomProperty)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.orgGated(s.handleDeleteOrgCustomProperty)))
 	s.route("GET /api/v3/orgs/{org}/properties/values",
-		s.requirePerm(scopeOrgAdministration, permRead, s.orgGated(s.handleListOrgRepoCustomPropertyValues)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.orgGated(s.handleListOrgRepoCustomPropertyValues)))
 	s.route("PATCH /api/v3/orgs/{org}/properties/values",
-		s.requirePerm(scopeOrgAdministration, permWrite, s.orgGated(s.handleBatchSetOrgRepoCustomPropertyValues)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.orgGated(s.handleBatchSetOrgRepoCustomPropertyValues)))
 	s.route("GET /api/v3/repos/{owner}/{repo}/properties/values", s.handleGetRepoCustomPropertyValues)
 	s.route("PATCH /api/v3/repos/{owner}/{repo}/properties/values",
-		s.requirePerm(scopeAdministration, permWrite, s.handleSetRepoCustomPropertyValues))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleSetRepoCustomPropertyValues))
 }
 
 var customPropertyValueTypes = map[string]bool{
@@ -68,7 +70,7 @@ type customPropertyPayload struct {
 
 // toCustomProperty validates the payload and materializes the definition.
 // Missing optional values fall back to their documented defaults.
-func (p *customPropertyPayload) toCustomProperty(w http.ResponseWriter, name string) *CustomProperty {
+func (p *customPropertyPayload) toCustomProperty(w http.ResponseWriter, name string) *store.CustomProperty {
 	return p.toCustomPropertyFor(w, name, "org_actors", "org_actors", "org_and_repo_actors")
 }
 
@@ -77,35 +79,35 @@ func (p *customPropertyPayload) toCustomPropertyFor(
 	name string,
 	defaultEditableBy string,
 	editableValues ...string,
-) *CustomProperty {
+) *store.CustomProperty {
 	if name == "" {
-		writeGHValidationError(w, "CustomProperty", "property_name", "missing_field")
+		store.WriteGHValidationError(w, "CustomProperty", "property_name", "missing_field")
 		return nil
 	}
 	if !validCustomPropertyName(name) {
-		writeGHValidationError(w, "CustomProperty", "property_name", "invalid")
+		store.WriteGHValidationError(w, "CustomProperty", "property_name", "invalid")
 		return nil
 	}
 	if !customPropertyValueTypes[p.ValueType] {
-		writeGHValidationError(w, "CustomProperty", "value_type", "invalid")
+		store.WriteGHValidationError(w, "CustomProperty", "value_type", "invalid")
 		return nil
 	}
 	isSelect := p.ValueType == "single_select" || p.ValueType == "multi_select"
 	if !isSelect && len(p.AllowedValues) > 0 {
-		writeGHValidationError(w, "CustomProperty", "allowed_values", "invalid")
+		store.WriteGHValidationError(w, "CustomProperty", "allowed_values", "invalid")
 		return nil
 	}
 	if isSelect && len(p.AllowedValues) > 200 {
-		writeGHValidationError(w, "CustomProperty", "allowed_values", "invalid")
+		store.WriteGHValidationError(w, "CustomProperty", "allowed_values", "invalid")
 		return nil
 	}
 	if p.Required && p.DefaultValue == nil {
-		writeGHValidationError(w, "CustomProperty", "default_value", "missing_field")
+		store.WriteGHValidationError(w, "CustomProperty", "default_value", "missing_field")
 		return nil
 	}
 	if p.DefaultValue != nil {
-		if err := validateCustomPropertyValue(&CustomProperty{ValueType: p.ValueType, AllowedValues: p.AllowedValues}, p.DefaultValue); err != nil {
-			writeGHValidationError(w, "CustomProperty", "default_value", "invalid")
+		if err := validateCustomPropertyValue(&store.CustomProperty{ValueType: p.ValueType, AllowedValues: p.AllowedValues}, p.DefaultValue); err != nil {
+			store.WriteGHValidationError(w, "CustomProperty", "default_value", "invalid")
 			return nil
 		}
 	}
@@ -119,12 +121,12 @@ func (p *customPropertyPayload) toCustomPropertyFor(
 			}
 		}
 		if !valid {
-			writeGHValidationError(w, "CustomProperty", "values_editable_by", "invalid")
+			store.WriteGHValidationError(w, "CustomProperty", "values_editable_by", "invalid")
 			return nil
 		}
 		editableBy = *p.ValuesEditableBy
 	}
-	return &CustomProperty{
+	return &store.CustomProperty{
 		PropertyName:          name,
 		ValueType:             p.ValueType,
 		Required:              p.Required,
@@ -156,10 +158,10 @@ func (s *Server) handleBatchUpsertOrgCustomProperties(w http.ResponseWriter, r *
 		return
 	}
 	if len(req.Properties) == 0 {
-		writeGHValidationError(w, "CustomProperty", "properties", "missing_field")
+		store.WriteGHValidationError(w, "CustomProperty", "properties", "missing_field")
 		return
 	}
-	defs := make([]*CustomProperty, 0, len(req.Properties))
+	defs := make([]*store.CustomProperty, 0, len(req.Properties))
 	for i := range req.Properties {
 		def := req.Properties[i].toCustomProperty(w, req.Properties[i].PropertyName)
 		if def == nil {
@@ -234,25 +236,25 @@ func (s *Server) handleListOrgRepoCustomPropertyValues(w http.ResponseWriter, r 
 func (s *Server) handleBatchSetOrgRepoCustomPropertyValues(w http.ResponseWriter, r *http.Request) {
 	org := r.PathValue("org")
 	var req struct {
-		RepositoryNames []string                     `json:"repository_names"`
-		Properties      []customPropertyValuePayload `json:"properties"`
+		RepositoryNames []string                           `json:"repository_names"`
+		Properties      []store.CustomPropertyValuePayload `json:"properties"`
 	}
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	if len(req.RepositoryNames) == 0 || len(req.RepositoryNames) > 30 {
-		writeGHValidationError(w, "CustomPropertyValues", "repository_names", "invalid")
+		store.WriteGHValidationError(w, "CustomPropertyValues", "repository_names", "invalid")
 		return
 	}
 	if req.Properties == nil {
-		writeGHValidationError(w, "CustomPropertyValues", "properties", "missing_field")
+		store.WriteGHValidationError(w, "CustomPropertyValues", "properties", "missing_field")
 		return
 	}
 	repoKeys := make([]string, 0, len(req.RepositoryNames))
 	for _, name := range req.RepositoryNames {
 		repo := s.store.GetRepo(org, name)
 		if repo == nil {
-			writeGHValidationError(w, "CustomPropertyValues", "repository_names", "invalid")
+			store.WriteGHValidationError(w, "CustomPropertyValues", "repository_names", "invalid")
 			return
 		}
 		repoKeys = append(repoKeys, repo.FullName)
@@ -291,13 +293,13 @@ func (s *Server) handleSetRepoCustomPropertyValues(w http.ResponseWriter, r *htt
 		return
 	}
 	var req struct {
-		Properties []customPropertyValuePayload `json:"properties"`
+		Properties []store.CustomPropertyValuePayload `json:"properties"`
 	}
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	if req.Properties == nil {
-		writeGHValidationError(w, "CustomPropertyValues", "properties", "missing_field")
+		store.WriteGHValidationError(w, "CustomPropertyValues", "properties", "missing_field")
 		return
 	}
 	if !s.applyCustomPropertyValues(w, owner, []string{repo.FullName}, req.Properties) {
@@ -308,18 +310,18 @@ func (s *Server) handleSetRepoCustomPropertyValues(w http.ResponseWriter, r *htt
 
 // applyCustomPropertyValues validates every value against the org schema and
 // applies the batch to each repo. A null value unsets the property.
-func (s *Server) applyCustomPropertyValues(w http.ResponseWriter, org string, repoKeys []string, values []customPropertyValuePayload) bool {
+func (s *Server) applyCustomPropertyValues(w http.ResponseWriter, org string, repoKeys []string, values []store.CustomPropertyValuePayload) bool {
 	for _, v := range values {
 		def := s.store.GetCustomProperty(org, v.PropertyName)
 		if def == nil {
-			writeGHValidationError(w, "CustomPropertyValues", "property_name", "invalid")
+			store.WriteGHValidationError(w, "CustomPropertyValues", "property_name", "invalid")
 			return false
 		}
 		if v.Value == nil {
 			continue
 		}
 		if err := validateCustomPropertyValue(def, v.Value); err != nil {
-			writeGHValidationError(w, "CustomPropertyValues", def.PropertyName, "invalid")
+			store.WriteGHValidationError(w, "CustomPropertyValues", def.PropertyName, "invalid")
 			return false
 		}
 	}
@@ -331,7 +333,7 @@ func (s *Server) applyCustomPropertyValues(w http.ResponseWriter, org string, re
 
 // validateCustomPropertyValue checks a non-null value against the property's
 // value type (and allowed values for the select types).
-func validateCustomPropertyValue(def *CustomProperty, value interface{}) error {
+func validateCustomPropertyValue(def *store.CustomProperty, value interface{}) error {
 	allowed := func(str string) bool {
 		for _, v := range def.AllowedValues {
 			if v == str {
@@ -384,7 +386,7 @@ func validateCustomPropertyValue(def *CustomProperty, value interface{}) error {
 	return nil
 }
 
-func customPropertyJSON(p *CustomProperty, org, baseURL string) map[string]interface{} {
+func customPropertyJSON(p *store.CustomProperty, org, baseURL string) map[string]interface{} {
 	var desc interface{}
 	if p.Description != nil {
 		desc = *p.Description
@@ -412,7 +414,7 @@ func customPropertyJSON(p *CustomProperty, org, baseURL string) map[string]inter
 	return out
 }
 
-func (s *Server) customPropertyJSONForOrg(p *CustomProperty, org, baseURL string) map[string]interface{} {
+func (s *Server) customPropertyJSONForOrg(p *store.CustomProperty, org, baseURL string) map[string]interface{} {
 	s.store.Mu.RLock()
 	enterpriseOwned := s.store.OrgCustomProperties[org][p.PropertyName] == nil &&
 		s.store.EnterpriseSettings.RepositoryCustomProperties[p.PropertyName] != nil

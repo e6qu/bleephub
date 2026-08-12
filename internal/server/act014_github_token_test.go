@@ -3,6 +3,8 @@ package bleephub
 import (
 	"net/http"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // ACT-014: GITHUB_TOKEN's REST access is scoped to the workflow's repository and
@@ -10,8 +12,10 @@ import (
 
 func TestResolveJobTokenPermissions(t *testing.T) {
 	s := newTestServer()
-	wfWith := func(p PermissionDef) *Workflow { return &Workflow{RepoFullName: "admin/r", Permissions: p} }
-	jdWith := func(p PermissionDef) *JobDef { return &JobDef{Permissions: p} }
+	wfWith := func(p store.PermissionDef) *store.Workflow {
+		return &store.Workflow{RepoFullName: "admin/r", Permissions: p}
+	}
+	jdWith := func(p store.PermissionDef) *store.JobDef { return &store.JobDef{Permissions: p} }
 
 	// Undeclared → the repo default level (read) across the standard scope set,
 	// and nothing outside it.
@@ -24,7 +28,7 @@ func TestResolveJobTokenPermissions(t *testing.T) {
 	}
 
 	// A declared workflow block replaces the default: only the listed scopes.
-	got = s.resolveJobTokenPermissions(wfWith(PermissionDef{"issues": "write"}), jdWith(nil))
+	got = s.resolveJobTokenPermissions(wfWith(store.PermissionDef{"issues": "write"}), jdWith(nil))
 	if got["issues"] != "write" || got["metadata"] != "read" {
 		t.Fatalf("declared block = %v", got)
 	}
@@ -33,7 +37,7 @@ func TestResolveJobTokenPermissions(t *testing.T) {
 	}
 
 	// A job block fully overrides the workflow block.
-	got = s.resolveJobTokenPermissions(wfWith(PermissionDef{"issues": "write"}), jdWith(PermissionDef{"contents": "read"}))
+	got = s.resolveJobTokenPermissions(wfWith(store.PermissionDef{"issues": "write"}), jdWith(store.PermissionDef{"contents": "read"}))
 	if got["contents"] != "read" {
 		t.Fatalf("job override lost contents: %v", got)
 	}
@@ -42,19 +46,19 @@ func TestResolveJobTokenPermissions(t *testing.T) {
 	}
 
 	// write-all grants write across the standard set.
-	got = s.resolveJobTokenPermissions(wfWith(PermissionDef{"*": "write"}), jdWith(nil))
+	got = s.resolveJobTokenPermissions(wfWith(store.PermissionDef{"*": "write"}), jdWith(nil))
 	if got["contents"] != "write" || got["pull_requests"] != "write" {
 		t.Fatalf("write-all = %v", got)
 	}
 
 	// An explicit empty block yields metadata:read only.
-	got = s.resolveJobTokenPermissions(wfWith(PermissionDef{}), jdWith(nil))
+	got = s.resolveJobTokenPermissions(wfWith(store.PermissionDef{}), jdWith(nil))
 	if len(got) != 1 || got["metadata"] != "read" {
 		t.Fatalf("empty block = %v", got)
 	}
 
 	// A `none` value drops the scope; hyphenated keys normalize to permScope form.
-	got = s.resolveJobTokenPermissions(wfWith(PermissionDef{"pull-requests": "write", "contents": "none"}), jdWith(nil))
+	got = s.resolveJobTokenPermissions(wfWith(store.PermissionDef{"pull-requests": "write", "contents": "none"}), jdWith(nil))
 	if got["pull_requests"] != "write" {
 		t.Fatalf("hyphen normalization = %v", got)
 	}
@@ -63,8 +67,8 @@ func TestResolveJobTokenPermissions(t *testing.T) {
 	}
 
 	// A repo whose default workflow permission is write grants write by default.
-	s.store.SetRepoActionsPermissions("admin/rw", &RepoActionsPermissions{WorkflowPermissions: &WorkflowPermissions{DefaultWorkflowPermissions: "write"}})
-	got = s.resolveJobTokenPermissions(&Workflow{RepoFullName: "admin/rw"}, jdWith(nil))
+	s.store.SetRepoActionsPermissions("admin/rw", &store.RepoActionsPermissions{WorkflowPermissions: &store.WorkflowPermissions{DefaultWorkflowPermissions: "write"}})
+	got = s.resolveJobTokenPermissions(&store.Workflow{RepoFullName: "admin/rw"}, jdWith(nil))
 	if got["contents"] != "write" {
 		t.Fatalf("repo write-default = %v", got)
 	}

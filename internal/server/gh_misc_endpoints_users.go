@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // User-scoped extras that live under /users/{username} and /user.
@@ -16,7 +18,7 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 	users := s.store.ListUsers()
 	out := make([]map[string]interface{}, 0, len(users))
 	for _, u := range users {
-		out = append(out, userToJSON(u))
+		out = append(out, store.UserToJSON(u))
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
@@ -55,27 +57,27 @@ func (s *Server) handleAdminCreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 	login := normalizeGitHubLogin(req.Login)
 	if login == "" {
-		writeGHValidationError(w, "User", "login", "missing_field")
+		store.WriteGHValidationError(w, "User", "login", "missing_field")
 		return
 	}
 	s.store.Mu.Lock()
 	if _, exists := s.store.UsersByLogin[login]; exists {
 		s.store.Mu.Unlock()
-		writeGHValidationError(w, "User", "login", "already_exists")
+		store.WriteGHValidationError(w, "User", "login", "already_exists")
 		return
 	}
 	if req.Email != "" {
 		for _, existing := range s.store.Users {
 			if strings.EqualFold(existing.Email, req.Email) {
 				s.store.Mu.Unlock()
-				writeGHValidationError(w, "User", "email", "already_exists")
+				store.WriteGHValidationError(w, "User", "email", "already_exists")
 				return
 			}
 		}
 	}
 	now := time.Now().UTC()
 	userID := s.store.ReserveGlobalID("next_user", &s.store.NextUser)
-	u := &User{
+	u := &store.User{
 		ID:           userID,
 		NodeID:       fmt.Sprintf("U_kgDO%08d", userID),
 		Login:        login,
@@ -94,7 +96,7 @@ func (s *Server) handleAdminCreateUser(w http.ResponseWriter, r *http.Request) {
 		s.store.Persist.MustPut("users", strconv.Itoa(u.ID), u)
 	}
 	s.store.Mu.Unlock()
-	newUserJSON := userToJSON(u)
+	newUserJSON := store.UserToJSON(u)
 	writeJSONCreated(w, jsonStringField(newUserJSON, "url"), newUserJSON)
 }
 
@@ -111,7 +113,7 @@ func (s *Server) handleAdminRenameUser(w http.ResponseWriter, r *http.Request) {
 	}
 	nextLogin := normalizeGitHubLogin(req.Login)
 	if nextLogin == "" {
-		writeGHValidationError(w, "User", "login", "missing_field")
+		store.WriteGHValidationError(w, "User", "login", "missing_field")
 		return
 	}
 	s.store.Mu.Lock()
@@ -123,7 +125,7 @@ func (s *Server) handleAdminRenameUser(w http.ResponseWriter, r *http.Request) {
 	}
 	if existing := s.store.UsersByLogin[nextLogin]; existing != nil && existing.ID != u.ID {
 		s.store.Mu.Unlock()
-		writeGHValidationError(w, "User", "login", "already_exists")
+		store.WriteGHValidationError(w, "User", "login", "already_exists")
 		return
 	}
 	delete(s.store.UsersByLogin, u.Login)
@@ -195,7 +197,7 @@ func (s *Server) handleAdminDeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.store.Persist != nil {
-		s.store.Persist.MustDelete(pendingDeletionsBucket, pendingUserDeletionKey(u.Login))
+		s.store.Persist.MustDelete(store.PendingDeletionsBucket, store.PendingUserDeletionKey(u.Login))
 	}
 
 	if err := s.store.DeleteLoginSessionsForUser(u.ID); err != nil {
@@ -351,7 +353,7 @@ func (s *Server) handleListUserReceivedEvents(w http.ResponseWriter, r *http.Req
 	// Received events are other users' activity on the user's own public
 	// repositories.
 	s.store.Mu.RLock()
-	repos := map[int]*Repo{}
+	repos := map[int]*store.Repo{}
 	for _, repo := range s.store.Repos {
 		if repo.OwnerType == "User" && repo.OwnerID == user.ID && !repo.Private {
 			repos[repo.ID] = repo
@@ -421,7 +423,7 @@ func (s *Server) handleListUserSubscriptions(w http.ResponseWriter, r *http.Requ
 	base := s.baseURL(r)
 	out := make([]map[string]interface{}, 0, len(repos))
 	for _, repo := range repos {
-		out = append(out, repoToJSON(repo, s.store, base))
+		out = append(out, store.RepoToJSON(repo, s.store, base))
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
@@ -436,7 +438,7 @@ func (s *Server) handleListUserBlocks(w http.ResponseWriter, r *http.Request) {
 	out := make([]map[string]interface{}, 0, len(logins))
 	for _, login := range logins {
 		if u := s.store.LookupUserByLogin(login); u != nil {
-			out = append(out, userToJSON(u))
+			out = append(out, store.UserToJSON(u))
 		}
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
@@ -524,7 +526,7 @@ func (s *Server) handleCreateMySocialAccounts(w http.ResponseWriter, r *http.Req
 	}
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxJSONBodyBytes))
 	if err != nil {
-		writeGHValidationError(w, "accounts", "accounts", "missing_field")
+		store.WriteGHValidationError(w, "accounts", "accounts", "missing_field")
 		return
 	}
 	var urls []string
@@ -535,7 +537,7 @@ func (s *Server) handleCreateMySocialAccounts(w http.ResponseWriter, r *http.Req
 	}
 	var objects []map[string]interface{}
 	if err := json.Unmarshal(body, &objects); err != nil {
-		writeGHValidationError(w, "accounts", "accounts", "missing_field")
+		store.WriteGHValidationError(w, "accounts", "accounts", "missing_field")
 		return
 	}
 	urls = nil
@@ -615,7 +617,7 @@ func (s *Server) handleCreateMySSHSigningKey(w http.ResponseWriter, r *http.Requ
 		Title string `json:"title"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Key == "" {
-		writeGHValidationError(w, "Key", "key", "missing_field")
+		store.WriteGHValidationError(w, "Key", "key", "missing_field")
 		return
 	}
 	entry := s.store.AddUserSSHSigningKey(user.ID, req.Key)
@@ -668,7 +670,7 @@ func (s *Server) handleListMySubscriptions(w http.ResponseWriter, r *http.Reques
 	base := s.baseURL(r)
 	out := make([]map[string]interface{}, 0, len(repos))
 	for _, repo := range repos {
-		out = append(out, repoToJSON(repo, s.store, base))
+		out = append(out, store.RepoToJSON(repo, s.store, base))
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }

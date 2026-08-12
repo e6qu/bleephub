@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // The forks endpoint takes GitHub's newest|oldest|stargazers|watchers sort
@@ -13,17 +15,17 @@ import (
 // were ignored. filterSortRepos must now honor an explicit created-asc order
 // and the stargazers key the forks handler maps to.
 func TestFilterSortReposHonorsForkSortKeys(t *testing.T) {
-	mk := func(name string, created time.Time, stars int) *Repo {
-		return &Repo{FullName: name, CreatedAt: created, StargazersCount: stars}
+	mk := func(name string, created time.Time, stars int) *store.Repo {
+		return &store.Repo{FullName: name, CreatedAt: created, StargazersCount: stars}
 	}
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	repos := []*Repo{
+	repos := []*store.Repo{
 		mk("a/old", base, 5),
 		mk("a/new", base.Add(48*time.Hour), 1),
 		mk("a/mid", base.Add(24*time.Hour), 9),
 	}
 
-	order := func(rs []*Repo) []string {
+	order := func(rs []*store.Repo) []string {
 		out := make([]string, len(rs))
 		for i, r := range rs {
 			out[i] = r.FullName
@@ -32,20 +34,20 @@ func TestFilterSortReposHonorsForkSortKeys(t *testing.T) {
 	}
 
 	// oldest -> created ascending
-	oldest := filterSortRepos(cloneRepoSlice(repos), RepoListOptions{Sort: "created", Direction: "asc", NoPaginate: true})
+	oldest := store.FilterSortRepos(cloneRepoSlice(repos), store.RepoListOptions{Sort: "created", Direction: "asc", NoPaginate: true})
 	if got := order(oldest); got[0] != "a/old" || got[2] != "a/new" {
 		t.Fatalf("oldest order = %v, want oldest-first", got)
 	}
 
 	// stargazers -> star count descending
-	byStars := filterSortRepos(cloneRepoSlice(repos), RepoListOptions{Sort: "stargazers", Direction: "desc", NoPaginate: true})
+	byStars := store.FilterSortRepos(cloneRepoSlice(repos), store.RepoListOptions{Sort: "stargazers", Direction: "desc", NoPaginate: true})
 	if got := order(byStars); got[0] != "a/mid" || got[2] != "a/new" {
 		t.Fatalf("stargazers order = %v, want highest-star first (a/mid, a/old, a/new)", got)
 	}
 }
 
-func cloneRepoSlice(in []*Repo) []*Repo {
-	out := make([]*Repo, len(in))
+func cloneRepoSlice(in []*store.Repo) []*store.Repo {
+	out := make([]*store.Repo, len(in))
 	copy(out, in)
 	return out
 }
@@ -187,7 +189,7 @@ func TestGraphQLCreateIssueHonorsProjectIds(t *testing.T) {
 	if issueNodeID == "" {
 		t.Fatalf("createIssue returned no issue: %v", resp)
 	}
-	issue := findIssueByNodeID(srv.store, issueNodeID)
+	issue := store.FindIssueByNodeID(srv.store, issueNodeID)
 	if issue == nil {
 		t.Fatal("issue not found by node id")
 	}

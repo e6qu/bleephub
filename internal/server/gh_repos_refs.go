@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/e6qu/bleephub/internal/gitstore"
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/storer"
@@ -91,7 +93,7 @@ func peelRepositoryTagTarget(stor storer.EncodedObjectStorer, hash plumbing.Hash
 	}
 }
 
-func nodeIDForTag(repo *Repo, tagName string) string {
+func nodeIDForTag(repo *store.Repo, tagName string) string {
 	return encodeNodeID("Tag", repo.ID, tagName)
 }
 
@@ -270,7 +272,7 @@ func (s *Server) handleListBranches(w http.ResponseWriter, r *http.Request) {
 		value := false
 		protectedFilter = &value
 	default:
-		writeGHValidationError(w, "Branch", "protected", "invalid")
+		store.WriteGHValidationError(w, "Branch", "protected", "invalid")
 		return
 	}
 	var branches []map[string]interface{}
@@ -378,7 +380,7 @@ func (s *Server) handleDeleteRef(w http.ResponseWriter, r *http.Request) {
 	// refPath is like "heads/branch-name" or "tags/v1.0"
 	fullRef := plumbing.ReferenceName("refs/" + refPath)
 	if !validFullyQualifiedGitRef(fullRef.String()) {
-		writeGHValidationError(w, "Reference", "ref", "invalid")
+		store.WriteGHValidationError(w, "Reference", "ref", "invalid")
 		return
 	}
 	oldRef, err := stor.Reference(fullRef)
@@ -387,7 +389,7 @@ func (s *Server) handleDeleteRef(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := removeReferenceCAS(stor, oldRef); err != nil {
+	if err := gitstore.RemoveReferenceCAS(stor, oldRef); err != nil {
 		if errors.Is(err, gitStorage.ErrReferenceHasChanged) {
 			writeGHError(w, http.StatusConflict, "Reference changed while it was being deleted")
 			return

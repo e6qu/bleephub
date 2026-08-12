@@ -12,6 +12,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 
 	"github.com/e6qu/bleephub/internal/server/testutil"
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func TestGitHubClassroomSurface(t *testing.T) {
@@ -298,7 +299,7 @@ func TestGitHubClassroomGroupAcceptanceLinksRosterIdentifiers(t *testing.T) {
 	if err := srv.initRepoFiles(context.Background(), starter, starter.DefaultBranch, "Group starter", "", "", true); err != nil {
 		t.Fatalf("initialize starter: %v", err)
 	}
-	students := []*User{srv.createTestUser(t, "classroom-group-one"), srv.createTestUser(t, "classroom-group-two"), srv.createTestUser(t, "classroom-group-three")}
+	students := []*store.User{srv.createTestUser(t, "classroom-group-one"), srv.createTestUser(t, "classroom-group-two"), srv.createTestUser(t, "classroom-group-three")}
 	tokens := make([]string, len(students))
 	for i, student := range students {
 		tokens[i] = srv.store.CreateToken(student.ID, "repo").Value
@@ -395,11 +396,11 @@ func TestGitHubClassroomPersistenceReloadPreservesTransitionState(t *testing.T) 
 	dir := t.TempDir()
 	t.Setenv("BLEEPHUB_PERSIST", "true")
 	t.Setenv("BLEEPHUB_DATA_DIR", dir)
-	p1, err := NewPersistence()
+	p1, err := store.NewPersistence()
 	if err != nil {
 		t.Fatalf("open persistence: %v", err)
 	}
-	st1 := NewStore()
+	st1 := store.NewStore()
 	if err := st1.SetPersistence(p1); err != nil {
 		t.Fatalf("attach persistence: %v", err)
 	}
@@ -410,22 +411,22 @@ func TestGitHubClassroomPersistenceReloadPreservesTransitionState(t *testing.T) 
 	starter := st1.CreateRepo(admin, "persistent-starter", "", false)
 	studentRepo := st1.CreateOrgRepo(org, student, "assignment-student", "", true)
 	classroom := st1.CreateClassroom("Persistent Course", org.ID, false)
-	st1.UpdateClassroom(classroom.ID, func(current *Classroom) {
-		current.Roster = []ClassroomStudent{{UserID: student.ID, RosterIdentifier: "student-42"}}
+	st1.UpdateClassroom(classroom.ID, func(current *store.Classroom) {
+		current.Roster = []store.ClassroomStudent{{UserID: student.ID, RosterIdentifier: "student-42"}}
 	})
-	assignment := st1.CreateClassroomAssignment(&ClassroomAssignment{ClassroomID: classroom.ID, Title: "Persistent Assignment", Type: "individual", Slug: "persistent-assignment", InviteCode: "persistent-code", InvitationsEnabled: true, StarterCodeRepoID: starter.ID, AutogradingTests: []ClassroomAutogradingTest{{Name: "Tests", Command: "go test ./...", Points: 25}}})
+	assignment := st1.CreateClassroomAssignment(&store.ClassroomAssignment{ClassroomID: classroom.ID, Title: "Persistent Assignment", Type: "individual", Slug: "persistent-assignment", InviteCode: "persistent-code", InvitationsEnabled: true, StarterCodeRepoID: starter.ID, AutogradingTests: []store.ClassroomAutogradingTest{{Name: "Tests", Command: "go test ./...", Points: 25}}})
 	acceptedAt := time.Date(2035, time.June, 15, 12, 0, 0, 0, time.UTC)
-	accepted := st1.CreateClassroomAcceptedAssignment(&ClassroomAcceptedAssignment{AssignmentID: assignment.ID, Students: []ClassroomStudent{{UserID: student.ID, RosterIdentifier: "student-42"}}, RepoID: studentRepo.ID, AcceptedAt: acceptedAt, BaselineSHA: strings.Repeat("a", 40)})
+	accepted := st1.CreateClassroomAcceptedAssignment(&store.ClassroomAcceptedAssignment{AssignmentID: assignment.ID, Students: []store.ClassroomStudent{{UserID: student.ID, RosterIdentifier: "student-42"}}, RepoID: studentRepo.ID, AcceptedAt: acceptedAt, BaselineSHA: strings.Repeat("a", 40)})
 	if err := p1.Close(); err != nil {
 		t.Fatalf("close persistence: %v", err)
 	}
 
-	p2, err := NewPersistence()
+	p2, err := store.NewPersistence()
 	if err != nil {
 		t.Fatalf("reopen persistence: %v", err)
 	}
 	defer p2.Close()
-	st2 := NewStore()
+	st2 := store.NewStore()
 	if err := st2.SetPersistence(p2); err != nil {
 		t.Fatalf("reload persistence: %v", err)
 	}

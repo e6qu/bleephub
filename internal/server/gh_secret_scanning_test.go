@@ -10,6 +10,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 var secretScanningSeedCounter uint64
@@ -63,7 +65,7 @@ func TestSecretScanningDetectsGeneratedFineGrainedPersonalAccessToken(t *testing
 	s := newIsolatedServer(t)
 	admin := s.store.UsersByLogin["admin"]
 	repo := s.store.CreateRepo(admin, "ss-fine-grained-pat", "", true)
-	token, err := s.store.CreateUserFineGrainedPAT(admin.ID, createPersonalAccessTokenWebRequest{
+	token, err := s.store.CreateUserFineGrainedPAT(admin.ID, store.CreatePersonalAccessTokenWebRequest{
 		Name: "secret scanning live token", ResourceOwner: admin.Login, RepositorySelection: "none",
 	})
 	if err != nil {
@@ -237,15 +239,15 @@ func TestSecretScanningAlertGetReturnsDetachedSnapshot(t *testing.T) {
 	s := newTestServer()
 	admin := s.store.UsersByLogin["admin"]
 	repo := s.store.CreateRepo(admin, "ss-detach", "", false)
-	alert := s.store.CreateSecretScanningAlert(repo.FullName, "github_personal_access_token", []SecretScanningLocation{
-		{Type: "commit", Details: SecretScanningLocationDetails{Path: "first.txt", StartLine: 1, EndLine: 1}},
+	alert := s.store.CreateSecretScanningAlert(repo.FullName, "github_personal_access_token", []store.SecretScanningLocation{
+		{Type: "commit", Details: store.SecretScanningLocationDetails{Path: "first.txt", StartLine: 1, EndLine: 1}},
 	})
 
 	// A caller that mutates the returned alert must not touch the stored row.
 	got := s.store.GetSecretScanningAlert(repo.FullName, alert.Number)
 	got.State = "resolved"
 	got.Locations[0].Details.Path = "hacked.txt"
-	got.Locations = append(got.Locations, SecretScanningLocation{Type: "commit"})
+	got.Locations = append(got.Locations, store.SecretScanningLocation{Type: "commit"})
 
 	again := s.store.GetSecretScanningAlert(repo.FullName, alert.Number)
 	if again.State != "open" {
@@ -277,9 +279,9 @@ func TestSecretScanning_AlertLocationsPagination(t *testing.T) {
 		t.Fatal("create repo failed")
 	}
 
-	alert := s.store.CreateSecretScanningAlert(repo.FullName, "github_personal_access_token", []SecretScanningLocation{
-		{Type: "commit", Details: SecretScanningLocationDetails{Path: "first.txt", StartLine: 1, EndLine: 1}},
-		{Type: "commit", Details: SecretScanningLocationDetails{Path: "second.txt", StartLine: 2, EndLine: 2}},
+	alert := s.store.CreateSecretScanningAlert(repo.FullName, "github_personal_access_token", []store.SecretScanningLocation{
+		{Type: "commit", Details: store.SecretScanningLocationDetails{Path: "first.txt", StartLine: 1, EndLine: 1}},
+		{Type: "commit", Details: store.SecretScanningLocationDetails{Path: "second.txt", StartLine: 2, EndLine: 2}},
 	})
 
 	base := "/api/v3/repos/admin/ss-locations-pg/secret-scanning/alerts/" + itoa(alert.Number) + "/locations"

@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // TestAgentRefreshMessageDelivery verifies that the sim-control endpoint
@@ -16,12 +18,12 @@ func TestAgentRefreshMessageDelivery(t *testing.T) {
 	srv := newIsolatedServer(t)
 	agentID := 4242
 	srv.store.Mu.Lock()
-	srv.store.Agents[agentID] = &Agent{
+	srv.store.Agents[agentID] = &store.Agent{
 		ID:      agentID,
 		Name:    "refresh-runner",
 		Version: "2.319.0",
 		Status:  "online",
-		Labels:  []Label{{Name: "self-hosted"}},
+		Labels:  []store.Label{{Name: "self-hosted"}},
 	}
 	srv.store.Mu.Unlock()
 	defer func() {
@@ -31,10 +33,10 @@ func TestAgentRefreshMessageDelivery(t *testing.T) {
 		srv.store.Mu.Unlock()
 	}()
 
-	sess := &Session{
+	sess := &store.Session{
 		SessionID: "refresh-sess",
-		Agent:     &Agent{ID: agentID, Labels: []Label{{Name: "self-hosted"}}},
-		MsgCh:     make(chan *TaskAgentMessage, 10),
+		Agent:     &store.Agent{ID: agentID, Labels: []store.Label{{Name: "self-hosted"}}},
+		MsgCh:     make(chan *store.TaskAgentMessage, 10),
 	}
 	srv.store.Mu.Lock()
 	srv.store.Sessions["refresh-sess"] = sess
@@ -50,7 +52,7 @@ func TestAgentRefreshMessageDelivery(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	var msg *TaskAgentMessage
+	var msg *store.TaskAgentMessage
 	select {
 	case msg = <-sess.MsgCh:
 	case <-time.After(2 * time.Second):
@@ -86,7 +88,7 @@ func TestAgentRefreshMessageAdminOnly(t *testing.T) {
 	srv := newIsolatedServer(t)
 	agentID := 4243
 	srv.store.Mu.Lock()
-	srv.store.Agents[agentID] = &Agent{ID: agentID, Name: "r"}
+	srv.store.Agents[agentID] = &store.Agent{ID: agentID, Name: "r"}
 	srv.store.Mu.Unlock()
 	defer func() {
 		srv.store.Mu.Lock()
@@ -95,10 +97,10 @@ func TestAgentRefreshMessageAdminOnly(t *testing.T) {
 	}()
 
 	// Create a non-admin user + token.
-	nonAdmin := &User{ID: 9001, Login: "nobody", Type: "User"}
+	nonAdmin := &store.User{ID: 9001, Login: "nobody", Type: "User"}
 	srv.store.Mu.Lock()
 	srv.store.Users[nonAdmin.ID] = nonAdmin
-	tok := &Token{Value: "ghp_nonadmin", UserID: nonAdmin.ID, Scopes: "repo"}
+	tok := &store.Token{Value: "ghp_nonadmin", UserID: nonAdmin.ID, Scopes: "repo"}
 	srv.store.Tokens[tok.Value] = tok
 	srv.store.Mu.Unlock()
 	defer func() {

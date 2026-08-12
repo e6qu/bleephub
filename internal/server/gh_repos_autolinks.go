@@ -4,13 +4,15 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func (s *Server) registerGHRepoAutolinkRoutes() {
 	s.route("GET /api/v3/repos/{owner}/{repo}/autolinks", s.handleListAutolinks)
-	s.route("POST /api/v3/repos/{owner}/{repo}/autolinks", s.requirePerm(scopeAdministration, permWrite, s.handleCreateAutolink))
+	s.route("POST /api/v3/repos/{owner}/{repo}/autolinks", s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleCreateAutolink))
 	s.route("GET /api/v3/repos/{owner}/{repo}/autolinks/{autolink_id}", s.handleGetAutolink)
-	s.route("DELETE /api/v3/repos/{owner}/{repo}/autolinks/{autolink_id}", s.requirePerm(scopeAdministration, permWrite, s.handleDeleteAutolink))
+	s.route("DELETE /api/v3/repos/{owner}/{repo}/autolinks/{autolink_id}", s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleDeleteAutolink))
 }
 
 func (s *Server) handleListAutolinks(w http.ResponseWriter, r *http.Request) {
@@ -56,11 +58,11 @@ func (s *Server) handleCreateAutolink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.KeyPrefix == "" {
-		writeGHValidationError(w, "Autolink", "key_prefix", "missing_field")
+		store.WriteGHValidationError(w, "Autolink", "key_prefix", "missing_field")
 		return
 	}
 	if req.URLTemplate == "" {
-		writeGHValidationError(w, "Autolink", "url_template", "missing_field")
+		store.WriteGHValidationError(w, "Autolink", "url_template", "missing_field")
 		return
 	}
 	isAlpha := true
@@ -123,7 +125,7 @@ func (s *Server) handleDeleteAutolink(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func autolinkJSON(a *RepoAutolink) map[string]interface{} {
+func autolinkJSON(a *store.RepoAutolink) map[string]interface{} {
 	return map[string]interface{}{
 		"id":              a.ID,
 		"node_id":         a.NodeID,

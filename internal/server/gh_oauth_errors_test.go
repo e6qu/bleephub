@@ -7,11 +7,13 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // mintOAuthWebFlowCode runs the consent web flow as admin and returns a valid
 // one-time authorization code bound to app.ClientID and redirect_uri "http://cb/".
-func mintOAuthWebFlowCode(t *testing.T, s *Server, app *OAuthApp) string {
+func mintOAuthWebFlowCode(t *testing.T, s *Server, app *store.OAuthApp) string {
 	t.Helper()
 	jar := doLogin(t, s, "admin")
 	authorizeURL := "/login/oauth/authorize?client_id=" + url.QueryEscape(app.ClientID) + "&redirect_uri=http://cb/&scope=repo&state=S"

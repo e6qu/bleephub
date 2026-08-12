@@ -5,6 +5,8 @@ import (
 	"net/http/httptest"
 	"sync"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // TestGistAndCodespaceResponseSnapshotRace drives the live-pointer readers
@@ -14,24 +16,24 @@ import (
 func TestGistAndCodespaceResponseSnapshotRace(t *testing.T) {
 	s := newTestServer()
 	admin := s.store.LookupUserByLogin("admin")
-	gist, err := s.store.CreateGistE(admin, "initial", false, map[string]*GistFile{
+	gist, err := s.store.CreateGistE(admin, "initial", false, map[string]*store.GistFile{
 		"note.txt": {Filename: "note.txt", Content: "initial"},
 	})
 	if err != nil {
 		t.Fatalf("create gist: %v", err)
 	}
 	now := fixedTestTime.UTC()
-	codespace := &Codespace{
+	codespace := &store.Codespace{
 		ID:          1,
 		Name:        "snapshot-race",
 		OwnerLogin:  admin.Login,
 		DisplayName: "initial",
-		MachineName: codespaceDefaultMachine().Name,
+		MachineName: store.CodespaceDefaultMachine().Name,
 		CreatedAt:   now,
 		UpdatedAt:   now,
 		LastUsedAt:  now,
 		State:       "Available",
-		LatestExport: &CodespaceExport{
+		LatestExport: &store.CodespaceExport{
 			ID:          "latest",
 			State:       "succeeded",
 			CompletedAt: now,
@@ -49,7 +51,7 @@ func TestGistAndCodespaceResponseSnapshotRace(t *testing.T) {
 		defer wg.Done()
 		for i := 0; i < iterations; i++ {
 			description := fmt.Sprintf("description-%d", i)
-			if _, _, err := s.store.UpdateGistE(gist.ID, &description, map[string]*GistFile{
+			if _, _, err := s.store.UpdateGistE(gist.ID, &description, map[string]*store.GistFile{
 				"note.txt": {Filename: "note.txt", Content: description},
 			}, nil); err != nil {
 				t.Errorf("update gist: %v", err)

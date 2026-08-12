@@ -3,6 +3,8 @@ package bleephub
 import (
 	"net/http"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func TestOrganizationSCIMUserLifecycle(t *testing.T) {
@@ -31,7 +33,7 @@ func TestOrganizationSCIMUserLifecycle(t *testing.T) {
 	}
 	isActiveMember := func(userID int) bool {
 		membership := srv.store.GetMembership("org-scim", userID)
-		return membership != nil && membership.State == MembershipStateActive
+		return membership != nil && membership.State == store.MembershipStateActive
 	}
 	backing := srv.store.LookupUserByLogin("org-scim-user")
 	if backing == nil || !isActiveMember(backing.ID) {
@@ -97,7 +99,7 @@ func TestOrganizationSCIMCannotHijackExistingAccount(t *testing.T) {
 
 	// A pre-existing, non-SCIM account.
 	srv.store.Mu.Lock()
-	victim := &User{ID: srv.store.NextUser, Login: "victim", Name: "Victim", Email: "victim@real.test", Type: "User", StarredRepos: map[string]bool{}}
+	victim := &store.User{ID: srv.store.NextUser, Login: "victim", Name: "Victim", Email: "victim@real.test", Type: "User", StarredRepos: map[string]bool{}}
 	srv.store.NextUser++
 	srv.store.Users[victim.ID] = victim
 	srv.store.UsersByLogin["victim"] = victim
@@ -119,7 +121,7 @@ func TestOrganizationSCIMCannotHijackExistingAccount(t *testing.T) {
 	if after == nil || after.ID != victim.ID || after.Name != "Victim" || after.Email != "victim@real.test" {
 		t.Fatalf("victim account was mutated by SCIM: %#v", after)
 	}
-	if m := srv.store.GetMembership("evilcorp", victim.ID); m != nil && m.State == MembershipStateActive {
+	if m := srv.store.GetMembership("evilcorp", victim.ID); m != nil && m.State == store.MembershipStateActive {
 		t.Fatal("victim was force-enrolled into the org via SCIM")
 	}
 }

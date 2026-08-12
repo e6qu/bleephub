@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func TestEnterpriseActionsPermissionsRoundTrip(t *testing.T) {
@@ -235,13 +237,13 @@ func TestActionsEnablementIsMonotonicAcrossPolicyScopes(t *testing.T) {
 		t.Fatal("enterprise selected-organizations policy was not enforced")
 	}
 
-	orgPolicy := defaultOrgActionsPermissions()
+	orgPolicy := store.DefaultOrgActionsPermissions()
 	orgPolicy.EnabledRepositories = "none"
 	s.store.SetOrgActionsPermissions(orgA.Login, orgPolicy)
 	if s.actionsEnabledForRepo(repoA.FullName) {
 		t.Fatal("repository was re-enabled beneath organization policy none")
 	}
-	selectedOrgPolicy := defaultOrgActionsPermissions()
+	selectedOrgPolicy := store.DefaultOrgActionsPermissions()
 	selectedOrgPolicy.EnabledRepositories = "selected"
 	selectedOrgPolicy.SelectedRepositoryIDs = []int{repoA.ID}
 	s.store.SetOrgActionsPermissions(orgA.Login, selectedOrgPolicy)
@@ -249,7 +251,7 @@ func TestActionsEnablementIsMonotonicAcrossPolicyScopes(t *testing.T) {
 		t.Fatal("selected repository was not enabled")
 	}
 
-	repoPolicy := defaultRepoActionsPermissions()
+	repoPolicy := store.DefaultRepoActionsPermissions()
 	repoPolicy.Enabled = false
 	s.store.SetRepoActionsPermissions(repoA.FullName, repoPolicy)
 	if s.actionsEnabledForRepo(repoA.FullName) {
@@ -286,7 +288,7 @@ func TestRepositoryRunnerRegistrationHonorsEnterpriseAndOrganizationPolicy(t *te
 	s.store.Mu.Lock()
 	s.store.EnterpriseSettings.ActionsDisableSelfHostedRunners = false
 	s.store.Mu.Unlock()
-	orgPolicy := defaultOrgActionsPermissions()
+	orgPolicy := store.DefaultOrgActionsPermissions()
 	orgPolicy.SelfHostedRunnersEnabledRepositories = "none"
 	s.store.SetOrgActionsPermissions(org.Login, orgPolicy)
 	rec = enterpriseActionsRequest(t, s, http.MethodPost, repoTokenPath, nil)

@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // TestHandlersNeverReadRepositoryIndexWithoutStoreLock is a mechanical
@@ -104,7 +106,7 @@ func selectorPath(expr ast.Expr) string {
 // create/delete versus lookup collision that used to let a request kill the
 // process with "concurrent map read and map write".
 func TestGetRepoByFullNameSerializesConcurrentMapMutation(t *testing.T) {
-	st := NewStore()
+	st := store.NewStore()
 	st.SeedDefaultUser()
 	owner := st.LookupUserByLogin("admin")
 	if owner == nil {

@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	git "github.com/go-git/go-git/v5"
 	gitConfig "github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -140,16 +141,16 @@ const (
 func (s *Server) registerGHImportRoutes() {
 	s.route("GET /api/v3/repos/{owner}/{repo}/import", s.handleGetImport)
 	s.route("PUT /api/v3/repos/{owner}/{repo}/import",
-		s.requirePerm(scopeAdministration, permWrite, s.handleStartImport))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleStartImport))
 	s.route("PATCH /api/v3/repos/{owner}/{repo}/import",
-		s.requirePerm(scopeAdministration, permWrite, s.handleUpdateImport))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleUpdateImport))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/import",
-		s.requirePerm(scopeAdministration, permWrite, s.handleCancelImport))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleCancelImport))
 	s.route("PATCH /api/v3/repos/{owner}/{repo}/import/lfs",
-		s.requirePerm(scopeAdministration, permWrite, s.handleSetImportLFS))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleSetImportLFS))
 	s.route("GET /api/v3/repos/{owner}/{repo}/import/authors", s.handleListImportAuthors)
 	s.route("PATCH /api/v3/repos/{owner}/{repo}/import/authors/{author_id}",
-		s.requirePerm(scopeAdministration, permWrite, s.handleUpdateImportAuthor))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleUpdateImportAuthor))
 	s.route("GET /api/v3/repos/{owner}/{repo}/import/large_files", s.handleListImportLargeFiles)
 }
 
@@ -157,7 +158,7 @@ func (s *Server) registerGHImportRoutes() {
 
 // --- Handlers ---
 
-func (s *Server) importToJSON(imp *RepoImport, repo *Repo, baseURL string) map[string]interface{} {
+func (s *Server) importToJSON(imp *store.RepoImport, repo *store.Repo, baseURL string) map[string]interface{} {
 	apiBase := baseURL + "/api/v3/repos/" + repo.FullName
 	var vcs interface{}
 	if imp.VCS != "" {
@@ -200,7 +201,7 @@ func (s *Server) importToJSON(imp *RepoImport, repo *Repo, baseURL string) map[s
 	return out
 }
 
-func porterAuthorToJSON(a *PorterAuthor, repo *Repo, baseURL string) map[string]interface{} {
+func porterAuthorToJSON(a *store.PorterAuthor, repo *store.Repo, baseURL string) map[string]interface{} {
 	return map[string]interface{}{
 		"id":          a.ID,
 		"remote_id":   a.RemoteID,
@@ -243,13 +244,13 @@ func (s *Server) handleStartImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.VCSURL == "" {
-		writeGHValidationError(w, "Import", "vcs_url", "missing_field")
+		store.WriteGHValidationError(w, "Import", "vcs_url", "missing_field")
 		return
 	}
 	if !s.acceptImportSource(w, req.VCSURL) {
 		return
 	}
-	imp := &RepoImport{
+	imp := &store.RepoImport{
 		RepoID:       repo.ID,
 		VCS:          req.VCS,
 		VCSURL:       req.VCSURL,
@@ -273,7 +274,7 @@ func (s *Server) handleStartImport(w http.ResponseWriter, r *http.Request) {
 // private target before a durable import record and worker are created.
 func (s *Server) acceptImportSource(w http.ResponseWriter, rawURL string) bool {
 	if err := validateWebhookTargetURL(rawURL, s.allowPrivateOutboundTargets); err != nil {
-		writeGHValidationError(w, "Import", "vcs_url", "invalid")
+		store.WriteGHValidationError(w, "Import", "vcs_url", "invalid")
 		return false
 	}
 	return true
@@ -354,7 +355,7 @@ func (s *Server) handleSetImportLFS(w http.ResponseWriter, r *http.Request) {
 	case "opt_out":
 		imp.UseLFS = false
 	default:
-		writeGHValidationError(w, "Import", "use_lfs", "invalid")
+		store.WriteGHValidationError(w, "Import", "use_lfs", "invalid")
 		return
 	}
 	s.store.PutRepoImport(imp)
@@ -430,7 +431,7 @@ func (s *Server) handleListImportLargeFiles(w http.ResponseWriter, r *http.Reque
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	owner, name, _ := splitRepoFullName(repo.FullName)
+	owner, name, _ := store.SplitRepoFullName(repo.FullName)
 	files := importLargeFiles(s.store.GetGitStorage(owner, name), repo.DefaultBranch)
 	out := make([]map[string]interface{}, 0, len(files))
 	for _, f := range files {
@@ -453,7 +454,7 @@ func (s *Server) handleListImportLargeFiles(w http.ResponseWriter, r *http.Reque
 //
 // The goroutine works on a copy: the record the handler renders and the record
 // the fetch mutates must not be the same struct.
-func (s *Server) startRepoImport(imp *RepoImport, repo *Repo) *RepoImport {
+func (s *Server) startRepoImport(imp *store.RepoImport, repo *store.Repo) *store.RepoImport {
 	pending := *imp
 	pending.Status = "importing"
 	s.store.PutRepoImport(&pending)
@@ -477,7 +478,7 @@ func (s *Server) startRepoImport(imp *RepoImport, repo *Repo) *RepoImport {
 // runRepoImport performs the import and records the honest outcome on imp.
 // Only git sources can really be imported; other VCS types end in status
 // "error" saying so.
-func (s *Server) runRepoImport(imp *RepoImport, repo *Repo) {
+func (s *Server) runRepoImport(imp *store.RepoImport, repo *store.Repo) {
 	imp.StatusText = ""
 	imp.FailedStep = ""
 	imp.ErrorMessage = ""
@@ -489,7 +490,7 @@ func (s *Server) runRepoImport(imp *RepoImport, repo *Repo) {
 		return
 	}
 
-	owner, name, ok := splitRepoFullName(repo.FullName)
+	owner, name, ok := store.SplitRepoFullName(repo.FullName)
 	if !ok {
 		imp.Status = "error"
 		imp.ErrorMessage = "invalid repository name"
@@ -570,7 +571,7 @@ func (s *Server) runRepoImport(imp *RepoImport, repo *Repo) {
 	imp.ImportPercent = &hundred
 	imp.Status = "complete"
 
-	s.store.UpdateRepo(owner, name, func(rp *Repo) {
+	s.store.UpdateRepo(owner, name, func(rp *store.Repo) {
 		rp.PushedAt = time.Now().UTC()
 	})
 }
@@ -615,9 +616,9 @@ func pointHEADAtImportedBranch(stor gitStorage.Storer, defaultBranch string) {
 
 // importedCommitStats counts commits and collects the distinct authors in
 // the imported storage.
-func importedCommitStats(stor gitStorage.Storer, imp *RepoImport) (int, []*PorterAuthor) {
+func importedCommitStats(stor gitStorage.Storer, imp *store.RepoImport) (int, []*store.PorterAuthor) {
 	count := 0
-	seen := map[string]*PorterAuthor{}
+	seen := map[string]*store.PorterAuthor{}
 	// Preserve author IDs (and any name/email remapping) across restarts.
 	for _, a := range imp.Authors {
 		seen[a.RemoteID] = a
@@ -625,7 +626,7 @@ func importedCommitStats(stor gitStorage.Storer, imp *RepoImport) (int, []*Porte
 	if imp.NextAuthorID == 0 {
 		imp.NextAuthorID = 1
 	}
-	authors := append([]*PorterAuthor(nil), imp.Authors...)
+	authors := append([]*store.PorterAuthor(nil), imp.Authors...)
 
 	iter, err := stor.IterEncodedObjects(plumbing.CommitObject)
 	if err != nil {
@@ -640,7 +641,7 @@ func importedCommitStats(stor gitStorage.Storer, imp *RepoImport) (int, []*Porte
 		count++
 		remoteID := commit.Author.Name + " <" + commit.Author.Email + ">"
 		if _, ok := seen[remoteID]; !ok {
-			a := &PorterAuthor{
+			a := &store.PorterAuthor{
 				ID:         imp.NextAuthorID,
 				RemoteID:   remoteID,
 				RemoteName: commit.Author.Name,
@@ -663,7 +664,7 @@ func importLargeFiles(stor gitStorage.Storer, defaultBranch string) []*PorterLar
 	if stor == nil {
 		return nil
 	}
-	sha := resolveBranchSha(stor, defaultBranch)
+	sha := store.ResolveBranchSha(stor, defaultBranch)
 	if sha == "" {
 		return nil
 	}

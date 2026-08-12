@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func TestDelegatedSecurityReviewJourneys(t *testing.T) {
@@ -52,8 +54,8 @@ func TestDelegatedSecurityReviewJourneys(t *testing.T) {
 
 	now := fixedTestTime
 	adminID := srv.store.LookupUserByLogin("admin").ID
-	request := func(id, number int, kind string) *SecurityReviewRequest {
-		return &SecurityReviewRequest{
+	request := func(id, number int, kind string) *store.SecurityReviewRequest {
+		return &store.SecurityReviewRequest{
 			ID: id, Number: number, RepoKey: repoKey, OrgLogin: "security-reviews",
 			Kind: kind, RequesterID: adminID,
 			ResourceID: strconv.Itoa(number), Status: "pending",
@@ -65,7 +67,7 @@ func TestDelegatedSecurityReviewJourneys(t *testing.T) {
 		reviewKindPushBypass, reviewKindSecretBypass, reviewKindCodeDismissal, reviewKindSecretDismissal,
 	} {
 		scope := securityReviewScope(repoKey, kind)
-		srv.store.SecurityReviewRequests[scope] = map[int]*SecurityReviewRequest{
+		srv.store.SecurityReviewRequests[scope] = map[int]*store.SecurityReviewRequest{
 			index + 11: request(index+100, index+11, kind),
 		}
 	}

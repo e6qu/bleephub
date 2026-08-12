@@ -5,6 +5,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func (s *Server) registerGHEnterpriseTeamRoutes() {
@@ -30,7 +32,7 @@ func (s *Server) registerGHEnterpriseTeamRoutes() {
 }
 
 // enterpriseTeamJSON renders the GitHub `enterprise-team` schema shape.
-func (s *Server) enterpriseTeamJSON(t *EnterpriseTeam, baseURL string) map[string]interface{} {
+func (s *Server) enterpriseTeamJSON(t *store.EnterpriseTeam, baseURL string) map[string]interface{} {
 	slug := s.enterpriseSlug()
 	api := baseURL + "/api/v3/enterprises/" + slug + "/teams/" + t.Slug
 	var groupID interface{}
@@ -92,17 +94,17 @@ func (s *Server) handleCreateEnterpriseTeam(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if req.Name == "" {
-		writeGHValidationError(w, "EnterpriseTeam", "name", "missing_field")
+		store.WriteGHValidationError(w, "EnterpriseTeam", "name", "missing_field")
 		return
 	}
 	if field, ok := validEnterpriseTeamEnums(req.OrganizationSelectionType, req.NotificationSetting); !ok {
-		writeGHValidationError(w, "EnterpriseTeam", field, "invalid")
+		store.WriteGHValidationError(w, "EnterpriseTeam", field, "invalid")
 		return
 	}
 
 	team := s.store.CreateEnterpriseTeam(req.Name, req.Description, req.OrganizationSelectionType, req.GroupID, req.NotificationSetting)
 	if team == nil {
-		writeGHValidationError(w, "EnterpriseTeam", "name", "already_exists")
+		store.WriteGHValidationError(w, "EnterpriseTeam", "name", "already_exists")
 		return
 	}
 	teamJSON := s.enterpriseTeamJSON(team, s.baseURL(r))
@@ -110,7 +112,7 @@ func (s *Server) handleCreateEnterpriseTeam(w http.ResponseWriter, r *http.Reque
 }
 
 // lookupEnterpriseTeam resolves {team_slug}, writing 404 when absent.
-func (s *Server) lookupEnterpriseTeam(w http.ResponseWriter, r *http.Request) *EnterpriseTeam {
+func (s *Server) lookupEnterpriseTeam(w http.ResponseWriter, r *http.Request) *store.EnterpriseTeam {
 	team := s.store.GetEnterpriseTeam(r.PathValue("team_slug"))
 	if team == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -162,7 +164,7 @@ func (s *Server) handleUpdateEnterpriseTeam(w http.ResponseWriter, r *http.Reque
 		notif = *req.NotificationSetting
 	}
 	if field, ok := validEnterpriseTeamEnums(selType, notif); !ok {
-		writeGHValidationError(w, "EnterpriseTeam", field, "invalid")
+		store.WriteGHValidationError(w, "EnterpriseTeam", field, "invalid")
 		return
 	}
 
@@ -171,7 +173,7 @@ func (s *Server) handleUpdateEnterpriseTeam(w http.ResponseWriter, r *http.Reque
 		groupID = &req.GroupID
 	}
 	if !s.store.UpdateEnterpriseTeam(team, req.Name, req.Description, req.OrganizationSelectionType, req.NotificationSetting, groupID) {
-		writeGHValidationError(w, "EnterpriseTeam", "name", "already_exists")
+		store.WriteGHValidationError(w, "EnterpriseTeam", "name", "already_exists")
 		return
 	}
 	writeJSON(w, http.StatusOK, s.enterpriseTeamJSON(team, s.baseURL(r)))
@@ -197,7 +199,7 @@ func (s *Server) handleListEnterpriseTeamMemberships(w http.ResponseWriter, r *h
 	page := paginateAndLink(w, r, members)
 	out := make([]map[string]interface{}, 0, len(page))
 	for _, u := range page {
-		out = append(out, userToJSON(u))
+		out = append(out, store.UserToJSON(u))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -214,16 +216,16 @@ func (s *Server) handleBulkAddEnterpriseTeamMemberships(w http.ResponseWriter, r
 		return
 	}
 	if len(req.Usernames) == 0 {
-		writeGHValidationError(w, "EnterpriseTeamMembership", "usernames", "missing_field")
+		store.WriteGHValidationError(w, "EnterpriseTeamMembership", "usernames", "missing_field")
 		return
 	}
 	// Resolve every username before mutating: a later invalid entry must not
 	// leave the earlier ones already added to the team.
-	users := make([]*User, 0, len(req.Usernames))
+	users := make([]*store.User, 0, len(req.Usernames))
 	for _, login := range req.Usernames {
 		u := s.store.LookupUserByLogin(login)
 		if u == nil {
-			writeGHValidationError(w, "EnterpriseTeamMembership", "usernames", "invalid")
+			store.WriteGHValidationError(w, "EnterpriseTeamMembership", "usernames", "invalid")
 			return
 		}
 		users = append(users, u)
@@ -231,7 +233,7 @@ func (s *Server) handleBulkAddEnterpriseTeamMemberships(w http.ResponseWriter, r
 	out := make([]map[string]interface{}, 0, len(users))
 	for _, u := range users {
 		s.store.AddEnterpriseTeamMember(team, u.ID)
-		out = append(out, userToJSON(u))
+		out = append(out, store.UserToJSON(u))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -248,16 +250,16 @@ func (s *Server) handleBulkRemoveEnterpriseTeamMemberships(w http.ResponseWriter
 		return
 	}
 	if len(req.Usernames) == 0 {
-		writeGHValidationError(w, "EnterpriseTeamMembership", "usernames", "missing_field")
+		store.WriteGHValidationError(w, "EnterpriseTeamMembership", "usernames", "missing_field")
 		return
 	}
 	// Resolve every username before mutating: a later invalid entry must not
 	// leave the earlier ones already removed from the team.
-	users := make([]*User, 0, len(req.Usernames))
+	users := make([]*store.User, 0, len(req.Usernames))
 	for _, login := range req.Usernames {
 		u := s.store.LookupUserByLogin(login)
 		if u == nil {
-			writeGHValidationError(w, "EnterpriseTeamMembership", "usernames", "invalid")
+			store.WriteGHValidationError(w, "EnterpriseTeamMembership", "usernames", "invalid")
 			return
 		}
 		users = append(users, u)
@@ -265,7 +267,7 @@ func (s *Server) handleBulkRemoveEnterpriseTeamMemberships(w http.ResponseWriter
 	out := make([]map[string]interface{}, 0, len(users))
 	for _, u := range users {
 		if s.store.RemoveEnterpriseTeamMember(team, u.ID) {
-			out = append(out, userToJSON(u))
+			out = append(out, store.UserToJSON(u))
 		}
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -281,7 +283,7 @@ func (s *Server) handleGetEnterpriseTeamMembership(w http.ResponseWriter, r *htt
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	writeJSON(w, http.StatusOK, userToJSON(u))
+	writeJSON(w, http.StatusOK, store.UserToJSON(u))
 }
 
 func (s *Server) handleAddEnterpriseTeamMembership(w http.ResponseWriter, r *http.Request) {
@@ -295,7 +297,7 @@ func (s *Server) handleAddEnterpriseTeamMembership(w http.ResponseWriter, r *htt
 		return
 	}
 	s.store.AddEnterpriseTeamMember(team, u.ID)
-	writeJSON(w, http.StatusCreated, userToJSON(u))
+	writeJSON(w, http.StatusCreated, store.UserToJSON(u))
 }
 
 func (s *Server) handleRemoveEnterpriseTeamMembership(w http.ResponseWriter, r *http.Request) {
@@ -317,9 +319,9 @@ func (s *Server) handleRemoveEnterpriseTeamMembership(w http.ResponseWriter, r *
 // requireSelectedEnterpriseTeam 422s unless the team's organization selection
 // type is "selected" — assignments can only be edited in that mode; "all" and
 // "disabled" derive the assignment set from the selection type itself.
-func requireSelectedEnterpriseTeam(w http.ResponseWriter, team *EnterpriseTeam) bool {
+func requireSelectedEnterpriseTeam(w http.ResponseWriter, team *store.EnterpriseTeam) bool {
 	if team.OrganizationSelectionType != "selected" {
-		writeGHValidationError(w, "EnterpriseTeam", "organization_selection_type", "invalid")
+		store.WriteGHValidationError(w, "EnterpriseTeam", "organization_selection_type", "invalid")
 		return false
 	}
 	return true
@@ -355,16 +357,16 @@ func (s *Server) handleBulkAddEnterpriseTeamOrgs(w http.ResponseWriter, r *http.
 		return
 	}
 	if len(req.OrganizationSlugs) == 0 {
-		writeGHValidationError(w, "EnterpriseTeamOrganizations", "organization_slugs", "missing_field")
+		store.WriteGHValidationError(w, "EnterpriseTeamOrganizations", "organization_slugs", "missing_field")
 		return
 	}
 	// Resolve every slug before mutating: a later invalid entry must not leave
 	// the earlier organizations already assigned to the team.
-	orgs := make([]*Org, 0, len(req.OrganizationSlugs))
+	orgs := make([]*store.Org, 0, len(req.OrganizationSlugs))
 	for _, slug := range req.OrganizationSlugs {
 		org := s.store.GetOrg(slug)
 		if org == nil {
-			writeGHValidationError(w, "EnterpriseTeamOrganizations", "organization_slugs", "invalid")
+			store.WriteGHValidationError(w, "EnterpriseTeamOrganizations", "organization_slugs", "invalid")
 			return
 		}
 		orgs = append(orgs, org)
@@ -393,7 +395,7 @@ func (s *Server) handleBulkRemoveEnterpriseTeamOrgs(w http.ResponseWriter, r *ht
 		return
 	}
 	if len(req.OrganizationSlugs) == 0 {
-		writeGHValidationError(w, "EnterpriseTeamOrganizations", "organization_slugs", "missing_field")
+		store.WriteGHValidationError(w, "EnterpriseTeamOrganizations", "organization_slugs", "missing_field")
 		return
 	}
 	for _, slug := range req.OrganizationSlugs {

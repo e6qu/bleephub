@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	gitStorage "github.com/go-git/go-git/v5/storage"
@@ -54,13 +55,13 @@ func (s *Server) handleGenerateRepoFromTemplate(w http.ResponseWriter, r *http.R
 		return
 	}
 	if req.Name == "" {
-		writeGHValidationError(w, "Repository", "name", "missing_field")
+		store.WriteGHValidationError(w, "Repository", "name", "missing_field")
 		return
 	}
 
 	// Resolve the owning account: the caller by default, an organization the
 	// caller is an active member of, or the caller by explicit login.
-	var repo *Repo
+	var repo *store.Repo
 	switch {
 	case req.Owner == "" || strings.EqualFold(req.Owner, user.Login):
 		repo = s.store.CreateRepo(user, req.Name, req.Description, bool(req.Private))
@@ -77,20 +78,20 @@ func (s *Server) handleGenerateRepoFromTemplate(w http.ResponseWriter, r *http.R
 		repo = s.store.CreateOrgRepo(org, user, req.Name, req.Description, bool(req.Private))
 	}
 	if repo == nil {
-		writeGHValidationError(w, "Repository", "name", "already_exists")
+		store.WriteGHValidationError(w, "Repository", "name", "already_exists")
 		return
 	}
 
-	ownerLogin, _, _ := splitRepoFullName(repo.FullName)
+	ownerLogin, _, _ := store.SplitRepoFullName(repo.FullName)
 	if template.DefaultBranch != repo.DefaultBranch {
-		s.store.UpdateRepo(ownerLogin, repo.Name, func(rp *Repo) {
+		s.store.UpdateRepo(ownerLogin, repo.Name, func(rp *store.Repo) {
 			rp.DefaultBranch = template.DefaultBranch
 		})
 	}
 
 	templateStor := s.store.GetGitStorage(templateOwner, templateName)
 	newStor := s.store.GetGitStorage(ownerLogin, repo.Name)
-	sig := repoSignature(coalesceStr(user.Name, user.Login), coalesceStr(user.Email, user.Login+"@bleephub.local"))
+	sig := repoSignature(store.CoalesceStr(user.Name, user.Login), store.CoalesceStr(user.Email, user.Login+"@bleephub.local"))
 	if err := generateFromTemplateStorage(templateStor, newStor, template.DefaultBranch, bool(req.IncludeAllBranches), sig); err != nil {
 		if _, deleteErr := s.store.DeleteRepo(ownerLogin, repo.Name); deleteErr != nil {
 			writeGHError(w, http.StatusInternalServerError, "repository rollback failed: "+deleteErr.Error())
@@ -99,7 +100,7 @@ func (s *Server) handleGenerateRepoFromTemplate(w http.ResponseWriter, r *http.R
 		writeGHError(w, http.StatusUnprocessableEntity, "Could not generate repository from template: "+err.Error())
 		return
 	}
-	s.store.UpdateRepo(ownerLogin, repo.Name, func(rp *Repo) {
+	s.store.UpdateRepo(ownerLogin, repo.Name, func(rp *store.Repo) {
 		rp.TemplateRepoID = template.ID
 		rp.PushedAt = time.Now().UTC()
 	})

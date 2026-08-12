@@ -1,6 +1,10 @@
 package bleephub
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
+)
 
 // TestPullRequestEventPersistsWithCorrectParentAcrossReload is the STORE-039
 // regression: a pull-request event must be persisted exactly once, already
@@ -8,12 +12,12 @@ import "testing"
 // event and rewritten (a crash in that window filed it against an unrelated
 // issue). Verified via reload, which reflects only durably-committed rows.
 func TestPullRequestEventPersistsWithCorrectParentAcrossReload(t *testing.T) {
-	st := reloadedStore(t, func(_ *Persistence, st *Store) {
+	st := reloadedStore(t, func(_ *store.Persistence, st *store.Store) {
 		st.RecordPullRequestEvent(1, 42, 1, "review_requested", "abc123", 7)
 		st.RecordIssueEvent(1, 99, 1, "labeled", map[string]interface{}{"label_id": 5})
 	})
 
-	var prEvent, issueEvent *IssueEvent
+	var prEvent, issueEvent *store.IssueEvent
 	for _, e := range st.IssueEvents {
 		switch e.Event {
 		case "review_requested":

@@ -3,6 +3,8 @@ package bleephub
 import (
 	"net/http"
 	"strconv"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // GitHub immutable releases: a repository toggle plus an organization-level
@@ -12,23 +14,23 @@ import (
 
 func (s *Server) registerGHImmutableReleaseRoutes() {
 	s.route("GET /api/v3/orgs/{org}/settings/immutable-releases",
-		s.requirePerm(scopeOrgAdministration, permRead, s.orgGated(s.handleGetOrgImmutableReleasesSettings)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.orgGated(s.handleGetOrgImmutableReleasesSettings)))
 	s.route("PUT /api/v3/orgs/{org}/settings/immutable-releases",
-		s.requirePerm(scopeOrgAdministration, permWrite, s.orgGated(s.handleSetOrgImmutableReleasesSettings)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.orgGated(s.handleSetOrgImmutableReleasesSettings)))
 	s.route("GET /api/v3/orgs/{org}/settings/immutable-releases/repositories",
-		s.requirePerm(scopeOrgAdministration, permRead, s.orgGated(s.handleListOrgImmutableReleasesRepos)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.orgGated(s.handleListOrgImmutableReleasesRepos)))
 	s.route("PUT /api/v3/orgs/{org}/settings/immutable-releases/repositories",
-		s.requirePerm(scopeOrgAdministration, permWrite, s.orgGated(s.handleSetOrgImmutableReleasesRepos)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.orgGated(s.handleSetOrgImmutableReleasesRepos)))
 	s.route("PUT /api/v3/orgs/{org}/settings/immutable-releases/repositories/{repository_id}",
-		s.requirePerm(scopeOrgAdministration, permWrite, s.orgGated(s.handleAddOrgImmutableReleasesRepo)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.orgGated(s.handleAddOrgImmutableReleasesRepo)))
 	s.route("DELETE /api/v3/orgs/{org}/settings/immutable-releases/repositories/{repository_id}",
-		s.requirePerm(scopeOrgAdministration, permWrite, s.orgGated(s.handleRemoveOrgImmutableReleasesRepo)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.orgGated(s.handleRemoveOrgImmutableReleasesRepo)))
 	s.route("GET /api/v3/repos/{owner}/{repo}/immutable-releases",
-		s.requirePerm(scopeAdministration, permRead, s.handleCheckRepoImmutableReleases))
+		s.requirePerm(store.ScopeAdministration, store.PermRead, s.handleCheckRepoImmutableReleases))
 	s.route("PUT /api/v3/repos/{owner}/{repo}/immutable-releases",
-		s.requirePerm(scopeAdministration, permWrite, s.handleEnableRepoImmutableReleases))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleEnableRepoImmutableReleases))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/immutable-releases",
-		s.requirePerm(scopeAdministration, permWrite, s.handleDisableRepoImmutableReleases))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleDisableRepoImmutableReleases))
 }
 
 func (s *Server) handleGetOrgImmutableReleasesSettings(w http.ResponseWriter, r *http.Request) {
@@ -53,17 +55,17 @@ func (s *Server) handleSetOrgImmutableReleasesSettings(w http.ResponseWriter, r 
 		return
 	}
 	if req.EnforcedRepositories == nil {
-		writeGHValidationError(w, "ImmutableReleasesSettings", "enforced_repositories", "missing_field")
+		store.WriteGHValidationError(w, "ImmutableReleasesSettings", "enforced_repositories", "missing_field")
 		return
 	}
 	switch *req.EnforcedRepositories {
 	case "all", "none", "selected":
 	default:
-		writeGHValidationError(w, "ImmutableReleasesSettings", "enforced_repositories", "invalid")
+		store.WriteGHValidationError(w, "ImmutableReleasesSettings", "enforced_repositories", "invalid")
 		return
 	}
 	if *req.EnforcedRepositories != "selected" && len(req.SelectedRepositoryIDs) > 0 {
-		writeGHValidationError(w, "ImmutableReleasesSettings", "selected_repository_ids", "invalid")
+		store.WriteGHValidationError(w, "ImmutableReleasesSettings", "selected_repository_ids", "invalid")
 		return
 	}
 	if !s.validateOrgRepoIDs(w, org, req.SelectedRepositoryIDs) {
@@ -111,7 +113,7 @@ func (s *Server) handleSetOrgImmutableReleasesRepos(w http.ResponseWriter, r *ht
 		return
 	}
 	if req.SelectedRepositoryIDs == nil {
-		writeGHValidationError(w, "ImmutableReleasesSettings", "selected_repository_ids", "missing_field")
+		store.WriteGHValidationError(w, "ImmutableReleasesSettings", "selected_repository_ids", "missing_field")
 		return
 	}
 	if s.store.GetOrgImmutableReleasesSettings(org).EnforcedRepositories != "selected" {
@@ -166,7 +168,7 @@ func (s *Server) handleRemoveOrgImmutableReleasesRepo(w http.ResponseWriter, r *
 
 // resolveRepoForImmutableReleases resolves the repo and requires admin
 // access, writing a 404 on failure.
-func (s *Server) resolveRepoForImmutableReleases(w http.ResponseWriter, r *http.Request) *Repo {
+func (s *Server) resolveRepoForImmutableReleases(w http.ResponseWriter, r *http.Request) *store.Repo {
 	repo := s.store.GetRepo(r.PathValue("owner"), r.PathValue("repo"))
 	if repo == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")

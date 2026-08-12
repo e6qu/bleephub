@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/gitstore"
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
 )
 
@@ -18,9 +20,9 @@ import (
 // connections. Every assertion here is about the write-staging map and the
 // lock, both of which are resolved before any request leaves the process, so a
 // test that reaches the network has already failed its own premise.
-func newStagingFSForTest(t *testing.T) *s3FS {
+func newStagingFSForTest(t *testing.T) *gitstore.S3FS {
 	t.Helper()
-	fs, err := newS3FS(context.Background(), "http://127.0.0.1:1", "bleephub-test", "git")
+	fs, err := gitstore.NewS3FS(context.Background(), "http://127.0.0.1:1", "bleephub-test", "git")
 	if err != nil {
 		t.Fatalf("build object filesystem: %v", err)
 	}
@@ -235,7 +237,7 @@ func TestRenameRepoRebindsGitStorageToNewPrefix(t *testing.T) {
 	t.Setenv("BLEEPHUB_S3_BUCKET", "")
 	t.Setenv("BLEEPHUB_GIT_DIR", gitDir)
 
-	st := NewStore()
+	st := store.NewStore()
 	st.SeedDefaultUser()
 	user := st.UsersByLogin["admin"]
 	if st.CreateRepo(user, "before", "", false) == nil {
@@ -284,7 +286,7 @@ func TestRenameRepoAbortsWhenTheStorageMoveFails(t *testing.T) {
 	t.Setenv("BLEEPHUB_S3_BUCKET", "")
 	t.Setenv("BLEEPHUB_GIT_DIR", gitDir)
 
-	st := NewStore()
+	st := store.NewStore()
 	st.SeedDefaultUser()
 	user := st.UsersByLogin["admin"]
 	if st.CreateRepo(user, "movable", "", false) == nil {
@@ -312,7 +314,7 @@ func TestTransferRepoRebindsGitStorageToNewOwnerPrefix(t *testing.T) {
 	t.Setenv("BLEEPHUB_S3_BUCKET", "")
 	t.Setenv("BLEEPHUB_GIT_DIR", gitDir)
 
-	st := NewStore()
+	st := store.NewStore()
 	st.SeedDefaultUser()
 	admin := st.UsersByLogin["admin"]
 	if st.CreateOrg(admin, "new-owner", "New Owner", "") == nil {
@@ -361,7 +363,7 @@ func TestInterruptedRepoDeleteIsFinishedOnRestart(t *testing.T) {
 	t.Setenv("BLEEPHUB_GIT_DIR", gitDir)
 
 	p1 := openTestPersistence(t, dataDir)
-	st1 := NewStore()
+	st1 := store.NewStore()
 	if err := st1.SetPersistence(p1); err != nil {
 		t.Fatalf("SetPersistence: %v", err)
 	}
@@ -375,7 +377,7 @@ func TestInterruptedRepoDeleteIsFinishedOnRestart(t *testing.T) {
 
 	// Stop exactly where a process death would: the intent is durable, the
 	// cascade has not run.
-	if err := p1.Put(pendingDeletionsBucket, pendingRepoDeletionKey(repo.FullName), pendingDeletion{
+	if err := p1.Put(store.PendingDeletionsBucket, store.PendingRepoDeletionKey(repo.FullName), store.PendingDeletion{
 		Kind:      "repo",
 		Name:      repo.FullName,
 		StartedAt: fixedTestTime.UTC(),
@@ -388,7 +390,7 @@ func TestInterruptedRepoDeleteIsFinishedOnRestart(t *testing.T) {
 
 	p2 := openTestPersistence(t, dataDir)
 	defer func() { _ = p2.Close() }()
-	st2 := NewStore()
+	st2 := store.NewStore()
 	if err := st2.SetPersistence(p2); err != nil {
 		t.Fatalf("reload SetPersistence: %v", err)
 	}
@@ -404,7 +406,7 @@ func TestInterruptedRepoDeleteIsFinishedOnRestart(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(gitDir, "admin", "abandoned")); !os.IsNotExist(err) {
 		t.Fatalf("git bytes of a half-deleted repository survived: %v", err)
 	}
-	rows, err := p2.List(pendingDeletionsBucket)
+	rows, err := p2.List(store.PendingDeletionsBucket)
 	if err != nil {
 		t.Fatalf("list deletion intents: %v", err)
 	}
@@ -424,7 +426,7 @@ func TestInterruptedOrgDeleteDoesNotPoisonBoot(t *testing.T) {
 	t.Setenv("BLEEPHUB_GIT_DIR", gitDir)
 
 	p1 := openTestPersistence(t, dataDir)
-	st1 := NewStore()
+	st1 := store.NewStore()
 	if err := st1.SetPersistence(p1); err != nil {
 		t.Fatalf("SetPersistence: %v", err)
 	}
@@ -439,7 +441,7 @@ func TestInterruptedOrgDeleteDoesNotPoisonBoot(t *testing.T) {
 		t.Fatal("CreateOrgRepo returned nil")
 	}
 
-	if err := p1.Put(pendingDeletionsBucket, pendingOrgDeletionKey(org.Login), pendingDeletion{
+	if err := p1.Put(store.PendingDeletionsBucket, store.PendingOrgDeletionKey(org.Login), store.PendingDeletion{
 		Kind:      "org",
 		Name:      org.Login,
 		StartedAt: fixedTestTime.UTC(),
@@ -456,7 +458,7 @@ func TestInterruptedOrgDeleteDoesNotPoisonBoot(t *testing.T) {
 
 	p2 := openTestPersistence(t, dataDir)
 	defer func() { _ = p2.Close() }()
-	st2 := NewStore()
+	st2 := store.NewStore()
 	if err := st2.SetPersistence(p2); err != nil {
 		t.Fatalf("a partial organization cascade poisoned the boot: %v", err)
 	}
@@ -484,7 +486,7 @@ func TestDeleteOrgCascadesToItsRepositories(t *testing.T) {
 	t.Setenv("BLEEPHUB_GIT_DIR", gitDir)
 
 	p1 := openTestPersistence(t, dataDir)
-	st1 := NewStore()
+	st1 := store.NewStore()
 	if err := st1.SetPersistence(p1); err != nil {
 		t.Fatalf("SetPersistence: %v", err)
 	}
@@ -506,7 +508,7 @@ func TestDeleteOrgCascadesToItsRepositories(t *testing.T) {
 
 	p2 := openTestPersistence(t, dataDir)
 	defer func() { _ = p2.Close() }()
-	st2 := NewStore()
+	st2 := store.NewStore()
 	if err := st2.SetPersistence(p2); err != nil {
 		t.Fatalf("reload after organization delete: %v", err)
 	}
@@ -528,11 +530,11 @@ func TestUnknownSchemaVersionRefusesToStart(t *testing.T) {
 		t.Fatalf("close: %v", err)
 	}
 
-	stampSchemaVersion(t, dataDir, currentSchemaVersion+7)
+	stampSchemaVersion(t, dataDir, store.CurrentSchemaVersion+7)
 
 	t.Setenv("BLEEPHUB_PERSIST", "true")
 	t.Setenv("BLEEPHUB_DATA_DIR", dataDir)
-	reopened, err := NewPersistence()
+	reopened, err := store.NewPersistence()
 	if err == nil {
 		_ = reopened.Close()
 		t.Fatal("a database stamped with an unknown schema version was accepted")
@@ -550,8 +552,8 @@ func TestSchemaVersionIsStampedAndAccepted(t *testing.T) {
 	if err := p.Close(); err != nil {
 		t.Fatalf("close: %v", err)
 	}
-	if got := readSchemaVersion(t, dataDir); got != currentSchemaVersion {
-		t.Fatalf("stamped schema version = %d, want %d", got, currentSchemaVersion)
+	if got := readSchemaVersion(t, dataDir); got != store.CurrentSchemaVersion {
+		t.Fatalf("stamped schema version = %d, want %d", got, store.CurrentSchemaVersion)
 	}
 	reopened := openTestPersistence(t, dataDir)
 	if err := reopened.Close(); err != nil {
@@ -584,7 +586,7 @@ func TestDeletedIdentifierIsNotReusedAcrossRestart(t *testing.T) {
 
 	p2 := openTestPersistence(t, dataDir)
 	defer func() { _ = p2.Close() }()
-	st := NewStore()
+	st := store.NewStore()
 	if err := st.SetPersistence(p2); err != nil {
 		t.Fatalf("reload SetPersistence: %v", err)
 	}
@@ -605,7 +607,7 @@ func TestDeletedRepositoryIdentifierIsNotReusedAcrossRestart(t *testing.T) {
 	t.Setenv("BLEEPHUB_GIT_DIR", gitDir)
 
 	p1 := openTestPersistence(t, dataDir)
-	st1 := NewStore()
+	st1 := store.NewStore()
 	if err := st1.SetPersistence(p1); err != nil {
 		t.Fatalf("SetPersistence: %v", err)
 	}
@@ -625,7 +627,7 @@ func TestDeletedRepositoryIdentifierIsNotReusedAcrossRestart(t *testing.T) {
 
 	p2 := openTestPersistence(t, dataDir)
 	defer func() { _ = p2.Close() }()
-	st2 := NewStore()
+	st2 := store.NewStore()
 	if err := st2.SetPersistence(p2); err != nil {
 		t.Fatalf("reload SetPersistence: %v", err)
 	}
@@ -647,7 +649,7 @@ func TestPersistenceBatchIsAtomic(t *testing.T) {
 	if err := p.Put("labels", "1", map[string]any{"id": 1}); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	batch := newPersistBatch(p)
+	batch := store.NewPersistBatch(p)
 	batch.Delete("labels", "1")
 	batch.Put("labels", "2", func() {}) // functions do not marshal
 	if err := batch.Commit(); err == nil {
@@ -681,7 +683,7 @@ func TestPersistenceWriteFailureDoesNotKillTheProcess(t *testing.T) {
 	if recovered == nil {
 		t.Fatal("a failed write neither returned nor raised")
 	}
-	failure, ok := recovered.(*persistenceFailure)
+	failure, ok := recovered.(*store.PersistenceFailure)
 	if !ok {
 		t.Fatalf("raised %T, want a persistence failure the handler can report", recovered)
 	}
@@ -690,11 +692,11 @@ func TestPersistenceWriteFailureDoesNotKillTheProcess(t *testing.T) {
 	}
 }
 
-func openTestPersistence(t *testing.T, dataDir string) *Persistence {
+func openTestPersistence(t *testing.T, dataDir string) *store.Persistence {
 	t.Helper()
 	t.Setenv("BLEEPHUB_PERSIST", "true")
 	t.Setenv("BLEEPHUB_DATA_DIR", dataDir)
-	p, err := NewPersistence()
+	p, err := store.NewPersistence()
 	if err != nil {
 		t.Fatalf("open persistence: %v", err)
 	}
@@ -717,10 +719,10 @@ func stampSchemaVersion(t *testing.T, dataDir string, version int) {
 	t.Helper()
 	db := openRawTestDatabase(t, dataDir)
 	defer func() { _ = db.Close() }()
-	if _, err := db.Exec(schemaMetaDDL); err != nil {
+	if _, err := db.Exec(store.SchemaMetaDDL); err != nil {
 		t.Fatalf("create schema metadata: %v", err)
 	}
-	if _, err := db.Exec(sqliteDialect.WriteVersion, strconv.Itoa(version)); err != nil {
+	if _, err := db.Exec(store.SqliteDialect.WriteVersion, strconv.Itoa(version)); err != nil {
 		t.Fatalf("stamp schema version: %v", err)
 	}
 }
@@ -730,7 +732,7 @@ func readSchemaVersion(t *testing.T, dataDir string) int {
 	db := openRawTestDatabase(t, dataDir)
 	defer func() { _ = db.Close() }()
 	var raw string
-	if err := db.QueryRow(sqliteDialect.ReadVersion).Scan(&raw); err != nil {
+	if err := db.QueryRow(store.SqliteDialect.ReadVersion).Scan(&raw); err != nil {
 		t.Fatalf("read schema version: %v", err)
 	}
 	version, err := strconv.Atoi(raw)

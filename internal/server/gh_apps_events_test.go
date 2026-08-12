@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // installation / installation_repositories webhook events — emission +
@@ -61,7 +63,7 @@ func TestInstallationCreatedFiresAppWebhook(t *testing.T) {
 	user := s.store.UsersByLogin["admin"]
 	app := s.store.CreateApp(user.ID, "Event Fire App", "", nil, nil)
 	// Configure app webhook.
-	s.store.UpdateAppHookConfig(app.ID, func(a *App) {
+	s.store.UpdateAppHookConfig(app.ID, func(a *store.App) {
 		a.WebhookURL = sink.URL
 		a.WebhookActive = true
 		a.WebhookSecret = "shh"

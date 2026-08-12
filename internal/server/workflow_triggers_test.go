@@ -7,6 +7,7 @@ import (
 
 	"github.com/e6qu/bleephub/internal/actions"
 	"github.com/e6qu/bleephub/internal/server/testutil"
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func TestResolveDispatchInputs(t *testing.T) {
@@ -110,7 +111,7 @@ jobs:
 	s.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/main",
 		map[string]interface{}{"head_commit": map[string]interface{}{"message": "x"}})
 	s.store.Mu.RLock()
-	var withPayload *Workflow
+	var withPayload *store.Workflow
 	for _, w := range s.store.Workflows {
 		if w.RepoFullName == repoKey && w.EventPayload != nil {
 			withPayload = w
@@ -152,7 +153,7 @@ jobs:
 
 	s.store.Mu.RLock()
 	defer s.store.Mu.RUnlock()
-	var matched *Workflow
+	var matched *store.Workflow
 	for _, workflow := range s.store.Workflows {
 		if workflow.RepoFullName == repoKey && workflow.Name == "issue-events" {
 			matched = workflow
@@ -325,7 +326,7 @@ jobs:
 
 	s.firePullRequestSynchronize(repo, repoKey, "feature-x")
 
-	var found *Workflow
+	var found *store.Workflow
 	ok := testutil.TestEventually(2*time.Second, 20*time.Millisecond, func() bool {
 		s.store.Mu.RLock()
 		for _, w := range s.store.Workflows {

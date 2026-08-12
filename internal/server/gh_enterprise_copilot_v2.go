@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
@@ -80,7 +81,7 @@ func (s *Server) expireEnterpriseCopilotSeatsLocked() {
 	}
 }
 
-func (s *Server) addEnterpriseCopilotSeatLocked(userID int, team *EnterpriseTeam) bool {
+func (s *Server) addEnterpriseCopilotSeatLocked(userID int, team *store.EnterpriseTeam) bool {
 	teamID, teamSlug := 0, ""
 	if team != nil {
 		teamID, teamSlug = team.ID, team.Slug
@@ -95,17 +96,17 @@ func (s *Server) addEnterpriseCopilotSeatLocked(userID int, team *EnterpriseTeam
 		}
 		return false
 	}
-	s.store.EnterpriseSettings.EnterpriseCopilotSeats[key] = &CopilotSeat{
+	s.store.EnterpriseSettings.EnterpriseCopilotSeats[key] = &store.CopilotSeat{
 		OrgLogin: s.enterpriseCopilotScope(), UserID: userID, AssigningTeamSlug: teamSlug,
 		CreatedAt: now, UpdatedAt: now,
 	}
 	return true
 }
 
-func (s *Server) enterpriseCopilotSeatJSON(seat *CopilotSeat, baseURL string) map[string]interface{} {
+func (s *Server) enterpriseCopilotSeatJSON(seat *store.CopilotSeat, baseURL string) map[string]interface{} {
 	var assignee interface{}
 	if user := s.store.GetUserByID(seat.UserID); user != nil {
-		assignee = userToJSON(user)
+		assignee = store.UserToJSON(user)
 	}
 	var assigningTeam interface{}
 	if seat.AssigningTeamSlug != "" {
@@ -125,10 +126,10 @@ func (s *Server) enterpriseCopilotSeatJSON(seat *CopilotSeat, baseURL string) ma
 	}
 }
 
-func (s *Server) enterpriseCopilotSeatRows() []*CopilotSeat {
+func (s *Server) enterpriseCopilotSeatRows() []*store.CopilotSeat {
 	s.store.Mu.Lock()
 	s.expireEnterpriseCopilotSeatsLocked()
-	rows := make([]*CopilotSeat, 0, len(s.store.EnterpriseSettings.EnterpriseCopilotSeats))
+	rows := make([]*store.CopilotSeat, 0, len(s.store.EnterpriseSettings.EnterpriseCopilotSeats))
 	for _, seat := range s.store.EnterpriseSettings.EnterpriseCopilotSeats {
 		copy := *seat
 		rows = append(rows, &copy)
@@ -157,12 +158,12 @@ func (s *Server) handleListEnterpriseCopilotSeats(w http.ResponseWriter, r *http
 	writeJSON(w, http.StatusOK, map[string]interface{}{"total_seats": len(unique), "seats": result})
 }
 
-func (s *Server) enterpriseCopilotUsers(w http.ResponseWriter, usernames []string) []*User {
+func (s *Server) enterpriseCopilotUsers(w http.ResponseWriter, usernames []string) []*store.User {
 	if len(usernames) == 0 {
-		writeGHValidationError(w, "CopilotSeat", "selected_usernames", "missing_field")
+		store.WriteGHValidationError(w, "CopilotSeat", "selected_usernames", "missing_field")
 		return nil
 	}
-	users := make([]*User, 0, len(usernames))
+	users := make([]*store.User, 0, len(usernames))
 	for _, username := range usernames {
 		user := s.store.LookupUserByLogin(username)
 		if user == nil || user.Type == "Bot" {
@@ -174,14 +175,14 @@ func (s *Server) enterpriseCopilotUsers(w http.ResponseWriter, usernames []strin
 	return users
 }
 
-func (s *Server) enterpriseCopilotTeams(w http.ResponseWriter, names []string) []*EnterpriseTeam {
+func (s *Server) enterpriseCopilotTeams(w http.ResponseWriter, names []string) []*store.EnterpriseTeam {
 	if len(names) == 0 {
-		writeGHValidationError(w, "CopilotSeat", "selected_enterprise_teams", "missing_field")
+		store.WriteGHValidationError(w, "CopilotSeat", "selected_enterprise_teams", "missing_field")
 		return nil
 	}
-	teams := make([]*EnterpriseTeam, 0, len(names))
+	teams := make([]*store.EnterpriseTeam, 0, len(names))
 	for _, name := range names {
-		team := s.store.GetEnterpriseTeam(slugify(name))
+		team := s.store.GetEnterpriseTeam(store.Slugify(name))
 		if team == nil {
 			writeGHError(w, http.StatusUnprocessableEntity, "Enterprise team does not exist: "+name)
 			return nil
@@ -232,7 +233,7 @@ func (s *Server) handleDeleteEnterpriseCopilotUsers(w http.ResponseWriter, r *ht
 	for _, user := range users {
 		if seat := s.store.EnterpriseSettings.EnterpriseCopilotSeats[enterpriseCopilotSeatKey(user.ID, 0)]; seat != nil &&
 			seat.PendingCancellationDate == "" {
-			seat.PendingCancellationDate = copilotNextCycleDate(now)
+			seat.PendingCancellationDate = store.CopilotNextCycleDate(now)
 			seat.UpdatedAt = now
 			cancelled++
 		}
@@ -286,7 +287,7 @@ func (s *Server) handleDeleteEnterpriseCopilotTeams(w http.ResponseWriter, r *ht
 		for _, userID := range team.MemberIDs {
 			if seat := s.store.EnterpriseSettings.EnterpriseCopilotSeats[enterpriseCopilotSeatKey(userID, team.ID)]; seat != nil &&
 				seat.PendingCancellationDate == "" {
-				seat.PendingCancellationDate = copilotNextCycleDate(now)
+				seat.PendingCancellationDate = store.CopilotNextCycleDate(now)
 				seat.UpdatedAt = now
 				cancelled++
 			}
@@ -342,7 +343,7 @@ func (s *Server) handlePutEnterpriseCopilotContentExclusion(w http.ResponseWrite
 	writeJSON(w, http.StatusOK, map[string]interface{}{"message": "Content exclusion settings updated."})
 }
 
-func (s *Server) enterpriseCustomAgentSource() (*Org, *Repo) {
+func (s *Server) enterpriseCustomAgentSource() (*store.Org, *store.Repo) {
 	s.store.Mu.RLock()
 	org := s.store.Orgs[s.store.EnterpriseSettings.CopilotCustomAgentsSourceOrgID]
 	s.store.Mu.RUnlock()
@@ -352,7 +353,7 @@ func (s *Server) enterpriseCustomAgentSource() (*Org, *Repo) {
 	return org, s.store.GetRepo(org.Login, ".github-private")
 }
 
-func customAgentSourceJSON(org *Org, repo *Repo) map[string]interface{} {
+func customAgentSourceJSON(org *store.Org, repo *store.Repo) map[string]interface{} {
 	return map[string]interface{}{
 		"organization": map[string]interface{}{"id": org.ID, "login": org.Login, "avatar_url": org.AvatarURL},
 		"repository":   map[string]interface{}{"id": repo.ID, "name": repo.Name, "full_name": repo.FullName},
@@ -395,9 +396,9 @@ func (s *Server) handlePutEnterpriseCopilotCustomAgentsSource(w http.ResponseWri
 	s.store.PersistEnterpriseSettings()
 	s.store.Mu.Unlock()
 	if needsRuleset {
-		ruleset := s.store.CreateEnterpriseRuleset(s.enterpriseSlug(), &Ruleset{
+		ruleset := s.store.CreateEnterpriseRuleset(s.enterpriseSlug(), &store.Ruleset{
 			Name: "Protect Copilot custom agents", Target: "branch", Enforcement: "active",
-			Rules: []Rule{{Type: "file_path_restriction", Parameters: map[string]interface{}{
+			Rules: []store.Rule{{Type: "file_path_restriction", Parameters: map[string]interface{}{
 				"restricted_file_paths": []string{"agents/*.md", ".github/agents/*.md"},
 				"repository_id":         repo.ID,
 			}}},

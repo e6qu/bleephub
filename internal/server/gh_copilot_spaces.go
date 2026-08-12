@@ -13,24 +13,26 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func (s *Server) registerGHCopilotSpacesRoutes() {
 	for _, prefix := range []string{"/api/v3/orgs/{org}/copilot-spaces", "/api/v3/users/{username}/copilot-spaces"} {
-		s.route("GET "+prefix, s.requirePerm(scopeCopilotSpaces, permRead, s.handleListCopilotSpaces))
-		s.route("POST "+prefix, s.requirePerm(scopeCopilotSpaces, permWrite, s.handleCreateCopilotSpace))
-		s.route("GET "+prefix+"/{space_number}", s.requirePerm(scopeCopilotSpaces, permRead, s.handleGetCopilotSpace))
-		s.route("PUT "+prefix+"/{space_number}", s.requirePerm(scopeCopilotSpaces, permWrite, s.handleUpdateCopilotSpace))
-		s.route("DELETE "+prefix+"/{space_number}", s.requirePerm(scopeCopilotSpaces, permWrite, s.handleDeleteCopilotSpace))
-		s.route("GET "+prefix+"/{space_number}/collaborators", s.requirePerm(scopeCopilotSpaces, permRead, s.handleListCopilotSpaceCollaborators))
-		s.route("POST "+prefix+"/{space_number}/collaborators", s.requirePerm(scopeCopilotSpaces, permWrite, s.handleAddCopilotSpaceCollaborator))
-		s.route("PUT "+prefix+"/{space_number}/collaborators/{actor_type}/{actor_identifier}", s.requirePerm(scopeCopilotSpaces, permWrite, s.handleUpdateCopilotSpaceCollaborator))
-		s.route("DELETE "+prefix+"/{space_number}/collaborators/{actor_type}/{actor_identifier}", s.requirePerm(scopeCopilotSpaces, permWrite, s.handleRemoveCopilotSpaceCollaborator))
-		s.route("GET "+prefix+"/{space_number}/resources", s.requirePerm(scopeCopilotSpaces, permRead, s.handleListCopilotSpaceResources))
-		s.route("POST "+prefix+"/{space_number}/resources", s.requirePerm(scopeCopilotSpaces, permWrite, s.handleCreateCopilotSpaceResource))
-		s.route("GET "+prefix+"/{space_number}/resources/{space_resource_id}", s.requirePerm(scopeCopilotSpaces, permRead, s.handleGetCopilotSpaceResource))
-		s.route("PUT "+prefix+"/{space_number}/resources/{space_resource_id}", s.requirePerm(scopeCopilotSpaces, permWrite, s.handleUpdateCopilotSpaceResource))
-		s.route("DELETE "+prefix+"/{space_number}/resources/{space_resource_id}", s.requirePerm(scopeCopilotSpaces, permWrite, s.handleDeleteCopilotSpaceResource))
+		s.route("GET "+prefix, s.requirePerm(store.ScopeCopilotSpaces, store.PermRead, s.handleListCopilotSpaces))
+		s.route("POST "+prefix, s.requirePerm(store.ScopeCopilotSpaces, store.PermWrite, s.handleCreateCopilotSpace))
+		s.route("GET "+prefix+"/{space_number}", s.requirePerm(store.ScopeCopilotSpaces, store.PermRead, s.handleGetCopilotSpace))
+		s.route("PUT "+prefix+"/{space_number}", s.requirePerm(store.ScopeCopilotSpaces, store.PermWrite, s.handleUpdateCopilotSpace))
+		s.route("DELETE "+prefix+"/{space_number}", s.requirePerm(store.ScopeCopilotSpaces, store.PermWrite, s.handleDeleteCopilotSpace))
+		s.route("GET "+prefix+"/{space_number}/collaborators", s.requirePerm(store.ScopeCopilotSpaces, store.PermRead, s.handleListCopilotSpaceCollaborators))
+		s.route("POST "+prefix+"/{space_number}/collaborators", s.requirePerm(store.ScopeCopilotSpaces, store.PermWrite, s.handleAddCopilotSpaceCollaborator))
+		s.route("PUT "+prefix+"/{space_number}/collaborators/{actor_type}/{actor_identifier}", s.requirePerm(store.ScopeCopilotSpaces, store.PermWrite, s.handleUpdateCopilotSpaceCollaborator))
+		s.route("DELETE "+prefix+"/{space_number}/collaborators/{actor_type}/{actor_identifier}", s.requirePerm(store.ScopeCopilotSpaces, store.PermWrite, s.handleRemoveCopilotSpaceCollaborator))
+		s.route("GET "+prefix+"/{space_number}/resources", s.requirePerm(store.ScopeCopilotSpaces, store.PermRead, s.handleListCopilotSpaceResources))
+		s.route("POST "+prefix+"/{space_number}/resources", s.requirePerm(store.ScopeCopilotSpaces, store.PermWrite, s.handleCreateCopilotSpaceResource))
+		s.route("GET "+prefix+"/{space_number}/resources/{space_resource_id}", s.requirePerm(store.ScopeCopilotSpaces, store.PermRead, s.handleGetCopilotSpaceResource))
+		s.route("PUT "+prefix+"/{space_number}/resources/{space_resource_id}", s.requirePerm(store.ScopeCopilotSpaces, store.PermWrite, s.handleUpdateCopilotSpaceResource))
+		s.route("DELETE "+prefix+"/{space_number}/resources/{space_resource_id}", s.requirePerm(store.ScopeCopilotSpaces, store.PermWrite, s.handleDeleteCopilotSpaceResource))
 	}
 }
 
@@ -61,7 +63,7 @@ func (s *Server) copilotSpaceOwner(w http.ResponseWriter, r *http.Request) (owne
 // admins; collaborator grants (directly or via team membership) and the
 // space's base role fill in the rest. An empty role means the space is
 // invisible to the caller.
-func (s *Server) copilotSpaceRole(ctx context.Context, user *User, space *CopilotSpace) string {
+func (s *Server) copilotSpaceRole(ctx context.Context, user *store.User, space *store.CopilotSpace) string {
 	ctx = contextWithUser(ctx, user)
 	if user == nil {
 		return ""
@@ -83,10 +85,10 @@ func (s *Server) copilotSpaceRole(ctx context.Context, user *User, space *Copilo
 		// membership. Their installation reach and Copilot Spaces grant are
 		// the two halves of access.
 		if token := ghInstallationTokenFromContext(ctx); token != nil && s.viewerReachesOrg(ctx, space.OwnerLogin) {
-			if hasPerm(token.Permissions, scopeCopilotSpaces, permWrite) {
+			if hasPerm(token.Permissions, store.ScopeCopilotSpaces, store.PermWrite) {
 				return "admin"
 			}
-			if hasPerm(token.Permissions, scopeCopilotSpaces, permRead) {
+			if hasPerm(token.Permissions, store.ScopeCopilotSpaces, store.PermRead) {
 				return "reader"
 			}
 		}
@@ -134,7 +136,7 @@ func copilotUserSpaceCredentialSupported(ctx context.Context) bool {
 // lookupCopilotSpace resolves the owner and {space_number} to a space
 // visible to the caller, writing 401/404 on failure. minRole gates the
 // operation: a caller who can see the space but lacks the role gets 403.
-func (s *Server) lookupCopilotSpace(w http.ResponseWriter, r *http.Request, minRole string) (*CopilotSpace, *User) {
+func (s *Server) lookupCopilotSpace(w http.ResponseWriter, r *http.Request, minRole string) (*store.CopilotSpace, *store.User) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "Requires authentication")
@@ -172,7 +174,7 @@ func (s *Server) lookupCopilotSpace(w http.ResponseWriter, r *http.Request, minR
 	return space, user
 }
 
-func (s *Server) copilotSpaceJSON(space *CopilotSpace, baseURL string) map[string]interface{} {
+func (s *Server) copilotSpaceJSON(space *store.CopilotSpace, baseURL string) map[string]interface{} {
 	var owner interface{}
 	var apiURL string
 	if space.OwnerType == "Organization" {
@@ -182,13 +184,13 @@ func (s *Server) copilotSpaceJSON(space *CopilotSpace, baseURL string) map[strin
 		apiURL = fmt.Sprintf("%s/api/v3/orgs/%s/copilot-spaces/%d", baseURL, space.OwnerLogin, space.Number)
 	} else {
 		if u := s.store.LookupUserByLogin(space.OwnerLogin); u != nil {
-			owner = userToJSON(u)
+			owner = store.UserToJSON(u)
 		}
 		apiURL = fmt.Sprintf("%s/api/v3/users/%s/copilot-spaces/%d", baseURL, space.OwnerLogin, space.Number)
 	}
 	var creator interface{}
 	if u := s.store.GetUserByID(space.CreatorID); u != nil {
-		creator = userToJSON(u)
+		creator = store.UserToJSON(u)
 	}
 	var description interface{}
 	if space.Description != "" {
@@ -219,7 +221,7 @@ func (s *Server) copilotSpaceJSON(space *CopilotSpace, baseURL string) map[strin
 	}
 }
 
-func copilotSpaceResourceJSON(res *CopilotSpaceResource) map[string]interface{} {
+func copilotSpaceResourceJSON(res *store.CopilotSpaceResource) map[string]interface{} {
 	return map[string]interface{}{
 		"id":            res.ID,
 		"resource_type": res.ResourceType,
@@ -232,13 +234,13 @@ func copilotSpaceResourceJSON(res *CopilotSpaceResource) map[string]interface{} 
 	}
 }
 
-func (s *Server) copilotSpaceCollaboratorJSON(c *CopilotSpaceCollaborator, space *CopilotSpace, baseURL string) map[string]interface{} {
+func (s *Server) copilotSpaceCollaboratorJSON(c *store.CopilotSpaceCollaborator, space *store.CopilotSpace, baseURL string) map[string]interface{} {
 	if c.ActorType == "User" {
 		u := s.store.GetUserByID(c.UserID)
 		if u == nil {
 			return nil
 		}
-		out := userToJSON(u)
+		out := store.UserToJSON(u)
 		out["actor_type"] = "User"
 		out["role"] = c.Role
 		return out
@@ -300,8 +302,8 @@ type copilotSpaceResourceAttribute struct {
 	Metadata     map[string]interface{} `json:"metadata"`
 }
 
-func cloneCopilotSpaceResources(resources []*CopilotSpaceResource) []*CopilotSpaceResource {
-	out := make([]*CopilotSpaceResource, 0, len(resources))
+func cloneCopilotSpaceResources(resources []*store.CopilotSpaceResource) []*store.CopilotSpaceResource {
+	out := make([]*store.CopilotSpaceResource, 0, len(resources))
 	for _, resource := range resources {
 		copy := *resource
 		copy.Metadata = make(map[string]interface{}, len(resource.Metadata))
@@ -317,7 +319,7 @@ func cloneCopilotSpaceResources(resources []*CopilotSpaceResource) []*CopilotSpa
 // contract used by the official space endpoints. It validates a complete
 // working copy first, so one invalid member cannot partially mutate the
 // existing space.
-func (s *Server) applyCopilotSpaceResourceAttributes(space *CopilotSpace, attributes []copilotSpaceResourceAttribute) string {
+func (s *Server) applyCopilotSpaceResourceAttributes(space *store.CopilotSpace, attributes []copilotSpaceResourceAttribute) string {
 	resources := cloneCopilotSpaceResources(space.Resources)
 	nextID := space.NextResourceID
 	for _, attribute := range attributes {
@@ -365,7 +367,7 @@ func (s *Server) applyCopilotSpaceResourceAttributes(space *CopilotSpace, attrib
 			resources[index].UpdatedAt = now
 			continue
 		}
-		resources = append(resources, &CopilotSpaceResource{
+		resources = append(resources, &store.CopilotSpaceResource{
 			ID: nextID, ResourceType: resourceType, Metadata: metadata,
 			CreatedAt: now, UpdatedAt: now,
 		})
@@ -390,7 +392,7 @@ func (s *Server) handleListCopilotSpaces(w http.ResponseWriter, r *http.Request)
 		writeGHError(w, http.StatusForbidden, "Resource not accessible by integration")
 		return
 	}
-	var visible []*CopilotSpace
+	var visible []*store.CopilotSpace
 	for _, space := range s.store.ListCopilotSpaces(ownerType, ownerLogin) {
 		if s.copilotSpaceRole(r.Context(), user, space) != "" {
 			visible = append(visible, space)
@@ -470,7 +472,7 @@ func (s *Server) handleCreateCopilotSpace(w http.ResponseWriter, r *http.Request
 		installationCanWrite := false
 		if token := ghInstallationTokenFromContext(r.Context()); token != nil {
 			installationCanWrite = s.viewerReachesOrg(r.Context(), ownerLogin) &&
-				hasPerm(token.Permissions, scopeCopilotSpaces, permWrite)
+				hasPerm(token.Permissions, store.ScopeCopilotSpaces, store.PermWrite)
 		}
 		if !s.viewerIsOrgMember(r.Context(), ownerLogin) && !installationCanWrite {
 			writeGHError(w, http.StatusNotFound, "Not Found")
@@ -491,24 +493,24 @@ func (s *Server) handleCreateCopilotSpace(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if strings.TrimSpace(req.Name) == "" {
-		writeGHValidationError(w, "CopilotSpace", "name", "missing_field")
+		store.WriteGHValidationError(w, "CopilotSpace", "name", "missing_field")
 		return
 	}
 	if len(req.GeneralInstructions) > 4000 {
-		writeGHValidationError(w, "CopilotSpace", "general_instructions", "invalid")
+		store.WriteGHValidationError(w, "CopilotSpace", "general_instructions", "invalid")
 		return
 	}
 	baseRole := "no_access"
 	if req.BaseRole != nil {
 		if !validCopilotSpaceBaseRole(ownerType, *req.BaseRole) {
-			writeGHValidationError(w, "CopilotSpace", "base_role", "invalid")
+			store.WriteGHValidationError(w, "CopilotSpace", "base_role", "invalid")
 			return
 		}
 		baseRole = *req.BaseRole
 	}
-	pendingResources := &CopilotSpace{NextResourceID: 1}
+	pendingResources := &store.CopilotSpace{NextResourceID: 1}
 	if field := s.applyCopilotSpaceResourceAttributes(pendingResources, req.ResourcesAttributes); field != "" {
-		writeGHValidationError(w, "CopilotSpace", field, "invalid")
+		store.WriteGHValidationError(w, "CopilotSpace", field, "invalid")
 		return
 	}
 	space := s.store.CreateCopilotSpace(ownerType, ownerLogin, user.ID, req.Name, req.Description, req.GeneralInstructions, baseRole)
@@ -545,19 +547,19 @@ func (s *Server) handleUpdateCopilotSpace(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if req.Name != nil && strings.TrimSpace(*req.Name) == "" {
-		writeGHValidationError(w, "CopilotSpace", "name", "missing_field")
+		store.WriteGHValidationError(w, "CopilotSpace", "name", "missing_field")
 		return
 	}
 	if req.GeneralInstructions != nil && len(*req.GeneralInstructions) > 4000 {
-		writeGHValidationError(w, "CopilotSpace", "general_instructions", "invalid")
+		store.WriteGHValidationError(w, "CopilotSpace", "general_instructions", "invalid")
 		return
 	}
 	if req.BaseRole != nil && !validCopilotSpaceBaseRole(space.OwnerType, *req.BaseRole) {
-		writeGHValidationError(w, "CopilotSpace", "base_role", "invalid")
+		store.WriteGHValidationError(w, "CopilotSpace", "base_role", "invalid")
 		return
 	}
 	if field := s.applyCopilotSpaceResourceAttributes(space, req.ResourcesAttributes); field != "" {
-		writeGHValidationError(w, "CopilotSpace", field, "invalid")
+		store.WriteGHValidationError(w, "CopilotSpace", field, "invalid")
 		return
 	}
 	if req.Name != nil {
@@ -603,7 +605,7 @@ func (s *Server) handleListCopilotSpaceCollaborators(w http.ResponseWriter, r *h
 // resolveCopilotSpaceActor resolves an actor_type + actor_identifier
 // pair (username / team slug, or a numeric ID) against the store. Teams
 // must belong to the organization that owns the space.
-func (s *Server) resolveCopilotSpaceActor(space *CopilotSpace, actorType, identifier string) (userID, teamID int, ok bool) {
+func (s *Server) resolveCopilotSpaceActor(space *store.CopilotSpace, actorType, identifier string) (userID, teamID int, ok bool) {
 	switch actorType {
 	case "User":
 		if u := s.store.LookupUserByLogin(identifier); u != nil {
@@ -634,7 +636,7 @@ func (s *Server) resolveCopilotSpaceActor(space *CopilotSpace, actorType, identi
 	return 0, 0, false
 }
 
-func copilotSpaceCollaboratorIndex(space *CopilotSpace, userID, teamID int) int {
+func copilotSpaceCollaboratorIndex(space *store.CopilotSpace, userID, teamID int) int {
 	for i, c := range space.Collaborators {
 		if c.UserID == userID && c.TeamID == teamID {
 			return i
@@ -657,25 +659,25 @@ func (s *Server) handleAddCopilotSpaceCollaborator(w http.ResponseWriter, r *htt
 		return
 	}
 	if req.ActorType != "User" && req.ActorType != "Team" {
-		writeGHValidationError(w, "CopilotSpaceCollaborator", "actor_type", "invalid")
+		store.WriteGHValidationError(w, "CopilotSpaceCollaborator", "actor_type", "invalid")
 		return
 	}
 	if req.Role != "reader" && req.Role != "writer" && req.Role != "admin" {
-		writeGHValidationError(w, "CopilotSpaceCollaborator", "role", "invalid")
+		store.WriteGHValidationError(w, "CopilotSpaceCollaborator", "role", "invalid")
 		return
 	}
 	userID, teamID, ok := s.resolveCopilotSpaceActor(space, req.ActorType, req.ActorIdentifier)
 	if !ok {
-		writeGHValidationError(w, "CopilotSpaceCollaborator", "actor_identifier", "invalid")
+		store.WriteGHValidationError(w, "CopilotSpaceCollaborator", "actor_identifier", "invalid")
 		return
 	}
 	if req.ActorType == "User" && space.OwnerType == "Organization" {
 		if u := s.store.GetUserByID(userID); u == nil || !namedUserIsActiveOrgMember(s.store, u, space.OwnerLogin) {
-			writeGHValidationError(w, "CopilotSpaceCollaborator", "actor_identifier", "invalid")
+			store.WriteGHValidationError(w, "CopilotSpaceCollaborator", "actor_identifier", "invalid")
 			return
 		}
 	}
-	collab := &CopilotSpaceCollaborator{ActorType: req.ActorType, UserID: userID, TeamID: teamID, Role: req.Role}
+	collab := &store.CopilotSpaceCollaborator{ActorType: req.ActorType, UserID: userID, TeamID: teamID, Role: req.Role}
 	if i := copilotSpaceCollaboratorIndex(space, userID, teamID); i >= 0 {
 		space.Collaborators[i] = collab
 	} else {
@@ -687,7 +689,7 @@ func (s *Server) handleAddCopilotSpaceCollaborator(w http.ResponseWriter, r *htt
 
 // copilotSpaceActorFromPath resolves the {actor_type}/{actor_identifier}
 // path segments, writing a 404 when the actor does not resolve.
-func (s *Server) copilotSpaceActorFromPath(w http.ResponseWriter, r *http.Request, space *CopilotSpace) (userID, teamID int, ok bool) {
+func (s *Server) copilotSpaceActorFromPath(w http.ResponseWriter, r *http.Request, space *store.CopilotSpace) (userID, teamID int, ok bool) {
 	actorType := r.PathValue("actor_type")
 	if actorType != "User" && actorType != "Team" {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -724,7 +726,7 @@ func (s *Server) handleUpdateCopilotSpaceCollaborator(w http.ResponseWriter, r *
 		}
 		w.WriteHeader(http.StatusNoContent)
 	case "reader", "writer", "admin":
-		collab := &CopilotSpaceCollaborator{ActorType: r.PathValue("actor_type"), UserID: userID, TeamID: teamID, Role: req.Role}
+		collab := &store.CopilotSpaceCollaborator{ActorType: r.PathValue("actor_type"), UserID: userID, TeamID: teamID, Role: req.Role}
 		if i := copilotSpaceCollaboratorIndex(space, userID, teamID); i >= 0 {
 			space.Collaborators[i] = collab
 		} else {
@@ -733,7 +735,7 @@ func (s *Server) handleUpdateCopilotSpaceCollaborator(w http.ResponseWriter, r *
 		s.store.SaveCopilotSpace(space)
 		writeJSON(w, http.StatusOK, s.copilotSpaceCollaboratorJSON(collab, space, s.baseURL(r)))
 	default:
-		writeGHValidationError(w, "CopilotSpaceCollaborator", "role", "invalid")
+		store.WriteGHValidationError(w, "CopilotSpaceCollaborator", "role", "invalid")
 	}
 }
 
@@ -835,15 +837,15 @@ func (s *Server) handleCreateCopilotSpaceResource(w http.ResponseWriter, r *http
 		return
 	}
 	if !validCopilotSpaceResourceType(req.ResourceType) {
-		writeGHValidationError(w, "CopilotSpaceResource", "resource_type", "invalid")
+		store.WriteGHValidationError(w, "CopilotSpaceResource", "resource_type", "invalid")
 		return
 	}
 	if req.Metadata == nil {
-		writeGHValidationError(w, "CopilotSpaceResource", "metadata", "missing_field")
+		store.WriteGHValidationError(w, "CopilotSpaceResource", "metadata", "missing_field")
 		return
 	}
 	if field := s.validateCopilotSpaceResource(req.ResourceType, req.Metadata); field != "" {
-		writeGHValidationError(w, "CopilotSpaceResource", field, "invalid")
+		store.WriteGHValidationError(w, "CopilotSpaceResource", field, "invalid")
 		return
 	}
 	// Attaching an identical resource again returns the existing one.
@@ -854,7 +856,7 @@ func (s *Server) handleCreateCopilotSpaceResource(w http.ResponseWriter, r *http
 		}
 	}
 	now := time.Now().UTC()
-	res := &CopilotSpaceResource{
+	res := &store.CopilotSpaceResource{
 		ID:           space.NextResourceID,
 		ResourceType: req.ResourceType,
 		Metadata:     req.Metadata,
@@ -869,7 +871,7 @@ func (s *Server) handleCreateCopilotSpaceResource(w http.ResponseWriter, r *http
 
 // copilotSpaceResourceFromPath resolves {space_resource_id}, writing a
 // 404 when the resource does not exist on the space.
-func copilotSpaceResourceFromPath(w http.ResponseWriter, r *http.Request, space *CopilotSpace) *CopilotSpaceResource {
+func copilotSpaceResourceFromPath(w http.ResponseWriter, r *http.Request, space *store.CopilotSpace) *store.CopilotSpaceResource {
 	id, err := strconv.Atoi(r.PathValue("space_resource_id"))
 	if err == nil {
 		for _, res := range space.Resources {
@@ -911,7 +913,7 @@ func (s *Server) handleUpdateCopilotSpaceResource(w http.ResponseWriter, r *http
 	}
 	if req.Metadata != nil {
 		if field := s.validateCopilotSpaceResource(res.ResourceType, req.Metadata); field != "" {
-			writeGHValidationError(w, "CopilotSpaceResource", field, "invalid")
+			store.WriteGHValidationError(w, "CopilotSpaceResource", field, "invalid")
 			return
 		}
 		res.Metadata = req.Metadata

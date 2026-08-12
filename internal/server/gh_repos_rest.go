@@ -9,23 +9,24 @@ import (
 	"strings"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
 	gitStorage "github.com/go-git/go-git/v5/storage"
 )
 
 func (s *Server) registerGHRepoRoutes() {
-	s.route("POST /api/v3/user/repos", s.requirePerm(scopeContents, permWrite, s.handleCreateRepo))
+	s.route("POST /api/v3/user/repos", s.requirePerm(store.ScopeContents, store.PermWrite, s.handleCreateRepo))
 	s.route("GET /api/v3/user/repos", s.handleListAuthUserRepos)
 	s.route("GET /api/v3/repos/{owner}/{repo}", s.handleGetRepo)
-	s.route("PATCH /api/v3/repos/{owner}/{repo}", s.requirePerm(scopeAdministration, permWrite, s.handleUpdateRepo))
-	s.route("DELETE /api/v3/repos/{owner}/{repo}", s.requirePerm(scopeAdministration, permWrite, s.handleDeleteRepo))
+	s.route("PATCH /api/v3/repos/{owner}/{repo}", s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleUpdateRepo))
+	s.route("DELETE /api/v3/repos/{owner}/{repo}", s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleDeleteRepo))
 	s.route("GET /api/v3/users/{username}/repos", s.handleListUserRepos)
 	s.route("GET /api/v3/orgs/{org}/repos", s.handleListOrgRepos)
 	s.route("GET /api/v3/repos/{owner}/{repo}/topics", s.handleGetRepoTopics)
-	s.route("PUT /api/v3/repos/{owner}/{repo}/topics", s.requirePerm(scopeContents, permWrite, s.handlePutRepoTopics))
+	s.route("PUT /api/v3/repos/{owner}/{repo}/topics", s.requirePerm(store.ScopeContents, store.PermWrite, s.handlePutRepoTopics))
 	s.route("GET /api/v3/repos/{owner}/{repo}/languages", s.handleGetRepoLanguages)
 	s.route("GET /api/v3/repos/{owner}/{repo}/compare/{range...}", s.handleCompareRefs)
-	s.route("POST /api/v3/repos/{owner}/{repo}/merges", s.requirePerm(scopeContents, permWrite, s.handleMergeRefs))
+	s.route("POST /api/v3/repos/{owner}/{repo}/merges", s.requirePerm(store.ScopeContents, store.PermWrite, s.handleMergeRefs))
 	s.route("POST /api/v3/repos/{owner}/{repo}/forks", s.handleCreateFork)
 	s.route("GET /api/v3/repos/{owner}/{repo}/forks", s.handleListForks)
 	s.route("GET /api/v3/repos/{owner}/{repo}/stargazers", s.handleListStargazers)
@@ -33,10 +34,10 @@ func (s *Server) registerGHRepoRoutes() {
 	s.route("DELETE /api/v3/user/starred/{owner}/{repo}", s.handleUnstarRepo)
 	s.route("GET /api/v3/user/starred", s.handleListStarredRepos)
 	s.route("GET /api/v3/users/{username}/starred", s.handleListUserStarredRepos)
-	s.route("GET /api/v3/repos/{owner}/{repo}/collaborators", s.requirePerm(scopeMetadata, permRead, s.handleListCollaborators))
-	s.route("GET /api/v3/repos/{owner}/{repo}/collaborators/{username}/permission", s.requirePerm(scopeMetadata, permRead, s.handleGetCollaboratorPermission))
-	s.route("PUT /api/v3/repos/{owner}/{repo}/collaborators/{username}", s.requirePerm(scopeAdministration, permWrite, s.handleAddCollaborator))
-	s.route("DELETE /api/v3/repos/{owner}/{repo}/collaborators/{username}", s.requirePerm(scopeAdministration, permWrite, s.handleRemoveCollaborator))
+	s.route("GET /api/v3/repos/{owner}/{repo}/collaborators", s.requirePerm(store.ScopeMetadata, store.PermRead, s.handleListCollaborators))
+	s.route("GET /api/v3/repos/{owner}/{repo}/collaborators/{username}/permission", s.requirePerm(store.ScopeMetadata, store.PermRead, s.handleGetCollaboratorPermission))
+	s.route("PUT /api/v3/repos/{owner}/{repo}/collaborators/{username}", s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleAddCollaborator))
+	s.route("DELETE /api/v3/repos/{owner}/{repo}/collaborators/{username}", s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleRemoveCollaborator))
 	s.registerGHRepoRefRoutes()
 	s.registerGHRepoObjectRoutes()
 	s.registerGHGitDataRoutes()
@@ -44,27 +45,27 @@ func (s *Server) registerGHRepoRoutes() {
 }
 
 func (s *Server) registerGHRepoSettingsRoutes() {
-	s.route("GET /api/v3/repos/{owner}/{repo}/keys", s.requirePerm(scopeAdministration, permRead, s.handleListRepoDeployKeys))
-	s.route("POST /api/v3/repos/{owner}/{repo}/keys", s.requirePerm(scopeAdministration, permWrite, s.handleCreateRepoDeployKey))
-	s.route("GET /api/v3/repos/{owner}/{repo}/keys/{key_id}", s.requirePerm(scopeAdministration, permRead, s.handleGetRepoDeployKey))
-	s.route("DELETE /api/v3/repos/{owner}/{repo}/keys/{key_id}", s.requirePerm(scopeAdministration, permWrite, s.handleDeleteRepoDeployKey))
-	s.route("POST /api/v3/repos/{owner}/{repo}/transfer", s.requirePerm(scopeAdministration, permWrite, s.handleTransferRepo))
-	s.route("POST /api/v3/repos/{owner}/{repo}/merge-upstream", s.requirePerm(scopeContents, permWrite, s.handleMergeUpstream))
-	s.route("POST /api/v3/repos/{owner}/{repo}/branches/{branch}/rename", s.requirePerm(scopeAdministration, permWrite, s.handleRenameBranch))
-	s.route("PUT /api/v3/repos/{owner}/{repo}/subscription", s.requirePerm(scopeContents, permRead, s.handleSetRepoSubscription))
-	s.route("DELETE /api/v3/repos/{owner}/{repo}/subscription", s.requirePerm(scopeContents, permRead, s.handleDeleteRepoSubscription))
-	s.route("GET /api/v3/repos/{owner}/{repo}/automated-security-fixes", s.requirePerm(scopeAdministration, permRead, s.handleCheckAutomatedSecurityFixes))
+	s.route("GET /api/v3/repos/{owner}/{repo}/keys", s.requirePerm(store.ScopeAdministration, store.PermRead, s.handleListRepoDeployKeys))
+	s.route("POST /api/v3/repos/{owner}/{repo}/keys", s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleCreateRepoDeployKey))
+	s.route("GET /api/v3/repos/{owner}/{repo}/keys/{key_id}", s.requirePerm(store.ScopeAdministration, store.PermRead, s.handleGetRepoDeployKey))
+	s.route("DELETE /api/v3/repos/{owner}/{repo}/keys/{key_id}", s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleDeleteRepoDeployKey))
+	s.route("POST /api/v3/repos/{owner}/{repo}/transfer", s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleTransferRepo))
+	s.route("POST /api/v3/repos/{owner}/{repo}/merge-upstream", s.requirePerm(store.ScopeContents, store.PermWrite, s.handleMergeUpstream))
+	s.route("POST /api/v3/repos/{owner}/{repo}/branches/{branch}/rename", s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleRenameBranch))
+	s.route("PUT /api/v3/repos/{owner}/{repo}/subscription", s.requirePerm(store.ScopeContents, store.PermRead, s.handleSetRepoSubscription))
+	s.route("DELETE /api/v3/repos/{owner}/{repo}/subscription", s.requirePerm(store.ScopeContents, store.PermRead, s.handleDeleteRepoSubscription))
+	s.route("GET /api/v3/repos/{owner}/{repo}/automated-security-fixes", s.requirePerm(store.ScopeAdministration, store.PermRead, s.handleCheckAutomatedSecurityFixes))
 	s.route("GET /api/v3/repos/{owner}/{repo}/private-vulnerability-reporting", s.handleCheckPrivateVulnerabilityReporting)
-	s.route("GET /api/v3/repos/{owner}/{repo}/vulnerability-alerts", s.requirePerm(scopeAdministration, permRead, s.handleCheckVulnerabilityAlerts))
-	s.route("GET /api/v3/repos/{owner}/{repo}/interaction-limits", s.requirePerm(scopeAdministration, permRead, s.handleGetInteractionLimits))
-	s.route("PUT /api/v3/repos/{owner}/{repo}/automated-security-fixes", s.requirePerm(scopeAdministration, permWrite, s.handleEnableAutomatedSecurityFixes))
-	s.route("DELETE /api/v3/repos/{owner}/{repo}/automated-security-fixes", s.requirePerm(scopeAdministration, permWrite, s.handleDisableAutomatedSecurityFixes))
-	s.route("PUT /api/v3/repos/{owner}/{repo}/private-vulnerability-reporting", s.requirePerm(scopeAdministration, permWrite, s.handleEnablePrivateVulnerabilityReporting))
-	s.route("DELETE /api/v3/repos/{owner}/{repo}/private-vulnerability-reporting", s.requirePerm(scopeAdministration, permWrite, s.handleDisablePrivateVulnerabilityReporting))
-	s.route("PUT /api/v3/repos/{owner}/{repo}/vulnerability-alerts", s.requirePerm(scopeAdministration, permWrite, s.handleEnableVulnerabilityAlerts))
-	s.route("DELETE /api/v3/repos/{owner}/{repo}/vulnerability-alerts", s.requirePerm(scopeAdministration, permWrite, s.handleDisableVulnerabilityAlerts))
-	s.route("PUT /api/v3/repos/{owner}/{repo}/interaction-limits", s.requirePerm(scopeAdministration, permWrite, s.handleSetInteractionLimits))
-	s.route("DELETE /api/v3/repos/{owner}/{repo}/interaction-limits", s.requirePerm(scopeAdministration, permWrite, s.handleDeleteInteractionLimits))
+	s.route("GET /api/v3/repos/{owner}/{repo}/vulnerability-alerts", s.requirePerm(store.ScopeAdministration, store.PermRead, s.handleCheckVulnerabilityAlerts))
+	s.route("GET /api/v3/repos/{owner}/{repo}/interaction-limits", s.requirePerm(store.ScopeAdministration, store.PermRead, s.handleGetInteractionLimits))
+	s.route("PUT /api/v3/repos/{owner}/{repo}/automated-security-fixes", s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleEnableAutomatedSecurityFixes))
+	s.route("DELETE /api/v3/repos/{owner}/{repo}/automated-security-fixes", s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleDisableAutomatedSecurityFixes))
+	s.route("PUT /api/v3/repos/{owner}/{repo}/private-vulnerability-reporting", s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleEnablePrivateVulnerabilityReporting))
+	s.route("DELETE /api/v3/repos/{owner}/{repo}/private-vulnerability-reporting", s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleDisablePrivateVulnerabilityReporting))
+	s.route("PUT /api/v3/repos/{owner}/{repo}/vulnerability-alerts", s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleEnableVulnerabilityAlerts))
+	s.route("DELETE /api/v3/repos/{owner}/{repo}/vulnerability-alerts", s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleDisableVulnerabilityAlerts))
+	s.route("PUT /api/v3/repos/{owner}/{repo}/interaction-limits", s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleSetInteractionLimits))
+	s.route("DELETE /api/v3/repos/{owner}/{repo}/interaction-limits", s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleDeleteInteractionLimits))
 }
 
 // repoAccessLevel names the repository standing repoFromRequest enforces
@@ -84,7 +85,7 @@ const (
 // at every level, matching real GitHub (which hides private repos behind
 // 404, never 403, on read paths); a readable repo the caller may not change
 // answers 403.
-func (s *Server) repoFromRequest(w http.ResponseWriter, r *http.Request, access repoAccessLevel) *Repo {
+func (s *Server) repoFromRequest(w http.ResponseWriter, r *http.Request, access repoAccessLevel) *store.Repo {
 	owner := r.PathValue("owner")
 	name := r.PathValue("repo")
 	repo := s.store.GetRepo(owner, name)
@@ -142,7 +143,7 @@ func (s *Server) handleCreateRepoDeployKey(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if req.Title == "" || req.Key == "" {
-		writeGHValidationError(w, "DeployKey", "key", "missing_field")
+		store.WriteGHValidationError(w, "DeployKey", "key", "missing_field")
 		return
 	}
 	key := s.store.CreateRepoDeployKey(repo.ID, req.Title, req.Key, req.ReadOnly)
@@ -190,7 +191,7 @@ func (s *Server) handleDeleteRepoDeployKey(w http.ResponseWriter, r *http.Reques
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func deployKeyToJSON(k *RepoDeployKey, fullName, base string) map[string]interface{} {
+func deployKeyToJSON(k *store.RepoDeployKey, fullName, base string) map[string]interface{} {
 	return map[string]interface{}{
 		"id":         k.ID,
 		"key":        k.Key,
@@ -223,10 +224,10 @@ func (s *Server) handleTransferRepo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.NewOwner == "" {
-		writeGHValidationError(w, "Transfer", "new_owner", "missing_field")
+		store.WriteGHValidationError(w, "Transfer", "new_owner", "missing_field")
 		return
 	}
-	owner, _, _ := splitRepoFullName(repo.FullName)
+	owner, _, _ := store.SplitRepoFullName(repo.FullName)
 	if !s.store.TransferRepo(owner, repo.Name, req.NewOwner) {
 		writeGHError(w, http.StatusUnprocessableEntity, "Repository transfer failed.")
 		return
@@ -271,9 +272,9 @@ func (s *Server) handleMergeUpstream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	owner, name, _ := splitRepoFullName(repo.FullName)
+	owner, name, _ := store.SplitRepoFullName(repo.FullName)
 	targetStor := s.store.GetGitStorage(owner, name)
-	srcOwner, srcName, _ := splitRepoFullName(source.FullName)
+	srcOwner, srcName, _ := store.SplitRepoFullName(source.FullName)
 	srcStor := s.store.GetGitStorage(srcOwner, srcName)
 	if targetStor == nil || srcStor == nil {
 		writeGHError(w, http.StatusUnprocessableEntity, "Branch not found")
@@ -285,7 +286,7 @@ func (s *Server) handleMergeUpstream(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnprocessableEntity, "Branch not found")
 		return
 	}
-	if err := copyGitObjects(srcStor, targetStor); err != nil {
+	if err := store.CopyGitObjects(srcStor, targetStor); err != nil {
 		writeGHError(w, http.StatusInternalServerError, "Upstream objects could not be copied")
 		return
 	}
@@ -310,7 +311,7 @@ func (s *Server) handleMergeUpstream(w http.ResponseWriter, r *http.Request) {
 	if email == "" {
 		email = user.Login + "@users.noreply.bleephub.local"
 	}
-	signature := repoSignature(coalesceStr(user.Name, user.Login), email)
+	signature := repoSignature(store.CoalesceStr(user.Name, user.Login), email)
 	newHash, fastForward, err := performMerge(targetStor, branchRef, srcRef.Hash(), source.FullName+":"+branch, "", signature)
 	if err != nil {
 		if errors.Is(err, gitStorage.ErrReferenceHasChanged) {
@@ -331,7 +332,7 @@ func (s *Server) handleMergeUpstream(w http.ResponseWriter, r *http.Request) {
 	if newHash == oldRef.Hash() {
 		mergeType = "none"
 	} else {
-		s.store.UpdateRepo(owner, name, func(updated *Repo) {
+		s.store.UpdateRepo(owner, name, func(updated *store.Repo) {
 			updated.PushedAt = time.Now().UTC()
 		})
 		s.afterCommittedRefUpdate(repo, user, branchRef.String(), oldRef.Hash().String(), newHash.String(), s.baseURL(r))
@@ -356,7 +357,7 @@ func (s *Server) handleRenameBranch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.NewName == "" {
-		writeGHValidationError(w, "Branch", "new_name", "missing_field")
+		store.WriteGHValidationError(w, "Branch", "new_name", "missing_field")
 		return
 	}
 	if !s.store.RenameBranch(repo.ID, branch, req.NewName) {
@@ -364,7 +365,7 @@ func (s *Server) handleRenameBranch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	owner, name, _ := splitRepoFullName(repo.FullName)
+	owner, name, _ := store.SplitRepoFullName(repo.FullName)
 	stor := s.store.GetGitStorage(owner, name)
 	base := s.baseURL(r)
 	api := base + "/api/v3/repos/" + repo.FullName
@@ -437,7 +438,7 @@ func (s *Server) handleDeleteRepoSubscription(w http.ResponseWriter, r *http.Req
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func subscriptionToJSON(sub *RepoSubscription, repo *Repo, base string) map[string]interface{} {
+func subscriptionToJSON(sub *store.RepoSubscription, repo *store.Repo, base string) map[string]interface{} {
 	createdAt := repo.CreatedAt
 	subscribed := false
 	ignored := false
@@ -566,16 +567,16 @@ func (s *Server) handleSetInteractionLimits(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if req.Limit == "" {
-		writeGHValidationError(w, "InteractionLimit", "limit", "missing_field")
+		store.WriteGHValidationError(w, "InteractionLimit", "limit", "missing_field")
 		return
 	}
 	if !isInteractionGroup(req.Limit) {
-		writeGHValidationError(w, "InteractionLimit", "limit", "invalid")
+		store.WriteGHValidationError(w, "InteractionLimit", "limit", "invalid")
 		return
 	}
 	expiresAt, ok := interactionLimitExpiry(req.Expiry, s.currentTime())
 	if !ok {
-		writeGHValidationError(w, "InteractionLimit", "expiry", "invalid")
+		store.WriteGHValidationError(w, "InteractionLimit", "expiry", "invalid")
 		return
 	}
 	if !s.store.SetRepoInteractionLimit(repo.ID, req.Limit, &expiresAt) {
@@ -650,14 +651,14 @@ func (s *Server) handleCreateRepo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Name == "" {
-		writeGHValidationError(w, "Repository", "name", "missing_field")
+		store.WriteGHValidationError(w, "Repository", "name", "missing_field")
 		return
 	}
 	// A name carrying a path separator, whitespace, or a trailing ".git" makes
 	// the storage key ambiguous (GitHub rejects these). It is also the input to
 	// the git-transport double-suffix confusion, so refuse it at the source.
 	if !isValidNewRepoName(req.Name) {
-		writeGHValidationError(w, "Repository", "name", "invalid")
+		store.WriteGHValidationError(w, "Repository", "name", "invalid")
 		return
 	}
 
@@ -669,7 +670,7 @@ func (s *Server) handleCreateRepo(w http.ResponseWriter, r *http.Request) {
 		case "private", "internal":
 			private = true
 		default:
-			writeGHValidationError(w, "Repository", "visibility", "invalid")
+			store.WriteGHValidationError(w, "Repository", "visibility", "invalid")
 			return
 		}
 	}
@@ -685,7 +686,7 @@ func (s *Server) handleCreateRepo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.store.UpdateRepo(user.Login, req.Name, func(r *Repo) {
+	s.store.UpdateRepo(user.Login, req.Name, func(r *store.Repo) {
 		r.Homepage = req.Homepage
 		if req.HasIssues != nil {
 			r.HasIssues = *req.HasIssues
@@ -697,7 +698,7 @@ func (s *Server) handleCreateRepo(w http.ResponseWriter, r *http.Request) {
 			r.HasWiki = *req.HasWiki
 		}
 		if req.HasDiscussions != nil {
-			r.HasDiscussions = boolPointer(*req.HasDiscussions)
+			r.HasDiscussions = store.BoolPointer(*req.HasDiscussions)
 		}
 		if req.HasPullRequests != nil {
 			r.HasPullRequests = *req.HasPullRequests
@@ -723,7 +724,7 @@ func (s *Server) handleCreateRepo(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if defaultBranch != "main" {
-		s.store.UpdateRepo(user.Login, req.Name, func(r *Repo) {
+		s.store.UpdateRepo(user.Login, req.Name, func(r *store.Repo) {
 			r.DefaultBranch = defaultBranch
 		})
 	}
@@ -812,7 +813,7 @@ func (s *Server) handleUpdateRepo(w http.ResponseWriter, r *http.Request) {
 		name = newName
 	}
 
-	s.store.UpdateRepo(owner, name, func(r *Repo) {
+	s.store.UpdateRepo(owner, name, func(r *store.Repo) {
 		if v, ok := req["description"].(string); ok {
 			r.Description = v
 		}
@@ -840,7 +841,7 @@ func (s *Server) handleUpdateRepo(w http.ResponseWriter, r *http.Request) {
 			r.HasWiki = v
 		}
 		if v, ok := coerceBool(req["has_discussions"]); ok {
-			r.HasDiscussions = boolPointer(v)
+			r.HasDiscussions = store.BoolPointer(v)
 		}
 		if v, ok := coerceBool(req["has_pull_requests"]); ok {
 			r.HasPullRequests = v
@@ -905,7 +906,7 @@ func (s *Server) handleUpdateRepo(w http.ResponseWriter, r *http.Request) {
 	if wasPrivate && updated != nil && !updated.Private {
 		s.emitWebhookEvent(updated.FullName, "public", "", map[string]interface{}{
 			"repository": repoPayload(updated),
-			"sender":     userToJSON(user),
+			"sender":     store.UserToJSON(user),
 		})
 	}
 	writeJSON(w, http.StatusOK, fullRepoJSONForViewer(updated, s.store, s.baseURL(r), user))
@@ -1000,7 +1001,7 @@ func (s *Server) handlePutRepoTopics(w http.ResponseWriter, r *http.Request) {
 	// repo pointer is shared, so reading r.Topics after the lock is released
 	// would race a concurrent UpdateRepo writer.
 	names := []string{}
-	s.store.UpdateRepo(owner, name, func(r *Repo) {
+	s.store.UpdateRepo(owner, name, func(r *store.Repo) {
 		r.Topics = req.Names
 		r.UpdatedAt = time.Now().UTC()
 		names = append([]string{}, r.Topics...)
@@ -1020,7 +1021,7 @@ func (s *Server) handleListAuthUserRepos(w http.ResponseWriter, r *http.Request)
 	opts := repoListOptionsFromQuery(r)
 	// GitHub rejects type combined with visibility or affiliation.
 	if r.URL.Query().Get("type") != "" && (r.URL.Query().Get("visibility") != "" || r.URL.Query().Get("affiliation") != "") {
-		writeGHValidationError(w, "Repository", "type", "invalid")
+		store.WriteGHValidationError(w, "Repository", "type", "invalid")
 		return
 	}
 	opts.NoPaginate = true // REST handlers use paginateAndLink for Link headers
@@ -1029,7 +1030,7 @@ func (s *Server) handleListAuthUserRepos(w http.ResponseWriter, r *http.Request)
 	result := make([]map[string]interface{}, 0, len(repos))
 	base := s.baseURL(r)
 	for _, repo := range repos {
-		result = append(result, repoToJSONForViewer(repo, s.store, base, user))
+		result = append(result, store.RepoToJSONForViewer(repo, s.store, base, user))
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, result))
 }
@@ -1051,7 +1052,7 @@ func (s *Server) handleListUserRepos(w http.ResponseWriter, r *http.Request) {
 	base := s.baseURL(r)
 	viewer := ghUserFromContext(r.Context())
 	for _, repo := range repos {
-		result = append(result, repoToJSONForViewer(repo, s.store, base, viewer))
+		result = append(result, store.RepoToJSONForViewer(repo, s.store, base, viewer))
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, result))
 }
@@ -1072,14 +1073,14 @@ func (s *Server) handleListOrgRepos(w http.ResponseWriter, r *http.Request) {
 	base := s.baseURL(r)
 	viewer := ghUserFromContext(r.Context())
 	for _, repo := range repos {
-		result = append(result, repoToJSONForViewer(repo, s.store, base, viewer))
+		result = append(result, store.RepoToJSONForViewer(repo, s.store, base, viewer))
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, result))
 }
 
-func repoListOptionsFromQuery(r *http.Request) RepoListOptions {
+func repoListOptionsFromQuery(r *http.Request) store.RepoListOptions {
 	q := r.URL.Query()
-	return RepoListOptions{
+	return store.RepoListOptions{
 		Type:        q.Get("type"),
 		Visibility:  q.Get("visibility"),
 		Affiliation: q.Get("affiliation"),
@@ -1123,12 +1124,12 @@ func (s *Server) baseURL(r *http.Request) string {
 // repo creation). It is the repository shape plus the network/subscriber
 // counters that exist only on full-repository, both derived from real
 // store state: the fork network and the watch subscriptions.
-func fullRepoJSON(repo *Repo, st *Store, baseURL string) map[string]interface{} {
+func fullRepoJSON(repo *store.Repo, st *store.Store, baseURL string) map[string]interface{} {
 	return fullRepoJSONForViewer(repo, st, baseURL, nil)
 }
 
-func fullRepoJSONForViewer(repo *Repo, st *Store, baseURL string, viewer *User) map[string]interface{} {
-	out := repoToJSONForViewer(repo, st, baseURL, viewer)
+func fullRepoJSONForViewer(repo *store.Repo, st *store.Store, baseURL string, viewer *store.User) map[string]interface{} {
+	out := store.RepoToJSONForViewer(repo, st, baseURL, viewer)
 	out["network_count"] = out["forks_count"]
 	out["subscribers_count"] = len(st.ListRepoSubscribers(repo.ID))
 	out["organization"] = repoOrganizationJSON(repo, st)
@@ -1159,10 +1160,10 @@ func fullRepoJSONForViewer(repo *Repo, st *Store, baseURL string, viewer *User) 
 	}
 	if repo.Fork {
 		if parent := st.GetRepoByID(repo.ParentID); parent != nil {
-			out["parent"] = repoToJSONForViewer(parent, st, baseURL, viewer)
+			out["parent"] = store.RepoToJSONForViewer(parent, st, baseURL, viewer)
 		}
 		if source := st.GetRepoByID(repo.SourceID); source != nil {
-			out["source"] = repoToJSONForViewer(source, st, baseURL, viewer)
+			out["source"] = store.RepoToJSONForViewer(source, st, baseURL, viewer)
 		}
 	}
 	return out
@@ -1191,7 +1192,7 @@ func jsonObject[K comparable, V any](m map[K]V) map[K]V {
 // repoOwnerREST returns a simple-user-shaped map for the owner of repo,
 // using snake_case keys. For org-owned repos it resolves the organization
 // from the repo's full name rather than the creating user.
-func repoOwnerREST(repo *Repo, st *Store, baseURL string) map[string]interface{} {
+func repoOwnerREST(repo *store.Repo, st *store.Store, baseURL string) map[string]interface{} {
 	if repo == nil {
 		return nil
 	}
@@ -1228,12 +1229,12 @@ func repoOwnerREST(repo *Repo, st *Store, baseURL string) map[string]interface{}
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 	if repo.Owner != nil {
-		return userToJSON(repo.Owner)
+		return store.UserToJSON(repo.Owner)
 	}
 	return nil
 }
 
-func repoOrganizationJSON(repo *Repo, st *Store) interface{} {
+func repoOrganizationJSON(repo *store.Repo, st *store.Store) interface{} {
 	if repo.OwnerType != "Organization" {
 		return nil
 	}
@@ -1245,7 +1246,7 @@ func repoOrganizationJSON(repo *Repo, st *Store) interface{} {
 	if org == nil {
 		return nil
 	}
-	return orgAsSimpleUserJSON(org)
+	return store.OrgAsSimpleUserJSON(org)
 }
 
 func (s *Server) handleListStargazers(w http.ResponseWriter, r *http.Request) {
@@ -1260,7 +1261,7 @@ func (s *Server) handleListStargazers(w http.ResponseWriter, r *http.Request) {
 	out := make([]map[string]interface{}, 0, len(ids))
 	for _, id := range ids {
 		if u := s.store.GetUserByID(id); u != nil {
-			out = append(out, userToJSON(u))
+			out = append(out, store.UserToJSON(u))
 		}
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
@@ -1284,7 +1285,7 @@ func (s *Server) handleStarRepo(w http.ResponseWriter, r *http.Request) {
 		s.emitWebhookEvent(repo.FullName, "watch", "started", map[string]interface{}{
 			"action":     "started",
 			"repository": repoPayload(repo),
-			"sender":     userToJSON(user),
+			"sender":     store.UserToJSON(user),
 		})
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -1312,7 +1313,7 @@ func (s *Server) handleListStarredRepos(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	names := s.store.ListStarredRepos(user.ID)
-	repos := make([]*Repo, 0, len(names))
+	repos := make([]*store.Repo, 0, len(names))
 	for _, fullName := range names {
 		parts := strings.SplitN(fullName, "/", 2)
 		if len(parts) != 2 {
@@ -1330,7 +1331,7 @@ func (s *Server) handleListStarredRepos(w http.ResponseWriter, r *http.Request) 
 		// GitHub documents this against `repository`, not `full-repository`:
 		// the fuller shape adds network_count, subscribers_count and
 		// organization, which the starred listing does not carry.
-		out = append(out, repoToJSONForViewer(repo, s.store, s.baseURL(r), user))
+		out = append(out, store.RepoToJSONForViewer(repo, s.store, s.baseURL(r), user))
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
@@ -1404,7 +1405,7 @@ func (s *Server) handleGetCollaboratorPermission(w http.ResponseWriter, r *http.
 			return
 		}
 	}
-	userJSON := userToJSON(u)
+	userJSON := store.UserToJSON(u)
 	userJSON["role_name"] = githubRoleName(perm)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"permission": perm,
@@ -1458,7 +1459,7 @@ func (s *Server) handleAddCollaborator(w http.ResponseWriter, r *http.Request) {
 	} else if repo.Owner != nil {
 		inviterID = repo.Owner.ID
 	}
-	var inv *RepoInvitation
+	var inv *store.RepoInvitation
 	for _, pending := range s.store.ListPendingRepoInvitations(repo.FullName) {
 		if strings.EqualFold(pending.InviteeLogin, username) {
 			inv = s.store.UpdateRepoInvitation(repo.FullName, pending.ID, req.Permission)
@@ -1500,8 +1501,8 @@ func (s *Server) handleRemoveCollaborator(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func collaboratorJSON(u *User, perm string) map[string]interface{} {
-	json := userToJSON(u)
+func collaboratorJSON(u *store.User, perm string) map[string]interface{} {
+	json := store.UserToJSON(u)
 	json["permissions"] = collaboratorPermsJSON(perm)
 	json["role_name"] = perm
 	return json
@@ -1520,7 +1521,7 @@ func collaboratorPermsJSON(perm string) map[string]bool {
 // simpleRepoJSON returns a GitHub `simple-repository`-shaped map. It is a
 // trimmed subset of repoToJSON with only the fields the simple-repository
 // schema allows, used by alert/list surfaces that embed a repository object.
-func simpleRepoJSON(repo *Repo, st *Store, baseURL string) map[string]interface{} {
+func simpleRepoJSON(repo *store.Repo, st *store.Store, baseURL string) map[string]interface{} {
 	api := baseURL + "/api/v3/repos/" + repo.FullName
 	return map[string]interface{}{
 		"id":                repo.ID,

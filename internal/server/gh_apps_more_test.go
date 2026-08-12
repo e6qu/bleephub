@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // --- additional / refined App-management endpoints
@@ -212,7 +214,7 @@ func TestUserInstallationRepos_MutationBindsOwnerSelectionAndRepository(t *testi
 	owner := s.store.UsersByLogin["admin"]
 
 	s.store.Mu.Lock()
-	outsider := &User{ID: s.store.NextUser, Login: "installation-outsider", Type: "User"}
+	outsider := &store.User{ID: s.store.NextUser, Login: "installation-outsider", Type: "User"}
 	s.store.NextUser++
 	s.store.Users[outsider.ID] = outsider
 	s.store.UsersByLogin[outsider.Login] = outsider
@@ -223,7 +225,7 @@ func TestUserInstallationRepos_MutationBindsOwnerSelectionAndRepository(t *testi
 	ownedRepo := s.store.CreateRepo(owner, "owned", "", false)
 	foreignRepo := s.store.CreateRepo(outsider, "foreign", "", false)
 
-	request := func(user *User, repoID int) *httptest.ResponseRecorder {
+	request := func(user *store.User, repoID int) *httptest.ResponseRecorder {
 		req := httptest.NewRequest("PUT", fmt.Sprintf("/api/v3/user/installations/%d/repositories/%d", inst.ID, repoID), nil)
 		req = req.WithContext(context.WithValue(req.Context(), ctxUser, user))
 		w := httptest.NewRecorder()
@@ -259,19 +261,19 @@ func TestOrganizationInstallationRepoMutationRequiresOwnerAndMatchingAppCredenti
 	repo := s.store.CreateOrgRepo(org, owner, "selected-repo", "", true)
 
 	s.store.Mu.Lock()
-	member := &User{ID: s.store.NextUser, Login: "installation-member", Type: "User"}
+	member := &store.User{ID: s.store.NextUser, Login: "installation-member", Type: "User"}
 	s.store.NextUser++
 	s.store.Users[member.ID] = member
 	s.store.UsersByLogin[member.Login] = member
 	s.store.Mu.Unlock()
-	s.store.SetMembership(org.Login, member.ID, OrgRoleMember, MembershipStateActive)
+	s.store.SetMembership(org.Login, member.ID, store.OrgRoleMember, store.MembershipStateActive)
 
 	app := s.store.CreateApp(owner.ID, "Organization Selection App", "", nil, nil)
 	otherApp := s.store.CreateApp(owner.ID, "Uninstalled Selection App", "", nil, nil)
 	inst := s.store.CreateInstallation(app.ID, "Organization", org.ID, org.Login, nil, nil)
 	s.store.SetInstallationRepositorySelection(inst.ID, "selected", nil)
 
-	request := func(user *User, token *UserToServerToken) *httptest.ResponseRecorder {
+	request := func(user *store.User, token *store.UserToServerToken) *httptest.ResponseRecorder {
 		req := httptest.NewRequest("PUT", fmt.Sprintf("/api/v3/user/installations/%d/repositories/%d", inst.ID, repo.ID), nil)
 		ctx := context.WithValue(req.Context(), ctxUser, user)
 		if token != nil {
@@ -286,10 +288,10 @@ func TestOrganizationInstallationRepoMutationRequiresOwnerAndMatchingAppCredenti
 	if w := request(member, nil); w.Code != http.StatusNotFound {
 		t.Fatalf("ordinary organization member status = %d, want 404", w.Code)
 	}
-	if w := request(owner, &UserToServerToken{AppID: otherApp.ID}); w.Code != http.StatusNotFound {
+	if w := request(owner, &store.UserToServerToken{AppID: otherApp.ID}); w.Code != http.StatusNotFound {
 		t.Fatalf("wrong-app user token status = %d, want 404", w.Code)
 	}
-	if w := request(owner, &UserToServerToken{AppID: app.ID, InstallationIDs: []int{inst.ID}}); w.Code != http.StatusNoContent {
+	if w := request(owner, &store.UserToServerToken{AppID: app.ID, InstallationIDs: []int{inst.ID}}); w.Code != http.StatusNoContent {
 		t.Fatalf("owner with matching app token status = %d, want 204; body = %s", w.Code, w.Body.String())
 	}
 }
@@ -298,7 +300,7 @@ func TestInstallationRepoStoreRejectsInvalidState(t *testing.T) {
 	s := newTestServer()
 	s.store.SeedDefaultUser()
 	owner := s.store.UsersByLogin["admin"]
-	foreign := &User{ID: 4242, Login: "store-foreign", Type: "User"}
+	foreign := &store.User{ID: 4242, Login: "store-foreign", Type: "User"}
 	s.store.Mu.Lock()
 	s.store.Users[foreign.ID] = foreign
 	s.store.UsersByLogin[foreign.Login] = foreign
@@ -325,7 +327,7 @@ func TestListInstallationRepositories_GhsToken(t *testing.T) {
 	app := s.store.CreateApp(user.ID, "Inst Repos App", "", nil, nil)
 
 	s.store.Mu.Lock()
-	octo := &User{ID: s.store.NextUser, Login: "octocat", Type: "User"}
+	octo := &store.User{ID: s.store.NextUser, Login: "octocat", Type: "User"}
 	s.store.NextUser++
 	s.store.Users[octo.ID] = octo
 	s.store.UsersByLogin[octo.Login] = octo

@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"sort"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // Activity event feeds — GET /orgs/{org}/events, GET /events, and the
@@ -38,7 +40,7 @@ type activityEvent struct {
 	json      map[string]interface{}
 }
 
-func eventActorToJSON(u *User) map[string]interface{} {
+func eventActorToJSON(u *store.User) map[string]interface{} {
 	return map[string]interface{}{
 		"id":          u.ID,
 		"login":       u.Login,
@@ -48,7 +50,7 @@ func eventActorToJSON(u *User) map[string]interface{} {
 	}
 }
 
-func activityEventOrgJSON(org *Org) map[string]interface{} {
+func activityEventOrgJSON(org *store.Org) map[string]interface{} {
 	return map[string]interface{}{
 		"id":          org.ID,
 		"login":       org.Login,
@@ -63,24 +65,24 @@ func activityEventOrgJSON(org *Org) map[string]interface{} {
 // (the organization feed shape). Source rows are gathered under the read
 // lock and rendered outside it — the JSON builders (issueToJSON and
 // friends) take the store lock themselves.
-func (s *Server) deriveActivityEvents(base string, repos map[int]*Repo, org *Org) []activityEvent {
+func (s *Server) deriveActivityEvents(base string, repos map[int]*store.Repo, org *store.Org) []activityEvent {
 	s.store.Mu.RLock()
-	var issues []*Issue
+	var issues []*store.Issue
 	for _, issue := range s.store.Issues {
 		if repos[issue.RepoID] != nil {
 			issues = append(issues, issue)
 		}
 	}
-	var pulls []*PullRequest
+	var pulls []*store.PullRequest
 	for _, pr := range s.store.PullRequests {
 		if repos[pr.RepoID] != nil {
 			pulls = append(pulls, pr)
 		}
 	}
 	type commentRow struct {
-		comment *Comment
-		issue   *Issue
-		pull    *PullRequest
+		comment *store.Comment
+		issue   *store.Issue
+		pull    *store.PullRequest
 	}
 	var comments []commentRow
 	for _, c := range s.store.Comments {
@@ -97,14 +99,14 @@ func (s *Server) deriveActivityEvents(base string, repos map[int]*Repo, org *Org
 	}
 	s.store.Mu.RUnlock()
 
-	repoJSON := func(repo *Repo) map[string]interface{} {
+	repoJSON := func(repo *store.Repo) map[string]interface{} {
 		return map[string]interface{}{
 			"id":   repo.ID,
 			"name": repo.FullName,
 			"url":  base + "/api/v3/repos/" + repo.FullName,
 		}
 	}
-	event := func(kind, rowID int, typ string, actor *User, repo *Repo, createdAt time.Time, payload map[string]interface{}) activityEvent {
+	event := func(kind, rowID int, typ string, actor *store.User, repo *store.Repo, createdAt time.Time, payload map[string]interface{}) activityEvent {
 		j := map[string]interface{}{
 			"id":         activityEventID(kind, rowID),
 			"type":       typ,
@@ -157,7 +159,7 @@ func (s *Server) deriveActivityEvents(base string, repos map[int]*Repo, org *Org
 		if author == nil {
 			continue
 		}
-		var repo *Repo
+		var repo *store.Repo
 		var issueJSON map[string]interface{}
 		var issueNumber int
 		if row.issue != nil {
@@ -172,7 +174,7 @@ func (s *Server) deriveActivityEvents(base string, repos map[int]*Repo, org *Org
 		events = append(events, event(activityEventKindIssueComment, c.ID, "IssueCommentEvent", author, repo, c.CreatedAt, map[string]interface{}{
 			"action":  "created",
 			"issue":   issueJSON,
-			"comment": commentToJSON(c, s.store, base, repo.FullName, issueNumber),
+			"comment": store.CommentToJSON(c, s.store, base, repo.FullName, issueNumber),
 		}))
 	}
 	return events
@@ -213,10 +215,10 @@ func newestActivityTime(events []activityEvent) time.Time {
 
 // publicReposByID returns every non-private repository keyed by ID — the
 // repository universe of the public activity feeds.
-func (s *Server) publicReposByID() map[int]*Repo {
+func (s *Server) publicReposByID() map[int]*store.Repo {
 	s.store.Mu.RLock()
 	defer s.store.Mu.RUnlock()
-	repos := map[int]*Repo{}
+	repos := map[int]*store.Repo{}
 	for _, repo := range s.store.Repos {
 		if !repo.Private {
 			repos[repo.ID] = repo
@@ -239,7 +241,7 @@ func (s *Server) handleListOrgEvents(w http.ResponseWriter, r *http.Request) {
 
 	// The public feed covers the org's non-private repositories.
 	s.store.Mu.RLock()
-	orgRepos := map[int]*Repo{}
+	orgRepos := map[int]*store.Repo{}
 	for _, repo := range s.store.Repos {
 		if repo.OwnerType == "Organization" && repo.OwnerID == org.ID && !repo.Private {
 			orgRepos[repo.ID] = repo

@@ -11,6 +11,7 @@ package bleephub
 
 import (
 	"github.com/e6qu/bleephub/internal/graphqlapi"
+	"github.com/e6qu/bleephub/internal/store"
 
 	"fmt"
 	"net/http"
@@ -29,7 +30,7 @@ func (s *Server) registerGHActionsConcurrencyRoutes() {
 // concurrencyGroupMember is one run holding or waiting for a group's
 // lease. Position 0 = holder (in_progress); 1+ = queued (pending).
 type concurrencyGroupMember struct {
-	wf       *Workflow
+	wf       *store.Workflow
 	position int
 }
 
@@ -46,16 +47,16 @@ func (m concurrencyGroupMember) status() string {
 func (s *Server) concurrencyGroupsForRepo(repo string) map[string][]concurrencyGroupMember {
 	s.store.Mu.RLock()
 	defer s.store.Mu.RUnlock()
-	holders := map[string][]*Workflow{}
-	pending := map[string][]*Workflow{}
+	holders := map[string][]*store.Workflow{}
+	pending := map[string][]*store.Workflow{}
 	for _, wf := range s.store.Workflows {
 		if wf.ConcurrencyGroup == "" || wf.RepoFullName != repo {
 			continue
 		}
 		switch wf.Status {
-		case WorkflowStatusRunning, WorkflowStatusWaiting:
+		case store.WorkflowStatusRunning, store.WorkflowStatusWaiting:
 			holders[wf.ConcurrencyGroup] = append(holders[wf.ConcurrencyGroup], wf)
-		case WorkflowStatusPendingConcurrency:
+		case store.WorkflowStatusPendingConcurrency:
 			pending[wf.ConcurrencyGroup] = append(pending[wf.ConcurrencyGroup], wf)
 		}
 	}
@@ -76,7 +77,7 @@ func (s *Server) concurrencyGroupsForRepo(repo string) map[string][]concurrencyG
 	// still lists them as pending from position 1, matching the queue
 	// semantics: position 0 is reserved for the lease holder.
 	for group, members := range out {
-		if len(members) > 0 && members[0].wf.Status == WorkflowStatusPendingConcurrency {
+		if len(members) > 0 && members[0].wf.Status == store.WorkflowStatusPendingConcurrency {
 			for i := range members {
 				members[i].position = i + 1
 			}

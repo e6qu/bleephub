@@ -17,6 +17,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // long-tail GitHub API surfaces gh CLI / octokit / probot hit.// Users API extras (keys, gpg_keys, emails, followers, following)
@@ -31,13 +33,13 @@ import (
 func (s *Server) registerGHMiscEndpoints() {
 	// Users keys + emails + follow
 	s.route("GET /api/v3/user/keys", s.handleListUserKeys)
-	s.route("POST /api/v3/user/keys", s.requirePerm(scopeAdministration, permWrite, s.handleCreateUserKey))
+	s.route("POST /api/v3/user/keys", s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleCreateUserKey))
 	s.route("GET /api/v3/user/keys/{key_id}", s.handleGetUserKey)
-	s.route("DELETE /api/v3/user/keys/{key_id}", s.requirePerm(scopeAdministration, permWrite, s.handleDeleteUserKey))
+	s.route("DELETE /api/v3/user/keys/{key_id}", s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleDeleteUserKey))
 	s.route("GET /api/v3/user/gpg_keys", s.handleListGPGKeys)
-	s.route("POST /api/v3/user/gpg_keys", s.requirePerm(scopeAdministration, permWrite, s.handleCreateGPGKey))
+	s.route("POST /api/v3/user/gpg_keys", s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleCreateGPGKey))
 	s.route("GET /api/v3/user/gpg_keys/{gpg_key_id}", s.handleGetGPGKey)
-	s.route("DELETE /api/v3/user/gpg_keys/{gpg_key_id}", s.requirePerm(scopeAdministration, permWrite, s.handleDeleteGPGKey))
+	s.route("DELETE /api/v3/user/gpg_keys/{gpg_key_id}", s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleDeleteGPGKey))
 	s.route("GET /api/v3/user/emails", s.handleListUserEmails)
 	s.route("GET /api/v3/users/{username}/keys", s.handleListUserKeysByLogin)
 	s.route("GET /api/v3/users/{username}/gpg_keys", s.handleListGPGKeysByLogin)
@@ -89,22 +91,22 @@ func (s *Server) registerGHMiscEndpoints() {
 	// OIDC subject customization is scoped to a repo or an org on real GitHub.
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/oidc/customization/sub", s.handleOIDCCustomSubGet)
 	s.route("PUT /api/v3/repos/{owner}/{repo}/actions/oidc/customization/sub",
-		s.requirePerm(scopeAdministration, permWrite, s.handleOIDCCustomSubPut))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleOIDCCustomSubPut))
 	s.route("GET /api/v3/orgs/{org}/actions/oidc/customization/sub", s.handleOIDCCustomSubGet)
 	s.route("PUT /api/v3/orgs/{org}/actions/oidc/customization/sub",
-		s.requirePerm(scopeAdministration, permWrite, s.handleOIDCCustomSubPut))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleOIDCCustomSubPut))
 
 	// Pages
 	s.route("GET /api/v3/repos/{owner}/{repo}/pages", s.requirePagesRead(s.handlePagesGet))
 	s.route("POST /api/v3/repos/{owner}/{repo}/pages",
-		s.requirePerm(scopePages, permWrite, s.handlePagesCreate))
+		s.requirePerm(store.ScopePages, store.PermWrite, s.handlePagesCreate))
 	s.route("PUT /api/v3/repos/{owner}/{repo}/pages",
-		s.requirePerm(scopePages, permWrite, s.handlePagesUpdate))
+		s.requirePerm(store.ScopePages, store.PermWrite, s.handlePagesUpdate))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/pages",
-		s.requirePerm(scopePages, permWrite, s.handlePagesDelete))
+		s.requirePerm(store.ScopePages, store.PermWrite, s.handlePagesDelete))
 	s.route("GET /api/v3/repos/{owner}/{repo}/pages/builds", s.requirePagesRead(s.handlePagesListBuilds))
 	s.route("POST /api/v3/repos/{owner}/{repo}/pages/builds",
-		s.requirePerm(scopePages, permWrite, s.handlePagesTriggerBuild))
+		s.requirePerm(store.ScopePages, store.PermWrite, s.handlePagesTriggerBuild))
 	s.route("GET /api/v3/repos/{owner}/{repo}/pages/builds/latest", s.requirePagesRead(s.handlePagesLatestBuild))
 	s.route("GET /api/v3/repos/{owner}/{repo}/pages/builds/{build_id}", s.requirePagesRead(s.handlePagesGetBuild))
 
@@ -175,14 +177,14 @@ func (s *Server) handleCreateUserKey(w http.ResponseWriter, r *http.Request) {
 		Key   string `json:"key"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Key == "" {
-		writeGHValidationError(w, "Key", "key", "missing_field")
+		store.WriteGHValidationError(w, "Key", "key", "missing_field")
 		return
 	}
 	s.store.Misc.Mu.Lock()
 	id := s.store.Misc.NextKeyID
 	s.store.Misc.NextKeyID++
-	k := &UserKey{ID: id, Title: req.Title, Key: req.Key, Verified: true, UserID: user.ID, CreatedAt: time.Now().UTC()}
-	parseErr := cacheParsedKey(k)
+	k := &store.UserKey{ID: id, Title: req.Title, Key: req.Key, Verified: true, UserID: user.ID, CreatedAt: time.Now().UTC()}
+	parseErr := store.CacheParsedKey(k)
 	s.store.Misc.UserKeys[id] = k
 	s.store.Misc.KeysByUser[user.ID] = append(s.store.Misc.KeysByUser[user.ID], k)
 	if s.store.Misc.Persist != nil {
@@ -285,7 +287,7 @@ func (s *Server) handleCreateGPGKey(w http.ResponseWriter, r *http.Request) {
 		Name             string `json:"name"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ArmoredPublicKey == "" {
-		writeGHValidationError(w, "ArmoredPublicKey", "armored_public_key", "missing_field")
+		store.WriteGHValidationError(w, "ArmoredPublicKey", "armored_public_key", "missing_field")
 		return
 	}
 	s.store.Misc.Mu.Lock()
@@ -295,10 +297,10 @@ func (s *Server) handleCreateGPGKey(w http.ResponseWriter, r *http.Request) {
 	if user.Email != "" {
 		email = user.Email
 	}
-	k := &GPGKey{
+	k := &store.GPGKey{
 		ID: id, PublicKey: req.ArmoredPublicKey, Name: req.Name, UserID: user.ID,
 		CreatedAt: time.Now(), CanSign: true, CanEncryptCommits: true, CanCertify: true,
-		Emails: []GPGKeyEmail{{Email: email, Verified: true, Primary: true}},
+		Emails: []store.GPGKeyEmail{{Email: email, Verified: true, Primary: true}},
 	}
 	s.store.Misc.GpgKeys[id] = k
 	s.store.Misc.GpgKeysByUser[user.ID] = append(s.store.Misc.GpgKeysByUser[user.ID], k)
@@ -375,7 +377,7 @@ func (s *Server) handleListGPGKeysByLogin(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
 
-func gpgKeyToJSON(k *GPGKey) map[string]interface{} {
+func gpgKeyToJSON(k *store.GPGKey) map[string]interface{} {
 	m := map[string]interface{}{
 		"id": k.ID, "key_id": k.KeyID, "public_key": k.PublicKey,
 		"can_sign": k.CanSign, "can_encrypt_commits": k.CanEncryptCommits,
@@ -430,7 +432,7 @@ func (s *Server) resolveLoginsJSON(logins []string) []map[string]interface{} {
 	out := []map[string]interface{}{}
 	for _, login := range logins {
 		if u := s.store.LookupUserByLogin(login); u != nil {
-			out = append(out, userToJSON(u))
+			out = append(out, store.UserToJSON(u))
 		}
 	}
 	return out
@@ -769,7 +771,7 @@ func (s *Server) mintOIDCToken(r *http.Request, audience string) (string, error)
 	workflowRef := repoFull + "/.github/workflows/" + workflowFile + "@" + ref
 	jobWorkflowRef := workflowRef
 
-	jtiBytes, err := randomBytes(12)
+	jtiBytes, err := store.RandomBytes(12)
 	if err != nil {
 		return "", fmt.Errorf("generate OpenID Connect token id: %w", err)
 	}
@@ -885,8 +887,8 @@ func (s *Server) handlePagesCreate(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusBadRequest, "Problems parsing JSON")
 		return
 	}
-	buildType := coalesceStr(req.BuildType, "legacy")
-	sourcePath := coalesceStr(req.Source.Path, "/")
+	buildType := store.CoalesceStr(req.BuildType, "legacy")
+	sourcePath := store.CoalesceStr(req.Source.Path, "/")
 	if err := s.validatePagesConfiguration(repo, buildType, req.Source.Branch, sourcePath); err != nil {
 		writeGHError(w, http.StatusUnprocessableEntity, err.Error())
 		return
@@ -894,7 +896,7 @@ func (s *Server) handlePagesCreate(w http.ResponseWriter, r *http.Request) {
 	// repo.Owner is an invariant (set at create, relinked on load); use it
 	// directly rather than guessing an owner.
 	ownerLogin := repo.Owner.Login
-	pages := &PagesSite{
+	pages := &store.PagesSite{
 		CNAME:   req.CNAME,
 		URL:     s.baseURL(r) + "/" + repo.FullName + "/pages",
 		HTMLURL: s.baseURL(r) + "/pages/" + ownerLogin + "/" + repo.Name + "/",
@@ -1003,7 +1005,7 @@ func (s *Server) handlePagesUpdate(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) validatePagesConfiguration(repo *Repo, buildType, branch, sourcePath string) error {
+func (s *Server) validatePagesConfiguration(repo *store.Repo, buildType, branch, sourcePath string) error {
 	if buildType != "legacy" && buildType != "workflow" {
 		return fmt.Errorf("invalid request: build_type must be legacy or workflow")
 	}
@@ -1017,7 +1019,7 @@ func (s *Server) validatePagesConfiguration(repo *Repo, buildType, branch, sourc
 		if branch == "" {
 			return fmt.Errorf("invalid request: source.branch is required for legacy Pages builds")
 		}
-		if resolveBranchSha(s.store.GetGitStorage(repo.Owner.Login, repo.Name), branch) == "" {
+		if store.ResolveBranchSha(s.store.GetGitStorage(repo.Owner.Login, repo.Name), branch) == "" {
 			return fmt.Errorf("invalid request: Pages source branch %q does not exist", branch)
 		}
 	}
@@ -1053,7 +1055,7 @@ func (s *Server) handlePagesListBuilds(w http.ResponseWriter, r *http.Request) {
 	builds := s.store.Misc.PagesBuilds[repo.FullName]
 	s.store.Misc.Mu.RUnlock()
 	if builds == nil {
-		builds = []*PagesBuild{}
+		builds = []*store.PagesBuild{}
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, builds))
 }
@@ -1065,10 +1067,10 @@ func (s *Server) handlePagesTriggerBuild(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	actor := "bleephub-system"
-	var pusher *PagesPusher
+	var pusher *store.PagesPusher
 	if user := ghUserFromContext(r.Context()); user != nil {
 		actor = user.Login
-		pusher = &PagesPusher{Login: user.Login, ID: user.ID, Type: coalesceStr(user.Type, "User")}
+		pusher = &store.PagesPusher{Login: user.Login, ID: user.ID, Type: store.CoalesceStr(user.Type, "User")}
 	}
 	_, ok := s.runPagesBuild(r.Context(), repo, pusher, actor, s.baseURL(r))
 	if !ok {
@@ -1079,7 +1081,7 @@ func (s *Server) handlePagesTriggerBuild(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusCreated, map[string]interface{}{"status": "queued", "url": s.baseURL(r) + "/api/v3/repos/" + repo.FullName + "/pages/builds/latest"})
 }
 
-func (s *Server) runPagesBuild(ctx context.Context, repo *Repo, pusher *PagesPusher, actor, baseURL string) (*PagesBuild, bool) {
+func (s *Server) runPagesBuild(ctx context.Context, repo *store.Repo, pusher *store.PagesPusher, actor, baseURL string) (*store.PagesBuild, bool) {
 	now := time.Now()
 	s.store.Misc.Mu.Lock()
 	pages := s.store.Misc.PagesByRepo[repo.ID]
@@ -1090,16 +1092,16 @@ func (s *Server) runPagesBuild(ctx context.Context, repo *Repo, pusher *PagesPus
 	buildID := s.store.Misc.NextPagesBuildID
 	s.store.Misc.NextPagesBuildID++
 	buildURL := baseURL + "/api/v3/repos/" + repo.FullName + "/pages/builds/" + strconv.FormatInt(buildID, 10)
-	build := &PagesBuild{
+	build := &store.PagesBuild{
 		ID:        buildID,
 		URL:       buildURL,
 		Status:    "queued",
 		Pusher:    pusher,
 		CreatedAt: now,
 		UpdatedAt: now,
-		Error:     &PagesBuildErr{},
+		Error:     &store.PagesBuildErr{},
 	}
-	s.store.Misc.PagesBuilds[repo.FullName] = append([]*PagesBuild{build}, s.store.Misc.PagesBuilds[repo.FullName]...)
+	s.store.Misc.PagesBuilds[repo.FullName] = append([]*store.PagesBuild{build}, s.store.Misc.PagesBuilds[repo.FullName]...)
 	if s.store.Misc.Persist != nil {
 		s.store.Misc.Persist.MustPut("pages_builds", repo.FullName, s.store.Misc.PagesBuilds[repo.FullName])
 	}
@@ -1132,14 +1134,14 @@ func (s *Server) runPagesBuild(ctx context.Context, repo *Repo, pusher *PagesPus
 	// build marked built while the site row still says building, or vice versa
 	// (STORE-001/002). Unlock before any panic so a persist failure can't
 	// deadlock on the held lock.
-	batch := newPersistBatch(s.store.Misc.Persist)
+	batch := store.NewPersistBatch(s.store.Misc.Persist)
 	batch.Put("pages_builds", repo.FullName, s.store.Misc.PagesBuilds[repo.FullName])
 	batch.Put("pages_sites", strconv.Itoa(repo.ID), pages)
 	persistErr := batch.Commit()
 	buildStatus, buildCommit, buildDuration := build.Status, build.Commit, build.Duration
 	s.store.Misc.Mu.Unlock()
 	if persistErr != nil {
-		panic(&persistenceFailure{Op: "batch", Bucket: "pages_sites", Key: strconv.Itoa(repo.ID), Err: persistErr})
+		panic(&store.PersistenceFailure{Op: "batch", Bucket: "pages_sites", Key: strconv.Itoa(repo.ID), Err: persistErr})
 	}
 	s.recordAuditEvent("pages.build", actor, "", map[string]interface{}{"repo": repo.FullName, "build_id": buildID})
 	// `page_build` fires when a Pages build finishes, so `on: page_build`
@@ -1151,7 +1153,7 @@ func (s *Server) runPagesBuild(ctx context.Context, repo *Repo, pusher *PagesPus
 			"duration": buildDuration,
 		},
 		"repository": repoPayload(repo),
-		"sender":     userToJSON(s.store.LookupUserByLogin(actor)),
+		"sender":     store.UserToJSON(s.store.LookupUserByLogin(actor)),
 	})
 	return build, true
 }
@@ -1214,11 +1216,11 @@ func (s *Server) handleOrgAuditLog(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.store.Misc.Mu.RLock()
-	entries := make([]*AuditEntry, 0, len(s.store.Misc.AuditLog))
+	entries := make([]*store.AuditEntry, 0, len(s.store.Misc.AuditLog))
 	order := r.URL.Query().Get("order")
 	if order != "" && order != "desc" && order != "asc" {
 		s.store.Misc.Mu.RUnlock()
-		writeGHValidationError(w, "AuditLog", "order", "invalid")
+		store.WriteGHValidationError(w, "AuditLog", "order", "invalid")
 		return
 	}
 	for _, e := range s.store.Misc.AuditLog {
@@ -1246,7 +1248,7 @@ func (s *Server) handleOrgAuditLog(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, entries))
 }
 
-func auditEntryMatchesPhrase(e *AuditEntry, phrase string) bool {
+func auditEntryMatchesPhrase(e *store.AuditEntry, phrase string) bool {
 	terms := strings.Fields(strings.ToLower(phrase))
 	if len(terms) == 0 {
 		return true
@@ -1269,7 +1271,7 @@ func (s *Server) recordAuditEvent(action, actor, org string, data map[string]int
 	s.store.Misc.Mu.Lock()
 	defer s.store.Misc.Mu.Unlock()
 	s.store.Misc.NextAuditID++
-	entry := &AuditEntry{
+	entry := &store.AuditEntry{
 		ID:        s.store.Misc.NextAuditID,
 		Timestamp: s.store.CurrentTime().Format(time.RFC3339Nano),
 		Action:    action,
@@ -1278,7 +1280,7 @@ func (s *Server) recordAuditEvent(action, actor, org string, data map[string]int
 		Data:      data,
 		Version:   "1.1",
 	}
-	s.store.Misc.AuditLog = append([]*AuditEntry{entry}, s.store.Misc.AuditLog...)
+	s.store.Misc.AuditLog = append([]*store.AuditEntry{entry}, s.store.Misc.AuditLog...)
 	if len(s.store.Misc.AuditLog) > maxAuditLogEntries {
 		s.store.Misc.AuditLog = s.store.Misc.AuditLog[:maxAuditLogEntries]
 	}
@@ -1294,7 +1296,7 @@ func (s *Server) recordAuditEvent(action, actor, org string, data map[string]int
 const maxAuditLogEntries = 5000
 
 // marketplacePlanToJSON renders the spec `marketplace-listing-plan` shape.
-func marketplacePlanToJSON(p *MarketplacePlan, baseURL string) map[string]interface{} {
+func marketplacePlanToJSON(p *store.MarketplacePlan, baseURL string) map[string]interface{} {
 	api := baseURL + "/api/v3/marketplace_listing/plans/" + strconv.Itoa(p.ID)
 	return map[string]interface{}{
 		"url":                    api,
@@ -1315,7 +1317,7 @@ func marketplacePlanToJSON(p *MarketplacePlan, baseURL string) map[string]interf
 
 // marketplaceAccountJSON renders the spec `marketplace-purchase` shape.
 // The account is a real user or organization from the store.
-func (s *Server) marketplaceAccountJSON(purchase *MarketplacePurchase, plan *MarketplacePlan, baseURL string) map[string]interface{} {
+func (s *Server) marketplaceAccountJSON(purchase *store.MarketplacePurchase, plan *store.MarketplacePlan, baseURL string) map[string]interface{} {
 	accountType := purchase.AccountType
 	login := ""
 	var email interface{}
@@ -1399,7 +1401,7 @@ func (s *Server) handleMarketplaceAccount(w http.ResponseWriter, r *http.Request
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	var purchase *MarketplacePurchase
+	var purchase *store.MarketplacePurchase
 	for _, candidate := range s.store.ListMarketplacePurchasesForListing(listing.Slug) {
 		if candidate.AccountID == accountID {
 			if purchase != nil {
@@ -1409,7 +1411,7 @@ func (s *Server) handleMarketplaceAccount(w http.ResponseWriter, r *http.Request
 			purchase = candidate
 		}
 	}
-	var plan *MarketplacePlan
+	var plan *store.MarketplacePlan
 	if purchase != nil {
 		plan = s.store.GetMarketplacePlanForListing(listing.Slug, purchase.PlanID)
 	}
@@ -1435,7 +1437,7 @@ func (s *Server) handleMarketplacePlanAccounts(w http.ResponseWriter, r *http.Re
 		return
 	}
 	plan := s.store.GetMarketplacePlanForListing(listing.Slug, planID)
-	purchases := make([]*MarketplacePurchase, 0)
+	purchases := make([]*store.MarketplacePurchase, 0)
 	for _, pu := range s.store.ListMarketplacePurchasesForListing(listing.Slug) {
 		if pu.PlanID == planID {
 			purchases = append(purchases, pu)
@@ -1471,7 +1473,7 @@ func (s *Server) handleMarketplacePlanAccounts(w http.ResponseWriter, r *http.Re
 
 // --- Helpers ---
 
-func userKeyToJSON(k *UserKey, baseURL string) map[string]interface{} {
+func userKeyToJSON(k *store.UserKey, baseURL string) map[string]interface{} {
 	return map[string]interface{}{
 		"id":         k.ID,
 		"url":        baseURL + "/api/v3/user/keys/" + strconv.Itoa(k.ID),

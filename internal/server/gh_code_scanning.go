@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"gopkg.in/yaml.v3"
@@ -32,9 +33,9 @@ func (s *Server) registerGHCodeScanningRoutes() {
 
 	// SARIF upload
 	s.route("POST /api/v3/repos/{owner}/{repo}/code-scanning/sarifs",
-		s.requirePerm(scopeSecurityEvents, permWrite, s.handleCreateSARIFUpload))
+		s.requirePerm(store.ScopeSecurityEvents, store.PermWrite, s.handleCreateSARIFUpload))
 	s.route("GET /api/v3/repos/{owner}/{repo}/code-scanning/sarifs/{sarif_id}",
-		s.requirePerm(scopeSecurityEvents, permRead, s.handleGetSARIFUpload))
+		s.requirePerm(store.ScopeSecurityEvents, store.PermRead, s.handleGetSARIFUpload))
 
 	// Default setup
 	s.route("GET /api/v3/repos/{owner}/{repo}/code-scanning/default-setup", s.handleGetCodeScanningDefaultSetup)
@@ -47,13 +48,13 @@ func (s *Server) registerGHCodeScanningRoutes() {
 
 	// CodeQL databases
 	s.route("POST /repos/{owner}/{repo}/code-scanning/codeql/databases/{language}",
-		s.requirePerm(scopeSecurityEvents, permWrite, s.handleUploadCodeQLDatabase))
+		s.requirePerm(store.ScopeSecurityEvents, store.PermWrite, s.handleUploadCodeQLDatabase))
 	s.route("GET /api/v3/repos/{owner}/{repo}/code-scanning/codeql/databases",
-		s.requirePerm(scopeContents, permRead, s.handleListCodeQLDatabases))
+		s.requirePerm(store.ScopeContents, store.PermRead, s.handleListCodeQLDatabases))
 	s.route("GET /api/v3/repos/{owner}/{repo}/code-scanning/codeql/databases/{language}",
-		s.requirePerm(scopeContents, permRead, s.handleGetCodeQLDatabase))
+		s.requirePerm(store.ScopeContents, store.PermRead, s.handleGetCodeQLDatabase))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/code-scanning/codeql/databases/{language}",
-		s.requirePerm(scopeContents, permWrite, s.handleDeleteCodeQLDatabase))
+		s.requirePerm(store.ScopeContents, store.PermWrite, s.handleDeleteCodeQLDatabase))
 	s.route("GET /code-scanning/repos/{owner}/{repo}/codeql/databases/{language}/download", s.handleDownloadCodeQLDatabase)
 
 	// CodeQL variant analyses
@@ -64,7 +65,7 @@ func (s *Server) registerGHCodeScanningRoutes() {
 
 	// Organization alerts
 	s.route("GET /api/v3/orgs/{org}/code-scanning/alerts",
-		s.requireOrgAdmin(scopeSecurityEvents, permRead, s.handleListOrgCodeScanningAlerts))
+		s.requireOrgAdmin(store.ScopeSecurityEvents, store.PermRead, s.handleListOrgCodeScanningAlerts))
 
 }
 
@@ -126,7 +127,7 @@ func (s *Server) handleUpdateCodeScanningAlert(w http.ResponseWriter, r *http.Re
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !s.viewerMayActOnRepo(r.Context(), repo, scopeSecurityEvents, permWrite, permAdmin) {
+	if !s.viewerMayActOnRepo(r.Context(), repo, store.ScopeSecurityEvents, store.PermWrite, store.PermAdmin) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -145,11 +146,11 @@ func (s *Server) handleUpdateCodeScanningAlert(w http.ResponseWriter, r *http.Re
 		return
 	}
 	if req.State == "" {
-		writeGHValidationError(w, "CodeScanningAlert", "state", "missing_field")
+		store.WriteGHValidationError(w, "CodeScanningAlert", "state", "missing_field")
 		return
 	}
 	if err := s.store.UpdateCodeScanningAlert(a, req.State, req.DismissedReason, req.DismissedComment); err != nil {
-		writeGHValidationError(w, "CodeScanningAlert", "state", "invalid")
+		store.WriteGHValidationError(w, "CodeScanningAlert", "state", "invalid")
 		return
 	}
 	writeJSON(w, http.StatusOK, codeScanningAlertToJSON(a, s.baseURL(r), repo))
@@ -237,7 +238,7 @@ func (s *Server) handleDeleteCodeScanningAnalysis(w http.ResponseWriter, r *http
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !s.viewerMayActOnRepo(r.Context(), repo, scopeSecurityEvents, permWrite, permAdmin) {
+	if !s.viewerMayActOnRepo(r.Context(), repo, store.ScopeSecurityEvents, store.PermWrite, store.PermAdmin) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -277,17 +278,17 @@ func (s *Server) handleCreateSARIFUpload(w http.ResponseWriter, r *http.Request)
 	commitSHA, _ := req["commit_sha"].(string)
 	ref, _ := req["ref"].(string)
 	if err := validateCodeScanningRef(ref); err != nil {
-		writeGHValidationError(w, "SARIFUpload", "ref", "invalid")
+		store.WriteGHValidationError(w, "SARIFUpload", "ref", "invalid")
 		return
 	}
 	if err := s.validateCodeScanningCommit(repo, commitSHA); err != nil {
-		writeGHValidationError(w, "SARIFUpload", "commit_sha", "invalid")
+		store.WriteGHValidationError(w, "SARIFUpload", "commit_sha", "invalid")
 		return
 	}
 
 	upload, err := s.store.CreateSARIFUpload(repo.FullName, req)
 	if err != nil {
-		writeGHValidationError(w, "SARIFUpload", "sarif", "invalid")
+		store.WriteGHValidationError(w, "SARIFUpload", "sarif", "invalid")
 		return
 	}
 	baseURL := s.baseURL(r)
@@ -307,15 +308,15 @@ func (s *Server) handleCreateSARIFUpload(w http.ResponseWriter, r *http.Request)
 // rather than intersected with a grant, which is how an installation created on
 // the attacker's own account downloaded any private repository's CodeQL
 // database — source-code-equivalent.
-func (s *Server) codeScanningRequestCanWriteRepo(r *http.Request, repo *Repo) bool {
-	return s.viewerHasRepoPermission(r.Context(), repo, scopeSecurityEvents, permWrite)
+func (s *Server) codeScanningRequestCanWriteRepo(r *http.Request, repo *store.Repo) bool {
+	return s.viewerHasRepoPermission(r.Context(), repo, store.ScopeSecurityEvents, store.PermWrite)
 }
 
-func (s *Server) codeScanningRequestCanReadRepo(r *http.Request, repo *Repo) bool {
+func (s *Server) codeScanningRequestCanReadRepo(r *http.Request, repo *store.Repo) bool {
 	return s.viewerCanReadRepo(r.Context(), repo)
 }
 
-func (s *Server) validateCodeScanningCoordinate(repo *Repo, commitSHA, ref string) error {
+func (s *Server) validateCodeScanningCoordinate(repo *store.Repo, commitSHA, ref string) error {
 	if err := validateCodeScanningRef(ref); err != nil {
 		return err
 	}
@@ -332,7 +333,7 @@ func validateCodeScanningRef(ref string) error {
 	return nil
 }
 
-func (s *Server) validateCodeScanningCommit(repo *Repo, commitSHA string) error {
+func (s *Server) validateCodeScanningCommit(repo *store.Repo, commitSHA string) error {
 	if repo == nil || len(commitSHA) != 40 {
 		return fmt.Errorf("commit_sha must be a full commit object ID")
 	}
@@ -490,7 +491,7 @@ func (s *Server) handleUpdateCodeScanningDefaultSetup(w http.ResponseWriter, r *
 			writeGHError(w, http.StatusConflict, "Code scanning default setup is already disabled")
 			return
 		}
-		s.store.SetCodeScanningDefaultSetup(&CodeScanningDefaultSetup{
+		s.store.SetCodeScanningDefaultSetup(&store.CodeScanningDefaultSetup{
 			RepoKey: repo.FullName,
 			State:   "not-configured",
 		})
@@ -502,7 +503,7 @@ func (s *Server) handleUpdateCodeScanningDefaultSetup(w http.ResponseWriter, r *
 		return
 	}
 
-	setup := &CodeScanningDefaultSetup{
+	setup := &store.CodeScanningDefaultSetup{
 		RepoKey:    repo.FullName,
 		State:      "configured",
 		QuerySuite: "default",
@@ -528,7 +529,7 @@ func (s *Server) handleUpdateCodeScanningDefaultSetup(w http.ResponseWriter, r *
 		setup.Languages = s.store.DetectCodeQLLanguages(repo)
 	}
 	if setup.RunnerType == "labeled" && setup.RunnerLabel == "" {
-		writeGHValidationError(w, "CodeScanningDefaultSetup", "runner_label", "missing_field")
+		store.WriteGHValidationError(w, "CodeScanningDefaultSetup", "runner_label", "missing_field")
 		return
 	}
 	if len(setup.Languages) == 0 {
@@ -539,7 +540,7 @@ func (s *Server) handleUpdateCodeScanningDefaultSetup(w http.ResponseWriter, r *
 	writeJSON(w, http.StatusOK, map[string]interface{}{})
 }
 
-func (s *Server) lookupCodeScanningAlert(w http.ResponseWriter, r *http.Request, repo *Repo) *CodeScanningAlert {
+func (s *Server) lookupCodeScanningAlert(w http.ResponseWriter, r *http.Request, repo *store.Repo) *store.CodeScanningAlert {
 	number, err := strconv.Atoi(r.PathValue("alert_number"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -553,7 +554,7 @@ func (s *Server) lookupCodeScanningAlert(w http.ResponseWriter, r *http.Request,
 	return a
 }
 
-func codeScanningAlertToJSON(a *CodeScanningAlert, baseURL string, repo *Repo) map[string]interface{} {
+func codeScanningAlertToJSON(a *store.CodeScanningAlert, baseURL string, repo *store.Repo) map[string]interface{} {
 	apiURL := fmt.Sprintf("%s/api/v3/repos/%s/code-scanning/alerts/%d", baseURL, repo.FullName, a.Number)
 	htmlURL := fmt.Sprintf("%s/%s/security/code-scanning/%d", baseURL, repo.FullName, a.Number)
 	instancesURL := fmt.Sprintf("%s/instances", apiURL)
@@ -601,7 +602,7 @@ func codeScanningAlertToJSON(a *CodeScanningAlert, baseURL string, repo *Repo) m
 	}
 }
 
-func codeScanningInstanceToJSON(inst CodeScanningAlertInstance) map[string]interface{} {
+func codeScanningInstanceToJSON(inst store.CodeScanningAlertInstance) map[string]interface{} {
 	return map[string]interface{}{
 		"ref":          inst.Ref,
 		"analysis_key": inst.AnalysisKey,
@@ -649,7 +650,7 @@ func (s *Server) handleListOrgCodeScanningAlerts(w http.ResponseWriter, r *http.
 
 // --- Copilot Autofix ---
 
-func codeScanningAutofixJSON(fix *CodeScanningAutofix) map[string]interface{} {
+func codeScanningAutofixJSON(fix *store.CodeScanningAutofix) map[string]interface{} {
 	return map[string]interface{}{
 		"status":      fix.Status,
 		"description": fix.Description,
@@ -691,7 +692,7 @@ func (s *Server) handleCreateCodeScanningAutofix(w http.ResponseWriter, r *http.
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !s.viewerHasRepoPermission(r.Context(), repo, scopeSecurityEvents, permWrite) {
+	if !s.viewerHasRepoPermission(r.Context(), repo, store.ScopeSecurityEvents, store.PermWrite) {
 		writeGHError(w, http.StatusForbidden, "Must have push access to Repository.")
 		return
 	}
@@ -727,7 +728,7 @@ func (s *Server) handleCommitCodeScanningAutofix(w http.ResponseWriter, r *http.
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !s.viewerHasRepoPermission(r.Context(), repo, scopeSecurityEvents, permWrite) {
+	if !s.viewerHasRepoPermission(r.Context(), repo, store.ScopeSecurityEvents, store.PermWrite) {
 		writeGHError(w, http.StatusForbidden, "Must have push access to Repository.")
 		return
 	}
@@ -761,7 +762,7 @@ func (s *Server) handleCommitCodeScanningAutofix(w http.ResponseWriter, r *http.
 		message = fmt.Sprintf("Autofix for code scanning alert #%d", a.Number)
 	}
 
-	owner, repoName, ok := splitRepoFullName(repo.FullName)
+	owner, repoName, ok := store.SplitRepoFullName(repo.FullName)
 	if !ok {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -824,7 +825,7 @@ func (s *Server) handleCommitCodeScanningAutofix(w http.ResponseWriter, r *http.
 		writeGHError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
-	s.store.UpdateRepo(owner, repoName, func(r *Repo) {
+	s.store.UpdateRepo(owner, repoName, func(r *store.Repo) {
 		r.PushedAt = time.Now().UTC()
 	})
 
@@ -837,7 +838,7 @@ func (s *Server) handleCommitCodeScanningAutofix(w http.ResponseWriter, r *http.
 // applyAutofixEdit produces the fixed file content for an autofix commit:
 // the generated remediation line is inserted immediately above the alert's
 // flagged start line (or at the top of a file the branch does not have yet).
-func applyAutofixEdit(content string, inst CodeScanningAlertInstance, description string) string {
+func applyAutofixEdit(content string, inst store.CodeScanningAlertInstance, description string) string {
 	lines := strings.Split(content, "\n")
 	idx := inst.StartLine - 1
 	if idx < 0 {
@@ -862,14 +863,14 @@ var codeQLLanguages = map[string]bool{
 	"javascript": true, "python": true, "ruby": true, "rust": true, "swift": true,
 }
 
-func (s *Server) codeQLDatabaseJSON(db *CodeQLDatabase, baseURL string, repo *Repo) map[string]interface{} {
+func (s *Server) codeQLDatabaseJSON(db *store.CodeQLDatabase, baseURL string, repo *store.Repo) map[string]interface{} {
 	uploader := s.store.GetUserByID(db.UploaderID)
 	var uploaderJSON map[string]interface{}
 	if uploader != nil {
-		uploaderJSON = userToJSON(uploader)
+		uploaderJSON = store.UserToJSON(uploader)
 	} else if db.UploaderID < 0 {
 		if app := s.store.GetApp(-db.UploaderID); app != nil {
-			uploaderJSON = userToJSON(&User{ID: -app.ID, Login: app.Slug + "[bot]", Type: "Bot"})
+			uploaderJSON = store.UserToJSON(&store.User{ID: -app.ID, Login: app.Slug + "[bot]", Type: "Bot"})
 		}
 	}
 	return map[string]interface{}{
@@ -944,7 +945,7 @@ func (s *Server) handleDeleteCodeQLDatabase(w http.ResponseWriter, r *http.Reque
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) lookupCodeScanningReadableRepo(w http.ResponseWriter, r *http.Request) *Repo {
+func (s *Server) lookupCodeScanningReadableRepo(w http.ResponseWriter, r *http.Request) *store.Repo {
 	repo := s.lookupRepoFromPath(r)
 	if repo == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -974,17 +975,17 @@ func (s *Server) handleUploadCodeQLDatabase(w http.ResponseWriter, r *http.Reque
 	}
 	language := strings.ToLower(strings.TrimSpace(r.PathValue("language")))
 	if !codeQLLanguages[language] {
-		writeGHValidationError(w, "CodeQLDatabase", "language", "invalid")
+		store.WriteGHValidationError(w, "CodeQLDatabase", "language", "invalid")
 		return
 	}
 	name := strings.TrimSpace(r.URL.Query().Get("name"))
 	if name == "" {
-		writeGHValidationError(w, "CodeQLDatabase", "name", "missing_field")
+		store.WriteGHValidationError(w, "CodeQLDatabase", "name", "missing_field")
 		return
 	}
 	commitOID := strings.TrimSpace(r.URL.Query().Get("commit_oid"))
 	if err := s.validateCodeScanningCoordinate(repo, commitOID, "refs/heads/"+repo.DefaultBranch); err != nil {
-		writeGHValidationError(w, "CodeQLDatabase", "commit_oid", "invalid")
+		store.WriteGHValidationError(w, "CodeQLDatabase", "commit_oid", "invalid")
 		return
 	}
 	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
@@ -998,7 +999,7 @@ func (s *Server) handleUploadCodeQLDatabase(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if err := validateCodeQLDatabaseBundle(content, language); err != nil {
-		writeGHValidationError(w, "CodeQLDatabase", "data", "invalid")
+		store.WriteGHValidationError(w, "CodeQLDatabase", "data", "invalid")
 		return
 	}
 
@@ -1112,7 +1113,7 @@ func (s *Server) handleDownloadCodeQLDatabase(w http.ResponseWriter, r *http.Req
 // variantAnalysisRepoIdentifierJSON renders the compact repository
 // identifier shape (code-scanning-variant-analysis-repository) used in
 // scanned/skipped repository groups.
-func variantAnalysisRepoIdentifierJSON(repo *Repo) map[string]interface{} {
+func variantAnalysisRepoIdentifierJSON(repo *store.Repo) map[string]interface{} {
 	return map[string]interface{}{
 		"id":               repo.ID,
 		"name":             repo.Name,
@@ -1133,11 +1134,11 @@ func variantAnalysisSkippedGroupJSON(repos []map[string]interface{}) map[string]
 	}
 }
 
-func (s *Server) variantAnalysisJSON(va *CodeQLVariantAnalysis, baseURL string, controllerRepo *Repo) map[string]interface{} {
+func (s *Server) variantAnalysisJSON(va *store.CodeQLVariantAnalysis, baseURL string, controllerRepo *store.Repo) map[string]interface{} {
 	actor := s.store.GetUserByID(va.ActorID)
 	var actorJSON map[string]interface{}
 	if actor != nil {
-		actorJSON = userToJSON(actor)
+		actorJSON = store.UserToJSON(actor)
 	}
 
 	scanned := make([]map[string]interface{}, 0, len(va.ScannedRepositories))
@@ -1207,7 +1208,7 @@ func (s *Server) handleCreateCodeQLVariantAnalysis(w http.ResponseWriter, r *htt
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !s.viewerHasRepoPermission(r.Context(), repo, scopeSecurityEvents, permWrite) {
+	if !s.viewerHasRepoPermission(r.Context(), repo, store.ScopeSecurityEvents, store.PermWrite) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -1270,7 +1271,7 @@ func (s *Server) handleCreateCodeQLVariantAnalysis(w http.ResponseWriter, r *htt
 	writeJSON(w, http.StatusCreated, s.variantAnalysisJSON(va, s.baseURL(r), repo))
 }
 
-func (s *Server) lookupCodeQLVariantAnalysis(w http.ResponseWriter, r *http.Request, repo *Repo) *CodeQLVariantAnalysis {
+func (s *Server) lookupCodeQLVariantAnalysis(w http.ResponseWriter, r *http.Request, repo *store.Repo) *store.CodeQLVariantAnalysis {
 	id, err := strconv.Atoi(r.PathValue("codeql_variant_analysis_id"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -1329,7 +1330,7 @@ func (s *Server) handleGetCodeQLVariantAnalysisRepoTask(w http.ResponseWriter, r
 			"repository":      simpleRepoJSON(taskRepo, s.store, s.baseURL(r)),
 			"analysis_status": task.AnalysisStatus,
 		}
-		if task.AnalysisStatus == CSAnalysisSucceeded {
+		if task.AnalysisStatus == store.CSAnalysisSucceeded {
 			out["result_count"] = task.ResultCount
 			if task.DatabaseCommitSHA != "" {
 				out["database_commit_sha"] = task.DatabaseCommitSHA
@@ -1373,7 +1374,7 @@ func (s *Server) handleDownloadCodeQLVariantAnalysisQueryPack(w http.ResponseWri
 	_, _ = w.Write(pack)
 }
 
-func codeScanningAnalysisToJSON(a *CodeScanningAnalysis, baseURL string, repo *Repo) map[string]interface{} {
+func codeScanningAnalysisToJSON(a *store.CodeScanningAnalysis, baseURL string, repo *store.Repo) map[string]interface{} {
 	apiURL := fmt.Sprintf("%s/api/v3/repos/%s/code-scanning/analyses/%d", baseURL, repo.FullName, a.ID)
 	return map[string]interface{}{
 		"ref":           a.Ref,

@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/google/uuid"
 )
 
@@ -56,11 +57,11 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sessionID := uuid.New().String()
-	session := &Session{
+	session := &store.Session{
 		SessionID: sessionID,
 		OwnerName: ownerName,
 		Agent:     agent,
-		MsgCh:     make(chan *TaskAgentMessage, 10),
+		MsgCh:     make(chan *store.TaskAgentMessage, 10),
 	}
 
 	s.store.Mu.Lock()
@@ -116,7 +117,7 @@ func (s *Server) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
 // sessionOwnedBy reports whether the runner credential on a request owns the
 // session it addresses. Sessions are keyed by an id the runner echoes back;
 // without this the id alone would be the credential.
-func sessionOwnedBy(session *Session, caller *runnerPrincipal) bool {
+func sessionOwnedBy(session *store.Session, caller *runnerPrincipal) bool {
 	if session == nil || caller == nil || caller.Agent == nil {
 		return false
 	}

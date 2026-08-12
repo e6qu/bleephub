@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // Deployment branch/tag policies and custom deployment protection rules on
@@ -22,32 +24,32 @@ import (
 //	DELETE /repos/{o}/{r}/environments/{env}/deployment_protection_rules/{protection_rule_id}
 
 const (
-	BranchPolicyBranch DeploymentBranchPolicyType = "branch"
-	BranchPolicyTag    DeploymentBranchPolicyType = "tag"
+	BranchPolicyBranch store.DeploymentBranchPolicyType = "branch"
+	BranchPolicyTag    store.DeploymentBranchPolicyType = "tag"
 )
 
 func (s *Server) registerGHEnvironmentPolicyRoutes() {
 	s.route("GET /api/v3/repos/{owner}/{repo}/environments/{env_name}/deployment-branch-policies", s.handleListDeploymentBranchPolicies)
 	s.route("POST /api/v3/repos/{owner}/{repo}/environments/{env_name}/deployment-branch-policies",
-		s.requirePerm(scopeAdministration, permWrite, s.handleCreateDeploymentBranchPolicy))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleCreateDeploymentBranchPolicy))
 	s.route("GET /api/v3/repos/{owner}/{repo}/environments/{env_name}/deployment-branch-policies/{branch_policy_id}", s.handleGetDeploymentBranchPolicy)
 	s.route("PUT /api/v3/repos/{owner}/{repo}/environments/{env_name}/deployment-branch-policies/{branch_policy_id}",
-		s.requirePerm(scopeAdministration, permWrite, s.handleUpdateDeploymentBranchPolicy))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleUpdateDeploymentBranchPolicy))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/environments/{env_name}/deployment-branch-policies/{branch_policy_id}",
-		s.requirePerm(scopeAdministration, permWrite, s.handleDeleteDeploymentBranchPolicy))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleDeleteDeploymentBranchPolicy))
 
 	s.route("GET /api/v3/repos/{owner}/{repo}/environments/{env_name}/deployment_protection_rules", s.handleListEnvProtectionRules)
 	s.route("POST /api/v3/repos/{owner}/{repo}/environments/{env_name}/deployment_protection_rules",
-		s.requirePerm(scopeAdministration, permWrite, s.handleCreateEnvProtectionRule))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleCreateEnvProtectionRule))
 	s.route("GET /api/v3/repos/{owner}/{repo}/environments/{env_name}/deployment_protection_rules/apps", s.handleListEnvProtectionRuleApps)
 	s.route("GET /api/v3/repos/{owner}/{repo}/environments/{env_name}/deployment_protection_rules/{protection_rule_id}", s.handleGetEnvProtectionRule)
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/environments/{env_name}/deployment_protection_rules/{protection_rule_id}",
-		s.requirePerm(scopeAdministration, permWrite, s.handleDeleteEnvProtectionRule))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleDeleteEnvProtectionRule))
 }
 
 // environmentFromPath resolves {owner}/{repo}/environments/{env_name},
 // writing a 404 and returning nils when either does not exist.
-func (s *Server) environmentFromPath(w http.ResponseWriter, r *http.Request) (*Repo, *Environment) {
+func (s *Server) environmentFromPath(w http.ResponseWriter, r *http.Request) (*store.Repo, *store.Environment) {
 	repo := s.lookupRepoFromPath(r)
 	if repo == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -67,7 +69,7 @@ func (s *Server) environmentFromPath(w http.ResponseWriter, r *http.Request) (*R
 
 // --- Handlers: deployment branch policies ---
 
-func branchPolicyToJSON(p *DeploymentBranchPolicyRule) map[string]interface{} {
+func branchPolicyToJSON(p *store.DeploymentBranchPolicyRule) map[string]interface{} {
 	return map[string]interface{}{
 		"id":      p.ID,
 		"node_id": p.NodeID,
@@ -112,12 +114,12 @@ func (s *Server) handleCreateDeploymentBranchPolicy(w http.ResponseWriter, r *ht
 		return
 	}
 	if req.Name == "" {
-		writeGHValidationError(w, "DeploymentBranchPolicy", "name", "missing_field")
+		store.WriteGHValidationError(w, "DeploymentBranchPolicy", "name", "missing_field")
 		return
 	}
-	policyType := coalesceStr(req.Type, "branch")
+	policyType := store.CoalesceStr(req.Type, "branch")
 	if policyType != "branch" && policyType != "tag" {
-		writeGHValidationError(w, "DeploymentBranchPolicy", "type", "invalid")
+		store.WriteGHValidationError(w, "DeploymentBranchPolicy", "type", "invalid")
 		return
 	}
 	created, existing := s.store.CreateEnvBranchPolicy(env.ID, req.Name, policyType)
@@ -164,7 +166,7 @@ func (s *Server) handleUpdateDeploymentBranchPolicy(w http.ResponseWriter, r *ht
 		return
 	}
 	if req.Name == "" {
-		writeGHValidationError(w, "DeploymentBranchPolicy", "name", "missing_field")
+		store.WriteGHValidationError(w, "DeploymentBranchPolicy", "name", "missing_field")
 		return
 	}
 	p := s.store.UpdateEnvBranchPolicy(env.ID, id, req.Name)
@@ -194,7 +196,7 @@ func (s *Server) handleDeleteDeploymentBranchPolicy(w http.ResponseWriter, r *ht
 
 // --- Handlers: custom deployment protection rules ---
 
-func (s *Server) envProtectionRuleJSON(rule *EnvCustomProtectionRule, baseURL string) map[string]interface{} {
+func (s *Server) envProtectionRuleJSON(rule *store.EnvCustomProtectionRule, baseURL string) map[string]interface{} {
 	s.store.Mu.RLock()
 	app := s.store.Apps[rule.AppID]
 	s.store.Mu.RUnlock()
@@ -210,7 +212,7 @@ func (s *Server) envProtectionRuleJSON(rule *EnvCustomProtectionRule, baseURL st
 	}
 }
 
-func customDeploymentRuleAppJSON(app *App, baseURL string) map[string]interface{} {
+func customDeploymentRuleAppJSON(app *store.App, baseURL string) map[string]interface{} {
 	return map[string]interface{}{
 		"id":              app.ID,
 		"slug":            app.Slug,
@@ -248,19 +250,19 @@ func (s *Server) handleCreateEnvProtectionRule(w http.ResponseWriter, r *http.Re
 		return
 	}
 	if req.IntegrationID == nil {
-		writeGHValidationError(w, "DeploymentProtectionRule", "integration_id", "missing_field")
+		store.WriteGHValidationError(w, "DeploymentProtectionRule", "integration_id", "missing_field")
 		return
 	}
 	s.store.Mu.RLock()
 	app := s.store.Apps[*req.IntegrationID]
 	s.store.Mu.RUnlock()
 	if app == nil {
-		writeGHValidationError(w, "DeploymentProtectionRule", "integration_id", "invalid")
+		store.WriteGHValidationError(w, "DeploymentProtectionRule", "integration_id", "invalid")
 		return
 	}
 	rule := s.store.CreateEnvProtectionRule(env.ID, app.ID)
 	if rule == nil {
-		writeGHValidationError(w, "DeploymentProtectionRule", "integration_id", "already_exists")
+		store.WriteGHValidationError(w, "DeploymentProtectionRule", "integration_id", "already_exists")
 		return
 	}
 	writeJSON(w, http.StatusCreated, s.envProtectionRuleJSON(rule, s.baseURL(r)))
@@ -274,7 +276,7 @@ func (s *Server) handleListEnvProtectionRuleApps(w http.ResponseWriter, r *http.
 	if env == nil {
 		return
 	}
-	ownerLogin, _, _ := splitRepoFullName(repo.FullName)
+	ownerLogin, _, _ := store.SplitRepoFullName(repo.FullName)
 	s.store.Mu.RLock()
 	appIDs := map[int]bool{}
 	for _, inst := range s.store.Installations {
@@ -282,7 +284,7 @@ func (s *Server) handleListEnvProtectionRuleApps(w http.ResponseWriter, r *http.
 			appIDs[inst.AppID] = true
 		}
 	}
-	apps := make([]*App, 0, len(appIDs))
+	apps := make([]*store.App, 0, len(appIDs))
 	for id := range appIDs {
 		if app := s.store.Apps[id]; app != nil {
 			apps = append(apps, app)

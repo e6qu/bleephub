@@ -3,6 +3,7 @@ package bleephub
 import (
 	"testing"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/graphql-go/graphql"
 )
 
@@ -42,7 +43,7 @@ func FuzzParseAndVerifyAppJWT(f *testing.F) {
 	f.Add("....")
 	f.Add("eyJ.eyJ.")
 	f.Fuzz(func(t *testing.T, tok string) {
-		st := NewStore()
+		st := store.NewStore()
 		_, _ = st.ParseAndVerifyAppJWT(tok)
 	})
 }
@@ -53,6 +54,6 @@ func FuzzAgentRSAPublicKey(f *testing.F) {
 	f.Add("", "")
 	f.Add("////", "!!!!")
 	f.Fuzz(func(t *testing.T, mod, exp string) {
-		_, _ = agentRSAPublicKey(&AgentPublicKey{Modulus: mod, Exponent: exp})
+		_, _ = agentRSAPublicKey(&store.AgentPublicKey{Modulus: mod, Exponent: exp})
 	})
 }

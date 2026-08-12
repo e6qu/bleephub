@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	gitStorage "github.com/go-git/go-git/v5/storage"
@@ -19,11 +20,11 @@ import (
 func (s *Server) registerGHRepoReadsRoutes() {
 	// People, watching, access.
 	s.route("GET /api/v3/repos/{owner}/{repo}/subscribers", s.handleListRepoSubscribers)
-	s.route("GET /api/v3/repos/{owner}/{repo}/subscription", s.requirePerm(scopeContents, permRead, s.handleGetRepoSubscription))
+	s.route("GET /api/v3/repos/{owner}/{repo}/subscription", s.requirePerm(store.ScopeContents, store.PermRead, s.handleGetRepoSubscription))
 	s.route("GET /api/v3/repos/{owner}/{repo}/teams", s.handleListRepoTeams)
 	s.route("GET /api/v3/repos/{owner}/{repo}/assignees", s.handleListRepoAssignees)
 	s.route("GET /api/v3/repos/{owner}/{repo}/assignees/{assignee}", s.handleCheckRepoAssignee)
-	s.route("GET /api/v3/repos/{owner}/{repo}/collaborators/{username}", s.requirePerm(scopeMetadata, permRead, s.handleCheckRepoCollaborator))
+	s.route("GET /api/v3/repos/{owner}/{repo}/collaborators/{username}", s.requirePerm(store.ScopeMetadata, store.PermRead, s.handleCheckRepoCollaborator))
 
 	// Repository metadata reads.
 	s.route("GET /api/v3/repos/{owner}/{repo}/hash-algorithm", s.handleGetRepoHashAlgorithm)
@@ -45,8 +46,8 @@ func (s *Server) registerGHRepoReadsRoutes() {
 	s.route("GET /api/v3/repos/{owner}/{repo}/stats/punch_card", s.handleStatsPunchCard)
 
 	// Git refs: exact single-ref lookup + prefix listing.
-	s.route("GET /api/v3/repos/{owner}/{repo}/git/ref/{ref...}", s.requirePerm(scopeContents, permRead, s.handleGetSingleRef))
-	s.route("GET /api/v3/repos/{owner}/{repo}/git/matching-refs/{ref...}", s.requirePerm(scopeContents, permRead, s.handleListMatchingRefs))
+	s.route("GET /api/v3/repos/{owner}/{repo}/git/ref/{ref...}", s.requirePerm(store.ScopeContents, store.PermRead, s.handleGetSingleRef))
+	s.route("GET /api/v3/repos/{owner}/{repo}/git/matching-refs/{ref...}", s.requirePerm(store.ScopeContents, store.PermRead, s.handleListMatchingRefs))
 
 	// Source archives: the API endpoints answer 302 to the codeload-style
 	// legacy URLs (the same URLs the tags API advertises), which stream real
@@ -77,7 +78,7 @@ func (s *Server) handleListRepoSubscribers(w http.ResponseWriter, r *http.Reques
 	users := s.store.ListRepoSubscribers(repo.ID)
 	out := make([]map[string]interface{}, 0, len(users))
 	for _, u := range users {
-		out = append(out, userToJSON(u))
+		out = append(out, store.UserToJSON(u))
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
@@ -126,7 +127,7 @@ func (s *Server) handleListRepoAssignees(w http.ResponseWriter, r *http.Request)
 	users := s.store.ListAssignableUsers(repo)
 	out := make([]map[string]interface{}, 0, len(users))
 	for _, u := range users {
-		out = append(out, userToJSON(u))
+		out = append(out, store.UserToJSON(u))
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
@@ -217,7 +218,7 @@ func detectLicenseKey(content string) string {
 	contentTokens := licenseTokenSet(content)
 	bestKey := ""
 	bestScore := 0.0
-	for key, tmpl := range licenseTemplates {
+	for key, tmpl := range store.LicenseTemplates {
 		tmplTokens := licenseTokenSet(tmpl.Body)
 		if len(tmplTokens) == 0 {
 			continue
@@ -259,7 +260,7 @@ func licenseTokenSet(text string) map[string]bool {
 // licenseSimpleJSON renders the GitHub license-simple shape for a catalog key
 // or the "other" pseudo-license GitHub reports for unidentified licenses.
 func (s *Server) licenseSimpleJSON(key, base string) map[string]interface{} {
-	if tmpl, ok := licenseTemplates[key]; ok {
+	if tmpl, ok := store.LicenseTemplates[key]; ok {
 		return map[string]interface{}{
 			"key":     key,
 			"name":    tmpl.Name,
@@ -388,7 +389,7 @@ func (s *Server) handleGetCommunityProfile(w http.ResponseWriter, r *http.Reques
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"health_percentage": present * 100 / len(checks),
-		"description":       nilOrString(repo.Description),
+		"description":       store.NilOrString(repo.Description),
 		"documentation":     nil,
 		"files": map[string]interface{}{
 			"code_of_conduct":       nil,
@@ -517,7 +518,7 @@ func (s *Server) handleListPublicRepositories(w http.ResponseWriter, r *http.Req
 	viewer := ghUserFromContext(r.Context())
 	out := make([]map[string]interface{}, 0, len(repos))
 	for _, repo := range repos {
-		out = append(out, repoToJSONForViewer(repo, s.store, base, viewer))
+		out = append(out, store.RepoToJSONForViewer(repo, s.store, base, viewer))
 	}
 	if more {
 		last := repos[len(repos)-1].ID
@@ -578,8 +579,8 @@ func (s *Server) handleListMatchingRefs(w http.ResponseWriter, r *http.Request) 
 // --- shared git helpers ---
 
 // gitStorageForRepo returns the repo's git storage, or nil.
-func (s *Server) gitStorageForRepo(repo *Repo) gitStorage.Storer {
-	owner, name, ok := splitRepoFullName(repo.FullName)
+func (s *Server) gitStorageForRepo(repo *store.Repo) gitStorage.Storer {
+	owner, name, ok := store.SplitRepoFullName(repo.FullName)
 	if !ok {
 		return nil
 	}
@@ -588,7 +589,7 @@ func (s *Server) gitStorageForRepo(repo *Repo) gitStorage.Storer {
 
 // repoTreeAtRef resolves a ref (or the default branch when empty) to its
 // commit and root tree.
-func (s *Server) repoTreeAtRef(repo *Repo, refName string) (*object.Tree, *object.Commit, error) {
+func (s *Server) repoTreeAtRef(repo *store.Repo, refName string) (*object.Tree, *object.Commit, error) {
 	stor := s.gitStorageForRepo(repo)
 	if stor == nil {
 		return nil, nil, fmt.Errorf("no git storage for %s", repo.FullName)
@@ -596,7 +597,7 @@ func (s *Server) repoTreeAtRef(repo *Repo, refName string) (*object.Tree, *objec
 	if refName == "" {
 		refName = repo.DefaultBranch
 	}
-	hash, err := resolveGitRef(stor, refName)
+	hash, err := store.ResolveGitRef(stor, refName)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -9,19 +9,20 @@ import (
 	"time"
 
 	"github.com/e6qu/bleephub/internal/actions"
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // --- ACT-044: job-state GC + hot-path indexes ---
 
 // gcQueueTestJob queues one deliverable job for repo and returns the stored
 // engine job.
-func gcQueueTestJob(t *testing.T, s *Server, jobID, repo string) *Job {
+func gcQueueTestJob(t *testing.T, s *Server, jobID, repo string) *store.Job {
 	t.Helper()
 	scopeID := "scope-" + jobID
 	message := fmt.Sprintf(
 		`{"plan":{"scopeIdentifier":%q},"contextData":{"github":{"t":2,"d":[{"k":"repository","v":%q}]}}}`,
 		scopeID, repo)
-	job := &Job{ID: jobID, PlanID: "plan-" + jobID, Status: "queued", Message: message}
+	job := &store.Job{ID: jobID, PlanID: "plan-" + jobID, Status: "queued", Message: message}
 	var msg map[string]interface{}
 	if err := json.Unmarshal([]byte(message), &msg); err != nil {
 		t.Fatalf("unmarshal seeded job message: %v", err)
@@ -30,7 +31,7 @@ func gcQueueTestJob(t *testing.T, s *Server, jobID, repo string) *Job {
 	s.store.Jobs[jobID] = job
 	s.store.RegisterDispatchedJobLocked(job, msg, repo)
 	s.store.Mu.Unlock()
-	s.actions.QueueJobMessage(&TaskAgentMessage{MessageID: 1, MessageType: "PipelineAgentJobRequest", Body: message, JobID: jobID})
+	s.actions.QueueJobMessage(&store.TaskAgentMessage{MessageID: 1, MessageType: "PipelineAgentJobRequest", Body: message, JobID: jobID})
 	return job
 }
 
@@ -43,14 +44,14 @@ func gcQueueTestJob(t *testing.T, s *Server, jobID, repo string) *Job {
 func TestUsedEphemeralAgentStaysDisqualifiedAfterJobGC(t *testing.T) {
 	s := newTestServer()
 
-	_, ephemeral := testAgentSession(t, s, runnerScope{Repo: "octo/a"})
+	_, ephemeral := testAgentSession(t, s, store.RunnerScope{Repo: "octo/a"})
 	s.store.Mu.Lock()
 	ephemeral.Ephemeral = true
 	s.store.Mu.Unlock()
-	session := &Session{SessionID: "gc-eph", Agent: ephemeral, MsgCh: make(chan *TaskAgentMessage, 1)}
+	session := &store.Session{SessionID: "gc-eph", Agent: ephemeral, MsgCh: make(chan *store.TaskAgentMessage, 1)}
 
 	job := gcQueueTestJob(t, s, "gc-eph-job", "octo/a")
-	if msg := s.actions.PullPendingMessage(session, runnerScope{Repo: "octo/a"}); msg == nil {
+	if msg := s.actions.PullPendingMessage(session, store.RunnerScope{Repo: "octo/a"}); msg == nil {
 		t.Fatal("fresh ephemeral runner was not handed its first job")
 	}
 	if !ephemeral.EverAssigned {
@@ -74,15 +75,15 @@ func TestUsedEphemeralAgentStaysDisqualifiedAfterJobGC(t *testing.T) {
 	// With the stub gone, the flag alone must keep the used ephemeral runner
 	// away from the next job.
 	gcQueueTestJob(t, s, "gc-eph-second", "octo/a")
-	if msg := s.actions.PullPendingMessage(session, runnerScope{Repo: "octo/a"}); msg != nil {
+	if msg := s.actions.PullPendingMessage(session, store.RunnerScope{Repo: "octo/a"}); msg != nil {
 		t.Fatal("used ephemeral runner was handed a second job after its completed job was garbage-collected")
 	}
 
 	// Control: a resident runner completes a job, the stub is swept, and the
 	// runner still takes the next one.
-	_, resident := testAgentSession(t, s, runnerScope{Repo: "octo/a"})
-	resSession := &Session{SessionID: "gc-res", Agent: resident, MsgCh: make(chan *TaskAgentMessage, 1)}
-	if msg := s.actions.PullPendingMessage(resSession, runnerScope{Repo: "octo/a"}); msg == nil {
+	_, resident := testAgentSession(t, s, store.RunnerScope{Repo: "octo/a"})
+	resSession := &store.Session{SessionID: "gc-res", Agent: resident, MsgCh: make(chan *store.TaskAgentMessage, 1)}
+	if msg := s.actions.PullPendingMessage(resSession, store.RunnerScope{Repo: "octo/a"}); msg == nil {
 		t.Fatal("resident runner did not take the queued job")
 	}
 	s.store.Mu.Lock()
@@ -92,7 +93,7 @@ func TestUsedEphemeralAgentStaysDisqualifiedAfterJobGC(t *testing.T) {
 		t.Fatalf("second sweep removed %d jobs, want 1", swept)
 	}
 	gcQueueTestJob(t, s, "gc-res-second", "octo/a")
-	if msg := s.actions.PullPendingMessage(resSession, runnerScope{Repo: "octo/a"}); msg == nil {
+	if msg := s.actions.PullPendingMessage(resSession, store.RunnerScope{Repo: "octo/a"}); msg == nil {
 		t.Fatal("resident runner was refused its second job after GC of the first")
 	}
 }
@@ -106,7 +107,7 @@ func TestLateFinishJobAfterMessageGCAuthenticates(t *testing.T) {
 	s.registerRoutes()
 	testRepo(t, s, "octo", "gc-late", false)
 
-	def, err := ParseWorkflow([]byte("name: late\njobs:\n  build:\n    runs-on: self-hosted\n    steps:\n      - run: echo hi\n"))
+	def, err := store.ParseWorkflow([]byte("name: late\njobs:\n  build:\n    runs-on: self-hosted\n    steps:\n      - run: echo hi\n"))
 	if err != nil {
 		t.Fatalf("parse workflow: %v", err)
 	}
@@ -122,7 +123,7 @@ func TestLateFinishJobAfterMessageGCAuthenticates(t *testing.T) {
 
 	s.store.Mu.RLock()
 	job := s.store.Jobs[wfJob.JobID]
-	scopeID, _ := jobMessageScopeAndRepo(job.Message)
+	scopeID, _ := store.JobMessageScopeAndRepo(job.Message)
 	s.store.Mu.RUnlock()
 	if scopeID == "" {
 		t.Fatal("dispatched job message carries no plan scope")

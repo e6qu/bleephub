@@ -2,6 +2,7 @@ package bleephub
 
 import (
 	"github.com/e6qu/bleephub/internal/graphqlapi"
+	"github.com/e6qu/bleephub/internal/store"
 
 	"encoding/base64"
 	"encoding/json"
@@ -228,7 +229,7 @@ func TestRepoGraphQL_RepositoryOwnerOrg(t *testing.T) {
 		s.store.Mu.Lock()
 		delete(s.store.Orgs, org.ID)
 		delete(s.store.OrgsByLogin, orgLogin)
-		delete(s.store.Memberships, membershipKey(orgLogin, s.store.UsersByLogin["admin"].ID))
+		delete(s.store.Memberships, store.MembershipKey(orgLogin, s.store.UsersByLogin["admin"].ID))
 		s.store.Mu.Unlock()
 	}()
 
@@ -425,11 +426,11 @@ func TestRepoGraphQL_ForkParentAndCount(t *testing.T) {
 	owner, name := sweep.owner, sweep.name
 
 	s.store.Mu.Lock()
-	forker := &User{ID: s.store.NextUser, Login: "graphql-forker", Type: "User", CreatedAt: fixedTestTime, UpdatedAt: fixedTestTime}
+	forker := &store.User{ID: s.store.NextUser, Login: "graphql-forker", Type: "User", CreatedAt: fixedTestTime, UpdatedAt: fixedTestTime}
 	s.store.NextUser++
 	s.store.Users[forker.ID] = forker
 	s.store.UsersByLogin[forker.Login] = forker
-	tok := &Token{Value: "graphql-forker-token", UserID: forker.ID, Scopes: "repo", CreatedAt: fixedTestTime}
+	tok := &store.Token{Value: "graphql-forker-token", UserID: forker.ID, Scopes: "repo", CreatedAt: fixedTestTime}
 	s.store.Tokens[tok.Value] = tok
 	s.store.Mu.Unlock()
 
@@ -572,25 +573,25 @@ func TestPRGraphQL_ViewDefaultFields(t *testing.T) {
 	repoKey := owner + "/" + name
 	now := fixedTestTime.UTC()
 	runID := s.store.ReserveRunID()
-	wf := &Workflow{
+	wf := &store.Workflow{
 		ID:           "gql-rollup-" + repoKey,
 		Name:         "ci",
 		RunID:        runID,
 		RunNumber:    runID,
-		Status:       WorkflowStatusCompleted,
-		Result:       ResultSuccess,
+		Status:       store.WorkflowStatusCompleted,
+		Result:       store.ResultSuccess,
 		CreatedAt:    now,
 		EventName:    "pull_request",
 		Ref:          "refs/heads/main",
 		Sha:          headSHA,
 		RepoFullName: repoKey,
-		Jobs: map[string]*WorkflowJob{
+		Jobs: map[string]*store.WorkflowJob{
 			"build": {
 				Key:         "build",
 				JobID:       "gql-rollup-job-" + repoKey,
 				DisplayName: "build",
-				Status:      JobStatusCompleted,
-				Result:      ResultSuccess,
+				Status:      store.JobStatusCompleted,
+				Result:      store.ResultSuccess,
 				StartedAt:   now,
 				CompletedAt: now,
 			},
@@ -1353,7 +1354,7 @@ func TestWebhookTrigger_WorkflowFileResolvable(t *testing.T) {
 	s.triggerWorkflowsForEvent(repoKey, "push", "", "refs/heads/main", nil)
 
 	// The workflow was submitted synchronously above; find it.
-	var wf *Workflow
+	var wf *store.Workflow
 	s.store.Mu.RLock()
 	for _, w := range s.store.Workflows {
 		if w.RepoFullName == repoKey {

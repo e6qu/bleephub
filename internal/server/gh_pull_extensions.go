@@ -5,44 +5,46 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func (s *Server) registerGHPullExtensionRoutes() {
 	s.route("GET /api/v3/repos/{owner}/{repo}/interaction-limits/pulls/creation-cap",
-		s.requirePerm(scopeAdministration, permRead, s.handleGetPRCreationCap))
+		s.requirePerm(store.ScopeAdministration, store.PermRead, s.handleGetPRCreationCap))
 	s.route("PATCH /api/v3/repos/{owner}/{repo}/interaction-limits/pulls/creation-cap",
-		s.requirePerm(scopeAdministration, permWrite, s.handleUpdatePRCreationCap))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleUpdatePRCreationCap))
 	s.route("GET /api/v3/orgs/{org}/interaction-limits/pulls/creation-cap",
-		s.requirePerm(scopeOrgAdministration, permRead, s.handleGetOrgPRCreationCap))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.handleGetOrgPRCreationCap))
 	s.route("PATCH /api/v3/orgs/{org}/interaction-limits/pulls/creation-cap",
-		s.requirePerm(scopeOrgAdministration, permWrite, s.handleUpdateOrgPRCreationCap))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.handleUpdateOrgPRCreationCap))
 	s.route("GET /api/v3/repos/{owner}/{repo}/interaction-limits/pulls/bypass-list",
-		s.requirePerm(scopeAdministration, permRead, s.handleGetPRCreationBypass))
+		s.requirePerm(store.ScopeAdministration, store.PermRead, s.handleGetPRCreationBypass))
 	s.route("PUT /api/v3/repos/{owner}/{repo}/interaction-limits/pulls/bypass-list",
-		s.requirePerm(scopeAdministration, permWrite, s.handleAddPRCreationBypass))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleAddPRCreationBypass))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/interaction-limits/pulls/bypass-list",
-		s.requirePerm(scopeAdministration, permWrite, s.handleRemovePRCreationBypass))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleRemovePRCreationBypass))
 
 	s.route("GET /api/v3/repos/{owner}/{repo}/stacks",
-		s.requirePerm(scopePullRequests, permRead, s.handleListPullRequestStacks))
+		s.requirePerm(store.ScopePullRequests, store.PermRead, s.handleListPullRequestStacks))
 	s.route("POST /api/v3/repos/{owner}/{repo}/stacks",
-		s.requirePerm(scopePullRequests, permWrite, s.handleCreatePullRequestStack))
+		s.requirePerm(store.ScopePullRequests, store.PermWrite, s.handleCreatePullRequestStack))
 	s.route("GET /api/v3/repos/{owner}/{repo}/stacks/{stack_number}",
-		s.requirePerm(scopePullRequests, permRead, s.handleGetPullRequestStack))
+		s.requirePerm(store.ScopePullRequests, store.PermRead, s.handleGetPullRequestStack))
 	s.route("POST /api/v3/repos/{owner}/{repo}/stacks/{stack_number}/add",
-		s.requirePerm(scopePullRequests, permWrite, s.handleAddPullRequestsToStack))
+		s.requirePerm(store.ScopePullRequests, store.PermWrite, s.handleAddPullRequestsToStack))
 	s.route("POST /api/v3/repos/{owner}/{repo}/stacks/{stack_number}/unstack",
-		s.requirePerm(scopePullRequests, permWrite, s.handleUnstackPullRequests))
+		s.requirePerm(store.ScopePullRequests, store.PermWrite, s.handleUnstackPullRequests))
 
 	s.route("GET /api/v3/repos/{owner}/{repo}/issues/{issue_number}/suggestions",
-		s.requirePerm(scopeIssues, permRead, s.handleListIssueSuggestions))
+		s.requirePerm(store.ScopeIssues, store.PermRead, s.handleListIssueSuggestions))
 	s.route("POST /api/v3/repos/{owner}/{repo}/issues/{issue_number}/suggestions/{suggestion_id}/approve",
-		s.requirePerm(scopeIssues, permWrite, s.handleApproveIssueSuggestion))
+		s.requirePerm(store.ScopeIssues, store.PermWrite, s.handleApproveIssueSuggestion))
 	s.route("POST /api/v3/repos/{owner}/{repo}/issues/{issue_number}/suggestions/{suggestion_id}/dismiss",
-		s.requirePerm(scopeIssues, permWrite, s.handleDismissIssueSuggestion))
+		s.requirePerm(store.ScopeIssues, store.PermWrite, s.handleDismissIssueSuggestion))
 }
 
-func (s *Server) requireRepoAdminForPullExtension(w http.ResponseWriter, r *http.Request) *Repo {
+func (s *Server) requireRepoAdminForPullExtension(w http.ResponseWriter, r *http.Request) *store.Repo {
 	repo := s.lookupReadableRepoFromPath(w, r)
 	if repo == nil {
 		return nil
@@ -74,14 +76,14 @@ func (s *Server) handleUpdatePRCreationCap(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if request.Enabled == nil {
-		writeGHValidationError(w, "PullRequestCreationCap", "enabled", "missing_field")
+		store.WriteGHValidationError(w, "PullRequestCreationCap", "enabled", "missing_field")
 		return
 	}
 	current := s.store.GetPRCreationCap(repo.FullName)
 	current.Enabled = *request.Enabled
 	if request.MaxOpenPullRequests != nil {
 		if *request.MaxOpenPullRequests < 1 || *request.MaxOpenPullRequests > 1000 {
-			writeGHValidationError(w, "PullRequestCreationCap", "max_open_pull_requests", "invalid")
+			store.WriteGHValidationError(w, "PullRequestCreationCap", "max_open_pull_requests", "invalid")
 			return
 		}
 		current.MaxOpenPullRequests = *request.MaxOpenPullRequests
@@ -110,14 +112,14 @@ func (s *Server) handleUpdateOrgPRCreationCap(w http.ResponseWriter, r *http.Req
 		return
 	}
 	if request.Enabled == nil {
-		writeGHValidationError(w, "PullRequestCreationCap", "enabled", "missing_field")
+		store.WriteGHValidationError(w, "PullRequestCreationCap", "enabled", "missing_field")
 		return
 	}
 	current := s.store.GetOrgPRCreationCap(org.Login)
 	current.Enabled = *request.Enabled
 	if request.MaxOpenPullRequests != nil {
 		if *request.MaxOpenPullRequests < 1 || *request.MaxOpenPullRequests > 1000 {
-			writeGHValidationError(w, "PullRequestCreationCap", "max_open_pull_requests", "invalid")
+			store.WriteGHValidationError(w, "PullRequestCreationCap", "max_open_pull_requests", "invalid")
 			return
 		}
 		current.MaxOpenPullRequests = *request.MaxOpenPullRequests
@@ -133,7 +135,7 @@ func (s *Server) handleGetPRCreationBypass(w http.ResponseWriter, r *http.Reques
 	users := s.store.PRCreationBypassUsers(repo.FullName)
 	out := make([]map[string]interface{}, 0, len(users))
 	for _, user := range paginateAndLink(w, r, users) {
-		out = append(out, userToJSON(user))
+		out = append(out, store.UserToJSON(user))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -150,12 +152,12 @@ func (s *Server) changePRCreationBypass(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	if len(request.Users) == 0 {
-		writeGHValidationError(w, "PullRequestCreationCapBypass", "users", "missing_field")
+		store.WriteGHValidationError(w, "PullRequestCreationCapBypass", "users", "missing_field")
 		return
 	}
 	for _, login := range request.Users {
 		if s.store.LookupUserByLogin(login) == nil {
-			writeGHValidationError(w, "PullRequestCreationCapBypass", "users", "invalid")
+			store.WriteGHValidationError(w, "PullRequestCreationCapBypass", "users", "invalid")
 			return
 		}
 	}
@@ -170,30 +172,30 @@ func (s *Server) handleRemovePRCreationBypass(w http.ResponseWriter, r *http.Req
 	s.changePRCreationBypass(w, r, false)
 }
 
-func (s *Server) resolveStackPulls(w http.ResponseWriter, repo *Repo, numbers []int, minimum int) []*PullRequest {
+func (s *Server) resolveStackPulls(w http.ResponseWriter, repo *store.Repo, numbers []int, minimum int) []*store.PullRequest {
 	if len(numbers) < minimum || len(numbers) > 100 {
-		writeGHValidationError(w, "PullRequestStack", "pull_requests", "invalid")
+		store.WriteGHValidationError(w, "PullRequestStack", "pull_requests", "invalid")
 		return nil
 	}
-	pulls := make([]*PullRequest, 0, len(numbers))
+	pulls := make([]*store.PullRequest, 0, len(numbers))
 	for _, number := range numbers {
 		pull := s.store.GetPullRequestByNumber(repo.ID, number)
 		if pull == nil {
-			writeGHValidationError(w, "PullRequestStack", "pull_requests", "invalid")
+			store.WriteGHValidationError(w, "PullRequestStack", "pull_requests", "invalid")
 			return nil
 		}
 		pulls = append(pulls, pull)
 	}
 	for index := 1; index < len(pulls); index++ {
 		if pulls[index].BaseRefName != pulls[index-1].HeadRefName {
-			writeGHValidationError(w, "PullRequestStack", "pull_requests", "invalid_stack_order")
+			store.WriteGHValidationError(w, "PullRequestStack", "pull_requests", "invalid_stack_order")
 			return nil
 		}
 	}
 	return pulls
 }
 
-func (s *Server) pullRequestStackJSON(r *http.Request, repo *Repo, stack *PullRequestStack, minimal bool) map[string]interface{} {
+func (s *Server) pullRequestStackJSON(r *http.Request, repo *store.Repo, stack *store.PullRequestStack, minimal bool) map[string]interface{} {
 	pulls := make([]map[string]interface{}, 0, len(stack.PullRequests))
 	open := false
 	for _, number := range stack.PullRequests {
@@ -292,8 +294,8 @@ func (s *Server) handleCreatePullRequestStack(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusCreated, s.pullRequestStackJSON(r, repo, stack, false))
 }
 
-func (s *Server) stackFromPath(w http.ResponseWriter, r *http.Request, admin bool) (*Repo, *PullRequestStack) {
-	var repo *Repo
+func (s *Server) stackFromPath(w http.ResponseWriter, r *http.Request, admin bool) (*store.Repo, *store.PullRequestStack) {
+	var repo *store.Repo
 	if admin {
 		repo = s.requireRepoAdminForPullExtension(w, r)
 	} else {
@@ -339,7 +341,7 @@ func (s *Server) handleAddPullRequestsToStack(w http.ResponseWriter, r *http.Req
 	}
 	top := s.store.GetPullRequestByNumber(repo.ID, stack.PullRequests[len(stack.PullRequests)-1])
 	if top == nil || pulls[0].BaseRefName != top.HeadRefName {
-		writeGHValidationError(w, "PullRequestStack", "pull_requests", "invalid_stack_order")
+		store.WriteGHValidationError(w, "PullRequestStack", "pull_requests", "invalid_stack_order")
 		return
 	}
 	updated, err := s.store.AddPullRequestsToStack(repo.FullName, stack.Number, pulls)
@@ -362,7 +364,7 @@ func (s *Server) handleUnstackPullRequests(w http.ResponseWriter, r *http.Reques
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) issueForSuggestionPath(w http.ResponseWriter, r *http.Request, write bool) (*Repo, *Issue) {
+func (s *Server) issueForSuggestionPath(w http.ResponseWriter, r *http.Request, write bool) (*store.Repo, *store.Issue) {
 	repo := s.lookupReadableRepoFromPath(w, r)
 	if repo == nil {
 		return nil, nil
@@ -402,7 +404,7 @@ func (s *Server) resolveIssueSuggestion(w http.ResponseWriter, r *http.Request, 
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	var target *IssueSuggestion
+	var target *store.IssueSuggestion
 	for _, suggestion := range s.store.ListIssueSuggestions(repo.FullName, issue.ID) {
 		if suggestion.ID == id {
 			target = suggestion
@@ -414,7 +416,7 @@ func (s *Server) resolveIssueSuggestion(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	if target.State != "pending" {
-		writeGHValidationError(w, "IssueSuggestion", "state", "invalid")
+		store.WriteGHValidationError(w, "IssueSuggestion", "state", "invalid")
 		return
 	}
 	user := ghUserFromContext(r.Context())
@@ -424,37 +426,37 @@ func (s *Server) resolveIssueSuggestion(w http.ResponseWriter, r *http.Request, 
 		state = "approved"
 		switch target.Action {
 		case "close_issue":
-			s.store.UpdateIssue(issue.ID, func(item *Issue) {
+			s.store.UpdateIssue(issue.ID, func(item *store.Issue) {
 				item.State = "CLOSED"
 				now := time.Now().UTC()
 				item.ClosedAt = &now
 			})
 		case "add_label":
 			if target.TargetID == nil || s.store.GetLabel(*target.TargetID) == nil {
-				writeGHValidationError(w, "IssueSuggestion", "target_id", "invalid")
+				store.WriteGHValidationError(w, "IssueSuggestion", "target_id", "invalid")
 				return
 			}
 			s.store.AddIssueLabels(repo.FullName, issue.Number, []int{*target.TargetID})
 		case "add_assignee":
 			if target.TargetID == nil || s.store.GetUserByID(*target.TargetID) == nil {
-				writeGHValidationError(w, "IssueSuggestion", "target_id", "invalid")
+				store.WriteGHValidationError(w, "IssueSuggestion", "target_id", "invalid")
 				return
 			}
 			s.store.AddIssueAssignees(repo.ID, issue.Number, []int{*target.TargetID}, user.ID)
 		case "set_type":
 			if target.TargetID == nil || s.store.GetAssignableIssueTypeForRepo(repo, *target.TargetID) == nil {
-				writeGHValidationError(w, "IssueSuggestion", "target_id", "invalid")
+				store.WriteGHValidationError(w, "IssueSuggestion", "target_id", "invalid")
 				return
 			}
-			s.store.UpdateIssue(issue.ID, func(item *Issue) { item.IssueTypeID = *target.TargetID })
+			s.store.UpdateIssue(issue.ID, func(item *store.Issue) { item.IssueTypeID = *target.TargetID })
 		case "add_field":
 			if target.TargetID == nil {
-				writeGHValidationError(w, "IssueSuggestion", "target_id", "invalid")
+				store.WriteGHValidationError(w, "IssueSuggestion", "target_id", "invalid")
 				return
 			}
 			s.store.AddIssueFieldValues(issue.ID, map[int]interface{}{*target.TargetID: target.TargetValue})
 		default:
-			writeGHValidationError(w, "IssueSuggestion", "action", "invalid")
+			store.WriteGHValidationError(w, "IssueSuggestion", "action", "invalid")
 			return
 		}
 		event := s.store.RecordIssueEvent(repo.ID, issue.ID, user.ID, "issue_suggestion_approved", map[string]interface{}{})
@@ -462,7 +464,7 @@ func (s *Server) resolveIssueSuggestion(w http.ResponseWriter, r *http.Request, 
 	}
 	resolved := s.store.ResolveIssueSuggestion(repo.FullName, issue.ID, id, user.ID, state, eventID)
 	if resolved == nil {
-		writeGHValidationError(w, "IssueSuggestion", "state", "invalid")
+		store.WriteGHValidationError(w, "IssueSuggestion", "state", "invalid")
 		return
 	}
 	writeJSON(w, http.StatusOK, resolved)

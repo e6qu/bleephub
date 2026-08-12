@@ -14,6 +14,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // testCodeQLDatabaseBundle creates the same relocatable archive shape emitted
@@ -640,7 +642,7 @@ func TestCodeQLDatabaseUpload_ObjectFailurePreservesPreviousDatabase(t *testing.
 	databaseID := int(created["id"].(float64))
 	secondCommit := s.putRepoFile(t, repo.FullName, "second.go", "package main\n", "add second source")
 	secondBundle := testCodeQLDatabaseBundle(t, "go", "replacement dataset")
-	s.store.ObjectByteStore = &s3ActionsByteStore{Fs: deriveS3FSForTest(t, "missing-bucket", objectFS.Prefix())}
+	s.store.ObjectByteStore = &store.S3ActionsByteStore{Fs: deriveS3FSForTest(t, "missing-bucket", objectFS.Prefix())}
 
 	resp := s.postCodeQLDatabase(t, defaultToken, repo.FullName, "go", "replacement", secondCommit, "application/zip", secondBundle)
 	body, _ := io.ReadAll(resp.Body)
@@ -677,20 +679,20 @@ func TestCodeQLDatabaseUpload_ObjectFailurePreservesPreviousDatabase(t *testing.
 func TestCodeQLDatabaseUpload_PersistenceFailurePreservesPreviousDatabase(t *testing.T) {
 	t.Setenv("BLEEPHUB_PERSIST", "true")
 	t.Setenv("BLEEPHUB_DATA_DIR", t.TempDir())
-	persistence, err := NewPersistence()
+	persistence, err := store.NewPersistence()
 	if err != nil {
 		t.Fatal(err)
 	}
-	store := NewStore()
-	if err := store.SetPersistence(persistence); err != nil {
+	st := store.NewStore()
+	if err := st.SetPersistence(persistence); err != nil {
 		t.Fatal(err)
 	}
 	_, objectStore := newObjectByteStoreForTest(t)
-	store.ObjectByteStore = objectStore
-	store.SeedDefaultUser()
-	user := store.UsersByLogin["admin"]
+	st.ObjectByteStore = objectStore
+	st.SeedDefaultUser()
+	user := st.UsersByLogin["admin"]
 	first := []byte("first durable CodeQL database")
-	database, err := store.UpsertCodeQLDatabase("admin/repo", "go", "go-database", "application/zip", strings.Repeat("1", 40), first, user.ID)
+	database, err := st.UpsertCodeQLDatabase("admin/repo", "go", "go-database", "application/zip", strings.Repeat("1", 40), first, user.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -700,21 +702,21 @@ func TestCodeQLDatabaseUpload_PersistenceFailurePreservesPreviousDatabase(t *tes
 	}
 
 	second := []byte("replacement durable CodeQL database")
-	if _, err := store.UpsertCodeQLDatabase("admin/repo", "go", "replacement", "application/zip", strings.Repeat("2", 40), second, user.ID); err == nil {
+	if _, err := st.UpsertCodeQLDatabase("admin/repo", "go", "replacement", "application/zip", strings.Repeat("2", 40), second, user.ID); err == nil {
 		t.Fatal("replacement with closed SQLite persistence succeeded")
 	}
-	got := store.GetCodeQLDatabase("admin/repo", "go")
+	got := st.GetCodeQLDatabase("admin/repo", "go")
 	if got == nil || got.Name != "go-database" || got.CommitOID != strings.Repeat("1", 40) || got.StoragePath != previousPath {
 		t.Fatalf("database metadata changed after persistence failure: %+v", got)
 	}
-	bytesAfterFailure, err := store.ReadCodeQLDatabaseContent(context.Background(), got)
+	bytesAfterFailure, err := st.ReadCodeQLDatabaseContent(context.Background(), got)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !bytes.Equal(bytesAfterFailure, first) {
 		t.Fatalf("database bytes changed after persistence failure: %q", bytesAfterFailure)
 	}
-	newPath := codeQLDatabaseDataKey(database.ID, second)
+	newPath := store.CodeQLDatabaseDataKey(database.ID, second)
 	if _, err := objectStore.Get(context.Background(), newPath); err == nil {
 		t.Fatalf("replacement object %s survived persistence rollback", newPath)
 	}
@@ -922,7 +924,7 @@ func TestCodeQLVariantAnalyses_QueryPacksUseObjectStore(t *testing.T) {
 	if authorized.StatusCode != http.StatusOK || !bytes.Equal(authorizedBytes, queryPackBytes) {
 		t.Fatalf("authorized private query-pack download = %d bytes=%d", authorized.StatusCode, len(authorizedBytes))
 	}
-	key := codeQLVariantAnalysisQueryPackDataKey(vaID)
+	key := store.CodeQLVariantAnalysisQueryPackDataKey(vaID)
 	if got := readS3TestFile(t, objectFS, key); !bytes.Equal(got, queryPackBytes) {
 		t.Fatalf("CodeQL variant-analysis query-pack object bytes = %q, want %q", got, queryPackBytes)
 	}

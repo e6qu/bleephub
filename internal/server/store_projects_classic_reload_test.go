@@ -1,6 +1,10 @@
 package bleephub
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
+)
 
 // TestPersistenceReload_ProjectBoardOrder covers the STORE data-loss fix (P4).
 // ProjectColumn.Position and ProjectCard.Position were tagged json:"-", so the
@@ -14,7 +18,7 @@ func TestPersistenceReload_ProjectBoardOrder(t *testing.T) {
 	var wantColOrder []int
 	var wantCardOrder []int
 
-	st2 := reloadedStore(t, func(p *Persistence, st *Store) {
+	st2 := reloadedStore(t, func(p *store.Persistence, st *store.Store) {
 		st.SeedDefaultUser()
 		user := st.UsersByLogin["admin"]
 		repo := st.CreateRepo(user, "board", "", false)
@@ -81,7 +85,7 @@ func TestPersistenceReload_ProjectBoardOrder(t *testing.T) {
 	}
 }
 
-func columnIDs(cols []*ProjectColumn) []int {
+func columnIDs(cols []*store.ProjectColumn) []int {
 	ids := make([]int, len(cols))
 	for i, c := range cols {
 		ids[i] = c.ID
@@ -89,7 +93,7 @@ func columnIDs(cols []*ProjectColumn) []int {
 	return ids
 }
 
-func cardIDs(cards []*ProjectCard) []int {
+func cardIDs(cards []*store.ProjectCard) []int {
 	ids := make([]int, len(cards))
 	for i, c := range cards {
 		ids[i] = c.ID

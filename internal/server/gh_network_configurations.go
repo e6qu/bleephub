@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"regexp"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // GitHub hosted compute networking: organizations create network
@@ -14,17 +16,17 @@ import (
 
 func (s *Server) registerGHNetworkConfigurationRoutes() {
 	s.route("GET /api/v3/orgs/{org}/settings/network-configurations",
-		s.requirePerm(scopeOrgAdministration, permRead, s.orgGated(s.handleListOrgNetworkConfigurations)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.orgGated(s.handleListOrgNetworkConfigurations)))
 	s.route("POST /api/v3/orgs/{org}/settings/network-configurations",
-		s.requirePerm(scopeOrgAdministration, permWrite, s.orgGated(s.handleCreateOrgNetworkConfiguration)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.orgGated(s.handleCreateOrgNetworkConfiguration)))
 	s.route("GET /api/v3/orgs/{org}/settings/network-configurations/{network_configuration_id}",
-		s.requirePerm(scopeOrgAdministration, permRead, s.orgGated(s.handleGetOrgNetworkConfiguration)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.orgGated(s.handleGetOrgNetworkConfiguration)))
 	s.route("PATCH /api/v3/orgs/{org}/settings/network-configurations/{network_configuration_id}",
-		s.requirePerm(scopeOrgAdministration, permWrite, s.orgGated(s.handleUpdateOrgNetworkConfiguration)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.orgGated(s.handleUpdateOrgNetworkConfiguration)))
 	s.route("DELETE /api/v3/orgs/{org}/settings/network-configurations/{network_configuration_id}",
-		s.requirePerm(scopeOrgAdministration, permWrite, s.orgGated(s.handleDeleteOrgNetworkConfiguration)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermWrite, s.orgGated(s.handleDeleteOrgNetworkConfiguration)))
 	s.route("GET /api/v3/orgs/{org}/settings/network-settings/{network_settings_id}",
-		s.requirePerm(scopeOrgAdministration, permRead, s.orgGated(s.handleGetOrgNetworkSettings)))
+		s.requirePerm(store.ScopeOrgAdministration, store.PermRead, s.orgGated(s.handleGetOrgNetworkSettings)))
 
 	// Seed endpoint standing in for the Azure private networking onboarding
 	// flow that provisions network settings resources on real GitHub.
@@ -54,26 +56,26 @@ func (s *Server) handleListNetworkConfigurationsForScope(w http.ResponseWriter, 
 
 // validateNetworkConfigurationRequest checks the shared create/update
 // constraints, writing the validation error on failure.
-func (s *Server) validateNetworkConfigurationRequest(w http.ResponseWriter, org string, req *networkConfigurationRequest, settingsRequired bool) bool {
+func (s *Server) validateNetworkConfigurationRequest(w http.ResponseWriter, org string, req *store.NetworkConfigurationRequest, settingsRequired bool) bool {
 	if req.Name != nil && !networkConfigurationNameRE.MatchString(*req.Name) {
-		writeGHValidationError(w, "NetworkConfiguration", "name", "invalid")
+		store.WriteGHValidationError(w, "NetworkConfiguration", "name", "invalid")
 		return false
 	}
 	if req.ComputeService != nil && *req.ComputeService != "none" && *req.ComputeService != "actions" {
-		writeGHValidationError(w, "NetworkConfiguration", "compute_service", "invalid")
+		store.WriteGHValidationError(w, "NetworkConfiguration", "compute_service", "invalid")
 		return false
 	}
 	if settingsRequired && len(req.NetworkSettingsIDs) != 1 {
-		writeGHValidationError(w, "NetworkConfiguration", "network_settings_ids", "invalid")
+		store.WriteGHValidationError(w, "NetworkConfiguration", "network_settings_ids", "invalid")
 		return false
 	}
 	if len(req.NetworkSettingsIDs) > 1 || len(req.FailoverNetworkSettingsIDs) > 1 {
-		writeGHValidationError(w, "NetworkConfiguration", "network_settings_ids", "invalid")
+		store.WriteGHValidationError(w, "NetworkConfiguration", "network_settings_ids", "invalid")
 		return false
 	}
 	for _, id := range append(append([]string{}, req.NetworkSettingsIDs...), req.FailoverNetworkSettingsIDs...) {
 		if s.store.GetNetworkSettings(org, id) == nil {
-			writeGHValidationError(w, "NetworkConfiguration", "network_settings_ids", "invalid")
+			store.WriteGHValidationError(w, "NetworkConfiguration", "network_settings_ids", "invalid")
 			return false
 		}
 	}
@@ -85,12 +87,12 @@ func (s *Server) handleCreateOrgNetworkConfiguration(w http.ResponseWriter, r *h
 }
 
 func (s *Server) handleCreateNetworkConfigurationForScope(w http.ResponseWriter, r *http.Request, scope string) {
-	var req networkConfigurationRequest
+	var req store.NetworkConfigurationRequest
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	if req.Name == nil {
-		writeGHValidationError(w, "NetworkConfiguration", "name", "missing_field")
+		store.WriteGHValidationError(w, "NetworkConfiguration", "name", "missing_field")
 		return
 	}
 	if !s.validateNetworkConfigurationRequest(w, scope, &req, true) {
@@ -127,7 +129,7 @@ func (s *Server) handleUpdateNetworkConfigurationForScope(w http.ResponseWriter,
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	var req networkConfigurationRequest
+	var req store.NetworkConfigurationRequest
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
@@ -188,7 +190,7 @@ func (s *Server) handleSeedOrgNetworkSettings(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusCreated, networkSettingsJSON(res))
 }
 
-func networkConfigurationJSON(c *NetworkConfiguration) map[string]interface{} {
+func networkConfigurationJSON(c *store.NetworkConfiguration) map[string]interface{} {
 	settingsIDs := c.NetworkSettingsIDs
 	if settingsIDs == nil {
 		settingsIDs = []string{}
@@ -207,7 +209,7 @@ func networkConfigurationJSON(c *NetworkConfiguration) map[string]interface{} {
 	return out
 }
 
-func networkSettingsJSON(res *NetworkSettingsResource) map[string]interface{} {
+func networkSettingsJSON(res *store.NetworkSettingsResource) map[string]interface{} {
 	out := map[string]interface{}{
 		"id":        res.ID,
 		"name":      res.Name,

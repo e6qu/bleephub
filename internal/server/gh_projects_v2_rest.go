@@ -2,6 +2,7 @@ package bleephub
 
 import (
 	"github.com/e6qu/bleephub/internal/graphqlapi"
+	"github.com/e6qu/bleephub/internal/store"
 
 	"context"
 	"fmt"
@@ -18,36 +19,36 @@ import (
 
 func (s *Server) registerGHProjectsV2Routes() {
 	// Organization-owned projects.
-	s.route("GET /api/v3/orgs/{org}/projectsV2", s.requirePerm(scopeProjects, permRead, s.handleOrgProjectsV2List))
-	s.route("GET /api/v3/orgs/{org}/projectsV2/{project_number}", s.requirePerm(scopeProjects, permRead, s.handleOrgProjectV2Get))
-	s.route("POST /api/v3/orgs/{org}/projectsV2/{project_number}/drafts", s.requirePerm(scopeProjects, permWrite, s.handleOrgProjectV2CreateDraft))
-	s.route("GET /api/v3/orgs/{org}/projectsV2/{project_number}/fields", s.requirePerm(scopeProjects, permRead, s.handleOrgProjectV2ListFields))
-	s.route("POST /api/v3/orgs/{org}/projectsV2/{project_number}/fields", s.requirePerm(scopeProjects, permWrite, s.handleOrgProjectV2CreateField))
-	s.route("GET /api/v3/orgs/{org}/projectsV2/{project_number}/fields/{field_id}", s.requirePerm(scopeProjects, permRead, s.handleOrgProjectV2GetField))
-	s.route("GET /api/v3/orgs/{org}/projectsV2/{project_number}/items", s.requirePerm(scopeProjects, permRead, s.handleOrgProjectV2ListItems))
-	s.route("POST /api/v3/orgs/{org}/projectsV2/{project_number}/items", s.requirePerm(scopeProjects, permWrite, s.handleOrgProjectV2AddItem))
-	s.route("GET /api/v3/orgs/{org}/projectsV2/{project_number}/items/{item_id}", s.requirePerm(scopeProjects, permRead, s.handleOrgProjectV2GetItem))
-	s.route("PATCH /api/v3/orgs/{org}/projectsV2/{project_number}/items/{item_id}", s.requirePerm(scopeProjects, permWrite, s.handleOrgProjectV2UpdateItem))
-	s.route("DELETE /api/v3/orgs/{org}/projectsV2/{project_number}/items/{item_id}", s.requirePerm(scopeProjects, permWrite, s.handleOrgProjectV2DeleteItem))
-	s.route("POST /api/v3/orgs/{org}/projectsV2/{project_number}/views", s.requirePerm(scopeProjects, permWrite, s.handleOrgProjectV2CreateView))
-	s.route("GET /api/v3/orgs/{org}/projectsV2/{project_number}/views/{view_number}/items", s.requirePerm(scopeProjects, permRead, s.handleOrgProjectV2ListViewItems))
+	s.route("GET /api/v3/orgs/{org}/projectsV2", s.requirePerm(store.ScopeProjects, store.PermRead, s.handleOrgProjectsV2List))
+	s.route("GET /api/v3/orgs/{org}/projectsV2/{project_number}", s.requirePerm(store.ScopeProjects, store.PermRead, s.handleOrgProjectV2Get))
+	s.route("POST /api/v3/orgs/{org}/projectsV2/{project_number}/drafts", s.requirePerm(store.ScopeProjects, store.PermWrite, s.handleOrgProjectV2CreateDraft))
+	s.route("GET /api/v3/orgs/{org}/projectsV2/{project_number}/fields", s.requirePerm(store.ScopeProjects, store.PermRead, s.handleOrgProjectV2ListFields))
+	s.route("POST /api/v3/orgs/{org}/projectsV2/{project_number}/fields", s.requirePerm(store.ScopeProjects, store.PermWrite, s.handleOrgProjectV2CreateField))
+	s.route("GET /api/v3/orgs/{org}/projectsV2/{project_number}/fields/{field_id}", s.requirePerm(store.ScopeProjects, store.PermRead, s.handleOrgProjectV2GetField))
+	s.route("GET /api/v3/orgs/{org}/projectsV2/{project_number}/items", s.requirePerm(store.ScopeProjects, store.PermRead, s.handleOrgProjectV2ListItems))
+	s.route("POST /api/v3/orgs/{org}/projectsV2/{project_number}/items", s.requirePerm(store.ScopeProjects, store.PermWrite, s.handleOrgProjectV2AddItem))
+	s.route("GET /api/v3/orgs/{org}/projectsV2/{project_number}/items/{item_id}", s.requirePerm(store.ScopeProjects, store.PermRead, s.handleOrgProjectV2GetItem))
+	s.route("PATCH /api/v3/orgs/{org}/projectsV2/{project_number}/items/{item_id}", s.requirePerm(store.ScopeProjects, store.PermWrite, s.handleOrgProjectV2UpdateItem))
+	s.route("DELETE /api/v3/orgs/{org}/projectsV2/{project_number}/items/{item_id}", s.requirePerm(store.ScopeProjects, store.PermWrite, s.handleOrgProjectV2DeleteItem))
+	s.route("POST /api/v3/orgs/{org}/projectsV2/{project_number}/views", s.requirePerm(store.ScopeProjects, store.PermWrite, s.handleOrgProjectV2CreateView))
+	s.route("GET /api/v3/orgs/{org}/projectsV2/{project_number}/views/{view_number}/items", s.requirePerm(store.ScopeProjects, store.PermRead, s.handleOrgProjectV2ListViewItems))
 
 	// User-owned projects. The create-view and create-draft routes are
 	// keyed by user ID, not login — that is the real GitHub path shape
 	// (/users/{user_id}/…/views and /user/{user_id}/…/drafts).
-	s.route("GET /api/v3/users/{username}/projectsV2", s.requirePerm(scopeProjects, permRead, s.handleUserProjectsV2List))
-	s.route("GET /api/v3/users/{username}/projectsV2/{project_number}", s.requirePerm(scopeProjects, permRead, s.handleUserProjectV2Get))
-	s.route("GET /api/v3/users/{username}/projectsV2/{project_number}/fields", s.requirePerm(scopeProjects, permRead, s.handleUserProjectV2ListFields))
-	s.route("POST /api/v3/users/{username}/projectsV2/{project_number}/fields", s.requirePerm(scopeProjects, permWrite, s.handleUserProjectV2CreateField))
-	s.route("GET /api/v3/users/{username}/projectsV2/{project_number}/fields/{field_id}", s.requirePerm(scopeProjects, permRead, s.handleUserProjectV2GetField))
-	s.route("GET /api/v3/users/{username}/projectsV2/{project_number}/items", s.requirePerm(scopeProjects, permRead, s.handleUserProjectV2ListItems))
-	s.route("POST /api/v3/users/{username}/projectsV2/{project_number}/items", s.requirePerm(scopeProjects, permWrite, s.handleUserProjectV2AddItem))
-	s.route("GET /api/v3/users/{username}/projectsV2/{project_number}/items/{item_id}", s.requirePerm(scopeProjects, permRead, s.handleUserProjectV2GetItem))
-	s.route("PATCH /api/v3/users/{username}/projectsV2/{project_number}/items/{item_id}", s.requirePerm(scopeProjects, permWrite, s.handleUserProjectV2UpdateItem))
-	s.route("DELETE /api/v3/users/{username}/projectsV2/{project_number}/items/{item_id}", s.requirePerm(scopeProjects, permWrite, s.handleUserProjectV2DeleteItem))
-	s.route("POST /api/v3/users/{user_id}/projectsV2/{project_number}/views", s.requirePerm(scopeProjects, permWrite, s.handleUserProjectV2CreateView))
-	s.route("GET /api/v3/users/{username}/projectsV2/{project_number}/views/{view_number}/items", s.requirePerm(scopeProjects, permRead, s.handleUserProjectV2ListViewItems))
-	s.route("POST /api/v3/user/{user_id}/projectsV2/{project_number}/drafts", s.requirePerm(scopeProjects, permWrite, s.handleAuthenticatedUserProjectV2CreateDraft))
+	s.route("GET /api/v3/users/{username}/projectsV2", s.requirePerm(store.ScopeProjects, store.PermRead, s.handleUserProjectsV2List))
+	s.route("GET /api/v3/users/{username}/projectsV2/{project_number}", s.requirePerm(store.ScopeProjects, store.PermRead, s.handleUserProjectV2Get))
+	s.route("GET /api/v3/users/{username}/projectsV2/{project_number}/fields", s.requirePerm(store.ScopeProjects, store.PermRead, s.handleUserProjectV2ListFields))
+	s.route("POST /api/v3/users/{username}/projectsV2/{project_number}/fields", s.requirePerm(store.ScopeProjects, store.PermWrite, s.handleUserProjectV2CreateField))
+	s.route("GET /api/v3/users/{username}/projectsV2/{project_number}/fields/{field_id}", s.requirePerm(store.ScopeProjects, store.PermRead, s.handleUserProjectV2GetField))
+	s.route("GET /api/v3/users/{username}/projectsV2/{project_number}/items", s.requirePerm(store.ScopeProjects, store.PermRead, s.handleUserProjectV2ListItems))
+	s.route("POST /api/v3/users/{username}/projectsV2/{project_number}/items", s.requirePerm(store.ScopeProjects, store.PermWrite, s.handleUserProjectV2AddItem))
+	s.route("GET /api/v3/users/{username}/projectsV2/{project_number}/items/{item_id}", s.requirePerm(store.ScopeProjects, store.PermRead, s.handleUserProjectV2GetItem))
+	s.route("PATCH /api/v3/users/{username}/projectsV2/{project_number}/items/{item_id}", s.requirePerm(store.ScopeProjects, store.PermWrite, s.handleUserProjectV2UpdateItem))
+	s.route("DELETE /api/v3/users/{username}/projectsV2/{project_number}/items/{item_id}", s.requirePerm(store.ScopeProjects, store.PermWrite, s.handleUserProjectV2DeleteItem))
+	s.route("POST /api/v3/users/{user_id}/projectsV2/{project_number}/views", s.requirePerm(store.ScopeProjects, store.PermWrite, s.handleUserProjectV2CreateView))
+	s.route("GET /api/v3/users/{username}/projectsV2/{project_number}/views/{view_number}/items", s.requirePerm(store.ScopeProjects, store.PermRead, s.handleUserProjectV2ListViewItems))
+	s.route("POST /api/v3/user/{user_id}/projectsV2/{project_number}/drafts", s.requirePerm(store.ScopeProjects, store.PermWrite, s.handleAuthenticatedUserProjectV2CreateDraft))
 }
 
 // ---------------------------------------------------------------------------
@@ -56,25 +57,25 @@ func (s *Server) registerGHProjectsV2Routes() {
 // projectV2Owner (= store.ProjectV2Owner — ARCH-003) is the resolved owner
 // (org or user) of a Projects v2 project addressed by a REST path.
 
-func (s *Server) projectV2OrgOwner(w http.ResponseWriter, r *http.Request) (*projectV2Owner, bool) {
+func (s *Server) projectV2OrgOwner(w http.ResponseWriter, r *http.Request) (*store.ProjectV2Owner, bool) {
 	org := s.store.GetOrg(r.PathValue("org"))
 	if org == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil, false
 	}
-	return &projectV2Owner{ID: org.ID, OwnerType: "Organization", Login: org.Login, Org: org}, true
+	return &store.ProjectV2Owner{ID: org.ID, OwnerType: "Organization", Login: org.Login, Org: org}, true
 }
 
-func (s *Server) projectV2UserOwnerByLogin(w http.ResponseWriter, r *http.Request) (*projectV2Owner, bool) {
+func (s *Server) projectV2UserOwnerByLogin(w http.ResponseWriter, r *http.Request) (*store.ProjectV2Owner, bool) {
 	u := s.store.LookupUserByLogin(r.PathValue("username"))
 	if u == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil, false
 	}
-	return &projectV2Owner{ID: u.ID, OwnerType: "User", Login: u.Login, User: u}, true
+	return &store.ProjectV2Owner{ID: u.ID, OwnerType: "User", Login: u.Login, User: u}, true
 }
 
-func (s *Server) projectV2UserOwnerByID(w http.ResponseWriter, r *http.Request) (*projectV2Owner, bool) {
+func (s *Server) projectV2UserOwnerByID(w http.ResponseWriter, r *http.Request) (*store.ProjectV2Owner, bool) {
 	id, err := strconv.Atoi(r.PathValue("user_id"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -85,24 +86,24 @@ func (s *Server) projectV2UserOwnerByID(w http.ResponseWriter, r *http.Request) 
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil, false
 	}
-	return &projectV2Owner{ID: u.ID, OwnerType: "User", Login: u.Login, User: u}, true
+	return &store.ProjectV2Owner{ID: u.ID, OwnerType: "User", Login: u.Login, User: u}, true
 }
 
 // canReadProjectV2: public projects are visible to any caller; private
 // projects only to the owning user, active members of the owning org,
 // or a site admin — and, for an app credential, only where the app was granted
 // projects over that account.
-func (s *Server) canReadProjectV2(ctx context.Context, user *User, owner *projectV2Owner, p *ProjectV2) bool {
+func (s *Server) canReadProjectV2(ctx context.Context, user *store.User, owner *store.ProjectV2Owner, p *store.ProjectV2) bool {
 	if p.Public {
 		return true
 	}
-	return s.projectV2OwnerReachable(ctx, user, owner, permRead)
+	return s.projectV2OwnerReachable(ctx, user, owner, store.PermRead)
 }
 
 // canWriteProjectV2: the owning user, active members of the owning org,
 // or a site admin, intersected with the app's grant as above.
-func (s *Server) canWriteProjectV2(ctx context.Context, user *User, owner *projectV2Owner) bool {
-	return s.projectV2OwnerReachable(ctx, user, owner, permWrite)
+func (s *Server) canWriteProjectV2(ctx context.Context, user *store.User, owner *store.ProjectV2Owner) bool {
+	return s.projectV2OwnerReachable(ctx, user, owner, store.PermWrite)
 }
 
 // projectV2OwnerReachable is the shared body: the credential's grant over the
@@ -112,11 +113,11 @@ func (s *Server) canWriteProjectV2(ctx context.Context, user *User, owner *proje
 // about the bearer and says nothing about the app speaking for them — a
 // user-to-server token of an app installed nowhere created projects under its
 // bearer's account where the same app's installation token was refused.
-func (s *Server) projectV2OwnerReachable(ctx context.Context, user *User, owner *projectV2Owner, level permLevel) bool {
+func (s *Server) projectV2OwnerReachable(ctx context.Context, user *store.User, owner *store.ProjectV2Owner, level store.PermLevel) bool {
 	if user == nil || owner == nil {
 		return false
 	}
-	if !s.credentialGrantsAccount(ctx, anyAccount, owner.Login, scopeProjects, level) {
+	if !s.credentialGrantsAccount(ctx, store.AnyAccount, owner.Login, store.ScopeProjects, level) {
 		return false
 	}
 	if user.SiteAdmin {
@@ -131,7 +132,7 @@ func (s *Server) projectV2OwnerReachable(ctx context.Context, user *User, owner 
 // projectV2FromRequest resolves {project_number} for the owner and
 // enforces read visibility. Writes 404 (never 403) when the project is
 // missing or hidden, matching how GitHub conceals private resources.
-func (s *Server) projectV2FromRequest(w http.ResponseWriter, r *http.Request, owner *projectV2Owner) (*ProjectV2, bool) {
+func (s *Server) projectV2FromRequest(w http.ResponseWriter, r *http.Request, owner *store.ProjectV2Owner) (*store.ProjectV2, bool) {
 	number, err := strconv.Atoi(r.PathValue("project_number"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -146,7 +147,7 @@ func (s *Server) projectV2FromRequest(w http.ResponseWriter, r *http.Request, ow
 }
 
 // requireProjectV2Write enforces write access, writing 403 on denial.
-func (s *Server) requireProjectV2Write(w http.ResponseWriter, r *http.Request, owner *projectV2Owner) (*User, bool) {
+func (s *Server) requireProjectV2Write(w http.ResponseWriter, r *http.Request, owner *store.ProjectV2Owner) (*store.User, bool) {
 	user := ghUserFromContext(r.Context())
 	if !s.canWriteProjectV2(r.Context(), user, owner) {
 		writeGHError(w, http.StatusForbidden, "Must have write access to the project.")
@@ -256,7 +257,7 @@ func setCursorLinkHeader(w http.ResponseWriter, r *http.Request, pi cursorPageIn
 
 // projectV2APIURL is the project's REST URL, which anchors project_url
 // and item_url members.
-func (s *Server) projectV2APIURL(r *http.Request, owner *projectV2Owner, number int) string {
+func (s *Server) projectV2APIURL(r *http.Request, owner *store.ProjectV2Owner, number int) string {
 	base := s.baseURL(r)
 	if owner.OwnerType == "Organization" {
 		return base + "/api/v3/orgs/" + owner.Login + "/projectsV2/" + strconv.Itoa(number)
@@ -267,15 +268,15 @@ func (s *Server) projectV2APIURL(r *http.Request, owner *projectV2Owner, number 
 // projectV2CreatorJSON renders the creating user; a creator that no
 // longer resolves renders as GitHub's "ghost" placeholder account.
 func (s *Server) projectV2CreatorJSON(creatorID int) map[string]interface{} {
-	return userToJSON(s.store.GetUserByID(creatorID))
+	return store.UserToJSON(s.store.GetUserByID(creatorID))
 }
 
-func (s *Server) projectV2JSON(p *ProjectV2, owner *projectV2Owner) map[string]interface{} {
+func (s *Server) projectV2JSON(p *store.ProjectV2, owner *store.ProjectV2Owner) map[string]interface{} {
 	var ownerJSON map[string]interface{}
 	if owner.Org != nil {
-		ownerJSON = orgAsSimpleUserJSON(owner.Org)
+		ownerJSON = store.OrgAsSimpleUserJSON(owner.Org)
 	} else if owner.User != nil {
-		ownerJSON = userToJSON(owner.User)
+		ownerJSON = store.UserToJSON(owner.User)
 	}
 	state := "open"
 	var closedAt interface{}
@@ -305,7 +306,7 @@ func (s *Server) projectV2JSON(p *ProjectV2, owner *projectV2Owner) map[string]i
 	}
 }
 
-func projectV2FieldJSON(f *ProjectV2Field, projectURL string) map[string]interface{} {
+func projectV2FieldJSON(f *store.ProjectV2Field, projectURL string) map[string]interface{} {
 	out := map[string]interface{}{
 		"id":          f.ID,
 		"node_id":     f.NodeID,
@@ -315,7 +316,7 @@ func projectV2FieldJSON(f *ProjectV2Field, projectURL string) map[string]interfa
 		"created_at":  f.CreatedAt.UTC().Format(time.RFC3339),
 		"updated_at":  f.UpdatedAt.UTC().Format(time.RFC3339),
 	}
-	if f.DataType == ProjectV2FieldSingleSelect {
+	if f.DataType == store.ProjectV2FieldSingleSelect {
 		options := make([]map[string]interface{}, 0, len(f.Options))
 		for _, o := range f.Options {
 			options = append(options, map[string]interface{}{
@@ -327,13 +328,13 @@ func projectV2FieldJSON(f *ProjectV2Field, projectURL string) map[string]interfa
 		}
 		out["options"] = options
 	}
-	if f.DataType == ProjectV2FieldIteration && f.Iteration != nil {
+	if f.DataType == store.ProjectV2FieldIteration && f.Iteration != nil {
 		out["configuration"] = projectV2IterationConfigJSON(f.Iteration)
 	}
 	return out
 }
 
-func projectV2IterationConfigJSON(cfg *ProjectV2IterationConfiguration) map[string]interface{} {
+func projectV2IterationConfigJSON(cfg *store.ProjectV2IterationConfiguration) map[string]interface{} {
 	iterations := make([]map[string]interface{}, 0, len(cfg.Iterations))
 	for _, it := range cfg.Iterations {
 		completed := false
@@ -363,7 +364,7 @@ func projectV2IterationConfigJSON(cfg *ProjectV2IterationConfiguration) map[stri
 	return out
 }
 
-func (s *Server) projectV2ItemSimpleJSON(it *ProjectV2Item, projectURL string) map[string]interface{} {
+func (s *Server) projectV2ItemSimpleJSON(it *store.ProjectV2Item, projectURL string) map[string]interface{} {
 	var archivedAt interface{}
 	if it.ArchivedAt != nil {
 		archivedAt = it.ArchivedAt.UTC().Format(time.RFC3339)
@@ -381,14 +382,14 @@ func (s *Server) projectV2ItemSimpleJSON(it *ProjectV2Item, projectURL string) m
 	}
 }
 
-func (s *Server) projectV2ItemWithContentJSON(r *http.Request, it *ProjectV2Item, projectURL string, fieldIDs []int) map[string]interface{} {
+func (s *Server) projectV2ItemWithContentJSON(r *http.Request, it *store.ProjectV2Item, projectURL string, fieldIDs []int) map[string]interface{} {
 	out := s.projectV2ItemSimpleJSON(it, projectURL)
 	out["content"] = s.projectV2ItemContentJSON(r, it)
 	out["fields"] = s.projectV2ItemFieldsJSON(it, fieldIDs)
 	return out
 }
 
-func (s *Server) projectV2ItemContentJSON(r *http.Request, it *ProjectV2Item) interface{} {
+func (s *Server) projectV2ItemContentJSON(r *http.Request, it *store.ProjectV2Item) interface{} {
 	base := s.baseURL(r)
 	switch it.ContentType {
 	case "Issue":
@@ -414,7 +415,7 @@ func (s *Server) projectV2ItemContentJSON(r *http.Request, it *ProjectV2Item) in
 	case "DraftIssue":
 		var user interface{}
 		if u := s.store.GetUserByID(it.CreatorID); u != nil {
-			user = userToJSON(u)
+			user = store.UserToJSON(u)
 		}
 		return map[string]interface{}{
 			"id":         it.ID,
@@ -433,7 +434,7 @@ func (s *Server) projectV2ItemContentJSON(r *http.Request, it *ProjectV2Item) in
 // explicit fieldIDs selection (the `fields` query parameter) every
 // requested field is rendered, unset values as null; otherwise every
 // field holding a value is rendered.
-func (s *Server) projectV2ItemFieldsJSON(it *ProjectV2Item, fieldIDs []int) []map[string]interface{} {
+func (s *Server) projectV2ItemFieldsJSON(it *store.ProjectV2Item, fieldIDs []int) []map[string]interface{} {
 	ids := fieldIDs
 	if len(ids) == 0 {
 		for fid := range it.FieldValues {
@@ -458,20 +459,20 @@ func (s *Server) projectV2ItemFieldsJSON(it *ProjectV2Item, fieldIDs []int) []ma
 	return out
 }
 
-func projectV2FieldValueJSON(f *ProjectV2Field, v *ProjectV2ItemFieldValue) interface{} {
+func projectV2FieldValueJSON(f *store.ProjectV2Field, v *store.ProjectV2ItemFieldValue) interface{} {
 	if v == nil {
 		return nil
 	}
 	switch f.DataType {
-	case ProjectV2FieldSingleSelect:
+	case store.ProjectV2FieldSingleSelect:
 		return map[string]interface{}{"id": v.OptionID, "name": v.OptionName}
-	case ProjectV2FieldText:
+	case store.ProjectV2FieldText:
 		return v.TextValue
-	case ProjectV2FieldNumber:
+	case store.ProjectV2FieldNumber:
 		return v.NumberValue
-	case ProjectV2FieldDate:
+	case store.ProjectV2FieldDate:
 		return v.DateValue
-	case ProjectV2FieldIteration:
+	case store.ProjectV2FieldIteration:
 		if f.Iteration != nil {
 			for _, it := range f.Iteration.Iterations {
 				if it.ID == v.IterationID {
@@ -489,7 +490,7 @@ func projectV2FieldValueJSON(f *ProjectV2Field, v *ProjectV2ItemFieldValue) inte
 	return nil
 }
 
-func (s *Server) projectV2ViewJSON(r *http.Request, v *ProjectV2View, owner *projectV2Owner, project *ProjectV2) map[string]interface{} {
+func (s *Server) projectV2ViewJSON(r *http.Request, v *store.ProjectV2View, owner *store.ProjectV2Owner, project *store.ProjectV2) map[string]interface{} {
 	var filter interface{}
 	if v.Filter != nil {
 		filter = *v.Filter
@@ -526,7 +527,7 @@ func (s *Server) projectV2ViewJSON(r *http.Request, v *ProjectV2View, owner *pro
 // `is:` state qualifiers, `field:value` qualifiers matching a field's
 // value, and free text matching the title.
 
-func (s *Server) projectV2ItemMatchesFilter(it *ProjectV2Item, filter string) bool {
+func (s *Server) projectV2ItemMatchesFilter(it *store.ProjectV2Item, filter string) bool {
 	for _, tok := range strings.Fields(filter) {
 		lower := strings.ToLower(tok)
 		switch {
@@ -564,7 +565,7 @@ func (s *Server) projectV2ItemMatchesFilter(it *ProjectV2Item, filter string) bo
 	return true
 }
 
-func (s *Server) projectV2ItemFieldMatches(it *ProjectV2Item, fieldName, want string) bool {
+func (s *Server) projectV2ItemFieldMatches(it *store.ProjectV2Item, fieldName, want string) bool {
 	for _, f := range s.store.ProjectsV2.FieldsForProject(it.ProjectID) {
 		if !strings.EqualFold(f.Name, fieldName) {
 			continue
@@ -574,16 +575,16 @@ func (s *Server) projectV2ItemFieldMatches(it *ProjectV2Item, fieldName, want st
 			return false
 		}
 		switch f.DataType {
-		case ProjectV2FieldSingleSelect:
+		case store.ProjectV2FieldSingleSelect:
 			return strings.EqualFold(v.OptionName, want)
-		case ProjectV2FieldText:
+		case store.ProjectV2FieldText:
 			return strings.EqualFold(v.TextValue, want)
-		case ProjectV2FieldNumber:
+		case store.ProjectV2FieldNumber:
 			num, err := strconv.ParseFloat(want, 64)
 			return err == nil && num == v.NumberValue
-		case ProjectV2FieldDate:
+		case store.ProjectV2FieldDate:
 			return v.DateValue == want
-		case ProjectV2FieldIteration:
+		case store.ProjectV2FieldIteration:
 			if f.Iteration != nil {
 				for _, iter := range f.Iteration.Iterations {
 					if iter.ID == v.IterationID {
@@ -597,7 +598,7 @@ func (s *Server) projectV2ItemFieldMatches(it *ProjectV2Item, fieldName, want st
 	return false
 }
 
-func (s *Server) projectV2ItemState(it *ProjectV2Item) string {
+func (s *Server) projectV2ItemState(it *store.ProjectV2Item) string {
 	switch it.ContentType {
 	case "Issue":
 		if issue := s.store.GetIssue(it.ContentID); issue != nil && issue.State != "OPEN" {
@@ -611,7 +612,7 @@ func (s *Server) projectV2ItemState(it *ProjectV2Item) string {
 	return "open"
 }
 
-func (s *Server) projectV2ItemTitle(it *ProjectV2Item) string {
+func (s *Server) projectV2ItemTitle(it *store.ProjectV2Item) string {
 	switch it.ContentType {
 	case "Issue":
 		if issue := s.store.GetIssue(it.ContentID); issue != nil {
@@ -627,7 +628,7 @@ func (s *Server) projectV2ItemTitle(it *ProjectV2Item) string {
 	return ""
 }
 
-func projectV2MatchesQuery(p *ProjectV2, q string) bool {
+func projectV2MatchesQuery(p *store.ProjectV2, q string) bool {
 	for _, tok := range strings.Fields(q) {
 		switch strings.ToLower(tok) {
 		case "is:open":
@@ -663,7 +664,7 @@ func parseProjectV2FieldsParam(w http.ResponseWriter, r *http.Request) ([]int, b
 			}
 			id, err := strconv.Atoi(part)
 			if err != nil {
-				writeGHValidationError(w, "ProjectV2Item", "fields", "invalid")
+				store.WriteGHValidationError(w, "ProjectV2Item", "fields", "invalid")
 				return nil, false
 			}
 			out = append(out, id)
@@ -675,11 +676,11 @@ func parseProjectV2FieldsParam(w http.ResponseWriter, r *http.Request) ([]int, b
 // ---------------------------------------------------------------------------
 // Shared handler cores
 
-func (s *Server) serveProjectsV2List(w http.ResponseWriter, r *http.Request, owner *projectV2Owner) {
+func (s *Server) serveProjectsV2List(w http.ResponseWriter, r *http.Request, owner *store.ProjectV2Owner) {
 	user := ghUserFromContext(r.Context())
 	q := r.URL.Query().Get("q")
 	all := s.store.ProjectsV2.ListProjectsForOwner(owner.ID, owner.OwnerType)
-	visible := make([]*ProjectV2, 0, len(all))
+	visible := make([]*store.ProjectV2, 0, len(all))
 	for _, p := range all {
 		if !s.canReadProjectV2(r.Context(), user, owner, p) {
 			continue
@@ -689,7 +690,7 @@ func (s *Server) serveProjectsV2List(w http.ResponseWriter, r *http.Request, own
 		}
 		visible = append(visible, p)
 	}
-	page, pi := cursorPaginate(r, visible, func(p *ProjectV2) int { return p.ID })
+	page, pi := cursorPaginate(r, visible, func(p *store.ProjectV2) int { return p.ID })
 	setCursorLinkHeader(w, r, pi)
 	out := make([]map[string]interface{}, 0, len(page))
 	for _, p := range page {
@@ -698,7 +699,7 @@ func (s *Server) serveProjectsV2List(w http.ResponseWriter, r *http.Request, own
 	writeJSON(w, http.StatusOK, out)
 }
 
-func (s *Server) serveProjectV2Get(w http.ResponseWriter, r *http.Request, owner *projectV2Owner) {
+func (s *Server) serveProjectV2Get(w http.ResponseWriter, r *http.Request, owner *store.ProjectV2Owner) {
 	p, ok := s.projectV2FromRequest(w, r, owner)
 	if !ok {
 		return
@@ -706,7 +707,7 @@ func (s *Server) serveProjectV2Get(w http.ResponseWriter, r *http.Request, owner
 	writeJSON(w, http.StatusOK, s.projectV2JSON(p, owner))
 }
 
-func (s *Server) serveProjectV2CreateDraft(w http.ResponseWriter, r *http.Request, owner *projectV2Owner) {
+func (s *Server) serveProjectV2CreateDraft(w http.ResponseWriter, r *http.Request, owner *store.ProjectV2Owner) {
 	p, ok := s.projectV2FromRequest(w, r, owner)
 	if !ok {
 		return
@@ -723,21 +724,21 @@ func (s *Server) serveProjectV2CreateDraft(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if req.Title == nil || strings.TrimSpace(*req.Title) == "" {
-		writeGHValidationError(w, "ProjectV2Item", "title", "missing_field")
+		store.WriteGHValidationError(w, "ProjectV2Item", "title", "missing_field")
 		return
 	}
 	item := s.store.ProjectsV2.AddDraftItem(p.ID, *req.Title, req.Body, user.ID)
 	writeJSON(w, http.StatusCreated, s.projectV2ItemSimpleJSON(item, s.projectV2APIURL(r, owner, p.Number)))
 }
 
-func (s *Server) serveProjectV2ListFields(w http.ResponseWriter, r *http.Request, owner *projectV2Owner) {
+func (s *Server) serveProjectV2ListFields(w http.ResponseWriter, r *http.Request, owner *store.ProjectV2Owner) {
 	p, ok := s.projectV2FromRequest(w, r, owner)
 	if !ok {
 		return
 	}
 	fields := s.store.ProjectsV2.FieldsForProject(p.ID)
 	sort.Slice(fields, func(i, j int) bool { return fields[i].ID < fields[j].ID })
-	page, pi := cursorPaginate(r, fields, func(f *ProjectV2Field) int { return f.ID })
+	page, pi := cursorPaginate(r, fields, func(f *store.ProjectV2Field) int { return f.ID })
 	setCursorLinkHeader(w, r, pi)
 	projectURL := s.projectV2APIURL(r, owner, p.Number)
 	out := make([]map[string]interface{}, 0, len(page))
@@ -747,7 +748,7 @@ func (s *Server) serveProjectV2ListFields(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, out)
 }
 
-func (s *Server) serveProjectV2CreateField(w http.ResponseWriter, r *http.Request, owner *projectV2Owner) {
+func (s *Server) serveProjectV2CreateField(w http.ResponseWriter, r *http.Request, owner *store.ProjectV2Owner) {
 	p, ok := s.projectV2FromRequest(w, r, owner)
 	if !ok {
 		return
@@ -780,43 +781,43 @@ func (s *Server) serveProjectV2CreateField(w http.ResponseWriter, r *http.Reques
 	if req.IssueFieldID != nil {
 		// bleephub has no organization issue fields, so no issue_field_id
 		// can resolve to one.
-		writeGHValidationError(w, "ProjectV2Field", "issue_field_id", "invalid")
+		store.WriteGHValidationError(w, "ProjectV2Field", "issue_field_id", "invalid")
 		return
 	}
 	if req.Name == nil || strings.TrimSpace(*req.Name) == "" {
-		writeGHValidationError(w, "ProjectV2Field", "name", "missing_field")
+		store.WriteGHValidationError(w, "ProjectV2Field", "name", "missing_field")
 		return
 	}
 	if req.DataType == nil {
-		writeGHValidationError(w, "ProjectV2Field", "data_type", "missing_field")
+		store.WriteGHValidationError(w, "ProjectV2Field", "data_type", "missing_field")
 		return
 	}
 	for _, f := range s.store.ProjectsV2.FieldsForProject(p.ID) {
 		if strings.EqualFold(f.Name, *req.Name) {
-			writeGHValidationError(w, "ProjectV2Field", "name", "already_exists")
+			store.WriteGHValidationError(w, "ProjectV2Field", "name", "already_exists")
 			return
 		}
 	}
 
-	var options []*ProjectV2SingleSelectOption
-	var iteration *ProjectV2IterationConfiguration
+	var options []*store.ProjectV2SingleSelectOption
+	var iteration *store.ProjectV2IterationConfiguration
 	switch *req.DataType {
 	case "text", "number", "date":
 	case "single_select":
 		if len(req.SingleSelectOptions) == 0 {
-			writeGHValidationError(w, "ProjectV2Field", "single_select_options", "missing_field")
+			store.WriteGHValidationError(w, "ProjectV2Field", "single_select_options", "missing_field")
 			return
 		}
 		for _, o := range req.SingleSelectOptions {
 			if strings.TrimSpace(o.Name) == "" {
-				writeGHValidationError(w, "ProjectV2Field", "single_select_options", "invalid")
+				store.WriteGHValidationError(w, "ProjectV2Field", "single_select_options", "invalid")
 				return
 			}
-			options = append(options, &ProjectV2SingleSelectOption{Name: o.Name, Color: o.Color, Description: o.Description})
+			options = append(options, &store.ProjectV2SingleSelectOption{Name: o.Name, Color: o.Color, Description: o.Description})
 		}
 	case "iteration":
 		if req.IterationConfiguration == nil {
-			writeGHValidationError(w, "ProjectV2Field", "iteration_configuration", "missing_field")
+			store.WriteGHValidationError(w, "ProjectV2Field", "iteration_configuration", "missing_field")
 			return
 		}
 		cfg := req.IterationConfiguration
@@ -828,10 +829,10 @@ func (s *Server) serveProjectV2CreateField(w http.ResponseWriter, r *http.Reques
 		if startDate == "" {
 			startDate = time.Now().UTC().Format("2006-01-02")
 		} else if _, err := time.Parse("2006-01-02", startDate); err != nil {
-			writeGHValidationError(w, "ProjectV2Field", "iteration_configuration", "invalid")
+			store.WriteGHValidationError(w, "ProjectV2Field", "iteration_configuration", "invalid")
 			return
 		}
-		iteration = &ProjectV2IterationConfiguration{StartDate: startDate, Duration: duration}
+		iteration = &store.ProjectV2IterationConfiguration{StartDate: startDate, Duration: duration}
 		for _, it := range cfg.Iterations {
 			itDuration := it.Duration
 			if itDuration <= 0 {
@@ -840,28 +841,28 @@ func (s *Server) serveProjectV2CreateField(w http.ResponseWriter, r *http.Reques
 			itStart := it.StartDate
 			if itStart != "" {
 				if _, err := time.Parse("2006-01-02", itStart); err != nil {
-					writeGHValidationError(w, "ProjectV2Field", "iteration_configuration", "invalid")
+					store.WriteGHValidationError(w, "ProjectV2Field", "iteration_configuration", "invalid")
 					return
 				}
 			} else {
 				itStart = startDate
 			}
-			iteration.Iterations = append(iteration.Iterations, &ProjectV2Iteration{
+			iteration.Iterations = append(iteration.Iterations, &store.ProjectV2Iteration{
 				Title:     it.Title,
 				StartDate: itStart,
 				Duration:  itDuration,
 			})
 		}
 	default:
-		writeGHValidationError(w, "ProjectV2Field", "data_type", "invalid")
+		store.WriteGHValidationError(w, "ProjectV2Field", "data_type", "invalid")
 		return
 	}
 
-	field := s.store.ProjectsV2.CreateField(p.ID, *req.Name, ProjectV2FieldDataType(strings.ToUpper(*req.DataType)), options, iteration)
+	field := s.store.ProjectsV2.CreateField(p.ID, *req.Name, store.ProjectV2FieldDataType(strings.ToUpper(*req.DataType)), options, iteration)
 	writeJSON(w, http.StatusCreated, projectV2FieldJSON(field, s.projectV2APIURL(r, owner, p.Number)))
 }
 
-func (s *Server) serveProjectV2GetField(w http.ResponseWriter, r *http.Request, owner *projectV2Owner) {
+func (s *Server) serveProjectV2GetField(w http.ResponseWriter, r *http.Request, owner *store.ProjectV2Owner) {
 	p, ok := s.projectV2FromRequest(w, r, owner)
 	if !ok {
 		return
@@ -879,7 +880,7 @@ func (s *Server) serveProjectV2GetField(w http.ResponseWriter, r *http.Request, 
 	writeJSON(w, http.StatusOK, projectV2FieldJSON(f, s.projectV2APIURL(r, owner, p.Number)))
 }
 
-func (s *Server) serveProjectV2ListItems(w http.ResponseWriter, r *http.Request, owner *projectV2Owner) {
+func (s *Server) serveProjectV2ListItems(w http.ResponseWriter, r *http.Request, owner *store.ProjectV2Owner) {
 	p, ok := s.projectV2FromRequest(w, r, owner)
 	if !ok {
 		return
@@ -899,7 +900,7 @@ func (s *Server) serveProjectV2ListItems(w http.ResponseWriter, r *http.Request,
 		}
 		items = filtered
 	}
-	page, pi := cursorPaginate(r, items, func(it *ProjectV2Item) int { return it.ID })
+	page, pi := cursorPaginate(r, items, func(it *store.ProjectV2Item) int { return it.ID })
 	setCursorLinkHeader(w, r, pi)
 	projectURL := s.projectV2APIURL(r, owner, p.Number)
 	out := make([]map[string]interface{}, 0, len(page))
@@ -909,7 +910,7 @@ func (s *Server) serveProjectV2ListItems(w http.ResponseWriter, r *http.Request,
 	writeJSON(w, http.StatusOK, out)
 }
 
-func (s *Server) serveProjectV2AddItem(w http.ResponseWriter, r *http.Request, owner *projectV2Owner) {
+func (s *Server) serveProjectV2AddItem(w http.ResponseWriter, r *http.Request, owner *store.ProjectV2Owner) {
 	p, ok := s.projectV2FromRequest(w, r, owner)
 	if !ok {
 		return
@@ -929,7 +930,7 @@ func (s *Server) serveProjectV2AddItem(w http.ResponseWriter, r *http.Request, o
 		return
 	}
 	if req.Type != "Issue" && req.Type != "PullRequest" {
-		writeGHValidationError(w, "ProjectV2Item", "type", "invalid")
+		store.WriteGHValidationError(w, "ProjectV2Item", "type", "invalid")
 		return
 	}
 
@@ -940,44 +941,44 @@ func (s *Server) serveProjectV2AddItem(w http.ResponseWriter, r *http.Request, o
 	case req.Owner != nil && req.Repo != nil && req.Number != nil:
 		repo := s.store.GetRepo(*req.Owner, *req.Repo)
 		if repo == nil {
-			writeGHValidationError(w, "ProjectV2Item", "repo", "invalid")
+			store.WriteGHValidationError(w, "ProjectV2Item", "repo", "invalid")
 			return
 		}
 		if req.Type == "Issue" {
 			issue := s.store.GetIssueByNumber(repo.ID, *req.Number)
 			if issue == nil {
-				writeGHValidationError(w, "ProjectV2Item", "number", "invalid")
+				store.WriteGHValidationError(w, "ProjectV2Item", "number", "invalid")
 				return
 			}
 			contentID = issue.ID
 		} else {
 			pr := s.store.GetPullRequestByNumber(repo.ID, *req.Number)
 			if pr == nil {
-				writeGHValidationError(w, "ProjectV2Item", "number", "invalid")
+				store.WriteGHValidationError(w, "ProjectV2Item", "number", "invalid")
 				return
 			}
 			contentID = pr.ID
 		}
 	default:
-		writeGHValidationError(w, "ProjectV2Item", "id", "missing_field")
+		store.WriteGHValidationError(w, "ProjectV2Item", "id", "missing_field")
 		return
 	}
 
 	// The database ID path must also resolve to real content.
 	if req.Type == "Issue" {
 		if s.store.GetIssue(contentID) == nil {
-			writeGHValidationError(w, "ProjectV2Item", "id", "invalid")
+			store.WriteGHValidationError(w, "ProjectV2Item", "id", "invalid")
 			return
 		}
 	} else if s.store.GetPullRequest(contentID) == nil {
-		writeGHValidationError(w, "ProjectV2Item", "id", "invalid")
+		store.WriteGHValidationError(w, "ProjectV2Item", "id", "invalid")
 		return
 	}
 	// Write on the project is not read on what goes into it. Adding content
 	// republishes its title and state to everyone who can see the project, so
 	// the same gate the GraphQL twin applies runs here.
 	if !s.graphql.ViewerCanReadProjectContent(r.Context(), req.Type, contentID) {
-		writeGHValidationError(w, "ProjectV2Item", "id", "invalid")
+		store.WriteGHValidationError(w, "ProjectV2Item", "id", "invalid")
 		return
 	}
 
@@ -987,7 +988,7 @@ func (s *Server) serveProjectV2AddItem(w http.ResponseWriter, r *http.Request, o
 
 // projectV2ItemFromRequest resolves {item_id} within the project,
 // writing 404 when it is absent or belongs elsewhere.
-func (s *Server) projectV2ItemFromRequest(w http.ResponseWriter, r *http.Request, p *ProjectV2) (*ProjectV2Item, bool) {
+func (s *Server) projectV2ItemFromRequest(w http.ResponseWriter, r *http.Request, p *store.ProjectV2) (*store.ProjectV2Item, bool) {
 	itemID, err := strconv.Atoi(r.PathValue("item_id"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -1001,7 +1002,7 @@ func (s *Server) projectV2ItemFromRequest(w http.ResponseWriter, r *http.Request
 	return it, true
 }
 
-func (s *Server) serveProjectV2GetItem(w http.ResponseWriter, r *http.Request, owner *projectV2Owner) {
+func (s *Server) serveProjectV2GetItem(w http.ResponseWriter, r *http.Request, owner *store.ProjectV2Owner) {
 	p, ok := s.projectV2FromRequest(w, r, owner)
 	if !ok {
 		return
@@ -1017,7 +1018,7 @@ func (s *Server) serveProjectV2GetItem(w http.ResponseWriter, r *http.Request, o
 	writeJSON(w, http.StatusOK, s.projectV2ItemWithContentJSON(r, it, s.projectV2APIURL(r, owner, p.Number), fieldIDs))
 }
 
-func (s *Server) serveProjectV2UpdateItem(w http.ResponseWriter, r *http.Request, owner *projectV2Owner) {
+func (s *Server) serveProjectV2UpdateItem(w http.ResponseWriter, r *http.Request, owner *store.ProjectV2Owner) {
 	p, ok := s.projectV2FromRequest(w, r, owner)
 	if !ok {
 		return
@@ -1039,23 +1040,23 @@ func (s *Server) serveProjectV2UpdateItem(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if len(req.Fields) == 0 {
-		writeGHValidationError(w, "ProjectV2Item", "fields", "missing_field")
+		store.WriteGHValidationError(w, "ProjectV2Item", "fields", "missing_field")
 		return
 	}
 	for _, upd := range req.Fields {
 		if upd.ID == nil {
-			writeGHValidationError(w, "ProjectV2Item", "fields", "missing_field")
+			store.WriteGHValidationError(w, "ProjectV2Item", "fields", "missing_field")
 			return
 		}
 		if err := s.store.ProjectsV2.SetFieldValueAny(it.ID, *upd.ID, upd.Value); err != nil {
-			writeGHValidationError(w, "ProjectV2Item", "fields", "invalid")
+			store.WriteGHValidationError(w, "ProjectV2Item", "fields", "invalid")
 			return
 		}
 	}
 	writeJSON(w, http.StatusOK, s.projectV2ItemWithContentJSON(r, it, s.projectV2APIURL(r, owner, p.Number), nil))
 }
 
-func (s *Server) serveProjectV2DeleteItem(w http.ResponseWriter, r *http.Request, owner *projectV2Owner) {
+func (s *Server) serveProjectV2DeleteItem(w http.ResponseWriter, r *http.Request, owner *store.ProjectV2Owner) {
 	p, ok := s.projectV2FromRequest(w, r, owner)
 	if !ok {
 		return
@@ -1071,7 +1072,7 @@ func (s *Server) serveProjectV2DeleteItem(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) serveProjectV2CreateView(w http.ResponseWriter, r *http.Request, owner *projectV2Owner) {
+func (s *Server) serveProjectV2CreateView(w http.ResponseWriter, r *http.Request, owner *store.ProjectV2Owner) {
 	p, ok := s.projectV2FromRequest(w, r, owner)
 	if !ok {
 		return
@@ -1090,17 +1091,17 @@ func (s *Server) serveProjectV2CreateView(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if req.Name == nil || strings.TrimSpace(*req.Name) == "" {
-		writeGHValidationError(w, "ProjectV2View", "name", "missing_field")
+		store.WriteGHValidationError(w, "ProjectV2View", "name", "missing_field")
 		return
 	}
 	if req.Layout == nil {
-		writeGHValidationError(w, "ProjectV2View", "layout", "missing_field")
+		store.WriteGHValidationError(w, "ProjectV2View", "layout", "missing_field")
 		return
 	}
 	switch *req.Layout {
 	case "table", "board", "roadmap":
 	default:
-		writeGHValidationError(w, "ProjectV2View", "layout", "invalid")
+		store.WriteGHValidationError(w, "ProjectV2View", "layout", "invalid")
 		return
 	}
 
@@ -1111,7 +1112,7 @@ func (s *Server) serveProjectV2CreateView(w http.ResponseWriter, r *http.Request
 			for _, fid := range req.VisibleFields {
 				f := s.store.ProjectsV2.GetField(fid)
 				if f == nil || f.ProjectID != p.ID {
-					writeGHValidationError(w, "ProjectV2View", "visible_fields", "invalid")
+					store.WriteGHValidationError(w, "ProjectV2View", "visible_fields", "invalid")
 					return
 				}
 				visible = append(visible, fid)
@@ -1128,7 +1129,7 @@ func (s *Server) serveProjectV2CreateView(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusCreated, s.projectV2ViewJSON(r, view, owner, p))
 }
 
-func (s *Server) serveProjectV2ListViewItems(w http.ResponseWriter, r *http.Request, owner *projectV2Owner) {
+func (s *Server) serveProjectV2ListViewItems(w http.ResponseWriter, r *http.Request, owner *store.ProjectV2Owner) {
 	p, ok := s.projectV2FromRequest(w, r, owner)
 	if !ok {
 		return
@@ -1157,7 +1158,7 @@ func (s *Server) serveProjectV2ListViewItems(w http.ResponseWriter, r *http.Requ
 		}
 		items = filtered
 	}
-	page, pi := cursorPaginate(r, items, func(it *ProjectV2Item) int { return it.ID })
+	page, pi := cursorPaginate(r, items, func(it *store.ProjectV2Item) int { return it.ID })
 	setCursorLinkHeader(w, r, pi)
 	projectURL := s.projectV2APIURL(r, owner, p.Number)
 	out := make([]map[string]interface{}, 0, len(page))

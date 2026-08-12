@@ -8,9 +8,11 @@ import (
 	"strconv"
 	"sync"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
-func pullsTestServer(t *testing.T) (*Server, *User, *Repo) {
+func pullsTestServer(t *testing.T) (*Server, *store.User, *store.Repo) {
 	t.Helper()
 	s := newTestServer()
 	s.registerGHPullRoutes()
@@ -118,7 +120,7 @@ func TestUnitCreatePR_RejectsDuplicateOpenHeadAndBase(t *testing.T) {
 	}
 
 	firstPR := s.store.GetPullRequestByNumber(repo.ID, 1)
-	if firstPR == nil || !s.store.UpdatePullRequest(firstPR.ID, func(pr *PullRequest) { pr.State = "CLOSED" }) {
+	if firstPR == nil || !s.store.UpdatePullRequest(firstPR.ID, func(pr *store.PullRequest) { pr.State = "CLOSED" }) {
 		t.Fatal("close first pull request")
 	}
 	reopenedCoordinate := doPullsReq(s, "POST", "/api/v3/repos/admin/pr-unit-test/pulls",
@@ -154,7 +156,7 @@ func TestCreatePullRequestChecked_AtomicallyRejectsConcurrentDuplicates(t *testi
 		switch {
 		case err == nil:
 			created++
-		case errors.Is(err, ErrOpenPullRequestExists):
+		case errors.Is(err, store.ErrOpenPullRequestExists):
 			rejected++
 		default:
 			t.Fatalf("unexpected creation error: %v", err)
@@ -291,7 +293,7 @@ func TestUnitUpdatePR_Reopen(t *testing.T) {
 		t.Fatal("failed to create PR")
 	}
 
-	s.store.UpdatePullRequest(pr.ID, func(p *PullRequest) {
+	s.store.UpdatePullRequest(pr.ID, func(p *store.PullRequest) {
 		p.State = "CLOSED"
 	})
 
@@ -349,7 +351,7 @@ func TestUnitMergePR_AlreadyMerged(t *testing.T) {
 		t.Fatal("failed to create PR")
 	}
 
-	s.store.UpdatePullRequest(pr.ID, func(p *PullRequest) {
+	s.store.UpdatePullRequest(pr.ID, func(p *store.PullRequest) {
 		p.State = "MERGED"
 	})
 
@@ -366,7 +368,7 @@ func TestUnitMergePR_Closed(t *testing.T) {
 		t.Fatal("failed to create PR")
 	}
 
-	s.store.UpdatePullRequest(pr.ID, func(p *PullRequest) {
+	s.store.UpdatePullRequest(pr.ID, func(p *store.PullRequest) {
 		p.State = "CLOSED"
 	})
 
@@ -407,7 +409,7 @@ func TestUnitListPRs_StateFilter(t *testing.T) {
 	if closedPR == nil {
 		t.Fatal("failed to create closed PR")
 	}
-	s.store.UpdatePullRequest(closedPR.ID, func(p *PullRequest) {
+	s.store.UpdatePullRequest(closedPR.ID, func(p *store.PullRequest) {
 		p.State = "CLOSED"
 	})
 

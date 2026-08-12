@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
 )
 
@@ -16,17 +17,17 @@ import (
 // state of a codespace whose backing container is gone (State Shutdown,
 // no container) — so codespace sub-resource endpoints that never touch
 // the container can be exercised without a Docker round-trip.
-func seedCodespaceRecord(t *testing.T, s *isolatedServer, ownerLogin, repoKey string) *Codespace {
+func seedCodespaceRecord(t *testing.T, s *isolatedServer, ownerLogin, repoKey string) *store.Codespace {
 	t.Helper()
-	name, err := generateCodespaceName(repoKey)
+	name, err := store.GenerateCodespaceName(repoKey)
 	if err != nil {
 		t.Fatalf("generate codespace name: %v", err)
 	}
 	st := s.store
 	st.Mu.Lock()
-	m := codespaceDefaultMachine()
+	m := store.CodespaceDefaultMachine()
 	now := fixedTestTime.UTC()
-	cs := &Codespace{
+	cs := &store.Codespace{
 		ID:                 st.NextCodespaceID,
 		Name:               name,
 		OwnerLogin:         ownerLogin,
@@ -63,7 +64,7 @@ func (r errReader) Read([]byte) (int, error) {
 
 func TestGenerateCodespaceNameRequiresRandomBytes(t *testing.T) {
 	t.Parallel()
-	name, err := generateCodespaceNameWithReader("octo/repo", bytes.NewReader([]byte{0xab, 0xcd, 0xef, 0x12}))
+	name, err := store.GenerateCodespaceNameWithReader("octo/repo", bytes.NewReader([]byte{0xab, 0xcd, 0xef, 0x12}))
 	if err != nil {
 		t.Fatalf("generate codespace name: %v", err)
 	}
@@ -72,7 +73,7 @@ func TestGenerateCodespaceNameRequiresRandomBytes(t *testing.T) {
 	}
 
 	wantErr := errors.New("entropy unavailable")
-	if _, err := generateCodespaceNameWithReader("octo/repo", errReader{err: wantErr}); !errors.Is(err, wantErr) {
+	if _, err := store.GenerateCodespaceNameWithReader("octo/repo", errReader{err: wantErr}); !errors.Is(err, wantErr) {
 		t.Fatalf("generate with failing reader error = %v, want %v", err, wantErr)
 	}
 }
@@ -97,8 +98,8 @@ func TestCodespacesUserMachines_RealCatalogValues(t *testing.T) {
 		t.Fatalf("decode machines: %v", err)
 	}
 	resp.Body.Close()
-	if out.TotalCount != len(codespaceMachines) || len(out.Machines) != len(codespaceMachines) {
-		t.Fatalf("machines count = %d/%d, want %d", out.TotalCount, len(out.Machines), len(codespaceMachines))
+	if out.TotalCount != len(store.CodespaceMachines) || len(out.Machines) != len(store.CodespaceMachines) {
+		t.Fatalf("machines count = %d/%d, want %d", out.TotalCount, len(out.Machines), len(store.CodespaceMachines))
 	}
 	// Every catalog entry carries its own real resources, not one
 	// repeated placeholder row.
@@ -106,10 +107,10 @@ func TestCodespacesUserMachines_RealCatalogValues(t *testing.T) {
 	for _, m := range out.Machines {
 		byName[m["name"].(string)] = m
 	}
-	if m := byName["basicLinux32"]; m == nil || m["cpus"] != 2.0 || m["memory_in_bytes"] != float64(4*codespaceGiB) {
+	if m := byName["basicLinux32"]; m == nil || m["cpus"] != 2.0 || m["memory_in_bytes"] != float64(4*store.CodespaceGiB) {
 		t.Fatalf("basicLinux32 machine = %v", byName["basicLinux32"])
 	}
-	if m := byName["largeLinux64"]; m == nil || m["cpus"] != 16.0 || m["storage_in_bytes"] != float64(64*codespaceGiB) {
+	if m := byName["largeLinux64"]; m == nil || m["cpus"] != 16.0 || m["storage_in_bytes"] != float64(64*store.CodespaceGiB) {
 		t.Fatalf("largeLinux64 machine = %v", byName["largeLinux64"])
 	}
 

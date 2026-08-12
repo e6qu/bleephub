@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -348,7 +349,7 @@ func TestPullRequestAndIssueCollaborationMetadata(t *testing.T) {
 	prJSON := decodeJSONWithStatus(t, created, http.StatusCreated)
 	number := int(prJSON["number"].(float64))
 	pr := s.store.GetPullRequestByNumber(repo.ID, number)
-	s.store.UpdatePullRequest(pr.ID, func(stored *PullRequest) {
+	s.store.UpdatePullRequest(pr.ID, func(stored *store.PullRequest) {
 		stored.Mergeable = "UNKNOWN"
 	})
 	s.store.PRReviewComments.CreateRootComment(pr.ID, s.store.UsersByLogin["admin"].ID, "feature.txt", "inline", "", "RIGHT", 1, 0)
@@ -404,7 +405,7 @@ func prJSONNumber(number int) string {
 func TestBranchRestrictionSubresourcesAddSetAndRemoveRequestedEntries(t *testing.T) {
 	s := bpTestServer(t)
 	admin := s.store.UsersByLogin["admin"]
-	reviewer := &User{
+	reviewer := &store.User{
 		ID:        9821,
 		NodeID:    "U_9821",
 		Login:     "restriction-reviewer",
@@ -464,7 +465,7 @@ func TestBranchRestrictionSubresourcesAddSetAndRemoveRequestedEntries(t *testing
 func TestCommentAuthorAssociationUsesRepositoryRelationship(t *testing.T) {
 	s := newTestServer()
 	admin := s.store.UsersByLogin["admin"]
-	contributor := &User{ID: 7411, Login: "comment-contributor", Type: "User", CreatedAt: fixedTestTime, UpdatedAt: fixedTestTime}
+	contributor := &store.User{ID: 7411, Login: "comment-contributor", Type: "User", CreatedAt: fixedTestTime, UpdatedAt: fixedTestTime}
 	s.store.Mu.Lock()
 	s.store.Users[contributor.ID] = contributor
 	s.store.UsersByLogin[contributor.Login] = contributor
@@ -474,11 +475,11 @@ func TestCommentAuthorAssociationUsesRepositoryRelationship(t *testing.T) {
 		t.Fatal("add repository collaborator")
 	}
 
-	commitComment := &CommitComment{ID: 1, AuthorID: contributor.ID, RepoID: repo.ID, CommitID: strings.Repeat("a", 40), CreatedAt: fixedTestTime, UpdatedAt: fixedTestTime}
+	commitComment := &store.CommitComment{ID: 1, AuthorID: contributor.ID, RepoID: repo.ID, CommitID: strings.Repeat("a", 40), CreatedAt: fixedTestTime, UpdatedAt: fixedTestTime}
 	if got := commitCommentToJSON(commitComment, s.store, "https://example.test", repo)["author_association"]; got != "COLLABORATOR" {
 		t.Fatalf("commit comment association = %v", got)
 	}
-	pr := &PullRequest{ID: 1, Number: 1, RepoID: repo.ID, AuthorID: admin.ID}
+	pr := &store.PullRequest{ID: 1, Number: 1, RepoID: repo.ID, AuthorID: admin.ID}
 	reviewComment := s.store.PRReviewComments.CreateRootComment(pr.ID, contributor.ID, "file.txt", "body", "", "RIGHT", 1, 0)
 	if got := prReviewCommentToJSON(reviewComment, s.store, "https://example.test", repo, pr)["author_association"]; got != "COLLABORATOR" {
 		t.Fatalf("review comment association = %v", got)

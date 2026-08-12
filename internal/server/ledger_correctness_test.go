@@ -2,6 +2,8 @@ package bleephub
 
 import (
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // TestReviewerRequestResolvesPRThroughTheIndex covers STORE-046: the
@@ -31,7 +33,7 @@ func TestReviewerRequestResolvesPRThroughTheIndex(t *testing.T) {
 	// collection with a stale record sharing (repoID, number). The old linear
 	// scan of st.PullRequests would resolve the stale record; the index resolves
 	// the real one. The reviewer path must follow the index.
-	stale := &PullRequest{ID: pr.ID + 100000, RepoID: repo.ID, Number: pr.Number, Title: "stale"}
+	stale := &store.PullRequest{ID: pr.ID + 100000, RepoID: repo.ID, Number: pr.Number, Title: "stale"}
 	s.store.Mu.Lock()
 	delete(s.store.PullRequests, pr.ID)
 	s.store.PullRequests[stale.ID] = stale

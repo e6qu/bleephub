@@ -9,9 +9,11 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
-func createTestUser(t *testing.T, login string) *User {
+func createTestUser(t *testing.T, login string) *store.User {
 	t.Helper()
 	resp, err := authedPost("/internal/users", "application/json", bytes.NewReader(mustJSON(map[string]interface{}{
 		"login": login,
@@ -91,7 +93,7 @@ func TestEnterpriseAdminUsersCRUDSiteAdminAndSuspension(t *testing.T) {
 	}
 	userToken := "tok-" + login
 	s.store.Mu.Lock()
-	s.store.Tokens[userToken] = &Token{Value: userToken, UserID: u.ID, Scopes: "repo", CreatedAt: fixedTestTime.UTC()}
+	s.store.Tokens[userToken] = &store.Token{Value: userToken, UserID: u.ID, Scopes: "repo", CreatedAt: fixedTestTime.UTC()}
 	s.store.Mu.Unlock()
 	asSuspended := s.get(t, "/api/v3/user", userToken)
 	asSuspended.Body.Close()

@@ -6,19 +6,21 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func (s *Server) registerGHSecurityAdvisoriesRoutes() {
-	s.route("GET /api/v3/repos/{owner}/{repo}/security-advisories", s.requirePerm(scopeSecurityEvents, permRead, s.handleListSecurityAdvisories))
-	s.route("POST /api/v3/repos/{owner}/{repo}/security-advisories", s.requirePerm(scopeSecurityEvents, permWrite, s.handleCreateSecurityAdvisory))
-	s.route("GET /api/v3/repos/{owner}/{repo}/security-advisories/{ghsa_id}", s.requirePerm(scopeSecurityEvents, permRead, s.handleGetSecurityAdvisory))
-	s.route("PATCH /api/v3/repos/{owner}/{repo}/security-advisories/{ghsa_id}", s.requirePerm(scopeSecurityEvents, permWrite, s.handleUpdateSecurityAdvisory))
-	s.route("POST /api/v3/repos/{owner}/{repo}/security-advisories/{ghsa_id}/cve", s.requirePerm(scopeSecurityEvents, permWrite, s.handleRequestCVE))
-	s.route("POST /api/v3/repos/{owner}/{repo}/security-advisories/{ghsa_id}/forks", s.requirePerm(scopeSecurityEvents, permWrite, s.handleCreateTemporaryFork))
+	s.route("GET /api/v3/repos/{owner}/{repo}/security-advisories", s.requirePerm(store.ScopeSecurityEvents, store.PermRead, s.handleListSecurityAdvisories))
+	s.route("POST /api/v3/repos/{owner}/{repo}/security-advisories", s.requirePerm(store.ScopeSecurityEvents, store.PermWrite, s.handleCreateSecurityAdvisory))
+	s.route("GET /api/v3/repos/{owner}/{repo}/security-advisories/{ghsa_id}", s.requirePerm(store.ScopeSecurityEvents, store.PermRead, s.handleGetSecurityAdvisory))
+	s.route("PATCH /api/v3/repos/{owner}/{repo}/security-advisories/{ghsa_id}", s.requirePerm(store.ScopeSecurityEvents, store.PermWrite, s.handleUpdateSecurityAdvisory))
+	s.route("POST /api/v3/repos/{owner}/{repo}/security-advisories/{ghsa_id}/cve", s.requirePerm(store.ScopeSecurityEvents, store.PermWrite, s.handleRequestCVE))
+	s.route("POST /api/v3/repos/{owner}/{repo}/security-advisories/{ghsa_id}/forks", s.requirePerm(store.ScopeSecurityEvents, store.PermWrite, s.handleCreateTemporaryFork))
 	// The literal /reports path conflicts with the {ghsa_id} wildcard in Go 1.22's mux,
 	// so the wildcard dispatches to the real /security-advisories/reports endpoint.
-	s.route("POST /api/v3/repos/{owner}/{repo}/security-advisories/{ghsa_id}", s.requirePerm(scopeSecurityEvents, permWrite, s.handleSecurityAdvisoryReportsDispatch))
-	s.route("GET /api/v3/orgs/{org}/security-advisories", s.requireOrgAdmin(scopeSecurityEvents, permRead, s.handleListOrgSecurityAdvisories))
+	s.route("POST /api/v3/repos/{owner}/{repo}/security-advisories/{ghsa_id}", s.requirePerm(store.ScopeSecurityEvents, store.PermWrite, s.handleSecurityAdvisoryReportsDispatch))
+	s.route("GET /api/v3/orgs/{org}/security-advisories", s.requireOrgAdmin(store.ScopeSecurityEvents, store.PermRead, s.handleListOrgSecurityAdvisories))
 }
 
 // handleListOrgSecurityAdvisories implements GET /orgs/{org}/security-advisories:
@@ -31,8 +33,8 @@ func (s *Server) handleListOrgSecurityAdvisories(w http.ResponseWriter, r *http.
 	}
 
 	type advisoryRow struct {
-		advisory *SecurityAdvisory
-		repo     *Repo
+		advisory *store.SecurityAdvisory
+		repo     *store.Repo
 	}
 	s.store.Mu.RLock()
 	var rows []advisoryRow
@@ -111,7 +113,7 @@ func (s *Server) handleListSecurityAdvisories(w http.ResponseWriter, r *http.Req
 	severity := r.URL.Query().Get("severity")
 
 	advisories := s.store.ListSecurityAdvisories(repo.ID)
-	filtered := make([]*SecurityAdvisory, 0, len(advisories))
+	filtered := make([]*store.SecurityAdvisory, 0, len(advisories))
 	for _, a := range advisories {
 		if state != "" && a.State != state {
 			continue
@@ -142,21 +144,21 @@ func (s *Server) handleCreateSecurityAdvisory(w http.ResponseWriter, r *http.Req
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !s.viewerMayActOnRepo(r.Context(), repo, scopeSecurityEvents, permWrite, permAdmin) {
+	if !s.viewerMayActOnRepo(r.Context(), repo, store.ScopeSecurityEvents, store.PermWrite, store.PermAdmin) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 
-	var req CreateAdvisoryReq
+	var req store.CreateAdvisoryReq
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	if req.Summary == "" || req.Severity == "" {
-		writeGHValidationError(w, "SecurityAdvisory", "summary", "missing_field")
+		store.WriteGHValidationError(w, "SecurityAdvisory", "summary", "missing_field")
 		return
 	}
-	if !validAdvisorySeverity(req.Severity) {
-		writeGHValidationError(w, "SecurityAdvisory", "severity", "invalid")
+	if !store.ValidAdvisorySeverity(req.Severity) {
+		store.WriteGHValidationError(w, "SecurityAdvisory", "severity", "invalid")
 		return
 	}
 
@@ -204,7 +206,7 @@ func (s *Server) handleUpdateSecurityAdvisory(w http.ResponseWriter, r *http.Req
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !s.viewerMayActOnRepo(r.Context(), repo, scopeSecurityEvents, permWrite, permAdmin) {
+	if !s.viewerMayActOnRepo(r.Context(), repo, store.ScopeSecurityEvents, store.PermWrite, store.PermAdmin) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -228,17 +230,17 @@ func (s *Server) handleUpdateSecurityAdvisory(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	if req.State != "" && !validAdvisoryState(req.State) {
-		writeGHValidationError(w, "SecurityAdvisory", "state", "invalid")
+	if req.State != "" && !store.ValidAdvisoryState(req.State) {
+		store.WriteGHValidationError(w, "SecurityAdvisory", "state", "invalid")
 		return
 	}
-	if req.Severity != "" && !validAdvisorySeverity(req.Severity) {
-		writeGHValidationError(w, "SecurityAdvisory", "severity", "invalid")
+	if req.Severity != "" && !store.ValidAdvisorySeverity(req.Severity) {
+		store.WriteGHValidationError(w, "SecurityAdvisory", "severity", "invalid")
 		return
 	}
 
 	publishedBefore := adv.PublishedAt != nil && adv.State == "published"
-	if !s.store.UpdateSecurityAdvisory(adv.ID, func(a *SecurityAdvisory) {
+	if !s.store.UpdateSecurityAdvisory(adv.ID, func(a *store.SecurityAdvisory) {
 		if req.Summary != "" {
 			a.Summary = req.Summary
 		}
@@ -289,7 +291,7 @@ func (s *Server) handleRequestCVE(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !s.viewerMayActOnRepo(r.Context(), repo, scopeSecurityEvents, permWrite, permAdmin) {
+	if !s.viewerMayActOnRepo(r.Context(), repo, store.ScopeSecurityEvents, store.PermWrite, store.PermAdmin) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -322,7 +324,7 @@ func (s *Server) handleCreateTemporaryFork(w http.ResponseWriter, r *http.Reques
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !s.viewerMayActOnRepo(r.Context(), repo, scopeSecurityEvents, permWrite, permAdmin) {
+	if !s.viewerMayActOnRepo(r.Context(), repo, store.ScopeSecurityEvents, store.PermWrite, store.PermAdmin) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -356,21 +358,21 @@ func (s *Server) handleSecurityAdvisoryReportsDispatch(w http.ResponseWriter, r 
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !s.viewerHasRepoPermission(r.Context(), repo, scopeSecurityEvents, permWrite) {
+	if !s.viewerHasRepoPermission(r.Context(), repo, store.ScopeSecurityEvents, store.PermWrite) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 
-	var req CreateAdvisoryReq
+	var req store.CreateAdvisoryReq
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	if req.Summary == "" || req.Severity == "" {
-		writeGHValidationError(w, "SecurityAdvisory", "summary", "missing_field")
+		store.WriteGHValidationError(w, "SecurityAdvisory", "summary", "missing_field")
 		return
 	}
-	if !validAdvisorySeverity(req.Severity) {
-		writeGHValidationError(w, "SecurityAdvisory", "severity", "invalid")
+	if !store.ValidAdvisorySeverity(req.Severity) {
+		store.WriteGHValidationError(w, "SecurityAdvisory", "severity", "invalid")
 		return
 	}
 
@@ -384,7 +386,7 @@ func (s *Server) handleSecurityAdvisoryReportsDispatch(w http.ResponseWriter, r 
 		writeGHError(w, http.StatusUnprocessableEntity, "Validation Failed")
 		return
 	}
-	s.store.CreateSecurityAdvisoryReport(SecurityAdvisoryReport{
+	s.store.CreateSecurityAdvisoryReport(store.SecurityAdvisoryReport{
 		AdvisoryID:             adv.ID,
 		ReporterID:             user.ID,
 		Summary:                adv.Summary,
@@ -401,7 +403,7 @@ func (s *Server) handleSecurityAdvisoryReportsDispatch(w http.ResponseWriter, r 
 	writeJSONCreated(w, jsonStringField(advJSON, "url"), advJSON)
 }
 
-func securityAdvisoryToJSON(a *SecurityAdvisory, repo *Repo, baseURL string, st *Store) map[string]interface{} {
+func securityAdvisoryToJSON(a *store.SecurityAdvisory, repo *store.Repo, baseURL string, st *store.Store) map[string]interface{} {
 	apiURL := fmt.Sprintf("%s/api/v3/repos/%s/security-advisories/%s", baseURL, repo.FullName, a.GHSAID)
 	htmlURL := fmt.Sprintf("%s/%s/security/advisories/%s", baseURL, repo.FullName, a.GHSAID)
 
@@ -421,7 +423,7 @@ func securityAdvisoryToJSON(a *SecurityAdvisory, repo *Repo, baseURL string, st 
 
 	var author interface{} = nil
 	if u := st.GetUserByID(a.AuthorID); u != nil {
-		author = userToJSON(u)
+		author = store.UserToJSON(u)
 	}
 
 	var publishedAt interface{} = nil

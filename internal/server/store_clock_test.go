@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // TestGoTestsDoNotReadWallClock makes the deterministic-test rule global:
@@ -100,7 +102,7 @@ func TestStoreModulesUseInjectedClock(t *testing.T) {
 }
 
 func TestStoreClockControlsIndependentStoreModules(t *testing.T) {
-	st := NewStore()
+	st := store.NewStore()
 	want := time.Date(2077, time.November, 3, 4, 5, 6, 0, time.UTC)
 	replaceStoreClockNow(st, func() time.Time { return want })
 	st.SeedDefaultUser()
@@ -117,7 +119,7 @@ func TestStoreClockControlsIndependentStoreModules(t *testing.T) {
 	advisory := st.CreateSecurityAdvisory(
 		repo.ID,
 		user.ID,
-		CreateAdvisoryReq{Summary: "clock contract", Description: "clock contract", Severity: "low"},
+		store.CreateAdvisoryReq{Summary: "clock contract", Description: "clock contract", Severity: "low"},
 	)
 	if advisory == nil || !advisory.CreatedAt.Equal(want) {
 		t.Fatalf("advisory time = %v, want %v", advisory, want)
@@ -128,8 +130,8 @@ func TestStoreClockControlsIndependentStoreModules(t *testing.T) {
 }
 
 func TestProjectV2ClockFallbackDoesNotRecurse(t *testing.T) {
-	store := newProjectV2Store(nil)
-	project := store.CreateProject(1, "User", "Real clock fallback", 1)
+	st := store.NewProjectV2Store(nil)
+	project := st.CreateProject(1, "User", "Real clock fallback", 1)
 	if project.CreatedAt.IsZero() || project.UpdatedAt.IsZero() {
 		t.Fatalf("project fallback timestamps are zero: %v / %v", project.CreatedAt, project.UpdatedAt)
 	}

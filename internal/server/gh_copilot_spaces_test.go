@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func TestOrgCopilotSpaces_CRUD(t *testing.T) {
@@ -155,8 +157,8 @@ func TestOrgCopilotSpaceCollaborators(t *testing.T) {
 	org, members := s.copilotTestOrg(t, "copilot-collab-org", "collab-bob", "collab-carol")
 	bob, carol := members[0], members[1]
 	bobTok := s.store.CreateToken(bob.ID, "repo").Value
-	team := s.store.CreateTeam(org.Login, "collab team", TeamOptions{})
-	s.store.SetTeamMembership(org.Login, team.Slug, carol.ID, TeamRoleMember)
+	team := s.store.CreateTeam(org.Login, "collab team", store.TeamOptions{})
+	s.store.SetTeamMembership(org.Login, team.Slug, carol.ID, store.TeamRoleMember)
 
 	base := "/api/v3/orgs/" + org.Login + "/copilot-spaces"
 	requireStatus(t, s.post(t, base, defaultToken, map[string]interface{}{"name": "Collab Space"}), 201)

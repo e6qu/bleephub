@@ -240,7 +240,7 @@ func TestRepoOrganizationVariablesList(t *testing.T) {
 		"selected_repository_ids": []int{pubRepo.ID},
 	}), 201, "create selected")
 
-	names := func(repo *Repo) map[string]bool {
+	names := func(repo *store.Repo) map[string]bool {
 		body := decodeJSON(t, s.get(t, "/api/v3/repos/"+repo.FullName+"/actions/organization-variables", defaultToken))
 		out := map[string]bool{}
 		for _, raw := range body["variables"].([]interface{}) {
@@ -280,11 +280,11 @@ func TestSecretsVariablesPersistenceReload(t *testing.T) {
 	envKey := store.EnvScopeKey(repoKey, "production")
 
 	// --- session 1 ---
-	p1, err := NewPersistence()
+	p1, err := store.NewPersistence()
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	st1 := NewStore()
+	st1 := store.NewStore()
 	if err := st1.SetPersistence(p1); err != nil {
 		t.Fatalf("SetPersistence: %v", err)
 	}
@@ -294,27 +294,27 @@ func TestSecretsVariablesPersistenceReload(t *testing.T) {
 		t.Fatalf("keypair: %v", err)
 	}
 
-	st1.RepoVariables[repoKey] = map[string]*ActionsVariable{
+	st1.RepoVariables[repoKey] = map[string]*store.ActionsVariable{
 		"RV": {Name: "RV", Value: "rv", CreatedAt: now, UpdatedAt: now},
 	}
 	p1.MustPut("repo_variables", repoKey, st1.RepoVariables[repoKey])
 
-	st1.OrgSecrets["acme"] = map[string]*OrgSecret{
-		"OS": {Secret: Secret{Name: "OS", Value: "os", CreatedAt: now, UpdatedAt: now}, Visibility: "selected", SelectedRepoIDs: []int{7}},
+	st1.OrgSecrets["acme"] = map[string]*store.OrgSecret{
+		"OS": {Secret: store.Secret{Name: "OS", Value: "os", CreatedAt: now, UpdatedAt: now}, Visibility: "selected", SelectedRepoIDs: []int{7}},
 	}
 	p1.MustPut("org_secrets", "acme", st1.OrgSecrets["acme"])
 
-	st1.OrgVariables["acme"] = map[string]*ActionsVariable{
+	st1.OrgVariables["acme"] = map[string]*store.ActionsVariable{
 		"OV": {Name: "OV", Value: "ov", Visibility: "all", CreatedAt: now, UpdatedAt: now},
 	}
 	p1.MustPut("org_variables", "acme", st1.OrgVariables["acme"])
 
-	st1.EnvSecrets[envKey] = map[string]*Secret{
+	st1.EnvSecrets[envKey] = map[string]*store.Secret{
 		"ES": {Name: "ES", Value: "es", CreatedAt: now, UpdatedAt: now},
 	}
 	p1.MustPut("env_secrets", envKey, st1.EnvSecrets[envKey])
 
-	st1.EnvVariables[envKey] = map[string]*ActionsVariable{
+	st1.EnvVariables[envKey] = map[string]*store.ActionsVariable{
 		"EV": {Name: "EV", Value: "ev", CreatedAt: now, UpdatedAt: now},
 	}
 	p1.MustPut("env_variables", envKey, st1.EnvVariables[envKey])
@@ -324,11 +324,11 @@ func TestSecretsVariablesPersistenceReload(t *testing.T) {
 	}
 
 	// --- session 2 ---
-	p2, err := NewPersistence()
+	p2, err := store.NewPersistence()
 	if err != nil {
 		t.Fatalf("re-open: %v", err)
 	}
-	st2 := NewStore()
+	st2 := store.NewStore()
 	if err := st2.SetPersistence(p2); err != nil {
 		t.Fatalf("re-load SetPersistence: %v", err)
 	}

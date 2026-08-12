@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/e6qu/bleephub/internal/actions"
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func (s *Server) registerGHWorkflowsRoutes() {
@@ -20,11 +21,11 @@ func (s *Server) registerGHWorkflowsRoutes() {
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/workflows/{workflow_id}", s.handleGetGHWorkflow)
 	s.route("GET /api/v3/repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs", s.handleListWorkflowFileRuns)
 	s.route("POST /api/v3/repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches",
-		s.requirePerm(scopeActions, permWrite, s.handleDispatchWorkflow))
+		s.requirePerm(store.ScopeActions, store.PermWrite, s.handleDispatchWorkflow))
 	s.route("PUT /api/v3/repos/{owner}/{repo}/actions/workflows/{workflow_id}/enable",
-		s.requirePerm(scopeActions, permWrite, s.handleSetWorkflowState("active")))
+		s.requirePerm(store.ScopeActions, store.PermWrite, s.handleSetWorkflowState("active")))
 	s.route("PUT /api/v3/repos/{owner}/{repo}/actions/workflows/{workflow_id}/disable",
-		s.requirePerm(scopeActions, permWrite, s.handleSetWorkflowState("disabled_manually")))
+		s.requirePerm(store.ScopeActions, store.PermWrite, s.handleSetWorkflowState("disabled_manually")))
 }
 
 // handleSetWorkflowState backs PUT .../workflows/{id}/{enable,disable}:
@@ -51,7 +52,7 @@ func (s *Server) handleSetWorkflowState(state string) http.HandlerFunc {
 // workflowFileJSON converts a WorkflowFile to GitHub's `Workflow`
 // shape. `gh workflow list` reads name/path/state/url/html_url; the
 // UI dispatch form additionally surfaces created_at/updated_at.
-func workflowFileJSON(wf *WorkflowFile, baseURL, repoName string) map[string]any {
+func workflowFileJSON(wf *store.WorkflowFile, baseURL, repoName string) map[string]any {
 	repoPath := repoName
 	if wf.RepoFullName != "" {
 		repoPath = wf.RepoFullName
@@ -128,7 +129,7 @@ func (s *Server) handleGetGHWorkflow(w http.ResponseWriter, r *http.Request) {
 // param (numeric ID or filename) and returns the matching WorkflowFile
 // or nil. Numeric ID is the canonical form; filename is the
 // developer-ergonomic shortcut `gh workflow run` uses.
-func (s *Server) resolveWorkflowFile(repoFullName, idOrPath string) *WorkflowFile {
+func (s *Server) resolveWorkflowFile(repoFullName, idOrPath string) *store.WorkflowFile {
 	if id, err := strconv.ParseInt(idOrPath, 10, 64); err == nil {
 		if wf := s.store.GetWorkflowFile(repoFullName, id); wf != nil {
 			return wf
@@ -163,7 +164,7 @@ func (s *Server) handleListWorkflowFileRuns(w http.ResponseWriter, r *http.Reque
 	eventFilter := r.URL.Query().Get("event")
 
 	s.store.Mu.RLock()
-	matching := []*Workflow{}
+	matching := []*store.Workflow{}
 	for _, run := range s.store.Workflows {
 		if run.RepoFullName != "" && run.RepoFullName != repo {
 			continue
@@ -284,7 +285,7 @@ func (s *Server) handleDispatchWorkflow(w http.ResponseWriter, r *http.Request) 
 	}
 	req.Inputs = inputs
 
-	def, err := ParseWorkflow([]byte(wf.YAML))
+	def, err := store.ParseWorkflow([]byte(wf.YAML))
 	if err != nil {
 		writeGHError(w, http.StatusUnprocessableEntity, "parse workflow YAML: "+err.Error())
 		return
@@ -338,7 +339,7 @@ func (s *Server) handleDispatchWorkflow(w http.ResponseWriter, r *http.Request) 
 // and a GitHub-cased wire error message ("" when valid).
 func resolveDispatchInputs(td *actions.TriggerDef, given map[string]string) (map[string]string, map[string]interface{}, string) {
 	inputs := make(map[string]string, len(given))
-	var declared map[string]*WorkflowInputDef
+	var declared map[string]*store.WorkflowInputDef
 	if td != nil {
 		declared = td.Inputs
 	}
@@ -353,7 +354,7 @@ func resolveDispatchInputs(td *actions.TriggerDef, given map[string]string) (map
 		val, gotten := inputs[name]
 		if !gotten {
 			if def.Default != nil {
-				val = exprToString(normalizeYAMLValue(def.Default))
+				val = store.ExprToString(store.NormalizeYAMLValue(def.Default))
 				inputs[name] = val
 			} else if def.Required {
 				return nil, nil, fmt.Sprintf("Required input %q not provided", name)
@@ -387,7 +388,7 @@ func resolveDispatchInputs(td *actions.TriggerDef, given map[string]string) (map
 		case "choice":
 			ok := false
 			for _, opt := range def.Options {
-				if exprToString(normalizeYAMLValue(opt)) == val {
+				if store.ExprToString(store.NormalizeYAMLValue(opt)) == val {
 					ok = true
 					break
 				}

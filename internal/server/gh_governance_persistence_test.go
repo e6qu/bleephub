@@ -3,6 +3,8 @@ package bleephub
 import (
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // TestPersistence_GovernanceSurfacesRoundTrip verifies every governance
@@ -15,11 +17,11 @@ func TestPersistence_GovernanceSurfacesRoundTrip(t *testing.T) {
 	t.Setenv("BLEEPHUB_PERSIST", "true")
 	t.Setenv("BLEEPHUB_DATA_DIR", dir)
 
-	p1, err := NewPersistence()
+	p1, err := store.NewPersistence()
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	st1 := NewStore()
+	st1 := store.NewStore()
 	if err := st1.SetPersistence(p1); err != nil {
 		t.Fatalf("SetPersistence: %v", err)
 	}
@@ -29,17 +31,17 @@ func TestPersistence_GovernanceSurfacesRoundTrip(t *testing.T) {
 	repo := st1.CreateOrgRepo(org, admin, "gov-persist-repo", "", false)
 
 	issueType := st1.CreateIssueType(org.Login, "Epic", nil, nil, true)
-	field := st1.CreateIssueField(org.Login, "Priority", nil, "single_select", "all", []issueFieldOptionRequest{
+	field := st1.CreateIssueField(org.Login, "Priority", nil, "single_select", "all", []store.IssueFieldOptionRequest{
 		{Name: strPtr("High"), Color: strPtr("red")},
 	})
 	st1.SetIssueFieldValues(42, map[int]interface{}{field.ID: "High"})
-	st1.UpsertCustomProperty(org.Login, &CustomProperty{
+	st1.UpsertCustomProperty(org.Login, &store.CustomProperty{
 		PropertyName: "team", ValueType: "string", ValuesEditableBy: "org_actors",
 	})
-	st1.SetRepoCustomPropertyValues(repo.FullName, []customPropertyValuePayload{
+	st1.SetRepoCustomPropertyValues(repo.FullName, []store.CustomPropertyValuePayload{
 		{PropertyName: "team", Value: "platform"},
 	})
-	cfg := st1.CreateCodeSecurityConfiguration(org.Login, &codeSecurityConfigurationRequest{
+	cfg := st1.CreateCodeSecurityConfiguration(org.Login, &store.CodeSecurityConfigurationRequest{
 		Name: strPtr("persist-cfg"), Description: strPtr("d"),
 	})
 	if !st1.AttachCodeSecurityConfiguration(org.Login, cfg.ID, "selected", []int{repo.ID}) {
@@ -48,14 +50,14 @@ func TestPersistence_GovernanceSurfacesRoundTrip(t *testing.T) {
 	campaign := st1.CreateCampaign(org.Login, "persist campaign", "d", []string{admin.Login}, nil,
 		fixedTestTime.Add(24*time.Hour), nil, map[int][]int{})
 	urlStr := "https://maven.example.com"
-	st1.CreatePrivateRegistry(org.Login, &privateRegistryRequest{
+	st1.CreatePrivateRegistry(org.Login, &store.PrivateRegistryRequest{
 		RegistryType: strPtr("maven_repository"), URL: &urlStr, Visibility: strPtr("all"),
 	}, "token")
 	settings, err := st1.CreateNetworkSettings(org.Login, "persist-subnet", "/subscriptions/x/subnets/s", "eastus")
 	if err != nil {
 		t.Fatalf("create network settings: %v", err)
 	}
-	netCfg, err := st1.CreateNetworkConfiguration(org.Login, &networkConfigurationRequest{
+	netCfg, err := st1.CreateNetworkConfiguration(org.Login, &store.NetworkConfigurationRequest{
 		Name: strPtr("persist-net"), NetworkSettingsIDs: []string{settings.ID},
 	})
 	if err != nil {
@@ -68,11 +70,11 @@ func TestPersistence_GovernanceSurfacesRoundTrip(t *testing.T) {
 		t.Fatalf("close: %v", err)
 	}
 
-	p2, err := NewPersistence()
+	p2, err := store.NewPersistence()
 	if err != nil {
 		t.Fatalf("re-open: %v", err)
 	}
-	st2 := NewStore()
+	st2 := store.NewStore()
 	if err := st2.SetPersistence(p2); err != nil {
 		t.Fatalf("re-load SetPersistence: %v", err)
 	}

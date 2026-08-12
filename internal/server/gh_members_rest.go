@@ -3,19 +3,21 @@ package bleephub
 import (
 	"context"
 	"net/http"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func (s *Server) registerGHMemberRoutes() {
 	s.route("GET /api/v3/orgs/{org}/members", s.handleListOrgMembers)
 	s.route("GET /api/v3/orgs/{org}/members/{username}", s.handleCheckOrgMember)
-	s.route("DELETE /api/v3/orgs/{org}/members/{username}", s.requirePerm(scopeMembers, permWrite, s.handleRemoveOrgMember))
+	s.route("DELETE /api/v3/orgs/{org}/members/{username}", s.requirePerm(store.ScopeMembers, store.PermWrite, s.handleRemoveOrgMember))
 	s.route("GET /api/v3/orgs/{org}/public_members", s.handleListPublicOrgMembers)
 	s.route("GET /api/v3/orgs/{org}/public_members/{username}", s.handleCheckPublicOrgMember)
 	s.route("PUT /api/v3/orgs/{org}/public_members/{username}", s.handlePublicizeOrgMembership)
 	s.route("DELETE /api/v3/orgs/{org}/public_members/{username}", s.handleConcealOrgMembership)
-	s.route("GET /api/v3/orgs/{org}/memberships/{username}", s.requirePerm(scopeMembers, permRead, s.handleGetOrgMembership))
-	s.route("PUT /api/v3/orgs/{org}/memberships/{username}", s.requirePerm(scopeMembers, permWrite, s.handleSetOrgMembership))
-	s.route("DELETE /api/v3/orgs/{org}/memberships/{username}", s.requirePerm(scopeMembers, permWrite, s.handleRemoveOrgMembership))
+	s.route("GET /api/v3/orgs/{org}/memberships/{username}", s.requirePerm(store.ScopeMembers, store.PermRead, s.handleGetOrgMembership))
+	s.route("PUT /api/v3/orgs/{org}/memberships/{username}", s.requirePerm(store.ScopeMembers, store.PermWrite, s.handleSetOrgMembership))
+	s.route("DELETE /api/v3/orgs/{org}/memberships/{username}", s.requirePerm(store.ScopeMembers, store.PermWrite, s.handleRemoveOrgMembership))
 
 	// The authenticated user's own memberships (the invitee side of the
 	// PUT-membership invitation flow: list, inspect, accept).
@@ -36,7 +38,7 @@ func (s *Server) handleListOrgMembers(w http.ResponseWriter, r *http.Request) {
 	// the org; a non-member (or anonymous caller) sees just the publicized
 	// members. This mirrors the behaviour of GET /orgs/{org}/members vs
 	// /orgs/{org}/public_members.
-	var members []*User
+	var members []*store.User
 	if s.viewerCanReadOrgMembers(r.Context(), orgLogin) {
 		members = s.store.ListOrgMembers(orgLogin)
 	} else {
@@ -44,7 +46,7 @@ func (s *Server) handleListOrgMembers(w http.ResponseWriter, r *http.Request) {
 	}
 	result := make([]map[string]interface{}, 0, len(members))
 	for _, u := range members {
-		result = append(result, userToJSON(u))
+		result = append(result, store.UserToJSON(u))
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, result))
 }
@@ -55,7 +57,7 @@ func (s *Server) handleListOrgMembers(w http.ResponseWriter, r *http.Request) {
 // intentionally not inserted into the organization's membership table.
 func (s *Server) viewerCanReadOrgMembers(ctx context.Context, orgLogin string) bool {
 	if ghInstallationTokenFromContext(ctx) != nil {
-		return s.credentialGrantsAccount(ctx, organizationAccount, orgLogin, scopeMembers, permRead)
+		return s.credentialGrantsAccount(ctx, store.OrganizationAccount, orgLogin, store.ScopeMembers, store.PermRead)
 	}
 	return s.viewerIsOrgMember(ctx, orgLogin)
 }
@@ -122,12 +124,12 @@ func (s *Server) handleSetOrgMembership(w http.ResponseWriter, r *http.Request) 
 	if !decodeJSONBodyOptional(w, r, &req) {
 		return
 	}
-	role := OrgRole(req.Role)
+	role := store.OrgRole(req.Role)
 	if role == "" {
-		role = OrgRoleMember
+		role = store.OrgRoleMember
 	}
-	if role != OrgRoleAdmin && role != OrgRoleMember {
-		writeGHValidationError(w, "Membership", "role", "invalid")
+	if role != store.OrgRoleAdmin && role != store.OrgRoleMember {
+		store.WriteGHValidationError(w, "Membership", "role", "invalid")
 		return
 	}
 
@@ -136,11 +138,11 @@ func (s *Server) handleSetOrgMembership(w http.ResponseWriter, r *http.Request) 
 	// updating an existing membership only changes the role. Self-PUT by an
 	// existing member keeps the active state.
 	existing := s.store.GetMembership(orgLogin, target.ID)
-	state := MembershipStatePending
+	state := store.MembershipStatePending
 	if existing != nil {
 		state = existing.State
 	} else if target.ID == user.ID {
-		state = MembershipStateActive
+		state = store.MembershipStateActive
 	}
 	m := s.store.SetMembership(orgLogin, target.ID, role, state)
 	if m == nil {
@@ -149,7 +151,7 @@ func (s *Server) handleSetOrgMembership(w http.ResponseWriter, r *http.Request) 
 	}
 	if existing == nil {
 		action := "member_invited"
-		if state == MembershipStateActive {
+		if state == store.MembershipStateActive {
 			action = "member_added"
 		}
 		s.emitOrgMembershipEvent(org, action, m, target, user)
@@ -214,7 +216,7 @@ func (s *Server) handleCheckOrgMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	m := s.store.GetMembership(orgLogin, target.ID)
-	if m == nil || m.State != MembershipStateActive {
+	if m == nil || m.State != store.MembershipStateActive {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -265,7 +267,7 @@ func (s *Server) handleListPublicOrgMembers(w http.ResponseWriter, r *http.Reque
 	members := s.store.ListPublicOrgMembers(orgLogin)
 	result := make([]map[string]interface{}, 0, len(members))
 	for _, u := range members {
-		result = append(result, userToJSON(u))
+		result = append(result, store.UserToJSON(u))
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, result))
 }
@@ -283,7 +285,7 @@ func (s *Server) handleCheckPublicOrgMember(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	m := s.store.GetMembership(orgLogin, target.ID)
-	if m == nil || m.State != MembershipStateActive || !m.Public {
+	if m == nil || m.State != store.MembershipStateActive || !m.Public {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -336,11 +338,11 @@ func (s *Server) handleListAuthUserMemberships(w http.ResponseWriter, r *http.Re
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
 	}
-	state := MembershipState(r.URL.Query().Get("state"))
+	state := store.MembershipState(r.URL.Query().Get("state"))
 	switch state {
-	case "", MembershipStateActive, MembershipStatePending:
+	case "", store.MembershipStateActive, store.MembershipStatePending:
 	default:
-		writeGHValidationError(w, "Membership", "state", "invalid")
+		store.WriteGHValidationError(w, "Membership", "state", "invalid")
 		return
 	}
 	memberships := s.store.ListMembershipsByUser(user.ID, state)
@@ -398,8 +400,8 @@ func (s *Server) handleUpdateAuthUserMembership(w http.ResponseWriter, r *http.R
 	if !decodeJSONBodyOptional(w, r, &req) {
 		return
 	}
-	if MembershipState(req.State) != MembershipStateActive {
-		writeGHValidationError(w, "Membership", "state", "invalid")
+	if store.MembershipState(req.State) != store.MembershipStateActive {
+		store.WriteGHValidationError(w, "Membership", "state", "invalid")
 		return
 	}
 	m := s.store.GetMembership(orgLogin, user.ID)
@@ -407,8 +409,8 @@ func (s *Server) handleUpdateAuthUserMembership(w http.ResponseWriter, r *http.R
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if m.State == MembershipStatePending {
-		m = s.store.SetMembership(orgLogin, user.ID, m.Role, MembershipStateActive)
+	if m.State == store.MembershipStatePending {
+		m = s.store.SetMembership(orgLogin, user.ID, m.Role, store.MembershipStateActive)
 		s.emitOrgMembershipEvent(org, "member_added", m, user, user)
 	}
 	writeJSON(w, http.StatusOK, membershipToJSON(m, user, org, s.baseURL(r)))
@@ -417,13 +419,13 @@ func (s *Server) handleUpdateAuthUserMembership(w http.ResponseWriter, r *http.R
 // membershipToJSON converts a Membership to the GitHub
 // `org-membership` shape: organization is the organization-simple
 // object and user the simple-user object.
-func membershipToJSON(m *Membership, user *User, org *Org, baseURL string) map[string]interface{} {
+func membershipToJSON(m *store.Membership, user *store.User, org *store.Org, baseURL string) map[string]interface{} {
 	return map[string]interface{}{
 		"url":              baseURL + "/api/v3/orgs/" + org.Login + "/memberships/" + user.Login,
 		"organization_url": baseURL + "/api/v3/orgs/" + org.Login,
 		"state":            m.State,
 		"role":             m.Role,
-		"user":             userToJSON(user),
+		"user":             store.UserToJSON(user),
 		"organization":     orgSimpleJSON(org, baseURL),
 	}
 }

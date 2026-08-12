@@ -14,12 +14,14 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
-func newAppTestStore() *Store {
-	store := NewStore()
-	store.ClockNow = func() time.Time { return fixedTestTime }
-	return store
+func newAppTestStore() *store.Store {
+	st := store.NewStore()
+	st.ClockNow = func() time.Time { return fixedTestTime }
+	return st
 }
 
 // --- Unit tests (store + JSON Web Token) ---
@@ -349,7 +351,7 @@ func TestJSONWebTokenInvalidSignature(t *testing.T) {
 	if len(parts) != 3 {
 		t.Fatalf("expected JSON Web Token to have 3 parts, got %d", len(parts))
 	}
-	sig, err := base64urlDecode(parts[2])
+	sig, err := store.Base64urlDecode(parts[2])
 	if err != nil {
 		t.Fatalf("decode JSON Web Token signature: %v", err)
 	}

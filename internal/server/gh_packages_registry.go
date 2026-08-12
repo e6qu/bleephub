@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/google/uuid"
 )
 
@@ -210,7 +211,7 @@ func (s *Server) handleContainerRegistryPutManifest(w http.ResponseWriter, r *ht
 	}
 	pkgName := containerRegistryPackageName(name)
 	p, _ := s.store.CreatePackage(ownerType, ownerKey, "container", pkgName, "public")
-	files := []PackageFileInput{{
+	files := []store.PackageFileInput{{
 		Name:          "manifest.json",
 		ContentType:   firstNonEmpty(manifest.MediaType, r.Header.Get("Content-Type"), "application/vnd.oci.image.manifest.v1+json"),
 		ContentBase64: base64.StdEncoding.EncodeToString(manifestBytes),
@@ -230,7 +231,7 @@ func (s *Server) handleContainerRegistryPutManifest(w http.ResponseWriter, r *ht
 			s.writeRegistryError(w, http.StatusBadRequest, "MANIFEST_INVALID", "manifest blob size mismatch for "+desc.Digest)
 			return
 		}
-		files = append(files, PackageFileInput{
+		files = append(files, store.PackageFileInput{
 			Name:          registryBlobFileName(desc.Digest),
 			ContentType:   firstNonEmpty(desc.MediaType, "application/octet-stream"),
 			ContentBase64: base64.StdEncoding.EncodeToString(blob),
@@ -268,7 +269,7 @@ func (s *Server) handleContainerRegistryGetManifest(w http.ResponseWriter, r *ht
 		s.writeRegistryError(w, http.StatusNotFound, "NAME_UNKNOWN", "repository name not known")
 		return
 	}
-	var version *PackageVersion
+	var version *store.PackageVersion
 	for _, cand := range s.store.ListPackageVersions(p.ID, false) {
 		if cand.Version == reference || packageVersionManifestDigest(cand) == reference {
 			version = cand
@@ -299,7 +300,7 @@ func (s *Server) handleContainerRegistryGetManifest(w http.ResponseWriter, r *ht
 	_, _ = w.Write(data)
 }
 
-func (s *Server) requireRegistryUser(w http.ResponseWriter, r *http.Request) *User {
+func (s *Server) requireRegistryUser(w http.ResponseWriter, r *http.Request) *store.User {
 	ctx := s.authenticateRequest(r)
 	user := ghUserFromContext(ctx)
 	if user == nil {
@@ -327,7 +328,7 @@ func (s *Server) resolveContainerRegistryOwner(w http.ResponseWriter, name strin
 	return "", "", false
 }
 
-func (s *Server) canPublishContainerRegistryPackage(ctx context.Context, user *User, ownerType, ownerKey string) bool {
+func (s *Server) canPublishContainerRegistryPackage(ctx context.Context, user *store.User, ownerType, ownerKey string) bool {
 	switch ownerType {
 	case "User":
 		return user.Login == ownerKey
@@ -371,13 +372,13 @@ func registryBlobFileName(digest string) string {
 	return "blobs/" + algo + "/" + hexPart
 }
 
-func packageVersionManifestDigest(v *PackageVersion) string {
+func packageVersionManifestDigest(v *store.PackageVersion) string {
 	return v.RegistryManifestDigest
 }
 
 func (s *Server) writeRegistryBlob(digest string, data []byte) error {
 	if s.store.ObjectByteStore != nil {
-		return s.store.ObjectByteStore.Put(context.Background(), packageRegistryBlobDataKey(digest), data)
+		return s.store.ObjectByteStore.Put(context.Background(), store.PackageRegistryBlobDataKey(digest), data)
 	}
 	if s.store.PackageDataDir == "" {
 		return fmt.Errorf("package file storage is not configured")
@@ -394,7 +395,7 @@ func (s *Server) writeRegistryBlob(digest string, data []byte) error {
 
 func (s *Server) readRegistryBlob(digest string) ([]byte, error) {
 	if s.store.ObjectByteStore != nil {
-		return s.store.ObjectByteStore.Get(context.Background(), packageRegistryBlobDataKey(digest))
+		return s.store.ObjectByteStore.Get(context.Background(), store.PackageRegistryBlobDataKey(digest))
 	}
 	path, err := s.registryBlobPath(digest)
 	if err != nil {

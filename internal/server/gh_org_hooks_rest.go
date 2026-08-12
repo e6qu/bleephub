@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // Organization-level webhooks (`/orgs/{org}/hooks`). Org hooks receive the
@@ -14,23 +16,23 @@ import (
 // table, so delivery introspection works identically.
 
 func (s *Server) registerGHOrgHookRoutes() {
-	s.route("POST /api/v3/orgs/{org}/hooks", s.requirePerm(scopeOrganizationHooks, permWrite, s.handleCreateOrgHook))
-	s.route("GET /api/v3/orgs/{org}/hooks", s.requirePerm(scopeOrganizationHooks, permRead, s.handleListOrgHooks))
-	s.route("GET /api/v3/orgs/{org}/hooks/{id}", s.requirePerm(scopeOrganizationHooks, permRead, s.handleGetOrgHook))
-	s.route("PATCH /api/v3/orgs/{org}/hooks/{id}", s.requirePerm(scopeOrganizationHooks, permWrite, s.handleUpdateOrgHook))
-	s.route("DELETE /api/v3/orgs/{org}/hooks/{id}", s.requirePerm(scopeOrganizationHooks, permWrite, s.handleDeleteOrgHook))
-	s.route("GET /api/v3/orgs/{org}/hooks/{hook_id}/config", s.requirePerm(scopeOrganizationHooks, permRead, s.handleGetOrgHookConfig))
-	s.route("PATCH /api/v3/orgs/{org}/hooks/{hook_id}/config", s.requirePerm(scopeOrganizationHooks, permWrite, s.handleUpdateOrgHookConfig))
-	s.route("GET /api/v3/orgs/{org}/hooks/{id}/deliveries", s.requirePerm(scopeOrganizationHooks, permRead, s.handleListOrgHookDeliveries))
-	s.route("GET /api/v3/orgs/{org}/hooks/{id}/deliveries/{delivery_id}", s.requirePerm(scopeOrganizationHooks, permRead, s.handleGetOrgHookDelivery))
-	s.route("POST /api/v3/orgs/{org}/hooks/{id}/deliveries/{delivery_id}/attempts", s.requirePerm(scopeOrganizationHooks, permWrite, s.handleRedeliverOrgHookDelivery))
-	s.route("POST /api/v3/orgs/{org}/hooks/{id}/pings", s.requirePerm(scopeOrganizationHooks, permWrite, s.handlePingOrgHook))
+	s.route("POST /api/v3/orgs/{org}/hooks", s.requirePerm(store.ScopeOrganizationHooks, store.PermWrite, s.handleCreateOrgHook))
+	s.route("GET /api/v3/orgs/{org}/hooks", s.requirePerm(store.ScopeOrganizationHooks, store.PermRead, s.handleListOrgHooks))
+	s.route("GET /api/v3/orgs/{org}/hooks/{id}", s.requirePerm(store.ScopeOrganizationHooks, store.PermRead, s.handleGetOrgHook))
+	s.route("PATCH /api/v3/orgs/{org}/hooks/{id}", s.requirePerm(store.ScopeOrganizationHooks, store.PermWrite, s.handleUpdateOrgHook))
+	s.route("DELETE /api/v3/orgs/{org}/hooks/{id}", s.requirePerm(store.ScopeOrganizationHooks, store.PermWrite, s.handleDeleteOrgHook))
+	s.route("GET /api/v3/orgs/{org}/hooks/{hook_id}/config", s.requirePerm(store.ScopeOrganizationHooks, store.PermRead, s.handleGetOrgHookConfig))
+	s.route("PATCH /api/v3/orgs/{org}/hooks/{hook_id}/config", s.requirePerm(store.ScopeOrganizationHooks, store.PermWrite, s.handleUpdateOrgHookConfig))
+	s.route("GET /api/v3/orgs/{org}/hooks/{id}/deliveries", s.requirePerm(store.ScopeOrganizationHooks, store.PermRead, s.handleListOrgHookDeliveries))
+	s.route("GET /api/v3/orgs/{org}/hooks/{id}/deliveries/{delivery_id}", s.requirePerm(store.ScopeOrganizationHooks, store.PermRead, s.handleGetOrgHookDelivery))
+	s.route("POST /api/v3/orgs/{org}/hooks/{id}/deliveries/{delivery_id}/attempts", s.requirePerm(store.ScopeOrganizationHooks, store.PermWrite, s.handleRedeliverOrgHookDelivery))
+	s.route("POST /api/v3/orgs/{org}/hooks/{id}/pings", s.requirePerm(store.ScopeOrganizationHooks, store.PermWrite, s.handlePingOrgHook))
 }
 
 // orgHookGate resolves the org and enforces the org-admin requirement
 // (the sim analogue of real GitHub's admin:org_hook scope). Returns nil
 // after writing the error response when the gate fails.
-func (s *Server) orgHookGate(w http.ResponseWriter, r *http.Request) *Org {
+func (s *Server) orgHookGate(w http.ResponseWriter, r *http.Request) *store.Org {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
@@ -69,11 +71,11 @@ func (s *Server) handleCreateOrgHook(w http.ResponseWriter, r *http.Request) {
 	}
 	// Unlike repo hooks, real GitHub REQUIRES name=web for org hooks.
 	if req.Name != "web" {
-		writeGHValidationError(w, "Hook", "name", "invalid")
+		store.WriteGHValidationError(w, "Hook", "name", "invalid")
 		return
 	}
 	if req.Config.URL == "" {
-		writeGHValidationError(w, "Hook", "url", "missing_field")
+		store.WriteGHValidationError(w, "Hook", "url", "missing_field")
 		return
 	}
 	if s.rejectUndeliverableHookURL(w, req.Config.URL) {
@@ -116,7 +118,7 @@ func (s *Server) handleListOrgHooks(w http.ResponseWriter, r *http.Request) {
 
 // orgHookFromRequest resolves the {id} path value to a stored org hook,
 // writing 404 and returning nil when it doesn't resolve.
-func (s *Server) orgHookFromRequest(w http.ResponseWriter, r *http.Request, org *Org) *Webhook {
+func (s *Server) orgHookFromRequest(w http.ResponseWriter, r *http.Request, org *store.Org) *store.Webhook {
 	hookID, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -167,7 +169,7 @@ func (s *Server) handleUpdateOrgHook(w http.ResponseWriter, r *http.Request) {
 	if req.Config != nil && req.Config.URL != "" && s.rejectUndeliverableHookURL(w, req.Config.URL) {
 		return
 	}
-	s.store.UpdateOrgHook(org.Login, hook.ID, func(h *Webhook) {
+	s.store.UpdateOrgHook(org.Login, hook.ID, func(h *store.Webhook) {
 		if req.Config != nil {
 			if req.Config.URL != "" {
 				h.URL = req.Config.URL
@@ -194,7 +196,7 @@ func (s *Server) handleUpdateOrgHook(w http.ResponseWriter, r *http.Request) {
 
 // orgHookFromConfigRequest resolves {org} + {hook_id} for the webhook
 // config sub-resource routes.
-func (s *Server) orgHookFromConfigRequest(w http.ResponseWriter, r *http.Request) (*Org, *Webhook) {
+func (s *Server) orgHookFromConfigRequest(w http.ResponseWriter, r *http.Request) (*store.Org, *store.Webhook) {
 	org := s.orgHookGate(w, r)
 	if org == nil {
 		return nil, nil
@@ -214,7 +216,7 @@ func (s *Server) orgHookFromConfigRequest(w http.ResponseWriter, r *http.Request
 
 // orgHookConfigJSON renders the webhook-config shape. The secret is masked,
 // as on real GitHub, since the raw value is never surfaced after creation.
-func orgHookConfigJSON(h *Webhook) map[string]interface{} {
+func orgHookConfigJSON(h *store.Webhook) map[string]interface{} {
 	contentType := h.ContentType
 	if contentType == "" {
 		contentType = "form"
@@ -259,7 +261,7 @@ func (s *Server) handleUpdateOrgHookConfig(w http.ResponseWriter, r *http.Reques
 	if req.URL != "" && s.rejectUndeliverableHookURL(w, req.URL) {
 		return
 	}
-	s.store.UpdateOrgHook(org.Login, hook.ID, func(h *Webhook) {
+	s.store.UpdateOrgHook(org.Login, hook.ID, func(h *store.Webhook) {
 		if req.URL != "" {
 			h.URL = req.URL
 		}
@@ -345,7 +347,7 @@ func (s *Server) handleRedeliverOrgHookDelivery(w http.ResponseWriter, r *http.R
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	var original *WebhookDelivery
+	var original *store.WebhookDelivery
 	for _, d := range s.store.ListDeliveries(hook.ID) {
 		if d.ID == deliveryID {
 			original = d
@@ -377,7 +379,7 @@ func (s *Server) handlePingOrgHook(w http.ResponseWriter, r *http.Request) {
 }
 
 // orgPingPayload builds the `ping` event payload for an org hook.
-func (s *Server) orgPingPayload(org *Org, hook *Webhook, r *http.Request) map[string]interface{} {
+func (s *Server) orgPingPayload(org *store.Org, hook *store.Webhook, r *http.Request) map[string]interface{} {
 	return map[string]interface{}{
 		"zen":          "Keep it logically awesome.",
 		"hook_id":      hook.ID,
@@ -387,7 +389,7 @@ func (s *Server) orgPingPayload(org *Org, hook *Webhook, r *http.Request) map[st
 }
 
 // orgHookToJSON serialises an org webhook to GitHub's org-hook shape.
-func orgHookToJSON(h *Webhook, org *Org, baseURL string) map[string]interface{} {
+func orgHookToJSON(h *store.Webhook, org *store.Org, baseURL string) map[string]interface{} {
 	hookBase := baseURL + "/api/v3/orgs/" + org.Login + "/hooks/" + strconv.Itoa(h.ID)
 	contentType := h.ContentType
 	if contentType == "" {
@@ -432,20 +434,20 @@ func (s *Server) emitOrgWebhookEvent(orgLogin, eventType, action string, payload
 // invitations as pending memberships, so the member_invited payload's
 // invitation object is derived from the membership (its id is a stable
 // derivation — there is no separate invitation entity to expose).
-func (s *Server) emitOrgMembershipEvent(org *Org, action string, m *Membership, target, sender *User) {
+func (s *Server) emitOrgMembershipEvent(org *store.Org, action string, m *store.Membership, target, sender *store.User) {
 	payload := map[string]interface{}{
 		"action":       action,
 		"organization": orgWebhookPayload(org),
 	}
 	if sender != nil {
-		payload["sender"] = userToJSON(sender)
+		payload["sender"] = store.UserToJSON(sender)
 	}
 	if action == "member_invited" {
 		invitationRole := "direct_member"
-		if m.Role == OrgRoleAdmin {
+		if m.Role == store.OrgRoleAdmin {
 			invitationRole = "admin"
 		}
-		payload["user"] = userToJSON(target)
+		payload["user"] = store.UserToJSON(target)
 		payload["invitation"] = map[string]interface{}{
 			"id":         authorizationID(org.Login + "/" + target.Login),
 			"login":      target.Login,
@@ -459,7 +461,7 @@ func (s *Server) emitOrgMembershipEvent(org *Org, action string, m *Membership, 
 			"organization_url": "/api/v3/orgs/" + org.Login,
 			"state":            m.State,
 			"role":             m.Role,
-			"user":             userToJSON(target),
+			"user":             store.UserToJSON(target),
 		}
 	}
 	s.emitOrgWebhookEvent(org.Login, "organization", action, payload)

@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func TestOrgBillingBudgets_Pagination(t *testing.T) {
@@ -224,7 +226,7 @@ func TestOrgBillingBudgets_Validation(t *testing.T) {
 
 	// Non-admin caller is forbidden.
 	outsider := srv.createTestUser(t, "billing-outsider")
-	srv.store.Tokens["ghp_billing_outsider"] = &Token{Value: "ghp_billing_outsider", UserID: outsider.ID}
+	srv.store.Tokens["ghp_billing_outsider"] = &store.Token{Value: "ghp_billing_outsider", UserID: outsider.ID}
 	resp = srv.get(t, "/api/v3/organizations/billing-budgets-val/settings/billing/budgets", "ghp_billing_outsider")
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusForbidden {
@@ -264,11 +266,11 @@ func TestOrgBillingUsage_ComputedFromActionsRunHistory(t *testing.T) {
 
 	// Record a real workflow run: one job of 150s → billed as 3 minutes.
 	started := time.Date(2026, 3, 10, 12, 0, 0, 0, time.UTC)
-	wf := &Workflow{
+	wf := &store.Workflow{
 		ID:           "billing-usage-run",
 		RepoFullName: "billing-usage-org/billing-usage-repo",
-		Status:       WorkflowStatusCompleted,
-		Jobs: map[string]*WorkflowJob{
+		Status:       store.WorkflowStatusCompleted,
+		Jobs: map[string]*store.WorkflowJob{
 			"job": {JobID: "billing-usage-job", StartedAt: started, CompletedAt: started.Add(150 * time.Second)},
 		},
 	}

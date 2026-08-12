@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/google/uuid"
 )
 
@@ -58,8 +59,8 @@ func githubAPIVersionFromContext(ctx context.Context) string {
 const ctxInvalidCredential contextKey = "gh-invalid-credential" // #nosec G101 -- typed context key, not a credential.
 
 // ghUserFromContext extracts the authenticated user from the request context.
-func ghUserFromContext(ctx context.Context) *User {
-	u, _ := ctx.Value(ctxUser).(*User)
+func ghUserFromContext(ctx context.Context) *store.User {
+	u, _ := ctx.Value(ctxUser).(*store.User)
 	return u
 }
 
@@ -67,7 +68,7 @@ func ghUserFromContext(ctx context.Context) *User {
 // HTTP middleware — the SSH transport has no request to attach one to. A nil
 // user is left off entirely so ghUserFromContext keeps returning nil rather
 // than a typed nil.
-func contextWithUser(ctx context.Context, user *User) context.Context {
+func contextWithUser(ctx context.Context, user *store.User) context.Context {
 	if user == nil {
 		return ctx
 	}
@@ -75,8 +76,8 @@ func contextWithUser(ctx context.Context, user *User) context.Context {
 }
 
 // ghAppFromContext extracts the JWT-authenticated app from the request context.
-func ghAppFromContext(ctx context.Context) *App {
-	a, _ := ctx.Value(ctxApp).(*App)
+func ghAppFromContext(ctx context.Context) *store.App {
+	a, _ := ctx.Value(ctxApp).(*store.App)
 	return a
 }
 
@@ -84,23 +85,23 @@ func ghAppFromContext(ctx context.Context) *App {
 // if authenticated by a ghs_ installation token. Returns nil for other auth shapes.
 // Consumed by gh_apps_rest.go (installation introspection) and the permission
 // decorator.
-func ghInstallationFromContext(ctx context.Context) *Installation {
-	i, _ := ctx.Value(ctxInstallation).(*Installation)
+func ghInstallationFromContext(ctx context.Context) *store.Installation {
+	i, _ := ctx.Value(ctxInstallation).(*store.Installation)
 	return i
 }
 
 // ghInstallationTokenFromContext extracts the installation token used to authenticate
 // the request, if any. Consumed by gh_apps_perms.go (permission decorator) and
 // gh_apps_rest.go (introspection endpoints).
-func ghInstallationTokenFromContext(ctx context.Context) *InstallationToken {
-	t, _ := ctx.Value(ctxInstallationToken).(*InstallationToken)
+func ghInstallationTokenFromContext(ctx context.Context) *store.InstallationToken {
+	t, _ := ctx.Value(ctxInstallationToken).(*store.InstallationToken)
 	return t
 }
 
 // ghUserToServerTokenFromContext extracts the gho_/ghu_ token used to authenticate,
 // if any. Consumed by gh_apps_perms.go (permission decorator's user-to-server path).
-func ghUserToServerTokenFromContext(ctx context.Context) *UserToServerToken {
-	t, _ := ctx.Value(ctxUserToServerToken).(*UserToServerToken)
+func ghUserToServerTokenFromContext(ctx context.Context) *store.UserToServerToken {
+	t, _ := ctx.Value(ctxUserToServerToken).(*store.UserToServerToken)
 	return t
 }
 
@@ -121,8 +122,8 @@ func ghJobTokenFromContext(ctx context.Context) *jobTokenPrincipal {
 	return t
 }
 
-func ghPersonalAccessTokenFromContext(ctx context.Context) *Token {
-	t, _ := ctx.Value(ctxPersonalAccessToken).(*Token)
+func ghPersonalAccessTokenFromContext(ctx context.Context) *store.Token {
+	t, _ := ctx.Value(ctxPersonalAccessToken).(*store.Token)
 	return t
 }
 
@@ -208,14 +209,14 @@ func (s *Server) ghHeadersMiddleware(next http.Handler) http.Handler {
 		// X-OAuth-Scopes reports the scopes of whichever credential
 		// authenticated the request; authenticateRequest already resolved it,
 		// so re-parsing the header here would be a second, divergent parse.
-		var token *Token
+		var token *store.Token
 		if pat := ghPersonalAccessTokenFromContext(ctx); pat != nil {
 			token = pat
 		} else if uts := ghUserToServerTokenFromContext(ctx); uts != nil {
 			// Materialize a transient classic token so the response writer can
 			// emit X-OAuth-Scopes for OAuth/GitHub-App user-to-server tokens,
 			// matching real GitHub.
-			token = &Token{Value: uts.Token, UserID: uts.UserID, Scopes: uts.Scopes}
+			token = &store.Token{Value: uts.Token, UserID: uts.UserID, Scopes: uts.Scopes}
 		}
 
 		// Wrap response writer to inject headers
@@ -241,7 +242,7 @@ func (s *Server) ghHeadersMiddleware(next http.Handler) http.Handler {
 			return
 		}
 		if field := invalidRESTPaginationQuery(r); strings.HasPrefix(path, "/api/v3/") && field != "" {
-			writeGHValidationError(rw, "Pagination", field, "invalid")
+			store.WriteGHValidationError(rw, "Pagination", field, "invalid")
 			return
 		}
 		next.ServeHTTP(rw, r)
@@ -277,7 +278,7 @@ func authScheme(auth string) (scheme, credential string) {
 // anything. It deliberately does NOT place a resolved user on the context: a
 // suspended user must not gain a principal, so the sole caller decides that
 // after checking user.Suspended.
-func (s *Server) resolveBearerCredential(ctx context.Context, tokenStr string) (context.Context, *User, bool) {
+func (s *Server) resolveBearerCredential(ctx context.Context, tokenStr string) (context.Context, *store.User, bool) {
 	switch {
 	case looksLikeJWT(tokenStr):
 		if app, err := s.store.ParseAndVerifyAppJWT(tokenStr); err == nil {
@@ -293,10 +294,10 @@ func (s *Server) resolveBearerCredential(ctx context.Context, tokenStr string) (
 			// The token acts as github-actions[bot] for handler attribution,
 			// exactly as an installation token acts as its app's bot user; the
 			// gate itself is governed by the jobTokenPrincipal, not this user.
-			return context.WithValue(ctx, ctxJobToken, principal), actionsBotUser(), true
+			return context.WithValue(ctx, ctxJobToken, principal), store.ActionsBotUser(), true
 		}
 		return ctx, nil, false
-	case strings.HasPrefix(tokenStr, tokenPrefixInstallation):
+	case strings.HasPrefix(tokenStr, store.TokenPrefixInstallation):
 		instToken, inst := s.store.LookupInstallationToken(tokenStr)
 		if instToken == nil {
 			return ctx, nil, false
@@ -307,15 +308,15 @@ func (s *Server) resolveBearerCredential(ctx context.Context, tokenStr string) (
 		ctx = context.WithValue(ctx, ctxInstallation, inst)
 		ctx = context.WithValue(ctx, ctxInstallationToken, instToken)
 		if app := s.store.GetApp(instToken.AppID); app != nil {
-			ctx = context.WithValue(ctx, ctxUser, appBotUser(app))
+			ctx = context.WithValue(ctx, ctxUser, store.AppBotUser(app))
 		}
 		return ctx, nil, true
-	case strings.HasPrefix(tokenStr, tokenPrefixOAuthUser), strings.HasPrefix(tokenStr, tokenPrefixAppUser):
+	case strings.HasPrefix(tokenStr, store.TokenPrefixOAuthUser), strings.HasPrefix(tokenStr, store.TokenPrefixAppUser):
 		if utsTok, u := s.store.LookupUserToServerToken(tokenStr); utsTok != nil {
 			return context.WithValue(ctx, ctxUserToServerToken, utsTok), u, true
 		}
 		return ctx, nil, false
-	case strings.HasPrefix(tokenStr, tokenPrefixRefresh):
+	case strings.HasPrefix(tokenStr, store.TokenPrefixRefresh):
 		// A refresh token is never an access credential.
 		return ctx, nil, false
 	default:
@@ -328,7 +329,7 @@ func (s *Server) resolveBearerCredential(ctx context.Context, tokenStr string) (
 
 func (s *Server) authenticateRequest(r *http.Request) context.Context {
 	ctx := r.Context()
-	var user *User
+	var user *store.User
 	authOffered := false
 	if auth := r.Header.Get("Authorization"); auth != "" {
 		authOffered = true
@@ -425,7 +426,7 @@ func (s *Server) clientCredentialsVerify(clientID, secret string) bool {
 // ghResponseWriter injects GitHub API headers before the first write.
 type ghResponseWriter struct {
 	http.ResponseWriter
-	token       *Token
+	token       *store.Token
 	path        string
 	apiVersion  string
 	method      string

@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -51,7 +52,7 @@ func (output *pagesJekyllOutput) message() string {
 	return message
 }
 
-func (s *Server) buildPagesBranch(ctx context.Context, repo *Repo, branch, sourcePath string) (string, bool, error) {
+func (s *Server) buildPagesBranch(ctx context.Context, repo *store.Repo, branch, sourcePath string) (string, bool, error) {
 	stor, _ := s.store.GitStorageForRepoID(repo.ID)
 	if stor == nil {
 		return "", false, fmt.Errorf("Pages source git storage is unavailable")
@@ -93,7 +94,7 @@ func (s *Server) buildPagesBranch(ctx context.Context, repo *Repo, branch, sourc
 	return commitSHA, custom404, nil
 }
 
-func pagesLegacySource(site *PagesSite) (string, string, error) {
+func pagesLegacySource(site *store.PagesSite) (string, string, error) {
 	if site.BuildType == nil || *site.BuildType != "legacy" {
 		return "", "", fmt.Errorf("manual Pages builds require build_type legacy")
 	}
@@ -169,7 +170,7 @@ func archivePagesEntries(entries []archiveEntry, when time.Time) ([]byte, bool, 
 	return artifact.Bytes(), custom404, nil
 }
 
-func (s *Server) buildJekyllPagesArtifact(ctx context.Context, repo *Repo, entries []archiveEntry, when time.Time) ([]byte, bool, error) {
+func (s *Server) buildJekyllPagesArtifact(ctx context.Context, repo *store.Repo, entries []archiveEntry, when time.Time) ([]byte, bool, error) {
 	workspace, err := os.MkdirTemp("", "bleephub-pages-jekyll-*")
 	if err != nil {
 		return nil, false, fmt.Errorf("create GitHub Pages Jekyll workspace: %w", err)
@@ -268,7 +269,7 @@ func collectPagesOutput(root string) ([]archiveEntry, error) {
 	return entries, nil
 }
 
-func (s *Server) publishPagesArtifact(ctx context.Context, repoID int, environment, buildVersion string, artifact []byte) (*PagesDeploymentRecord, error) {
+func (s *Server) publishPagesArtifact(ctx context.Context, repoID int, environment, buildVersion string, artifact []byte) (*store.PagesDeploymentRecord, error) {
 	if s.store.ObjectByteStore == nil {
 		return nil, fmt.Errorf("Pages publication requires configured object storage")
 	}

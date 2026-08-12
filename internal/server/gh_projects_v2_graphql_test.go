@@ -4,23 +4,25 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func TestProjectV2Store_DeleteProjectUnindexesContentItems(t *testing.T) {
 	t.Parallel()
-	store := newProjectV2Store(nil)
-	project := store.CreateProject(1, "User", "Cleanup", 1)
-	item := store.AddItem(project.ID, "Issue", 42, 1)
+	st := store.NewProjectV2Store(nil)
+	project := st.CreateProject(1, "User", "Cleanup", 1)
+	item := st.AddItem(project.ID, "Issue", 42, 1)
 	if item == nil {
 		t.Fatal("AddItem returned nil")
 	}
-	if got := store.ListItemsForIssue(42); len(got) != 1 {
+	if got := st.ListItemsForIssue(42); len(got) != 1 {
 		t.Fatalf("precondition ListItemsForIssue = %#v, want one item", got)
 	}
-	if !store.DeleteProject(project.ID) {
+	if !st.DeleteProject(project.ID) {
 		t.Fatal("DeleteProject returned false")
 	}
-	if got := store.ListItemsForIssue(42); len(got) != 0 {
+	if got := st.ListItemsForIssue(42); len(got) != 0 {
 		t.Fatalf("DeleteProject left stale content index entries: %#v", got)
 	}
 }
@@ -91,7 +93,7 @@ func TestProjectsV2GraphQL_CreateProjectUsesResolvedUserAndOrganizationOwners(t 
 	}
 }
 
-func projectV2OwnerHasTitle(st *Store, ownerID int, ownerType, title string) bool {
+func projectV2OwnerHasTitle(st *store.Store, ownerID int, ownerType, title string) bool {
 	for _, project := range st.ProjectsV2.ListProjectsForOwner(ownerID, ownerType) {
 		if project.Title == title {
 			return true
@@ -114,23 +116,23 @@ func TestProjectsV2GraphQL_FieldValueKinds(t *testing.T) {
 	project := s.store.ProjectsV2.CreateProject(admin.ID, "User", "GraphQL fields", admin.ID)
 	item := s.store.ProjectsV2.AddItem(project.ID, "Issue", int(issue["id"].(float64)), admin.ID)
 
-	textField := s.store.ProjectsV2.CreateField(project.ID, "Notes", ProjectV2FieldText, nil, nil)
-	numberField := s.store.ProjectsV2.CreateField(project.ID, "Effort", ProjectV2FieldNumber, nil, nil)
-	dateField := s.store.ProjectsV2.CreateField(project.ID, "Due", ProjectV2FieldDate, nil, nil)
-	selectField := s.store.ProjectsV2.CreateField(project.ID, "Priority", ProjectV2FieldSingleSelect, []*ProjectV2SingleSelectOption{
+	textField := s.store.ProjectsV2.CreateField(project.ID, "Notes", store.ProjectV2FieldText, nil, nil)
+	numberField := s.store.ProjectsV2.CreateField(project.ID, "Effort", store.ProjectV2FieldNumber, nil, nil)
+	dateField := s.store.ProjectsV2.CreateField(project.ID, "Due", store.ProjectV2FieldDate, nil, nil)
+	selectField := s.store.ProjectsV2.CreateField(project.ID, "Priority", store.ProjectV2FieldSingleSelect, []*store.ProjectV2SingleSelectOption{
 		{Name: "High", Color: "RED"},
 		{Name: "Low", Color: "GREEN"},
 	}, nil)
-	iterationField := s.store.ProjectsV2.CreateField(project.ID, "Sprint", ProjectV2FieldIteration, nil, &ProjectV2IterationConfiguration{
+	iterationField := s.store.ProjectsV2.CreateField(project.ID, "Sprint", store.ProjectV2FieldIteration, nil, &store.ProjectV2IterationConfiguration{
 		StartDate: "2026-07-06",
 		Duration:  7,
-		Iterations: []*ProjectV2Iteration{
+		Iterations: []*store.ProjectV2Iteration{
 			{Title: "Sprint 1", StartDate: "2026-07-06", Duration: 7},
 			{Title: "Sprint 2", StartDate: "2026-07-13", Duration: 7},
 		},
 	})
 
-	update := func(field *ProjectV2Field, value map[string]interface{}) {
+	update := func(field *store.ProjectV2Field, value map[string]interface{}) {
 		t.Helper()
 		data := s.gqlData(t, `mutation($project:ID!,$item:ID!,$field:ID!,$value:ProjectV2FieldValue!){
 			updateProjectV2ItemFieldValue(input:{projectId:$project,itemId:$item,fieldId:$field,value:$value}){
@@ -218,14 +220,14 @@ func TestProjectsV2GraphQL_ProjectLevelConnections(t *testing.T) {
 	project := s.store.ProjectsV2.CreateProject(admin.ID, "User", "GraphQL project", admin.ID)
 	s.store.ProjectsV2.AddItem(project.ID, "Issue", issueID, admin.ID)
 	s.store.ProjectsV2.AddDraftItem(project.ID, "Draft item", "Body", admin.ID)
-	stage := s.store.ProjectsV2.CreateField(project.ID, "Stage", ProjectV2FieldSingleSelect, []*ProjectV2SingleSelectOption{
+	stage := s.store.ProjectsV2.CreateField(project.ID, "Stage", store.ProjectV2FieldSingleSelect, []*store.ProjectV2SingleSelectOption{
 		{Name: "Todo", Color: "GRAY", Description: "ready to schedule"},
 		{Name: "Done", Color: "GREEN"},
 	}, nil)
-	sprint := s.store.ProjectsV2.CreateField(project.ID, "Sprint", ProjectV2FieldIteration, nil, &ProjectV2IterationConfiguration{
+	sprint := s.store.ProjectsV2.CreateField(project.ID, "Sprint", store.ProjectV2FieldIteration, nil, &store.ProjectV2IterationConfiguration{
 		StartDate: "2026-07-06",
 		Duration:  14,
-		Iterations: []*ProjectV2Iteration{
+		Iterations: []*store.ProjectV2Iteration{
 			{Title: "Sprint 1", StartDate: "2026-07-06", Duration: 14},
 		},
 	})
@@ -273,7 +275,7 @@ func TestProjectsV2GraphQL_ProjectLevelConnections(t *testing.T) {
 	}
 	fieldNodes := fields["nodes"].([]interface{})
 	firstField := fieldNodes[0].(map[string]interface{})
-	if firstField["id"] != stage.NodeID || firstField["name"] != "Stage" || firstField["dataType"] != string(ProjectV2FieldSingleSelect) {
+	if firstField["id"] != stage.NodeID || firstField["name"] != "Stage" || firstField["dataType"] != string(store.ProjectV2FieldSingleSelect) {
 		t.Fatalf("first field = %v", firstField)
 	}
 	options := firstField["options"].([]interface{})
@@ -281,7 +283,7 @@ func TestProjectsV2GraphQL_ProjectLevelConnections(t *testing.T) {
 		t.Fatalf("stage options = %v", options)
 	}
 	secondField := fieldNodes[1].(map[string]interface{})
-	if secondField["id"] != sprint.NodeID || secondField["dataType"] != string(ProjectV2FieldIteration) {
+	if secondField["id"] != sprint.NodeID || secondField["dataType"] != string(store.ProjectV2FieldIteration) {
 		t.Fatalf("second field = %v", secondField)
 	}
 	iteration := secondField["configuration"].(map[string]interface{})

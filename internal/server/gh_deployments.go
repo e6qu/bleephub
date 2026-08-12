@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // Deployments + Deployment Statuses + Environments.
@@ -28,15 +30,15 @@ import (
 
 func (s *Server) registerGHDeploymentsRoutes() {
 	s.route("POST /api/v3/repos/{owner}/{repo}/deployments",
-		s.requirePerm(scopeDeployments, permWrite, s.handleCreateDeployment))
+		s.requirePerm(store.ScopeDeployments, store.PermWrite, s.handleCreateDeployment))
 	s.route("GET /api/v3/repos/{owner}/{repo}/deployments",
 		s.handleListDeployments)
 	s.route("GET /api/v3/repos/{owner}/{repo}/deployments/{deployment_id}",
 		s.handleGetDeployment)
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/deployments/{deployment_id}",
-		s.requirePerm(scopeDeployments, permWrite, s.handleDeleteDeployment))
+		s.requirePerm(store.ScopeDeployments, store.PermWrite, s.handleDeleteDeployment))
 	s.route("POST /api/v3/repos/{owner}/{repo}/deployments/{deployment_id}/statuses",
-		s.requirePerm(scopeDeployments, permWrite, s.handleCreateDeploymentStatus))
+		s.requirePerm(store.ScopeDeployments, store.PermWrite, s.handleCreateDeploymentStatus))
 	s.route("GET /api/v3/repos/{owner}/{repo}/deployments/{deployment_id}/statuses",
 		s.handleListDeploymentStatuses)
 	s.route("GET /api/v3/repos/{owner}/{repo}/deployments/{deployment_id}/statuses/{status_id}",
@@ -47,9 +49,9 @@ func (s *Server) registerGHDeploymentsRoutes() {
 	s.route("GET /api/v3/repos/{owner}/{repo}/environments/{env_name}",
 		s.handleGetEnvironment)
 	s.route("PUT /api/v3/repos/{owner}/{repo}/environments/{env_name}",
-		s.requirePerm(scopeAdministration, permWrite, s.handleUpsertEnvironment))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleUpsertEnvironment))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/environments/{env_name}",
-		s.requirePerm(scopeAdministration, permWrite, s.handleDeleteEnvironment))
+		s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleDeleteEnvironment))
 }
 
 func (s *Server) handleCreateDeployment(w http.ResponseWriter, r *http.Request) {
@@ -75,7 +77,7 @@ func (s *Server) handleCreateDeployment(w http.ResponseWriter, r *http.Request) 
 		ProductionEnvironment flexBool               `json:"production_environment"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Ref == "" {
-		writeGHValidationError(w, "Deployment", "ref", "missing_field")
+		store.WriteGHValidationError(w, "Deployment", "ref", "missing_field")
 		return
 	}
 	env := req.Environment
@@ -172,7 +174,7 @@ func (s *Server) handleCreateDeploymentStatus(w http.ResponseWriter, r *http.Req
 		AutoInactive   flexBool `json:"auto_inactive"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.State == "" {
-		writeGHValidationError(w, "DeploymentStatus", "state", "missing_field")
+		store.WriteGHValidationError(w, "DeploymentStatus", "state", "missing_field")
 		return
 	}
 	env := req.Environment
@@ -293,7 +295,7 @@ func (s *Server) handleUpsertEnvironment(w http.ResponseWriter, r *http.Request)
 			Type string `json:"type"`
 			ID   int    `json:"id"`
 		} `json:"reviewers"`
-		DeploymentBranchPolicy *DeploymentBranchPolicy `json:"deployment_branch_policy"`
+		DeploymentBranchPolicy *store.DeploymentBranchPolicy `json:"deployment_branch_policy"`
 	}
 	// An absent body is valid (environment with no protection config), but
 	// malformed JSON is still a 400 like real GitHub.
@@ -333,14 +335,14 @@ func (s *Server) handleDeleteEnvironment(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func deploymentToJSON(d *Deployment, st *Store, baseURL string, repo *Repo) map[string]interface{} {
+func deploymentToJSON(d *store.Deployment, st *store.Store, baseURL string, repo *store.Repo) map[string]interface{} {
 	if d == nil {
 		return nil
 	}
 	var creator map[string]interface{}
 	st.Mu.RLock()
 	if u := st.Users[d.CreatorID]; u != nil {
-		creator = userToJSON(u)
+		creator = store.UserToJSON(u)
 	}
 	st.Mu.RUnlock()
 	return map[string]interface{}{
@@ -364,16 +366,16 @@ func deploymentToJSON(d *Deployment, st *Store, baseURL string, repo *Repo) map[
 	}
 }
 
-func deploymentStatusToJSON(st *DeploymentStatus, store *Store, baseURL string, repo *Repo) map[string]interface{} {
+func deploymentStatusToJSON(st *store.DeploymentStatus, stor *store.Store, baseURL string, repo *store.Repo) map[string]interface{} {
 	if st == nil {
 		return nil
 	}
 	var creator map[string]interface{}
-	store.Mu.RLock()
-	if u := store.Users[st.CreatorID]; u != nil {
-		creator = userToJSON(u)
+	stor.Mu.RLock()
+	if u := stor.Users[st.CreatorID]; u != nil {
+		creator = store.UserToJSON(u)
 	}
-	store.Mu.RUnlock()
+	stor.Mu.RUnlock()
 	return map[string]interface{}{
 		"id":              st.ID,
 		"node_id":         st.NodeID,
@@ -392,7 +394,7 @@ func deploymentStatusToJSON(st *DeploymentStatus, store *Store, baseURL string, 
 	}
 }
 
-func environmentToJSON(e *Environment, st *Store, baseURL string, repo *Repo) map[string]interface{} {
+func environmentToJSON(e *store.Environment, st *store.Store, baseURL string, repo *store.Repo) map[string]interface{} {
 	if e == nil {
 		return nil
 	}
@@ -444,7 +446,7 @@ func environmentToJSON(e *Environment, st *Store, baseURL string, repo *Repo) ma
 // environmentReviewersJSON renders the configured reviewers with their
 // resolved user objects, the shape protection rules and pending
 // deployments share.
-func environmentReviewersJSON(e *Environment, st *Store) []map[string]interface{} {
+func environmentReviewersJSON(e *store.Environment, st *store.Store) []map[string]interface{} {
 	out := []map[string]interface{}{}
 	for _, rev := range e.Reviewers {
 		revType, _ := rev["type"].(string)
@@ -458,7 +460,7 @@ func environmentReviewersJSON(e *Environment, st *Store) []map[string]interface{
 		entry := map[string]interface{}{"type": revType}
 		st.Mu.RLock()
 		if u := st.Users[id]; u != nil {
-			entry["reviewer"] = userToJSON(u)
+			entry["reviewer"] = store.UserToJSON(u)
 		}
 		st.Mu.RUnlock()
 		out = append(out, entry)
@@ -466,7 +468,7 @@ func environmentReviewersJSON(e *Environment, st *Store) []map[string]interface{
 	return out
 }
 
-func buildDeploymentEventPayload(repo *Repo, d *Deployment, sender *User, action string) map[string]interface{} {
+func buildDeploymentEventPayload(repo *store.Repo, d *store.Deployment, sender *store.User, action string) map[string]interface{} {
 	return attachInstallationBlock(map[string]interface{}{
 		"action": action,
 		"deployment": map[string]interface{}{
@@ -481,7 +483,7 @@ func buildDeploymentEventPayload(repo *Repo, d *Deployment, sender *User, action
 	}, nil)
 }
 
-func buildDeploymentStatusEventPayload(repo *Repo, d *Deployment, status *DeploymentStatus, sender *User) map[string]interface{} {
+func buildDeploymentStatusEventPayload(repo *store.Repo, d *store.Deployment, status *store.DeploymentStatus, sender *store.User) map[string]interface{} {
 	return attachInstallationBlock(map[string]interface{}{
 		"action": status.State,
 		"deployment_status": map[string]interface{}{

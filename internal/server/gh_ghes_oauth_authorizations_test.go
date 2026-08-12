@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // legacyAuthorizationSessionRequest drives the authorizations API the way a
@@ -42,7 +44,7 @@ func TestLegacyOAuthAuthorizationAndGrantJourney(t *testing.T) {
 	s.registerGHAppsOAuthMgmtRoutes()
 	admin := s.store.LookupUserByLogin("admin")
 	const session = "admin-browser-session"
-	s.store.LoginSessions[session] = &LoginSession{UserID: admin.ID, ExpiresAt: s.currentTime().Add(time.Hour)}
+	s.store.LoginSessions[session] = &store.LoginSession{UserID: admin.ID, ExpiresAt: s.currentTime().Add(time.Hour)}
 	req := func(method, path string, body map[string]interface{}) *httptest.ResponseRecorder {
 		return legacyAuthorizationSessionRequest(t, s, session, method, path, body)
 	}
@@ -141,11 +143,11 @@ func TestLegacyAuthorizationMetadataPersists(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("BLEEPHUB_PERSIST", "true")
 	t.Setenv("BLEEPHUB_DATA_DIR", dir)
-	p1, err := NewPersistence()
+	p1, err := store.NewPersistence()
 	if err != nil {
 		t.Fatal(err)
 	}
-	st1 := NewStore()
+	st1 := store.NewStore()
 	if err := st1.SetPersistence(p1); err != nil {
 		t.Fatal(err)
 	}
@@ -162,12 +164,12 @@ func TestLegacyAuthorizationMetadataPersists(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	p2, err := NewPersistence()
+	p2, err := store.NewPersistence()
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer p2.Close()
-	st2 := NewStore()
+	st2 := store.NewStore()
 	if err := st2.SetPersistence(p2); err != nil {
 		t.Fatal(err)
 	}

@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func (s *Server) registerGHGistRoutes() {
@@ -37,7 +39,7 @@ func (s *Server) registerGHGistRoutes() {
 // for themselves, which meant each new one started out deciding nothing, and
 // `GET /gists/{id}/{sha}` handed a non-public gist's file contents to an
 // anonymous caller.
-func (s *Server) visibleGist(w http.ResponseWriter, r *http.Request) *Gist {
+func (s *Server) visibleGist(w http.ResponseWriter, r *http.Request) *store.Gist {
 	g := s.store.GetGist(r.PathValue("gist_id"))
 	if g == nil || !s.viewerCanSeeGist(r.Context(), g) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -48,7 +50,7 @@ func (s *Server) visibleGist(w http.ResponseWriter, r *http.Request) *Gist {
 
 // viewerCanSeeGist is the visibility rule itself: a public gist is everyone's,
 // a non-public one is its owner's.
-func (s *Server) viewerCanSeeGist(ctx context.Context, g *Gist) bool {
+func (s *Server) viewerCanSeeGist(ctx context.Context, g *store.Gist) bool {
 	if g == nil {
 		return false
 	}
@@ -73,7 +75,7 @@ func (s *Server) handleListGistCommits(w http.ResponseWriter, r *http.Request) {
 	base := s.baseURL(r)
 	var ownerJSON interface{}
 	if owner := s.store.GetUserByID(gist.OwnerID); owner != nil {
-		ownerJSON = userToJSON(owner)
+		ownerJSON = store.UserToJSON(owner)
 	}
 	items := make([]map[string]interface{}, len(commits))
 	for i, h := range commits {
@@ -146,14 +148,14 @@ func (s *Server) handleCreateGist(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(req.Files) == 0 {
-		writeGHValidationError(w, "Gist", "files", "missing_field")
+		store.WriteGHValidationError(w, "Gist", "files", "missing_field")
 		return
 	}
 
-	files := make(map[string]*GistFile)
+	files := make(map[string]*store.GistFile)
 	for name, f := range req.Files {
 		if name == "" {
-			writeGHValidationError(w, "Gist", "files", "invalid")
+			store.WriteGHValidationError(w, "Gist", "files", "invalid")
 			return
 		}
 		files[name] = gistFileFromInput(name, f.Content, s.baseURL(r), "")
@@ -203,10 +205,10 @@ func (s *Server) handleUpdateGist(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var newFiles map[string]*GistFile
+	var newFiles map[string]*store.GistFile
 	var deleteFiles []string
 	if req.Files != nil {
-		newFiles = make(map[string]*GistFile)
+		newFiles = make(map[string]*store.GistFile)
 		for name, f := range req.Files {
 			if f == nil {
 				deleteFiles = append(deleteFiles, name)
@@ -372,7 +374,7 @@ func (s *Server) handleCreateGistComment(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if req.Body == "" {
-		writeGHValidationError(w, "GistComment", "body", "missing_field")
+		store.WriteGHValidationError(w, "GistComment", "body", "missing_field")
 		return
 	}
 	c := s.store.CreateGistComment(id, user, req.Body)
@@ -467,7 +469,7 @@ func (s *Server) handleDeleteGistComment(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func writeGistList(w http.ResponseWriter, r *http.Request, s *Server, gists []*Gist, includeContent bool) {
+func writeGistList(w http.ResponseWriter, r *http.Request, s *Server, gists []*store.Gist, includeContent bool) {
 	items := make([]map[string]interface{}, len(gists))
 	for i, g := range gists {
 		items[i] = s.gistToJSON(g, r, includeContent)
@@ -482,7 +484,7 @@ func writeGistList(w http.ResponseWriter, r *http.Request, s *Server, gists []*G
 // so writing them into the stored gist would publish one caller's host to every
 // other reader, and rendering the stored gist directly would let a concurrent
 // edit be serialized half-applied.
-func (s *Server) gistView(g *Gist, r *http.Request) *Gist {
+func (s *Server) gistView(g *store.Gist, r *http.Request) *store.Gist {
 	view := s.snapshotGist(g)
 	if view == nil {
 		return nil
@@ -512,25 +514,25 @@ func (s *Server) gistView(g *Gist, r *http.Request) *Gist {
 		}
 		f.Size = len(f.Content)
 	}
-	sortHistory(view.History)
+	store.SortHistory(view.History)
 	return view
 }
 
 // snapshotGist copies a stored gist, its files and its history under the store
 // lock, so nothing a writer holds is shared with the copy.
-func (s *Server) snapshotGist(g *Gist) *Gist {
+func (s *Server) snapshotGist(g *store.Gist) *store.Gist {
 	if g == nil {
 		return nil
 	}
 	s.store.Mu.RLock()
 	defer s.store.Mu.RUnlock()
 	view := *g
-	view.Files = make(map[string]*GistFile, len(g.Files))
+	view.Files = make(map[string]*store.GistFile, len(g.Files))
 	for name, f := range g.Files {
 		file := *f
 		view.Files[name] = &file
 	}
-	view.History = make([]*GistHistory, len(g.History))
+	view.History = make([]*store.GistHistory, len(g.History))
 	for i, h := range g.History {
 		entry := *h
 		entry.ChangeStatus = make(map[string]int, len(h.ChangeStatus))
@@ -543,7 +545,7 @@ func (s *Server) snapshotGist(g *Gist) *Gist {
 	return &view
 }
 
-func (s *Server) gistToJSON(g *Gist, r *http.Request, includeContent bool) map[string]interface{} {
+func (s *Server) gistToJSON(g *store.Gist, r *http.Request, includeContent bool) map[string]interface{} {
 	g = s.gistView(g, r)
 	base := s.baseURL(r)
 	files := make(map[string]interface{}, len(g.Files))
@@ -564,7 +566,7 @@ func (s *Server) gistToJSON(g *Gist, r *http.Request, includeContent bool) map[s
 	owner := s.store.GetUserByID(g.OwnerID)
 	var ownerJSON interface{}
 	if owner != nil {
-		ownerJSON = userToJSON(owner)
+		ownerJSON = store.UserToJSON(owner)
 	}
 
 	history := make([]map[string]interface{}, len(g.History))
@@ -602,12 +604,12 @@ func (s *Server) gistToJSON(g *Gist, r *http.Request, includeContent bool) map[s
 	}
 }
 
-func (s *Server) gistCommentToJSON(c *GistComment, r *http.Request) map[string]interface{} {
+func (s *Server) gistCommentToJSON(c *store.GistComment, r *http.Request) map[string]interface{} {
 	base := s.baseURL(r)
 	user := s.store.GetUserByID(c.UserID)
 	var userJSON interface{}
 	if user != nil {
-		userJSON = userToJSON(user)
+		userJSON = store.UserToJSON(user)
 	}
 	return map[string]interface{}{
 		"id":                 c.ID,
@@ -621,8 +623,8 @@ func (s *Server) gistCommentToJSON(c *GistComment, r *http.Request) map[string]i
 	}
 }
 
-func gistFileFromInput(filename, content, base, gistID string) *GistFile {
-	return &GistFile{
+func gistFileFromInput(filename, content, base, gistID string) *store.GistFile {
+	return &store.GistFile{
 		Filename: filename,
 		Type:     detectGistFileType(filename),
 		Language: detectGistLanguage(filename),

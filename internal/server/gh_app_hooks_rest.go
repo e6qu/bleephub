@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // app-level webhook config + deliveries.
@@ -47,7 +49,7 @@ func (s *Server) handleUpdateAppHookConfig(w http.ResponseWriter, r *http.Reques
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	s.store.UpdateAppHookConfig(app.ID, func(a *App) {
+	s.store.UpdateAppHookConfig(app.ID, func(a *store.App) {
 		if req.URL != "" {
 			a.WebhookURL = req.URL
 		}
@@ -123,7 +125,7 @@ func (s *Server) handleRedeliverAppHookDelivery(w http.ResponseWriter, r *http.R
 	w.WriteHeader(http.StatusAccepted)
 }
 
-func appHookConfigJSON(app *App) map[string]interface{} {
+func appHookConfigJSON(app *store.App) map[string]interface{} {
 	contentType := app.WebhookContentType
 	if contentType == "" {
 		contentType = "form" // GitHub's documented default for app webhooks
@@ -142,7 +144,7 @@ func appHookConfigJSON(app *App) map[string]interface{} {
 	}
 }
 
-func deliveryFullJSON(d *WebhookDelivery) map[string]interface{} {
+func deliveryFullJSON(d *store.WebhookDelivery) map[string]interface{} {
 	out := deliveryToJSON(d)
 	// The full delivery object (unlike the list summary) carries the target url.
 	out["url"] = d.TargetURL
@@ -166,7 +168,7 @@ func deliveryFullJSON(d *WebhookDelivery) map[string]interface{} {
 }
 
 // redeliverAppWebhook re-runs the delivery against the App's current webhook URL.
-func (s *Server) redeliverAppWebhook(app *App, original *WebhookDelivery) {
+func (s *Server) redeliverAppWebhook(app *store.App, original *store.WebhookDelivery) {
 	if app.WebhookURL == "" {
 		return
 	}

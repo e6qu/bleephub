@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"strconv"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // testSubjectDigest derives a real sha256 subject digest from seed text.
@@ -187,7 +189,7 @@ func TestRepoAttestations_BundlesUseObjectStore(t *testing.T) {
 	digest := testSubjectDigest("attest-object-repo-artifact")
 	bundle := makeSigstoreBundle(t, digest, "https://slsa.dev/provenance/v1")
 	id := s.uploadAttestation(t, "admin/attest-object-repo", defaultToken, bundle)
-	key := attestationBundleDataKey(id)
+	key := store.AttestationBundleDataKey(id)
 
 	stored := s.store.GetAttestation(id)
 	if stored == nil {
