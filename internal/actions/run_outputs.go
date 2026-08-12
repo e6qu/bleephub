@@ -1,5 +1,7 @@
 package actions
 
+import "github.com/e6qu/bleephub/internal/store"
+
 // RunnerVariableValue is one runner-evaluated output value as it appears in
 // the JobCompleted plan event (run_service.go's wire contract decodes into
 // it; the engine stores the resolved values on the workflow job).
@@ -23,8 +25,8 @@ func (s *Engine) CaptureResolvedJobOutputs(jobID string, outputs map[string]Runn
 	}
 
 	s.store.Mu.Lock()
-	var wfJob *WorkflowJob
-	var workflow *Workflow
+	var wfJob *store.WorkflowJob
+	var workflow *store.Workflow
 	for _, wf := range s.store.Workflows {
 		if job, ok := FindWorkflowJobByID(wf, jobID); ok {
 			wfJob = job
@@ -53,7 +55,7 @@ func (s *Engine) CaptureResolvedJobOutputs(jobID string, outputs map[string]Runn
 
 // FindWorkflowJobByID scans a workflow's jobs for the given engine job
 // UUID. Callers hold the store lock.
-func FindWorkflowJobByID(wf *Workflow, jobID string) (*WorkflowJob, bool) {
+func FindWorkflowJobByID(wf *store.Workflow, jobID string) (*store.WorkflowJob, bool) {
 	for _, wfJob := range wf.Jobs {
 		if wfJob.JobID == jobID {
 			return wfJob, true

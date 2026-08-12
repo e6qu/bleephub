@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
 	gitStorage "github.com/go-git/go-git/v5/storage"
 )
@@ -280,7 +281,7 @@ func (s *Engine) FireDueSchedules(now time.Time) {
 	s.scheduleIndex.retain(live)
 }
 
-func scheduleInactive(repo *Repo, now time.Time) bool {
+func scheduleInactive(repo *store.Repo, now time.Time) bool {
 	if repo == nil || repo.Private {
 		return false
 	}

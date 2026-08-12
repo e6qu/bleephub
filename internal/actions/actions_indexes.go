@@ -3,6 +3,8 @@ package actions
 import (
 	"context"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // This file holds the Actions hot-path indexes and the garbage collection of
@@ -87,7 +89,7 @@ func (s *Engine) startActionsJanitor(ctx context.Context) {
 func (s *Engine) SweepRetiredActionsJobs(now time.Time) int {
 	var planIDs []string
 	s.store.Mu.Lock()
-	var retired []*Job
+	var retired []*store.Job
 	for _, job := range s.store.Jobs {
 		if job.CompletedAt.IsZero() {
 			continue

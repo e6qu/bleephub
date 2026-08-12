@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // SubmitTriggeredWorkflow parses, expands, and submits one workflow file
@@ -12,8 +14,8 @@ import (
 // time (the run's workflow_id), and the workflow becomes visible to
 // other goroutines the moment it is stored — patching fields afterwards
 // would both mis-derive the file id and race those readers.
-func (s *Engine) SubmitTriggeredWorkflow(fileName string, content []byte, meta *WorkflowEventMeta) (*Workflow, error) {
-	wfDef, err := ParseWorkflow(content)
+func (s *Engine) SubmitTriggeredWorkflow(fileName string, content []byte, meta *WorkflowEventMeta) (*store.Workflow, error) {
+	wfDef, err := store.ParseWorkflow(content)
 	if err != nil {
 		return nil, fmt.Errorf("parse %s: %w", fileName, err)
 	}

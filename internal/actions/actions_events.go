@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // EventKind enumerates workflow/job lifecycle transitions that
@@ -25,10 +27,10 @@ const (
 // snapshots captured when the transition occurred.
 type actionsEvent struct {
 	kind        EventKind
-	wf          *Workflow
-	job         *WorkflowJob
-	wfSnapshot  *Workflow
-	jobSnapshot *WorkflowJob
+	wf          *store.Workflow
+	job         *store.WorkflowJob
+	wfSnapshot  *store.Workflow
+	jobSnapshot *store.WorkflowJob
 }
 
 // actionsEventLoop fans workflow/job transitions out to the checks
@@ -54,7 +56,7 @@ type actionsEventLoop struct {
 	stopped bool
 }
 
-func CloneWorkflowEventSnapshot(wf *Workflow) *Workflow {
+func CloneWorkflowEventSnapshot(wf *store.Workflow) *store.Workflow {
 	if wf == nil {
 		return nil
 	}
@@ -67,7 +69,7 @@ func CloneWorkflowEventSnapshot(wf *Workflow) *Workflow {
 	return &snapshot
 }
 
-func CloneWorkflowJobEventSnapshot(job *WorkflowJob) *WorkflowJob {
+func CloneWorkflowJobEventSnapshot(job *store.WorkflowJob) *store.WorkflowJob {
 	if job == nil {
 		return nil
 	}
@@ -119,7 +121,7 @@ func cloneActionsValue(value interface{}) interface{} {
 // QueueEvent snapshots and enqueues a transition. It is safe to call
 // while holding the store lock: admission takes only the event-loop mutex and
 // never waits for the consumer.
-func (s *Engine) QueueEvent(kind EventKind, wf *Workflow, job *WorkflowJob) {
+func (s *Engine) QueueEvent(kind EventKind, wf *store.Workflow, job *store.WorkflowJob) {
 	if wf == nil || wf.RepoFullName == "" {
 		return // runs without a repository have no checks surface
 	}
@@ -192,12 +194,12 @@ func (s *Engine) drainActionsEvents() {
 // OnActionsRunRequestedSnapshot creates the run's check suite plus one check
 // run per visible job, then emits check_suite + workflow_run "requested"
 // events from the immutable transition snapshot queued by the scheduler.
-func (s *Engine) OnActionsRunRequestedSnapshot(wf, snapshot *Workflow) {
+func (s *Engine) OnActionsRunRequestedSnapshot(wf, snapshot *store.Workflow) {
 	repoKey := wf.RepoFullName
 	branch := refShortName(wf.Ref)
 
-	suite := s.store.CreateCheckSuite(repoKey, branch, wf.Sha, githubActionsAppID)
-	s.store.UpdateCheckSuite(suite.ID, func(cs *CheckSuite) {
+	suite := s.store.CreateCheckSuite(repoKey, branch, wf.Sha, store.GithubActionsAppID)
+	s.store.UpdateCheckSuite(suite.ID, func(cs *store.CheckSuite) {
 		cs.WorkflowRunID = wf.RunID
 		cs.WorkflowRunBackendID = wf.ID
 		cs.WorkflowName = wf.Name
@@ -212,7 +214,7 @@ func (s *Engine) OnActionsRunRequestedSnapshot(wf, snapshot *Workflow) {
 	s.store.Mu.Unlock()
 
 	s.store.Mu.RLock()
-	jobs := make([]*WorkflowJob, 0, len(wf.Jobs))
+	jobs := make([]*store.WorkflowJob, 0, len(wf.Jobs))
 	for _, j := range wf.Jobs {
 		if !j.Hidden {
 			jobs = append(jobs, j)
@@ -221,17 +223,17 @@ func (s *Engine) OnActionsRunRequestedSnapshot(wf, snapshot *Workflow) {
 	s.store.Mu.RUnlock()
 
 	for _, j := range jobs {
-		cr := s.store.CreateCheckRun(repoKey, wf.Sha, j.DisplayName, githubActionsAppID, suite.ID)
+		cr := s.store.CreateCheckRun(repoKey, wf.Sha, j.DisplayName, store.GithubActionsAppID, suite.ID)
 		s.store.Mu.RLock()
 		jobStatus, jobResult := j.Status, j.Result
 		s.store.Mu.RUnlock()
 		now := time.Now().UTC()
-		s.store.UpdateCheckRun(cr.ID, func(c *CheckRun) {
+		s.store.UpdateCheckRun(cr.ID, func(c *store.CheckRun) {
 			c.ExternalID = j.JobID
 			c.DetailsURL = fmt.Sprintf("http://%s/%s/actions/runs/%d", s.addr, repoKey, wf.RunID)
 			// Jobs carried over from a previous attempt arrive already
 			// terminal; their check runs reflect that immediately.
-			if jobStatus == JobStatusCompleted || jobStatus == JobStatusSkipped {
+			if jobStatus == store.JobStatusCompleted || jobStatus == store.JobStatusSkipped {
 				c.Status = "completed"
 				c.Conclusion = resultToConclusion(jobResult)
 				c.CompletedAt = &now
@@ -251,7 +253,7 @@ func (s *Engine) OnActionsRunRequestedSnapshot(wf, snapshot *Workflow) {
 
 // OnActionsRunCompletedSnapshot rolls the suite up and emits completed events
 // from the immutable transition snapshot queued by the scheduler.
-func (s *Engine) OnActionsRunCompletedSnapshot(wf, snapshot *Workflow) {
+func (s *Engine) OnActionsRunCompletedSnapshot(wf, snapshot *store.Workflow) {
 	repoKey := wf.RepoFullName
 
 	s.store.Mu.RLock()
@@ -285,12 +287,12 @@ func (s *Engine) OnActionsRunCompletedSnapshot(wf, snapshot *Workflow) {
 }
 
 // updateJobCheckRun moves a job's check run to a new status.
-func (s *Engine) updateJobCheckRun(wf *Workflow, job *WorkflowJob, status, conclusion string) {
+func (s *Engine) updateJobCheckRun(wf *store.Workflow, job *store.WorkflowJob, status, conclusion string) {
 	id := jobCheckRunID(s, job)
 	if id == 0 {
 		return
 	}
-	s.store.UpdateCheckRun(id, func(c *CheckRun) {
+	s.store.UpdateCheckRun(id, func(c *store.CheckRun) {
 		c.Status = status
 		if conclusion != "" {
 			c.Conclusion = conclusion
@@ -300,7 +302,7 @@ func (s *Engine) updateJobCheckRun(wf *Workflow, job *WorkflowJob, status, concl
 
 // completeJobCheckRun finishes a job's check run with the job's result
 // and emits check_run completed.
-func (s *Engine) completeJobCheckRun(wf *Workflow, job *WorkflowJob) {
+func (s *Engine) completeJobCheckRun(wf *store.Workflow, job *store.WorkflowJob) {
 	id := jobCheckRunID(s, job)
 	if id == 0 {
 		return
@@ -309,7 +311,7 @@ func (s *Engine) completeJobCheckRun(wf *Workflow, job *WorkflowJob) {
 	result := job.Result
 	s.store.Mu.RUnlock()
 	now := time.Now().UTC()
-	s.store.UpdateCheckRun(id, func(c *CheckRun) {
+	s.store.UpdateCheckRun(id, func(c *store.CheckRun) {
 		c.Status = "completed"
 		c.Conclusion = resultToConclusion(result)
 		c.CompletedAt = &now
@@ -317,7 +319,7 @@ func (s *Engine) completeJobCheckRun(wf *Workflow, job *WorkflowJob) {
 	s.sink.CheckRunEvent(wf.RepoFullName, id, "completed")
 }
 
-func jobCheckRunID(s *Engine, job *WorkflowJob) int64 {
+func jobCheckRunID(s *Engine, job *store.WorkflowJob) int64 {
 	s.store.Mu.RLock()
 	defer s.store.Mu.RUnlock()
 	return job.CheckRunID
@@ -325,17 +327,17 @@ func jobCheckRunID(s *Engine, job *WorkflowJob) int64 {
 
 // resultToConclusion maps an engine Result onto GitHub's check
 // conclusion vocabulary.
-func resultToConclusion(r Result) string {
+func resultToConclusion(r store.Result) string {
 	switch r {
-	case ResultSuccess:
+	case store.ResultSuccess:
 		return "success"
-	case ResultFailure:
+	case store.ResultFailure:
 		return "failure"
-	case ResultCancelled:
+	case store.ResultCancelled:
 		return "cancelled"
-	case ResultSkipped:
+	case store.ResultSkipped:
 		return "skipped"
-	case ResultStartupFailure:
+	case store.ResultStartupFailure:
 		return "startup_failure"
 	default:
 		return ""

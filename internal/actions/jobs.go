@@ -3,6 +3,7 @@ package actions
 import (
 	"fmt"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/google/uuid"
 )
 
@@ -22,14 +23,14 @@ type SubmitStep struct {
 
 // ExpandMatrixJobs expands matrix strategies in a WorkflowDef, creating
 // multiple job entries per matrix combination.
-func ExpandMatrixJobs(wf *WorkflowDef) *WorkflowDef {
-	expanded := &WorkflowDef{
+func ExpandMatrixJobs(wf *store.WorkflowDef) *store.WorkflowDef {
+	expanded := &store.WorkflowDef{
 		Name:        wf.Name,
 		RunName:     wf.RunName,
 		Env:         wf.Env,
 		Permissions: wf.Permissions,
 		Defaults:    wf.Defaults,
-		Jobs:        make(map[string]*JobDef),
+		Jobs:        make(map[string]*store.JobDef),
 		Concurrency: wf.Concurrency,
 	}
 

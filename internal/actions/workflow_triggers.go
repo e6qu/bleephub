@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	gitStorage "github.com/go-git/go-git/v5/storage"
@@ -25,7 +26,7 @@ type TriggerDef struct {
 	PathsIgnore    []string
 	Types          []string
 	// Inputs carries workflow_dispatch / workflow_call input declarations.
-	Inputs map[string]*WorkflowInputDef
+	Inputs map[string]*store.WorkflowInputDef
 	// Schedules carries every cron line together with its optional IANA
 	// timezone. GitHub evaluates each entry independently and exposes the
 	// matching cron expression through github.event.schedule.
@@ -157,16 +158,16 @@ func parseTriggerDef(event string, node *yaml.Node) (*TriggerDef, error) {
 		return td, nil
 	}
 	var raw struct {
-		Branches       []string                          `yaml:"branches"`
-		BranchesIgnore []string                          `yaml:"branches-ignore"`
-		Tags           []string                          `yaml:"tags"`
-		TagsIgnore     []string                          `yaml:"tags-ignore"`
-		Paths          []string                          `yaml:"paths"`
-		PathsIgnore    []string                          `yaml:"paths-ignore"`
-		Types          []string                          `yaml:"types"`
-		Inputs         map[string]*WorkflowInputDef      `yaml:"inputs"`
-		Outputs        map[string]*workflowCallOutputDef `yaml:"outputs"`
-		Secrets        map[string]*WorkflowCallSecretDef `yaml:"secrets"`
+		Branches       []string                           `yaml:"branches"`
+		BranchesIgnore []string                           `yaml:"branches-ignore"`
+		Tags           []string                           `yaml:"tags"`
+		TagsIgnore     []string                           `yaml:"tags-ignore"`
+		Paths          []string                           `yaml:"paths"`
+		PathsIgnore    []string                           `yaml:"paths-ignore"`
+		Types          []string                           `yaml:"types"`
+		Inputs         map[string]*store.WorkflowInputDef `yaml:"inputs"`
+		Outputs        map[string]*workflowCallOutputDef  `yaml:"outputs"`
+		Secrets        map[string]*WorkflowCallSecretDef  `yaml:"secrets"`
 	}
 	if err := node.Decode(&raw); err != nil {
 		return nil, fmt.Errorf("invalid trigger filters: %w", err)

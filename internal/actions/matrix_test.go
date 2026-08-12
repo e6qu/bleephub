@@ -2,10 +2,12 @@ package actions
 
 import (
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func TestExpandMatrix2x2(t *testing.T) {
-	m := &MatrixDef{
+	m := &store.MatrixDef{
 		Values: map[string][]interface{}{
 			"os": {"ubuntu", "macos"},
 			"go": {"1.21", "1.22"},
@@ -30,7 +32,7 @@ func TestExpandMatrix2x2(t *testing.T) {
 }
 
 func TestExpandMatrixWithInclude(t *testing.T) {
-	m := &MatrixDef{
+	m := &store.MatrixDef{
 		Values: map[string][]interface{}{
 			"os": {"ubuntu"},
 			"go": {"1.21", "1.22"},
@@ -46,7 +48,7 @@ func TestExpandMatrixWithInclude(t *testing.T) {
 }
 
 func TestExpandMatrixWithExclude(t *testing.T) {
-	m := &MatrixDef{
+	m := &store.MatrixDef{
 		Values: map[string][]interface{}{
 			"os": {"ubuntu", "macos"},
 			"go": {"1.21", "1.22"},
@@ -69,7 +71,7 @@ func TestExpandMatrixWithExclude(t *testing.T) {
 }
 
 func TestExpandMatrixEmpty(t *testing.T) {
-	m := &MatrixDef{}
+	m := &store.MatrixDef{}
 	combos := ExpandMatrix(m)
 	if combos != nil {
 		t.Errorf("combos = %v, want nil", combos)
@@ -105,7 +107,7 @@ func TestMatrixJobNameUsesDeclarationOrder(t *testing.T) {
 }
 
 func TestMatrixMatchingPreservesValueTypes(t *testing.T) {
-	m := &MatrixDef{
+	m := &store.MatrixDef{
 		Values:  map[string][]interface{}{"version": {float64(1), "1"}},
 		Exclude: []map[string]interface{}{{"version": float64(1)}},
 	}
@@ -116,7 +118,7 @@ func TestMatrixMatchingPreservesValueTypes(t *testing.T) {
 }
 
 func TestParsedMatrixRetainsYAMLKeyOrder(t *testing.T) {
-	def, err := ParseWorkflow([]byte(`name: order
+	def, err := store.ParseWorkflow([]byte(`name: order
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -141,7 +143,7 @@ jobs:
 }
 
 func TestExpandMatrixSingle(t *testing.T) {
-	m := &MatrixDef{
+	m := &store.MatrixDef{
 		Values: map[string][]interface{}{
 			"version": {"1.0"},
 		},
@@ -156,7 +158,7 @@ func TestExpandMatrixSingle(t *testing.T) {
 }
 
 func TestExpandMatrixIncludeExtraKey(t *testing.T) {
-	m := &MatrixDef{
+	m := &store.MatrixDef{
 		Values: map[string][]interface{}{
 			"os": {"ubuntu"},
 		},

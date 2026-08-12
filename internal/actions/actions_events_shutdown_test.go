@@ -68,8 +68,8 @@ func TestActionsEventDrainFlushesQueueOnShutdown(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	e.Start(ctx)
 
-	wf := &Workflow{ID: "wf-shutdown-flush", RepoFullName: "owner/repo"}
-	job := &WorkflowJob{JobID: "job-1", DisplayName: "build"}
+	wf := &store.Workflow{ID: "wf-shutdown-flush", RepoFullName: "owner/repo"}
+	job := &store.WorkflowJob{JobID: "job-1", DisplayName: "build"}
 	for i := 0; i < queued; i++ {
 		e.QueueEvent(EvJobQueued, wf, job)
 	}
@@ -96,7 +96,7 @@ func TestActionsEventDrainStopsPromptlyWhenIdle(t *testing.T) {
 
 	// One event lazily starts the drain; receiving its emission proves the
 	// drain is past processing and idle (or about to re-check its predicate).
-	e.QueueEvent(EvJobQueued, &Workflow{ID: "wf-idle", RepoFullName: "owner/repo"}, &WorkflowJob{JobID: "job-1"})
+	e.QueueEvent(EvJobQueued, &store.Workflow{ID: "wf-idle", RepoFullName: "owner/repo"}, &store.WorkflowJob{JobID: "job-1"})
 	<-sink.notify
 
 	cancel()

@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // ExprContext holds the evaluation context for GitHub Actions expressions.
@@ -85,7 +87,7 @@ func EvalTemplate(s string, ctx *ExprContext) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		out.WriteString(exprToString(v))
+		out.WriteString(store.ExprToString(v))
 		s = s[start+end+2:]
 	}
 }
@@ -589,37 +591,37 @@ func (p *exprParser) callFunction(name string, args []interface{}) (interface{},
 			}
 			return false, nil
 		}
-		return strings.Contains(strings.ToLower(exprToString(args[0])), strings.ToLower(exprToString(args[1]))), nil
+		return strings.Contains(strings.ToLower(store.ExprToString(args[0])), strings.ToLower(store.ExprToString(args[1]))), nil
 	case "startswith":
 		if err := wantArgs("startsWith", args, 2); err != nil {
 			return nil, err
 		}
-		return strings.HasPrefix(strings.ToLower(exprToString(args[0])), strings.ToLower(exprToString(args[1]))), nil
+		return strings.HasPrefix(strings.ToLower(store.ExprToString(args[0])), strings.ToLower(store.ExprToString(args[1]))), nil
 	case "endswith":
 		if err := wantArgs("endsWith", args, 2); err != nil {
 			return nil, err
 		}
-		return strings.HasSuffix(strings.ToLower(exprToString(args[0])), strings.ToLower(exprToString(args[1]))), nil
+		return strings.HasSuffix(strings.ToLower(store.ExprToString(args[0])), strings.ToLower(store.ExprToString(args[1]))), nil
 	case "format":
 		if len(args) < 1 {
 			return nil, fmt.Errorf("format() needs a format string")
 		}
-		return exprFormat(exprToString(args[0]), args[1:])
+		return exprFormat(store.ExprToString(args[0]), args[1:])
 	case "join":
 		if len(args) < 1 || len(args) > 2 {
 			return nil, fmt.Errorf("join() takes 1 or 2 arguments, got %d", len(args))
 		}
 		sep := ","
 		if len(args) == 2 {
-			sep = exprToString(args[1])
+			sep = store.ExprToString(args[1])
 		}
 		arr, ok := args[0].([]interface{})
 		if !ok {
-			return exprToString(args[0]), nil
+			return store.ExprToString(args[0]), nil
 		}
 		parts := make([]string, 0, len(arr))
 		for _, item := range arr {
-			parts = append(parts, exprToString(item))
+			parts = append(parts, store.ExprToString(item))
 		}
 		return strings.Join(parts, sep), nil
 	case "tojson":
@@ -636,7 +638,7 @@ func (p *exprParser) callFunction(name string, args []interface{}) (interface{},
 			return nil, err
 		}
 		var v interface{}
-		if err := json.Unmarshal([]byte(exprToString(args[0])), &v); err != nil {
+		if err := json.Unmarshal([]byte(store.ExprToString(args[0])), &v); err != nil {
 			return nil, fmt.Errorf("fromJSON: %w", err)
 		}
 		return v, nil
@@ -677,7 +679,7 @@ func exprFormat(f string, args []interface{}) (string, error) {
 			if err != nil || idx < 0 || idx >= len(args) {
 				return "", fmt.Errorf("format(): invalid placeholder {%s}", f[i+1:i+end])
 			}
-			out.WriteString(exprToString(args[idx]))
+			out.WriteString(store.ExprToString(args[idx]))
 			i += end
 		case f[i] == '}':
 			return "", fmt.Errorf("format(): unmatched '}' in %q", f)

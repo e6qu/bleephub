@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	gitStorage "github.com/go-git/go-git/v5/storage"
@@ -30,7 +31,7 @@ const maxWorkflowCallDepth = 4
 //
 // repoKey provides the resolution context for "./" references; depth
 // starts at 1 for the top-level workflow.
-func (s *Engine) expandReusableWorkflows(def *WorkflowDef, repoKey string, depth int) (*WorkflowDef, error) {
+func (s *Engine) expandReusableWorkflows(def *store.WorkflowDef, repoKey string, depth int) (*store.WorkflowDef, error) {
 	hasCalls := false
 	for _, jd := range def.Jobs {
 		if jd.Uses != "" {
@@ -45,14 +46,14 @@ func (s *Engine) expandReusableWorkflows(def *WorkflowDef, repoKey string, depth
 		return nil, fmt.Errorf("reusable workflows nested deeper than %d levels", maxWorkflowCallDepth)
 	}
 
-	out := &WorkflowDef{
+	out := &store.WorkflowDef{
 		Name:        def.Name,
 		RunName:     def.RunName,
 		Env:         def.Env,
 		Permissions: def.Permissions,
 		Defaults:    def.Defaults,
 		Concurrency: def.Concurrency,
-		Jobs:        make(map[string]*JobDef, len(def.Jobs)),
+		Jobs:        make(map[string]*store.JobDef, len(def.Jobs)),
 	}
 	for key, jd := range def.Jobs {
 		if jd.Uses == "" {
@@ -70,7 +71,7 @@ func (s *Engine) expandReusableWorkflows(def *WorkflowDef, repoKey string, depth
 }
 
 // expandOneCall expands a single `uses:` job into out.
-func (s *Engine) expandOneCall(out *WorkflowDef, callerKey string, caller *JobDef, repoKey string, depth int) error {
+func (s *Engine) expandOneCall(out *store.WorkflowDef, callerKey string, caller *store.JobDef, repoKey string, depth int) error {
 	calledRepo, calledPath, calledYAML, err := s.resolveCalledWorkflow(repoKey, caller.Uses)
 	if err != nil {
 		return err
@@ -84,7 +85,7 @@ func (s *Engine) expandOneCall(out *WorkflowDef, callerKey string, caller *JobDe
 	if !isCallable {
 		return fmt.Errorf("called workflow %s does not declare on: workflow_call", calledPath)
 	}
-	var inputDefs map[string]*WorkflowInputDef
+	var inputDefs map[string]*store.WorkflowInputDef
 	var outputDefs map[string]string
 	var secretDefs map[string]*WorkflowCallSecretDef
 	if callDef != nil {
@@ -117,7 +118,7 @@ func (s *Engine) expandOneCall(out *WorkflowDef, callerKey string, caller *JobDe
 		}
 	}
 
-	calledDef, err := ParseWorkflow(calledYAML)
+	calledDef, err := store.ParseWorkflow(calledYAML)
 	if err != nil {
 		return fmt.Errorf("called workflow %s: %w", calledPath, err)
 	}
@@ -127,7 +128,7 @@ func (s *Engine) expandOneCall(out *WorkflowDef, callerKey string, caller *JobDe
 		return fmt.Errorf("called workflow %s: %w", calledPath, err)
 	}
 
-	binding := &WorkflowCallBinding{
+	binding := &store.WorkflowCallBinding{
 		CallerKey:      callerKey,
 		CalledPath:     calledPath,
 		CalledRepo:     calledRepo,
@@ -144,7 +145,7 @@ func (s *Engine) expandOneCall(out *WorkflowDef, callerKey string, caller *JobDe
 	}
 
 	gateKey := callerKey + "/__call"
-	out.Jobs[gateKey] = &JobDef{
+	out.Jobs[gateKey] = &store.JobDef{
 		Name:            callerDisplay,
 		Needs:           caller.Needs,
 		If:              caller.If,
@@ -182,7 +183,7 @@ func (s *Engine) expandOneCall(out *WorkflowDef, callerKey string, caller *JobDe
 		collectorNeeds = append(collectorNeeds, childKey)
 	}
 
-	out.Jobs[callerKey] = &JobDef{
+	out.Jobs[callerKey] = &store.JobDef{
 		Name:            callerDisplay,
 		Needs:           collectorNeeds,
 		Call:            binding,
@@ -214,7 +215,7 @@ func (s *Engine) resolveCalledWorkflow(repoKey, uses string) (calledRepo, called
 		return repoKey, path, content, nil
 	}
 
-	nameWithOwner, path, ref, isLocal := ParseActionRef(uses)
+	nameWithOwner, path, ref, isLocal := store.ParseActionRef(uses)
 	if isLocal || nameWithOwner == "" || path == "" {
 		return "", "", nil, fmt.Errorf("invalid reusable workflow reference %q", uses)
 	}
@@ -286,22 +287,22 @@ func gitFileAtRef(stor gitStorage.Storer, ref, path string) ([]byte, error) {
 
 // completeServerJob finishes a synthetic gate/collector node in place.
 // Callers hold the store write lock.
-func (s *Engine) completeServerJobLocked(wf *Workflow, wfJob *WorkflowJob) {
+func (s *Engine) completeServerJobLocked(wf *store.Workflow, wfJob *store.WorkflowJob) {
 	jd := wfJob.Def
 	switch jd.CallRole {
 	case "gate":
 		if !s.ResolveCallInputsLocked(wf, wfJob) {
-			wfJob.Status = JobStatusCompleted
-			wfJob.Result = ResultFailure
+			wfJob.Status = store.JobStatusCompleted
+			wfJob.Result = store.ResultFailure
 			break
 		}
-		wfJob.Status = JobStatusCompleted
-		wfJob.Result = ResultSuccess
+		wfJob.Status = store.JobStatusCompleted
+		wfJob.Result = store.ResultSuccess
 	case "collector":
 		s.collectCallOutputsLocked(wf, wfJob)
 	default:
-		wfJob.Status = JobStatusCompleted
-		wfJob.Result = ResultSuccess
+		wfJob.Status = store.JobStatusCompleted
+		wfJob.Result = store.ResultSuccess
 	}
 	wfJob.CompletedAt = time.Now()
 	if wfJob.StartedAt.IsZero() {
@@ -312,7 +313,7 @@ func (s *Engine) completeServerJobLocked(wf *Workflow, wfJob *WorkflowJob) {
 // ResolveCallInputsLocked evaluates the caller's `with:` templates with
 // the contexts available to jobs.<id>.with (github, needs, vars, inputs,
 // matrix) and applies the called workflow's defaults and typing.
-func (s *Engine) ResolveCallInputsLocked(wf *Workflow, gate *WorkflowJob) bool {
+func (s *Engine) ResolveCallInputsLocked(wf *store.Workflow, gate *store.WorkflowJob) bool {
 	binding := gate.Def.Call
 	if binding == nil {
 		return true
@@ -352,7 +353,7 @@ func (s *Engine) ResolveCallInputsLocked(wf *Workflow, gate *WorkflowJob) bool {
 			continue
 		}
 		if def.Default != nil {
-			resolved[name] = normalizeYAMLValue(def.Default)
+			resolved[name] = store.NormalizeYAMLValue(def.Default)
 		} else if def.Type == "boolean" {
 			resolved[name] = false
 		}
@@ -363,7 +364,7 @@ func (s *Engine) ResolveCallInputsLocked(wf *Workflow, gate *WorkflowJob) bool {
 
 // TypedCallInput converts a resolved string input to the declared type without
 // accepting prefixes or truthy spellings that GitHub's input contract rejects.
-func TypedCallInput(def *WorkflowInputDef, val string) (interface{}, error) {
+func TypedCallInput(def *store.WorkflowInputDef, val string) (interface{}, error) {
 	if def == nil {
 		return val, nil
 	}
@@ -385,7 +386,7 @@ func TypedCallInput(def *WorkflowInputDef, val string) (interface{}, error) {
 		return f, nil
 	case "choice":
 		for _, option := range def.Options {
-			if fmt.Sprint(normalizeYAMLValue(option)) == val {
+			if fmt.Sprint(store.NormalizeYAMLValue(option)) == val {
 				return val, nil
 			}
 		}
@@ -399,7 +400,7 @@ func TypedCallInput(def *WorkflowInputDef, val string) (interface{}, error) {
 // the workflow_call output templates against the called jobs' results;
 // the node reports skipped when every called job skipped (mirroring the
 // caller job's state on real GitHub).
-func (s *Engine) collectCallOutputsLocked(wf *Workflow, collector *WorkflowJob) {
+func (s *Engine) collectCallOutputsLocked(wf *store.Workflow, collector *store.WorkflowJob) {
 	binding := collector.Def.Call
 	allSkipped := true
 	jobsCtx := make(map[string]interface{})
@@ -409,7 +410,7 @@ func (s *Engine) collectCallOutputsLocked(wf *Workflow, collector *WorkflowJob) 
 			if !ok {
 				continue
 			}
-			if called.Status != JobStatusSkipped {
+			if called.Status != store.JobStatusSkipped {
 				allSkipped = false
 			}
 			outputs := make(map[string]interface{}, len(called.Outputs))
@@ -426,13 +427,13 @@ func (s *Engine) collectCallOutputsLocked(wf *Workflow, collector *WorkflowJob) 
 	}
 
 	if allSkipped {
-		collector.Status = JobStatusSkipped
-		collector.Result = ResultSkipped
+		collector.Status = store.JobStatusSkipped
+		collector.Result = store.ResultSkipped
 		return
 	}
 
-	collector.Status = JobStatusCompleted
-	collector.Result = ResultSuccess
+	collector.Status = store.JobStatusCompleted
+	collector.Result = store.ResultSuccess
 	if binding == nil || len(binding.OutputDefs) == 0 {
 		return
 	}
@@ -445,8 +446,8 @@ func (s *Engine) collectCallOutputsLocked(wf *Workflow, collector *WorkflowJob) 
 		val, err := EvalTemplate(tmpl, ctx)
 		if err != nil {
 			s.logger.Warn().Err(err).Str("output", name).Msg("workflow_call output template failed")
-			collector.Status = JobStatusCompleted
-			collector.Result = ResultFailure
+			collector.Status = store.JobStatusCompleted
+			collector.Result = store.ResultFailure
 			return
 		}
 		collector.Outputs[name] = val
