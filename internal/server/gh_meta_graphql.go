@@ -8,6 +8,8 @@ import (
 
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/graphql/language/ast"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 func stringScalar(name string) *graphql.Scalar {
@@ -149,10 +151,10 @@ func (s *Server) addMetaFieldsToSchema(queryType *graphql.Object) {
 			"url":          &graphql.Field{Type: uri},
 		},
 	})
-	codeOfConductJSON := func(c codeOfConduct) map[string]interface{} {
+	codeOfConductJSON := func(c store.CodeOfConduct) map[string]interface{} {
 		return map[string]interface{}{
-			"body": c.body, "id": "COC_" + c.key, "key": c.key, "name": c.name,
-			"resourcePath": "/codes_of_conduct/" + c.key, "url": nil,
+			"body": c.Body, "id": "COC_" + c.Key, "key": c.Key, "name": c.Name,
+			"resourcePath": "/codes_of_conduct/" + c.Key, "url": nil,
 		}
 	}
 	queryType.AddFieldConfig("codeOfConduct", &graphql.Field{
@@ -165,8 +167,8 @@ func (s *Server) addMetaFieldsToSchema(queryType *graphql.Object) {
 			if !ok {
 				return nil, nil
 			}
-			for _, c := range codesOfConductCatalog {
-				if c.key == key {
+			for _, c := range store.CodesOfConductCatalog {
+				if c.Key == key {
 					return codeOfConductJSON(c), nil
 				}
 			}
@@ -176,8 +178,8 @@ func (s *Server) addMetaFieldsToSchema(queryType *graphql.Object) {
 	queryType.AddFieldConfig("codesOfConduct", &graphql.Field{
 		Type: graphql.NewList(codeOfConductType),
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			out := make([]interface{}, 0, len(codesOfConductCatalog))
-			for _, c := range codesOfConductCatalog {
+			out := make([]interface{}, 0, len(store.CodesOfConductCatalog))
+			for _, c := range store.CodesOfConductCatalog {
 				out = append(out, codeOfConductJSON(c))
 			}
 			return out, nil

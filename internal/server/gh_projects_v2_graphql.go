@@ -102,13 +102,13 @@ func (s *Server) projectV2OwnerByID(ownerID int, ownerType string) *projectV2Own
 		if org == nil {
 			return nil
 		}
-		return &projectV2Owner{id: org.ID, ownerType: "Organization", login: org.Login, org: org}
+		return &projectV2Owner{ID: org.ID, OwnerType: "Organization", Login: org.Login, Org: org}
 	}
 	u := s.store.GetUserByID(ownerID)
 	if u == nil {
 		return nil
 	}
-	return &projectV2Owner{id: u.ID, ownerType: "User", login: u.Login, user: u}
+	return &projectV2Owner{ID: u.ID, OwnerType: "User", Login: u.Login, User: u}
 }
 
 // viewerCanReadProjectContent reports whether the request may read the issue or

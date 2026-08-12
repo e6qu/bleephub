@@ -13,6 +13,18 @@ import (
 // implementation covers what `gh project create`, `gh project item-add`,
 // and `gh issue view --json projectItems` actually exercise.
 
+// ProjectV2Owner is the resolved owner (org or user) of a Projects v2
+// project. Both the REST layer and the GraphQL resolver layer resolve
+// project owners into this record before running the shared access
+// predicates. (Moved from the server layer in ARCH-003.)
+type ProjectV2Owner struct {
+	ID        int
+	OwnerType string // "Organization" or "User"
+	Login     string
+	Org       *Org
+	User      *User
+}
+
 // ProjectV2 is a Projects v2 project. Per real GH: each project belongs
 // to a user or organization (the owner) and has a stable per-owner
 // `number` plus a globally unique `nodeID`.

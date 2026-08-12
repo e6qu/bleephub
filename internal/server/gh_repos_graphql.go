@@ -1849,3 +1849,13 @@ func (s *Server) gqlRefType() *graphql.Object {
 	})
 	return s.graphqlTypes.ref
 }
+
+// nullableTimePtr renders an optional timestamp as RFC3339 or JSON null
+// (moved here from the repos REST file in ARCH-003; its only callers are
+// GraphQL renderers).
+func nullableTimePtr(t *time.Time) interface{} {
+	if t == nil || t.IsZero() {
+		return nil
+	}
+	return t.UTC().Format(time.RFC3339)
+}

@@ -51,15 +51,8 @@ func (s *Server) registerGHProjectsV2Routes() {
 // ---------------------------------------------------------------------------
 // Owner resolution + access control
 
-// projectV2Owner is the resolved owner (org or user) of a Projects v2
-// project addressed by a REST path.
-type projectV2Owner struct {
-	id        int
-	ownerType string // "Organization" or "User"
-	login     string
-	org       *Org
-	user      *User
-}
+// projectV2Owner (= store.ProjectV2Owner — ARCH-003) is the resolved owner
+// (org or user) of a Projects v2 project addressed by a REST path.
 
 func (s *Server) projectV2OrgOwner(w http.ResponseWriter, r *http.Request) (*projectV2Owner, bool) {
 	org := s.store.GetOrg(r.PathValue("org"))
@@ -67,7 +60,7 @@ func (s *Server) projectV2OrgOwner(w http.ResponseWriter, r *http.Request) (*pro
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil, false
 	}
-	return &projectV2Owner{id: org.ID, ownerType: "Organization", login: org.Login, org: org}, true
+	return &projectV2Owner{ID: org.ID, OwnerType: "Organization", Login: org.Login, Org: org}, true
 }
 
 func (s *Server) projectV2UserOwnerByLogin(w http.ResponseWriter, r *http.Request) (*projectV2Owner, bool) {
@@ -76,7 +69,7 @@ func (s *Server) projectV2UserOwnerByLogin(w http.ResponseWriter, r *http.Reques
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil, false
 	}
-	return &projectV2Owner{id: u.ID, ownerType: "User", login: u.Login, user: u}, true
+	return &projectV2Owner{ID: u.ID, OwnerType: "User", Login: u.Login, User: u}, true
 }
 
 func (s *Server) projectV2UserOwnerByID(w http.ResponseWriter, r *http.Request) (*projectV2Owner, bool) {
@@ -90,7 +83,7 @@ func (s *Server) projectV2UserOwnerByID(w http.ResponseWriter, r *http.Request) 
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil, false
 	}
-	return &projectV2Owner{id: u.ID, ownerType: "User", login: u.Login, user: u}, true
+	return &projectV2Owner{ID: u.ID, OwnerType: "User", Login: u.Login, User: u}, true
 }
 
 // canReadProjectV2: public projects are visible to any caller; private
@@ -113,7 +106,7 @@ func (s *Server) canWriteProjectV2(ctx context.Context, user *User, owner *proje
 // projectV2OwnerReachable is the shared body: the credential's grant over the
 // owning account, then the caller's own standing on it.
 //
-// The owning-user arm used to be `user.ID == owner.id` alone, which is a fact
+// The owning-user arm used to be `user.ID == owner.ID` alone, which is a fact
 // about the bearer and says nothing about the app speaking for them — a
 // user-to-server token of an app installed nowhere created projects under its
 // bearer's account where the same app's installation token was refused.
@@ -121,16 +114,16 @@ func (s *Server) projectV2OwnerReachable(ctx context.Context, user *User, owner 
 	if user == nil || owner == nil {
 		return false
 	}
-	if !s.credentialGrantsAccount(ctx, anyAccount, owner.login, scopeProjects, level) {
+	if !s.credentialGrantsAccount(ctx, anyAccount, owner.Login, scopeProjects, level) {
 		return false
 	}
 	if user.SiteAdmin {
 		return true
 	}
-	if owner.ownerType == "User" {
-		return user.ID == owner.id
+	if owner.OwnerType == "User" {
+		return user.ID == owner.ID
 	}
-	return s.viewerIsOrgMember(ctx, owner.login)
+	return s.viewerIsOrgMember(ctx, owner.Login)
 }
 
 // projectV2FromRequest resolves {project_number} for the owner and
@@ -142,7 +135,7 @@ func (s *Server) projectV2FromRequest(w http.ResponseWriter, r *http.Request, ow
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil, false
 	}
-	p := s.store.ProjectsV2.GetProjectByOwnerNumber(owner.id, owner.ownerType, number)
+	p := s.store.ProjectsV2.GetProjectByOwnerNumber(owner.ID, owner.OwnerType, number)
 	if p == nil || !s.canReadProjectV2(r.Context(), ghUserFromContext(r.Context()), owner, p) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil, false
@@ -263,10 +256,10 @@ func setCursorLinkHeader(w http.ResponseWriter, r *http.Request, pi cursorPageIn
 // and item_url members.
 func (s *Server) projectV2APIURL(r *http.Request, owner *projectV2Owner, number int) string {
 	base := s.baseURL(r)
-	if owner.ownerType == "Organization" {
-		return base + "/api/v3/orgs/" + owner.login + "/projectsV2/" + strconv.Itoa(number)
+	if owner.OwnerType == "Organization" {
+		return base + "/api/v3/orgs/" + owner.Login + "/projectsV2/" + strconv.Itoa(number)
 	}
-	return base + "/api/v3/users/" + owner.login + "/projectsV2/" + strconv.Itoa(number)
+	return base + "/api/v3/users/" + owner.Login + "/projectsV2/" + strconv.Itoa(number)
 }
 
 // projectV2CreatorJSON renders the creating user; a creator that no
@@ -277,10 +270,10 @@ func (s *Server) projectV2CreatorJSON(creatorID int) map[string]interface{} {
 
 func (s *Server) projectV2JSON(p *ProjectV2, owner *projectV2Owner) map[string]interface{} {
 	var ownerJSON map[string]interface{}
-	if owner.org != nil {
-		ownerJSON = orgAsSimpleUserJSON(owner.org)
-	} else if owner.user != nil {
-		ownerJSON = userToJSON(owner.user)
+	if owner.Org != nil {
+		ownerJSON = orgAsSimpleUserJSON(owner.Org)
+	} else if owner.User != nil {
+		ownerJSON = userToJSON(owner.User)
 	}
 	state := "open"
 	var closedAt interface{}
@@ -503,9 +496,9 @@ func (s *Server) projectV2ViewJSON(r *http.Request, v *ProjectV2View, owner *pro
 	if visible == nil {
 		visible = []int{}
 	}
-	ownerPath := "/users/" + owner.login
-	if owner.ownerType == "Organization" {
-		ownerPath = "/orgs/" + owner.login
+	ownerPath := "/users/" + owner.Login
+	if owner.OwnerType == "Organization" {
+		ownerPath = "/orgs/" + owner.Login
 	}
 	return map[string]interface{}{
 		"id":                v.ID,
@@ -683,7 +676,7 @@ func parseProjectV2FieldsParam(w http.ResponseWriter, r *http.Request) ([]int, b
 func (s *Server) serveProjectsV2List(w http.ResponseWriter, r *http.Request, owner *projectV2Owner) {
 	user := ghUserFromContext(r.Context())
 	q := r.URL.Query().Get("q")
-	all := s.store.ProjectsV2.ListProjectsForOwner(owner.id, owner.ownerType)
+	all := s.store.ProjectsV2.ListProjectsForOwner(owner.ID, owner.OwnerType)
 	visible := make([]*ProjectV2, 0, len(all))
 	for _, p := range all {
 		if !s.canReadProjectV2(r.Context(), user, owner, p) {
@@ -1334,7 +1327,7 @@ func (s *Server) handleAuthenticatedUserProjectV2CreateDraft(w http.ResponseWrit
 		return
 	}
 	user := ghUserFromContext(r.Context())
-	if user == nil || (user.ID != owner.id && !user.SiteAdmin) {
+	if user == nil || (user.ID != owner.ID && !user.SiteAdmin) {
 		writeGHError(w, http.StatusForbidden, "Must be the addressed user.")
 		return
 	}

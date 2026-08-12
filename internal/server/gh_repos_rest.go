@@ -1188,13 +1188,6 @@ func jsonObject[K comparable, V any](m map[K]V) map[K]V {
 	return m
 }
 
-func nullableTimePtr(t *time.Time) interface{} {
-	if t == nil || t.IsZero() {
-		return nil
-	}
-	return t.UTC().Format(time.RFC3339)
-}
-
 func repoOrganizationJSON(repo *Repo, st *Store) interface{} {
 	if repo.OwnerType != "Organization" {
 		return nil

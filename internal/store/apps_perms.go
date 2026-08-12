@@ -31,3 +31,27 @@ const (
 	ScopePATs              PermScope = "organization_personal_access_tokens"
 	ScopeCopilotSpaces     PermScope = "copilot_spaces"
 )
+
+// PermLevel is the entitlement level a credential holds for a PermScope.
+// Level ordering: read < write < admin. "admin" implies write; "write"
+// implies read. (Moved from the server layer in ARCH-003 so the GraphQL
+// resolver layer and the HTTP layer share one definition.)
+type PermLevel int
+
+const (
+	PermRead PermLevel = iota
+	PermWrite
+	PermAdmin
+)
+
+// AccountKind distinguishes the two account namespaces an entitlement can
+// target. Users and organizations are separate namespaces sharing one login
+// space, so authorization checks must not match on login alone.
+// AnyAccount is for resources that hang off an account of either kind,
+// such as a ProjectV2. (Moved from the server layer in ARCH-003.)
+type AccountKind int
+
+const (
+	AnyAccount AccountKind = iota
+	OrganizationAccount
+)
