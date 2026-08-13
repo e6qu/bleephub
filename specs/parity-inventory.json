@@ -5318,6 +5318,15 @@
         "status_kind": "open"
       },
       {
+        "category": "WEB",
+        "finding": "Repo Insights was missing GitHub's **Code frequency** subtab (weekly additions/deletions over the last year); the page rendered Community/Contributors/Commit-activity/Traffic but not code frequency, despite `GET /repos/{o}/{r}/stats/code_frequency` being wired",
+        "id": "WEB-085",
+        "location": "web/src/pages/InsightsPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added a CodeFrequencySection (fetchCodeFrequency + GithubCodeFrequencyWeek) rendering the additions/deletions summary and an accessible per-week bar chart (role=img + aria-label, theme-safe --gh-open-solid/--gh-closed for both modes); InsightsPage is already in the a11y theme sweep so both themes are axe-checked; unit test asserts the +/\u2212 totals",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -6734,23 +6743,23 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 69,
+            "fixed": 70,
             "open": 4
           },
-          "total": 75
+          "total": 76
         }
       },
       "severity": {
         "blocker": 167,
         "major": 383,
-        "minor": 154
+        "minor": 155
       },
       "status": {
         "deferred": 3,
-        "fixed": 697,
+        "fixed": 698,
         "open": 4
       },
-      "total": 704
+      "total": 705
     }
   },
   "rest": {

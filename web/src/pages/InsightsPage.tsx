@@ -5,6 +5,7 @@ import {
   fetchRepoContributors,
   fetchCommunityProfile,
   fetchCommitActivity,
+  fetchCodeFrequency,
   fetchTrafficViews,
   fetchTrafficClones,
   fetchTrafficPopularPaths,
@@ -27,6 +28,7 @@ export function InsightsPage() {
         <CommunityProfileSection owner={owner} repo={repo} />
         <ContributorsSection owner={owner} repo={repo} />
         <CommitActivitySection owner={owner} repo={repo} />
+        <CodeFrequencySection owner={owner} repo={repo} />
         <TrafficSection owner={owner} repo={repo} />
         <PopularContentSection owner={owner} repo={repo} />
       </div>
@@ -167,6 +169,72 @@ function CommitActivitySection({ owner, repo }: { owner: string; repo: string })
                       borderRadius: "1px 1px 0 0",
                     }}
                   />
+                ))}
+              </div>
+            </div>
+          </Box>
+        ))}
+    </section>
+  );
+}
+
+function CodeFrequencySection({ owner, repo }: { owner: string; repo: string }) {
+  const { data, isLoading, isError, error } = useQuery({
+    queryKey: ["code-frequency", owner, repo],
+    queryFn: () => fetchCodeFrequency(owner, repo),
+  });
+
+  const additions = data?.reduce((s, w) => s + Math.max(w[1], 0), 0) ?? 0;
+  const deletions = data?.reduce((s, w) => s + Math.abs(Math.min(w[2], 0)), 0) ?? 0;
+  const peak = data?.reduce((m, w) => Math.max(m, Math.max(w[1], 0), Math.abs(w[2])), 0) ?? 0;
+
+  return (
+    <section>
+      <SectionLabel>Code frequency (last 52 weeks)</SectionLabel>
+      {isLoading && <Spinner label="loading code frequency" />}
+      {isError && <InlineError title="Failed to load code frequency" detail={String(error)} />}
+      {data &&
+        (additions === 0 && deletions === 0 ? (
+          <Blankslate icon={<GraphIcon size={26} />} title="No code changes in the last year" />
+        ) : (
+          <Box>
+            <div style={{ padding: "1rem" }}>
+              <div style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)", marginBottom: "0.6rem" }}>
+                <span style={{ color: "var(--gh-open-solid)" }}>+{additions.toLocaleString()}</span>{" "}
+                additions and{" "}
+                <span style={{ color: "var(--gh-closed)" }}>−{deletions.toLocaleString()}</span>{" "}
+                deletions across {data.length} week{data.length === 1 ? "" : "s"}
+              </div>
+              <div
+                className="flex items-center gap-px"
+                style={{ height: "5rem" }}
+                role="img"
+                aria-label={`Weekly additions and deletions, most recent week last; +${additions} additions and −${deletions} deletions in total`}
+              >
+                {data.map((week) => (
+                  <div key={week[0]} className="flex flex-1 flex-col justify-center" style={{ minWidth: "2px", height: "100%" }}>
+                    <div style={{ flex: 1, display: "flex", alignItems: "flex-end" }}>
+                      <div
+                        title={`Week of ${new Date(week[0] * 1000).toLocaleDateString()}: +${week[1]} / −${Math.abs(week[2])}`}
+                        style={{
+                          width: "100%",
+                          height: `${peak > 0 ? Math.max((Math.max(week[1], 0) / peak) * 100, week[1] > 0 ? 4 : 0) : 0}%`,
+                          background: week[1] > 0 ? "var(--gh-open-solid)" : "transparent",
+                          borderRadius: "1px 1px 0 0",
+                        }}
+                      />
+                    </div>
+                    <div style={{ flex: 1, display: "flex", alignItems: "flex-start" }}>
+                      <div
+                        style={{
+                          width: "100%",
+                          height: `${peak > 0 ? Math.max((Math.abs(Math.min(week[2], 0)) / peak) * 100, week[2] < 0 ? 4 : 0) : 0}%`,
+                          background: week[2] < 0 ? "var(--gh-closed)" : "transparent",
+                          borderRadius: "0 0 1px 1px",
+                        }}
+                      />
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>

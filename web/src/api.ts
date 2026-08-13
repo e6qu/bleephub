@@ -107,6 +107,7 @@ import type {
   GithubTrafficPath,
   GithubTrafficReferrer,
   GithubCommitActivityWeek,
+  GithubCodeFrequencyWeek,
   GithubCommunityProfile,
   GithubLabel,
   GithubMilestone,
@@ -3348,6 +3349,9 @@ export const fetchTrafficPopularReferrers = (owner: string, repo: string) =>
 
 export const fetchCommitActivity = (owner: string, repo: string) =>
   ghFetch<GithubCommitActivityWeek[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/stats/commit_activity`);
+
+export const fetchCodeFrequency = (owner: string, repo: string) =>
+  ghFetch<GithubCodeFrequencyWeek[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/stats/code_frequency`);
 
 export const fetchCommunityProfile = (owner: string, repo: string) =>
   ghFetch<GithubCommunityProfile>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/community/profile`);
