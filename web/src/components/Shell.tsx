@@ -423,7 +423,8 @@ export type OrgTab =
   | "rulesets"
   | "governance"
   | "copilot"
-  | "hooks";
+  | "hooks"
+  | "settings";
 
 /**
  * Org context bar: organization login breadcrumb with org-level tabs.
@@ -457,6 +458,7 @@ export function OrgHeader({ org, active }: { org: string; active: OrgTab }) {
         <RepoTabLink to={`${base}/governance`} icon={<PeopleIcon size={15} />} label="Governance" active={active === "governance"} />
         <RepoTabLink to={`${base}/hooks`} icon={<WebhookIcon size={15} />} label="Webhooks" active={active === "hooks"} />
         <RepoTabLink to={`${base}/copilot`} icon={<CommentIcon size={15} />} label="Copilot" active={active === "copilot"} />
+        <RepoTabLink to={`${base}/settings`} icon={<GearIcon size={15} />} label="Settings" active={active === "settings"} />
       </nav>
     </div>
   );
