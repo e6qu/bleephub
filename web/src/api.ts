@@ -1424,6 +1424,7 @@ export const createClassroomAssignment = (
     deadline?: string | undefined;
     max_teams?: number | undefined;
     max_members?: number | undefined;
+    editor?: string | undefined;
     autograding_tests: ClassroomAutogradingTest[];
   },
 ) => ghPostJSON<ClassroomAssignment>(`/classroom-data/classrooms/${classroomID}/assignments`, body);

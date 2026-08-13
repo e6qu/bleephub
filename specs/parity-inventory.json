@@ -5332,8 +5332,8 @@
         "id": "WEB-082",
         "location": "web/src/pages/ClassroomPage.tsx",
         "severity": "M",
-        "status": "open \u2014 assessed and confirmed backend-supported; the fix is to surface these as form controls (a visibility select, two toggles, conditional group-size inputs, an editor select). Deferred only to avoid colliding with the in-flight ClassroomPage.tsx change in #284 \u2014 file findings, don't hand-wave; do this slice once #284 merges",
-        "status_kind": "open"
+        "status": "fixed \u2014 surfaced all five in the assignment-creation dialog: a **Repository visibility** select (private/public \u2192 public_repo), a **Supported editor** select (none/vscode/codespaces \u2192 editor), conditional **group team-size** inputs (max_teams/max_members, shown only for group assignments), and **Grant students admin access** + **Enable feedback pull requests** checkboxes. Wired through the createClassroomAssignment payload (editor field added). Classroom vitest green",
+        "status_kind": "fixed"
       },
       {
         "category": "WEB",
@@ -6860,8 +6860,7 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 86,
-            "open": 1
+            "fixed": 87
           },
           "total": 89
         }
@@ -6873,8 +6872,7 @@
       },
       "status": {
         "deferred": 3,
-        "fixed": 714,
-        "open": 1
+        "fixed": 715
       },
       "total": 718
     }
