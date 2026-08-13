@@ -5264,6 +5264,24 @@
         "status_kind": "open"
       },
       {
+        "category": "WEB",
+        "finding": "The user profile had no tab row \u2014 unlike github.com/{user} it collapsed straight to a bare repository list, with no Overview, Projects, Packages or Stars, and no profile README or contribution graph",
+        "id": "WEB-070",
+        "location": "web/src/pages/ProfilePage.tsx",
+        "severity": "B",
+        "status": "fixed \u2014 added the underline tab nav (Overview/Repositories/Projects/Packages/Stars via `?tab=`); Overview renders the `<user>/<user>` profile README, a contribution calendar aggregated from `GET users/{login}/events`, and a recent-activity list; Stars/Packages/Projects wire the existing `users/{login}/starred`, `/packages`, `/projectsV2` endpoints. Verified in Chromium both themes (0 load failures, 0 new axe) + unit tests for the tab-switch data paths",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "The profile Overview has no pinned-repositories section \u2014 github.com lets a user pin up to six repos, but the simulator has no pin storage (only unrelated issue-comment pinning exists)",
+        "id": "WEB-071",
+        "location": "web/src/pages/ProfilePage.tsx",
+        "severity": "M",
+        "status": "open \u2014 needs a minimal backend: a per-user ordered pinned-repo list plus get/set routes, then an Overview pin grid; tracked as the next profile slice",
+        "status_kind": "open"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -6680,23 +6698,23 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 65,
-            "open": 2
+            "fixed": 66,
+            "open": 3
           },
-          "total": 69
+          "total": 71
         }
       },
       "severity": {
-        "blocker": 165,
-        "major": 379,
+        "blocker": 166,
+        "major": 380,
         "minor": 154
       },
       "status": {
         "deferred": 3,
-        "fixed": 693,
-        "open": 2
+        "fixed": 694,
+        "open": 3
       },
-      "total": 698
+      "total": 700
     }
   },
   "rest": {
@@ -28210,7 +28228,7 @@
   "ui": {
     "browser_navigations": [
       {
-        "line": 165,
+        "line": 169,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/"
       },

@@ -23,6 +23,7 @@ import type {
   GithubCommit,
   GithubCommitComment,
   GithubProjectV2,
+  GithubUserEvent,
   GithubProjectV2Field,
   GithubProjectV2Item,
   GithubComparison,
@@ -4643,6 +4644,23 @@ export const fetchUserReposByLoginPage = (
 /** Organizations a named user belongs to (GET /users/{login}/orgs). */
 export const fetchUserOrgsByLogin = (login: string) =>
   ghFetch<GithubOrgSummary[]>(`/api/v3/users/${encodeURIComponent(login)}/orgs`);
+
+/** Repositories a named user has starred — the profile Stars tab (GET /users/{login}/starred). */
+export const fetchUserStarredRepos = (login: string) =>
+  ghFetch<BleephubRepo[]>(`/api/v3/users/${encodeURIComponent(login)}/starred`);
+
+/** A named user's ProjectsV2 — the profile Projects tab (GET /users/{login}/projectsV2). */
+export const fetchUserProjectsV2 = (login: string) =>
+  ghFetch<GithubProjectV2[]>(`/api/v3/users/${encodeURIComponent(login)}/projectsV2`);
+
+/**
+ * A named user's public activity feed (GET /users/{login}/events). The
+ * simulator derives Create/Delete/Push/Issues/IssueComment/PullRequest events
+ * on the fly; the profile Overview aggregates these into the contribution graph
+ * and a recent-activity list.
+ */
+export const fetchUserEvents = (login: string) =>
+  ghFetch<GithubUserEvent[]>(`/api/v3/users/${encodeURIComponent(login)}/events`);
 
 /** Organization-full profile for the org Overview tab (GET /orgs/{org}). */
 export const fetchOrgProfile = (org: string) =>

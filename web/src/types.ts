@@ -789,6 +789,28 @@ export interface GithubProjectV2Item {
   fields?: GithubProjectV2ItemFieldValue[];
 }
 
+/**
+ * A single entry from GET /users/{login}/events. The simulator derives a small
+ * set of event types (CreateEvent, DeleteEvent, PushEvent, IssuesEvent,
+ * IssueCommentEvent, PullRequestEvent); the profile Overview buckets these by
+ * day for the contribution graph and lists them as recent activity.
+ */
+export interface GithubUserEvent {
+  id?: string;
+  type: string;
+  created_at: string;
+  actor?: { login?: string; avatar_url?: string };
+  repo?: { name?: string };
+  payload?: {
+    action?: string;
+    ref?: string;
+    ref_type?: string;
+    number?: number;
+    size?: number;
+    [key: string]: unknown;
+  };
+}
+
 export interface BleephubAuditEvent {
   id: number;
   actor_login: string;

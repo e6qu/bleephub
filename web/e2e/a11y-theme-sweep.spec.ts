@@ -103,6 +103,10 @@ function buildRoutes(): { route: string; label: string }[] {
   return [
     { route: "/ui/", label: "dashboard" },
     { route: `/ui/${o}`, label: "profile" },
+    { route: `/ui/${o}?tab=repositories`, label: "profile-repositories" },
+    { route: `/ui/${o}?tab=projects`, label: "profile-projects" },
+    { route: `/ui/${o}?tab=packages`, label: "profile-packages" },
+    { route: `/ui/${o}?tab=stars`, label: "profile-stars" },
     { route: "/ui/account", label: "account" },
     { route: "/ui/notifications", label: "notifications" },
     { route: "/ui/search?q=test", label: "search" },

@@ -1,6 +1,6 @@
 # Bleephub bug ledger
 
-698 findings from the continuing full-surface audit: 165 blockers, 379 major, 154 minor. Every
+700 findings from the continuing full-surface audit: 166 blockers, 380 major, 154 minor. Every
 entry carries a location and a one-sentence claim. Severity is `B` blocker, `M` major, `m` minor.
 Status begins with one of `open`, `partial`, `fixed`, or `deferred`; the generated parity
 inventory records the exact counts and fails CI when this summary or a row drifts.
@@ -592,6 +592,8 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | WEB-067 | m | web/src/components/ui.tsx, web/src/components/PRFilesView.tsx, web/src/pages/RepoSettingsPage.tsx | Several controls fell under the 24x24 WCAG 2.5.8 (AA) target size — the small Button, the PR line-comment button, and the settings "Manage" links | fixed — Button carries a 1.5rem min-height, the PR comment button is 1.5rem square, and the wrapping settings links are inline-flex so their box tracks the button; target-size axe hits went to zero |
 | WEB-068 | M | web/src/components/LabelPills.tsx | Label pills render the raw label color as text over a 13%-tint of the same color, so light label colors (yellow, cyan) fall below AA contrast in both themes; GitHub computes a per-label readable foreground | open — needs a luminance-aware foreground like GitHub's label styles; tracked as the label-contrast slice of the WCAG workstream |
 | WEB-069 | m | web/src/pages/MarketplacePage.tsx, web/src/pages/IssuesPage.tsx, web/src/pages/CodeScanningPage.tsx | Residual axe color-contrast on a few colored spans in light mode — the marketplace active-tab marker, an issue state badge, and code-scanning inline `<code>` | open — per-element token adjustments; tracked with WEB-068 in the contrast pass |
+| WEB-070 | B | web/src/pages/ProfilePage.tsx | The user profile had no tab row — unlike github.com/{user} it collapsed straight to a bare repository list, with no Overview, Projects, Packages or Stars, and no profile README or contribution graph | fixed — added the underline tab nav (Overview/Repositories/Projects/Packages/Stars via `?tab=`); Overview renders the `<user>/<user>` profile README, a contribution calendar aggregated from `GET users/{login}/events`, and a recent-activity list; Stars/Packages/Projects wire the existing `users/{login}/starred`, `/packages`, `/projectsV2` endpoints. Verified in Chromium both themes (0 load failures, 0 new axe) + unit tests for the tab-switch data paths |
+| WEB-071 | M | web/src/pages/ProfilePage.tsx | The profile Overview has no pinned-repositories section — github.com lets a user pin up to six repos, but the simulator has no pin storage (only unrelated issue-comment pinning exists) | open — needs a minimal backend: a per-user ordered pinned-repo list plus get/set routes, then an Overview pin grid; tracked as the next profile slice |
 
 ## TEST — test-suite quality
 
