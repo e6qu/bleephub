@@ -6,6 +6,11 @@ import { confirmAction } from "../components/confirmAction.js";
 import {
   addRepoDeployKey,
   createRepoAutolink,
+  fetchWebhooks,
+  createRepoHook,
+  updateRepoHook,
+  deleteRepoHook,
+  pingRepoHook,
   deleteRepoAutolink,
   fetchRepoAutolinks,
   createPagesSite,
@@ -41,6 +46,7 @@ import {
 import type {
   BleephubRepo,
   GithubAutolink,
+  GithubWebhook,
   GithubCollaborator,
   GithubDeployKey,
   GithubPagesBuild,
@@ -51,7 +57,7 @@ import { RepoHeader } from "../components/Shell.js";
 import { SettingsLayout, type SettingsNavSection } from "../components/SettingsLayout.js";
 import { PageTitle, Button, Box, FormLabel, ErrorBanner } from "../components/ui.js";
 
-type SettingsTab = "general" | "collaborators" | "deploy-keys" | "pages" | "security" | "interaction" | "transfer" | "rename" | "autolinks";
+type SettingsTab = "general" | "collaborators" | "deploy-keys" | "pages" | "security" | "interaction" | "transfer" | "rename" | "autolinks" | "webhooks";
 
 const SETTINGS_NAV: SettingsNavSection<SettingsTab>[] = [
   { items: [{ key: "general", label: "General" }] },
@@ -60,6 +66,7 @@ const SETTINGS_NAV: SettingsNavSection<SettingsTab>[] = [
     title: "Code and automation",
     items: [
       { key: "pages", label: "Pages" },
+      { key: "webhooks", label: "Webhooks" },
       { key: "rename", label: "Rename branch" },
       { key: "autolinks", label: "Autolinks" },
     ],
@@ -101,6 +108,7 @@ export function RepoSettingsPage() {
         {tab === "security" && <SecurityTab owner={owner} repo={repo} />}
         {tab === "interaction" && <InteractionTab owner={owner} repo={repo} />}
         {tab === "autolinks" && <AutolinksTab owner={owner} repo={repo} />}
+        {tab === "webhooks" && <WebhooksTab owner={owner} repo={repo} />}
         {tab === "transfer" && (
           <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
             <TransferTab owner={owner} repo={repo} />
@@ -1037,6 +1045,163 @@ function AutolinksTab({ owner, repo }: { owner: string; repo: string }) {
                 disabled={deleteMut.isPending}
                 onClick={async () => {
                   if (await confirmAction(`Delete autolink ${a.key_prefix}?`)) deleteMut.mutate(a.id);
+                }}
+              >
+                Delete
+              </Button>
+            </div>
+          ))}
+        </Box>
+      )}
+    </div>
+  );
+}
+
+function WebhooksTab({ owner, repo }: { owner: string; repo: string }) {
+  const queryClient = useQueryClient();
+  const [url, setUrl] = useState("");
+  const [contentType, setContentType] = useState("json");
+  const [secret, setSecret] = useState("");
+  const [events, setEvents] = useState("push");
+  const [active, setActive] = useState(true);
+
+  const listQ = useQuery({
+    queryKey: ["repo-hooks", owner, repo],
+    queryFn: () => fetchWebhooks(owner, repo),
+    enabled: !!owner && !!repo,
+  });
+  const invalidate = () => void queryClient.invalidateQueries({ queryKey: ["repo-hooks", owner, repo] });
+
+  const createMut = useMutation({
+    mutationFn: () =>
+      createRepoHook(owner, repo, {
+        url: url.trim(),
+        contentType,
+        secret: secret.trim() || undefined,
+        events: events.split(",").map((e) => e.trim()).filter(Boolean),
+        active,
+      }),
+    onSuccess: () => {
+      invalidate();
+      setUrl("");
+      setSecret("");
+      setEvents("push");
+      setActive(true);
+    },
+  });
+  const toggleMut = useMutation({
+    mutationFn: (h: GithubWebhook) => updateRepoHook(owner, repo, h.id, { active: !h.active }),
+    onSuccess: invalidate,
+  });
+  const pingMut = useMutation({
+    mutationFn: (id: number) => pingRepoHook(owner, repo, id),
+  });
+  const deleteMut = useMutation({
+    mutationFn: (id: number) => deleteRepoHook(owner, repo, id),
+    onSuccess: invalidate,
+  });
+
+  const hooks: GithubWebhook[] = listQ.data ?? [];
+  const busy = toggleMut.isPending || pingMut.isPending || deleteMut.isPending;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+      <Box header={<span style={{ fontWeight: 600 }}>Add webhook</span>}>
+        <div style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+          {createMut.error && <ErrorBanner>{String(createMut.error)}</ErrorBanner>}
+          <FormLabel id="hook-url">Payload URL</FormLabel>
+          <input
+            id="hook-url"
+            type="text"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="https://example.com/webhook"
+            className="w-full"
+          />
+          <FormLabel id="hook-content-type">Content type</FormLabel>
+          <select id="hook-content-type" value={contentType} onChange={(e) => setContentType(e.target.value)} className="w-full">
+            <option value="json">application/json</option>
+            <option value="form">application/x-www-form-urlencoded</option>
+          </select>
+          <FormLabel id="hook-secret">Secret (optional)</FormLabel>
+          <input
+            id="hook-secret"
+            type="password"
+            value={secret}
+            onChange={(e) => setSecret(e.target.value)}
+            placeholder="Signing secret"
+            className="w-full"
+          />
+          <FormLabel id="hook-events">Events (comma-separated)</FormLabel>
+          <input
+            id="hook-events"
+            type="text"
+            value={events}
+            onChange={(e) => setEvents(e.target.value)}
+            placeholder="push, pull_request"
+            className="w-full"
+          />
+          <label className="flex items-center gap-2" style={{ fontSize: "0.85rem" }}>
+            <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />
+            Active
+          </label>
+          <div className="flex justify-end">
+            <Button variant="primary" disabled={createMut.isPending || !url.trim()} onClick={() => createMut.mutate()}>
+              {createMut.isPending ? "Adding…" : "Add webhook"}
+            </Button>
+          </div>
+        </div>
+      </Box>
+
+      {(toggleMut.error || pingMut.error || deleteMut.error) && (
+        <ErrorBanner>{String(toggleMut.error ?? pingMut.error ?? deleteMut.error)}</ErrorBanner>
+      )}
+      {pingMut.isSuccess && <div style={{ fontSize: "0.82rem", color: "var(--gh-open)" }}>Ping sent.</div>}
+
+      {listQ.isLoading ? (
+        <Spinner label="loading webhooks" />
+      ) : listQ.isError ? (
+        <InlineError title="Failed to load webhooks" detail={String(listQ.error)} />
+      ) : hooks.length === 0 ? (
+        <p style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)" }}>No webhooks yet.</p>
+      ) : (
+        <Box>
+          {hooks.map((h, i) => (
+            <div
+              key={h.id}
+              className="flex items-center gap-3"
+              style={{ padding: "0.7rem 1rem", borderBottom: i < hooks.length - 1 ? "1px solid var(--color-border)" : "none" }}
+            >
+              <span
+                aria-hidden
+                style={{ width: 8, height: 8, borderRadius: "999px", background: h.active ? "var(--gh-open)" : "var(--color-fg-subtle)", flexShrink: 0 }}
+              />
+              <div className="min-w-0 flex-1">
+                <div style={{ fontSize: "0.88rem", fontWeight: 500, color: "var(--color-fg)" }}>
+                  {h.name} <span style={{ color: "var(--color-fg-subtle)", fontWeight: 400 }}>#{h.id}</span>
+                </div>
+                <div className="font-mono" style={{ fontSize: "0.74rem", color: "var(--color-fg-muted)", wordBreak: "break-all" }}>
+                  {h.config.url || "no url"} · events: {h.events.join(", ") || "none"}
+                </div>
+              </div>
+              <Link to={`/ui/repos/${owner}/${repo}/hooks/${h.id}/deliveries`} style={{ fontSize: "0.8rem", color: "var(--color-accent)", textDecoration: "none" }}>
+                Deliveries
+              </Link>
+              <Button size="sm" aria-label={`Ping webhook ${h.id}`} disabled={busy} onClick={() => pingMut.mutate(h.id)}>
+                Ping
+              </Button>
+              <Button size="sm" disabled={busy} onClick={() => toggleMut.mutate(h)}>
+                {h.active ? "Disable" : "Enable"}
+              </Button>
+              <Button
+                size="sm"
+                variant="danger"
+                aria-label={`Delete webhook ${h.id}`}
+                disabled={busy}
+                onClick={async () => {
+                  if (await confirmAction(`Delete webhook #${h.id}?`, { title: "Delete webhook", confirmLabel: "Delete" })) {
+                    deleteMut.mutate(h.id);
+                  }
                 }}
               >
                 Delete

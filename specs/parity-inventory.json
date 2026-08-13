@@ -5309,6 +5309,15 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "Repo Settings had no Webhooks page \u2014 unlike github.com there was no way to list, create, edit, ping, or delete repository webhooks from the UI; only a standalone delivery viewer existed",
+        "id": "WEB-075",
+        "location": "web/src/pages/RepoSettingsPage.tsx",
+        "severity": "M",
+        "status": "fixed \u2014 added a Webhooks tab under Settings \u2192 Code and automation: lists hooks with active state, a create form (payload URL, content type, optional secret, comma-separated events, active), enable/disable toggle, ping, delete-with-confirm, and a link to the existing per-hook deliveries page. Repo-scoped hook api wrappers (create/update/delete/ping) mirror the org ones; all backend routes pre-existed. vitest covers list + create (asserting the hook body); a Chromium e2e drives the tab, creates a hook, and asserts the tab is axe-clean (WCAG A+AA)",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -6725,23 +6734,23 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 69,
+            "fixed": 70,
             "open": 3
           },
-          "total": 74
+          "total": 75
         }
       },
       "severity": {
         "blocker": 167,
-        "major": 382,
+        "major": 383,
         "minor": 154
       },
       "status": {
         "deferred": 3,
-        "fixed": 697,
+        "fixed": 698,
         "open": 3
       },
-      "total": 703
+      "total": 704
     }
   },
   "rest": {
@@ -28548,6 +28557,16 @@
         "line": 82,
         "source": "web/e2e/errorPaths.spec.ts",
         "target": "/ui/operations"
+      },
+      {
+        "line": 27,
+        "source": "web/e2e/repo-webhooks.spec.ts",
+        "target": "/ui/"
+      },
+      {
+        "line": 32,
+        "source": "web/e2e/repo-webhooks.spec.ts",
+        "target": "/ui/repos/admin/${repo}/settings"
       }
     ],
     "routes": [
@@ -29691,7 +29710,7 @@
       }
     ],
     "summary": {
-      "browser_navigations": 59,
+      "browser_navigations": 61,
       "routes": 89,
       "routes_with_direct_render": 86,
       "routes_with_test_reference": 88

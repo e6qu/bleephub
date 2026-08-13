@@ -1806,6 +1806,48 @@ export const syncFork = (owner: string, repo: string, branch: string) =>
 export const fetchWebhooks = (owner: string, repo: string) =>
   ghFetch<GithubWebhook[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/hooks`);
 
+const repoHooksPath = (owner: string, repo: string): string =>
+  `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/hooks`;
+
+/** Create a repository webhook — POST repos/{owner}/{repo}/hooks. */
+export const createRepoHook = (
+  owner: string,
+  repo: string,
+  payload: {
+    url: string;
+    contentType?: string | undefined;
+    secret?: string | undefined;
+    events?: string[] | undefined;
+    active?: boolean | undefined;
+  },
+) =>
+  ghPostJSON<GithubWebhook>(repoHooksPath(owner, repo), {
+    name: "web",
+    active: payload.active ?? true,
+    events: payload.events ?? ["push"],
+    config: {
+      url: payload.url,
+      content_type: payload.contentType ?? "json",
+      ...(payload.secret ? { secret: payload.secret } : {}),
+    },
+  });
+
+/** Patch a repository webhook (toggle active, change events/url) — PATCH repos/{owner}/{repo}/hooks/{id}. */
+export const updateRepoHook = (
+  owner: string,
+  repo: string,
+  id: number,
+  patch: { active?: boolean; events?: string[]; config?: { url?: string; content_type?: string } },
+) => ghPatchJSON<GithubWebhook>(`${repoHooksPath(owner, repo)}/${id}`, patch);
+
+/** Delete a repository webhook — DELETE repos/{owner}/{repo}/hooks/{id}. */
+export const deleteRepoHook = (owner: string, repo: string, id: number) =>
+  ghSend("DELETE", `${repoHooksPath(owner, repo)}/${id}`);
+
+/** Send a ping event to a repository webhook — POST repos/{owner}/{repo}/hooks/{id}/pings. */
+export const pingRepoHook = (owner: string, repo: string, id: number) =>
+  ghSend("POST", `${repoHooksPath(owner, repo)}/${id}/pings`);
+
 // Secrets + environments come back in GitHub's list envelope
 // ({secrets:[…], total_count}) — unwrap to the array the user interface renders.
 // No `?? []`: if the server ever stops sending the array, the missing
