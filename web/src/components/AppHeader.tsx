@@ -45,6 +45,8 @@ import {
   AuditLogIcon,
   GraphIcon,
   CommentIcon,
+  ProjectIcon,
+  StarIcon,
 } from "./octicons.js";
 import { abortPendingRequests, clearToken, fetchCurrentUser, fetchNotifications, isRateLimited } from "../api.js";
 
@@ -530,6 +532,7 @@ export function AppHeader() {
               {(close) => (
                 <>
                   <MenuLink to="/ui/repos?new=1" icon={<RepoIcon size={16} />} onClick={close}>New repository</MenuLink>
+                  <MenuLink to="/ui/migrations" icon={<MigrationIcon size={16} />} onClick={close}>Import repository</MenuLink>
                   <MenuLink to="/ui/gists?new=1" icon={<GistIcon size={16} />} onClick={close}>New gist</MenuLink>
                   <MenuLink to="/ui/operations/orgs?new=1" icon={<OrganizationIcon size={16} />} onClick={close}>New organization</MenuLink>
                 </>
@@ -583,6 +586,8 @@ export function AppHeader() {
                   <MenuLink to="/ui/gists" icon={<GistIcon size={16} />} onClick={close}>My gists</MenuLink>
                   <MenuLink to="/ui/packages" icon={<PackageIcon size={16} />} onClick={close}>My packages</MenuLink>
                   <MenuLink to="/ui/codespaces" icon={<CodespaceIcon size={16} />} onClick={close}>My codespaces</MenuLink>
+                  {login && <MenuLink to={`/ui/${login}?tab=projects`} icon={<ProjectIcon size={16} />} onClick={close}>Your projects</MenuLink>}
+                  {login && <MenuLink to={`/ui/${login}?tab=stars`} icon={<StarIcon size={16} />} onClick={close}>Your stars</MenuLink>}
                   <MenuSeparator />
                   <MenuLink to="/ui/account" icon={<KeyIcon size={16} />} onClick={close}>Settings</MenuLink>
                   <MenuLink to="/ui/operations" icon={<GraphIcon size={16} />} onClick={close}>Operations</MenuLink>

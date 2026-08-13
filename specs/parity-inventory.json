@@ -5318,6 +5318,15 @@
         "status_kind": "open"
       },
       {
+        "category": "WEB",
+        "finding": "The global-nav menus were missing three entries GitHub's header has: the create-**+** menu lacked **Import repository**, and the avatar menu lacked **Your projects** and **Your stars**. (The old \"Your organizations\" item still needs a dedicated user-facing orgs page \u2014 tracked separately.)",
+        "id": "WEB-083",
+        "location": "web/src/components/AppHeader.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added Import repository \u2192 `/ui/migrations`, Your projects \u2192 `/ui/{login}?tab=projects`, Your stars \u2192 `/ui/{login}?tab=stars` (the profile Projects/Stars tabs merged in #274); AppHeader is axe-swept on every route and the targets are already in the a11y sweep, keyboard-nav test updated for the new create-menu order",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -6734,23 +6743,23 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 69,
+            "fixed": 70,
             "open": 4
           },
-          "total": 75
+          "total": 76
         }
       },
       "severity": {
         "blocker": 167,
         "major": 383,
-        "minor": 154
+        "minor": 155
       },
       "status": {
         "deferred": 3,
-        "fixed": 697,
+        "fixed": 698,
         "open": 4
       },
-      "total": 704
+      "total": 705
     }
   },
   "rest": {
