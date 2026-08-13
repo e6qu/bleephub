@@ -63,10 +63,12 @@ contrast token — the dominant finding, ~200 element-hits from the shared DataT
 **WEB-065** (task-list checkbox labels via a shared Markdown wrapper), **WEB-066** (dl→ul on the
 profile/org sidebars), **WEB-067** (24px target sizes).
 
-Remaining (open, tracked): **WEB-068** label-pill contrast (raw label color as text over a tint —
-fails AA for light label colors, both themes; needs a luminance-aware foreground like GitHub's) and
-**WEB-069** a few residual colored spans (marketplace active-tab, issue state badge, code-scanning
-`<code>`). These are the Workstream C contrast pass. No dark-mode-only contrast leaks were found.
+✅ **Workstream C (WCAG AA) COMPLETE**: the sweep now reports **0 violations across all 47 routes ×
+both themes**. **WEB-068** (label-pill contrast — hue-matched, theme-switched foregrounds) and
+**WEB-069** (marketplace active-tab → `--color-accent-emphasis`; code-scanning kicker/code → a new
+readable `--color-brand-cyan-text` token) are FIXED. The axe dual-theme sweep is now a **BLOCKING
+ratchet gate** (a final test fails the suite on any violation or load-failure), so a11y can't
+silently regress. No dark-mode-only contrast leaks were found.
 
 ### 0.2 github.com nav-parity gap map → Workstream A backlog
 
@@ -82,27 +84,27 @@ menus/controls are missing or non-functional.
   page rail + markdown view + create/edit/delete. Go + vitest + Chromium-sweep verified.
 - **B2 — user-profile tab row**: ✅ FIXED (WEB-070) — Overview/Repositories/Projects/Packages/Stars
   tab row; Overview renders the profile README, a contribution graph (from the events feed), and a
-  recent-activity list. Still open: WEB-071 pinned repositories (needs a backend pin store).
+  recent-activity list. ✅ WEB-071 pinned repositories now DONE (per-user pin store under /ui-data + Overview grid).
 
 **MAJORs (menu/control missing or non-functional), ranked:**
 1. Profile **contribution graph** (calendar heatmap) missing.
-2. Profile **pinned repositories** missing.
+2. ✅ FIXED (WEB-071) — Profile **pinned repositories**: per-user pin store (/ui-data) + Overview grid with own-profile editor.
 3. Profile **README** missing.
 4. ✅ FIXED (WEB-073) — Global **command palette / ⌘K** jump-to: lazy-loaded dialog+combobox (static targets + live repo/user search, keyboard nav, axe-clean); ⌘K/Ctrl-K in `AppHeader.tsx`.
-5. Repo **"Go to file"** fuzzy finder missing.
-6. Repo Settings **Webhooks** list/create missing (only a delivery viewer exists).
+5. ✅ FIXED (WEB-076) — Repo **"Go to file"** fuzzy finder: lazy-loaded recursive-tree finder, `t` shortcut + button, keyboard-nav, axe-clean.
+6. ✅ FIXED (WEB-075) — Repo Settings **Webhooks**: list/create/toggle/ping/delete + deliveries link (Settings → Code and automation); was only a delivery viewer.
 7. Repo Settings **Environments** editor missing (Deployments list ≠ env settings).
 8. Repo Settings **Actions** settings (General/Runners) missing.
 9. **Repo-level Rulesets** missing (rulesets exist org-only).
-10. **Org Settings** landing page missing (settings scattered as top-level tabs).
-11. **Org Insights** tab missing (Insights is repo-only).
+10. ✅ FIXED (WEB-079) — **Org Settings** landing at `/orgs/:org/settings` (org profile edit + links to the settings surfaces); a Settings tab was added to the org header.
+11. ✅ FIXED (WEB-081) — **Org Insights** tab: /orgs/:org/insights (GHES API Insights — request summary + top subjects).
 12. ✅ FIXED (WEB-074) — Issue/PR sidebar **Projects**: now lists the org's ProjectsV2, marks/edits (add + remove) this item's membership; was a hardcoded "None yet" stub (`IssueSidebar.tsx`).
-13. Account settings: **Password/2FA, Notifications, Profile edit, Account, Appearance** all missing
+13. PARTIAL (WEB-078) — Account settings: **Profile edit + Appearance** added (Public profile default tab + theme); **Password/2FA, Notifications** still missing
     (only Emails/keys/PAT/blocked present).
 14. Account settings: authorized **Applications** missing; OAuth/GitHub Apps misplaced under Operations.
 15. Create **`+`** menu missing Import repository and New project.
 16. Avatar menu missing **Your organizations / projects / stars**.
-17. Dashboard activity feed is **issues-only**, not the follow/news feed.
+17. ✅ FIXED (WEB-077) — Dashboard **Following** feed (from received_events) added above a renamed "Your issues" section; was issues-only.
 18. Add file has no **Upload files** (binary upload) — text-only modal.
 
 **MINORs** (misplaced/partial): repo-settings sub-nav is in-page state, not deep-linkable URLs;
@@ -158,7 +160,7 @@ Match the old Classroom's structure and functionality (Phase 0 builds this refer
 - **Roster**: create from a student-identifier list, link students to GitHub accounts, LMS/import.
 - **Assignments**: individual **and** group assignments; the creation flow (title, starter-code template repo, deadline, visibility, editor/Codespaces option, **protected file paths**, **autograding** tests, **feedback pull request**).
 - **Accept flow**: invite URL → provisions a repo from the starter template for the student/team.
-- **Assignment overview**: accepted-assignments list, per-student repo links, **autograding results/points**, and **grade download (CSV export)**.
+- **Assignment overview**: accepted-assignments list, per-student repo links, **autograding results/points**, and ✅ **grade download (CSV export)** — DONE (WEB-080): a "Download grades (CSV)" button on the assignment report exports the grades in classroom.github.com's exact column order.
 
 Verify each end-to-end in an owned org through both the API and `/ui/classrooms`, matching where each control lives in the real product. Apply the same light/dark + WCAG/ARIA bar. (Other genuinely-non-github surfaces — `/ui/operations/*` operator console, `/ui/metrics` — get the lighter "internally coherent + themed + accessible" check, since those have no github.com analogue.)
 

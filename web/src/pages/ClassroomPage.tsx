@@ -736,10 +736,52 @@ function AssignmentReportingDialog({
         </div>
       )}
       <DialogActions>
+        <Button
+          disabled={(grades.data ?? []).length === 0}
+          onClick={() => downloadGradesCsv(assignment.title, grades.data ?? [])}
+        >
+          Download grades (CSV)
+        </Button>
         <Button onClick={onClose}>Close</Button>
       </DialogActions>
     </Modal>
   );
+}
+
+// GitHub Classroom's grade CSV, matching classroom.github.com's column order so
+// the export drops into the same grading pipelines. The rows come straight from
+// GET /assignments/{id}/grades.
+const GRADE_CSV_COLUMNS: (keyof ClassroomGrade)[] = [
+  "assignment_name",
+  "assignment_url",
+  "starter_code_url",
+  "github_username",
+  "roster_identifier",
+  "student_repository_name",
+  "student_repository_url",
+  "submission_timestamp",
+  "points_awarded",
+  "points_available",
+  "group_name",
+];
+
+/** Build the GitHub Classroom grade CSV text from the grades rows. */
+export function gradesToCsv(grades: ClassroomGrade[]): string {
+  const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const header = GRADE_CSV_COLUMNS.join(",");
+  const rows = grades.map((g) => GRADE_CSV_COLUMNS.map((c) => esc(g[c])).join(","));
+  return [header, ...rows].join("\n");
+}
+
+function downloadGradesCsv(title: string, grades: ClassroomGrade[]): void {
+  const url = URL.createObjectURL(new Blob([gradesToCsv(grades)], { type: "text/csv" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${title.replace(/[^\w.-]+/g, "-").toLowerCase() || "assignment"}-grades.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 function AcceptAssignment({ code }: { code: string }) {

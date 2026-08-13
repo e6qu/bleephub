@@ -63,6 +63,7 @@ import type {
   BleephubGist,
   BleephubGistFile,
   GithubGistCommit,
+  GithubGistComment,
   GithubNotificationThread,
   GithubThreadSubscription,
   GithubProjectClassic,
@@ -107,6 +108,7 @@ import type {
   GithubTrafficPath,
   GithubTrafficReferrer,
   GithubCommitActivityWeek,
+  GithubCodeFrequencyWeek,
   GithubCommunityProfile,
   GithubLabel,
   GithubMilestone,
@@ -1064,6 +1066,18 @@ export const fetchRepoContents = (
   return ghFetch<GithubContentItem[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${path}${qs}`);
 };
 
+export interface GithubGitTreeResponse {
+  sha: string;
+  truncated: boolean;
+  tree: { path: string; type: "blob" | "tree" | "commit"; mode: string; sha: string; size?: number }[];
+}
+
+/** The full recursive git tree at a ref — powers the "Go to file" fuzzy finder. */
+export const fetchRepoTreeRecursive = (owner: string, repo: string, ref: string): Promise<GithubGitTreeResponse> =>
+  ghFetch<GithubGitTreeResponse>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/trees/${encodeURIComponent(ref)}?recursive=1`,
+  );
+
 export const fetchRepoFile = (
   owner: string,
   repo: string,
@@ -1806,6 +1820,48 @@ export const syncFork = (owner: string, repo: string, branch: string) =>
 export const fetchWebhooks = (owner: string, repo: string) =>
   ghFetch<GithubWebhook[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/hooks`);
 
+const repoHooksPath = (owner: string, repo: string): string =>
+  `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/hooks`;
+
+/** Create a repository webhook — POST repos/{owner}/{repo}/hooks. */
+export const createRepoHook = (
+  owner: string,
+  repo: string,
+  payload: {
+    url: string;
+    contentType?: string | undefined;
+    secret?: string | undefined;
+    events?: string[] | undefined;
+    active?: boolean | undefined;
+  },
+) =>
+  ghPostJSON<GithubWebhook>(repoHooksPath(owner, repo), {
+    name: "web",
+    active: payload.active ?? true,
+    events: payload.events ?? ["push"],
+    config: {
+      url: payload.url,
+      content_type: payload.contentType ?? "json",
+      ...(payload.secret ? { secret: payload.secret } : {}),
+    },
+  });
+
+/** Patch a repository webhook (toggle active, change events/url) — PATCH repos/{owner}/{repo}/hooks/{id}. */
+export const updateRepoHook = (
+  owner: string,
+  repo: string,
+  id: number,
+  patch: { active?: boolean; events?: string[]; config?: { url?: string; content_type?: string } },
+) => ghPatchJSON<GithubWebhook>(`${repoHooksPath(owner, repo)}/${id}`, patch);
+
+/** Delete a repository webhook — DELETE repos/{owner}/{repo}/hooks/{id}. */
+export const deleteRepoHook = (owner: string, repo: string, id: number) =>
+  ghSend("DELETE", `${repoHooksPath(owner, repo)}/${id}`);
+
+/** Send a ping event to a repository webhook — POST repos/{owner}/{repo}/hooks/{id}/pings. */
+export const pingRepoHook = (owner: string, repo: string, id: number) =>
+  ghSend("POST", `${repoHooksPath(owner, repo)}/${id}/pings`);
+
 // Secrets + environments come back in GitHub's list envelope
 // ({secrets:[…], total_count}) — unwrap to the array the user interface renders.
 // No `?? []`: if the server ever stops sending the array, the missing
@@ -2497,6 +2553,15 @@ export const fetchGist = (id: string) => ghFetch<BleephubGist>(`/api/v3/gists/${
 export const fetchGistCommits = (id: string) => ghFetch<GithubGistCommit[]>(`/api/v3/gists/${id}/commits`);
 
 export const fetchGistForks = (id: string) => ghFetch<BleephubGist[]>(`/api/v3/gists/${id}/forks`);
+
+export const fetchGistComments = (id: string) =>
+  ghFetch<GithubGistComment[]>(`/api/v3/gists/${id}/comments`);
+
+export const createGistComment = (id: string, body: string) =>
+  ghPostJSON<GithubGistComment>(`/api/v3/gists/${id}/comments`, { body });
+
+export const deleteGistComment = (id: string, commentId: number) =>
+  ghDelete(`/api/v3/gists/${id}/comments/${commentId}`);
 
 export const forkGist = (id: string) => ghPostJSON<BleephubGist>(`/api/v3/gists/${id}/forks`, {});
 
@@ -3349,6 +3414,9 @@ export const fetchTrafficPopularReferrers = (owner: string, repo: string) =>
 export const fetchCommitActivity = (owner: string, repo: string) =>
   ghFetch<GithubCommitActivityWeek[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/stats/commit_activity`);
 
+export const fetchCodeFrequency = (owner: string, repo: string) =>
+  ghFetch<GithubCodeFrequencyWeek[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/stats/code_frequency`);
+
 export const fetchCommunityProfile = (owner: string, repo: string) =>
   ghFetch<GithubCommunityProfile>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/community/profile`);
 
@@ -4086,6 +4154,16 @@ export const fetchPagesDeploymentStatus = (
 /** The token's own user — reaction toggles need to know "my" reactions. */
 export const fetchAuthenticatedUser = () => ghFetch<GithubAccount>("/api/v3/user");
 
+/** Edit the authenticated user's public profile — PATCH /user. */
+export const updateAuthenticatedUser = (payload: {
+  name?: string;
+  bio?: string;
+  company?: string;
+  location?: string;
+  blog?: string;
+  twitter_username?: string;
+}): Promise<GithubUserProfile> => ghPatchJSON<GithubUserProfile>("/api/v3/user", payload);
+
 export const fetchPRReviews = (owner: string, repo: string, number: number) =>
   ghFetch<GithubPRReview[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/reviews`);
 
@@ -4683,6 +4761,17 @@ export const fetchUserOrgsByLogin = (login: string) =>
 export const fetchUserStarredRepos = (login: string) =>
   ghFetch<BleephubRepo[]>(`/api/v3/users/${encodeURIComponent(login)}/starred`);
 
+/**
+ * A user's pinned repositories (profile Overview grid). GitHub exposes pins only
+ * over GraphQL, so the simulator serves them from /ui-data. `setPinnedRepos`
+ * replaces the ordered list (max 6) and only works on your own account.
+ */
+export const fetchPinnedRepos = (login: string) =>
+  ghFetch<BleephubRepo[]>(`/ui-data/users/${encodeURIComponent(login)}/pinned`);
+
+export const setPinnedRepos = (login: string, repos: string[]) =>
+  ghPutJSON<BleephubRepo[]>(`/ui-data/users/${encodeURIComponent(login)}/pinned`, { repos });
+
 /** A named user's ProjectsV2 — the profile Projects tab (GET /users/{login}/projectsV2). */
 export const fetchUserProjectsV2 = (login: string) =>
   ghFetch<GithubProjectV2[]>(`/api/v3/users/${encodeURIComponent(login)}/projectsV2`);
@@ -4696,9 +4785,46 @@ export const fetchUserProjectsV2 = (login: string) =>
 export const fetchUserEvents = (login: string) =>
   ghFetch<GithubUserEvent[]>(`/api/v3/users/${encodeURIComponent(login)}/events`);
 
+/**
+ * The viewer's dashboard "following" news feed — activity from people and repos
+ * they follow/watch (GET /users/{login}/received_events).
+ */
+export const fetchReceivedEvents = (login: string) =>
+  ghFetch<GithubUserEvent[]>(`/api/v3/users/${encodeURIComponent(login)}/received_events`);
+
 /** Organization-full profile for the org Overview tab (GET /orgs/{org}). */
 export const fetchOrgProfile = (org: string) =>
   ghFetch<GithubOrgProfile>(`/api/v3/orgs/${encodeURIComponent(org)}`);
+
+// ─── Organization API Insights (GHES) — the org Insights tab ────────────────
+export interface OrgApiInsightsSummary {
+  total_request_count: number;
+  rate_limited_request_count: number;
+  last_request_timestamp: string;
+  last_rate_limited_timestamp: string | null;
+}
+export interface OrgApiInsightsSubjectStat {
+  subject_id?: number;
+  subject_name: string;
+  total_request_count: number;
+  rate_limited_request_count: number;
+  last_request_timestamp?: string;
+  last_rate_limited_timestamp?: string | null;
+}
+
+const insightsWindow = (): string => {
+  const max = new Date().toISOString();
+  const min = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  return `min_timestamp=${encodeURIComponent(min)}&max_timestamp=${encodeURIComponent(max)}`;
+};
+
+/** Org API-request summary over the trailing 30 days (GET .../insights/api/summary-stats). */
+export const fetchOrgApiInsightsSummary = (org: string): Promise<OrgApiInsightsSummary> =>
+  ghFetch<OrgApiInsightsSummary>(`/api/v3/orgs/${encodeURIComponent(org)}/insights/api/summary-stats?${insightsWindow()}`);
+
+/** Per-subject (app/actor) API-request stats over the trailing 30 days. */
+export const fetchOrgApiInsightsSubjectStats = (org: string): Promise<OrgApiInsightsSubjectStat[]> =>
+  ghFetch<OrgApiInsightsSubjectStat[]>(`/api/v3/orgs/${encodeURIComponent(org)}/insights/api/subject-stats?${insightsWindow()}`);
 
 /** Members visible to the caller (GET /orgs/{org}/members). */
 export const fetchOrgMembers = (org: string) =>

@@ -5,12 +5,13 @@ import {
   fetchCurrentUser,
   fetchUserReposPage,
   fetchDashboardIssues,
+  fetchReceivedEvents,
   isForbidden,
   isRateLimited,
 } from "../api.js";
-import type { BleephubRepo, GithubFeedIssue } from "../types.js";
+import type { BleephubRepo, GithubFeedIssue, GithubUserEvent } from "../types.js";
 import { Avatar } from "../components/Avatar.js";
-import { Box, SectionLabel, Blankslate, Button } from "../components/ui.js";
+import { Box, SectionLabel, Blankslate, ButtonLink } from "../components/ui.js";
 import {
   RepoIcon,
   IssueOpenedIcon,
@@ -37,6 +38,14 @@ export function DashboardPage() {
     refetchInterval: (query) =>
       isRateLimited(query.state.error) || isForbidden(query.state.error) ? false : 30000,
   });
+  const viewerLogin = user.data?.login;
+  const feed = useQuery({
+    queryKey: ["dashboard-feed", viewerLogin],
+    queryFn: () => fetchReceivedEvents(viewerLogin as string),
+    enabled: !!viewerLogin,
+    refetchInterval: (query) =>
+      isRateLimited(query.state.error) || isForbidden(query.state.error) ? false : 30000,
+  });
 
   const topRepos = repos.data?.items.slice(0, 8) ?? [];
 
@@ -59,11 +68,11 @@ export function DashboardPage() {
           ) : (
             <SectionLabel>Top repositories</SectionLabel>
           )}
-          <Link to="/ui/repos" style={{ textDecoration: "none" }}>
-            <Button variant="primary" size="sm">
-              <RepoIcon size={14} /> New
-            </Button>
-          </Link>
+          {/* A single primary-styled anchor — NOT a <Link> wrapping a <Button>:
+              nesting interactive-in-interactive trips WCAG 2.5.8 target-size. */}
+          <ButtonLink to="/ui/repos" aria-label="New repository" variant="primary" size="sm">
+            <RepoIcon size={14} /> New
+          </ButtonLink>
         </div>
         <Box>
           {repos.isLoading && <Spinner label="loading repositories" />}
@@ -87,25 +96,48 @@ export function DashboardPage() {
         </Box>
       </aside>
 
-      {/* Center: recent activity feed */}
-      <section>
-        <SectionLabel>Recent activity</SectionLabel>
-        {issues.isLoading && <Spinner label="loading activity" />}
-        {issues.isError && (
-          <InlineError title="Failed to load activity" detail={String(issues.error)} />
-        )}
-        {issues.data &&
-          (issues.data.length === 0 ? (
-            <Blankslate icon={<IssueOpenedIcon size={28} />} title="No recent activity">
-              Issues you open or are assigned to across your repositories show up here.
-            </Blankslate>
-          ) : (
-            <Box>
-              {issues.data.map((issue, i) => (
-                <FeedIssueRow key={issue.id} issue={issue} last={i === issues.data.length - 1} />
-              ))}
-            </Box>
-          ))}
+      {/* Center: the following/news feed (github.com's home feed), then your issues */}
+      <section className="flex flex-col gap-6">
+        <div>
+          <SectionLabel>Following</SectionLabel>
+          {feed.isLoading && <Spinner label="loading activity feed" />}
+          {feed.isError && (
+            <InlineError title="Failed to load activity feed" detail={String(feed.error)} />
+          )}
+          {feed.data &&
+            (feed.data.length === 0 ? (
+              <Blankslate icon={<GlobeIcon size={28} />} title="Your feed is quiet">
+                When you follow people and watch repositories, their activity — pushes, issues,
+                and pull requests — shows up here.
+              </Blankslate>
+            ) : (
+              <Box>
+                {feed.data.slice(0, 30).map((event, i) => (
+                  <FollowFeedRow key={event.id ?? i} event={event} last={i === Math.min(feed.data!.length, 30) - 1} />
+                ))}
+              </Box>
+            ))}
+        </div>
+
+        <div>
+          <SectionLabel>Your issues</SectionLabel>
+          {issues.isLoading && <Spinner label="loading issues" />}
+          {issues.isError && (
+            <InlineError title="Failed to load issues" detail={String(issues.error)} />
+          )}
+          {issues.data &&
+            (issues.data.length === 0 ? (
+              <Blankslate icon={<IssueOpenedIcon size={28} />} title="No open issues">
+                Issues you open or are assigned to across your repositories show up here.
+              </Blankslate>
+            ) : (
+              <Box>
+                {issues.data.map((issue, i) => (
+                  <FeedIssueRow key={issue.id} issue={issue} last={i === issues.data.length - 1} />
+                ))}
+              </Box>
+            ))}
+        </div>
       </section>
 
       {/* Right panel: quick links */}
@@ -145,7 +177,15 @@ function TopRepoRow({ repo, last }: { repo: BleephubRepo; last: boolean }) {
       <Link
         to={`/ui/repos/${owner}/${name}`}
         className="truncate"
-        style={{ color: "var(--color-accent)", fontSize: "0.85rem", textDecoration: "none" }}
+        // inline-block + ≥24px line-height: a standalone list link (not inline
+        // text) must clear WCAG 2.5.8 target-size.
+        style={{
+          display: "inline-block",
+          color: "var(--color-accent)",
+          fontSize: "0.85rem",
+          lineHeight: "1.625rem",
+          textDecoration: "none",
+        }}
       >
         {repo.full_name}
       </Link>
@@ -171,7 +211,17 @@ function FeedIssueRow({ issue, last }: { issue: GithubFeedIssue; last: boolean }
       <div className="min-w-0 flex-1">
         <Link
           to={`/ui/repos/${owner}/${name}/issues/${issue.number}`}
-          style={{ color: "var(--color-fg)", fontWeight: 600, fontSize: "0.9rem", textDecoration: "none" }}
+          // inline-block + ≥24px line-height so the title's own hit box clears
+          // WCAG 2.5.8 target-size (it sits alone on its line, so the inline-text
+          // exemption doesn't apply).
+          style={{
+            display: "inline-block",
+            color: "var(--color-fg)",
+            fontWeight: 600,
+            fontSize: "0.9rem",
+            lineHeight: "1.625rem",
+            textDecoration: "none",
+          }}
         >
           {issue.title}
         </Link>
@@ -190,6 +240,57 @@ function FeedIssueRow({ issue, last }: { issue: GithubFeedIssue; last: boolean }
           {issue.comments}
         </span>
       )}
+    </div>
+  );
+}
+
+function followEventPhrase(e: GithubUserEvent): string {
+  const action = e.payload?.action;
+  switch (e.type) {
+    case "PushEvent": {
+      const n = e.payload?.size;
+      return typeof n === "number" ? `pushed ${n} commit${n === 1 ? "" : "s"} to` : "pushed to";
+    }
+    case "CreateEvent":
+      return `created ${e.payload?.ref_type ?? "a ref"} in`;
+    case "DeleteEvent":
+      return `deleted ${e.payload?.ref_type ?? "a ref"} in`;
+    case "IssuesEvent":
+      return `${action ?? "updated"} an issue in`;
+    case "IssueCommentEvent":
+      return "commented on an issue in";
+    case "PullRequestEvent":
+      return `${action ?? "updated"} a pull request in`;
+    default:
+      return "was active in";
+  }
+}
+
+function FollowFeedRow({ event, last }: { event: GithubUserEvent; last: boolean }) {
+  const actor = event.actor?.login ?? "someone";
+  const repo = event.repo?.name;
+  return (
+    <div
+      className="flex items-start gap-2.5"
+      style={{ padding: "0.7rem 1rem", borderBottom: last ? "none" : "1px solid var(--color-border)" }}
+    >
+      <Avatar login={actor} src={event.actor?.avatar_url} size={22} />
+      <div className="min-w-0 flex-1" style={{ fontSize: "0.85rem" }}>
+        <span>
+          <Link to={`/ui/${actor}`} style={{ color: "var(--color-fg)", fontWeight: 600, textDecoration: "none" }}>
+            {actor}
+          </Link>{" "}
+          <span style={{ color: "var(--color-fg-muted)" }}>{followEventPhrase(event)}</span>{" "}
+          {repo && (
+            <Link to={`/ui/repos/${repo}`} style={{ color: "var(--color-accent)", textDecoration: "none" }}>
+              {repo}
+            </Link>
+          )}
+        </span>
+        <div style={{ fontSize: "0.76rem", color: "var(--color-fg-muted)" }}>
+          {new Date(event.created_at).toLocaleDateString()}
+        </div>
+      </div>
     </div>
   );
 }

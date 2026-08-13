@@ -74,6 +74,9 @@ function mockInsightsEndpoints(overrides: Record<string, () => Response> = {}) {
       weeks[51] = { week: weeks[51]!.week, days: [0, 3, 0, 1, 0, 0, 0], total: 4 };
       return Promise.resolve(jsonResponse(weeks));
     }
+    if (u.includes("/stats/code_frequency")) {
+      return Promise.resolve(jsonResponse([[1700000000, 40, -12], [1700604800, 7, -3]]));
+    }
     if (u.includes("/traffic/views")) {
       return Promise.resolve(jsonResponse({ count: 0, uniques: 0, views: [] }));
     }
@@ -108,6 +111,10 @@ describe("InsightsPage", () => {
     expect(screen.getByText("43%")).toBeInTheDocument();
     // commit activity total
     expect(screen.getByText(/4 commits on the default branch/)).toBeInTheDocument();
+    // code frequency: 40+7 additions and 12+3 deletions across 2 weeks
+    expect(screen.getByText("+47")).toBeInTheDocument();
+    expect(screen.getByText("−15")).toBeInTheDocument();
+    expect(screen.getByText(/additions and/)).toBeInTheDocument();
     // clone traffic bucket list rendered, view traffic honestly empty
     expect(screen.getByText(/5 \(2 unique\)/)).toBeInTheDocument();
     expect(screen.getByText(/No views in the last 14 days/)).toBeInTheDocument();

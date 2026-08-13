@@ -857,6 +857,7 @@ export interface BleephubGist {
 
 // Generated from the vendored GitHub OpenAPI description (WEB-013).
 export type GithubGistCommit = components["schemas"]["gist-commit"];
+export type GithubGistComment = components["schemas"]["gist-comment"];
 
 export interface GithubNotificationThread {
   id: string;
@@ -1319,6 +1320,10 @@ export interface GithubCommitActivityWeek {
   days: number[];
   total: number;
 }
+
+/** One weekly bucket from GET /repos/{o}/{r}/stats/code_frequency:
+ * [unix week timestamp, additions (>=0), deletions (<=0)]. */
+export type GithubCodeFrequencyWeek = [number, number, number];
 
 // Generated from the vendored GitHub OpenAPI description (WEB-013).
 export type GithubCommunityProfile = components["schemas"]["community-profile"];

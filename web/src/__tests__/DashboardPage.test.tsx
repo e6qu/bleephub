@@ -59,6 +59,8 @@ describe("DashboardPage", () => {
     mockFetch.mockImplementation((url: RequestInfo | URL) => {
       const u = url.toString();
       if (u.includes("/api/v3/user/repos")) return Promise.resolve(jsonResponse([repo], 200, { Link: "" }));
+      if (u.includes("/received_events"))
+        return Promise.resolve(jsonResponse([{ id: "e1", type: "PushEvent", created_at: "2026-02-01T00:00:00Z", actor: { login: "hubot" }, repo: { name: "acme/api" }, payload: { size: 2 } }]));
       if (u.includes("/api/v3/issues")) return Promise.resolve(jsonResponse([feedIssue]));
       if (u.includes("/api/v3/user")) return Promise.resolve(jsonResponse({ id: 1, login: "octocat", type: "User", site_admin: true, created_at: "2026-01-01T00:00:00Z" }));
       return Promise.resolve(jsonResponse([]));
@@ -68,11 +70,11 @@ describe("DashboardPage", () => {
     await waitFor(() => {
       expect(screen.getByText("Flaky runner timeout")).toBeInTheDocument();
     });
-    expect(screen.getByText("octocat")).toBeInTheDocument();
-    // "acme/api" appears in both the top-repos rail and the feed row.
-    expect(screen.getAllByText("acme/api").length).toBeGreaterThan(0);
-    expect(screen.getByText("Recent activity")).toBeInTheDocument();
-    // Quick links panel.
+    // The following feed (received_events) renders the actor + activity phrase.
+    expect(screen.getByText("Following")).toBeInTheDocument();
+    expect(await screen.findByText("hubot")).toBeInTheDocument();
+    expect(screen.getByText(/pushed 2 commits to/i)).toBeInTheDocument();
+    expect(screen.getByText("Your issues")).toBeInTheDocument();
     expect(screen.getByText("System status")).toBeInTheDocument();
   });
 
@@ -80,6 +82,7 @@ describe("DashboardPage", () => {
     mockFetch.mockImplementation((url: RequestInfo | URL) => {
       const u = url.toString();
       if (u.includes("/api/v3/user/repos")) return Promise.resolve(jsonResponse([], 200, { Link: "" }));
+      if (u.includes("/received_events")) return Promise.resolve(jsonResponse([]));
       if (u.includes("/api/v3/issues")) return Promise.resolve(jsonResponse([]));
       if (u.includes("/api/v3/user")) return Promise.resolve(jsonResponse({ id: 1, login: "octocat", type: "User", site_admin: true, created_at: "2026-01-01T00:00:00Z" }));
       return Promise.resolve(jsonResponse([]));
@@ -87,22 +90,24 @@ describe("DashboardPage", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText(/no recent activity/i)).toBeInTheDocument();
+      expect(screen.getByText(/your feed is quiet/i)).toBeInTheDocument();
     });
+    expect(screen.getByText(/no open issues/i)).toBeInTheDocument();
   });
 
   it("surfaces a feed error instead of swallowing it", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL) => {
       const u = url.toString();
       if (u.includes("/api/v3/user/repos")) return Promise.resolve(jsonResponse([], 200, { Link: "" }));
-      if (u.includes("/api/v3/issues")) return Promise.resolve(jsonResponse({ message: "boom" }, 500));
+      if (u.includes("/received_events")) return Promise.resolve(jsonResponse({ message: "boom" }, 500));
+      if (u.includes("/api/v3/issues")) return Promise.resolve(jsonResponse([]));
       if (u.includes("/api/v3/user")) return Promise.resolve(jsonResponse({ id: 1, login: "octocat", type: "User", site_admin: true, created_at: "2026-01-01T00:00:00Z" }));
       return Promise.resolve(jsonResponse([]));
     });
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText(/failed to load activity/i)).toBeInTheDocument();
+      expect(screen.getByText(/failed to load activity feed/i)).toBeInTheDocument();
     });
   });
 });

@@ -47,6 +47,8 @@ const CodespacesPage = lazy(() => import("./pages/CodespacesPage.js").then(({ Co
 const PackagesPage = lazy(() => import("./pages/PackagesPage.js").then(({ PackagesPage }) => ({ default: PackagesPage })));
 const InsightsPage = lazy(() => import("./pages/InsightsPage.js").then(({ InsightsPage }) => ({ default: InsightsPage })));
 const OrgGovernancePage = lazy(() => import("./pages/OrgGovernancePage.js").then(({ OrgGovernancePage }) => ({ default: OrgGovernancePage })));
+const OrgSettingsPage = lazy(() => import("./pages/OrgSettingsPage.js").then(({ OrgSettingsPage }) => ({ default: OrgSettingsPage })));
+const OrgInsightsPage = lazy(() => import("./pages/OrgInsightsPage.js").then(({ OrgInsightsPage }) => ({ default: OrgInsightsPage })));
 const CopilotPage = lazy(() => import("./pages/CopilotPage.js").then(({ CopilotPage }) => ({ default: CopilotPage })));
 const PersonalCopilotSpacesPage = lazy(() =>
   import("./pages/CopilotPage.js").then(({ PersonalCopilotSpacesPage }) => ({ default: PersonalCopilotSpacesPage })),
@@ -57,6 +59,7 @@ const WebhookDeliveriesPage = lazy(() => import("./pages/WebhookDeliveriesPage.j
 const OrgHooksPage = lazy(() => import("./pages/OrgHooksPage.js").then(({ OrgHooksPage }) => ({ default: OrgHooksPage })));
 const SearchPage = lazy(() => import("./pages/SearchPage.js").then(({ SearchPage }) => ({ default: SearchPage })));
 const AccountPage = lazy(() => import("./pages/AccountPage.js").then(({ AccountPage }) => ({ default: AccountPage })));
+const MyOrganizationsPage = lazy(() => import("./pages/MyOrganizationsPage.js").then(({ MyOrganizationsPage }) => ({ default: MyOrganizationsPage })));
 const RepoSocialPage = lazy(() => import("./pages/RepoSocialPage.js").then(({ RepoSocialPage }) => ({ default: RepoSocialPage })));
 const DashboardPage = lazy(() => import("./pages/DashboardPage.js").then(({ DashboardPage }) => ({ default: DashboardPage })));
 const ProfilePage = lazy(() => import("./pages/ProfilePage.js").then(({ ProfilePage }) => ({ default: ProfilePage })));
@@ -197,6 +200,8 @@ export function App() {
               <Route path="/ui/orgs/:org/projects/:number" element={<OrgProjectsV2Page />} />
               <Route path="/ui/orgs/:org/rulesets" element={<RulesetsPage />} />
               <Route path="/ui/orgs/:org/governance" element={<OrgGovernancePage />} />
+              <Route path="/ui/orgs/:org/settings" element={<OrgSettingsPage />} />
+              <Route path="/ui/orgs/:org/insights" element={<OrgInsightsPage />} />
               <Route path="/ui/orgs/:org/copilot" element={<CopilotPage />} />
               <Route path="/ui/repos/:owner/:repo" element={<RepoDetailPage />} />
               <Route path="/ui/repos/:owner/:repo/commits" element={<RepoDetailPage initialTab="commits" />} />
@@ -266,6 +271,7 @@ export function App() {
               {/* Search + repo social + account */}
               <Route path="/ui/search" element={<SearchPage />} />
               <Route path="/ui/account" element={<AccountPage />} />
+              <Route path="/ui/settings/organizations" element={<MyOrganizationsPage />} />
               <Route path="/ui/repos/:owner/:repo/stargazers" element={<RepoSocialPage kind="stargazers" />} />
               <Route path="/ui/repos/:owner/:repo/watchers" element={<RepoSocialPage kind="watchers" />} />
               <Route path="/ui/repos/:owner/:repo/forks" element={<RepoSocialPage kind="forks" />} />

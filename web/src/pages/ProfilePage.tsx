@@ -12,6 +12,8 @@ import {
   fetchRepoReadme,
   fetchPackages,
   fetchAuthenticatedUser,
+  fetchPinnedRepos,
+  setPinnedRepos,
   checkFollowing,
   followUser,
   unfollowUser,
@@ -283,6 +285,8 @@ function ProfileOverview({ login }: { login: string }) {
 
   return (
     <div className="flex flex-col gap-5">
+      <PinnedSection login={login} />
+
       {readme.data && (
         <Box header={<span className="inline-flex items-center gap-2"><RepoIcon size={14} />{login} / README.md</span>}>
           <div style={{ padding: "1rem 1.25rem" }} className="markdown-body">
@@ -311,6 +315,136 @@ function ProfileOverview({ login }: { login: string }) {
         </section>
       )}
     </div>
+  );
+}
+
+// ─── Pinned repositories (profile Overview) ─────────────────────────────────────
+
+function PinnedSection({ login }: { login: string }) {
+  const qc = useQueryClient();
+  const viewer = useQuery({ queryKey: ["viewer"], queryFn: fetchAuthenticatedUser });
+  const isSelf = typeof viewer.data?.login === "string" && viewer.data.login === login;
+  const pinnedQ = useQuery({ queryKey: ["pinned", login], queryFn: () => fetchPinnedRepos(login) });
+  const [editing, setEditing] = useState(false);
+  const muted = { fontSize: "0.85rem", color: "var(--color-fg-muted)" } as const;
+
+  const pinned = pinnedQ.data ?? [];
+  // On another user's profile with no pins, GitHub hides the section entirely.
+  if (pinnedQ.isLoading) return null;
+  if (!isSelf && pinned.length === 0) return null;
+
+  return (
+    <section>
+      <div className="mb-2 flex items-center justify-between">
+        <SectionLabel>Pinned</SectionLabel>
+        {isSelf && (
+          <Button size="sm" onClick={() => setEditing((v) => !v)}>
+            {editing ? "Done" : "Customize your pins"}
+          </Button>
+        )}
+      </div>
+      {editing ? (
+        <PinnedEditor
+          login={login}
+          current={pinned.map((r) => r.full_name)}
+          onSaved={() => {
+            qc.invalidateQueries({ queryKey: ["pinned", login] });
+            setEditing(false);
+          }}
+        />
+      ) : pinned.length === 0 ? (
+        <p style={muted}>You have no pinned repositories yet. Use “Customize your pins”.</p>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {pinned.map((repo) => (
+            <PinnedCard key={repo.id} repo={repo} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function PinnedCard({ repo }: { repo: BleephubRepo }) {
+  const [owner, name] = repo.full_name.split("/");
+  return (
+    <div style={{ border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)", padding: "0.85rem 1rem" }}>
+      <Link
+        to={`/ui/repos/${owner}/${name}`}
+        className="inline-flex items-center gap-1"
+        style={{ color: "var(--color-accent)", fontWeight: 600, fontSize: "0.9rem", textDecoration: "none" }}
+      >
+        <RepoIcon size={14} /> {repo.name}
+      </Link>
+      {repo.description && (
+        <p className="mt-1" style={{ fontSize: "0.8rem", color: "var(--color-fg-muted)", maxWidth: "30rem" }}>
+          {repo.description}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function PinnedEditor({
+  login,
+  current,
+  onSaved,
+}: {
+  login: string;
+  current: string[];
+  onSaved: () => void;
+}) {
+  const [selected, setSelected] = useState<string[]>(current);
+  const reposQ = useQuery({
+    queryKey: ["own-repos-for-pins", login],
+    queryFn: () => fetchUserReposByLoginPage(login, { sort: "updated" }),
+  });
+  const saveMut = useMutation({
+    mutationFn: () => setPinnedRepos(login, selected),
+    onSuccess: onSaved,
+  });
+  const toggle = (fullName: string) =>
+    setSelected((s) =>
+      s.includes(fullName) ? s.filter((x) => x !== fullName) : s.length >= 6 ? s : [...s, fullName],
+    );
+  const repos = reposQ.data?.items ?? [];
+
+  return (
+    <Box>
+      <div style={{ padding: "0.75rem 1rem" }}>
+        <div style={{ fontSize: "0.8rem", color: "var(--color-fg-muted)", marginBottom: "0.5rem" }}>
+          Select up to 6 repositories ({selected.length}/6)
+        </div>
+        {reposQ.isLoading ? (
+          <Spinner label="loading repositories" />
+        ) : (
+          <ul style={{ listStyle: "none", margin: 0, padding: 0, maxHeight: "16rem", overflowY: "auto" }}>
+            {repos.map((r) => {
+              const checked = selected.includes(r.full_name);
+              return (
+                <li key={r.id}>
+                  <label className="flex items-center gap-2" style={{ padding: "0.25rem 0", fontSize: "0.85rem" }}>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={!checked && selected.length >= 6}
+                      onChange={() => toggle(r.full_name)}
+                    />
+                    {r.name}
+                  </label>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        <MutationError of={saveMut} />
+        <div className="mt-2 flex justify-end">
+          <Button variant="primary" size="sm" disabled={saveMut.isPending} onClick={() => saveMut.mutate()}>
+            {saveMut.isPending ? "Saving…" : "Save pins"}
+          </Button>
+        </div>
+      </div>
+    </Box>
   );
 }
 

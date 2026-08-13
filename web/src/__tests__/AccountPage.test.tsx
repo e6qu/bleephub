@@ -7,6 +7,12 @@ import { AccountPage } from "../pages/AccountPage.js";
 const mockFetch = vi.fn();
 globalThis.fetch = mockFetch;
 
+// useTheme (Appearance tab) reads prefers-color-scheme; jsdom has no matchMedia.
+Object.defineProperty(window, "matchMedia", {
+  configurable: true,
+  value: vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })),
+});
+
 function jsonResponse(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -49,6 +55,13 @@ function installFetchRoutes(overrides: Record<string, () => Response> = {}) {
       );
     if (key === "GET /api/v3/user/blocks")
       return Promise.resolve(jsonResponse([{ login: "spammer" }]));
+    // Public profile tab (now the default) fetches the viewer + their profile.
+    if (key === "GET /api/v3/user")
+      return Promise.resolve(jsonResponse({ id: 1, login: "admin", type: "User", site_admin: true }));
+    if (url.includes("/api/v3/users/admin") && method === "GET")
+      return Promise.resolve(jsonResponse({ login: "admin", name: "Admin", bio: "", company: "", location: "", blog: "", twitter_username: "", created_at: "2026-01-01T00:00:00Z", followers: 0, following: 0, public_repos: 0 }));
+    if (key === "PATCH /api/v3/user")
+      return Promise.resolve(jsonResponse({ login: "admin", name: "Admin" }));
     return Promise.resolve(jsonResponse({ message: `unexpected ${key}` }, 500));
   });
 }
@@ -70,6 +83,7 @@ describe("AccountPage", () => {
   it("lists SSH keys from GET /user/keys", async () => {
     installFetchRoutes();
     renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "SSH keys" }));
     await waitFor(() => {
       expect(screen.getByText("laptop")).toBeInTheDocument();
     });
@@ -79,6 +93,7 @@ describe("AccountPage", () => {
   it("renders a left settings sub-nav and marks the active item", async () => {
     installFetchRoutes();
     renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "SSH keys" }));
     await waitFor(() => screen.getByText("laptop"));
 
     const nav = screen.getByRole("navigation", { name: "Settings" });
@@ -113,6 +128,7 @@ describe("AccountPage", () => {
         ),
     });
     renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "SSH keys" }));
     await waitFor(() => screen.getByText("laptop"));
 
     fireEvent.change(document.getElementById("user-ssh-keys-title")!, {
@@ -148,6 +164,7 @@ describe("AccountPage", () => {
       }, 201),
     });
     renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "SSH keys" }));
     await waitFor(() => screen.getByText("laptop"));
     fireEvent.click(screen.getByRole("button", { name: "Personal access tokens" }));
     expect(await screen.findByText("Fine-grained personal access tokens")).toBeInTheDocument();
@@ -160,11 +177,37 @@ describe("AccountPage", () => {
     expect(post![1].body).toContain('"contents":"read"');
   });
 
+  it("defaults to Public profile and saves edits via PATCH /user", async () => {
+    installFetchRoutes();
+    renderPage();
+    // Public profile is the default tab (matches github.com).
+    expect(screen.getByRole("button", { name: "Public profile" })).toHaveAttribute("aria-current", "page");
+    // The profile form loads asynchronously (viewer → profile fetch).
+    const saveBtn = await screen.findByRole("button", { name: /update profile/i });
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Ada Lovelace" } });
+    fireEvent.click(saveBtn);
+    await waitFor(() => {
+      const patch = mockFetch.mock.calls.find((c) => c[1]?.method === "PATCH" && String(c[0]) === "/api/v3/user");
+      expect(patch).toBeDefined();
+      expect(String(patch![1].body)).toContain("Ada Lovelace");
+    });
+  });
+
+  it("has an Appearance tab that switches the theme", async () => {
+    installFetchRoutes();
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Appearance" }));
+    const dark = await screen.findByRole("radio", { name: /dark/i });
+    fireEvent.click(dark);
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
+  });
+
   it("deletes an SSH key via DELETE /user/keys/{id}", async () => {
     installFetchRoutes({
       "DELETE /api/v3/user/keys/3": () => new Response(null, { status: 204 }),
     });
     renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "SSH keys" }));
     await waitFor(() => screen.getByText("laptop"));
 
     fireEvent.click(screen.getByRole("button", { name: "delete" }));

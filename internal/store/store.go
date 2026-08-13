@@ -156,8 +156,12 @@ type User struct {
 	SiteAdmin    bool            `json:"site_admin"`
 	Suspended    bool            `json:"suspended,omitempty"`
 	StarredRepos map[string]bool `json:"starred_repos,omitempty"`
-	CreatedAt    time.Time       `json:"created_at"`
-	UpdatedAt    time.Time       `json:"updated_at"`
+	// PinnedRepos is the user's ordered list of pinned repository full names
+	// (max 6), shown on the profile Overview. GitHub exposes pins only over
+	// GraphQL, so the simulator serves them from a /ui-data endpoint.
+	PinnedRepos []string  `json:"pinned_repos,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 	// user-surface profile fields (PATCH /user), email addresses, and
 	// account-level interaction limits.
 	Blog                   string      `json:"blog,omitempty"`

@@ -49,7 +49,7 @@ describe("AppHeader menus", () => {
     await user.click(trigger);
 
     const first = screen.getByRole("menuitem", { name: "New repository" });
-    const second = screen.getByRole("menuitem", { name: "New gist" });
+    const second = screen.getByRole("menuitem", { name: "Import repository" });
     await waitFor(() => expect(first).toHaveFocus());
 
     await user.keyboard("{ArrowDown}");

@@ -423,7 +423,9 @@ export type OrgTab =
   | "rulesets"
   | "governance"
   | "copilot"
-  | "hooks";
+  | "hooks"
+  | "settings"
+  | "insights";
 
 /**
  * Org context bar: organization login breadcrumb with org-level tabs.
@@ -453,10 +455,12 @@ export function OrgHeader({ org, active }: { org: string; active: OrgTab }) {
         <RepoTabLink to={`${base}/packages`} icon={<PackageIcon size={15} />} label="Packages" active={active === "packages"} />
         <RepoTabLink to={`${base}/people`} icon={<PeopleIcon size={15} />} label="People" active={active === "people"} />
         <RepoTabLink to={`${base}/teams`} icon={<TeamIcon size={15} />} label="Teams" active={active === "teams"} />
+        <RepoTabLink to={`${base}/insights`} icon={<GraphIcon size={15} />} label="Insights" active={active === "insights"} />
         <RepoTabLink to={`${base}/rulesets`} icon={<GearIcon size={15} />} label="Rulesets" active={active === "rulesets"} />
         <RepoTabLink to={`${base}/governance`} icon={<PeopleIcon size={15} />} label="Governance" active={active === "governance"} />
         <RepoTabLink to={`${base}/hooks`} icon={<WebhookIcon size={15} />} label="Webhooks" active={active === "hooks"} />
         <RepoTabLink to={`${base}/copilot`} icon={<CommentIcon size={15} />} label="Copilot" active={active === "copilot"} />
+        <RepoTabLink to={`${base}/settings`} icon={<GearIcon size={15} />} label="Settings" active={active === "settings"} />
       </nav>
     </div>
   );

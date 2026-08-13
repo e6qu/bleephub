@@ -8,11 +8,14 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 // ─── Phase 0 empirical baseline ───────────────────────────────────────────────
 //
-// This spec does NOT fix anything and does NOT fail on violations. It sweeps a
-// representative set of /ui routes in BOTH light and dark themes, runs axe-core
-// (WCAG 2.0/2.1/2.2 A + AA), and writes a machine-readable violation inventory
-// plus a light/dark theme-defect catalogue. Route-load failures are recorded as
-// findings rather than aborting the sweep.
+// This spec sweeps a representative set of /ui routes in BOTH light and dark
+// themes, runs axe-core (WCAG 2.0/2.1/2.2 A + AA), and writes a machine-readable
+// violation inventory plus a light/dark theme-defect catalogue. Per-route load
+// failures are recorded (not thrown) during the sweep so the catalogue is
+// complete; the final "a11y ratchet" test then FAILS the suite if any route in
+// either theme carried a violation or failed to load. The baseline is zero, so
+// this is a blocking regression gate — drive new findings back to zero rather
+// than loosening it.
 
 const ADMIN_TOKEN = "bleephub-admin-token-00000000000000000000";
 const BASE = "http://localhost:15555";
@@ -108,6 +111,7 @@ function buildRoutes(): { route: string; label: string }[] {
     { route: `/ui/${o}?tab=packages`, label: "profile-packages" },
     { route: `/ui/${o}?tab=stars`, label: "profile-stars" },
     { route: "/ui/account", label: "account" },
+    { route: "/ui/settings/organizations", label: "my-organizations" },
     { route: "/ui/notifications", label: "notifications" },
     { route: "/ui/search?q=test", label: "search" },
     { route: "/ui/repos", label: "repos-list" },
@@ -190,6 +194,11 @@ test.beforeAll(async ({ browser }) => {
   ok("wiki", await api(page, "PUT", `/ui-data/repos/${seeded.owner}/${seeded.repo}/wiki/pages/home`, {
     title: "Home",
     body: "# Welcome\n\nParity wiki fixture page.",
+  }));
+
+  // Pin the repo so the profile Overview renders its pinned grid.
+  ok("pin", await api(page, "PUT", `/ui-data/users/${seeded.owner}/pinned`, {
+    repos: [`${seeded.owner}/${seeded.repo}`],
   }));
 
   // labels + milestones
@@ -303,6 +312,10 @@ for (const theme of THEMES) {
           .waitForSelector("main, [role=main], .app-header", { timeout: 8_000 })
           .catch(() => {});
         await page.waitForLoadState("networkidle", { timeout: 6_000 }).catch(() => {});
+        // Async list/feed content (dashboard repos + activity, tables) can render
+        // after network-idle; give the DOM a beat to settle so axe measures the
+        // real, populated page (and matches slower CI) rather than a skeleton.
+        await page.waitForTimeout(600);
 
         const isDark = await page.evaluate(() =>
           document.documentElement.classList.contains("dark"),
@@ -339,13 +352,39 @@ for (const theme of THEMES) {
       console.log(
         `[scan] ${theme} ${route} -> ${
           record.loadFailure ? "LOAD-FAIL" : `${record.violations.length} rules`
-        }${record.themeApplied ? "" : " (theme-mismatch)"}`,
+        }${record.themeApplied ? "" : " (theme-mismatch)"}` +
+          // Surface the offending rule + element selectors on stdout so a CI-only
+          // (e.g. Linux-subpixel) regression is diagnosable without the artifact.
+          record.violations
+            .map((v) => `\n    ! ${v.id}: ${v.targets.join(" | ")}`)
+            .join(""),
       );
     }
-    // Baseline collector: never fail on violations.
     expect(collected.length).toBeGreaterThan(0);
   });
 }
+
+// ─── ratchet gate ────────────────────────────────────────────────────────────────
+// The sweep is now BLOCKING: after both theme passes, fail if any route carries
+// an axe violation or failed to load. The baseline was driven to zero (ledger
+// WEB-064..069), so any regression — a new hardcoded color, a missing label —
+// fails CI here rather than silently accruing. Runs after the two theme tests in
+// the same worker, so `collected` is populated.
+test("a11y ratchet — zero WCAG violations across all routes and themes", () => {
+  const offenders = collected
+    .filter((r) => r.loadFailure || r.violations.length > 0)
+    .map((r) =>
+      r.loadFailure
+        ? `${r.route} [${r.theme}] LOAD-FAIL: ${r.error ?? "unknown"}`
+        : `${r.route} [${r.theme}] ${r.violations.map((v) => `${v.id}×${v.nodes}`).join(", ")}`,
+    );
+  expect(
+    offenders,
+    offenders.length
+      ? `axe/theme regressions (drive back to zero, don't loosen the gate):\n  ${offenders.join("\n  ")}`
+      : undefined,
+  ).toEqual([]);
+});
 
 // ─── aggregate + emit ────────────────────────────────────────────────────────────
 test.afterAll(async () => {
