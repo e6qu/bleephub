@@ -148,6 +148,8 @@ Drive the Phase-0 axe inventory to zero (or justified, documented exceptions):
 
 ## Workstream D — GitHub Classroom (full parity with the old implementation)
 
+**Assessed gap (WEB-082, open):** the assignment-creation dialog omits 5 backend-supported teacher options old classroom.github.com has — repo visibility, grant-students-admin, feedback-PR toggle, group team-size (max_teams/max_members), and supported editor. Fix surfaces them as form controls; deferred behind the in-flight #284 ClassroomPage.tsx change.
+
 GitHub Classroom is a revived, upstream-**deprecated** product — but its objective is the same as the rest: **full functional parity with GitHub's old Classroom implementation** (`classroom.github.com` as it existed). It has a real reference to match — its navigation, flows, and features — not an "internally coherent" exemption. Status today: REST list + org-scoped auth verified working (list→200, web-create correctly 403s without org-admin); **the full product is unverified against the real Classroom**.
 
 Match the old Classroom's structure and functionality (Phase 0 builds this reference map too):
