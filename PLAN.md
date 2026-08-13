@@ -104,7 +104,7 @@ menus/controls are missing or non-functional.
 14. Account settings: authorized **Applications** missing; OAuth/GitHub Apps misplaced under Operations.
 15. Create **`+`** menu missing Import repository and New project.
 16. Avatar menu missing **Your organizations / projects / stars**.
-17. Dashboard activity feed is **issues-only**, not the follow/news feed.
+17. ✅ FIXED (WEB-077) — Dashboard **Following** feed (from received_events) added above a renamed "Your issues" section; was issues-only.
 18. Add file has no **Upload files** (binary upload) — text-only modal.
 
 **MINORs** (misplaced/partial): repo-settings sub-nav is in-page state, not deep-linkable URLs;

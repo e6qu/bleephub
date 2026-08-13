@@ -4761,6 +4761,13 @@ export const fetchUserProjectsV2 = (login: string) =>
 export const fetchUserEvents = (login: string) =>
   ghFetch<GithubUserEvent[]>(`/api/v3/users/${encodeURIComponent(login)}/events`);
 
+/**
+ * The viewer's dashboard "following" news feed — activity from people and repos
+ * they follow/watch (GET /users/{login}/received_events).
+ */
+export const fetchReceivedEvents = (login: string) =>
+  ghFetch<GithubUserEvent[]>(`/api/v3/users/${encodeURIComponent(login)}/received_events`);
+
 /** Organization-full profile for the org Overview tab (GET /orgs/{org}). */
 export const fetchOrgProfile = (org: string) =>
   ghFetch<GithubOrgProfile>(`/api/v3/orgs/${encodeURIComponent(org)}`);
