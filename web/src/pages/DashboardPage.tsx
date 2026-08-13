@@ -203,7 +203,17 @@ function FeedIssueRow({ issue, last }: { issue: GithubFeedIssue; last: boolean }
       <div className="min-w-0 flex-1">
         <Link
           to={`/ui/repos/${owner}/${name}/issues/${issue.number}`}
-          style={{ color: "var(--color-fg)", fontWeight: 600, fontSize: "0.9rem", textDecoration: "none" }}
+          // inline-block + ≥24px line-height so the title's own hit box clears
+          // WCAG 2.5.8 target-size (it sits alone on its line, so the inline-text
+          // exemption doesn't apply).
+          style={{
+            display: "inline-block",
+            color: "var(--color-fg)",
+            fontWeight: 600,
+            fontSize: "0.9rem",
+            lineHeight: "1.625rem",
+            textDecoration: "none",
+          }}
         >
           {issue.title}
         </Link>
