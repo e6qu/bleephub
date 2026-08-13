@@ -6,9 +6,13 @@ import { createColumnHelper } from "@bleephub/ui-core/components";
 import { confirmAction } from "../components/confirmAction.js";
 import {
   createGist,
+  createGistComment,
   deleteGist,
+  deleteGistComment,
+  fetchCurrentUser,
   fetchGist,
   fetchGistCommits,
+  fetchGistComments,
   fetchGistForks,
   fetchGists,
   fetchPublicGists,
@@ -35,6 +39,7 @@ import {
   Tabs,
 } from "../components/ui.js";
 import { GistIcon, StarIcon, BranchIcon } from "../components/octicons.js";
+import { Avatar } from "../components/Avatar.js";
 
 type GistScope = "yours" | "public" | "starred";
 
@@ -211,7 +216,7 @@ function GistsTable({ scope, onSelect }: { scope: GistScope; onSelect: (id: stri
 function GistDetail({ id, onClose }: { id: string; onClose: () => void }) {
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<BleephubGist | null>(null);
-  const [detailTab, setDetailTab] = useState<"files" | "commits" | "forks">("files");
+  const [detailTab, setDetailTab] = useState<"files" | "commits" | "forks" | "comments">("files");
   const [actionError, setActionError] = useState<string | null>(null);
 
   const { data, isLoading, isError } = useQuery({
@@ -282,11 +287,12 @@ function GistDetail({ id, onClose }: { id: string; onClose: () => void }) {
         </Button>
       </div>
 
-      <Tabs<"files" | "commits" | "forks">
+      <Tabs<"files" | "commits" | "forks" | "comments">
         items={[
           { key: "files", label: "Files" },
           { key: "commits", label: "History" },
           { key: "forks", label: "Forks" },
+          { key: "comments", label: "Comments" },
         ]}
         active={detailTab}
         onChange={setDetailTab}
@@ -316,6 +322,7 @@ function GistDetail({ id, onClose }: { id: string; onClose: () => void }) {
 
       {detailTab === "commits" && <GistCommits id={id} />}
       {detailTab === "forks" && <GistForks id={id} />}
+      {detailTab === "comments" && <GistComments id={id} />}
 
       <DialogActions>
         <Button onClick={onClose} variant="ghost">
@@ -419,6 +426,110 @@ function GistForks({ id }: { id: string }) {
           <div style={{ fontSize: "0.82rem" }}>{fork.description || "(no description)"}</div>
         </Box>
       ))}
+    </div>
+  );
+}
+
+function GistComments({ id }: { id: string }) {
+  const queryClient = useQueryClient();
+  const [body, setBody] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const viewer = useQuery({ queryKey: ["current-user"], queryFn: ({ signal }) => fetchCurrentUser(signal) });
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["gists", id, "comments"],
+    queryFn: () => fetchGistComments(id),
+  });
+
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ["gists", id, "comments"] });
+
+  const createMut = useMutation({
+    mutationFn: () => createGistComment(id, body.trim()),
+    onSuccess: () => {
+      setBody("");
+      setError(null);
+      invalidate();
+    },
+    onError: (err: Error) => setError(err.message),
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (commentId: number) => deleteGistComment(id, commentId),
+    onSuccess: () => {
+      setError(null);
+      invalidate();
+    },
+    onError: (err: Error) => setError(err.message),
+  });
+
+  return (
+    <div className="flex flex-col gap-3">
+      {error && <ErrorBanner>{error}</ErrorBanner>}
+      {isError && <InlineError title="Failed to load comments" />}
+      {isLoading && <Spinner label="loading comments" />}
+      {data && data.length === 0 && (
+        <div style={{ color: "var(--color-fg-muted)", fontSize: "0.85rem" }}>No comments yet.</div>
+      )}
+      {data?.map((comment) => (
+        <Box key={comment.id} className="p-3">
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <span className="flex items-center gap-2" style={{ fontSize: "0.85rem", fontWeight: 600 }}>
+              <Avatar login={comment.user?.login ?? "ghost"} src={comment.user?.avatar_url} size={20} />
+              {comment.user?.login ?? "ghost"}
+              <span style={{ fontWeight: 400, color: "var(--color-fg-muted)", fontSize: "0.78rem" }}>
+                commented {new Date(comment.created_at).toLocaleString()}
+              </span>
+            </span>
+            {viewer.data?.login && comment.user?.login === viewer.data.login && (
+              <Button
+                size="sm"
+                variant="ghost"
+                aria-label={`Delete comment ${comment.id}`}
+                disabled={deleteMut.isPending}
+                onClick={async () => {
+                  if (await confirmAction("Delete this comment?", { title: "Delete comment", confirmLabel: "Delete" })) {
+                    deleteMut.mutate(comment.id);
+                  }
+                }}
+              >
+                Delete
+              </Button>
+            )}
+          </div>
+          <div style={{ fontSize: "0.88rem", whiteSpace: "pre-wrap" }}>{comment.body}</div>
+        </Box>
+      ))}
+
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (body.trim()) createMut.mutate();
+        }}
+        className="flex flex-col gap-2"
+      >
+        <FormLabel id="gist-comment-body">Add a comment</FormLabel>
+        <textarea
+          id="gist-comment-body"
+          value={body}
+          onChange={(event) => setBody(event.target.value)}
+          rows={3}
+          placeholder="Leave a comment"
+          style={{
+            width: "100%",
+            padding: "0.5rem 0.65rem",
+            fontSize: "0.88rem",
+            borderRadius: "var(--radius-md)",
+            border: "1px solid var(--color-border)",
+            background: "var(--color-surface)",
+            color: "var(--color-fg)",
+          }}
+        />
+        <div className="flex justify-end">
+          <Button type="submit" variant="primary" size="sm" disabled={!body.trim() || createMut.isPending}>
+            {createMut.isPending ? "Commenting…" : "Comment"}
+          </Button>
+        </div>
+      </form>
     </div>
   );
 }

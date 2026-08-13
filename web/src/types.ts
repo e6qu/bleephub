@@ -857,6 +857,7 @@ export interface BleephubGist {
 
 // Generated from the vendored GitHub OpenAPI description (WEB-013).
 export type GithubGistCommit = components["schemas"]["gist-commit"];
+export type GithubGistComment = components["schemas"]["gist-comment"];
 
 export interface GithubNotificationThread {
   id: string;

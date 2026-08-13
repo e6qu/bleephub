@@ -60,6 +60,17 @@ function mockEndpoints() {
       return Promise.resolve(jsonResponse([]));
     }
     if (url === "/api/v3/gists/g1/commits") return Promise.resolve(jsonResponse([]));
+    if (url === "/api/v3/gists/g1/comments") {
+      if (init?.method === "POST") {
+        return Promise.resolve(
+          jsonResponse({ id: 99, body: "great gist", user: { login: "admin" }, created_at: "2026-01-02T00:00:00Z" }, 201),
+        );
+      }
+      return Promise.resolve(
+        jsonResponse([{ id: 1, body: "first!", user: { login: "octocat" }, created_at: "2026-01-01T00:00:00Z" }]),
+      );
+    }
+    if (url === "/api/v3/user") return Promise.resolve(jsonResponse({ login: "admin", avatar_url: "" }));
     return Promise.resolve(jsonResponse({}));
   });
 }
@@ -104,6 +115,28 @@ describe("GistsPage", () => {
       expect(screen.getByText("Fork")).toBeInTheDocument();
       expect(screen.getByText("hello.txt")).toBeInTheDocument();
     });
+  });
+
+  it("lists gist comments and posts a new one", async () => {
+    mockEndpoints();
+    renderPage();
+    await waitFor(() => expect(screen.getByText("hello world")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("hello world"));
+    await waitFor(() => expect(screen.getByText("hello.txt")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("tab", { name: "Comments" }));
+    await waitFor(() => expect(screen.getByText("first!")).toBeInTheDocument());
+
+    fireEvent.change(screen.getByLabelText("Add a comment"), { target: { value: "great gist" } });
+    fireEvent.click(screen.getByRole("button", { name: "Comment" }));
+
+    await waitFor(() =>
+      expect(
+        mockFetch.mock.calls.some(
+          ([u, init]) => u === "/api/v3/gists/g1/comments" && (init as RequestInit | undefined)?.method === "POST",
+        ),
+      ).toBe(true),
+    );
   });
 
   it("opens the create form from the global new-gist deep link", async () => {

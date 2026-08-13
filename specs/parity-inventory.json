@@ -5318,6 +5318,15 @@
         "status_kind": "open"
       },
       {
+        "category": "WEB",
+        "finding": "The gist detail view (GistDetail) exposed Files/History/Forks but had **no comment thread**, though GitHub gists support comments and the backend wires full CRUD (`GET/POST/PATCH/DELETE /gists/{id}/comments`)",
+        "id": "WEB-086",
+        "location": "web/src/pages/GistsPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added a Comments tab: lists the thread (avatar, author, timestamp, body), an accessible composer (FormLabel-bound textarea + Comment button) posting via createGistComment, and a Delete action on the viewer's own comments (confirmAction-guarded, deleteGistComment); theme-safe tokens; unit test opens the tab, asserts an existing comment renders, and that submitting POSTs to /gists/{id}/comments",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -6734,23 +6743,23 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 69,
+            "fixed": 70,
             "open": 4
           },
-          "total": 75
+          "total": 76
         }
       },
       "severity": {
         "blocker": 167,
         "major": 383,
-        "minor": 154
+        "minor": 155
       },
       "status": {
         "deferred": 3,
-        "fixed": 697,
+        "fixed": 698,
         "open": 4
       },
-      "total": 704
+      "total": 705
     }
   },
   "rest": {

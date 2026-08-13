@@ -63,6 +63,7 @@ import type {
   BleephubGist,
   BleephubGistFile,
   GithubGistCommit,
+  GithubGistComment,
   GithubNotificationThread,
   GithubThreadSubscription,
   GithubProjectClassic,
@@ -2497,6 +2498,15 @@ export const fetchGist = (id: string) => ghFetch<BleephubGist>(`/api/v3/gists/${
 export const fetchGistCommits = (id: string) => ghFetch<GithubGistCommit[]>(`/api/v3/gists/${id}/commits`);
 
 export const fetchGistForks = (id: string) => ghFetch<BleephubGist[]>(`/api/v3/gists/${id}/forks`);
+
+export const fetchGistComments = (id: string) =>
+  ghFetch<GithubGistComment[]>(`/api/v3/gists/${id}/comments`);
+
+export const createGistComment = (id: string, body: string) =>
+  ghPostJSON<GithubGistComment>(`/api/v3/gists/${id}/comments`, { body });
+
+export const deleteGistComment = (id: string, commentId: number) =>
+  ghDelete(`/api/v3/gists/${id}/comments/${commentId}`);
 
 export const forkGist = (id: string) => ghPostJSON<BleephubGist>(`/api/v3/gists/${id}/forks`, {});
 
