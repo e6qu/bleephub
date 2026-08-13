@@ -5309,6 +5309,15 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "Account settings had no Public-profile editor and no Appearance section \u2014 github.com's Settings opens on Public profile and carries Appearance (theme), but bleephub only exposed Emails/keys/PAT/blocked",
+        "id": "WEB-078",
+        "location": "web/src/pages/AccountPage.tsx",
+        "severity": "M",
+        "status": "fixed \u2014 added a \"Public profile\" tab (now the default, matching github.com; edits name/bio/company/location/blog/twitter via `PATCH /user` with `updateAuthenticatedUser`) and an \"Appearance\" tab that hosts the theme control (Light/Dark) in its correct Settings location. vitest covers the profile save (PATCH body) and the theme switch (`.dark` applied); a viewer/profile load failure degrades to a visible error; `/ui/account` renders clean in the Chromium a11y sweep. (Notifications and Password/2FA sub-sections remain \u2014 separate slices.)",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -6725,23 +6734,23 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 69,
+            "fixed": 70,
             "open": 3
           },
-          "total": 74
+          "total": 75
         }
       },
       "severity": {
         "blocker": 167,
-        "major": 382,
+        "major": 383,
         "minor": 154
       },
       "status": {
         "deferred": 3,
-        "fixed": 697,
+        "fixed": 698,
         "open": 3
       },
-      "total": 703
+      "total": 704
     }
   },
   "rest": {
