@@ -1,149 +1,186 @@
-# Bleephub remediation plan
+# PLAN.md — GitHub functional-parity, theming & accessibility
 
-A full-surface audit of backend, UI, testing, CI, release preparedness and the
-deployment model produced 512 findings, 120 of them blockers. `BUGS.md` is the
-ledger. This file is the execution plan.
+## Objective (sharpened 2026-08-13)
 
-## How this is sequenced
+Make the bleephub web UI a **functional replica of github.com**:
 
-Phases are ordered so each one leaves the tree building with tests passing, and
-so that structural fixes land before the instances they subsume. Where a class
-of defect has a mechanical detector, the detector lands with the fix and becomes
-a permanent gate — the point is that the class cannot regrow, not that today's
-instances are patched.
+1. **Navigational / structural parity** — every GitHub menu, tab, and control is present **in the same location** with the **same functionality**. Styling may differ; *placement and behavior must match*.
+2. **Light/dark mode** — every page and component renders correctly and legibly in **both** themes, with no hardcoded colors that leak.
+3. **WCAG 2.2 AA** — measured, gated compliance (contrast, keyboard operability, focus, names/roles/values, etc.).
+4. **ARIA / accessibility** — correct semantics: landmarks, roles, labels, live regions, focus management, keyboard nav.
 
-Three detectors do most of the work:
+## Honest status reset
 
-| Detector | Kills |
-|---|---|
-| Route-inventory test over `RegisteredRoutes()` | Every unauthenticated/unauthorized route at once, including `/_apis/`, `/internal/oauth/state`, the 25 ungated REST files, and anonymous private-repo reads |
-| Declared-but-never-read test | ~40 silent no-ops: GraphQL arguments, workflow keys, request-body fields decoded and dropped |
-| Allowlist liveness + citation tests | Collapses the OpenAPI violation allowlist from 60 entries toward 1 |
+The **BUGS.md ledger backlog is closed** (689 fixed + 3 deferred = 692, zero open) and **CI is green**, and the codebase was refactored into five compiler-enforced modules. That is real — but it measured a *feature backlog and conformance gates*, **not** the four objectives above. None of these four has been **systematically verified against github.com**. Earlier "UI parity complete" claims were scoped to the backlog and are **overstated relative to this objective**. This plan is the correction: verify empirically, surface by surface, and close the gaps.
 
-## Phases
+Grounding facts measured today (starting point, not a gap list — Phase 0 produces the gap list):
+- **UI surface**: 87 `/ui` routes across 55 page components (inventory below).
+- **Dark mode**: infrastructure present (`.dark` class, `useTheme` hook, header toggle, 60 `--color-*` tokens with a `.dark` override) — but **26 hardcoded hex colors** in `pages/`+`components/` will not respond to theme, and **no page is verified per-theme**.
+- **Accessibility**: **no automated a11y testing** (no axe/jest-axe; one ad-hoc modal test). 277 ad-hoc `aria-*`/`role=` usages exist but are unverified.
 
-### Phase 1 — Authorization becomes real
-The root cause. `requirePerm` is a credential-shape gate, not an authorization
-gate: for a classic PAT or a browser session it evaluates no predicate and falls
-through. Make it total — every branch produces an explicit allow or deny — add
-the missing classic-PAT scope arm, and introduce `requireRepoRead` /
-`requireRepoPush` / `requireRepoAdmin` applied at registration. Land the
-route-inventory test in the same phase so the gap cannot reopen.
+## Method (non-negotiable, from the "wired ≠ working" lesson)
 
-### Phase 2 — Runner control plane
-`/_apis/` has no authentication and its job messages carry every org, repo and
-environment secret in plaintext. Add an agent-auth middleware resolving the
-issued bearer token to an agent, bind sessions and job requests to that agent,
-and sign runtime tokens (currently `alg:none`, one-year expiry, trusted
-unverified).
+- **Empirical, not wiring audits.** Every claim is proven by driving the running app in Claude-in-Chrome (or Playwright e2e) and capturing evidence — not by reading that a handler exists.
+- **Compare to real github.com structure**, not to our own prior assumptions. Phase 0 builds the reference map.
+- **One rolling PR per coherent slice.** Each PR carries its evidence (browser journey, both-theme screenshots, axe report). User merges; assistant never merges.
+- **File findings as BUGS.md rows** (WEB-/A11Y-/THEME- prefixes) as they're discovered, so the gap is tracked, not hand-waved. Regenerate parity inventory LAST after BUGS.md edits.
+- **Gates:** existing Go/web gates stay green; add the new accessibility + theme gates (below) so parity can't silently regress.
 
-Groundwork, so this is not re-derived: the token already exists and is already
-keyed to the right thing. `handleOAuthToken` (`auth.go:163`) returns
-`makeJWT(agent.Authorization.ClientID, "bleephub")`, so the subject identifies
-the registering agent. Nothing reads it — grepping `Authorization` across
-`broker.go`, `agents.go`, `run_service.go` and `timeline.go` finds only the
-struct the server *hands out*, never a header it inspects. So the work is to
-verify the token and resolve it to an `*Agent`, not to invent a credential.
+---
 
-Two things make this the phase to be careful with. The token is `alg:none`, so
-verification is meaningless until it is signed — sign first, then enforce, or
-enforcement is theatre. And the only thing that proves the real `actions/runner`
-still works afterwards is the Sockerless CI job, which takes about fifteen
-minutes per attempt and cannot run locally without Docker.
+## Phase 0 — Assessment (measure the gap before fixing) — DO THIS FIRST
 
-### Phase 3 — GraphQL
-The endpoint serves anonymous requests; mutations authenticate but never
-authorize; `user(login:).repositories` leaks private repositories. Add the
-authentication choke point, route every mutation through an authorization
-helper, gate repository nodes behind a type only constructible via `canReadRepo`,
-and add a query depth/complexity limit.
+Produce three artifacts so the remaining work is sized honestly rather than guessed:
 
-### Phase 4 — Crash classes
-Two `fatal error` paths that kill the process rather than returning 500: a map
-write under a read lock, and eight unsynchronized store-map reads. Fix both,
-unexport the store maps so the class cannot recur, add panic-recovery
-middleware, and fix the confirmed nil-dereferences.
+1. **github.com structure reference map** — enumerate GitHub's real navigation surfaces and the menus/controls each contains, so parity is checked against a source of truth:
+   - Global: top bar (search + scope, create-new `+` menu, issues/PRs/notifications, profile menu contents), left dashboard nav.
+   - Repo: the tab row (Code/Issues/PRs/Actions/Projects/Wiki/Security/Insights/Settings) and each tab's sub-nav + page controls; the repo header (watch/fork/star, about, clone, branch selector, file tree, add-file menu).
+   - Org: tab row (Overview/Repositories/Packages/People/Teams/Projects/Insights/Settings) + settings sub-nav.
+   - User profile, Settings (the full left-rail of account settings), Notifications, Search results tabs, Explore/Marketplace.
+   - **GitHub Classroom** (the old `classroom.github.com`): classroom list, classroom page tabs (Assignments / Students / Settings), the assignment-creation flow (starter repo, deadline, autograding, feedback PR, protected paths), roster management, accept flow, and grade export — mapped to `/ui/classrooms*`.
+   - Map each to the bleephub route that should host it (from the inventory below), marking **present / missing / misplaced**.
+2. **Accessibility baseline** — wire `@axe-core/playwright` (or jest-axe on rendered pages) and run it across every route; capture the violation inventory by rule and severity. This is the WCAG/ARIA gap, measured.
+3. **Theme baseline** — render every route in light and dark; screenshot both; catalog theme defects (illegible contrast, hardcoded-color leaks — start from the 26 known hex literals, unstyled dark surfaces, focus rings invisible in one theme).
 
-### Phase 5 — Process lifecycle
-No signal handling, no graceful shutdown, no goroutine ownership, no request
-body limits, no panic recovery, and a TLS misconfiguration that silently serves
-plaintext. Add a config choke point, a lifecycle owner, `/livez` + `/readyz`.
+Deliverable: a scored gap list (per surface: nav-parity gaps, functionality gaps, a11y violations, theme defects) that turns the rest of this plan from estimate into fact.
 
-### Phase 6 — Persistence atomicity
-604 single-row writes against 4 batched ones; memory mutated before the write;
-`log.Fatalf` as the error strategy. Add a single batched apply path, persist
-before mutating, make ID allocation durable, add a schema version, and quarantine
-referentially-broken rows at load instead of refusing to boot.
+---
 
-### Phase 7 — Actions engine
-Matrix expansion shares one env map across combinations; the `needs` rewrite is
-map-iteration-order dependent; `include:`-only matrices are dropped; workflow
-files are read from HEAD rather than the triggering ref; fork PRs never trigger;
-an unsynchronized regex cache crashes the process; jobs are lost on runner death.
+## Phase 0 — RESULTS (measured 2026-08-13)
 
-### Phase 8 — Silent no-ops and validation
-Implement or loudly reject every accepted-and-ignored parameter, workflow key and
-body field. Add enum validation, pointer fields so absent and zero differ, and
-pagination on the ~60 lists that return whole collections.
+Phase 0 is **done**. Three empirical artifacts were produced against the running app.
 
-### Phase 9 — Parity
-Ratchet the violation allowlist toward one justified entry, fix the emitters it
-papers over, strengthen the validator (status codes, enums, nullability,
-coverage floor), and remove the invented routes from the route allowlist.
+### 0.1 Accessibility + theme baseline (axe-core, 47 routes × light/dark)
 
-### Phase 10 — Web
-Replace the client-side fleet fan-out polled every three seconds with a server
-aggregate, surface mutation errors, give dialogs real semantics, and fix the
-blank-screen session probe.
+Tooling landed: `web/e2e/a11y-theme-sweep.spec.ts` sweeps 47 routes in both themes with
+`@axe-core/playwright` (WCAG 2.0/2.1/2.2 A+AA), writing a machine-readable inventory to
+`web/test-results/a11y/`. Run: `cd web && SERVER_BIN=../bleephub-server bunx playwright test a11y-theme-sweep`.
 
-### Phase 11 — Test infrastructure
-Per-test isolated servers, `-race`, coverage with a ratchet, real fuzzing, and
-wiring the four orphaned test tiers into CI.
+Baseline was **219 violation instances across 40 route/theme pairs**, 4 rules. Fixes in this slice
+drove it to **11 instances / 8 pairs, 1 rule** (a 95% reduction). Cleared entirely: `label`
+(critical), `definition-list`, `target-size`. See ledger **WEB-064** (the `--color-fg-subtle`
+contrast token — the dominant finding, ~200 element-hits from the shared DataTable sort-headers),
+**WEB-065** (task-list checkbox labels via a shared Markdown wrapper), **WEB-066** (dl→ul on the
+profile/org sidebars), **WEB-067** (24px target sizes).
 
-### Phase 12 — CI, release, deployment
-Static analysis, the unwired quality gates, release workflow, LICENSE and the
-absent release-readiness files, supply-chain attestation, and the Terraform
-correctness and durability fixes.
+Remaining (open, tracked): **WEB-068** label-pill contrast (raw label color as text over a tint —
+fails AA for light label colors, both themes; needs a luminance-aware foreground like GitHub's) and
+**WEB-069** a few residual colored spans (marketplace active-tab, issue state badge, code-scanning
+`<code>`). These are the Workstream C contrast pass. No dark-mode-only contrast leaks were found.
 
-## Status
+### 0.2 github.com nav-parity gap map → Workstream A backlog
 
-| Phase | State |
-|---|---|
-| 1 — Authorization | partial, and previously recorded here as landed while two blockers were live — the recurring failure on this branch. `requirePerm` decides on every credential shape; the installation predicate is single-sourced; `canReadRepo`/`canAdminOrg`/`isActiveOrgMember` are renamed to `…AsUser` and 104 call sites now go through the context-aware choke points, enforced by an AST test that fails the build on a reintroduced direct call. `principalMayAccessTarget` no longer passes when the path names a resource that does not exist — a route-table sweep had found 38 such routes, one minting a usable runner registration token. `canPushRepo` and `canAdminRepo` are now on the same ratchet, and the 63 direct callers that exposed go through the credential-aware family. The family itself no longer answers reachability alone: `viewerHasRepoPermission(ctx, repo, scope, level)` intersects what the app was granted with which repositories that grant is over, and the surfaces that gate themselves — both git transports and every GraphQL mutation — name the scope they need rather than inheriting one. A denied read now answers 404 whatever level the route asked for, so the gate is no longer an existence oracle. Still open: `canReadRepoLocked` is the same class at 10 sites under the store lock and needs `…Locked` store variants first; classic-PAT scope enforcement is untouched. Not done until a review round comes back clean twice |
-| 2 — Runner control plane | partial. Runtime tokens are HS256-signed with a 6h TTL and verified before any claim is read; the `/_apis/` and `/twirp/` routes in auth.go, agents.go, broker.go and artifacts.go carry a decorator, with a commented two-entry allowlist; secrets reach only a runner whose registration scope covers the repository; a dropped connection requeues the job instead of losing it. The `/_apis/` routes in jobs.go and run_service.go — including job acquire and complete — are being gated now |
-| 3 — GraphQL | partial. Endpoint requires authentication, the private-repository leak in `user().repositories` is closed, and every mutation reaches the schema through one policy table that names the permission scope it is granted at and the standing the caller needs on the repository. The author exemption relaxes the standing and not the grant. Field resolvers outside the mutation lane are not yet swept |
-| 4 — Crash classes | partial. Map-write-under-read-lock fixed, 9 unsynchronized reads converted, panic recovery added, and every confirmed nil-dereference closed at a choke point — `userToJSON(nil)` renders the ghost account, `mutated[T]` guards the lost-target mutators, `projectCardToJSON` reports an unrenderable card, the trigger regex cache is a `sync.Map`. Six reads still sit inside a held lock, and 78 unlocked `ReposByName` reads remain — the unrecoverable-fatal-error class, not a catchable panic |
-| 5 — Lifecycle | partial. TLS pair validation, panic recovery, query redaction, `net/http` error log bridged. Signal handling, graceful shutdown, goroutine ownership and body limits still open |
-| 6 — Persistence | pending |
-| 7 — Actions engine | partial. Matrix expansion, exclude-before-include, `continue-on-error`, the job-duration metric, webhook SSRF closed at configuration and dial time with redirects refused and fan-out bounded, the unbounded `Content-Range` allocation bounded by bytes actually received, artifact and log routes bound to their job's repository and plan. Fork-PR triggers and workflow-file-from-HEAD remain |
-| 8 — Silent no-ops | partial, progressing toward fixed. Pagination is closed and cannot regrow: a spec-driven AST ratchet fails any registered GET route whose OpenAPI operation declares `per_page` but whose handler cannot reach a pagination primitive, the 69 routes it caught paginate through `paginateAndLink` (object-shaped endpoints follow their documented file/commit-window semantics), and the unstable map-iteration feeds the work exposed now sort deterministically. Accepted-and-ignored body fields and enum validation are being closed entry-by-entry: org alert filters now apply state/secret_type/resolution/ecosystem/package across secret scanning, dependabot and code scanning; `tool_guid` is stored from SARIF and echoed rather than hardcoded `nil`; codespace create accepts and threads all documented fields; custom properties respect `require_explicit_values` for default suppression and echo `values_editable_by`; deployments honor `auto_inactive` with inactive statuses and webhook fan-out. Two entries (REST-050, REST-051) were verified already wired and marked stale. Org events now require authentication; commented-out dead handlers removed; private-registry credentials use `json:"-"` with a persistence wrapper; license `node_id` fields are valid base64 GitHub node IDs rather than key-appended prefixes |
-| 9 — Parity | pending |
-| 10 — Web | landed. All six blockers: metrics from two server calls instead of a per-repository walk every three seconds, 28 state-changing controls given a shared error surface, the dialog primitive made accessible for all 40 sites, the three session states distinguished with a bounded probe, and two test configurations that had never executed — one extending a path outside the repository — repaired without changing a line of test source. 338 tests to 422 |
-| 11 — Test infrastructure | pending |
-| 12 — CI, release, deployment | partial. LICENSE (AGPL-3.0-or-later, assumed from the project's own dependency rule and still needing the owner's confirmation); a release path from a semver tag through the existing publish pipeline with signing and SBOM attestation; the four orphaned quality gates plus actionlint, shellcheck and a ledger check; release Dockerfiles and both bundles built on pull requests, which is also the only place dqlite-node compiles; terraform given deployment safety, a state backend, a customer-managed key and restore paths. golangci-lint, coverage and govulncheck still need real defects fixed first. The embedded UI (`internal/server/dist`) is no longer committed: it is a generated Vite artifact rebuilt by the release image's `ui-builder` stage and `make build`, gitignored except a `.gitkeep` that keeps `//go:embed all:dist` compiling. This replaces the earlier committed-artifact freshness gate (CORE-013) — Vite 8's native bundler is not byte-reproducible across CPU architectures, which a byte-exact gate cannot survive, so the artifact is kept out of git entirely and staleness is structurally impossible |
+Full surface-by-surface map done (top bar, dashboard, repo header+tabs, repo settings, issue/PR,
+org, profile, account settings, notifications/search/explore/marketplace/gists). The bar is
+"same location + same function, styling may differ." Each item below converts to a `WEB-` ledger
+row as its fix lands. **The UI is NOT at nav parity** — two whole surfaces are absent and ~18
+menus/controls are missing or non-functional.
 
-Counts as of the latest commit: **around 90 fixed, a dozen partial, the rest open, across 547 rows** Every
-open item still carries its location and claim; nothing was dropped to make the
-list shorter.
+**BLOCKERs (whole tab/page absent):**
+- **B1 — repo Wiki**: no tab, no route, no page (`has_wiki` field exists, unused).
+- **B2 — user-profile tab row**: Overview/Repositories/Projects/Packages/Stars absent; the profile
+  collapses to a bare repo list (`ProfilePage.tsx`).
 
-## Baseline
+**MAJORs (menu/control missing or non-functional), ranked:**
+1. Profile **contribution graph** (calendar heatmap) missing.
+2. Profile **pinned repositories** missing.
+3. Profile **README** missing.
+4. Global **command palette / ⌘K** jump-to missing (no keybinding at all in `AppHeader.tsx`).
+5. Repo **"Go to file"** fuzzy finder missing.
+6. Repo Settings **Webhooks** list/create missing (only a delivery viewer exists).
+7. Repo Settings **Environments** editor missing (Deployments list ≠ env settings).
+8. Repo Settings **Actions** settings (General/Runners) missing.
+9. **Repo-level Rulesets** missing (rulesets exist org-only).
+10. **Org Settings** landing page missing (settings scattered as top-level tabs).
+11. **Org Insights** tab missing (Insights is repo-only).
+12. Issue/PR sidebar **Projects** is a hardcoded "None yet" stub (`IssueSidebar.tsx`).
+13. Account settings: **Password/2FA, Notifications, Profile edit, Account, Appearance** all missing
+    (only Emails/keys/PAT/blocked present).
+14. Account settings: authorized **Applications** missing; OAuth/GitHub Apps misplaced under Operations.
+15. Create **`+`** menu missing Import repository and New project.
+16. Avatar menu missing **Your organizations / projects / stars**.
+17. Dashboard activity feed is **issues-only**, not the follow/news feed.
+18. Add file has no **Upload files** (binary upload) — text-only modal.
 
-Recorded before any change, on `9600511`:
+**MINORs** (misplaced/partial): repo-settings sub-nav is in-page state, not deep-linkable URLs;
+repo tab order (Insights before Security); theme toggle in avatar menu vs Appearance; branch
+selector lacks branch/tag search + create-branch; About-edit-gear + contributors absent; search
+results lack Wikis/Discussions/Packages tabs; Explore reuses `/ui/search`.
 
-```
-go build ./...              clean
-go vet -tags noui ./...     clean
-go test -tags noui ./...    all packages ok, 0 failures, 0 skips
-                            internal/server 437.685s against an 8m timeout
-```
+Two items **need a runtime check** before filing: repo Danger-zone completeness
+(delete referenced, visibility-change/archive unconfirmed) and header-search qualifier hand-off.
 
-The 9% timeout headroom is itself a finding — a slower runner turns it into a
-CI failure that reads as a hang.
+### 0.3 Classroom parity map — see Workstream D
 
-## Not in scope for this branch
+Mapped against the old `classroom.github.com`; REST list + org-scoped auth verified; autograding
+wiring provisions a repo and commits the workflow. Full end-to-end (roster/import, group
+assignments, accept→provision, grade CSV) still to verify surface by surface.
 
-`internal/server` is a single flat package: 406 files, 181k lines. Splitting it
-into subpackages is a genuine structural improvement and is deliberately **not**
-attempted here — it would conflict with every other change in this branch and is
-an architectural decision to take on its own. It is recorded in `BUGS.md` so it
-is not lost.
+---
+
+## Workstream A — Navigational / functional parity
+
+For each surface in the Phase-0 map, verify against github.com and fix:
+- **Menu presence & location**: every GitHub menu/tab/control exists in the same structural place. Add missing ones; relocate misplaced ones.
+- **Functionality**: every GitHub action on that surface is present and *works* (driven in-browser, not just wired). The backend write endpoints largely exist already (prior finding: ~1035 server write routes); most gaps are expected to be frontend wiring/placement, but each must be proven.
+- Known candidate areas to scrutinize (from the route inventory — confirm against github.com, don't assume complete): repo **Wiki** (no `/wiki` route present), repo **Settings** sub-nav breadth vs GitHub's, the profile/overview page, org **Insights**, the create-`+` menu contents, repo header controls (branch selector, file-tree add-file/upload, "Go to file"), global command palette.
+
+Slices land per-surface (e.g. "repo header parity", "account-settings left-rail parity", "org tab-row parity").
+
+## Workstream B — Light/dark mode compliance
+
+- Replace the 26 hardcoded hex colors (and any others Phase 0 finds) with `--color-*` tokens; ensure the `.dark` block defines every token used.
+- Verify every page in both themes (Phase-0 screenshots become the regression baseline).
+- **Gate**: a Playwright pass that loads key routes in both themes and fails on axe color-contrast violations, so a new hardcoded color can't regress theming.
+
+## Workstream C — WCAG 2.2 AA + ARIA
+
+Drive the Phase-0 axe inventory to zero (or justified, documented exceptions):
+- **Structure**: one `<main>`, correct landmark roles, logical heading order, skip-link works.
+- **Names/roles/values**: every control has an accessible name; icon-only buttons get `aria-label`; form fields have associated `<label>`s; tables use proper headers.
+- **Keyboard**: full keyboard operability, visible focus in both themes, no traps, modals trap+restore focus (extend the existing modal a11y test to all dialogs).
+- **Dynamic content**: `aria-live` for async load/error/toast; `aria-current` on active nav; `aria-expanded` on menus.
+- **Contrast**: AA ratios in both themes (overlaps Workstream B).
+- **Gate**: `@axe-core/playwright` run in the Browser-e2e CI job across all routes, failing on new violations (ratchet down from the Phase-0 baseline, never up — mirror the openapi-shape ratchet pattern).
+
+## Workstream D — GitHub Classroom (full parity with the old implementation)
+
+GitHub Classroom is a revived, upstream-**deprecated** product — but its objective is the same as the rest: **full functional parity with GitHub's old Classroom implementation** (`classroom.github.com` as it existed). It has a real reference to match — its navigation, flows, and features — not an "internally coherent" exemption. Status today: REST list + org-scoped auth verified working (list→200, web-create correctly 403s without org-admin); **the full product is unverified against the real Classroom**.
+
+Match the old Classroom's structure and functionality (Phase 0 builds this reference map too):
+- **Classroom list** (per organization) and the **create-classroom** flow (pick org, name, connect a roster).
+- **Classroom page** with its tabs/sections: **Assignments**, **Students / Roster**, classroom **Settings**, teachers/TAs.
+- **Roster**: create from a student-identifier list, link students to GitHub accounts, LMS/import.
+- **Assignments**: individual **and** group assignments; the creation flow (title, starter-code template repo, deadline, visibility, editor/Codespaces option, **protected file paths**, **autograding** tests, **feedback pull request**).
+- **Accept flow**: invite URL → provisions a repo from the starter template for the student/team.
+- **Assignment overview**: accepted-assignments list, per-student repo links, **autograding results/points**, and **grade download (CSV export)**.
+
+Verify each end-to-end in an owned org through both the API and `/ui/classrooms`, matching where each control lives in the real product. Apply the same light/dark + WCAG/ARIA bar. (Other genuinely-non-github surfaces — `/ui/operations/*` operator console, `/ui/metrics` — get the lighter "internally coherent + themed + accessible" check, since those have no github.com analogue.)
+
+---
+
+## Sequencing
+
+1. **Phase 0** (assessment) → the scored gap list. *(next action)*
+2. Then interleave A/B/C/D as rolling PRs, **highest-traffic surfaces first** (dashboard, repo Code/Issues/PRs, global nav), each PR proving parity + both themes + zero-new-axe-violations for the surface it touches.
+3. Add the two CI gates (axe ratchet, dual-theme contrast) early so progress is protected.
+
+## Out of scope / decisions already made
+
+- **Pixel/visual identity** with github.com is explicitly *not* required (styling may differ) — only structure, placement, functionality, theming, and a11y.
+- **Deferred by owner decision** (not work): keep `@bleephub/ui-core` as a library (WEB-016/017); accept TEST-015 (comma-ok sweep net-negative).
+
+## Standing maintenance (unchanged, runs alongside)
+
+Dependabot bumps ≥24h past publish → one consolidated rolling PR; vendored GraphQL/REST contract drift → re-vendor per the documented recipes; CI health (stale parity inventory = regenerate; MinIO/network flakes = re-run). Proven cadence: #270 (Go bumps), #271 (GraphQL drift), #272 (web patches).
+
+---
+
+## Appendix — current `/ui` route inventory (87 routes / 55 pages)
+
+Global: `/ui/` (dashboard), `/ui/:login` (profile), `/ui/account`, `/ui/notifications`, `/ui/search`, `/ui/login`, `/ui/oauth`, `/ui/users/:login`.
+Repos: `/ui/repos`, `/ui/repos/:owner/:repo` and tabs — `actions` (+`/runs/:runId`), `blob/:ref/*`, `tree/:ref/*`, `branches`, `tags`, `commits`(+`/:sha`), `compare/:range`, `discussions`(+`/:number`), `deployments`, `forks`, `insights`, `issues`(+`/:number`), `labels`, `milestones`, `packages`, `projects-classic`, `pulls`(+`/:number`,`/checks`,`/commits`,`/files`), `releases`(+`/new`,`/:releaseId`), `security/{advisories,code-scanning,dependabot,secret-scanning}`, `settings`(+`/branch-protection`,`/secrets`), `stargazers`, `watchers`, `codespaces`, `hooks/:hookId/deliveries`.
+Orgs: `/ui/orgs/:org` and `copilot`, `governance`, `hooks`(+deliveries), `packages`, `people`, `projects`(+`/:number`), `repos`, `rulesets`, `teams`.
+Operator/misc: `/ui/operations`(+`audit-log`,`enterprise`,`orgs`,`teams`,`users`), `/ui/apps`(+marketplace), `/ui/marketplace`(+`/:slug`), `/ui/classrooms`(+`/:classroomId`,`/accept/:inviteCode`), `/ui/codespaces`(+`/:codespaceName`), `/ui/copilot/spaces`, `/ui/gists`, `/ui/metrics`, `/ui/migrations`, `/ui/packages`, `/ui/runners`, `/ui/workflows`(+`/:id`).
+
+**Notable absences to confirm against github.com in Phase 0** (present on GitHub, no route here): repo **Wiki**, repo **Projects (v2 beta boards at repo scope)**, **Explore/Trending**, user **Stars/Projects tabs**, the global **command palette**, repo **Settings** sub-pages beyond branch-protection/secrets (Actions/Pages/Environments/Webhooks/Deploy keys/Moderation/etc. — some exist as separate routes, map them).

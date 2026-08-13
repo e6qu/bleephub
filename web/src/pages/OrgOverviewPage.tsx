@@ -49,7 +49,7 @@ export function OrgOverviewPage() {
           {p.description && (
             <p style={{ fontSize: "0.9rem", color: "var(--color-fg)" }}>{p.description}</p>
           )}
-          <dl className="flex flex-col gap-1.5" style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)" }}>
+          <ul className="flex flex-col gap-1.5" style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)", listStyle: "none", margin: 0, padding: 0 }}>
             <MetaRow icon={<PeopleIcon size={15} />}>
               <Link to={`/ui/orgs/${org}/people`} style={{ color: "var(--color-accent)", textDecoration: "none" }}>
                 {members.data ? `${members.data.length} member${members.data.length === 1 ? "" : "s"}` : "Members"}
@@ -69,7 +69,7 @@ export function OrgOverviewPage() {
               </MetaRow>
             )}
             {p.email && <MetaRow>{p.email}</MetaRow>}
-          </dl>
+          </ul>
         </aside>
 
         <section>
@@ -106,10 +106,10 @@ export function OrgOverviewPage() {
 
 function MetaRow({ icon, children }: { icon?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-2">
+    <li className="flex items-center gap-2">
       {icon && <span style={{ color: "var(--color-fg-subtle)" }}>{icon}</span>}
       <span>{children}</span>
-    </div>
+    </li>
   );
 }
 

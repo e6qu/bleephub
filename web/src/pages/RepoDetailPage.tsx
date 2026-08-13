@@ -2,8 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
-import Markdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import Markdown from "../components/Markdown";
 import {
   fetchRepoDetail,
   fetchRepoBranches,
@@ -585,7 +584,7 @@ function CodeView({
             style={{ padding: "1.5rem", fontSize: "0.9rem" }}
             className="markdown-body"
           >
-            <Markdown remarkPlugins={[remarkGfm]}>
+            <Markdown>
               {readme.text}
             </Markdown>
           </div>

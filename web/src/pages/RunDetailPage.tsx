@@ -1,8 +1,7 @@
 import { useMemo, useState } from "react";
 import { useParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import Markdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import Markdown from "../components/Markdown";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
 import {
   fetchWorkflowRun,
@@ -580,7 +579,7 @@ function JobPane({
           >
             Job summary
           </div>
-          <Markdown remarkPlugins={[remarkGfm]}>{summaryQ.data}</Markdown>
+          <Markdown>{summaryQ.data}</Markdown>
         </div>
       )}
     </Box>

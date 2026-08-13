@@ -111,7 +111,7 @@ function ProfileSidebar({
           <strong style={{ color: "var(--color-fg)" }}>{p.following}</strong> following
         </span>
       </div>
-      <dl className="flex flex-col gap-1.5" style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)" }}>
+      <ul className="flex flex-col gap-1.5" style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)", listStyle: "none", margin: 0, padding: 0 }}>
         {p.company && <MetaRow>{p.company}</MetaRow>}
         {p.location && <MetaRow>{p.location}</MetaRow>}
         {p.email && <MetaRow>{p.email}</MetaRow>}
@@ -123,7 +123,7 @@ function ProfileSidebar({
           </MetaRow>
         )}
         {p.twitter_username && <MetaRow>@{p.twitter_username}</MetaRow>}
-      </dl>
+      </ul>
       {orgs && orgs.length > 0 && (
         <div>
           <SectionLabel>Organizations</SectionLabel>
@@ -145,10 +145,10 @@ function ProfileSidebar({
 
 function MetaRow({ icon, children }: { icon?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-2">
+    <li className="flex items-center gap-2">
       {icon && <span style={{ color: "var(--color-fg-subtle)" }}>{icon}</span>}
       <span className="min-w-0 break-words">{children}</span>
-    </div>
+    </li>
   );
 }
 

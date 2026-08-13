@@ -1,6 +1,6 @@
 # Bleephub bug ledger
 
-692 findings from the continuing full-surface audit: 165 blockers, 376 major, 151 minor. Every
+698 findings from the continuing full-surface audit: 165 blockers, 379 major, 154 minor. Every
 entry carries a location and a one-sentence claim. Severity is `B` blocker, `M` major, `m` minor.
 Status begins with one of `open`, `partial`, `fixed`, or `deferred`; the generated parity
 inventory records the exact counts and fails CI when this summary or a row drifts.
@@ -586,6 +586,12 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | WEB-061 | m | web/src/pages/SecretScanningPage.tsx, web/src/pages/DependabotPage.tsx | The state/severity filter selects had labels wrapping nothing and no accessible name | fixed — each select carries an `aria-label` |
 | WEB-062 | m | web/src/pages/DiscussionsPage.tsx, web/src/pages/GistsPage.tsx, web/src/pages/TeamsPage.tsx | Several inputs and textareas relied on a placeholder only and had no accessible name | fixed — added `aria-label`s matching each field's intent |
 | WEB-063 | m | web/src/pages/RepoSettingsPage.tsx | The interaction-limit tab never loaded the current limit and invalidated a query key nothing read | fixed — a query seeds the current limit, which also makes the previously-dead invalidation live |
+| WEB-064 | M | web/src/index.css | The `--color-fg-subtle` token — DataTable sort-headers and every small "subtle" label — failed WCAG AA contrast in both themes (3.24:1 light, 3.77:1 dark), the dominant axe finding across 18 routes | fixed — darkened to #656d76 light (4.93:1 on the subtle surface) and #7d8590 dark (4.64:1), keeping subtle dimmer than muted; an axe dual-theme sweep measured color-contrast element-hits falling from ~200 to 11 |
+| WEB-065 | M | web/src/components/Markdown.tsx | The task-list checkboxes remark-gfm emits for `- [ ]` items were unlabeled form controls (axe `label`, critical) on every markdown surface — issue, PR, discussion and run bodies | fixed — a shared Markdown wrapper names the disabled checkboxes by their completed/incomplete state and is adopted by all six call sites, replacing the per-page react-markdown usage |
+| WEB-066 | m | web/src/pages/ProfilePage.tsx, web/src/pages/OrgOverviewPage.tsx | The profile and org-overview meta sidebars wrapped plain `<div>` rows in a `<dl>` with no `<dt>`/`<dd>`, failing axe `definition-list` in both themes | fixed — these are meta lists, not definitions, so they became `<ul>`/`<li>` matching GitHub's sidebar, clearing the rule |
+| WEB-067 | m | web/src/components/ui.tsx, web/src/components/PRFilesView.tsx, web/src/pages/RepoSettingsPage.tsx | Several controls fell under the 24x24 WCAG 2.5.8 (AA) target size — the small Button, the PR line-comment button, and the settings "Manage" links | fixed — Button carries a 1.5rem min-height, the PR comment button is 1.5rem square, and the wrapping settings links are inline-flex so their box tracks the button; target-size axe hits went to zero |
+| WEB-068 | M | web/src/components/LabelPills.tsx | Label pills render the raw label color as text over a 13%-tint of the same color, so light label colors (yellow, cyan) fall below AA contrast in both themes; GitHub computes a per-label readable foreground | open — needs a luminance-aware foreground like GitHub's label styles; tracked as the label-contrast slice of the WCAG workstream |
+| WEB-069 | m | web/src/pages/MarketplacePage.tsx, web/src/pages/IssuesPage.tsx, web/src/pages/CodeScanningPage.tsx | Residual axe color-contrast on a few colored spans in light mode — the marketplace active-tab marker, an issue state badge, and code-scanning inline `<code>` | open — per-element token adjustments; tracked with WEB-068 in the contrast pass |
 
 ## TEST — test-suite quality
 

@@ -5210,6 +5210,60 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "The `--color-fg-subtle` token \u2014 DataTable sort-headers and every small \"subtle\" label \u2014 failed WCAG AA contrast in both themes (3.24:1 light, 3.77:1 dark), the dominant axe finding across 18 routes",
+        "id": "WEB-064",
+        "location": "web/src/index.css",
+        "severity": "M",
+        "status": "fixed \u2014 darkened to #656d76 light (4.93:1 on the subtle surface) and #7d8590 dark (4.64:1), keeping subtle dimmer than muted; an axe dual-theme sweep measured color-contrast element-hits falling from ~200 to 11",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "The task-list checkboxes remark-gfm emits for `- [ ]` items were unlabeled form controls (axe `label`, critical) on every markdown surface \u2014 issue, PR, discussion and run bodies",
+        "id": "WEB-065",
+        "location": "web/src/components/Markdown.tsx",
+        "severity": "M",
+        "status": "fixed \u2014 a shared Markdown wrapper names the disabled checkboxes by their completed/incomplete state and is adopted by all six call sites, replacing the per-page react-markdown usage",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "The profile and org-overview meta sidebars wrapped plain `<div>` rows in a `<dl>` with no `<dt>`/`<dd>`, failing axe `definition-list` in both themes",
+        "id": "WEB-066",
+        "location": "web/src/pages/ProfilePage.tsx, web/src/pages/OrgOverviewPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 these are meta lists, not definitions, so they became `<ul>`/`<li>` matching GitHub's sidebar, clearing the rule",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "Several controls fell under the 24x24 WCAG 2.5.8 (AA) target size \u2014 the small Button, the PR line-comment button, and the settings \"Manage\" links",
+        "id": "WEB-067",
+        "location": "web/src/components/ui.tsx, web/src/components/PRFilesView.tsx, web/src/pages/RepoSettingsPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 Button carries a 1.5rem min-height, the PR comment button is 1.5rem square, and the wrapping settings links are inline-flex so their box tracks the button; target-size axe hits went to zero",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "Label pills render the raw label color as text over a 13%-tint of the same color, so light label colors (yellow, cyan) fall below AA contrast in both themes; GitHub computes a per-label readable foreground",
+        "id": "WEB-068",
+        "location": "web/src/components/LabelPills.tsx",
+        "severity": "M",
+        "status": "open \u2014 needs a luminance-aware foreground like GitHub's label styles; tracked as the label-contrast slice of the WCAG workstream",
+        "status_kind": "open"
+      },
+      {
+        "category": "WEB",
+        "finding": "Residual axe color-contrast on a few colored spans in light mode \u2014 the marketplace active-tab marker, an issue state badge, and code-scanning inline `<code>`",
+        "id": "WEB-069",
+        "location": "web/src/pages/MarketplacePage.tsx, web/src/pages/IssuesPage.tsx, web/src/pages/CodeScanningPage.tsx",
+        "severity": "m",
+        "status": "open \u2014 per-element token adjustments; tracked with WEB-068 in the contrast pass",
+        "status_kind": "open"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -6626,21 +6680,23 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 61
+            "fixed": 65,
+            "open": 2
           },
-          "total": 63
+          "total": 69
         }
       },
       "severity": {
         "blocker": 165,
-        "major": 376,
-        "minor": 151
+        "major": 379,
+        "minor": 154
       },
       "status": {
         "deferred": 3,
-        "fixed": 689
+        "fixed": 693,
+        "open": 2
       },
-      "total": 692
+      "total": 698
     }
   },
   "rest": {
@@ -28154,6 +28210,11 @@
   "ui": {
     "browser_navigations": [
       {
+        "line": 165,
+        "source": "web/e2e/a11y-theme-sweep.spec.ts",
+        "target": "/ui/"
+      },
+      {
         "line": 113,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/"
@@ -29551,7 +29612,7 @@
       }
     ],
     "summary": {
-      "browser_navigations": 56,
+      "browser_navigations": 57,
       "routes": 87,
       "routes_with_direct_render": 84,
       "routes_with_test_reference": 86
