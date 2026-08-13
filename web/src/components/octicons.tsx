@@ -79,6 +79,15 @@ export function RepoIcon(p: IconProps) {
   );
 }
 
+export function BookIcon(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path d="M8 2.5c-1-.7-2.3-1-4-1H2v10.5h2c1.7 0 3 .3 4 1 1-.7 2.3-1 4-1h2V1.5h-2c-1.7 0-3 .3-4 1z" />
+      <path d="M8 2.5v11" />
+    </Svg>
+  );
+}
+
 export function FileIcon(p: IconProps) {
   return (
     <Svg {...p}>

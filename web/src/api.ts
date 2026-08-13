@@ -24,6 +24,7 @@ import type {
   GithubCommitComment,
   GithubProjectV2,
   GithubUserEvent,
+  GithubWikiPage,
   GithubProjectV2Field,
   GithubProjectV2Item,
   GithubComparison,
@@ -1136,6 +1137,39 @@ export const fetchRepoReadme = (owner: string, repo: string, ref?: string): Prom
   const qs = ref ? `?ref=${encodeURIComponent(ref)}` : "";
   return ghFetch<GithubContentFile>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/readme${qs}`);
 };
+
+// ─── Repository wiki (simulator page store) ─────────────────────────────────
+// Real GitHub wikis are git-only with no REST API; the simulator exposes a
+// page-store under the repo. Slug derivation mirrors the Go store.WikiSlug so a
+// page created client-side lands at the same key the server would compute.
+
+const wikiPath = (owner: string, repo: string): string =>
+  `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/wiki/pages`;
+
+/** Turn a page title into its URL-safe slug (mirrors Go store.WikiSlug). */
+export const wikiSlug = (title: string): string =>
+  title
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+export const fetchWikiPages = (owner: string, repo: string): Promise<GithubWikiPage[]> =>
+  ghFetch<GithubWikiPage[]>(wikiPath(owner, repo));
+
+export const fetchWikiPage = (owner: string, repo: string, slug: string): Promise<GithubWikiPage> =>
+  ghFetch<GithubWikiPage>(`${wikiPath(owner, repo)}/${encodeURIComponent(slug)}`);
+
+export const putWikiPage = (
+  owner: string,
+  repo: string,
+  slug: string,
+  page: { title: string; body: string },
+): Promise<GithubWikiPage> =>
+  ghPutJSON<GithubWikiPage>(`${wikiPath(owner, repo)}/${encodeURIComponent(slug)}`, page);
+
+export const deleteWikiPage = (owner: string, repo: string, slug: string): Promise<void> =>
+  ghDelete(`${wikiPath(owner, repo)}/${encodeURIComponent(slug)}`);
 
 export const fetchRepoTopics = (owner: string, repo: string): Promise<{ names: string[] }> =>
   ghFetch<{ names: string[] }>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/topics`);

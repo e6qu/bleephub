@@ -586,6 +586,7 @@ func (s *Server) registerRoutes() {
 	s.registerGHRepoRoutes()
 	s.registerGHSecurityAdvisoriesRoutes()
 	s.registerGHRepoAutolinkRoutes()
+	s.registerGHWikiRoutes()
 	s.registerGHRepoInvitationRoutes()
 	s.registerGHTemplateRoutes()
 	s.registerGHOrgRoutes()

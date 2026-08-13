@@ -15,6 +15,7 @@ import {
   PackageIcon,
   DiscussionIcon,
   GraphIcon,
+  BookIcon,
   WebhookIcon,
   StarIcon,
   EyeIcon,
@@ -120,7 +121,7 @@ function formatPublishedAt(value: string) {
 
 // ─── Repo context header + tabs ────────────────────────────────────────
 
-export type RepoTab = "code" | "issues" | "pulls" | "actions" | "projects-classic" | "discussions" | "insights" | "security" | "settings";
+export type RepoTab = "code" | "issues" | "pulls" | "actions" | "projects-classic" | "wiki" | "discussions" | "insights" | "security" | "settings";
 
 /**
  * Repo context bar: "owner / repo" breadcrumb above the GitHub-style tab
@@ -320,6 +321,14 @@ export function RepoHeader({
           label="Projects"
           active={active === "projects-classic"}
         />
+        {repository.data?.has_wiki && (
+          <RepoTabLink
+            to={`${base}/wiki`}
+            icon={<BookIcon size={15} />}
+            label="Wiki"
+            active={active === "wiki"}
+          />
+        )}
         <RepoTabLink
           to={`${base}/insights`}
           icon={<GraphIcon size={15} />}

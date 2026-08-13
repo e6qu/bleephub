@@ -811,6 +811,16 @@ export interface GithubUserEvent {
   };
 }
 
+/** A single wiki page from the simulator's repo wiki page-store. */
+export interface GithubWikiPage {
+  slug: string;
+  title: string;
+  body: string;
+  author?: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface BleephubAuditEvent {
   id: number;
   actor_login: string;

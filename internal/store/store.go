@@ -291,6 +291,19 @@ type RepoAutolink struct {
 	CreatedAt      time.Time `json:"created_at"`
 }
 
+// WikiPage is a single markdown page in a repository's wiki. Real GitHub backs
+// wikis with a separate `<repo>.wiki.git` repository and exposes no REST API;
+// the simulator uses a dedicated per-repo page store keyed by slug instead.
+type WikiPage struct {
+	Slug      string    `json:"slug"`
+	Title     string    `json:"title"`
+	Body      string    `json:"body"`
+	RepoKey   string    `json:"-"`
+	Author    string    `json:"author,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 // RepoInvitation represents a pending invitation to collaborate on a repository.
 type RepoInvitation struct {
 	ID           int       `json:"id"`
@@ -417,6 +430,7 @@ type Store struct {
 	RepoVariables                map[string]map[string]*ActionsVariable // "owner/repo" → NAME → variable
 	RepoCollaborators            map[string]map[string]string           // "owner/repo" → login → permission (pull/push/admin)
 	RepoAutolinks                map[string]map[int]*RepoAutolink       // "owner/repo" → id → autolink
+	RepoWikiPages                map[string]map[string]*WikiPage        // "owner/repo" → slug → wiki page
 	RepoInvitations              map[string]map[int]*RepoInvitation     // "owner/repo" → id → invitation
 	RepoDeployKeys               map[string]map[int]*RepoDeployKey      // "owner/repo" → id → deploy key
 	RepoSubscriptions            map[string]*RepoSubscription           // "userID:repoID" → subscription
@@ -917,6 +931,7 @@ func NewStore() *Store {
 		RepoVariables:                make(map[string]map[string]*ActionsVariable),
 		RepoCollaborators:            make(map[string]map[string]string),
 		RepoAutolinks:                make(map[string]map[int]*RepoAutolink),
+		RepoWikiPages:                make(map[string]map[string]*WikiPage),
 		RepoInvitations:              make(map[string]map[int]*RepoInvitation),
 		RepoDeployKeys:               make(map[string]map[int]*RepoDeployKey),
 		RepoSubscriptions:            map[string]*RepoSubscription{},
@@ -1867,6 +1882,17 @@ func (st *Store) loadFromPersistence() error {
 				}
 			}
 			st.RepoAutolinks[key] = autolinks
+			return nil
+		}},
+		{"repo_wiki_pages", func(key string, raw []byte) error {
+			var pages map[string]*WikiPage
+			if err := LoadJSON(raw, &pages); err != nil {
+				return err
+			}
+			for _, p := range pages {
+				p.RepoKey = key
+			}
+			st.RepoWikiPages[key] = pages
 			return nil
 		}},
 		{"repo_invitations", func(key string, raw []byte) error {

@@ -30,6 +30,7 @@ const CodeScanningPage = lazy(() => import("./pages/CodeScanningPage.js").then((
 const DependabotPage = lazy(() => import("./pages/DependabotPage.js").then(({ DependabotPage }) => ({ default: DependabotPage })));
 const SecurityAdvisoriesPage = lazy(() => import("./pages/SecurityAdvisoriesPage.js").then(({ SecurityAdvisoriesPage }) => ({ default: SecurityAdvisoriesPage })));
 const ProjectsClassicPage = lazy(() => import("./pages/ProjectsClassicPage.js").then(({ ProjectsClassicPage }) => ({ default: ProjectsClassicPage })));
+const WikiPage = lazy(() => import("./pages/WikiPage.js").then(({ WikiPage }) => ({ default: WikiPage })));
 const RepoSecretsPage = lazy(() => import("./pages/RepoSecretsPage.js").then(({ RepoSecretsPage }) => ({ default: RepoSecretsPage })));
 const MetricsPage = lazy(() => import("./pages/MetricsPage.js").then(({ MetricsPage }) => ({ default: MetricsPage })));
 const AppsPage = lazy(() => import("./pages/AppsPage.js").then(({ AppsPage }) => ({ default: AppsPage })));
@@ -229,6 +230,8 @@ export function App() {
               <Route path="/ui/repos/:owner/:repo/security/dependabot" element={<DependabotPage />} />
               <Route path="/ui/repos/:owner/:repo/security/advisories" element={<SecurityAdvisoriesPage />} />
               <Route path="/ui/repos/:owner/:repo/projects-classic" element={<ProjectsClassicPage />} />
+              <Route path="/ui/repos/:owner/:repo/wiki" element={<WikiPage />} />
+              <Route path="/ui/repos/:owner/:repo/wiki/:slug" element={<WikiPage />} />
               <Route path="/ui/repos/:owner/:repo/settings/secrets" element={<RepoSecretsPage />} />
               <Route path="/ui/apps" element={<AppsPage />} />
               <Route path="/ui/apps/:publisher/marketplace" element={<MarketplacePublisherPage />} />
