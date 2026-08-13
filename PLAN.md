@@ -160,7 +160,7 @@ Match the old Classroom's structure and functionality (Phase 0 builds this refer
 - **Roster**: create from a student-identifier list, link students to GitHub accounts, LMS/import.
 - **Assignments**: individual **and** group assignments; the creation flow (title, starter-code template repo, deadline, visibility, editor/Codespaces option, **protected file paths**, **autograding** tests, **feedback pull request**).
 - **Accept flow**: invite URL → provisions a repo from the starter template for the student/team.
-- **Assignment overview**: accepted-assignments list, per-student repo links, **autograding results/points**, and **grade download (CSV export)**.
+- **Assignment overview**: accepted-assignments list, per-student repo links, **autograding results/points**, and ✅ **grade download (CSV export)** — DONE (WEB-080): a "Download grades (CSV)" button on the assignment report exports the grades in classroom.github.com's exact column order.
 
 Verify each end-to-end in an owned org through both the API and `/ui/classrooms`, matching where each control lives in the real product. Apply the same light/dark + WCAG/ARIA bar. (Other genuinely-non-github surfaces — `/ui/operations/*` operator console, `/ui/metrics` — get the lighter "internally coherent + themed + accessible" check, since those have no github.com analogue.)
 
