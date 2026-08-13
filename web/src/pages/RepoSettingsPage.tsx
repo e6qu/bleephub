@@ -1,9 +1,24 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties, type FormEvent } from "react";
 import { useParams, useNavigate, Link } from "react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
 import { confirmAction } from "../components/confirmAction.js";
 import {
+  fetchActionsPermissions,
+  updateActionsPermissions,
+  fetchWorkflowPermissions,
+  updateWorkflowPermissions,
+  fetchRepoRulesets,
+  createRepoRuleset,
+  deleteRepoRuleset,
+  fetchEnvironments,
+  createEnvironment,
+  deleteEnvironment,
+  fetchEnvVariables,
+  createEnvVariable,
+  deleteEnvVariable,
+  fetchEnvSecrets,
+  deleteEnvSecret,
   addRepoDeployKey,
   createRepoAutolink,
   fetchWebhooks,
@@ -44,6 +59,14 @@ import {
   updateRepoTopics,
 } from "../api.js";
 import type {
+  GithubRuleset,
+  GithubRulesetTarget,
+  GithubRulesetEnforcement,
+  GithubEnvironment,
+  GithubActionsVariable,
+  GithubActionsPermissions,
+  GithubWorkflowPermissions,
+  GithubSecret,
   BleephubRepo,
   GithubAutolink,
   GithubWebhook,
@@ -57,7 +80,7 @@ import { RepoHeader } from "../components/Shell.js";
 import { SettingsLayout, type SettingsNavSection } from "../components/SettingsLayout.js";
 import { PageTitle, Button, Box, FormLabel, ErrorBanner } from "../components/ui.js";
 
-type SettingsTab = "general" | "collaborators" | "deploy-keys" | "pages" | "security" | "interaction" | "transfer" | "rename" | "autolinks" | "webhooks";
+type SettingsTab = "general" | "collaborators" | "deploy-keys" | "pages" | "security" | "interaction" | "transfer" | "rename" | "autolinks" | "webhooks" | "actions" | "environments" | "rulesets";
 
 const SETTINGS_NAV: SettingsNavSection<SettingsTab>[] = [
   { items: [{ key: "general", label: "General" }] },
@@ -65,6 +88,9 @@ const SETTINGS_NAV: SettingsNavSection<SettingsTab>[] = [
   {
     title: "Code and automation",
     items: [
+      { key: "actions", label: "Actions" },
+      { key: "rulesets", label: "Rulesets" },
+      { key: "environments", label: "Environments" },
       { key: "pages", label: "Pages" },
       { key: "webhooks", label: "Webhooks" },
       { key: "rename", label: "Rename branch" },
@@ -109,6 +135,9 @@ export function RepoSettingsPage() {
         {tab === "interaction" && <InteractionTab owner={owner} repo={repo} />}
         {tab === "autolinks" && <AutolinksTab owner={owner} repo={repo} />}
         {tab === "webhooks" && <WebhooksTab owner={owner} repo={repo} />}
+        {tab === "actions" && <ActionsSettingsTab owner={owner} repo={repo} />}
+        {tab === "rulesets" && <RepoRulesetsTab owner={owner} repo={repo} />}
+        {tab === "environments" && <EnvironmentsTab owner={owner} repo={repo} />}
         {tab === "transfer" && (
           <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
             <TransferTab owner={owner} repo={repo} />
@@ -1855,5 +1884,234 @@ function PagesDeploymentLookupCard({ owner, repo }: { owner: string; repo: strin
         )}
       </div>
     </Box>
+  );
+}
+
+const settingsInputStyle: CSSProperties = {
+  padding: "0.4rem 0.6rem",
+  fontSize: "0.85rem",
+  borderRadius: "var(--radius-md)",
+  border: "1px solid var(--color-border)",
+  background: "var(--color-surface)",
+  color: "var(--color-fg)",
+};
+
+const settingsH2: CSSProperties = { fontSize: "1.1rem", fontWeight: 600 };
+
+// ─── Actions settings ──────────────────────────────────────────────────────
+function ActionsSettingsTab({ owner, repo }: { owner: string; repo: string }) {
+  const qc = useQueryClient();
+  const [error, setError] = useState<string | null>(null);
+  const perms = useQuery({ queryKey: ["actions-permissions", owner, repo], queryFn: () => fetchActionsPermissions(owner, repo) });
+  const wf = useQuery({ queryKey: ["workflow-permissions", owner, repo], queryFn: () => fetchWorkflowPermissions(owner, repo) });
+  const permMut = useMutation({
+    mutationFn: (body: GithubActionsPermissions) => updateActionsPermissions(owner, repo, body),
+    onSuccess: () => { setError(null); void qc.invalidateQueries({ queryKey: ["actions-permissions", owner, repo] }); },
+    onError: (e: Error) => setError(e.message),
+  });
+  const wfMut = useMutation({
+    mutationFn: (body: GithubWorkflowPermissions) => updateWorkflowPermissions(owner, repo, body),
+    onSuccess: () => { setError(null); void qc.invalidateQueries({ queryKey: ["workflow-permissions", owner, repo] }); },
+    onError: (e: Error) => setError(e.message),
+  });
+
+  const PERM_OPTIONS = [
+    { enabled: true, allowed: "all" as const, label: "Allow all actions and reusable workflows" },
+    { enabled: true, allowed: "local_only" as const, label: "Allow local actions only" },
+    { enabled: true, allowed: "selected" as const, label: "Allow select actions and reusable workflows" },
+    { enabled: false, allowed: undefined, label: "Disable actions" },
+  ];
+
+  return (
+    <section style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+      {error && <ErrorBanner>{error}</ErrorBanner>}
+      <div>
+        <h2 style={settingsH2}>Actions permissions</h2>
+        {perms.isLoading && <Spinner label="loading actions permissions" />}
+        {perms.isError && <InlineError title="Failed to load Actions permissions" />}
+        {perms.data && (
+          <Box>
+            <div style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+              {PERM_OPTIONS.map((opt) => {
+                const checked = opt.enabled === perms.data!.enabled && (!opt.enabled || opt.allowed === (perms.data!.allowed_actions ?? "all"));
+                return (
+                  <label key={opt.label} style={{ display: "flex", gap: "0.5rem", fontSize: "0.9rem", alignItems: "center" }}>
+                    <input type="radio" name="actions-perm" checked={checked} disabled={permMut.isPending}
+                      onChange={() => permMut.mutate(opt.enabled ? { enabled: true, allowed_actions: opt.allowed ?? "all" } : { enabled: false })} />
+                    {opt.label}
+                  </label>
+                );
+              })}
+            </div>
+          </Box>
+        )}
+      </div>
+      <div>
+        <h2 style={settingsH2}>Workflow permissions</h2>
+        <p style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)", margin: "0.3rem 0 0.5rem" }}>
+          Default permissions granted to the <code>GITHUB_TOKEN</code> when running workflows in this repository.
+        </p>
+        {wf.isLoading && <Spinner label="loading workflow permissions" />}
+        {wf.isError && <InlineError title="Failed to load workflow permissions" />}
+        {wf.data && (
+          <Box>
+            <div style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+              {(["read", "write"] as const).map((v) => (
+                <label key={v} style={{ display: "flex", gap: "0.5rem", fontSize: "0.9rem", alignItems: "center" }}>
+                  <input type="radio" name="wf-perm" checked={wf.data!.default_workflow_permissions === v} disabled={wfMut.isPending}
+                    onChange={() => wfMut.mutate({ default_workflow_permissions: v, can_approve_pull_request_reviews: wf.data!.can_approve_pull_request_reviews })} />
+                  {v === "read" ? "Read repository contents and packages permissions" : "Read and write permissions"}
+                </label>
+              ))}
+            </div>
+          </Box>
+        )}
+      </div>
+    </section>
+  );
+}
+
+// ─── repo Rulesets ─────────────────────────────────────────────────────────
+function RepoRulesetsTab({ owner, repo }: { owner: string; repo: string }) {
+  const qc = useQueryClient();
+  const [name, setName] = useState("");
+  const [target, setTarget] = useState<GithubRulesetTarget>("branch");
+  const [enforcement, setEnforcement] = useState<GithubRulesetEnforcement>("active");
+  const [error, setError] = useState<string | null>(null);
+  const list = useQuery({ queryKey: ["repo-rulesets", owner, repo], queryFn: () => fetchRepoRulesets(owner, repo) });
+  const createMut = useMutation({
+    mutationFn: () => createRepoRuleset(owner, repo, { name: name.trim(), target, enforcement }),
+    onSuccess: () => { setName(""); setError(null); void qc.invalidateQueries({ queryKey: ["repo-rulesets", owner, repo] }); },
+    onError: (e: Error) => setError(e.message),
+  });
+  const delMut = useMutation({
+    mutationFn: (id: number) => deleteRepoRuleset(owner, repo, id),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["repo-rulesets", owner, repo] }),
+    onError: (e: Error) => setError(e.message),
+  });
+  const rulesets: GithubRuleset[] = list.data ?? [];
+  return (
+    <section style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+      <h2 style={settingsH2}>Rulesets</h2>
+      {error && <ErrorBanner>{error}</ErrorBanner>}
+      <Box header={<span style={{ fontWeight: 600 }}>New ruleset</span>}>
+        <form onSubmit={(e: FormEvent) => { e.preventDefault(); if (name.trim()) createMut.mutate(); }}
+          style={{ padding: "1rem", display: "flex", flexWrap: "wrap", gap: "0.6rem", alignItems: "end" }}>
+          <div><FormLabel id="ruleset-name">Name</FormLabel><input id="ruleset-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ruleset name" style={settingsInputStyle} /></div>
+          <div><FormLabel id="ruleset-target">Target</FormLabel><select id="ruleset-target" value={target} onChange={(e) => setTarget(e.target.value as GithubRulesetTarget)} style={settingsInputStyle}><option value="branch">Branch</option><option value="tag">Tag</option><option value="push">Push</option></select></div>
+          <div><FormLabel id="ruleset-enf">Enforcement</FormLabel><select id="ruleset-enf" value={enforcement} onChange={(e) => setEnforcement(e.target.value as GithubRulesetEnforcement)} style={settingsInputStyle}><option value="active">Active</option><option value="evaluate">Evaluate</option><option value="disabled">Disabled</option></select></div>
+          <Button type="submit" variant="primary" size="sm" disabled={!name.trim() || createMut.isPending}>{createMut.isPending ? "Creating…" : "Create ruleset"}</Button>
+        </form>
+      </Box>
+      {list.isLoading && <Spinner label="loading rulesets" />}
+      {list.isError && <InlineError title="Failed to load rulesets" />}
+      {list.data && (rulesets.length === 0 ? (
+        <p style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)" }}>No rulesets yet.</p>
+      ) : (
+        <Box>
+          {rulesets.map((rs, i) => (
+            <div key={rs.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.7rem 1rem", borderBottom: i < rulesets.length - 1 ? "1px solid var(--color-border)" : "none" }}>
+              <span style={{ fontSize: "0.9rem" }}><strong>{rs.name}</strong> <span style={{ color: "var(--color-fg-muted)", fontSize: "0.8rem" }}>{rs.target} · {rs.enforcement}</span></span>
+              <Button size="sm" variant="danger" aria-label={`Delete ruleset ${rs.name}`} disabled={delMut.isPending}
+                onClick={async () => { if (await confirmAction(`Delete ruleset "${rs.name}"?`, { title: "Delete ruleset", confirmLabel: "Delete" })) delMut.mutate(rs.id); }}>Delete</Button>
+            </div>
+          ))}
+        </Box>
+      ))}
+    </section>
+  );
+}
+
+// ─── repo Environments ─────────────────────────────────────────────────────
+function EnvironmentsTab({ owner, repo }: { owner: string; repo: string }) {
+  const qc = useQueryClient();
+  const [newEnv, setNewEnv] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [openEnv, setOpenEnv] = useState<string | null>(null);
+  const list = useQuery({ queryKey: ["environments", owner, repo], queryFn: () => fetchEnvironments(owner, repo) });
+  const createMut = useMutation({
+    mutationFn: () => createEnvironment(owner, repo, newEnv.trim()),
+    onSuccess: () => { setNewEnv(""); setError(null); void qc.invalidateQueries({ queryKey: ["environments", owner, repo] }); },
+    onError: (e: Error) => setError(e.message),
+  });
+  const delMut = useMutation({
+    mutationFn: (name: string) => deleteEnvironment(owner, repo, name),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["environments", owner, repo] }),
+    onError: (e: Error) => setError(e.message),
+  });
+  const envs: GithubEnvironment[] = list.data ?? [];
+  return (
+    <section style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+      <h2 style={settingsH2}>Environments</h2>
+      {error && <ErrorBanner>{error}</ErrorBanner>}
+      <Box header={<span style={{ fontWeight: 600 }}>New environment</span>}>
+        <form onSubmit={(e: FormEvent) => { e.preventDefault(); if (newEnv.trim()) createMut.mutate(); }}
+          style={{ padding: "1rem", display: "flex", gap: "0.6rem", alignItems: "end" }}>
+          <div style={{ flex: 1 }}><FormLabel id="env-name">Name</FormLabel><input id="env-name" value={newEnv} onChange={(e) => setNewEnv(e.target.value)} placeholder="e.g. production" style={settingsInputStyle} /></div>
+          <Button type="submit" variant="primary" size="sm" disabled={!newEnv.trim() || createMut.isPending}>{createMut.isPending ? "Creating…" : "Configure environment"}</Button>
+        </form>
+      </Box>
+      {list.isLoading && <Spinner label="loading environments" />}
+      {list.isError && <InlineError title="Failed to load environments" />}
+      {list.data && (envs.length === 0 ? (
+        <p style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)" }}>No environments yet.</p>
+      ) : (
+        <Box>
+          {envs.map((env, i) => (
+            <div key={env.id} style={{ borderBottom: i < envs.length - 1 ? "1px solid var(--color-border)" : "none" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.7rem 1rem" }}>
+                <button type="button" onClick={() => setOpenEnv(openEnv === env.name ? null : env.name)} aria-expanded={openEnv === env.name}
+                  style={{ background: "transparent", border: 0, color: "var(--color-accent)", fontSize: "0.9rem", fontWeight: 600, cursor: "pointer", minHeight: "1.625rem" }}>
+                  {env.name}
+                </button>
+                <Button size="sm" variant="danger" aria-label={`Delete environment ${env.name}`} disabled={delMut.isPending}
+                  onClick={async () => { if (await confirmAction(`Delete environment "${env.name}"?`, { title: "Delete environment", confirmLabel: "Delete" })) delMut.mutate(env.name); }}>Delete</Button>
+              </div>
+              {openEnv === env.name && <EnvironmentDetail owner={owner} repo={repo} env={env.name} />}
+            </div>
+          ))}
+        </Box>
+      ))}
+    </section>
+  );
+}
+
+function EnvironmentDetail({ owner, repo, env }: { owner: string; repo: string; env: string }) {
+  const qc = useQueryClient();
+  const [vname, setVName] = useState("");
+  const [vval, setVVal] = useState("");
+  const vars = useQuery({ queryKey: ["env-vars", owner, repo, env], queryFn: () => fetchEnvVariables(owner, repo, env) });
+  const secrets = useQuery({ queryKey: ["env-secrets", owner, repo, env], queryFn: () => fetchEnvSecrets(owner, repo, env) });
+  const addVar = useMutation({ mutationFn: () => createEnvVariable(owner, repo, env, vname.trim(), vval), onSuccess: () => { setVName(""); setVVal(""); void qc.invalidateQueries({ queryKey: ["env-vars", owner, repo, env] }); } });
+  const delVar = useMutation({ mutationFn: (n: string) => deleteEnvVariable(owner, repo, env, n), onSuccess: () => void qc.invalidateQueries({ queryKey: ["env-vars", owner, repo, env] }) });
+  const delSecret = useMutation({ mutationFn: (n: string) => deleteEnvSecret(owner, repo, env, n), onSuccess: () => void qc.invalidateQueries({ queryKey: ["env-secrets", owner, repo, env] }) });
+  const variables: GithubActionsVariable[] = vars.data ?? [];
+  const secretList: GithubSecret[] = secrets.data ?? [];
+  return (
+    <div style={{ padding: "0 1rem 1rem", display: "flex", flexDirection: "column", gap: "0.8rem", background: "var(--color-bg-subtle)" }}>
+      <div>
+        <h3 style={{ fontSize: "0.85rem", fontWeight: 600, margin: "0.6rem 0 0.3rem" }}>Environment variables</h3>
+        {variables.map((v) => (
+          <div key={v.name} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.82rem", padding: "0.2rem 0" }}>
+            <span><code>{v.name}</code> = {v.value}</span>
+            <Button size="sm" variant="ghost" aria-label={`Delete variable ${v.name}`} onClick={() => delVar.mutate(v.name)}>Remove</Button>
+          </div>
+        ))}
+        <form onSubmit={(e: FormEvent) => { e.preventDefault(); if (vname.trim()) addVar.mutate(); }} style={{ display: "flex", gap: "0.4rem", marginTop: "0.4rem", flexWrap: "wrap" }}>
+          <input value={vname} onChange={(e) => setVName(e.target.value)} placeholder="NAME" aria-label="Variable name" style={settingsInputStyle} />
+          <input value={vval} onChange={(e) => setVVal(e.target.value)} placeholder="value" aria-label="Variable value" style={settingsInputStyle} />
+          <Button type="submit" size="sm" variant="secondary" disabled={!vname.trim() || addVar.isPending}>Add variable</Button>
+        </form>
+      </div>
+      <div>
+        <h3 style={{ fontSize: "0.85rem", fontWeight: 600, margin: "0 0 0.3rem" }}>Environment secrets</h3>
+        {secretList.length ? secretList.map((s) => (
+          <div key={s.name} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.82rem", padding: "0.2rem 0" }}>
+            <code>{s.name}</code>
+            <Button size="sm" variant="ghost" aria-label={`Delete secret ${s.name}`} onClick={() => delSecret.mutate(s.name)}>Remove</Button>
+          </div>
+        )) : <p style={{ fontSize: "0.8rem", color: "var(--color-fg-muted)" }}>No secrets.</p>}
+      </div>
+    </div>
   );
 }

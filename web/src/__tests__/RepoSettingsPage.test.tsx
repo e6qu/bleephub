@@ -150,6 +150,31 @@ describe("RepoSettingsPage", () => {
     });
   });
 
+  it("creates an environment via PUT .../environments/{name} from the Environments tab", async () => {
+    mockFetch.mockImplementation((url: string, opts?: { method?: string }) => {
+      const u = url.toString();
+      if (u.includes("/environments/production") && opts?.method === "PUT") {
+        return Promise.resolve(jsonResponse({ id: 1, name: "production", node_id: "e", url: "u" }, 200));
+      }
+      if (u.endsWith("/environments")) return Promise.resolve(jsonResponse({ environments: [] }));
+      if (u.includes("/issues") || u.includes("/pulls")) return Promise.resolve(jsonResponse([]));
+      return Promise.resolve(jsonResponse(repo));
+    });
+    renderPage();
+    await waitFor(() => screen.getByDisplayValue("before"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Environments" }));
+    fireEvent.change(await screen.findByLabelText("Name"), { target: { value: "production" } });
+    fireEvent.click(screen.getByRole("button", { name: "Configure environment" }));
+
+    await waitFor(() => {
+      const put = mockFetch.mock.calls.find(
+        (c) => String(c[0]).includes("/environments/production") && c[1]?.method === "PUT",
+      );
+      expect(put).toBeDefined();
+    });
+  });
+
   it("lists and creates a repository webhook from the Webhooks tab", async () => {
     const existing = {
       id: 7,

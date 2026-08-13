@@ -482,6 +482,26 @@ export interface GithubEnvironment {
   url: string;
 }
 
+/** An Actions variable — GET .../actions/variables and env variables. */
+export interface GithubActionsVariable {
+  name: string;
+  value: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** GET/PUT .../actions/permissions. */
+export interface GithubActionsPermissions {
+  enabled: boolean;
+  allowed_actions?: "all" | "local_only" | "selected";
+}
+
+/** GET/PUT .../actions/permissions/workflow — default GITHUB_TOKEN scope. */
+export interface GithubWorkflowPermissions {
+  default_workflow_permissions: "read" | "write";
+  can_approve_pull_request_reviews: boolean;
+}
+
 // ─── GitHub Actions REST shapes (/api/v3/repos/{o}/{r}/actions/*) ───────
 
 /** GitHub workflow-run status. */

@@ -62,6 +62,8 @@ function installFetchRoutes(overrides: Record<string, () => Response> = {}) {
       return Promise.resolve(jsonResponse({ login: "admin", name: "Admin", bio: "", company: "", location: "", blog: "", twitter_username: "", created_at: "2026-01-01T00:00:00Z", followers: 0, following: 0, public_repos: 0 }));
     if (key === "PATCH /api/v3/user")
       return Promise.resolve(jsonResponse({ login: "admin", name: "Admin" }));
+    if (url === "/ui-data/user/account-settings" || key.startsWith("PUT /ui-data/user/"))
+      return Promise.resolve(jsonResponse({ two_factor_enabled: false, notification_settings: { email: true, web: true, participating: true, watching: true } }));
     return Promise.resolve(jsonResponse({ message: `unexpected ${key}` }, 500));
   });
 }
@@ -80,6 +82,32 @@ function renderPage() {
 }
 
 describe("AccountPage", () => {
+  it("enables two-factor via PUT /ui-data/user/two-factor", async () => {
+    installFetchRoutes();
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Password and authentication" }));
+    await waitFor(() => expect(screen.getByText(/Two-factor authentication is/)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: /Enable two-factor/ }));
+    await waitFor(() =>
+      expect(
+        mockFetch.mock.calls.some(([u, i]) => String(u) === "/ui-data/user/two-factor" && (i as RequestInit | undefined)?.method === "PUT"),
+      ).toBe(true),
+    );
+  });
+
+  it("saves a notification toggle via PUT /ui-data/user/notification-settings", async () => {
+    installFetchRoutes();
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
+    await waitFor(() => expect(screen.getByText("Email")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("checkbox", { name: /Email/ }));
+    await waitFor(() =>
+      expect(
+        mockFetch.mock.calls.some(([u, i]) => String(u) === "/ui-data/user/notification-settings" && (i as RequestInit | undefined)?.method === "PUT"),
+      ).toBe(true),
+    );
+  });
+
   it("lists SSH keys from GET /user/keys", async () => {
     installFetchRoutes();
     renderPage();

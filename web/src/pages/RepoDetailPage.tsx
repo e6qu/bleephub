@@ -31,6 +31,7 @@ import {
   fetchReleases,
   fetchPackages,
   putFile,
+  uploadFile,
   deleteFile,
   createRef,
 } from "../api.js";
@@ -80,6 +81,19 @@ import {
 // Lazy so the fuzzy finder (and its recursive-tree fetch) stay out of the entry
 // bundle; loaded on first "Go to file".
 const GoToFile = lazy(() => import("../components/GoToFile.js").then((m) => ({ default: m.GoToFile })));
+
+/** Read a File's bytes as base64 (no data: prefix) for the contents API. */
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result);
+      resolve(result.slice(result.indexOf(",") + 1));
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("could not read file"));
+    reader.readAsDataURL(file);
+  });
+}
 
 type SubTab = "code" | "commits" | "branches" | "tags" | "releases" | "webhooks" | "secrets" | "environments";
 
@@ -464,6 +478,31 @@ function CodeView({
     },
   });
 
+  const [uploading, setUploading] = useState(false);
+  const [uploadItems, setUploadItems] = useState<File[]>([]);
+  const [uploadMessage, setUploadMessage] = useState("");
+  const uploadFilesMut = useMutation({
+    mutationFn: async () => {
+      // Sequential so a mid-batch failure surfaces the file that failed and the
+      // earlier commits still land (matching github.com's per-file commits).
+      for (const file of uploadItems) {
+        const contentBase64 = await fileToBase64(file);
+        const fullPath = path ? `${path}/${file.name}` : file.name;
+        await uploadFile(owner, repo, fullPath, {
+          message: uploadMessage || `Add ${file.name}`,
+          contentBase64,
+          branch,
+        });
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["contents", owner, repo, path, branch] });
+      setUploading(false);
+      setUploadItems([]);
+      setUploadMessage("");
+    },
+  });
+
   if (loading || itemsLoading || readmeLoading) return <Spinner label="loading code" />;
   if (commits.length === 0) {
     return <EmptyRepoSetup owner={owner} repo={repo} defaultBranch={defaultBranch} sshUrl={sshUrl} />;
@@ -517,6 +556,9 @@ function CodeView({
         <Button size="sm" onClick={() => setAdding(true)}>
           Add file
         </Button>
+        <Button size="sm" onClick={() => setUploading(true)}>
+          Upload files
+        </Button>
         <CloneButton owner={owner} repo={repo} sshUrl={sshUrl} archiveRef={branch} />
       </div>
 
@@ -568,6 +610,51 @@ function CodeView({
               onClick={() => createFileMut.mutate()}
             >
               {createFileMut.isPending ? "Committing…" : "Commit new file"}
+            </Button>
+          </DialogActions>
+        </Modal>
+      )}
+
+      {uploading && (
+        <Modal title="Upload files" onClose={() => setUploading(false)}>
+          <FormLabel id="upload-input">Choose files{path ? ` (into ${path}/)` : ""}</FormLabel>
+          <input
+            id="upload-input"
+            type="file"
+            multiple
+            className="mb-3 w-full"
+            onChange={(e) => setUploadItems(Array.from(e.target.files ?? []))}
+          />
+          {uploadItems.length > 0 && (
+            <ul className="mb-3" style={{ listStyle: "none", margin: 0, padding: 0, fontSize: ".82rem" }}>
+              {uploadItems.map((f) => (
+                <li key={f.name} style={{ display: "flex", justifyContent: "space-between", padding: ".15rem 0" }}>
+                  <span>{f.name}</span>
+                  <span style={{ color: "var(--color-fg-muted)" }}>{(f.size / 1024).toFixed(1)} KB</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <FormLabel id="upload-message">Commit message</FormLabel>
+          <input
+            id="upload-message"
+            value={uploadMessage}
+            onChange={(e) => setUploadMessage(e.target.value)}
+            placeholder={`Add ${uploadItems.length || ""} file${uploadItems.length === 1 ? "" : "s"}`.replace("  ", " ")}
+            className="mb-2 w-full"
+          />
+          <MutationError of={uploadFilesMut} />
+          <DialogActions>
+            <Button variant="ghost" size="sm" onClick={() => setUploading(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={uploadItems.length === 0 || uploadFilesMut.isPending}
+              onClick={() => uploadFilesMut.mutate()}
+            >
+              {uploadFilesMut.isPending ? "Uploading…" : `Commit ${uploadItems.length} file${uploadItems.length === 1 ? "" : "s"}`}
             </Button>
           </DialogActions>
         </Modal>

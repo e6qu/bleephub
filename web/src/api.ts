@@ -102,6 +102,9 @@ import type {
   GithubRuleset,
   GithubRulesetCreatePayload,
   GithubRulesetSuite,
+  GithubActionsVariable,
+  GithubActionsPermissions,
+  GithubWorkflowPermissions,
   GithubContributor,
   GithubTrafficViews,
   GithubTrafficClones,
@@ -1120,6 +1123,27 @@ export const putFile = (
   );
 };
 
+/**
+ * Upload a file whose `contentBase64` is ALREADY base64 (from a File's bytes) —
+ * used by the drag/drop "Upload files" flow, where re-encoding would corrupt
+ * binary content. Pass `sha` to overwrite an existing path.
+ */
+export const uploadFile = (
+  owner: string,
+  repo: string,
+  path: string,
+  payload: { message: string; contentBase64: string; sha?: string | undefined; branch?: string | undefined },
+) => {
+  const encodedPath = path.split("/").map(encodeURIComponent).join("/");
+  const body: Record<string, unknown> = { message: payload.message, content: payload.contentBase64 };
+  if (payload.sha) body.sha = payload.sha;
+  if (payload.branch) body.branch = payload.branch;
+  return ghPutJSON<{ commit: { sha: string } }>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodedPath}`,
+    body,
+  );
+};
+
 /** Delete a file through the contents API. `sha` is the file's current blob sha. */
 export const deleteFile = (
   owner: string,
@@ -1421,6 +1445,7 @@ export const createClassroomAssignment = (
     deadline?: string | undefined;
     max_teams?: number | undefined;
     max_members?: number | undefined;
+    editor?: string | undefined;
     autograding_tests: ClassroomAutogradingTest[];
   },
 ) => ghPostJSON<ClassroomAssignment>(`/classroom-data/classrooms/${classroomID}/assignments`, body);
@@ -2885,6 +2910,57 @@ export const updateOrgRuleset = (org: string, rulesetId: number, payload: Github
 export const deleteOrgRuleset = (org: string, rulesetId: number) =>
   ghDeleteJSON<void>(`/api/v3/orgs/${encodeURIComponent(org)}/rulesets/${rulesetId}`, {});
 
+const repoBase = (owner: string, repo: string) =>
+  `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
+
+export const fetchRepoRulesets = (owner: string, repo: string) =>
+  ghFetch<GithubRuleset[]>(`${repoBase(owner, repo)}/rulesets`);
+
+export const createRepoRuleset = (owner: string, repo: string, payload: GithubRulesetCreatePayload) =>
+  ghPostJSON<GithubRuleset>(`${repoBase(owner, repo)}/rulesets`, payload);
+
+export const deleteRepoRuleset = (owner: string, repo: string, rulesetId: number) =>
+  ghDeleteJSON<void>(`${repoBase(owner, repo)}/rulesets/${rulesetId}`, {});
+
+// ─── repo Actions settings ───────────────────────────────────────────────
+export const fetchActionsPermissions = (owner: string, repo: string) =>
+  ghFetch<GithubActionsPermissions>(`${repoBase(owner, repo)}/actions/permissions`);
+
+export const updateActionsPermissions = (owner: string, repo: string, body: GithubActionsPermissions) =>
+  ghSend("PUT", `${repoBase(owner, repo)}/actions/permissions`, body);
+
+export const fetchWorkflowPermissions = (owner: string, repo: string) =>
+  ghFetch<GithubWorkflowPermissions>(`${repoBase(owner, repo)}/actions/permissions/workflow`);
+
+export const updateWorkflowPermissions = (owner: string, repo: string, body: GithubWorkflowPermissions) =>
+  ghSend("PUT", `${repoBase(owner, repo)}/actions/permissions/workflow`, body);
+
+// ─── repo Environments settings ──────────────────────────────────────────
+export const createEnvironment = (owner: string, repo: string, name: string) =>
+  ghPutJSON<GithubEnvironment>(`${repoBase(owner, repo)}/environments/${encodeURIComponent(name)}`, {});
+
+export const deleteEnvironment = (owner: string, repo: string, name: string) =>
+  ghDelete(`${repoBase(owner, repo)}/environments/${encodeURIComponent(name)}`);
+
+export const fetchEnvVariables = (owner: string, repo: string, env: string) =>
+  ghFetch<{ variables: GithubActionsVariable[] }>(
+    `${repoBase(owner, repo)}/environments/${encodeURIComponent(env)}/variables`,
+  ).then((r) => r.variables ?? []);
+
+export const createEnvVariable = (owner: string, repo: string, env: string, name: string, value: string) =>
+  ghPostJSON<void>(`${repoBase(owner, repo)}/environments/${encodeURIComponent(env)}/variables`, { name, value });
+
+export const deleteEnvVariable = (owner: string, repo: string, env: string, name: string) =>
+  ghDelete(`${repoBase(owner, repo)}/environments/${encodeURIComponent(env)}/variables/${encodeURIComponent(name)}`);
+
+export const fetchEnvSecrets = (owner: string, repo: string, env: string) =>
+  ghFetch<{ secrets: GithubSecret[] }>(
+    `${repoBase(owner, repo)}/environments/${encodeURIComponent(env)}/secrets`,
+  ).then((r) => r.secrets ?? []);
+
+export const deleteEnvSecret = (owner: string, repo: string, env: string, name: string) =>
+  ghDelete(`${repoBase(owner, repo)}/environments/${encodeURIComponent(env)}/secrets/${encodeURIComponent(name)}`);
+
 export interface GithubRulesetSuiteFilters {
   repositoryName?: string;
   ref?: string;
@@ -4163,6 +4239,25 @@ export const updateAuthenticatedUser = (payload: {
   blog?: string;
   twitter_username?: string;
 }): Promise<GithubUserProfile> => ghPatchJSON<GithubUserProfile>("/api/v3/user", payload);
+
+// Account security (2FA) + notification preferences — github.com serves these
+// from web-only pages, so the simulator exposes them under /ui-data.
+export interface NotificationSettings {
+  email: boolean;
+  web: boolean;
+  participating: boolean;
+  watching: boolean;
+}
+export interface AccountSettings {
+  two_factor_enabled: boolean;
+  notification_settings: NotificationSettings;
+}
+export const fetchAccountSettings = (signal?: AbortSignal) =>
+  ghFetch<AccountSettings>("/ui-data/user/account-settings", signal);
+export const setTwoFactor = (enabled: boolean) =>
+  ghPutJSON<AccountSettings>("/ui-data/user/two-factor", { enabled });
+export const setNotificationSettings = (settings: NotificationSettings) =>
+  ghPutJSON<AccountSettings>("/ui-data/user/notification-settings", settings);
 
 export const fetchPRReviews = (owner: string, repo: string, number: number) =>
   ghFetch<GithubPRReview[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/reviews`);

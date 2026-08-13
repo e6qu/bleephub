@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
 import { confirmAction } from "../components/confirmAction.js";
+import { fetchAccountSettings, setTwoFactor, setNotificationSettings, type NotificationSettings } from "../api.js";
 import {
   addUserEmails,
   blockUser,
@@ -39,19 +40,21 @@ import { PageTitle, Box, Button, ErrorBanner, FormLabel } from "../components/ui
 import { SettingsLayout, type SettingsNavSection } from "../components/SettingsLayout.js";
 import { KeyIcon } from "../components/octicons.js";
 
-type AccountTab = "profile" | "appearance" | "tokens" | "ssh-keys" | "gpg-keys" | "signing-keys" | "emails" | "blocked";
+type AccountTab = "profile" | "appearance" | "notifications" | "tokens" | "ssh-keys" | "gpg-keys" | "signing-keys" | "emails" | "blocked" | "authentication";
 
 const ACCOUNT_NAV: SettingsNavSection<AccountTab>[] = [
   {
     items: [
       { key: "profile", label: "Public profile" },
       { key: "appearance", label: "Appearance" },
+      { key: "notifications", label: "Notifications" },
       { key: "emails", label: "Emails" },
     ],
   },
   {
     title: "Access",
     items: [
+      { key: "authentication", label: "Password and authentication" },
       { key: "tokens", label: "Personal access tokens" },
       { key: "ssh-keys", label: "SSH keys" },
       { key: "gpg-keys", label: "GPG keys" },
@@ -69,6 +72,8 @@ export function AccountPage() {
       <SettingsLayout sections={ACCOUNT_NAV} active={tab} onSelect={setTab}>
         {tab === "profile" && <ProfileSettingsTab />}
         {tab === "appearance" && <AppearanceTab />}
+        {tab === "notifications" && <NotificationsSettingsTab />}
+        {tab === "authentication" && <AuthenticationTab />}
         {tab === "ssh-keys" && <SSHKeysTab />}
         {tab === "tokens" && <FineGrainedTokensTab />}
         {tab === "gpg-keys" && <GPGKeysTab />}
@@ -738,5 +743,83 @@ function AppearanceTab() {
         ))}
       </fieldset>
     </Box>
+  );
+}
+
+function AuthenticationTab() {
+  const client = useQueryClient();
+  const query = useQuery({ queryKey: ["account-settings"], queryFn: () => fetchAccountSettings() });
+  const [error, setError] = useState<string | null>(null);
+  const mutation = useMutation({
+    mutationFn: (enabled: boolean) => setTwoFactor(enabled),
+    onSuccess: () => { setError(null); void client.invalidateQueries({ queryKey: ["account-settings"] }); },
+    onError: (e: Error) => setError(e.message),
+  });
+  if (query.isLoading) return <Spinner label="loading authentication settings" />;
+  if (query.isError) return <InlineError title="Failed to load authentication settings" detail={String(query.error)} />;
+  const on = query.data?.two_factor_enabled ?? false;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+      {error && <ErrorBanner>{error}</ErrorBanner>}
+      <Box header={<span style={{ fontWeight: 600 }}>Two-factor authentication</span>}>
+        <div style={{ padding: "1rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem" }}>
+          <div>
+            <p style={{ fontSize: "0.9rem", margin: 0 }}>
+              Two-factor authentication is <strong>{on ? "enabled" : "not enabled"}</strong> for your account.
+            </p>
+            <p style={{ fontSize: "0.8rem", color: "var(--color-fg-muted)", margin: "0.25rem 0 0" }}>
+              Add an extra layer of security to your account by requiring a second authentication step at sign-in.
+            </p>
+          </div>
+          <Button variant={on ? "secondary" : "primary"} size="sm" disabled={mutation.isPending}
+            onClick={() => mutation.mutate(!on)}>
+            {mutation.isPending ? "Saving…" : on ? "Disable" : "Enable two-factor authentication"}
+          </Button>
+        </div>
+      </Box>
+    </div>
+  );
+}
+
+const NOTIFICATION_TOGGLES: { key: keyof NotificationSettings; label: string; hint: string }[] = [
+  { key: "participating", label: "Participating and @mentions", hint: "Notify me about threads I'm participating in or @mentioned in." },
+  { key: "watching", label: "Watching", hint: "Notify me about activity on repositories I watch." },
+  { key: "email", label: "Email", hint: "Deliver notifications to my email." },
+  { key: "web", label: "Web and mobile", hint: "Deliver notifications in the web UI." },
+];
+
+function NotificationsSettingsTab() {
+  const client = useQueryClient();
+  const query = useQuery({ queryKey: ["account-settings"], queryFn: () => fetchAccountSettings() });
+  const [error, setError] = useState<string | null>(null);
+  const mutation = useMutation({
+    mutationFn: (next: NotificationSettings) => setNotificationSettings(next),
+    onSuccess: () => { setError(null); void client.invalidateQueries({ queryKey: ["account-settings"] }); },
+    onError: (e: Error) => setError(e.message),
+  });
+  if (query.isLoading) return <Spinner label="loading notification settings" />;
+  if (query.isError) return <InlineError title="Failed to load notification settings" detail={String(query.error)} />;
+  const settings = query.data!.notification_settings;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+      {error && <ErrorBanner>{error}</ErrorBanner>}
+      <Box header={<span style={{ fontWeight: 600 }}>Default notifications</span>}>
+        <fieldset style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "0.7rem", border: "none", margin: 0 }}>
+          <legend style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)", marginBottom: "0.3rem" }}>
+            Choose how you receive notifications.
+          </legend>
+          {NOTIFICATION_TOGGLES.map((t) => (
+            <label key={t.key} className="flex items-start gap-2" style={{ fontSize: "0.9rem", cursor: "pointer" }}>
+              <input type="checkbox" checked={settings[t.key]} disabled={mutation.isPending}
+                onChange={(e) => mutation.mutate({ ...settings, [t.key]: e.target.checked })} />
+              <span>
+                <span style={{ fontWeight: 600 }}>{t.label}</span>
+                <span style={{ display: "block", fontSize: "0.8rem", color: "var(--color-fg-muted)" }}>{t.hint}</span>
+              </span>
+            </label>
+          ))}
+        </fieldset>
+      </Box>
+    </div>
   );
 }

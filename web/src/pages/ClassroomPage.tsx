@@ -528,6 +528,15 @@ function AssignmentDialog({
   const [invitationsEnabled, setInvitationsEnabled] = useState(
     assignment?.invitations_enabled ?? true,
   );
+  // WEB-082: the five teacher options old classroom.github.com exposes.
+  const [visibility, setVisibility] = useState<"private" | "public">(
+    assignment?.public_repo ? "public" : "private",
+  );
+  const [studentsAreAdmins, setStudentsAreAdmins] = useState(false);
+  const [feedbackPr, setFeedbackPr] = useState(true);
+  const [maxTeams, setMaxTeams] = useState("");
+  const [maxMembers, setMaxMembers] = useState("");
+  const [editor, setEditor] = useState("");
   const nextTestKey = useRef(0);
   const [tests, setTests] = useState<Array<ClassroomAutogradingTest & { key: number }>>(
     assignment?.autograding_tests?.length
@@ -554,10 +563,17 @@ function AssignmentDialog({
           title: title.trim(),
           type,
           starter_code_repository: starter.trim(),
-          public_repo: false,
-          students_are_repo_admins: false,
-          feedback_pull_requests_enabled: true,
+          public_repo: visibility === "public",
+          students_are_repo_admins: studentsAreAdmins,
+          feedback_pull_requests_enabled: feedbackPr,
           deadline: deadline ? new Date(deadline).toISOString() : undefined,
+          editor: editor || undefined,
+          ...(type === "group"
+            ? {
+                max_teams: maxTeams ? Number(maxTeams) : undefined,
+                max_members: maxMembers ? Number(maxMembers) : undefined,
+              }
+            : {}),
           autograding_tests: tests.map(({ key: _key, ...test }) => test),
         }),
     onSuccess: () => {
@@ -620,6 +636,47 @@ function AssignmentDialog({
             <input id="assignment-deadline" className="w-full" type="datetime-local" value={deadline} onChange={(event) => setDeadline(event.target.value)} />
           </div>
         </div>
+        {!editing && (
+          <>
+            {type === "group" && (
+              <div className="mb-3 grid grid-cols-2 gap-3">
+                <div>
+                  <FormLabel id="assignment-max-teams">Maximum teams</FormLabel>
+                  <input id="assignment-max-teams" className="w-full" type="number" min={0} value={maxTeams} onChange={(event) => setMaxTeams(event.target.value)} placeholder="No limit" />
+                </div>
+                <div>
+                  <FormLabel id="assignment-max-members">Members per team</FormLabel>
+                  <input id="assignment-max-members" className="w-full" type="number" min={0} value={maxMembers} onChange={(event) => setMaxMembers(event.target.value)} placeholder="No limit" />
+                </div>
+              </div>
+            )}
+            <div className="mb-3 grid grid-cols-2 gap-3">
+              <div>
+                <FormLabel id="assignment-visibility">Repository visibility</FormLabel>
+                <select id="assignment-visibility" className="w-full" value={visibility} onChange={(event) => setVisibility(event.target.value as "private" | "public")}>
+                  <option value="private">Private</option>
+                  <option value="public">Public</option>
+                </select>
+              </div>
+              <div>
+                <FormLabel id="assignment-editor">Supported editor</FormLabel>
+                <select id="assignment-editor" className="w-full" value={editor} onChange={(event) => setEditor(event.target.value)}>
+                  <option value="">None</option>
+                  <option value="vscode">Visual Studio Code</option>
+                  <option value="codespaces">GitHub Codespaces</option>
+                </select>
+              </div>
+            </div>
+            <label className="mb-2 flex items-center gap-2" style={{ fontSize: ".84rem" }}>
+              <input type="checkbox" checked={studentsAreAdmins} onChange={(event) => setStudentsAreAdmins(event.target.checked)} />
+              Grant students admin access to their repository
+            </label>
+            <label className="mb-3 flex items-center gap-2" style={{ fontSize: ".84rem" }}>
+              <input type="checkbox" checked={feedbackPr} onChange={(event) => setFeedbackPr(event.target.checked)} />
+              Enable feedback pull requests
+            </label>
+          </>
+        )}
         {editing && (
           <label className="mb-3 flex items-center gap-2" style={{ fontSize: ".84rem" }}>
             <input type="checkbox" checked={invitationsEnabled} onChange={(event) => setInvitationsEnabled(event.target.checked)} />
