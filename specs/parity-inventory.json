@@ -5291,6 +5291,15 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "github.com's global \u2318K / Ctrl-K \"jump to\" command palette had no equivalent \u2014 there was no keybinding anywhere in the app, so the header search box was the only navigation entry point",
+        "id": "WEB-073",
+        "location": "web/src/components/CommandPalette.tsx, web/src/components/AppHeader.tsx",
+        "severity": "M",
+        "status": "fixed \u2014 a lazy-loaded (code-split out of the entry bundle, loaded on first open) command palette: \u2318K/Ctrl-K opens a dialog+combobox with static jump-to targets plus live repository and user/org search; \u2191/\u2193 move the active option, Enter navigates, Esc closes; focus opens on the input, is trapped in the dialog, and restores to the opener. Proven by vitest (roles, filter, keyboard-nav, navigate, escape) and a Chromium e2e that opens it with \u2318K, filters, navigates, and asserts the open dialog is axe-clean (WCAG A+AA) in a real browser",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -6707,23 +6716,23 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 67,
+            "fixed": 68,
             "open": 3
           },
-          "total": 72
+          "total": 73
         }
       },
       "severity": {
         "blocker": 167,
-        "major": 380,
+        "major": 381,
         "minor": 154
       },
       "status": {
         "deferred": 3,
-        "fixed": 695,
+        "fixed": 696,
         "open": 3
       },
-      "total": 701
+      "total": 702
     }
   },
   "rest": {
@@ -28502,6 +28511,16 @@
         "target": "/health"
       },
       {
+        "line": 9,
+        "source": "web/e2e/command-palette.spec.ts",
+        "target": "/ui/"
+      },
+      {
+        "line": 43,
+        "source": "web/e2e/command-palette.spec.ts",
+        "target": "/ui/"
+      },
+      {
         "line": 21,
         "source": "web/e2e/errorPaths.spec.ts",
         "target": "/ui/repos/admin/this-repo-does-not-exist-xyz/insights"
@@ -29663,7 +29682,7 @@
       }
     ],
     "summary": {
-      "browser_navigations": 57,
+      "browser_navigations": 59,
       "routes": 89,
       "routes_with_direct_render": 86,
       "routes_with_test_reference": 88

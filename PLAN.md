@@ -88,7 +88,7 @@ menus/controls are missing or non-functional.
 1. Profile **contribution graph** (calendar heatmap) missing.
 2. Profile **pinned repositories** missing.
 3. Profile **README** missing.
-4. Global **command palette / ⌘K** jump-to missing (no keybinding at all in `AppHeader.tsx`).
+4. ✅ FIXED (WEB-073) — Global **command palette / ⌘K** jump-to: lazy-loaded dialog+combobox (static targets + live repo/user search, keyboard nav, axe-clean); ⌘K/Ctrl-K in `AppHeader.tsx`.
 5. Repo **"Go to file"** fuzzy finder missing.
 6. Repo Settings **Webhooks** list/create missing (only a delivery viewer exists).
 7. Repo Settings **Environments** editor missing (Deployments list ≠ env settings).
