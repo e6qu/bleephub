@@ -1,6 +1,6 @@
 # Bleephub bug ledger
 
-705 findings from the continuing full-surface audit: 167 blockers, 383 major, 155 minor. Every
+715 findings from the continuing full-surface audit: 167 blockers, 389 major, 159 minor. Every
 entry carries a location and a one-sentence claim. Severity is `B` blocker, `M` major, `m` minor.
 Status begins with one of `open`, `partial`, `fixed`, or `deferred`; the generated parity
 inventory records the exact counts and fails CI when this summary or a row drifts.

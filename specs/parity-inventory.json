@@ -5251,8 +5251,8 @@
         "id": "WEB-068",
         "location": "web/src/components/LabelPills.tsx",
         "severity": "M",
-        "status": "open \u2014 needs a luminance-aware foreground like GitHub's label styles; tracked as the label-contrast slice of the WCAG workstream",
-        "status_kind": "open"
+        "status": "fixed \u2014 LabelPills now derives the label's HSL and emits two hue-matched foregrounds as CSS variables (a dark one for the light-mode tint, a light one for the dark-mode tint) switched by the `.label-pill`/`.dark .label-pill` rules, so text clears AA against the composited tint in both themes; the axe sweep confirms zero label-contrast hits",
+        "status_kind": "fixed"
       },
       {
         "category": "WEB",
@@ -5260,8 +5260,8 @@
         "id": "WEB-069",
         "location": "web/src/pages/MarketplacePage.tsx, web/src/pages/IssuesPage.tsx, web/src/pages/CodeScanningPage.tsx",
         "severity": "m",
-        "status": "open \u2014 per-element token adjustments; tracked with WEB-068 in the contrast pass",
-        "status_kind": "open"
+        "status": "fixed \u2014 the active marketplace category uses the higher-contrast `--color-accent-emphasis`, and a new readable `--color-brand-cyan-text` token (dark cyan in light mode) replaces the decorative `--color-brand-cyan` for the code-scanning kicker + inline code text; the issue state badge cleared via the WEB-068 label fix. The axe dual-theme sweep is now a BLOCKING ratchet gate (fails on any violation/load-failure), holding the whole surface at zero",
+        "status_kind": "fixed"
       },
       {
         "category": "WEB",
@@ -5274,12 +5274,12 @@
       },
       {
         "category": "WEB",
-        "finding": "The profile Overview has no pinned-repositories section \u2014 github.com lets a user pin up to six repos, but the simulator has no pin storage (only unrelated issue-comment pinning exists)",
+        "finding": "The profile Overview has no pinned-repositories section \u2014 github.com lets a user pin up to six repos, but the simulator had no pin storage",
         "id": "WEB-071",
-        "location": "web/src/pages/ProfilePage.tsx",
+        "location": "web/src/pages/ProfilePage.tsx, internal/store/pinned_repos.go, internal/server/gh_pinned.go",
         "severity": "M",
-        "status": "open \u2014 needs a minimal backend: a per-user ordered pinned-repo list plus get/set routes, then an Overview pin grid; tracked as the next profile slice",
-        "status_kind": "open"
+        "status": "fixed \u2014 added a per-user ordered pin list (store.User.PinnedRepos, max 6, dedup/existence-filtered) and get/set routes under `/ui-data/users/{login}/pinned` (GitHub pins are GraphQL-only, so not `/api/v3`; PUT is self-or-siteadmin only), plus a profile Overview pin grid with an own-profile \"Customize your pins\" editor. Go tests cover the store + auth (set/list, >6 \u2192 422, dedup/nonexistent dropped, non-owner 403); vitest drives the Overview grid + save; the profile renders clean in the Chromium sweep",
+        "status_kind": "fixed"
       },
       {
         "category": "WEB",
@@ -5310,6 +5310,24 @@
       },
       {
         "category": "WEB",
+        "finding": "Repo Settings had no Webhooks page \u2014 unlike github.com there was no way to list, create, edit, ping, or delete repository webhooks from the UI; only a standalone delivery viewer existed",
+        "id": "WEB-075",
+        "location": "web/src/pages/RepoSettingsPage.tsx",
+        "severity": "M",
+        "status": "fixed \u2014 added a Webhooks tab under Settings \u2192 Code and automation: lists hooks with active state, a create form (payload URL, content type, optional secret, comma-separated events, active), enable/disable toggle, ping, delete-with-confirm, and a link to the existing per-hook deliveries page. Repo-scoped hook api wrappers (create/update/delete/ping) mirror the org ones; all backend routes pre-existed. vitest covers list + create (asserting the hook body); a Chromium e2e drives the tab, creates a hook, and asserts the tab is axe-clean (WCAG A+AA)",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "The repo file browser had no \"Go to file\" fuzzy finder \u2014 github.com's `t` shortcut / button to jump to any file by path was absent",
+        "id": "WEB-076",
+        "location": "web/src/components/GoToFile.tsx, web/src/pages/RepoDetailPage.tsx",
+        "severity": "M",
+        "status": "fixed \u2014 a lazy-loaded (code-split) fuzzy finder loads the recursive git tree at the current ref, subsequence-matches file paths (basename-preferred), and navigates to the blob; opened by a \"Go to file\" toolbar button or the `t` shortcut, with dialog/combobox/listbox ARIA, \u2191/\u2193/Enter/Esc, trapped+restored focus. vitest covers filter + navigate + escape; a Chromium e2e opens it, filters, navigates to the blob, and asserts the dialog is axe-clean (WCAG A+AA)",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
         "finding": "The Classroom assignment-creation flow omits five teacher-facing options that old classroom.github.com exposes and the backend already accepts: repository **visibility** (public_repo \u2014 hardcoded private), **grant students admin access** (students_are_repo_admins \u2014 hardcoded off), **enable feedback pull requests** (feedback_pull_requests_enabled \u2014 hardcoded on), group **team size** (max_teams/max_members \u2014 not surfaced despite the group type), and **supported editor** (editor). The `createClassroomAssignment` handler (gh_classroom_web.go) accepts all five",
         "id": "WEB-082",
         "location": "web/src/pages/ClassroomPage.tsx",
@@ -5319,11 +5337,83 @@
       },
       {
         "category": "WEB",
+        "finding": "The dashboard center feed was issues-only \u2014 unlike github.com's home page it had no following/news feed of activity from the people and repos you follow",
+        "id": "WEB-077",
+        "location": "web/src/pages/DashboardPage.tsx",
+        "severity": "M",
+        "status": "fixed \u2014 added a \"Following\" activity feed from `GET /users/{login}/received_events` (push/create/delete/issue/PR/comment events rendered as actor + phrase + repo link), above a renamed \"Your issues\" section; the empty state prompts you to follow people and watch repos. vitest covers the feed content, the empty state, and a feed error; the dashboard renders clean in the Chromium a11y sweep",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "Account settings had no Public-profile editor and no Appearance section \u2014 github.com's Settings opens on Public profile and carries Appearance (theme), but bleephub only exposed Emails/keys/PAT/blocked",
+        "id": "WEB-078",
+        "location": "web/src/pages/AccountPage.tsx",
+        "severity": "M",
+        "status": "fixed \u2014 added a \"Public profile\" tab (now the default, matching github.com; edits name/bio/company/location/blog/twitter via `PATCH /user` with `updateAuthenticatedUser`) and an \"Appearance\" tab that hosts the theme control (Light/Dark) in its correct Settings location. vitest covers the profile save (PATCH body) and the theme switch (`.dark` applied); a viewer/profile load failure degrades to a visible error; `/ui/account` renders clean in the Chromium a11y sweep. (Notifications and Password/2FA sub-sections remain \u2014 separate slices.)",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "The organization had no Settings landing \u2014 github.com gathers org settings under `/orgs/{org}/settings`, but bleephub scattered them across top-level tabs with no single Settings entry point",
+        "id": "WEB-079",
+        "location": "web/src/pages/OrgSettingsPage.tsx, web/src/components/Shell.tsx",
+        "severity": "M",
+        "status": "fixed \u2014 added a Settings tab to the org header and a `/ui/orgs/:org/settings` landing that edits the org profile (display name, description, billing email via `PATCH /orgs/{org}`) and links to the settings surfaces (Member privileges, Rulesets, Webhooks, Copilot, People, Teams). vitest covers the form + section links + PATCH save; a Chromium e2e drives the form, save, and asserts the page is axe-clean",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "GitHub Classroom's assignment report displayed grades but had no \"Download grades (CSV)\" export \u2014 old classroom.github.com prominently offers a grade CSV download in a fixed column format for grading pipelines",
+        "id": "WEB-080",
+        "location": "web/src/pages/ClassroomPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added a \"Download grades (CSV)\" button to the assignment-report modal that exports `GET /assignments/{id}/grades` in classroom.github.com's exact column order (assignment/starter URLs, github_username, roster_identifier, student repo name/url, submission timestamp, points awarded/available, group_name). Pure client-side CSV from the already-fetched grades; the builder is a unit-tested pure function (column order, quote/comma escaping, empty-set header)",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "The organization had no Insights tab \u2014 GHES surfaces an org Insights (API Insights) tab, and the backend existed (`/orgs/{org}/insights/api/*`) but no UI reached it",
+        "id": "WEB-081",
+        "location": "web/src/pages/OrgInsightsPage.tsx, web/src/components/Shell.tsx",
+        "severity": "M",
+        "status": "fixed \u2014 added an Insights tab to the org header and a `/ui/orgs/:org/insights` page showing a trailing-30-day API-request summary (total + rate-limited request counts) and the top request-subjects (apps/actors) table, sorted by volume. Backed by the pre-existing summary-stats/subject-stats endpoints. vitest covers the summary + subjects table + empty state; a Chromium e2e renders the page and asserts it is axe-clean",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
         "finding": "The global-nav menus were missing three entries GitHub's header has: the create-**+** menu lacked **Import repository**, and the avatar menu lacked **Your projects** and **Your stars**. (The old \"Your organizations\" item still needs a dedicated user-facing orgs page \u2014 tracked separately.)",
         "id": "WEB-083",
         "location": "web/src/components/AppHeader.tsx",
         "severity": "m",
         "status": "fixed \u2014 added Import repository \u2192 `/ui/migrations`, Your projects \u2192 `/ui/{login}?tab=projects`, Your stars \u2192 `/ui/{login}?tab=stars` (the profile Projects/Stars tabs merged in #274); AppHeader is axe-swept on every route and the targets are already in the a11y sweep, keyboard-nav test updated for the new create-menu order",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "The avatar menu's \"Your organizations\" entry (GitHub's github.com/settings/organizations) had no home \u2014 the only orgs list was the operator-scoped `/ui/operations/orgs` (all orgs), not the authenticated user's memberships",
+        "id": "WEB-084",
+        "location": "web/src/pages/MyOrganizationsPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 new MyOrganizationsPage at `/ui/settings/organizations` backed by the existing `GET /api/v3/user/orgs` (fetchAuthenticatedUserOrgs); lists the viewer's orgs (avatar, login, description \u2192 `/ui/orgs/{login}`) with an empty state + New-organization CTA; avatar-menu \"Your organizations\" entry added; route added to the a11y theme sweep (both themes), unit test covers the list + empty state",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "Repo Insights was missing GitHub's **Code frequency** subtab (weekly additions/deletions over the last year); the page rendered Community/Contributors/Commit-activity/Traffic but not code frequency, despite `GET /repos/{o}/{r}/stats/code_frequency` being wired",
+        "id": "WEB-085",
+        "location": "web/src/pages/InsightsPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added a CodeFrequencySection (fetchCodeFrequency + GithubCodeFrequencyWeek) rendering the additions/deletions summary and an accessible per-week bar chart (role=img + aria-label, theme-safe --gh-open-solid/--gh-closed for both modes); InsightsPage is already in the a11y theme sweep so both themes are axe-checked; unit test asserts the +/\u2212 totals",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "The gist detail view (GistDetail) exposed Files/History/Forks but had **no comment thread**, though GitHub gists support comments and the backend wires full CRUD (`GET/POST/PATCH/DELETE /gists/{id}/comments`)",
+        "id": "WEB-086",
+        "location": "web/src/pages/GistsPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added a Comments tab: lists the thread (avatar, author, timestamp, body), an accessible composer (FormLabel-bound textarea + Comment button) posting via createGistComment, and a Delete action on the viewer's own comments (confirmAction-guarded, deleteGistComment); theme-safe tokens; unit test opens the tab, asserts an existing comment renders, and that submitting POSTs to /gists/{id}/comments",
         "status_kind": "fixed"
       },
       {
@@ -6743,23 +6833,23 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 70,
-            "open": 4
+            "fixed": 83,
+            "open": 1
           },
-          "total": 76
+          "total": 86
         }
       },
       "severity": {
         "blocker": 167,
-        "major": 383,
-        "minor": 155
+        "major": 389,
+        "minor": 159
       },
       "status": {
         "deferred": 3,
-        "fixed": 698,
-        "open": 4
+        "fixed": 711,
+        "open": 1
       },
-      "total": 705
+      "total": 715
     }
   },
   "rest": {
@@ -28273,7 +28363,7 @@
   "ui": {
     "browser_navigations": [
       {
-        "line": 170,
+        "line": 174,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/"
       },
@@ -28566,12 +28656,52 @@
         "line": 82,
         "source": "web/e2e/errorPaths.spec.ts",
         "target": "/ui/operations"
+      },
+      {
+        "line": 27,
+        "source": "web/e2e/org-insights.spec.ts",
+        "target": "/ui/"
+      },
+      {
+        "line": 31,
+        "source": "web/e2e/org-insights.spec.ts",
+        "target": "/ui/orgs/${org}/insights"
+      },
+      {
+        "line": 27,
+        "source": "web/e2e/org-settings.spec.ts",
+        "target": "/ui/"
+      },
+      {
+        "line": 31,
+        "source": "web/e2e/org-settings.spec.ts",
+        "target": "/ui/orgs/${org}/settings"
+      },
+      {
+        "line": 27,
+        "source": "web/e2e/repo-go-to-file.spec.ts",
+        "target": "/ui/"
+      },
+      {
+        "line": 31,
+        "source": "web/e2e/repo-go-to-file.spec.ts",
+        "target": "/ui/repos/admin/${repo}"
+      },
+      {
+        "line": 27,
+        "source": "web/e2e/repo-webhooks.spec.ts",
+        "target": "/ui/"
+      },
+      {
+        "line": 32,
+        "source": "web/e2e/repo-webhooks.spec.ts",
+        "target": "/ui/repos/admin/${repo}/settings"
       }
     ],
     "routes": [
       {
         "component": "DashboardPage",
-        "line": 190,
+        "line": 193,
         "path": "/ui/",
         "rendered_tests": [
           "web/src/__tests__/DashboardPage.test.tsx"
@@ -28583,7 +28713,7 @@
       },
       {
         "component": "LoginRedirect",
-        "line": 174,
+        "line": 177,
         "path": "/ui/*",
         "rendered_tests": [],
         "source": "web/src/App.tsx",
@@ -28591,7 +28721,7 @@
       },
       {
         "component": "Navigate",
-        "line": 284,
+        "line": 290,
         "path": "/ui/*",
         "rendered_tests": [],
         "source": "web/src/App.tsx",
@@ -28601,7 +28731,7 @@
       },
       {
         "component": "ProfilePage",
-        "line": 283,
+        "line": 289,
         "path": "/ui/:login",
         "rendered_tests": [
           "web/src/__tests__/ProfilePage.test.tsx"
@@ -28613,7 +28743,7 @@
       },
       {
         "component": "AccountPage",
-        "line": 268,
+        "line": 273,
         "path": "/ui/account",
         "rendered_tests": [
           "web/src/__tests__/AccountPage.test.tsx",
@@ -28627,7 +28757,7 @@
       },
       {
         "component": "AppsPage",
-        "line": 236,
+        "line": 241,
         "path": "/ui/apps",
         "rendered_tests": [
           "web/src/__tests__/AppsPage.test.tsx"
@@ -28639,7 +28769,7 @@
       },
       {
         "component": "MarketplacePublisherPage",
-        "line": 237,
+        "line": 242,
         "path": "/ui/apps/:publisher/marketplace",
         "rendered_tests": [
           "web/src/__tests__/MarketplacePublisherPage.test.tsx"
@@ -28651,43 +28781,46 @@
       },
       {
         "component": "ClassroomPage",
-        "line": 250,
+        "line": 255,
         "path": "/ui/classrooms",
         "rendered_tests": [
           "web/src/__tests__/ClassroomPage.test.tsx"
         ],
         "source": "web/src/App.tsx",
         "tests": [
+          "web/src/__tests__/ClassroomGradesCsv.test.ts",
           "web/src/__tests__/ClassroomPage.test.tsx"
         ]
       },
       {
         "component": "ClassroomPage",
-        "line": 251,
+        "line": 256,
         "path": "/ui/classrooms/:classroomId",
         "rendered_tests": [
           "web/src/__tests__/ClassroomPage.test.tsx"
         ],
         "source": "web/src/App.tsx",
         "tests": [
+          "web/src/__tests__/ClassroomGradesCsv.test.ts",
           "web/src/__tests__/ClassroomPage.test.tsx"
         ]
       },
       {
         "component": "ClassroomPage",
-        "line": 252,
+        "line": 257,
         "path": "/ui/classrooms/accept/:inviteCode",
         "rendered_tests": [
           "web/src/__tests__/ClassroomPage.test.tsx"
         ],
         "source": "web/src/App.tsx",
         "tests": [
+          "web/src/__tests__/ClassroomGradesCsv.test.ts",
           "web/src/__tests__/ClassroomPage.test.tsx"
         ]
       },
       {
         "component": "CodespacesPage",
-        "line": 246,
+        "line": 251,
         "path": "/ui/codespaces",
         "rendered_tests": [
           "web/src/__tests__/CodespacesPage.test.tsx"
@@ -28699,7 +28832,7 @@
       },
       {
         "component": "CodespacesPage",
-        "line": 247,
+        "line": 252,
         "path": "/ui/codespaces/:codespaceName",
         "rendered_tests": [
           "web/src/__tests__/CodespacesPage.test.tsx"
@@ -28711,7 +28844,7 @@
       },
       {
         "component": "PersonalCopilotSpacesPage",
-        "line": 249,
+        "line": 254,
         "path": "/ui/copilot/spaces",
         "rendered_tests": [
           "web/src/__tests__/CopilotPage.test.tsx"
@@ -28723,7 +28856,7 @@
       },
       {
         "component": "GistsPage",
-        "line": 240,
+        "line": 245,
         "path": "/ui/gists",
         "rendered_tests": [
           "web/src/__tests__/GistsPage.test.tsx"
@@ -28735,7 +28868,7 @@
       },
       {
         "component": "LoginPage",
-        "line": 173,
+        "line": 176,
         "path": "/ui/login",
         "rendered_tests": [
           "web/src/__tests__/LoginPage.test.tsx"
@@ -28748,7 +28881,7 @@
       },
       {
         "component": "Navigate",
-        "line": 282,
+        "line": 288,
         "path": "/ui/login",
         "rendered_tests": [],
         "source": "web/src/App.tsx",
@@ -28758,7 +28891,7 @@
       },
       {
         "component": "MarketplacePage",
-        "line": 253,
+        "line": 258,
         "path": "/ui/marketplace",
         "rendered_tests": [
           "web/src/__tests__/MarketplacePage.test.tsx"
@@ -28770,7 +28903,7 @@
       },
       {
         "component": "MarketplacePage",
-        "line": 254,
+        "line": 259,
         "path": "/ui/marketplace/:slug",
         "rendered_tests": [
           "web/src/__tests__/MarketplacePage.test.tsx"
@@ -28782,7 +28915,7 @@
       },
       {
         "component": "MetricsPage",
-        "line": 239,
+        "line": 244,
         "path": "/ui/metrics",
         "rendered_tests": [
           "web/src/__tests__/MetricsPage.test.tsx"
@@ -28794,7 +28927,7 @@
       },
       {
         "component": "MigrationsPage",
-        "line": 245,
+        "line": 250,
         "path": "/ui/migrations",
         "rendered_tests": [
           "web/src/__tests__/MigrationsPage.test.tsx"
@@ -28806,7 +28939,7 @@
       },
       {
         "component": "NotificationsPage",
-        "line": 241,
+        "line": 246,
         "path": "/ui/notifications",
         "rendered_tests": [
           "web/src/__tests__/NotificationsPage.test.tsx"
@@ -28818,7 +28951,7 @@
       },
       {
         "component": "OAuthPage",
-        "line": 238,
+        "line": 243,
         "path": "/ui/oauth",
         "rendered_tests": [
           "web/src/__tests__/OAuthPage.test.tsx"
@@ -28830,7 +28963,7 @@
       },
       {
         "component": "OverviewPage",
-        "line": 255,
+        "line": 260,
         "path": "/ui/operations",
         "rendered_tests": [
           "web/src/__tests__/OverviewPage.test.tsx"
@@ -28842,7 +28975,7 @@
       },
       {
         "component": "AuditLogPage",
-        "line": 260,
+        "line": 265,
         "path": "/ui/operations/audit-log",
         "rendered_tests": [
           "web/src/__tests__/AuditLogPage.test.tsx",
@@ -28856,7 +28989,7 @@
       },
       {
         "component": "EnterprisePage",
-        "line": 259,
+        "line": 264,
         "path": "/ui/operations/enterprise",
         "rendered_tests": [
           "web/src/__tests__/EnterprisePage.test.tsx",
@@ -28870,7 +29003,7 @@
       },
       {
         "component": "OrgsPage",
-        "line": 257,
+        "line": 262,
         "path": "/ui/operations/orgs",
         "rendered_tests": [
           "web/src/__tests__/UiFidelityJourneys.test.tsx",
@@ -28884,7 +29017,7 @@
       },
       {
         "component": "TeamsPage",
-        "line": 258,
+        "line": 263,
         "path": "/ui/operations/teams",
         "rendered_tests": [
           "web/src/__tests__/TeamsPage.test.tsx"
@@ -28896,7 +29029,7 @@
       },
       {
         "component": "UsersPage",
-        "line": 256,
+        "line": 261,
         "path": "/ui/operations/users",
         "rendered_tests": [
           "web/src/__tests__/pageErrorPaths.test.tsx"
@@ -28908,7 +29041,7 @@
       },
       {
         "component": "OrgOverviewPage",
-        "line": 276,
+        "line": 282,
         "path": "/ui/orgs/:org",
         "rendered_tests": [
           "web/src/__tests__/OrgOverviewPage.test.tsx"
@@ -28920,7 +29053,7 @@
       },
       {
         "component": "CopilotPage",
-        "line": 200,
+        "line": 205,
         "path": "/ui/orgs/:org/copilot",
         "rendered_tests": [
           "web/src/__tests__/CopilotPage.test.tsx",
@@ -28934,7 +29067,7 @@
       },
       {
         "component": "OrgGovernancePage",
-        "line": 199,
+        "line": 202,
         "path": "/ui/orgs/:org/governance",
         "rendered_tests": [
           "web/src/__tests__/OrgGovernancePage.test.tsx",
@@ -28948,7 +29081,7 @@
       },
       {
         "component": "OrgHooksPage",
-        "line": 264,
+        "line": 269,
         "path": "/ui/orgs/:org/hooks",
         "rendered_tests": [
           "web/src/__tests__/OrgHooksPage.test.tsx"
@@ -28960,7 +29093,7 @@
       },
       {
         "component": "WebhookDeliveriesPage",
-        "line": 265,
+        "line": 270,
         "path": "/ui/orgs/:org/hooks/:hookId/deliveries",
         "rendered_tests": [
           "web/src/__tests__/WebhookDeliveriesPage.test.tsx",
@@ -28973,8 +29106,20 @@
         ]
       },
       {
+        "component": "OrgInsightsPage",
+        "line": 204,
+        "path": "/ui/orgs/:org/insights",
+        "rendered_tests": [
+          "web/src/__tests__/OrgInsightsPage.test.tsx"
+        ],
+        "source": "web/src/App.tsx",
+        "tests": [
+          "web/src/__tests__/OrgInsightsPage.test.tsx"
+        ]
+      },
+      {
         "component": "PackagesPage",
-        "line": 243,
+        "line": 248,
         "path": "/ui/orgs/:org/packages",
         "rendered_tests": [
           "web/src/__tests__/mutationErrors.test.tsx"
@@ -28986,7 +29131,7 @@
       },
       {
         "component": "OrgPeoplePage",
-        "line": 277,
+        "line": 283,
         "path": "/ui/orgs/:org/people",
         "rendered_tests": [
           "web/src/__tests__/OrgPeopleTeamsPage.test.tsx"
@@ -28998,7 +29143,7 @@
       },
       {
         "component": "OrgProjectsV2Page",
-        "line": 196,
+        "line": 199,
         "path": "/ui/orgs/:org/projects",
         "rendered_tests": [
           "web/src/__tests__/OrgProjectsV2Page.test.tsx"
@@ -29010,7 +29155,7 @@
       },
       {
         "component": "OrgProjectsV2Page",
-        "line": 197,
+        "line": 200,
         "path": "/ui/orgs/:org/projects/:number",
         "rendered_tests": [
           "web/src/__tests__/OrgProjectsV2Page.test.tsx"
@@ -29022,7 +29167,7 @@
       },
       {
         "component": "OrgReposPage",
-        "line": 195,
+        "line": 198,
         "path": "/ui/orgs/:org/repos",
         "rendered_tests": [
           "web/src/__tests__/OrgReposPage.test.tsx"
@@ -29034,7 +29179,7 @@
       },
       {
         "component": "RulesetsPage",
-        "line": 198,
+        "line": 201,
         "path": "/ui/orgs/:org/rulesets",
         "rendered_tests": [
           "web/src/__tests__/RulesetsPage.test.tsx",
@@ -29047,8 +29192,20 @@
         ]
       },
       {
+        "component": "OrgSettingsPage",
+        "line": 203,
+        "path": "/ui/orgs/:org/settings",
+        "rendered_tests": [
+          "web/src/__tests__/OrgSettingsPage.test.tsx"
+        ],
+        "source": "web/src/App.tsx",
+        "tests": [
+          "web/src/__tests__/OrgSettingsPage.test.tsx"
+        ]
+      },
+      {
         "component": "OrgTeamsPage",
-        "line": 278,
+        "line": 284,
         "path": "/ui/orgs/:org/teams",
         "rendered_tests": [
           "web/src/__tests__/OrgPeopleTeamsPage.test.tsx"
@@ -29060,7 +29217,7 @@
       },
       {
         "component": "PackagesPage",
-        "line": 242,
+        "line": 247,
         "path": "/ui/packages",
         "rendered_tests": [
           "web/src/__tests__/mutationErrors.test.tsx"
@@ -29072,7 +29229,7 @@
       },
       {
         "component": "ReposPage",
-        "line": 194,
+        "line": 197,
         "path": "/ui/repos",
         "rendered_tests": [
           "web/src/__tests__/ReposPage.test.tsx"
@@ -29084,7 +29241,7 @@
       },
       {
         "component": "RepoDetailPage",
-        "line": 201,
+        "line": 206,
         "path": "/ui/repos/:owner/:repo",
         "rendered_tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx",
@@ -29100,7 +29257,7 @@
       },
       {
         "component": "ActionsPage",
-        "line": 224,
+        "line": 229,
         "path": "/ui/repos/:owner/:repo/actions",
         "rendered_tests": [
           "web/src/__tests__/ActionsPage.test.tsx"
@@ -29112,7 +29269,7 @@
       },
       {
         "component": "RunDetailPage",
-        "line": 225,
+        "line": 230,
         "path": "/ui/repos/:owner/:repo/actions/runs/:runId",
         "rendered_tests": [
           "web/src/__tests__/RunDetailPage.test.tsx"
@@ -29124,7 +29281,7 @@
       },
       {
         "component": "RepoFilePage",
-        "line": 208,
+        "line": 213,
         "path": "/ui/repos/:owner/:repo/blob/:ref/*",
         "rendered_tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx"
@@ -29136,7 +29293,7 @@
       },
       {
         "component": "RepoDetailPage",
-        "line": 203,
+        "line": 208,
         "path": "/ui/repos/:owner/:repo/branches",
         "rendered_tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx",
@@ -29152,7 +29309,7 @@
       },
       {
         "component": "CodespacesPage",
-        "line": 248,
+        "line": 253,
         "path": "/ui/repos/:owner/:repo/codespaces",
         "rendered_tests": [
           "web/src/__tests__/CodespacesPage.test.tsx"
@@ -29164,7 +29321,7 @@
       },
       {
         "component": "RepoDetailPage",
-        "line": 202,
+        "line": 207,
         "path": "/ui/repos/:owner/:repo/commits",
         "rendered_tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx",
@@ -29180,7 +29337,7 @@
       },
       {
         "component": "RepoCommitPage",
-        "line": 206,
+        "line": 211,
         "path": "/ui/repos/:owner/:repo/commits/:sha",
         "rendered_tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx"
@@ -29192,7 +29349,7 @@
       },
       {
         "component": "RepoComparePage",
-        "line": 207,
+        "line": 212,
         "path": "/ui/repos/:owner/:repo/compare/:range",
         "rendered_tests": [
           "web/src/__tests__/RepositoryCollaborationJourneys.test.tsx"
@@ -29204,7 +29361,7 @@
       },
       {
         "component": "DeploymentsPage",
-        "line": 262,
+        "line": 267,
         "path": "/ui/repos/:owner/:repo/deployments",
         "rendered_tests": [
           "web/src/__tests__/DeploymentsPage.test.tsx",
@@ -29218,7 +29375,7 @@
       },
       {
         "component": "DiscussionsPage",
-        "line": 222,
+        "line": 227,
         "path": "/ui/repos/:owner/:repo/discussions",
         "rendered_tests": [
           "web/src/__tests__/DiscussionsPage.test.tsx"
@@ -29231,7 +29388,7 @@
       },
       {
         "component": "DiscussionsPage",
-        "line": 223,
+        "line": 228,
         "path": "/ui/repos/:owner/:repo/discussions/:number",
         "rendered_tests": [
           "web/src/__tests__/DiscussionsPage.test.tsx"
@@ -29244,7 +29401,7 @@
       },
       {
         "component": "RepoSocialPage",
-        "line": 271,
+        "line": 277,
         "path": "/ui/repos/:owner/:repo/forks",
         "rendered_tests": [
           "web/src/__tests__/RepoSocialPage.test.tsx",
@@ -29258,7 +29415,7 @@
       },
       {
         "component": "WebhookDeliveriesPage",
-        "line": 263,
+        "line": 268,
         "path": "/ui/repos/:owner/:repo/hooks/:hookId/deliveries",
         "rendered_tests": [
           "web/src/__tests__/WebhookDeliveriesPage.test.tsx",
@@ -29272,7 +29429,7 @@
       },
       {
         "component": "InsightsPage",
-        "line": 216,
+        "line": 221,
         "path": "/ui/repos/:owner/:repo/insights",
         "rendered_tests": [
           "web/src/__tests__/InsightsPage.test.tsx",
@@ -29286,7 +29443,7 @@
       },
       {
         "component": "IssuesPage",
-        "line": 212,
+        "line": 217,
         "path": "/ui/repos/:owner/:repo/issues",
         "rendered_tests": [
           "web/src/__tests__/IssuesPage.test.tsx"
@@ -29298,7 +29455,7 @@
       },
       {
         "component": "IssuesPage",
-        "line": 213,
+        "line": 218,
         "path": "/ui/repos/:owner/:repo/issues/:number",
         "rendered_tests": [
           "web/src/__tests__/IssuesPage.test.tsx"
@@ -29310,7 +29467,7 @@
       },
       {
         "component": "IssuesPage",
-        "line": 214,
+        "line": 219,
         "path": "/ui/repos/:owner/:repo/labels",
         "rendered_tests": [
           "web/src/__tests__/IssuesPage.test.tsx"
@@ -29322,7 +29479,7 @@
       },
       {
         "component": "IssuesPage",
-        "line": 215,
+        "line": 220,
         "path": "/ui/repos/:owner/:repo/milestones",
         "rendered_tests": [
           "web/src/__tests__/IssuesPage.test.tsx"
@@ -29334,7 +29491,7 @@
       },
       {
         "component": "PackagesPage",
-        "line": 244,
+        "line": 249,
         "path": "/ui/repos/:owner/:repo/packages",
         "rendered_tests": [
           "web/src/__tests__/mutationErrors.test.tsx"
@@ -29346,7 +29503,7 @@
       },
       {
         "component": "ProjectsClassicPage",
-        "line": 232,
+        "line": 237,
         "path": "/ui/repos/:owner/:repo/projects-classic",
         "rendered_tests": [
           "web/src/__tests__/pageErrorPaths.test.tsx"
@@ -29359,7 +29516,7 @@
       },
       {
         "component": "PullsPage",
-        "line": 217,
+        "line": 222,
         "path": "/ui/repos/:owner/:repo/pulls",
         "rendered_tests": [
           "web/src/__tests__/PullsPage.test.tsx",
@@ -29373,7 +29530,7 @@
       },
       {
         "component": "PullsPage",
-        "line": 218,
+        "line": 223,
         "path": "/ui/repos/:owner/:repo/pulls/:number",
         "rendered_tests": [
           "web/src/__tests__/PullsPage.test.tsx",
@@ -29387,7 +29544,7 @@
       },
       {
         "component": "PullsPage",
-        "line": 221,
+        "line": 226,
         "path": "/ui/repos/:owner/:repo/pulls/:number/checks",
         "rendered_tests": [
           "web/src/__tests__/PullsPage.test.tsx",
@@ -29401,7 +29558,7 @@
       },
       {
         "component": "PullsPage",
-        "line": 219,
+        "line": 224,
         "path": "/ui/repos/:owner/:repo/pulls/:number/commits",
         "rendered_tests": [
           "web/src/__tests__/PullsPage.test.tsx",
@@ -29415,7 +29572,7 @@
       },
       {
         "component": "PullsPage",
-        "line": 220,
+        "line": 225,
         "path": "/ui/repos/:owner/:repo/pulls/:number/files",
         "rendered_tests": [
           "web/src/__tests__/PullsPage.test.tsx",
@@ -29429,7 +29586,7 @@
       },
       {
         "component": "ReleasesPage",
-        "line": 209,
+        "line": 214,
         "path": "/ui/repos/:owner/:repo/releases",
         "rendered_tests": [
           "web/src/__tests__/ReleasesPage.test.tsx"
@@ -29441,7 +29598,7 @@
       },
       {
         "component": "ReleasesPage",
-        "line": 211,
+        "line": 216,
         "path": "/ui/repos/:owner/:repo/releases/:releaseId",
         "rendered_tests": [
           "web/src/__tests__/ReleasesPage.test.tsx"
@@ -29453,7 +29610,7 @@
       },
       {
         "component": "ReleasesPage",
-        "line": 210,
+        "line": 215,
         "path": "/ui/repos/:owner/:repo/releases/new",
         "rendered_tests": [
           "web/src/__tests__/ReleasesPage.test.tsx"
@@ -29465,7 +29622,7 @@
       },
       {
         "component": "SecurityAdvisoriesPage",
-        "line": 231,
+        "line": 236,
         "path": "/ui/repos/:owner/:repo/security/advisories",
         "rendered_tests": [
           "web/src/__tests__/UiFidelityJourneys.test.tsx",
@@ -29479,7 +29636,7 @@
       },
       {
         "component": "CodeScanningPage",
-        "line": 229,
+        "line": 234,
         "path": "/ui/repos/:owner/:repo/security/code-scanning",
         "rendered_tests": [
           "web/src/__tests__/CodeScanningPage.test.tsx"
@@ -29491,7 +29648,7 @@
       },
       {
         "component": "DependabotPage",
-        "line": 230,
+        "line": 235,
         "path": "/ui/repos/:owner/:repo/security/dependabot",
         "rendered_tests": [
           "web/src/__tests__/UiFidelityJourneys.test.tsx",
@@ -29505,7 +29662,7 @@
       },
       {
         "component": "SecretScanningPage",
-        "line": 228,
+        "line": 233,
         "path": "/ui/repos/:owner/:repo/security/secret-scanning",
         "rendered_tests": [
           "web/src/__tests__/UiFidelityJourneys.test.tsx",
@@ -29521,7 +29678,7 @@
       },
       {
         "component": "RepoSettingsPage",
-        "line": 226,
+        "line": 231,
         "path": "/ui/repos/:owner/:repo/settings",
         "rendered_tests": [
           "web/src/__tests__/RepoCollaboratorsTab.test.tsx",
@@ -29537,7 +29694,7 @@
       },
       {
         "component": "BranchProtectionPage",
-        "line": 227,
+        "line": 232,
         "path": "/ui/repos/:owner/:repo/settings/branch-protection",
         "rendered_tests": [
           "web/src/__tests__/UiFidelityJourneys.test.tsx",
@@ -29551,7 +29708,7 @@
       },
       {
         "component": "RepoSecretsPage",
-        "line": 235,
+        "line": 240,
         "path": "/ui/repos/:owner/:repo/settings/secrets",
         "rendered_tests": [
           "web/src/__tests__/RepoSecretsPage.test.tsx"
@@ -29563,7 +29720,7 @@
       },
       {
         "component": "RepoSocialPage",
-        "line": 269,
+        "line": 275,
         "path": "/ui/repos/:owner/:repo/stargazers",
         "rendered_tests": [
           "web/src/__tests__/RepoSocialPage.test.tsx",
@@ -29577,7 +29734,7 @@
       },
       {
         "component": "RepoDetailPage",
-        "line": 204,
+        "line": 209,
         "path": "/ui/repos/:owner/:repo/tags",
         "rendered_tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx",
@@ -29593,7 +29750,7 @@
       },
       {
         "component": "RepoDetailPage",
-        "line": 205,
+        "line": 210,
         "path": "/ui/repos/:owner/:repo/tree/:ref/*",
         "rendered_tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx",
@@ -29609,7 +29766,7 @@
       },
       {
         "component": "RepoSocialPage",
-        "line": 270,
+        "line": 276,
         "path": "/ui/repos/:owner/:repo/watchers",
         "rendered_tests": [
           "web/src/__tests__/RepoSocialPage.test.tsx",
@@ -29623,7 +29780,7 @@
       },
       {
         "component": "WikiPage",
-        "line": 233,
+        "line": 238,
         "path": "/ui/repos/:owner/:repo/wiki",
         "rendered_tests": [
           "web/src/__tests__/WikiPage.test.tsx"
@@ -29635,7 +29792,7 @@
       },
       {
         "component": "WikiPage",
-        "line": 234,
+        "line": 239,
         "path": "/ui/repos/:owner/:repo/wiki/:slug",
         "rendered_tests": [
           "web/src/__tests__/WikiPage.test.tsx"
@@ -29647,7 +29804,7 @@
       },
       {
         "component": "RunnersPage",
-        "line": 193,
+        "line": 196,
         "path": "/ui/runners",
         "rendered_tests": [
           "web/src/__tests__/RunnersPage.test.tsx"
@@ -29659,7 +29816,7 @@
       },
       {
         "component": "SearchPage",
-        "line": 267,
+        "line": 272,
         "path": "/ui/search",
         "rendered_tests": [
           "web/src/__tests__/SearchPage.test.tsx",
@@ -29672,8 +29829,20 @@
         ]
       },
       {
+        "component": "MyOrganizationsPage",
+        "line": 274,
+        "path": "/ui/settings/organizations",
+        "rendered_tests": [
+          "web/src/__tests__/MyOrganizationsPage.test.tsx"
+        ],
+        "source": "web/src/App.tsx",
+        "tests": [
+          "web/src/__tests__/MyOrganizationsPage.test.tsx"
+        ]
+      },
+      {
         "component": "ProfilePage",
-        "line": 279,
+        "line": 285,
         "path": "/ui/users/:login",
         "rendered_tests": [
           "web/src/__tests__/ProfilePage.test.tsx"
@@ -29685,7 +29854,7 @@
       },
       {
         "component": "WorkflowsPage",
-        "line": 191,
+        "line": 194,
         "path": "/ui/workflows",
         "rendered_tests": [
           "web/src/__tests__/WorkflowsPage.test.tsx"
@@ -29697,7 +29866,7 @@
       },
       {
         "component": "WorkflowDetailPage",
-        "line": 192,
+        "line": 195,
         "path": "/ui/workflows/:id",
         "rendered_tests": [
           "web/src/__tests__/WorkflowDetailPage.test.tsx"
@@ -29709,10 +29878,10 @@
       }
     ],
     "summary": {
-      "browser_navigations": 59,
-      "routes": 89,
-      "routes_with_direct_render": 86,
-      "routes_with_test_reference": 88
+      "browser_navigations": 67,
+      "routes": 92,
+      "routes_with_direct_render": 89,
+      "routes_with_test_reference": 91
     }
   }
 }
