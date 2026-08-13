@@ -1,7 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { useMutation, useQueryClient, type QueryKey } from "@tanstack/react-query";
-import Markdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import Markdown from "./Markdown";
 import { updateIssueComment, deleteIssueComment } from "../api.js";
 import type { GithubComment } from "../types.js";
 import { Button, DialogActions, FormLabel } from "./ui.js";
@@ -67,7 +66,7 @@ export function CommentCard({ login, body, date, isOp = false, headerActions }: 
         }}
       >
         {body ? (
-          <Markdown remarkPlugins={[remarkGfm]}>{body}</Markdown>
+          <Markdown>{body}</Markdown>
         ) : (
           <span style={{ color: "var(--color-fg-muted)" }}>No description provided.</span>
         )}

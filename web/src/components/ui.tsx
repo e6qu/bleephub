@@ -73,6 +73,9 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       style={{
         ...variantStyle,
         ...sizeStyle,
+        // WCAG 2.5.8 (AA) minimum touch-target height; width follows from
+        // padding + label. Callers can still override via `style`.
+        minHeight: "1.5rem",
         fontFamily: "var(--font-sans)",
         fontWeight: 600,
         borderRadius: "var(--radius-md)",

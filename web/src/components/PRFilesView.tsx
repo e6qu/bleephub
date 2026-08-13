@@ -162,8 +162,8 @@ function FileDiff({
                           borderRadius: "var(--radius-sm)",
                           background: "var(--color-accent)",
                           color: "#fff",
-                          width: "1.25rem",
-                          height: "1.25rem",
+                          width: "1.5rem",
+                          height: "1.5rem",
                           lineHeight: 1,
                         }}
                       >

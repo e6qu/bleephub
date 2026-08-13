@@ -1,6 +1,5 @@
 import { useState } from "react";
-import Markdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import Markdown from "../components/Markdown";
 import { useParams, Link, useNavigate } from "react-router";
 import { useMutation, useQuery, useQueryClient, useInfiniteQuery } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
@@ -494,7 +493,7 @@ function DiscussionPost({ body, bodyText }: { body: string; bodyText: string }) 
   }
   return (
     <div className="markdown-body" style={{ fontSize: "0.92rem", lineHeight: 1.6 }}>
-      <Markdown remarkPlugins={[remarkGfm]}>{body}</Markdown>
+      <Markdown>{body}</Markdown>
     </div>
   );
 }
@@ -561,7 +560,7 @@ function DiscussionCommentCard({
           color: "var(--color-fg)",
         }}
       >
-        <Markdown remarkPlugins={[remarkGfm]}>{comment.body}</Markdown>
+        <Markdown>{comment.body}</Markdown>
       </div>
       <div className="flex items-center gap-2 px-3 pb-2">
         <button
@@ -604,7 +603,7 @@ function DiscussionCommentCard({
                 {new Date(reply.createdAt).toLocaleString()}
               </div>
               <div className="markdown-body" style={{ fontSize: "0.85rem", lineHeight: 1.5 }}>
-                <Markdown remarkPlugins={[remarkGfm]}>{reply.body}</Markdown>
+                <Markdown>{reply.body}</Markdown>
               </div>
             </div>
           ))}

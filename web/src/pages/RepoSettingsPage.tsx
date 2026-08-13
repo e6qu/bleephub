@@ -381,7 +381,7 @@ function BranchProtectionCard({ owner, repo }: { owner: string; repo: string }) 
     <Box header={<span style={{ fontWeight: 600 }}>Branch protection</span>} className="mt-4">
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "1rem" }}>
         <span style={{ fontSize: "0.9rem" }}>Define merge constraints and required status checks.</span>
-        <Link to={`/ui/repos/${owner}/${repo}/settings/branch-protection`}>
+        <Link to={`/ui/repos/${owner}/${repo}/settings/branch-protection`} style={{ display: "inline-flex" }}>
           <Button variant="secondary" size="sm">Manage branch protection</Button>
         </Link>
       </div>
@@ -394,7 +394,7 @@ function SecretsAndVariablesCard({ owner, repo }: { owner: string; repo: string 
     <Box header={<span style={{ fontWeight: 600 }}>Secrets and variables</span>} className="mt-4">
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "1rem" }}>
         <span style={{ fontSize: "0.9rem" }}>Manage Actions secrets and variables across repository, environment, and organization scopes.</span>
-        <Link to={`/ui/repos/${owner}/${repo}/settings/secrets`}>
+        <Link to={`/ui/repos/${owner}/${repo}/settings/secrets`} style={{ display: "inline-flex" }}>
           <Button variant="secondary" size="sm">Manage secrets and variables</Button>
         </Link>
       </div>
