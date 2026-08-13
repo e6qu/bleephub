@@ -586,6 +586,7 @@ export function AppHeader() {
                   <MenuLink to="/ui/gists" icon={<GistIcon size={16} />} onClick={close}>My gists</MenuLink>
                   <MenuLink to="/ui/packages" icon={<PackageIcon size={16} />} onClick={close}>My packages</MenuLink>
                   <MenuLink to="/ui/codespaces" icon={<CodespaceIcon size={16} />} onClick={close}>My codespaces</MenuLink>
+                  <MenuLink to="/ui/settings/organizations" icon={<OrganizationIcon size={16} />} onClick={close}>Your organizations</MenuLink>
                   {login && <MenuLink to={`/ui/${login}?tab=projects`} icon={<ProjectIcon size={16} />} onClick={close}>Your projects</MenuLink>}
                   {login && <MenuLink to={`/ui/${login}?tab=stars`} icon={<StarIcon size={16} />} onClick={close}>Your stars</MenuLink>}
                   <MenuSeparator />
