@@ -5417,6 +5417,33 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "repo Settings had no **Actions** settings page \u2014 github.com's Settings \u2192 Actions \u2192 General controls (which actions are allowed to run, default GITHUB_TOKEN workflow permissions) had no UI, though `GET/PUT /repos/{o}/{r}/actions/permissions` and `.../permissions/workflow` are wired",
+        "id": "WEB-087",
+        "location": "web/src/pages/RepoSettingsPage.tsx",
+        "severity": "M",
+        "status": "fixed \u2014 added an Actions tab under Settings \u2192 Code and automation: an Actions-permissions radio group (allow all / local only / selected / disable) backed by fetch/updateActionsPermissions, and a workflow-permissions radio (read vs read-write GITHUB_TOKEN) backed by fetch/updateWorkflowPermissions",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "repo Settings had no repo-level **Rulesets** page (rulesets existed org-only), though `GET/POST/DELETE /repos/{o}/{r}/rulesets` are wired",
+        "id": "WEB-088",
+        "location": "web/src/pages/RepoSettingsPage.tsx",
+        "severity": "M",
+        "status": "fixed \u2014 added a Rulesets tab: lists repo rulesets, a create form (name / target branch\u00b7tag\u00b7push / enforcement active\u00b7evaluate\u00b7disabled) via createRepoRuleset, and delete-with-confirm via deleteRepoRuleset (fetchRepoRulesets mirrors the org wrappers)",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "repo Settings had no **Environments** page \u2014 github.com manages deployment environments (variables, secrets, protection) there, and the backend wires environments + their variables/secrets, but no UI reached it",
+        "id": "WEB-089",
+        "location": "web/src/pages/RepoSettingsPage.tsx",
+        "severity": "M",
+        "status": "fixed \u2014 added an Environments tab: list/create (`PUT .../environments/{name}`)/delete environments, and a per-environment detail panel with environment **variables** CRUD (create/list/delete) and **secrets** (list/delete). All backend routes pre-existed",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -6833,23 +6860,23 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 83,
+            "fixed": 86,
             "open": 1
           },
-          "total": 86
+          "total": 89
         }
       },
       "severity": {
         "blocker": 167,
-        "major": 389,
+        "major": 392,
         "minor": 159
       },
       "status": {
         "deferred": 3,
-        "fixed": 711,
+        "fixed": 714,
         "open": 1
       },
-      "total": 715
+      "total": 718
     }
   },
   "rest": {
