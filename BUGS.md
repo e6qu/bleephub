@@ -1,6 +1,6 @@
 # Bleephub bug ledger
 
-719 findings from the continuing full-surface audit: 167 blockers, 393 major, 159 minor. Every
+721 findings from the continuing full-surface audit: 167 blockers, 395 major, 159 minor. Every
 entry carries a location and a one-sentence claim. Severity is `B` blocker, `M` major, `m` minor.
 Status begins with one of `open`, `partial`, `fixed`, or `deferred`; the generated parity
 inventory records the exact counts and fails CI when this summary or a row drifts.
@@ -613,6 +613,8 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | WEB-088 | M | web/src/pages/RepoSettingsPage.tsx | repo Settings had no repo-level **Rulesets** page (rulesets existed org-only), though `GET/POST/DELETE /repos/{o}/{r}/rulesets` are wired | fixed — added a Rulesets tab: lists repo rulesets, a create form (name / target branch·tag·push / enforcement active·evaluate·disabled) via createRepoRuleset, and delete-with-confirm via deleteRepoRuleset (fetchRepoRulesets mirrors the org wrappers) |
 | WEB-089 | M | web/src/pages/RepoSettingsPage.tsx | repo Settings had no **Environments** page — github.com manages deployment environments (variables, secrets, protection) there, and the backend wires environments + their variables/secrets, but no UI reached it | fixed — added an Environments tab: list/create (`PUT .../environments/{name}`)/delete environments, and a per-environment detail panel with environment **variables** CRUD (create/list/delete) and **secrets** (list/delete). All backend routes pre-existed |
 | WEB-090 | M | web/src/pages/RepoDetailPage.tsx | The repo file browser had only a text "Add file" (create a single text file) — github.com's "Add file → **Upload files**" binary/multi-file flow was absent, though `PUT /repos/{o}/{r}/contents/{path}` accepts base64 content | fixed — added an "Upload files" button + modal: a multi-file `<input type=file>`, a selected-files list with sizes, a commit message, and an upload mutation that base64-encodes each file (fileToBase64, no re-encode) and PUTs it via the new `uploadFile` wrapper on the current branch/path (per-file commits like github.com) |
+| WEB-091 | M | web/src/pages/AccountPage.tsx, internal/server/gh_account_settings.go | account Settings had no **Password and authentication** (two-factor) page — github.com's 2FA settings had no equivalent, and 2FA is web-only (no REST) so nothing was wired | fixed — added a small `/ui-data/user/two-factor` backend (store field `TwoFactorEnabled` + get/set, served like pinned repos), and an Authentication tab showing 2FA status with an enable/disable control (fetchAccountSettings/setTwoFactor). Route-definition gates pass |
+| WEB-092 | M | web/src/pages/AccountPage.tsx, internal/server/gh_account_settings.go | account Settings had no **Notifications** preferences page — github.com's notification settings are web-only (no REST) so nothing was wired | fixed — added a `/ui-data/user/notification-settings` backend (store `NotificationSettings` with github.com's defaults + get/set) and a Notifications tab with participating/watching/email/web toggles persisted via setNotificationSettings |
 
 ## TEST — test-suite quality
 

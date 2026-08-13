@@ -4240,6 +4240,25 @@ export const updateAuthenticatedUser = (payload: {
   twitter_username?: string;
 }): Promise<GithubUserProfile> => ghPatchJSON<GithubUserProfile>("/api/v3/user", payload);
 
+// Account security (2FA) + notification preferences — github.com serves these
+// from web-only pages, so the simulator exposes them under /ui-data.
+export interface NotificationSettings {
+  email: boolean;
+  web: boolean;
+  participating: boolean;
+  watching: boolean;
+}
+export interface AccountSettings {
+  two_factor_enabled: boolean;
+  notification_settings: NotificationSettings;
+}
+export const fetchAccountSettings = (signal?: AbortSignal) =>
+  ghFetch<AccountSettings>("/ui-data/user/account-settings", signal);
+export const setTwoFactor = (enabled: boolean) =>
+  ghPutJSON<AccountSettings>("/ui-data/user/two-factor", { enabled });
+export const setNotificationSettings = (settings: NotificationSettings) =>
+  ghPutJSON<AccountSettings>("/ui-data/user/notification-settings", settings);
+
 export const fetchPRReviews = (owner: string, repo: string, number: number) =>
   ghFetch<GithubPRReview[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/reviews`);
 

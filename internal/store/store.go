@@ -162,6 +162,11 @@ type User struct {
 	PinnedRepos []string  `json:"pinned_repos,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+	// Account security + notification preferences. GitHub's 2FA and notification
+	// settings are web-only (no REST), so the simulator serves them from a
+	// browser-only /ui-data endpoint rather than an invented /api/v3 path.
+	TwoFactorEnabled     bool                  `json:"two_factor_enabled,omitempty"`
+	NotificationSettings *NotificationSettings `json:"notification_settings,omitempty"`
 	// user-surface profile fields (PATCH /user), email addresses, and
 	// account-level interaction limits.
 	Blog                   string      `json:"blog,omitempty"`
