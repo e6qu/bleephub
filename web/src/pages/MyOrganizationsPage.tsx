@@ -4,7 +4,7 @@ import { InlineError, Spinner } from "@bleephub/ui-core/components";
 import { fetchAuthenticatedUserOrgs } from "../api.js";
 import type { BleephubOrg } from "../types.js";
 import { Avatar } from "../components/Avatar.js";
-import { Box, Blankslate, Button, PageTitle } from "../components/ui.js";
+import { Box, Blankslate, ButtonLink, PageTitle } from "../components/ui.js";
 import { OrganizationIcon, PlusIcon } from "../components/octicons.js";
 
 /**
@@ -24,11 +24,9 @@ export function MyOrganizationsPage() {
         icon={<OrganizationIcon size={22} />}
         title="Your organizations"
         actions={
-          <Link to="/ui/operations/orgs?new=1" style={{ textDecoration: "none" }}>
-            <Button variant="primary" size="sm">
-              <PlusIcon size={14} /> New organization
-            </Button>
-          </Link>
+          <ButtonLink to="/ui/operations/orgs?new=1" variant="primary" size="sm">
+            <PlusIcon size={14} /> New organization
+          </ButtonLink>
         }
       />
 

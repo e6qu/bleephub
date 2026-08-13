@@ -352,7 +352,12 @@ for (const theme of THEMES) {
       console.log(
         `[scan] ${theme} ${route} -> ${
           record.loadFailure ? "LOAD-FAIL" : `${record.violations.length} rules`
-        }${record.themeApplied ? "" : " (theme-mismatch)"}`,
+        }${record.themeApplied ? "" : " (theme-mismatch)"}` +
+          // Surface the offending rule + element selectors on stdout so a CI-only
+          // (e.g. Linux-subpixel) regression is diagnosable without the artifact.
+          record.violations
+            .map((v) => `\n    ! ${v.id}: ${v.targets.join(" | ")}`)
+            .join(""),
       );
     }
     expect(collected.length).toBeGreaterThan(0);

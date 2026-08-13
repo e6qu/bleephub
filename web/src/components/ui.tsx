@@ -8,6 +8,7 @@ import {
   useId,
   useRef,
 } from "react";
+import { Link } from "react-router";
 
 /*
  * bleephub UI primitives — GitHub-familiar shapes (sans type, soft 6px
@@ -28,15 +29,16 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   size?: ButtonSize;
 }
 
-export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { variant = "secondary", size = "md", className = "", style, children, ...rest },
-  ref,
-) {
+const BUTTON_BASE_CLASS = "inline-flex items-center justify-center gap-1.5";
+
+// Shared button visuals so a real <Link> can look identical to a <Button>
+// (see ButtonLink) without nesting one inside the other — nesting interactive
+// content trips WCAG 2.5.8 target-size (the anchor's hit box reads as obscured).
+function buttonStyle(variant: ButtonVariant, size: ButtonSize): CSSProperties {
   const sizeStyle: CSSProperties =
     size === "sm"
       ? { padding: "0.2rem 0.65rem", fontSize: "0.78rem" }
       : { padding: "0.34rem 0.85rem", fontSize: "0.82rem" };
-
   const variantStyle: CSSProperties = (() => {
     switch (variant) {
       case "primary":
@@ -65,27 +67,61 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
         };
     }
   })();
+  return {
+    ...variantStyle,
+    ...sizeStyle,
+    // WCAG 2.5.8 (AA) minimum touch-target height; 26px (not a flat 24) so
+    // borderline targets clear the threshold after Linux Chromium's subpixel
+    // rounding, which trims a flat 24px below it (surfaced only in CI).
+    minHeight: "1.625rem",
+    fontFamily: "var(--font-sans)",
+    fontWeight: 600,
+    borderRadius: "var(--radius-md)",
+    whiteSpace: "nowrap",
+    transition: "filter 0.1s var(--ease-out-quint), background-color 0.1s var(--ease-out-quint)",
+  };
+}
+
+/** A react-router Link with Button visuals. Use this instead of wrapping a
+ *  <Button> in a <Link> — nested interactive content fails target-size. */
+export function ButtonLink({
+  to,
+  variant = "secondary",
+  size = "md",
+  className = "",
+  style,
+  children,
+  ...rest
+}: {
+  to: string;
+  variant?: ButtonVariant;
+  size?: ButtonSize;
+  className?: string;
+  style?: CSSProperties;
+  children: ReactNode;
+} & Record<string, unknown>) {
+  return (
+    <Link
+      to={to}
+      className={`${BUTTON_BASE_CLASS} ${className}`}
+      style={{ textDecoration: "none", ...buttonStyle(variant, size), ...style }}
+      {...rest}
+    >
+      {children}
+    </Link>
+  );
+}
+
+export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
+  { variant = "secondary", size = "md", className = "", style, children, ...rest },
+  ref,
+) {
 
   return (
     <button
       ref={ref}
-      className={`inline-flex items-center justify-center gap-1.5 ${className}`}
-      style={{
-        ...variantStyle,
-        ...sizeStyle,
-        // WCAG 2.5.8 (AA) minimum touch-target height; width follows from
-        // padding + label. Callers can still override via `style`.
-        // 26px (not exactly 24) so borderline targets clear WCAG 2.5.8 even
-        // after Linux Chromium's subpixel rounding, which trims a flat 24px
-        // below the threshold (surfaced only in CI).
-        minHeight: "1.625rem",
-        fontFamily: "var(--font-sans)",
-        fontWeight: 600,
-        borderRadius: "var(--radius-md)",
-        whiteSpace: "nowrap",
-        transition: "filter 0.1s var(--ease-out-quint), background-color 0.1s var(--ease-out-quint)",
-        ...style,
-      }}
+      className={`${BUTTON_BASE_CLASS} ${className}`}
+      style={{ ...buttonStyle(variant, size), ...style }}
       {...rest}
     >
       {children}

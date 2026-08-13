@@ -11,7 +11,7 @@ import {
 } from "../api.js";
 import type { BleephubRepo, GithubFeedIssue, GithubUserEvent } from "../types.js";
 import { Avatar } from "../components/Avatar.js";
-import { Box, SectionLabel, Blankslate } from "../components/ui.js";
+import { Box, SectionLabel, Blankslate, ButtonLink } from "../components/ui.js";
 import {
   RepoIcon,
   IssueOpenedIcon,
@@ -69,27 +69,10 @@ export function DashboardPage() {
             <SectionLabel>Top repositories</SectionLabel>
           )}
           {/* A single primary-styled anchor — NOT a <Link> wrapping a <Button>:
-              nesting interactive-in-interactive left the anchor's own hit box
-              obscured by the inner button, tripping WCAG 2.5.8 target-size. */}
-          <Link
-            to="/ui/repos"
-            aria-label="New repository"
-            className="inline-flex items-center justify-center gap-1.5"
-            style={{
-              textDecoration: "none",
-              background: "var(--gh-open-solid)",
-              color: "#ffffff",
-              border: "1px solid color-mix(in srgb, #000 12%, var(--gh-open-solid))",
-              padding: "0.2rem 0.65rem",
-              minHeight: "1.75rem",
-              fontSize: "0.78rem",
-              fontWeight: 600,
-              borderRadius: "var(--radius-md)",
-              whiteSpace: "nowrap",
-            }}
-          >
+              nesting interactive-in-interactive trips WCAG 2.5.8 target-size. */}
+          <ButtonLink to="/ui/repos" aria-label="New repository" variant="primary" size="sm">
             <RepoIcon size={14} /> New
-          </Link>
+          </ButtonLink>
         </div>
         <Box>
           {repos.isLoading && <Spinner label="loading repositories" />}
