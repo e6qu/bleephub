@@ -5309,6 +5309,15 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "GitHub Classroom's assignment report displayed grades but had no \"Download grades (CSV)\" export \u2014 old classroom.github.com prominently offers a grade CSV download in a fixed column format for grading pipelines",
+        "id": "WEB-080",
+        "location": "web/src/pages/ClassroomPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added a \"Download grades (CSV)\" button to the assignment-report modal that exports `GET /assignments/{id}/grades` in classroom.github.com's exact column order (assignment/starter URLs, github_username, roster_identifier, student repo name/url, submission timestamp, points awarded/available, group_name). Pure client-side CSV from the already-fetched grades; the builder is a unit-tested pure function (column order, quote/comma escaping, empty-set header)",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -6725,23 +6734,23 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 69,
+            "fixed": 70,
             "open": 3
           },
-          "total": 74
+          "total": 75
         }
       },
       "severity": {
         "blocker": 167,
         "major": 382,
-        "minor": 154
+        "minor": 155
       },
       "status": {
         "deferred": 3,
-        "fixed": 697,
+        "fixed": 698,
         "open": 3
       },
-      "total": 703
+      "total": 704
     }
   },
   "rest": {
@@ -28640,6 +28649,7 @@
         ],
         "source": "web/src/App.tsx",
         "tests": [
+          "web/src/__tests__/ClassroomGradesCsv.test.ts",
           "web/src/__tests__/ClassroomPage.test.tsx"
         ]
       },
@@ -28652,6 +28662,7 @@
         ],
         "source": "web/src/App.tsx",
         "tests": [
+          "web/src/__tests__/ClassroomGradesCsv.test.ts",
           "web/src/__tests__/ClassroomPage.test.tsx"
         ]
       },
@@ -28664,6 +28675,7 @@
         ],
         "source": "web/src/App.tsx",
         "tests": [
+          "web/src/__tests__/ClassroomGradesCsv.test.ts",
           "web/src/__tests__/ClassroomPage.test.tsx"
         ]
       },
