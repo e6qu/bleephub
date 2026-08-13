@@ -5300,6 +5300,15 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "The issue/PR sidebar Projects section was a hardcoded \"None yet\" \u2014 a visible control that never reflected or edited the item's ProjectsV2 membership",
+        "id": "WEB-074",
+        "location": "web/src/components/IssueSidebar.tsx",
+        "severity": "M",
+        "status": "fixed \u2014 for org-owned repos it lists the org's ProjectsV2, marks the ones this issue/PR belongs to (matched from each project's item list, capturing the item id), and adds/removes membership via the existing org project-item endpoints; a user-owned repo has no org projects and so truthfully shows \"None yet\". vitest drives membership display plus add (POST) and remove (DELETE) against the real API contract; the issue page renders clean in the Chromium a11y sweep",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -6716,23 +6725,23 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 68,
+            "fixed": 69,
             "open": 3
           },
-          "total": 73
+          "total": 74
         }
       },
       "severity": {
         "blocker": 167,
-        "major": 381,
+        "major": 382,
         "minor": 154
       },
       "status": {
         "deferred": 3,
-        "fixed": 696,
+        "fixed": 697,
         "open": 3
       },
-      "total": 702
+      "total": 703
     }
   },
   "rest": {

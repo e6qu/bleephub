@@ -16,7 +16,12 @@ import {
   unlockIssue,
   setIssueMilestone,
   setIssueType,
+  fetchOrgProjectsV2,
+  fetchOrgProjectV2Items,
+  addOrgProjectV2Item,
+  deleteOrgProjectV2Item,
 } from "../api.js";
+import type { GithubProjectV2 } from "../types.js";
 import { LabelPills } from "./LabelPills.js";
 import { ErrorBanner } from "./ui.js";
 import { GearIcon } from "./octicons.js";
@@ -271,7 +276,7 @@ export function IssueSidebar({
       </SidebarSection>
 
       <SidebarSection title="Projects">
-        <span style={muted}>None yet</span>
+        <ProjectsField owner={owner} repo={repo} ownerType={ownerType} number={number} kind={kind} />
       </SidebarSection>
 
       <SidebarSection title="Milestone">
@@ -366,5 +371,126 @@ export function IssueSidebar({
         )}
       </SidebarSection>
     </aside>
+  );
+}
+
+/**
+ * The issue/PR sidebar Projects section. Real GitHub lets you add the item to
+ * ProjectsV2 boards and shows which it belongs to. ProjectsV2 are org-scoped
+ * here, so this activates for org-owned repos: it lists the org's projects,
+ * marks the ones containing this item (from their item lists), and adds/removes
+ * via the org project-item endpoints. A user-owned repo has no org projects, so
+ * it truthfully shows "None yet".
+ */
+function ProjectsField({
+  owner,
+  repo,
+  ownerType,
+  number,
+  kind,
+}: {
+  owner: string;
+  repo: string;
+  ownerType?: string | undefined;
+  number: number;
+  kind: "issue" | "pr";
+}) {
+  const qc = useQueryClient();
+  const isOrg = ownerType === "Organization";
+  const contentType = kind === "pr" ? "PullRequest" : "Issue";
+  const muted = { fontSize: "0.82rem", color: "var(--color-fg-muted)" } as const;
+
+  // Fetch the org's projects and, for each, whether this item is in it (and the
+  // membership's item id, needed to remove it).
+  const { data, isLoading, isError, error } = useQuery({
+    queryKey: ["issue-projects", owner, repo, kind, number],
+    enabled: isOrg,
+    queryFn: async () => {
+      const projects = await fetchOrgProjectsV2(owner);
+      return Promise.all(
+        projects.map(async (project) => {
+          const items = await fetchOrgProjectV2Items(owner, project.number);
+          const match = items.find(
+            (it) =>
+              it.content_type === contentType &&
+              it.content?.number === number &&
+              (it.content?.html_url ?? "").includes(`/${owner}/${repo}/`),
+          );
+          return { project, itemId: match ? match.id : null };
+        }),
+      );
+    },
+  });
+
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ["issue-projects", owner, repo, kind, number] });
+  };
+  const addMut = useMutation({
+    mutationFn: (project: GithubProjectV2) =>
+      addOrgProjectV2Item(owner, project.number, { type: contentType, owner, repo, number }),
+    onSuccess: invalidate,
+  });
+  const removeMut = useMutation({
+    mutationFn: (m: { projectNumber: number; itemId: number }) =>
+      deleteOrgProjectV2Item(owner, m.projectNumber, m.itemId),
+    onSuccess: invalidate,
+  });
+
+  if (!isOrg) return <span style={muted}>None yet</span>;
+  if (isLoading) return <span style={muted}>Loading…</span>;
+  if (isError) return <InlineError inline title="Failed to load projects" detail={String(error)} />;
+
+  const memberships = (data ?? []).filter((x): x is { project: GithubProjectV2; itemId: number } => x.itemId !== null);
+  const addable = (data ?? []).filter((x) => x.itemId === null).map((x) => x.project);
+  const busy = addMut.isPending || removeMut.isPending;
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      {memberships.length === 0 && addable.length === 0 && <span style={muted}>None yet</span>}
+      {memberships.map(({ project, itemId }) => (
+        <div key={project.id} className="flex items-center gap-1">
+          <span style={{ fontSize: "0.85rem", color: "var(--color-fg)" }}>{project.title}</span>
+          <button
+            type="button"
+            aria-label={`Remove from project ${project.title}`}
+            onClick={() => removeMut.mutate({ projectNumber: project.number, itemId })}
+            disabled={busy}
+            style={{
+              border: "none",
+              background: "transparent",
+              color: "var(--color-fg-muted)",
+              fontSize: "0.75rem",
+              lineHeight: 1,
+              padding: "0 0.15rem",
+              cursor: "pointer",
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      ))}
+      {addable.length > 0 && (
+        <select
+          aria-label="Add to project"
+          value=""
+          onChange={(e) => {
+            const project = addable.find((p) => String(p.number) === e.target.value);
+            if (project) addMut.mutate(project);
+          }}
+          disabled={busy}
+          style={{ fontSize: "0.8rem" }}
+        >
+          <option value="">Add to project…</option>
+          {addable.map((p) => (
+            <option key={p.id} value={p.number}>
+              {p.title}
+            </option>
+          ))}
+        </select>
+      )}
+      {(addMut.isError || removeMut.isError) && (
+        <ErrorBanner>{String(addMut.error ?? removeMut.error)}</ErrorBanner>
+      )}
+    </div>
   );
 }
