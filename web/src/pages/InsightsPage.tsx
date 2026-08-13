@@ -200,9 +200,9 @@ function CodeFrequencySection({ owner, repo }: { owner: string; repo: string }) 
           <Box>
             <div style={{ padding: "1rem" }}>
               <div style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)", marginBottom: "0.6rem" }}>
-                <span style={{ color: "var(--gh-open-solid)" }}>+{additions.toLocaleString()}</span>{" "}
+                <span style={{ color: "var(--color-success-text)" }}>+{additions.toLocaleString()}</span>{" "}
                 additions and{" "}
-                <span style={{ color: "var(--gh-closed)" }}>−{deletions.toLocaleString()}</span>{" "}
+                <span style={{ color: "var(--color-danger-text)" }}>−{deletions.toLocaleString()}</span>{" "}
                 deletions across {data.length} week{data.length === 1 ? "" : "s"}
               </div>
               <div

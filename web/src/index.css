@@ -69,6 +69,12 @@
   --gh-closed: #cf222e;
   --gh-draft: #6e7781;
 
+  /* Readable success/danger *text* colours (the -solid greens/reds above are
+   * icon/emphasis tints that fail AA as small text — see WEB-085 additions /
+   * deletions summary). AA-safe on the content surface in both themes. */
+  --color-success-text: #116329;
+  --color-danger-text: #cf222e;
+
   /* Typography — platform system stacks, exactly like github.com. */
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans",
     Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
@@ -128,6 +134,9 @@
   --gh-merged: #a371f7;
   --gh-closed: #f85149;
   --gh-draft: #8b949e;
+
+  --color-success-text: #3fb950;
+  --color-danger-text: #f85149;
 
   color-scheme: dark;
 }
