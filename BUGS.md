@@ -1,6 +1,6 @@
 # Bleephub bug ledger
 
-724 findings from the continuing full-surface audit: 167 blockers, 395 major, 162 minor. Every
+725 findings from the continuing full-surface audit: 167 blockers, 396 major, 162 minor. Every
 entry carries a location and a one-sentence claim. Severity is `B` blocker, `M` major, `m` minor.
 Status begins with one of `open`, `partial`, `fixed`, or `deferred`; the generated parity
 inventory records the exact counts and fails CI when this summary or a row drifts.
@@ -618,6 +618,7 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | WEB-093 | m | web/src/pages/InsightsPage.tsx | repo Insights was missing GitHub's **Forks** view (the network of forks), though `GET /repos/{o}/{r}/forks` is wired | fixed — added a Forks section to repo Insights listing the repository's forks (each `full_name` → `/ui/repos/{full_name}`) with an empty state, via fetchRepoForksPage. Links use inline-block + ≥24px line-height for WCAG 2.5.8 target-size |
 | WEB-094 | m | web/src/pages/InsightsPage.tsx | repo Insights had no **Dependency graph** view, though the backend builds a real SPDX SBOM (`GET /repos/{o}/{r}/dependency-graph/sbom`) | fixed — added a Dependency-graph section listing the repository's parsed dependencies (ecosystem:name + version) from the SBOM, with a count header and empty state, via a new fetchDependencySBOM wrapper (drops the self-describing first package) |
 | WEB-095 | m | web/src/pages/InsightsPage.tsx | repo Insights had no **Pulse** activity overview (GitHub's first Insights subtab) | fixed — added a Pulse section at the top of Insights with StatCards for merged PRs, open PRs, closed issues, and open issues (issue counts exclude PRs, which the /issues endpoint also returns; merged = closed PRs with merged_at) |
+| WEB-096 | M | web/src/pages/DiscussionsPage.tsx, internal/graphqlapi/gh_reactions_graphql.go | GitHub discussions and discussion comments support **reactions**, but bleephub had only the read side (`reactionGroups`) — no way to add/remove one (GitHub exposes reactions GraphQL-only, and the `addReaction`/`removeReaction` mutations did not exist) | fixed — added the Go GraphQL **addReaction/removeReaction** mutations (polymorphic Reactable target with proper authz — a refusal case covers each; payloads kept GitHub-exact minimal to hold the schema-parity ratchet at ≤9 gaps; schema snapshot regenerated) and a **viewerHasReacted** field on ReactionGroup; the frontend renders a reaction bar (count pills + an emoji picker, both target-size-safe 26px with aria-labels/aria-pressed) on the discussion and every comment, toggling via the mutations. Verified: addReaction over GraphQL + the detail route (bar + open picker) axe-clean in both themes |
 
 ## TEST — test-suite quality
 

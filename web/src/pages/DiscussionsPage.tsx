@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type CSSProperties, type ReactNode } from "react";
 import Markdown from "../components/Markdown";
 import { useParams, Link, useNavigate } from "react-router";
 import { useMutation, useQuery, useQueryClient, useInfiniteQuery } from "@tanstack/react-query";
@@ -15,9 +15,11 @@ import {
   deleteDiscussion,
   deleteDiscussionComment,
   updateDiscussionComment,
+  addReaction,
+  removeReaction,
 } from "../api.js";
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
-import type { GithubDiscussion, GithubDiscussionComment } from "../types.js";
+import type { GithubDiscussion, GithubDiscussionComment, GithubReactionGroup } from "../types.js";
 import { RepoHeader } from "../components/Shell.js";
 import {
   Button,
@@ -392,6 +394,11 @@ function DiscussionDetail({
       </div>
 
       <DiscussionPost body={discussion.body} bodyText={discussion.bodyText} />
+      <DiscussionReactionBar
+        subjectId={discussion.id}
+        groups={discussion.reactionGroups ?? []}
+        invalidateKey={["discussion", owner, repo, number]}
+      />
 
       <div className="mt-6">
         <h2 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: "1rem" }}>Comments</h2>
@@ -411,6 +418,13 @@ function DiscussionDetail({
               setEditingComment(comment.id);
               setEditBody(comment.body);
             }}
+            reactionBar={
+              <DiscussionReactionBar
+                subjectId={comment.id}
+                groups={comment.reactionGroups ?? []}
+                invalidateKey={["discussion", owner, repo, number]}
+              />
+            }
           />
         ))}
         {comments.length === 0 && (
@@ -483,6 +497,68 @@ function DiscussionDetail({
   );
 }
 
+const REACTION_EMOJI: Record<string, string> = {
+  THUMBS_UP: "👍", THUMBS_DOWN: "👎", LAUGH: "😄", HOORAY: "🎉",
+  CONFUSED: "😕", HEART: "❤️", ROCKET: "🚀", EYES: "👀",
+};
+
+function DiscussionReactionBar({ subjectId, groups, invalidateKey }: {
+  subjectId: string;
+  groups: GithubReactionGroup[];
+  invalidateKey: (string | number)[];
+}) {
+  const qc = useQueryClient();
+  const [picking, setPicking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const toggle = useMutation({
+    mutationFn: ({ content, has }: { content: string; has: boolean }) =>
+      has ? removeReaction(subjectId, content) : addReaction(subjectId, content),
+    onSuccess: () => { setError(null); setPicking(false); void qc.invalidateQueries({ queryKey: invalidateKey }); },
+    onError: (e: Error) => setError(e.message),
+  });
+  const shown = groups.filter((g) => g.users.totalCount > 0);
+  const pill = (active: boolean): CSSProperties => ({
+    display: "inline-flex", alignItems: "center", gap: "0.25rem", minHeight: "1.625rem",
+    padding: "0.1rem 0.5rem", fontSize: "0.8rem", cursor: "pointer",
+    border: `1px solid ${active ? "var(--color-accent)" : "var(--color-border)"}`,
+    borderRadius: "999px", color: "var(--color-fg)",
+    background: active ? "var(--color-accent-soft)" : "var(--color-bg-subtle)",
+  });
+  return (
+    <div className="flex items-center gap-1.5" style={{ marginTop: "0.5rem", flexWrap: "wrap" }}>
+      {shown.map((g) => (
+        <button key={g.content} type="button" disabled={toggle.isPending} style={pill(g.viewerHasReacted)}
+          aria-pressed={g.viewerHasReacted} aria-label={`${g.viewerHasReacted ? "Remove" : "Add"} ${g.content} reaction`}
+          onClick={() => toggle.mutate({ content: g.content, has: g.viewerHasReacted })}>
+          <span aria-hidden>{REACTION_EMOJI[g.content] ?? "•"}</span>
+          <span className="tabular-nums">{g.users.totalCount}</span>
+        </button>
+      ))}
+      <div style={{ position: "relative" }}>
+        <button type="button" aria-label="Add reaction" aria-expanded={picking} onClick={() => setPicking((v) => !v)}
+          style={{ minHeight: "1.625rem", minWidth: "1.75rem", padding: "0.1rem 0.4rem", border: "1px solid var(--color-border)", borderRadius: "999px", background: "var(--color-bg-subtle)", color: "var(--color-fg-muted)", cursor: "pointer", fontSize: "0.9rem" }}>
+          +
+        </button>
+        {picking && (
+          <div role="menu" aria-label="Pick a reaction" style={{ position: "absolute", zIndex: 20, top: "calc(100% + 4px)", left: 0, display: "flex", gap: "0.15rem", padding: "0.3rem", background: "var(--color-surface-raised)", border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)", boxShadow: "var(--shadow-floating)" }}>
+            {Object.entries(REACTION_EMOJI).map(([content, emoji]) => {
+              const g = groups.find((x) => x.content === content);
+              return (
+                <button key={content} type="button" role="menuitem" aria-label={content} disabled={toggle.isPending}
+                  onClick={() => toggle.mutate({ content, has: g?.viewerHasReacted ?? false })}
+                  style={{ minHeight: "1.75rem", minWidth: "1.75rem", border: "none", background: g?.viewerHasReacted ? "var(--color-accent-soft)" : "transparent", borderRadius: "var(--radius-sm)", cursor: "pointer", fontSize: "1rem" }}>
+                  {emoji}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+      {error && <span style={{ color: "var(--color-status-error)", fontSize: "0.75rem" }}>{error}</span>}
+    </div>
+  );
+}
+
 function DiscussionPost({ body, bodyText }: { body: string; bodyText: string }) {
   if (!bodyText.trim()) {
     return (
@@ -506,6 +582,7 @@ function DiscussionCommentCard({
   onReply,
   onDelete,
   onEdit,
+  reactionBar,
 }: {
   comment: GithubDiscussionComment;
   isAnswer: boolean;
@@ -514,6 +591,7 @@ function DiscussionCommentCard({
   onReply: () => void;
   onDelete: () => void;
   onEdit: () => void;
+  reactionBar?: ReactNode;
 }) {
   return (
     <div
@@ -562,6 +640,7 @@ function DiscussionCommentCard({
       >
         <Markdown>{comment.body}</Markdown>
       </div>
+      {reactionBar && <div style={{ padding: "0 1rem" }}>{reactionBar}</div>}
       <div className="flex items-center gap-2 px-3 pb-2">
         <button
           type="button"

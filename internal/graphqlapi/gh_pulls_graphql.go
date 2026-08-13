@@ -2199,7 +2199,7 @@ func pullRequestToGQL(pr *store.PullRequest, st *store.Store) map[string]interfa
 			"totalCount": len(commitNodes),
 			"nodes":      commitNodes,
 		},
-		"reactionGroups": reactionGroupsForGraphQL(st.Reactions, "pull_request", pr.ID),
+		"reactionGroups": reactionGroupsForGraphQL(st.Reactions, "pull_request", pr.ID, 0),
 		"reviewThreads": map[string]interface{}{
 			"nodes":      reviewThreadNodes,
 			"totalCount": len(reviewThreadNodes),
@@ -2421,7 +2421,7 @@ func prReviewSourceLocked(r *store.PullRequestReview, st *store.Store) map[strin
 		"updatedAt":         r.UpdatedAt.Format(time.RFC3339),
 		"submittedAt":       r.CreatedAt.Format(time.RFC3339),
 		"commit":            map[string]interface{}{"oid": commitSHA},
-		"reactionGroups":    reactionGroupsForGraphQL(st.Reactions, "pull_request_review", r.ID),
+		"reactionGroups":    reactionGroupsForGraphQL(st.Reactions, "pull_request_review", r.ID, 0),
 	}
 }
 

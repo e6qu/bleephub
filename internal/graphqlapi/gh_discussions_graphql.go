@@ -185,7 +185,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 							return nil, fmt.Errorf("comment source: unexpected type %T", p.Source)
 						}
 						commentID, _ := c["databaseId"].(int)
-						return reactionGroupsForGraphQL(s.store.Reactions, "discussion_comment", commentID), nil
+						return reactionGroupsForGraphQL(s.store.Reactions, "discussion_comment", commentID, s.viewerReactorID(p.Context)), nil
 					},
 				},
 				"reactions": &graphql.Field{
@@ -384,7 +384,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 						return nil, fmt.Errorf("discussion source: unexpected type %T", p.Source)
 					}
 					discussionID, _ := d["databaseId"].(int)
-					return reactionGroupsForGraphQL(s.store.Reactions, "discussion", discussionID), nil
+					return reactionGroupsForGraphQL(s.store.Reactions, "discussion", discussionID, s.viewerReactorID(p.Context)), nil
 				},
 			},
 			"reactions": &graphql.Field{

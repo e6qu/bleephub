@@ -292,15 +292,15 @@
   "graphql": {
     "compatibility_gap_count": 9,
     "coverage": {
-      "bleephub_types": 259,
+      "bleephub_types": 263,
       "compatibility_gap_count": 9,
-      "implemented_fields": 911,
+      "implemented_fields": 922,
       "official_fields": 8360,
       "official_types": 1807,
-      "shared_types": 252,
-      "signature_exact_fields": 910
+      "shared_types": 256,
+      "signature_exact_fields": 921
     },
-    "introspection_snapshot_sha256": "ebddcba9ee1fda19d2d8fd93e2567f28b160b85f03d392d3165a15a9f968ad2e",
+    "introspection_snapshot_sha256": "94c24d0cd37c5a3573b1615869def537b31386492f8b1cef70db6bc879cb67c3",
     "official_schema": {
       "content_sha256": "b716c6844750283b8c33200f660989337254e7158f40ed869f06418bafb3bc2e",
       "source": "https://docs.github.com/public/fpt/schema.docs.graphql"
@@ -313,6 +313,7 @@
       "internal/graphqlapi/gh_orgs_graphql.go",
       "internal/graphqlapi/gh_projects_v2_graphql.go",
       "internal/graphqlapi/gh_pulls_graphql.go",
+      "internal/graphqlapi/gh_reactions_graphql.go",
       "internal/graphqlapi/gh_repos_graphql.go"
     ],
     "test_files": [
@@ -5498,6 +5499,15 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "GitHub discussions and discussion comments support **reactions**, but bleephub had only the read side (`reactionGroups`) \u2014 no way to add/remove one (GitHub exposes reactions GraphQL-only, and the `addReaction`/`removeReaction` mutations did not exist)",
+        "id": "WEB-096",
+        "location": "web/src/pages/DiscussionsPage.tsx, internal/graphqlapi/gh_reactions_graphql.go",
+        "severity": "M",
+        "status": "fixed \u2014 added the Go GraphQL **addReaction/removeReaction** mutations (polymorphic Reactable target with proper authz \u2014 a refusal case covers each; payloads kept GitHub-exact minimal to hold the schema-parity ratchet at \u22649 gaps; schema snapshot regenerated) and a **viewerHasReacted** field on ReactionGroup; the frontend renders a reaction bar (count pills + an emoji picker, both target-size-safe 26px with aria-labels/aria-pressed) on the discussion and every comment, toggling via the mutations. Verified: addReaction over GraphQL + the detail route (bar + open picker) axe-clean in both themes",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -6914,21 +6924,21 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 93
+            "fixed": 94
           },
-          "total": 95
+          "total": 96
         }
       },
       "severity": {
         "blocker": 167,
-        "major": 395,
+        "major": 396,
         "minor": 162
       },
       "status": {
         "deferred": 3,
-        "fixed": 721
+        "fixed": 722
       },
-      "total": 724
+      "total": 725
     }
   },
   "rest": {

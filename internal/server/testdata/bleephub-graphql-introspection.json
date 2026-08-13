@@ -107,6 +107,22 @@
         }
       }
     },
+    "AddReactionInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "content": "ReactionContent!",
+        "subjectId": "ID!"
+      }
+    },
+    "AddReactionPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        }
+      }
+    },
     "AutoMergeRequest": {
       "kind": "OBJECT",
       "fields": {
@@ -1905,6 +1921,12 @@
             "input": "AddPullRequestReviewInput!"
           }
         },
+        "addReaction": {
+          "type": "AddReactionPayload",
+          "args": {
+            "input": "AddReactionInput!"
+          }
+        },
         "closeIssue": {
           "type": "CloseIssuePayload",
           "args": {
@@ -2005,6 +2027,12 @@
           "type": "MinimizeCommentPayload",
           "args": {
             "input": "MinimizeCommentInput!"
+          }
+        },
+        "removeReaction": {
+          "type": "RemoveReactionPayload",
+          "args": {
+            "input": "RemoveReactionInput!"
           }
         },
         "reopenIssue": {
@@ -3391,6 +3419,9 @@
         },
         "users": {
           "type": "ReactingUserConnection!"
+        },
+        "viewerHasReacted": {
+          "type": "Boolean!"
         }
       }
     },
@@ -3476,6 +3507,22 @@
         "CREATED_AT",
         "NAME"
       ]
+    },
+    "RemoveReactionInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "content": "ReactionContent!",
+        "subjectId": "ID!"
+      }
+    },
+    "RemoveReactionPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        }
+      }
     },
     "ReopenIssueInput": {
       "kind": "INPUT_OBJECT",

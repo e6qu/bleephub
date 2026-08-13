@@ -226,6 +226,7 @@ func (s *Resolver) initGraphQLSchema() {
 
 	// Add Projects v2 mutations (createProjectV2, addProjectV2ItemById).
 	s.addProjectV2MutationsToSchema(mutationType)
+	s.addReactionMutationsToSchema(mutationType)
 
 	// Every mutation is now registered. Authorization coverage is asserted over
 	// the assembled type rather than trusted to each family above, so a

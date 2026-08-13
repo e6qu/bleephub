@@ -188,6 +188,20 @@ var gqlMutationCases = []gqlMutationCase{
 		},
 	},
 	{
+		name: "addReaction",
+		doc:  `mutation($input:AddReactionInput!){addReaction(input:$input){clientMutationId}}`,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"subjectId": f.discussion.NodeID, "content": "THUMBS_UP"}
+		},
+	},
+	{
+		name: "removeReaction",
+		doc:  `mutation($input:RemoveReactionInput!){removeReaction(input:$input){clientMutationId}}`,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"subjectId": f.discussion.NodeID, "content": "THUMBS_UP"}
+		},
+	},
+	{
 		name: "updateDiscussion",
 		doc:  `mutation($input:UpdateDiscussionInput!){updateDiscussion(input:$input){discussion{title}}}`,
 		input: func(f *gqlAuthzFixture) map[string]interface{} {

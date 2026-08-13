@@ -3342,6 +3342,7 @@ export async function fetchDiscussionDetail(
           category { id name emoji isAnswerable }
           createdAt
           updatedAt
+          reactionGroups { content viewerHasReacted users { totalCount } }
           comments(first: 100) {
             nodes {
               id
@@ -3351,6 +3352,7 @@ export async function fetchDiscussionDetail(
               createdAt
               updatedAt
               isAnswer
+              reactionGroups { content viewerHasReacted users { totalCount } }
               replies(first: 100) {
                 nodes {
                   id
@@ -3360,6 +3362,7 @@ export async function fetchDiscussionDetail(
                   createdAt
                   updatedAt
                   isAnswer
+                  reactionGroups { content viewerHasReacted users { totalCount } }
                 }
               }
             }
@@ -3372,6 +3375,21 @@ export async function fetchDiscussionDetail(
     signal,
   );
   return data.repository.discussion;
+}
+
+/** Add a reaction to a discussion or discussion comment (GraphQL-only on GitHub).
+ * `content` is the ReactionContent enum (THUMBS_UP, HEART, ROCKET, …). */
+export async function addReaction(subjectId: string, content: string): Promise<void> {
+  await ghGraphQL(
+    `mutation($input: AddReactionInput!) { addReaction(input: $input) { clientMutationId } }`,
+    { input: { subjectId, content } },
+  );
+}
+export async function removeReaction(subjectId: string, content: string): Promise<void> {
+  await ghGraphQL(
+    `mutation($input: RemoveReactionInput!) { removeReaction(input: $input) { clientMutationId } }`,
+    { input: { subjectId, content } },
+  );
 }
 
 export async function createDiscussion(

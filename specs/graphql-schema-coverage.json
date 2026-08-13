@@ -1,10 +1,10 @@
 {
   "official_types": 1807,
-  "bleephub_types": 259,
-  "shared_types": 252,
+  "bleephub_types": 263,
+  "shared_types": 256,
   "official_fields": 8360,
-  "implemented_fields": 911,
-  "signature_exact_fields": 910,
+  "implemented_fields": 922,
+  "signature_exact_fields": 921,
   "compatibility_gap_count": 9,
   "missing_types": [
     "AbortQueuedMigrationsInput",
@@ -49,8 +49,6 @@
     "AddPullRequestReviewThreadPayload",
     "AddPullRequestReviewThreadReplyInput",
     "AddPullRequestReviewThreadReplyPayload",
-    "AddReactionInput",
-    "AddReactionPayload",
     "AddStarInput",
     "AddStarPayload",
     "AddSubIssueInput",
@@ -1028,8 +1026,6 @@
     "RemoveOutsideCollaboratorPayload",
     "RemovePullRequestCreationCapBypassUsersInput",
     "RemovePullRequestCreationCapBypassUsersPayload",
-    "RemoveReactionInput",
-    "RemoveReactionPayload",
     "RemoveStarInput",
     "RemoveStarPayload",
     "RemoveSubIssueInput",
@@ -1574,6 +1570,11 @@
     "AddPullRequestReviewPayload": [
       "reviewEdge"
     ],
+    "AddReactionPayload": [
+      "reaction",
+      "reactionGroups",
+      "subject"
+    ],
     "AutoMergeRequest": [
       "pullRequest"
     ],
@@ -1962,7 +1963,6 @@
       "addPullRequestReviewComment",
       "addPullRequestReviewThread",
       "addPullRequestReviewThreadReply",
-      "addReaction",
       "addStar",
       "addSubIssue",
       "addUpvote",
@@ -2082,7 +2082,6 @@
       "removeLabelsFromLabelable",
       "removeOutsideCollaborator",
       "removePullRequestCreationCapBypassUsers",
-      "removeReaction",
       "removeStar",
       "removeSubIssue",
       "removeUpvote",
@@ -2604,8 +2603,7 @@
     "ReactionGroup": [
       "createdAt",
       "reactors",
-      "subject",
-      "viewerHasReacted"
+      "subject"
     ],
     "Ref": [
       "associatedPullRequests",
@@ -2633,6 +2631,11 @@
     ],
     "ReleaseConnection": [
       "edges"
+    ],
+    "RemoveReactionPayload": [
+      "reaction",
+      "reactionGroups",
+      "subject"
     ],
     "Repository": [
       "allowUpdateBranch",

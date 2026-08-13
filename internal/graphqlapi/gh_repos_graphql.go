@@ -1241,6 +1241,8 @@ var graphqlMutationAuthz = map[string]mutationRule{
 
 	"createDiscussion":                repoRule{scope: store.ScopeDiscussions, level: mutationReadRepo, target: mutationTargetRepo("repositoryId")},
 	"addDiscussionComment":            repoRule{scope: store.ScopeDiscussions, level: mutationReadRepo, target: mutationTargetDiscussion("discussionId")},
+	"addReaction":                     repoRule{scope: store.ScopeDiscussions, level: mutationReadRepo, target: mutationTargetReactable("subjectId")},
+	"removeReaction":                  repoRule{scope: store.ScopeDiscussions, level: mutationReadRepo, target: mutationTargetReactable("subjectId")},
 	"updateDiscussion":                repoRule{scope: store.ScopeDiscussions, level: mutationAdminRepo, authorMayAct: true, target: mutationTargetDiscussion("discussionId")},
 	"deleteDiscussion":                repoRule{scope: store.ScopeDiscussions, level: mutationAdminRepo, authorMayAct: true, target: mutationTargetDiscussion("id")},
 	"updateDiscussionComment":         repoRule{scope: store.ScopeDiscussions, level: mutationAdminRepo, authorMayAct: true, target: mutationTargetDiscussionComment("commentId")},

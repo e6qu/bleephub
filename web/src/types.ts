@@ -923,6 +923,13 @@ export interface GithubDiscussionAuthor {
   avatarUrl?: string;
 }
 
+/** A GraphQL ReactionGroup (content enum + viewer state + count). */
+export interface GithubReactionGroup {
+  content: string;
+  viewerHasReacted: boolean;
+  users: { totalCount: number };
+}
+
 export interface GithubDiscussion {
   id: string;
   number: number;
@@ -934,6 +941,7 @@ export interface GithubDiscussion {
   createdAt: string;
   updatedAt: string;
   comments: { totalCount: number };
+  reactionGroups?: GithubReactionGroup[];
 }
 
 export interface GithubDiscussionComment {
@@ -945,6 +953,7 @@ export interface GithubDiscussionComment {
   updatedAt: string;
   isAnswer: boolean;
   replies: { nodes: GithubDiscussionComment[] };
+  reactionGroups?: GithubReactionGroup[];
 }
 
 export interface GithubDiscussionConnection {
