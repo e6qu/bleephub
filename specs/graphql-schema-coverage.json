@@ -1,8 +1,8 @@
 {
-  "official_types": 1806,
+  "official_types": 1807,
   "bleephub_types": 259,
   "shared_types": 252,
-  "official_fields": 8341,
+  "official_fields": 8360,
   "implemented_fields": 911,
   "signature_exact_fields": 910,
   "compatibility_gap_count": 9,
@@ -611,6 +611,7 @@
     "IssueFieldSingleSelectOptionInput",
     "IssueFieldTimelineOption",
     "IssueFieldValueCommon",
+    "IssueFieldValueFilter",
     "IssueFieldsConnection",
     "IssueFieldsEdge",
     "IssueSearchType",
@@ -1872,6 +1873,7 @@
       "cursor"
     ],
     "IssueFilters": [
+      "issueFieldValues",
       "milestone",
       "milestoneNumber",
       "since",
@@ -2218,6 +2220,7 @@
       "packages",
       "pendingMembers",
       "pinnableItems",
+      "pinnedIssueFields",
       "pinnedItems",
       "pinnedItemsRemaining",
       "project",
@@ -2288,10 +2291,13 @@
     ],
     "ProjectV2Field": [
       "databaseId",
+      "isIssueField",
+      "issueField",
       "project"
     ],
     "ProjectV2FieldCommon": [
       "databaseId",
+      "isIssueField",
       "project"
     ],
     "ProjectV2FieldValue": [
@@ -2360,6 +2366,7 @@
     ],
     "ProjectV2IterationField": [
       "databaseId",
+      "isIssueField",
       "project"
     ],
     "ProjectV2IterationFieldIteration": [
@@ -2367,6 +2374,8 @@
     ],
     "ProjectV2SingleSelectField": [
       "databaseId",
+      "isIssueField",
+      "issueField",
       "project"
     ],
     "ProjectV2SingleSelectFieldOption": [
