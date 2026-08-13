@@ -1,6 +1,6 @@
 # Bleephub bug ledger
 
-723 findings from the continuing full-surface audit: 167 blockers, 395 major, 161 minor. Every
+724 findings from the continuing full-surface audit: 167 blockers, 395 major, 162 minor. Every
 entry carries a location and a one-sentence claim. Severity is `B` blocker, `M` major, `m` minor.
 Status begins with one of `open`, `partial`, `fixed`, or `deferred`; the generated parity
 inventory records the exact counts and fails CI when this summary or a row drifts.
@@ -617,6 +617,7 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | WEB-092 | M | web/src/pages/AccountPage.tsx, internal/server/gh_account_settings.go | account Settings had no **Notifications** preferences page — github.com's notification settings are web-only (no REST) so nothing was wired | fixed — added a `/ui-data/user/notification-settings` backend (store `NotificationSettings` with github.com's defaults + get/set) and a Notifications tab with participating/watching/email/web toggles persisted via setNotificationSettings |
 | WEB-093 | m | web/src/pages/InsightsPage.tsx | repo Insights was missing GitHub's **Forks** view (the network of forks), though `GET /repos/{o}/{r}/forks` is wired | fixed — added a Forks section to repo Insights listing the repository's forks (each `full_name` → `/ui/repos/{full_name}`) with an empty state, via fetchRepoForksPage. Links use inline-block + ≥24px line-height for WCAG 2.5.8 target-size |
 | WEB-094 | m | web/src/pages/InsightsPage.tsx | repo Insights had no **Dependency graph** view, though the backend builds a real SPDX SBOM (`GET /repos/{o}/{r}/dependency-graph/sbom`) | fixed — added a Dependency-graph section listing the repository's parsed dependencies (ecosystem:name + version) from the SBOM, with a count header and empty state, via a new fetchDependencySBOM wrapper (drops the self-describing first package) |
+| WEB-095 | m | web/src/pages/InsightsPage.tsx | repo Insights had no **Pulse** activity overview (GitHub's first Insights subtab) | fixed — added a Pulse section at the top of Insights with StatCards for merged PRs, open PRs, closed issues, and open issues (issue counts exclude PRs, which the /issues endpoint also returns; merged = closed PRs with merged_at) |
 
 ## TEST — test-suite quality
 

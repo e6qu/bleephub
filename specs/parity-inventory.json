@@ -5489,6 +5489,15 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "repo Insights had no **Pulse** activity overview (GitHub's first Insights subtab)",
+        "id": "WEB-095",
+        "location": "web/src/pages/InsightsPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added a Pulse section at the top of Insights with StatCards for merged PRs, open PRs, closed issues, and open issues (issue counts exclude PRs, which the /issues endpoint also returns; merged = closed PRs with merged_at)",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -6905,21 +6914,21 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 92
+            "fixed": 93
           },
-          "total": 94
+          "total": 95
         }
       },
       "severity": {
         "blocker": 167,
         "major": 395,
-        "minor": 161
+        "minor": 162
       },
       "status": {
         "deferred": 3,
-        "fixed": 720
+        "fixed": 721
       },
-      "total": 723
+      "total": 724
     }
   },
   "rest": {

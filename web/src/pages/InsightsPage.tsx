@@ -4,6 +4,8 @@ import { Spinner, InlineError } from "@bleephub/ui-core/components";
 import {
   fetchRepoForksPage,
   fetchDependencySBOM,
+  fetchRepoPRsPage,
+  fetchRepoIssuesPage,
   fetchRepoContributors,
   fetchCommunityProfile,
   fetchCommitActivity,
@@ -27,6 +29,7 @@ export function InsightsPage() {
     <div>
       <RepoHeader owner={owner} repo={repo} active="insights" {...counts} />
       <div className="flex flex-col gap-6">
+        <PulseSection owner={owner} repo={repo} />
         <CommunityProfileSection owner={owner} repo={repo} />
         <ContributorsSection owner={owner} repo={repo} />
         <CommitActivitySection owner={owner} repo={repo} />
@@ -466,6 +469,36 @@ function DependencyGraphSection({ owner, repo }: { owner: string; repo: string }
             </ul>
           </Box>
         ))}
+    </section>
+  );
+}
+
+function PulseSection({ owner, repo }: { owner: string; repo: string }) {
+  const openPRs = useQuery({ queryKey: ["pulse-pr-open", owner, repo], queryFn: () => fetchRepoPRsPage(owner, repo, "open") });
+  const closedPRs = useQuery({ queryKey: ["pulse-pr-closed", owner, repo], queryFn: () => fetchRepoPRsPage(owner, repo, "closed") });
+  const openIssues = useQuery({ queryKey: ["pulse-iss-open", owner, repo], queryFn: () => fetchRepoIssuesPage(owner, repo, "open") });
+  const closedIssues = useQuery({ queryKey: ["pulse-iss-closed", owner, repo], queryFn: () => fetchRepoIssuesPage(owner, repo, "closed") });
+  const loading = openPRs.isLoading || closedPRs.isLoading || openIssues.isLoading || closedIssues.isLoading;
+  // The /issues endpoint also returns PRs (GitHub quirk); exclude them for issue counts.
+  const issuesOnly = (items: { pull_request?: unknown }[] = []) => items.filter((i) => !i.pull_request).length;
+  const merged = (closedPRs.data?.items ?? []).filter((pr) => Boolean((pr as { merged_at?: string | null }).merged_at)).length;
+  const stats = [
+    { label: "Merged pull requests", value: merged },
+    { label: "Open pull requests", value: openPRs.data?.items.length ?? 0 },
+    { label: "Closed issues", value: issuesOnly(closedIssues.data?.items) },
+    { label: "Open issues", value: issuesOnly(openIssues.data?.items) },
+  ];
+  return (
+    <section>
+      <SectionLabel>Pulse</SectionLabel>
+      {loading && <Spinner label="loading activity overview" />}
+      {!loading && (
+        <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(9rem, 1fr))" }}>
+          {stats.map((s) => (
+            <StatCard key={s.label} title={s.label} value={String(s.value)} />
+          ))}
+        </div>
+      )}
     </section>
   );
 }
