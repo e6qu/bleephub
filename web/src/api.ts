@@ -1064,6 +1064,18 @@ export const fetchRepoContents = (
   return ghFetch<GithubContentItem[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${path}${qs}`);
 };
 
+export interface GithubGitTreeResponse {
+  sha: string;
+  truncated: boolean;
+  tree: { path: string; type: "blob" | "tree" | "commit"; mode: string; sha: string; size?: number }[];
+}
+
+/** The full recursive git tree at a ref — powers the "Go to file" fuzzy finder. */
+export const fetchRepoTreeRecursive = (owner: string, repo: string, ref: string): Promise<GithubGitTreeResponse> =>
+  ghFetch<GithubGitTreeResponse>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/trees/${encodeURIComponent(ref)}?recursive=1`,
+  );
+
 export const fetchRepoFile = (
   owner: string,
   repo: string,

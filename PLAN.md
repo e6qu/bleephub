@@ -89,7 +89,7 @@ menus/controls are missing or non-functional.
 2. Profile **pinned repositories** missing.
 3. Profile **README** missing.
 4. ✅ FIXED (WEB-073) — Global **command palette / ⌘K** jump-to: lazy-loaded dialog+combobox (static targets + live repo/user search, keyboard nav, axe-clean); ⌘K/Ctrl-K in `AppHeader.tsx`.
-5. Repo **"Go to file"** fuzzy finder missing.
+5. ✅ FIXED (WEB-076) — Repo **"Go to file"** fuzzy finder: lazy-loaded recursive-tree finder, `t` shortcut + button, keyboard-nav, axe-clean.
 6. Repo Settings **Webhooks** list/create missing (only a delivery viewer exists).
 7. Repo Settings **Environments** editor missing (Deployments list ≠ env settings).
 8. Repo Settings **Actions** settings (General/Runners) missing.

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, lazy, Suspense } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
@@ -76,6 +76,10 @@ import {
   ChevronDownIcon,
   GearIcon,
 } from "../components/octicons.js";
+
+// Lazy so the fuzzy finder (and its recursive-tree fetch) stay out of the entry
+// bundle; loaded on first "Go to file".
+const GoToFile = lazy(() => import("../components/GoToFile.js").then((m) => ({ default: m.GoToFile })));
 
 type SubTab = "code" | "commits" | "branches" | "tags" | "releases" | "webhooks" | "secrets" | "environments";
 
@@ -422,6 +426,21 @@ function CodeView({
 
   const qc = useQueryClient();
   const [adding, setAdding] = useState(false);
+  const [goToFileOpen, setGoToFileOpen] = useState(false);
+
+  // GitHub's `t` shortcut opens "Go to file" (ignored while typing in a field).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "t" || e.metaKey || e.ctrlKey || e.altKey) return;
+      const el = document.activeElement;
+      const tag = el?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || (el as HTMLElement | null)?.isContentEditable) return;
+      e.preventDefault();
+      setGoToFileOpen(true);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
   const [newName, setNewName] = useState("");
   const [newContent, setNewContent] = useState("");
   const [newMessage, setNewMessage] = useState("");
@@ -492,11 +511,20 @@ function CodeView({
           </button>
         )}
         <span style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)", flex: 1 }}>{path}</span>
+        <Button size="sm" onClick={() => setGoToFileOpen(true)}>
+          Go to file
+        </Button>
         <Button size="sm" onClick={() => setAdding(true)}>
           Add file
         </Button>
         <CloneButton owner={owner} repo={repo} sshUrl={sshUrl} archiveRef={branch} />
       </div>
+
+      {goToFileOpen && (
+        <Suspense fallback={null}>
+          <GoToFile owner={owner} repo={repo} gitRef={branch} onClose={() => setGoToFileOpen(false)} />
+        </Suspense>
+      )}
 
       {adding && (
         <Modal title="Add a new file" onClose={() => setAdding(false)}>

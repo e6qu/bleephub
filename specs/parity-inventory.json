@@ -5309,6 +5309,15 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "The repo file browser had no \"Go to file\" fuzzy finder \u2014 github.com's `t` shortcut / button to jump to any file by path was absent",
+        "id": "WEB-076",
+        "location": "web/src/components/GoToFile.tsx, web/src/pages/RepoDetailPage.tsx",
+        "severity": "M",
+        "status": "fixed \u2014 a lazy-loaded (code-split) fuzzy finder loads the recursive git tree at the current ref, subsequence-matches file paths (basename-preferred), and navigates to the blob; opened by a \"Go to file\" toolbar button or the `t` shortcut, with dialog/combobox/listbox ARIA, \u2191/\u2193/Enter/Esc, trapped+restored focus. vitest covers filter + navigate + escape; a Chromium e2e opens it, filters, navigates to the blob, and asserts the dialog is axe-clean (WCAG A+AA)",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -6725,23 +6734,23 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 69,
+            "fixed": 70,
             "open": 3
           },
-          "total": 74
+          "total": 75
         }
       },
       "severity": {
         "blocker": 167,
-        "major": 382,
+        "major": 383,
         "minor": 154
       },
       "status": {
         "deferred": 3,
-        "fixed": 697,
+        "fixed": 698,
         "open": 3
       },
-      "total": 703
+      "total": 704
     }
   },
   "rest": {
@@ -28548,6 +28557,16 @@
         "line": 82,
         "source": "web/e2e/errorPaths.spec.ts",
         "target": "/ui/operations"
+      },
+      {
+        "line": 27,
+        "source": "web/e2e/repo-go-to-file.spec.ts",
+        "target": "/ui/"
+      },
+      {
+        "line": 31,
+        "source": "web/e2e/repo-go-to-file.spec.ts",
+        "target": "/ui/repos/admin/${repo}"
       }
     ],
     "routes": [
@@ -29691,7 +29710,7 @@
       }
     ],
     "summary": {
-      "browser_navigations": 59,
+      "browser_navigations": 61,
       "routes": 89,
       "routes_with_direct_render": 86,
       "routes_with_test_reference": 88
