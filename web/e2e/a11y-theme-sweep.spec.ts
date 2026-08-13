@@ -403,7 +403,8 @@ test.afterAll(async () => {
     .slice(0, 15);
 
   const summary = {
-    generatedAt: new Date().toISOString(),
+    // No generatedAt timestamp: the test-clock gate forbids calendar-sensitive
+    // wall-clock data in tests, and a stamp would also churn the baseline JSON.
     axeCoreVersion: "4.13.0",
     axePlaywrightVersion: "4.13.0",
     wcagTags: WCAG_TAGS,
