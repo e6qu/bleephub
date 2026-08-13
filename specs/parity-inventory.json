@@ -5444,6 +5444,15 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "The repo file browser had only a text \"Add file\" (create a single text file) \u2014 github.com's \"Add file \u2192 **Upload files**\" binary/multi-file flow was absent, though `PUT /repos/{o}/{r}/contents/{path}` accepts base64 content",
+        "id": "WEB-090",
+        "location": "web/src/pages/RepoDetailPage.tsx",
+        "severity": "M",
+        "status": "fixed \u2014 added an \"Upload files\" button + modal: a multi-file `<input type=file>`, a selected-files list with sizes, a commit message, and an upload mutation that base64-encodes each file (fileToBase64, no re-encode) and PUTs it via the new `uploadFile` wrapper on the current branch/path (per-file commits like github.com)",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -6860,21 +6869,21 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 87
+            "fixed": 88
           },
-          "total": 89
+          "total": 90
         }
       },
       "severity": {
         "blocker": 167,
-        "major": 392,
+        "major": 393,
         "minor": 159
       },
       "status": {
         "deferred": 3,
-        "fixed": 715
+        "fixed": 716
       },
-      "total": 718
+      "total": 719
     }
   },
   "rest": {

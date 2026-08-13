@@ -1,6 +1,6 @@
 # Bleephub bug ledger
 
-718 findings from the continuing full-surface audit: 167 blockers, 392 major, 159 minor. Every
+719 findings from the continuing full-surface audit: 167 blockers, 393 major, 159 minor. Every
 entry carries a location and a one-sentence claim. Severity is `B` blocker, `M` major, `m` minor.
 Status begins with one of `open`, `partial`, `fixed`, or `deferred`; the generated parity
 inventory records the exact counts and fails CI when this summary or a row drifts.
@@ -612,6 +612,7 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | WEB-087 | M | web/src/pages/RepoSettingsPage.tsx | repo Settings had no **Actions** settings page — github.com's Settings → Actions → General controls (which actions are allowed to run, default GITHUB_TOKEN workflow permissions) had no UI, though `GET/PUT /repos/{o}/{r}/actions/permissions` and `.../permissions/workflow` are wired | fixed — added an Actions tab under Settings → Code and automation: an Actions-permissions radio group (allow all / local only / selected / disable) backed by fetch/updateActionsPermissions, and a workflow-permissions radio (read vs read-write GITHUB_TOKEN) backed by fetch/updateWorkflowPermissions |
 | WEB-088 | M | web/src/pages/RepoSettingsPage.tsx | repo Settings had no repo-level **Rulesets** page (rulesets existed org-only), though `GET/POST/DELETE /repos/{o}/{r}/rulesets` are wired | fixed — added a Rulesets tab: lists repo rulesets, a create form (name / target branch·tag·push / enforcement active·evaluate·disabled) via createRepoRuleset, and delete-with-confirm via deleteRepoRuleset (fetchRepoRulesets mirrors the org wrappers) |
 | WEB-089 | M | web/src/pages/RepoSettingsPage.tsx | repo Settings had no **Environments** page — github.com manages deployment environments (variables, secrets, protection) there, and the backend wires environments + their variables/secrets, but no UI reached it | fixed — added an Environments tab: list/create (`PUT .../environments/{name}`)/delete environments, and a per-environment detail panel with environment **variables** CRUD (create/list/delete) and **secrets** (list/delete). All backend routes pre-existed |
+| WEB-090 | M | web/src/pages/RepoDetailPage.tsx | The repo file browser had only a text "Add file" (create a single text file) — github.com's "Add file → **Upload files**" binary/multi-file flow was absent, though `PUT /repos/{o}/{r}/contents/{path}` accepts base64 content | fixed — added an "Upload files" button + modal: a multi-file `<input type=file>`, a selected-files list with sizes, a commit message, and an upload mutation that base64-encodes each file (fileToBase64, no re-encode) and PUTs it via the new `uploadFile` wrapper on the current branch/path (per-file commits like github.com) |
 
 ## TEST — test-suite quality
 

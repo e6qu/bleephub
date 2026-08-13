@@ -1123,6 +1123,27 @@ export const putFile = (
   );
 };
 
+/**
+ * Upload a file whose `contentBase64` is ALREADY base64 (from a File's bytes) —
+ * used by the drag/drop "Upload files" flow, where re-encoding would corrupt
+ * binary content. Pass `sha` to overwrite an existing path.
+ */
+export const uploadFile = (
+  owner: string,
+  repo: string,
+  path: string,
+  payload: { message: string; contentBase64: string; sha?: string | undefined; branch?: string | undefined },
+) => {
+  const encodedPath = path.split("/").map(encodeURIComponent).join("/");
+  const body: Record<string, unknown> = { message: payload.message, content: payload.contentBase64 };
+  if (payload.sha) body.sha = payload.sha;
+  if (payload.branch) body.branch = payload.branch;
+  return ghPutJSON<{ commit: { sha: string } }>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodedPath}`,
+    body,
+  );
+};
+
 /** Delete a file through the contents API. `sha` is the file's current blob sha. */
 export const deleteFile = (
   owner: string,
