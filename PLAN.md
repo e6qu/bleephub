@@ -95,7 +95,7 @@ menus/controls are missing or non-functional.
 8. Repo Settings **Actions** settings (General/Runners) missing.
 9. **Repo-level Rulesets** missing (rulesets exist org-only).
 10. **Org Settings** landing page missing (settings scattered as top-level tabs).
-11. **Org Insights** tab missing (Insights is repo-only).
+11. ✅ FIXED (WEB-081) — **Org Insights** tab: /orgs/:org/insights (GHES API Insights — request summary + top subjects).
 12. ✅ FIXED (WEB-074) — Issue/PR sidebar **Projects**: now lists the org's ProjectsV2, marks/edits (add + remove) this item's membership; was a hardcoded "None yet" stub (`IssueSidebar.tsx`).
 13. Account settings: **Password/2FA, Notifications, Profile edit, Account, Appearance** all missing
     (only Emails/keys/PAT/blocked present).

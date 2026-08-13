@@ -4700,6 +4700,36 @@ export const fetchUserEvents = (login: string) =>
 export const fetchOrgProfile = (org: string) =>
   ghFetch<GithubOrgProfile>(`/api/v3/orgs/${encodeURIComponent(org)}`);
 
+// ─── Organization API Insights (GHES) — the org Insights tab ────────────────
+export interface OrgApiInsightsSummary {
+  total_request_count: number;
+  rate_limited_request_count: number;
+  last_request_timestamp: string;
+  last_rate_limited_timestamp: string | null;
+}
+export interface OrgApiInsightsSubjectStat {
+  subject_id?: number;
+  subject_name: string;
+  total_request_count: number;
+  rate_limited_request_count: number;
+  last_request_timestamp?: string;
+  last_rate_limited_timestamp?: string | null;
+}
+
+const insightsWindow = (): string => {
+  const max = new Date().toISOString();
+  const min = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  return `min_timestamp=${encodeURIComponent(min)}&max_timestamp=${encodeURIComponent(max)}`;
+};
+
+/** Org API-request summary over the trailing 30 days (GET .../insights/api/summary-stats). */
+export const fetchOrgApiInsightsSummary = (org: string): Promise<OrgApiInsightsSummary> =>
+  ghFetch<OrgApiInsightsSummary>(`/api/v3/orgs/${encodeURIComponent(org)}/insights/api/summary-stats?${insightsWindow()}`);
+
+/** Per-subject (app/actor) API-request stats over the trailing 30 days. */
+export const fetchOrgApiInsightsSubjectStats = (org: string): Promise<OrgApiInsightsSubjectStat[]> =>
+  ghFetch<OrgApiInsightsSubjectStat[]>(`/api/v3/orgs/${encodeURIComponent(org)}/insights/api/subject-stats?${insightsWindow()}`);
+
 /** Members visible to the caller (GET /orgs/{org}/members). */
 export const fetchOrgMembers = (org: string) =>
   ghFetch<GithubAccount[]>(`/api/v3/orgs/${encodeURIComponent(org)}/members`);

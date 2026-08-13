@@ -47,6 +47,7 @@ const CodespacesPage = lazy(() => import("./pages/CodespacesPage.js").then(({ Co
 const PackagesPage = lazy(() => import("./pages/PackagesPage.js").then(({ PackagesPage }) => ({ default: PackagesPage })));
 const InsightsPage = lazy(() => import("./pages/InsightsPage.js").then(({ InsightsPage }) => ({ default: InsightsPage })));
 const OrgGovernancePage = lazy(() => import("./pages/OrgGovernancePage.js").then(({ OrgGovernancePage }) => ({ default: OrgGovernancePage })));
+const OrgInsightsPage = lazy(() => import("./pages/OrgInsightsPage.js").then(({ OrgInsightsPage }) => ({ default: OrgInsightsPage })));
 const CopilotPage = lazy(() => import("./pages/CopilotPage.js").then(({ CopilotPage }) => ({ default: CopilotPage })));
 const PersonalCopilotSpacesPage = lazy(() =>
   import("./pages/CopilotPage.js").then(({ PersonalCopilotSpacesPage }) => ({ default: PersonalCopilotSpacesPage })),
@@ -197,6 +198,7 @@ export function App() {
               <Route path="/ui/orgs/:org/projects/:number" element={<OrgProjectsV2Page />} />
               <Route path="/ui/orgs/:org/rulesets" element={<RulesetsPage />} />
               <Route path="/ui/orgs/:org/governance" element={<OrgGovernancePage />} />
+              <Route path="/ui/orgs/:org/insights" element={<OrgInsightsPage />} />
               <Route path="/ui/orgs/:org/copilot" element={<CopilotPage />} />
               <Route path="/ui/repos/:owner/:repo" element={<RepoDetailPage />} />
               <Route path="/ui/repos/:owner/:repo/commits" element={<RepoDetailPage initialTab="commits" />} />
