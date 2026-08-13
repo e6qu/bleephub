@@ -5480,6 +5480,15 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "repo Insights had no **Dependency graph** view, though the backend builds a real SPDX SBOM (`GET /repos/{o}/{r}/dependency-graph/sbom`)",
+        "id": "WEB-094",
+        "location": "web/src/pages/InsightsPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added a Dependency-graph section listing the repository's parsed dependencies (ecosystem:name + version) from the SBOM, with a count header and empty state, via a new fetchDependencySBOM wrapper (drops the self-describing first package)",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -6896,21 +6905,21 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 91
+            "fixed": 92
           },
-          "total": 93
+          "total": 94
         }
       },
       "severity": {
         "blocker": 167,
         "major": 395,
-        "minor": 160
+        "minor": 161
       },
       "status": {
         "deferred": 3,
-        "fixed": 719
+        "fixed": 720
       },
-      "total": 722
+      "total": 723
     }
   },
   "rest": {

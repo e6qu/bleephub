@@ -502,6 +502,15 @@ export interface GithubWorkflowPermissions {
   can_approve_pull_request_reviews: boolean;
 }
 
+/** One package in the SPDX SBOM (GET .../dependency-graph/sbom). The first
+ * package describes the repo itself; the rest are its dependencies. */
+export interface GithubSBOMPackage {
+  SPDXID: string;
+  name: string;
+  versionInfo?: string;
+  externalRefs?: Array<{ referenceLocator: string; referenceType: string }>;
+}
+
 // ─── GitHub Actions REST shapes (/api/v3/repos/{o}/{r}/actions/*) ───────
 
 /** GitHub workflow-run status. */

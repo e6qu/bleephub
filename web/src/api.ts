@@ -105,6 +105,7 @@ import type {
   GithubActionsVariable,
   GithubActionsPermissions,
   GithubWorkflowPermissions,
+  GithubSBOMPackage,
   GithubContributor,
   GithubTrafficViews,
   GithubTrafficClones,
@@ -4754,6 +4755,13 @@ export const fetchRepoSubscribersPage = (owner: string, repo: string, pageUrl?: 
 /** First page of forks; follow pages via the Link rel="next" URL. */
 export const fetchRepoForksPage = (owner: string, repo: string, pageUrl?: string) =>
   ghFetchPage<BleephubRepo>(pageUrl ?? `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/forks?per_page=50`);
+
+/** The repository's SPDX SBOM package list (dependency graph). Drops the first
+ * package (which describes the repo itself), leaving its dependencies. */
+export const fetchDependencySBOM = (owner: string, repo: string) =>
+  ghFetch<{ sbom: { packages: GithubSBOMPackage[] } }>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/dependency-graph/sbom`,
+  ).then((r) => (r.sbom?.packages ?? []).slice(1));
 
 /** Language name → byte count, sorted by the server descending by bytes. */
 export const fetchRepoLanguages = (owner: string, repo: string) =>

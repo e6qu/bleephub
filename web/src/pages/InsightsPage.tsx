@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
 import {
   fetchRepoForksPage,
+  fetchDependencySBOM,
   fetchRepoContributors,
   fetchCommunityProfile,
   fetchCommitActivity,
@@ -32,6 +33,7 @@ export function InsightsPage() {
         <CodeFrequencySection owner={owner} repo={repo} />
         <TrafficSection owner={owner} repo={repo} />
         <PopularContentSection owner={owner} repo={repo} />
+        <DependencyGraphSection owner={owner} repo={repo} />
         <ForksSection owner={owner} repo={repo} />
       </div>
     </div>
@@ -418,6 +420,47 @@ function ForksSection({ owner, repo }: { owner: string; repo: string }) {
                   >
                     {fork.full_name}
                   </Link>
+                </li>
+              ))}
+            </ul>
+          </Box>
+        ))}
+    </section>
+  );
+}
+
+function DependencyGraphSection({ owner, repo }: { owner: string; repo: string }) {
+  const { data, isLoading, isError, error } = useQuery({
+    queryKey: ["dependency-sbom", owner, repo],
+    queryFn: () => fetchDependencySBOM(owner, repo),
+  });
+  const deps = data ?? [];
+  return (
+    <section>
+      <SectionLabel>Dependency graph</SectionLabel>
+      {isLoading && <Spinner label="loading dependencies" />}
+      {isError && <InlineError title="Failed to load dependencies" detail={String(error)} />}
+      {data &&
+        (deps.length === 0 ? (
+          <Blankslate icon={<GraphIcon size={26} />} title="No dependencies detected">
+            Dependencies parsed from this repository's manifests appear here.
+          </Blankslate>
+        ) : (
+          <Box>
+            <div style={{ padding: "0.6rem 1rem", fontSize: "0.8rem", color: "var(--color-fg-muted)", borderBottom: "1px solid var(--color-border)" }}>
+              {deps.length} dependenc{deps.length === 1 ? "y" : "ies"} from the default branch
+            </div>
+            <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+              {deps.map((pkg, i) => (
+                <li
+                  key={pkg.SPDXID}
+                  className="flex items-center justify-between gap-3"
+                  style={{ padding: "0.5rem 1rem", borderBottom: i < deps.length - 1 ? "1px solid var(--color-border)" : "none", fontSize: "0.85rem" }}
+                >
+                  <span className="font-mono truncate">{pkg.name}</span>
+                  {pkg.versionInfo && (
+                    <span className="tabular-nums" style={{ color: "var(--color-fg-muted)", fontSize: "0.8rem" }}>{pkg.versionInfo}</span>
+                  )}
                 </li>
               ))}
             </ul>
