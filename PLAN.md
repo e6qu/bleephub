@@ -77,9 +77,12 @@ row as its fix lands. **The UI is NOT at nav parity** — two whole surfaces are
 menus/controls are missing or non-functional.
 
 **BLOCKERs (whole tab/page absent):**
-- **B1 — repo Wiki**: no tab, no route, no page (`has_wiki` field exists, unused).
-- **B2 — user-profile tab row**: Overview/Repositories/Projects/Packages/Stars absent; the profile
-  collapses to a bare repo list (`ProfilePage.tsx`).
+- **B1 — repo Wiki**: ✅ FIXED (WEB-072) — added a backend page store + REST routes, the Wiki
+  tab (gated on `has_wiki`), `/ui/repos/:owner/:repo/wiki[/:slug]` routes, and a WikiPage with a
+  page rail + markdown view + create/edit/delete. Go + vitest + Chromium-sweep verified.
+- **B2 — user-profile tab row**: ✅ FIXED (WEB-070) — Overview/Repositories/Projects/Packages/Stars
+  tab row; Overview renders the profile README, a contribution graph (from the events feed), and a
+  recent-activity list. Still open: WEB-071 pinned repositories (needs a backend pin store).
 
 **MAJORs (menu/control missing or non-functional), ranked:**
 1. Profile **contribution graph** (calendar heatmap) missing.

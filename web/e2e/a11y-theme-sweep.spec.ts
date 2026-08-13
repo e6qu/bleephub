@@ -103,6 +103,10 @@ function buildRoutes(): { route: string; label: string }[] {
   return [
     { route: "/ui/", label: "dashboard" },
     { route: `/ui/${o}`, label: "profile" },
+    { route: `/ui/${o}?tab=repositories`, label: "profile-repositories" },
+    { route: `/ui/${o}?tab=projects`, label: "profile-projects" },
+    { route: `/ui/${o}?tab=packages`, label: "profile-packages" },
+    { route: `/ui/${o}?tab=stars`, label: "profile-stars" },
     { route: "/ui/account", label: "account" },
     { route: "/ui/notifications", label: "notifications" },
     { route: "/ui/search?q=test", label: "search" },
@@ -139,6 +143,7 @@ function buildRoutes(): { route: string; label: string }[] {
     { route: `/ui/repos/${o}/${r}/security/code-scanning`, label: "repo-code-scanning" },
     { route: `/ui/repos/${o}/${r}/insights`, label: "repo-insights" },
     { route: `/ui/repos/${o}/${r}/discussions`, label: "repo-discussions" },
+    { route: `/ui/repos/${o}/${r}/wiki`, label: "repo-wiki" },
     // org
     { route: `/ui/orgs/${org}`, label: "org-overview" },
     { route: `/ui/orgs/${org}/people`, label: "org-people" },
@@ -178,6 +183,13 @@ test.beforeAll(async ({ browser }) => {
     description: "GitHub-parity a11y baseline fixture",
     auto_init: true,
     private: false,
+    has_wiki: true,
+  }));
+
+  // a wiki page so the Wiki tab renders content, not just the empty state
+  ok("wiki", await api(page, "PUT", `/ui-data/repos/${seeded.owner}/${seeded.repo}/wiki/pages/home`, {
+    title: "Home",
+    body: "# Welcome\n\nParity wiki fixture page.",
   }));
 
   // labels + milestones

@@ -63,9 +63,17 @@ const repo = {
   updated_at: "2026-02-01T00:00:00Z",
 };
 
+// The Overview tab (default) fetches the profile README and the events feed;
+// other tabs fetch starred/packages/projectsV2. Answer them all so whichever
+// tab a test lands on renders without an unmocked-fetch crash.
 function mockProfileEndpoints() {
   mockFetch.mockImplementation((url: RequestInfo | URL) => {
     const u = url.toString();
+    if (u.includes("/readme")) return Promise.resolve(jsonResponse({ message: "Not Found" }, 404));
+    if (u.includes("/events")) return Promise.resolve(jsonResponse([]));
+    if (u.includes("/starred")) return Promise.resolve(jsonResponse([repo]));
+    if (u.includes("/packages")) return Promise.resolve(jsonResponse([]));
+    if (u.includes("/projectsV2")) return Promise.resolve(jsonResponse([]));
     if (u.includes("/repos")) return Promise.resolve(jsonResponse([repo], 200, { Link: "" }));
     if (u.includes("/orgs")) return Promise.resolve(jsonResponse([{ login: "acme", id: 2, avatar_url: "", description: "acme" }]));
     return Promise.resolve(jsonResponse(profile));
@@ -73,9 +81,9 @@ function mockProfileEndpoints() {
 }
 
 describe("ProfilePage", () => {
-  it("renders the profile sidebar, repos, and orgs at /ui/:login", async () => {
+  it("renders the sidebar + orgs on Overview and the repo list under the Repositories tab", async () => {
     mockProfileEndpoints();
-    renderAt("/ui/octocat");
+    renderAt("/ui/octocat?tab=repositories");
 
     await waitFor(() => {
       expect(screen.getByText("The Octocat")).toBeInTheDocument();
@@ -84,6 +92,27 @@ describe("ProfilePage", () => {
     expect(screen.getByText("5")).toBeInTheDocument(); // followers
     expect(await screen.findByText("api")).toBeInTheDocument();
     expect(screen.getByText("Organizations")).toBeInTheDocument();
+  });
+
+  it("shows the tab row with a Stars tab", async () => {
+    mockProfileEndpoints();
+    renderAt("/ui/octocat");
+    await screen.findByText("The Octocat");
+    const nav = screen.getByRole("navigation", { name: "Profile" });
+    expect(nav).toHaveTextContent("Overview");
+    expect(nav).toHaveTextContent("Stars");
+  });
+
+  it("renders the starred repos under the Stars tab via GET users/{login}/starred", async () => {
+    mockProfileEndpoints();
+    renderAt("/ui/octocat?tab=stars");
+    await screen.findByText("The Octocat");
+    expect(await screen.findByText("Starred repositories")).toBeInTheDocument();
+    expect(await screen.findByText("api")).toBeInTheDocument();
+    const starredCall = mockFetch.mock.calls.find((c) =>
+      c[0].toString().endsWith("/api/v3/users/octocat/starred"),
+    );
+    expect(starredCall).toBeTruthy();
   });
 
   it("resolves the same page at /ui/users/:login", async () => {
@@ -123,6 +152,8 @@ describe("ProfilePage follow", () => {
         return Promise.resolve(new Response(null, { status: following ? 204 : 404 }));
       }
       if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "me", id: 9 }));
+      if (u.includes("/readme")) return Promise.resolve(jsonResponse({ message: "Not Found" }, 404));
+      if (u.includes("/events")) return Promise.resolve(jsonResponse([]));
       if (u.includes("/repos")) return Promise.resolve(jsonResponse([repo], 200, { Link: "" }));
       if (u.includes("/orgs")) return Promise.resolve(jsonResponse([]));
       return Promise.resolve(jsonResponse(profile));
@@ -157,6 +188,8 @@ describe("ProfilePage follow", () => {
     mockFetch.mockImplementation((url: RequestInfo | URL) => {
       const u = url.toString();
       if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "octocat", id: 1 }));
+      if (u.includes("/readme")) return Promise.resolve(jsonResponse({ message: "Not Found" }, 404));
+      if (u.includes("/events")) return Promise.resolve(jsonResponse([]));
       if (u.includes("/repos")) return Promise.resolve(jsonResponse([repo], 200, { Link: "" }));
       if (u.includes("/orgs")) return Promise.resolve(jsonResponse([]));
       return Promise.resolve(jsonResponse(profile));

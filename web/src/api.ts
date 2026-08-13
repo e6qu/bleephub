@@ -23,6 +23,8 @@ import type {
   GithubCommit,
   GithubCommitComment,
   GithubProjectV2,
+  GithubUserEvent,
+  GithubWikiPage,
   GithubProjectV2Field,
   GithubProjectV2Item,
   GithubComparison,
@@ -1135,6 +1137,39 @@ export const fetchRepoReadme = (owner: string, repo: string, ref?: string): Prom
   const qs = ref ? `?ref=${encodeURIComponent(ref)}` : "";
   return ghFetch<GithubContentFile>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/readme${qs}`);
 };
+
+// ─── Repository wiki (simulator page store) ─────────────────────────────────
+// Real GitHub wikis are git-only with no REST API; the simulator exposes a
+// page-store under the repo. Slug derivation mirrors the Go store.WikiSlug so a
+// page created client-side lands at the same key the server would compute.
+
+const wikiPath = (owner: string, repo: string): string =>
+  `/ui-data/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/wiki/pages`;
+
+/** Turn a page title into its URL-safe slug (mirrors Go store.WikiSlug). */
+export const wikiSlug = (title: string): string =>
+  title
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+export const fetchWikiPages = (owner: string, repo: string): Promise<GithubWikiPage[]> =>
+  ghFetch<GithubWikiPage[]>(wikiPath(owner, repo));
+
+export const fetchWikiPage = (owner: string, repo: string, slug: string): Promise<GithubWikiPage> =>
+  ghFetch<GithubWikiPage>(`${wikiPath(owner, repo)}/${encodeURIComponent(slug)}`);
+
+export const putWikiPage = (
+  owner: string,
+  repo: string,
+  slug: string,
+  page: { title: string; body: string },
+): Promise<GithubWikiPage> =>
+  ghPutJSON<GithubWikiPage>(`${wikiPath(owner, repo)}/${encodeURIComponent(slug)}`, page);
+
+export const deleteWikiPage = (owner: string, repo: string, slug: string): Promise<void> =>
+  ghDelete(`${wikiPath(owner, repo)}/${encodeURIComponent(slug)}`);
 
 export const fetchRepoTopics = (owner: string, repo: string): Promise<{ names: string[] }> =>
   ghFetch<{ names: string[] }>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/topics`);
@@ -4643,6 +4678,23 @@ export const fetchUserReposByLoginPage = (
 /** Organizations a named user belongs to (GET /users/{login}/orgs). */
 export const fetchUserOrgsByLogin = (login: string) =>
   ghFetch<GithubOrgSummary[]>(`/api/v3/users/${encodeURIComponent(login)}/orgs`);
+
+/** Repositories a named user has starred — the profile Stars tab (GET /users/{login}/starred). */
+export const fetchUserStarredRepos = (login: string) =>
+  ghFetch<BleephubRepo[]>(`/api/v3/users/${encodeURIComponent(login)}/starred`);
+
+/** A named user's ProjectsV2 — the profile Projects tab (GET /users/{login}/projectsV2). */
+export const fetchUserProjectsV2 = (login: string) =>
+  ghFetch<GithubProjectV2[]>(`/api/v3/users/${encodeURIComponent(login)}/projectsV2`);
+
+/**
+ * A named user's public activity feed (GET /users/{login}/events). The
+ * simulator derives Create/Delete/Push/Issues/IssueComment/PullRequest events
+ * on the fly; the profile Overview aggregates these into the contribution graph
+ * and a recent-activity list.
+ */
+export const fetchUserEvents = (login: string) =>
+  ghFetch<GithubUserEvent[]>(`/api/v3/users/${encodeURIComponent(login)}/events`);
 
 /** Organization-full profile for the org Overview tab (GET /orgs/{org}). */
 export const fetchOrgProfile = (org: string) =>
