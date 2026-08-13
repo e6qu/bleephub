@@ -161,7 +161,7 @@ type User struct {
 	// GraphQL, so the simulator serves them from a /ui-data endpoint.
 	PinnedRepos []string  `json:"pinned_repos,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt    time.Time       `json:"updated_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 	// user-surface profile fields (PATCH /user), email addresses, and
 	// account-level interaction limits.
 	Blog                   string      `json:"blog,omitempty"`
