@@ -5309,6 +5309,15 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "The dashboard center feed was issues-only \u2014 unlike github.com's home page it had no following/news feed of activity from the people and repos you follow",
+        "id": "WEB-077",
+        "location": "web/src/pages/DashboardPage.tsx",
+        "severity": "M",
+        "status": "fixed \u2014 added a \"Following\" activity feed from `GET /users/{login}/received_events` (push/create/delete/issue/PR/comment events rendered as actor + phrase + repo link), above a renamed \"Your issues\" section; the empty state prompts you to follow people and watch repos. vitest covers the feed content, the empty state, and a feed error; the dashboard renders clean in the Chromium a11y sweep",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -6725,23 +6734,23 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 69,
+            "fixed": 70,
             "open": 3
           },
-          "total": 74
+          "total": 75
         }
       },
       "severity": {
         "blocker": 167,
-        "major": 382,
+        "major": 383,
         "minor": 154
       },
       "status": {
         "deferred": 3,
-        "fixed": 697,
+        "fixed": 698,
         "open": 3
       },
-      "total": 703
+      "total": 704
     }
   },
   "rest": {
