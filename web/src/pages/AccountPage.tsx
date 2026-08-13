@@ -23,6 +23,9 @@ import {
   setUserEmailVisibility,
   reviewFineGrainedPATRequest,
   unblockUser,
+  fetchAuthenticatedUser,
+  fetchUserProfile,
+  updateAuthenticatedUser,
 } from "../api.js";
 import type {
   GithubBlockedUser,
@@ -31,14 +34,21 @@ import type {
   GithubSSHSigningKey,
   GithubUserEmail,
 } from "../types.js";
+import { useTheme } from "@bleephub/ui-core/hooks";
 import { PageTitle, Box, Button, ErrorBanner, FormLabel } from "../components/ui.js";
 import { SettingsLayout, type SettingsNavSection } from "../components/SettingsLayout.js";
 import { KeyIcon } from "../components/octicons.js";
 
-type AccountTab = "tokens" | "ssh-keys" | "gpg-keys" | "signing-keys" | "emails" | "blocked";
+type AccountTab = "profile" | "appearance" | "tokens" | "ssh-keys" | "gpg-keys" | "signing-keys" | "emails" | "blocked";
 
 const ACCOUNT_NAV: SettingsNavSection<AccountTab>[] = [
-  { items: [{ key: "emails", label: "Emails" }] },
+  {
+    items: [
+      { key: "profile", label: "Public profile" },
+      { key: "appearance", label: "Appearance" },
+      { key: "emails", label: "Emails" },
+    ],
+  },
   {
     title: "Access",
     items: [
@@ -52,11 +62,13 @@ const ACCOUNT_NAV: SettingsNavSection<AccountTab>[] = [
 ];
 
 export function AccountPage() {
-  const [tab, setTab] = useState<AccountTab>("ssh-keys");
+  const [tab, setTab] = useState<AccountTab>("profile");
   return (
     <div>
-      <PageTitle title="Account" meta="Keys, email addresses, and blocked users on the authenticated account" />
+      <PageTitle title="Account" meta="Your public profile, appearance, keys, emails, and blocked users" />
       <SettingsLayout sections={ACCOUNT_NAV} active={tab} onSelect={setTab}>
+        {tab === "profile" && <ProfileSettingsTab />}
+        {tab === "appearance" && <AppearanceTab />}
         {tab === "ssh-keys" && <SSHKeysTab />}
         {tab === "tokens" && <FineGrainedTokensTab />}
         {tab === "gpg-keys" && <GPGKeysTab />}
@@ -627,5 +639,104 @@ function BlockedUsersTab() {
         )}
       </Box>
     </div>
+  );
+}
+
+// ─── Public profile (edit name/bio/company/location/blog/twitter via PATCH /user) ──
+
+function ProfileSettingsTab() {
+  const qc = useQueryClient();
+  const viewer = useQuery({ queryKey: ["viewer"], queryFn: fetchAuthenticatedUser });
+  const login = viewer.data?.login;
+  const profile = useQuery({
+    queryKey: ["user-profile", login],
+    queryFn: () => fetchUserProfile(login as string),
+    enabled: !!login,
+  });
+
+  const [form, setForm] = useState<{ name: string; bio: string; company: string; location: string; blog: string; twitter_username: string } | null>(null);
+  const current = form ?? {
+    name: profile.data?.name ?? "",
+    bio: profile.data?.bio ?? "",
+    company: profile.data?.company ?? "",
+    location: profile.data?.location ?? "",
+    blog: profile.data?.blog ?? "",
+    twitter_username: profile.data?.twitter_username ?? "",
+  };
+  const set = (k: keyof typeof current, v: string) => setForm({ ...current, [k]: v });
+
+  const saveMut = useMutation({
+    mutationFn: () => updateAuthenticatedUser(current),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["user-profile", login] });
+      qc.invalidateQueries({ queryKey: ["current-user"] });
+    },
+  });
+
+  if (viewer.isError)
+    return <InlineError title="Failed to load your account" detail={String(viewer.error)} />;
+  if (profile.isError)
+    return <InlineError title="Failed to load profile" detail={String(profile.error)} />;
+
+  const field = (key: keyof typeof current, label: string, placeholder = "") => (
+    <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+      <FormLabel id={`profile-${key}`}>{label}</FormLabel>
+      <input id={`profile-${key}`} type="text" value={current[key]} placeholder={placeholder} onChange={(e) => set(key, e.target.value)} className="w-full" />
+    </div>
+  );
+
+  return (
+    <Box header={<span style={{ fontWeight: 600 }}>Public profile</span>}>
+      <div style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+        {saveMut.error && <ErrorBanner>{String(saveMut.error)}</ErrorBanner>}
+        {field("name", "Name", "Your name")}
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+          <FormLabel id="profile-bio">Bio</FormLabel>
+          <textarea id="profile-bio" value={current.bio} rows={3} onChange={(e) => set("bio", e.target.value)} className="w-full" />
+        </div>
+        {field("company", "Company")}
+        {field("location", "Location")}
+        {field("blog", "Website", "https://example.com")}
+        {field("twitter_username", "Twitter username", "without @")}
+        <div className="flex items-center justify-end gap-3">
+          {saveMut.isSuccess && <span style={{ fontSize: "0.82rem", color: "var(--gh-open)" }}>Profile updated.</span>}
+          <Button variant="primary" disabled={saveMut.isPending} onClick={() => saveMut.mutate()}>
+            {saveMut.isPending ? "Saving…" : "Update profile"}
+          </Button>
+        </div>
+      </div>
+    </Box>
+  );
+}
+
+// ─── Appearance (theme, in its github.com-correct Settings location) ──────────────
+
+function AppearanceTab() {
+  const { theme, setTheme } = useTheme("light");
+  const options: { value: "light" | "dark"; label: string; hint: string }[] = [
+    { value: "light", label: "Light", hint: "Default light theme" },
+    { value: "dark", label: "Dark", hint: "Dark theme for low-light" },
+  ];
+  return (
+    <Box header={<span style={{ fontWeight: 600 }}>Theme</span>}>
+      <fieldset style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "0.6rem", border: "none", margin: 0 }}>
+        <legend style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)", marginBottom: "0.4rem" }}>
+          Choose how bleephub looks to you.
+        </legend>
+        {options.map((o) => (
+          <label key={o.value} className="flex items-center gap-2" style={{ fontSize: "0.9rem", cursor: "pointer" }}>
+            <input
+              type="radio"
+              name="theme"
+              value={o.value}
+              checked={theme === o.value}
+              onChange={() => setTheme(o.value)}
+            />
+            <span style={{ fontWeight: 600 }}>{o.label}</span>
+            <span style={{ fontSize: "0.8rem", color: "var(--color-fg-muted)" }}>· {o.hint}</span>
+          </label>
+        ))}
+      </fieldset>
+    </Box>
   );
 }

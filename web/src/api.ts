@@ -4140,6 +4140,16 @@ export const fetchPagesDeploymentStatus = (
 /** The token's own user — reaction toggles need to know "my" reactions. */
 export const fetchAuthenticatedUser = () => ghFetch<GithubAccount>("/api/v3/user");
 
+/** Edit the authenticated user's public profile — PATCH /user. */
+export const updateAuthenticatedUser = (payload: {
+  name?: string;
+  bio?: string;
+  company?: string;
+  location?: string;
+  blog?: string;
+  twitter_username?: string;
+}): Promise<GithubUserProfile> => ghPatchJSON<GithubUserProfile>("/api/v3/user", payload);
+
 export const fetchPRReviews = (owner: string, repo: string, number: number) =>
   ghFetch<GithubPRReview[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/reviews`);
 
