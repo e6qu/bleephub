@@ -5309,6 +5309,15 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "The Classroom assignment-creation flow omits five teacher-facing options that old classroom.github.com exposes and the backend already accepts: repository **visibility** (public_repo \u2014 hardcoded private), **grant students admin access** (students_are_repo_admins \u2014 hardcoded off), **enable feedback pull requests** (feedback_pull_requests_enabled \u2014 hardcoded on), group **team size** (max_teams/max_members \u2014 not surfaced despite the group type), and **supported editor** (editor). The `createClassroomAssignment` handler (gh_classroom_web.go) accepts all five",
+        "id": "WEB-082",
+        "location": "web/src/pages/ClassroomPage.tsx",
+        "severity": "M",
+        "status": "open \u2014 assessed and confirmed backend-supported; the fix is to surface these as form controls (a visibility select, two toggles, conditional group-size inputs, an editor select). Deferred only to avoid colliding with the in-flight ClassroomPage.tsx change in #284 \u2014 file findings, don't hand-wave; do this slice once #284 merges",
+        "status_kind": "open"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -6726,22 +6735,22 @@
           "status": {
             "deferred": 2,
             "fixed": 69,
-            "open": 3
+            "open": 4
           },
-          "total": 74
+          "total": 75
         }
       },
       "severity": {
         "blocker": 167,
-        "major": 382,
+        "major": 383,
         "minor": 154
       },
       "status": {
         "deferred": 3,
         "fixed": 697,
-        "open": 3
+        "open": 4
       },
-      "total": 703
+      "total": 704
     }
   },
   "rest": {
