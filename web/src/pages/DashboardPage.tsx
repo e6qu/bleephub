@@ -59,7 +59,7 @@ export function DashboardPage() {
           ) : (
             <SectionLabel>Top repositories</SectionLabel>
           )}
-          <Link to="/ui/repos" style={{ textDecoration: "none" }}>
+          <Link to="/ui/repos" style={{ textDecoration: "none", display: "inline-flex" }}>
             <Button variant="primary" size="sm">
               <RepoIcon size={14} /> New
             </Button>

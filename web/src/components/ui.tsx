@@ -75,7 +75,10 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
         ...sizeStyle,
         // WCAG 2.5.8 (AA) minimum touch-target height; width follows from
         // padding + label. Callers can still override via `style`.
-        minHeight: "1.5rem",
+        // 26px (not exactly 24) so borderline targets clear WCAG 2.5.8 even
+        // after Linux Chromium's subpixel rounding, which trims a flat 24px
+        // below the threshold (surfaced only in CI).
+        minHeight: "1.625rem",
         fontFamily: "var(--font-sans)",
         fontWeight: 600,
         borderRadius: "var(--radius-md)",

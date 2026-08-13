@@ -130,6 +130,10 @@ export function AuditLogPage() {
         const details = info.getValue();
         return (
           <pre
+            // A scrollable region must be keyboard-focusable so it can be
+            // scrolled without a mouse (axe scrollable-region-focusable).
+            tabIndex={0}
+            aria-label="Event details"
             style={{
               margin: 0,
               fontSize: "0.75rem",

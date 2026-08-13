@@ -306,6 +306,10 @@ for (const theme of THEMES) {
           .waitForSelector("main, [role=main], .app-header", { timeout: 8_000 })
           .catch(() => {});
         await page.waitForLoadState("networkidle", { timeout: 6_000 }).catch(() => {});
+        // Async list/feed content (dashboard repos + activity, tables) can render
+        // after network-idle; give the DOM a beat to settle so axe measures the
+        // real, populated page (and matches slower CI) rather than a skeleton.
+        await page.waitForTimeout(600);
 
         const isDark = await page.evaluate(() =>
           document.documentElement.classList.contains("dark"),
