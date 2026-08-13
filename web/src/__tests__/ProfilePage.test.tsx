@@ -70,6 +70,7 @@ function mockProfileEndpoints() {
   mockFetch.mockImplementation((url: RequestInfo | URL) => {
     const u = url.toString();
     if (u.includes("/readme")) return Promise.resolve(jsonResponse({ message: "Not Found" }, 404));
+    if (u.includes("/pinned")) return Promise.resolve(jsonResponse([]));
     if (u.includes("/events")) return Promise.resolve(jsonResponse([]));
     if (u.includes("/starred")) return Promise.resolve(jsonResponse([repo]));
     if (u.includes("/packages")) return Promise.resolve(jsonResponse([]));
@@ -115,6 +116,35 @@ describe("ProfilePage", () => {
     expect(starredCall).toBeTruthy();
   });
 
+  it("shows pinned repositories on the Overview and saves edits via PUT (own profile)", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      const method = init?.method ?? "GET";
+      if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "octocat", id: 1 })); // viewer == profile → own
+      if (u.includes("/ui-data/users/octocat/pinned") && method === "PUT") return Promise.resolve(jsonResponse([repo]));
+      if (u.includes("/ui-data/users/octocat/pinned")) return Promise.resolve(jsonResponse([repo]));
+      if (u.includes("/events")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/readme")) return Promise.resolve(jsonResponse({ message: "Not Found" }, 404));
+      if (u.includes("/repos")) return Promise.resolve(jsonResponse([repo], 200, { Link: "" }));
+      if (u.includes("/orgs")) return Promise.resolve(jsonResponse([]));
+      return Promise.resolve(jsonResponse(profile));
+    });
+    renderAt("/ui/octocat");
+    // The pinned repo shows on the Overview (not a stub).
+    expect(await screen.findByText("Pinned")).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: /api/ })).toBeInTheDocument();
+
+    // Own profile → can customize; toggle editor, save → PUT.
+    fireEvent.click(screen.getByRole("button", { name: /customize your pins/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /save pins/i }));
+    await waitFor(() => {
+      const put = mockFetch.mock.calls.find(
+        (c) => c[0].toString().includes("/ui-data/users/octocat/pinned") && c[1]?.method === "PUT",
+      );
+      expect(put).toBeTruthy();
+    });
+  });
+
   it("resolves the same page at /ui/users/:login", async () => {
     mockProfileEndpoints();
     renderAt("/ui/users/octocat");
@@ -153,7 +183,8 @@ describe("ProfilePage follow", () => {
       }
       if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "me", id: 9 }));
       if (u.includes("/readme")) return Promise.resolve(jsonResponse({ message: "Not Found" }, 404));
-      if (u.includes("/events")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/pinned")) return Promise.resolve(jsonResponse([]));
+    if (u.includes("/events")) return Promise.resolve(jsonResponse([]));
       if (u.includes("/repos")) return Promise.resolve(jsonResponse([repo], 200, { Link: "" }));
       if (u.includes("/orgs")) return Promise.resolve(jsonResponse([]));
       return Promise.resolve(jsonResponse(profile));
@@ -189,7 +220,8 @@ describe("ProfilePage follow", () => {
       const u = url.toString();
       if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "octocat", id: 1 }));
       if (u.includes("/readme")) return Promise.resolve(jsonResponse({ message: "Not Found" }, 404));
-      if (u.includes("/events")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/pinned")) return Promise.resolve(jsonResponse([]));
+    if (u.includes("/events")) return Promise.resolve(jsonResponse([]));
       if (u.includes("/repos")) return Promise.resolve(jsonResponse([repo], 200, { Link: "" }));
       if (u.includes("/orgs")) return Promise.resolve(jsonResponse([]));
       return Promise.resolve(jsonResponse(profile));
