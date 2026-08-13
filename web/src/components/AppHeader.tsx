@@ -2,12 +2,20 @@ import {
   useEffect,
   useRef,
   useState,
+  lazy,
+  Suspense,
   type ReactNode,
   type CSSProperties,
   type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { Link, NavLink, useNavigate } from "react-router";
+
+// The command palette is behind a keyboard shortcut, so it is code-split out of
+// the entry bundle and loaded on first ⌘K rather than at initial page load.
+const CommandPalette = lazy(() =>
+  import("./CommandPalette.js").then((m) => ({ default: m.CommandPalette })),
+);
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTheme } from "@bleephub/ui-core/hooks";
 import { useReportError, useToastQueryErrors } from "@bleephub/ui-core/components";
@@ -395,6 +403,19 @@ export function AppHeader() {
   const [drawer, setDrawer] = useState(false);
   const [q, setQ] = useState("");
   const [scope, setScope] = useState("repositories");
+  const [paletteOpen, setPaletteOpen] = useState(false);
+
+  // Global ⌘K / Ctrl-K opens the command palette (github.com's "jump to").
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && (e.key === "k" || e.key === "K")) {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
 
   // A throttled 403 is final for the current window: retrying it only deepens
   // the exhaustion (same guard pattern as useMetricsData). Surface it instead
@@ -578,6 +599,11 @@ export function AppHeader() {
           </div>
         </div>
       </header>
+      {paletteOpen && (
+        <Suspense fallback={null}>
+          <CommandPalette open onClose={() => setPaletteOpen(false)} viewerLogin={login || undefined} />
+        </Suspense>
+      )}
     </>
   );
 }
