@@ -63,10 +63,12 @@ contrast token — the dominant finding, ~200 element-hits from the shared DataT
 **WEB-065** (task-list checkbox labels via a shared Markdown wrapper), **WEB-066** (dl→ul on the
 profile/org sidebars), **WEB-067** (24px target sizes).
 
-Remaining (open, tracked): **WEB-068** label-pill contrast (raw label color as text over a tint —
-fails AA for light label colors, both themes; needs a luminance-aware foreground like GitHub's) and
-**WEB-069** a few residual colored spans (marketplace active-tab, issue state badge, code-scanning
-`<code>`). These are the Workstream C contrast pass. No dark-mode-only contrast leaks were found.
+✅ **Workstream C (WCAG AA) COMPLETE**: the sweep now reports **0 violations across all 47 routes ×
+both themes**. **WEB-068** (label-pill contrast — hue-matched, theme-switched foregrounds) and
+**WEB-069** (marketplace active-tab → `--color-accent-emphasis`; code-scanning kicker/code → a new
+readable `--color-brand-cyan-text` token) are FIXED. The axe dual-theme sweep is now a **BLOCKING
+ratchet gate** (a final test fails the suite on any violation or load-failure), so a11y can't
+silently regress. No dark-mode-only contrast leaks were found.
 
 ### 0.2 github.com nav-parity gap map → Workstream A backlog
 

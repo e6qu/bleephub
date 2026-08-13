@@ -40,6 +40,9 @@
   --color-accent-emphasis: #0550ae;
   --color-brand-blue: #006eff;
   --color-brand-cyan: #00b8d9;
+  /* Readable cyan for TEXT (the decorative brand-cyan above fails AA as small
+     text on light surfaces — ledger WEB-069). Dark cyan in light mode. */
+  --color-brand-cyan-text: #0e7490;
   --color-brand-purple: #8250df;
   --color-brand-pink: #d1248f;
   --color-brand-gold: #bf8700;
@@ -102,6 +105,7 @@
   --color-accent-emphasis: #79c0ff;
   --color-brand-blue: #58a6ff;
   --color-brand-cyan: #39d0e8;
+  --color-brand-cyan-text: #39d0e8;
   --color-brand-purple: #d2a8ff;
   --color-brand-pink: #ff7bda;
   --color-brand-gold: #f2cc60;
@@ -252,7 +256,7 @@ select {
 .marketplace-sidebar { align-self: start; position: sticky; top: 5rem; display: flex; flex-direction: column; gap: .25rem; }
 .marketplace-sidebar h2 { padding: .45rem .65rem; font-size: .78rem; color: var(--color-fg-muted); }
 .marketplace-category { padding: .48rem .65rem; border-radius: var(--radius-md); color: var(--color-fg); font-size: .84rem; text-decoration: none; }
-.marketplace-category:hover, .marketplace-category.active { background: color-mix(in srgb, var(--color-accent) 10%, var(--color-bg-subtle)); color: var(--color-accent); font-weight: 600; }
+.marketplace-category:hover, .marketplace-category.active { background: color-mix(in srgb, var(--color-accent) 10%, var(--color-bg-subtle)); color: var(--color-accent-emphasis); font-weight: 600; }
 .marketplace-publisher-link { margin-top: .85rem; padding: .7rem .65rem; border-top: 1px solid var(--color-border); color: var(--color-accent); font-size: .8rem; text-decoration: none; }
 .marketplace-toolbar { display: flex; align-items: end; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
 .marketplace-toolbar h2 { font-size: 1.2rem; font-weight: 680; }
@@ -713,7 +717,7 @@ select {
 .security-database-copy code,
 .security-upload code {
   padding: 0.12rem 0.3rem;
-  color: var(--color-brand-cyan);
+  color: var(--color-brand-cyan-text);
   font-family: var(--font-mono);
   background: color-mix(in srgb, var(--color-brand-cyan) 10%, var(--color-bg-subtle));
   border-radius: var(--radius-sm);
@@ -752,7 +756,7 @@ select {
 
 .security-kicker.pink { color: var(--color-brand-pink); }
 .security-kicker.purple { color: var(--color-brand-purple); }
-.security-kicker.cyan { color: var(--color-brand-cyan); }
+.security-kicker.cyan { color: var(--color-brand-cyan-text); }
 
 .security-list {
   margin: 0;
@@ -1099,4 +1103,13 @@ select {
   margin: 1.5rem 0;
   border: 0;
   background: var(--color-border);
+}
+
+/* Colored issue-label pills: contrast-safe text per theme (see LabelPills.tsx,
+   ledger WEB-068). --label-fg-light/dark are set inline per label color. */
+.label-pill {
+  color: var(--label-fg-light, var(--color-fg));
+}
+.dark .label-pill {
+  color: var(--label-fg-dark, var(--color-fg));
 }

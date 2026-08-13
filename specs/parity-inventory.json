@@ -5251,8 +5251,8 @@
         "id": "WEB-068",
         "location": "web/src/components/LabelPills.tsx",
         "severity": "M",
-        "status": "open \u2014 needs a luminance-aware foreground like GitHub's label styles; tracked as the label-contrast slice of the WCAG workstream",
-        "status_kind": "open"
+        "status": "fixed \u2014 LabelPills now derives the label's HSL and emits two hue-matched foregrounds as CSS variables (a dark one for the light-mode tint, a light one for the dark-mode tint) switched by the `.label-pill`/`.dark .label-pill` rules, so text clears AA against the composited tint in both themes; the axe sweep confirms zero label-contrast hits",
+        "status_kind": "fixed"
       },
       {
         "category": "WEB",
@@ -5260,8 +5260,8 @@
         "id": "WEB-069",
         "location": "web/src/pages/MarketplacePage.tsx, web/src/pages/IssuesPage.tsx, web/src/pages/CodeScanningPage.tsx",
         "severity": "m",
-        "status": "open \u2014 per-element token adjustments; tracked with WEB-068 in the contrast pass",
-        "status_kind": "open"
+        "status": "fixed \u2014 the active marketplace category uses the higher-contrast `--color-accent-emphasis`, and a new readable `--color-brand-cyan-text` token (dark cyan in light mode) replaces the decorative `--color-brand-cyan` for the code-scanning kicker + inline code text; the issue state badge cleared via the WEB-068 label fix. The axe dual-theme sweep is now a BLOCKING ratchet gate (fails on any violation/load-failure), holding the whole surface at zero",
+        "status_kind": "fixed"
       },
       {
         "category": "WEB",
@@ -6725,8 +6725,8 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 69,
-            "open": 3
+            "fixed": 71,
+            "open": 1
           },
           "total": 74
         }
@@ -6738,8 +6738,8 @@
       },
       "status": {
         "deferred": 3,
-        "fixed": 697,
-        "open": 3
+        "fixed": 699,
+        "open": 1
       },
       "total": 703
     }
@@ -28255,7 +28255,7 @@
   "ui": {
     "browser_navigations": [
       {
-        "line": 170,
+        "line": 173,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/"
       },
