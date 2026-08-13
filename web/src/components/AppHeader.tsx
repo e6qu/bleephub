@@ -352,7 +352,7 @@ export function AppHeader() {
             <ThreeBarsIcon size={16} />
           </button>
 
-          <Link to="/ui/" className="inline-flex items-center gap-2" style={{ textDecoration: "none", color: "var(--color-fg)" }}>
+          <Link to="/ui/" className="inline-flex items-center gap-2" style={{ textDecoration: "none", color: "var(--color-fg)", minHeight: "1.625rem" }}>
             <Mark size={24} />
             <span style={{ fontWeight: 600, fontSize: "0.95rem" }} className="hidden sm:inline">
               bleephub
