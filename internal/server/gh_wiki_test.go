@@ -34,7 +34,7 @@ func TestWiki_PutGetListUpdateDelete(t *testing.T) {
 	admin := s.store.UsersByLogin["admin"]
 	repo := s.store.CreateRepo(admin, "wiki-repo", "", false)
 	enableWiki(s, repo)
-	base := "/api/v3/repos/" + repo.FullName + "/wiki/pages"
+	base := "/ui-data/repos/" + repo.FullName + "/wiki/pages"
 
 	// create
 	w := doWikiReq(s, adminPAT, "PUT", base+"/home", []byte(`{"title":"Home","body":"# Welcome"}`))
@@ -92,11 +92,11 @@ func TestWiki_DisabledWikiIs404(t *testing.T) {
 	admin := s.store.UsersByLogin["admin"]
 	repo := s.store.CreateRepo(admin, "no-wiki", "", false) // HasWiki defaults false
 
-	w := doWikiReq(s, adminPAT, "GET", "/api/v3/repos/"+repo.FullName+"/wiki/pages", nil)
+	w := doWikiReq(s, adminPAT, "GET", "/ui-data/repos/"+repo.FullName+"/wiki/pages", nil)
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("disabled-wiki list status = %d, want 404", w.Code)
 	}
-	w = doWikiReq(s, adminPAT, "PUT", "/api/v3/repos/"+repo.FullName+"/wiki/pages/home", []byte(`{"title":"X","body":"y"}`))
+	w = doWikiReq(s, adminPAT, "PUT", "/ui-data/repos/"+repo.FullName+"/wiki/pages/home", []byte(`{"title":"X","body":"y"}`))
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("disabled-wiki put status = %d, want 404", w.Code)
 	}
@@ -108,7 +108,7 @@ func TestWiki_PutMissingTitleIs422(t *testing.T) {
 	repo := s.store.CreateRepo(admin, "wiki-missing", "", false)
 	enableWiki(s, repo)
 
-	w := doWikiReq(s, adminPAT, "PUT", "/api/v3/repos/"+repo.FullName+"/wiki/pages/home", []byte(`{"body":"no title"}`))
+	w := doWikiReq(s, adminPAT, "PUT", "/ui-data/repos/"+repo.FullName+"/wiki/pages/home", []byte(`{"body":"no title"}`))
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("missing-title status = %d, want 422", w.Code)
 	}
@@ -130,11 +130,11 @@ func TestWiki_ReadCollaboratorCannotWrite(t *testing.T) {
 	readerToken := s.store.CreateToken(other.ID, "repo").Value
 
 	// A pull-only collaborator can read the wiki but not write it.
-	w := doWikiReq(s, readerToken, "GET", "/api/v3/repos/"+repo.FullName+"/wiki/pages", nil)
+	w := doWikiReq(s, readerToken, "GET", "/ui-data/repos/"+repo.FullName+"/wiki/pages", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("reader list status = %d, want 200", w.Code)
 	}
-	w = doWikiReq(s, readerToken, "PUT", "/api/v3/repos/"+repo.FullName+"/wiki/pages/home", []byte(`{"title":"Home","body":"x"}`))
+	w = doWikiReq(s, readerToken, "PUT", "/ui-data/repos/"+repo.FullName+"/wiki/pages/home", []byte(`{"title":"Home","body":"x"}`))
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("reader write status = %d, want 403", w.Code)
 	}
@@ -147,7 +147,7 @@ func TestWiki_PrivateNoReadIs404(t *testing.T) {
 	enableWiki(s, repo)
 	s.store.UpsertWikiPage(repo.FullName, "home", "Home", "secret", "admin")
 
-	w := doWikiReq(s, "", "GET", "/api/v3/repos/"+repo.FullName+"/wiki/pages", nil)
+	w := doWikiReq(s, "", "GET", "/ui-data/repos/"+repo.FullName+"/wiki/pages", nil)
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("unauthed private wiki list = %d, want 404", w.Code)
 	}

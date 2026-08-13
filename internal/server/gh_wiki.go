@@ -7,16 +7,19 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// Wiki is git-backed on real GitHub with no REST API. The simulator exposes a
-// small page-store surface under the repo so the /ui wiki tab has something to
+// Wiki is git-backed on real GitHub with NO REST API, so these routes live
+// under the browser-only /ui-data namespace rather than /api/v3 — inventing a
+// GitHub-namespaced path is a defect the route-definition tests reject. The
+// simulator exposes a small page store so the /ui wiki tab has something to
 // drive: list/read for anyone who can read the repo, create/update/delete for
 // anyone with push access. A repository whose wiki is disabled (has_wiki=false)
 // reports 404 for the whole surface, matching a disabled wiki on github.com.
+// (`s.route` auto-wraps /ui-data patterns with authenticateUIData.)
 func (s *Server) registerGHWikiRoutes() {
-	s.route("GET /api/v3/repos/{owner}/{repo}/wiki/pages", s.handleListWikiPages)
-	s.route("GET /api/v3/repos/{owner}/{repo}/wiki/pages/{slug}", s.handleGetWikiPage)
-	s.route("PUT /api/v3/repos/{owner}/{repo}/wiki/pages/{slug}", s.handlePutWikiPage)
-	s.route("DELETE /api/v3/repos/{owner}/{repo}/wiki/pages/{slug}", s.handleDeleteWikiPage)
+	s.route("GET /ui-data/repos/{owner}/{repo}/wiki/pages", s.handleListWikiPages)
+	s.route("GET /ui-data/repos/{owner}/{repo}/wiki/pages/{slug}", s.handleGetWikiPage)
+	s.route("PUT /ui-data/repos/{owner}/{repo}/wiki/pages/{slug}", s.handlePutWikiPage)
+	s.route("DELETE /ui-data/repos/{owner}/{repo}/wiki/pages/{slug}", s.handleDeleteWikiPage)
 }
 
 // wikiRepoForRead resolves the repo and enforces read access + wiki-enabled,

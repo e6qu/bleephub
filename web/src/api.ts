@@ -1144,7 +1144,7 @@ export const fetchRepoReadme = (owner: string, repo: string, ref?: string): Prom
 // page created client-side lands at the same key the server would compute.
 
 const wikiPath = (owner: string, repo: string): string =>
-  `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/wiki/pages`;
+  `/ui-data/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/wiki/pages`;
 
 /** Turn a page title into its URL-safe slug (mirrors Go store.WikiSlug). */
 export const wikiSlug = (title: string): string =>

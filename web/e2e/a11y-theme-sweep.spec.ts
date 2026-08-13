@@ -187,7 +187,7 @@ test.beforeAll(async ({ browser }) => {
   }));
 
   // a wiki page so the Wiki tab renders content, not just the empty state
-  ok("wiki", await api(page, "PUT", `/api/v3/repos/${seeded.owner}/${seeded.repo}/wiki/pages/home`, {
+  ok("wiki", await api(page, "PUT", `/ui-data/repos/${seeded.owner}/${seeded.repo}/wiki/pages/home`, {
     title: "Home",
     body: "# Welcome\n\nParity wiki fixture page.",
   }));
