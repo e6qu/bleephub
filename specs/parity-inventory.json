@@ -5287,7 +5287,7 @@
         "id": "WEB-072",
         "location": "internal/server/gh_wiki.go, internal/store/repos_wiki.go, web/src/pages/WikiPage.tsx, web/src/components/Shell.tsx",
         "severity": "B",
-        "status": "fixed \u2014 added a per-repo wiki page store (store.WikiPage + slug/title/body/history, persisted) and REST routes (list/get/put/delete under `/repos/{o}/{r}/wiki/pages`, gated on has_wiki with read for viewers and push for editors), a Wiki tab in the repo header shown when has_wiki, `/ui/repos/:owner/:repo/wiki[/:slug]` routes, and a WikiPage with a page rail, markdown view, and create/edit/delete. Go tests cover the store+auth; vitest covers the UI; the Chromium sweep loads it in both themes with no new axe",
+        "status": "fixed \u2014 added a per-repo wiki page store (store.WikiPage + slug/title/body/history, persisted) and routes (list/get/put/delete under the browser-only `/ui-data/repos/{o}/{r}/wiki/pages` namespace \u2014 real GitHub has no REST wiki API, so a `/api/v3` path would be an invented route the definition gates reject \u2014 gated on has_wiki with read for viewers and push for editors), a Wiki tab in the repo header shown when has_wiki, `/ui/repos/:owner/:repo/wiki[/:slug]` routes, and a WikiPage with a page rail, markdown view, and create/edit/delete. Go tests cover the store+auth; vitest covers the UI; the Chromium sweep loads it in both themes with no new axe",
         "status_kind": "fixed"
       },
       {
