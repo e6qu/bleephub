@@ -5471,6 +5471,15 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "repo Insights was missing GitHub's **Forks** view (the network of forks), though `GET /repos/{o}/{r}/forks` is wired",
+        "id": "WEB-093",
+        "location": "web/src/pages/InsightsPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added a Forks section to repo Insights listing the repository's forks (each `full_name` \u2192 `/ui/repos/{full_name}`) with an empty state, via fetchRepoForksPage. Links use inline-block + \u226524px line-height for WCAG 2.5.8 target-size",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -6887,21 +6896,21 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 90
+            "fixed": 91
           },
-          "total": 92
+          "total": 93
         }
       },
       "severity": {
         "blocker": 167,
         "major": 395,
-        "minor": 159
+        "minor": 160
       },
       "status": {
         "deferred": 3,
-        "fixed": 718
+        "fixed": 719
       },
-      "total": 721
+      "total": 722
     }
   },
   "rest": {

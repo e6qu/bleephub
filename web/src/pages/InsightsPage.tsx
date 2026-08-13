@@ -1,7 +1,8 @@
-import { useParams } from "react-router";
+import { useParams, Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
 import {
+  fetchRepoForksPage,
   fetchRepoContributors,
   fetchCommunityProfile,
   fetchCommitActivity,
@@ -31,6 +32,7 @@ export function InsightsPage() {
         <CodeFrequencySection owner={owner} repo={repo} />
         <TrafficSection owner={owner} repo={repo} />
         <PopularContentSection owner={owner} repo={repo} />
+        <ForksSection owner={owner} repo={repo} />
       </div>
     </div>
   );
@@ -382,6 +384,45 @@ function PopularContentSection({ owner, repo }: { owner: string; repo: string })
           </Box>
         </div>
       )}
+    </section>
+  );
+}
+
+function ForksSection({ owner, repo }: { owner: string; repo: string }) {
+  const { data, isLoading, isError, error } = useQuery({
+    queryKey: ["repo-forks", owner, repo],
+    queryFn: () => fetchRepoForksPage(owner, repo),
+  });
+  const forks = data?.items ?? [];
+  return (
+    <section>
+      <SectionLabel>Forks</SectionLabel>
+      {isLoading && <Spinner label="loading forks" />}
+      {isError && <InlineError title="Failed to load forks" detail={String(error)} />}
+      {data &&
+        (forks.length === 0 ? (
+          <Blankslate icon={<GraphIcon size={26} />} title="No forks yet">
+            When people fork this repository, they show up here.
+          </Blankslate>
+        ) : (
+          <Box>
+            <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+              {forks.map((fork, i) => (
+                <li
+                  key={fork.id}
+                  style={{ borderBottom: i < forks.length - 1 ? "1px solid var(--color-border)" : "none" }}
+                >
+                  <Link
+                    to={`/ui/repos/${fork.full_name}`}
+                    style={{ display: "inline-block", padding: "0.6rem 1rem", color: "var(--color-accent)", fontSize: "0.9rem", lineHeight: "1.625rem", textDecoration: "none" }}
+                  >
+                    {fork.full_name}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </Box>
+        ))}
     </section>
   );
 }
