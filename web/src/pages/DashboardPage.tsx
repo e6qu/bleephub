@@ -177,7 +177,15 @@ function TopRepoRow({ repo, last }: { repo: BleephubRepo; last: boolean }) {
       <Link
         to={`/ui/repos/${owner}/${name}`}
         className="truncate"
-        style={{ color: "var(--color-accent)", fontSize: "0.85rem", textDecoration: "none" }}
+        // inline-block + ≥24px line-height: a standalone list link (not inline
+        // text) must clear WCAG 2.5.8 target-size.
+        style={{
+          display: "inline-block",
+          color: "var(--color-accent)",
+          fontSize: "0.85rem",
+          lineHeight: "1.625rem",
+          textDecoration: "none",
+        }}
       >
         {repo.full_name}
       </Link>
