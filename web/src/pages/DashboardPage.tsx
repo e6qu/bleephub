@@ -59,7 +59,20 @@ export function DashboardPage() {
           ) : (
             <SectionLabel>Top repositories</SectionLabel>
           )}
-          <Link to="/ui/repos" style={{ textDecoration: "none", display: "inline-flex" }}>
+          <Link
+            to="/ui/repos"
+            aria-label="New repository"
+            style={{
+              textDecoration: "none",
+              display: "inline-flex",
+              alignItems: "center",
+              // Guarantee the anchor's own hit box clears WCAG 2.5.8 (24px);
+              // without this the inline-flex <a> can collapse to the nested
+              // button's baseline and Linux Chromium's subpixel rounding trims
+              // a flat 24px box below threshold (dark-theme sweep regression).
+              minHeight: "1.75rem",
+            }}
+          >
             <Button variant="primary" size="sm">
               <RepoIcon size={14} /> New
             </Button>
