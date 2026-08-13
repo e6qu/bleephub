@@ -150,6 +150,48 @@ describe("RepoSettingsPage", () => {
     });
   });
 
+  it("lists and creates a repository webhook from the Webhooks tab", async () => {
+    const existing = {
+      id: 7,
+      name: "web",
+      active: true,
+      events: ["push"],
+      config: { url: "https://old.example/hook", content_type: "json" },
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+      url: "",
+      deliveries_url: "",
+      last_response: { code: null, status: "unused", message: null },
+    };
+    mockFetch.mockImplementation((url: string, opts?: { method?: string }) => {
+      const u = url.toString();
+      if (u === "/api/v3/repos/admin/settings-repo/hooks" && opts?.method === "POST") {
+        return Promise.resolve(jsonResponse({ ...existing, id: 8, config: { url: "https://new.example/hook", content_type: "json" } }, 201));
+      }
+      if (u === "/api/v3/repos/admin/settings-repo/hooks") return Promise.resolve(jsonResponse([existing]));
+      if (u.includes("/issues") || u.includes("/pulls")) return Promise.resolve(jsonResponse([]));
+      return Promise.resolve(jsonResponse(repo));
+    });
+    renderPage();
+    await waitFor(() => screen.getByDisplayValue("before"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Webhooks" }));
+    // Existing hook is listed (not a stub).
+    expect(await screen.findByText(/old\.example\/hook/)).toBeInTheDocument();
+
+    fireEvent.change(await screen.findByLabelText("Payload URL"), { target: { value: "https://new.example/hook" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add webhook" }));
+
+    await waitFor(() => {
+      const post = mockFetch.mock.calls.find(
+        (c) => c[0] === "/api/v3/repos/admin/settings-repo/hooks" && c[1]?.method === "POST",
+      );
+      expect(post).toBeDefined();
+      const body = JSON.parse(String(post![1].body));
+      expect(body).toMatchObject({ name: "web", active: true, events: ["push"], config: { url: "https://new.example/hook", content_type: "json" } });
+    });
+  });
+
   it("deletes the repository via DELETE /repos/{owner}/{repo} from the danger zone", async () => {
     // Route by URL/method so any number of background GETs stay valid; only the
     // DELETE returns an empty 204.
