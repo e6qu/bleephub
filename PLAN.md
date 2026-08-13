@@ -94,7 +94,7 @@ menus/controls are missing or non-functional.
 7. Repo Settings **Environments** editor missing (Deployments list ≠ env settings).
 8. Repo Settings **Actions** settings (General/Runners) missing.
 9. **Repo-level Rulesets** missing (rulesets exist org-only).
-10. **Org Settings** landing page missing (settings scattered as top-level tabs).
+10. ✅ FIXED (WEB-079) — **Org Settings** landing at `/orgs/:org/settings` (org profile edit + links to the settings surfaces); a Settings tab was added to the org header.
 11. **Org Insights** tab missing (Insights is repo-only).
 12. ✅ FIXED (WEB-074) — Issue/PR sidebar **Projects**: now lists the org's ProjectsV2, marks/edits (add + remove) this item's membership; was a hardcoded "None yet" stub (`IssueSidebar.tsx`).
 13. Account settings: **Password/2FA, Notifications, Profile edit, Account, Appearance** all missing
