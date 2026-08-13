@@ -57,6 +57,7 @@ const WebhookDeliveriesPage = lazy(() => import("./pages/WebhookDeliveriesPage.j
 const OrgHooksPage = lazy(() => import("./pages/OrgHooksPage.js").then(({ OrgHooksPage }) => ({ default: OrgHooksPage })));
 const SearchPage = lazy(() => import("./pages/SearchPage.js").then(({ SearchPage }) => ({ default: SearchPage })));
 const AccountPage = lazy(() => import("./pages/AccountPage.js").then(({ AccountPage }) => ({ default: AccountPage })));
+const MyOrganizationsPage = lazy(() => import("./pages/MyOrganizationsPage.js").then(({ MyOrganizationsPage }) => ({ default: MyOrganizationsPage })));
 const RepoSocialPage = lazy(() => import("./pages/RepoSocialPage.js").then(({ RepoSocialPage }) => ({ default: RepoSocialPage })));
 const DashboardPage = lazy(() => import("./pages/DashboardPage.js").then(({ DashboardPage }) => ({ default: DashboardPage })));
 const ProfilePage = lazy(() => import("./pages/ProfilePage.js").then(({ ProfilePage }) => ({ default: ProfilePage })));
@@ -266,6 +267,7 @@ export function App() {
               {/* Search + repo social + account */}
               <Route path="/ui/search" element={<SearchPage />} />
               <Route path="/ui/account" element={<AccountPage />} />
+              <Route path="/ui/settings/organizations" element={<MyOrganizationsPage />} />
               <Route path="/ui/repos/:owner/:repo/stargazers" element={<RepoSocialPage kind="stargazers" />} />
               <Route path="/ui/repos/:owner/:repo/watchers" element={<RepoSocialPage kind="watchers" />} />
               <Route path="/ui/repos/:owner/:repo/forks" element={<RepoSocialPage kind="forks" />} />

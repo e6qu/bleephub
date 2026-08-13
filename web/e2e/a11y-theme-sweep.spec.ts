@@ -108,6 +108,7 @@ function buildRoutes(): { route: string; label: string }[] {
     { route: `/ui/${o}?tab=packages`, label: "profile-packages" },
     { route: `/ui/${o}?tab=stars`, label: "profile-stars" },
     { route: "/ui/account", label: "account" },
+    { route: "/ui/settings/organizations", label: "my-organizations" },
     { route: "/ui/notifications", label: "notifications" },
     { route: "/ui/search?q=test", label: "search" },
     { route: "/ui/repos", label: "repos-list" },
