@@ -82,11 +82,11 @@ menus/controls are missing or non-functional.
   page rail + markdown view + create/edit/delete. Go + vitest + Chromium-sweep verified.
 - **B2 — user-profile tab row**: ✅ FIXED (WEB-070) — Overview/Repositories/Projects/Packages/Stars
   tab row; Overview renders the profile README, a contribution graph (from the events feed), and a
-  recent-activity list. Still open: WEB-071 pinned repositories (needs a backend pin store).
+  recent-activity list. ✅ WEB-071 pinned repositories now DONE (per-user pin store under /ui-data + Overview grid).
 
 **MAJORs (menu/control missing or non-functional), ranked:**
 1. Profile **contribution graph** (calendar heatmap) missing.
-2. Profile **pinned repositories** missing.
+2. ✅ FIXED (WEB-071) — Profile **pinned repositories**: per-user pin store (/ui-data) + Overview grid with own-profile editor.
 3. Profile **README** missing.
 4. ✅ FIXED (WEB-073) — Global **command palette / ⌘K** jump-to: lazy-loaded dialog+combobox (static targets + live repo/user search, keyboard nav, axe-clean); ⌘K/Ctrl-K in `AppHeader.tsx`.
 5. Repo **"Go to file"** fuzzy finder missing.

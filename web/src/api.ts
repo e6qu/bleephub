@@ -4683,6 +4683,17 @@ export const fetchUserOrgsByLogin = (login: string) =>
 export const fetchUserStarredRepos = (login: string) =>
   ghFetch<BleephubRepo[]>(`/api/v3/users/${encodeURIComponent(login)}/starred`);
 
+/**
+ * A user's pinned repositories (profile Overview grid). GitHub exposes pins only
+ * over GraphQL, so the simulator serves them from /ui-data. `setPinnedRepos`
+ * replaces the ordered list (max 6) and only works on your own account.
+ */
+export const fetchPinnedRepos = (login: string) =>
+  ghFetch<BleephubRepo[]>(`/ui-data/users/${encodeURIComponent(login)}/pinned`);
+
+export const setPinnedRepos = (login: string, repos: string[]) =>
+  ghPutJSON<BleephubRepo[]>(`/ui-data/users/${encodeURIComponent(login)}/pinned`, { repos });
+
 /** A named user's ProjectsV2 — the profile Projects tab (GET /users/{login}/projectsV2). */
 export const fetchUserProjectsV2 = (login: string) =>
   ghFetch<GithubProjectV2[]>(`/api/v3/users/${encodeURIComponent(login)}/projectsV2`);

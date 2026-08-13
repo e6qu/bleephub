@@ -192,6 +192,11 @@ test.beforeAll(async ({ browser }) => {
     body: "# Welcome\n\nParity wiki fixture page.",
   }));
 
+  // Pin the repo so the profile Overview renders its pinned grid.
+  ok("pin", await api(page, "PUT", `/ui-data/users/${seeded.owner}/pinned`, {
+    repos: [`${seeded.owner}/${seeded.repo}`],
+  }));
+
   // labels + milestones
   ok("label-1", await api(page, "POST", `/api/v3/repos/${seeded.owner}/${seeded.repo}/labels`, {
     name: "parity-bug",

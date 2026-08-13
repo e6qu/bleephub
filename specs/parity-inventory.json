@@ -5274,12 +5274,12 @@
       },
       {
         "category": "WEB",
-        "finding": "The profile Overview has no pinned-repositories section \u2014 github.com lets a user pin up to six repos, but the simulator has no pin storage (only unrelated issue-comment pinning exists)",
+        "finding": "The profile Overview has no pinned-repositories section \u2014 github.com lets a user pin up to six repos, but the simulator had no pin storage",
         "id": "WEB-071",
-        "location": "web/src/pages/ProfilePage.tsx",
+        "location": "web/src/pages/ProfilePage.tsx, internal/store/pinned_repos.go, internal/server/gh_pinned.go",
         "severity": "M",
-        "status": "open \u2014 needs a minimal backend: a per-user ordered pinned-repo list plus get/set routes, then an Overview pin grid; tracked as the next profile slice",
-        "status_kind": "open"
+        "status": "fixed \u2014 added a per-user ordered pin list (store.User.PinnedRepos, max 6, dedup/existence-filtered) and get/set routes under `/ui-data/users/{login}/pinned` (GitHub pins are GraphQL-only, so not `/api/v3`; PUT is self-or-siteadmin only), plus a profile Overview pin grid with an own-profile \"Customize your pins\" editor. Go tests cover the store + auth (set/list, >6 \u2192 422, dedup/nonexistent dropped, non-owner 403); vitest drives the Overview grid + save; the profile renders clean in the Chromium sweep",
+        "status_kind": "fixed"
       },
       {
         "category": "WEB",
@@ -6725,8 +6725,8 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 69,
-            "open": 3
+            "fixed": 70,
+            "open": 2
           },
           "total": 74
         }
@@ -6738,8 +6738,8 @@
       },
       "status": {
         "deferred": 3,
-        "fixed": 697,
-        "open": 3
+        "fixed": 698,
+        "open": 2
       },
       "total": 703
     }
