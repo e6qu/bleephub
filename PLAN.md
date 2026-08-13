@@ -96,7 +96,7 @@ menus/controls are missing or non-functional.
 9. **Repo-level Rulesets** missing (rulesets exist org-only).
 10. **Org Settings** landing page missing (settings scattered as top-level tabs).
 11. **Org Insights** tab missing (Insights is repo-only).
-12. Issue/PR sidebar **Projects** is a hardcoded "None yet" stub (`IssueSidebar.tsx`).
+12. ✅ FIXED (WEB-074) — Issue/PR sidebar **Projects**: now lists the org's ProjectsV2, marks/edits (add + remove) this item's membership; was a hardcoded "None yet" stub (`IssueSidebar.tsx`).
 13. Account settings: **Password/2FA, Notifications, Profile edit, Account, Appearance** all missing
     (only Emails/keys/PAT/blocked present).
 14. Account settings: authorized **Applications** missing; OAuth/GitHub Apps misplaced under Operations.
