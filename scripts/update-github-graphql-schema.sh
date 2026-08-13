@@ -2,17 +2,19 @@
 # Refresh GitHub's official public GraphQL schema behind an explicit digest pin.
 set -euo pipefail
 
-PIN_SHA256="86e8e001eb3db2469348cefd25aacf22e623d3fbeed6affddef47ad98f12a9fc"
+PIN_SHA256="b716c6844750283b8c33200f660989337254e7158f40ed869f06418bafb3bc2e"
 # GitHub's rolling docs endpoint serves several reviewed feature-flag variants
 # from different CDN edges during the ProjectV2 multi-select/view rollout, so
 # which one a runner sees depends on its region. Keep the richer contract
 # vendored, while letting the drift check recognize the other official variants,
-# all observed from docs.github.com. The current pin (86e8e001) adds a GITLAB
-# migration-source enum value and an "asynchronously" wording tweak over the
-# prior pin (c504a0ed), which some edges still serve from cache and which stays
-# accepted through the rollout; 0c5ad89a and fc99569d are earlier variants of
-# the same rollout. Any further digest remains blocking.
-ROLLOUT_SHA256="c504a0ed454276c878d5a873b782fa9824f2dec3205de3370845d40977e41322 0c5ad89a426609cf1b79679155a17609cd04d7a09914eee9c56894eea18bb031 fc99569d6628bfe0176eded638b4797ee64ab50e0bf2b671a660ec717d085dae"
+# all observed from docs.github.com. The current pin (b716c684) adds the
+# `IssueFieldValueFilter` input type (issue-field-value querying for the
+# ProjectV2 issue-fields feature) and reflows the multi-interface `implements`
+# clauses one-per-line over the prior pin (86e8e001), which some edges still
+# serve from cache and which stays accepted through the rollout; c504a0ed,
+# 0c5ad89a and fc99569d are earlier variants of the same rollout. Any further
+# digest remains blocking.
+ROLLOUT_SHA256="86e8e001eb3db2469348cefd25aacf22e623d3fbeed6affddef47ad98f12a9fc c504a0ed454276c878d5a873b782fa9824f2dec3205de3370845d40977e41322 0c5ad89a426609cf1b79679155a17609cd04d7a09914eee9c56894eea18bb031 fc99569d6628bfe0176eded638b4797ee64ab50e0bf2b671a660ec717d085dae"
 SOURCE_URL="https://docs.github.com/public/fpt/schema.docs.graphql"
 
 usage() {
