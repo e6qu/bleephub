@@ -96,11 +96,12 @@ try {
   assert.equal(await validationSignOutForm.getAttribute("method"), "post");
   await assertAuthenticated(context, primaryOrigin, true);
 
-  // The packages page exercises the authenticated-user package endpoint with
-  // GitHub's mandatory package_type parameter instead of returning HTTP 400.
+  // The packages page reads the /ui-data user aggregation (which accepts an
+  // optional package_type) rather than GitHub's REST /user/packages, which 400s
+  // without a package_type. The container tab still narrows via package_type.
   const packages = page.waitForResponse((response) => {
     const target = new URL(response.url());
-    return target.pathname === "/api/v3/user/packages" && target.searchParams.get("package_type") === "container";
+    return target.pathname.startsWith("/ui-data/users/") && target.pathname.endsWith("/packages") && target.searchParams.get("package_type") === "container";
   });
   await page.goto(`${primaryOrigin}/ui/packages`);
   assert.equal((await packages).status(), 200);
