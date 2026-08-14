@@ -1,4 +1,7 @@
 FROM golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS builder
+# Re-enable toolchain auto-download (the golang image pins GOTOOLCHAIN=local) so
+# this 1.26.5 image builds with the go1.26.6 toolchain go.mod requires.
+ENV GOTOOLCHAIN=auto
 ARG BLEEPHUB_TEST_REVISION
 WORKDIR /src
 COPY go.mod go.sum ./
