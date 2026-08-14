@@ -5625,6 +5625,15 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "the profile and org Packages tab (`/ui/{owner}?tab=packages`) failed with \"Failed to load packages: ApiError: 400\" \u2014 it called GitHub's REST list endpoints (`/user/packages`, `/users/{u}/packages`, `/orgs/{o}/packages`), which require a single `package_type` and 400 without one, while the tab lists every type at once; the user scope also ignored the resolved username",
+        "id": "WEB-110",
+        "location": "web/src/api.ts, internal/server/gh_packages.go",
+        "severity": "m",
+        "status": "fixed \u2014 added browser aggregations `GET /ui-data/users/{username}/packages` and `/ui-data/orgs/{org}/packages` that accept an optional `package_type` (empty = every type), mirroring the existing repo Packages adapter, and pointed `packageListPath`'s user/org scopes at them (the username is now used, not ignored); `listOwnerPackagesJSON` treats an empty type as all types while the validated public REST endpoints are unchanged. Verified on a running server (`/ui-data/users/admin/packages` \u2192 200, `/ui-data/orgs/{org}/packages` \u2192 200, bare `/api/v3/user/packages` \u2192 400 GitHub-parity); Go test asserts 200 + every seeded type across user and org; api.test asserts the new /ui-data URLs",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -7041,21 +7050,21 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 107
+            "fixed": 108
           },
-          "total": 109
+          "total": 110
         }
       },
       "severity": {
         "blocker": 167,
         "major": 398,
-        "minor": 173
+        "minor": 174
       },
       "status": {
         "deferred": 3,
-        "fixed": 735
+        "fixed": 736
       },
-      "total": 738
+      "total": 739
     }
   },
   "rest": {
