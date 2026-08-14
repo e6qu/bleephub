@@ -1,5 +1,8 @@
 import { test, expect, type Page } from "./fixtures.js";
 import AxeBuilder from "@axe-core/playwright";
+
+// Inferred from AxeBuilder itself so no direct dependency on axe-core is needed.
+type AxeAnalysis = Awaited<ReturnType<InstanceType<typeof AxeBuilder>["analyze"]>>;
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -96,6 +99,23 @@ type RouteResult = {
 };
 
 const collected: RouteResult[] = [];
+
+// Shared axe → ViolationRecord projection, used by both the per-route scan and
+// the open-dialog scan so neither drifts (and jscpd sees one copy).
+function mapViolations(results: AxeAnalysis): ViolationRecord[] {
+  return results.violations.map((v) => ({
+    id: v.id,
+    impact: v.impact ?? null,
+    description: v.description,
+    help: v.help,
+    helpUrl: v.helpUrl,
+    tags: v.tags,
+    nodes: v.nodes.length,
+    targets: v.nodes
+      .slice(0, 8)
+      .map((n) => (Array.isArray(n.target) ? n.target.join(" ") : String(n.target))),
+  }));
+}
 
 // ─── route set (~47 routes; one per distinct page type) ─────────────────────────
 function buildRoutes(): { route: string; label: string }[] {
@@ -362,18 +382,7 @@ for (const theme of THEMES) {
         record.themeApplied = theme === "dark" ? isDark : !isDark;
 
         const results = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
-        record.violations = results.violations.map((v) => ({
-          id: v.id,
-          impact: v.impact ?? null,
-          description: v.description,
-          help: v.help,
-          helpUrl: v.helpUrl,
-          tags: v.tags,
-          nodes: v.nodes.length,
-          targets: v.nodes
-            .slice(0, 8)
-            .map((n) => (Array.isArray(n.target) ? n.target.join(" ") : String(n.target))),
-        }));
+        record.violations = mapViolations(results);
 
         const safe = route.replace(/[^a-z0-9]+/gi, "_").replace(/^_|_$/g, "");
         await page
@@ -399,6 +408,43 @@ for (const theme of THEMES) {
             .join(""),
       );
     }
+
+    // Also scan an OPEN modal surface: the "?" keyboard-shortcuts sheet is an
+    // interactive dialog the base-route scans never reach.
+    {
+      const record: RouteResult = {
+        route: "/ui/ (shortcuts dialog)",
+        theme,
+        url: BASE + "/ui/",
+        themeApplied: false,
+        loadFailure: false,
+        violations: [],
+      };
+      try {
+        await page.goto("/ui/", { waitUntil: "domcontentloaded", timeout: 30_000 });
+        await page.waitForSelector("main, [role=main], .app-header", { timeout: 8_000 }).catch(() => {});
+        // GlobalShortcuts (which owns the "?" handler) is code-split, so let its
+        // chunk load before pressing.
+        await page.waitForTimeout(800);
+        const dialog = page.getByRole("dialog", { name: "Keyboard shortcuts" });
+        await page.keyboard.press("Shift+Slash"); // "?"
+        await dialog.waitFor({ state: "visible", timeout: 8_000 });
+        const isDark = await page.evaluate(() => document.documentElement.classList.contains("dark"));
+        record.themeApplied = theme === "dark" ? isDark : !isDark;
+        record.violations = mapViolations(await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze());
+      } catch (err) {
+        record.loadFailure = true;
+        record.error = err instanceof Error ? err.message : String(err);
+      }
+      collected.push(record);
+      // eslint-disable-next-line no-console
+      console.log(
+        `[scan] ${theme} shortcuts-dialog -> ${
+          record.loadFailure ? "LOAD-FAIL" : `${record.violations.length} rules`
+        }` + record.violations.map((v) => `\n    ! ${v.id}: ${v.targets.join(" | ")}`).join(""),
+      );
+    }
+
     expect(collected.length).toBeGreaterThan(0);
   });
 }

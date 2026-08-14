@@ -16,6 +16,12 @@ import { Link, useNavigate } from "react-router";
 const CommandPalette = lazy(() =>
   import("./CommandPalette.js").then((m) => ({ default: m.CommandPalette })),
 );
+// The "?" shortcuts sheet and the global `g …` navigation sequences live in a
+// lazily-loaded module so their code (and the modal) stay out of the entry
+// bundle rather than weighing on first paint.
+const GlobalShortcuts = lazy(() =>
+  import("./GlobalShortcuts.js").then((m) => ({ default: m.GlobalShortcuts })),
+);
 // The global-nav drawer only mounts on a hamburger click, so it is code-split
 // out of the always-loaded header too.
 const GlobalNavDrawer = lazy(() =>
@@ -489,6 +495,9 @@ export function AppHeader() {
           <CommandPalette open onClose={() => setPaletteOpen(false)} viewerLogin={login || undefined} />
         </Suspense>
       )}
+      <Suspense fallback={null}>
+        <GlobalShortcuts login={login} />
+      </Suspense>
     </>
   );
 }

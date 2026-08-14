@@ -5526,6 +5526,15 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "bleephub had the \u2318K command palette but not GitHub's **`?` keyboard-shortcuts help sheet** nor the global **`g \u2026` navigation sequences** it documents",
+        "id": "WEB-099",
+        "location": "web/src/components/GlobalShortcuts.tsx, web/src/components/KeyboardShortcuts.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added a `?` shortcuts modal (accessible dialog: role=dialog + aria-labelledby, Esc/backdrop/close-button dismiss, focus moved to close on open and restored on close, `<kbd>` bindings) listing only shortcuts that actually work, plus the global `g h`/`g n`/`g e`/`g p` navigation sequences (ignored while typing; the `g` prefix expires in 1s). Both live in a code-split `GlobalShortcuts` module so the entry bundle stays under its 160 KB budget. Extended the a11y ratchet to open and scan the dialog in both themes. Verified: unit tests (dialog a11y + `?` opens + `g n` navigates); axe-clean in both themes",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -6942,21 +6951,21 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 96
+            "fixed": 97
           },
-          "total": 98
+          "total": 99
         }
       },
       "severity": {
         "blocker": 167,
         "major": 397,
-        "minor": 163
+        "minor": 164
       },
       "status": {
         "deferred": 3,
-        "fixed": 724
+        "fixed": 725
       },
-      "total": 727
+      "total": 728
     }
   },
   "rest": {
@@ -28470,7 +28479,12 @@
   "ui": {
     "browser_navigations": [
       {
-        "line": 176,
+        "line": 196,
+        "source": "web/e2e/a11y-theme-sweep.spec.ts",
+        "target": "/ui/"
+      },
+      {
+        "line": 424,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/"
       },
@@ -29985,7 +29999,7 @@
       }
     ],
     "summary": {
-      "browser_navigations": 67,
+      "browser_navigations": 68,
       "routes": 92,
       "routes_with_direct_render": 89,
       "routes_with_test_reference": 91
