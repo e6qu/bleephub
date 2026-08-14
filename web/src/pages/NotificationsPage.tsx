@@ -62,6 +62,9 @@ function ThreadsTable({ all }: { all: boolean }) {
   // table below the Unread/All tabs and the free-text filter.
   const [repoFilter, setRepoFilter] = useState("");
   const [reasonFilter, setReasonFilter] = useState("");
+  // github.com's inbox groups threads under per-repository headers; offer that
+  // as an alternative to the flat table.
+  const [groupByRepo, setGroupByRepo] = useState(false);
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["notifications", all],
@@ -235,27 +238,145 @@ function ThreadsTable({ all }: { all: boolean }) {
             </select>
           </label>
         </div>
-        {!all && filtered.length > 0 && (
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => markAllMut.mutate()}
-            disabled={markAllMut.isPending}
-          >
-            {markAllMut.isPending ? "Marking…" : "Mark all as read"}
-          </Button>
-        )}
+        <div className="flex items-end gap-2">
+          <div role="group" aria-label="Group notifications" className="flex gap-1">
+            {(["list", "repo"] as const).map((mode) => (
+              <Button
+                key={mode}
+                size="sm"
+                variant={(mode === "repo") === groupByRepo ? "primary" : "secondary"}
+                aria-pressed={(mode === "repo") === groupByRepo}
+                onClick={() => setGroupByRepo(mode === "repo")}
+              >
+                {mode === "list" ? "List" : "By repository"}
+              </Button>
+            ))}
+          </div>
+          {!all && filtered.length > 0 && (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => markAllMut.mutate()}
+              disabled={markAllMut.isPending}
+            >
+              {markAllMut.isPending ? "Marking…" : "Mark all as read"}
+            </Button>
+          )}
+        </div>
       </div>
-      <DataTable
-        data={filtered ?? []}
-        columns={columns}
-        filterPlaceholder="Filter notifications…"
-        emptyMessage={all ? "No notifications." : "No unread notifications."}
-      />
+      {groupByRepo ? (
+        <NotificationsByRepo
+          threads={filtered}
+          repoName={repoName}
+          onRead={(id) => readMut.mutate(id)}
+          onDone={(id) => doneMut.mutate(id)}
+          onSubscription={setActiveThread}
+          busy={readMut.isPending || doneMut.isPending}
+          emptyMessage={all ? "No notifications." : "No unread notifications."}
+        />
+      ) : (
+        <DataTable
+          data={filtered ?? []}
+          columns={columns}
+          filterPlaceholder="Filter notifications…"
+          emptyMessage={all ? "No notifications." : "No unread notifications."}
+        />
+      )}
       {activeThread && (
         <SubscriptionDialog thread={activeThread} onClose={() => setActiveThread(null)} />
       )}
     </>
+  );
+}
+
+function NotificationsByRepo({
+  threads,
+  repoName,
+  onRead,
+  onDone,
+  onSubscription,
+  busy,
+  emptyMessage,
+}: {
+  threads: GithubNotificationThread[];
+  repoName: (t: GithubNotificationThread) => string;
+  onRead: (id: string) => void;
+  onDone: (id: string) => void;
+  onSubscription: (t: GithubNotificationThread) => void;
+  busy: boolean;
+  emptyMessage: string;
+}) {
+  if (threads.length === 0) {
+    return (
+      <Box>
+        <div style={{ padding: "1rem", color: "var(--color-fg-muted)", fontSize: "0.85rem" }}>{emptyMessage}</div>
+      </Box>
+    );
+  }
+  const groups = new Map<string, GithubNotificationThread[]>();
+  for (const t of threads) {
+    const name = repoName(t) || "(unknown repository)";
+    const list = groups.get(name) ?? [];
+    list.push(t);
+    groups.set(name, list);
+  }
+  return (
+    <div className="flex flex-col gap-4">
+      {[...groups.entries()]
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([repo, list]) => (
+          <Box
+            key={repo}
+            header={
+              <span style={{ fontWeight: 600 }}>
+                {repo}{" "}
+                <span style={{ color: "var(--color-fg-muted)", fontWeight: 400 }}>({list.length})</span>
+              </span>
+            }
+          >
+            <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+              {list.map((thread, i) => {
+                const href = subjectUrlToUI(thread.subject.url);
+                return (
+                  <li
+                    key={thread.id}
+                    className="flex flex-wrap items-center gap-2"
+                    style={{ padding: "0.5rem 1rem", borderBottom: i < list.length - 1 ? "1px solid var(--color-border)" : "none" }}
+                  >
+                    {thread.unread && <StateLabel state="open">unread</StateLabel>}
+                    <span className="min-w-0 flex-1">
+                      {href ? (
+                        <Link
+                          to={href}
+                          style={{ display: "inline-block", color: "var(--color-accent)", textDecoration: "none", lineHeight: "1.625rem" }}
+                        >
+                          {thread.subject.title}
+                        </Link>
+                      ) : (
+                        <span>{thread.subject.title}</span>
+                      )}
+                      <span style={{ color: "var(--color-fg-muted)", fontSize: "0.78rem", marginLeft: "0.5rem" }}>
+                        {thread.subject.type} · {thread.reason}
+                      </span>
+                    </span>
+                    {thread.unread && (
+                      <Button size="sm" variant="secondary" disabled={busy} onClick={() => onRead(thread.id)}>
+                        Mark read
+                      </Button>
+                    )}
+                    <Button size="sm" variant="ghost" onClick={() => onSubscription(thread)}>
+                      Subscription
+                    </Button>
+                    <Button size="sm" variant="ghost" disabled={busy} onClick={() => onDone(thread.id)}>
+                      Done
+                    </Button>
+                  </li>
+                );
+              })}
+            </ul>
+          </Box>
+        ))}
+    </div>
   );
 }
 

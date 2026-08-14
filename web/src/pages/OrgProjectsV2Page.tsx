@@ -123,6 +123,8 @@ function ProjectV2Detail({ org, number }: { org: string; number: number }) {
     onSuccess: invalidate,
   });
   const [view, setView] = useState<"table" | "board">("table");
+  const [filterText, setFilterText] = useState("");
+  const [groupFieldId, setGroupFieldId] = useState<number | "none" | "">("");
   const [draftTitle, setDraftTitle] = useState("");
   const draftMut = useMutation({
     mutationFn: () => createOrgProjectV2Draft(org, number, { title: draftTitle.trim() }),
@@ -136,11 +138,22 @@ function ProjectV2Detail({ org, number }: { org: string; number: number }) {
   if (projectQ.isError || !projectQ.data) {
     return <InlineError title="Failed to load project" detail={String(projectQ.error)} />;
   }
-  const items = itemsQ.data ?? [];
-  // Group the board by the first single-select field that has options.
-  const groupField = (fieldsQ.data ?? []).find(
+  const allItems = itemsQ.data ?? [];
+  const needle = filterText.trim().toLowerCase();
+  const items = needle
+    ? allItems.filter((it) => (it.content?.title ?? "").toLowerCase().includes(needle))
+    : allItems;
+  // The board groups by a single-select field — the user's choice, defaulting to
+  // the first one that has options; "none" renders an ungrouped list.
+  const singleSelectFields = (fieldsQ.data ?? []).filter(
     (f) => f.data_type === "single_select" && (f.options?.length ?? 0) > 0,
   );
+  const groupField =
+    groupFieldId === "none"
+      ? undefined
+      : groupFieldId === ""
+        ? singleSelectFields[0]
+        : singleSelectFields.find((f) => f.id === groupFieldId);
   const removeItem = async (itemId: number) => {
     if (await confirmAction("Remove this item from the project?")) deleteMut.mutate(itemId);
   };
@@ -203,18 +216,48 @@ function ProjectV2Detail({ org, number }: { org: string; number: number }) {
       </Box>
       {deleteMut.error && <ErrorBanner>{String(deleteMut.error)}</ErrorBanner>}
       {moveMut.error && <ErrorBanner>{String(moveMut.error)}</ErrorBanner>}
-      <div role="group" aria-label="View" className="mt-3 flex gap-1">
-        {(["table", "board"] as const).map((v) => (
-          <Button
-            key={v}
-            size="sm"
-            variant={view === v ? "primary" : "secondary"}
-            aria-pressed={view === v}
-            onClick={() => setView(v)}
-          >
-            {v === "table" ? "Table" : "Board"}
-          </Button>
-        ))}
+      <div className="mt-3 flex flex-wrap items-end gap-3">
+        <div role="group" aria-label="View" className="flex gap-1">
+          {(["table", "board"] as const).map((v) => (
+            <Button
+              key={v}
+              size="sm"
+              variant={view === v ? "primary" : "secondary"}
+              aria-pressed={view === v}
+              onClick={() => setView(v)}
+            >
+              {v === "table" ? "Table" : "Board"}
+            </Button>
+          ))}
+        </div>
+        <label className="flex flex-col gap-1" style={{ fontSize: "0.72rem", color: "var(--color-fg-muted)" }}>
+          Filter items
+          <input
+            aria-label="Filter items by title"
+            value={filterText}
+            onChange={(e) => setFilterText(e.target.value)}
+            placeholder="Filter by title…"
+            style={{ fontSize: "0.8rem", padding: "0.2rem 0.4rem" }}
+          />
+        </label>
+        {singleSelectFields.length > 0 && (
+          <label className="flex flex-col gap-1" style={{ fontSize: "0.72rem", color: "var(--color-fg-muted)" }}>
+            Group by
+            <select
+              aria-label="Group items by field"
+              value={groupFieldId === "" ? String(singleSelectFields[0]?.id ?? "none") : String(groupFieldId)}
+              onChange={(e) => setGroupFieldId(e.target.value === "none" ? "none" : Number(e.target.value))}
+              style={{ fontSize: "0.8rem", padding: "0.2rem 0.4rem" }}
+            >
+              {singleSelectFields.map((f) => (
+                <option key={f.id} value={String(f.id)}>
+                  {f.name}
+                </option>
+              ))}
+              <option value="none">No grouping</option>
+            </select>
+          </label>
+        )}
       </div>
       {itemsQ.isLoading ? (
         <Spinner label="loading items" />

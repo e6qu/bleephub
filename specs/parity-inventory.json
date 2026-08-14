@@ -5580,6 +5580,24 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "round 5 shipped the notifications repo/reason *filters* but not github.com's **group-by-repository** inbox layout",
+        "id": "WEB-105",
+        "location": "web/src/pages/NotificationsPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added a List / By repository toggle (`role=group`, `aria-pressed`) that renders threads grouped under per-repository `Box` headers (with counts), each row keeping the subject link + mark-read / subscription / done actions. Verified: unit test seeds two repos and asserts the grouped view (no table, two group counts, links resolve); axe-clean in both themes",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "the Projects v2 table/board had no **group-by** or **filter** controls (round 4/6 shipped views + field editing)",
+        "id": "WEB-106",
+        "location": "web/src/pages/OrgProjectsV2Page.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added a \"Filter items by title\" input that narrows both views and a \"Group by\" dropdown that drives the board's grouping by any single-select field (or \"No grouping\"), replacing the previously hard-coded first-field grouping. Verified: unit test filters items by title; the a11y sweep's seeded project exercises the controls at 0 violations in both themes",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -6996,21 +7014,21 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 102
+            "fixed": 104
           },
-          "total": 104
+          "total": 106
         }
       },
       "severity": {
         "blocker": 167,
         "major": 398,
-        "minor": 168
+        "minor": 170
       },
       "status": {
         "deferred": 3,
-        "fixed": 730
+        "fixed": 732
       },
-      "total": 733
+      "total": 735
     }
   },
   "rest": {

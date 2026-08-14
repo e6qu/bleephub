@@ -86,6 +86,30 @@ describe("OrgProjectsV2Page", () => {
     });
   });
 
+  it("filters table items by title", async () => {
+    const items = [
+      { id: 21, content_type: "Issue", content: { title: "Fix the login bug", number: 1 }, fields: [] },
+      { id: 22, content_type: "Issue", content: { title: "Write docs", number: 2 }, fields: [] },
+    ];
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.endsWith("/orgs/acme/projectsV2/3/fields")) return Promise.resolve(jsonResponse([]));
+      if (u.endsWith("/orgs/acme/projectsV2/3/items")) return Promise.resolve(jsonResponse(items));
+      if (u.endsWith("/orgs/acme/projectsV2/3")) {
+        return Promise.resolve(jsonResponse({ id: 1, number: 3, title: "Roadmap", short_description: null }));
+      }
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/orgs/acme/projects/3");
+
+    expect(await screen.findByText("Write docs")).toBeInTheDocument();
+    expect(screen.getByText("Fix the login bug")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Filter items by title"), { target: { value: "docs" } });
+    expect(screen.getByText("Write docs")).toBeInTheDocument();
+    expect(screen.queryByText("Fix the login bug")).toBeNull();
+  });
+
   it("edits a text field value via PATCH on blur", async () => {
     const field = { id: 200, name: "Notes", data_type: "text", options: [] };
     const item = {
