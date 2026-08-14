@@ -139,6 +139,7 @@ func TestBranchProtectedByRepositoryAndOrganizationRulesets(t *testing.T) {
 		"active",
 		store.RulesetConditions{RefName: store.RefNameCondition{Include: []string{"release/*"}}},
 		[]store.Rule{{Type: "required_status_checks"}},
+		nil,
 	)
 	if !s.store.BranchProtectedByRuleset(orgRepo, "release/v1") {
 		t.Fatal("active organization ruleset did not protect a matching repository branch")

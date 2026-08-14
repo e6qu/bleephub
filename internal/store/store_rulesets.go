@@ -257,7 +257,7 @@ func (st *Store) GetRuleset(id int) *Ruleset {
 }
 
 // CreateOrgRuleset creates and persists a new organization-level ruleset.
-func (st *Store) CreateOrgRuleset(orgID int, name string, target string, enforcement string, conditions RulesetConditions, rules []Rule) *Ruleset {
+func (st *Store) CreateOrgRuleset(orgID int, name string, target string, enforcement string, conditions RulesetConditions, rules []Rule, bypassActors []RulesetBypassActor) *Ruleset {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 
@@ -271,6 +271,7 @@ func (st *Store) CreateOrgRuleset(orgID int, name string, target string, enforce
 		SourceType:           "Organization",
 		Enforcement:          enforcement,
 		CurrentUserCanBypass: "never",
+		BypassActors:         bypassActors,
 		Conditions:           conditions,
 		Rules:                rules,
 		CreatedAt:            st.CurrentTime(),

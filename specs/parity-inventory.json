@@ -5652,6 +5652,15 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "rulesets were not authorable: the org RulesetFormModal only toggled bare rule TYPES (no parameters, no targeting conditions, no bypass list) and the repo Settings\u2192Rulesets tab had NO rule selection at all \u2014 you could not set an approval count, status-check contexts, ref-name targeting, or a bypass actor, though the server models all of it",
+        "id": "WEB-113",
+        "location": "web/src/components/RulesetEditor.tsx, web/src/pages/RulesetsPage.tsx, internal/store/store_rulesets.go",
+        "severity": "M",
+        "status": "fixed \u2014 a shared `RulesetEditor` (used by both the org modal and the repo tab, so no jscpd duplication and no entry-bundle growth since both hosts are lazy) authors: ref-name targeting (`~DEFAULT_BRANCH`/`~ALL` + include/exclude patterns), the six no-parameter rules, `pull_request` (spec-complete 5-field parameters \u2014 count, dismiss-stale, code-owner, last-push, thread-resolution), `required_status_checks` (contexts + strict policy), branch/tag `name_pattern` (operator/pattern/negate), and a bypass-actor list (actor_id/type/mode); added the missing `push` target to the org modal. Rule parameters are emitted spec-complete so GitHub's `repository-rule` oneOf matches (partial params tripped the openapi-shape gate with cascading enum/unknown-field errors). Root server fix: `CreateOrgRuleset` now persists `bypass_actors` (org create silently dropped them; repo create + org update already honored them). Verified: Go round-trip test asserts conditions+params+bypass survive org create through the shape validator; org + repo unit tests assert the authored POST bodies; the a11y sweep scans `/ui/orgs/{org}/rulesets` and the repo Rulesets tab (with every parameter sub-form expanded) at 0 violations in both themes",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -7068,21 +7077,21 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 110
+            "fixed": 111
           },
-          "total": 112
+          "total": 113
         }
       },
       "severity": {
         "blocker": 167,
-        "major": 398,
+        "major": 399,
         "minor": 176
       },
       "status": {
         "deferred": 3,
-        "fixed": 738
+        "fixed": 739
       },
-      "total": 741
+      "total": 742
     }
   },
   "rest": {
@@ -28600,17 +28609,22 @@
   "ui": {
     "browser_navigations": [
       {
-        "line": 198,
+        "line": 199,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 439,
+        "line": 440,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 478,
+        "line": 479,
+        "source": "web/e2e/a11y-theme-sweep.spec.ts",
+        "target": "/ui/repos/${seeded.owner}/${seeded.repo}/settings"
+      },
+      {
+        "line": 514,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/repos/${seeded.owner}/${seeded.repo}/settings"
       },
@@ -30137,7 +30151,7 @@
       }
     ],
     "summary": {
-      "browser_navigations": 69,
+      "browser_navigations": 70,
       "routes": 93,
       "routes_with_direct_render": 90,
       "routes_with_test_reference": 92

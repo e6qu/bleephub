@@ -512,7 +512,7 @@ func (s *Server) handleCreateOrgRuleset(w http.ResponseWriter, r *http.Request) 
 		store.WriteGHValidationError(w, "ruleset", "name", "missing_field")
 		return
 	}
-	rs := s.store.CreateOrgRuleset(org.ID, body.Name, body.Target, body.Enforcement, body.Conditions, body.Rules)
+	rs := s.store.CreateOrgRuleset(org.ID, body.Name, body.Target, body.Enforcement, body.Conditions, body.Rules, body.BypassActors)
 	writeJSON(w, http.StatusCreated, rulesetToJSON(rs, true))
 }
 

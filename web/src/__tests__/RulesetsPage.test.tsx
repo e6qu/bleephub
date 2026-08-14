@@ -89,6 +89,47 @@ describe("RulesetsPage", () => {
     });
   });
 
+  it("authors conditions, pull_request parameters, and a bypass actor", async () => {
+    mockFetch.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/v3/orgs/acme/rulesets" && init?.method === "POST") {
+        return Promise.resolve(jsonResponse(ruleset, 201));
+      }
+      if (url === "/api/v3/orgs/acme/rulesets") return Promise.resolve(jsonResponse([]));
+      return Promise.resolve(jsonResponse({}));
+    });
+    renderPage();
+    await screen.findByText("No rulesets configured for this organization.");
+
+    fireEvent.click(screen.getByRole("button", { name: "New ruleset" }));
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "protect-main" } });
+    // Targeting: default branch → conditions.ref_name.include ["~DEFAULT_BRANCH"]
+    fireEvent.click(screen.getByLabelText("Include default branch"));
+    // pull_request with a non-default approval count
+    fireEvent.click(screen.getByLabelText("pull_request"));
+    fireEvent.change(screen.getByLabelText("Required approving review count"), { target: { value: "3" } });
+    // one bypass actor
+    fireEvent.click(screen.getByRole("button", { name: "Add bypass actor" }));
+    fireEvent.change(screen.getByLabelText("Bypass actor 1 id"), { target: { value: "7" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create ruleset" }));
+
+    await waitFor(() => {
+      expect(mockFetch.mock.calls.some(([u, i]) => u === "/api/v3/orgs/acme/rulesets" && i?.method === "POST")).toBe(true);
+    });
+    const [, init] = mockFetch.mock.calls.find(([u, i]) => u === "/api/v3/orgs/acme/rulesets" && i?.method === "POST")!;
+    const sent = JSON.parse(String(init.body));
+    expect(sent.conditions).toEqual({ ref_name: { include: ["~DEFAULT_BRANCH"], exclude: [] } });
+    const pr = sent.rules.find((r: { type: string }) => r.type === "pull_request");
+    expect(pr.parameters).toMatchObject({
+      required_approving_review_count: 3,
+      dismiss_stale_reviews_on_push: false,
+      require_code_owner_review: false,
+      require_last_push_approval: false,
+      required_review_thread_resolution: false,
+    });
+    expect(sent.bypass_actors).toEqual([{ actor_id: 7, actor_type: "User", bypass_mode: "always" }]);
+  });
+
   it("loads rule insights and drills into individual evaluations", async () => {
     mockFetch.mockImplementation((input: RequestInfo | URL) => {
       const url = String(input);

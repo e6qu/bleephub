@@ -219,7 +219,7 @@ func TestRulesets_ListIncludesParentsTargetsAndPagination(t *testing.T) {
 	admin := s.store.UsersByLogin["admin"]
 	org := s.store.CreateOrg(admin, "ruleset-list-org", "", "")
 	repo := s.store.CreateOrgRepo(org, admin, "ruleset-list-repo", "", false)
-	parent := s.store.CreateOrgRuleset(org.ID, "parent-tags", "tag", "active", store.RulesetConditions{}, []store.Rule{{Type: "deletion"}})
+	parent := s.store.CreateOrgRuleset(org.ID, "parent-tags", "tag", "active", store.RulesetConditions{}, []store.Rule{{Type: "deletion"}}, nil)
 	local := s.store.CreateRuleset(repo, &store.Ruleset{
 		Name: "local-branches", Target: "branch", Enforcement: "active", Rules: []store.Rule{{Type: "deletion"}},
 	})

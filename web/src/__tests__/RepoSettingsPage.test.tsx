@@ -283,6 +283,37 @@ describe("RepoSettingsPage", () => {
     });
   });
 
+  it("authors a repo ruleset with a rule and status-check parameters from the Rulesets tab", async () => {
+    mockFetch.mockImplementation((url: string, opts?: { method?: string }) => {
+      const u = url.toString();
+      if (u === "/api/v3/repos/admin/settings-repo/rulesets" && opts?.method === "POST") {
+        return Promise.resolve(jsonResponse({ id: 1, name: "protect", target: "branch", enforcement: "active", rules: [] }, 201));
+      }
+      if (u === "/api/v3/repos/admin/settings-repo/rulesets") return Promise.resolve(jsonResponse([]));
+      if (u.includes("/issues") || u.includes("/pulls")) return Promise.resolve(jsonResponse([]));
+      return Promise.resolve(jsonResponse(repo));
+    });
+    renderPage();
+    await waitFor(() => screen.getByDisplayValue("before"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Rulesets" }));
+    fireEvent.change(await screen.findByLabelText("Name"), { target: { value: "protect" } });
+    fireEvent.click(screen.getByLabelText("required_status_checks"));
+    fireEvent.change(screen.getByLabelText("Required status check contexts"), { target: { value: "build\nlint" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create ruleset" }));
+
+    await waitFor(() => {
+      const post = mockFetch.mock.calls.find(
+        (c) => String(c[0]) === "/api/v3/repos/admin/settings-repo/rulesets" && c[1]?.method === "POST",
+      );
+      expect(post).toBeDefined();
+      const sent = JSON.parse(String(post![1].body));
+      const sc = sent.rules.find((r: { type: string }) => r.type === "required_status_checks");
+      expect(sc.parameters.required_status_checks).toEqual([{ context: "build" }, { context: "lint" }]);
+      expect(sc.parameters.strict_required_status_checks_policy).toBe(false);
+    });
+  });
+
   it("saves Actions fork-PR approval, retention days, and create/approve-PRs from the Actions tab", async () => {
     mockFetch.mockImplementation((url: string, opts?: { method?: string }) => {
       const u = url.toString();
