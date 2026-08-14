@@ -5517,6 +5517,15 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "the Projects v2 board offered only a kanban view, but GitHub's **default Projects v2 view is a Table** (spreadsheet: one row per item, one column per field) with a Board/Table switcher \u2014 bleephub had no table view at all",
+        "id": "WEB-098",
+        "location": "web/src/pages/OrgProjectsV2Page.tsx",
+        "severity": "M",
+        "status": "fixed \u2014 added a **Table view** (now the default, matching GitHub) rendering a semantic `<table>` (col headers per field, `<th scope=\"row\">` title cell linking to the item, single-select cells editable inline via the same field-value mutation, other field types read-only) plus an accessible **Board/Table switcher** (`role=\"group\"`, `aria-pressed` toggles). Extended the a11y sweep to seed an org project (createProjectV2 + Status field + draft item) and scan the project-detail route. Verified: unit tests assert table-default + switch-to-board; axe-clean in both themes across the seeded project route",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -6933,21 +6942,21 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 95
+            "fixed": 96
           },
-          "total": 97
+          "total": 98
         }
       },
       "severity": {
         "blocker": 167,
-        "major": 396,
+        "major": 397,
         "minor": 163
       },
       "status": {
         "deferred": 3,
-        "fixed": 723
+        "fixed": 724
       },
-      "total": 726
+      "total": 727
     }
   },
   "rest": {
@@ -28461,7 +28470,7 @@
   "ui": {
     "browser_navigations": [
       {
-        "line": 174,
+        "line": 176,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/"
       },

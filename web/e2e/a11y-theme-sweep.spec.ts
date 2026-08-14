@@ -40,6 +40,7 @@ const seeded = {
   issueNumber: 0,
   pullNumber: 0,
   classroomId: 0,
+  projectNumber: 0,
 };
 
 async function api(
@@ -154,6 +155,7 @@ function buildRoutes(): { route: string; label: string }[] {
     { route: `/ui/orgs/${org}/teams`, label: "org-teams" },
     { route: `/ui/orgs/${org}/repos`, label: "org-repos" },
     { route: `/ui/orgs/${org}/governance`, label: "org-governance" },
+    { route: `/ui/orgs/${org}/projects/${seeded.projectNumber || 1}`, label: "org-project-detail" },
     // operations console
     { route: "/ui/operations", label: "operations" },
     { route: "/ui/operations/audit-log", label: "operations-audit-log" },
@@ -267,6 +269,43 @@ test.beforeAll(async ({ browser }) => {
     name: "org-parity",
     auto_init: true,
   }));
+
+  // a Projects V2 board so /orgs/{org}/projects/{n} renders the table view with
+  // a real single-select column and an item (GitHub creates projects over
+  // GraphQL only). Best-effort: the route still scans clean if any step is gated.
+  const orgInfo = await api(page, "GET", `/api/v3/orgs/${seeded.org}`);
+  const ownerNodeId =
+    orgInfo.ok && orgInfo.json && typeof orgInfo.json === "object"
+      ? (orgInfo.json as { node_id?: string }).node_id
+      : undefined;
+  if (ownerNodeId) {
+    const projRes = await api(page, "POST", "/api/graphql", {
+      query:
+        "mutation($input:CreateProjectV2Input!){createProjectV2(input:$input){projectV2{number}}}",
+      variables: { input: { ownerId: ownerNodeId, title: "Parity Roadmap" } },
+    });
+    const projNumber =
+      projRes.ok && projRes.json && typeof projRes.json === "object"
+        ? (projRes.json as { data?: { createProjectV2?: { projectV2?: { number?: number } } } }).data
+            ?.createProjectV2?.projectV2?.number
+        : undefined;
+    if (projNumber) {
+      seeded.projectNumber = projNumber;
+      ok("project-field", await api(page, "POST", `/api/v3/orgs/${seeded.org}/projectsV2/${projNumber}/fields`, {
+        name: "Status",
+        data_type: "single_select",
+        single_select_options: [
+          { name: "Todo", color: "GRAY", description: "" },
+          { name: "Done", color: "GREEN", description: "" },
+        ],
+      }));
+      ok("project-draft", await api(page, "POST", `/api/v3/orgs/${seeded.org}/projectsV2/${projNumber}/drafts`, {
+        title: "Draft parity item",
+      }));
+    } else {
+      ok("project", projRes);
+    }
+  }
 
   // classroom (best-effort; feature may be gated)
   const classroomRes = await api(page, "POST", "/classroom-data/classrooms", {
