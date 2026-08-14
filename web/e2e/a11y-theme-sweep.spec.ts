@@ -248,6 +248,7 @@ test.beforeAll(async ({ browser }) => {
     title: "Baseline parity issue",
     body:
       "Seed issue for the a11y sweep.\n\n- [ ] item one\n- [x] item two\n\n" +
+      "Autolinks: see #1, cc @admin, cross admin/org-parity#1.\n\n" +
       "> [!NOTE]\n> A note callout.\n\n" +
       "> [!TIP]\n> A tip callout.\n\n" +
       "> [!IMPORTANT]\n> An important callout.\n\n" +

@@ -1,12 +1,61 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { render, cleanup, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router";
 import Markdown from "../components/Markdown.js";
 
 afterEach(cleanup);
 
+function renderMd(ui: React.ReactNode) {
+  return render(<MemoryRouter>{ui}</MemoryRouter>);
+}
+
+describe("Markdown autolinks", () => {
+  const ctx = { owner: "octo", repo: "hello" };
+
+  it("links #123, @user, owner/repo#9, and 40-char SHAs with repo context", () => {
+    const sha = "a".repeat(40);
+    renderMd(
+      <Markdown linkContext={ctx}>{`See #123 by @octocat, cross other/repo#9, at ${sha}.`}</Markdown>,
+    );
+    expect(screen.getByRole("link", { name: "#123" })).toHaveAttribute(
+      "href",
+      "/ui/repos/octo/hello/issues/123",
+    );
+    expect(screen.getByRole("link", { name: "@octocat" })).toHaveAttribute("href", "/ui/octocat");
+    expect(screen.getByRole("link", { name: "other/repo#9" })).toHaveAttribute(
+      "href",
+      "/ui/repos/other/repo/issues/9",
+    );
+    expect(screen.getByRole("link", { name: sha })).toHaveAttribute(
+      "href",
+      `/ui/repos/octo/hello/commits/${sha}`,
+    );
+  });
+
+  it("does not autolink #123 or SHAs without repo context, but still links @user and owner/repo#n", () => {
+    renderMd(<Markdown>{"bare #123 and @octocat and other/repo#5"}</Markdown>);
+    expect(screen.queryByRole("link", { name: "#123" })).toBeNull();
+    expect(screen.getByRole("link", { name: "@octocat" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "other/repo#5" })).toBeInTheDocument();
+  });
+
+  it("does not autolink refs inside code spans or the local part of emails", () => {
+    const { container } = renderMd(
+      <Markdown linkContext={ctx}>{"`#123` and mail me@example.com"}</Markdown>,
+    );
+    // The code-span #123 is not turned into an issue link, and the email's
+    // `@example` is not turned into an @mention — i.e. no in-app /ui/ links fire.
+    // (remark-gfm may still linkify the email to mailto:, which is fine.)
+    const internal = [...container.querySelectorAll("a")].filter((a) =>
+      (a.getAttribute("href") ?? "").startsWith("/ui/"),
+    );
+    expect(internal).toHaveLength(0);
+  });
+});
+
 describe("Markdown", () => {
   it("renders GitHub alerts as titled, typed admonitions", () => {
-    const { container } = render(
+    const { container } = renderMd(
       <div className="markdown-body">
         <Markdown>{"> [!WARNING]\n> Be careful here."}</Markdown>
       </div>,
@@ -28,7 +77,7 @@ describe("Markdown", () => {
       ["IMPORTANT", "markdown-alert-important"],
       ["CAUTION", "markdown-alert-caution"],
     ] as const) {
-      const { container, unmount } = render(
+      const { container, unmount } = renderMd(
         <div className="markdown-body">
           <Markdown>{`> [!${marker}]\n> Body.`}</Markdown>
         </div>,
@@ -39,7 +88,7 @@ describe("Markdown", () => {
   });
 
   it("leaves an ordinary blockquote untouched", () => {
-    const { container } = render(
+    const { container } = renderMd(
       <div className="markdown-body">
         <Markdown>{"> just a quote"}</Markdown>
       </div>,
@@ -49,7 +98,7 @@ describe("Markdown", () => {
   });
 
   it("still renders task-list checkboxes with accessible names", () => {
-    render(
+    renderMd(
       <div className="markdown-body">
         <Markdown>{"- [x] done\n- [ ] todo"}</Markdown>
       </div>,
