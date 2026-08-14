@@ -116,6 +116,41 @@ describe("NotificationsPage", () => {
     expect(screen.queryByText("Other issue")).toBeNull();
   });
 
+  it("groups notifications under per-repository headers", async () => {
+    const t2 = {
+      ...thread,
+      id: "t2",
+      repository: { full_name: "octo/other" },
+      subject: { ...thread.subject, title: "Other issue", url: "/api/v3/repos/octo/other/issues/2" },
+      url: "/api/v3/notifications/threads/t2",
+    };
+    mockFetch.mockImplementation((url: string) => {
+      if (url === "/api/v3/notifications" || url === "/api/v3/notifications?all=true") {
+        return Promise.resolve(jsonResponse([thread, t2]));
+      }
+      return Promise.resolve(jsonResponse({}));
+    });
+    renderPage();
+    await waitFor(() => expect(screen.getByText("Issue title")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "By repository" }));
+    // Grouped view: the flat table is gone and two single-thread groups render
+    // (each header carries a "(1)" count).
+    expect(screen.queryByRole("table")).toBeNull();
+    expect(screen.getAllByText("(1)")).toHaveLength(2);
+    // The toggle reflects the active mode.
+    expect(screen.getByRole("button", { name: "By repository" })).toHaveAttribute("aria-pressed", "true");
+    // Thread links still resolve under their repo group.
+    expect(screen.getByRole("link", { name: "Issue title" })).toHaveAttribute(
+      "href",
+      "/ui/repos/admin/repo/issues/1",
+    );
+    expect(screen.getByRole("link", { name: "Other issue" })).toHaveAttribute(
+      "href",
+      "/ui/repos/octo/other/issues/2",
+    );
+  });
+
   it("switches to all notifications", async () => {
     mockEndpoints();
     renderPage();

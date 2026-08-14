@@ -158,6 +158,7 @@ function buildRoutes(): { route: string; label: string }[] {
     { route: `/ui/repos/${o}/${r}/pulls/${pr}/checks`, label: "repo-pull-checks" },
     { route: `/ui/repos/${o}/${r}/actions`, label: "repo-actions" },
     { route: `/ui/repos/${o}/${r}/commits`, label: "repo-commits" },
+    { route: `/ui/repos/${o}/${r}/blame/main/README.md`, label: "repo-blame" },
     { route: `/ui/repos/${o}/${r}/branches`, label: "repo-branches" },
     { route: `/ui/repos/${o}/${r}/tags`, label: "repo-tags" },
     { route: `/ui/repos/${o}/${r}/releases`, label: "repo-releases" },

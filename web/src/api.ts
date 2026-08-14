@@ -917,7 +917,7 @@ export async function dispatchWorkflow(
   }
 }
 
-async function ghFetch<T>(path: string, signal?: AbortSignal): Promise<T> {
+export async function ghFetch<T>(path: string, signal?: AbortSignal): Promise<T> {
   const res = await apiFetch(path, { headers: authHeaders(), signal: readSignal(signal) });
   if (!res.ok) {
     handleUnauthorized(res);

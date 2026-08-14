@@ -57,7 +57,7 @@ import type {
   GithubRepoSocialCounts,
 } from "../types.js";
 import { RepoHeader } from "../components/Shell.js";
-import { Box, Blankslate, Button, CodeBlock, SectionLabel, Modal, DialogActions, FormLabel } from "../components/ui.js";
+import { Box, Blankslate, Button, ButtonLink, CodeBlock, SectionLabel, Modal, DialogActions, FormLabel } from "../components/ui.js";
 import { CommentCard } from "../components/CommentCard.js";
 import { ReactionBar } from "../components/ReactionBar.js";
 import {
@@ -1921,6 +1921,22 @@ export function RepoFilePage() {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [message, setMessage] = useState("");
+  const [copied, setCopied] = useState(false);
+  // "Copy permalink" pins the URL to the ref's current commit SHA (github.com's
+  // `y` shortcut), so the link keeps pointing at this exact revision.
+  const copyPermalink = async () => {
+    try {
+      const commits = await fetchRepoCommits(owner, repo, { sha: ref, perPage: 1 });
+      const sha = commits[0]?.sha ?? ref;
+      await navigator.clipboard.writeText(
+        `${window.location.origin}/ui/repos/${owner}/${repo}/blob/${sha}/${path}`,
+      );
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard denied or offline — leave the button label unchanged.
+    }
+  };
   const editMut = useMutation({
     mutationFn: () =>
       putFile(owner, repo, path, {
@@ -1980,6 +1996,12 @@ export function RepoFilePage() {
             </span>
             {!editing && (
               <>
+                <ButtonLink size="sm" to={`/ui/repos/${owner}/${repo}/blame/${ref}/${path}`}>
+                  Blame
+                </ButtonLink>
+                <Button size="sm" onClick={copyPermalink}>
+                  {copied ? "Copied!" : "Copy permalink"}
+                </Button>
                 <Button
                   size="sm"
                   onClick={() => {

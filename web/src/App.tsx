@@ -17,6 +17,7 @@ const RepoDetailPage = lazy(() => import("./pages/RepoDetailPage.js").then(({ Re
 const RepoCommitPage = lazy(() => import("./pages/RepoDetailPage.js").then(({ RepoCommitPage }) => ({ default: RepoCommitPage })));
 const RepoComparePage = lazy(() => import("./pages/RepoDetailPage.js").then(({ RepoComparePage }) => ({ default: RepoComparePage })));
 const RepoFilePage = lazy(() => import("./pages/RepoDetailPage.js").then(({ RepoFilePage }) => ({ default: RepoFilePage })));
+const BlamePage = lazy(() => import("./pages/BlamePage.js").then(({ BlamePage }) => ({ default: BlamePage })));
 const ReleasesPage = lazy(() => import("./pages/ReleasesPage.js").then(({ ReleasesPage }) => ({ default: ReleasesPage })));
 const IssuesPage = lazy(() => import("./pages/IssuesPage.js").then(({ IssuesPage }) => ({ default: IssuesPage })));
 const PullsPage = lazy(() => import("./pages/PullsPage.js").then(({ PullsPage }) => ({ default: PullsPage })));
@@ -211,6 +212,7 @@ export function App() {
               <Route path="/ui/repos/:owner/:repo/commits/:sha" element={<RepoCommitPage />} />
               <Route path="/ui/repos/:owner/:repo/compare/:range" element={<RepoComparePage />} />
               <Route path="/ui/repos/:owner/:repo/blob/:ref/*" element={<RepoFilePage />} />
+              <Route path="/ui/repos/:owner/:repo/blame/:ref/*" element={<BlamePage />} />
               <Route path="/ui/repos/:owner/:repo/releases" element={<ReleasesPage />} />
               <Route path="/ui/repos/:owner/:repo/releases/new" element={<ReleasesPage />} />
               <Route path="/ui/repos/:owner/:repo/releases/:releaseId" element={<ReleasesPage />} />

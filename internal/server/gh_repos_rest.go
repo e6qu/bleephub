@@ -40,6 +40,7 @@ func (s *Server) registerGHRepoRoutes() {
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/collaborators/{username}", s.requirePerm(store.ScopeAdministration, store.PermWrite, s.handleRemoveCollaborator))
 	s.registerGHRepoRefRoutes()
 	s.registerGHRepoObjectRoutes()
+	s.registerGHBlameRoutes()
 	s.registerGHGitDataRoutes()
 	s.registerGHRepoSettingsRoutes()
 }
