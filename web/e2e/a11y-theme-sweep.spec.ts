@@ -301,6 +301,15 @@ test.beforeAll(async ({ browser }) => {
     name: "org-parity",
     auto_init: true,
   }));
+  // an org custom-property schema so the repo Settings › Custom properties tab
+  // renders its authoring form (not just the empty state) for the a11y scan.
+  ok("org-props", await api(page, "PATCH", `/api/v3/orgs/${seeded.org}/properties/schema`, {
+    properties: [
+      { property_name: "environment", value_type: "single_select", allowed_values: ["prod", "staging"], description: "Deploy tier" },
+      { property_name: "regions", value_type: "multi_select", allowed_values: ["us", "eu"] },
+      { property_name: "team", value_type: "string" },
+    ],
+  }));
 
   // a Projects V2 board so /orgs/{org}/projects/{n} renders the table view with
   // a real single-select column and an item (GitHub creates projects over
@@ -532,6 +541,39 @@ for (const theme of THEMES) {
       // eslint-disable-next-line no-console
       console.log(
         `[scan] ${theme} settings-rulesets -> ${
+          record.loadFailure ? "LOAD-FAIL" : `${record.violations.length} rules`
+        }` + record.violations.map((v) => `\n    ! ${v.id}: ${v.targets.join(" | ")}`).join(""),
+      );
+    }
+
+    // Also scan the repo Settings → Custom properties tab (org-owned repo, whose
+    // org has a seeded schema, so the value-authoring form renders) — a
+    // state-gated tab invisible to the base settings scan.
+    {
+      const record: RouteResult = {
+        route: `/ui/repos/${seeded.org}/org-parity/settings (Custom properties tab)`,
+        theme,
+        url: BASE + `/ui/repos/${seeded.org}/org-parity/settings`,
+        themeApplied: false,
+        loadFailure: false,
+        violations: [],
+      };
+      try {
+        await page.goto(`/ui/repos/${seeded.org}/org-parity/settings`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+        await page.waitForSelector("main, [role=main], .app-header", { timeout: 8_000 }).catch(() => {});
+        await page.getByRole("button", { name: "Custom properties", exact: true }).click();
+        await page.getByLabel("environment").waitFor({ state: "visible", timeout: 8_000 });
+        const isDark = await page.evaluate(() => document.documentElement.classList.contains("dark"));
+        record.themeApplied = theme === "dark" ? isDark : !isDark;
+        record.violations = mapViolations(await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze());
+      } catch (err) {
+        record.loadFailure = true;
+        record.error = err instanceof Error ? err.message : String(err);
+      }
+      collected.push(record);
+      // eslint-disable-next-line no-console
+      console.log(
+        `[scan] ${theme} settings-custom-properties -> ${
           record.loadFailure ? "LOAD-FAIL" : `${record.violations.length} rules`
         }` + record.violations.map((v) => `\n    ! ${v.id}: ${v.targets.join(" | ")}`).join(""),
       );

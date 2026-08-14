@@ -5679,6 +5679,15 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "org custom-property *schemas* were authorable (OrgGovernancePage) but a repo could never set property *values* \u2014 github.com exposes this under repo Settings \u203a Custom properties, which was entirely absent",
+        "id": "WEB-116",
+        "location": "web/src/pages/RepoSettingsPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added a **Custom properties** repo settings tab that reads the org schema (`GET /orgs/{owner}/properties/schema`) and the repo's current values (`GET /repos/{o}/{r}/properties/values`) and renders a value editor per `value_type` (string/url text input, single_select + true_false dropdowns, multi_select checkboxes), saving through `PATCH /repos/{o}/{r}/properties/values {properties:[\u2026]}` (a null value unsets); non-org repos show an empty state. Wrappers live in the lazy settings page (`ghFetch`/`ghSend`). Verified: unit test edits a single-select and a string property and asserts the PATCH body; the a11y sweep seeds an org schema and scans the org repo's Custom properties tab at 0 violations in both themes",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -7095,21 +7104,21 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 113
+            "fixed": 114
           },
-          "total": 115
+          "total": 116
         }
       },
       "severity": {
         "blocker": 167,
         "major": 399,
-        "minor": 178
+        "minor": 179
       },
       "status": {
         "deferred": 3,
-        "fixed": 741
+        "fixed": 742
       },
-      "total": 744
+      "total": 745
     }
   },
   "rest": {
@@ -28632,22 +28641,27 @@
         "target": "/ui/"
       },
       {
-        "line": 441,
+        "line": 450,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 480,
+        "line": 489,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/repos/${seeded.owner}/${seeded.repo}/settings"
       },
       {
-        "line": 515,
+        "line": 524,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/repos/${seeded.owner}/${seeded.repo}/settings"
       },
       {
-        "line": 552,
+        "line": 562,
+        "source": "web/e2e/a11y-theme-sweep.spec.ts",
+        "target": "/ui/repos/${seeded.org}/org-parity/settings"
+      },
+      {
+        "line": 594,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/search"
       },
@@ -30174,7 +30188,7 @@
       }
     ],
     "summary": {
-      "browser_navigations": 71,
+      "browser_navigations": 72,
       "routes": 93,
       "routes_with_direct_render": 90,
       "routes_with_test_reference": 92

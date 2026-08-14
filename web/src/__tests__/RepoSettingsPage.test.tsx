@@ -283,6 +283,48 @@ describe("RepoSettingsPage", () => {
     });
   });
 
+  it("sets custom property values from the Custom properties tab", async () => {
+    mockFetch.mockImplementation((url: string, opts?: { method?: string }) => {
+      const u = url.toString();
+      if (u === "/api/v3/repos/admin/settings-repo/properties/values" && opts?.method === "PATCH") {
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      if (u === "/api/v3/orgs/admin/properties/schema") {
+        return Promise.resolve(jsonResponse([
+          { property_name: "environment", value_type: "single_select", required: false, allowed_values: ["prod", "staging"], description: "Deploy tier" },
+          { property_name: "team", value_type: "string", required: false, allowed_values: null },
+        ]));
+      }
+      if (u === "/api/v3/repos/admin/settings-repo/properties/values") {
+        return Promise.resolve(jsonResponse([{ property_name: "environment", value: "staging" }]));
+      }
+      if (u.includes("/issues") || u.includes("/pulls")) return Promise.resolve(jsonResponse([]));
+      return Promise.resolve(jsonResponse(repo));
+    });
+    renderPage();
+    await waitFor(() => screen.getByDisplayValue("before"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Custom properties" }));
+    const envSelect = await screen.findByLabelText("environment");
+    await waitFor(() => expect((envSelect as HTMLSelectElement).value).toBe("staging"));
+    fireEvent.change(envSelect, { target: { value: "prod" } });
+    fireEvent.change(screen.getByLabelText("team"), { target: { value: "platform" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      const patch = mockFetch.mock.calls.find(
+        (c) => String(c[0]) === "/api/v3/repos/admin/settings-repo/properties/values" && c[1]?.method === "PATCH",
+      );
+      expect(patch).toBeDefined();
+      expect(JSON.parse(String(patch![1].body)).properties).toEqual(
+        expect.arrayContaining([
+          { property_name: "environment", value: "prod" },
+          { property_name: "team", value: "platform" },
+        ]),
+      );
+    });
+  });
+
   it("authors a repo ruleset with a rule and status-check parameters from the Rulesets tab", async () => {
     mockFetch.mockImplementation((url: string, opts?: { method?: string }) => {
       const u = url.toString();
