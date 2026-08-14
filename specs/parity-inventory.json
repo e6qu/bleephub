@@ -5553,6 +5553,15 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "the notifications inbox had Unread/All tabs and a free-text filter but not github.com's **repository** and **reason** filters",
+        "id": "WEB-102",
+        "location": "web/src/pages/NotificationsPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added two accessible filter dropdowns (aria-labelled Repository / Reason) populated from the distinct repos and reasons present in the inbox; they compose with the Unread/All tabs and text filter to narrow the thread list. Verified: unit test seeds two threads across repos/reasons and asserts each filter narrows the table; axe-clean in both themes",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -6969,21 +6978,21 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 99
+            "fixed": 100
           },
-          "total": 101
+          "total": 102
         }
       },
       "severity": {
         "blocker": 167,
         "major": 397,
-        "minor": 166
+        "minor": 167
       },
       "status": {
         "deferred": 3,
-        "fixed": 727
+        "fixed": 728
       },
-      "total": 730
+      "total": 731
     }
   },
   "rest": {

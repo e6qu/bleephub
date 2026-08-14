@@ -85,6 +85,37 @@ describe("NotificationsPage", () => {
     });
   });
 
+  it("filters the inbox by repository and by reason", async () => {
+    const t2 = {
+      ...thread,
+      id: "t2",
+      repository: { full_name: "octo/other" },
+      subject: { ...thread.subject, title: "Other issue", url: "/api/v3/repos/octo/other/issues/2" },
+      reason: "mention",
+      url: "/api/v3/notifications/threads/t2",
+    };
+    mockFetch.mockImplementation((url: string) => {
+      if (url === "/api/v3/notifications" || url === "/api/v3/notifications?all=true") {
+        return Promise.resolve(jsonResponse([thread, t2]));
+      }
+      return Promise.resolve(jsonResponse({}));
+    });
+    renderPage();
+    await waitFor(() => expect(screen.getByText("Other issue")).toBeInTheDocument());
+    expect(screen.getByText("Issue title")).toBeInTheDocument();
+
+    // Filter by repository → only octo/other's thread remains.
+    fireEvent.change(screen.getByLabelText("Filter by repository"), { target: { value: "octo/other" } });
+    expect(screen.getByText("Other issue")).toBeInTheDocument();
+    expect(screen.queryByText("Issue title")).toBeNull();
+
+    // Reset repo, filter by reason → only the 'subscribed' thread remains.
+    fireEvent.change(screen.getByLabelText("Filter by repository"), { target: { value: "" } });
+    fireEvent.change(screen.getByLabelText("Filter by reason"), { target: { value: "subscribed" } });
+    expect(screen.getByText("Issue title")).toBeInTheDocument();
+    expect(screen.queryByText("Other issue")).toBeNull();
+  });
+
   it("switches to all notifications", async () => {
     mockEndpoints();
     renderPage();
