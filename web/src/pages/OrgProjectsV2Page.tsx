@@ -99,8 +99,8 @@ function ProjectV2Detail({ org, number }: { org: string; number: number }) {
     queryFn: () => fetchOrgProjectV2Fields(org, number),
   });
   const moveMut = useMutation({
-    mutationFn: ({ itemId, fieldId, optionId }: { itemId: number; fieldId: number; optionId: string }) =>
-      setOrgProjectV2ItemField(org, number, itemId, fieldId, optionId),
+    mutationFn: ({ itemId, fieldId, value }: { itemId: number; fieldId: number; value: string | number }) =>
+      setOrgProjectV2ItemField(org, number, itemId, fieldId, value),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["project-v2-items", org, number] }),
   });
   const [type, setType] = useState<"Issue" | "PullRequest">("Issue");
@@ -224,9 +224,8 @@ function ProjectV2Detail({ org, number }: { org: string; number: number }) {
         <ProjectTableView
           items={items}
           fields={fieldsQ.data ?? []}
-          groupField={groupField}
           busy={moveMut.isPending || deleteMut.isPending}
-          onMove={(itemId, fieldId, optionId) => moveMut.mutate({ itemId, fieldId, optionId })}
+          onMove={(itemId, fieldId, value) => moveMut.mutate({ itemId, fieldId, value })}
           onRemove={(itemId) => void removeItem(itemId)}
         />
       ) : groupField ? (
@@ -244,7 +243,7 @@ function ProjectV2Detail({ org, number }: { org: string; number: number }) {
                           item={it}
                           groupField={groupField}
                           busy={moveMut.isPending || deleteMut.isPending}
-                          onMove={(optionId) => moveMut.mutate({ itemId: it.id, fieldId: groupField.id, optionId })}
+                          onMove={(optionId) => moveMut.mutate({ itemId: it.id, fieldId: groupField.id, value: optionId })}
                           onRemove={() => void removeItem(it.id)}
                         />
                       ))}
@@ -277,22 +276,81 @@ function ProjectV2Detail({ org, number }: { org: string; number: number }) {
   );
 }
 
+// One editable table cell. Single-select renders a dropdown; text/number/date
+// render an input committed on blur; anything else is read-only. All go through
+// the same setOrgProjectV2ItemField mutation (value is a string or number).
+function ProjectFieldCell({
+  item,
+  field,
+  busy,
+  onSet,
+}: {
+  item: GithubProjectV2Item;
+  field: GithubProjectV2Field;
+  busy: boolean;
+  onSet: (value: string | number) => void;
+}) {
+  const label = `${field.name} for item ${item.id}`;
+  const cellStyle = { padding: "0.5rem 0.8rem" };
+  if (field.data_type === "single_select") {
+    return (
+      <td style={cellStyle}>
+        <select
+          aria-label={label}
+          value={itemOptionId(item, field.id) ?? ""}
+          onChange={(e) => onSet(e.target.value)}
+          disabled={busy}
+          style={{ fontSize: "0.78rem" }}
+        >
+          <option value="" disabled>
+            Set {field.name}…
+          </option>
+          {(field.options ?? []).map((o) => (
+            <option key={o.id} value={o.id}>
+              {o.name.raw}
+            </option>
+          ))}
+        </select>
+      </td>
+    );
+  }
+  if (field.data_type === "text" || field.data_type === "number" || field.data_type === "date") {
+    const raw = itemFieldValue(item, field);
+    const initial = field.data_type === "date" ? raw.slice(0, 10) : raw;
+    return (
+      <td style={cellStyle}>
+        <input
+          aria-label={label}
+          type={field.data_type === "text" ? "text" : field.data_type}
+          defaultValue={initial}
+          disabled={busy}
+          style={{ fontSize: "0.78rem", maxWidth: "9rem" }}
+          onBlur={(e) => {
+            const v = e.target.value;
+            if (v === initial) return;
+            onSet(field.data_type === "number" && v !== "" ? Number(v) : v);
+          }}
+        />
+      </td>
+    );
+  }
+  return <td style={{ ...cellStyle, color: "var(--color-fg-muted)" }}>{itemFieldValue(item, field) || "—"}</td>;
+}
+
 // GitHub's Projects v2 default view: a spreadsheet-style table, one row per
-// item and one column per field. Single-select fields are editable inline (the
-// same mutation the board uses); other field types render read-only.
+// item and one column per field. Single-select, text, number and date fields
+// are editable inline (the same mutation the board uses).
 function ProjectTableView({
   items,
   fields,
-  groupField,
   busy,
   onMove,
   onRemove,
 }: {
   items: GithubProjectV2Item[];
   fields: GithubProjectV2Field[];
-  groupField: GithubProjectV2Field | undefined;
   busy: boolean;
-  onMove: (itemId: number, fieldId: number, optionId: string) => void;
+  onMove: (itemId: number, fieldId: number, value: string | number) => void;
   onRemove: (itemId: number) => void;
 }) {
   // The item title is its own column, so drop any field literally named "Title".
@@ -341,32 +399,15 @@ function ProjectTableView({
                     <span style={{ color: "var(--color-fg-muted)" }}> #{it.content.number}</span>
                   )}
                 </th>
-                {columns.map((f) =>
-                  f.id === groupField?.id && f.data_type === "single_select" ? (
-                    <td key={f.id} style={{ padding: "0.5rem 0.8rem" }}>
-                      <select
-                        aria-label={`${f.name} for item ${it.id}`}
-                        value={itemOptionId(it, f.id) ?? ""}
-                        onChange={(e) => onMove(it.id, f.id, e.target.value)}
-                        disabled={busy}
-                        style={{ fontSize: "0.78rem" }}
-                      >
-                        <option value="" disabled>
-                          Set {f.name}…
-                        </option>
-                        {(f.options ?? []).map((o) => (
-                          <option key={o.id} value={o.id}>
-                            {o.name.raw}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                  ) : (
-                    <td key={f.id} style={{ padding: "0.5rem 0.8rem", color: "var(--color-fg-muted)" }}>
-                      {itemFieldValue(it, f) || "—"}
-                    </td>
-                  ),
-                )}
+                {columns.map((f) => (
+                  <ProjectFieldCell
+                    key={f.id}
+                    item={it}
+                    field={f}
+                    busy={busy}
+                    onSet={(value) => onMove(it.id, f.id, value)}
+                  />
+                ))}
                 <td style={{ padding: "0.5rem 0.8rem", textAlign: "right" }}>
                   <Button
                     size="sm"

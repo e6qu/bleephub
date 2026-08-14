@@ -327,6 +327,11 @@ test.beforeAll(async ({ browser }) => {
           { name: "Done", color: "GREEN", description: "" },
         ],
       }));
+      // A text field too, so the table renders an editable text input to scan.
+      ok("project-text-field", await api(page, "POST", `/api/v3/orgs/${seeded.org}/projectsV2/${projNumber}/fields`, {
+        name: "Notes",
+        data_type: "text",
+      }));
       ok("project-draft", await api(page, "POST", `/api/v3/orgs/${seeded.org}/projectsV2/${projNumber}/drafts`, {
         title: "Draft parity item",
       }));

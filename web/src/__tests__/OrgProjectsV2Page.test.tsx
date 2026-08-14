@@ -86,6 +86,38 @@ describe("OrgProjectsV2Page", () => {
     });
   });
 
+  it("edits a text field value via PATCH on blur", async () => {
+    const field = { id: 200, name: "Notes", data_type: "text", options: [] };
+    const item = {
+      id: 11,
+      content_type: "Issue",
+      content: { title: "Doc task", number: 7 },
+      fields: [{ id: 200, name: "Notes", data_type: "text", value: "old" }],
+    };
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.endsWith("/orgs/acme/projectsV2/3/fields")) return Promise.resolve(jsonResponse([field]));
+      if (u.endsWith("/orgs/acme/projectsV2/3/items")) return Promise.resolve(jsonResponse([item]));
+      if (u.endsWith("/orgs/acme/projectsV2/3")) {
+        return Promise.resolve(jsonResponse({ id: 1, number: 3, title: "Roadmap", short_description: null }));
+      }
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/orgs/acme/projects/3");
+
+    const input = await screen.findByLabelText("Notes for item 11");
+    fireEvent.change(input, { target: { value: "revised" } });
+    fireEvent.blur(input);
+
+    await waitFor(() => {
+      const patch = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/orgs/acme/projectsV2/3/items/11") && c[1]?.method === "PATCH",
+      );
+      expect(patch).toBeDefined();
+      expect(JSON.parse(String(patch![1].body))).toEqual({ fields: [{ id: 200, value: "revised" }] });
+    });
+  });
+
   it("defaults to a table view and switches to the board", async () => {
     const field = {
       id: 100,

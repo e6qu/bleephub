@@ -5562,6 +5562,15 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "the Projects v2 table only let you edit single-select fields (round 4); text, number and date fields were read-only even though the field-value API accepts any value",
+        "id": "WEB-103",
+        "location": "web/src/pages/OrgProjectsV2Page.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 extracted a `ProjectFieldCell` that renders an aria-labelled editable control per field type (dropdown for single-select, `<input type=text/number/date>` committed on blur for the rest) and made every single-select editable (not just the grouped one); all go through the same setOrgProjectV2ItemField mutation. Extended the a11y sweep's seeded project with a text field. Verified: unit test edits a text field and asserts the PATCH body; axe-clean in both themes",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -6978,21 +6987,21 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 100
+            "fixed": 101
           },
-          "total": 102
+          "total": 103
         }
       },
       "severity": {
         "blocker": 167,
         "major": 397,
-        "minor": 167
+        "minor": 168
       },
       "status": {
         "deferred": 3,
-        "fixed": 728
+        "fixed": 729
       },
-      "total": 731
+      "total": 732
     }
   },
   "rest": {
@@ -28511,7 +28520,7 @@
         "target": "/ui/"
       },
       {
-        "line": 432,
+        "line": 437,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/"
       },
