@@ -292,15 +292,15 @@
   "graphql": {
     "compatibility_gap_count": 9,
     "coverage": {
-      "bleephub_types": 259,
+      "bleephub_types": 263,
       "compatibility_gap_count": 9,
-      "implemented_fields": 911,
+      "implemented_fields": 922,
       "official_fields": 8360,
       "official_types": 1807,
-      "shared_types": 252,
-      "signature_exact_fields": 910
+      "shared_types": 256,
+      "signature_exact_fields": 921
     },
-    "introspection_snapshot_sha256": "ebddcba9ee1fda19d2d8fd93e2567f28b160b85f03d392d3165a15a9f968ad2e",
+    "introspection_snapshot_sha256": "94c24d0cd37c5a3573b1615869def537b31386492f8b1cef70db6bc879cb67c3",
     "official_schema": {
       "content_sha256": "b716c6844750283b8c33200f660989337254e7158f40ed869f06418bafb3bc2e",
       "source": "https://docs.github.com/public/fpt/schema.docs.graphql"
@@ -313,6 +313,7 @@
       "internal/graphqlapi/gh_orgs_graphql.go",
       "internal/graphqlapi/gh_projects_v2_graphql.go",
       "internal/graphqlapi/gh_pulls_graphql.go",
+      "internal/graphqlapi/gh_reactions_graphql.go",
       "internal/graphqlapi/gh_repos_graphql.go"
     ],
     "test_files": [
@@ -5480,6 +5481,42 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "repo Insights had no **Dependency graph** view, though the backend builds a real SPDX SBOM (`GET /repos/{o}/{r}/dependency-graph/sbom`)",
+        "id": "WEB-094",
+        "location": "web/src/pages/InsightsPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added a Dependency-graph section listing the repository's parsed dependencies (ecosystem:name + version) from the SBOM, with a count header and empty state, via a new fetchDependencySBOM wrapper (drops the self-describing first package)",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "repo Insights had no **Pulse** activity overview (GitHub's first Insights subtab)",
+        "id": "WEB-095",
+        "location": "web/src/pages/InsightsPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added a Pulse section at the top of Insights with StatCards for merged PRs, open PRs, closed issues, and open issues (issue counts exclude PRs, which the /issues endpoint also returns; merged = closed PRs with merged_at)",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "GitHub discussions and discussion comments support **reactions**, but bleephub had only the read side (`reactionGroups`) \u2014 no way to add/remove one (GitHub exposes reactions GraphQL-only, and the `addReaction`/`removeReaction` mutations did not exist)",
+        "id": "WEB-096",
+        "location": "web/src/pages/DiscussionsPage.tsx, internal/graphqlapi/gh_reactions_graphql.go",
+        "severity": "M",
+        "status": "fixed \u2014 added the Go GraphQL **addReaction/removeReaction** mutations (polymorphic Reactable target with proper authz \u2014 a refusal case covers each; payloads kept GitHub-exact minimal to hold the schema-parity ratchet at \u22649 gaps; schema snapshot regenerated) and a **viewerHasReacted** field on ReactionGroup; the frontend renders a reaction bar (count pills + an emoji picker, both target-size-safe 26px with aria-labels/aria-pressed) on the discussion and every comment, toggling via the mutations. Verified: addReaction over GraphQL + the detail route (bar + open picker) axe-clean in both themes",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "repo Insights was missing GitHub's **Network** subtab \u2014 the commit-ancestry graph \u2014 leaving Insights without any topology view even though the commits API already returns full parent links",
+        "id": "WEB-097",
+        "location": "web/src/pages/InsightsPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added a Network section that lays out the real commit DAG as a horizontal railroad SVG (a git-style lane algorithm: merge commits and branch points spawn/retire lanes; parents outside the fetched window are skipped), colours lanes from an 8-token theme-safe palette (defined in both light and dark), labels branch tips, and exposes the graph as `role=\"img\"` with a descriptive label plus an off-screen ordered list linking each commit to its detail page for screen readers. Verified: unit test drives a fork+merge DAG (lanes/label/links); axe-clean in both themes",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -6896,21 +6933,21 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 91
+            "fixed": 95
           },
-          "total": 93
+          "total": 97
         }
       },
       "severity": {
         "blocker": 167,
-        "major": 395,
-        "minor": 160
+        "major": 396,
+        "minor": 163
       },
       "status": {
         "deferred": 3,
-        "fixed": 719
+        "fixed": 723
       },
-      "total": 722
+      "total": 726
     }
   },
   "rest": {

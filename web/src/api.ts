@@ -105,6 +105,7 @@ import type {
   GithubActionsVariable,
   GithubActionsPermissions,
   GithubWorkflowPermissions,
+  GithubSBOMPackage,
   GithubContributor,
   GithubTrafficViews,
   GithubTrafficClones,
@@ -3341,6 +3342,7 @@ export async function fetchDiscussionDetail(
           category { id name emoji isAnswerable }
           createdAt
           updatedAt
+          reactionGroups { content viewerHasReacted users { totalCount } }
           comments(first: 100) {
             nodes {
               id
@@ -3350,6 +3352,7 @@ export async function fetchDiscussionDetail(
               createdAt
               updatedAt
               isAnswer
+              reactionGroups { content viewerHasReacted users { totalCount } }
               replies(first: 100) {
                 nodes {
                   id
@@ -3359,6 +3362,7 @@ export async function fetchDiscussionDetail(
                   createdAt
                   updatedAt
                   isAnswer
+                  reactionGroups { content viewerHasReacted users { totalCount } }
                 }
               }
             }
@@ -3371,6 +3375,21 @@ export async function fetchDiscussionDetail(
     signal,
   );
   return data.repository.discussion;
+}
+
+/** Add a reaction to a discussion or discussion comment (GraphQL-only on GitHub).
+ * `content` is the ReactionContent enum (THUMBS_UP, HEART, ROCKET, …). */
+export async function addReaction(subjectId: string, content: string): Promise<void> {
+  await ghGraphQL(
+    `mutation($input: AddReactionInput!) { addReaction(input: $input) { clientMutationId } }`,
+    { input: { subjectId, content } },
+  );
+}
+export async function removeReaction(subjectId: string, content: string): Promise<void> {
+  await ghGraphQL(
+    `mutation($input: RemoveReactionInput!) { removeReaction(input: $input) { clientMutationId } }`,
+    { input: { subjectId, content } },
+  );
 }
 
 export async function createDiscussion(
@@ -4754,6 +4773,13 @@ export const fetchRepoSubscribersPage = (owner: string, repo: string, pageUrl?: 
 /** First page of forks; follow pages via the Link rel="next" URL. */
 export const fetchRepoForksPage = (owner: string, repo: string, pageUrl?: string) =>
   ghFetchPage<BleephubRepo>(pageUrl ?? `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/forks?per_page=50`);
+
+/** The repository's SPDX SBOM package list (dependency graph). Drops the first
+ * package (which describes the repo itself), leaving its dependencies. */
+export const fetchDependencySBOM = (owner: string, repo: string) =>
+  ghFetch<{ sbom: { packages: GithubSBOMPackage[] } }>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/dependency-graph/sbom`,
+  ).then((r) => (r.sbom?.packages ?? []).slice(1));
 
 /** Language name → byte count, sorted by the server descending by bytes. */
 export const fetchRepoLanguages = (owner: string, repo: string) =>

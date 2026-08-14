@@ -502,6 +502,15 @@ export interface GithubWorkflowPermissions {
   can_approve_pull_request_reviews: boolean;
 }
 
+/** One package in the SPDX SBOM (GET .../dependency-graph/sbom). The first
+ * package describes the repo itself; the rest are its dependencies. */
+export interface GithubSBOMPackage {
+  SPDXID: string;
+  name: string;
+  versionInfo?: string;
+  externalRefs?: Array<{ referenceLocator: string; referenceType: string }>;
+}
+
 // ─── GitHub Actions REST shapes (/api/v3/repos/{o}/{r}/actions/*) ───────
 
 /** GitHub workflow-run status. */
@@ -914,6 +923,13 @@ export interface GithubDiscussionAuthor {
   avatarUrl?: string;
 }
 
+/** A GraphQL ReactionGroup (content enum + viewer state + count). */
+export interface GithubReactionGroup {
+  content: string;
+  viewerHasReacted: boolean;
+  users: { totalCount: number };
+}
+
 export interface GithubDiscussion {
   id: string;
   number: number;
@@ -925,6 +941,7 @@ export interface GithubDiscussion {
   createdAt: string;
   updatedAt: string;
   comments: { totalCount: number };
+  reactionGroups?: GithubReactionGroup[];
 }
 
 export interface GithubDiscussionComment {
@@ -936,6 +953,7 @@ export interface GithubDiscussionComment {
   updatedAt: string;
   isAnswer: boolean;
   replies: { nodes: GithubDiscussionComment[] };
+  reactionGroups?: GithubReactionGroup[];
 }
 
 export interface GithubDiscussionConnection {

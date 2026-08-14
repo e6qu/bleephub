@@ -1,6 +1,6 @@
 module github.com/e6qu/bleephub/security-tools
 
-go 1.26.5
+go 1.26.6
 
 require (
 	github.com/mibk/dupl v1.1.0

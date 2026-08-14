@@ -1560,7 +1560,7 @@ func issueToGQL(issue *store.Issue, st *store.Store) map[string]interface{} {
 				"endCursor":       nil,
 			},
 		},
-		"reactionGroups": reactionGroupsForGraphQL(st.Reactions, "issue", issue.ID),
+		"reactionGroups": reactionGroupsForGraphQL(st.Reactions, "issue", issue.ID, 0),
 	}
 }
 
@@ -1667,6 +1667,14 @@ func (s *Resolver) gqlReactionGroupType() *graphql.Object {
 		Name: "ReactionGroup",
 		Fields: graphql.Fields{
 			"content": &graphql.Field{Type: graphql.NewNonNull(reactionContentEnum)},
+			"viewerHasReacted": &graphql.Field{
+				Type: graphql.NewNonNull(graphql.Boolean),
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					m, _ := p.Source.(map[string]interface{})
+					v, _ := m["viewerHasReacted"].(bool)
+					return v, nil
+				},
+			},
 			"users": &graphql.Field{
 				Type: graphql.NewNonNull(graphql.NewObject(graphql.ObjectConfig{
 					Name: "ReactingUserConnection",
@@ -2117,7 +2125,7 @@ func commentToGQLLocked(c *store.Comment, st *store.Store) map[string]interface{
 		"isMinimized":         c.MinimizedReason != "",
 		"isPinned":            c.Pinned,
 		"minimizedReason":     nilStr(c.MinimizedReason),
-		"reactionGroups":      reactionGroupsForGraphQL(st.Reactions, "issue_comment", c.ID),
+		"reactionGroups":      reactionGroupsForGraphQL(st.Reactions, "issue_comment", c.ID, 0),
 	}
 }
 
@@ -2195,14 +2203,18 @@ func nilStrPtr(s *string) interface{} {
 // for the given parent, querying the real ReactionStore so per-content
 // totalCount values reflect actual reactions. Used by Issue, IssueComment,
 // and any other reactable type's `reactionGroups` field.
-func reactionGroupsForGraphQL(rs *store.ReactionStore, parentType string, parentID int) []map[string]interface{} {
+func reactionGroupsForGraphQL(rs *store.ReactionStore, parentType string, parentID int, viewerID int) []map[string]interface{} {
 	counts := map[string]int{
 		"+1": 0, "-1": 0, "laugh": 0, "confused": 0,
 		"heart": 0, "hooray": 0, "rocket": 0, "eyes": 0,
 	}
+	viewerReacted := map[string]bool{}
 	if rs != nil && parentID != 0 {
 		for _, r := range rs.ListReactions(parentType, parentID, "") {
 			counts[r.Content]++
+			if viewerID != 0 && r.UserID == viewerID {
+				viewerReacted[r.Content] = true
+			}
 		}
 	}
 	// Order matches real GitHub's GraphQL response.
@@ -2219,8 +2231,9 @@ func reactionGroupsForGraphQL(rs *store.ReactionStore, parentType string, parent
 	out := make([]map[string]interface{}, 0, len(mapping))
 	for _, m := range mapping {
 		out = append(out, map[string]interface{}{
-			"content": m.gql,
-			"users":   map[string]interface{}{"totalCount": counts[m.rest]},
+			"content":          m.gql,
+			"users":            map[string]interface{}{"totalCount": counts[m.rest]},
+			"viewerHasReacted": viewerReacted[m.rest],
 		})
 	}
 	return out
