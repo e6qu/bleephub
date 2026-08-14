@@ -1114,6 +1114,58 @@ select {
   background: var(--color-border);
 }
 
+/* GitHub alerts/callouts (`> [!NOTE]` …): colored admonition boxes. The
+   blockquote is rewritten to div.markdown-alert.markdown-alert-<type> by
+   remarkGithubAlerts in Markdown.tsx; every color is a theme-safe token defined
+   in both the light and dark blocks. */
+.markdown-body .markdown-alert {
+  padding: 0.5rem 1rem;
+  margin-bottom: 1rem;
+  color: var(--color-fg);
+  border-left: 0.25em solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+.markdown-body .markdown-alert > :first-child {
+  margin-top: 0;
+}
+.markdown-body .markdown-alert > :last-child {
+  margin-bottom: 0;
+}
+.markdown-body .markdown-alert-title {
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+.markdown-body .markdown-alert-note {
+  border-left-color: var(--color-accent);
+}
+.markdown-body .markdown-alert-note .markdown-alert-title {
+  color: var(--color-accent);
+}
+.markdown-body .markdown-alert-tip {
+  border-left-color: var(--color-success-text);
+}
+.markdown-body .markdown-alert-tip .markdown-alert-title {
+  color: var(--color-success-text);
+}
+.markdown-body .markdown-alert-important {
+  border-left-color: var(--color-brand-purple);
+}
+.markdown-body .markdown-alert-important .markdown-alert-title {
+  color: var(--color-brand-purple);
+}
+.markdown-body .markdown-alert-warning {
+  border-left-color: var(--color-status-warn);
+}
+.markdown-body .markdown-alert-warning .markdown-alert-title {
+  color: var(--color-status-warn);
+}
+.markdown-body .markdown-alert-caution {
+  border-left-color: var(--color-danger-text);
+}
+.markdown-body .markdown-alert-caution .markdown-alert-title {
+  color: var(--color-danger-text);
+}
+
 /* Colored issue-label pills: contrast-safe text per theme (see LabelPills.tsx,
    ledger WEB-068). --label-fg-light/dark are set inline per label color. */
 .label-pill {

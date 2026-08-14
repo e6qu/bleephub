@@ -5517,6 +5517,33 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "the Projects v2 board offered only a kanban view, but GitHub's **default Projects v2 view is a Table** (spreadsheet: one row per item, one column per field) with a Board/Table switcher \u2014 bleephub had no table view at all",
+        "id": "WEB-098",
+        "location": "web/src/pages/OrgProjectsV2Page.tsx",
+        "severity": "M",
+        "status": "fixed \u2014 added a **Table view** (now the default, matching GitHub) rendering a semantic `<table>` (col headers per field, `<th scope=\"row\">` title cell linking to the item, single-select cells editable inline via the same field-value mutation, other field types read-only) plus an accessible **Board/Table switcher** (`role=\"group\"`, `aria-pressed` toggles). Extended the a11y sweep to seed an org project (createProjectV2 + Status field + draft item) and scan the project-detail route. Verified: unit tests assert table-default + switch-to-board; axe-clean in both themes across the seeded project route",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "bleephub had the \u2318K command palette but not GitHub's **`?` keyboard-shortcuts help sheet** nor the global **`g \u2026` navigation sequences** it documents",
+        "id": "WEB-099",
+        "location": "web/src/components/GlobalShortcuts.tsx, web/src/components/KeyboardShortcuts.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added a `?` shortcuts modal (accessible dialog: role=dialog + aria-labelledby, Esc/backdrop/close-button dismiss, focus moved to close on open and restored on close, `<kbd>` bindings) listing only shortcuts that actually work, plus the global `g h`/`g n`/`g e`/`g p` navigation sequences (ignored while typing; the `g` prefix expires in 1s). Both live in a code-split `GlobalShortcuts` module so the entry bundle stays under its 160 KB budget. Extended the a11y ratchet to open and scan the dialog in both themes. Verified: unit tests (dialog a11y + `?` opens + `g n` navigates); axe-clean in both themes",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "markdown bodies rendered GitHub **alerts** (`> [!NOTE]` / TIP / IMPORTANT / WARNING / CAUTION) as plain blockquotes \u2014 remark-gfm doesn't handle them, so READMEs/issues/discussions lost the colored callouts",
+        "id": "WEB-100",
+        "location": "web/src/components/Markdown.tsx, web/src/index.css",
+        "severity": "m",
+        "status": "fixed \u2014 added a dependency-free remark transform that rewrites an alert blockquote into a titled `div.markdown-alert-<type>` (marker stripped, `Note`/`Tip`/\u2026 title prepended), styled with a per-type left border + title colour from theme-safe tokens defined in both light and dark. Extended the a11y sweep's seeded issue body to render all five types. Verified: unit tests (each type + ordinary blockquote untouched + task-list checkboxes still labelled); axe-clean (incl. contrast) in both themes",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -6933,21 +6960,21 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 95
+            "fixed": 98
           },
-          "total": 97
+          "total": 100
         }
       },
       "severity": {
         "blocker": 167,
-        "major": 396,
-        "minor": 163
+        "major": 397,
+        "minor": 165
       },
       "status": {
         "deferred": 3,
-        "fixed": 723
+        "fixed": 726
       },
-      "total": 726
+      "total": 729
     }
   },
   "rest": {
@@ -28461,7 +28488,12 @@
   "ui": {
     "browser_navigations": [
       {
-        "line": 174,
+        "line": 196,
+        "source": "web/e2e/a11y-theme-sweep.spec.ts",
+        "target": "/ui/"
+      },
+      {
+        "line": 431,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/"
       },
@@ -29976,7 +30008,7 @@
       }
     ],
     "summary": {
-      "browser_navigations": 67,
+      "browser_navigations": 68,
       "routes": 92,
       "routes_with_direct_render": 89,
       "routes_with_test_reference": 91

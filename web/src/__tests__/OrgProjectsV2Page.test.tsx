@@ -73,7 +73,8 @@ describe("OrgProjectsV2Page", () => {
     });
     renderAt("/ui/orgs/acme/projects/3");
 
-    const moveSelect = await screen.findByLabelText("Move item 10");
+    // The table view is the default, so the single-select cell drives the PATCH.
+    const moveSelect = await screen.findByLabelText("Status for item 10");
     fireEvent.change(moveSelect, { target: { value: "opt-done" } });
 
     await waitFor(() => {
@@ -83,6 +84,46 @@ describe("OrgProjectsV2Page", () => {
       expect(patch).toBeDefined();
       expect(JSON.parse(String(patch![1].body))).toEqual({ fields: [{ id: 100, value: "opt-done" }] });
     });
+  });
+
+  it("defaults to a table view and switches to the board", async () => {
+    const field = {
+      id: 100,
+      name: "Status",
+      data_type: "single_select",
+      options: [
+        { id: "opt-todo", name: { raw: "To do", html: "To do" } },
+        { id: "opt-done", name: { raw: "Done", html: "Done" } },
+      ],
+    };
+    const item = {
+      id: 10,
+      content_type: "Issue",
+      content: { title: "Fix bug", number: 5 },
+      fields: [{ id: 100, name: "Status", data_type: "single_select", value: { id: "opt-todo", name: "To do" } }],
+    };
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.endsWith("/orgs/acme/projectsV2/3/fields")) return Promise.resolve(jsonResponse([field]));
+      if (u.endsWith("/orgs/acme/projectsV2/3/items")) return Promise.resolve(jsonResponse([item]));
+      if (u.endsWith("/orgs/acme/projectsV2/3")) {
+        return Promise.resolve(jsonResponse({ id: 1, number: 3, title: "Roadmap", short_description: null }));
+      }
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/orgs/acme/projects/3");
+
+    // Table view is active by default: a column header per field + a row per item.
+    expect(await screen.findByRole("columnheader", { name: "Status" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Title" })).toBeInTheDocument();
+    expect(screen.getByRole("rowheader", { name: /Fix bug/ })).toBeInTheDocument();
+    // The Table toggle is pressed, Board is not.
+    expect(screen.getByRole("button", { name: "Table" })).toHaveAttribute("aria-pressed", "true");
+
+    // Switching to the board reveals the kanban move control instead.
+    fireEvent.click(screen.getByRole("button", { name: "Board" }));
+    expect(await screen.findByLabelText("Move item 10")).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
 
   it("creates a draft item via POST .../drafts", async () => {

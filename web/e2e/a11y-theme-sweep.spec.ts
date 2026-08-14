@@ -1,5 +1,8 @@
 import { test, expect, type Page } from "./fixtures.js";
 import AxeBuilder from "@axe-core/playwright";
+
+// Inferred from AxeBuilder itself so no direct dependency on axe-core is needed.
+type AxeAnalysis = Awaited<ReturnType<InstanceType<typeof AxeBuilder>["analyze"]>>;
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -40,6 +43,7 @@ const seeded = {
   issueNumber: 0,
   pullNumber: 0,
   classroomId: 0,
+  projectNumber: 0,
 };
 
 async function api(
@@ -95,6 +99,23 @@ type RouteResult = {
 };
 
 const collected: RouteResult[] = [];
+
+// Shared axe → ViolationRecord projection, used by both the per-route scan and
+// the open-dialog scan so neither drifts (and jscpd sees one copy).
+function mapViolations(results: AxeAnalysis): ViolationRecord[] {
+  return results.violations.map((v) => ({
+    id: v.id,
+    impact: v.impact ?? null,
+    description: v.description,
+    help: v.help,
+    helpUrl: v.helpUrl,
+    tags: v.tags,
+    nodes: v.nodes.length,
+    targets: v.nodes
+      .slice(0, 8)
+      .map((n) => (Array.isArray(n.target) ? n.target.join(" ") : String(n.target))),
+  }));
+}
 
 // ─── route set (~47 routes; one per distinct page type) ─────────────────────────
 function buildRoutes(): { route: string; label: string }[] {
@@ -154,6 +175,7 @@ function buildRoutes(): { route: string; label: string }[] {
     { route: `/ui/orgs/${org}/teams`, label: "org-teams" },
     { route: `/ui/orgs/${org}/repos`, label: "org-repos" },
     { route: `/ui/orgs/${org}/governance`, label: "org-governance" },
+    { route: `/ui/orgs/${org}/projects/${seeded.projectNumber || 1}`, label: "org-project-detail" },
     // operations console
     { route: "/ui/operations", label: "operations" },
     { route: "/ui/operations/audit-log", label: "operations-audit-log" },
@@ -220,10 +242,17 @@ test.beforeAll(async ({ browser }) => {
     title: "v2.0",
   }));
 
-  // issue
+  // issue — the body exercises task-list checkboxes and all five GitHub alert
+  // types so the ratchet validates the alert title/border colours in both themes.
   const issueRes = await api(page, "POST", `/api/v3/repos/${seeded.owner}/${seeded.repo}/issues`, {
     title: "Baseline parity issue",
-    body: "Seed issue for the a11y sweep.\n\n- [ ] item one\n- [x] item two",
+    body:
+      "Seed issue for the a11y sweep.\n\n- [ ] item one\n- [x] item two\n\n" +
+      "> [!NOTE]\n> A note callout.\n\n" +
+      "> [!TIP]\n> A tip callout.\n\n" +
+      "> [!IMPORTANT]\n> An important callout.\n\n" +
+      "> [!WARNING]\n> A warning callout.\n\n" +
+      "> [!CAUTION]\n> A caution callout.",
     labels: ["parity-bug"],
   });
   ok("issue", issueRes);
@@ -267,6 +296,43 @@ test.beforeAll(async ({ browser }) => {
     name: "org-parity",
     auto_init: true,
   }));
+
+  // a Projects V2 board so /orgs/{org}/projects/{n} renders the table view with
+  // a real single-select column and an item (GitHub creates projects over
+  // GraphQL only). Best-effort: the route still scans clean if any step is gated.
+  const orgInfo = await api(page, "GET", `/api/v3/orgs/${seeded.org}`);
+  const ownerNodeId =
+    orgInfo.ok && orgInfo.json && typeof orgInfo.json === "object"
+      ? (orgInfo.json as { node_id?: string }).node_id
+      : undefined;
+  if (ownerNodeId) {
+    const projRes = await api(page, "POST", "/api/graphql", {
+      query:
+        "mutation($input:CreateProjectV2Input!){createProjectV2(input:$input){projectV2{number}}}",
+      variables: { input: { ownerId: ownerNodeId, title: "Parity Roadmap" } },
+    });
+    const projNumber =
+      projRes.ok && projRes.json && typeof projRes.json === "object"
+        ? (projRes.json as { data?: { createProjectV2?: { projectV2?: { number?: number } } } }).data
+            ?.createProjectV2?.projectV2?.number
+        : undefined;
+    if (projNumber) {
+      seeded.projectNumber = projNumber;
+      ok("project-field", await api(page, "POST", `/api/v3/orgs/${seeded.org}/projectsV2/${projNumber}/fields`, {
+        name: "Status",
+        data_type: "single_select",
+        single_select_options: [
+          { name: "Todo", color: "GRAY", description: "" },
+          { name: "Done", color: "GREEN", description: "" },
+        ],
+      }));
+      ok("project-draft", await api(page, "POST", `/api/v3/orgs/${seeded.org}/projectsV2/${projNumber}/drafts`, {
+        title: "Draft parity item",
+      }));
+    } else {
+      ok("project", projRes);
+    }
+  }
 
   // classroom (best-effort; feature may be gated)
   const classroomRes = await api(page, "POST", "/classroom-data/classrooms", {
@@ -323,18 +389,7 @@ for (const theme of THEMES) {
         record.themeApplied = theme === "dark" ? isDark : !isDark;
 
         const results = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
-        record.violations = results.violations.map((v) => ({
-          id: v.id,
-          impact: v.impact ?? null,
-          description: v.description,
-          help: v.help,
-          helpUrl: v.helpUrl,
-          tags: v.tags,
-          nodes: v.nodes.length,
-          targets: v.nodes
-            .slice(0, 8)
-            .map((n) => (Array.isArray(n.target) ? n.target.join(" ") : String(n.target))),
-        }));
+        record.violations = mapViolations(results);
 
         const safe = route.replace(/[^a-z0-9]+/gi, "_").replace(/^_|_$/g, "");
         await page
@@ -360,6 +415,43 @@ for (const theme of THEMES) {
             .join(""),
       );
     }
+
+    // Also scan an OPEN modal surface: the "?" keyboard-shortcuts sheet is an
+    // interactive dialog the base-route scans never reach.
+    {
+      const record: RouteResult = {
+        route: "/ui/ (shortcuts dialog)",
+        theme,
+        url: BASE + "/ui/",
+        themeApplied: false,
+        loadFailure: false,
+        violations: [],
+      };
+      try {
+        await page.goto("/ui/", { waitUntil: "domcontentloaded", timeout: 30_000 });
+        await page.waitForSelector("main, [role=main], .app-header", { timeout: 8_000 }).catch(() => {});
+        // GlobalShortcuts (which owns the "?" handler) is code-split, so let its
+        // chunk load before pressing.
+        await page.waitForTimeout(800);
+        const dialog = page.getByRole("dialog", { name: "Keyboard shortcuts" });
+        await page.keyboard.press("Shift+Slash"); // "?"
+        await dialog.waitFor({ state: "visible", timeout: 8_000 });
+        const isDark = await page.evaluate(() => document.documentElement.classList.contains("dark"));
+        record.themeApplied = theme === "dark" ? isDark : !isDark;
+        record.violations = mapViolations(await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze());
+      } catch (err) {
+        record.loadFailure = true;
+        record.error = err instanceof Error ? err.message : String(err);
+      }
+      collected.push(record);
+      // eslint-disable-next-line no-console
+      console.log(
+        `[scan] ${theme} shortcuts-dialog -> ${
+          record.loadFailure ? "LOAD-FAIL" : `${record.violations.length} rules`
+        }` + record.violations.map((v) => `\n    ! ${v.id}: ${v.targets.join(" | ")}`).join(""),
+      );
+    }
+
     expect(collected.length).toBeGreaterThan(0);
   });
 }

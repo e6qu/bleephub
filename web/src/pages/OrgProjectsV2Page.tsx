@@ -26,6 +26,22 @@ function itemOptionId(item: GithubProjectV2Item, fieldId: number): string | null
   return null;
 }
 
+/** Human-readable display of an item's value for one field (for the table view). */
+function itemFieldValue(item: GithubProjectV2Item, field: GithubProjectV2Field): string {
+  const fv = item.fields?.find((f) => f.id === field.id);
+  if (!fv || fv.value == null) return "";
+  const v = fv.value;
+  if (field.data_type === "single_select" && typeof v === "object" && "id" in (v as object)) {
+    const optId = String((v as { id: string }).id);
+    return field.options?.find((o) => o.id === optId)?.name.raw ?? "";
+  }
+  if (typeof v === "object") {
+    const o = v as Record<string, unknown>;
+    return String(o.name ?? o.title ?? o.date ?? o.raw ?? JSON.stringify(v));
+  }
+  return String(v);
+}
+
 export function OrgProjectsV2Page() {
   const { org = "", number } = useParams<{ org: string; number?: string }>();
   return (
@@ -106,6 +122,7 @@ function ProjectV2Detail({ org, number }: { org: string; number: number }) {
     mutationFn: (itemId: number) => deleteOrgProjectV2Item(org, number, itemId),
     onSuccess: invalidate,
   });
+  const [view, setView] = useState<"table" | "board">("table");
   const [draftTitle, setDraftTitle] = useState("");
   const draftMut = useMutation({
     mutationFn: () => createOrgProjectV2Draft(org, number, { title: draftTitle.trim() }),
@@ -186,10 +203,32 @@ function ProjectV2Detail({ org, number }: { org: string; number: number }) {
       </Box>
       {deleteMut.error && <ErrorBanner>{String(deleteMut.error)}</ErrorBanner>}
       {moveMut.error && <ErrorBanner>{String(moveMut.error)}</ErrorBanner>}
+      <div role="group" aria-label="View" className="mt-3 flex gap-1">
+        {(["table", "board"] as const).map((v) => (
+          <Button
+            key={v}
+            size="sm"
+            variant={view === v ? "primary" : "secondary"}
+            aria-pressed={view === v}
+            onClick={() => setView(v)}
+          >
+            {v === "table" ? "Table" : "Board"}
+          </Button>
+        ))}
+      </div>
       {itemsQ.isLoading ? (
         <Spinner label="loading items" />
       ) : items.length === 0 ? (
         <Blankslate title="No items" />
+      ) : view === "table" ? (
+        <ProjectTableView
+          items={items}
+          fields={fieldsQ.data ?? []}
+          groupField={groupField}
+          busy={moveMut.isPending || deleteMut.isPending}
+          onMove={(itemId, fieldId, optionId) => moveMut.mutate({ itemId, fieldId, optionId })}
+          onRemove={(itemId) => void removeItem(itemId)}
+        />
       ) : groupField ? (
         <div className="mt-3 flex gap-3" style={{ overflowX: "auto" }}>
           {[...(groupField.options ?? []).map((o) => ({ id: o.id, label: o.name.raw })), { id: null, label: `No ${groupField.name}` }].map(
@@ -235,6 +274,116 @@ function ProjectV2Detail({ org, number }: { org: string; number: number }) {
         </Box>
       )}
     </>
+  );
+}
+
+// GitHub's Projects v2 default view: a spreadsheet-style table, one row per
+// item and one column per field. Single-select fields are editable inline (the
+// same mutation the board uses); other field types render read-only.
+function ProjectTableView({
+  items,
+  fields,
+  groupField,
+  busy,
+  onMove,
+  onRemove,
+}: {
+  items: GithubProjectV2Item[];
+  fields: GithubProjectV2Field[];
+  groupField: GithubProjectV2Field | undefined;
+  busy: boolean;
+  onMove: (itemId: number, fieldId: number, optionId: string) => void;
+  onRemove: (itemId: number) => void;
+}) {
+  // The item title is its own column, so drop any field literally named "Title".
+  const columns = fields.filter((f) => f.name.toLowerCase() !== "title");
+  return (
+    <Box className="mt-3">
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
+          <caption className="sr-only">Project items</caption>
+          <thead>
+            <tr style={{ borderBottom: "1px solid var(--color-border)" }}>
+              <th scope="col" style={{ textAlign: "left", padding: "0.5rem 0.8rem" }}>
+                Title
+              </th>
+              {columns.map((f) => (
+                <th key={f.id} scope="col" style={{ textAlign: "left", padding: "0.5rem 0.8rem" }}>
+                  {f.name}
+                </th>
+              ))}
+              <th scope="col" style={{ textAlign: "right", padding: "0.5rem 0.8rem" }}>
+                <span className="sr-only">Actions</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((it) => (
+              <tr key={it.id} style={{ borderBottom: "1px solid var(--color-border)" }}>
+                <th scope="row" style={{ textAlign: "left", padding: "0.5rem 0.8rem", fontWeight: 400 }}>
+                  <span style={{ fontSize: "0.7rem", color: "var(--color-fg-muted)" }}>{it.content_type}</span>{" "}
+                  {it.content?.html_url ? (
+                    <Link
+                      to={it.content.html_url}
+                      style={{
+                        display: "inline-block",
+                        color: "var(--color-accent)",
+                        textDecoration: "none",
+                        lineHeight: "1.625rem",
+                      }}
+                    >
+                      {it.content?.title ?? "(untitled)"}
+                    </Link>
+                  ) : (
+                    (it.content?.title ?? "(untitled)")
+                  )}
+                  {it.content?.number != null && (
+                    <span style={{ color: "var(--color-fg-muted)" }}> #{it.content.number}</span>
+                  )}
+                </th>
+                {columns.map((f) =>
+                  f.id === groupField?.id && f.data_type === "single_select" ? (
+                    <td key={f.id} style={{ padding: "0.5rem 0.8rem" }}>
+                      <select
+                        aria-label={`${f.name} for item ${it.id}`}
+                        value={itemOptionId(it, f.id) ?? ""}
+                        onChange={(e) => onMove(it.id, f.id, e.target.value)}
+                        disabled={busy}
+                        style={{ fontSize: "0.78rem" }}
+                      >
+                        <option value="" disabled>
+                          Set {f.name}…
+                        </option>
+                        {(f.options ?? []).map((o) => (
+                          <option key={o.id} value={o.id}>
+                            {o.name.raw}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                  ) : (
+                    <td key={f.id} style={{ padding: "0.5rem 0.8rem", color: "var(--color-fg-muted)" }}>
+                      {itemFieldValue(it, f) || "—"}
+                    </td>
+                  ),
+                )}
+                <td style={{ padding: "0.5rem 0.8rem", textAlign: "right" }}>
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    aria-label={`Remove item ${it.id}`}
+                    disabled={busy}
+                    onClick={() => onRemove(it.id)}
+                  >
+                    Remove
+                  </Button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Box>
   );
 }
 
