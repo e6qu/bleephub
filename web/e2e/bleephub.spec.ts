@@ -299,10 +299,13 @@ test.describe("User menu and packages", () => {
     await expect(page).toHaveURL(/\/ui\/login/);
   });
 
-  test("loads each package tab with GitHub's required package type", async ({ page }) => {
+  test("loads each package tab via the /ui-data aggregation with its package type", async ({ page }) => {
+    // The web Packages tab reads the /ui-data user aggregation (which accepts an
+    // optional package_type) rather than GitHub's REST /user/packages, which 400s
+    // without a package_type. Each type tab still narrows via package_type.
     const containerResponse = page.waitForResponse((response) => {
       const requestURL = new URL(response.url());
-      return requestURL.pathname.endsWith("/user/packages") && requestURL.searchParams.get("package_type") === "container";
+      return requestURL.pathname.startsWith("/ui-data/users/") && requestURL.pathname.endsWith("/packages") && requestURL.searchParams.get("package_type") === "container";
     });
     await page.goto("/ui/packages");
     expect((await containerResponse).status()).toBe(200);
@@ -311,7 +314,7 @@ test.describe("User menu and packages", () => {
 
     const npmResponse = page.waitForResponse((response) => {
       const requestURL = new URL(response.url());
-      return requestURL.pathname.endsWith("/user/packages") && requestURL.searchParams.get("package_type") === "npm";
+      return requestURL.pathname.startsWith("/ui-data/users/") && requestURL.pathname.endsWith("/packages") && requestURL.searchParams.get("package_type") === "npm";
     });
     await page.getByRole("tab", { name: "npm" }).click();
     expect((await npmResponse).status()).toBe(200);
