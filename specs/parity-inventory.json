@@ -5661,6 +5661,15 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "there was no equivalent of github.com/search/advanced \u2014 the search page offered only a raw query box and the repositories filter row, with no guided way to assemble qualifiers",
+        "id": "WEB-114",
+        "location": "web/src/pages/SearchPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 an inline **Advanced** query-builder (toggled from the search bar, so it needs no extra route or entry-bundle weight) with aria-labelled fields for keywords, language, repository, user, organization, topic, and minimum stars; a `buildAdvancedQuery` helper assembles them into a GitHub qualifier string (multi-word values quoted, `stars:>=N` range, empty fields dropped) and runs the search. Verified: unit tests for the builder (quoting, drops, invalid stars) and an interaction test that fills the form and asserts the assembled `/search/repositories?q=\u2026`; the a11y sweep opens and scans the advanced form at 0 violations in both themes",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -7077,21 +7086,21 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 111
+            "fixed": 112
           },
-          "total": 113
+          "total": 114
         }
       },
       "severity": {
         "blocker": 167,
         "major": 399,
-        "minor": 176
+        "minor": 177
       },
       "status": {
         "deferred": 3,
-        "fixed": 739
+        "fixed": 740
       },
-      "total": 742
+      "total": 743
     }
   },
   "rest": {
@@ -28629,6 +28638,11 @@
         "target": "/ui/repos/${seeded.owner}/${seeded.repo}/settings"
       },
       {
+        "line": 551,
+        "source": "web/e2e/a11y-theme-sweep.spec.ts",
+        "target": "/ui/search"
+      },
+      {
         "line": 113,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/"
@@ -30151,7 +30165,7 @@
       }
     ],
     "summary": {
-      "browser_navigations": 70,
+      "browser_navigations": 71,
       "routes": 93,
       "routes_with_direct_render": 90,
       "routes_with_test_reference": 92

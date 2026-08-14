@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, cleanup, screen, waitFor, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Routes, Route } from "react-router";
-import { SearchPage } from "../pages/SearchPage.js";
+import { SearchPage, buildAdvancedQuery } from "../pages/SearchPage.js";
 
 const mockFetch = vi.fn();
 globalThis.fetch = mockFetch;
@@ -215,5 +215,32 @@ describe("SearchPage", () => {
     await waitFor(() => {
       expect(screen.getByText("Search failed")).toBeInTheDocument();
     });
+  });
+
+  it("builds a qualifier query from the advanced search form and runs it", async () => {
+    mockFetch.mockResolvedValue(jsonResponse({ total_count: 0, items: [] }));
+    renderPage("/ui/search?type=repositories");
+    fireEvent.click(screen.getByRole("button", { name: "Advanced" }));
+    fireEvent.change(await screen.findByLabelText("With these words"), { target: { value: "http client" } });
+    fireEvent.change(screen.getByLabelText("Written in language"), { target: { value: "go" } });
+    fireEvent.change(screen.getByLabelText("In organization"), { target: { value: "e6qu" } });
+    fireEvent.change(screen.getByLabelText("With at least this many stars"), { target: { value: "5" } });
+    fireEvent.click(screen.getByRole("button", { name: "Build query" }));
+    await waitFor(() => {
+      const hit = mockFetch.mock.calls.map(([u]) => String(u)).find((u) => u.includes("/search/repositories"));
+      expect(hit).toBeDefined();
+      // The `q` param encodes spaces as `+`; normalise before comparing.
+      expect(decodeURIComponent(hit!.replace(/\+/g, " "))).toContain("http client language:go org:e6qu stars:>=5");
+    });
+  });
+});
+
+describe("buildAdvancedQuery", () => {
+  it("assembles, quotes multi-word values, and drops empty fields", () => {
+    expect(
+      buildAdvancedQuery({ keywords: "rate limiter", language: "go", repo: "e6qu/bleephub", user: "", org: "", topic: "web server", stars: "10" }),
+    ).toBe('rate limiter language:go repo:e6qu/bleephub topic:"web server" stars:>=10');
+    expect(buildAdvancedQuery({ keywords: "", language: "", repo: "", user: "", org: "", topic: "", stars: "" })).toBe("");
+    expect(buildAdvancedQuery({ keywords: "", language: "", repo: "", user: "", org: "", topic: "", stars: "abc" })).toBe("");
   });
 });

@@ -536,6 +536,38 @@ for (const theme of THEMES) {
       );
     }
 
+    // Also scan the search page's Advanced query-builder form, which is toggled
+    // open by a button and so is invisible to the base /ui/search scan.
+    {
+      const record: RouteResult = {
+        route: "/ui/search (advanced form)",
+        theme,
+        url: BASE + "/ui/search",
+        themeApplied: false,
+        loadFailure: false,
+        violations: [],
+      };
+      try {
+        await page.goto("/ui/search", { waitUntil: "domcontentloaded", timeout: 30_000 });
+        await page.waitForSelector("main, [role=main], .app-header", { timeout: 8_000 }).catch(() => {});
+        await page.getByRole("button", { name: "Advanced", exact: true }).click();
+        await page.getByLabel("With these words").waitFor({ state: "visible", timeout: 8_000 });
+        const isDark = await page.evaluate(() => document.documentElement.classList.contains("dark"));
+        record.themeApplied = theme === "dark" ? isDark : !isDark;
+        record.violations = mapViolations(await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze());
+      } catch (err) {
+        record.loadFailure = true;
+        record.error = err instanceof Error ? err.message : String(err);
+      }
+      collected.push(record);
+      // eslint-disable-next-line no-console
+      console.log(
+        `[scan] ${theme} search-advanced -> ${
+          record.loadFailure ? "LOAD-FAIL" : `${record.violations.length} rules`
+        }` + record.violations.map((v) => `\n    ! ${v.id}: ${v.targets.join(" | ")}`).join(""),
+      );
+    }
+
     expect(collected.length).toBeGreaterThan(0);
   });
 }
