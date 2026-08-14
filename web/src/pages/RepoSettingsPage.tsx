@@ -12,7 +12,9 @@ import {
   createRepoRuleset,
   deleteRepoRuleset,
   fetchEnvironments,
+  fetchEnvironmentsDetail,
   createEnvironment,
+  putEnvironment,
   deleteEnvironment,
   fetchEnvVariables,
   createEnvVariable,
@@ -2080,6 +2082,18 @@ function EnvironmentDetail({ owner, repo, env }: { owner: string; repo: string; 
   const qc = useQueryClient();
   const [vname, setVName] = useState("");
   const [vval, setVVal] = useState("");
+  const detailQ = useQuery({
+    queryKey: ["environments-detail", owner, repo],
+    queryFn: () => fetchEnvironmentsDetail(owner, repo),
+  });
+  const thisEnv = (detailQ.data ?? []).find((e) => e.name === env);
+  const currentWait = thisEnv?.protection_rules?.find((r) => r.wait_timer != null)?.wait_timer ?? 0;
+  const [waitTimer, setWaitTimer] = useState<string>("");
+  useEffect(() => setWaitTimer(String(currentWait)), [currentWait]);
+  const saveWait = useMutation({
+    mutationFn: () => putEnvironment(owner, repo, env, { wait_timer: Number(waitTimer) || 0 }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["environments-detail", owner, repo] }),
+  });
   const vars = useQuery({ queryKey: ["env-vars", owner, repo, env], queryFn: () => fetchEnvVariables(owner, repo, env) });
   const secrets = useQuery({ queryKey: ["env-secrets", owner, repo, env], queryFn: () => fetchEnvSecrets(owner, repo, env) });
   const addVar = useMutation({ mutationFn: () => createEnvVariable(owner, repo, env, vname.trim(), vval), onSuccess: () => { setVName(""); setVVal(""); void qc.invalidateQueries({ queryKey: ["env-vars", owner, repo, env] }); } });
@@ -2089,6 +2103,26 @@ function EnvironmentDetail({ owner, repo, env }: { owner: string; repo: string; 
   const secretList: GithubSecret[] = secrets.data ?? [];
   return (
     <div style={{ padding: "0 1rem 1rem", display: "flex", flexDirection: "column", gap: "0.8rem", background: "var(--color-bg-subtle)" }}>
+      <div>
+        <h3 style={{ fontSize: "0.85rem", fontWeight: 600, margin: "0.6rem 0 0.3rem" }}>Protection rules</h3>
+        <div style={{ display: "flex", alignItems: "flex-end", gap: "0.4rem", flexWrap: "wrap" }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem", fontSize: "0.75rem", color: "var(--color-fg-muted)" }}>
+            Wait timer (minutes)
+            <input
+              type="number"
+              min={0}
+              max={43200}
+              aria-label={`Wait timer for ${env}`}
+              value={waitTimer}
+              onChange={(e) => setWaitTimer(e.target.value)}
+              style={settingsInputStyle}
+            />
+          </label>
+          <Button size="sm" variant="secondary" disabled={saveWait.isPending} onClick={() => saveWait.mutate()}>
+            {saveWait.isPending ? "Saving…" : "Save protection"}
+          </Button>
+        </div>
+      </div>
       <div>
         <h3 style={{ fontSize: "0.85rem", fontWeight: 600, margin: "0.6rem 0 0.3rem" }}>Environment variables</h3>
         {variables.map((v) => (

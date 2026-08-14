@@ -15,6 +15,7 @@ import {
   removeReleaseReaction,
   updateRelease,
   uploadReleaseAsset,
+  ghPostJSON,
   type ReleasePayload,
 } from "../api.js";
 import { ReactionBar } from "../components/ReactionBar.js";
@@ -125,6 +126,15 @@ function ReleaseRow({ owner, repo, release, last }: {
   );
 }
 
+// github.com's "Generate release notes" — autogenerates the title + a
+// changelog body from the commits since the previous tag. Defined here so it
+// rides this lazy chunk rather than weighing on the entry bundle.
+const generateReleaseNotes = (owner: string, repo: string, tag_name: string, target_commitish?: string) =>
+  ghPostJSON<{ name: string; body: string }>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/releases/generate-notes`,
+    { tag_name, target_commitish },
+  );
+
 function ReleaseEditor({ owner, repo, release, onSaved }: { owner: string; repo: string; release?: GithubRelease; onSaved?: (saved: GithubRelease) => void }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -167,6 +177,14 @@ function ReleaseEditor({ owner, repo, release, onSaved }: { owner: string; repo:
     },
   });
 
+  const genNotes = useMutation({
+    mutationFn: () => generateReleaseNotes(owner, repo, tagName.trim(), target.trim() || undefined),
+    onSuccess: (notes) => {
+      setBody(notes.body ?? "");
+      if (!name.trim() && notes.name) setName(notes.name);
+    },
+  });
+
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (tagName.trim()) save.mutate();
@@ -182,7 +200,22 @@ function ReleaseEditor({ owner, repo, release, onSaved }: { owner: string; repo:
           <label><FormLabel>Target branch or commit</FormLabel><input aria-label="Target branch or commit" value={target} onChange={(e) => setTarget(e.target.value)} style={inputStyle} placeholder="main" /></label>
         </div>
         <label><FormLabel>Release title</FormLabel><input aria-label="Release title" value={name} onChange={(e) => setName(e.target.value)} style={inputStyle} /></label>
-        <label><FormLabel>Release notes</FormLabel><textarea aria-label="Release notes" value={body} onChange={(e) => setBody(e.target.value)} rows={10} style={{ ...inputStyle, resize: "vertical" }} /></label>
+        <div>
+          <div className="flex items-center justify-between gap-2">
+            <FormLabel>Release notes</FormLabel>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled={!tagName.trim() || genNotes.isPending}
+              onClick={() => genNotes.mutate()}
+            >
+              {genNotes.isPending ? "Generating…" : "Generate release notes"}
+            </Button>
+          </div>
+          {genNotes.isError && <ErrorBanner>{String(genNotes.error)}</ErrorBanner>}
+          <textarea aria-label="Release notes" value={body} onChange={(e) => setBody(e.target.value)} rows={10} style={{ ...inputStyle, resize: "vertical" }} />
+        </div>
         <div className="flex flex-wrap gap-5">
           <label className="inline-flex items-center gap-2"><input type="checkbox" checked={draft} onChange={(e) => setDraft(e.target.checked)} /> Save as draft</label>
           <label className="inline-flex items-center gap-2"><input type="checkbox" checked={prerelease} onChange={(e) => setPrerelease(e.target.checked)} /> Mark as pre-release</label>

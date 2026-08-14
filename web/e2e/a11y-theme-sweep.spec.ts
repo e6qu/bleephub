@@ -162,6 +162,7 @@ function buildRoutes(): { route: string; label: string }[] {
     { route: `/ui/repos/${o}/${r}/branches`, label: "repo-branches" },
     { route: `/ui/repos/${o}/${r}/tags`, label: "repo-tags" },
     { route: `/ui/repos/${o}/${r}/releases`, label: "repo-releases" },
+    { route: `/ui/repos/${o}/${r}/releases/new`, label: "repo-release-new" },
     { route: `/ui/repos/${o}/${r}/labels`, label: "repo-labels" },
     { route: `/ui/repos/${o}/${r}/milestones`, label: "repo-milestones" },
     { route: `/ui/repos/${o}/${r}/settings`, label: "repo-settings" },

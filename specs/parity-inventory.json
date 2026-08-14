@@ -5598,6 +5598,24 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "the release create/edit form had draft/pre-release flags and asset upload but not github.com's **\"Generate release notes\"** button, though the server exposes `POST /releases/generate-notes`",
+        "id": "WEB-107",
+        "location": "web/src/pages/ReleasesPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added a Generate release notes button beside the notes field that POSTs to generate-notes and fills the body (and the title when empty); the wrapper rides the lazy releases chunk (ghPostJSON exported) so the entry stays under budget. Verified: unit test drives the button and asserts the POST body + filled textarea; a11y sweep scans `/releases/new` at 0 violations in both themes",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "the Environments settings tab managed variables + secrets but exposed no **protection rules**, though the server's environment PUT accepts a wait_timer",
+        "id": "WEB-108",
+        "location": "web/src/pages/RepoSettingsPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added a Protection rules section to each environment's detail with an aria-labelled wait-timer input (pre-loaded from the environment's current rule via fetchEnvironmentsDetail) that saves through the existing putEnvironment PUT. Verified: unit test expands an environment, edits the wait timer, and asserts the PUT body",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -7014,21 +7032,21 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 104
+            "fixed": 106
           },
-          "total": 106
+          "total": 108
         }
       },
       "severity": {
         "blocker": 167,
         "major": 398,
-        "minor": 170
+        "minor": 172
       },
       "status": {
         "deferred": 3,
-        "fixed": 732
+        "fixed": 734
       },
-      "total": 735
+      "total": 737
     }
   },
   "rest": {
@@ -28542,12 +28560,12 @@
   "ui": {
     "browser_navigations": [
       {
-        "line": 197,
+        "line": 198,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 438,
+        "line": 439,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/"
       },

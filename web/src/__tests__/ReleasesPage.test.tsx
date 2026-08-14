@@ -25,6 +25,32 @@ function response(data: unknown, status = 200) {
 afterEach(() => { cleanup(); mockFetch.mockReset(); });
 
 describe("ReleasesPage", () => {
+  it("fills the notes via POST /releases/generate-notes", async () => {
+    mockFetch.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/repos/admin/release/releases/generate-notes") && init?.method === "POST") {
+        return Promise.resolve(response({ name: "v2.0.0", body: "## What's Changed\n* Everything" }));
+      }
+      if (url === "/api/v3/repos/admin/release") return Promise.resolve(response(repo));
+      return Promise.resolve(response([]));
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/ui/repos/admin/release/releases/new"]}><Routes><Route path="/ui/repos/:owner/:repo/releases/new" element={<ReleasesPage />} /></Routes></MemoryRouter></QueryClientProvider>);
+
+    fireEvent.change(await screen.findByLabelText("Tag"), { target: { value: "v2.0.0" } });
+    fireEvent.click(screen.getByRole("button", { name: "Generate release notes" }));
+    await waitFor(() => {
+      const post = mockFetch.mock.calls.find(
+        (c) => String(c[0]).endsWith("/releases/generate-notes") && c[1]?.method === "POST",
+      );
+      expect(post).toBeDefined();
+      expect(JSON.parse(String(post![1].body))).toEqual({ tag_name: "v2.0.0", target_commitish: undefined });
+    });
+    await waitFor(() =>
+      expect((screen.getByLabelText("Release notes") as HTMLTextAreaElement).value).toContain("What's Changed"),
+    );
+  });
+
   it("returns from editing with the updated release and its assets intact", async () => {
     mockFetch.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);

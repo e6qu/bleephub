@@ -1266,7 +1266,7 @@ export const fetchGitignoreTemplates = () => ghFetch<string[]>("/api/v3/gitignor
 export const fetchLicenseTemplates = () =>
   ghFetch<{ key: string; name: string; spdx_id: string }[]>("/api/v3/licenses");
 
-async function ghPostJSON<T>(path: string, body: unknown): Promise<T> {
+export async function ghPostJSON<T>(path: string, body: unknown): Promise<T> {
   const res = await apiFetch(path, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },

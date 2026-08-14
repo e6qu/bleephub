@@ -175,6 +175,46 @@ describe("RepoSettingsPage", () => {
     });
   });
 
+  it("saves an environment wait-timer protection rule via PUT", async () => {
+    const envObj = {
+      id: 1,
+      name: "production",
+      node_id: "e",
+      url: "u",
+      protection_rules: [{ id: 1, node_id: "r", type: "wait_timer", wait_timer: 5 }],
+      deployment_branch_policy: null,
+    };
+    mockFetch.mockImplementation((url: string, opts?: { method?: string }) => {
+      const u = url.toString();
+      if (u.includes("/environments/production") && opts?.method === "PUT") {
+        return Promise.resolve(jsonResponse(envObj, 200));
+      }
+      if (u.includes("/environments/production/variables")) return Promise.resolve(jsonResponse({ variables: [] }));
+      if (u.includes("/environments/production/secrets")) return Promise.resolve(jsonResponse({ secrets: [] }));
+      if (u.endsWith("/environments")) return Promise.resolve(jsonResponse({ environments: [envObj] }));
+      if (u.includes("/issues") || u.includes("/pulls")) return Promise.resolve(jsonResponse([]));
+      return Promise.resolve(jsonResponse(repo));
+    });
+    renderPage();
+    await waitFor(() => screen.getByDisplayValue("before"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Environments" }));
+    fireEvent.click(await screen.findByRole("button", { name: "production" }));
+    const wait = await screen.findByLabelText("Wait timer for production");
+    // Let the env detail (wait_timer 5) load before editing, matching real use.
+    await waitFor(() => expect(wait).toHaveValue(5));
+    fireEvent.change(wait, { target: { value: "30" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save protection" }));
+
+    await waitFor(() => {
+      const put = mockFetch.mock.calls.find(
+        (c) => String(c[0]).includes("/environments/production") && c[1]?.method === "PUT",
+      );
+      expect(put).toBeDefined();
+      expect(JSON.parse(String(put![1].body))).toEqual({ wait_timer: 30 });
+    });
+  });
+
   it("lists and creates a repository webhook from the Webhooks tab", async () => {
     const existing = {
       id: 7,
