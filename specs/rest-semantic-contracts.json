@@ -34185,6 +34185,7 @@
         },
         "parameters": [
           {
+            "format": "int64",
             "in": "path",
             "name": "job_id",
             "required": true,
@@ -34240,6 +34241,7 @@
         },
         "parameters": [
           {
+            "format": "int64",
             "in": "path",
             "name": "job_id",
             "required": true,
@@ -34310,6 +34312,7 @@
         },
         "parameters": [
           {
+            "format": "int64",
             "in": "path",
             "name": "job_id",
             "required": true,
@@ -36184,6 +36187,7 @@
             "type": "string"
           },
           {
+            "format": "int64",
             "in": "query",
             "name": "check_suite_id",
             "required": false,
@@ -38525,6 +38529,7 @@
             "type": "string"
           },
           {
+            "format": "int64",
             "in": "query",
             "name": "check_suite_id",
             "required": false,
@@ -42553,6 +42558,7 @@
         },
         "parameters": [
           {
+            "format": "int64",
             "in": "path",
             "name": "check_run_id",
             "required": true,
@@ -42662,6 +42668,7 @@
         },
         "parameters": [
           {
+            "format": "int64",
             "in": "path",
             "name": "check_run_id",
             "required": true,
@@ -42720,6 +42727,7 @@
         },
         "parameters": [
           {
+            "format": "int64",
             "in": "path",
             "name": "check_run_id",
             "required": true,
@@ -42789,6 +42797,7 @@
         },
         "parameters": [
           {
+            "format": "int64",
             "in": "path",
             "name": "check_run_id",
             "required": true,
@@ -43712,7 +43721,8 @@
                   "enum": [
                     "false positive",
                     "won't fix",
-                    "used in tests"
+                    "used in tests",
+                    "mitigated"
                   ],
                   "nullable": true,
                   "type": "string"
@@ -79581,7 +79591,7 @@
   ],
   "schema_version": 1,
   "source": "third_party/github-openapi.json.gz",
-  "source_sha256": "2f78e6e5b7c6bd32af008dbb26655253eee1dee507cf0010bc4142170b97c181",
+  "source_sha256": "f1a01c395961f4e4b7bc9b98d775711213baf89b3c8d84e4c76c10e0440caca2",
   "summary": {
     "operations": 1220,
     "state_changing": 584,

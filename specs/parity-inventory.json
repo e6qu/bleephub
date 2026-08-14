@@ -19064,11 +19064,15 @@
           "represented_operations": 1190
         },
         "ghec": {
-          "documented_operations": 1465,
+          "documented_operations": 1469,
           "missing_operations": [
             "GET /enterprises/{}/actions/runners/deprecations/{}",
             "GET /orgs/{}/actions/runners/deprecations/{}",
-            "GET /repos/{}/{}/actions/runners/deprecations/{}"
+            "GET /repos/{}/{}/actions/runners/deprecations/{}",
+            "POST /orgs/{}/credential-authorizations/revoke-all",
+            "POST /orgs/{}/credential-authorizations/revoke-credential-type",
+            "POST /orgs/{}/credential-authorizations/{}/revoke",
+            "POST /orgs/{}/credential-authorizations/{}/revoke-credential-type"
           ],
           "represented_operations": 1462
         },
@@ -28584,7 +28588,7 @@
         "source": "internal/server/gh_misc_endpoints.go"
       }
     ],
-    "vendored_openapi_sha256": "2f78e6e5b7c6bd32af008dbb26655253eee1dee507cf0010bc4142170b97c181"
+    "vendored_openapi_sha256": "f1a01c395961f4e4b7bc9b98d775711213baf89b3c8d84e4c76c10e0440caca2"
   },
   "schema_version": 1,
   "sources": {
