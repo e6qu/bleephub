@@ -28,7 +28,7 @@
         "@types/react-dom": "^19.2.4",
         "@vitejs/plugin-react": "^6.0.5",
         "@vitest/coverage-v8": "4.1.10",
-        "jscpd": "5.0.14",
+        "jscpd": "5.0.15",
         "jsdom": "30.0.1",
         "knip": "6.32.2",
         "octokit": "^5.0.5",
@@ -563,19 +563,19 @@
 
     "js-tokens": ["js-tokens@10.0.0", "", {}, "sha512-lM/UBzQmfJRo9ABXbPWemivdCW8V2G8FHaHdypQaIy523snUjog0W71ayWXTjiR+ixeMyVHN2XcpnTd/liPg/Q=="],
 
-    "jscpd": ["jscpd@5.0.14", "", { "optionalDependencies": { "jscpd-darwin-arm64": "5.0.14", "jscpd-darwin-x64": "5.0.14", "jscpd-linux-arm64-gnu": "5.0.14", "jscpd-linux-x64-gnu": "5.0.14", "jscpd-linux-x64-musl": "5.0.14", "jscpd-windows-x64-msvc": "5.0.14" }, "bin": { "jscpd": "run-jscpd.js" } }, "sha512-zge+FPZZAymt2Do5Z0+QHyIn4/XcUhrO/W7of9HcHZfx2AK8++dYhLA1uWtwXj47ml3Of8PbcUW4wUWvYMCc3w=="],
+    "jscpd": ["jscpd@5.0.15", "", { "optionalDependencies": { "jscpd-darwin-arm64": "5.0.15", "jscpd-darwin-x64": "5.0.15", "jscpd-linux-arm64-gnu": "5.0.15", "jscpd-linux-x64-gnu": "5.0.15", "jscpd-linux-x64-musl": "5.0.15", "jscpd-windows-x64-msvc": "5.0.15" }, "bin": { "jscpd": "run-jscpd.js" } }, "sha512-PJF3ALlPVJGiMoCtSHg6Ln3/dnRVd27sD/UTUv62MAS5I0jdhvqI0x0p8D1LP8xJ35GLTgHzCMSQvjoa/JNZkg=="],
 
-    "jscpd-darwin-arm64": ["jscpd-darwin-arm64@5.0.14", "", { "os": "darwin", "cpu": "arm64" }, "sha512-Ojjl79SBuj9tEW6WbjZ1a/1ZOR89dneH9yLQYQu8WyWaQownttnx7RYFEHU6aGhS4jIvwUEbr+1wxzFTb37cwg=="],
+    "jscpd-darwin-arm64": ["jscpd-darwin-arm64@5.0.15", "", { "os": "darwin", "cpu": "arm64" }, "sha512-7UIRxKkvqN7bVIl2nXYsTOs7a2M6Y1Ll58KehquQbI6gUC3I7AAd/vz2HNWIdo+f5lJB0tiN1E9B/i6CUM4WHQ=="],
 
-    "jscpd-darwin-x64": ["jscpd-darwin-x64@5.0.14", "", { "os": "darwin", "cpu": "x64" }, "sha512-DxFg5XvjMZ81iVeqillnM5apqcGCfNTbroNF+mPLr7RkHLGH6mudLgtO+ILL/hfpZXy1bF9oIY5BSudPmN/k9A=="],
+    "jscpd-darwin-x64": ["jscpd-darwin-x64@5.0.15", "", { "os": "darwin", "cpu": "x64" }, "sha512-ifknlGR2xW9yZ5BCeUBkBOrOFBAFMQmugpzFnx1y8/BDve0pyBLjxIOVnN/bqeqLDV+sd/zxkx5Gf/xD9UlRKA=="],
 
-    "jscpd-linux-arm64-gnu": ["jscpd-linux-arm64-gnu@5.0.14", "", { "os": "linux", "cpu": "arm64" }, "sha512-1uw+XBHEt9pONXNICSp5HpaVWPjG6mQ6deDXaq9Yb0xCNJkX4/8gmn0vhzekIyZD2DspRYKPUolbDsqm/HEdYg=="],
+    "jscpd-linux-arm64-gnu": ["jscpd-linux-arm64-gnu@5.0.15", "", { "os": "linux", "cpu": "arm64" }, "sha512-JrlE0Nk2NRt9EmGD+5ZjMI0il5t/zxj3uwcintnugJumRmbKy2ncr2MALJLeulUTHLT7uYMEveLK2b79DLtDAQ=="],
 
-    "jscpd-linux-x64-gnu": ["jscpd-linux-x64-gnu@5.0.14", "", { "os": "linux", "cpu": "x64" }, "sha512-dFTbyyrm+Z9pcXIVzJQCw8QAgiNqIiO69sm4AfA7/wFdPoizoVzjhaXsYXcSV4bs0aoPiWbNazg0J0HgslT/5A=="],
+    "jscpd-linux-x64-gnu": ["jscpd-linux-x64-gnu@5.0.15", "", { "os": "linux", "cpu": "x64" }, "sha512-Hb37UrME4X3tAyw4EYNTuSOeet0uq2UYwyeWUphdjTY8Z9GB4qzniDyCClvNjzAbz9EZ47LXHYvZSP6hlzhgIw=="],
 
-    "jscpd-linux-x64-musl": ["jscpd-linux-x64-musl@5.0.14", "", { "os": "linux", "cpu": "x64" }, "sha512-SayS7qQJvixyy9eR0+UjepkTsUUwqvlsiuSxfIdHgG2qzqoh/thnkgiu4By8fsiiDpQONsQrRrZDwHRQ3GDrBQ=="],
+    "jscpd-linux-x64-musl": ["jscpd-linux-x64-musl@5.0.15", "", { "os": "linux", "cpu": "x64" }, "sha512-dFHCSfL+h3irvmkRCn8MojdA5R1NuUPswVUrr3vrCI+3v5VjBBrERWfq1rpnFdKOgK7T/4Fvkj4L04vnWPTRiQ=="],
 
-    "jscpd-windows-x64-msvc": ["jscpd-windows-x64-msvc@5.0.14", "", { "os": "win32", "cpu": "x64" }, "sha512-DqjxlVkUanlahGgY2lY7Zkrau4BUTI+AwWky+bPGK4kSK2AIOaUziY9Q19u8b58idXmJA9FKK98Fuu4ajNXVjQ=="],
+    "jscpd-windows-x64-msvc": ["jscpd-windows-x64-msvc@5.0.15", "", { "os": "win32", "cpu": "x64" }, "sha512-OJ5F5qePxS9EVyw5pdCOAAR7SRm02LJyCMAHXB5bSUfo4mOZrEKkhgO+EUHgK4p7Blpovw9acpgf1/R2o1Z4Ig=="],
 
     "jsdom": ["jsdom@30.0.1", "", { "dependencies": { "@asamuzakjp/css-color": "^6.0.5", "@asamuzakjp/dom-selector": "^8.3.0", "@bramus/specificity": "^2.4.2", "@csstools/css-syntax-patches-for-csstree": "^1.1.7", "@exodus/bytes": "^1.15.1", "css-tree": "^3.2.1", "data-urls": "^7.0.0", "decimal.js": "^10.6.0", "html-encoding-sniffer": "^6.0.0", "is-potential-custom-element-name": "^1.0.1", "lru-cache": "^11.5.2", "parse5": "^8.0.1", "saxes": "^6.0.0", "symbol-tree": "^3.2.4", "tough-cookie": "^6.0.2", "undici": "^8.9.0", "w3c-xmlserializer": "^5.0.0", "webidl-conversions": "^8.0.1", "whatwg-mimetype": "^5.0.0", "whatwg-url": "^17.1.0", "xml-name-validator": "^5.0.0" }, "peerDependencies": { "canvas": "^3.2.3" }, "optionalPeers": ["canvas"] }, "sha512-52v7mUVUfNQVYYqE1lcdaymWL0njO7lTLUog6ZvW2U5KsbiLk/GnZlVJ+qx0xfNJZ6Gn+KSpPNE52vurbxZwrA=="],
 
