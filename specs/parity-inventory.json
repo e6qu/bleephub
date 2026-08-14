@@ -5535,6 +5535,15 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "markdown bodies rendered GitHub **alerts** (`> [!NOTE]` / TIP / IMPORTANT / WARNING / CAUTION) as plain blockquotes \u2014 remark-gfm doesn't handle them, so READMEs/issues/discussions lost the colored callouts",
+        "id": "WEB-100",
+        "location": "web/src/components/Markdown.tsx, web/src/index.css",
+        "severity": "m",
+        "status": "fixed \u2014 added a dependency-free remark transform that rewrites an alert blockquote into a titled `div.markdown-alert-<type>` (marker stripped, `Note`/`Tip`/\u2026 title prepended), styled with a per-type left border + title colour from theme-safe tokens defined in both light and dark. Extended the a11y sweep's seeded issue body to render all five types. Verified: unit tests (each type + ordinary blockquote untouched + task-list checkboxes still labelled); axe-clean (incl. contrast) in both themes",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -6951,21 +6960,21 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 97
+            "fixed": 98
           },
-          "total": 99
+          "total": 100
         }
       },
       "severity": {
         "blocker": 167,
         "major": 397,
-        "minor": 164
+        "minor": 165
       },
       "status": {
         "deferred": 3,
-        "fixed": 725
+        "fixed": 726
       },
-      "total": 728
+      "total": 729
     }
   },
   "rest": {
@@ -28484,7 +28493,7 @@
         "target": "/ui/"
       },
       {
-        "line": 424,
+        "line": 431,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/"
       },

@@ -242,10 +242,17 @@ test.beforeAll(async ({ browser }) => {
     title: "v2.0",
   }));
 
-  // issue
+  // issue — the body exercises task-list checkboxes and all five GitHub alert
+  // types so the ratchet validates the alert title/border colours in both themes.
   const issueRes = await api(page, "POST", `/api/v3/repos/${seeded.owner}/${seeded.repo}/issues`, {
     title: "Baseline parity issue",
-    body: "Seed issue for the a11y sweep.\n\n- [ ] item one\n- [x] item two",
+    body:
+      "Seed issue for the a11y sweep.\n\n- [ ] item one\n- [x] item two\n\n" +
+      "> [!NOTE]\n> A note callout.\n\n" +
+      "> [!TIP]\n> A tip callout.\n\n" +
+      "> [!IMPORTANT]\n> An important callout.\n\n" +
+      "> [!WARNING]\n> A warning callout.\n\n" +
+      "> [!CAUTION]\n> A caution callout.",
     labels: ["parity-bug"],
   });
   ok("issue", issueRes);
