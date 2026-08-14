@@ -657,6 +657,23 @@ export interface GithubRunner {
 // generated schema replaces a hand-written cast with the documented contract.
 export type GithubContentFile = components["schemas"]["content-file"];
 
+/** One run of consecutive lines attributed to the same commit (git blame). */
+export interface GithubBlameHunk {
+  sha: string;
+  short_sha: string;
+  summary: string;
+  author: string;
+  date: string;
+  start_line: number;
+  lines: string[];
+}
+export interface GithubBlameResult {
+  path: string;
+  ref: string;
+  sha: string;
+  hunks: GithubBlameHunk[];
+}
+
 /** Content directory entry — GET .../contents/{path} (dir variant). */
 export interface GithubContentItem {
   name: string;
