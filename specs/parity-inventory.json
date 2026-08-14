@@ -5688,6 +5688,15 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "org-level Actions settings (which repositories may run Actions, the allowed-actions policy, and the default GITHUB_TOKEN workflow permissions) had no UI at all \u2014 only repo-level Actions settings existed",
+        "id": "WEB-117",
+        "location": "web/src/pages/OrgGovernancePage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added an **Actions** governance tab mirroring the repo Actions settings against the org endpoints: enabled-repositories policy (all/selected/none) and allowed-actions policy (all/local_only/selected) via `PUT /orgs/{org}/actions/permissions`, plus read/write workflow permissions and the create/approve-PRs toggle via `PUT /orgs/{org}/actions/permissions/workflow`. Wrappers live in the lazy governance page (`ghFetch`/`ghSend`). Verified: unit test drives a policy radio and the create/approve toggle and asserts each PUT body; the a11y sweep scans `/ui/orgs/{org}/governance?tab=actions` at 0 violations in both themes",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -7104,21 +7113,21 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 114
+            "fixed": 115
           },
-          "total": 116
+          "total": 117
         }
       },
       "severity": {
         "blocker": 167,
         "major": 399,
-        "minor": 179
+        "minor": 180
       },
       "status": {
         "deferred": 3,
-        "fixed": 742
+        "fixed": 743
       },
-      "total": 745
+      "total": 746
     }
   },
   "rest": {
@@ -28636,32 +28645,32 @@
   "ui": {
     "browser_navigations": [
       {
-        "line": 200,
+        "line": 201,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 450,
+        "line": 451,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 489,
+        "line": 490,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/repos/${seeded.owner}/${seeded.repo}/settings"
       },
       {
-        "line": 524,
+        "line": 525,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/repos/${seeded.owner}/${seeded.repo}/settings"
       },
       {
-        "line": 562,
+        "line": 563,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/repos/${seeded.org}/org-parity/settings"
       },
       {
-        "line": 594,
+        "line": 595,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/search"
       },

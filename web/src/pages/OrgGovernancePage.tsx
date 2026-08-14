@@ -53,9 +53,9 @@ import {
 } from "../components/ui.js";
 import { ChevronDownIcon, ChevronRightIcon } from "../components/octicons.js";
 
-type GovernanceTab = "people" | "roles" | "member-privileges" | "properties" | "issue-types";
+type GovernanceTab = "people" | "roles" | "member-privileges" | "actions" | "properties" | "issue-types";
 
-const GOVERNANCE_TABS: GovernanceTab[] = ["people", "roles", "member-privileges", "properties", "issue-types"];
+const GOVERNANCE_TABS: GovernanceTab[] = ["people", "roles", "member-privileges", "actions", "properties", "issue-types"];
 
 export function OrgGovernancePage() {
   const { org = "" } = useParams<{ org: string }>();
@@ -79,6 +79,7 @@ export function OrgGovernancePage() {
           { key: "people" as const, label: "People" },
           { key: "roles" as const, label: "Roles" },
           { key: "member-privileges" as const, label: "Member privileges" },
+          { key: "actions" as const, label: "Actions" },
           { key: "properties" as const, label: "Custom properties" },
           { key: "issue-types" as const, label: "Issue types" },
         ]}
@@ -88,6 +89,7 @@ export function OrgGovernancePage() {
       {tab === "people" && <PeoplePanel org={org} />}
       {tab === "roles" && <RolesPanel org={org} />}
       {tab === "member-privileges" && <MemberPrivilegesPanel org={org} />}
+      {tab === "actions" && <OrgActionsPanel org={org} />}
       {tab === "properties" && <PropertiesPanel org={org} />}
       {tab === "issue-types" && <IssueTypesPanel org={org} />}
     </div>
@@ -155,6 +157,92 @@ function MemberPrivilegesPanel({ org }: { org: string }) {
         <Button variant="primary" disabled={save.isPending || !form} onClick={() => form && save.mutate(form)}>
           {save.isPending ? "Saving…" : "Save"}
         </Button>
+      </div>
+    </div>
+  );
+}
+
+interface OrgActionsPermissions { enabled_repositories: string; allowed_actions: string }
+interface OrgWorkflowPermissions { default_workflow_permissions: string; can_approve_pull_request_reviews: boolean }
+const orgActionsBase = (org: string) => `/api/v3/orgs/${encodeURIComponent(org)}/actions/permissions`;
+
+// Org Settings › Actions: which repositories may run Actions, the allowed-actions
+// policy, and the default GITHUB_TOKEN workflow permissions — mirrors the repo
+// Actions settings against the org-level endpoints.
+function OrgActionsPanel({ org }: { org: string }) {
+  const qc = useQueryClient();
+  const [error, setError] = useState<string | null>(null);
+  const perms = useQuery({ queryKey: ["org-actions-perms", org], queryFn: () => ghFetch<OrgActionsPermissions>(orgActionsBase(org)) });
+  const wf = useQuery({ queryKey: ["org-workflow-perms", org], queryFn: () => ghFetch<OrgWorkflowPermissions>(`${orgActionsBase(org)}/workflow`) });
+  const permMut = useMutation({
+    mutationFn: (body: Partial<OrgActionsPermissions>) => ghSend("PUT", orgActionsBase(org), body),
+    onSuccess: () => { setError(null); void qc.invalidateQueries({ queryKey: ["org-actions-perms", org] }); },
+    onError: (e: Error) => setError(e.message),
+  });
+  const wfMut = useMutation({
+    mutationFn: (body: OrgWorkflowPermissions) => ghSend("PUT", `${orgActionsBase(org)}/workflow`, body),
+    onSuccess: () => { setError(null); void qc.invalidateQueries({ queryKey: ["org-workflow-perms", org] }); },
+    onError: (e: Error) => setError(e.message),
+  });
+
+  const ENABLED = [
+    { value: "all", label: "All repositories" },
+    { value: "selected", label: "Selected repositories" },
+    { value: "none", label: "Disabled for all repositories" },
+  ];
+  const ALLOWED = [
+    { value: "all", label: "Allow all actions and reusable workflows" },
+    { value: "local_only", label: "Allow local actions only" },
+    { value: "selected", label: "Allow select actions and reusable workflows" },
+  ];
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem", maxWidth: "44rem", marginTop: "1rem" }}>
+      {error && <ErrorBanner>{error}</ErrorBanner>}
+      <div>
+        <h3 style={{ fontSize: "1rem", fontWeight: 600, margin: "0 0 0.5rem" }}>Policies</h3>
+        {perms.isLoading && <Spinner label="loading org actions permissions" />}
+        {perms.isError && <InlineError title="Failed to load organization Actions permissions" />}
+        {perms.data && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+            {ENABLED.map((o) => (
+              <label key={o.value} style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.9rem", minHeight: "1.625rem" }}>
+                <input type="radio" name="org-enabled-repos" checked={perms.data!.enabled_repositories === o.value} disabled={permMut.isPending}
+                  onChange={() => permMut.mutate({ enabled_repositories: o.value })} />
+                {o.label}
+              </label>
+            ))}
+            <h3 style={{ fontSize: "1rem", fontWeight: 600, margin: "0.6rem 0 0.3rem" }}>Allowed actions</h3>
+            {ALLOWED.map((o) => (
+              <label key={o.value} style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.9rem", minHeight: "1.625rem" }}>
+                <input type="radio" name="org-allowed-actions" checked={perms.data!.allowed_actions === o.value} disabled={permMut.isPending}
+                  onChange={() => permMut.mutate({ allowed_actions: o.value })} />
+                {o.label}
+              </label>
+            ))}
+          </div>
+        )}
+      </div>
+      <div>
+        <h3 style={{ fontSize: "1rem", fontWeight: 600, margin: "0 0 0.5rem" }}>Workflow permissions</h3>
+        {wf.isLoading && <Spinner label="loading org workflow permissions" />}
+        {wf.isError && <InlineError title="Failed to load organization workflow permissions" />}
+        {wf.data && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+            {(["read", "write"] as const).map((v) => (
+              <label key={v} style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.9rem", minHeight: "1.625rem" }}>
+                <input type="radio" name="org-wf-perm" checked={wf.data!.default_workflow_permissions === v} disabled={wfMut.isPending}
+                  onChange={() => wfMut.mutate({ default_workflow_permissions: v, can_approve_pull_request_reviews: wf.data!.can_approve_pull_request_reviews })} />
+                {v === "read" ? "Read repository contents and packages permissions" : "Read and write permissions"}
+              </label>
+            ))}
+            <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.9rem", minHeight: "1.625rem" }}>
+              <input type="checkbox" checked={wf.data!.can_approve_pull_request_reviews ?? false} disabled={wfMut.isPending}
+                onChange={(e) => wfMut.mutate({ default_workflow_permissions: wf.data!.default_workflow_permissions, can_approve_pull_request_reviews: e.target.checked })} />
+              Allow GitHub Actions to create and approve pull requests
+            </label>
+          </div>
+        )}
       </div>
     </div>
   );
