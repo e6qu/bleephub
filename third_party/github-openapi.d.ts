@@ -13151,6 +13151,8 @@ export interface paths {
          * Create a commit comment
          * @description Create a comment for a commit using its `:commit_sha`.
          *
+         *     Access to commit comments can be controlled by organization owners. For more information, see "[Managing commit comments for your organization](https://docs.github.com/organizations/managing-organization-settings/managing-commit-comments-for-your-organization)".
+         *
          *     This endpoint triggers [notifications](https://docs.github.com/github/managing-subscriptions-and-notifications-on-github/about-notifications). Creating content too quickly using this endpoint may result in secondary rate limiting. For more information, see "[Rate limits for the API](https://docs.github.com/rest/using-the-rest-api/rate-limits-for-the-rest-api#about-secondary-rate-limits)" and "[Best practices for using the REST API](https://docs.github.com/rest/guides/best-practices-for-using-the-rest-api)."
          *
          *     This endpoint supports the following custom media types. For more information, see "[Media types](https://docs.github.com/rest/using-the-rest-api/getting-started-with-the-rest-api#media-types)."
@@ -18927,9 +18929,6 @@ export interface paths {
          *     *   Only files smaller than 384 KB are searchable.
          *     *   You must always include at least one search term when searching source code. For example, searching for [`language:go`](https://github.com/search?utf8=%E2%9C%93&q=language%3Ago&type=Code) is not valid, while [`amazing
          *     language:go`](https://github.com/search?utf8=%E2%9C%93&q=amazing+language%3Ago&type=Code) is.
-         *
-         *     > [!NOTE]
-         *     > `repository.description`, `repository.owner.type`, and `repository.owner.node_id` are closing down on this endpoint and will return `null` in a future API version. Use the [Get a repository](https://docs.github.com/rest/repos/repos#get-a-repository) endpoint (`GET /repos/{owner}/{repo}`) to retrieve full repository metadata.
          *
          *     This endpoint requires you to authenticate and limits you to 10 requests per minute.
          */
@@ -27235,12 +27234,12 @@ export interface components {
             budget_product_sku: string;
             budget_alerting: {
                 /**
-                 * @description Whether alerts are enabled for this budget
+                 * @description Whether alerts are enabled for this budget. Ignored for user-scope as alerting is disabled for them.
                  * @example true
                  */
                 will_alert: boolean;
                 /**
-                 * @description Array of user login names who will receive alerts
+                 * @description Array of user login names who will receive alerts. Ignored for user-scope as alerting is disabled for them.
                  * @example [
                  *       "mona",
                  *       "lisa"
@@ -27307,12 +27306,12 @@ export interface components {
                 budget_type?: "ProductPricing" | "SkuPricing";
                 budget_alerting?: {
                     /**
-                     * @description Whether alerts are enabled for this budget
+                     * @description Whether alerts are enabled for this budget. Rejected for user-scope as alerting is always disabled for them.
                      * @example true
                      */
                     will_alert?: boolean;
                     /**
-                     * @description Array of user login names who will receive alerts
+                     * @description Array of user login names who will receive alerts. Rejected for user-scope as alerting is always disabled for them.
                      * @example [
                      *       "mona",
                      *       "lisa"
@@ -27360,12 +27359,12 @@ export interface components {
             budget_type: "ProductPricing" | "SkuPricing";
             budget_alerting: {
                 /**
-                 * @description Whether alerts are enabled for this budget
+                 * @description Whether alerts are enabled for this budget. Present but not applicable for user-scope as alerting is always disabled for them.
                  * @example true
                  */
                 will_alert?: boolean;
                 /**
-                 * @description Array of user login names who will receive alerts
+                 * @description Array of user login names who will receive alerts. Present but not applicable for user-scope as alerting is always disabled for them.
                  * @example [
                  *       "mona",
                  *       "lisa"
@@ -27423,12 +27422,12 @@ export interface components {
                 budget_type?: "ProductPricing" | "SkuPricing";
                 budget_alerting?: {
                     /**
-                     * @description Whether alerts are enabled for this budget
+                     * @description Whether alerts are enabled for this budget. Ignored for user-scope as alerting is always disabled for them.
                      * @example true
                      */
                     will_alert?: boolean;
                     /**
-                     * @description Array of user login names who will receive alerts
+                     * @description Array of user login names who will receive alerts. Ignored for user-scope as alerting is always disabled for them.
                      * @example [
                      *       "mona",
                      *       "lisa"
@@ -28645,7 +28644,7 @@ export interface components {
          * @description **Required when the state is dismissed.** The reason for dismissing or closing the alert.
          * @enum {string|null}
          */
-        "code-scanning-alert-dismissed-reason": "false positive" | "won't fix" | "used in tests" | null;
+        "code-scanning-alert-dismissed-reason": "false positive" | "won't fix" | "used in tests" | "mitigated" | null;
         /** @description The dismissal comment associated with the dismissal of the alert. */
         "code-scanning-alert-dismissed-comment": string | null;
         "code-scanning-alert-rule-summary": {
@@ -31077,20 +31076,20 @@ export interface components {
              * Format: date
              * @description The start date of the first iteration.
              */
-            start_date?: string;
+            start_date: string;
             /** @description The default duration for iterations in days. Individual iterations can override this value. */
-            duration?: number;
+            duration: number;
             /** @description Zero or more iterations for the field. */
             iterations?: {
                 /** @description The title of the iteration. */
-                title?: string;
+                title: string;
                 /**
                  * Format: date
                  * @description The start date of the iteration.
                  */
-                start_date?: string;
+                start_date: string;
                 /** @description The duration of the iteration in days. */
-                duration?: number;
+                duration: number;
             }[];
         };
         /**
@@ -34304,11 +34303,13 @@ export interface components {
          */
         job: {
             /**
+             * Format: int64
              * @description The id of the job.
              * @example 21
              */
             id: number;
             /**
+             * Format: int64
              * @description The id of the associated workflow run.
              * @example 5
              */
@@ -34580,6 +34581,7 @@ export interface components {
          */
         "workflow-run": {
             /**
+             * Format: int64
              * @description The ID of the workflow run.
              * @example 5
              */
@@ -34592,6 +34594,7 @@ export interface components {
             /** @example MDEwOkNoZWNrU3VpdGU1 */
             node_id: string;
             /**
+             * Format: int64
              * @description The ID of the associated check suite.
              * @example 42
              */
@@ -48623,7 +48626,7 @@ export interface components {
                  * @description The reason for dismissing or closing the alert.
                  * @enum {string|null}
                  */
-                dismissed_reason: "false positive" | "won't fix" | "used in tests" | null;
+                dismissed_reason: "false positive" | "won't fix" | "used in tests" | "mitigated" | null;
                 /** @description The time that the alert was fixed in ISO 8601 format: `YYYY-MM-DDTHH:MM:SSZ`. */
                 fixed_at?: unknown;
                 /**
@@ -48754,7 +48757,7 @@ export interface components {
                  * @description The reason for dismissing or closing the alert.
                  * @enum {string|null}
                  */
-                dismissed_reason: "false positive" | "won't fix" | "used in tests" | null;
+                dismissed_reason: "false positive" | "won't fix" | "used in tests" | "mitigated" | null;
                 /** @description The time that the alert was fixed in ISO 8601 format: `YYYY-MM-DDTHH:MM:SSZ`. */
                 fixed_at?: unknown;
                 /**
@@ -48885,7 +48888,7 @@ export interface components {
                 dismissed_at: unknown;
                 dismissed_by: unknown;
                 dismissed_comment?: components["schemas"]["code-scanning-alert-dismissed-comment"];
-                /** @description The reason for dismissing or closing the alert. Can be one of: `false positive`, `won't fix`, and `used in tests`. */
+                /** @description The reason for dismissing or closing the alert. Can be one of: `false positive`, `won't fix`, `used in tests`, and `mitigated`. */
                 dismissed_reason: unknown;
                 /** @description The time that the alert was fixed in ISO 8601 format: `YYYY-MM-DDTHH:MM:SSZ`. */
                 fixed_at?: unknown;
@@ -49028,7 +49031,7 @@ export interface components {
                  * @description The reason for dismissing or closing the alert.
                  * @enum {string|null}
                  */
-                dismissed_reason: "false positive" | "won't fix" | "used in tests" | null;
+                dismissed_reason: "false positive" | "won't fix" | "used in tests" | "mitigated" | null;
                 /** @description The time that the alert was fixed in ISO 8601 format: `YYYY-MM-DDTHH:MM:SSZ`. */
                 fixed_at?: unknown;
                 /**
@@ -49124,7 +49127,7 @@ export interface components {
                 dismissed_at: string | null;
                 dismissed_by: Record<string, never> | null;
                 dismissed_comment?: components["schemas"]["code-scanning-alert-dismissed-comment"];
-                /** @description The reason for dismissing or closing the alert. Can be one of: `false positive`, `won't fix`, and `used in tests`. */
+                /** @description The reason for dismissing or closing the alert. Can be one of: `false positive`, `won't fix`, `used in tests`, and `mitigated`. */
                 dismissed_reason: string | null;
                 /** @description The time that the alert was fixed in ISO 8601 format: `YYYY-MM-DDTHH:MM:SSZ`. */
                 fixed_at?: unknown;
@@ -49224,7 +49227,7 @@ export interface components {
                 dismissed_at: unknown;
                 dismissed_by: unknown;
                 dismissed_comment?: components["schemas"]["code-scanning-alert-dismissed-comment"];
-                /** @description The reason for dismissing or closing the alert. Can be one of: `false positive`, `won't fix`, and `used in tests`. */
+                /** @description The reason for dismissing or closing the alert. Can be one of: `false positive`, `won't fix`, `used in tests`, and `mitigated`. */
                 dismissed_reason: unknown;
                 /** @description The time that the alert was fixed in ISO 8601 format: `YYYY-MM-DDTHH:MM:SSZ`. */
                 fixed_at?: unknown;
@@ -49356,7 +49359,7 @@ export interface components {
                  * @description The reason for dismissing or closing the alert.
                  * @enum {string|null}
                  */
-                dismissed_reason: "false positive" | "won't fix" | "used in tests" | null;
+                dismissed_reason: "false positive" | "won't fix" | "used in tests" | "mitigated" | null;
                 /** @description The time that the alert was fixed in ISO 8601 format: `YYYY-MM-DDTHH:MM:SSZ`. */
                 fixed_at?: unknown;
                 /**
@@ -52575,7 +52578,7 @@ export interface components {
             installation: components["schemas"]["installation"];
             organization?: components["schemas"]["organization-simple-webhooks"];
             repositories_added: components["schemas"]["webhooks_repositories_added"];
-            /** @description An array of repository objects, which were removed from the installation. */
+            /** @description An array of repository objects, which were removed from the installation. When `repository_selection` changes from `all` to `selected`, this array is empty. */
             repositories_removed: {
                 full_name?: string;
                 /** @description Unique identifier of the repository */
@@ -52599,7 +52602,7 @@ export interface components {
             installation: components["schemas"]["installation"];
             organization?: components["schemas"]["organization-simple-webhooks"];
             repositories_added: components["schemas"]["webhooks_repositories_added"];
-            /** @description An array of repository objects, which were removed from the installation. */
+            /** @description An array of repository objects, which were removed from the installation. When `repository_selection` changes from `all` to `selected`, this array is empty. */
             repositories_removed: {
                 full_name: string;
                 /** @description Unique identifier of the repository */
@@ -104988,9 +104991,9 @@ export interface operations {
                     /** @description Whether to prevent additional spending once the budget is exceeded. For `user` and `multi_user_customer` scopes, this must be `true`. */
                     prevent_further_usage?: boolean;
                     budget_alerting?: {
-                        /** @description Whether alerts are enabled for this budget */
+                        /** @description Whether alerts are enabled for this budget. Rejected for user-scope as alerting is always disabled for them. */
                         will_alert?: boolean;
-                        /** @description Array of user login names who will receive alerts */
+                        /** @description Array of user login names who will receive alerts. Rejected for user-scope as alerting is always disabled for them. */
                         alert_recipients?: string[];
                     };
                     /**
@@ -105132,9 +105135,9 @@ export interface operations {
                     /** @description Whether to prevent additional spending once the budget is exceeded. For budgets with `user` or `multi_user_customer` scope, this must remain `true`. */
                     prevent_further_usage?: boolean;
                     budget_alerting?: {
-                        /** @description Whether alerts are enabled for this budget */
+                        /** @description Whether alerts are enabled for this budget. Ignored for user-scopes as alerting is always disabled for them. */
                         will_alert?: boolean;
-                        /** @description Array of user login names who will receive alerts */
+                        /** @description Array of user login names who will receive alerts. Ignored for user-scopes as alerting is always disabled for them. */
                         alert_recipients?: string[];
                     };
                     /**

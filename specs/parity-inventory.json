@@ -5598,6 +5598,60 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "the release create/edit form had draft/pre-release flags and asset upload but not github.com's **\"Generate release notes\"** button, though the server exposes `POST /releases/generate-notes`",
+        "id": "WEB-107",
+        "location": "web/src/pages/ReleasesPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added a Generate release notes button beside the notes field that POSTs to generate-notes and fills the body (and the title when empty); the wrapper rides the lazy releases chunk (ghPostJSON exported) so the entry stays under budget. Verified: unit test drives the button and asserts the POST body + filled textarea; a11y sweep scans `/releases/new` at 0 violations in both themes",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "the Environments settings tab managed variables + secrets but exposed no **protection rules**, though the server's environment PUT accepts a wait_timer",
+        "id": "WEB-108",
+        "location": "web/src/pages/RepoSettingsPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added a Protection rules section to each environment's detail with an aria-labelled wait-timer input (pre-loaded from the environment's current rule via fetchEnvironmentsDetail) that saves through the existing putEnvironment PUT. Verified: unit test expands an environment, edits the wait timer, and asserts the PUT body",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "markdown task-list checkboxes (`- [ ]`) rendered read-only, but github.com lets you toggle them straight from a rendered issue body to update it",
+        "id": "WEB-109",
+        "location": "web/src/components/Markdown.tsx, web/src/pages/IssuesPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 Markdown gained an opt-in `onToggleTask` that makes task-list checkboxes interactive (a click reports the checkbox's document index via DOM order); a `toggleTaskInMarkdown` helper flips the matching source marker, and the issue OP body wires it to PATCH the issue body. Read-only everywhere the handler is absent. Verified: unit tests (helper flips the Nth marker; interactive click reports the index; checkboxes stay disabled without a handler); a11y sweep's seeded issue body exercises interactive checkboxes at 0 violations in both themes",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "the profile and org Packages tab (`/ui/{owner}?tab=packages`) failed with \"Failed to load packages: ApiError: 400\" \u2014 it called GitHub's REST list endpoints (`/user/packages`, `/users/{u}/packages`, `/orgs/{o}/packages`), which require a single `package_type` and 400 without one, while the tab lists every type at once; the user scope also ignored the resolved username",
+        "id": "WEB-110",
+        "location": "web/src/api.ts, internal/server/gh_packages.go",
+        "severity": "m",
+        "status": "fixed \u2014 added browser aggregations `GET /ui-data/users/{username}/packages` and `/ui-data/orgs/{org}/packages` that accept an optional `package_type` (empty = every type), mirroring the existing repo Packages adapter, and pointed `packageListPath`'s user/org scopes at them (the username is now used, not ignored); `listOwnerPackagesJSON` treats an empty type as all types while the validated public REST endpoints are unchanged. Verified on a running server (`/ui-data/users/admin/packages` \u2192 200, `/ui-data/orgs/{org}/packages` \u2192 200, bare `/api/v3/user/packages` \u2192 400 GitHub-parity); Go test asserts 200 + every seeded type across user and org; api.test and the browser packages e2e both assert the new /ui-data URLs",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "the release create/edit form had draft/pre-release flags and asset upload but no github.com **\"Set as the latest release\"** control, though the server's release create/update accepts `make_latest`",
+        "id": "WEB-111",
+        "location": "web/src/pages/ReleasesPage.tsx, web/src/api.ts",
+        "severity": "m",
+        "status": "fixed \u2014 added a \"Set as the latest release\" checkbox that sends `make_latest: \"true\"/\"false\"` (the server excludes a release from latest only on `\"false\"`); the release REST object does not expose the current exclude flag, so the box reflects GitHub's on-by-default state. Verified: unit test unchecks it and asserts `make_latest:\"false\"` in the POST body; a11y sweep scans `/releases/new` at 0 violations in both themes",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "the repo Settings \u2192 Actions tab exposed allowed-actions policy and workflow-token read/write but not github.com's **\"Allow GitHub Actions to create and approve pull requests\"**, **fork-PR workflow approval policy**, or **artifact & log retention days**, though the server exposes all three",
+        "id": "WEB-112",
+        "location": "web/src/pages/RepoSettingsPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added the create/approve-PRs checkbox (the `can_approve_pull_request_reviews` field the workflow-permissions mutation already threaded but never surfaced), an aria-labelled fork-PR approval `<select>` (`.../actions/permissions/fork-pr-contributor-approval`), and an aria-labelled retention-days input + Save (`.../actions/permissions/artifact-and-log-retention`); the two new GET/PUT wrappers live in the lazily-loaded settings page (exported `ghFetch`/`ghSend`) to keep the entry bundle under budget. Verified: unit test drives all three and asserts each PUT body; the a11y sweep now clicks into the Actions tab and scans it at 0 violations in both themes",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -7014,21 +7068,21 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 104
+            "fixed": 110
           },
-          "total": 106
+          "total": 112
         }
       },
       "severity": {
         "blocker": 167,
         "major": 398,
-        "minor": 170
+        "minor": 176
       },
       "status": {
         "deferred": 3,
-        "fixed": 732
+        "fixed": 738
       },
-      "total": 735
+      "total": 741
     }
   },
   "rest": {
@@ -19010,11 +19064,15 @@
           "represented_operations": 1190
         },
         "ghec": {
-          "documented_operations": 1465,
+          "documented_operations": 1469,
           "missing_operations": [
             "GET /enterprises/{}/actions/runners/deprecations/{}",
             "GET /orgs/{}/actions/runners/deprecations/{}",
-            "GET /repos/{}/{}/actions/runners/deprecations/{}"
+            "GET /repos/{}/{}/actions/runners/deprecations/{}",
+            "POST /orgs/{}/credential-authorizations/revoke-all",
+            "POST /orgs/{}/credential-authorizations/revoke-credential-type",
+            "POST /orgs/{}/credential-authorizations/{}/revoke",
+            "POST /orgs/{}/credential-authorizations/{}/revoke-credential-type"
           ],
           "represented_operations": 1462
         },
@@ -28530,7 +28588,7 @@
         "source": "internal/server/gh_misc_endpoints.go"
       }
     ],
-    "vendored_openapi_sha256": "2f78e6e5b7c6bd32af008dbb26655253eee1dee507cf0010bc4142170b97c181"
+    "vendored_openapi_sha256": "f1a01c395961f4e4b7bc9b98d775711213baf89b3c8d84e4c76c10e0440caca2"
   },
   "schema_version": 1,
   "sources": {
@@ -28542,14 +28600,19 @@
   "ui": {
     "browser_navigations": [
       {
-        "line": 197,
+        "line": 198,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 438,
+        "line": 439,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/"
+      },
+      {
+        "line": 478,
+        "source": "web/e2e/a11y-theme-sweep.spec.ts",
+        "target": "/ui/repos/${seeded.owner}/${seeded.repo}/settings"
       },
       {
         "line": 113,
@@ -28612,202 +28675,202 @@
         "target": "/ui/"
       },
       {
-        "line": 307,
+        "line": 310,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/packages"
       },
       {
-        "line": 326,
+        "line": 329,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 363,
+        "line": 366,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/account"
       },
       {
-        "line": 387,
+        "line": 390,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 393,
+        "line": 396,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/classrooms/${classroom.id}"
       },
       {
-        "line": 417,
+        "line": 420,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos"
       },
       {
-        "line": 431,
+        "line": 434,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 439,
+        "line": 442,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos"
       },
       {
-        "line": 461,
+        "line": 464,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos"
       },
       {
-        "line": 480,
+        "line": 483,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 491,
+        "line": 494,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos/${owner}/detail-test"
       },
       {
-        "line": 505,
+        "line": 508,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 516,
+        "line": 519,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos/${owner}/readme-test"
       },
       {
-        "line": 526,
+        "line": 529,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 540,
+        "line": 543,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos/admin/${repo}"
       },
       {
-        "line": 550,
+        "line": 553,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 564,
+        "line": 567,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos/${owner}/issues-test"
       },
       {
-        "line": 579,
+        "line": 582,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 594,
+        "line": 597,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos/${owner}/issues-direct/issues"
       },
       {
-        "line": 616,
+        "line": 619,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 626,
+        "line": 629,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos/${owner}/pulls-direct/pulls"
       },
       {
-        "line": 634,
+        "line": 637,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 658,
+        "line": 661,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos/admin/${repo}/pulls/${pull.number}/files"
       },
       {
-        "line": 686,
+        "line": 689,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/apps"
       },
       {
-        "line": 694,
+        "line": 697,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/apps"
       },
       {
-        "line": 705,
+        "line": 708,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/apps"
       },
       {
-        "line": 715,
+        "line": 718,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/oauth"
       },
       {
-        "line": 726,
+        "line": 729,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 758,
+        "line": 761,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/workflows"
       },
       {
-        "line": 777,
+        "line": 780,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/metrics"
       },
       {
-        "line": 788,
+        "line": 791,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 794,
+        "line": 797,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos/${owner}/${repo}/releases"
       },
       {
-        "line": 838,
+        "line": 841,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 845,
+        "line": 848,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos/${owner}/${repo}/security/code-scanning"
       },
       {
-        "line": 893,
+        "line": 896,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/apps"
       },
       {
-        "line": 927,
+        "line": 930,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/marketplace"
       },
       {
-        "line": 977,
+        "line": 980,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/operations"
       },
       {
-        "line": 982,
+        "line": 985,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos"
       },
       {
-        "line": 994,
+        "line": 997,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos/${owner}/dark-theme-repo"
       },
       {
-        "line": 1007,
+        "line": 1010,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/health"
       },
@@ -30074,7 +30137,7 @@
       }
     ],
     "summary": {
-      "browser_navigations": 68,
+      "browser_navigations": 69,
       "routes": 93,
       "routes_with_direct_render": 90,
       "routes_with_test_reference": 92

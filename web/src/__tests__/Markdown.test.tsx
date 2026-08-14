@@ -1,7 +1,43 @@
-import { describe, it, expect, afterEach } from "vitest";
-import { render, cleanup, screen } from "@testing-library/react";
+import { describe, it, expect, afterEach, vi } from "vitest";
+import { render, cleanup, screen, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
-import Markdown from "../components/Markdown.js";
+import Markdown, { toggleTaskInMarkdown } from "../components/Markdown.js";
+
+describe("toggleTaskInMarkdown", () => {
+  const src = "- [ ] first\n- [x] second\n- [ ] third";
+  it("flips the Nth task marker without touching the others", () => {
+    expect(toggleTaskInMarkdown(src, 0, true)).toBe("- [x] first\n- [x] second\n- [ ] third");
+    expect(toggleTaskInMarkdown(src, 1, false)).toBe("- [ ] first\n- [ ] second\n- [ ] third");
+    expect(toggleTaskInMarkdown(src, 2, true)).toBe("- [ ] first\n- [x] second\n- [x] third");
+  });
+});
+
+describe("Markdown task lists", () => {
+  it("interactive checkboxes report their index on toggle; read-only otherwise", () => {
+    const onToggle = vi.fn();
+    const { rerender } = render(
+      <MemoryRouter>
+        <div className="markdown-body">
+          <Markdown onToggleTask={onToggle}>{"- [ ] a\n- [x] b"}</Markdown>
+        </div>
+      </MemoryRouter>,
+    );
+    const boxes = screen.getAllByRole("checkbox");
+    expect(boxes[1]).not.toBeDisabled();
+    fireEvent.click(boxes[1]!);
+    expect(onToggle).toHaveBeenCalledWith(1, false);
+
+    // Without the handler the checkboxes stay disabled (read-only).
+    rerender(
+      <MemoryRouter>
+        <div className="markdown-body">
+          <Markdown>{"- [ ] a\n- [x] b"}</Markdown>
+        </div>
+      </MemoryRouter>,
+    );
+    expect(screen.getAllByRole("checkbox")[0]).toBeDisabled();
+  });
+});
 
 afterEach(cleanup);
 

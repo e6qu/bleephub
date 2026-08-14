@@ -4,6 +4,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
 import { confirmAction } from "../components/confirmAction.js";
 import {
+  ghFetch,
+  ghSend,
   fetchActionsPermissions,
   updateActionsPermissions,
   fetchWorkflowPermissions,
@@ -12,7 +14,9 @@ import {
   createRepoRuleset,
   deleteRepoRuleset,
   fetchEnvironments,
+  fetchEnvironmentsDetail,
   createEnvironment,
+  putEnvironment,
   deleteEnvironment,
   fetchEnvVariables,
   createEnvVariable,
@@ -1898,12 +1902,47 @@ const settingsInputStyle: CSSProperties = {
 
 const settingsH2: CSSProperties = { fontSize: "1.1rem", fontWeight: 600 };
 
+// Repo Actions fork-PR approval + artifact/log retention. These wrappers live in
+// this lazily-loaded page (not entry-resident api.ts) to keep the entry bundle
+// under budget, per the ghFetch/ghSend lazy-wrapper pattern.
+interface ForkPRApproval { approval_policy: string }
+interface ArtifactRetention { days: number; maximum_allowed_days: number }
+const FORK_PR_POLICIES = [
+  { value: "first_time_contributors_new_to_github", label: "Require approval for first-time contributors who are new to GitHub" },
+  { value: "first_time_contributors", label: "Require approval for first-time contributors" },
+  { value: "all_external_contributors", label: "Require approval for all outside collaborators" },
+] as const;
+const actionsPermBase = (owner: string, repo: string) =>
+  `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/permissions`;
+const fetchForkPRApproval = (owner: string, repo: string) =>
+  ghFetch<ForkPRApproval>(`${actionsPermBase(owner, repo)}/fork-pr-contributor-approval`);
+const updateForkPRApproval = (owner: string, repo: string, approval_policy: string) =>
+  ghSend("PUT", `${actionsPermBase(owner, repo)}/fork-pr-contributor-approval`, { approval_policy });
+const fetchArtifactRetention = (owner: string, repo: string) =>
+  ghFetch<ArtifactRetention>(`${actionsPermBase(owner, repo)}/artifact-and-log-retention`);
+const updateArtifactRetention = (owner: string, repo: string, days: number) =>
+  ghSend("PUT", `${actionsPermBase(owner, repo)}/artifact-and-log-retention`, { days });
+
 // ─── Actions settings ──────────────────────────────────────────────────────
 function ActionsSettingsTab({ owner, repo }: { owner: string; repo: string }) {
   const qc = useQueryClient();
   const [error, setError] = useState<string | null>(null);
   const perms = useQuery({ queryKey: ["actions-permissions", owner, repo], queryFn: () => fetchActionsPermissions(owner, repo) });
   const wf = useQuery({ queryKey: ["workflow-permissions", owner, repo], queryFn: () => fetchWorkflowPermissions(owner, repo) });
+  const forkApproval = useQuery({ queryKey: ["fork-pr-approval", owner, repo], queryFn: () => fetchForkPRApproval(owner, repo) });
+  const retention = useQuery({ queryKey: ["artifact-retention", owner, repo], queryFn: () => fetchArtifactRetention(owner, repo) });
+  const [retentionDays, setRetentionDays] = useState<number | null>(null);
+  useEffect(() => { if (retention.data) setRetentionDays(retention.data.days); }, [retention.data]);
+  const forkMut = useMutation({
+    mutationFn: (policy: string) => updateForkPRApproval(owner, repo, policy),
+    onSuccess: () => { setError(null); void qc.invalidateQueries({ queryKey: ["fork-pr-approval", owner, repo] }); },
+    onError: (e: Error) => setError(e.message),
+  });
+  const retentionMut = useMutation({
+    mutationFn: (days: number) => updateArtifactRetention(owner, repo, days),
+    onSuccess: () => { setError(null); void qc.invalidateQueries({ queryKey: ["artifact-retention", owner, repo] }); },
+    onError: (e: Error) => setError(e.message),
+  });
   const permMut = useMutation({
     mutationFn: (body: GithubActionsPermissions) => updateActionsPermissions(owner, repo, body),
     onSuccess: () => { setError(null); void qc.invalidateQueries({ queryKey: ["actions-permissions", owner, repo] }); },
@@ -1963,6 +2002,52 @@ function ActionsSettingsTab({ owner, repo }: { owner: string; repo: string }) {
                   {v === "read" ? "Read repository contents and packages permissions" : "Read and write permissions"}
                 </label>
               ))}
+              <label style={{ display: "flex", gap: "0.5rem", fontSize: "0.9rem", alignItems: "center", marginTop: "0.4rem" }}>
+                <input type="checkbox" checked={wf.data!.can_approve_pull_request_reviews ?? false} disabled={wfMut.isPending}
+                  onChange={(e) => wfMut.mutate({ default_workflow_permissions: wf.data!.default_workflow_permissions, can_approve_pull_request_reviews: e.target.checked })} />
+                Allow GitHub Actions to create and approve pull requests
+              </label>
+            </div>
+          </Box>
+        )}
+      </div>
+      <div>
+        <h2 style={settingsH2}>Fork pull request workflows from outside collaborators</h2>
+        <p style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)", margin: "0.3rem 0 0.5rem" }}>
+          Choose which contributors need a maintainer to approve running workflows on their fork pull requests.
+        </p>
+        {forkApproval.isLoading && <Spinner label="loading fork PR approval policy" />}
+        {forkApproval.isError && <InlineError title="Failed to load fork PR approval policy" />}
+        {forkApproval.data && (
+          <Box>
+            <div style={{ padding: "1rem" }}>
+              <select aria-label="Fork pull request approval policy" value={forkApproval.data.approval_policy}
+                disabled={forkMut.isPending} onChange={(e) => forkMut.mutate(e.target.value)} style={{ ...settingsInputStyle, width: "100%", maxWidth: "34rem" }}>
+                {FORK_PR_POLICIES.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
+              </select>
+            </div>
+          </Box>
+        )}
+      </div>
+      <div>
+        <h2 style={settingsH2}>Artifact and log retention</h2>
+        <p style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)", margin: "0.3rem 0 0.5rem" }}>
+          The number of days to retain artifacts and logs produced by workflows in this repository.
+        </p>
+        {retention.isLoading && <Spinner label="loading artifact and log retention" />}
+        {retention.isError && <InlineError title="Failed to load artifact and log retention" />}
+        {retention.data && (
+          <Box>
+            <div style={{ padding: "1rem", display: "flex", alignItems: "flex-end", gap: "0.6rem" }}>
+              <label style={{ display: "flex", flexDirection: "column", gap: "0.4rem", fontSize: "0.85rem" }}>
+                <span>Days (1–{retention.data.maximum_allowed_days})</span>
+                <input type="number" aria-label="Artifact and log retention days" min={1} max={retention.data.maximum_allowed_days}
+                  value={retentionDays ?? retention.data.days} disabled={retentionMut.isPending}
+                  onChange={(e) => setRetentionDays(Number(e.target.value))} style={{ ...settingsInputStyle, width: "8rem" }} />
+              </label>
+              <Button type="button" variant="secondary"
+                disabled={retentionMut.isPending || retentionDays === null || retentionDays === retention.data.days || retentionDays < 1 || retentionDays > retention.data.maximum_allowed_days}
+                onClick={() => { if (retentionDays !== null) retentionMut.mutate(retentionDays); }}>Save</Button>
             </div>
           </Box>
         )}
@@ -2080,6 +2165,18 @@ function EnvironmentDetail({ owner, repo, env }: { owner: string; repo: string; 
   const qc = useQueryClient();
   const [vname, setVName] = useState("");
   const [vval, setVVal] = useState("");
+  const detailQ = useQuery({
+    queryKey: ["environments-detail", owner, repo],
+    queryFn: () => fetchEnvironmentsDetail(owner, repo),
+  });
+  const thisEnv = (detailQ.data ?? []).find((e) => e.name === env);
+  const currentWait = thisEnv?.protection_rules?.find((r) => r.wait_timer != null)?.wait_timer ?? 0;
+  const [waitTimer, setWaitTimer] = useState<string>("");
+  useEffect(() => setWaitTimer(String(currentWait)), [currentWait]);
+  const saveWait = useMutation({
+    mutationFn: () => putEnvironment(owner, repo, env, { wait_timer: Number(waitTimer) || 0 }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["environments-detail", owner, repo] }),
+  });
   const vars = useQuery({ queryKey: ["env-vars", owner, repo, env], queryFn: () => fetchEnvVariables(owner, repo, env) });
   const secrets = useQuery({ queryKey: ["env-secrets", owner, repo, env], queryFn: () => fetchEnvSecrets(owner, repo, env) });
   const addVar = useMutation({ mutationFn: () => createEnvVariable(owner, repo, env, vname.trim(), vval), onSuccess: () => { setVName(""); setVVal(""); void qc.invalidateQueries({ queryKey: ["env-vars", owner, repo, env] }); } });
@@ -2089,6 +2186,26 @@ function EnvironmentDetail({ owner, repo, env }: { owner: string; repo: string; 
   const secretList: GithubSecret[] = secrets.data ?? [];
   return (
     <div style={{ padding: "0 1rem 1rem", display: "flex", flexDirection: "column", gap: "0.8rem", background: "var(--color-bg-subtle)" }}>
+      <div>
+        <h3 style={{ fontSize: "0.85rem", fontWeight: 600, margin: "0.6rem 0 0.3rem" }}>Protection rules</h3>
+        <div style={{ display: "flex", alignItems: "flex-end", gap: "0.4rem", flexWrap: "wrap" }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem", fontSize: "0.75rem", color: "var(--color-fg-muted)" }}>
+            Wait timer (minutes)
+            <input
+              type="number"
+              min={0}
+              max={43200}
+              aria-label={`Wait timer for ${env}`}
+              value={waitTimer}
+              onChange={(e) => setWaitTimer(e.target.value)}
+              style={settingsInputStyle}
+            />
+          </label>
+          <Button size="sm" variant="secondary" disabled={saveWait.isPending} onClick={() => saveWait.mutate()}>
+            {saveWait.isPending ? "Saving…" : "Save protection"}
+          </Button>
+        </div>
+      </div>
       <div>
         <h3 style={{ fontSize: "0.85rem", fontWeight: 600, margin: "0.6rem 0 0.3rem" }}>Environment variables</h3>
         {variables.map((v) => (

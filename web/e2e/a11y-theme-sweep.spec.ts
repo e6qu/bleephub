@@ -162,6 +162,7 @@ function buildRoutes(): { route: string; label: string }[] {
     { route: `/ui/repos/${o}/${r}/branches`, label: "repo-branches" },
     { route: `/ui/repos/${o}/${r}/tags`, label: "repo-tags" },
     { route: `/ui/repos/${o}/${r}/releases`, label: "repo-releases" },
+    { route: `/ui/repos/${o}/${r}/releases/new`, label: "repo-release-new" },
     { route: `/ui/repos/${o}/${r}/labels`, label: "repo-labels" },
     { route: `/ui/repos/${o}/${r}/milestones`, label: "repo-milestones" },
     { route: `/ui/repos/${o}/${r}/settings`, label: "repo-settings" },
@@ -454,6 +455,42 @@ for (const theme of THEMES) {
       // eslint-disable-next-line no-console
       console.log(
         `[scan] ${theme} shortcuts-dialog -> ${
+          record.loadFailure ? "LOAD-FAIL" : `${record.violations.length} rules`
+        }` + record.violations.map((v) => `\n    ! ${v.id}: ${v.targets.join(" | ")}`).join(""),
+      );
+    }
+
+    // Also scan the repo Settings → Actions tab, whose controls (permissions
+    // radios, workflow-token permissions, fork-PR approval, artifact retention,
+    // create/approve-PRs) are gated behind client state, so the base /settings
+    // route only ever renders the General tab.
+    {
+      const route = `/ui/repos/${seeded.owner}/${seeded.repo}/settings (Actions tab)`;
+      const record: RouteResult = {
+        route,
+        theme,
+        url: BASE + `/ui/repos/${seeded.owner}/${seeded.repo}/settings`,
+        themeApplied: false,
+        loadFailure: false,
+        violations: [],
+      };
+      try {
+        await page.goto(`/ui/repos/${seeded.owner}/${seeded.repo}/settings`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+        await page.waitForSelector("main, [role=main], .app-header", { timeout: 8_000 }).catch(() => {});
+        await page.getByRole("button", { name: "Actions", exact: true }).click();
+        await page.getByLabel("Fork pull request approval policy").waitFor({ state: "visible", timeout: 8_000 });
+        await page.waitForLoadState("networkidle", { timeout: 6_000 }).catch(() => {});
+        const isDark = await page.evaluate(() => document.documentElement.classList.contains("dark"));
+        record.themeApplied = theme === "dark" ? isDark : !isDark;
+        record.violations = mapViolations(await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze());
+      } catch (err) {
+        record.loadFailure = true;
+        record.error = err instanceof Error ? err.message : String(err);
+      }
+      collected.push(record);
+      // eslint-disable-next-line no-console
+      console.log(
+        `[scan] ${theme} settings-actions -> ${
           record.loadFailure ? "LOAD-FAIL" : `${record.violations.length} rules`
         }` + record.violations.map((v) => `\n    ! ${v.id}: ${v.targets.join(" | ")}`).join(""),
       );

@@ -14,9 +14,11 @@ export interface CommentCardProps {
   isOp?: boolean | undefined;
   /** Rendered at the right of the header — e.g. Edit/Delete controls. */
   headerActions?: ReactNode | undefined;
+  /** When set, task-list checkboxes become interactive (index + new state). */
+  onToggleTask?: ((index: number, checked: boolean) => void) | undefined;
 }
 
-export function CommentCard({ login, body, date, isOp = false, headerActions }: CommentCardProps) {
+export function CommentCard({ login, body, date, isOp = false, headerActions, onToggleTask }: CommentCardProps) {
   return (
     <div
       style={{
@@ -66,7 +68,7 @@ export function CommentCard({ login, body, date, isOp = false, headerActions }: 
         }}
       >
         {body ? (
-          <Markdown>{body}</Markdown>
+          <Markdown onToggleTask={onToggleTask}>{body}</Markdown>
         ) : (
           <span style={{ color: "var(--color-fg-muted)" }}>No description provided.</span>
         )}

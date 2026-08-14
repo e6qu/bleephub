@@ -406,16 +406,23 @@ describe("security advisory API helpers", () => {
 });
 
 describe("package API helpers", () => {
-  it("uses GitHub's authenticated-user package endpoint", () => {
-    expect(packageListPath({ kind: "user", username: "ignored" }, "container")).toBe(
-      "/api/v3/user/packages?package_type=container",
+  // The Packages tab lists every type at once, but GitHub's REST list endpoints
+  // require a single package_type (400 otherwise) — so all three scopes read the
+  // /ui-data aggregations, which accept an optional package_type.
+  it("reads the /ui-data user aggregation for the named user", () => {
+    expect(packageListPath({ kind: "user", username: "octocat" }, "container")).toBe(
+      "/ui-data/users/octocat/packages?package_type=container",
+    );
+    expect(packageListPath({ kind: "user", username: "octocat" })).toBe(
+      "/ui-data/users/octocat/packages",
     );
   });
 
-  it("keeps official org REST and repository web package coordinates separate", () => {
+  it("reads the /ui-data org and repository aggregations", () => {
     expect(packageListPath({ kind: "org", org: "e6qu" }, "npm")).toBe(
-      "/api/v3/orgs/e6qu/packages?package_type=npm",
+      "/ui-data/orgs/e6qu/packages?package_type=npm",
     );
+    expect(packageListPath({ kind: "org", org: "e6qu" })).toBe("/ui-data/orgs/e6qu/packages");
     expect(packageListPath({ kind: "repo", owner: "e6qu", repo: "bleephub" })).toBe(
       "/ui-data/repos/e6qu/bleephub/packages",
     );

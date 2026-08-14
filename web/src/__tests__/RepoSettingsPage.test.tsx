@@ -175,6 +175,46 @@ describe("RepoSettingsPage", () => {
     });
   });
 
+  it("saves an environment wait-timer protection rule via PUT", async () => {
+    const envObj = {
+      id: 1,
+      name: "production",
+      node_id: "e",
+      url: "u",
+      protection_rules: [{ id: 1, node_id: "r", type: "wait_timer", wait_timer: 5 }],
+      deployment_branch_policy: null,
+    };
+    mockFetch.mockImplementation((url: string, opts?: { method?: string }) => {
+      const u = url.toString();
+      if (u.includes("/environments/production") && opts?.method === "PUT") {
+        return Promise.resolve(jsonResponse(envObj, 200));
+      }
+      if (u.includes("/environments/production/variables")) return Promise.resolve(jsonResponse({ variables: [] }));
+      if (u.includes("/environments/production/secrets")) return Promise.resolve(jsonResponse({ secrets: [] }));
+      if (u.endsWith("/environments")) return Promise.resolve(jsonResponse({ environments: [envObj] }));
+      if (u.includes("/issues") || u.includes("/pulls")) return Promise.resolve(jsonResponse([]));
+      return Promise.resolve(jsonResponse(repo));
+    });
+    renderPage();
+    await waitFor(() => screen.getByDisplayValue("before"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Environments" }));
+    fireEvent.click(await screen.findByRole("button", { name: "production" }));
+    const wait = await screen.findByLabelText("Wait timer for production");
+    // Let the env detail (wait_timer 5) load before editing, matching real use.
+    await waitFor(() => expect(wait).toHaveValue(5));
+    fireEvent.change(wait, { target: { value: "30" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save protection" }));
+
+    await waitFor(() => {
+      const put = mockFetch.mock.calls.find(
+        (c) => String(c[0]).includes("/environments/production") && c[1]?.method === "PUT",
+      );
+      expect(put).toBeDefined();
+      expect(JSON.parse(String(put![1].body))).toEqual({ wait_timer: 30 });
+    });
+  });
+
   it("lists and creates a repository webhook from the Webhooks tab", async () => {
     const existing = {
       id: 7,
@@ -240,6 +280,60 @@ describe("RepoSettingsPage", () => {
         (c) => c[0] === "/api/v3/repos/admin/settings-repo" && c[1]?.method === "DELETE",
       );
       expect(del).toBeTruthy();
+    });
+  });
+
+  it("saves Actions fork-PR approval, retention days, and create/approve-PRs from the Actions tab", async () => {
+    mockFetch.mockImplementation((url: string, opts?: { method?: string }) => {
+      const u = url.toString();
+      const perm = "/api/v3/repos/admin/settings-repo/actions/permissions";
+      if ((u === `${perm}/workflow` || u === `${perm}/fork-pr-contributor-approval` || u === `${perm}/artifact-and-log-retention`) && opts?.method === "PUT") {
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      if (u === `${perm}/workflow`) return Promise.resolve(jsonResponse({ default_workflow_permissions: "read", can_approve_pull_request_reviews: false }));
+      if (u === `${perm}/fork-pr-contributor-approval`) return Promise.resolve(jsonResponse({ approval_policy: "first_time_contributors" }));
+      if (u === `${perm}/artifact-and-log-retention`) return Promise.resolve(jsonResponse({ days: 90, maximum_allowed_days: 400 }));
+      if (u === perm) return Promise.resolve(jsonResponse({ enabled: true, allowed_actions: "all" }));
+      if (u.includes("/issues") || u.includes("/pulls")) return Promise.resolve(jsonResponse([]));
+      return Promise.resolve(jsonResponse(repo));
+    });
+    renderPage();
+    await waitFor(() => screen.getByDisplayValue("before"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Actions" }));
+
+    // Allow GitHub Actions to create and approve pull requests
+    const approve = await screen.findByRole("checkbox", { name: "Allow GitHub Actions to create and approve pull requests" });
+    fireEvent.click(approve);
+    await waitFor(() => {
+      const put = mockFetch.mock.calls.find(
+        (c) => String(c[0]).endsWith("/actions/permissions/workflow") && c[1]?.method === "PUT",
+      );
+      expect(put).toBeDefined();
+      expect(JSON.parse(String(put![1].body)).can_approve_pull_request_reviews).toBe(true);
+    });
+
+    // Fork PR approval policy
+    fireEvent.change(screen.getByLabelText("Fork pull request approval policy"), { target: { value: "all_external_contributors" } });
+    await waitFor(() => {
+      const put = mockFetch.mock.calls.find(
+        (c) => String(c[0]).endsWith("/fork-pr-contributor-approval") && c[1]?.method === "PUT",
+      );
+      expect(put).toBeDefined();
+      expect(JSON.parse(String(put![1].body))).toEqual({ approval_policy: "all_external_contributors" });
+    });
+
+    // Artifact and log retention days
+    const days = await screen.findByLabelText("Artifact and log retention days");
+    await waitFor(() => expect(days).toHaveValue(90));
+    fireEvent.change(days, { target: { value: "30" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      const put = mockFetch.mock.calls.find(
+        (c) => String(c[0]).endsWith("/artifact-and-log-retention") && c[1]?.method === "PUT",
+      );
+      expect(put).toBeDefined();
+      expect(JSON.parse(String(put![1].body))).toEqual({ days: 30 });
     });
   });
 });

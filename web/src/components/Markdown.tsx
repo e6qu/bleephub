@@ -3,19 +3,47 @@ import remarkGfm from "remark-gfm";
 import { Link, useParams } from "react-router";
 import type { ComponentPropsWithoutRef } from "react";
 
-// Shared markdown renderer. Defaults to GitHub-flavored markdown and gives the
-// disabled checkboxes that remark-gfm emits for task-list items (`- [ ]`) an
-// accessible name — otherwise axe flags them as unlabeled form controls
-// (WCAG 4.1.2 / the `label` rule). The list-item text carries the meaning, so
-// the label just conveys the checkbox's completed/incomplete state.
-function TaskListInput(props: ComponentPropsWithoutRef<"input">) {
+/**
+ * Flip the Nth task-list marker (`[ ]`↔`[x]`) in the raw markdown source. The
+ * ordinal matches the rendered checkbox order (both are document order), so a
+ * clicked checkbox's DOM index maps straight to the source marker to toggle.
+ */
+export function toggleTaskInMarkdown(source: string, index: number, checked: boolean): string {
+  let i = -1;
+  return source.replace(/^(\s*(?:[-*+]|\d+\.)\s+)\[([ xX])\]/gm, (whole, prefix: string) => {
+    i += 1;
+    return i === index ? `${prefix}[${checked ? "x" : " "}]` : whole;
+  });
+}
+
+// Shared markdown renderer. Defaults to GitHub-flavored markdown. remark-gfm
+// emits task-list (`- [ ]`) checkboxes disabled; we give them an accessible name
+// (WCAG 4.1.2 / the `label` rule — the item text carries the meaning). When an
+// `onToggleTask` handler is supplied (an editable body), the checkboxes become
+// interactive: a click reports its document index so the caller can flip the
+// matching source marker and persist, matching github.com.
+function TaskListInput({
+  onToggleTask,
+  ...props
+}: ComponentPropsWithoutRef<"input"> & { onToggleTask?: ((index: number, checked: boolean) => void) | undefined }) {
   if (props.type === "checkbox") {
-    return (
-      <input
-        {...props}
-        aria-label={props.checked ? "completed task" : "incomplete task"}
-      />
-    );
+    const label = props.checked ? "completed task" : "incomplete task";
+    if (onToggleTask) {
+      return (
+        <input
+          {...props}
+          aria-label={label}
+          disabled={false}
+          onChange={(e) => {
+            const root = e.currentTarget.closest(".markdown-body");
+            const boxes = root ? [...root.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')] : [];
+            const idx = boxes.indexOf(e.currentTarget);
+            if (idx >= 0) onToggleTask(idx, e.currentTarget.checked);
+          }}
+        />
+      );
+    }
+    return <input {...props} aria-label={label} />;
   }
   return <input {...props} />;
 }
@@ -143,18 +171,22 @@ export default function Markdown({
   remarkPlugins,
   components,
   linkContext,
+  onToggleTask,
   ...rest
-}: Options & { linkContext?: LinkContext }) {
+}: Options & { linkContext?: LinkContext; onToggleTask?: ((index: number, checked: boolean) => void) | undefined }) {
   // Every markdown body renders inside a route, so the current :owner/:repo
   // params are the natural reference context for `#123` / SHA autolinks — no
   // caller needs to thread it. An explicit linkContext still wins (cross-repo).
   const params = useParams();
   const ctx: LinkContext | undefined =
     linkContext ?? (params.owner && params.repo ? { owner: params.owner, repo: params.repo } : undefined);
+  const input = (props: ComponentPropsWithoutRef<"input">) => (
+    <TaskListInput {...props} onToggleTask={onToggleTask} />
+  );
   return (
     <ReactMarkdown
       remarkPlugins={remarkPlugins ?? [remarkGfm, remarkGithubAlerts, [remarkGithubRefs, ctx]]}
-      components={{ input: TaskListInput, a: MarkdownLink, ...components }}
+      components={{ input, a: MarkdownLink, ...components }}
       {...rest}
     >
       {children}

@@ -31,6 +31,7 @@ import {
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
 import type { GithubIssue, GithubLabel, GithubMilestone, ListFilterState } from "../types.js";
 import { CommentCard, EditableCommentList } from "../components/CommentCard.js";
+import { toggleTaskInMarkdown } from "../components/Markdown.js";
 import { CommentComposer } from "../components/CommentComposer.js";
 import { MutationError } from "../components/MutationError.js";
 import { LabelPills } from "../components/LabelPills.js";
@@ -381,6 +382,10 @@ function IssueDetail({ owner, repo, number }: { owner: string; repo: string; num
       updateIssue(owner, repo, number, { state: issue?.state === "open" ? "closed" : "open" }),
     onSuccess: invalidateIssue,
   });
+  const toggleTaskMut = useMutation({
+    mutationFn: (body: string) => updateIssue(owner, repo, number, { body }),
+    onSuccess: invalidateIssue,
+  });
   const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editBody, setEditBody] = useState("");
@@ -497,7 +502,15 @@ function IssueDetail({ owner, repo, number }: { owner: string; repo: string; num
           {viewerQ.isError && (
             <InlineError inline title="Failed to load current user" detail={String(viewerQ.error)} />
           )}
-          <CommentCard login={issue.user?.login} body={issue.body ?? undefined} date={issue.created_at} isOp />
+          <CommentCard
+            login={issue.user?.login}
+            body={issue.body ?? undefined}
+            date={issue.created_at}
+            isOp
+            onToggleTask={(index, checked) =>
+              toggleTaskMut.mutate(toggleTaskInMarkdown(issue.body ?? "", index, checked))
+            }
+          />
           <ReactionBar
             queryKey={["issue-body-reactions", owner, repo, number]}
             fetchList={() => fetchIssueReactions(owner, repo, number)}

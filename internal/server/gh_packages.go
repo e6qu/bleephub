@@ -347,7 +347,9 @@ func (s *Server) listOwnerPackagesJSON(r *http.Request, user *store.User, ownerK
 	baseURL := s.baseURL(r)
 	out := make([]map[string]interface{}, 0, len(pkgs))
 	for _, p := range pkgs {
-		if p.PackageType != pkgType {
+		// An empty pkgType lists every package type (the web UI's Packages tab,
+		// via /ui-data). The public REST endpoints always pass a validated type.
+		if pkgType != "" && p.PackageType != pkgType {
 			continue
 		}
 		if visibility != "" && p.Visibility != visibility {
@@ -801,6 +803,40 @@ func (s *Server) handleListRepoPackages(w http.ResponseWriter, r *http.Request) 
 		out = append(out, s.packageToJSON(p, baseURL))
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// handleUIListUserPackages / handleUIListOrgPackages back the profile/org
+// Packages tab. github.com's REST list endpoints require a single package_type
+// (400 otherwise); the web UI lists every type at once, so these /ui-data
+// aggregations accept an OPTIONAL package_type (empty = all) instead.
+func (s *Server) handleUIListUserPackages(w http.ResponseWriter, r *http.Request) {
+	user := s.requireUser(w, r)
+	if user == nil {
+		return
+	}
+	u := s.store.LookupUserByLogin(r.PathValue("username"))
+	if u == nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	pkgType := r.URL.Query().Get("package_type")
+	visibility := r.URL.Query().Get("visibility")
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, s.listOwnerPackagesJSON(r, user, u.Login, pkgType, visibility)))
+}
+
+func (s *Server) handleUIListOrgPackages(w http.ResponseWriter, r *http.Request) {
+	user := s.requireUser(w, r)
+	if user == nil {
+		return
+	}
+	org := s.store.GetOrg(r.PathValue("org"))
+	if org == nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	pkgType := r.URL.Query().Get("package_type")
+	visibility := r.URL.Query().Get("visibility")
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, s.listOwnerPackagesJSON(r, user, org.Login, pkgType, visibility)))
 }
 
 func (s *Server) handleGetRepoPackage(w http.ResponseWriter, r *http.Request) {

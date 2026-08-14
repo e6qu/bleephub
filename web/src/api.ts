@@ -1266,7 +1266,7 @@ export const fetchGitignoreTemplates = () => ghFetch<string[]>("/api/v3/gitignor
 export const fetchLicenseTemplates = () =>
   ghFetch<{ key: string; name: string; spdx_id: string }[]>("/api/v3/licenses");
 
-async function ghPostJSON<T>(path: string, body: unknown): Promise<T> {
+export async function ghPostJSON<T>(path: string, body: unknown): Promise<T> {
   const res = await apiFetch(path, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
@@ -1925,6 +1925,9 @@ export interface ReleasePayload {
   body?: string | undefined;
   draft?: boolean | undefined;
   prerelease?: boolean | undefined;
+  // "true" keeps the release eligible to be the repo's latest (GitHub's default);
+  // "false" excludes it permanently. "legacy" defers to date-based selection.
+  make_latest?: "true" | "false" | "legacy" | undefined;
 }
 
 export const createRelease = (owner: string, repo: string, payload: ReleasePayload) =>
@@ -2039,7 +2042,7 @@ async function ghFetchEnvelope<T>(
 }
 
 /** Non-GET request that returns no JSON the caller renders. */
-async function ghSend(method: string, path: string, body?: unknown): Promise<void> {
+export async function ghSend(method: string, path: string, body?: unknown): Promise<void> {
   const res = await apiFetch(path, {
     method,
     headers: body !== undefined
@@ -3162,10 +3165,12 @@ function packageBasePath(scope: PackageScope, pkgType: string, pkgName: string):
 export function packageListPath(scope: PackageScope, pkgType?: string): string {
   const query = pkgType ? `?package_type=${encodeURIComponent(pkgType)}` : "";
   switch (scope.kind) {
+    // github.com's REST list-packages endpoints require a package_type; the web
+    // Packages tab lists every type, so it reads the /ui-data aggregations.
     case "user":
-      return `/api/v3/user/packages${query}`;
+      return `/ui-data/users/${encodeURIComponent(scope.username)}/packages${query}`;
     case "org":
-      return `/api/v3/orgs/${encodeURIComponent(scope.org)}/packages${query}`;
+      return `/ui-data/orgs/${encodeURIComponent(scope.org)}/packages${query}`;
     case "repo":
       return `/ui-data/repos/${encodeURIComponent(scope.owner)}/${encodeURIComponent(scope.repo)}/packages${query}`;
   }
