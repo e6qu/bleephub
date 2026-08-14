@@ -96,6 +96,21 @@ function mockInsightsEndpoints(overrides: Record<string, () => Response> = {}) {
   });
 }
 
+// A tiny DAG with a feature branch off A that merges back at C, exercising the
+// lane fork/merge path of computeCommitGraph.
+const commit = (sha: string, parents: string[], message: string) => ({
+  sha,
+  parents: parents.map((p) => ({ sha: p })),
+  commit: { message, author: { name: "admin", date: "2026-01-02T00:00:00Z" } },
+  author: { login: "admin" },
+});
+const networkCommits = [
+  commit("cccccccc", ["bbbbbbbb", "ffffffff"], "Merge feature"),
+  commit("bbbbbbbb", ["aaaaaaaa"], "Mainline work"),
+  commit("ffffffff", ["aaaaaaaa"], "Feature work"),
+  commit("aaaaaaaa", [], "Root commit"),
+];
+
 describe("InsightsPage", () => {
   it("renders contributors, community health, commit activity, and traffic", async () => {
     mockInsightsEndpoints();
@@ -121,6 +136,33 @@ describe("InsightsPage", () => {
     // popular content empty states
     expect(screen.getByText(/No path traffic recorded/)).toBeInTheDocument();
     expect(screen.getByText(/No referrer traffic recorded/)).toBeInTheDocument();
+  });
+
+  it("renders the commit network graph with lanes and a screen-reader commit list", async () => {
+    mockInsightsEndpoints({
+      "/commits?": () => jsonResponse(networkCommits),
+      "/branches": () =>
+        jsonResponse([
+          { name: "main", commit: { sha: "cccccccc" } },
+          { name: "feature", commit: { sha: "ffffffff" } },
+        ]),
+    });
+    renderAt("/ui/repos/admin/test/insights");
+
+    // The header reports the commit count and >1 lane (feature branch forks one).
+    await waitFor(() => {
+      expect(screen.getByText(/Latest 4 commits across [2-9] lanes/)).toBeInTheDocument();
+    });
+    // The SVG exposes an accessible label.
+    expect(
+      screen.getByRole("img", { name: /Commit network graph: 4 commits/ }),
+    ).toBeInTheDocument();
+    // The off-screen commit list links each commit to its detail page.
+    const merge = screen.getByRole("link", { name: /Merge feature/i });
+    expect(merge).toHaveAttribute("href", "/ui/repos/admin/test/commits/cccccccc");
+    expect(screen.getByRole("link", { name: /Root commit/i })).toBeInTheDocument();
+    // Branch tips are labelled on the graph.
+    expect(screen.getByText("feature")).toBeInTheDocument();
   });
 
   it("shows an honest empty state when contributors returns 204", async () => {

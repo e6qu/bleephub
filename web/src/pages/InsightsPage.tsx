@@ -10,12 +10,14 @@ import {
   fetchCommunityProfile,
   fetchCommitActivity,
   fetchCodeFrequency,
+  fetchRepoCommits,
+  fetchRepoBranches,
   fetchTrafficViews,
   fetchTrafficClones,
   fetchTrafficPopularPaths,
   fetchTrafficPopularReferrers,
 } from "../api.js";
-import type { GithubCommunityProfile, GithubTrafficBucket } from "../types.js";
+import type { GithubCommunityProfile, GithubTrafficBucket, GithubCommit } from "../types.js";
 import { RepoHeader } from "../components/Shell.js";
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
 import { Box, Blankslate, SectionLabel, StatCard } from "../components/ui.js";
@@ -37,6 +39,7 @@ export function InsightsPage() {
         <TrafficSection owner={owner} repo={repo} />
         <PopularContentSection owner={owner} repo={repo} />
         <DependencyGraphSection owner={owner} repo={repo} />
+        <NetworkSection owner={owner} repo={repo} />
         <ForksSection owner={owner} repo={repo} />
       </div>
     </div>
@@ -467,6 +470,271 @@ function DependencyGraphSection({ owner, repo }: { owner: string; repo: string }
                 </li>
               ))}
             </ul>
+          </Box>
+        ))}
+    </section>
+  );
+}
+
+// Lane palette — every entry is a token defined in both the light and dark
+// theme blocks, so the graph never leaks a hardcoded colour.
+const NETWORK_LANE_COLORS = [
+  "var(--color-accent)",
+  "var(--gh-merged)",
+  "var(--color-success-text)",
+  "var(--color-brand-purple)",
+  "var(--gh-open-solid)",
+  "var(--color-brand-pink)",
+  "var(--color-danger-text)",
+  "var(--color-brand-blue)",
+];
+const laneColor = (lane: number) => NETWORK_LANE_COLORS[lane % NETWORK_LANE_COLORS.length];
+
+interface NetworkNode {
+  sha: string;
+  lane: number;
+  x: number;
+  y: number;
+  message: string;
+  author: string;
+  date: string;
+}
+interface NetworkEdge {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  lane: number;
+}
+
+const NET_DX = 16;
+const NET_DY = 20;
+const NET_PAD = 12;
+const NET_R = 4;
+
+// computeCommitGraph lays out the commit ancestry DAG as a horizontal railroad
+// (time flows left→old to right→new). Merge commits and branch points spawn and
+// retire lanes exactly as git's own graph does.
+function computeCommitGraph(commits: GithubCommit[]): {
+  nodes: NetworkNode[];
+  edges: NetworkEdge[];
+  laneCount: number;
+  width: number;
+  height: number;
+} {
+  const n = commits.length;
+  const indexBySha = new Map<string, number>();
+  commits.forEach((c, i) => indexBySha.set(c.sha, i));
+
+  const active: (string | null)[] = []; // active[lane] = sha that lane is waiting to place
+  const col: Record<string, number> = {};
+  const claim = (sha: string): number => {
+    let lane = active.indexOf(sha);
+    if (lane === -1) {
+      lane = active.indexOf(null);
+      if (lane === -1) {
+        lane = active.length;
+        active.push(null);
+      }
+      active[lane] = sha;
+    }
+    return lane;
+  };
+
+  for (let i = 0; i < n; i++) {
+    const c = commits[i];
+    if (!c) continue;
+    const lane = claim(c.sha);
+    // A branch point: two children both reserved this sha in different lanes —
+    // collapse the duplicates into the chosen lane so it isn't leaked forever.
+    for (let l = 0; l < active.length; l++) {
+      if (l !== lane && active[l] === c.sha) active[l] = null;
+    }
+    col[c.sha] = lane;
+
+    const parents = (c.parents ?? []).map((p) => p.sha);
+    if (parents.length === 0) {
+      active[lane] = null;
+    } else {
+      const first = parents[0] as string;
+      const existing = active.indexOf(first);
+      // If the first parent is already expected elsewhere, free this lane;
+      // otherwise this lane keeps following it.
+      active[lane] = existing !== -1 && existing !== lane ? null : first;
+      for (let k = 1; k < parents.length; k++) {
+        const p = parents[k];
+        if (p === undefined) continue;
+        if (active.indexOf(p) === -1) {
+          let free = active.indexOf(null);
+          if (free === -1) {
+            free = active.length;
+            active.push(null);
+          }
+          active[free] = p;
+        }
+      }
+    }
+  }
+
+  const maxLane = Object.values(col).reduce((m, l) => Math.max(m, l), 0);
+  const xAt = (i: number) => NET_PAD + (n - 1 - i) * NET_DX;
+  const yAt = (lane: number) => NET_PAD + lane * NET_DY;
+
+  const nodes: NetworkNode[] = commits.map((c, i) => ({
+    sha: c.sha,
+    lane: col[c.sha] ?? 0,
+    x: xAt(i),
+    y: yAt(col[c.sha] ?? 0),
+    message: (c.commit?.message ?? "").split("\n")[0] ?? "",
+    author: c.author?.login ?? c.commit?.author?.name ?? "unknown",
+    date: c.commit?.author?.date ?? "",
+  }));
+
+  const edges: NetworkEdge[] = [];
+  commits.forEach((c, i) => {
+    const childLane = col[c.sha] ?? 0;
+    const x1 = xAt(i);
+    const y1 = yAt(childLane);
+    (c.parents ?? []).forEach((p, k) => {
+      const pi = indexBySha.get(p.sha);
+      if (pi === undefined) return; // parent outside the fetched window
+      const parentLane = col[p.sha] ?? 0;
+      edges.push({
+        x1,
+        y1,
+        x2: xAt(pi),
+        y2: yAt(parentLane),
+        // First-parent edge keeps the child's lane colour; a merge edge takes
+        // the incoming branch's colour.
+        lane: k === 0 ? childLane : parentLane,
+      });
+    });
+  });
+
+  return {
+    nodes,
+    edges,
+    laneCount: maxLane + 1,
+    width: NET_PAD * 2 + Math.max(n - 1, 0) * NET_DX + NET_R,
+    height: NET_PAD * 2 + maxLane * NET_DY + NET_R,
+  };
+}
+
+function edgePath(e: NetworkEdge): string {
+  if (e.y1 === e.y2) return `M${e.x1},${e.y1} L${e.x2},${e.y2}`;
+  const mx = (e.x1 + e.x2) / 2;
+  return `M${e.x1},${e.y1} C${mx},${e.y1} ${mx},${e.y2} ${e.x2},${e.y2}`;
+}
+
+function NetworkSection({ owner, repo }: { owner: string; repo: string }) {
+  const commitsQ = useQuery({
+    queryKey: ["network-commits", owner, repo],
+    queryFn: () => fetchRepoCommits(owner, repo, { perPage: 50 }),
+  });
+  const branchesQ = useQuery({
+    queryKey: ["network-branches", owner, repo],
+    queryFn: () => fetchRepoBranches(owner, repo),
+  });
+
+  const commits = commitsQ.data ?? [];
+  const graph = computeCommitGraph(commits);
+  const branchTips = new Map<string, string[]>();
+  for (const b of branchesQ.data ?? []) {
+    const list = branchTips.get(b.commit.sha) ?? [];
+    list.push(b.name);
+    branchTips.set(b.commit.sha, list);
+  }
+
+  return (
+    <section>
+      <SectionLabel>Network</SectionLabel>
+      {commitsQ.isLoading && <Spinner label="loading commit network" />}
+      {commitsQ.isError && (
+        <InlineError title="Failed to load commit network" detail={String(commitsQ.error)} />
+      )}
+      {commitsQ.data &&
+        (commits.length === 0 ? (
+          <Blankslate icon={<GraphIcon size={26} />} title="No commits yet">
+            The commit network graph appears once the default branch has history.
+          </Blankslate>
+        ) : (
+          <Box>
+            <div
+              style={{
+                padding: "0.6rem 1rem",
+                fontSize: "0.8rem",
+                color: "var(--color-fg-muted)",
+                borderBottom: "1px solid var(--color-border)",
+              }}
+            >
+              Latest {commits.length} commit{commits.length === 1 ? "" : "s"} across{" "}
+              {graph.laneCount} lane{graph.laneCount === 1 ? "" : "s"}
+            </div>
+            <div style={{ overflowX: "auto", padding: "0.75rem 1rem" }}>
+              <svg
+                width={graph.width}
+                height={graph.height}
+                viewBox={`0 0 ${graph.width} ${graph.height}`}
+                role="img"
+                aria-label={`Commit network graph: ${commits.length} commits laid out across ${graph.laneCount} branch lanes, oldest on the left.`}
+                style={{ display: "block" }}
+              >
+                {graph.edges.map((e, i) => (
+                  <path
+                    key={i}
+                    d={edgePath(e)}
+                    fill="none"
+                    stroke={laneColor(e.lane)}
+                    strokeWidth={2}
+                    opacity={0.8}
+                  />
+                ))}
+                {graph.nodes.map((node) => {
+                  const tips = branchTips.get(node.sha);
+                  return (
+                    <g key={node.sha}>
+                      <circle cx={node.x} cy={node.y} r={NET_R} fill={laneColor(node.lane)}>
+                        <title>{`${node.sha.slice(0, 7)} · ${node.message} · ${node.author}`}</title>
+                      </circle>
+                      {tips && tips.length > 0 && (
+                        <text
+                          x={node.x + NET_R + 3}
+                          y={node.y - NET_R - 2}
+                          fontSize={9}
+                          fill="var(--color-fg-muted)"
+                        >
+                          {tips.join(", ")}
+                        </text>
+                      )}
+                    </g>
+                  );
+                })}
+              </svg>
+            </div>
+            {/* Screen-reader fallback: the SVG is decorative topology, so expose
+                the same commits as a linked, ordered list off-screen. */}
+            <ol
+              style={{
+                position: "absolute",
+                width: 1,
+                height: 1,
+                padding: 0,
+                margin: -1,
+                overflow: "hidden",
+                clip: "rect(0 0 0 0)",
+                whiteSpace: "nowrap",
+                border: 0,
+              }}
+            >
+              {graph.nodes.map((node) => (
+                <li key={node.sha}>
+                  <Link to={`/ui/repos/${owner}/${repo}/commits/${node.sha}`}>
+                    {node.sha.slice(0, 7)} — {node.message} — {node.author}
+                    {node.date ? ` — ${new Date(node.date).toLocaleDateString()}` : ""}
+                  </Link>
+                </li>
+              ))}
+            </ol>
           </Box>
         ))}
     </section>
