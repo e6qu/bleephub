@@ -3162,10 +3162,12 @@ function packageBasePath(scope: PackageScope, pkgType: string, pkgName: string):
 export function packageListPath(scope: PackageScope, pkgType?: string): string {
   const query = pkgType ? `?package_type=${encodeURIComponent(pkgType)}` : "";
   switch (scope.kind) {
+    // github.com's REST list-packages endpoints require a package_type; the web
+    // Packages tab lists every type, so it reads the /ui-data aggregations.
     case "user":
-      return `/api/v3/user/packages${query}`;
+      return `/ui-data/users/${encodeURIComponent(scope.username)}/packages${query}`;
     case "org":
-      return `/api/v3/orgs/${encodeURIComponent(scope.org)}/packages${query}`;
+      return `/ui-data/orgs/${encodeURIComponent(scope.org)}/packages${query}`;
     case "repo":
       return `/ui-data/repos/${encodeURIComponent(scope.owner)}/${encodeURIComponent(scope.repo)}/packages${query}`;
   }

@@ -13,6 +13,10 @@ func (s *Server) registerUIAPIRoutes() {
 	// version assets that its public REST API does not. Keep those browser
 	// adapters outside /api/v3 so the REST namespace remains spec-exact.
 	s.route("GET /ui-data/repos/{owner}/{repo}/packages", s.handleListRepoPackages)
+	// The web Packages tab lists every package type at once; the public REST
+	// endpoints require a single package_type. These aggregate without one.
+	s.route("GET /ui-data/users/{username}/packages", s.handleUIListUserPackages)
+	s.route("GET /ui-data/orgs/{org}/packages", s.handleUIListOrgPackages)
 	s.route("GET /ui-data/repos/{owner}/{repo}/packages/{package_type}/{package_name}", s.handleGetRepoPackage)
 	s.route("DELETE /ui-data/repos/{owner}/{repo}/packages/{package_type}/{package_name}", s.handleDeleteRepoPackage)
 	s.route("GET /ui-data/repos/{owner}/{repo}/packages/{package_type}/{package_name}/versions", s.handleListRepoPackageVersions)
