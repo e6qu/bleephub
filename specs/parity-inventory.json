@@ -5544,6 +5544,33 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "rendered markdown didn't autolink GitHub references \u2014 `#123` issue/PR, `@user` mentions, `owner/repo#123` cross-repo, or 40-char commit SHAs (remark-gfm only autolinks bare URLs)",
+        "id": "WEB-101",
+        "location": "web/src/components/Markdown.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added a `remarkGithubRefs` transform (walks text nodes, skips code spans and existing links, respects word/`@`/email boundaries) that autolinks all four forms; repo context comes automatically from the current route's `:owner`/`:repo` params via `useParams` (no caller threading; `#123`/SHA are left plain off a repo, as GitHub does), and internal `/ui/\u2026` links (authored or autolinked) now route in-app through react-router. Extended the a11y sweep's seeded issue body with `#1` / `@admin` / cross-repo refs, which surfaced a latent `link-in-text-block` (1.4.1) failure \u2014 in-text markdown links relied on colour alone and the dark accent vs body-text contrast is <3:1 \u2014 fixed by underlining `.markdown-body a` (matches github.com). Verified: unit tests (each ref type, no-context, code-span/email skipped); axe-clean in both themes",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "the notifications inbox had Unread/All tabs and a free-text filter but not github.com's **repository** and **reason** filters",
+        "id": "WEB-102",
+        "location": "web/src/pages/NotificationsPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added two accessible filter dropdowns (aria-labelled Repository / Reason) populated from the distinct repos and reasons present in the inbox; they compose with the Unread/All tabs and text filter to narrow the thread list. Verified: unit test seeds two threads across repos/reasons and asserts each filter narrows the table; axe-clean in both themes",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "the Projects v2 table only let you edit single-select fields (round 4); text, number and date fields were read-only even though the field-value API accepts any value",
+        "id": "WEB-103",
+        "location": "web/src/pages/OrgProjectsV2Page.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 extracted a `ProjectFieldCell` that renders an aria-labelled editable control per field type (dropdown for single-select, `<input type=text/number/date>` committed on blur for the rest) and made every single-select editable (not just the grouped one); all go through the same setOrgProjectV2ItemField mutation. Extended the a11y sweep's seeded project with a text field. Verified: unit test edits a text field and asserts the PATCH body; axe-clean in both themes",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -6960,21 +6987,21 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 98
+            "fixed": 101
           },
-          "total": 100
+          "total": 103
         }
       },
       "severity": {
         "blocker": 167,
         "major": 397,
-        "minor": 165
+        "minor": 168
       },
       "status": {
         "deferred": 3,
-        "fixed": 726
+        "fixed": 729
       },
-      "total": 729
+      "total": 732
     }
   },
   "rest": {
@@ -28493,7 +28520,7 @@
         "target": "/ui/"
       },
       {
-        "line": 431,
+        "line": 437,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/"
       },

@@ -58,6 +58,10 @@ function ThreadsTable({ all }: { all: boolean }) {
   const queryClient = useQueryClient();
   const [mutationError, setMutationError] = useState<string | null>(null);
   const [activeThread, setActiveThread] = useState<GithubNotificationThread | null>(null);
+  // github.com's inbox filters by repository and by reason; both narrow the
+  // table below the Unread/All tabs and the free-text filter.
+  const [repoFilter, setRepoFilter] = useState("");
+  const [reasonFilter, setReasonFilter] = useState("");
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["notifications", all],
@@ -91,10 +95,17 @@ function ThreadsTable({ all }: { all: boolean }) {
     onError: (err: Error) => setMutationError(err.message),
   });
 
-  const filtered = all ? data : data?.filter((t) => t.unread);
-
   if (isError) return <InlineError title="Failed to load notifications" />;
   if (isLoading || !data) return <Spinner label="loading notifications" />;
+
+  const repoName = (t: GithubNotificationThread) =>
+    typeof t.repository.full_name === "string" ? t.repository.full_name : "";
+  const repoOptions = [...new Set(data.map(repoName).filter(Boolean))].sort();
+  const reasonOptions = [...new Set(data.map((t) => t.reason).filter(Boolean))].sort();
+  const filtered = data
+    .filter((t) => all || t.unread)
+    .filter((t) => !repoFilter || repoName(t) === repoFilter)
+    .filter((t) => !reasonFilter || t.reason === reasonFilter);
 
   const columns = [
     col.accessor("unread", {
@@ -185,11 +196,46 @@ function ThreadsTable({ all }: { all: boolean }) {
     }),
   ];
 
+  const filterSelectStyle = { fontSize: "0.82rem", padding: "0.2rem 0.4rem" };
   return (
     <>
       {mutationError && <ErrorBanner>{mutationError}</ErrorBanner>}
-      {!all && filtered && filtered.length > 0 && (
-        <div className="mb-3 flex justify-end">
+      <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="flex flex-col gap-1" style={{ fontSize: "0.75rem", color: "var(--color-fg-muted)" }}>
+            Repository
+            <select
+              aria-label="Filter by repository"
+              value={repoFilter}
+              onChange={(e) => setRepoFilter(e.target.value)}
+              style={filterSelectStyle}
+            >
+              <option value="">All repositories</option>
+              {repoOptions.map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1" style={{ fontSize: "0.75rem", color: "var(--color-fg-muted)" }}>
+            Reason
+            <select
+              aria-label="Filter by reason"
+              value={reasonFilter}
+              onChange={(e) => setReasonFilter(e.target.value)}
+              style={filterSelectStyle}
+            >
+              <option value="">All reasons</option>
+              {reasonOptions.map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        {!all && filtered.length > 0 && (
           <Button
             size="sm"
             variant="secondary"
@@ -198,8 +244,8 @@ function ThreadsTable({ all }: { all: boolean }) {
           >
             {markAllMut.isPending ? "Marking…" : "Mark all as read"}
           </Button>
-        </div>
-      )}
+        )}
+      </div>
       <DataTable
         data={filtered ?? []}
         columns={columns}

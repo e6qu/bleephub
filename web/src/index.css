@@ -1060,9 +1060,9 @@ select {
 }
 .markdown-body a {
   color: var(--color-accent);
-  text-decoration: none;
-}
-.markdown-body a:hover {
+  /* Underline in-text links so they're distinguishable by more than colour
+     (WCAG 1.4.1 link-in-text-block; the dark accent vs body-text contrast is
+     under 3:1). Matches github.com's underlined markdown-body links. */
   text-decoration: underline;
 }
 .markdown-body code {

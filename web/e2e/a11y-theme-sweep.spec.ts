@@ -248,6 +248,7 @@ test.beforeAll(async ({ browser }) => {
     title: "Baseline parity issue",
     body:
       "Seed issue for the a11y sweep.\n\n- [ ] item one\n- [x] item two\n\n" +
+      "Autolinks: see #1, cc @admin, cross admin/org-parity#1.\n\n" +
       "> [!NOTE]\n> A note callout.\n\n" +
       "> [!TIP]\n> A tip callout.\n\n" +
       "> [!IMPORTANT]\n> An important callout.\n\n" +
@@ -325,6 +326,11 @@ test.beforeAll(async ({ browser }) => {
           { name: "Todo", color: "GRAY", description: "" },
           { name: "Done", color: "GREEN", description: "" },
         ],
+      }));
+      // A text field too, so the table renders an editable text input to scan.
+      ok("project-text-field", await api(page, "POST", `/api/v3/orgs/${seeded.org}/projectsV2/${projNumber}/fields`, {
+        name: "Notes",
+        data_type: "text",
       }));
       ok("project-draft", await api(page, "POST", `/api/v3/orgs/${seeded.org}/projectsV2/${projNumber}/drafts`, {
         title: "Draft parity item",
