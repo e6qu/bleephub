@@ -5616,6 +5616,15 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "markdown task-list checkboxes (`- [ ]`) rendered read-only, but github.com lets you toggle them straight from a rendered issue body to update it",
+        "id": "WEB-109",
+        "location": "web/src/components/Markdown.tsx, web/src/pages/IssuesPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 Markdown gained an opt-in `onToggleTask` that makes task-list checkboxes interactive (a click reports the checkbox's document index via DOM order); a `toggleTaskInMarkdown` helper flips the matching source marker, and the issue OP body wires it to PATCH the issue body. Read-only everywhere the handler is absent. Verified: unit tests (helper flips the Nth marker; interactive click reports the index; checkboxes stay disabled without a handler); a11y sweep's seeded issue body exercises interactive checkboxes at 0 violations in both themes",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -7032,21 +7041,21 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 106
+            "fixed": 107
           },
-          "total": 108
+          "total": 109
         }
       },
       "severity": {
         "blocker": 167,
         "major": 398,
-        "minor": 172
+        "minor": 173
       },
       "status": {
         "deferred": 3,
-        "fixed": 734
+        "fixed": 735
       },
-      "total": 737
+      "total": 738
     }
   },
   "rest": {

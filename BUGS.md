@@ -1,6 +1,6 @@
 # Bleephub bug ledger
 
-737 findings from the continuing full-surface audit: 167 blockers, 398 major, 172 minor. Every
+738 findings from the continuing full-surface audit: 167 blockers, 398 major, 173 minor. Every
 entry carries a location and a one-sentence claim. Severity is `B` blocker, `M` major, `m` minor.
 Status begins with one of `open`, `partial`, `fixed`, or `deferred`; the generated parity
 inventory records the exact counts and fails CI when this summary or a row drifts.
@@ -631,6 +631,7 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | WEB-106 | m | web/src/pages/OrgProjectsV2Page.tsx | the Projects v2 table/board had no **group-by** or **filter** controls (round 4/6 shipped views + field editing) | fixed — added a "Filter items by title" input that narrows both views and a "Group by" dropdown that drives the board's grouping by any single-select field (or "No grouping"), replacing the previously hard-coded first-field grouping. Verified: unit test filters items by title; the a11y sweep's seeded project exercises the controls at 0 violations in both themes |
 | WEB-107 | m | web/src/pages/ReleasesPage.tsx | the release create/edit form had draft/pre-release flags and asset upload but not github.com's **"Generate release notes"** button, though the server exposes `POST /releases/generate-notes` | fixed — added a Generate release notes button beside the notes field that POSTs to generate-notes and fills the body (and the title when empty); the wrapper rides the lazy releases chunk (ghPostJSON exported) so the entry stays under budget. Verified: unit test drives the button and asserts the POST body + filled textarea; a11y sweep scans `/releases/new` at 0 violations in both themes |
 | WEB-108 | m | web/src/pages/RepoSettingsPage.tsx | the Environments settings tab managed variables + secrets but exposed no **protection rules**, though the server's environment PUT accepts a wait_timer | fixed — added a Protection rules section to each environment's detail with an aria-labelled wait-timer input (pre-loaded from the environment's current rule via fetchEnvironmentsDetail) that saves through the existing putEnvironment PUT. Verified: unit test expands an environment, edits the wait timer, and asserts the PUT body |
+| WEB-109 | m | web/src/components/Markdown.tsx, web/src/pages/IssuesPage.tsx | markdown task-list checkboxes (`- [ ]`) rendered read-only, but github.com lets you toggle them straight from a rendered issue body to update it | fixed — Markdown gained an opt-in `onToggleTask` that makes task-list checkboxes interactive (a click reports the checkbox's document index via DOM order); a `toggleTaskInMarkdown` helper flips the matching source marker, and the issue OP body wires it to PATCH the issue body. Read-only everywhere the handler is absent. Verified: unit tests (helper flips the Nth marker; interactive click reports the index; checkboxes stay disabled without a handler); a11y sweep's seeded issue body exercises interactive checkboxes at 0 violations in both themes |
 
 ## TEST — test-suite quality
 
