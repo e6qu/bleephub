@@ -1925,6 +1925,9 @@ export interface ReleasePayload {
   body?: string | undefined;
   draft?: boolean | undefined;
   prerelease?: boolean | undefined;
+  // "true" keeps the release eligible to be the repo's latest (GitHub's default);
+  // "false" excludes it permanently. "legacy" defers to date-based selection.
+  make_latest?: "true" | "false" | "legacy" | undefined;
 }
 
 export const createRelease = (owner: string, repo: string, payload: ReleasePayload) =>
@@ -2039,7 +2042,7 @@ async function ghFetchEnvelope<T>(
 }
 
 /** Non-GET request that returns no JSON the caller renders. */
-async function ghSend(method: string, path: string, body?: unknown): Promise<void> {
+export async function ghSend(method: string, path: string, body?: unknown): Promise<void> {
   const res = await apiFetch(path, {
     method,
     headers: body !== undefined

@@ -51,6 +51,31 @@ describe("ReleasesPage", () => {
     );
   });
 
+  it("sends make_latest from the 'Set as the latest release' checkbox", async () => {
+    mockFetch.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/v3/repos/admin/release/releases" && init?.method === "POST") {
+        return Promise.resolve(response({ ...release, tag_name: "v3.0.0" }, 201));
+      }
+      if (url === "/api/v3/repos/admin/release") return Promise.resolve(response(repo));
+      return Promise.resolve(response([]));
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/ui/repos/admin/release/releases/new"]}><Routes><Route path="/ui/repos/:owner/:repo/releases/new" element={<ReleasesPage />} /></Routes></MemoryRouter></QueryClientProvider>);
+
+    fireEvent.change(await screen.findByLabelText("Tag"), { target: { value: "v3.0.0" } });
+    // Checked by default (GitHub's on-by-default); uncheck to exclude from latest.
+    fireEvent.click(screen.getByRole("checkbox", { name: "Set as the latest release" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create release" }));
+    await waitFor(() => {
+      const post = mockFetch.mock.calls.find(
+        (c) => String(c[0]) === "/api/v3/repos/admin/release/releases" && c[1]?.method === "POST",
+      );
+      expect(post).toBeDefined();
+      expect(JSON.parse(String(post![1].body)).make_latest).toBe("false");
+    });
+  });
+
   it("returns from editing with the updated release and its assets intact", async () => {
     mockFetch.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);

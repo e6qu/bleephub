@@ -144,6 +144,10 @@ function ReleaseEditor({ owner, repo, release, onSaved }: { owner: string; repo:
   const [body, setBody] = useState(release?.body ?? "");
   const [draft, setDraft] = useState(release?.draft ?? false);
   const [prerelease, setPrerelease] = useState(release?.prerelease ?? false);
+  // GitHub's "Set as the latest release" checkbox. The release REST object does
+  // not expose whether it is currently excluded from latest, so this reflects
+  // GitHub's default (eligible/on); unchecking sends make_latest:"false".
+  const [makeLatest, setMakeLatest] = useState(true);
 
   useEffect(() => {
     if (!release) return;
@@ -164,6 +168,7 @@ function ReleaseEditor({ owner, repo, release, onSaved }: { owner: string; repo:
         body,
         draft,
         prerelease,
+        make_latest: makeLatest ? "true" : "false",
       };
       return release
         ? updateRelease(owner, repo, release.id, payload)
@@ -219,6 +224,7 @@ function ReleaseEditor({ owner, repo, release, onSaved }: { owner: string; repo:
         <div className="flex flex-wrap gap-5">
           <label className="inline-flex items-center gap-2"><input type="checkbox" checked={draft} onChange={(e) => setDraft(e.target.checked)} /> Save as draft</label>
           <label className="inline-flex items-center gap-2"><input type="checkbox" checked={prerelease} onChange={(e) => setPrerelease(e.target.checked)} /> Mark as pre-release</label>
+          <label className="inline-flex items-center gap-2"><input type="checkbox" checked={makeLatest} onChange={(e) => setMakeLatest(e.target.checked)} /> Set as the latest release</label>
         </div>
         <div className="flex gap-2">
           <Button type="submit" variant="primary" disabled={!tagName.trim() || save.isPending}>{release ? "Save changes" : "Create release"}</Button>
