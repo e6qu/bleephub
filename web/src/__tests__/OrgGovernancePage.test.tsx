@@ -361,4 +361,38 @@ describe("OrgGovernancePage issue types tab", () => {
       });
     });
   });
+
+  describe("Member privileges", () => {
+    it("loads and saves base permission + member repo creation + commit signoff", async () => {
+      mockFetch.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url === "/api/v3/orgs/acme" && init?.method === "PATCH") return Promise.resolve(jsonResponse({}, 200));
+        if (url === "/api/v3/orgs/acme") {
+          return Promise.resolve(jsonResponse({
+            default_repository_permission: "read",
+            members_can_create_repositories: true,
+            web_commit_signoff_required: false,
+          }));
+        }
+        return Promise.resolve(jsonResponse({}));
+      });
+      renderAt("/ui/orgs/acme/governance?tab=member-privileges");
+
+      const base = await screen.findByLabelText("Base permissions");
+      await waitFor(() => expect((base as HTMLSelectElement).value).toBe("read"));
+      fireEvent.change(base, { target: { value: "write" } });
+      fireEvent.click(screen.getByLabelText("Require contributors to sign off on web-based commits"));
+      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+      await waitFor(() => {
+        const patch = mockFetch.mock.calls.find(([u, i]) => u === "/api/v3/orgs/acme" && i?.method === "PATCH");
+        expect(patch).toBeTruthy();
+        expect(JSON.parse(String(patch![1]!.body))).toMatchObject({
+          default_repository_permission: "write",
+          members_can_create_repositories: true,
+          web_commit_signoff_required: true,
+        });
+      });
+    });
+  });
 });

@@ -39,7 +39,7 @@ export function OrgSettingsPage() {
 
   const base = `/ui/orgs/${org}`;
   const sections: { to: string; icon: React.ReactNode; label: string; hint: string }[] = [
-    { to: `${base}/governance`, icon: <PeopleIcon size={16} />, label: "Member privileges", hint: "Base permissions, repository creation, and governance" },
+    { to: `${base}/governance?tab=member-privileges`, icon: <PeopleIcon size={16} />, label: "Member privileges", hint: "Base permissions, repository creation, and governance" },
     { to: `${base}/rulesets`, icon: <GearIcon size={16} />, label: "Repository rulesets", hint: "Branch and tag protection rules across repositories" },
     { to: `${base}/hooks`, icon: <WebhookIcon size={16} />, label: "Webhooks", hint: "Organization webhooks and deliveries" },
     { to: `${base}/copilot`, icon: <CommentIcon size={16} />, label: "Copilot", hint: "Copilot access and policies" },

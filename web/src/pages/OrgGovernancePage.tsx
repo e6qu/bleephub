@@ -1,9 +1,11 @@
 import { useState } from "react";
-import { useParams } from "react-router";
+import { useParams, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
 import { confirmAction } from "../components/confirmAction.js";
 import {
+  ghFetch,
+  ghSend,
   fetchOrgInvitations,
   fetchFailedOrgInvitations,
   createOrgInvitation,
@@ -51,11 +53,23 @@ import {
 } from "../components/ui.js";
 import { ChevronDownIcon, ChevronRightIcon } from "../components/octicons.js";
 
-type GovernanceTab = "people" | "roles" | "properties" | "issue-types";
+type GovernanceTab = "people" | "roles" | "member-privileges" | "properties" | "issue-types";
+
+const GOVERNANCE_TABS: GovernanceTab[] = ["people", "roles", "member-privileges", "properties", "issue-types"];
 
 export function OrgGovernancePage() {
   const { org = "" } = useParams<{ org: string }>();
-  const [tab, setTab] = useState<GovernanceTab>("people");
+  const [params, setParams] = useSearchParams();
+  const urlTab = params.get("tab") ?? "";
+  const [tab, setTab] = useState<GovernanceTab>(
+    GOVERNANCE_TABS.includes(urlTab as GovernanceTab) ? (urlTab as GovernanceTab) : "people",
+  );
+  const selectTab = (next: GovernanceTab) => {
+    setTab(next);
+    const merged = new URLSearchParams(params);
+    merged.set("tab", next);
+    setParams(merged);
+  };
 
   return (
     <div>
@@ -64,16 +78,84 @@ export function OrgGovernancePage() {
         items={[
           { key: "people" as const, label: "People" },
           { key: "roles" as const, label: "Roles" },
+          { key: "member-privileges" as const, label: "Member privileges" },
           { key: "properties" as const, label: "Custom properties" },
           { key: "issue-types" as const, label: "Issue types" },
         ]}
         active={tab}
-        onChange={setTab}
+        onChange={selectTab}
       />
       {tab === "people" && <PeoplePanel org={org} />}
       {tab === "roles" && <RolesPanel org={org} />}
+      {tab === "member-privileges" && <MemberPrivilegesPanel org={org} />}
       {tab === "properties" && <PropertiesPanel org={org} />}
       {tab === "issue-types" && <IssueTypesPanel org={org} />}
+    </div>
+  );
+}
+
+interface OrgMemberPrivileges {
+  default_repository_permission: string;
+  members_can_create_repositories: boolean;
+  web_commit_signoff_required: boolean;
+}
+
+// Org Settings › Member privileges: base repository permission, member repo
+// creation, and org-wide commit signoff — all via PATCH /orgs/{org}.
+function MemberPrivilegesPanel({ org }: { org: string }) {
+  const qc = useQueryClient();
+  const [error, setError] = useState<string | null>(null);
+  const [form, setForm] = useState<OrgMemberPrivileges | null>(null);
+  const detail = useQuery({
+    queryKey: ["org-member-privileges", org],
+    queryFn: () => ghFetch<OrgMemberPrivileges>(`/api/v3/orgs/${encodeURIComponent(org)}`),
+  });
+  const current = form ?? detail.data ?? null;
+  const save = useMutation({
+    mutationFn: (payload: OrgMemberPrivileges) => ghSend("PATCH", `/api/v3/orgs/${encodeURIComponent(org)}`, payload),
+    onSuccess: () => { setError(null); void qc.invalidateQueries({ queryKey: ["org-member-privileges", org] }); },
+    onError: (e: Error) => setError(e.message),
+  });
+
+  if (detail.isLoading) return <Spinner label="loading member privileges" />;
+  if (detail.isError || !current) return <InlineError title="Failed to load member privileges" />;
+
+  const update = (patch: Partial<OrgMemberPrivileges>) => setForm({ ...current, ...patch });
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem", maxWidth: "44rem", marginTop: "1rem" }}>
+      {error && <ErrorBanner>{error}</ErrorBanner>}
+      <div>
+        <FormLabel id="base-perm">Base permissions</FormLabel>
+        <p style={{ fontSize: "0.82rem", color: "var(--color-fg-muted)", margin: "0.2rem 0 0.4rem" }}>
+          The default permission every member has on organization repositories.
+        </p>
+        <select id="base-perm" aria-label="Base permissions" value={current.default_repository_permission}
+          onChange={(e) => update({ default_repository_permission: e.target.value })}
+          style={{ padding: "0.4rem 0.6rem", fontSize: "0.9rem" }}>
+          {[
+            { value: "none", label: "No permission" },
+            { value: "read", label: "Read" },
+            { value: "write", label: "Write" },
+            { value: "admin", label: "Admin" },
+          ].map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+      </div>
+      <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.9rem", minHeight: "1.625rem" }}>
+        <input type="checkbox" checked={current.members_can_create_repositories}
+          onChange={(e) => update({ members_can_create_repositories: e.target.checked })} />
+        Allow members to create repositories
+      </label>
+      <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.9rem", minHeight: "1.625rem" }}>
+        <input type="checkbox" checked={current.web_commit_signoff_required}
+          onChange={(e) => update({ web_commit_signoff_required: e.target.checked })} />
+        Require contributors to sign off on web-based commits
+      </label>
+      <div>
+        <Button variant="primary" disabled={save.isPending || !form} onClick={() => form && save.mutate(form)}>
+          {save.isPending ? "Saving…" : "Save"}
+        </Button>
+      </div>
     </div>
   );
 }

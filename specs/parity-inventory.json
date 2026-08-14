@@ -5670,6 +5670,15 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "the org Settings \"Member privileges\" link was a dead-end \u2014 it pointed at the governance page (People/Roles/Custom-properties/Issue-types) which exposed none of the promised controls (base permissions, member repository creation, web-commit signoff), so those org-wide settings were unreachable",
+        "id": "WEB-115",
+        "location": "web/src/pages/OrgGovernancePage.tsx, web/src/pages/OrgSettingsPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added a **Member privileges** governance tab with a base-permissions select (none/read/write/admin), a members-can-create-repositories toggle, and a require-web-commit-signoff toggle, all via `PATCH /api/v3/orgs/{org}` (prefilled from the org GET); made the governance tabs URL-addressable (`?tab=`) and retargeted the settings link to `\u2026/governance?tab=member-privileges`. Verified: unit test loads the org and asserts the PATCH body; the a11y sweep scans `/ui/orgs/{org}/governance?tab=member-privileges` at 0 violations in both themes",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -7086,21 +7095,21 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 112
+            "fixed": 113
           },
-          "total": 114
+          "total": 115
         }
       },
       "severity": {
         "blocker": 167,
         "major": 399,
-        "minor": 177
+        "minor": 178
       },
       "status": {
         "deferred": 3,
-        "fixed": 740
+        "fixed": 741
       },
-      "total": 743
+      "total": 744
     }
   },
   "rest": {
@@ -28618,27 +28627,27 @@
   "ui": {
     "browser_navigations": [
       {
-        "line": 199,
+        "line": 200,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 440,
+        "line": 441,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 479,
+        "line": 480,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/repos/${seeded.owner}/${seeded.repo}/settings"
       },
       {
-        "line": 514,
+        "line": 515,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/repos/${seeded.owner}/${seeded.repo}/settings"
       },
       {
-        "line": 551,
+        "line": 552,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/search"
       },

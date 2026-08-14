@@ -178,6 +178,7 @@ function buildRoutes(): { route: string; label: string }[] {
     { route: `/ui/orgs/${org}/repos`, label: "org-repos" },
     { route: `/ui/orgs/${org}/governance`, label: "org-governance" },
     { route: `/ui/orgs/${org}/rulesets`, label: "org-rulesets" },
+    { route: `/ui/orgs/${org}/governance?tab=member-privileges`, label: "org-member-privileges" },
     { route: `/ui/orgs/${org}/projects/${seeded.projectNumber || 1}`, label: "org-project-detail" },
     // operations console
     { route: "/ui/operations", label: "operations" },

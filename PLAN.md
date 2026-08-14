@@ -176,6 +176,7 @@ Verify each end-to-end in an owned org through both the API and `/ui/classrooms`
 
 - **Pixel/visual identity** with github.com is explicitly *not* required (styling may differ) — only structure, placement, functionality, theming, and a11y.
 - **Deferred by owner decision** (not work): keep `@bleephub/ui-core` as a library (WEB-016/017); accept TEST-015 (comma-ok sweep net-negative).
+- **Deferred by entry-budget constraint**: a **"New project"** item in the global "+" create menu (`AppHeader.tsx`, round 8). The entry chunk sits at exactly its 163840-byte ceiling, so the ~90-byte MenuLink breaches it and `AppHeader` is always-loaded (cannot be code-split like the palette/shortcuts/drawer already are). Land it only alongside a genuine entry-bundle reduction, not a budget bump. "Your projects" already links the same surface from the avatar menu.
 
 ## Standing maintenance (unchanged, runs alongside)
 
