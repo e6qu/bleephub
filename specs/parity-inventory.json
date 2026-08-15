@@ -5778,6 +5778,33 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "the branches and tags lists had Compare / zip / tar controls but no **delete** affordance; github.com shows a delete control on every non-default, non-protected branch and on tags",
+        "id": "WEB-127",
+        "location": "web/src/pages/RepoDetailPage.tsx, web/src/api.ts",
+        "severity": "m",
+        "status": "fixed \u2014 added a `deleteRef` client fn (`DELETE /git/refs/{heads,tags}/\u2026`) and a Delete button on each non-default, non-protected branch row and each tag row, guarded by `confirmAction`; the server's `requireRefDeletionAllowed` already rejects default/protected refs. Verified: unit test deletes a non-default branch and asserts the DELETE; the a11y sweep scans the branches tab (seeded non-default branch \u2192 Delete rendered) at 0 violations in both themes",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "the Actions run detail offered Re-run all / Re-run failed jobs but no per-job re-run; github.com puts a re-run control on the individual job",
+        "id": "WEB-128",
+        "location": "web/src/pages/RunDetailPage.tsx, web/src/api.ts",
+        "severity": "m",
+        "status": "fixed \u2014 added a `rerunJob` client fn (`POST /actions/jobs/{job_id}/rerun`) and a Re-run job button in the selected job's pane header (placed there, not on the sidebar row which is itself a `<button>`, to avoid nested-interactive). Verified: unit test clicks it and asserts the per-job rerun POST",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "a discussion could be deleted and its comments edited, but the discussion's own title/body had no edit control; github.com exposes Edit on the discussion",
+        "id": "WEB-129",
+        "location": "web/src/pages/DiscussionsPage.tsx, web/src/api.ts",
+        "severity": "m",
+        "status": "fixed \u2014 added an `updateDiscussion` GraphQL client fn (title+body) and an Edit button beside Delete opening an inline title/body form saving through it. Verified: unit test edits the title and asserts the `updateDiscussion` mutation carries the new title",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -7194,21 +7221,21 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 124
+            "fixed": 127
           },
-          "total": 126
+          "total": 129
         }
       },
       "severity": {
         "blocker": 167,
         "major": 399,
-        "minor": 189
+        "minor": 192
       },
       "status": {
         "deferred": 3,
-        "fixed": 752
+        "fixed": 755
       },
-      "total": 755
+      "total": 758
     }
   },
   "rest": {

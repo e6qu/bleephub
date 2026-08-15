@@ -225,6 +225,16 @@ describe("RunDetailPage", () => {
     });
   });
 
+  it("re-runs an individual job from the job pane", async () => {
+    installMocks({ run: runData({ conclusion: "failure" }), job: jobData({ conclusion: "failure" }) });
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Re-run job" }));
+    await waitFor(() => {
+      const calls = mockFetch.mock.calls.filter((c) => c[1]?.method === "POST").map((c) => c[0].toString());
+      expect(calls.some((u) => /\/actions\/jobs\/\d+\/rerun$/.test(u))).toBe(true);
+    });
+  });
+
   it("expands a step to its ##[group] log slice when markers segment the log", async () => {
     const logs = [
       "2026-01-01T00:00:10Z ##[group]Set up job",

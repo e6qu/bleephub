@@ -34,6 +34,7 @@ import {
   uploadFile,
   deleteFile,
   createRef,
+  deleteRef,
 } from "../api.js";
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
 import { decodeContentsBase64 } from "../utils/workflowDispatch.js";
@@ -2188,6 +2189,10 @@ function BranchesList({
       setName("");
     },
   });
+  const deleteMut = useMutation({
+    mutationFn: (branch: string) => deleteRef(owner, repo, `heads/${branch}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["branches", owner, repo] }),
+  });
 
   const newBranchButton = branches.length > 0 && (
     <Button size="sm" onClick={() => setCreating(true)}>
@@ -2294,6 +2299,21 @@ function BranchesList({
               Compare
             </Link>
           )}
+          {b.name !== defaultBranch && !b.protected && (
+            <Button
+              size="sm"
+              variant="danger"
+              aria-label={`Delete branch ${b.name}`}
+              disabled={deleteMut.isPending}
+              onClick={async () => {
+                if (await confirmAction(`Delete branch "${b.name}"?`, { title: "Delete branch", confirmLabel: "Delete" })) {
+                  deleteMut.mutate(b.name);
+                }
+              }}
+            >
+              Delete
+            </Button>
+          )}
         </div>
       ))}
     </Box>
@@ -2328,6 +2348,10 @@ function TagsList({
       setCreating(false);
       setName("");
     },
+  });
+  const deleteMut = useMutation({
+    mutationFn: (tag: string) => deleteRef(owner, repo, `tags/${tag}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["repo-tags", owner, repo] }),
   });
 
   const newTagModal = creating && (
@@ -2411,6 +2435,19 @@ function TagsList({
           >
             tar.gz
           </a>
+          <Button
+            size="sm"
+            variant="danger"
+            aria-label={`Delete tag ${t.name}`}
+            disabled={deleteMut.isPending}
+            onClick={async () => {
+              if (await confirmAction(`Delete tag "${t.name}"?`, { title: "Delete tag", confirmLabel: "Delete" })) {
+                deleteMut.mutate(t.name);
+              }
+            }}
+          >
+            Delete
+          </Button>
         </div>
       ))}
     </Box>

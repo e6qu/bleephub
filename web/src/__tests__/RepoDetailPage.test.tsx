@@ -609,6 +609,31 @@ describe("RepoDetailPage refs", () => {
     });
   });
 
+  it("deletes a non-default branch via DELETE /git/refs/heads/{branch}", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith("/git/refs/heads/feature/y") && init?.method === "DELETE") {
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      if (u.endsWith("/branches")) {
+        return Promise.resolve(jsonResponse([
+          { name: "main", commit: { sha: "abc" } },
+          { name: "feature/y", commit: { sha: "def" } },
+        ]));
+      }
+      return routedFetch(url);
+    });
+    renderPage("/ui/repos/admin/test/branches");
+    fireEvent.click(await screen.findByRole("button", { name: "Delete branch feature/y" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+    await waitFor(() => {
+      const del = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/git/refs/heads/feature/y") && c[1]?.method === "DELETE",
+      );
+      expect(del).toBeTruthy();
+    });
+  });
+
   it("creates a tag from the tags tab", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL) => routedFetch(url));
     renderPage("/ui/repos/admin/test/tags");
