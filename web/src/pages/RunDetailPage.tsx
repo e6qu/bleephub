@@ -29,6 +29,7 @@ import { useOpenCounts } from "../hooks/useOpenCounts.js";
 import { RepoHeader } from "../components/PageHeader.js";
 import { RunStatusIcon } from "../components/RunStatusIcon.js";
 import { Box, Blankslate, Button, ErrorBanner } from "../components/ui.js";
+import { MutationError } from "../components/MutationError.js";
 import {
   BranchIcon,
   ChevronDownIcon,
@@ -580,6 +581,7 @@ function JobPane({
         </div>
       }
     >
+      <MutationError of={rerunMut} />
       {job.steps.length === 0 ? (
         <div style={{ padding: "0.75rem 1rem", fontSize: "0.82rem", color: "var(--color-fg-muted)" }}>
           No steps recorded for this job.

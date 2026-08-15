@@ -40,11 +40,11 @@ import type {
   GithubUserEmail,
 } from "../types.js";
 import { useTheme } from "@bleephub/ui-core/hooks";
-import { PageTitle, Box, Button, ErrorBanner, FormLabel } from "../components/ui.js";
+import { PageTitle, Box, Button, ErrorBanner, FormLabel, Blankslate } from "../components/ui.js";
 import { SettingsLayout, type SettingsNavSection } from "../components/SettingsLayout.js";
-import { KeyIcon, LockIcon } from "../components/octicons.js";
+import { KeyIcon, LockIcon, GraphIcon } from "../components/octicons.js";
 
-type AccountTab = "profile" | "appearance" | "notifications" | "tokens" | "ssh-keys" | "gpg-keys" | "signing-keys" | "emails" | "blocked" | "authentication" | "codespaces";
+type AccountTab = "profile" | "appearance" | "notifications" | "tokens" | "ssh-keys" | "gpg-keys" | "signing-keys" | "emails" | "blocked" | "authentication" | "codespaces" | "billing";
 
 const ACCOUNT_NAV: SettingsNavSection<AccountTab>[] = [
   {
@@ -69,6 +69,7 @@ const ACCOUNT_NAV: SettingsNavSection<AccountTab>[] = [
     title: "Code, planning, and automation",
     items: [{ key: "codespaces", label: "Codespaces" }],
   },
+  { title: "Billing", items: [{ key: "billing", label: "Billing and plans" }] },
   { title: "Moderation", items: [{ key: "blocked", label: "Blocked users" }] },
 ];
 
@@ -88,6 +89,7 @@ export function AccountPage() {
         {tab === "signing-keys" && <SigningKeysTab />}
         {tab === "emails" && <EmailsTab />}
         {tab === "codespaces" && <CodespacesSecretsTab />}
+        {tab === "billing" && <BillingTab />}
         {tab === "blocked" && <BlockedUsersTab />}
       </SettingsLayout>
     </div>
@@ -801,6 +803,186 @@ function CodespacesSecretsTab() {
         )}
       </Box>
     </div>
+  );
+}
+
+// ─── Billing and plans (read-only usage reports, github.com/settings/billing) ──────
+
+interface BillingSummaryItem {
+  product: string;
+  sku: string;
+  unitType: string;
+  pricePerUnit: number;
+  grossQuantity: number;
+  grossAmount: number;
+  discountAmount: number;
+  netQuantity: number;
+  netAmount: number;
+}
+interface BillingSummaryReport {
+  timePeriod: { year: number; month?: number; day?: number };
+  user: string;
+  usageItems: BillingSummaryItem[];
+}
+interface BillingModelReport {
+  timePeriod: { year: number; month?: number; day?: number };
+  user: string;
+  usageItems: Record<string, unknown>[];
+}
+
+// Billing amounts are decimal US dollars (grossAmount = quantity * pricePerUnit),
+// not integer cents; format them as currency.
+const usd = (n: number, maxFrac = 2) =>
+  new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: Math.max(2, maxFrac),
+  }).format(n);
+
+function billingPeriodLabel(p: { year: number; month?: number; day?: number }): string {
+  if (!p?.year) return "";
+  const month = p.month ? String(p.month).padStart(2, "0") : null;
+  const day = p.day ? String(p.day).padStart(2, "0") : null;
+  return [p.year, month, day].filter(Boolean).join("-");
+}
+
+function BillingTab() {
+  const viewer = useQuery({ queryKey: ["viewer"], queryFn: fetchAuthenticatedUser });
+  const login = viewer.data?.login;
+
+  const summary = useQuery({
+    queryKey: ["billing-usage-summary", login],
+    queryFn: () =>
+      ghFetch<BillingSummaryReport>(`/api/v3/users/${enc(login as string)}/settings/billing/usage/summary`),
+    enabled: !!login,
+  });
+  const aiCredit = useQuery({
+    queryKey: ["billing-ai-credit", login],
+    queryFn: () =>
+      ghFetch<BillingModelReport>(`/api/v3/users/${enc(login as string)}/settings/billing/ai_credit/usage`),
+    enabled: !!login,
+  });
+  const premium = useQuery({
+    queryKey: ["billing-premium-request", login],
+    queryFn: () =>
+      ghFetch<BillingModelReport>(`/api/v3/users/${enc(login as string)}/settings/billing/premium_request/usage`),
+    enabled: !!login,
+  });
+
+  if (viewer.isError)
+    return <InlineError title="Failed to load your account" detail={String(viewer.error)} />;
+  if (viewer.isLoading || summary.isLoading) return <Spinner label="loading billing usage" />;
+  if (summary.isError)
+    return <InlineError title="Failed to load billing usage" detail={String(summary.error)} />;
+
+  const report = summary.data!;
+  const items = report.usageItems ?? [];
+  const netTotal = items.reduce((sum, it) => sum + (it.netAmount ?? 0), 0);
+  const grossTotal = items.reduce((sum, it) => sum + (it.grossAmount ?? 0), 0);
+  const discountTotal = items.reduce((sum, it) => sum + (it.discountAmount ?? 0), 0);
+  const period = billingPeriodLabel(report.timePeriod);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+      <div
+        style={{
+          padding: "1.15rem",
+          border: "1px solid var(--color-border)",
+          borderRadius: 10,
+          background: "var(--color-bg-subtle)",
+        }}
+      >
+        <h2 style={{ fontSize: "1.15rem", fontWeight: 700 }}>Billing and plans</h2>
+        <p style={{ color: "var(--color-fg-muted)", marginTop: ".25rem" }}>
+          A read-only summary of your metered usage{period ? ` for ${period}` : ""}.
+        </p>
+      </div>
+
+      <Box header={<span style={{ fontWeight: 650 }}>Usage this period</span>}>
+        {items.length === 0 ? (
+          <div style={{ padding: "1rem" }}>
+            <Blankslate icon={<GraphIcon size={26} />} title="No usage to report">
+              You have no metered usage for this period.
+            </Blankslate>
+          </div>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
+              <thead>
+                <tr style={{ textAlign: "left", color: "var(--color-fg-muted)" }}>
+                  <th style={{ padding: "0.55rem 1rem", fontWeight: 600 }}>Product</th>
+                  <th style={{ padding: "0.55rem 1rem", fontWeight: 600 }}>SKU</th>
+                  <th style={{ padding: "0.55rem 1rem", fontWeight: 600, textAlign: "right" }}>Quantity</th>
+                  <th style={{ padding: "0.55rem 1rem", fontWeight: 600, textAlign: "right" }}>Unit price</th>
+                  <th style={{ padding: "0.55rem 1rem", fontWeight: 600, textAlign: "right" }}>Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((it) => (
+                  <tr key={`${it.product}/${it.sku}`} style={{ borderTop: "1px solid var(--color-border)" }}>
+                    <td style={{ padding: "0.55rem 1rem", fontWeight: 500 }}>{it.product}</td>
+                    <td style={{ padding: "0.55rem 1rem", color: "var(--color-fg-muted)" }}>{it.sku}</td>
+                    <td style={{ padding: "0.55rem 1rem", textAlign: "right" }}>
+                      {it.netQuantity}
+                      {it.unitType ? <span style={{ color: "var(--color-fg-muted)" }}> {it.unitType}</span> : null}
+                    </td>
+                    <td style={{ padding: "0.55rem 1rem", textAlign: "right" }}>{usd(it.pricePerUnit, 4)}</td>
+                    <td style={{ padding: "0.55rem 1rem", textAlign: "right", fontWeight: 500 }}>{usd(it.netAmount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr style={{ borderTop: "2px solid var(--color-border)" }}>
+                  <td colSpan={4} style={{ padding: "0.55rem 1rem", textAlign: "right", color: "var(--color-fg-muted)" }}>
+                    Gross {usd(grossTotal)}
+                    {discountTotal ? ` · Discount ${usd(-discountTotal)}` : ""} · Total
+                  </td>
+                  <td style={{ padding: "0.55rem 1rem", textAlign: "right", fontWeight: 700 }}>{usd(netTotal)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
+      </Box>
+
+      <BillingModelPanel title="AI credit usage" query={aiCredit} emptyLabel="No AI credit usage" />
+      <BillingModelPanel title="Premium request usage" query={premium} emptyLabel="No premium request usage" />
+    </div>
+  );
+}
+
+function BillingModelPanel({
+  title,
+  query,
+  emptyLabel,
+}: {
+  title: string;
+  query: { isLoading: boolean; isError: boolean; error: unknown; data: BillingModelReport | undefined };
+  emptyLabel: string;
+}) {
+  return (
+    <Box header={<span style={{ fontWeight: 650 }}>{title}</span>}>
+      <div style={{ padding: "1rem" }}>
+        {query.isLoading ? (
+          <Spinner label={`loading ${title.toLowerCase()}`} />
+        ) : query.isError ? (
+          <InlineError title={`Failed to load ${title.toLowerCase()}`} detail={String(query.error)} />
+        ) : (query.data?.usageItems?.length ?? 0) === 0 ? (
+          <Blankslate icon={<GraphIcon size={24} />} title={emptyLabel}>
+            No usage for this period.
+          </Blankslate>
+        ) : (
+          <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+            {query.data!.usageItems.map((it, i) => (
+              <li key={i} style={{ padding: "0.4rem 0", fontSize: "0.85rem", fontFamily: "var(--font-mono)" }}>
+                {JSON.stringify(it)}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </Box>
   );
 }
 

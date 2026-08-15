@@ -709,6 +709,7 @@ function MergeBox({
               {updateBranchMut.isPending ? "Updating…" : "Update branch"}
             </Button>
           </div>
+          <MutationError of={[readyMut, draftMut]} />
           {updateBranchMut.isError && (
             <div className="mt-2" style={{ fontSize: "0.8rem", color: "var(--color-status-error)" }}>
               Update branch failed:{" "}
