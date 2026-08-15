@@ -17,6 +17,7 @@ import {
   approveWorkflowRun,
   rerunRun,
   rerunFailedJobs,
+  rerunJob,
   isNotFound,
 } from "../api.js";
 import type { GithubJob, GithubJobStep, GithubWorkflowRun } from "../types.js";
@@ -503,6 +504,15 @@ function JobPane({
   }, [segments, job.steps]);
   const stepSliced = segmentByStep.size > 0;
 
+  const qc = useQueryClient();
+  const rerunMut = useMutation({
+    mutationFn: () => rerunJob(owner, repo, job.id),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["run-jobs", owner, repo] });
+      void qc.invalidateQueries({ queryKey: ["run", owner, repo] });
+    },
+  });
+
   return (
     <Box
       header={
@@ -518,6 +528,9 @@ function JobPane({
               </span>
             )}
             <span className="tabular-nums">{formatDuration(job.started_at, job.completed_at)}</span>
+            <Button size="sm" disabled={rerunMut.isPending} onClick={() => rerunMut.mutate()}>
+              {rerunMut.isPending ? "Re-running…" : "Re-run job"}
+            </Button>
           </span>
         </div>
       }

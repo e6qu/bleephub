@@ -1172,6 +1172,11 @@ export const createRef = (owner: string, repo: string, ref: string, sha: string)
     { ref, sha },
   );
 
+// ref is the ref path without the leading "refs/", e.g. "heads/feature" or
+// "tags/v1.0". The server rejects deleting a default/protected ref.
+export const deleteRef = (owner: string, repo: string, ref: string) =>
+  ghSend("DELETE", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/refs/${ref.split("/").map(encodeURIComponent).join("/")}`);
+
 export const fetchRepoReadme = (owner: string, repo: string, ref?: string): Promise<GithubContentFile> => {
   const qs = ref ? `?ref=${encodeURIComponent(ref)}` : "";
   return ghFetch<GithubContentFile>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/readme${qs}`);
@@ -2147,6 +2152,9 @@ export const rerunRun = (owner: string, repo: string, runId: number) =>
 
 export const rerunFailedJobs = (owner: string, repo: string, runId: number) =>
   ghSend("POST", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs/${runId}/rerun-failed-jobs`);
+
+export const rerunJob = (owner: string, repo: string, jobId: number) =>
+  ghSend("POST", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/jobs/${jobId}/rerun`);
 
 export const fetchRunArtifacts = (owner: string, repo: string, runId: number) =>
   ghFetchEnvelope<GithubArtifact>(
@@ -3459,6 +3467,20 @@ export async function deleteDiscussion(discussionId: string): Promise<void> {
       deleteDiscussion(input: $input) { clientMutationId }
     }`,
     { input: { id: discussionId } },
+  );
+}
+
+// Edit a discussion's title, body, and/or category (github.com's "Edit" on the
+// discussion itself). Only the provided fields are changed.
+export async function updateDiscussion(
+  discussionId: string,
+  fields: { title?: string; body?: string; categoryId?: string },
+): Promise<void> {
+  await ghGraphQL<{ updateDiscussion: unknown }>(
+    `mutation($input: UpdateDiscussionInput!) {
+      updateDiscussion(input: $input) { discussion { id title } }
+    }`,
+    { input: { discussionId, ...fields } },
   );
 }
 

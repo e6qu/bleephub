@@ -13,6 +13,7 @@ import {
   markDiscussionCommentAsAnswer,
   unmarkDiscussionCommentAsAnswer,
   deleteDiscussion,
+  updateDiscussion,
   deleteDiscussionComment,
   updateDiscussionComment,
   addReaction,
@@ -291,6 +292,9 @@ function DiscussionDetail({
   const [commentError, setCommentError] = useState<string | null>(null);
   const [editingComment, setEditingComment] = useState<string | null>(null);
   const [editBody, setEditBody] = useState("");
+  const [editingDiscussion, setEditingDiscussion] = useState(false);
+  const [editTitle, setEditTitle] = useState("");
+  const [editDiscBody, setEditDiscBody] = useState("");
 
   const { data: discussion, isLoading, isError, error } = useQuery({
     queryKey: ["discussion", owner, repo, number],
@@ -341,6 +345,15 @@ function DiscussionDetail({
     },
   });
 
+  const editDiscussionMutation = useMutation({
+    mutationFn: () => updateDiscussion(discussion!.id, { title: editTitle.trim(), body: editDiscBody }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["discussion", owner, repo, number] });
+      qc.invalidateQueries({ queryKey: ["discussions", owner, repo] });
+      setEditingDiscussion(false);
+    },
+  });
+
   if (isError) {
     return (
       <div>
@@ -386,6 +399,17 @@ function DiscussionDetail({
         <Button
           variant="ghost"
           size="sm"
+          onClick={() => {
+            setEditTitle(discussion.title);
+            setEditDiscBody(discussion.bodyText ?? discussion.body ?? "");
+            setEditingDiscussion(true);
+          }}
+        >
+          Edit
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={() => deleteDiscussionMutation.mutate()}
           disabled={deleteDiscussionMutation.isPending}
         >
@@ -393,7 +417,45 @@ function DiscussionDetail({
         </Button>
       </div>
 
-      <DiscussionPost body={discussion.body} bodyText={discussion.bodyText} />
+      {editingDiscussion ? (
+        <div
+          className="mb-4"
+          style={{ border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)", padding: "0.85rem 1rem" }}
+        >
+          <FormLabel id="edit-discussion-title">Title</FormLabel>
+          <input
+            id="edit-discussion-title"
+            value={editTitle}
+            onChange={(e) => setEditTitle(e.target.value)}
+            className="mb-3 w-full"
+          />
+          <FormLabel id="edit-discussion-body">Body</FormLabel>
+          <textarea
+            id="edit-discussion-body"
+            value={editDiscBody}
+            onChange={(e) => setEditDiscBody(e.target.value)}
+            rows={5}
+            className="mb-2 w-full"
+            style={{ resize: "vertical" }}
+          />
+          <MutationError of={editDiscussionMutation} />
+          <DialogActions>
+            <Button variant="ghost" size="sm" onClick={() => setEditingDiscussion(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={!editTitle.trim() || editDiscussionMutation.isPending}
+              onClick={() => editDiscussionMutation.mutate()}
+            >
+              {editDiscussionMutation.isPending ? "Saving…" : "Save"}
+            </Button>
+          </DialogActions>
+        </div>
+      ) : (
+        <DiscussionPost body={discussion.body} bodyText={discussion.bodyText} />
+      )}
       <DiscussionReactionBar
         subjectId={discussion.id}
         groups={discussion.reactionGroups ?? []}

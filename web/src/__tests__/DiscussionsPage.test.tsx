@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, cleanup, screen, waitFor } from "@testing-library/react";
+import { render, cleanup, screen, waitFor, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Routes, Route } from "react-router";
 import { DiscussionsPage } from "../pages/DiscussionsPage.js";
@@ -138,6 +138,38 @@ describe("DiscussionsPage detail", () => {
     renderAt("/ui/repos/admin/test/discussions/7");
     await waitFor(() => {
       expect(screen.getByText("A real discussion")).toBeInTheDocument();
+    });
+  });
+
+  it("edits a discussion's title and body via updateDiscussion", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.includes("/api/graphql")) {
+        const body = JSON.parse((init?.body as string) ?? "{}");
+        if (body.query.includes("updateDiscussion")) {
+          return Promise.resolve(jsonResponse({ data: { updateDiscussion: { discussion: { id: "D1", title: "Edited title" } } } }));
+        }
+        if (body.query.includes("discussionCategories")) {
+          return Promise.resolve(jsonResponse({ data: { repository: { discussionCategories: { nodes: [category] } } } }));
+        }
+        return Promise.resolve(jsonResponse({
+          data: { repository: { discussion: {
+            ...discussion(7, "A real discussion"), body: "details", bodyHTML: "<p>details</p>", bodyText: "details", comments: { nodes: [], totalCount: 0 },
+          } } },
+        }));
+      }
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/test/discussions/7");
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Edited title" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      const mut = mockFetch.mock.calls.find(
+        ([u2, i2]) => u2.toString().includes("/api/graphql") && String((i2 as RequestInit)?.body).includes("updateDiscussion"),
+      );
+      expect(mut).toBeTruthy();
+      expect(JSON.parse(String((mut![1] as RequestInit).body)).variables.input.title).toBe("Edited title");
     });
   });
 
