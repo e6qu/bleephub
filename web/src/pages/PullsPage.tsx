@@ -53,7 +53,7 @@ import type {
 } from "../types.js";
 import { formatDuration } from "../utils/format.js";
 import { CommentCard } from "../components/CommentCard.js";
-import { RepoHeader } from "../components/Shell.js";
+import { RepoHeader } from "../components/PageHeader.js";
 import { RunStatusIcon } from "../components/RunStatusIcon.js";
 import { ReactionBar } from "../components/ReactionBar.js";
 import { IssueSidebar } from "../components/IssueSidebar.js";

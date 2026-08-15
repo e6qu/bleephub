@@ -1,7 +1,7 @@
 import { useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { InlineError, Spinner } from "@bleephub/ui-core/components";
-import { OrgHeader } from "../components/Shell.js";
+import { OrgHeader } from "../components/PageHeader.js";
 import { PageTitle, Box, SectionLabel } from "../components/ui.js";
 import { fetchOrgApiInsightsSummary, fetchOrgApiInsightsSubjectStats } from "../api.js";
 

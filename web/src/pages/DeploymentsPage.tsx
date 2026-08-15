@@ -24,7 +24,7 @@ import type {
   GithubEnvironmentDetail,
   GithubWorkflowRun,
 } from "../types.js";
-import { RepoHeader } from "../components/Shell.js";
+import { RepoHeader } from "../components/PageHeader.js";
 import { PageTitle, Box, Blankslate, Button, Tabs, ErrorBanner, FormLabel } from "../components/ui.js";
 import { ChevronDownIcon, ChevronRightIcon } from "../components/octicons.js";
 

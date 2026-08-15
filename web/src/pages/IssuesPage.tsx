@@ -36,7 +36,7 @@ import { CommentComposer } from "../components/CommentComposer.js";
 import { MutationError } from "../components/MutationError.js";
 import { LabelPills } from "../components/LabelPills.js";
 import { StateToggle } from "../components/StateToggle.js";
-import { RepoHeader } from "../components/Shell.js";
+import { RepoHeader } from "../components/PageHeader.js";
 import {
   ListControls,
   filterAndSortItems,

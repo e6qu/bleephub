@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { InlineError, Spinner } from "@bleephub/ui-core/components";
 import { fetchOrgProfile, fetchOrgReposPage, fetchOrgMembers } from "../api.js";
 import type { BleephubRepo } from "../types.js";
-import { OrgHeader } from "../components/Shell.js";
+import { OrgHeader } from "../components/PageHeader.js";
 import { Avatar } from "../components/Avatar.js";
 import { Box, SectionLabel, Blankslate } from "../components/ui.js";
 import { RepoIcon, PeopleIcon, GlobeIcon, LockIcon } from "../components/octicons.js";

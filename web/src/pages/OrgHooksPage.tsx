@@ -10,7 +10,7 @@ import {
   pingOrgHook,
 } from "../api.js";
 import type { GithubOrgWebhook } from "../types.js";
-import { OrgHeader } from "../components/Shell.js";
+import { OrgHeader } from "../components/PageHeader.js";
 import { PageTitle, Box, Blankslate, Button, ErrorBanner, Modal, DialogActions, FormLabel } from "../components/ui.js";
 import { MutationError } from "../components/MutationError.js";
 import { confirmAction } from "../components/confirmAction.js";

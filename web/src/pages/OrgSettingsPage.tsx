@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { InlineError, Spinner } from "@bleephub/ui-core/components";
-import { OrgHeader } from "../components/Shell.js";
+import { OrgHeader } from "../components/PageHeader.js";
 import { PageTitle, Box, Button, FormLabel, ErrorBanner, SectionLabel } from "../components/ui.js";
 import { fetchOrgProfile, updateOrg } from "../api.js";
 import {

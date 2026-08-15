@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { InlineError, Spinner } from "@bleephub/ui-core/components";
-import { RepoHeader } from "../components/Shell.js";
+import { RepoHeader } from "../components/PageHeader.js";
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
 import { Box, Blankslate, Button, SectionLabel } from "../components/ui.js";
 import { MutationError } from "../components/MutationError.js";

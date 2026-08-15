@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
 import { ghFetch } from "../api.js";
 import type { GithubBlameResult } from "../types.js";
-import { RepoHeader } from "../components/Shell.js";
+import { RepoHeader } from "../components/PageHeader.js";
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
 import { Box } from "../components/ui.js";
 

@@ -11,7 +11,7 @@ import {
   deleteDependabotRepoSecret,
 } from "../api.js";
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
-import { RepoHeader } from "../components/Shell.js";
+import { RepoHeader } from "../components/PageHeader.js";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
 import { Box, Button, FormLabel, ErrorBanner } from "../components/ui.js";
 import { MutationError } from "../components/MutationError.js";

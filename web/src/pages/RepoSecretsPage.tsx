@@ -18,7 +18,7 @@ import type { GithubOrgVisibility, GithubVariable } from "../types.js";
 import { sealSecret } from "../utils/sealedBox.js";
 import { confirmAction } from "../components/confirmAction.js";
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
-import { RepoHeader } from "../components/Shell.js";
+import { RepoHeader } from "../components/PageHeader.js";
 import {
   Box,
   Blankslate,

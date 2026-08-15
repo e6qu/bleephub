@@ -83,7 +83,7 @@ import type {
   GithubPagesSite,
   GithubRepoInvitation,
 } from "../types.js";
-import { RepoHeader } from "../components/Shell.js";
+import { RepoHeader } from "../components/PageHeader.js";
 import { SettingsLayout, type SettingsNavSection } from "../components/SettingsLayout.js";
 import { PageTitle, Button, Box, FormLabel, ErrorBanner } from "../components/ui.js";
 

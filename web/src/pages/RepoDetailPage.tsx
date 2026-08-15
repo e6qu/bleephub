@@ -56,7 +56,7 @@ import type {
   GithubRelease,
   GithubRepoSocialCounts,
 } from "../types.js";
-import { RepoHeader } from "../components/Shell.js";
+import { RepoHeader } from "../components/PageHeader.js";
 import { Box, Blankslate, Button, ButtonLink, CodeBlock, SectionLabel, Modal, DialogActions, FormLabel } from "../components/ui.js";
 import { CommentCard } from "../components/CommentCard.js";
 import { ReactionBar } from "../components/ReactionBar.js";

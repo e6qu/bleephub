@@ -8,7 +8,7 @@ import {
   type Page,
 } from "../api.js";
 import type { GithubAccount } from "../types.js";
-import { RepoHeader } from "../components/Shell.js";
+import { RepoHeader } from "../components/PageHeader.js";
 import { PageTitle, Box, Blankslate, Button } from "../components/ui.js";
 import { StarIcon, RepoIcon } from "../components/octicons.js";
 

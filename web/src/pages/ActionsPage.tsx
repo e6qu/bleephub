@@ -27,7 +27,7 @@ import type {
 } from "../types.js";
 import { decodeContentsBase64, parseWorkflowDispatch } from "../utils/workflowDispatch.js";
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
-import { RepoHeader } from "../components/Shell.js";
+import { RepoHeader } from "../components/PageHeader.js";
 import { RunStatusIcon } from "../components/RunStatusIcon.js";
 import {
   Box,

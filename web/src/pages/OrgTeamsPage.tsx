@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { InlineError, Spinner } from "@bleephub/ui-core/components";
 import { fetchOrgTeams } from "../api.js";
 import type { GithubOrgTeam } from "../types.js";
-import { OrgHeader } from "../components/Shell.js";
+import { OrgHeader } from "../components/PageHeader.js";
 import { Box, SectionLabel, Blankslate } from "../components/ui.js";
 import { TeamIcon, LockIcon } from "../components/octicons.js";
 

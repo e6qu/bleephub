@@ -12,7 +12,7 @@ import {
   deleteOrgProjectV2Item,
   setOrgProjectV2ItemField,
 } from "../api.js";
-import { OrgHeader } from "../components/Shell.js";
+import { OrgHeader } from "../components/PageHeader.js";
 import { PageTitle, Box, Blankslate, Button, ErrorBanner } from "../components/ui.js";
 import { confirmAction } from "../components/confirmAction.js";
 import type { GithubProjectV2Field, GithubProjectV2Item } from "../types.js";

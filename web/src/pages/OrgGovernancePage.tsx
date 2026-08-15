@@ -41,7 +41,7 @@ import type {
   GithubOrgRole,
   GithubOrgRepoCustomPropertyValues,
 } from "../types.js";
-import { OrgHeader } from "../components/Shell.js";
+import { OrgHeader } from "../components/PageHeader.js";
 import {
   Box,
   Button,

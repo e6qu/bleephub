@@ -5697,6 +5697,15 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "the entry chunk sat at exactly its 163840-byte ceiling (30 bytes of headroom), blocking every new /ui route, api.ts wrapper, and always-loaded AppHeader control for two rounds \u2014 new parity work had to contort into lazy tabs to fit",
+        "id": "WEB-118",
+        "location": "web/src/components/Shell.tsx, web/src/components/PageHeader.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 `RepoHeader`/`OrgHeader` (\u2248370 lines plus a large octicon/api import set) were only ever used by lazily-loaded repo/org pages but shared the always-loaded shell module, dragging them into the entry. Moved them to a dedicated `components/PageHeader.tsx` imported directly by those 32 pages (a re-export barrel from Shell did NOT tree-shake \u2014 verified empirically \u2014 so the imports were repointed); the shell module now imports only `AppHeader` + `fetchHealth`. Entry chunk **163810 \u2192 155071 bytes** (headroom 30 \u2192 **8769**), first-paint weight genuinely reduced (the dashboard never needs repo/org headers). Verified: typecheck, 628 vitest, knip (no unused exports), jscpd (code moved, not duplicated), and a full a11y-sweep regression pass render every repo/org header 0 violations both themes",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -7113,21 +7122,21 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 115
+            "fixed": 116
           },
-          "total": 117
+          "total": 118
         }
       },
       "severity": {
         "blocker": 167,
         "major": 399,
-        "minor": 180
+        "minor": 181
       },
       "status": {
         "deferred": 3,
-        "fixed": 743
+        "fixed": 744
       },
-      "total": 746
+      "total": 747
     }
   },
   "rest": {

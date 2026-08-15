@@ -12,7 +12,7 @@ import {
   reportVulnerability,
 } from "../api.js";
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
-import { RepoHeader } from "../components/Shell.js";
+import { RepoHeader } from "../components/PageHeader.js";
 import { Box, Button, Modal, FormLabel, ErrorBanner, DialogActions } from "../components/ui.js";
 import { MutationError } from "../components/MutationError.js";
 import type {
