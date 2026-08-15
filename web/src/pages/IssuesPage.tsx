@@ -527,6 +527,7 @@ function IssueDetail({ owner, repo, number }: { owner: string; repo: string; num
                 owner={owner}
                 repo={repo}
                 comments={comments}
+                viewerLogin={viewerLogin}
                 invalidateKeys={[
                   ["issue-comments", owner, repo, number],
                   ["issue", owner, repo, number],

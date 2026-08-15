@@ -1,11 +1,18 @@
 import { useState, type ReactNode } from "react";
 import { useMutation, useQueryClient, type QueryKey } from "@tanstack/react-query";
 import Markdown from "./Markdown";
-import { updateIssueComment, deleteIssueComment } from "../api.js";
+import {
+  updateIssueComment,
+  deleteIssueComment,
+  fetchIssueCommentReactions,
+  addIssueCommentReaction,
+  removeIssueCommentReaction,
+} from "../api.js";
 import type { GithubComment } from "../types.js";
 import { Button, DialogActions, FormLabel } from "./ui.js";
 import { MutationError } from "./MutationError.js";
 import { confirmAction } from "./confirmAction.js";
+import { ReactionBar } from "./ReactionBar.js";
 
 export interface CommentCardProps {
   login?: string | undefined;
@@ -88,11 +95,13 @@ export function EditableCommentList({
   repo,
   comments,
   invalidateKeys,
+  viewerLogin,
 }: {
   owner: string;
   repo: string;
   comments: GithubComment[];
   invalidateKeys: QueryKey[];
+  viewerLogin?: string | null | undefined;
 }) {
   const qc = useQueryClient();
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -150,8 +159,8 @@ export function EditableCommentList({
             </DialogActions>
           </div>
         ) : (
+          <div key={c.id}>
           <CommentCard
-            key={c.id}
             login={c.user?.login}
             body={c.body}
             date={c.created_at}
@@ -186,6 +195,14 @@ export function EditableCommentList({
               </>
             }
           />
+          <ReactionBar
+            queryKey={["issue-comment-reactions", owner, repo, c.id]}
+            fetchList={() => fetchIssueCommentReactions(owner, repo, c.id)}
+            add={(content) => addIssueCommentReaction(owner, repo, c.id, content)}
+            remove={(reactionId) => removeIssueCommentReaction(owner, repo, c.id, reactionId)}
+            viewerLogin={viewerLogin ?? null}
+          />
+          </div>
         ),
       )}
       <MutationError of={deleteMut} />
