@@ -5706,6 +5706,24 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "the global \"+\" create menu offered New repository / Import repository / New gist / New organization but omitted github.com's **New project** entry",
+        "id": "WEB-119",
+        "location": "web/src/components/AppHeader.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added a \"New project\" MenuLink (viewer-scoped, `/ui/{login}?tab=projects`), unblocked by the WEB-118 entry-bundle reduction that gave the always-loaded header room for the ~90-byte control it could not previously fit. Verified: AppHeaderKeyboard test asserts End-key focus lands on the new last item",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "organization Actions **Secrets and variables** management had no org-nav entry \u2014 the functionality existed only behind a scope toggle on the repo Secrets page, so github.com's Org Settings \u203a Secrets and variables was unreachable from the org",
+        "id": "WEB-120",
+        "location": "web/src/components/SecretsManager.tsx, web/src/pages/OrgGovernancePage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 extracted the repo Secrets page's `SecretsSection`/`VariablesSection` (sealed-box browser encryption, CRUD, all/private/selected visibility) into a shared `components/SecretsManager.tsx` and added a **Secrets and variables** org governance tab that renders them against an `{ kind: \"org\" }` scope (the scope abstraction and org endpoints already existed). No duplication (code moved, jscpd-clean); the repo Secrets page now imports the shared sections. Verified: repo secrets tests still green post-extraction; a new org test lists org secrets + variables from `/orgs/{org}/actions/{secrets,variables}`; the a11y sweep scans `/ui/orgs/{org}/governance?tab=secrets` at 0 violations in both themes",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -7122,21 +7140,21 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 116
+            "fixed": 118
           },
-          "total": 118
+          "total": 120
         }
       },
       "severity": {
         "blocker": 167,
         "major": 399,
-        "minor": 181
+        "minor": 183
       },
       "status": {
         "deferred": 3,
-        "fixed": 744
+        "fixed": 746
       },
-      "total": 747
+      "total": 749
     }
   },
   "rest": {
@@ -28654,32 +28672,32 @@
   "ui": {
     "browser_navigations": [
       {
-        "line": 201,
+        "line": 202,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 451,
+        "line": 452,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 490,
+        "line": 491,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/repos/${seeded.owner}/${seeded.repo}/settings"
       },
       {
-        "line": 525,
+        "line": 526,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/repos/${seeded.owner}/${seeded.repo}/settings"
       },
       {
-        "line": 563,
+        "line": 564,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/repos/${seeded.org}/org-parity/settings"
       },
       {
-        "line": 595,
+        "line": 596,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/search"
       },

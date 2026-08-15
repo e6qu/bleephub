@@ -41,6 +41,8 @@ import type {
   GithubOrgRole,
   GithubOrgRepoCustomPropertyValues,
 } from "../types.js";
+import type { SecretsScope } from "../api.js";
+import { SecretsSection, VariablesSection } from "../components/SecretsManager.js";
 import { OrgHeader } from "../components/PageHeader.js";
 import {
   Box,
@@ -53,9 +55,9 @@ import {
 } from "../components/ui.js";
 import { ChevronDownIcon, ChevronRightIcon } from "../components/octicons.js";
 
-type GovernanceTab = "people" | "roles" | "member-privileges" | "actions" | "properties" | "issue-types";
+type GovernanceTab = "people" | "roles" | "member-privileges" | "actions" | "secrets" | "properties" | "issue-types";
 
-const GOVERNANCE_TABS: GovernanceTab[] = ["people", "roles", "member-privileges", "actions", "properties", "issue-types"];
+const GOVERNANCE_TABS: GovernanceTab[] = ["people", "roles", "member-privileges", "actions", "secrets", "properties", "issue-types"];
 
 export function OrgGovernancePage() {
   const { org = "" } = useParams<{ org: string }>();
@@ -80,6 +82,7 @@ export function OrgGovernancePage() {
           { key: "roles" as const, label: "Roles" },
           { key: "member-privileges" as const, label: "Member privileges" },
           { key: "actions" as const, label: "Actions" },
+          { key: "secrets" as const, label: "Secrets and variables" },
           { key: "properties" as const, label: "Custom properties" },
           { key: "issue-types" as const, label: "Issue types" },
         ]}
@@ -90,6 +93,7 @@ export function OrgGovernancePage() {
       {tab === "roles" && <RolesPanel org={org} />}
       {tab === "member-privileges" && <MemberPrivilegesPanel org={org} />}
       {tab === "actions" && <OrgActionsPanel org={org} />}
+      {tab === "secrets" && <OrgSecretsPanel org={org} />}
       {tab === "properties" && <PropertiesPanel org={org} />}
       {tab === "issue-types" && <IssueTypesPanel org={org} />}
     </div>
@@ -243,6 +247,26 @@ function OrgActionsPanel({ org }: { org: string }) {
             </label>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// Org Settings › Secrets and variables. Reuses the shared secrets manager against
+// an org scope — the same encryption, CRUD, and visibility (all/private/selected)
+// logic as the repo Secrets page, now reachable from the org nav.
+function OrgSecretsPanel({ org }: { org: string }) {
+  const scope: SecretsScope = { kind: "org", org };
+  return (
+    <div style={{ marginTop: "1rem" }}>
+      <p className="mb-4" style={{ fontSize: "0.84rem", color: "var(--color-fg-muted)" }}>
+        Secrets are encrypted in the browser with the organization&apos;s public key before upload
+        and are never readable again from this page. Variables are stored as plain text. Each can be
+        scoped to all, private, or selected repositories.
+      </p>
+      <div className="grid gap-6 lg:grid-cols-2">
+        <SecretsSection scope={scope} />
+        <VariablesSection scope={scope} />
       </div>
     </div>
   );

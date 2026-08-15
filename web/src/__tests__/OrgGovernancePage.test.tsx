@@ -362,6 +362,24 @@ describe("OrgGovernancePage issue types tab", () => {
     });
   });
 
+  describe("Secrets and variables", () => {
+    it("lists org Actions secrets and variables from the org endpoints", async () => {
+      mockFetch.mockImplementation((input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.startsWith("/api/v3/orgs/acme/actions/secrets")) {
+          return Promise.resolve(jsonResponse({ total_count: 1, secrets: [{ name: "ORG_TOKEN", visibility: "all", created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-02T00:00:00Z" }] }));
+        }
+        if (url.startsWith("/api/v3/orgs/acme/actions/variables")) {
+          return Promise.resolve(jsonResponse({ total_count: 1, variables: [{ name: "ORG_VAR", value: "prod", visibility: "all", created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-02T00:00:00Z" }] }));
+        }
+        return Promise.resolve(jsonResponse({}));
+      });
+      renderAt("/ui/orgs/acme/governance?tab=secrets");
+      expect(await screen.findByText("ORG_TOKEN")).toBeInTheDocument();
+      expect(await screen.findByText("ORG_VAR")).toBeInTheDocument();
+    });
+  });
+
   describe("Actions", () => {
     it("saves org Actions policy and workflow permissions", async () => {
       mockFetch.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
