@@ -176,7 +176,11 @@ Verify each end-to-end in an owned org through both the API and `/ui/classrooms`
 
 - **Pixel/visual identity** with github.com is explicitly *not* required (styling may differ) — only structure, placement, functionality, theming, and a11y.
 - **Deferred by owner decision** (not work): keep `@bleephub/ui-core` as a library (WEB-016/017); accept TEST-015 (comma-ok sweep net-negative).
-- **Deferred by entry-budget constraint**: a **"New project"** item in the global "+" create menu (`AppHeader.tsx`, round 8). The entry chunk sits at exactly its 163840-byte ceiling, so the ~90-byte MenuLink breaches it and `AppHeader` is always-loaded (cannot be code-split like the palette/shortcuts/drawer already are). Land it only alongside a genuine entry-bundle reduction, not a budget bump. "Your projects" already links the same surface from the avatar menu.
+- **Deferred by entry-budget constraint**: a **"New project"** item in the global "+" create menu (`AppHeader.tsx`, round 8). The entry chunk sits at exactly its 163840-byte ceiling, so the ~90-byte MenuLink breaches it and `AppHeader` is always-loaded (cannot be code-split like the palette/shortcuts/drawer already are). Land it only alongside a genuine entry-bundle reduction, not a budget bump. "Your projects" already links the same surface from the avatar menu. *(RESOLVED round 9: WEB-118 freed 8.7 KB of headroom; WEB-119 landed New project.)*
+
+## Remaining interaction backlog (round 11 deep audit)
+- **Issue conversation timeline events** (M, frontend-only): the issue page (`IssuesPage.tsx` `IssueDetail`) shows only comments, not the labeled/assigned/closed/renamed timeline events github.com interleaves. The PR page's `ConversationTimeline`/`TimelineEventRow` already render exactly these; lift them into a shared component and switch the issue page to `fetchIssueTimeline`. Read-only display parity; lower value than the interactive controls already shipped (WEB-124/125).
+- **Pin comment** (BLOCKED, not frontend-only): GHES per-comment pin. Server has `PUT/DELETE /issues/comments/{id}/pin`, but the REST `issue-comment` object has no `pinned` field (neither does GitHub's OpenAPI spec — github.com pins via GraphQL/web), so the UI cannot reflect pin state without a spec-violating server field that the openapi-shape gate would reject. Needs a `/ui-data` surface or GraphQL, not a REST field.
 
 ## Standing maintenance (unchanged, runs alongside)
 

@@ -500,12 +500,18 @@ describe("repository detail journeys", () => {
     });
   });
 
-  it("renders a repository file at its durable URL", async () => {
+  it("renders a repository file at its durable URL with Raw + History controls", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL) => routedFetch(url));
     renderPage("/ui/repos/admin/test/blob/main/README.md");
 
     expect(await screen.findByText("admin/test")).toBeInTheDocument();
     expect(screen.getByText(/extra detail/)).toBeInTheDocument();
+    // github.com's per-file Raw and History affordances.
+    expect(screen.getByRole("button", { name: "View raw file" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "History" })).toHaveAttribute(
+      "href",
+      "/ui/repos/admin/test/commits?path=README.md&sha=main",
+    );
   });
 
   it("syncs a fork via POST /merge-upstream", async () => {

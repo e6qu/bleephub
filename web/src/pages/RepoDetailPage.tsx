@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, lazy, Suspense } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
 import Markdown from "../components/Markdown";
@@ -1219,8 +1219,16 @@ function CommitHistory({
     since: "",
     until: "",
   };
-  const [draft, setDraft] = useState<CommitHistoryFilters>(emptyFilters);
-  const [filters, setFilters] = useState<CommitHistoryFilters>(emptyFilters);
+  // Deep-link support for the per-file "History" control: ?path=… (&sha=…)
+  // pre-fills the path filter so the commits tab lands scoped to that file.
+  const [searchParams] = useSearchParams();
+  const initialFilters: CommitHistoryFilters = {
+    ...emptyFilters,
+    path: searchParams.get("path") ?? "",
+    sha: searchParams.get("sha") || defaultBranch,
+  };
+  const [draft, setDraft] = useState<CommitHistoryFilters>(initialFilters);
+  const [filters, setFilters] = useState<CommitHistoryFilters>(initialFilters);
   const [page, setPage] = useState(1);
   const perPage = 30;
   const query = useQuery({
@@ -1996,6 +2004,22 @@ export function RepoFilePage() {
             </span>
             {!editing && (
               <>
+                <Button
+                  size="sm"
+                  aria-label="View raw file"
+                  onClick={() => {
+                    // The decoded file text is already loaded; open it as a raw
+                    // text blob, mirroring github.com's "Raw" view.
+                    const url = URL.createObjectURL(new Blob([content], { type: "text/plain;charset=utf-8" }));
+                    window.open(url, "_blank", "noopener");
+                    setTimeout(() => URL.revokeObjectURL(url), 30_000);
+                  }}
+                >
+                  Raw
+                </Button>
+                <ButtonLink size="sm" to={`/ui/repos/${owner}/${repo}/commits?path=${encodeURIComponent(path)}&sha=${encodeURIComponent(ref)}`}>
+                  History
+                </ButtonLink>
                 <ButtonLink size="sm" to={`/ui/repos/${owner}/${repo}/blame/${ref}/${path}`}>
                   Blame
                 </ButtonLink>
