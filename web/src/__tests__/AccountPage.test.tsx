@@ -424,4 +424,45 @@ describe("AccountPage", () => {
       expect(String(put![0])).toBe("/api/v3/user/blocks/troll");
     });
   });
+
+  it("renders billing usage summary and fires GET .../settings/billing/usage/summary", async () => {
+    installFetchRoutes({
+      "GET /api/v3/users/admin/settings/billing/usage/summary": () =>
+        jsonResponse({
+          timePeriod: { year: 2026, month: 8 },
+          user: "admin",
+          usageItems: [
+            {
+              product: "actions",
+              sku: "Actions Linux",
+              unitType: "minutes",
+              pricePerUnit: 0.008,
+              grossQuantity: 100,
+              grossAmount: 0.8,
+              discountAmount: 0,
+              netQuantity: 100,
+              netAmount: 0.8,
+            },
+          ],
+        }),
+      "GET /api/v3/users/admin/settings/billing/ai_credit/usage": () =>
+        jsonResponse({ timePeriod: { year: 2026, month: 8 }, user: "admin", usageItems: [] }),
+      "GET /api/v3/users/admin/settings/billing/premium_request/usage": () =>
+        jsonResponse({ timePeriod: { year: 2026, month: 8 }, user: "admin", usageItems: [] }),
+    });
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Billing and plans" }));
+
+    await waitFor(() => expect(screen.getByText("Actions Linux")).toBeInTheDocument());
+    expect(screen.getByText("actions")).toBeInTheDocument();
+    // netAmount 0.8 rendered as currency.
+    expect(screen.getAllByText("$0.80").length).toBeGreaterThan(0);
+
+    const summaryGet = mockFetch.mock.calls.find(
+      (c) =>
+        String(c[0]).includes("/users/admin/settings/billing/usage/summary") &&
+        ((c[1] as RequestInit | undefined)?.method ?? "GET") === "GET",
+    );
+    expect(summaryGet).toBeDefined();
+  });
 });

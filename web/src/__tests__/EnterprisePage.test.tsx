@@ -335,3 +335,109 @@ describe("EnterprisePage settings tab", () => {
     ).toBeInTheDocument();
   });
 });
+
+const budget = {
+  id: "b-1",
+  budget_scope: "enterprise",
+  budget_entity_name: "",
+  budget_amount: 500,
+  prevent_further_usage: true,
+  budget_product_sku: "actions",
+  budget_type: "ProductPricing",
+  budget_alerting: { will_alert: false, alert_recipients: [] },
+};
+
+const BUDGETS_PATH = "/api/v3/enterprises/acme/settings/billing/budgets";
+
+// Base handler: enterprise slug + empty default (teams) tab + one budget on the
+// billing list. Callers pass overrides keyed by a URL substring.
+function mockBilling(overrides: Array<[string, (init?: RequestInit) => Response]> = []) {
+  mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+    const u = url.toString();
+    for (const [needle, make] of overrides) {
+      if (u.includes(needle)) return Promise.resolve(make(init));
+    }
+    if (u.includes("/internal/status")) {
+      return Promise.resolve(jsonResponse({ enterprise_slug: "acme" }));
+    }
+    if (u.includes(BUDGETS_PATH)) {
+      return Promise.resolve(jsonResponse({ budgets: [budget], total_count: 1, has_next_page: false }));
+    }
+    // Default (teams) tab list and anything else.
+    return Promise.resolve(jsonResponse([]));
+  });
+}
+
+
+describe("EnterprisePage billing tab", () => {
+  it("renders spending budgets on the Billing tab", async () => {
+    mockBilling();
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("tab", { name: "Billing" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("actions")).toBeInTheDocument();
+    });
+    expect(screen.getByText(/\$500/)).toBeInTheDocument();
+    expect(screen.getByText(/scope: enterprise/)).toBeInTheDocument();
+  });
+
+  it("creates a budget via POST to the budgets endpoint", async () => {
+    mockBilling([
+      [
+        BUDGETS_PATH,
+        (init) =>
+          init?.method === "POST"
+            ? jsonResponse({ budget })
+            : jsonResponse({ budgets: [budget], total_count: 1, has_next_page: false }),
+      ],
+    ]);
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("tab", { name: "Billing" }));
+    fireEvent.click(await screen.findByRole("button", { name: "New budget" }));
+
+    fireEvent.change(screen.getByLabelText("Product SKU"), { target: { value: "copilot" } });
+    fireEvent.change(screen.getByLabelText("Budget amount (USD)"), { target: { value: "250" } });
+    fireEvent.click(screen.getByLabelText(/prevent further usage/i));
+    fireEvent.click(screen.getByRole("button", { name: "Create budget" }));
+
+    await waitFor(() => {
+      const post = mockFetch.mock.calls.find(
+        (c) => c[0].toString() === BUDGETS_PATH && c[1]?.method === "POST",
+      );
+      expect(post).toBeTruthy();
+      expect(JSON.parse(String(post![1]!.body))).toEqual({
+        budget_amount: 250,
+        prevent_further_usage: true,
+        budget_scope: "enterprise",
+        budget_type: "ProductPricing",
+        budget_product_sku: "copilot",
+        budget_entity_name: "",
+        budget_alerting: { will_alert: false, alert_recipients: [] },
+      });
+    });
+  });
+
+  it("deletes a budget via DELETE after confirmation", async () => {
+    mockBilling([
+      [
+        `${BUDGETS_PATH}/b-1`,
+        () => jsonResponse({ message: "Budget successfully deleted.", budget_id: "b-1" }),
+      ],
+    ]);
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("tab", { name: "Billing" }));
+    fireEvent.click(await screen.findByRole("button", { name: "delete" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm" }));
+
+    await waitFor(() => {
+      const del = mockFetch.mock.calls.find(
+        (c) => c[0].toString() === `${BUDGETS_PATH}/b-1` && c[1]?.method === "DELETE",
+      );
+      expect(del).toBeTruthy();
+    });
+  });
+});

@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
 import { confirmAction } from "../components/confirmAction.js";
+import { MutationError } from "../components/MutationError.js";
+import { ghFetch, ghPostJSON, ghSend } from "../api.js";
 import {
   fetchEnterpriseSlug,
   fetchEnterpriseTeams,
@@ -31,10 +33,12 @@ import {
   PageTitle,
   Tabs,
 } from "../components/ui.js";
-import { GlobeIcon, TeamIcon } from "../components/octicons.js";
+import { GlobeIcon, GraphIcon, TeamIcon } from "../components/octicons.js";
 import { Blankslate } from "../components/ui.js";
 
-type EnterpriseTab = "teams" | "settings";
+const enc = encodeURIComponent;
+
+type EnterpriseTab = "teams" | "settings" | "billing";
 
 export function EnterprisePage() {
   const [tab, setTab] = useState<EnterpriseTab>("teams");
@@ -57,12 +61,14 @@ export function EnterprisePage() {
       <Tabs
         items={[
           { key: "teams" as const, label: "Teams" },
+          { key: "billing" as const, label: "Billing" },
           { key: "settings" as const, label: "Settings" },
         ]}
         active={tab}
         onChange={setTab}
       />
       {tab === "teams" && <EnterpriseTeamsPanel />}
+      {tab === "billing" && <EnterpriseBillingPanel enterpriseSlug={enterpriseSlug} />}
       {tab === "settings" && <EnterpriseSettingsPanel />}
     </div>
   );
@@ -448,6 +454,271 @@ function EnterpriseTeamOrgsDialog({
             ))}
           </ul>
         ))}
+    </Modal>
+  );
+}
+
+// ─── Enterprise billing ─────────────────────────────────────────────────
+
+interface EnterpriseBudget {
+  id: string;
+  budget_scope: string;
+  budget_entity_name: string;
+  budget_amount: number;
+  prevent_further_usage: boolean;
+  budget_product_sku: string;
+  budget_type: string;
+  budget_alerting: { will_alert: boolean; alert_recipients: string[] };
+  user?: string;
+}
+
+interface EnterpriseBudgetList {
+  budgets: EnterpriseBudget[];
+  total_count: number;
+  has_next_page: boolean;
+}
+
+// Same request family as the org budgets — budget_alerting is required on
+// create even when alerting is disabled, so send an explicit empty envelope.
+interface EnterpriseBudgetBody {
+  budget_amount: number;
+  prevent_further_usage: boolean;
+  budget_scope: string;
+  budget_type: string;
+  budget_product_sku: string;
+  budget_entity_name?: string;
+  budget_alerting: { will_alert: boolean; alert_recipients: string[] };
+}
+
+const BUDGET_SCOPES = [
+  "enterprise",
+  "organization",
+  "repository",
+  "cost_center",
+  "user",
+  "multi_user_customer",
+  "multi_user_cost_center",
+] as const;
+
+const budgetsPath = (slug: string) => `/api/v3/enterprises/${enc(slug)}/settings/billing/budgets`;
+
+const fetchEnterpriseBudgets = (slug: string) =>
+  ghFetch<EnterpriseBudgetList>(budgetsPath(slug));
+const createEnterpriseBudget = (slug: string, body: EnterpriseBudgetBody) =>
+  ghPostJSON<{ budget: EnterpriseBudget }>(budgetsPath(slug), body);
+const updateEnterpriseBudget = (slug: string, id: string, body: Partial<EnterpriseBudgetBody>) =>
+  ghSend("PATCH", `${budgetsPath(slug)}/${enc(id)}`, body);
+const deleteEnterpriseBudget = (slug: string, id: string) =>
+  ghSend("DELETE", `${budgetsPath(slug)}/${enc(id)}`);
+
+function EnterpriseBillingPanel({ enterpriseSlug }: { enterpriseSlug: string | undefined }) {
+  const qc = useQueryClient();
+  const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState<EnterpriseBudget | null>(null);
+
+  const { data, isLoading, isError, error: loadErr } = useQuery({
+    queryKey: ["enterprise-budgets", enterpriseSlug],
+    queryFn: () => fetchEnterpriseBudgets(enterpriseSlug!),
+    enabled: !!enterpriseSlug,
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => deleteEnterpriseBudget(enterpriseSlug!, id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["enterprise-budgets", enterpriseSlug] }),
+  });
+
+  if (!enterpriseSlug || isLoading) return <Spinner label="loading spending budgets" />;
+  if (isError || !data) {
+    return <InlineError title="Failed to load spending budgets" detail={String(loadErr)} />;
+  }
+
+  const budgets = data.budgets ?? [];
+
+  return (
+    <div>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <span style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)" }}>
+          Spending budgets cap metered usage across this enterprise.
+        </span>
+        <Button variant="primary" size="sm" onClick={() => setCreating(true)}>
+          New budget
+        </Button>
+      </div>
+      <MutationError of={deleteMut} />
+      {budgets.length === 0 ? (
+        <Blankslate icon={<GraphIcon size={26} />} title="No spending budgets yet" />
+      ) : (
+        <Box>
+          {budgets.map((budget, i) => (
+            <div
+              key={budget.id}
+              className="flex flex-wrap items-center gap-3"
+              style={{
+                padding: "0.7rem 1rem",
+                borderBottom: i < budgets.length - 1 ? "1px solid var(--color-border)" : "none",
+              }}
+            >
+              <div className="min-w-0 flex-1">
+                <div style={{ fontWeight: 600, fontSize: "0.92rem" }}>
+                  {budget.budget_product_sku}{" "}
+                  <span style={{ color: "var(--color-fg-muted)", fontWeight: 400 }}>
+                    ${budget.budget_amount}
+                  </span>
+                </div>
+                <div className="mt-0.5" style={{ fontSize: "0.78rem", color: "var(--color-fg-muted)" }}>
+                  scope: {budget.budget_scope}
+                  {budget.budget_entity_name ? ` (${budget.budget_entity_name})` : ""} ·{" "}
+                  {budget.prevent_further_usage ? "stops usage at limit" : "alert only"}
+                </div>
+              </div>
+              <Button size="sm" variant="ghost" onClick={() => setEditing(budget)}>
+                edit
+              </Button>
+              <Button
+                size="sm"
+                variant="danger"
+                disabled={deleteMut.isPending}
+                onClick={async () => {
+                  if (await confirmAction(`Delete the ${budget.budget_product_sku} budget?`))
+                    deleteMut.mutate(budget.id);
+                }}
+              >
+                delete
+              </Button>
+            </div>
+          ))}
+        </Box>
+      )}
+      {(creating || editing) && (
+        <EnterpriseBudgetDialog
+          enterpriseSlug={enterpriseSlug}
+          budget={editing ?? undefined}
+          onClose={() => {
+            setCreating(false);
+            setEditing(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function EnterpriseBudgetDialog({
+  enterpriseSlug,
+  budget,
+  onClose,
+}: {
+  enterpriseSlug: string;
+  budget?: EnterpriseBudget | undefined;
+  onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const [productSku, setProductSku] = useState(budget?.budget_product_sku ?? "");
+  const [amount, setAmount] = useState(String(budget?.budget_amount ?? ""));
+  const [scope, setScope] = useState(budget?.budget_scope ?? "enterprise");
+  const [entityName, setEntityName] = useState(budget?.budget_entity_name ?? "");
+  const [preventUsage, setPreventUsage] = useState(budget?.prevent_further_usage ?? false);
+
+  const parsedAmount = parseInt(amount, 10);
+  const validAmount = Number.isFinite(parsedAmount) && parsedAmount >= 0;
+  // enterprise / multi_user_customer scopes reject a non-empty entity name.
+  const entityless = scope === "enterprise" || scope === "multi_user_customer";
+
+  const mutation = useMutation({
+    mutationFn: async () => {
+      if (budget) {
+        await updateEnterpriseBudget(enterpriseSlug, budget.id, {
+          budget_amount: parsedAmount,
+          prevent_further_usage: preventUsage,
+          budget_scope: scope,
+          budget_product_sku: productSku.trim(),
+          budget_entity_name: entityless ? "" : entityName.trim(),
+        });
+        return;
+      }
+      await createEnterpriseBudget(enterpriseSlug, {
+        budget_amount: parsedAmount,
+        prevent_further_usage: preventUsage,
+        budget_scope: scope,
+        budget_type: "ProductPricing",
+        budget_product_sku: productSku.trim(),
+        budget_entity_name: entityless ? "" : entityName.trim(),
+        budget_alerting: { will_alert: false, alert_recipients: [] },
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["enterprise-budgets", enterpriseSlug] });
+      onClose();
+    },
+  });
+
+  return (
+    <Modal title={budget ? "Edit spending budget" : "New spending budget"} onClose={onClose}>
+      <FormLabel id="ent-budget-sku">Product SKU</FormLabel>
+      <input
+        id="ent-budget-sku"
+        autoFocus
+        placeholder="e.g. actions"
+        value={productSku}
+        onChange={(e) => setProductSku(e.target.value)}
+        className="mb-3 w-full"
+      />
+      <FormLabel id="ent-budget-amount">Budget amount (USD)</FormLabel>
+      <input
+        id="ent-budget-amount"
+        type="number"
+        min={0}
+        value={amount}
+        onChange={(e) => setAmount(e.target.value)}
+        className="mb-3 w-full"
+      />
+      <FormLabel id="ent-budget-scope">Scope</FormLabel>
+      <select
+        id="ent-budget-scope"
+        value={scope}
+        onChange={(e) => setScope(e.target.value)}
+        className="mb-3 w-full"
+      >
+        {BUDGET_SCOPES.map((s) => (
+          <option key={s} value={s}>
+            {s}
+          </option>
+        ))}
+      </select>
+      {!entityless && (
+        <>
+          <FormLabel id="ent-budget-entity">Entity name</FormLabel>
+          <input
+            id="ent-budget-entity"
+            placeholder="organization / repository / login"
+            value={entityName}
+            onChange={(e) => setEntityName(e.target.value)}
+            className="mb-3 w-full"
+          />
+        </>
+      )}
+      <label className="mb-4 flex items-center gap-2" style={{ fontSize: "0.88rem" }}>
+        <input
+          type="checkbox"
+          checked={preventUsage}
+          onChange={(e) => setPreventUsage(e.target.checked)}
+        />
+        Prevent further usage once the budget is exceeded
+      </label>
+      <MutationError of={mutation} />
+      <DialogActions>
+        <Button variant="ghost" size="sm" onClick={onClose} disabled={mutation.isPending}>
+          Cancel
+        </Button>
+        <Button
+          variant="primary"
+          size="sm"
+          disabled={!productSku.trim() || !validAmount || mutation.isPending}
+          onClick={() => mutation.mutate()}
+        >
+          {mutation.isPending ? "Saving…" : budget ? "Save" : "Create budget"}
+        </Button>
+      </DialogActions>
     </Modal>
   );
 }

@@ -2,6 +2,7 @@ import { useEffect, useState, type CSSProperties, type FormEvent } from "react";
 import { useParams, useNavigate, Link } from "react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
+import { MutationError } from "../components/MutationError.js";
 import { confirmAction } from "../components/confirmAction.js";
 import { RulesetEditor, type RulesetRuleConfig } from "../components/RulesetEditor.js";
 import {
@@ -2125,7 +2126,7 @@ function ActionsSettingsTab({ owner, repo }: { owner: string; repo: string }) {
           Default permissions granted to the <code>GITHUB_TOKEN</code> when running workflows in this repository.
         </p>
         {wf.isLoading && <Spinner label="loading workflow permissions" />}
-        {wf.isError && <InlineError title="Failed to load workflow permissions" />}
+        {wf.isError && <InlineError title="Failed to load workflow permissions" detail={String(wf.error)} />}
         {wf.data && (
           <Box>
             <div style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "0.6rem" }}>
@@ -2515,6 +2516,7 @@ function EnvironmentDetail({ owner, repo, env }: { owner: string; repo: string; 
   const secretList: GithubSecret[] = secrets.data ?? [];
   return (
     <div style={{ padding: "0 1rem 1rem", display: "flex", flexDirection: "column", gap: "0.8rem", background: "var(--color-bg-subtle)" }}>
+      <MutationError of={[saveWait, addVar, delVar, delSecret]} />
       <div>
         <h3 style={{ fontSize: "0.85rem", fontWeight: 600, margin: "0.6rem 0 0.3rem" }}>Protection rules</h3>
         <div style={{ display: "flex", alignItems: "flex-end", gap: "0.4rem", flexWrap: "wrap" }}>
@@ -2537,12 +2539,20 @@ function EnvironmentDetail({ owner, repo, env }: { owner: string; repo: string; 
       </div>
       <div>
         <h3 style={{ fontSize: "0.85rem", fontWeight: 600, margin: "0.6rem 0 0.3rem" }}>Environment variables</h3>
-        {variables.map((v) => (
-          <div key={v.name} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.82rem", padding: "0.2rem 0" }}>
-            <span><code>{v.name}</code> = {v.value}</span>
-            <Button size="sm" variant="ghost" aria-label={`Delete variable ${v.name}`} onClick={() => delVar.mutate(v.name)}>Remove</Button>
-          </div>
-        ))}
+        {vars.isLoading ? (
+          <Spinner label="loading variables" />
+        ) : vars.isError ? (
+          <InlineError title="Failed to load variables" detail={String(vars.error)} />
+        ) : variables.length === 0 ? (
+          <p style={{ fontSize: "0.8rem", color: "var(--color-fg-muted)" }}>No variables.</p>
+        ) : (
+          variables.map((v) => (
+            <div key={v.name} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.82rem", padding: "0.2rem 0" }}>
+              <span><code>{v.name}</code> = {v.value}</span>
+              <Button size="sm" variant="ghost" aria-label={`Delete variable ${v.name}`} onClick={() => delVar.mutate(v.name)}>Remove</Button>
+            </div>
+          ))
+        )}
         <form onSubmit={(e: FormEvent) => { e.preventDefault(); if (vname.trim()) addVar.mutate(); }} style={{ display: "flex", gap: "0.4rem", marginTop: "0.4rem", flexWrap: "wrap" }}>
           <input value={vname} onChange={(e) => setVName(e.target.value)} placeholder="NAME" aria-label="Variable name" style={settingsInputStyle} />
           <input value={vval} onChange={(e) => setVVal(e.target.value)} placeholder="value" aria-label="Variable value" style={settingsInputStyle} />

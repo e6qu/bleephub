@@ -395,7 +395,8 @@ function IssueDetail({ owner, repo, number }: { owner: string; repo: string; num
   });
   const toggleTaskMut = useMutation({
     mutationFn: (body: string) => updateIssue(owner, repo, number, { body }),
-    onSuccess: invalidateIssue,
+    // On failure re-fetch so the optimistic checkbox reverts to the persisted body.
+    onSettled: invalidateIssue,
   });
   const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState("");
@@ -529,6 +530,7 @@ function IssueDetail({ owner, repo, number }: { owner: string; repo: string; num
             remove={(reactionId) => removeIssueReaction(owner, repo, number, reactionId)}
             viewerLogin={viewerLogin}
           />
+          <MutationError of={toggleTaskMut} />
           <SubIssuesSection owner={owner} repo={repo} number={number} />
           {commentsError ? (
             <InlineError inline title="Failed to load comments" detail={String(commentsErr)} />
