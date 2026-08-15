@@ -61,7 +61,7 @@ describe("AppHeader menus", () => {
     await user.keyboard("{ArrowDown}");
     expect(second).toHaveFocus();
     await user.keyboard("{End}");
-    expect(screen.getByRole("menuitem", { name: "New organization" })).toHaveFocus();
+    expect(screen.getByRole("menuitem", { name: "New project" })).toHaveFocus();
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("menu", { name: "Create new…" })).not.toBeInTheDocument();
     expect(trigger).toHaveFocus();
