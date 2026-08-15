@@ -215,6 +215,21 @@ func (s *Resolver) lockByNodeID(nodeID string, locked bool, reason string) (map[
 		}
 		return pullRequestToGQL(refreshed, s.store), true
 	}
+	if d := store.FindDiscussionByNodeID(s.store, nodeID); d != nil {
+		s.store.UpdateDiscussion(d.ID, func(dd *store.Discussion) {
+			dd.Locked = locked
+			if locked {
+				dd.LockedReason = reason
+			} else {
+				dd.LockedReason = ""
+			}
+		})
+		refreshed := s.store.GetDiscussion(d.ID)
+		if refreshed == nil {
+			refreshed = d
+		}
+		return discussionToGQL(refreshed, s.store), true
+	}
 	return nil, false
 }
 

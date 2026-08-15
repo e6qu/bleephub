@@ -154,9 +154,11 @@ import type {
   GithubGPGKey,
   GithubSSHSigningKey,
   GithubBlockedUser,
+  GithubSocialAccount,
   GithubUserProfile,
   GithubOrgProfile,
   GithubOrgSummary,
+  GithubOrgMembership,
   GithubOrgTeam,
   GithubFeedIssue,
   GithubPRFile,
@@ -1574,7 +1576,12 @@ export const updateIssue = (
   owner: string,
   repo: string,
   number: number,
-  patch: { title?: string; body?: string; state?: "open" | "closed" },
+  patch: {
+    title?: string;
+    body?: string;
+    state?: "open" | "closed";
+    state_reason?: "completed" | "not_planned" | "reopened" | null;
+  },
 ) =>
   ghPatchJSON<GithubIssue>(
     `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}`,
@@ -2156,6 +2163,12 @@ export const rerunFailedJobs = (owner: string, repo: string, runId: number) =>
 export const rerunJob = (owner: string, repo: string, jobId: number) =>
   ghSend("POST", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/jobs/${jobId}/rerun`);
 
+export const deleteWorkflowRun = (owner: string, repo: string, runId: number) =>
+  ghSend("DELETE", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs/${runId}`);
+
+export const deleteWorkflowRunLogs = (owner: string, repo: string, runId: number) =>
+  ghSend("DELETE", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs/${runId}/logs`);
+
 export const fetchRunArtifacts = (owner: string, repo: string, runId: number) =>
   ghFetchEnvelope<GithubArtifact>(
     `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs/${runId}/artifacts`,
@@ -2222,6 +2235,10 @@ export const createRunnerRegistrationToken = (owner: string, repo: string) =>
     `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runners/registration-token`,
     {},
   );
+
+/** Remove a registered self-hosted runner from a repo. */
+export const deleteActionsRunner = (owner: string, repo: string, runnerId: number) =>
+  ghSend("DELETE", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runners/${runnerId}`);
 
 // ─── Secrets & variables (repo / environment / org scopes) ──────────────
 
@@ -2305,6 +2322,14 @@ export async function updateUser(login: string, payload: Pick<Partial<BleephubUs
 
 export const deleteUser = (login: string) =>
   ghSend("DELETE", `/api/v3/admin/users/${encodeURIComponent(login)}`);
+
+/** Site-admin: suspend a user account (blocks sign-in and API use). */
+export const suspendUser = (login: string) =>
+  ghSend("PUT", `/api/v3/users/${encodeURIComponent(login)}/suspended`);
+
+/** Site-admin: lift a user account suspension. */
+export const unsuspendUser = (login: string) =>
+  ghSend("DELETE", `/api/v3/users/${encodeURIComponent(login)}/suspended`);
 
 export async function fetchOrgs(signal?: AbortSignal): Promise<BleephubOrg[]> {
   const orgs = await ghFetch<GithubOrgSummary[]>("/api/v3/organizations?per_page=100", signal);
@@ -2591,6 +2616,9 @@ export const fetchGistComments = (id: string) =>
 
 export const createGistComment = (id: string, body: string) =>
   ghPostJSON<GithubGistComment>(`/api/v3/gists/${id}/comments`, { body });
+
+export const updateGistComment = (id: string, commentId: number, body: string) =>
+  ghPatchJSON<GithubGistComment>(`/api/v3/gists/${id}/comments/${commentId}`, { body });
 
 export const deleteGistComment = (id: string, commentId: number) =>
   ghDelete(`/api/v3/gists/${id}/comments/${commentId}`);
@@ -3346,6 +3374,7 @@ export async function fetchDiscussionDetail(
           title
           body
           bodyText
+          locked
           author { login avatarUrl }
           category { id name emoji isAnswerable }
           createdAt
@@ -3481,6 +3510,27 @@ export async function updateDiscussion(
       updateDiscussion(input: $input) { discussion { id title } }
     }`,
     { input: { discussionId, ...fields } },
+  );
+}
+
+export async function lockDiscussion(
+  discussionId: string,
+  lockReason?: "OFF_TOPIC" | "RESOLVED" | "SPAM" | "TOO_HEATED",
+): Promise<void> {
+  await ghGraphQL<{ lockLockable: unknown }>(
+    `mutation($input: LockLockableInput!) {
+      lockLockable(input: $input) { lockedRecord { locked } }
+    }`,
+    { input: { lockableId: discussionId, ...(lockReason ? { lockReason } : {}) } },
+  );
+}
+
+export async function unlockDiscussion(discussionId: string): Promise<void> {
+  await ghGraphQL<{ unlockLockable: unknown }>(
+    `mutation($input: UnlockLockableInput!) {
+      unlockLockable(input: $input) { unlockedRecord { locked } }
+    }`,
+    { input: { lockableId: discussionId } },
   );
 }
 
@@ -4060,6 +4110,24 @@ export const fetchEnvBranchPolicies = (owner: string, repo: string, envName: str
     }
     return r.branch_policies;
   });
+
+export const createEnvBranchPolicy = (
+  owner: string,
+  repo: string,
+  envName: string,
+  name: string,
+  type: "branch" | "tag",
+) =>
+  ghPostJSON<GithubDeploymentBranchPolicy>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/environments/${encodeURIComponent(envName)}/deployment-branch-policies`,
+    { name, type },
+  );
+
+export const deleteEnvBranchPolicy = (owner: string, repo: string, envName: string, policyId: number) =>
+  ghSend(
+    "DELETE",
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/environments/${encodeURIComponent(envName)}/deployment-branch-policies/${policyId}`,
+  );
 
 export const fetchEnvProtectionRules = (owner: string, repo: string, envName: string) =>
   ghFetch<{
@@ -4880,6 +4948,15 @@ export const deleteUserEmails = (emails: string[]) =>
 export const setUserEmailVisibility = (visibility: "public" | "private") =>
   ghPatchJSON<GithubUserEmail[]>("/api/v3/user/email/visibility", { visibility });
 
+export const fetchSocialAccounts = () =>
+  ghFetch<GithubSocialAccount[]>("/api/v3/user/social_accounts");
+
+export const addSocialAccounts = (accountUrls: string[]) =>
+  ghPostJSON<GithubSocialAccount[]>("/api/v3/user/social_accounts", { account_urls: accountUrls });
+
+export const deleteSocialAccounts = (accountUrls: string[]) =>
+  ghSend("DELETE", "/api/v3/user/social_accounts", { account_urls: accountUrls });
+
 // ─── Bleephub dashboard, user profile, and organization pages ───────────
 
 /** Public-user profile for GET /users/{login} (the /ui/{login} page). */
@@ -4973,6 +5050,10 @@ export const fetchOrgApiInsightsSubjectStats = (org: string): Promise<OrgApiInsi
 export const fetchOrgMembers = (org: string) =>
   ghFetch<GithubAccount[]>(`/api/v3/orgs/${encodeURIComponent(org)}/members`);
 
+/** Members whose org membership is publicized — GET orgs/{org}/public_members. */
+export const fetchPublicOrgMembers = (org: string) =>
+  ghFetch<GithubAccount[]>(`/api/v3/orgs/${encodeURIComponent(org)}/public_members`);
+
 /** Add or invite a member (or change their role) — PUT orgs/{org}/memberships/{user}. */
 export const setOrgMembership = (org: string, username: string, role: "member" | "admin") =>
   ghPutJSON<{ state: string; role: string }>(
@@ -4983,6 +5064,25 @@ export const setOrgMembership = (org: string, username: string, role: "member" |
 /** Remove a member from the org — DELETE orgs/{org}/memberships/{user}. */
 export const removeOrgMember = (org: string, username: string) =>
   ghSend("DELETE", `/api/v3/orgs/${encodeURIComponent(org)}/memberships/${encodeURIComponent(username)}`);
+
+/** Publicize your own org membership — PUT orgs/{org}/public_members/{user}. */
+export const publicizeOrgMembership = (org: string, username: string) =>
+  ghSend("PUT", `/api/v3/orgs/${encodeURIComponent(org)}/public_members/${encodeURIComponent(username)}`);
+
+/** Conceal your own org membership — DELETE orgs/{org}/public_members/{user}. */
+export const concealOrgMembership = (org: string, username: string) =>
+  ghSend("DELETE", `/api/v3/orgs/${encodeURIComponent(org)}/public_members/${encodeURIComponent(username)}`);
+
+/** List your own org memberships filtered by state — GET user/memberships/orgs. */
+export const fetchMyOrgMemberships = (state: "pending" | "active") =>
+  ghFetch<GithubOrgMembership[]>(`/api/v3/user/memberships/orgs?state=${state}`);
+
+/** Accept your own pending org membership — PATCH user/memberships/orgs/{org}. */
+export const updateMyOrgMembership = (org: string, state: "active") =>
+  ghPatchJSON<{ state: string; role: string }>(
+    `/api/v3/user/memberships/orgs/${encodeURIComponent(org)}`,
+    { state },
+  );
 
 /** Whether the authenticated user follows `login` (204 = yes, 404 = no). */
 export const checkFollowing = async (login: string): Promise<boolean> => {

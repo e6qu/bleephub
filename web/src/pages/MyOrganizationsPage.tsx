@@ -1,10 +1,11 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router";
 import { InlineError, Spinner } from "@bleephub/ui-core/components";
-import { fetchAuthenticatedUserOrgs } from "../api.js";
+import { fetchAuthenticatedUserOrgs, fetchMyOrgMemberships, updateMyOrgMembership } from "../api.js";
 import type { BleephubOrg } from "../types.js";
 import { Avatar } from "../components/Avatar.js";
-import { Box, Blankslate, ButtonLink, PageTitle } from "../components/ui.js";
+import { Box, Blankslate, Button, ButtonLink, PageTitle, SectionLabel } from "../components/ui.js";
+import { MutationError } from "../components/MutationError.js";
 import { OrganizationIcon, PlusIcon } from "../components/octicons.js";
 
 /**
@@ -16,6 +17,18 @@ export function MyOrganizationsPage() {
   const orgs = useQuery({
     queryKey: ["my-organizations"],
     queryFn: ({ signal }) => fetchAuthenticatedUserOrgs(signal),
+  });
+  const qc = useQueryClient();
+  const pending = useQuery({
+    queryKey: ["my-org-invitations"],
+    queryFn: () => fetchMyOrgMemberships("pending"),
+  });
+  const joinMut = useMutation({
+    mutationFn: (org: string) => updateMyOrgMembership(org, "active"),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["my-org-invitations"] });
+      qc.invalidateQueries({ queryKey: ["my-organizations"] });
+    },
   });
 
   return (
@@ -29,6 +42,43 @@ export function MyOrganizationsPage() {
           </ButtonLink>
         }
       />
+
+      {pending.data && pending.data.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <SectionLabel>Pending invitations</SectionLabel>
+          <MutationError of={joinMut} />
+          <Box>
+            <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+              {pending.data.map((m, i) => (
+                <li
+                  key={m.organization.id}
+                  className="flex items-center gap-3"
+                  style={{
+                    padding: "0.7rem 1rem",
+                    borderBottom: i === pending.data.length - 1 ? "none" : "1px solid var(--color-border)",
+                  }}
+                >
+                  <Avatar login={m.organization.login} src={m.organization.avatar_url} size={32} square />
+                  <span className="min-w-0 flex-1" style={{ fontWeight: 600, fontSize: "0.9rem" }}>
+                    {m.organization.login}
+                    <span style={{ fontWeight: 400, fontSize: "0.8rem", color: "var(--color-fg-muted)" }}>
+                      {" "}invited you to join
+                    </span>
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    disabled={joinMut.isPending}
+                    onClick={() => joinMut.mutate(m.organization.login)}
+                  >
+                    Join
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </Box>
+        </div>
+      )}
 
       {orgs.isLoading && <Spinner label="loading organizations" />}
       {orgs.isError && (

@@ -5805,6 +5805,132 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "closing an issue always sent `{state:\"closed\"}` with no reason, so every close was silently recorded as completed; github.com's Close control lets you pick Completed vs Not planned",
+        "id": "WEB-130",
+        "location": "web/src/pages/IssuesPage.tsx, web/src/api.ts",
+        "severity": "m",
+        "status": "fixed \u2014 the close control now shows a reason `<select>` (Close as completed / Close as not planned) when the issue is open and PATCHes `state_reason` alongside `state` (reopen sends `reopened`); the `updateIssue` wrapper type gained `state_reason`. Verified: unit test picks Not planned, closes, and asserts the PATCH carries `state_reason:\"not_planned\"`",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "discussions were declared Lockable but `lockByNodeID` and the lock authorization target only resolved issues and PRs, so a discussion could never be locked; the UI also had no lock control",
+        "id": "WEB-131",
+        "location": "internal/graphqlapi/gh_moderation_graphql.go, internal/graphqlapi/gh_repos_graphql.go, web/src/pages/DiscussionsPage.tsx, web/src/api.ts",
+        "severity": "m",
+        "status": "fixed \u2014 extended `lockByNodeID` to resolve a discussion node ID (persist `Locked`/`LockedReason` via `UpdateDiscussion`, return `discussionToGQL`) and added `mutationTargetLockable` so lockLockable/unlockLockable authorize a discussion's repo; added `lockDiscussion`/`unlockDiscussion` client fns, selected `locked` in the detail query, and a Lock/Unlock conversation button. Verified: Go test locks+unlocks a discussion and asserts the reason; unit test clicks Lock and asserts the `lockLockable` mutation",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "a discussion's category could be set at creation but never changed; github.com's discussion Edit exposes a category picker",
+        "id": "WEB-132",
+        "location": "web/src/pages/DiscussionsPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 the discussion Edit form now includes a category `<select>` (fed by a categories query added to the detail view) and forwards `categoryId` through the existing `updateDiscussion` mutation. Verified: unit test changes the category on edit and asserts `input.categoryId` in the mutation",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "the Actions run detail could cancel/rerun but not delete a completed run; github.com's run \"...\" menu offers Delete workflow run",
+        "id": "WEB-133",
+        "location": "web/src/pages/RunDetailPage.tsx, web/src/api.ts",
+        "severity": "m",
+        "status": "fixed \u2014 added a `deleteWorkflowRun` client fn (`DELETE /actions/runs/{id}`) and a confirm-guarded danger \"Delete workflow run\" button (completed runs) that navigates back to the run list. Verified: unit test confirms and asserts the DELETE",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "there was no way to clear a run's logs; github.com offers \"Delete all logs\" on a completed run",
+        "id": "WEB-134",
+        "location": "web/src/pages/RunDetailPage.tsx, web/src/api.ts",
+        "severity": "m",
+        "status": "fixed \u2014 added a `deleteWorkflowRunLogs` client fn (`DELETE /actions/runs/{id}/logs`) and a confirm-guarded \"Delete all logs\" button on completed runs. Verified: unit test confirms and asserts the logs DELETE",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "registered self-hosted runners could be added but never removed from the UI; github.com's runner \"...\" menu offers Remove",
+        "id": "WEB-135",
+        "location": "web/src/pages/RunnersPage.tsx, web/src/api.ts",
+        "severity": "m",
+        "status": "fixed \u2014 added a `deleteActionsRunner` client fn (`DELETE /actions/runners/{id}`) and a per-row confirm-guarded Remove button. Verified: unit test confirms and asserts the runner DELETE",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "the site-admin user table could promote/delete but not suspend a user; github.com admin offers Suspend/Unsuspend",
+        "id": "WEB-136",
+        "location": "web/src/pages/UsersPage.tsx, web/src/api.ts",
+        "severity": "m",
+        "status": "fixed \u2014 added `suspendUser`/`unsuspendUser` client fns (`PUT`/`DELETE /users/{login}/suspended`) and a per-row suspend/unsuspend button (state from `suspended_at`), plus the `suspended_at` field on the user type. Verified: unit test suspends a user and asserts the PUT",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "the org-invite flow was one-directional \u2014 an org could invite, but the invited user had no accept control; github.com surfaces pending invitations with a Join button",
+        "id": "WEB-137",
+        "location": "web/src/pages/MyOrganizationsPage.tsx, web/src/api.ts",
+        "severity": "m",
+        "status": "fixed \u2014 added `fetchMyOrgMemberships` + `updateMyOrgMembership` client fns and a \"Pending invitations\" section listing `state:pending` memberships each with a Join button that PATCHes the membership to `active`. Verified: unit test clicks Join and asserts the membership PATCH",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "org membership visibility (public vs private) could not be changed; github.com's People list lets you publicize/conceal your own membership",
+        "id": "WEB-138",
+        "location": "web/src/pages/OrgPeoplePage.tsx, web/src/api.ts",
+        "severity": "m",
+        "status": "fixed \u2014 added `fetchPublicOrgMembers` + `publicizeOrgMembership`/`concealOrgMembership` client fns and a Make public / Make private toggle on the viewer's own member card (visibility derived from the public-members list). Verified: unit test makes the viewer's membership public and asserts the `public_members` PUT",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "Settings had no social-accounts editor; separately the create handler rejected GitHub's documented `{account_urls:[...]}` body (accepting only a bare array / `[{url}]`) while delete already accepted it",
+        "id": "WEB-139",
+        "location": "internal/server/gh_misc_endpoints_users.go, web/src/pages/AccountPage.tsx, web/src/api.ts",
+        "severity": "m",
+        "status": "fixed \u2014 added `fetchSocialAccounts`/`addSocialAccounts`/`deleteSocialAccounts` client fns and a Social accounts editor in the Public profile tab, and taught `handleCreateMySocialAccounts` to also accept `{account_urls}`. Verified: Go test creates via `{account_urls}`; unit test adds a link and asserts the POST body carries `account_urls`",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "a gist comment could be created and deleted but not edited; github.com exposes Edit on your own gist comment",
+        "id": "WEB-140",
+        "location": "web/src/pages/GistsPage.tsx, web/src/api.ts",
+        "severity": "m",
+        "status": "fixed \u2014 added an `updateGistComment` client fn (`PATCH /gists/{id}/comments/{cid}`) and an Edit button opening an inline textarea on the viewer's own comments. Verified: unit test edits a comment and asserts the PATCH body",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "environment deployment branch/tag policies were read-only; github.com's environment settings add and delete named branch/tag patterns",
+        "id": "WEB-141",
+        "location": "web/src/pages/DeploymentsPage.tsx, web/src/api.ts",
+        "severity": "m",
+        "status": "fixed \u2014 added `createEnvBranchPolicy`/`deleteEnvBranchPolicy` client fns and an add form (pattern + branch/tag type) plus a per-policy Delete in the environment detail. Verified: unit test adds a pattern and asserts the `deployment-branch-policies` POST",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "github.com's comment \"...\" menu can Hide (minimize) a comment with a classifier and render it collapsed; the server backs this via GraphQL minimizeComment/unminimizeComment",
+        "id": "WEB-142",
+        "location": "web/src/components/CommentCard.tsx",
+        "severity": "m",
+        "status": "deferred \u2014 the issue/PR conversation renders comments from the REST **timeline**, which carries neither the comment's GraphQL node ID (minimizeComment's `subjectId`) nor an `isMinimized`/collapsed state, so wiring hide would require threading GraphQL node IDs and minimized state through the REST timeline shape (server + client) \u2014 a cross-cutting change deferred out of this PR rather than folded in half-done",
+        "status_kind": "deferred"
+      },
+      {
+        "category": "WEB",
+        "finding": "github.com's org member-privileges page exposes granular toggles (members_can_create_public/private_repositories, members_can_create_pages, members_can_fork_private_repositories, members_can_create_teams) beyond the three the UI already wires",
+        "id": "WEB-143",
+        "location": "internal/server/gh_orgs_rest.go, internal/store/store_orgs.go",
+        "severity": "m",
+        "status": "deferred \u2014 the org PATCH handler + store model only persist `members_can_create_repositories`; the extra fields are unmodeled, so a UI toggle would be non-functional. Adding them is a store-model + response + test change disproportionate to the parity value and is deferred rather than shipped as dead controls",
+        "status_kind": "deferred"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -7220,22 +7346,22 @@
         },
         "WEB": {
           "status": {
-            "deferred": 2,
-            "fixed": 127
+            "deferred": 4,
+            "fixed": 139
           },
-          "total": 129
+          "total": 143
         }
       },
       "severity": {
         "blocker": 167,
         "major": 399,
-        "minor": 192
+        "minor": 206
       },
       "status": {
-        "deferred": 3,
-        "fixed": 755
+        "deferred": 5,
+        "fixed": 767
       },
-      "total": 758
+      "total": 772
     }
   },
   "rest": {
@@ -29452,10 +29578,12 @@
         "line": 266,
         "path": "/ui/operations/users",
         "rendered_tests": [
+          "web/src/__tests__/UsersPage.test.tsx",
           "web/src/__tests__/pageErrorPaths.test.tsx"
         ],
         "source": "web/src/App.tsx",
         "tests": [
+          "web/src/__tests__/UsersPage.test.tsx",
           "web/src/__tests__/pageErrorPaths.test.tsx"
         ]
       },
@@ -29554,10 +29682,12 @@
         "line": 288,
         "path": "/ui/orgs/:org/people",
         "rendered_tests": [
+          "web/src/__tests__/OrgPeoplePage.test.tsx",
           "web/src/__tests__/OrgPeopleTeamsPage.test.tsx"
         ],
         "source": "web/src/App.tsx",
         "tests": [
+          "web/src/__tests__/OrgPeoplePage.test.tsx",
           "web/src/__tests__/OrgPeopleTeamsPage.test.tsx"
         ]
       },

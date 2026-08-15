@@ -380,9 +380,17 @@ function IssueDetail({ owner, repo, number }: { owner: string; repo: string; num
     qc.invalidateQueries({ queryKey: ["issue", owner, repo, number] });
     qc.invalidateQueries({ queryKey: ["issues", owner, repo] });
   };
+  const [closeReason, setCloseReason] = useState<"completed" | "not_planned">("completed");
   const stateMut = useMutation({
     mutationFn: () =>
-      updateIssue(owner, repo, number, { state: issue?.state === "open" ? "closed" : "open" }),
+      updateIssue(
+        owner,
+        repo,
+        number,
+        issue?.state === "open"
+          ? { state: "closed", state_reason: closeReason }
+          : { state: "open", state_reason: "reopened" },
+      ),
     onSuccess: invalidateIssue,
   });
   const toggleTaskMut = useMutation({
@@ -553,13 +561,26 @@ function IssueDetail({ owner, repo, number }: { owner: string; repo: string; num
               ["issue", owner, repo, number],
             ]}
             extraActions={
-              <Button
-                size="sm"
-                disabled={stateMut.isPending}
-                onClick={() => stateMut.mutate()}
-              >
-                {open ? "Close issue" : "Reopen issue"}
-              </Button>
+              <div style={{ display: "flex", gap: ".5rem", alignItems: "center" }}>
+                {open && (
+                  <select
+                    aria-label="Reason for closing"
+                    value={closeReason}
+                    onChange={(e) => setCloseReason(e.target.value as "completed" | "not_planned")}
+                    disabled={stateMut.isPending}
+                  >
+                    <option value="completed">Close as completed</option>
+                    <option value="not_planned">Close as not planned</option>
+                  </select>
+                )}
+                <Button
+                  size="sm"
+                  disabled={stateMut.isPending}
+                  onClick={() => stateMut.mutate()}
+                >
+                  {open ? "Close issue" : "Reopen issue"}
+                </Button>
+              </div>
             }
           />
         </div>

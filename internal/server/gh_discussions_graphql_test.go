@@ -261,6 +261,53 @@ func runDiscussionGQL(t *testing.T, query string, variables map[string]interface
 	return d
 }
 
+// TestDiscussionsGraphQL_Lock verifies a discussion is a Lockable: lockLockable
+// and unlockLockable resolve a discussion node ID (not just issues/PRs) and
+// flip its locked state with the supplied reason.
+func TestDiscussionsGraphQL_Lock(t *testing.T) {
+	resp := ghPost(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{
+		"name": "discussions-lock",
+	})
+	repoData := decodeJSON(t, resp)
+	owner, _ := repoData["owner"].(map[string]interface{})
+	login, _ := owner["login"].(string)
+	name, _ := repoData["name"].(string)
+	repoNodeID, _ := repoData["node_id"].(string)
+
+	catQuery := `query($owner:String!,$name:String!){repository(owner:$owner,name:$name){discussionCategories(first:10){nodes{id,name}}}}`
+	cats := runDiscussionGQL(t, catQuery, map[string]interface{}{"owner": login, "name": name})
+	firstCat := firstNode(cats, "repository", "discussionCategories")
+	catID, _ := firstCat["id"].(string)
+
+	create := `mutation($repo:ID!,$cat:ID!){createDiscussion(input:{repositoryId:$repo,categoryId:$cat,title:"Lock me",body:"body"}){discussion{id,locked}}}`
+	createRes := runDiscussionGQL(t, create, map[string]interface{}{"repo": repoNodeID, "cat": catID})
+	disc, _ := createRes["createDiscussion"].(map[string]interface{})["discussion"].(map[string]interface{})
+	discNodeID, _ := disc["id"].(string)
+	if locked, _ := disc["locked"].(bool); locked {
+		t.Fatalf("new discussion should not be locked")
+	}
+
+	lock := `mutation($id:ID!){lockLockable(input:{lockableId:$id,lockReason:SPAM}){lockedRecord{locked,activeLockReason}}}`
+	lockRes := runDiscussionGQL(t, lock, map[string]interface{}{"id": discNodeID})
+	rec, _ := lockRes["lockLockable"].(map[string]interface{})["lockedRecord"].(map[string]interface{})
+	if locked, _ := rec["locked"].(bool); !locked {
+		t.Fatalf("expected discussion locked after lockLockable, got %v", rec)
+	}
+	if reason, _ := rec["activeLockReason"].(string); reason != "SPAM" {
+		t.Fatalf("expected activeLockReason SPAM, got %v", rec["activeLockReason"])
+	}
+
+	unlock := `mutation($id:ID!){unlockLockable(input:{lockableId:$id}){unlockedRecord{locked,activeLockReason}}}`
+	unlockRes := runDiscussionGQL(t, unlock, map[string]interface{}{"id": discNodeID})
+	urec, _ := unlockRes["unlockLockable"].(map[string]interface{})["unlockedRecord"].(map[string]interface{})
+	if locked, _ := urec["locked"].(bool); locked {
+		t.Fatalf("expected discussion unlocked after unlockLockable, got %v", urec)
+	}
+	if urec["activeLockReason"] != nil {
+		t.Fatalf("expected nil activeLockReason after unlock, got %v", urec["activeLockReason"])
+	}
+}
+
 func runDiscussionGQLExpectErrors(t *testing.T, query string, variables map[string]interface{}) map[string]interface{} {
 	t.Helper()
 	resp := ghPost(t, "/api/graphql", defaultToken, map[string]interface{}{

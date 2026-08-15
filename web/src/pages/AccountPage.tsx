@@ -27,6 +27,9 @@ import {
   fetchAuthenticatedUser,
   fetchUserProfile,
   updateAuthenticatedUser,
+  fetchSocialAccounts,
+  addSocialAccounts,
+  deleteSocialAccounts,
 } from "../api.js";
 import type {
   GithubBlockedUser,
@@ -709,8 +712,75 @@ function ProfileSettingsTab() {
             {saveMut.isPending ? "Saving…" : "Update profile"}
           </Button>
         </div>
+        <SocialAccountsEditor />
       </div>
     </Box>
+  );
+}
+
+// ─── Social accounts (add/remove profile links via /user/social_accounts) ──────────
+
+function SocialAccountsEditor() {
+  const qc = useQueryClient();
+  const [newUrl, setNewUrl] = useState("");
+  const query = useQuery({ queryKey: ["social-accounts"], queryFn: fetchSocialAccounts });
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["social-accounts"] });
+  const addMut = useMutation({
+    mutationFn: () => addSocialAccounts([newUrl.trim()]),
+    onSuccess: () => {
+      setNewUrl("");
+      invalidate();
+    },
+  });
+  const removeMut = useMutation({
+    mutationFn: (url: string) => deleteSocialAccounts([url]),
+    onSuccess: invalidate,
+  });
+
+  return (
+    <div style={{ borderTop: "1px solid var(--color-border)", paddingTop: "0.85rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+      <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>Social accounts</span>
+      {(addMut.error || removeMut.error) && <ErrorBanner>{String(addMut.error ?? removeMut.error)}</ErrorBanner>}
+      {query.data && query.data.length === 0 && (
+        <span style={{ fontSize: "0.82rem", color: "var(--color-fg-muted)" }}>No social accounts linked.</span>
+      )}
+      {query.data?.map((account) => (
+        <div key={account.url} className="flex items-center justify-between gap-2">
+          <a href={account.url} style={{ fontSize: "0.85rem", color: "var(--color-accent-fg)" }}>{account.url}</a>
+          <Button
+            size="sm"
+            variant="ghost"
+            aria-label={`Remove ${account.url}`}
+            disabled={removeMut.isPending}
+            onClick={() => removeMut.mutate(account.url)}
+          >
+            Remove
+          </Button>
+        </div>
+      ))}
+      <form
+        className="flex items-end gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (newUrl.trim()) addMut.mutate();
+        }}
+      >
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+          <FormLabel id="social-account-url">Add a social link</FormLabel>
+          <input
+            id="social-account-url"
+            type="url"
+            value={newUrl}
+            placeholder="https://example.com/you"
+            onChange={(e) => setNewUrl(e.target.value)}
+            className="w-full"
+          />
+        </div>
+        <Button type="submit" variant="secondary" size="sm" disabled={!newUrl.trim() || addMut.isPending}>
+          {addMut.isPending ? "Adding…" : "Add"}
+        </Button>
+      </form>
+    </div>
   );
 }
 

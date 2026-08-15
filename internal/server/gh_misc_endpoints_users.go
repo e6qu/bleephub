@@ -535,6 +535,16 @@ func (s *Server) handleCreateMySocialAccounts(w http.ResponseWriter, r *http.Req
 		writeJSON(w, http.StatusCreated, s.store.ListUserSocialAccounts(user.ID))
 		return
 	}
+	// GitHub's documented body is {"account_urls": [...]}; accept it (the delete
+	// handler already does) alongside the bare-array and [{url}] object forms.
+	var req struct {
+		AccountUrls []string `json:"account_urls"`
+	}
+	if err := json.Unmarshal(body, &req); err == nil && len(req.AccountUrls) > 0 {
+		s.store.SetUserSocialAccounts(user.ID, req.AccountUrls)
+		writeJSON(w, http.StatusCreated, s.store.ListUserSocialAccounts(user.ID))
+		return
+	}
 	var objects []map[string]interface{}
 	if err := json.Unmarshal(body, &objects); err != nil {
 		store.WriteGHValidationError(w, "accounts", "accounts", "missing_field")

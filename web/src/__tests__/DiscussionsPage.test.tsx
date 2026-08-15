@@ -173,6 +173,68 @@ describe("DiscussionsPage detail", () => {
     });
   });
 
+  it("locks a discussion via the lockLockable mutation", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.includes("/api/graphql")) {
+        const body = JSON.parse((init?.body as string) ?? "{}");
+        if (body.query.includes("lockLockable")) {
+          return Promise.resolve(jsonResponse({ data: { lockLockable: { lockedRecord: { locked: true } } } }));
+        }
+        if (body.query.includes("discussionCategories")) {
+          return Promise.resolve(jsonResponse({ data: { repository: { discussionCategories: { nodes: [category] } } } }));
+        }
+        return Promise.resolve(jsonResponse({
+          data: { repository: { discussion: {
+            ...discussion(7, "A real discussion"), locked: false, body: "details", bodyHTML: "<p>details</p>", comments: { nodes: [], totalCount: 0 },
+          } } },
+        }));
+      }
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/test/discussions/7");
+    fireEvent.click(await screen.findByRole("button", { name: "Lock conversation" }));
+    await waitFor(() => {
+      const mut = mockFetch.mock.calls.find(
+        ([u2, i2]) => u2.toString().includes("/api/graphql") && String((i2 as RequestInit)?.body).includes("lockLockable"),
+      );
+      expect(mut).toBeTruthy();
+    });
+  });
+
+  it("changes a discussion's category on edit via updateDiscussion", async () => {
+    const other = { id: "DGC_kgDO00000002", name: "Ideas", emoji: ":bulb:", description: "", isAnswerable: false };
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.includes("/api/graphql")) {
+        const body = JSON.parse((init?.body as string) ?? "{}");
+        if (body.query.includes("updateDiscussion")) {
+          return Promise.resolve(jsonResponse({ data: { updateDiscussion: { discussion: { id: "D1", title: "A real discussion" } } } }));
+        }
+        if (body.query.includes("discussionCategories")) {
+          return Promise.resolve(jsonResponse({ data: { repository: { discussionCategories: { nodes: [category, other] } } } }));
+        }
+        return Promise.resolve(jsonResponse({
+          data: { repository: { discussion: {
+            ...discussion(7, "A real discussion"), body: "details", bodyHTML: "<p>details</p>", bodyText: "details", comments: { nodes: [], totalCount: 0 },
+          } } },
+        }));
+      }
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/test/discussions/7");
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Category"), { target: { value: other.id } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      const mut = mockFetch.mock.calls.find(
+        ([u2, i2]) => u2.toString().includes("/api/graphql") && String((i2 as RequestInit)?.body).includes("updateDiscussion"),
+      );
+      expect(mut).toBeTruthy();
+      expect(JSON.parse(String((mut![1] as RequestInit).body)).variables.input.categoryId).toBe(other.id);
+    });
+  });
+
   it("shows a not-found state for a missing discussion", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
       const u = url.toString();

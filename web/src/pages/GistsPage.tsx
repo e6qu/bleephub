@@ -7,6 +7,7 @@ import { confirmAction } from "../components/confirmAction.js";
 import {
   createGist,
   createGistComment,
+  updateGistComment,
   deleteGist,
   deleteGistComment,
   fetchCurrentUser,
@@ -434,6 +435,8 @@ function GistComments({ id }: { id: string }) {
   const queryClient = useQueryClient();
   const [body, setBody] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editBody, setEditBody] = useState("");
 
   const viewer = useQuery({ queryKey: ["current-user"], queryFn: ({ signal }) => fetchCurrentUser(signal) });
   const { data, isLoading, isError } = useQuery({
@@ -462,6 +465,17 @@ function GistComments({ id }: { id: string }) {
     onError: (err: Error) => setError(err.message),
   });
 
+  const editMut = useMutation({
+    mutationFn: (commentId: number) => updateGistComment(id, commentId, editBody.trim()),
+    onSuccess: () => {
+      setError(null);
+      setEditingId(null);
+      setEditBody("");
+      invalidate();
+    },
+    onError: (err: Error) => setError(err.message),
+  });
+
   return (
     <div className="flex flex-col gap-3">
       {error && <ErrorBanner>{error}</ErrorBanner>}
@@ -481,22 +495,70 @@ function GistComments({ id }: { id: string }) {
               </span>
             </span>
             {viewer.data?.login && comment.user?.login === viewer.data.login && (
-              <Button
-                size="sm"
-                variant="ghost"
-                aria-label={`Delete comment ${comment.id}`}
-                disabled={deleteMut.isPending}
-                onClick={async () => {
-                  if (await confirmAction("Delete this comment?", { title: "Delete comment", confirmLabel: "Delete" })) {
-                    deleteMut.mutate(comment.id);
-                  }
-                }}
-              >
-                Delete
-              </Button>
+              <span className="flex gap-1">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  aria-label={`Edit comment ${comment.id}`}
+                  onClick={() => {
+                    setEditingId(comment.id);
+                    setEditBody(comment.body);
+                  }}
+                >
+                  Edit
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  aria-label={`Delete comment ${comment.id}`}
+                  disabled={deleteMut.isPending}
+                  onClick={async () => {
+                    if (await confirmAction("Delete this comment?", { title: "Delete comment", confirmLabel: "Delete" })) {
+                      deleteMut.mutate(comment.id);
+                    }
+                  }}
+                >
+                  Delete
+                </Button>
+              </span>
             )}
           </div>
-          <div style={{ fontSize: "0.88rem", whiteSpace: "pre-wrap" }}>{comment.body}</div>
+          {editingId === comment.id ? (
+            <form
+              className="flex flex-col gap-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (editBody.trim()) editMut.mutate(comment.id);
+              }}
+            >
+              <FormLabel id={`gist-comment-edit-${comment.id}`}>Edit comment</FormLabel>
+              <textarea
+                id={`gist-comment-edit-${comment.id}`}
+                value={editBody}
+                onChange={(event) => setEditBody(event.target.value)}
+                rows={3}
+                style={{
+                  width: "100%",
+                  padding: "0.5rem 0.65rem",
+                  fontSize: "0.88rem",
+                  borderRadius: "var(--radius-md)",
+                  border: "1px solid var(--color-border)",
+                  background: "var(--color-surface)",
+                  color: "var(--color-fg)",
+                }}
+              />
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="ghost" size="sm" onClick={() => setEditingId(null)}>
+                  Cancel
+                </Button>
+                <Button type="submit" variant="primary" size="sm" disabled={!editBody.trim() || editMut.isPending}>
+                  {editMut.isPending ? "Saving…" : "Save"}
+                </Button>
+              </div>
+            </form>
+          ) : (
+            <div style={{ fontSize: "0.88rem", whiteSpace: "pre-wrap" }}>{comment.body}</div>
+          )}
         </Box>
       ))}
 

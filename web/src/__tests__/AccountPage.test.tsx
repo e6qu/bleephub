@@ -221,6 +221,27 @@ describe("AccountPage", () => {
     });
   });
 
+  it("adds a social account via POST /user/social_accounts", async () => {
+    installFetchRoutes({
+      "GET /api/v3/user/social_accounts": () => jsonResponse([]),
+      "POST /api/v3/user/social_accounts": () =>
+        jsonResponse([{ provider: "generic", url: "https://example.com/me" }], 201),
+    });
+    renderPage();
+    // Public profile is the default tab; the social accounts editor lives here.
+    const input = await screen.findByLabelText("Add a social link");
+    fireEvent.change(input, { target: { value: "https://example.com/me" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    await waitFor(() => {
+      const post = mockFetch.mock.calls.find(
+        (c) => c[1]?.method === "POST" && String(c[0]) === "/api/v3/user/social_accounts",
+      );
+      expect(post).toBeDefined();
+      expect(String(post![1].body)).toContain("https://example.com/me");
+      expect(String(post![1].body)).toContain("account_urls");
+    });
+  });
+
   it("has an Appearance tab that switches the theme", async () => {
     installFetchRoutes();
     renderPage();

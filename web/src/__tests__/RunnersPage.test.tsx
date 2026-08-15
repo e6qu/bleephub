@@ -141,4 +141,17 @@ describe("RunnersPage add runner", () => {
     });
     expect(await screen.findByText(/AABBCC/)).toBeInTheDocument();
   });
+
+  it("removes a runner via DELETE after confirming", async () => {
+    installMocks();
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Remove runner gh-runner-7" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Remove" }));
+    await waitFor(() => {
+      const del = mockFetch.mock.calls.find(
+        (c) => /\/actions\/runners\/\d+$/.test(c[0].toString()) && c[1]?.method === "DELETE",
+      );
+      expect(del).toBeTruthy();
+    });
+  });
 });
