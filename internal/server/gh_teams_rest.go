@@ -899,7 +899,12 @@ func teamSimpleJSON(team *store.Team, org *store.Org, st *store.Store, baseURL s
 // with st.mu held (the embedded organization-full derives counts).
 func teamToJSON(team *store.Team, org *store.Org, st *store.Store, baseURL string) map[string]interface{} {
 	out := teamSimpleJSON(team, org, st, baseURL)
-	out["organization"] = orgToJSON(org, st, baseURL)
+	orgJSON := orgToJSON(org, st, baseURL)
+	// The embedded org uses GitHub's `team-organization` schema, which carries
+	// every member-privilege flag EXCEPT members_can_create_teams (only the
+	// top-level `organization-full` response includes that one).
+	delete(orgJSON, "members_can_create_teams")
+	out["organization"] = orgJSON
 	out["members_count"] = len(team.MemberIDs)
 	out["repos_count"] = len(team.RepoNames)
 	out["created_at"] = team.CreatedAt.Format(time.RFC3339)

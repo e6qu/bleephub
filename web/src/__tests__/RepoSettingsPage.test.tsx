@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, cleanup, screen, waitFor, fireEvent } from "@testing-library/react";
+import { render, cleanup, screen, waitFor, fireEvent, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Routes, Route } from "react-router";
 import { RepoSettingsPage } from "../pages/RepoSettingsPage.js";
@@ -407,6 +407,130 @@ describe("RepoSettingsPage", () => {
       );
       expect(put).toBeDefined();
       expect(JSON.parse(String(put![1].body))).toEqual({ days: 30 });
+    });
+  });
+
+  it("saves the selected-actions allow-list via PUT .../selected-actions", async () => {
+    mockFetch.mockImplementation((url: string, opts?: { method?: string }) => {
+      const u = url.toString();
+      const perm = "/api/v3/repos/admin/settings-repo/actions/permissions";
+      if (u === `${perm}/selected-actions` && opts?.method === "PUT") {
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      if (u === `${perm}/selected-actions`) {
+        return Promise.resolve(jsonResponse({ github_owned_allowed: true, verified_allowed: false, patterns_allowed: [] }));
+      }
+      if (u === perm) return Promise.resolve(jsonResponse({ enabled: true, allowed_actions: "selected" }));
+      if (u.includes("/issues") || u.includes("/pulls")) return Promise.resolve(jsonResponse([]));
+      return Promise.resolve(jsonResponse(repo));
+    });
+    renderPage();
+    await waitFor(() => screen.getByDisplayValue("before"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Actions" }));
+    const patterns = await screen.findByLabelText("Allowed action patterns");
+    fireEvent.change(patterns, { target: { value: "actions/checkout@*\n" } });
+    // Scope to the allow-list panel; a sibling retention section also has a Save.
+    const panel = patterns.closest("label")!.parentElement!;
+    fireEvent.click(within(panel).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      const put = mockFetch.mock.calls.find(
+        (c) => String(c[0]).endsWith("/actions/permissions/selected-actions") && c[1]?.method === "PUT",
+      );
+      expect(put).toBeDefined();
+      expect(JSON.parse(String(put![1].body))).toEqual({
+        github_owned_allowed: true,
+        verified_allowed: false,
+        patterns_allowed: ["actions/checkout@*"],
+      });
+    });
+  });
+
+  it("changes the Actions access level via PUT .../actions/permissions/access", async () => {
+    mockFetch.mockImplementation((url: string, opts?: { method?: string }) => {
+      const u = url.toString();
+      const perm = "/api/v3/repos/admin/settings-repo/actions/permissions";
+      if (u === `${perm}/access` && opts?.method === "PUT") {
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      if (u === `${perm}/access`) return Promise.resolve(jsonResponse({ access_level: "none" }));
+      if (u === perm) return Promise.resolve(jsonResponse({ enabled: true, allowed_actions: "all" }));
+      if (u.includes("/issues") || u.includes("/pulls")) return Promise.resolve(jsonResponse([]));
+      return Promise.resolve(jsonResponse(repo));
+    });
+    renderPage();
+    await waitFor(() => screen.getByDisplayValue("before"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Actions" }));
+    const select = await screen.findByLabelText("Actions access level");
+    await waitFor(() => expect((select as HTMLSelectElement).value).toBe("none"));
+    fireEvent.change(select, { target: { value: "organization" } });
+
+    await waitFor(() => {
+      const put = mockFetch.mock.calls.find(
+        (c) => String(c[0]).endsWith("/actions/permissions/access") && c[1]?.method === "PUT",
+      );
+      expect(put).toBeDefined();
+      expect(JSON.parse(String(put![1].body))).toEqual({ access_level: "organization" });
+    });
+  });
+
+  it("toggles fork-PR workflows in private repos via PUT .../fork-pr-workflows-private-repos", async () => {
+    mockFetch.mockImplementation((url: string, opts?: { method?: string }) => {
+      const u = url.toString();
+      const perm = "/api/v3/repos/admin/settings-repo/actions/permissions";
+      if (u === `${perm}/fork-pr-workflows-private-repos` && opts?.method === "PUT") {
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      if (u === `${perm}/fork-pr-workflows-private-repos`) {
+        return Promise.resolve(jsonResponse({ run_workflows_from_fork_pull_requests: false }));
+      }
+      if (u === perm) return Promise.resolve(jsonResponse({ enabled: true, allowed_actions: "all" }));
+      if (u.includes("/issues") || u.includes("/pulls")) return Promise.resolve(jsonResponse([]));
+      return Promise.resolve(jsonResponse(repo));
+    });
+    renderPage();
+    await waitFor(() => screen.getByDisplayValue("before"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Actions" }));
+    const toggle = await screen.findByRole("checkbox", { name: "Run workflows from fork pull requests" });
+    fireEvent.click(toggle);
+
+    await waitFor(() => {
+      const put = mockFetch.mock.calls.find(
+        (c) => String(c[0]).endsWith("/fork-pr-workflows-private-repos") && c[1]?.method === "PUT",
+      );
+      expect(put).toBeDefined();
+      expect(JSON.parse(String(put![1].body)).run_workflows_from_fork_pull_requests).toBe(true);
+    });
+  });
+
+  it("enables immutable releases via PUT .../immutable-releases (404 = disabled)", async () => {
+    mockFetch.mockImplementation((url: string, opts?: { method?: string }) => {
+      const u = url.toString();
+      const path = "/api/v3/repos/admin/settings-repo/immutable-releases";
+      if (u === path && opts?.method === "PUT") {
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      // Disabled → GET 404.
+      if (u === path) return Promise.resolve(jsonResponse({ message: "Not Found" }, 404));
+      if (u.includes("/issues") || u.includes("/pulls")) return Promise.resolve(jsonResponse([]));
+      return Promise.resolve(jsonResponse(repo));
+    });
+    renderPage();
+    await waitFor(() => screen.getByDisplayValue("before"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Actions" }));
+    const toggle = await screen.findByRole("checkbox", { name: "Enable immutable releases" });
+    await waitFor(() => expect(toggle).not.toBeChecked());
+    fireEvent.click(toggle);
+
+    await waitFor(() => {
+      const put = mockFetch.mock.calls.find(
+        (c) => c[0] === "/api/v3/repos/admin/settings-repo/immutable-releases" && c[1]?.method === "PUT",
+      );
+      expect(put).toBeDefined();
     });
   });
 });

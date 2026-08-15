@@ -17,6 +17,7 @@ import {
   checkFollowing,
   followUser,
   unfollowUser,
+  ghFetch,
 } from "../api.js";
 import { decodeContentsBase64 } from "../utils/workflowDispatch.js";
 import type {
@@ -45,8 +46,10 @@ import {
   ClockIcon,
 } from "../components/octicons.js";
 
-type ProfileTab = "overview" | "repositories" | "projects" | "packages" | "stars";
-const TABS: { key: ProfileTab; label: string; icon: React.ReactNode }[] = [
+type NavTab = "overview" | "repositories" | "projects" | "packages" | "stars";
+// followers/following are reachable from the header counts, not the tab row.
+type ProfileTab = NavTab | "followers" | "following";
+const TABS: { key: NavTab; label: string; icon: React.ReactNode }[] = [
   { key: "overview", label: "Overview", icon: <RepoIcon size={15} /> },
   { key: "repositories", label: "Repositories", icon: <RepoIcon size={15} /> },
   { key: "projects", label: "Projects", icon: <ProjectIcon size={15} /> },
@@ -58,9 +61,10 @@ export function ProfilePage() {
   const { login = "" } = useParams<{ login: string }>();
   const [params] = useSearchParams();
   const rawTab = params.get("tab");
-  const tab: ProfileTab = TABS.some((t) => t.key === rawTab)
-    ? (rawTab as ProfileTab)
-    : "overview";
+  const tab: ProfileTab =
+    TABS.some((t) => t.key === rawTab) || rawTab === "followers" || rawTab === "following"
+      ? (rawTab as ProfileTab)
+      : "overview";
 
   const profile = useQuery({
     queryKey: ["user-profile", login],
@@ -87,6 +91,8 @@ export function ProfilePage() {
           {tab === "projects" && <ProfileProjects login={login} />}
           {tab === "packages" && <ProfilePackages login={login} />}
           {tab === "stars" && <ProfileStars login={login} />}
+          {tab === "followers" && <ProfileFollows login={login} kind="followers" />}
+          {tab === "following" && <ProfileFollows login={login} kind="following" />}
         </div>
       </div>
     </div>
@@ -213,11 +219,15 @@ function ProfileSidebar({
       <div className="flex items-center gap-2" style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)" }}>
         <PeopleIcon size={15} />
         <span>
-          <strong style={{ color: "var(--color-fg)" }}>{p.followers}</strong> followers
+          <Link to={`/ui/${p.login}?tab=followers`} style={{ color: "var(--color-fg-muted)", textDecoration: "none" }}>
+            <strong style={{ color: "var(--color-fg)" }}>{p.followers}</strong> followers
+          </Link>
         </span>
         <span>·</span>
         <span>
-          <strong style={{ color: "var(--color-fg)" }}>{p.following}</strong> following
+          <Link to={`/ui/${p.login}?tab=following`} style={{ color: "var(--color-fg-muted)", textDecoration: "none" }}>
+            <strong style={{ color: "var(--color-fg)" }}>{p.following}</strong> following
+          </Link>
         </span>
       </div>
       <ul className="flex flex-col gap-1.5" style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)", listStyle: "none", margin: 0, padding: 0 }}>
@@ -732,6 +742,52 @@ function ProfileProjects({ login }: { login: string }) {
                     {proj.short_description}
                   </p>
                 )}
+              </li>
+            ))}
+          </ul>
+        ))}
+    </section>
+  );
+}
+
+// ─── Followers / Following lists (reached from the header counts) ───────────────
+
+interface FollowAccount {
+  login: string;
+  avatar_url: string;
+}
+
+function ProfileFollows({ login, kind }: { login: string; kind: "followers" | "following" }) {
+  const { data, isLoading, isError, error } = useQuery({
+    queryKey: ["user-follows", login, kind],
+    queryFn: () => ghFetch<FollowAccount[]>(`/api/v3/users/${encodeURIComponent(login)}/${kind}`),
+  });
+  return (
+    <section>
+      <SectionLabel>{kind === "followers" ? "Followers" : "Following"}</SectionLabel>
+      {isLoading && <Spinner label={`loading ${kind}`} />}
+      {isError && <InlineError title={`Failed to load ${kind}`} detail={String(error)} />}
+      {data &&
+        (data.length === 0 ? (
+          <Blankslate icon={<PeopleIcon size={28} />} title={kind === "followers" ? "No followers yet" : "Not following anyone"}>
+            {kind === "followers"
+              ? "When people follow this user, they'll show up here."
+              : "This user isn't following anyone yet."}
+          </Blankslate>
+        ) : (
+          <ul className="grid gap-3 sm:grid-cols-2" style={{ listStyle: "none", margin: 0, padding: 0 }}>
+            {data.map((account) => (
+              <li key={account.login}>
+                <Box style={{ padding: "0.75rem 1rem" }}>
+                  <Link
+                    to={`/ui/${account.login}`}
+                    className="flex items-center gap-3"
+                    style={{ color: "var(--color-fg)", textDecoration: "none" }}
+                  >
+                    <Avatar login={account.login} src={account.avatar_url} size={40} />
+                    <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>{account.login}</span>
+                  </Link>
+                </Box>
               </li>
             ))}
           </ul>

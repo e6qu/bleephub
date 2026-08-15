@@ -212,6 +212,55 @@ describe("CodespacesPage", () => {
     });
   });
 
+  it("exports the codespace to a branch via POST /user/codespaces/{name}/exports", async () => {
+    mockFetch.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      if (url === `/api/v3/user/codespaces/${codespace.name}/exports` && init?.method === "POST") {
+        return Promise.resolve(jsonResponse({ state: "queued", branch: "codespace-export" }, 202));
+      }
+      if (url === `/api/v3/user/codespaces/${codespace.name}`) {
+        return Promise.resolve(jsonResponse(codespace));
+      }
+      return Promise.resolve(jsonResponse({}));
+    });
+    renderPage(`/ui/codespaces/${codespace.name}`);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Export to branch" }));
+    await waitFor(() => {
+      const post = mockFetch.mock.calls.find(
+        (c) =>
+          c[0].toString() === `/api/v3/user/codespaces/${codespace.name}/exports` &&
+          c[1]?.method === "POST",
+      );
+      expect(post).toBeTruthy();
+    });
+  });
+
+  it("publishes an unpublished codespace via POST /user/codespaces/{name}/publish", async () => {
+    const unpublished = { ...codespace, repository: null };
+    let published: unknown = null;
+    mockFetch.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      if (url === `/api/v3/user/codespaces/${codespace.name}/publish` && init?.method === "POST") {
+        published = JSON.parse(String(init.body));
+        return Promise.resolve(jsonResponse({ id: 99, name: "new-repo" }, 201));
+      }
+      if (url === `/api/v3/user/codespaces/${codespace.name}`) {
+        return Promise.resolve(jsonResponse(unpublished));
+      }
+      return Promise.resolve(jsonResponse({}));
+    });
+    renderPage(`/ui/codespaces/${codespace.name}`);
+
+    const input = await screen.findByRole("textbox", { name: "New repository name" });
+    fireEvent.change(input, { target: { value: "new-repo" } });
+    fireEvent.click(screen.getByRole("button", { name: "Publish" }));
+
+    await waitFor(() => {
+      expect(published).toEqual({ name: "new-repo", private: true });
+    });
+  });
+
   it("treats an empty 202 delete response as success and removes the row", async () => {
     let deleted = false;
     mockFetch.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {

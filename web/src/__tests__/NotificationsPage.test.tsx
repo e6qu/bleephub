@@ -209,4 +209,19 @@ describe("NotificationsPage", () => {
       );
     });
   });
+
+  it("marks a repository's notifications read from its group header", async () => {
+    mockEndpoints();
+    renderPage();
+    await waitFor(() => expect(screen.getByText("Issue title")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "By repository" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Mark all as read in admin/repo" }));
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/api/v3/repos/admin/repo/notifications",
+        expect.objectContaining({ method: "PUT" }),
+      );
+    });
+  });
 });

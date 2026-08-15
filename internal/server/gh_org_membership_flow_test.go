@@ -227,14 +227,19 @@ func TestOrgProfileFieldsPatch(t *testing.T) {
 	srv.createOrg(t, "profile-org")
 
 	patch := srv.patch(t, "/api/v3/orgs/profile-org", defaultToken, map[string]interface{}{
-		"company":                         "ACME Holdings",
-		"location":                        "Rotterdam",
-		"blog":                            "https://blog.example.test",
-		"twitter_username":                "acme",
-		"billing_email":                   "billing@example.test",
-		"default_repository_permission":   "write",
-		"members_can_create_repositories": false,
-		"web_commit_signoff_required":     true,
+		"company":                                 "ACME Holdings",
+		"location":                                "Rotterdam",
+		"blog":                                    "https://blog.example.test",
+		"twitter_username":                        "acme",
+		"billing_email":                           "billing@example.test",
+		"default_repository_permission":           "write",
+		"members_can_create_repositories":         false,
+		"members_can_create_public_repositories":  false,
+		"members_can_create_private_repositories": false,
+		"members_can_create_pages":                false,
+		"members_can_fork_private_repositories":   true,
+		"members_can_create_teams":                false,
+		"web_commit_signoff_required":             true,
 	})
 	if patch.StatusCode != http.StatusOK {
 		patch.Body.Close()
@@ -242,14 +247,19 @@ func TestOrgProfileFieldsPatch(t *testing.T) {
 	}
 	got := decodeJSON(t, patch)
 	for field, want := range map[string]interface{}{
-		"company":                         "ACME Holdings",
-		"location":                        "Rotterdam",
-		"blog":                            "https://blog.example.test",
-		"twitter_username":                "acme",
-		"billing_email":                   "billing@example.test",
-		"default_repository_permission":   "write",
-		"members_can_create_repositories": false,
-		"web_commit_signoff_required":     true,
+		"company":                                 "ACME Holdings",
+		"location":                                "Rotterdam",
+		"blog":                                    "https://blog.example.test",
+		"twitter_username":                        "acme",
+		"billing_email":                           "billing@example.test",
+		"default_repository_permission":           "write",
+		"members_can_create_repositories":         false,
+		"members_can_create_public_repositories":  false,
+		"members_can_create_private_repositories": false,
+		"members_can_create_pages":                false,
+		"members_can_fork_private_repositories":   true,
+		"members_can_create_teams":                false,
+		"web_commit_signoff_required":             true,
 	} {
 		if got[field] != want {
 			t.Errorf("%s = %v, want %v", field, got[field], want)
@@ -274,6 +284,17 @@ func TestOrgProfileFieldsPatch(t *testing.T) {
 	}
 	if fGot["members_can_create_repositories"] != true {
 		t.Errorf("default members_can_create_repositories = %v, want true", fGot["members_can_create_repositories"])
+	}
+	for field, want := range map[string]interface{}{
+		"members_can_create_public_repositories":  true,
+		"members_can_create_private_repositories": true,
+		"members_can_create_pages":                true,
+		"members_can_fork_private_repositories":   false,
+		"members_can_create_teams":                true,
+	} {
+		if fGot[field] != want {
+			t.Errorf("default %s = %v, want %v", field, fGot[field], want)
+		}
 	}
 }
 

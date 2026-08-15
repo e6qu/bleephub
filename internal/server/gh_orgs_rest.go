@@ -167,9 +167,17 @@ func (s *Server) handleUpdateOrg(w http.ResponseWriter, r *http.Request) {
 		setStr("twitter_username", &o.TwitterUsername)
 		setStr("billing_email", &o.BillingEmail)
 		setStr("default_repository_permission", &o.DefaultRepositoryPermission)
-		if v, ok := req["members_can_create_repositories"].(bool); ok {
-			o.MembersCanCreateRepositories = &v
+		setBoolPtr := func(key string, dst **bool) {
+			if v, ok := req[key].(bool); ok {
+				*dst = &v
+			}
 		}
+		setBoolPtr("members_can_create_repositories", &o.MembersCanCreateRepositories)
+		setBoolPtr("members_can_create_public_repositories", &o.MembersCanCreatePublicRepositories)
+		setBoolPtr("members_can_create_private_repositories", &o.MembersCanCreatePrivateRepositories)
+		setBoolPtr("members_can_create_pages", &o.MembersCanCreatePages)
+		setBoolPtr("members_can_fork_private_repositories", &o.MembersCanForkPrivateRepositories)
+		setBoolPtr("members_can_create_teams", &o.MembersCanCreateTeams)
 		if v, ok := req["web_commit_signoff_required"].(bool); ok {
 			o.WebCommitSignoffRequired = v
 		}
@@ -466,10 +474,17 @@ func orgToJSON(org *store.Org, st *store.Store, baseURL string) map[string]inter
 	if org.DefaultRepositoryPermission == "" {
 		out["default_repository_permission"] = "read" // GitHub's default
 	}
-	membersCanCreate := true // GitHub's default
-	if org.MembersCanCreateRepositories != nil {
-		membersCanCreate = *org.MembersCanCreateRepositories
+	boolOr := func(p *bool, def bool) bool {
+		if p != nil {
+			return *p
+		}
+		return def
 	}
-	out["members_can_create_repositories"] = membersCanCreate
+	out["members_can_create_repositories"] = boolOr(org.MembersCanCreateRepositories, true)
+	out["members_can_create_public_repositories"] = boolOr(org.MembersCanCreatePublicRepositories, true)
+	out["members_can_create_private_repositories"] = boolOr(org.MembersCanCreatePrivateRepositories, true)
+	out["members_can_create_pages"] = boolOr(org.MembersCanCreatePages, true)
+	out["members_can_fork_private_repositories"] = boolOr(org.MembersCanForkPrivateRepositories, false)
+	out["members_can_create_teams"] = boolOr(org.MembersCanCreateTeams, true)
 	return out
 }

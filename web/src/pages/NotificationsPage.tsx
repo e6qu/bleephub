@@ -13,7 +13,10 @@ import {
   setThreadSubscription,
   isForbidden,
   isRateLimited,
+  ghSend,
 } from "../api.js";
+
+const enc = encodeURIComponent;
 import type { GithubNotificationThread, GithubThreadSubscription } from "../types.js";
 import {
   Box,
@@ -91,6 +94,19 @@ function ThreadsTable({ all }: { all: boolean }) {
   });
   const doneMut = useMutation({
     mutationFn: (id: string) => markThreadDone(id),
+    onSuccess: () => {
+      setMutationError(null);
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
+    },
+    onError: (err: Error) => setMutationError(err.message),
+  });
+  // github.com clears a whole repository's notifications from its group header:
+  // PUT /repos/{owner}/{repo}/notifications marks them all read.
+  const markRepoMut = useMutation({
+    mutationFn: (fullName: string) => {
+      const [owner = "", repo = ""] = fullName.split("/");
+      return ghSend("PUT", `/api/v3/repos/${enc(owner)}/${enc(repo)}/notifications`);
+    },
     onSuccess: () => {
       setMutationError(null);
       queryClient.invalidateQueries({ queryKey: ["notifications"] });
@@ -271,6 +287,8 @@ function ThreadsTable({ all }: { all: boolean }) {
           onRead={(id) => readMut.mutate(id)}
           onDone={(id) => doneMut.mutate(id)}
           onSubscription={setActiveThread}
+          onMarkRepoRead={(fullName) => markRepoMut.mutate(fullName)}
+          repoBusy={markRepoMut.isPending}
           busy={readMut.isPending || doneMut.isPending}
           emptyMessage={all ? "No notifications." : "No unread notifications."}
         />
@@ -295,6 +313,8 @@ function NotificationsByRepo({
   onRead,
   onDone,
   onSubscription,
+  onMarkRepoRead,
+  repoBusy,
   busy,
   emptyMessage,
 }: {
@@ -303,6 +323,8 @@ function NotificationsByRepo({
   onRead: (id: string) => void;
   onDone: (id: string) => void;
   onSubscription: (t: GithubNotificationThread) => void;
+  onMarkRepoRead: (fullName: string) => void;
+  repoBusy: boolean;
   busy: boolean;
   emptyMessage: string;
 }) {
@@ -328,10 +350,23 @@ function NotificationsByRepo({
           <Box
             key={repo}
             header={
-              <span style={{ fontWeight: 600 }}>
-                {repo}{" "}
-                <span style={{ color: "var(--color-fg-muted)", fontWeight: 400 }}>({list.length})</span>
-              </span>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span style={{ fontWeight: 600 }}>
+                  {repo}{" "}
+                  <span style={{ color: "var(--color-fg-muted)", fontWeight: 400 }}>({list.length})</span>
+                </span>
+                {repo.includes("/") && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    aria-label={`Mark all as read in ${repo}`}
+                    disabled={repoBusy}
+                    onClick={() => onMarkRepoRead(repo)}
+                  >
+                    Mark all as read
+                  </Button>
+                )}
+              </div>
             }
           >
             <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>

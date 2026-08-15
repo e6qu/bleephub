@@ -17,6 +17,7 @@ import {
   updateCodespace,
   isForbidden,
   isRateLimited,
+  ghPostJSON,
 } from "../api.js";
 import type { BleephubRepo, GithubCodespace, GithubCodespaceState } from "../types.js";
 import { confirmAction } from "../components/confirmAction.js";
@@ -252,6 +253,24 @@ function CodespaceDetail({ name }: { name: string }) {
       setEditingMachine(false);
     },
   });
+  const exportBranch = useMutation({
+    mutationFn: () =>
+      ghPostJSON<unknown>(`/api/v3/user/codespaces/${encodeURIComponent(name)}/exports`, {}),
+    onSuccess: () => client.invalidateQueries({ queryKey }),
+  });
+  const [publishName, setPublishName] = useState("");
+  const [publishPrivate, setPublishPrivate] = useState(true);
+  const publish = useMutation({
+    mutationFn: () =>
+      ghPostJSON<unknown>(`/api/v3/user/codespaces/${encodeURIComponent(name)}/publish`, {
+        name: publishName,
+        private: publishPrivate,
+      }),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey });
+      client.invalidateQueries({ queryKey: ["codespaces", "user"] });
+    },
+  });
 
   if (query.isLoading) return <Spinner label={`Loading ${name}`} />;
   if (query.isError || !query.data) {
@@ -283,6 +302,13 @@ function CodespaceDetail({ name }: { name: string }) {
               </Button>
             ) : null}
             <Button
+              variant="secondary"
+              disabled={exportBranch.isPending}
+              onClick={() => exportBranch.mutate()}
+            >
+              Export to branch
+            </Button>
+            <Button
               variant="danger"
               disabled={remove.isPending}
               onClick={async () => {
@@ -294,8 +320,8 @@ function CodespaceDetail({ name }: { name: string }) {
           </>
         }
       />
-      {(start.error || stop.error || remove.error || changeMachine.error) && (
-        <ErrorBanner>{String(start.error || stop.error || remove.error || changeMachine.error)}</ErrorBanner>
+      {(start.error || stop.error || remove.error || changeMachine.error || exportBranch.error || publish.error) && (
+        <ErrorBanner>{String(start.error || stop.error || remove.error || changeMachine.error || exportBranch.error || publish.error)}</ErrorBanner>
       )}
       <Box>
         <dl className="grid gap-4 sm:grid-cols-2" style={{ padding: "1rem" }}>
@@ -310,7 +336,35 @@ function CodespaceDetail({ name }: { name: string }) {
               >
                 {cs.repository.full_name}
               </Link>
-            ) : "Unpublished"}
+            ) : (
+              <div className="flex flex-col gap-2">
+                <span>Unpublished</span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    type="text"
+                    aria-label="New repository name"
+                    value={publishName}
+                    onChange={(e) => setPublishName(e.target.value)}
+                    placeholder="new-repo-name"
+                  />
+                  <label className="flex items-center gap-1" style={{ fontSize: ".82rem" }}>
+                    <input
+                      type="checkbox"
+                      checked={publishPrivate}
+                      onChange={(e) => setPublishPrivate(e.target.checked)}
+                    />
+                    Private
+                  </label>
+                  <Button
+                    variant="primary"
+                    disabled={publish.isPending || !publishName}
+                    onClick={() => publish.mutate()}
+                  >
+                    Publish
+                  </Button>
+                </div>
+              </div>
+            )}
           </CodespaceFact>
           <CodespaceFact label="Machine">
             {editingMachine && cs.repository ? (

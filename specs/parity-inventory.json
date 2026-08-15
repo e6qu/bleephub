@@ -5925,10 +5925,91 @@
         "category": "WEB",
         "finding": "github.com's org member-privileges page exposes granular toggles (members_can_create_public/private_repositories, members_can_create_pages, members_can_fork_private_repositories, members_can_create_teams) beyond the three the UI already wires",
         "id": "WEB-143",
-        "location": "internal/server/gh_orgs_rest.go, internal/store/store_orgs.go",
+        "location": "internal/server/gh_orgs_rest.go, internal/store/store_orgs.go, internal/server/gh_teams_rest.go, web/src/pages/OrgGovernancePage.tsx",
         "severity": "m",
-        "status": "deferred \u2014 the org PATCH handler + store model only persist `members_can_create_repositories`; the extra fields are unmodeled, so a UI toggle would be non-functional. Adding them is a store-model + response + test change disproportionate to the parity value and is deferred rather than shipped as dead controls",
-        "status_kind": "deferred"
+        "status": "fixed \u2014 added the 5 `*bool` fields to the Org model (nil = GitHub's default: true except fork-private=false) with `cloneOrg` deep-copying all six for the STORE-021 detached-snapshot invariant; the org PATCH handler parses them and the org-full GET response emits them; the nested `team-organization` in the team response strips `members_can_create_teams` (that field is only on `organization-full`, not `team-organization` \u2014 fixes an openapi-shape ratchet hit); the Member-privileges panel renders all 5 as toggles. Verified: Go `TestOrgProfileFieldsPatch` round-trips every field + checks defaults; the web test toggles fork-private/create-teams and asserts the PATCH body",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "the repo Actions settings offered the \"Allow select actions and reusable workflows\" radio but no allow-list editor, so choosing it was functionally dead",
+        "id": "WEB-144",
+        "location": "web/src/pages/RepoSettingsPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 when allowed_actions===\"selected\", the Actions permissions section now renders an allow-list editor (GitHub-owned + verified-creator checkboxes + a newline-separated patterns textarea) wired to GET/PUT `/actions/permissions/selected-actions`, defined inline in the lazy page to keep the entry bundle flat. Verified: unit test saves and asserts the patterns PUT",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "the repo Actions settings had no \"Access\" control (whether this repo's actions can be used by other repos)",
+        "id": "WEB-145",
+        "location": "web/src/pages/RepoSettingsPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added an Actions access `<select>` (none / organization / enterprise) wired to GET/PUT `/actions/permissions/access`. Verified: unit test asserts the access_level PUT",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "the repo Actions settings lacked github.com's \"Fork pull request workflows in private repositories\" controls",
+        "id": "WEB-146",
+        "location": "web/src/pages/RepoSettingsPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added a section with the run-workflows / write-tokens / secrets / require-approval checkboxes wired to GET/PUT `/actions/permissions/fork-pr-workflows-private-repos`. Verified: unit test toggles and asserts the flag PUT",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "github.com exposes an immutable-releases toggle; the UI had no control",
+        "id": "WEB-147",
+        "location": "web/src/pages/RepoSettingsPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added an \"Enable immutable releases\" checkbox reading GET `/immutable-releases` (404\u2192off) and PUT/DELETE to toggle. Verified: unit test enables and asserts the PUT",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "the inbox had a global Mark-all-read but not github.com's per-repository \"Mark all as read\" on each repo group",
+        "id": "WEB-148",
+        "location": "web/src/pages/NotificationsPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added a per-group \"Mark all as read\" button calling PUT `/repos/{owner}/{repo}/notifications`. Verified: unit test clicks a group button and asserts the per-repo PUT",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "Copilot seat assignment worked per-username but not by team, which github.com's Copilot access page supports",
+        "id": "WEB-149",
+        "location": "web/src/pages/CopilotPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added a team-slug input with Add/Remove team calling POST/DELETE `/orgs/{org}/copilot/billing/selected_teams` with `{selected_teams}`. Verified: unit test adds a team and asserts the POST body",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "a codespace could not be exported to a branch; github.com offers \"Export changes to a branch\"",
+        "id": "WEB-150",
+        "location": "web/src/pages/CodespacesPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added an \"Export to branch\" button calling POST `/user/codespaces/{name}/exports`. Verified: unit test asserts the exports POST",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "an unpublished codespace showed \"Unpublished\" with no action; github.com offers \"Publish to a new repository\"",
+        "id": "WEB-151",
+        "location": "web/src/pages/CodespacesPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added a publish form (repo name + private checkbox) shown only when unpublished, calling POST `/user/codespaces/{name}/publish` with `{name, private}`. Verified: unit test fills the form and asserts the publish POST body",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "a profile's followers/following counts were non-clickable text; github.com links them to list views",
+        "id": "WEB-152",
+        "location": "web/src/pages/ProfilePage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 the counts now link to `?tab=followers`/`?tab=following` (no new route \u2192 entry-bundle-safe) which render account lists via GET `/users/{login}/followers` and `/following`. Verified: unit tests click through to each list and assert the GET",
+        "status_kind": "fixed"
       },
       {
         "category": "TEST",
@@ -7346,22 +7427,22 @@
         },
         "WEB": {
           "status": {
-            "deferred": 4,
-            "fixed": 139
+            "deferred": 3,
+            "fixed": 149
           },
-          "total": 143
+          "total": 152
         }
       },
       "severity": {
         "blocker": 167,
         "major": 399,
-        "minor": 206
+        "minor": 215
       },
       "status": {
-        "deferred": 5,
-        "fixed": 767
+        "deferred": 4,
+        "fixed": 777
       },
-      "total": 772
+      "total": 781
     }
   },
   "rest": {

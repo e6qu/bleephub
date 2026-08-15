@@ -106,6 +106,11 @@ export function OrgGovernancePage() {
 interface OrgMemberPrivileges {
   default_repository_permission: string;
   members_can_create_repositories: boolean;
+  members_can_create_public_repositories: boolean;
+  members_can_create_private_repositories: boolean;
+  members_can_create_pages: boolean;
+  members_can_fork_private_repositories: boolean;
+  members_can_create_teams: boolean;
   web_commit_signoff_required: boolean;
 }
 
@@ -150,16 +155,23 @@ function MemberPrivilegesPanel({ org }: { org: string }) {
           ].map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
       </div>
-      <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.9rem", minHeight: "1.625rem" }}>
-        <input type="checkbox" checked={current.members_can_create_repositories}
-          onChange={(e) => update({ members_can_create_repositories: e.target.checked })} />
-        Allow members to create repositories
-      </label>
-      <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.9rem", minHeight: "1.625rem" }}>
-        <input type="checkbox" checked={current.web_commit_signoff_required}
-          onChange={(e) => update({ web_commit_signoff_required: e.target.checked })} />
-        Require contributors to sign off on web-based commits
-      </label>
+      {(
+        [
+          ["members_can_create_repositories", "Allow members to create repositories"],
+          ["members_can_create_public_repositories", "Allow members to create public repositories"],
+          ["members_can_create_private_repositories", "Allow members to create private repositories"],
+          ["members_can_create_pages", "Allow members to publish GitHub Pages sites"],
+          ["members_can_fork_private_repositories", "Allow forking of private repositories"],
+          ["members_can_create_teams", "Allow members to create teams"],
+          ["web_commit_signoff_required", "Require contributors to sign off on web-based commits"],
+        ] as [keyof OrgMemberPrivileges, string][]
+      ).map(([key, label]) => (
+        <label key={key} style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.9rem", minHeight: "1.625rem" }}>
+          <input type="checkbox" checked={!!current[key]}
+            onChange={(e) => update({ [key]: e.target.checked })} />
+          {label}
+        </label>
+      ))}
       <div>
         <Button variant="primary" disabled={save.isPending || !form} onClick={() => form && save.mutate(form)}>
           {save.isPending ? "Saving…" : "Save"}
