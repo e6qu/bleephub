@@ -7,7 +7,7 @@ import {
   fetchRepoIssuesPage,
   fetchRepoIssuesFilteredPage,
   fetchIssueDetail,
-  fetchIssueComments,
+  fetchIssueTimeline,
   createIssue,
   updateIssue,
   fetchSubIssues,
@@ -364,11 +364,14 @@ function IssueDetail({ owner, repo, number }: { owner: string; repo: string; num
     queryKey: ["repo", owner, repo],
     queryFn: ({ signal }) => fetchRepoDetail(owner, repo, signal),
   });
-  const { data: comments = [], isError: commentsError, error: commentsErr } = useQuery({
-    queryKey: ["issue-comments", owner, repo, number],
-    queryFn: () => fetchIssueComments(owner, repo, number),
+  const { data: timeline = [], isError: commentsError, error: commentsErr } = useQuery({
+    queryKey: ["issue-timeline", owner, repo, number],
+    queryFn: () => fetchIssueTimeline(owner, repo, number),
     enabled: !!issue,
   });
+  // Comments are the "commented" timeline events — used for the count and the
+  // participants list; the full timeline drives the interleaved conversation.
+  const comments = timeline.filter((i) => i.event === "commented");
   const viewerQ = useQuery({ queryKey: ["viewer"], queryFn: fetchAuthenticatedUser });
   const viewerLogin = typeof viewerQ.data?.login === "string" ? viewerQ.data.login : null;
 
@@ -526,10 +529,10 @@ function IssueDetail({ owner, repo, number }: { owner: string; repo: string; num
               <EditableCommentList
                 owner={owner}
                 repo={repo}
-                comments={comments}
+                items={timeline}
                 viewerLogin={viewerLogin}
                 invalidateKeys={[
-                  ["issue-comments", owner, repo, number],
+                  ["issue-timeline", owner, repo, number],
                   ["issue", owner, repo, number],
                 ]}
               />
@@ -546,7 +549,7 @@ function IssueDetail({ owner, repo, number }: { owner: string; repo: string; num
             repo={repo}
             number={number}
             invalidateKeys={[
-              ["issue-comments", owner, repo, number],
+              ["issue-timeline", owner, repo, number],
               ["issue", owner, repo, number],
             ]}
             extraActions={

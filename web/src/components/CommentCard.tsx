@@ -8,11 +8,12 @@ import {
   addIssueCommentReaction,
   removeIssueCommentReaction,
 } from "../api.js";
-import type { GithubComment } from "../types.js";
+import type { GithubTimelineItem } from "../types.js";
 import { Button, DialogActions, FormLabel } from "./ui.js";
 import { MutationError } from "./MutationError.js";
 import { confirmAction } from "./confirmAction.js";
 import { ReactionBar } from "./ReactionBar.js";
+import { TimelineEventRow } from "./TimelineEventRow.js";
 
 export interface CommentCardProps {
   login?: string | undefined;
@@ -90,16 +91,20 @@ export function CommentCard({ login, body, date, isOp = false, headerActions, on
  * issue-comments endpoints (issues and PRs alike) and invalidate `invalidateKeys`
  * — normally the comment list plus the issue/PR detail so its count refreshes.
  */
+// Renders an issue/PR conversation timeline: comment events become editable
+// comments (edit / delete / reactions), and every other event (labeled, assigned,
+// closed, renamed, referenced, milestoned …) becomes a shared TimelineEventRow —
+// interleaved in the order github.com shows them.
 export function EditableCommentList({
   owner,
   repo,
-  comments,
+  items,
   invalidateKeys,
   viewerLogin,
 }: {
   owner: string;
   repo: string;
-  comments: GithubComment[];
+  items: GithubTimelineItem[];
   invalidateKeys: QueryKey[];
   viewerLogin?: string | null | undefined;
 }) {
@@ -123,8 +128,13 @@ export function EditableCommentList({
 
   return (
     <>
-      {comments.map((c) =>
-        editingId === c.id ? (
+      {items.map((item, index) => {
+        // Non-comment events render as a shared timeline row.
+        if (item.event !== "commented" || typeof item.id !== "number") {
+          return <TimelineEventRow key={`${item.event}-${item.id ?? index}`} item={item} />;
+        }
+        const c = { id: item.id, body: item.body, created_at: item.created_at ?? "", user: item.user };
+        return editingId === c.id ? (
           <div
             key={c.id}
             className="mb-4"
@@ -203,8 +213,8 @@ export function EditableCommentList({
             viewerLogin={viewerLogin ?? null}
           />
           </div>
-        ),
-      )}
+        );
+      })}
       <MutationError of={deleteMut} />
     </>
   );

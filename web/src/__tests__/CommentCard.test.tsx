@@ -46,7 +46,7 @@ describe("EditableCommentList reactions", () => {
           owner="admin"
           repo="r"
           viewerLogin="admin"
-          comments={[{ id: 42, body: "a comment", created_at: "2026-01-01T00:00:00Z", user: { login: "admin" } } as never]}
+          items={[{ event: "commented", id: 42, body: "a comment", created_at: "2026-01-01T00:00:00Z", user: { login: "admin" } } as never]}
           invalidateKeys={[]}
         />
       </QueryClientProvider>,
