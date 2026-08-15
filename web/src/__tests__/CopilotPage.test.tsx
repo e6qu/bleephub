@@ -131,6 +131,31 @@ describe("CopilotPage", () => {
     });
   });
 
+  it("assigns Copilot seats to a team via POST selected_teams", async () => {
+    mockCopilotEndpoints({
+      "/copilot/billing/selected_teams": () => jsonResponse({ seats_created: 4 }, 201),
+    });
+    renderAt("/ui/orgs/acme/copilot");
+    await waitFor(() => {
+      expect(screen.getByLabelText("Team slug to assign Copilot seats")).toBeInTheDocument();
+    });
+    fireEvent.change(screen.getByLabelText("Team slug to assign Copilot seats"), {
+      target: { value: "engineering" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add team" }));
+    await waitFor(() => {
+      const post = mockFetch.mock.calls.find(
+        (c) =>
+          c[0].toString().includes("/orgs/acme/copilot/billing/selected_teams") &&
+          c[1]?.method === "POST",
+      );
+      expect(post).toBeTruthy();
+      expect(JSON.parse(String(post![1]!.body))).toEqual({
+        selected_teams: ["engineering"],
+      });
+    });
+  });
+
   it("cancels a seat via DELETE selected_users", async () => {
     mockCopilotEndpoints({
       "/copilot/billing/selected_users": () => new Response(null, { status: 204 }),

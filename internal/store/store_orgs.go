@@ -72,24 +72,31 @@ const (
 // true: a nil value (including rows persisted before the field existed)
 // means "default", not false.
 type Org struct {
-	ID                           int       `json:"id"`
-	NodeID                       string    `json:"node_id"`
-	Login                        string    `json:"login"`
-	Name                         string    `json:"name"`
-	Description                  string    `json:"description"`
-	Email                        string    `json:"email"`
-	AvatarURL                    string    `json:"avatar_url"`
-	Type                         string    `json:"type"`
-	Company                      string    `json:"company"`
-	Blog                         string    `json:"blog"`
-	Location                     string    `json:"location"`
-	TwitterUsername              string    `json:"twitter_username"`
-	BillingEmail                 string    `json:"billing_email"`
-	DefaultRepositoryPermission  string    `json:"default_repository_permission"` // "" = GitHub default "read"
-	MembersCanCreateRepositories *bool     `json:"members_can_create_repositories"`
-	WebCommitSignoffRequired     bool      `json:"web_commit_signoff_required"`
-	CreatedAt                    time.Time `json:"created_at"`
-	UpdatedAt                    time.Time `json:"updated_at"`
+	ID                           int    `json:"id"`
+	NodeID                       string `json:"node_id"`
+	Login                        string `json:"login"`
+	Name                         string `json:"name"`
+	Description                  string `json:"description"`
+	Email                        string `json:"email"`
+	AvatarURL                    string `json:"avatar_url"`
+	Type                         string `json:"type"`
+	Company                      string `json:"company"`
+	Blog                         string `json:"blog"`
+	Location                     string `json:"location"`
+	TwitterUsername              string `json:"twitter_username"`
+	BillingEmail                 string `json:"billing_email"`
+	DefaultRepositoryPermission  string `json:"default_repository_permission"` // "" = GitHub default "read"
+	MembersCanCreateRepositories *bool  `json:"members_can_create_repositories"`
+	// Granular member-privilege toggles. nil = GitHub's default for that field
+	// (true for repos/pages/teams, false for forking private repos).
+	MembersCanCreatePublicRepositories  *bool     `json:"members_can_create_public_repositories"`
+	MembersCanCreatePrivateRepositories *bool     `json:"members_can_create_private_repositories"`
+	MembersCanCreatePages               *bool     `json:"members_can_create_pages"`
+	MembersCanForkPrivateRepositories   *bool     `json:"members_can_fork_private_repositories"`
+	MembersCanCreateTeams               *bool     `json:"members_can_create_teams"`
+	WebCommitSignoffRequired            bool      `json:"web_commit_signoff_required"`
+	CreatedAt                           time.Time `json:"created_at"`
+	UpdatedAt                           time.Time `json:"updated_at"`
 }
 
 // Membership represents a user's membership in an organization.
@@ -187,17 +194,26 @@ func (st *Store) CreateOrg(creator *User, login, name, description string) *Org 
 
 // GetOrg returns an organization by login, or nil if not found.
 // cloneOrg returns a copy safe to hand outside the store lock (STORE-021):
-// MembersCanCreateRepositories is the only reference field. Org writes go
+// the member-privilege *bool flags are the reference fields. Org writes go
 // through the keyed UpdateOrg or mutate the live st.Orgs row directly.
 func cloneOrg(o *Org) *Org {
 	if o == nil {
 		return nil
 	}
 	clone := *o
-	if o.MembersCanCreateRepositories != nil {
-		v := *o.MembersCanCreateRepositories
-		clone.MembersCanCreateRepositories = &v
+	dup := func(p *bool) *bool {
+		if p == nil {
+			return nil
+		}
+		v := *p
+		return &v
 	}
+	clone.MembersCanCreateRepositories = dup(o.MembersCanCreateRepositories)
+	clone.MembersCanCreatePublicRepositories = dup(o.MembersCanCreatePublicRepositories)
+	clone.MembersCanCreatePrivateRepositories = dup(o.MembersCanCreatePrivateRepositories)
+	clone.MembersCanCreatePages = dup(o.MembersCanCreatePages)
+	clone.MembersCanForkPrivateRepositories = dup(o.MembersCanForkPrivateRepositories)
+	clone.MembersCanCreateTeams = dup(o.MembersCanCreateTeams)
 	return &clone
 }
 

@@ -449,6 +449,11 @@ describe("OrgGovernancePage issue types tab", () => {
           return Promise.resolve(jsonResponse({
             default_repository_permission: "read",
             members_can_create_repositories: true,
+            members_can_create_public_repositories: true,
+            members_can_create_private_repositories: true,
+            members_can_create_pages: true,
+            members_can_fork_private_repositories: false,
+            members_can_create_teams: true,
             web_commit_signoff_required: false,
           }));
         }
@@ -460,6 +465,9 @@ describe("OrgGovernancePage issue types tab", () => {
       await waitFor(() => expect((base as HTMLSelectElement).value).toBe("read"));
       fireEvent.change(base, { target: { value: "write" } });
       fireEvent.click(screen.getByLabelText("Require contributors to sign off on web-based commits"));
+      // Granular toggles (WEB-143): fork private off->on, create teams on->off.
+      fireEvent.click(screen.getByLabelText("Allow forking of private repositories"));
+      fireEvent.click(screen.getByLabelText("Allow members to create teams"));
       fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
       await waitFor(() => {
@@ -469,6 +477,8 @@ describe("OrgGovernancePage issue types tab", () => {
           default_repository_permission: "write",
           members_can_create_repositories: true,
           web_commit_signoff_required: true,
+          members_can_fork_private_repositories: true,
+          members_can_create_teams: false,
         });
       });
     });

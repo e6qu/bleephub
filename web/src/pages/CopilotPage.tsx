@@ -21,6 +21,8 @@ import {
   updateCopilotSpaceResource,
   removeCopilotSpaceResource,
   fetchCurrentUser,
+  ghSend,
+  ghPostJSON,
 } from "../api.js";
 import type { CopilotSpaceOwner } from "../api.js";
 import type {
@@ -41,6 +43,8 @@ import {
 } from "../components/ui.js";
 import { ChevronDownIcon, ChevronRightIcon, CommentIcon } from "../components/octicons.js";
 import { Blankslate } from "../components/ui.js";
+
+const enc = encodeURIComponent;
 
 export function CopilotPage() {
   const { org = "" } = useParams<{ org: string }>();
@@ -130,6 +134,7 @@ function SeatsSection({ org }: { org: string }) {
   const qc = useQueryClient();
   const [error, setError] = useState<string | null>(null);
   const [usernames, setUsernames] = useState("");
+  const [teamSlug, setTeamSlug] = useState("");
 
   const { data, isLoading, isError, error: loadErr } = useQuery({
     queryKey: ["copilot-seats", org],
@@ -161,6 +166,30 @@ function SeatsSection({ org }: { org: string }) {
     onSuccess: invalidate,
     onError: (err: Error) => setError(err.message),
   });
+  // github.com also lets you grant/revoke Copilot seats for a whole team by slug.
+  const addTeamMut = useMutation({
+    mutationFn: () =>
+      ghPostJSON<{ seats_created: number }>(
+        `/api/v3/orgs/${enc(org)}/copilot/billing/selected_teams`,
+        { selected_teams: [teamSlug.trim()] },
+      ),
+    onSuccess: () => {
+      invalidate();
+      setTeamSlug("");
+    },
+    onError: (err: Error) => setError(err.message),
+  });
+  const removeTeamMut = useMutation({
+    mutationFn: () =>
+      ghSend("DELETE", `/api/v3/orgs/${enc(org)}/copilot/billing/selected_teams`, {
+        selected_teams: [teamSlug.trim()],
+      }),
+    onSuccess: () => {
+      invalidate();
+      setTeamSlug("");
+    },
+    onError: (err: Error) => setError(err.message),
+  });
 
   return (
     <section>
@@ -185,6 +214,37 @@ function SeatsSection({ org }: { org: string }) {
             }}
           >
             Assign seats
+          </Button>
+        </div>
+        <div className="flex gap-2" style={{ padding: "0.75rem 1rem", borderBottom: "1px solid var(--color-border)" }}>
+          <input
+            aria-label="Team slug to assign Copilot seats"
+            placeholder="team-slug"
+            value={teamSlug}
+            onChange={(e) => setTeamSlug(e.target.value)}
+            className="w-full"
+          />
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={addTeamMut.isPending || !teamSlug.trim()}
+            onClick={() => {
+              setError(null);
+              addTeamMut.mutate();
+            }}
+          >
+            Add team
+          </Button>
+          <Button
+            variant="danger"
+            size="sm"
+            disabled={removeTeamMut.isPending || !teamSlug.trim()}
+            onClick={() => {
+              setError(null);
+              removeTeamMut.mutate();
+            }}
+          >
+            Remove team
           </Button>
         </div>
         {isLoading && <Spinner label="loading Copilot seats" />}

@@ -7,6 +7,7 @@ import { RulesetEditor, type RulesetRuleConfig } from "../components/RulesetEdit
 import {
   ghFetch,
   ghSend,
+  isNotFound,
   fetchOrgCustomProperties,
   fetchActionsPermissions,
   updateActionsPermissions,
@@ -1928,6 +1929,54 @@ const fetchArtifactRetention = (owner: string, repo: string) =>
 const updateArtifactRetention = (owner: string, repo: string, days: number) =>
   ghSend("PUT", `${actionsPermBase(owner, repo)}/artifact-and-log-retention`, { days });
 
+// Allow-list backing the "Allow select actions and reusable workflows" radio.
+interface SelectedActions { github_owned_allowed: boolean; verified_allowed: boolean; patterns_allowed: string[] }
+const fetchSelectedActions = (owner: string, repo: string) =>
+  ghFetch<SelectedActions>(`${actionsPermBase(owner, repo)}/selected-actions`);
+const updateSelectedActions = (owner: string, repo: string, body: SelectedActions) =>
+  ghSend("PUT", `${actionsPermBase(owner, repo)}/selected-actions`, body);
+
+// Which other repositories may consume this repo's actions/reusable workflows.
+interface ActionsAccess { access_level: string }
+const ACTIONS_ACCESS_LEVELS = [
+  { value: "none", label: "Not accessible outside the repository" },
+  { value: "organization", label: "Accessible from repositories in the organization" },
+  { value: "enterprise", label: "Accessible from repositories in the enterprise" },
+] as const;
+const fetchActionsAccess = (owner: string, repo: string) =>
+  ghFetch<ActionsAccess>(`${actionsPermBase(owner, repo)}/access`);
+const updateActionsAccess = (owner: string, repo: string, access_level: string) =>
+  ghSend("PUT", `${actionsPermBase(owner, repo)}/access`, { access_level });
+
+// Fork PR workflow controls for private repositories (all server-side optional).
+interface ForkPRWorkflowsPrivate {
+  run_workflows_from_fork_pull_requests?: boolean;
+  send_write_tokens_to_workflows?: boolean;
+  send_secrets_and_variables?: boolean;
+  require_approval_for_fork_pr_workflows?: boolean;
+}
+const fetchForkPRWorkflowsPrivate = (owner: string, repo: string) =>
+  ghFetch<ForkPRWorkflowsPrivate>(`${actionsPermBase(owner, repo)}/fork-pr-workflows-private-repos`);
+const updateForkPRWorkflowsPrivate = (owner: string, repo: string, body: ForkPRWorkflowsPrivate) =>
+  ghSend("PUT", `${actionsPermBase(owner, repo)}/fork-pr-workflows-private-repos`, body);
+
+// Immutable releases: GET 404s when disabled; PUT enables, DELETE disables.
+interface ImmutableReleases { enabled: boolean; enforced_by_owner?: boolean }
+const immutableReleasesPath = (owner: string, repo: string) =>
+  `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/immutable-releases`;
+const fetchImmutableReleases = async (owner: string, repo: string): Promise<ImmutableReleases> => {
+  try {
+    return await ghFetch<ImmutableReleases>(immutableReleasesPath(owner, repo));
+  } catch (err) {
+    if (isNotFound(err)) return { enabled: false };
+    throw err;
+  }
+};
+const enableImmutableReleases = (owner: string, repo: string) =>
+  ghSend("PUT", immutableReleasesPath(owner, repo));
+const disableImmutableReleases = (owner: string, repo: string) =>
+  ghSend("DELETE", immutableReleasesPath(owner, repo));
+
 // ─── Actions settings ──────────────────────────────────────────────────────
 function ActionsSettingsTab({ owner, repo }: { owner: string; repo: string }) {
   const qc = useQueryClient();
@@ -1956,6 +2005,50 @@ function ActionsSettingsTab({ owner, repo }: { owner: string; repo: string }) {
   const wfMut = useMutation({
     mutationFn: (body: GithubWorkflowPermissions) => updateWorkflowPermissions(owner, repo, body),
     onSuccess: () => { setError(null); void qc.invalidateQueries({ queryKey: ["workflow-permissions", owner, repo] }); },
+    onError: (e: Error) => setError(e.message),
+  });
+
+  // Allow-list editor for the "selected" actions policy.
+  const isSelected = perms.data?.allowed_actions === "selected";
+  const selectedActions = useQuery({
+    queryKey: ["selected-actions", owner, repo],
+    queryFn: () => fetchSelectedActions(owner, repo),
+    enabled: isSelected,
+  });
+  const [githubOwned, setGithubOwned] = useState(false);
+  const [verifiedAllowed, setVerifiedAllowed] = useState(false);
+  const [patternsText, setPatternsText] = useState("");
+  useEffect(() => {
+    if (selectedActions.data) {
+      setGithubOwned(selectedActions.data.github_owned_allowed);
+      setVerifiedAllowed(selectedActions.data.verified_allowed);
+      setPatternsText((selectedActions.data.patterns_allowed ?? []).join("\n"));
+    }
+  }, [selectedActions.data]);
+  const selectedMut = useMutation({
+    mutationFn: (body: SelectedActions) => updateSelectedActions(owner, repo, body),
+    onSuccess: () => { setError(null); void qc.invalidateQueries({ queryKey: ["selected-actions", owner, repo] }); },
+    onError: (e: Error) => setError(e.message),
+  });
+
+  const access = useQuery({ queryKey: ["actions-access", owner, repo], queryFn: () => fetchActionsAccess(owner, repo) });
+  const accessMut = useMutation({
+    mutationFn: (access_level: string) => updateActionsAccess(owner, repo, access_level),
+    onSuccess: () => { setError(null); void qc.invalidateQueries({ queryKey: ["actions-access", owner, repo] }); },
+    onError: (e: Error) => setError(e.message),
+  });
+
+  const forkPrivate = useQuery({ queryKey: ["fork-pr-workflows-private", owner, repo], queryFn: () => fetchForkPRWorkflowsPrivate(owner, repo) });
+  const forkPrivateMut = useMutation({
+    mutationFn: (body: ForkPRWorkflowsPrivate) => updateForkPRWorkflowsPrivate(owner, repo, body),
+    onSuccess: () => { setError(null); void qc.invalidateQueries({ queryKey: ["fork-pr-workflows-private", owner, repo] }); },
+    onError: (e: Error) => setError(e.message),
+  });
+
+  const immutable = useQuery({ queryKey: ["immutable-releases", owner, repo], queryFn: () => fetchImmutableReleases(owner, repo) });
+  const immutableMut = useMutation({
+    mutationFn: (enabled: boolean) => (enabled ? enableImmutableReleases(owner, repo) : disableImmutableReleases(owner, repo)),
+    onSuccess: () => { setError(null); void qc.invalidateQueries({ queryKey: ["immutable-releases", owner, repo] }); },
     onError: (e: Error) => setError(e.message),
   });
 
@@ -1988,6 +2081,42 @@ function ActionsSettingsTab({ owner, repo }: { owner: string; repo: string }) {
               })}
             </div>
           </Box>
+        )}
+        {isSelected && (
+          <div style={{ marginTop: "0.6rem" }}>
+            {selectedActions.isLoading && <Spinner label="loading allowed actions" />}
+            {selectedActions.isError && <InlineError title="Failed to load allowed actions" />}
+            {selectedActions.data && (
+              <Box>
+                <div style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+                  <label style={{ display: "flex", gap: "0.5rem", fontSize: "0.9rem", alignItems: "center" }}>
+                    <input type="checkbox" checked={githubOwned} disabled={selectedMut.isPending}
+                      onChange={(e) => setGithubOwned(e.target.checked)} />
+                    Allow actions created by GitHub
+                  </label>
+                  <label style={{ display: "flex", gap: "0.5rem", fontSize: "0.9rem", alignItems: "center" }}>
+                    <input type="checkbox" checked={verifiedAllowed} disabled={selectedMut.isPending}
+                      onChange={(e) => setVerifiedAllowed(e.target.checked)} />
+                    Allow actions by Marketplace verified creators
+                  </label>
+                  <label style={{ display: "flex", flexDirection: "column", gap: "0.4rem", fontSize: "0.85rem" }}>
+                    <span>Allowed patterns (one per line)</span>
+                    <textarea aria-label="Allowed action patterns" rows={4} value={patternsText} disabled={selectedMut.isPending}
+                      onChange={(e) => setPatternsText(e.target.value)}
+                      style={{ ...settingsInputStyle, width: "100%", maxWidth: "34rem", fontFamily: "var(--font-mono)" }} />
+                  </label>
+                  <div>
+                    <Button type="button" variant="secondary" disabled={selectedMut.isPending}
+                      onClick={() => selectedMut.mutate({
+                        github_owned_allowed: githubOwned,
+                        verified_allowed: verifiedAllowed,
+                        patterns_allowed: patternsText.split("\n").map((p) => p.trim()).filter(Boolean),
+                      })}>Save</Button>
+                  </div>
+                </div>
+              </Box>
+            )}
+          </div>
         )}
       </div>
       <div>
@@ -2053,6 +2182,70 @@ function ActionsSettingsTab({ owner, repo }: { owner: string; repo: string }) {
               <Button type="button" variant="secondary"
                 disabled={retentionMut.isPending || retentionDays === null || retentionDays === retention.data.days || retentionDays < 1 || retentionDays > retention.data.maximum_allowed_days}
                 onClick={() => { if (retentionDays !== null) retentionMut.mutate(retentionDays); }}>Save</Button>
+            </div>
+          </Box>
+        )}
+      </div>
+      <div>
+        <h2 style={settingsH2}>Actions access</h2>
+        <p style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)", margin: "0.3rem 0 0.5rem" }}>
+          Choose which other repositories may use the actions and reusable workflows in this repository.
+        </p>
+        {access.isLoading && <Spinner label="loading actions access level" />}
+        {access.isError && <InlineError title="Failed to load actions access level" />}
+        {access.data && (
+          <Box>
+            <div style={{ padding: "1rem" }}>
+              <select aria-label="Actions access level" value={access.data.access_level}
+                disabled={accessMut.isPending} onChange={(e) => accessMut.mutate(e.target.value)}
+                style={{ ...settingsInputStyle, width: "100%", maxWidth: "34rem" }}>
+                {ACTIONS_ACCESS_LEVELS.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
+              </select>
+            </div>
+          </Box>
+        )}
+      </div>
+      <div>
+        <h2 style={settingsH2}>Fork pull request workflows in private repositories</h2>
+        <p style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)", margin: "0.3rem 0 0.5rem" }}>
+          Control how workflows run for pull requests from forks of this private repository.
+        </p>
+        {forkPrivate.isLoading && <Spinner label="loading fork PR workflow settings" />}
+        {forkPrivate.isError && <InlineError title="Failed to load fork PR workflow settings" />}
+        {forkPrivate.data && (
+          <Box>
+            <div style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+              {([
+                ["run_workflows_from_fork_pull_requests", "Run workflows from fork pull requests"],
+                ["send_write_tokens_to_workflows", "Send write tokens to workflows from fork pull requests"],
+                ["send_secrets_and_variables", "Send secrets and variables to workflows from fork pull requests"],
+                ["require_approval_for_fork_pr_workflows", "Require approval for fork pull request workflows"],
+              ] as const).map(([key, label]) => (
+                <label key={key} style={{ display: "flex", gap: "0.5rem", fontSize: "0.9rem", alignItems: "center" }}>
+                  <input type="checkbox" checked={forkPrivate.data![key] ?? false} disabled={forkPrivateMut.isPending}
+                    onChange={(e) => forkPrivateMut.mutate({ ...forkPrivate.data, [key]: e.target.checked })} />
+                  {label}
+                </label>
+              ))}
+            </div>
+          </Box>
+        )}
+      </div>
+      <div>
+        <h2 style={settingsH2}>Immutable releases</h2>
+        <p style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)", margin: "0.3rem 0 0.5rem" }}>
+          Prevent published releases and their assets from being modified after they are created.
+        </p>
+        {immutable.isLoading && <Spinner label="loading immutable releases setting" />}
+        {immutable.isError && <InlineError title="Failed to load immutable releases setting" />}
+        {immutable.data && (
+          <Box>
+            <div style={{ padding: "1rem" }}>
+              <label style={{ display: "flex", gap: "0.5rem", fontSize: "0.9rem", alignItems: "center" }}>
+                <input type="checkbox" checked={immutable.data.enabled} disabled={immutableMut.isPending}
+                  onChange={(e) => immutableMut.mutate(e.target.checked)} />
+                Enable immutable releases
+              </label>
             </div>
           </Box>
         )}

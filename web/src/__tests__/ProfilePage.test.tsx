@@ -75,6 +75,8 @@ function mockProfileEndpoints() {
     if (u.includes("/starred")) return Promise.resolve(jsonResponse([repo]));
     if (u.includes("/packages")) return Promise.resolve(jsonResponse([]));
     if (u.includes("/projectsV2")) return Promise.resolve(jsonResponse([]));
+    if (u.includes("/followers")) return Promise.resolve(jsonResponse([{ login: "fan1", avatar_url: "" }]));
+    if (u.includes("/following")) return Promise.resolve(jsonResponse([{ login: "idol1", avatar_url: "" }]));
     if (u.includes("/repos")) return Promise.resolve(jsonResponse([repo], 200, { Link: "" }));
     if (u.includes("/orgs")) return Promise.resolve(jsonResponse([{ login: "acme", id: 2, avatar_url: "", description: "acme" }]));
     return Promise.resolve(jsonResponse(profile));
@@ -114,6 +116,28 @@ describe("ProfilePage", () => {
       c[0].toString().endsWith("/api/v3/users/octocat/starred"),
     );
     expect(starredCall).toBeTruthy();
+  });
+
+  it("renders the followers list via GET users/{login}/followers when the count is clicked", async () => {
+    mockProfileEndpoints();
+    renderAt("/ui/octocat?tab=followers");
+    await screen.findByText("The Octocat");
+    expect(await screen.findByText("fan1")).toBeInTheDocument();
+    const followersCall = mockFetch.mock.calls.find((c) =>
+      c[0].toString().endsWith("/api/v3/users/octocat/followers"),
+    );
+    expect(followersCall).toBeTruthy();
+  });
+
+  it("renders the following list via GET users/{login}/following", async () => {
+    mockProfileEndpoints();
+    renderAt("/ui/octocat?tab=following");
+    await screen.findByText("The Octocat");
+    expect(await screen.findByText("idol1")).toBeInTheDocument();
+    const followingCall = mockFetch.mock.calls.find((c) =>
+      c[0].toString().endsWith("/api/v3/users/octocat/following"),
+    );
+    expect(followingCall).toBeTruthy();
   });
 
   it("shows pinned repositories on the Overview and saves edits via PUT (own profile)", async () => {
