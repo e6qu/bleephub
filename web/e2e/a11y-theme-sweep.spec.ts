@@ -132,6 +132,7 @@ function buildRoutes(): { route: string; label: string }[] {
     { route: `/ui/${o}?tab=packages`, label: "profile-packages" },
     { route: `/ui/${o}?tab=stars`, label: "profile-stars" },
     { route: "/ui/account", label: "account" },
+    { route: "/ui/account?tab=codespaces", label: "account-codespaces-secrets" },
     { route: "/ui/settings/organizations", label: "my-organizations" },
     { route: "/ui/notifications", label: "notifications" },
     { route: "/ui/search?q=test", label: "search" },

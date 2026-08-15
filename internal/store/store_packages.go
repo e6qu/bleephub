@@ -228,6 +228,23 @@ func (st *Store) DeletePackage(ownerKey, pkgType, name string) bool {
 	return true
 }
 
+// ListDeletedPackages returns the soft-deleted packages for an owner scope,
+// newest first. Soft-deleted rows leave PackagesByOwnerKey but remain in the
+// authoritative st.Packages map, so this scans it directly — mirrors
+// GitHub's `GET .../packages?state=deleted`.
+func (st *Store) ListDeletedPackages(ownerKey string) []*Package {
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
+	var out []*Package
+	for _, p := range st.Packages {
+		if p.Deleted && p.OwnerKey == ownerKey {
+			out = append(out, p)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID > out[j].ID })
+	return snapshotPackages(out)
+}
+
 // GetDeletedPackage returns a soft-deleted package for an owner scope,
 // or nil.
 func (st *Store) GetDeletedPackage(ownerKey, pkgType, name string) *Package {

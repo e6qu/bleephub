@@ -5916,10 +5916,10 @@
         "category": "WEB",
         "finding": "github.com's comment \"...\" menu can Hide (minimize) a comment with a classifier and render it collapsed; the server backs this via GraphQL minimizeComment/unminimizeComment",
         "id": "WEB-142",
-        "location": "web/src/components/CommentCard.tsx",
+        "location": "web/src/components/CommentCard.tsx, web/src/pages/IssuesPage.tsx",
         "severity": "m",
-        "status": "deferred \u2014 the issue/PR conversation renders comments from the REST **timeline**, which carries neither the comment's GraphQL node ID (minimizeComment's `subjectId`) nor an `isMinimized`/collapsed state, so wiring hide would require threading GraphQL node IDs and minimized state through the REST timeline shape (server + client) \u2014 a cross-cutting change deferred out of this PR rather than folded in half-done",
-        "status_kind": "deferred"
+        "status": "fixed \u2014 no REST-shape change needed: the REST timeline comment already carries `node_id` (used as minimizeComment's `subjectId`), and the minimized state is read via GraphQL (`repository.issue.comments.nodes.isMinimized/minimizedReason`, keyed by databaseId) rather than polluting the REST timeline \u2014 keeps the openapi-shape gate clean. The conversation now shows a Hide control with a 6-way classifier picker (off-topic/outdated/resolved/duplicate/spam/abuse), renders minimized comments collapsed with a Show/Unhide toggle, and `ghGraphQL` was exported so the mutations live inline in the (lazy) CommentCard chunk. Verified: unit test hides a comment and asserts the minimizeComment mutation carries subjectId + classifier",
+        "status_kind": "fixed"
       },
       {
         "category": "WEB",
@@ -6080,8 +6080,8 @@
         "id": "WEB-160",
         "location": "web/src/pages/MigrationsPage.tsx",
         "severity": "m",
-        "status": "deferred \u2014 a multi-step import wizard (clone-URL start \u2192 poll status \u2192 LFS opt-in \u2192 author mapping \u2192 cancel) is a larger flow than fits this PR cleanly; left for a dedicated round with its own e2e coverage",
-        "status_kind": "deferred"
+        "status": "fixed \u2014 added an \"Import a repository\" section: target owner/repo + clone-URL start (PUT import), a manual-Refresh status panel (GET import; no wall-clock polling), an LFS opt-in/out toggle (PATCH import/lfs), an editable author-mapping list (PATCH import/authors/{id}), and Cancel (DELETE import); calls defined inline. Verified: unit tests assert the start PUT, the cancel DELETE, and an author PATCH",
+        "status_kind": "fixed"
       },
       {
         "category": "WEB",
@@ -6089,8 +6089,8 @@
         "id": "WEB-161",
         "location": "web/src/pages/PackagesPage.tsx",
         "severity": "m",
-        "status": "deferred \u2014 needs a deleted-packages listing surface first (there is no in-UI list of deleted packages to act on); deferred rather than shipped without the listing",
-        "status_kind": "deferred"
+        "status": "fixed \u2014 boy-scout-added `state=deleted` support to the package list (new store `ListDeletedPackages` + `listOwnerPackagesJSON` branch, so `GET .../packages?state=deleted` enumerates soft-deleted rows, matching GitHub), then a \"Deleted packages\" section in PackagesPage listing them with a confirm-guarded Restore (POST .../restore) for user/org scopes. Verified: Go test asserts state=deleted lists the deleted package + it stays out of the active list; unit test restores one and asserts the POST",
+        "status_kind": "fixed"
       },
       {
         "category": "WEB",
@@ -6098,8 +6098,8 @@
         "id": "WEB-162",
         "location": "web/src/pages/AccountPage.tsx",
         "severity": "m",
-        "status": "deferred \u2014 PUT requires client-side libsodium secret sealing (a dependency + crypto flow not yet in the web bundle) and a new Settings surface; deferred as a larger self-contained change",
-        "status_kind": "deferred"
+        "status": "fixed \u2014 added a \"Codespaces\" tab under Account settings with a secrets manager (list + create + delete), reusing the existing `sealSecret` (libsodium sealed-box) helper: fetch the public key \u2192 seal the value \u2192 PUT `{encrypted_value, key_id}`. Verified: unit test seals a secret, asserts the PUT carries key_id (never the plaintext) and that the sealed value round-trips via crypto_box_seal_open, plus a delete test",
+        "status_kind": "fixed"
       },
       {
         "category": "TEST",
@@ -7517,8 +7517,8 @@
         },
         "WEB": {
           "status": {
-            "deferred": 6,
-            "fixed": 156
+            "deferred": 2,
+            "fixed": 160
           },
           "total": 162
         }
@@ -7529,8 +7529,8 @@
         "minor": 225
       },
       "status": {
-        "deferred": 7,
-        "fixed": 784
+        "deferred": 3,
+        "fixed": 788
       },
       "total": 791
     }
@@ -29050,37 +29050,37 @@
   "ui": {
     "browser_navigations": [
       {
-        "line": 209,
+        "line": 210,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 472,
+        "line": 473,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 511,
+        "line": 512,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/repos/${seeded.owner}/${seeded.repo}/settings"
       },
       {
-        "line": 546,
+        "line": 547,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/repos/${seeded.owner}/${seeded.repo}/settings"
       },
       {
-        "line": 584,
+        "line": 585,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/repos/${seeded.org}/org-parity/settings"
       },
       {
-        "line": 616,
+        "line": 617,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/search"
       },
       {
-        "line": 649,
+        "line": 650,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/orgs/${seeded.org}/governance?tab=code-security"
       },
@@ -29841,10 +29841,12 @@
         "line": 254,
         "path": "/ui/orgs/:org/packages",
         "rendered_tests": [
+          "web/src/__tests__/PackagesPage.test.tsx",
           "web/src/__tests__/mutationErrors.test.tsx"
         ],
         "source": "web/src/App.tsx",
         "tests": [
+          "web/src/__tests__/PackagesPage.test.tsx",
           "web/src/__tests__/mutationErrors.test.tsx"
         ]
       },
@@ -29955,10 +29957,12 @@
         "line": 253,
         "path": "/ui/packages",
         "rendered_tests": [
+          "web/src/__tests__/PackagesPage.test.tsx",
           "web/src/__tests__/mutationErrors.test.tsx"
         ],
         "source": "web/src/App.tsx",
         "tests": [
+          "web/src/__tests__/PackagesPage.test.tsx",
           "web/src/__tests__/mutationErrors.test.tsx"
         ]
       },
@@ -30257,10 +30261,12 @@
         "line": 255,
         "path": "/ui/repos/:owner/:repo/packages",
         "rendered_tests": [
+          "web/src/__tests__/PackagesPage.test.tsx",
           "web/src/__tests__/mutationErrors.test.tsx"
         ],
         "source": "web/src/App.tsx",
         "tests": [
+          "web/src/__tests__/PackagesPage.test.tsx",
           "web/src/__tests__/mutationErrors.test.tsx"
         ]
       },

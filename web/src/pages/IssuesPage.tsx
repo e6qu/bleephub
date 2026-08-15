@@ -537,6 +537,7 @@ function IssueDetail({ owner, repo, number }: { owner: string; repo: string; num
               <EditableCommentList
                 owner={owner}
                 repo={repo}
+                number={number}
                 items={timeline}
                 viewerLogin={viewerLogin}
                 invalidateKeys={[

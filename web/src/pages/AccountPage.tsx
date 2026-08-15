@@ -2,7 +2,8 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
 import { confirmAction } from "../components/confirmAction.js";
-import { fetchAccountSettings, setTwoFactor, setNotificationSettings, type NotificationSettings } from "../api.js";
+import { fetchAccountSettings, setTwoFactor, setNotificationSettings, ghFetch, ghSend, type NotificationSettings } from "../api.js";
+import { sealSecret } from "../utils/sealedBox.js";
 import {
   addUserEmails,
   blockUser,
@@ -41,9 +42,9 @@ import type {
 import { useTheme } from "@bleephub/ui-core/hooks";
 import { PageTitle, Box, Button, ErrorBanner, FormLabel } from "../components/ui.js";
 import { SettingsLayout, type SettingsNavSection } from "../components/SettingsLayout.js";
-import { KeyIcon } from "../components/octicons.js";
+import { KeyIcon, LockIcon } from "../components/octicons.js";
 
-type AccountTab = "profile" | "appearance" | "notifications" | "tokens" | "ssh-keys" | "gpg-keys" | "signing-keys" | "emails" | "blocked" | "authentication";
+type AccountTab = "profile" | "appearance" | "notifications" | "tokens" | "ssh-keys" | "gpg-keys" | "signing-keys" | "emails" | "blocked" | "authentication" | "codespaces";
 
 const ACCOUNT_NAV: SettingsNavSection<AccountTab>[] = [
   {
@@ -64,6 +65,10 @@ const ACCOUNT_NAV: SettingsNavSection<AccountTab>[] = [
       { key: "signing-keys", label: "Signing keys" },
     ],
   },
+  {
+    title: "Code, planning, and automation",
+    items: [{ key: "codespaces", label: "Codespaces" }],
+  },
   { title: "Moderation", items: [{ key: "blocked", label: "Blocked users" }] },
 ];
 
@@ -82,6 +87,7 @@ export function AccountPage() {
         {tab === "gpg-keys" && <GPGKeysTab />}
         {tab === "signing-keys" && <SigningKeysTab />}
         {tab === "emails" && <EmailsTab />}
+        {tab === "codespaces" && <CodespacesSecretsTab />}
         {tab === "blocked" && <BlockedUsersTab />}
       </SettingsLayout>
     </div>
@@ -640,6 +646,154 @@ function BlockedUsersTab() {
                   disabled={unblockMut.isPending}
                 >
                   unblock
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Box>
+    </div>
+  );
+}
+
+// ─── Codespaces secrets (sealed-box encrypted user secrets for Codespaces) ─────────
+
+interface CodespaceSecret {
+  name: string;
+  created_at: string;
+  updated_at: string;
+  visibility?: string;
+}
+
+const enc = encodeURIComponent;
+
+const fetchCodespaceSecrets = () =>
+  ghFetch<{ total_count: number; secrets: CodespaceSecret[] }>(
+    "/api/v3/user/codespaces/secrets",
+  );
+
+function CodespacesSecretsTab() {
+  const queryClient = useQueryClient();
+  const [error, setError] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const [value, setValue] = useState("");
+
+  const query = useQuery({
+    queryKey: ["user-codespaces-secrets"],
+    queryFn: fetchCodespaceSecrets,
+  });
+  const invalidate = () =>
+    queryClient.invalidateQueries({ queryKey: ["user-codespaces-secrets"] });
+
+  const addMut = useMutation({
+    // Sealed-box encrypt the value in the browser against the user
+    // Codespaces public key; only ciphertext + key_id leave the client.
+    mutationFn: async () => {
+      const secretName = name.trim();
+      if (!secretName) throw new Error("Name is required");
+      if (!value) throw new Error("Value is required");
+      const pk = await ghFetch<{ key_id: string; key: string }>(
+        "/api/v3/user/codespaces/secrets/public-key",
+      );
+      const encrypted = await sealSecret(value, pk.key);
+      await ghSend("PUT", `/api/v3/user/codespaces/secrets/${enc(secretName)}`, {
+        encrypted_value: encrypted,
+        key_id: pk.key_id,
+      });
+    },
+    onSuccess: () => {
+      setError(null);
+      setName("");
+      setValue("");
+      invalidate();
+    },
+    onError: (err: Error) => setError(err.message),
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (secretName: string) =>
+      ghSend("DELETE", `/api/v3/user/codespaces/secrets/${enc(secretName)}`),
+    onSuccess: () => {
+      setError(null);
+      invalidate();
+    },
+    onError: (err: Error) => setError(err.message),
+  });
+
+  if (query.isLoading) return <Spinner label="loading Codespaces secrets" />;
+  if (query.isError)
+    return <InlineError title="Failed to load Codespaces secrets" detail={String(query.error)} />;
+
+  const secrets = query.data?.secrets ?? [];
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+      {error && <ErrorBanner>{error}</ErrorBanner>}
+      <Box header={<span style={{ fontWeight: 600 }}>New secret</span>}>
+        <div style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+          <FormLabel id="codespaces-secret-name">Name</FormLabel>
+          <input
+            id="codespaces-secret-name"
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="YOUR_SECRET_NAME"
+            className="w-full font-mono"
+          />
+          <FormLabel id="codespaces-secret-value">Value</FormLabel>
+          <textarea
+            id="codespaces-secret-value"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            rows={4}
+            className="w-full font-mono"
+            style={{ resize: "vertical" }}
+          />
+          <div className="flex justify-end">
+            <Button
+              variant="primary"
+              onClick={() => {
+                setError(null);
+                addMut.mutate();
+              }}
+              disabled={addMut.isPending || !name.trim() || !value}
+            >
+              {addMut.isPending ? "Encrypting…" : "Add secret"}
+            </Button>
+          </div>
+        </div>
+      </Box>
+      <Box header={<span style={{ fontWeight: 600 }}>Codespaces secrets</span>}>
+        {secrets.length === 0 ? (
+          <div style={{ padding: "1rem", color: "var(--color-fg-muted)", fontSize: "0.85rem" }}>
+            No Codespaces secrets.
+          </div>
+        ) : (
+          <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+            {secrets.map((s) => (
+              <li
+                key={s.name}
+                className="flex items-center justify-between gap-4"
+                style={{ padding: "0.6rem 1rem", borderBottom: "1px solid var(--color-border)" }}
+              >
+                <div className="flex min-w-0 items-center gap-2">
+                  <LockIcon size={16} style={{ color: "var(--color-fg-muted)", flexShrink: 0 }} />
+                  <div style={{ minWidth: 0 }}>
+                    <div className="font-mono" style={{ fontWeight: 500 }}>{s.name}</div>
+                    <div style={{ color: "var(--color-fg-muted)", fontSize: "0.72rem" }}>
+                      updated {new Date(s.updated_at).toLocaleDateString()}
+                    </div>
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  variant="danger"
+                  disabled={deleteMut.isPending}
+                  onClick={async () => {
+                    if (await confirmAction(`Delete secret ${s.name}?`)) deleteMut.mutate(s.name);
+                  }}
+                >
+                  delete
                 </Button>
               </li>
             ))}

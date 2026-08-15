@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { UseQueryResult } from "@tanstack/react-query";
 import { DataTable, InlineError, Spinner } from "@bleephub/ui-core/components";
 import { createColumnHelper } from "@bleephub/ui-core/components";
 import {
@@ -14,6 +15,8 @@ import {
   unlockMigrationRepo,
   isForbidden,
   isRateLimited,
+  ghFetch,
+  ghSend,
 } from "../api.js";
 import type { BleephubRepo, GithubMigration, GithubMigrationState } from "../types.js";
 import { confirmAction } from "../components/confirmAction.js";
@@ -34,7 +37,35 @@ import { DownloadIcon, MigrationIcon } from "../components/octicons.js";
 
 type Scope = { kind: "user" } | { kind: "org"; org: string };
 
+const enc = encodeURIComponent;
+
 const col = createColumnHelper<GithubMigration>();
+
+/** A source-repository import record as returned by the /import endpoints. */
+interface GithubImport {
+  vcs: string | null;
+  use_lfs: boolean;
+  vcs_url: string;
+  status: string;
+  status_text: string | null;
+  failed_step: string | null;
+  error_message: string | null;
+  has_large_files: boolean;
+  large_files_size: number;
+  large_files_count: number;
+  import_percent: number | null;
+  commit_count: number | null;
+  authors_count: number | null;
+}
+
+/** A commit author discovered in an imported repository, remappable by email/name. */
+interface GithubImportAuthor {
+  id: number;
+  remote_id: string;
+  remote_name: string;
+  email: string;
+  name: string;
+}
 
 function stateLabel(state: GithubMigrationState): { state: "open" | "closed" | "draft"; label: string } {
   switch (state) {
@@ -116,12 +147,433 @@ export function MigrationsPage() {
         </Blankslate>
       )}
 
+      <ImportRepositorySection />
+
       {showCreate && (
         <CreateMigrationDialog
           initialScope={activeScope}
           onClose={() => setShowCreate(false)}
         />
       )}
+    </div>
+  );
+}
+
+function ImportRepositorySection() {
+  const queryClient = useQueryClient();
+  const [owner, setOwner] = useState("");
+  const [repo, setRepo] = useState("");
+  const [vcsUrl, setVcsUrl] = useState("");
+  const [vcsUsername, setVcsUsername] = useState("");
+  const [vcsPassword, setVcsPassword] = useState("");
+  const [target, setTarget] = useState<{ owner: string; repo: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const importKey = (o: string, r: string) => ["import", o, r] as const;
+  const activeKey = target ? importKey(target.owner, target.repo) : importKey("", "");
+  const importPath = target ? `/api/v3/repos/${enc(target.owner)}/${enc(target.repo)}/import` : "";
+
+  const importQ = useQuery({
+    queryKey: activeKey,
+    queryFn: () => ghFetch<GithubImport>(importPath),
+    enabled: target != null,
+    retry: false,
+    // Manual Refresh only — no polling keeps the flow deterministic and testable.
+    refetchInterval: false,
+  });
+
+  const importReady = target != null && importQ.data != null;
+
+  const authorsQ = useQuery({
+    queryKey: [...activeKey, "authors"],
+    queryFn: () => ghFetch<GithubImportAuthor[]>(`${importPath}/authors`),
+    enabled: importReady,
+    retry: false,
+  });
+
+  const invalidateImport = () => {
+    if (target) {
+      queryClient.invalidateQueries({ queryKey: importKey(target.owner, target.repo) });
+    }
+  };
+
+  const startMut = useMutation({
+    mutationFn: () => {
+      const body: Record<string, string> = { vcs_url: vcsUrl.trim() };
+      if (vcsUsername.trim()) body.vcs_username = vcsUsername.trim();
+      if (vcsPassword) body.vcs_password = vcsPassword;
+      return ghSend("PUT", `/api/v3/repos/${enc(owner.trim())}/${enc(repo.trim())}/import`, body);
+    },
+    onSuccess: () => {
+      setError(null);
+      const next = { owner: owner.trim(), repo: repo.trim() };
+      setTarget(next);
+      queryClient.invalidateQueries({ queryKey: importKey(next.owner, next.repo) });
+    },
+    onError: (err: Error) => setError(err.message),
+  });
+
+  const cancelMut = useMutation({
+    mutationFn: () => ghSend("DELETE", importPath),
+    onSuccess: () => {
+      setError(null);
+      invalidateImport();
+      setTarget(null);
+    },
+    onError: (err: Error) => setError(err.message),
+  });
+
+  const lfsMut = useMutation({
+    mutationFn: (useLfs: boolean) =>
+      ghSend("PATCH", `${importPath}/lfs`, { use_lfs: useLfs ? "opt_in" : "opt_out" }),
+    onSuccess: () => {
+      setError(null);
+      invalidateImport();
+    },
+    onError: (err: Error) => setError(err.message),
+  });
+
+  const canStart =
+    owner.trim() !== "" && repo.trim() !== "" && vcsUrl.trim() !== "" && !startMut.isPending;
+
+  return (
+    <div className="mt-8">
+      <div
+        className="mb-4 border-t pt-6"
+        style={{ borderColor: "var(--color-border)" }}
+      >
+        <h2 style={{ fontSize: "1.1rem", fontWeight: 600 }}>Import a repository</h2>
+        <p className="mt-1 text-sm" style={{ color: "var(--color-fg-muted)" }}>
+          Import an external repository into a target repository by its clone URL.
+        </p>
+      </div>
+
+      <Box header="Source">
+        <div className="grid gap-3 p-4">
+          <div className="flex flex-wrap gap-3">
+            <div>
+              <FormLabel id="import-owner">Target owner</FormLabel>
+              <input
+                id="import-owner"
+                type="text"
+                value={owner}
+                onChange={(e) => setOwner(e.target.value)}
+                placeholder="owner"
+                className="w-48"
+              />
+            </div>
+            <div>
+              <FormLabel id="import-repo">Target repository</FormLabel>
+              <input
+                id="import-repo"
+                type="text"
+                value={repo}
+                onChange={(e) => setRepo(e.target.value)}
+                placeholder="repo"
+                className="w-48"
+              />
+            </div>
+          </div>
+          <div>
+            <FormLabel id="import-url">Clone URL</FormLabel>
+            <input
+              id="import-url"
+              type="text"
+              value={vcsUrl}
+              onChange={(e) => setVcsUrl(e.target.value)}
+              placeholder="https://example.com/octo/source.git"
+              className="w-full"
+            />
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <div>
+              <FormLabel id="import-username">Username (optional)</FormLabel>
+              <input
+                id="import-username"
+                type="text"
+                value={vcsUsername}
+                onChange={(e) => setVcsUsername(e.target.value)}
+                placeholder="for private sources"
+                className="w-48"
+              />
+            </div>
+            <div>
+              <FormLabel id="import-password">Password / token (optional)</FormLabel>
+              <input
+                id="import-password"
+                type="password"
+                value={vcsPassword}
+                onChange={(e) => setVcsPassword(e.target.value)}
+                placeholder="for private sources"
+                className="w-48"
+              />
+            </div>
+          </div>
+          <div>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => {
+                setError(null);
+                startMut.mutate();
+              }}
+              disabled={!canStart}
+            >
+              {startMut.isPending ? "Starting…" : "Start import"}
+            </Button>
+          </div>
+        </div>
+      </Box>
+
+      {error && (
+        <div className="mt-4">
+          <ErrorBanner>{error}</ErrorBanner>
+        </div>
+      )}
+
+      {target && (
+        <div className="mt-4">
+          <ImportStatusPanel
+            target={target}
+            importQ={importQ}
+            authorsQ={authorsQ}
+            onRefresh={() => {
+              importQ.refetch();
+              if (importReady) authorsQ.refetch();
+            }}
+            onToggleLfs={(useLfs) => lfsMut.mutate(useLfs)}
+            lfsPending={lfsMut.isPending}
+            onCancel={() => cancelMut.mutate()}
+            cancelPending={cancelMut.isPending}
+            importPath={importPath}
+            onWrite={invalidateImport}
+            onError={setError}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ImportStatusPanel({
+  target,
+  importQ,
+  authorsQ,
+  onRefresh,
+  onToggleLfs,
+  lfsPending,
+  onCancel,
+  cancelPending,
+  importPath,
+  onWrite,
+  onError,
+}: {
+  target: { owner: string; repo: string };
+  importQ: UseQueryResult<GithubImport, Error>;
+  authorsQ: UseQueryResult<GithubImportAuthor[], Error>;
+  onRefresh: () => void;
+  onToggleLfs: (useLfs: boolean) => void;
+  lfsPending: boolean;
+  onCancel: () => void;
+  cancelPending: boolean;
+  importPath: string;
+  onWrite: () => void;
+  onError: (message: string) => void;
+}) {
+  const imp = importQ.data;
+
+  return (
+    <Box
+      header={
+        <div className="flex w-full items-center justify-between gap-2">
+          <span className="font-mono">
+            {target.owner}/{target.repo}
+          </span>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="secondary" onClick={onRefresh} disabled={importQ.isFetching}>
+              {importQ.isFetching ? "Refreshing…" : "Refresh"}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={onCancel} disabled={cancelPending}>
+              Cancel import
+            </Button>
+          </div>
+        </div>
+      }
+    >
+      <div className="p-4">
+        {importQ.isLoading && <Spinner label="loading import status" />}
+        {importQ.isError && (
+          <InlineError
+            title="No import in progress"
+            detail={String(importQ.error)}
+          />
+        )}
+        {imp && (
+          <>
+            <div className="mb-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
+              <Stat label="Status" value={imp.status} />
+              <Stat
+                label="Progress"
+                value={imp.import_percent != null ? `${imp.import_percent}%` : "—"}
+              />
+              <Stat label="Commits" value={imp.commit_count != null ? String(imp.commit_count) : "—"} />
+              <Stat label="Authors" value={imp.authors_count != null ? String(imp.authors_count) : "—"} />
+              <Stat label="VCS" value={imp.vcs ?? "—"} />
+              <Stat
+                label="Large files"
+                value={imp.has_large_files ? String(imp.large_files_count) : "0"}
+              />
+            </div>
+
+            {imp.error_message && (
+              <div className="mb-4">
+                <ErrorBanner>
+                  {imp.failed_step ? `${imp.failed_step}: ` : ""}
+                  {imp.error_message}
+                </ErrorBanner>
+              </div>
+            )}
+
+            <div className="mb-4">
+              <label className="inline-flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={imp.use_lfs}
+                  disabled={lfsPending}
+                  onChange={(e) => onToggleLfs(e.target.checked)}
+                />
+                <span style={{ fontSize: "0.85rem" }}>
+                  Store large files with Git LFS
+                </span>
+              </label>
+            </div>
+
+            <ImportAuthors
+              authorsQ={authorsQ}
+              importPath={importPath}
+              onWrite={onWrite}
+              onError={onError}
+            />
+          </>
+        )}
+      </div>
+    </Box>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div style={{ color: "var(--color-fg-muted)", fontSize: "0.72rem", textTransform: "uppercase" }}>
+        {label}
+      </div>
+      <div style={{ fontWeight: 600 }}>{value}</div>
+    </div>
+  );
+}
+
+function ImportAuthors({
+  authorsQ,
+  importPath,
+  onWrite,
+  onError,
+}: {
+  authorsQ: UseQueryResult<GithubImportAuthor[], Error>;
+  importPath: string;
+  onWrite: () => void;
+  onError: (message: string) => void;
+}) {
+  const authors = authorsQ.data ?? [];
+
+  return (
+    <div>
+      <div className="mb-2" style={{ fontSize: "0.82rem", fontWeight: 600 }}>
+        Authors
+      </div>
+      {authorsQ.isLoading && <Spinner label="loading authors" />}
+      {authors.length === 0 && !authorsQ.isLoading ? (
+        <div style={{ color: "var(--color-fg-muted)", fontSize: "0.85rem" }}>
+          No authors detected yet. Refresh once the import completes.
+        </div>
+      ) : (
+        <div
+          className="divide-y"
+          style={{ border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)" }}
+        >
+          {authors.map((author) => (
+            <ImportAuthorRow
+              key={author.id}
+              author={author}
+              importPath={importPath}
+              onWrite={onWrite}
+              onError={onError}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ImportAuthorRow({
+  author,
+  importPath,
+  onWrite,
+  onError,
+}: {
+  author: GithubImportAuthor;
+  importPath: string;
+  onWrite: () => void;
+  onError: (message: string) => void;
+}) {
+  const [name, setName] = useState(author.name);
+  const [email, setEmail] = useState(author.email);
+
+  const saveMut = useMutation({
+    mutationFn: () =>
+      ghSend("PATCH", `${importPath}/authors/${author.id}`, {
+        name: name.trim(),
+        email: email.trim(),
+      }),
+    onSuccess: () => onWrite(),
+    onError: (err: Error) => onError(err.message),
+  });
+
+  const dirty = name !== author.name || email !== author.email;
+
+  return (
+    <div className="flex flex-wrap items-end gap-3 p-3" style={{ fontSize: "0.85rem" }}>
+      <div className="font-mono" style={{ color: "var(--color-fg-muted)", minWidth: "12rem" }}>
+        {author.remote_id}
+      </div>
+      <div>
+        <FormLabel id={`author-name-${author.id}`}>Name</FormLabel>
+        <input
+          id={`author-name-${author.id}`}
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          className="w-40"
+        />
+      </div>
+      <div>
+        <FormLabel id={`author-email-${author.id}`}>Email</FormLabel>
+        <input
+          id={`author-email-${author.id}`}
+          type="text"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          className="w-56"
+        />
+      </div>
+      <Button
+        size="sm"
+        variant="secondary"
+        onClick={() => saveMut.mutate()}
+        disabled={!dirty || saveMut.isPending}
+      >
+        Save
+      </Button>
     </div>
   );
 }
