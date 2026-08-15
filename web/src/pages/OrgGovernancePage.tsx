@@ -6,6 +6,7 @@ import { confirmAction } from "../components/confirmAction.js";
 import {
   ghFetch,
   ghSend,
+  ghPostJSON,
   fetchOrgInvitations,
   fetchFailedOrgInvitations,
   createOrgInvitation,
@@ -41,7 +42,9 @@ import type {
   GithubOrgRole,
   GithubOrgRepoCustomPropertyValues,
 } from "../types.js";
-import { OrgHeader } from "../components/Shell.js";
+import type { SecretsScope } from "../api.js";
+import { SecretsSection, VariablesSection } from "../components/SecretsManager.js";
+import { OrgHeader } from "../components/PageHeader.js";
 import {
   Box,
   Button,
@@ -53,9 +56,9 @@ import {
 } from "../components/ui.js";
 import { ChevronDownIcon, ChevronRightIcon } from "../components/octicons.js";
 
-type GovernanceTab = "people" | "roles" | "member-privileges" | "actions" | "properties" | "issue-types";
+type GovernanceTab = "people" | "roles" | "member-privileges" | "actions" | "secrets" | "code-security" | "properties" | "issue-types";
 
-const GOVERNANCE_TABS: GovernanceTab[] = ["people", "roles", "member-privileges", "actions", "properties", "issue-types"];
+const GOVERNANCE_TABS: GovernanceTab[] = ["people", "roles", "member-privileges", "actions", "secrets", "code-security", "properties", "issue-types"];
 
 export function OrgGovernancePage() {
   const { org = "" } = useParams<{ org: string }>();
@@ -80,6 +83,8 @@ export function OrgGovernancePage() {
           { key: "roles" as const, label: "Roles" },
           { key: "member-privileges" as const, label: "Member privileges" },
           { key: "actions" as const, label: "Actions" },
+          { key: "secrets" as const, label: "Secrets and variables" },
+          { key: "code-security" as const, label: "Code security" },
           { key: "properties" as const, label: "Custom properties" },
           { key: "issue-types" as const, label: "Issue types" },
         ]}
@@ -90,6 +95,8 @@ export function OrgGovernancePage() {
       {tab === "roles" && <RolesPanel org={org} />}
       {tab === "member-privileges" && <MemberPrivilegesPanel org={org} />}
       {tab === "actions" && <OrgActionsPanel org={org} />}
+      {tab === "secrets" && <OrgSecretsPanel org={org} />}
+      {tab === "code-security" && <OrgCodeSecurityPanel org={org} />}
       {tab === "properties" && <PropertiesPanel org={org} />}
       {tab === "issue-types" && <IssueTypesPanel org={org} />}
     </div>
@@ -244,6 +251,160 @@ function OrgActionsPanel({ org }: { org: string }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// Org Settings › Secrets and variables. Reuses the shared secrets manager against
+// an org scope — the same encryption, CRUD, and visibility (all/private/selected)
+// logic as the repo Secrets page, now reachable from the org nav.
+function OrgSecretsPanel({ org }: { org: string }) {
+  const scope: SecretsScope = { kind: "org", org };
+  return (
+    <div style={{ marginTop: "1rem" }}>
+      <p className="mb-4" style={{ fontSize: "0.84rem", color: "var(--color-fg-muted)" }}>
+        Secrets are encrypted in the browser with the organization&apos;s public key before upload
+        and are never readable again from this page. Variables are stored as plain text. Each can be
+        scoped to all, private, or selected repositories.
+      </p>
+      <div className="grid gap-6 lg:grid-cols-2">
+        <SecretsSection scope={scope} />
+        <VariablesSection scope={scope} />
+      </div>
+    </div>
+  );
+}
+
+interface CodeSecurityConfig {
+  id: number;
+  name: string;
+  description: string;
+  enforcement?: string;
+  default_for_new_repos?: string | null;
+  advanced_security?: string;
+  dependency_graph?: string;
+  dependabot_alerts?: string;
+  dependabot_security_updates?: string;
+  code_scanning_default_setup?: string;
+  secret_scanning?: string;
+  secret_scanning_push_protection?: string;
+  private_vulnerability_reporting?: string;
+}
+const cscBase = (org: string) => `/api/v3/orgs/${encodeURIComponent(org)}/code-security/configurations`;
+// enabled/disabled/not_set feature toggles offered on the create form; each maps
+// to the identically-named code-security-configuration field.
+const CSC_TOGGLES: { key: keyof CodeSecurityConfig; label: string }[] = [
+  { key: "dependency_graph", label: "Dependency graph" },
+  { key: "dependabot_alerts", label: "Dependabot alerts" },
+  { key: "dependabot_security_updates", label: "Dependabot security updates" },
+  { key: "code_scanning_default_setup", label: "Code scanning default setup" },
+  { key: "secret_scanning", label: "Secret scanning" },
+  { key: "secret_scanning_push_protection", label: "Secret scanning push protection" },
+  { key: "private_vulnerability_reporting", label: "Private vulnerability reporting" },
+];
+const CSC_STATES = ["not_set", "enabled", "disabled"];
+
+// Org Settings › Code security › Configurations: author reusable security
+// configurations (feature toggles + enforcement), set one as the default for new
+// repositories, and delete them. Server: /orgs/{org}/code-security/configurations.
+function OrgCodeSecurityPanel({ org }: { org: string }) {
+  const qc = useQueryClient();
+  const [error, setError] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [form, setForm] = useState<Record<string, string>>({ name: "", description: "", enforcement: "enforced", advanced_security: "disabled" });
+  const list = useQuery({ queryKey: ["code-security-configs", org], queryFn: () => ghFetch<CodeSecurityConfig[]>(cscBase(org)) });
+  const invalidate = () => void qc.invalidateQueries({ queryKey: ["code-security-configs", org] });
+  const createMut = useMutation({
+    mutationFn: (body: Record<string, string>) => ghPostJSON<CodeSecurityConfig>(cscBase(org), body),
+    onSuccess: () => { setError(null); setCreating(false); setForm({ name: "", description: "", enforcement: "enforced", advanced_security: "disabled" }); invalidate(); },
+    onError: (e: Error) => setError(e.message),
+  });
+  const delMut = useMutation({
+    mutationFn: (id: number) => ghSend("DELETE", `${cscBase(org)}/${id}`),
+    onSuccess: () => { setError(null); invalidate(); },
+    onError: (e: Error) => setError(e.message),
+  });
+  const defaultMut = useMutation({
+    mutationFn: (id: number) => ghSend("PUT", `${cscBase(org)}/${id}/defaults`, { default_for_new_repos: "all" }),
+    onSuccess: () => { setError(null); invalidate(); },
+    onError: (e: Error) => setError(e.message),
+  });
+
+  const configs: CodeSecurityConfig[] = list.data ?? [];
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "1rem", marginTop: "1rem" }}>
+      {error && <ErrorBanner>{error}</ErrorBanner>}
+      <div className="flex items-center justify-between">
+        <p style={{ fontSize: "0.84rem", color: "var(--color-fg-muted)", margin: 0 }}>
+          Reusable security configurations you can apply as the default for new repositories.
+        </p>
+        <Button variant="primary" size="sm" onClick={() => setCreating(true)}>New configuration</Button>
+      </div>
+      {list.isLoading && <Spinner label="loading code security configurations" />}
+      {list.isError && <InlineError title="Failed to load code security configurations" />}
+      {list.data && (configs.length === 0 ? (
+        <p style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)" }}>No configurations yet.</p>
+      ) : (
+        <Box>
+          {configs.map((c, i) => (
+            <div key={c.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.75rem", padding: "0.7rem 1rem", borderBottom: i < configs.length - 1 ? "1px solid var(--color-border)" : "none" }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: "0.9rem" }}>
+                  <strong>{c.name}</strong>
+                  {c.default_for_new_repos && c.default_for_new_repos !== "none" && (
+                    <span style={{ marginLeft: "0.5rem", fontSize: "0.72rem", color: "var(--color-fg-subtle)" }}>default: {c.default_for_new_repos}</span>
+                  )}
+                </div>
+                <div style={{ fontSize: "0.8rem", color: "var(--color-fg-muted)" }}>{c.description}</div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="ghost" disabled={defaultMut.isPending} onClick={() => defaultMut.mutate(c.id)}>Set as default</Button>
+                <Button size="sm" variant="danger" aria-label={`Delete configuration ${c.name}`} disabled={delMut.isPending}
+                  onClick={async () => { if (await confirmAction(`Delete configuration "${c.name}"?`, { title: "Delete configuration", confirmLabel: "Delete" })) delMut.mutate(c.id); }}>Delete</Button>
+              </div>
+            </div>
+          ))}
+        </Box>
+      ))}
+
+      {creating && (
+        <Modal title="New code security configuration" onClose={() => setCreating(false)}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+            <label><FormLabel id="csc-name">Name</FormLabel>
+              <input id="csc-name" aria-label="Configuration name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full" /></label>
+            <label><FormLabel id="csc-desc">Description</FormLabel>
+              <input id="csc-desc" aria-label="Configuration description" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="w-full" /></label>
+            <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem", fontSize: "0.85rem" }}>
+              <span>Enforcement</span>
+              <select aria-label="Enforcement" value={form.enforcement} onChange={(e) => setForm({ ...form, enforcement: e.target.value })}>
+                <option value="enforced">Enforced</option>
+                <option value="unenforced">Unenforced</option>
+              </select>
+            </label>
+            <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem", fontSize: "0.85rem" }}>
+              <span>GitHub Advanced Security</span>
+              <select aria-label="GitHub Advanced Security" value={form.advanced_security} onChange={(e) => setForm({ ...form, advanced_security: e.target.value })}>
+                <option value="enabled">Enabled</option>
+                <option value="disabled">Disabled</option>
+              </select>
+            </label>
+            {CSC_TOGGLES.map((t) => (
+              <label key={t.key} style={{ display: "flex", flexDirection: "column", gap: "0.2rem", fontSize: "0.85rem" }}>
+                <span>{t.label}</span>
+                <select aria-label={t.label} value={form[t.key] ?? "not_set"} onChange={(e) => setForm({ ...form, [t.key]: e.target.value })}>
+                  {CSC_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </label>
+            ))}
+          </div>
+          <DialogActions>
+            <Button variant="ghost" onClick={() => setCreating(false)} disabled={createMut.isPending}>Cancel</Button>
+            <Button variant="primary" disabled={!(form.name ?? "").trim() || !(form.description ?? "").trim() || createMut.isPending}
+              onClick={() => createMut.mutate(form)}>{createMut.isPending ? "Creating…" : "Create configuration"}</Button>
+          </DialogActions>
+        </Modal>
+      )}
     </div>
   );
 }

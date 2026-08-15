@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { InlineError, Spinner } from "@bleephub/ui-core/components";
 import { fetchOrgMembers, setOrgMembership, removeOrgMember } from "../api.js";
 import type { GithubAccount } from "../types.js";
-import { OrgHeader } from "../components/Shell.js";
+import { OrgHeader } from "../components/PageHeader.js";
 import { Avatar } from "../components/Avatar.js";
 import { Box, SectionLabel, Blankslate, Button, FormLabel } from "../components/ui.js";
 import { MutationError } from "../components/MutationError.js";

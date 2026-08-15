@@ -2,7 +2,7 @@ import { useParams } from "react-router";
 import { InlineError } from "@bleephub/ui-core/components";
 import { fetchOrgReposPage } from "../api.js";
 import { RepoListPage } from "./RepoListPage.js";
-import { OrgHeader } from "../components/Shell.js";
+import { OrgHeader } from "../components/PageHeader.js";
 
 export function OrgReposPage() {
   const { org } = useParams<{ org: string }>();

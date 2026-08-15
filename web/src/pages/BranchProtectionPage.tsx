@@ -12,7 +12,7 @@ import {
   setBranchRestrictionUsers,
 } from "../api.js";
 import type { GithubBranch, GithubBranchProtection } from "../types.js";
-import { RepoHeader } from "../components/Shell.js";
+import { RepoHeader } from "../components/PageHeader.js";
 import { PageTitle, Button, Box } from "../components/ui.js";
 
 interface FormState {

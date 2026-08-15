@@ -356,7 +356,7 @@ function TeamDetailDialog({ team, onClose }: { team: BleephubTeam; onClose: () =
   );
 }
 
-function TeamMembersPanel({ org, slug }: { org: string; slug: string }) {
+export function TeamMembersPanel({ org, slug }: { org: string; slug: string }) {
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
   const [username, setUsername] = useState("");
@@ -485,7 +485,7 @@ function TeamMembersPanel({ org, slug }: { org: string; slug: string }) {
   );
 }
 
-function TeamReposPanel({ org, slug }: { org: string; slug: string }) {
+export function TeamReposPanel({ org, slug }: { org: string; slug: string }) {
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
   const [repoInput, setRepoInput] = useState("");
@@ -604,7 +604,7 @@ function TeamReposPanel({ org, slug }: { org: string; slug: string }) {
   );
 }
 
-function TeamChildrenPanel({ org, slug }: { org: string; slug: string }) {
+export function TeamChildrenPanel({ org, slug }: { org: string; slug: string }) {
   const query = useQuery({
     queryKey: ["team-children", org, slug],
     queryFn: () => fetchChildTeams(org, slug),

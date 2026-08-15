@@ -20,7 +20,7 @@ import {
 } from "../api.js";
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
 import type { GithubDiscussion, GithubDiscussionComment, GithubReactionGroup } from "../types.js";
-import { RepoHeader } from "../components/Shell.js";
+import { RepoHeader } from "../components/PageHeader.js";
 import {
   Button,
   Box,

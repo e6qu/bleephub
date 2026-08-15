@@ -9,7 +9,7 @@ import {
 } from "../api.js";
 import type { HookScope } from "../api.js";
 import type { GithubHookDelivery } from "../types.js";
-import { OrgHeader, RepoHeader } from "../components/Shell.js";
+import { OrgHeader, RepoHeader } from "../components/PageHeader.js";
 import { PageTitle, Box, Blankslate, Button, CodeBlock, ErrorBanner } from "../components/ui.js";
 import { ChevronDownIcon, ChevronRightIcon } from "../components/octicons.js";
 

@@ -20,7 +20,7 @@ import {
 } from "../api.js";
 import { ReactionBar } from "../components/ReactionBar.js";
 import type { GithubRelease, GithubReleaseAsset } from "../types.js";
-import { RepoHeader } from "../components/Shell.js";
+import { RepoHeader } from "../components/PageHeader.js";
 import { Blankslate, Box, Button, ErrorBanner, FormLabel, PageTitle } from "../components/ui.js";
 import { confirmAction } from "../components/confirmAction.js";
 import { DownloadIcon, PlusIcon, TagIcon, TrashIcon } from "../components/octicons.js";

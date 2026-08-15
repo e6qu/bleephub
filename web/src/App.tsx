@@ -26,6 +26,7 @@ const ActionsPage = lazy(() => import("./pages/ActionsPage.js").then(({ ActionsP
 const RunDetailPage = lazy(() => import("./pages/RunDetailPage.js").then(({ RunDetailPage }) => ({ default: RunDetailPage })));
 const RepoSettingsPage = lazy(() => import("./pages/RepoSettingsPage.js").then(({ RepoSettingsPage }) => ({ default: RepoSettingsPage })));
 const BranchProtectionPage = lazy(() => import("./pages/BranchProtectionPage.js").then(({ BranchProtectionPage }) => ({ default: BranchProtectionPage })));
+const RepoSecurityOverviewPage = lazy(() => import("./pages/RepoSecurityOverviewPage.js").then(({ RepoSecurityOverviewPage }) => ({ default: RepoSecurityOverviewPage })));
 const SecretScanningPage = lazy(() => import("./pages/SecretScanningPage.js").then(({ SecretScanningPage }) => ({ default: SecretScanningPage })));
 const CodeScanningPage = lazy(() => import("./pages/CodeScanningPage.js").then(({ CodeScanningPage }) => ({ default: CodeScanningPage })));
 const DependabotPage = lazy(() => import("./pages/DependabotPage.js").then(({ DependabotPage }) => ({ default: DependabotPage })));
@@ -67,6 +68,7 @@ const ProfilePage = lazy(() => import("./pages/ProfilePage.js").then(({ ProfileP
 const OrgOverviewPage = lazy(() => import("./pages/OrgOverviewPage.js").then(({ OrgOverviewPage }) => ({ default: OrgOverviewPage })));
 const OrgPeoplePage = lazy(() => import("./pages/OrgPeoplePage.js").then(({ OrgPeoplePage }) => ({ default: OrgPeoplePage })));
 const OrgTeamsPage = lazy(() => import("./pages/OrgTeamsPage.js").then(({ OrgTeamsPage }) => ({ default: OrgTeamsPage })));
+const OrgTeamDetailPage = lazy(() => import("./pages/OrgTeamDetailPage.js").then(({ OrgTeamDetailPage }) => ({ default: OrgTeamDetailPage })));
 const ClassroomPage = lazy(() => import("./pages/ClassroomPage.js").then(({ ClassroomPage }) => ({ default: ClassroomPage })));
 const MarketplacePage = lazy(() => import("./pages/MarketplacePage.js").then(({ MarketplacePage }) => ({ default: MarketplacePage })));
 const MarketplacePublisherPage = lazy(() => import("./pages/MarketplacePublisherPage.js").then(({ MarketplacePublisherPage }) => ({ default: MarketplacePublisherPage })));
@@ -232,6 +234,7 @@ export function App() {
               <Route path="/ui/repos/:owner/:repo/actions/runs/:runId" element={<RunDetailPage />} />
               <Route path="/ui/repos/:owner/:repo/settings" element={<RepoSettingsPage />} />
               <Route path="/ui/repos/:owner/:repo/settings/branch-protection" element={<BranchProtectionPage />} />
+              <Route path="/ui/repos/:owner/:repo/security" element={<RepoSecurityOverviewPage />} />
               <Route path="/ui/repos/:owner/:repo/security/secret-scanning" element={<SecretScanningPage />} />
               <Route path="/ui/repos/:owner/:repo/security/code-scanning" element={<CodeScanningPage />} />
               <Route path="/ui/repos/:owner/:repo/security/dependabot" element={<DependabotPage />} />
@@ -284,6 +287,7 @@ export function App() {
               <Route path="/ui/orgs/:org" element={<OrgOverviewPage />} />
               <Route path="/ui/orgs/:org/people" element={<OrgPeoplePage />} />
               <Route path="/ui/orgs/:org/teams" element={<OrgTeamsPage />} />
+              <Route path="/ui/orgs/:org/teams/:slug" element={<OrgTeamDetailPage />} />
               <Route path="/ui/users/:login" element={<ProfilePage />} />
               {/* A logged-in user hitting /ui/login (bookmark) or any
                   unknown /ui/* path lands back on the dashboard. */}

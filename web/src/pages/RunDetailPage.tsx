@@ -22,7 +22,7 @@ import {
 import type { GithubJob, GithubJobStep, GithubWorkflowRun } from "../types.js";
 import { formatDuration } from "../utils/format.js";
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
-import { RepoHeader } from "../components/Shell.js";
+import { RepoHeader } from "../components/PageHeader.js";
 import { RunStatusIcon } from "../components/RunStatusIcon.js";
 import { Box, Blankslate, Button, ErrorBanner } from "../components/ui.js";
 import {

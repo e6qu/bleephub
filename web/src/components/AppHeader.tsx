@@ -420,6 +420,7 @@ export function AppHeader() {
                   <MenuLink to="/ui/migrations" icon={<MigrationIcon size={16} />} onClick={close}>Import repository</MenuLink>
                   <MenuLink to="/ui/gists?new=1" icon={<GistIcon size={16} />} onClick={close}>New gist</MenuLink>
                   <MenuLink to="/ui/operations/orgs?new=1" icon={<OrganizationIcon size={16} />} onClick={close}>New organization</MenuLink>
+                  {login && <MenuLink to={`/ui/${login}?tab=projects`} icon={<ProjectIcon size={16} />} onClick={close}>New project</MenuLink>}
                 </>
               )}
             </HeaderMenu>

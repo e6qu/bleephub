@@ -19,7 +19,7 @@ import type {
 } from "../types.js";
 import { confirmAction } from "../components/confirmAction.js";
 import { RulesetEditor, type RulesetRuleConfig } from "../components/RulesetEditor.js";
-import { OrgHeader } from "../components/Shell.js";
+import { OrgHeader } from "../components/PageHeader.js";
 import {
   Box,
   Button,

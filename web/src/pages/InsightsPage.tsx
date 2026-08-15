@@ -18,7 +18,7 @@ import {
   fetchTrafficPopularReferrers,
 } from "../api.js";
 import type { GithubCommunityProfile, GithubTrafficBucket, GithubCommit } from "../types.js";
-import { RepoHeader } from "../components/Shell.js";
+import { RepoHeader } from "../components/PageHeader.js";
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
 import { Box, Blankslate, SectionLabel, StatCard } from "../components/ui.js";
 import { GraphIcon, PeopleIcon, CheckCircleIcon, XCircleIcon } from "../components/octicons.js";
