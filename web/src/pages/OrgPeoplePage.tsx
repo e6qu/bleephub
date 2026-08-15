@@ -2,7 +2,15 @@ import { useMemo, useState } from "react";
 import { useParams, Link } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { InlineError, Spinner } from "@bleephub/ui-core/components";
-import { fetchOrgMembers, setOrgMembership, removeOrgMember } from "../api.js";
+import {
+  fetchOrgMembers,
+  fetchPublicOrgMembers,
+  setOrgMembership,
+  removeOrgMember,
+  publicizeOrgMembership,
+  concealOrgMembership,
+  fetchCurrentUser,
+} from "../api.js";
 import type { GithubAccount } from "../types.js";
 import { OrgHeader } from "../components/PageHeader.js";
 import { Avatar } from "../components/Avatar.js";
@@ -22,8 +30,25 @@ export function OrgPeoplePage() {
     queryKey: ["org-members", org],
     queryFn: () => fetchOrgMembers(org),
   });
+  const viewerQ = useQuery({ queryKey: ["current-user"], queryFn: ({ signal }) => fetchCurrentUser(signal) });
+  const publicQ = useQuery({
+    queryKey: ["org-public-members", org],
+    queryFn: () => fetchPublicOrgMembers(org),
+  });
+  const publicLogins = useMemo(
+    () => new Set((publicQ.data ?? []).map((m) => m.login)),
+    [publicQ.data],
+  );
 
-  const invalidate = () => qc.invalidateQueries({ queryKey: ["org-members", org] });
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ["org-members", org] });
+    qc.invalidateQueries({ queryKey: ["org-public-members", org] });
+  };
+  const visibilityMut = useMutation({
+    mutationFn: (v: { login: string; makePublic: boolean }) =>
+      v.makePublic ? publicizeOrgMembership(org, v.login) : concealOrgMembership(org, v.login),
+    onSuccess: invalidate,
+  });
   const inviteMut = useMutation({
     mutationFn: () => setOrgMembership(org, inviteLogin.trim(), inviteRole),
     onSuccess: () => {
@@ -113,6 +138,11 @@ export function OrgPeoplePage() {
                 <MemberCard
                   key={m.id}
                   member={m}
+                  isSelf={viewerQ.data?.login === m.login}
+                  isPublic={publicLogins.has(m.login)}
+                  onToggleVisibility={() =>
+                    visibilityMut.mutate({ login: m.login, makePublic: !publicLogins.has(m.login) })
+                  }
                   onSetRole={(role) => roleMut.mutate({ login: m.login, role })}
                   onRemove={async () => {
                     if (
@@ -124,7 +154,7 @@ export function OrgPeoplePage() {
                       removeMut.mutate(m.login);
                     }
                   }}
-                  busy={roleMut.isPending || removeMut.isPending}
+                  busy={roleMut.isPending || removeMut.isPending || visibilityMut.isPending}
                 />
               ))}
             </div>
@@ -137,11 +167,17 @@ export function OrgPeoplePage() {
 
 function MemberCard({
   member,
+  isSelf,
+  isPublic,
+  onToggleVisibility,
   onSetRole,
   onRemove,
   busy,
 }: {
   member: GithubAccount;
+  isSelf: boolean;
+  isPublic: boolean;
+  onToggleVisibility: () => void;
   onSetRole: (role: "member" | "admin") => void;
   onRemove: () => void;
   busy: boolean;
@@ -159,9 +195,23 @@ function MemberCard({
           </Link>
           <div style={{ fontSize: "0.78rem", color: "var(--color-fg-muted)" }}>
             {member.site_admin ? "Site admin" : member.type}
+            {isPublic ? " · public member" : isSelf ? " · private member" : ""}
           </div>
         </div>
       </div>
+      {isSelf && (
+        <div className="mt-2">
+          <Button
+            size="sm"
+            variant="ghost"
+            aria-label={isPublic ? "Make membership private" : "Make membership public"}
+            disabled={busy}
+            onClick={onToggleVisibility}
+          >
+            {isPublic ? "Make private" : "Make public"}
+          </Button>
+        </div>
+      )}
       <div className="mt-2 flex items-center gap-2">
         <select
           aria-label={`Set role for ${member.login}`}

@@ -7,6 +7,8 @@ import {
   deleteUser,
   fetchUsers,
   updateUser,
+  suspendUser,
+  unsuspendUser,
   isForbidden,
   isRateLimited,
 } from "../api.js";
@@ -73,6 +75,16 @@ function UsersTable() {
     onError: (err: Error) => setMutationError(err.message),
   });
 
+  const suspendMut = useMutation({
+    mutationFn: ({ login, suspended }: { login: string; suspended: boolean }) =>
+      suspended ? unsuspendUser(login) : suspendUser(login),
+    onSuccess: () => {
+      setMutationError(null);
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+    },
+    onError: (err: Error) => setMutationError(err.message),
+  });
+
   if (isError) return <InlineError title="Failed to load users" />;
   if (isLoading || !data) return <Spinner label="loading users" />;
 
@@ -119,19 +131,35 @@ function UsersTable() {
       header: "Actions",
       cell: (info) => {
         const user = info.row.original;
+        const suspended = !!user.suspended_at;
         return (
-          <Button
-            size="sm"
-            variant="danger"
-            onClick={async () => {
-              if (await confirmAction(`Delete user @${user.login}?`)) {
-                deleteMut.mutate(user.login);
-              }
-            }}
-            disabled={deleteMut.isPending}
-          >
-            delete
-          </Button>
+          <span className="inline-flex gap-2">
+            <Button
+              size="sm"
+              variant="secondary"
+              aria-label={`${suspended ? "Unsuspend" : "Suspend"} user ${user.login}`}
+              onClick={async () => {
+                if (await confirmAction(`${suspended ? "Unsuspend" : "Suspend"} user @${user.login}?`)) {
+                  suspendMut.mutate({ login: user.login, suspended });
+                }
+              }}
+              disabled={suspendMut.isPending}
+            >
+              {suspended ? "unsuspend" : "suspend"}
+            </Button>
+            <Button
+              size="sm"
+              variant="danger"
+              onClick={async () => {
+                if (await confirmAction(`Delete user @${user.login}?`)) {
+                  deleteMut.mutate(user.login);
+                }
+              }}
+              disabled={deleteMut.isPending}
+            >
+              delete
+            </Button>
+          </span>
         );
       },
     }),

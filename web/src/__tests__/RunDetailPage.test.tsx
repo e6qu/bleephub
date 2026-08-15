@@ -316,4 +316,30 @@ describe("RunDetailPage", () => {
       });
     });
   });
+
+  it("deletes a completed workflow run after confirming and navigates away", async () => {
+    installMocks();
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Delete workflow run" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+    await waitFor(() => {
+      const del = mockFetch.mock.calls.find(
+        (c) => /\/actions\/runs\/\d+$/.test(c[0].toString()) && c[1]?.method === "DELETE",
+      );
+      expect(del).toBeTruthy();
+    });
+  });
+
+  it("deletes all logs for a completed run after confirming", async () => {
+    installMocks();
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Delete all logs" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+    await waitFor(() => {
+      const del = mockFetch.mock.calls.find(
+        (c) => /\/actions\/runs\/\d+\/logs$/.test(c[0].toString()) && c[1]?.method === "DELETE",
+      );
+      expect(del).toBeTruthy();
+    });
+  });
 });

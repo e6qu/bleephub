@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useParams } from "react-router";
+import { useParams, useNavigate } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Markdown from "../components/Markdown";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
@@ -18,8 +18,11 @@ import {
   rerunRun,
   rerunFailedJobs,
   rerunJob,
+  deleteWorkflowRun,
+  deleteWorkflowRunLogs,
   isNotFound,
 } from "../api.js";
+import { confirmAction } from "../components/confirmAction.js";
 import type { GithubJob, GithubJobStep, GithubWorkflowRun } from "../types.js";
 import { formatDuration } from "../utils/format.js";
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
@@ -194,6 +197,18 @@ function RunHeader({
     mutationFn: () => approveWorkflowRun(owner, repo, run.id),
     onSuccess: invalidateRun,
   });
+  const navigate = useNavigate();
+  const deleteLogsMutation = useMutation({
+    mutationFn: () => deleteWorkflowRunLogs(owner, repo, run.id),
+    onSuccess: invalidateRun,
+  });
+  const deleteRunMutation = useMutation({
+    mutationFn: () => deleteWorkflowRun(owner, repo, run.id),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["runs", owner, repo] });
+      navigate(`/ui/repos/${owner}/${repo}/actions`);
+    },
+  });
 
   const cancellable = run.status === "queued" || run.status === "in_progress" || run.status === "waiting";
   const completed = run.status === "completed";
@@ -202,7 +217,9 @@ function RunHeader({
     forceCancelMutation.error ??
     approveMutation.error ??
     rerunMutation.error ??
-    rerunFailedMutation.error;
+    rerunFailedMutation.error ??
+    deleteLogsMutation.error ??
+    deleteRunMutation.error;
 
   return (
     <header className="border-b pb-4" style={{ borderColor: "var(--color-border)" }}>
@@ -306,6 +323,34 @@ function RunHeader({
               onClick={() => rerunFailedMutation.mutate()}
             >
               {rerunFailedMutation.isPending ? "Re-running…" : "Re-run failed jobs"}
+            </Button>
+          )}
+          {completed && (
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={deleteLogsMutation.isPending}
+              onClick={async () => {
+                if (await confirmAction("Delete all logs for this workflow run?", { title: "Delete all logs", confirmLabel: "Delete" })) {
+                  deleteLogsMutation.mutate();
+                }
+              }}
+            >
+              {deleteLogsMutation.isPending ? "Deleting…" : "Delete all logs"}
+            </Button>
+          )}
+          {completed && (
+            <Button
+              variant="danger"
+              size="sm"
+              disabled={deleteRunMutation.isPending}
+              onClick={async () => {
+                if (await confirmAction("Delete this workflow run? This cannot be undone.", { title: "Delete workflow run", confirmLabel: "Delete" })) {
+                  deleteRunMutation.mutate();
+                }
+              }}
+            >
+              {deleteRunMutation.isPending ? "Deleting…" : "Delete workflow run"}
             </Button>
           )}
         </div>

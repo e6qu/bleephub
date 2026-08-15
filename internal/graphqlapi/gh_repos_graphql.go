@@ -1252,8 +1252,8 @@ var graphqlMutationAuthz = map[string]mutationRule{
 
 	"minimizeComment":   repoRule{scope: store.ScopeIssues, level: mutationPushRepo, authorMayAct: true, target: mutationTargetIssueComment("subjectId")},
 	"unminimizeComment": repoRule{scope: store.ScopeIssues, level: mutationPushRepo, authorMayAct: true, target: mutationTargetIssueComment("subjectId")},
-	"lockLockable":      repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: mutationTargetIssueOrPullRequest("lockableId")},
-	"unlockLockable":    repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: mutationTargetIssueOrPullRequest("lockableId")},
+	"lockLockable":      repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: mutationTargetLockable("lockableId")},
+	"unlockLockable":    repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: mutationTargetLockable("lockableId")},
 
 	"createPullRequest":             repoRule{scope: store.ScopePullRequests, level: mutationReadRepo, target: mutationTargetRepo("repositoryId")},
 	"addPullRequestReview":          repoRule{scope: store.ScopePullRequests, level: mutationReadRepo, target: mutationTargetPullRequest("pullRequestId")},
@@ -1448,6 +1448,26 @@ func mutationTargetIssueOrPullRequest(key string) func(*Resolver, map[string]int
 		if pr := store.FindPullRequestByNodeID(s.store, nodeID); pr != nil {
 			target.repo = s.store.GetRepoByID(pr.RepoID)
 			target.authorID = pr.AuthorID
+		}
+		return target
+	}
+}
+
+// mutationTargetLockable covers lockLockable / unlockLockable, whose subject is
+// any Lockable: an issue, a pull request, or a discussion. It extends the
+// issue-or-PR resolution with the discussion case so a discussion node ID
+// resolves to its repository for authorization.
+func mutationTargetLockable(key string) func(*Resolver, map[string]interface{}) mutationTarget {
+	issueOrPR := mutationTargetIssueOrPullRequest(key)
+	return func(s *Resolver, input map[string]interface{}) mutationTarget {
+		if target := issueOrPR(s, input); target.repo != nil {
+			return target
+		}
+		nodeID, _ := input[key].(string)
+		target := mutationTarget{missing: gqlMissingNode("node", nodeID)}
+		if d := store.FindDiscussionByNodeID(s.store, nodeID); d != nil {
+			target.repo = s.store.GetRepoByID(d.RepoID)
+			target.authorID = d.AuthorID
 		}
 		return target
 	}

@@ -14,6 +14,8 @@ import {
   unmarkDiscussionCommentAsAnswer,
   deleteDiscussion,
   updateDiscussion,
+  lockDiscussion,
+  unlockDiscussion,
   deleteDiscussionComment,
   updateDiscussionComment,
   addReaction,
@@ -295,10 +297,15 @@ function DiscussionDetail({
   const [editingDiscussion, setEditingDiscussion] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editDiscBody, setEditDiscBody] = useState("");
+  const [editCategory, setEditCategory] = useState("");
 
   const { data: discussion, isLoading, isError, error } = useQuery({
     queryKey: ["discussion", owner, repo, number],
     queryFn: ({ signal }) => fetchDiscussionDetail(owner, repo, number, signal),
+  });
+  const { data: categories = [] } = useQuery({
+    queryKey: ["discussion-categories", owner, repo],
+    queryFn: ({ signal }) => fetchDiscussionCategories(owner, repo, signal),
   });
 
   const addCommentMutation = useMutation({
@@ -345,8 +352,19 @@ function DiscussionDetail({
     },
   });
 
+  const lockMutation = useMutation({
+    mutationFn: () =>
+      discussion!.locked ? unlockDiscussion(discussion!.id) : lockDiscussion(discussion!.id, "RESOLVED"),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["discussion", owner, repo, number] }),
+  });
+
   const editDiscussionMutation = useMutation({
-    mutationFn: () => updateDiscussion(discussion!.id, { title: editTitle.trim(), body: editDiscBody }),
+    mutationFn: () =>
+      updateDiscussion(discussion!.id, {
+        title: editTitle.trim(),
+        body: editDiscBody,
+        ...(editCategory ? { categoryId: editCategory } : {}),
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["discussion", owner, repo, number] });
       qc.invalidateQueries({ queryKey: ["discussions", owner, repo] });
@@ -402,10 +420,19 @@ function DiscussionDetail({
           onClick={() => {
             setEditTitle(discussion.title);
             setEditDiscBody(discussion.bodyText ?? discussion.body ?? "");
+            setEditCategory(discussion.category.id);
             setEditingDiscussion(true);
           }}
         >
           Edit
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => lockMutation.mutate()}
+          disabled={lockMutation.isPending}
+        >
+          {discussion.locked ? "Unlock conversation" : "Lock conversation"}
         </Button>
         <Button
           variant="ghost"
@@ -429,6 +456,19 @@ function DiscussionDetail({
             onChange={(e) => setEditTitle(e.target.value)}
             className="mb-3 w-full"
           />
+          <FormLabel id="edit-discussion-category">Category</FormLabel>
+          <select
+            id="edit-discussion-category"
+            value={editCategory}
+            onChange={(e) => setEditCategory(e.target.value)}
+            className="mb-3 w-full"
+          >
+            {categories.map((cat) => (
+              <option key={cat.id} value={cat.id}>
+                {cat.emoji} {cat.name}
+              </option>
+            ))}
+          </select>
           <FormLabel id="edit-discussion-body">Body</FormLabel>
           <textarea
             id="edit-discussion-body"

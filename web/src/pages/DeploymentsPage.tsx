@@ -8,6 +8,8 @@ import {
   fetchDeploymentStatuses,
   fetchDeploymentsPage,
   fetchEnvBranchPolicies,
+  createEnvBranchPolicy,
+  deleteEnvBranchPolicy,
   fetchEnvProtectionRules,
   fetchEnvironmentsDetail,
   fetchPendingDeployments,
@@ -17,6 +19,7 @@ import {
   isForbidden,
   isRateLimited,
 } from "../api.js";
+import { confirmAction } from "../components/confirmAction.js";
 import type {
   GithubDeployment,
   GithubDeploymentState,
@@ -512,6 +515,22 @@ function EnvironmentDetail({
     queryKey: ["env-protection-rules", owner, repo, env.name],
     queryFn: () => fetchEnvProtectionRules(owner, repo, env.name),
   });
+  const qc = useQueryClient();
+  const [policyName, setPolicyName] = useState("");
+  const [policyType, setPolicyType] = useState<"branch" | "tag">("branch");
+  const invalidatePolicies = () =>
+    qc.invalidateQueries({ queryKey: ["env-branch-policies", owner, repo, env.name] });
+  const addPolicyMut = useMutation({
+    mutationFn: () => createEnvBranchPolicy(owner, repo, env.name, policyName.trim(), policyType),
+    onSuccess: () => {
+      setPolicyName("");
+      invalidatePolicies();
+    },
+  });
+  const deletePolicyMut = useMutation({
+    mutationFn: (policyId: number) => deleteEnvBranchPolicy(owner, repo, env.name, policyId),
+    onSuccess: invalidatePolicies,
+  });
 
   return (
     <div
@@ -561,12 +580,62 @@ function EnvironmentDetail({
         ) : (
           <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
             {(branchPoliciesQ.data ?? []).map((p) => (
-              <li key={p.id} className="font-mono" style={{ padding: "0.15rem 0" }}>
-                {p.name} <span style={{ color: "var(--color-fg-muted)" }}>({p.type})</span>
+              <li key={p.id} className="flex items-center gap-2" style={{ padding: "0.15rem 0" }}>
+                <span className="font-mono">
+                  {p.name} <span style={{ color: "var(--color-fg-muted)" }}>({p.type})</span>
+                </span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  aria-label={`Delete branch policy ${p.name}`}
+                  disabled={deletePolicyMut.isPending}
+                  onClick={async () => {
+                    if (
+                      typeof p.id === "number" &&
+                      (await confirmAction(`Delete branch policy "${p.name}"?`, { title: "Delete branch policy", confirmLabel: "Delete" }))
+                    ) {
+                      deletePolicyMut.mutate(p.id);
+                    }
+                  }}
+                >
+                  Delete
+                </Button>
               </li>
             ))}
           </ul>
         )}
+        {(addPolicyMut.error || deletePolicyMut.error) && (
+          <ErrorBanner>{String(addPolicyMut.error ?? deletePolicyMut.error)}</ErrorBanner>
+        )}
+        <form
+          className="mt-1 flex items-end gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (policyName.trim()) addPolicyMut.mutate();
+          }}
+        >
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+            <FormLabel id={`policy-name-${env.name}`}>Branch/tag pattern</FormLabel>
+            <input
+              id={`policy-name-${env.name}`}
+              type="text"
+              value={policyName}
+              placeholder="releases/*"
+              onChange={(e) => setPolicyName(e.target.value)}
+            />
+          </div>
+          <select
+            aria-label="Policy type"
+            value={policyType}
+            onChange={(e) => setPolicyType(e.target.value as "branch" | "tag")}
+          >
+            <option value="branch">Branch</option>
+            <option value="tag">Tag</option>
+          </select>
+          <Button type="submit" variant="secondary" size="sm" disabled={!policyName.trim() || addPolicyMut.isPending}>
+            {addPolicyMut.isPending ? "Adding…" : "Add"}
+          </Button>
+        </form>
       </div>
       <div>
         <div style={{ fontWeight: 600, marginBottom: "0.2rem" }}>

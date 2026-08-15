@@ -139,6 +139,50 @@ describe("GistsPage", () => {
     );
   });
 
+  it("edits the viewer's own gist comment via PATCH", async () => {
+    mockFetch.mockImplementation((url: string, init?: RequestInit) => {
+      if (url === "/api/v3/gists") return Promise.resolve(jsonResponse([gist]));
+      if (url === "/api/v3/gists/g1") return Promise.resolve(jsonResponse(gist));
+      if (url === "/api/v3/gists/g1/commits") return Promise.resolve(jsonResponse([]));
+      if (url === "/api/v3/gists/g1/comments") {
+        if (init?.method === "PATCH") {
+          return Promise.resolve(
+            jsonResponse({ id: 1, body: "edited body", user: { login: "admin" }, created_at: "2026-01-01T00:00:00Z" }),
+          );
+        }
+        return Promise.resolve(
+          jsonResponse([{ id: 1, body: "mine", user: { login: "admin" }, created_at: "2026-01-01T00:00:00Z" }]),
+        );
+      }
+      if (url === "/api/v3/gists/g1/comments/1") {
+        return Promise.resolve(
+          jsonResponse({ id: 1, body: "edited body", user: { login: "admin" }, created_at: "2026-01-01T00:00:00Z" }),
+        );
+      }
+      if (url === "/api/v3/user") return Promise.resolve(jsonResponse({ login: "admin", avatar_url: "" }));
+      return Promise.resolve(jsonResponse({}));
+    });
+    renderPage();
+    await waitFor(() => expect(screen.getByText("hello world")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("hello world"));
+    await waitFor(() => expect(screen.getByText("hello.txt")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("tab", { name: "Comments" }));
+    await waitFor(() => expect(screen.getByText("mine")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit comment 1" }));
+    fireEvent.change(screen.getByLabelText("Edit comment"), { target: { value: "edited body" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      const patched = mockFetch.mock.calls.find(
+        ([u, init]) => u === "/api/v3/gists/g1/comments/1" && (init as RequestInit | undefined)?.method === "PATCH",
+      );
+      expect(patched).toBeTruthy();
+      expect(JSON.parse((patched![1] as RequestInit).body as string)).toEqual({ body: "edited body" });
+    });
+  });
+
   it("opens the create form from the global new-gist deep link", async () => {
     window.history.pushState({}, "", "/ui/gists?new=1");
     mockEndpoints();

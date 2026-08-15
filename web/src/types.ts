@@ -759,6 +759,7 @@ export interface BleephubUser {
   site_admin: boolean;
   created_at: string;
   avatar_url?: string;
+  suspended_at?: string | null;
 }
 
 export interface BleephubOrg {
@@ -957,6 +958,7 @@ export interface GithubDiscussion {
   category: GithubDiscussionCategory;
   createdAt: string;
   updatedAt: string;
+  locked?: boolean;
   comments: { totalCount: number };
   reactionGroups?: GithubReactionGroup[];
 }
@@ -1945,6 +1947,11 @@ export interface GithubGPGKey {
 export type GithubSSHSigningKey = components["schemas"]["ssh-signing-key"];
 
 /** Entry in GET /user/blocks. */
+export interface GithubSocialAccount {
+  provider: string;
+  url: string;
+}
+
 export interface GithubBlockedUser {
   login: string;
 }
@@ -2005,6 +2012,13 @@ export interface GithubOrgSummary {
   id: number;
   avatar_url: string;
   description: string | null;
+}
+
+/** GET /user/memberships/orgs — the caller's membership in an org. */
+export interface GithubOrgMembership {
+  state: "pending" | "active";
+  role: string;
+  organization: GithubOrgSummary;
 }
 
 /** The GitHub `team` (team-simple) shape in GET /orgs/{org}/teams. */

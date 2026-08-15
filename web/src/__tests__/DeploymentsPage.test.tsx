@@ -183,6 +183,56 @@ describe("DeploymentsPage", () => {
     await waitFor(() => expect(screen.getByText(/release\/\*/)).toBeInTheDocument());
   });
 
+  it("adds a deployment branch policy via POST .../deployment-branch-policies", async () => {
+    mockFetch.mockImplementation((url: string, init?: RequestInit) => {
+      if (url === "/api/v3/repos/admin/deploy-repo/environments") {
+        return Promise.resolve(jsonResponse({ total_count: 1, environments: [environment] }));
+      }
+      if (url.endsWith("/environments/production/deployment-branch-policies")) {
+        if (init?.method === "POST") {
+          return Promise.resolve(
+            jsonResponse({ id: 22, node_id: "DBP_kwDO00000022", name: "hotfix/*", type: "branch" }, 201),
+          );
+        }
+        return Promise.resolve(
+          jsonResponse({
+            total_count: 1,
+            branch_policies: [
+              { id: 21, node_id: "DBP_kwDO00000021", name: "release/*", type: "branch" },
+            ],
+          }),
+        );
+      }
+      if (url.endsWith("/environments/production/deployment_protection_rules")) {
+        return Promise.resolve(
+          jsonResponse({ total_count: 0, custom_deployment_protection_rules: [] }),
+        );
+      }
+      if (url.startsWith("/api/v3/repos/admin/deploy-repo/deployments?")) {
+        return Promise.resolve(jsonResponse([]));
+      }
+      return Promise.resolve(jsonResponse({ message: "Not Found" }, 404));
+    });
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("tab", { name: "Environments" }));
+    fireEvent.click(await screen.findByText("production"));
+    fireEvent.change(await screen.findByLabelText("Branch/tag pattern"), {
+      target: { value: "hotfix/*" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+
+    await waitFor(() => {
+      const post = mockFetch.mock.calls.find(
+        (c) =>
+          c[0].toString().endsWith("/environments/production/deployment-branch-policies") &&
+          c[1]?.method === "POST",
+      );
+      expect(post).toBeDefined();
+      expect(JSON.parse(String(post![1].body))).toEqual({ name: "hotfix/*", type: "branch" });
+    });
+  });
+
   it("creates a deployment via POST .../deployments", async () => {
     mockFetch.mockImplementation((url: string, init?: RequestInit) => {
       if (url === "/api/v3/repos/admin/deploy-repo/deployments" && init?.method === "POST") {

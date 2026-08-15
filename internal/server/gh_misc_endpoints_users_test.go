@@ -188,6 +188,26 @@ func TestUserExtras_SocialAccounts(t *testing.T) {
 	}
 }
 
+// TestUserExtras_SocialAccountsAccountUrls covers the GitHub-documented request
+// body {"account_urls": [...]} for creating social accounts, which the create
+// handler must accept alongside the bare-array and [{url}] object forms.
+func TestUserExtras_SocialAccountsAccountUrls(t *testing.T) {
+	resp := ghPost(t, "/api/v3/user/social_accounts", defaultToken, map[string]interface{}{
+		"account_urls": []string{"https://example.com/canonical"},
+	})
+	if resp.StatusCode != 201 {
+		resp.Body.Close()
+		t.Fatalf("expected 201, got %d", resp.StatusCode)
+	}
+	accounts := decodeJSONArray(t, resp)
+	if len(accounts) == 0 {
+		t.Fatal("expected the account_urls body to create a social account")
+	}
+	if url, _ := accounts[0]["url"].(string); url != "https://example.com/canonical" {
+		t.Fatalf("expected the created account URL, got %v", accounts[0]["url"])
+	}
+}
+
 func TestUserExtras_SSHSigningKeys(t *testing.T) {
 	resp := ghPost(t, "/api/v3/user/ssh_signing_keys", defaultToken, map[string]interface{}{
 		"key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDIhz2GK/XCUj4i6Q5yQJNL1MXMY0RxzPV2QrBqfHrDq",

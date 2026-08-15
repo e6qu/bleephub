@@ -1,16 +1,19 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { DataTable, InlineError, Spinner, StatusBadge } from "@bleephub/ui-core/components";
 import { createColumnHelper } from "@bleephub/ui-core/components";
 import {
   fetchRepos,
   fetchActionsRunners,
   createRunnerRegistrationToken,
+  deleteActionsRunner,
   isForbidden,
   isRateLimited,
 } from "../api.js";
 import type { GithubRunner } from "../types.js";
 import { PageTitle, StatCard, Button, Modal, CodeBlock } from "../components/ui.js";
 import { MutationError } from "../components/MutationError.js";
+import { confirmAction } from "../components/confirmAction.js";
 
 const col = createColumnHelper<GithubRunner>();
 
@@ -90,6 +93,41 @@ export function RunnersPage() {
   const tokenMut = useMutation({
     mutationFn: () => createRunnerRegistrationToken(owner, repo),
   });
+  const qc = useQueryClient();
+  const removeMut = useMutation({
+    mutationFn: (runnerId: number) => deleteActionsRunner(owner, repo, runnerId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["gh-runners", firstRepo] }),
+  });
+  const tableColumns = useMemo(
+    () => [
+      ...columns,
+      col.display({
+        id: "actions",
+        header: "",
+        cell: (info) => (
+          <Button
+            variant="danger"
+            size="sm"
+            aria-label={`Remove runner ${info.row.original.name}`}
+            disabled={removeMut.isPending}
+            onClick={async () => {
+              if (
+                await confirmAction(`Remove runner "${info.row.original.name}"?`, {
+                  title: "Remove runner",
+                  confirmLabel: "Remove",
+                })
+              ) {
+                removeMut.mutate(info.row.original.id);
+              }
+            }}
+          >
+            Remove
+          </Button>
+        ),
+      }),
+    ],
+    [removeMut],
+  );
 
   if (reposQ.isError) {
     return <InlineError title="Failed to load repositories for the runner registry" />;
@@ -158,9 +196,10 @@ export function RunnersPage() {
         <StatCard title="Busy runners" value={busy} emphasized={busy > 0} />
       </div>
 
+      <MutationError of={removeMut} />
       <DataTable
         data={runners}
-        columns={columns}
+        columns={tableColumns}
         filterPlaceholder="Filter runners…"
         emptyMessage="No runners registered."
       />

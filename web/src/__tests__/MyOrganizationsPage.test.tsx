@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, cleanup, screen, waitFor } from "@testing-library/react";
+import { render, cleanup, screen, waitFor, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter } from "react-router";
 import { MyOrganizationsPage } from "../pages/MyOrganizationsPage.js";
@@ -55,5 +55,34 @@ describe("MyOrganizationsPage", () => {
     mockFetch.mockResolvedValue(jsonResponse([]));
     renderPage();
     await waitFor(() => expect(screen.getByText("No organizations yet")).toBeTruthy());
+  });
+
+  it("accepts a pending invitation via PATCH /user/memberships/orgs/{org}", async () => {
+    const pending = {
+      state: "pending",
+      role: "member",
+      organization: { login: "acme", id: 1, avatar_url: "", description: null },
+    };
+    mockFetch.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url.includes("/api/v3/user/memberships/orgs?state=pending"))
+        return Promise.resolve(jsonResponse([pending]));
+      if (url.includes("/api/v3/user/memberships/orgs/acme") && method === "PATCH")
+        return Promise.resolve(jsonResponse({ state: "active", role: "member" }));
+      if (url.includes("/api/v3/user/orgs")) return Promise.resolve(jsonResponse([]));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Join" }));
+
+    await waitFor(() => {
+      const patch = mockFetch.mock.calls.find(
+        (c) => String(c[0]).includes("/api/v3/user/memberships/orgs/acme") && c[1]?.method === "PATCH",
+      );
+      expect(patch).toBeTruthy();
+      expect(String(patch![1].body)).toContain('"state":"active"');
+    });
   });
 });

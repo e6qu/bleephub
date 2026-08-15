@@ -200,7 +200,39 @@ describe("IssuesPage detail", () => {
         (c) => c[0].toString().endsWith("/issues/7") && c[1]?.method === "PATCH",
       );
       expect(patched).toBeTruthy();
-      expect(JSON.parse((patched![1] as RequestInit).body as string)).toEqual({ state: "closed" });
+      expect(JSON.parse((patched![1] as RequestInit).body as string)).toEqual({
+        state: "closed",
+        state_reason: "completed",
+      });
+    });
+  });
+
+  it("closes an open issue with the selected reason", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith("/issues/7") && init?.method === "PATCH") {
+        return Promise.resolve(
+          jsonResponse({ ...issue(7, "A real issue"), state: "closed", state_reason: "not_planned" }),
+        );
+      }
+      if (u.includes("/issues/7/comments") || u.includes("/timeline")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/issues/7/reactions")) return Promise.resolve(jsonResponse([]));
+      if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "admin" }));
+      if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/test/issues/7");
+    fireEvent.change(await screen.findByLabelText("Reason for closing"), { target: { value: "not_planned" } });
+    fireEvent.click(screen.getByRole("button", { name: /close issue/i }));
+    await waitFor(() => {
+      const patched = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/issues/7") && c[1]?.method === "PATCH",
+      );
+      expect(patched).toBeTruthy();
+      expect(JSON.parse((patched![1] as RequestInit).body as string)).toEqual({
+        state: "closed",
+        state_reason: "not_planned",
+      });
     });
   });
 
