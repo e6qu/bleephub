@@ -167,6 +167,7 @@ function buildRoutes(): { route: string; label: string }[] {
     { route: `/ui/repos/${o}/${r}/milestones`, label: "repo-milestones" },
     { route: `/ui/repos/${o}/${r}/settings`, label: "repo-settings" },
     { route: `/ui/repos/${o}/${r}/settings/branch-protection`, label: "repo-branch-protection" },
+    { route: `/ui/repos/${o}/${r}/security`, label: "repo-security-overview" },
     { route: `/ui/repos/${o}/${r}/security/code-scanning`, label: "repo-code-scanning" },
     { route: `/ui/repos/${o}/${r}/insights`, label: "repo-insights" },
     { route: `/ui/repos/${o}/${r}/discussions`, label: "repo-discussions" },

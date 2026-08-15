@@ -26,6 +26,7 @@ const ActionsPage = lazy(() => import("./pages/ActionsPage.js").then(({ ActionsP
 const RunDetailPage = lazy(() => import("./pages/RunDetailPage.js").then(({ RunDetailPage }) => ({ default: RunDetailPage })));
 const RepoSettingsPage = lazy(() => import("./pages/RepoSettingsPage.js").then(({ RepoSettingsPage }) => ({ default: RepoSettingsPage })));
 const BranchProtectionPage = lazy(() => import("./pages/BranchProtectionPage.js").then(({ BranchProtectionPage }) => ({ default: BranchProtectionPage })));
+const RepoSecurityOverviewPage = lazy(() => import("./pages/RepoSecurityOverviewPage.js").then(({ RepoSecurityOverviewPage }) => ({ default: RepoSecurityOverviewPage })));
 const SecretScanningPage = lazy(() => import("./pages/SecretScanningPage.js").then(({ SecretScanningPage }) => ({ default: SecretScanningPage })));
 const CodeScanningPage = lazy(() => import("./pages/CodeScanningPage.js").then(({ CodeScanningPage }) => ({ default: CodeScanningPage })));
 const DependabotPage = lazy(() => import("./pages/DependabotPage.js").then(({ DependabotPage }) => ({ default: DependabotPage })));
@@ -232,6 +233,7 @@ export function App() {
               <Route path="/ui/repos/:owner/:repo/actions/runs/:runId" element={<RunDetailPage />} />
               <Route path="/ui/repos/:owner/:repo/settings" element={<RepoSettingsPage />} />
               <Route path="/ui/repos/:owner/:repo/settings/branch-protection" element={<BranchProtectionPage />} />
+              <Route path="/ui/repos/:owner/:repo/security" element={<RepoSecurityOverviewPage />} />
               <Route path="/ui/repos/:owner/:repo/security/secret-scanning" element={<SecretScanningPage />} />
               <Route path="/ui/repos/:owner/:repo/security/code-scanning" element={<CodeScanningPage />} />
               <Route path="/ui/repos/:owner/:repo/security/dependabot" element={<DependabotPage />} />

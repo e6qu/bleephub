@@ -252,7 +252,7 @@ export function RepoHeader({
           active={active === "insights"}
         />
         <RepoTabLink
-          to={`${base}/security/secret-scanning`}
+          to={`${base}/security`}
           icon={<LockIcon size={15} />}
           label="Security"
           active={onSecurity}
@@ -270,6 +270,11 @@ export function RepoHeader({
           className="mt-2 flex flex-wrap items-center gap-2"
           style={{ fontSize: "0.85rem", borderBottom: "1px solid var(--color-border)", paddingBottom: "0.5rem" }}
         >
+          <RepoTabLink
+            to={`${base}/security`}
+            label="Overview"
+            active={location.pathname === `${base}/security`}
+          />
           <RepoTabLink
             to={`${base}/security/secret-scanning`}
             label="Secret scanning"
