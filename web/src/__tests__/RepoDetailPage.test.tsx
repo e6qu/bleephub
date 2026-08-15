@@ -31,6 +31,7 @@ function renderPage(path = "/ui/repos/admin/test") {
           <Route path="/ui/repos/:owner/:repo/commits" element={<RepoDetailPage initialTab="commits" />} />
           <Route path="/ui/repos/:owner/:repo/branches" element={<RepoDetailPage initialTab="branches" />} />
           <Route path="/ui/repos/:owner/:repo/tags" element={<RepoDetailPage initialTab="tags" />} />
+          <Route path="/ui/repos/:owner/:repo/activity" element={<RepoDetailPage initialTab="activity" />} />
           <Route path="/ui/repos/:owner/:repo/commits/:sha" element={<RepoCommitPage />} />
           <Route path="/ui/repos/:owner/:repo/tree/:ref/*" element={<RepoDetailPage />} />
           <Route path="/ui/repos/:owner/:repo/blob/:ref/*" element={<RepoFilePage />} />
@@ -535,6 +536,37 @@ describe("repository detail journeys", () => {
       expect(post).toBeDefined();
       expect(JSON.parse(String(post![1].body))).toEqual({ branch: "main" });
     });
+  });
+});
+
+describe("RepoDetailPage activity", () => {
+  it("renders the activity feed and fires GET /activity", async () => {
+    const calls: string[] = [];
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      calls.push(u);
+      if (u.endsWith("/repos/admin/test/activity")) {
+        return Promise.resolve(jsonResponse([
+          {
+            id: 7,
+            activity_type: "push",
+            ref: "refs/heads/main",
+            before: "0000000",
+            after: "abc1234",
+            timestamp: "2026-01-02T00:00:00Z",
+            actor: { login: "octocat", avatar_url: "" },
+          },
+        ]));
+      }
+      return routedFetch(url);
+    });
+    renderPage("/ui/repos/admin/test/activity");
+
+    // the activity row: actor login, "pushed to" label, and short ref
+    expect(await screen.findByText("octocat")).toBeInTheDocument();
+    expect(screen.getByText("pushed to")).toBeInTheDocument();
+    expect(screen.getByText("main")).toBeInTheDocument();
+    expect(calls.some((u) => u.endsWith("/api/v3/repos/admin/test/activity"))).toBe(true);
   });
 });
 

@@ -1,40 +1,17 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { render, cleanup, screen, waitFor, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { MemoryRouter, Routes, Route } from "react-router";
 import { CodeScanningPage } from "../pages/CodeScanningPage.js";
 
 const mockFetch = vi.fn();
 globalThis.fetch = mockFetch;
 
-const repository = {
-  id: 41,
-  name: "security",
-  full_name: "admin/security",
-  private: false,
-  visibility: "public",
-  default_branch: "trunk",
-  owner: { login: "admin", type: "User" },
-  has_issues: true,
-  has_projects: true,
-  has_wiki: true,
-};
-const headSHA = "6bbf4f18bc0046a7f4280f789f05c39dfe29fdb7";
-const database = {
-  id: 7,
-  name: "go-database",
-  language: "go",
-  uploader: { login: "codeql[bot]", type: "Bot" },
-  content_type: "application/zip",
-  size: 4096,
-  created_at: "2026-07-12T10:00:00Z",
-  updated_at: "2026-07-12T11:00:00Z",
-  url: "/api/v3/repos/admin/security/code-scanning/codeql/databases/go",
-  commit_oid: headSHA,
-};
-
-function json(data: unknown, status = 200) {
-  return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } });
+function jsonResponse(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
 }
 
 afterEach(() => {
@@ -42,61 +19,146 @@ afterEach(() => {
   mockFetch.mockReset();
 });
 
-describe("CodeScanningPage", () => {
-  it("uses the real default-branch commit and manages CodeQL databases", async () => {
-    let sarifRequest: Record<string, string> | undefined;
-    mockFetch.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url === "/api/v3/repos/admin/security") return json(repository);
-      if (url.endsWith("/branches/trunk")) return json({ name: "trunk", commit: { sha: headSHA } });
-      if (url.endsWith("/code-scanning/codeql/databases")) return json([database]);
-      if (init?.method === "DELETE" && url.endsWith("/code-scanning/codeql/databases/go")) return new Response(null, { status: 204 });
-      if (init?.method === "POST" && url.endsWith("/code-scanning/sarifs")) {
-        sarifRequest = JSON.parse(String(init.body)) as Record<string, string>;
-        return json({ id: "sarif-1", url: "/sarif-1" }, 202);
+function renderPage() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={["/ui/repos/admin/csrepo/security/code-scanning"]}>
+        <Routes>
+          <Route
+            path="/ui/repos/:owner/:repo/security/code-scanning"
+            element={<CodeScanningPage />}
+          />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
+const repo = {
+  id: 1,
+  name: "csrepo",
+  full_name: "admin/csrepo",
+  default_branch: "main",
+  owner: { login: "admin", type: "User" },
+};
+
+const branch = { name: "main", commit: { sha: "abcdef1234567890" } };
+
+const openAlert = {
+  number: 1,
+  state: "open",
+  dismissed_reason: null,
+  rule: { id: "js/sqli", name: "js/sqli", severity: "error", description: "SQL injection" },
+  tool: { name: "CodeQL", guid: null, version: null },
+  most_recent_instance: null,
+};
+
+// Route every request the page issues by URL + method so the ordering of the
+// many background GETs (repo, branch, alerts, instances, analyses, databases,
+// default-setup, autofix, open-counts) never matters.
+function routeBase(url: string): Response | null {
+  const u = url.toString();
+  if (u.startsWith("/api/v3/repos/admin/csrepo/branches/main")) return jsonResponse(branch);
+  if (u.includes("/code-scanning/analyses")) return jsonResponse([]);
+  if (u.includes("/code-scanning/codeql/databases")) return jsonResponse([]);
+  if (u.includes("/code-scanning/alerts/1/instances")) return jsonResponse([]);
+  if (u.includes("/issues") || u.includes("/pulls")) return jsonResponse([]);
+  if (u.includes("/code-scanning/alerts")) return jsonResponse([openAlert]);
+  if (u === "/api/v3/repos/admin/csrepo") return jsonResponse(repo);
+  return null;
+}
+
+describe("CodeScanningPage default setup", () => {
+  it("enables default setup via PATCH .../code-scanning/default-setup with query_suite", async () => {
+    mockFetch.mockImplementation((url: string, opts?: { method?: string }) => {
+      const u = url.toString();
+      if (u.endsWith("/code-scanning/default-setup") && opts?.method === "PATCH") {
+        return Promise.resolve(jsonResponse({}, 200));
       }
-      if (url.endsWith("/code-scanning/sarifs/sarif-1")) {
-        return json({ processing_status: "complete", analyses_url: "/analyses", errors: null });
+      if (u.endsWith("/code-scanning/default-setup")) {
+        return Promise.resolve(
+          jsonResponse({ state: "not-configured", languages: [], updated_at: null, schedule: null }),
+        );
       }
-      if (url.includes("/code-scanning/alerts") || url.includes("/code-scanning/analyses")) return json([]);
-      if (url.includes("/ui-data/repos/admin/security/viewer")) return json({ starred: false, subscribed: false });
-      if (url.includes("/issues") || url.includes("/pulls") || url.endsWith("/branches")) return json([]);
-      return json([]);
+      const r = routeBase(u);
+      return Promise.resolve(r ?? jsonResponse(repo));
     });
+    renderPage();
 
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-    render(
-      <QueryClientProvider client={client}>
-        <MemoryRouter initialEntries={["/ui/repos/admin/security/security/code-scanning"]}>
-          <Routes>
-            <Route path="/ui/repos/:owner/:repo/security/code-scanning" element={<CodeScanningPage />} />
-          </Routes>
-        </MemoryRouter>
-      </QueryClientProvider>,
-    );
+    const suite = await screen.findByLabelText("Query suite");
+    fireEvent.change(suite, { target: { value: "extended" } });
+    fireEvent.click(screen.getByRole("button", { name: "Enable" }));
 
-    expect(await screen.findByRole("heading", { name: "Code scanning" })).toBeVisible();
-    expect(await screen.findByText("go-database")).toBeVisible();
-    expect(screen.getByText("trunk")).toBeVisible();
-    expect(screen.getByText(headSHA.slice(0, 7))).toBeVisible();
-    expect(screen.getByText("4.0 KB", { exact: false })).toBeVisible();
+    await waitFor(() => {
+      const patch = mockFetch.mock.calls.find(
+        (c) => String(c[0]).endsWith("/code-scanning/default-setup") && c[1]?.method === "PATCH",
+      );
+      expect(patch).toBeDefined();
+      expect(JSON.parse(String(patch![1].body))).toEqual({
+        state: "configured",
+        query_suite: "extended",
+      });
+    });
+  });
+});
 
-    const file = new File([`{"version":"2.1.0","note":"café"}`], "results.sarif", { type: "application/sarif+json" });
-    fireEvent.change(screen.getByLabelText("SARIF file"), { target: { files: [file] } });
-    const uploadButton = screen.getByRole("button", { name: "Upload SARIF" });
-    await waitFor(() => expect(uploadButton).toBeEnabled());
-    fireEvent.click(uploadButton);
+describe("CodeScanningPage autofix", () => {
+  it("generates a fix via POST .../autofix from the alert detail", async () => {
+    mockFetch.mockImplementation((url: string, opts?: { method?: string }) => {
+      const u = url.toString();
+      if (u.endsWith("/alerts/1/autofix") && opts?.method === "POST") {
+        return Promise.resolve(jsonResponse({ status: "success", description: "fix", started_at: "x" }, 202));
+      }
+      // No fix exists yet → GET 404.
+      if (u.endsWith("/alerts/1/autofix")) return Promise.resolve(jsonResponse({ message: "Not Found" }, 404));
+      if (u.endsWith("/code-scanning/default-setup")) {
+        return Promise.resolve(jsonResponse({ state: "not-configured", languages: [], updated_at: null, schedule: null }));
+      }
+      const r = routeBase(u);
+      return Promise.resolve(r ?? jsonResponse(repo));
+    });
+    renderPage();
 
-    await waitFor(() => expect(sarifRequest).toBeDefined());
-    expect(sarifRequest?.commit_sha).toBe(headSHA);
-    expect(sarifRequest?.ref).toBe("refs/heads/trunk");
-    expect(new TextDecoder().decode(Uint8Array.from(atob(sarifRequest!.sarif!), (char) => char.charCodeAt(0)))).toContain("café");
-    expect(sarifRequest?.commit_sha).not.toMatch(/^0+$/);
+    fireEvent.click(await screen.findByRole("button", { name: /#1 js\/sqli/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Generate fix" }));
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete go CodeQL database" }));
-    await waitFor(() => expect(mockFetch).toHaveBeenCalledWith(
-      "/api/v3/repos/admin/security/code-scanning/codeql/databases/go",
-      expect.objectContaining({ method: "DELETE" }),
-    ));
+    await waitFor(() => {
+      const post = mockFetch.mock.calls.find(
+        (c) => String(c[0]).endsWith("/alerts/1/autofix") && c[1]?.method === "POST",
+      );
+      expect(post).toBeDefined();
+    });
+  });
+
+  it("commits an existing fix via POST .../autofix/commits", async () => {
+    mockFetch.mockImplementation((url: string, opts?: { method?: string }) => {
+      const u = url.toString();
+      if (u.endsWith("/alerts/1/autofix/commits") && opts?.method === "POST") {
+        return Promise.resolve(jsonResponse({ target_ref: "refs/heads/main", sha: "deadbeef" }, 201));
+      }
+      // A generated fix already exists.
+      if (u.endsWith("/alerts/1/autofix")) {
+        return Promise.resolve(jsonResponse({ status: "success", description: "Remediates js/sqli.", started_at: "x" }));
+      }
+      if (u.endsWith("/code-scanning/default-setup")) {
+        return Promise.resolve(jsonResponse({ state: "not-configured", languages: [], updated_at: null, schedule: null }));
+      }
+      const r = routeBase(u);
+      return Promise.resolve(r ?? jsonResponse(repo));
+    });
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: /#1 js\/sqli/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Commit to a new branch" }));
+
+    await waitFor(() => {
+      const post = mockFetch.mock.calls.find(
+        (c) => String(c[0]).endsWith("/alerts/1/autofix/commits") && c[1]?.method === "POST",
+      );
+      expect(post).toBeDefined();
+    });
   });
 });

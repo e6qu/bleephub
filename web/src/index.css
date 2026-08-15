@@ -766,6 +766,7 @@ select {
 .security-kicker.pink { color: var(--color-brand-pink); }
 .security-kicker.purple { color: var(--color-brand-purple); }
 .security-kicker.cyan { color: var(--color-brand-cyan-text); }
+.security-kicker.green { color: var(--color-success-text); }
 
 .security-list {
   margin: 0;

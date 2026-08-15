@@ -170,6 +170,8 @@ function buildRoutes(): { route: string; label: string }[] {
     { route: `/ui/repos/${o}/${r}/settings/branch-protection`, label: "repo-branch-protection" },
     { route: `/ui/repos/${o}/${r}/security`, label: "repo-security-overview" },
     { route: `/ui/repos/${o}/${r}/security/code-scanning`, label: "repo-code-scanning" },
+    { route: `/ui/repos/${o}/${r}/security/secret-scanning`, label: "repo-secret-scanning" },
+    { route: `/ui/repos/${o}/${r}/activity`, label: "repo-activity" },
     { route: `/ui/repos/${o}/${r}/insights`, label: "repo-insights" },
     { route: `/ui/repos/${o}/${r}/discussions`, label: "repo-discussions" },
     { route: `/ui/repos/${o}/${r}/wiki`, label: "repo-wiki" },
@@ -185,6 +187,7 @@ function buildRoutes(): { route: string; label: string }[] {
     { route: `/ui/orgs/${org}/governance?tab=actions`, label: "org-actions-settings" },
     { route: `/ui/orgs/${org}/governance?tab=secrets`, label: "org-secrets" },
     { route: `/ui/orgs/${org}/governance?tab=code-security`, label: "org-code-security" },
+    { route: `/ui/orgs/${org}/copilot`, label: "org-copilot" },
     { route: `/ui/orgs/${org}/projects/${seeded.projectNumber || 1}`, label: "org-project-detail" },
     // operations console
     { route: "/ui/operations", label: "operations" },

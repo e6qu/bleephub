@@ -5,13 +5,17 @@ import { Link, useParams } from "react-router";
 import {
   createMarketplacePlanSettings,
   fetchMarketplaceListingSettings,
+  ghSend,
   isNotFound,
   saveMarketplaceListingSettings,
   type MarketplaceListingSettingsPayload,
 } from "../api.js";
-import type { GithubMarketplaceListingSettings } from "../types.js";
+import type { GithubMarketplaceListingSettings, GithubMarketplacePlan } from "../types.js";
 import { Box, Button, ErrorBanner, FormLabel, PageTitle, StateLabel } from "../components/ui.js";
+import { confirmAction } from "../components/confirmAction.js";
 import { PackageIcon, PlusIcon } from "../components/octicons.js";
+
+const enc = encodeURIComponent;
 
 export function MarketplacePublisherPage() {
   const { publisher = "" } = useParams<{ publisher: string }>();
@@ -75,7 +79,7 @@ function PublisherEditor({ publisher, listing }: { publisher: string; listing?: 
         </form>
         <aside>
           <Box header={<div className="flex w-full items-center justify-between"><b>Pricing plans</b>{listing && <Button size="sm" onClick={() => setShowPlan((value) => !value)}><PlusIcon size={14} /> Add plan</Button>}</div>}>
-            {listing?.plans.length ? <div>{listing.plans.map((plan) => <div key={plan.id} className="marketplace-publisher-plan"><div><b>{plan.name}</b><p>{plan.description}</p></div><StateLabel state={plan.state === "published" ? "open" : "draft"}>{plan.state}</StateLabel></div>)}</div> : <div style={{ padding: "1rem", color: "var(--color-fg-muted)", fontSize: ".8rem" }}>{listing ? "Add at least one published plan before publishing this listing." : "Save the draft listing before adding pricing plans."}</div>}
+            {listing?.plans.length ? <div>{listing.plans.map((plan) => <PlanRow key={plan.id} publisher={publisher} plan={plan} />)}</div> : <div style={{ padding: "1rem", color: "var(--color-fg-muted)", fontSize: ".8rem" }}>{listing ? "Add at least one published plan before publishing this listing." : "Save the draft listing before adding pricing plans."}</div>}
           </Box>
           {listing && showPlan && <PlanForm publisher={publisher} onDone={() => setShowPlan(false)} />}
           <Box className="mt-4" header={<b>Publication checklist</b>}>
@@ -91,28 +95,63 @@ function Field({ label, id, hint, children }: { label: string; id: string; hint?
   return <div><FormLabel id={id}>{label}</FormLabel>{children}{hint && <p className="mt-1" style={{ color: "var(--color-fg-muted)", fontSize: ".7rem" }}>{hint}</p>}</div>;
 }
 
-function PlanForm({ publisher, onDone }: { publisher: string; onDone: () => void }) {
+function PlanRow({ publisher, plan }: { publisher: string; plan: GithubMarketplacePlan }) {
   const client = useQueryClient();
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [model, setModel] = useState<"FREE" | "FLAT_RATE" | "PER_UNIT">("FREE");
-  const [monthly, setMonthly] = useState(0);
-  const [yearly, setYearly] = useState(0);
-  const [trial, setTrial] = useState(false);
-  const [unitName, setUnitName] = useState("");
+  const [editing, setEditing] = useState(false);
+  const remove = useMutation({
+    mutationFn: () => ghSend("DELETE", `/settings/apps/${enc(publisher)}/marketplace/plans/${plan.id}`),
+    onSuccess: async () => client.invalidateQueries({ queryKey: ["marketplace"] }),
+  });
+  const onDelete = async () => {
+    if (await confirmAction(`Delete pricing plan ${plan.name}? This cannot be undone.`, { title: "Delete pricing plan", confirmLabel: "Delete" })) {
+      remove.mutate();
+    }
+  };
+  return (
+    <div>
+      <div className="marketplace-publisher-plan">
+        <div><b>{plan.name}</b><p>{plan.description}</p></div>
+        <div className="flex items-center gap-2">
+          <StateLabel state={plan.state === "published" ? "open" : "draft"}>{plan.state}</StateLabel>
+          <Button size="sm" onClick={() => setEditing((value) => !value)} aria-expanded={editing}>Edit</Button>
+          <Button size="sm" variant="danger" disabled={remove.isPending} onClick={onDelete}>Delete</Button>
+        </div>
+      </div>
+      {remove.error && <div style={{ padding: "0 1rem 1rem" }}><ErrorBanner>{String(remove.error)}</ErrorBanner></div>}
+      {editing && <PlanForm publisher={publisher} plan={plan} onDone={() => setEditing(false)} />}
+    </div>
+  );
+}
+
+function PlanForm({ publisher, plan, onDone }: { publisher: string; plan?: GithubMarketplacePlan; onDone: () => void }) {
+  const client = useQueryClient();
+  const [name, setName] = useState(plan?.name ?? "");
+  const [description, setDescription] = useState(plan?.description ?? "");
+  const [model, setModel] = useState<"FREE" | "FLAT_RATE" | "PER_UNIT">(plan?.price_model ?? "FREE");
+  const [monthly, setMonthly] = useState(plan?.monthly_price_in_cents ?? 0);
+  const [yearly, setYearly] = useState(plan?.yearly_price_in_cents ?? 0);
+  const [trial, setTrial] = useState(plan?.has_free_trial ?? false);
+  const [unitName, setUnitName] = useState(plan?.unit_name ?? "");
+  const uid = plan ? String(plan.id) : "new";
   const mutation = useMutation({
-    mutationFn: () =>
-      createMarketplacePlanSettings(publisher, {
+    mutationFn: async () => {
+      const payload = {
         name,
         description,
         price_model: model,
-        monthly_price_in_cents: monthly,
-        yearly_price_in_cents: yearly,
-        has_free_trial: trial,
-        unit_name: unitName,
-        state: "published",
-        bullets: [],
-      }),
+        monthly_price_in_cents: model === "FREE" ? 0 : monthly,
+        yearly_price_in_cents: model === "FREE" ? 0 : yearly,
+        has_free_trial: model === "FREE" ? false : trial,
+        unit_name: model === "PER_UNIT" ? unitName : "",
+        state: plan?.state ?? "published",
+        bullets: plan?.bullets ?? [],
+      };
+      if (plan) {
+        await ghSend("PUT", `/settings/apps/${enc(publisher)}/marketplace/plans/${plan.id}`, payload);
+      } else {
+        await createMarketplacePlanSettings(publisher, payload);
+      }
+    },
     onSuccess: async () => {
       await client.invalidateQueries({ queryKey: ["marketplace"] });
       onDone();
@@ -123,28 +162,28 @@ function PlanForm({ publisher, onDone }: { publisher: string; onDone: () => void
     mutation.mutate();
   };
   return (
-    <Box className="mt-4" header={<b>New pricing plan</b>}>
+    <Box className="mt-4" header={<b>{plan ? "Edit pricing plan" : "New pricing plan"}</b>}>
       <form onSubmit={submit} className="grid gap-3" style={{ padding: "1rem" }}>
-        <Field label="Name" id="marketplace-plan-name">
+        <Field label="Name" id={`marketplace-plan-name-${uid}`}>
           <input
-            id="marketplace-plan-name"
+            id={`marketplace-plan-name-${uid}`}
             className="w-full"
             required
             value={name}
             onChange={(event) => setName(event.target.value)}
           />
         </Field>
-        <Field label="Description" id="marketplace-plan-description">
+        <Field label="Description" id={`marketplace-plan-description-${uid}`}>
           <input
-            id="marketplace-plan-description"
+            id={`marketplace-plan-description-${uid}`}
             className="w-full"
             value={description}
             onChange={(event) => setDescription(event.target.value)}
           />
         </Field>
-        <Field label="Pricing model" id="marketplace-plan-model">
+        <Field label="Pricing model" id={`marketplace-plan-model-${uid}`}>
           <select
-            id="marketplace-plan-model"
+            id={`marketplace-plan-model-${uid}`}
             className="w-full"
             value={model}
             onChange={(event) => setModel(event.target.value as typeof model)}
@@ -156,9 +195,9 @@ function PlanForm({ publisher, onDone }: { publisher: string; onDone: () => void
         </Field>
         {model !== "FREE" && (
           <div className="grid grid-cols-2 gap-2">
-            <Field label="Monthly (cents)" id="marketplace-plan-monthly">
+            <Field label="Monthly (cents)" id={`marketplace-plan-monthly-${uid}`}>
               <input
-                id="marketplace-plan-monthly"
+                id={`marketplace-plan-monthly-${uid}`}
                 className="w-full"
                 type="number"
                 min={0}
@@ -166,9 +205,9 @@ function PlanForm({ publisher, onDone }: { publisher: string; onDone: () => void
                 onChange={(event) => setMonthly(Number(event.target.value))}
               />
             </Field>
-            <Field label="Yearly (cents)" id="marketplace-plan-yearly">
+            <Field label="Yearly (cents)" id={`marketplace-plan-yearly-${uid}`}>
               <input
-                id="marketplace-plan-yearly"
+                id={`marketplace-plan-yearly-${uid}`}
                 className="w-full"
                 type="number"
                 min={0}
@@ -179,12 +218,12 @@ function PlanForm({ publisher, onDone }: { publisher: string; onDone: () => void
           </div>
         )}
         {model === "PER_UNIT" && (
-          <Field label="Unit name" id="marketplace-plan-unit">
+          <Field label="Unit name" id={`marketplace-plan-unit-${uid}`}>
             <input
-              id="marketplace-plan-unit"
+              id={`marketplace-plan-unit-${uid}`}
               className="w-full"
               required
-              value={unitName}
+              value={unitName ?? ""}
               onChange={(event) => setUnitName(event.target.value)}
             />
           </Field>
@@ -201,7 +240,7 @@ function PlanForm({ publisher, onDone }: { publisher: string; onDone: () => void
         {mutation.error && <ErrorBanner>{String(mutation.error)}</ErrorBanner>}
         <div className="flex justify-end gap-2">
           <Button type="button" onClick={onDone}>Cancel</Button>
-          <Button type="submit" variant="primary" disabled={mutation.isPending}>Publish plan</Button>
+          <Button type="submit" variant="primary" disabled={mutation.isPending}>{plan ? "Save plan" : "Publish plan"}</Button>
         </div>
       </form>
     </Box>

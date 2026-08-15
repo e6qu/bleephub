@@ -35,7 +35,9 @@ import {
   deleteFile,
   createRef,
   deleteRef,
+  ghFetch,
 } from "../api.js";
+import { Avatar } from "../components/Avatar.js";
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
 import { decodeContentsBase64 } from "../utils/workflowDispatch.js";
 import { confirmAction } from "../components/confirmAction.js";
@@ -96,21 +98,49 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
-type SubTab = "code" | "commits" | "branches" | "tags" | "releases" | "webhooks" | "secrets" | "environments";
+type SubTab = "code" | "commits" | "branches" | "tags" | "activity" | "releases" | "webhooks" | "secrets" | "environments";
 
 const SUB_TABS: { key: SubTab; label: string }[] = [
   { key: "code", label: "Code" },
   { key: "commits", label: "Commits" },
   { key: "branches", label: "Branches" },
   { key: "tags", label: "Tags" },
+  { key: "activity", label: "Activity" },
   { key: "releases", label: "Releases" },
   { key: "webhooks", label: "Webhooks" },
   { key: "secrets", label: "Secrets" },
   { key: "environments", label: "Environments" },
 ];
 
-const CONTENT_TABS = SUB_TABS.slice(0, 5);
-const ADMIN_TABS = SUB_TABS.slice(5);
+const CONTENT_TABS = SUB_TABS.slice(0, 6);
+const ADMIN_TABS = SUB_TABS.slice(6);
+
+/** A recorded repository ref-update, as served by GET /repos/{o}/{r}/activity. */
+interface RepoActivityItem {
+  id: number;
+  activity_type: string;
+  ref: string;
+  before: string;
+  after: string;
+  timestamp: string;
+  actor: { login?: string; avatar_url?: string } | null;
+}
+
+// Inline fetch (per the repo's ghFetch convention) — the activity feed is the
+// only caller, so it lives here rather than in the shared api module.
+const fetchRepoActivity = (owner: string, repo: string) =>
+  ghFetch<RepoActivityItem[]>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/activity`,
+  );
+
+const ACTIVITY_LABELS: Record<string, string> = {
+  push: "pushed to",
+  force_push: "force-pushed",
+  branch_creation: "created branch",
+  branch_deletion: "deleted branch",
+  pr_merge: "merged a pull request into",
+  merge_queue_merge: "merged via merge queue into",
+};
 
 export function RepoDetailPage({ initialTab = "code" }: { initialTab?: SubTab }) {
   const params = useParams<{ owner: string; repo: string; ref?: string; "*": string }>();
@@ -184,6 +214,11 @@ export function RepoDetailPage({ initialTab = "code" }: { initialTab?: SubTab })
     queryFn: () => fetchRepoTags(owner, repo),
     enabled: tab === "tags" && !!owner && !!repo,
   });
+  const { data: activity = [], isLoading: activityLoading, isError: activityError, error: activityErr } = useQuery({
+    queryKey: ["repo-activity", owner, repo],
+    queryFn: () => fetchRepoActivity(owner, repo),
+    enabled: tab === "activity" && !!owner && !!repo,
+  });
   const { data: socialCounts } = useQuery({
     queryKey: ["repo-social-counts", owner, repo],
     queryFn: () => fetchRepoSocialCounts(owner, repo),
@@ -231,7 +266,10 @@ export function RepoDetailPage({ initialTab = "code" }: { initialTab?: SubTab })
             t.key === "commits" || t.key === "branches" || t.key === "tags"
               ? t.key
               : "root";
-          const to = repoCodeRoute(owner, repo, { kind: destination });
+          const to =
+            t.key === "activity"
+              ? `/ui/repos/${owner}/${repo}/activity`
+              : repoCodeRoute(owner, repo, { kind: destination });
           return (
           <Link
             key={t.key}
@@ -344,6 +382,12 @@ export function RepoDetailPage({ initialTab = "code" }: { initialTab?: SubTab })
           <InlineError title="Failed to load tags" detail={String(tagsErr)} />
         ) : (
           <TagsList owner={owner} repo={repo} tags={tags} branches={branches} defaultBranch={repoData.default_branch} />
+        ))}
+      {tab === "activity" &&
+        (activityError ? (
+          <InlineError title="Failed to load activity" detail={String(activityErr)} />
+        ) : (
+          <ActivityFeed items={activity} loading={activityLoading} />
         ))}
       {tab === "releases" &&
         (releasesError ? (
@@ -1399,6 +1443,41 @@ function CommitsList({
           </Link>
         </div>
       ))}
+    </Box>
+  );
+}
+
+/** GitHub's repo /activity feed: recorded ref updates, newest first. */
+function ActivityFeed({ items, loading }: { items: RepoActivityItem[]; loading: boolean }) {
+  if (loading) return <Spinner label="loading activity" />;
+  if (items.length === 0) return <Blankslate icon={<BranchIcon size={26} />} title="No activity yet" />;
+  return (
+    <Box>
+      {items.map((a, i) => {
+        const login = a.actor?.login ?? "ghost";
+        const shortRef = a.ref.replace(/^refs\/(heads|tags)\//, "");
+        const label = ACTIVITY_LABELS[a.activity_type] ?? a.activity_type.replace(/_/g, " ");
+        return (
+          <div
+            key={a.id}
+            className="flex items-center gap-3"
+            style={{
+              padding: "0.65rem 1rem",
+              borderBottom: i < items.length - 1 ? "1px solid var(--color-border)" : "none",
+            }}
+          >
+            <Avatar login={login} src={a.actor?.avatar_url} size={28} />
+            <div className="min-w-0 flex-1" style={{ fontSize: "0.85rem", color: "var(--color-fg)" }}>
+              <span style={{ fontWeight: 600 }}>{login}</span>{" "}
+              <span style={{ color: "var(--color-fg-muted)" }}>{label}</span>{" "}
+              <span className="font-mono" style={{ color: "var(--color-fg)" }}>{shortRef}</span>
+            </div>
+            <span style={{ fontSize: "0.76rem", color: "var(--color-fg-muted)", whiteSpace: "nowrap" }}>
+              {relativeTimeFromNow(a.timestamp)}
+            </span>
+          </div>
+        );
+      })}
     </Box>
   );
 }

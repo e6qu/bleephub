@@ -14,6 +14,9 @@ import {
   downloadCodeQLDatabase,
   fetchRepoDetail,
   fetchRepoBranch,
+  ghFetch,
+  ghSend,
+  ghPostJSON,
 } from "../api.js";
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
 import { RepoHeader } from "../components/PageHeader.js";
@@ -36,6 +39,27 @@ const DISMISSED_REASONS: { value: GithubCodeScanningDismissedReason; label: stri
   { value: "won't fix", label: "Won't fix" },
   { value: "used in tests", label: "Used in tests" },
 ];
+
+const enc = encodeURIComponent;
+
+type QuerySuite = "default" | "extended";
+
+interface CodeScanningDefaultSetup {
+  state: "configured" | "not-configured";
+  languages: string[];
+  query_suite?: QuerySuite;
+  updated_at: string | null;
+  schedule: string | null;
+  runner_type?: string;
+  runner_label?: string;
+  threat_model?: string;
+}
+
+interface CodeScanningAutofix {
+  status: string;
+  description: string;
+  started_at: string;
+}
 
 export function CodeScanningPage() {
   const { owner = "", repo = "" } = useParams<{ owner: string; repo: string }>();
@@ -183,6 +207,8 @@ export function CodeScanningPage() {
         </div>
       </section>
 
+      <DefaultSetupSection owner={owner} repo={repo} />
+
       <div className="security-filter-bar">
         <div className="security-filter-group">
           <label htmlFor="code-state-filter">State</label>
@@ -228,6 +254,8 @@ export function CodeScanningPage() {
           <MutationError of={updateMutation} />
           {selected ? (
             <AlertDetail
+              owner={owner}
+              repo={repo}
               alert={selected}
               instances={instances}
               onDismiss={(reason, comment) =>
@@ -330,6 +358,103 @@ function formatDate(value: string): string {
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(value));
 }
 
+function DefaultSetupSection({ owner, repo }: { owner: string; repo: string }) {
+  const queryClient = useQueryClient();
+  const [querySuite, setQuerySuite] = useState<QuerySuite>("default");
+
+  const { data: setup } = useQuery({
+    queryKey: ["code-scanning-default-setup", owner, repo],
+    queryFn: () =>
+      ghFetch<CodeScanningDefaultSetup>(
+        `/api/v3/repos/${enc(owner)}/${enc(repo)}/code-scanning/default-setup`,
+      ),
+    enabled: !!owner && !!repo,
+  });
+
+  useEffect(() => {
+    if (setup?.query_suite) setQuerySuite(setup.query_suite);
+  }, [setup?.query_suite]);
+
+  const mutation = useMutation({
+    mutationFn: (body: { state?: "configured" | "not-configured"; query_suite?: QuerySuite }) =>
+      ghSend(
+        "PATCH",
+        `/api/v3/repos/${enc(owner)}/${enc(repo)}/code-scanning/default-setup`,
+        body,
+      ),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ["code-scanning-default-setup", owner, repo] }),
+  });
+
+  const configured = setup?.state === "configured";
+
+  return (
+    <Box className="security-panel security-default-setup-panel mt-4">
+      <div className="security-panel-heading">
+        <div>
+          <span className="security-kicker green">CodeQL</span>
+          <h2>Default setup</h2>
+          <p>Automatically scan this repository with GitHub&apos;s recommended CodeQL configuration.</p>
+        </div>
+        <span className="security-count">{configured ? "On" : "Off"}</span>
+      </div>
+
+      <div className="security-default-setup-body">
+        <div className="security-default-setup-status">
+          <strong>Status: {configured ? "Configured" : "Not configured"}</strong>
+          {configured && (
+            <span>
+              {(setup?.languages ?? []).join(", ") || "No languages detected"}
+              {setup?.query_suite ? ` · ${setup.query_suite} query suite` : ""}
+              {setup?.schedule ? ` · ${setup.schedule} schedule` : ""}
+            </span>
+          )}
+        </div>
+
+        <div className="security-filter-group">
+          <label htmlFor="default-setup-query-suite">Query suite</label>
+          <select
+            id="default-setup-query-suite"
+            aria-label="Query suite"
+            value={querySuite}
+            onChange={(e) => setQuerySuite(e.target.value as QuerySuite)}
+          >
+            <option value="default">Default</option>
+            <option value="extended">Extended</option>
+          </select>
+        </div>
+
+        <div className="flex gap-2">
+          <button
+            type="button"
+            className="security-button"
+            disabled={mutation.isPending}
+            onClick={() =>
+              mutation.mutate(
+                configured
+                  ? { state: "not-configured" }
+                  : { state: "configured", query_suite: querySuite },
+              )
+            }
+          >
+            {configured ? "Disable" : "Enable"}
+          </button>
+          <button
+            type="button"
+            className="security-primary-button"
+            disabled={mutation.isPending}
+            onClick={() => mutation.mutate({ state: "configured", query_suite: querySuite })}
+          >
+            Save
+          </button>
+        </div>
+      </div>
+
+      <MutationError of={mutation} />
+    </Box>
+  );
+}
+
 function AnalysisItem({
   analysis,
   owner,
@@ -369,12 +494,16 @@ function AnalysisItem({
 }
 
 function AlertDetail({
+  owner,
+  repo,
   alert,
   instances,
   onDismiss,
   onReopen,
   onFix,
 }: {
+  owner: string;
+  repo: string;
   alert: GithubCodeScanningAlert;
   instances: GithubCodeScanningAlertInstance[];
   onDismiss: (reason: GithubCodeScanningDismissedReason, comment: string) => void;
@@ -383,6 +512,33 @@ function AlertDetail({
 }) {
   const [reason, setReason] = useState<GithubCodeScanningDismissedReason>("false positive");
   const [comment, setComment] = useState("");
+  const queryClient = useQueryClient();
+
+  const autofixPath = `/api/v3/repos/${enc(owner)}/${enc(repo)}/code-scanning/alerts/${alert.number}/autofix`;
+
+  const { data: autofix } = useQuery({
+    queryKey: ["code-scanning-autofix", owner, repo, alert.number],
+    queryFn: () => ghFetch<CodeScanningAutofix>(autofixPath),
+    enabled: alert.state === "open",
+    retry: false,
+  });
+
+  const invalidateAlert = () => {
+    queryClient.invalidateQueries({ queryKey: ["code-scanning", owner, repo] });
+    queryClient.invalidateQueries({ queryKey: ["code-scanning-autofix", owner, repo, alert.number] });
+  };
+
+  const generateFixMutation = useMutation({
+    mutationFn: () => ghPostJSON<CodeScanningAutofix>(autofixPath, {}),
+    onSuccess: invalidateAlert,
+  });
+
+  const commitFixMutation = useMutation({
+    mutationFn: () => ghPostJSON<{ target_ref: string; sha: string }>(`${autofixPath}/commits`, {}),
+    onSuccess: invalidateAlert,
+  });
+
+  const fixReady = autofix?.status === "success";
 
   return (
     <div>
@@ -446,6 +602,42 @@ function AlertDetail({
           <button type="button" onClick={onReopen} style={{ fontSize: "0.85rem", padding: "0.4rem 0.8rem" }}>
             Reopen
           </button>
+        </div>
+      )}
+
+      {alert.state === "open" && (
+        <div className="security-autofix" style={{ marginBottom: "1rem" }}>
+          <h4 style={{ fontSize: "0.9rem", marginBottom: "0.5rem" }}>Copilot Autofix</h4>
+          {fixReady ? (
+            <>
+              {autofix?.description && (
+                <p style={{ color: "var(--color-fg-muted)", fontSize: "0.85rem", marginBottom: "0.5rem" }}>
+                  {autofix.description}
+                </p>
+              )}
+              <button
+                type="button"
+                className="security-primary-button"
+                onClick={() => commitFixMutation.mutate()}
+                disabled={commitFixMutation.isPending}
+                style={{ fontSize: "0.85rem", padding: "0.4rem 0.8rem" }}
+              >
+                {commitFixMutation.isPending ? "Committing…" : "Commit to a new branch"}
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              className="security-button"
+              onClick={() => generateFixMutation.mutate()}
+              disabled={generateFixMutation.isPending}
+              style={{ fontSize: "0.85rem", padding: "0.4rem 0.8rem" }}
+            >
+              {generateFixMutation.isPending ? "Generating…" : "Generate fix"}
+            </button>
+          )}
+          <MutationError of={generateFixMutation} />
+          <MutationError of={commitFixMutation} />
         </div>
       )}
 
