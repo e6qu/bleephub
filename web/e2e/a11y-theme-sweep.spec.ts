@@ -181,6 +181,7 @@ function buildRoutes(): { route: string; label: string }[] {
     { route: `/ui/orgs/${org}/governance?tab=member-privileges`, label: "org-member-privileges" },
     { route: `/ui/orgs/${org}/governance?tab=actions`, label: "org-actions-settings" },
     { route: `/ui/orgs/${org}/governance?tab=secrets`, label: "org-secrets" },
+    { route: `/ui/orgs/${org}/governance?tab=code-security`, label: "org-code-security" },
     { route: `/ui/orgs/${org}/projects/${seeded.projectNumber || 1}`, label: "org-project-detail" },
     // operations console
     { route: "/ui/operations", label: "operations" },
@@ -608,6 +609,39 @@ for (const theme of THEMES) {
       // eslint-disable-next-line no-console
       console.log(
         `[scan] ${theme} search-advanced -> ${
+          record.loadFailure ? "LOAD-FAIL" : `${record.violations.length} rules`
+        }` + record.violations.map((v) => `\n    ! ${v.id}: ${v.targets.join(" | ")}`).join(""),
+      );
+    }
+
+    // Also scan the org Code security "New configuration" modal, whose feature-
+    // toggle form (name/description + ~10 aria-labelled selects) is only reachable
+    // by opening the dialog.
+    {
+      const record: RouteResult = {
+        route: `/ui/orgs/${seeded.org}/governance?tab=code-security (new config dialog)`,
+        theme,
+        url: BASE + `/ui/orgs/${seeded.org}/governance?tab=code-security`,
+        themeApplied: false,
+        loadFailure: false,
+        violations: [],
+      };
+      try {
+        await page.goto(`/ui/orgs/${seeded.org}/governance?tab=code-security`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+        await page.waitForSelector("main, [role=main], .app-header", { timeout: 8_000 }).catch(() => {});
+        await page.getByRole("button", { name: "New configuration", exact: true }).click();
+        await page.getByLabel("Configuration name").waitFor({ state: "visible", timeout: 8_000 });
+        const isDark = await page.evaluate(() => document.documentElement.classList.contains("dark"));
+        record.themeApplied = theme === "dark" ? isDark : !isDark;
+        record.violations = mapViolations(await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze());
+      } catch (err) {
+        record.loadFailure = true;
+        record.error = err instanceof Error ? err.message : String(err);
+      }
+      collected.push(record);
+      // eslint-disable-next-line no-console
+      console.log(
+        `[scan] ${theme} code-security-dialog -> ${
           record.loadFailure ? "LOAD-FAIL" : `${record.violations.length} rules`
         }` + record.violations.map((v) => `\n    ! ${v.id}: ${v.targets.join(" | ")}`).join(""),
       );

@@ -362,6 +362,37 @@ describe("OrgGovernancePage issue types tab", () => {
     });
   });
 
+  describe("Code security", () => {
+    it("creates a code security configuration with feature toggles", async () => {
+      mockFetch.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const base = "/api/v3/orgs/acme/code-security/configurations";
+        if (url === base && init?.method === "POST") {
+          return Promise.resolve(jsonResponse({ id: 1, name: "Baseline", description: "d" }, 201));
+        }
+        if (url === base) return Promise.resolve(jsonResponse([]));
+        return Promise.resolve(jsonResponse({}));
+      });
+      renderAt("/ui/orgs/acme/governance?tab=code-security");
+      fireEvent.click(await screen.findByRole("button", { name: "New configuration" }));
+      fireEvent.change(screen.getByLabelText("Configuration name"), { target: { value: "Baseline" } });
+      fireEvent.change(screen.getByLabelText("Configuration description"), { target: { value: "Org baseline" } });
+      fireEvent.change(screen.getByLabelText("Secret scanning"), { target: { value: "enabled" } });
+      fireEvent.click(screen.getByRole("button", { name: "Create configuration" }));
+
+      await waitFor(() => {
+        const post = mockFetch.mock.calls.find(([u, i]) => u === "/api/v3/orgs/acme/code-security/configurations" && i?.method === "POST");
+        expect(post).toBeTruthy();
+        expect(JSON.parse(String(post![1]!.body))).toMatchObject({
+          name: "Baseline",
+          description: "Org baseline",
+          enforcement: "enforced",
+          secret_scanning: "enabled",
+        });
+      });
+    });
+  });
+
   describe("Secrets and variables", () => {
     it("lists org Actions secrets and variables from the org endpoints", async () => {
       mockFetch.mockImplementation((input: RequestInfo | URL) => {

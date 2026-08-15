@@ -5724,6 +5724,15 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "github.com's Org Settings \u203a Code security \u203a Configurations (author reusable security configurations, set one as the default for new repos, delete) had no web presence, though the server implements the whole feature",
+        "id": "WEB-121",
+        "location": "web/src/pages/OrgGovernancePage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added a **Code security** org governance tab that lists configurations and a \"New configuration\" modal authoring name, description, enforcement, GitHub Advanced Security, and enabled/disabled/not_set toggles for dependency graph, Dependabot alerts + security updates, code-scanning default setup, secret scanning + push protection, and private vulnerability reporting \u2014 POSTing to `/orgs/{org}/code-security/configurations`; each listed config has Set-as-default (`PUT \u2026/{id}/defaults`) and Delete. Wrappers live in the lazy governance page (`ghFetch`/`ghPostJSON`/`ghSend`). Verified: a Go round-trip test posts the exact create body through the OpenAPI shape validator and lists it back; a frontend test drives the modal and asserts the POST body; the a11y sweep scans `/ui/orgs/{org}/governance?tab=code-security` and its create dialog at 0 violations in both themes",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -7140,21 +7149,21 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 118
+            "fixed": 119
           },
-          "total": 120
+          "total": 121
         }
       },
       "severity": {
         "blocker": 167,
         "major": 399,
-        "minor": 183
+        "minor": 184
       },
       "status": {
         "deferred": 3,
-        "fixed": 746
+        "fixed": 747
       },
-      "total": 749
+      "total": 750
     }
   },
   "rest": {
@@ -28672,34 +28681,39 @@
   "ui": {
     "browser_navigations": [
       {
-        "line": 202,
+        "line": 203,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 452,
+        "line": 453,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 491,
+        "line": 492,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/repos/${seeded.owner}/${seeded.repo}/settings"
       },
       {
-        "line": 526,
+        "line": 527,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/repos/${seeded.owner}/${seeded.repo}/settings"
       },
       {
-        "line": 564,
+        "line": 565,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/repos/${seeded.org}/org-parity/settings"
       },
       {
-        "line": 596,
+        "line": 597,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/search"
+      },
+      {
+        "line": 630,
+        "source": "web/e2e/a11y-theme-sweep.spec.ts",
+        "target": "/ui/orgs/${seeded.org}/governance?tab=code-security"
       },
       {
         "line": 113,
@@ -30224,7 +30238,7 @@
       }
     ],
     "summary": {
-      "browser_navigations": 72,
+      "browser_navigations": 73,
       "routes": 93,
       "routes_with_direct_render": 90,
       "routes_with_test_reference": 92
