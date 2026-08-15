@@ -87,7 +87,7 @@ describe("IssuesPage detail", () => {
   it("renders the issue when found", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL) => {
       const u = url.toString();
-      if (u.includes("/issues/7/comments")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/issues/7/comments") || u.includes("/timeline")) return Promise.resolve(jsonResponse([]));
       if (u.includes("/issues/7/reactions")) return Promise.resolve(jsonResponse([]));
       if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "admin" }));
       if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
@@ -99,6 +99,29 @@ describe("IssuesPage detail", () => {
     });
   });
 
+  it("interleaves timeline events with comments in the conversation", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.includes("/issues/7/timeline")) {
+        return Promise.resolve(jsonResponse([
+          { event: "labeled", actor: { login: "admin" }, label: { name: "bug", color: "d73a4a" }, created_at: "2026-01-02T00:00:00Z" },
+          { event: "commented", id: 100, body: "on it", user: { login: "admin" }, created_at: "2026-01-03T00:00:00Z" },
+          { event: "closed", actor: { login: "admin" }, created_at: "2026-01-04T00:00:00Z" },
+        ]));
+      }
+      if (u.includes("/reactions")) return Promise.resolve(jsonResponse([]));
+      if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "admin" }));
+      if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/test/issues/7");
+    // A labeled event, the comment, and a closed event all render.
+    expect(await screen.findByText(/added the/)).toBeInTheDocument();
+    expect(screen.getByText("bug")).toBeInTheDocument();
+    expect(screen.getByText("on it")).toBeInTheDocument();
+    expect(screen.getByText(/closed/)).toBeInTheDocument();
+  });
+
   it("adds a sub-issue by number via POST /issues/{n}/sub_issues", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
       const u = url.toString();
@@ -106,7 +129,7 @@ describe("IssuesPage detail", () => {
         return Promise.resolve(jsonResponse(issue(7, "A real issue"), 201));
       }
       if (u.endsWith("/issues/7/sub_issues")) return Promise.resolve(jsonResponse([]));
-      if (u.includes("/issues/7/comments")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/issues/7/comments") || u.includes("/timeline")) return Promise.resolve(jsonResponse([]));
       if (u.includes("/issues/7/reactions")) return Promise.resolve(jsonResponse([]));
       if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "admin" }));
       if (u.endsWith("/issues/9")) return Promise.resolve(jsonResponse(issue(9, "Child issue")));
@@ -138,7 +161,7 @@ describe("IssuesPage detail", () => {
           ),
         );
       }
-      if (u.includes("/issues/7/comments")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/issues/7/comments") || u.includes("/timeline")) return Promise.resolve(jsonResponse([]));
       if (u.includes("/issues/7/reactions")) return Promise.resolve(jsonResponse([]));
       if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "admin" }));
       if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
@@ -163,7 +186,7 @@ describe("IssuesPage detail", () => {
       if (u.endsWith("/issues/7") && init?.method === "PATCH") {
         return Promise.resolve(jsonResponse({ ...issue(7, "A real issue"), state: "closed" }));
       }
-      if (u.includes("/issues/7/comments")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/issues/7/comments") || u.includes("/timeline")) return Promise.resolve(jsonResponse([]));
       if (u.includes("/issues/7/reactions")) return Promise.resolve(jsonResponse([]));
       if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "admin" }));
       if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
@@ -187,7 +210,7 @@ describe("IssuesPage detail", () => {
       if (u.endsWith("/issues/7") && init?.method === "PATCH") {
         return Promise.resolve(jsonResponse({ ...issue(7, "Renamed"), body: "New body" }));
       }
-      if (u.includes("/issues/7/comments")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/issues/7/comments") || u.includes("/timeline")) return Promise.resolve(jsonResponse([]));
       if (u.includes("/issues/7/reactions")) return Promise.resolve(jsonResponse([]));
       if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "admin" }));
       if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
@@ -224,7 +247,7 @@ describe("IssuesPage detail", () => {
       if (u.endsWith("/issues/comments/100") && init?.method === "PATCH") {
         return Promise.resolve(jsonResponse({ ...withComment(), body: "edited" }));
       }
-      if (u.includes("/issues/7/comments")) return Promise.resolve(jsonResponse([withComment()]));
+      if (u.includes("/issues/7/timeline")) return Promise.resolve(jsonResponse([{ ...withComment(), event: "commented" }]));
       if (u.includes("/issues/7/reactions")) return Promise.resolve(jsonResponse([]));
       if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "admin" }));
       if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
@@ -250,7 +273,7 @@ describe("IssuesPage detail", () => {
       if (u.endsWith("/issues/comments/100") && init?.method === "DELETE") {
         return Promise.resolve(new Response(null, { status: 204 }));
       }
-      if (u.includes("/issues/7/comments")) return Promise.resolve(jsonResponse([withComment()]));
+      if (u.includes("/issues/7/timeline")) return Promise.resolve(jsonResponse([{ ...withComment(), event: "commented" }]));
       if (u.includes("/issues/7/reactions")) return Promise.resolve(jsonResponse([]));
       if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "admin" }));
       if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
@@ -277,7 +300,7 @@ describe("IssuesPage detail", () => {
       if (u.endsWith("/repos/admin/test/assignees")) {
         return Promise.resolve(jsonResponse([{ login: "bob" }]));
       }
-      if (u.includes("/issues/7/comments")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/issues/7/comments") || u.includes("/timeline")) return Promise.resolve(jsonResponse([]));
       if (u.includes("/issues/7/reactions")) return Promise.resolve(jsonResponse([]));
       if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "admin" }));
       if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
@@ -301,7 +324,7 @@ describe("IssuesPage detail", () => {
       if (u.endsWith("/issues/7/lock") && init?.method === "PUT") {
         return Promise.resolve(new Response(null, { status: 204 }));
       }
-      if (u.includes("/issues/7/comments")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/issues/7/comments") || u.includes("/timeline")) return Promise.resolve(jsonResponse([]));
       if (u.includes("/issues/7/reactions")) return Promise.resolve(jsonResponse([]));
       if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "admin" }));
       if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
@@ -430,7 +453,7 @@ describe("IssuesPage detail sidebar", () => {
   it("renders the two-column layout with the metadata sidebar", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL) => {
       const u = url.toString();
-      if (u.includes("/issues/7/comments")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/issues/7/comments") || u.includes("/timeline")) return Promise.resolve(jsonResponse([]));
       if (u.includes("/issues/7/reactions")) return Promise.resolve(jsonResponse([]));
       if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "admin" }));
       if (u.includes("/issues/7")) {
@@ -573,7 +596,7 @@ describe("IssuesPage detail triage", () => {
       if (u.includes("/issues/7/labels") && init?.method === "POST") {
         return Promise.resolve(jsonResponse([bugLabel]));
       }
-      if (u.includes("/issues/7/comments")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/issues/7/comments") || u.includes("/timeline")) return Promise.resolve(jsonResponse([]));
       if (u.includes("/issues/7/reactions")) return Promise.resolve(jsonResponse([]));
       if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "admin" }));
       if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "Triaged")));
@@ -641,7 +664,7 @@ describe("IssuesPage detail triage", () => {
   it("hides issue type controls and skips the org issue-type endpoint for user-owned repositories", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL) => {
       const u = url.toString();
-      if (u.includes("/issues/7/comments")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/issues/7/comments") || u.includes("/timeline")) return Promise.resolve(jsonResponse([]));
       if (u.includes("/issues/7/reactions")) return Promise.resolve(jsonResponse([]));
       if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "admin" }));
       if (u.endsWith("/api/v3/repos/admin/test")) {

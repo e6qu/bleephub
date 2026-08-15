@@ -269,6 +269,15 @@ test.beforeAll(async ({ browser }) => {
   ok("issue", issueRes);
   if (issueRes.ok && issueRes.json && typeof issueRes.json === "object") {
     seeded.issueNumber = (issueRes.json as { number: number }).number;
+    // An assignee + a comment so the issue conversation timeline renders the
+    // full range of rows (labeled from creation, assigned, and a comment) for
+    // the a11y scan.
+    ok("issue-assignee", await api(page, "POST", `/api/v3/repos/${seeded.owner}/${seeded.repo}/issues/${seeded.issueNumber}/assignees`, {
+      assignees: ["admin"],
+    }));
+    ok("issue-comment", await api(page, "POST", `/api/v3/repos/${seeded.owner}/${seeded.repo}/issues/${seeded.issueNumber}/comments`, {
+      body: "A seeded comment for the conversation timeline.",
+    }));
   }
 
   // branch + file + pull request

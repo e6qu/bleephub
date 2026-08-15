@@ -5769,6 +5769,15 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "the issue conversation showed only comments \u2014 github.com interleaves labeled/assigned/closed/renamed/referenced/milestoned **timeline events** with the comments in order; the PR page already rendered them but the issue page did not",
+        "id": "WEB-126",
+        "location": "web/src/components/CommentCard.tsx, web/src/components/TimelineEventRow.tsx, web/src/pages/IssuesPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 extracted the PR page's `TimelineEventRow` (+ `reviewStateText`) into a shared `components/TimelineEventRow.tsx` (reuse, not duplication \u2014 the PR page now imports it, jscpd-clean), and evolved `EditableCommentList` to consume the issue **timeline** (`fetchIssueTimeline`) rather than the flat comment list: `commented` events render as editable comments (edit/delete + reactions from WEB-124 preserved), every other event renders a `TimelineEventRow`, interleaved in github.com's order. `IssuesPage` now derives its comment count + participants from the timeline; the dead `fetchIssueComments` wrapper was removed. Verified: unit test interleaves a labeled event, a comment, and a closed event and asserts each renders; existing edit/delete/reaction tests still pass; the a11y sweep now seeds an assigned+commented issue so the conversation renders event rows + editable comment + reaction bar at 0 violations in both themes",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -7185,21 +7194,21 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 123
+            "fixed": 124
           },
-          "total": 125
+          "total": 126
         }
       },
       "severity": {
         "blocker": 167,
         "major": 399,
-        "minor": 188
+        "minor": 189
       },
       "status": {
         "deferred": 3,
-        "fixed": 751
+        "fixed": 752
       },
-      "total": 754
+      "total": 755
     }
   },
   "rest": {
@@ -28722,32 +28731,32 @@
         "target": "/ui/"
       },
       {
-        "line": 460,
+        "line": 469,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 499,
+        "line": 508,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/repos/${seeded.owner}/${seeded.repo}/settings"
       },
       {
-        "line": 534,
+        "line": 543,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/repos/${seeded.owner}/${seeded.repo}/settings"
       },
       {
-        "line": 572,
+        "line": 581,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/repos/${seeded.org}/org-parity/settings"
       },
       {
-        "line": 604,
+        "line": 613,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/search"
       },
       {
-        "line": 637,
+        "line": 646,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/orgs/${seeded.org}/governance?tab=code-security"
       },
