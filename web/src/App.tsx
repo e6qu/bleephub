@@ -68,6 +68,7 @@ const ProfilePage = lazy(() => import("./pages/ProfilePage.js").then(({ ProfileP
 const OrgOverviewPage = lazy(() => import("./pages/OrgOverviewPage.js").then(({ OrgOverviewPage }) => ({ default: OrgOverviewPage })));
 const OrgPeoplePage = lazy(() => import("./pages/OrgPeoplePage.js").then(({ OrgPeoplePage }) => ({ default: OrgPeoplePage })));
 const OrgTeamsPage = lazy(() => import("./pages/OrgTeamsPage.js").then(({ OrgTeamsPage }) => ({ default: OrgTeamsPage })));
+const OrgTeamDetailPage = lazy(() => import("./pages/OrgTeamDetailPage.js").then(({ OrgTeamDetailPage }) => ({ default: OrgTeamDetailPage })));
 const ClassroomPage = lazy(() => import("./pages/ClassroomPage.js").then(({ ClassroomPage }) => ({ default: ClassroomPage })));
 const MarketplacePage = lazy(() => import("./pages/MarketplacePage.js").then(({ MarketplacePage }) => ({ default: MarketplacePage })));
 const MarketplacePublisherPage = lazy(() => import("./pages/MarketplacePublisherPage.js").then(({ MarketplacePublisherPage }) => ({ default: MarketplacePublisherPage })));
@@ -286,6 +287,7 @@ export function App() {
               <Route path="/ui/orgs/:org" element={<OrgOverviewPage />} />
               <Route path="/ui/orgs/:org/people" element={<OrgPeoplePage />} />
               <Route path="/ui/orgs/:org/teams" element={<OrgTeamsPage />} />
+              <Route path="/ui/orgs/:org/teams/:slug" element={<OrgTeamDetailPage />} />
               <Route path="/ui/users/:login" element={<ProfilePage />} />
               {/* A logged-in user hitting /ui/login (bookmark) or any
                   unknown /ui/* path lands back on the dashboard. */}

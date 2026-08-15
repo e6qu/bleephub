@@ -176,6 +176,7 @@ function buildRoutes(): { route: string; label: string }[] {
     { route: `/ui/orgs/${org}`, label: "org-overview" },
     { route: `/ui/orgs/${org}/people`, label: "org-people" },
     { route: `/ui/orgs/${org}/teams`, label: "org-teams" },
+    { route: `/ui/orgs/${org}/teams/platform`, label: "org-team-detail" },
     { route: `/ui/orgs/${org}/repos`, label: "org-repos" },
     { route: `/ui/orgs/${org}/governance`, label: "org-governance" },
     { route: `/ui/orgs/${org}/rulesets`, label: "org-rulesets" },
@@ -304,6 +305,10 @@ test.beforeAll(async ({ browser }) => {
   ok("org-repo", await api(page, "POST", `/api/v3/orgs/${seeded.org}/repos`, {
     name: "org-parity",
     auto_init: true,
+  }));
+  // an org team so /orgs/{org}/teams/{slug} renders a team detail for the scan.
+  ok("org-team", await api(page, "POST", `/api/v3/orgs/${seeded.org}/teams`, {
+    name: "Platform",
   }));
   // an org custom-property schema so the repo Settings › Custom properties tab
   // renders its authoring form (not just the empty state) for the a11y scan.
