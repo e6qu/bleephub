@@ -210,6 +210,7 @@ export function App() {
               <Route path="/ui/repos/:owner/:repo/commits" element={<RepoDetailPage initialTab="commits" />} />
               <Route path="/ui/repos/:owner/:repo/branches" element={<RepoDetailPage initialTab="branches" />} />
               <Route path="/ui/repos/:owner/:repo/tags" element={<RepoDetailPage initialTab="tags" />} />
+              <Route path="/ui/repos/:owner/:repo/activity" element={<RepoDetailPage initialTab="activity" />} />
               <Route path="/ui/repos/:owner/:repo/tree/:ref/*" element={<RepoDetailPage />} />
               <Route path="/ui/repos/:owner/:repo/commits/:sha" element={<RepoCommitPage />} />
               <Route path="/ui/repos/:owner/:repo/compare/:range" element={<RepoComparePage />} />

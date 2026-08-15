@@ -82,11 +82,29 @@ func TestPackagesAuthUser_DeleteAndRestorePackage(t *testing.T) {
 		t.Fatalf("delete package: %d", resp.StatusCode)
 	}
 
-	// Deleted packages disappear from gets and lists...
+	// Deleted packages disappear from gets and the default (active) list...
 	resp = s.get(t, "/api/v3/user/packages/npm/restorable-pkg", defaultToken)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("get deleted package: %d, want 404", resp.StatusCode)
+	}
+	active := decodeJSONArray(t, s.get(t, "/api/v3/user/packages?package_type=npm", defaultToken))
+	for _, p := range active {
+		if p["name"] == "restorable-pkg" {
+			t.Fatalf("deleted package leaked into the active list")
+		}
+	}
+
+	// ...but state=deleted lists them so the UI can offer restore.
+	deleted := decodeJSONArray(t, s.get(t, "/api/v3/user/packages?package_type=npm&state=deleted", defaultToken))
+	found := false
+	for _, p := range deleted {
+		if p["name"] == "restorable-pkg" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("state=deleted list missing the deleted package: %v", deleted)
 	}
 
 	// ...but restore brings the package back with its versions intact.

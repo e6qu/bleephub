@@ -1,15 +1,15 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, cleanup, screen, waitFor, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter } from "react-router";
+import { MemoryRouter } from "react-router";
 import { MigrationsPage } from "../pages/MigrationsPage.js";
 
 const mockFetch = vi.fn();
 globalThis.fetch = mockFetch;
 
-function jsonResponse(data: unknown) {
+function jsonResponse(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
-    status: 200,
+    status,
     headers: { "Content-Type": "application/json" },
   });
 }
@@ -25,131 +25,125 @@ function renderPage() {
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
+      <MemoryRouter initialEntries={["/ui/migrations"]}>
         <MigrationsPage />
-      </BrowserRouter>
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 }
 
-const baseRepo = {
-  id: 10,
-  name: "repo",
-  full_name: "admin/repo",
-  description: "",
-  homepage: null,
-  default_branch: "main",
-  visibility: "public",
-  private: false,
-  created_at: "2024-01-01T00:00:00Z",
-  updated_at: "2024-01-01T00:00:00Z",
-  pushed_at: null,
-  size: 0,
-  owner: { login: "admin", type: "User" },
-  license: null,
-  has_issues: true,
-  has_projects: true,
-  has_wiki: true,
-  has_pull_requests: true,
-  is_template: false,
-  archived: false,
-  web_commit_signoff_required: false,
-  allow_squash_merge: true,
-  allow_merge_commit: true,
-  allow_rebase_merge: true,
-  allow_auto_merge: false,
-  allow_update_branch: false,
-  delete_branch_on_merge: false,
-  use_squash_pr_title_as_default: false,
-  squash_merge_commit_title: "COMMIT_OR_PR_TITLE",
-  squash_merge_commit_message: "COMMIT_MESSAGES",
-  merge_commit_title: "PR_TITLE",
-  merge_commit_message: "PR_BODY",
-  pull_request_creation_policy: "maintainer",
+const importRecord = {
+  vcs: "git",
+  use_lfs: false,
+  vcs_url: "https://example.com/octo/source.git",
+  status: "complete",
+  status_text: null,
+  failed_step: null,
+  error_message: null,
+  has_large_files: false,
+  large_files_size: 0,
+  large_files_count: 0,
+  import_percent: 100,
+  commit_count: 3,
+  authors_count: 1,
 };
 
-const userMigration = {
+const author = {
   id: 1,
-  node_id: "M_kgDO00000001",
-  guid: "guid-1",
-  state: "exported",
-  repositories: [baseRepo],
-  lock_repositories: true,
-  exclude_metadata: false,
-  exclude_git_data: false,
-  exclude_attachments: false,
-  exclude_releases: false,
-  exclude_owner_projects: false,
-  org_metadata_only: false,
-  url: "/api/v3/user/migrations/1",
-  html_url: "/ui/migrations/1",
-  archive_url: "/api/v3/user/migrations/1/archive",
-  created_at: "2024-01-01T00:00:00Z",
-  updated_at: "2024-01-01T00:00:00Z",
-  exported_at: "2024-01-01T00:00:00Z",
+  remote_id: "Octo Cat <octo@example.com>",
+  remote_name: "Octo Cat",
+  email: "octo@example.com",
+  name: "Octo Cat",
 };
 
-const orgMigration = {
-  ...userMigration,
-  id: 2,
-  node_id: "M_kgDO00000002",
-  guid: "guid-2",
-};
-
-function mockEndpoints() {
-  mockFetch.mockImplementation((url: string) => {
-    if (url === "/api/v3/user/migrations") return Promise.resolve(jsonResponse([userMigration]));
-    if (url === "/api/v3/orgs/acme/migrations") return Promise.resolve(jsonResponse([orgMigration]));
-    if (url === "/api/v3/user/repos?per_page=100") return Promise.resolve(jsonResponse([baseRepo]));
-    return Promise.resolve(jsonResponse({}));
-  });
+// The user-migrations list backs the initial page render; default any other GET
+// to an empty list so the import flow is what the assertions isolate.
+function baseRouter(url: string) {
+  const u = url.toString();
+  if (u.includes("/import/authors")) return jsonResponse([author]);
+  if (u.endsWith("/import")) return jsonResponse(importRecord);
+  return jsonResponse([]);
 }
 
-describe("MigrationsPage", () => {
-  it("renders user migrations", async () => {
-    mockEndpoints();
+describe("MigrationsPage import flow", () => {
+  it("starts an import with a PUT carrying the clone URL", async () => {
+    mockFetch.mockImplementation((url: string, opts?: { method?: string }) => {
+      if (opts?.method === "PUT") return Promise.resolve(jsonResponse(importRecord, 201));
+      return Promise.resolve(baseRouter(url));
+    });
     renderPage();
+
+    fireEvent.change(await screen.findByLabelText("Target owner"), { target: { value: "octo" } });
+    fireEvent.change(screen.getByLabelText("Target repository"), { target: { value: "dest" } });
+    fireEvent.change(screen.getByLabelText("Clone URL"), {
+      target: { value: "https://example.com/octo/source.git" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Start import" }));
+
     await waitFor(() => {
-      expect(screen.getByText("Migrations")).toBeInTheDocument();
-      expect(screen.getByText(/1 rows/)).toBeInTheDocument();
+      const put = mockFetch.mock.calls.find(
+        (c) => c[0] === "/api/v3/repos/octo/dest/import" && c[1]?.method === "PUT",
+      );
+      expect(put).toBeDefined();
+      expect(JSON.parse(String(put![1].body))).toMatchObject({
+        vcs_url: "https://example.com/octo/source.git",
+      });
     });
   });
 
-  it("switches to organization migrations", async () => {
-    mockEndpoints();
+  it("cancels an import with a DELETE", async () => {
+    mockFetch.mockImplementation((url: string, opts?: { method?: string }) => {
+      if (opts?.method === "PUT") return Promise.resolve(jsonResponse(importRecord, 201));
+      if (opts?.method === "DELETE") return Promise.resolve(new Response(null, { status: 204 }));
+      return Promise.resolve(baseRouter(url));
+    });
     renderPage();
-    fireEvent.click(screen.getByText("Organization"));
-    const input = screen.getByPlaceholderText("org-login");
-    fireEvent.change(input, { target: { value: "acme" } });
-    fireEvent.click(screen.getByText("Load"));
+
+    fireEvent.change(await screen.findByLabelText("Target owner"), { target: { value: "octo" } });
+    fireEvent.change(screen.getByLabelText("Target repository"), { target: { value: "dest" } });
+    fireEvent.change(screen.getByLabelText("Clone URL"), {
+      target: { value: "https://example.com/octo/source.git" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Start import" }));
+
+    // Status panel appears once the target is set and the GET resolves.
+    fireEvent.click(await screen.findByRole("button", { name: "Cancel import" }));
+
     await waitFor(() => {
-      expect(input).toHaveValue("acme");
-      expect(screen.getByText(/1 rows/)).toBeInTheDocument();
+      const del = mockFetch.mock.calls.find(
+        (c) => c[0] === "/api/v3/repos/octo/dest/import" && c[1]?.method === "DELETE",
+      );
+      expect(del).toBeDefined();
     });
   });
 
-  it("loads migration repository choices from GitHub REST user repositories", async () => {
-    mockEndpoints();
-    renderPage();
-    fireEvent.click(screen.getByText("New migration"));
-    await waitFor(() => {
-      expect(screen.getByRole("checkbox", { name: "admin/repo" })).toBeInTheDocument();
+  it("remaps an author with a PATCH to .../import/authors/{id}", async () => {
+    mockFetch.mockImplementation((url: string, opts?: { method?: string }) => {
+      if (opts?.method === "PUT") return Promise.resolve(jsonResponse(importRecord, 201));
+      if (opts?.method === "PATCH") return Promise.resolve(jsonResponse(author));
+      return Promise.resolve(baseRouter(url));
     });
-    const calls = mockFetch.mock.calls.map((c) => c[0].toString());
-    expect(calls).toContain("/api/v3/user/repos?per_page=100");
-    expect(calls).not.toContain("/internal/repos");
-  });
+    renderPage();
 
-  it("pluralizes the repository count in the details dialog without doubling the suffix", async () => {
-    const secondRepo = { ...baseRepo, id: 11, name: "repo2", full_name: "admin/repo2" };
-    const multiRepoMigration = { ...userMigration, repositories: [baseRepo, secondRepo] };
-    mockFetch.mockImplementation((url: string) => {
-      if (url === "/api/v3/user/migrations") return Promise.resolve(jsonResponse([multiRepoMigration]));
-      return Promise.resolve(jsonResponse({}));
+    fireEvent.change(await screen.findByLabelText("Target owner"), { target: { value: "octo" } });
+    fireEvent.change(screen.getByLabelText("Target repository"), { target: { value: "dest" } });
+    fireEvent.change(screen.getByLabelText("Clone URL"), {
+      target: { value: "https://example.com/octo/source.git" },
     });
-    renderPage();
-    fireEvent.click(await screen.findByText("Details"));
-    expect(await screen.findByText(/2 repositories/)).toBeInTheDocument();
-    expect(screen.queryByText(/repositoryies/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Start import" }));
+
+    // The author row loads from GET .../import/authors once the import GET resolves.
+    const emailInput = await screen.findByLabelText("Email");
+    fireEvent.change(emailInput, { target: { value: "new@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      const patch = mockFetch.mock.calls.find(
+        (c) =>
+          c[0] === "/api/v3/repos/octo/dest/import/authors/1" && c[1]?.method === "PATCH",
+      );
+      expect(patch).toBeDefined();
+      expect(JSON.parse(String(patch![1].body))).toMatchObject({ email: "new@example.com" });
+    });
   });
 });

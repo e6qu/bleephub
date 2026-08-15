@@ -6,9 +6,13 @@ import {
   fetchSecretScanningAlert,
   fetchSecretScanningAlertLocations,
   updateSecretScanningAlert,
+  ghFetch,
+  ghPostJSON,
+  ghSend,
 } from "../api.js";
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
 import { RepoHeader } from "../components/PageHeader.js";
+import { confirmAction } from "../components/confirmAction.js";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
 import { Box, Button } from "../components/ui.js";
 import { MutationError } from "../components/MutationError.js";
@@ -17,6 +21,18 @@ import type {
   GithubSecretScanningLocation,
   GithubSecretScanningResolution,
 } from "../types.js";
+
+const enc = encodeURIComponent;
+
+/** A custom pattern as returned by the secret-scanning custom-patterns API. */
+interface CustomPattern {
+  id: number;
+  name: string;
+  pattern: string;
+  slug: string;
+  state: string;
+  custom_pattern_version: string;
+}
 
 type FilterState = "all" | "open" | "resolved";
 
@@ -167,7 +183,153 @@ export function SecretScanningPage() {
           )}
         </Box>
       </div>
+
+      <CustomPatterns owner={owner} repo={repo} />
     </div>
+  );
+}
+
+function CustomPatterns({ owner, repo }: { owner: string; repo: string }) {
+  const queryClient = useQueryClient();
+  const basePath = `/api/v3/repos/${enc(owner)}/${enc(repo)}/secret-scanning/custom-patterns`;
+  const queryKey = ["secret-scanning-custom-patterns", owner, repo];
+
+  const [name, setName] = useState("");
+  const [pattern, setPattern] = useState("");
+
+  const {
+    data,
+    isLoading,
+    isError,
+    error,
+  } = useQuery({
+    queryKey,
+    queryFn: () => ghFetch<CustomPattern[]>(basePath),
+    enabled: !!owner && !!repo,
+  });
+  const patterns = Array.isArray(data) ? data : [];
+
+  const invalidate = () => queryClient.invalidateQueries({ queryKey });
+
+  const createMutation = useMutation({
+    mutationFn: (spec: { name: string; pattern: string }) =>
+      ghPostJSON<{ created_patterns: CustomPattern[] }>(basePath, { patterns: [spec] }),
+    onSuccess: () => {
+      setName("");
+      setPattern("");
+      invalidate();
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (p: CustomPattern) =>
+      ghSend("DELETE", basePath, {
+        patterns: [{ pattern_id: p.id, custom_pattern_version: p.custom_pattern_version }],
+      }),
+    onSuccess: invalidate,
+  });
+
+  return (
+    <Box className="mt-4">
+      <h3 style={{ marginTop: 0, marginBottom: "0.75rem" }}>Custom patterns ({patterns.length})</h3>
+
+      <MutationError of={createMutation} />
+      <MutationError of={deleteMutation} />
+
+      {isLoading ? (
+        <Spinner label={`loading ${owner}/${repo} custom patterns`} />
+      ) : isError ? (
+        <InlineError title="Failed to load custom patterns" detail={String(error)} />
+      ) : patterns.length === 0 ? (
+        <p style={{ color: "var(--color-fg-muted)", fontSize: "0.85rem" }}>No custom patterns.</p>
+      ) : (
+        <ul style={{ listStyle: "none", padding: 0, margin: "0 0 1rem" }}>
+          {patterns.map((p) => (
+            <li
+              key={p.id}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: "0.75rem",
+                padding: "0.5rem 0",
+                borderBottom: "1px solid var(--color-border)",
+              }}
+            >
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontWeight: 600, fontSize: "0.9rem" }}>{p.name}</div>
+                <div
+                  style={{
+                    fontSize: "0.8rem",
+                    color: "var(--color-fg-muted)",
+                    fontFamily: "var(--font-mono, monospace)",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {p.pattern}
+                </div>
+              </div>
+              <Button
+                type="button"
+                variant="danger"
+                size="sm"
+                onClick={async () => {
+                  if (await confirmAction(`Delete pattern ${p.name}?`, { confirmLabel: "Delete" })) {
+                    deleteMutation.mutate(p);
+                  }
+                }}
+              >
+                Delete
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (name.trim() && pattern.trim()) {
+            createMutation.mutate({ name: name.trim(), pattern });
+          }
+        }}
+      >
+        <h4 style={{ fontSize: "0.9rem", marginBottom: "0.5rem" }}>New custom pattern</h4>
+        <label htmlFor="custom-pattern-name" style={{ fontSize: "0.85rem", display: "block" }}>
+          Pattern name
+        </label>
+        <input
+          id="custom-pattern-name"
+          type="text"
+          aria-label="Pattern name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          style={{ fontSize: "0.85rem", padding: "0.35rem 0.5rem", width: "100%", marginBottom: "0.5rem" }}
+        />
+        <label htmlFor="custom-pattern-regex" style={{ fontSize: "0.85rem", display: "block" }}>
+          Secret format (regex)
+        </label>
+        <input
+          id="custom-pattern-regex"
+          type="text"
+          aria-label="Secret format (regex)"
+          value={pattern}
+          onChange={(e) => setPattern(e.target.value)}
+          style={{
+            fontSize: "0.85rem",
+            padding: "0.35rem 0.5rem",
+            width: "100%",
+            marginBottom: "0.5rem",
+            fontFamily: "var(--font-mono, monospace)",
+          }}
+        />
+        <Button type="submit" size="sm" disabled={!name.trim() || !pattern.trim() || createMutation.isPending}>
+          Create pattern
+        </Button>
+      </form>
+    </Box>
   );
 }
 

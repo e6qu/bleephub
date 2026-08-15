@@ -21,6 +21,7 @@ import {
   updateCopilotSpaceResource,
   removeCopilotSpaceResource,
   fetchCurrentUser,
+  ghFetch,
   ghSend,
   ghPostJSON,
 } from "../api.js";
@@ -55,6 +56,8 @@ export function CopilotPage() {
       <div className="flex flex-col gap-6">
         <BillingSection org={org} />
         <SeatsSection org={org} />
+        <ContentExclusionSection org={org} />
+        <CodingAgentSection org={org} />
         <SpacesSection owner={org} />
       </div>
     </div>
@@ -294,6 +297,178 @@ function SeatsSection({ org }: { org: string }) {
           ))}
       </Box>
     </section>
+  );
+}
+
+// Copilot content exclusion: an organization maps each scope (a repository
+// "owner/name" or "*" for all) to a list of rules, each a path string or an
+// object with exactly one of ifAnyMatch / ifNoneMatch. The shape is faithfully
+// edited as JSON and PUT back to the org content_exclusion endpoint.
+function ContentExclusionSection({ org }: { org: string }) {
+  const { data, isLoading, isError, error } = useQuery({
+    queryKey: ["copilot-content-exclusion", org],
+    queryFn: ({ signal }) =>
+      ghFetch<Record<string, unknown[]>>(
+        `/api/v3/orgs/${enc(org)}/copilot/content_exclusion`,
+        signal,
+      ),
+  });
+
+  return (
+    <section>
+      <SectionLabel>Content exclusion</SectionLabel>
+      {isLoading && <Spinner label="loading content exclusion rules" />}
+      {isError && (
+        <InlineError title="Failed to load content exclusion rules" detail={String(error)} />
+      )}
+      {/* Keyed on org so the editor seeds its text from the loaded rules once. */}
+      {data && <ContentExclusionEditor key={org} org={org} initial={data} />}
+    </section>
+  );
+}
+
+function ContentExclusionEditor({
+  org,
+  initial,
+}: {
+  org: string;
+  initial: Record<string, unknown[]>;
+}) {
+  const qc = useQueryClient();
+  const [text, setText] = useState(() => JSON.stringify(initial, null, 2));
+  const [error, setError] = useState<string | null>(null);
+
+  const saveMut = useMutation({
+    mutationFn: () => {
+      let parsed: unknown;
+      try {
+        parsed = text.trim() === "" ? {} : JSON.parse(text);
+      } catch {
+        throw new Error("Rules must be valid JSON.");
+      }
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+        throw new Error("Rules must be a JSON object mapping each scope to a list of rules.");
+      }
+      return ghSend("PUT", `/api/v3/orgs/${enc(org)}/copilot/content_exclusion`, parsed);
+    },
+    onSuccess: () => {
+      setError(null);
+      qc.invalidateQueries({ queryKey: ["copilot-content-exclusion", org] });
+    },
+    onError: (err: Error) => setError(err.message),
+  });
+
+  return (
+    <Box>
+      <div className="flex flex-col gap-2" style={{ padding: "0.75rem 1rem" }}>
+        <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--color-fg-muted)" }}>
+          Map each scope (a repository <code>owner/name</code>, or <code>*</code> for all) to a list
+          of rules. Each rule is a path string or an object with exactly one of{" "}
+          <code>ifAnyMatch</code> / <code>ifNoneMatch</code>.
+        </p>
+        {error && <ErrorBanner>{error}</ErrorBanner>}
+        <textarea
+          aria-label="Copilot content exclusion rules"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          rows={8}
+          className="w-full"
+          style={{ fontFamily: "var(--font-mono, monospace)", fontSize: "0.82rem" }}
+        />
+        <div>
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={saveMut.isPending}
+            onClick={() => {
+              setError(null);
+              saveMut.mutate();
+            }}
+          >
+            {saveMut.isPending ? "Saving…" : "Save exclusion rules"}
+          </Button>
+        </div>
+      </div>
+    </Box>
+  );
+}
+
+const CODING_AGENT_POLICIES = ["all", "selected", "none"] as const;
+
+// Copilot coding agent: the organization policy for which repositories may use
+// the Copilot cloud/coding agent — all, a selected set, or none.
+function CodingAgentSection({ org }: { org: string }) {
+  const { data, isLoading, isError, error } = useQuery({
+    queryKey: ["copilot-coding-agent-permissions", org],
+    queryFn: ({ signal }) =>
+      ghFetch<{ enabled_repositories: string }>(
+        `/api/v3/orgs/${enc(org)}/copilot/coding-agent/permissions`,
+        signal,
+      ),
+  });
+
+  return (
+    <section>
+      <SectionLabel>Coding agent</SectionLabel>
+      {isLoading && <Spinner label="loading Copilot coding agent policy" />}
+      {isError && (
+        <InlineError title="Failed to load Copilot coding agent policy" detail={String(error)} />
+      )}
+      {/* Keyed on org so the select seeds its value from the loaded policy once. */}
+      {data && <CodingAgentEditor key={org} org={org} initial={data.enabled_repositories} />}
+    </section>
+  );
+}
+
+function CodingAgentEditor({ org, initial }: { org: string; initial: string }) {
+  const qc = useQueryClient();
+  const [policy, setPolicy] = useState(initial);
+  const [error, setError] = useState<string | null>(null);
+
+  const saveMut = useMutation({
+    mutationFn: () =>
+      ghSend("PUT", `/api/v3/orgs/${enc(org)}/copilot/coding-agent/permissions`, {
+        enabled_repositories: policy,
+      }),
+    onSuccess: () => {
+      setError(null);
+      qc.invalidateQueries({ queryKey: ["copilot-coding-agent-permissions", org] });
+    },
+    onError: (err: Error) => setError(err.message),
+  });
+
+  return (
+    <Box>
+      <div className="flex flex-wrap items-center gap-3" style={{ padding: "0.75rem 1rem" }}>
+        <FormLabel id="coding-agent-policy">
+          Repositories allowed to use Copilot coding agent
+        </FormLabel>
+        <select
+          id="coding-agent-policy"
+          aria-label="Copilot coding agent repository policy"
+          value={policy}
+          onChange={(e) => setPolicy(e.target.value)}
+        >
+          {CODING_AGENT_POLICIES.map((p) => (
+            <option key={p} value={p}>
+              {p}
+            </option>
+          ))}
+        </select>
+        <Button
+          variant="primary"
+          size="sm"
+          disabled={saveMut.isPending}
+          onClick={() => {
+            setError(null);
+            saveMut.mutate();
+          }}
+        >
+          {saveMut.isPending ? "Saving…" : "Save"}
+        </Button>
+      </div>
+      {error && <ErrorBanner>{error}</ErrorBanner>}
+    </Box>
   );
 }
 

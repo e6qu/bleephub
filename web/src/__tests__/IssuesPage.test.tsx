@@ -122,6 +122,45 @@ describe("IssuesPage detail", () => {
     expect(screen.getByText(/closed/)).toBeInTheDocument();
   });
 
+  it("hides a comment via the minimizeComment mutation", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.includes("/api/graphql")) {
+        const body = JSON.parse((init?.body as string) ?? "{}");
+        if (String(body.query).includes("minimizeComment")) {
+          return Promise.resolve(jsonResponse({ data: { minimizeComment: { minimizedComment: { isMinimized: true } } } }));
+        }
+        // minimization-state query: comment 100 not yet minimized.
+        return Promise.resolve(jsonResponse({
+          data: { repository: { issue: { comments: { nodes: [{ databaseId: 100, isMinimized: false, minimizedReason: null }] } } } },
+        }));
+      }
+      if (u.includes("/issues/7/timeline")) {
+        return Promise.resolve(jsonResponse([
+          { event: "commented", id: 100, node_id: "IC_kgDO00000064", body: "spammy", user: { login: "admin" }, created_at: "2026-01-03T00:00:00Z" },
+        ]));
+      }
+      if (u.includes("/reactions")) return Promise.resolve(jsonResponse([]));
+      if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "admin" }));
+      if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/test/issues/7");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Hide comment" }));
+    fireEvent.change(screen.getByLabelText("Reason for hiding"), { target: { value: "SPAM" } });
+    fireEvent.click(screen.getByRole("button", { name: "Hide" }));
+
+    await waitFor(() => {
+      const mut = mockFetch.mock.calls.find(
+        ([u2, i2]) => u2.toString().includes("/api/graphql") && String((i2 as RequestInit)?.body).includes("minimizeComment"),
+      );
+      expect(mut).toBeTruthy();
+      const vars = JSON.parse(String((mut![1] as RequestInit).body)).variables;
+      expect(vars.input).toMatchObject({ subjectId: "IC_kgDO00000064", classifier: "SPAM" });
+    });
+  });
+
   it("adds a sub-issue by number via POST /issues/{n}/sub_issues", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
       const u = url.toString();

@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { useMutation, useQueryClient, type QueryKey } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query";
 import Markdown from "./Markdown";
 import {
   updateIssueComment,
@@ -7,6 +7,7 @@ import {
   fetchIssueCommentReactions,
   addIssueCommentReaction,
   removeIssueCommentReaction,
+  ghGraphQL,
 } from "../api.js";
 import type { GithubTimelineItem } from "../types.js";
 import { Button, DialogActions, FormLabel } from "./ui.js";
@@ -95,15 +96,64 @@ export function CommentCard({ login, body, date, isOp = false, headerActions, on
 // comments (edit / delete / reactions), and every other event (labeled, assigned,
 // closed, renamed, referenced, milestoned …) becomes a shared TimelineEventRow —
 // interleaved in the order github.com shows them.
+// github.com's "Hide" classifiers → GraphQL ReportedContentClassifiers /
+// the stored MinimizedReason enum.
+const HIDE_CLASSIFIERS = ["OFF_TOPIC", "OUTDATED", "RESOLVED", "DUPLICATE", "SPAM", "ABUSE"] as const;
+type HideClassifier = (typeof HIDE_CLASSIFIERS)[number];
+
+const hideReasonLabel = (reason?: string | null): string =>
+  ({ OFF_TOPIC: "off-topic", OUTDATED: "outdated", RESOLVED: "resolved", DUPLICATE: "duplicate", SPAM: "spam", ABUSE: "abuse" }[String(reason)] ?? "hidden");
+
+function minimizeComment(subjectId: string, classifier: HideClassifier): Promise<unknown> {
+  return ghGraphQL(
+    `mutation($input: MinimizeCommentInput!) { minimizeComment(input: $input) { minimizedComment { isMinimized } } }`,
+    { input: { subjectId, classifier } },
+  );
+}
+function unminimizeComment(subjectId: string): Promise<unknown> {
+  return ghGraphQL(
+    `mutation($input: UnminimizeCommentInput!) { unminimizeComment(input: $input) { unminimizedComment { isMinimized } } }`,
+    { input: { subjectId } },
+  );
+}
+
+interface MinimizationState {
+  isMinimized: boolean;
+  minimizedReason: string | null;
+}
+async function fetchCommentMinimization(
+  owner: string,
+  repo: string,
+  number: number,
+): Promise<Map<number, MinimizationState>> {
+  const data = await ghGraphQL<{
+    repository: { issue: { comments: { nodes: { databaseId: number; isMinimized: boolean; minimizedReason: string | null }[] } } | null } | null;
+  }>(
+    `query($owner: String!, $repo: String!, $n: Int!) {
+      repository(owner: $owner, name: $repo) {
+        issue(number: $n) { comments(first: 100) { nodes { databaseId isMinimized minimizedReason } } }
+      }
+    }`,
+    { owner, repo, n: number },
+  );
+  const map = new Map<number, MinimizationState>();
+  for (const c of data.repository?.issue?.comments.nodes ?? []) {
+    map.set(c.databaseId, { isMinimized: c.isMinimized, minimizedReason: c.minimizedReason });
+  }
+  return map;
+}
+
 export function EditableCommentList({
   owner,
   repo,
+  number,
   items,
   invalidateKeys,
   viewerLogin,
 }: {
   owner: string;
   repo: string;
+  number?: number;
   items: GithubTimelineItem[];
   invalidateKeys: QueryKey[];
   viewerLogin?: string | null | undefined;
@@ -126,6 +176,30 @@ export function EditableCommentList({
     onSuccess: invalidate,
   });
 
+  const minimizedQuery = useQuery({
+    queryKey: ["issue-comment-minimization", owner, repo, number],
+    queryFn: () => fetchCommentMinimization(owner, repo, number as number),
+    enabled: typeof number === "number",
+  });
+  const minimized = minimizedQuery.data ?? new Map<number, MinimizationState>();
+  const refetchMinimized = () => {
+    invalidate();
+    minimizedQuery.refetch();
+  };
+  const minimizeMut = useMutation({
+    mutationFn: (v: { subjectId: string; classifier: HideClassifier }) => minimizeComment(v.subjectId, v.classifier),
+    onSuccess: refetchMinimized,
+  });
+  const unminimizeMut = useMutation({
+    mutationFn: (subjectId: string) => unminimizeComment(subjectId),
+    onSuccess: refetchMinimized,
+  });
+  // Comment id currently showing its hide-reason picker, and the chosen reason.
+  const [hidingId, setHidingId] = useState<number | null>(null);
+  const [hideReason, setHideReason] = useState<HideClassifier>("OFF_TOPIC");
+  // Minimized comments the viewer chose to expand ("Show").
+  const [shown, setShown] = useState<Set<number>>(new Set());
+
   return (
     <>
       {items.map((item, index) => {
@@ -133,7 +207,44 @@ export function EditableCommentList({
         if (item.event !== "commented" || typeof item.id !== "number") {
           return <TimelineEventRow key={`${item.event}-${item.id ?? index}`} item={item} />;
         }
-        const c = { id: item.id, body: item.body, created_at: item.created_at ?? "", user: item.user };
+        const c = { id: item.id, node_id: item.node_id, body: item.body, created_at: item.created_at ?? "", user: item.user };
+        const min = minimized.get(c.id);
+        // A minimized comment renders collapsed until the viewer clicks Show.
+        if (min?.isMinimized && !shown.has(c.id)) {
+          return (
+            <div
+              key={c.id}
+              className="mb-4 flex items-center justify-between gap-2"
+              style={{
+                border: "1px solid var(--color-border)",
+                borderRadius: "var(--radius-md)",
+                padding: "0.55rem 0.9rem",
+                color: "var(--color-fg-muted)",
+                fontSize: "0.85rem",
+              }}
+            >
+              <span>
+                {c.user?.login ?? "someone"}'s comment was hidden — {hideReasonLabel(min.minimizedReason)}
+              </span>
+              <span className="flex gap-2">
+                <Button size="sm" variant="ghost" onClick={() => setShown((s) => new Set(s).add(c.id))}>
+                  Show
+                </Button>
+                {c.node_id && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    aria-label="Unhide comment"
+                    disabled={unminimizeMut.isPending}
+                    onClick={() => unminimizeMut.mutate(c.node_id as string)}
+                  >
+                    Unhide
+                  </Button>
+                )}
+              </span>
+            </div>
+          );
+        }
         return editingId === c.id ? (
           <div
             key={c.id}
@@ -202,6 +313,50 @@ export function EditableCommentList({
                 >
                   Delete
                 </Button>
+                {c.node_id && typeof number === "number" && (
+                  hidingId === c.id ? (
+                    <>
+                      <select
+                        aria-label="Reason for hiding"
+                        value={hideReason}
+                        onChange={(e) => setHideReason(e.target.value as HideClassifier)}
+                      >
+                        {HIDE_CLASSIFIERS.map((r) => (
+                          <option key={r} value={r}>
+                            {hideReasonLabel(r)}
+                          </option>
+                        ))}
+                      </select>
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        disabled={minimizeMut.isPending}
+                        onClick={() =>
+                          minimizeMut.mutate(
+                            { subjectId: c.node_id as string, classifier: hideReason },
+                            { onSuccess: () => setHidingId(null) },
+                          )
+                        }
+                      >
+                        Hide
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => setHidingId(null)}>
+                        Cancel
+                      </Button>
+                    </>
+                  ) : (
+                    <Button
+                      size="sm"
+                      aria-label="Hide comment"
+                      onClick={() => {
+                        setHideReason("OFF_TOPIC");
+                        setHidingId(c.id);
+                      }}
+                    >
+                      Hide
+                    </Button>
+                  )
+                )}
               </>
             }
           />
@@ -216,6 +371,8 @@ export function EditableCommentList({
         );
       })}
       <MutationError of={deleteMut} />
+      <MutationError of={minimizeMut} />
+      <MutationError of={unminimizeMut} />
     </>
   );
 }

@@ -3258,7 +3258,7 @@ interface GraphQLResponse<T> {
   errors?: Array<{ message: string; type?: string }>;
 }
 
-async function ghGraphQL<T>(query: string, variables?: Record<string, unknown>, signal?: AbortSignal): Promise<T> {
+export async function ghGraphQL<T>(query: string, variables?: Record<string, unknown>, signal?: AbortSignal): Promise<T> {
   const res = await apiFetch("/api/graphql", {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },

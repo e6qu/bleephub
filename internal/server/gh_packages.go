@@ -343,7 +343,14 @@ func packageListFilters(w http.ResponseWriter, r *http.Request) (pkgType, visibi
 // listOwnerPackagesJSON renders the packages of one owner scope filtered
 // by type, visibility, and viewer access.
 func (s *Server) listOwnerPackagesJSON(r *http.Request, user *store.User, ownerKey, pkgType, visibility string) []map[string]interface{} {
-	pkgs := s.store.ListPackages(ownerKey)
+	// GitHub's `state` filter: "active" (default) or "deleted". Deleted rows
+	// leave the by-owner index, so they come from a dedicated scan.
+	var pkgs []*store.Package
+	if r.URL.Query().Get("state") == "deleted" {
+		pkgs = s.store.ListDeletedPackages(ownerKey)
+	} else {
+		pkgs = s.store.ListPackages(ownerKey)
+	}
 	baseURL := s.baseURL(r)
 	out := make([]map[string]interface{}, 0, len(pkgs))
 	for _, p := range pkgs {

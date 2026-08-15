@@ -1783,6 +1783,7 @@ export interface GithubReaction {
 export interface GithubTimelineItem {
   event: string;
   id?: number;
+  node_id?: string;
   actor?: { login: string; avatar_url: string } | null;
   user?: { login: string; avatar_url: string } | null;
   body?: string;

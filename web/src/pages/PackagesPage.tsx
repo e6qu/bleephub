@@ -12,6 +12,9 @@ import {
   fetchPackages,
   fetchPackageVersions,
   restorePackageVersion,
+  packageListPath,
+  ghFetch,
+  ghPostJSON,
   type PackageScope,
 } from "../api.js";
 import type {
@@ -216,6 +219,7 @@ function PackagesList({
         columns={columns}
         emptyMessage="No packages yet."
       />
+      {scope.kind !== "repo" && <DeletedPackages scope={scope} packageType={packageType} />}
       {selected && (
         <PackageDetailDialog
           scope={scope}
@@ -224,6 +228,75 @@ function PackagesList({
         />
       )}
     </>
+  );
+}
+
+// Deleted packages (github.com's "?state=deleted") with a per-package Restore.
+// Only user/org scopes have a restore endpoint (there is no repo-scoped one).
+function packageRestorePath(scope: PackageScope, pkgType: string, name: string): string | null {
+  const seg = `packages/${encodeURIComponent(pkgType)}/${encodeURIComponent(name)}/restore`;
+  switch (scope.kind) {
+    case "user":
+      return `/api/v3/users/${encodeURIComponent(scope.username)}/${seg}`;
+    case "org":
+      return `/api/v3/orgs/${encodeURIComponent(scope.org)}/${seg}`;
+    case "repo":
+      return null;
+  }
+}
+
+function DeletedPackages({ scope, packageType }: { scope: PackageScope; packageType: GithubPackageType }) {
+  const queryClient = useQueryClient();
+  const key = ["packages-deleted", scope, packageType];
+  const { data } = useQuery({
+    queryKey: key,
+    queryFn: () => ghFetch<GithubPackage[]>(`${packageListPath(scope, packageType)}&state=deleted`),
+  });
+  const restoreMut = useMutation({
+    mutationFn: (pkg: GithubPackage) => {
+      const path = packageRestorePath(scope, pkg.package_type, pkg.name);
+      return path ? ghPostJSON<void>(path, {}) : Promise.reject(new Error("no restore endpoint"));
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: key });
+      queryClient.invalidateQueries({ queryKey: ["packages", scope, packageType] });
+    },
+  });
+  const deleted = (data ?? []).filter((p) => p.package_type === packageType);
+  if (deleted.length === 0) return null;
+  return (
+    <section className="mt-6">
+      <h3 style={{ fontSize: "0.9rem", fontWeight: 600, color: "var(--color-fg-muted)", marginBottom: "0.5rem" }}>
+        Deleted packages
+      </h3>
+      <MutationError of={restoreMut} />
+      <ul style={{ listStyle: "none", margin: 0, padding: 0, border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)" }}>
+        {deleted.map((pkg, i) => (
+          <li
+            key={pkg.name}
+            className="flex items-center justify-between gap-3"
+            style={{ padding: "0.6rem 0.9rem", borderBottom: i === deleted.length - 1 ? "none" : "1px solid var(--color-border)" }}
+          >
+            <span style={{ fontSize: "0.88rem" }}>
+              {pkg.name} <span style={{ color: "var(--color-fg-muted)" }}>({pkg.package_type})</span>
+            </span>
+            <Button
+              size="sm"
+              variant="secondary"
+              aria-label={`Restore package ${pkg.name}`}
+              disabled={restoreMut.isPending}
+              onClick={async () => {
+                if (await confirmAction(`Restore package ${pkg.name}?`, { title: "Restore package", confirmLabel: "Restore" })) {
+                  restoreMut.mutate(pkg);
+                }
+              }}
+            >
+              Restore
+            </Button>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

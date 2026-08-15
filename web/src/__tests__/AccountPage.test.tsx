@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, cleanup, screen, waitFor, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
+import sodium from "libsodium-wrappers";
 import { AccountPage } from "../pages/AccountPage.js";
 
 const mockFetch = vi.fn();
@@ -55,6 +56,15 @@ function installFetchRoutes(overrides: Record<string, () => Response> = {}) {
       );
     if (key === "GET /api/v3/user/blocks")
       return Promise.resolve(jsonResponse([{ login: "spammer" }]));
+    if (key === "GET /api/v3/user/codespaces/secrets")
+      return Promise.resolve(
+        jsonResponse({
+          total_count: 1,
+          secrets: [
+            { name: "NPM_TOKEN", created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-02T00:00:00Z", visibility: "all" },
+          ],
+        }),
+      );
     // Public profile tab (now the default) fetches the viewer + their profile.
     if (key === "GET /api/v3/user")
       return Promise.resolve(jsonResponse({ id: 1, login: "admin", type: "User", site_admin: true }));
@@ -331,6 +341,70 @@ describe("AccountPage", () => {
       const del = mockFetch.mock.calls.find((c) => c[1]?.method === "DELETE");
       expect(del).toBeDefined();
       expect(String(del![0])).toBe("/api/v3/user/blocks/spammer");
+    });
+  });
+
+  it("lists Codespaces secrets and seals a new one via PUT /user/codespaces/secrets/{name}", async () => {
+    await sodium.ready;
+    const keypair = sodium.crypto_box_keypair();
+    installFetchRoutes({
+      "GET /api/v3/user/codespaces/secrets/public-key": () =>
+        jsonResponse({
+          key_id: "568250167242549743",
+          key: sodium.to_base64(keypair.publicKey, sodium.base64_variants.ORIGINAL),
+        }),
+      "PUT /api/v3/user/codespaces/secrets/MY_SECRET": () => new Response(null, { status: 204 }),
+    });
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Codespaces" }));
+    await waitFor(() => screen.getByText("NPM_TOKEN"));
+
+    fireEvent.change(document.getElementById("codespaces-secret-name")!, {
+      target: { value: "MY_SECRET" },
+    });
+    fireEvent.change(document.getElementById("codespaces-secret-value")!, {
+      target: { value: "super-plain-text" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add secret" }));
+
+    await waitFor(() => {
+      const put = mockFetch.mock.calls.find(
+        (c) =>
+          String(c[0]) === "/api/v3/user/codespaces/secrets/MY_SECRET" &&
+          (c[1] as RequestInit | undefined)?.method === "PUT",
+      );
+      expect(put).toBeDefined();
+      const rawBody = String((put![1] as RequestInit).body);
+      // The plaintext must never appear on the wire.
+      expect(rawBody).not.toContain("super-plain-text");
+      const body = JSON.parse(rawBody);
+      expect(body.key_id).toBe("568250167242549743");
+      const opened = sodium.crypto_box_seal_open(
+        sodium.from_base64(body.encrypted_value, sodium.base64_variants.ORIGINAL),
+        keypair.publicKey,
+        keypair.privateKey,
+      );
+      expect(sodium.to_string(opened)).toBe("super-plain-text");
+    });
+  });
+
+  it("deletes a Codespaces secret via DELETE /user/codespaces/secrets/{name}", async () => {
+    installFetchRoutes({
+      "DELETE /api/v3/user/codespaces/secrets/NPM_TOKEN": () => new Response(null, { status: 204 }),
+    });
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Codespaces" }));
+    await waitFor(() => screen.getByText("NPM_TOKEN"));
+
+    fireEvent.click(screen.getByRole("button", { name: "delete" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm" }));
+    await waitFor(() => {
+      const del = mockFetch.mock.calls.find(
+        (c) =>
+          String(c[0]) === "/api/v3/user/codespaces/secrets/NPM_TOKEN" &&
+          (c[1] as RequestInit | undefined)?.method === "DELETE",
+      );
+      expect(del).toBeDefined();
     });
   });
 

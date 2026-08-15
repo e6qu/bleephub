@@ -414,6 +414,54 @@ describe("CopilotPage", () => {
     expect(screen.getByText("New-hire context")).toBeInTheDocument();
     expect(screen.getByText(/base role: reader · created by @admin/)).toBeInTheDocument();
   });
+
+  it("saves Copilot content exclusion rules via PUT", async () => {
+    mockCopilotEndpoints({
+      "/copilot/content_exclusion": () => jsonResponse({ "*": ["secrets/**"] }),
+    });
+    renderAt("/ui/orgs/acme/copilot");
+    await waitFor(() => {
+      expect(screen.getByLabelText("Copilot content exclusion rules")).toBeInTheDocument();
+    });
+    fireEvent.change(screen.getByLabelText("Copilot content exclusion rules"), {
+      target: { value: '{"*":["secrets/**","*.pem"]}' },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /save exclusion rules/i }));
+    await waitFor(() => {
+      const put = mockFetch.mock.calls.find(
+        (c) =>
+          c[0].toString().includes("/orgs/acme/copilot/content_exclusion") &&
+          c[1]?.method === "PUT",
+      );
+      expect(put).toBeTruthy();
+      expect(JSON.parse(String(put![1]!.body))).toEqual({ "*": ["secrets/**", "*.pem"] });
+    });
+  });
+
+  it("saves the Copilot coding agent policy via PUT", async () => {
+    mockCopilotEndpoints({
+      "/copilot/coding-agent/permissions": () => jsonResponse({ enabled_repositories: "all" }),
+    });
+    renderAt("/ui/orgs/acme/copilot");
+    await waitFor(() => {
+      expect(
+        screen.getByLabelText("Copilot coding agent repository policy"),
+      ).toBeInTheDocument();
+    });
+    fireEvent.change(screen.getByLabelText("Copilot coding agent repository policy"), {
+      target: { value: "selected" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      const put = mockFetch.mock.calls.find(
+        (c) =>
+          c[0].toString().includes("/orgs/acme/copilot/coding-agent/permissions") &&
+          c[1]?.method === "PUT",
+      );
+      expect(put).toBeTruthy();
+      expect(JSON.parse(String(put![1]!.body))).toEqual({ enabled_repositories: "selected" });
+    });
+  });
 });
 
 describe("PersonalCopilotSpacesPage", () => {
