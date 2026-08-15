@@ -3,9 +3,11 @@ import { useParams, useNavigate, Link } from "react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
 import { confirmAction } from "../components/confirmAction.js";
+import { RulesetEditor, type RulesetRuleConfig } from "../components/RulesetEditor.js";
 import {
   ghFetch,
   ghSend,
+  fetchOrgCustomProperties,
   fetchActionsPermissions,
   updateActionsPermissions,
   fetchWorkflowPermissions,
@@ -63,6 +65,7 @@ import {
   updateRepoTopics,
 } from "../api.js";
 import type {
+  GithubCustomProperty,
   GithubRuleset,
   GithubRulesetTarget,
   GithubRulesetEnforcement,
@@ -84,7 +87,7 @@ import { RepoHeader } from "../components/Shell.js";
 import { SettingsLayout, type SettingsNavSection } from "../components/SettingsLayout.js";
 import { PageTitle, Button, Box, FormLabel, ErrorBanner } from "../components/ui.js";
 
-type SettingsTab = "general" | "collaborators" | "deploy-keys" | "pages" | "security" | "interaction" | "transfer" | "rename" | "autolinks" | "webhooks" | "actions" | "environments" | "rulesets";
+type SettingsTab = "general" | "collaborators" | "deploy-keys" | "pages" | "security" | "interaction" | "transfer" | "rename" | "autolinks" | "webhooks" | "actions" | "environments" | "rulesets" | "custom-properties";
 
 const SETTINGS_NAV: SettingsNavSection<SettingsTab>[] = [
   { items: [{ key: "general", label: "General" }] },
@@ -99,6 +102,7 @@ const SETTINGS_NAV: SettingsNavSection<SettingsTab>[] = [
       { key: "webhooks", label: "Webhooks" },
       { key: "rename", label: "Rename branch" },
       { key: "autolinks", label: "Autolinks" },
+      { key: "custom-properties", label: "Custom properties" },
     ],
   },
   {
@@ -141,6 +145,7 @@ export function RepoSettingsPage() {
         {tab === "webhooks" && <WebhooksTab owner={owner} repo={repo} />}
         {tab === "actions" && <ActionsSettingsTab owner={owner} repo={repo} />}
         {tab === "rulesets" && <RepoRulesetsTab owner={owner} repo={repo} />}
+        {tab === "custom-properties" && <CustomPropertiesTab owner={owner} repo={repo} />}
         {tab === "environments" && <EnvironmentsTab owner={owner} repo={repo} />}
         {tab === "transfer" && (
           <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
@@ -2056,16 +2061,144 @@ function ActionsSettingsTab({ owner, repo }: { owner: string; repo: string }) {
   );
 }
 
+// ─── repo Custom properties ─────────────────────────────────────────────────
+interface RepoCustomPropertyValue {
+  property_name: string;
+  value: string | string[] | null;
+}
+
+// Repo Settings › Custom properties: set values for the org-defined property
+// schema. Values are authored per value_type and saved via
+// PATCH /repos/{owner}/{repo}/properties/values {properties:[…]}.
+function CustomPropertiesTab({ owner, repo }: { owner: string; repo: string }) {
+  const qc = useQueryClient();
+  const [error, setError] = useState<string | null>(null);
+  const [edits, setEdits] = useState<Record<string, string | string[] | null>>({});
+  const schema = useQuery({
+    queryKey: ["org-custom-properties", owner],
+    queryFn: () => fetchOrgCustomProperties(owner),
+    retry: false,
+  });
+  const values = useQuery({
+    queryKey: ["repo-custom-property-values", owner, repo],
+    queryFn: () => ghFetch<RepoCustomPropertyValue[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/properties/values`),
+    retry: false,
+  });
+  const save = useMutation({
+    mutationFn: (properties: RepoCustomPropertyValue[]) =>
+      ghSend("PATCH", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/properties/values`, { properties }),
+    onSuccess: () => {
+      setError(null);
+      setEdits({});
+      void qc.invalidateQueries({ queryKey: ["repo-custom-property-values", owner, repo] });
+    },
+    onError: (e: Error) => setError(e.message),
+  });
+
+  if (schema.isLoading || values.isLoading) return <Spinner label="loading custom properties" />;
+  // Custom properties are an organization feature; a user-owned repo (or an org
+  // with no schema) simply has none to set.
+  const props: GithubCustomProperty[] = schema.data ?? [];
+  if (schema.isError || props.length === 0) {
+    return (
+      <section style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+        <h2 style={settingsH2}>Custom properties</h2>
+        <p style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)" }}>
+          No custom properties are defined for this repository&apos;s organization.
+        </p>
+      </section>
+    );
+  }
+
+  const currentValue = (name: string): string | string[] | null => {
+    if (name in edits) return edits[name]!;
+    const found = (values.data ?? []).find((v) => v.property_name === name);
+    return found ? found.value : null;
+  };
+  const setValue = (name: string, value: string | string[] | null) => setEdits((prev) => ({ ...prev, [name]: value }));
+
+  const submit = () => {
+    const properties: RepoCustomPropertyValue[] = props.map((p) => ({
+      property_name: p.property_name,
+      value: currentValue(p.property_name),
+    }));
+    save.mutate(properties);
+  };
+
+  return (
+    <section style={{ display: "flex", flexDirection: "column", gap: "1rem", maxWidth: "44rem" }}>
+      <h2 style={settingsH2}>Custom properties</h2>
+      {error && <ErrorBanner>{error}</ErrorBanner>}
+      {props.map((p) => {
+        const val = currentValue(p.property_name);
+        const allowed = (p.allowed_values ?? []) as string[];
+        return (
+          <div key={p.property_name}>
+            <FormLabel id={`cp-${p.property_name}`}>
+              {p.property_name}{p.required ? " *" : ""}
+            </FormLabel>
+            {p.description && <p style={{ fontSize: "0.78rem", color: "var(--color-fg-muted)", margin: "0.1rem 0 0.3rem" }}>{p.description}</p>}
+            {p.value_type === "true_false" ? (
+              <select id={`cp-${p.property_name}`} aria-label={p.property_name} value={typeof val === "string" ? val : ""}
+                onChange={(e) => setValue(p.property_name, e.target.value || null)} style={settingsInputStyle}>
+                <option value="">— unset —</option>
+                <option value="true">true</option>
+                <option value="false">false</option>
+              </select>
+            ) : p.value_type === "single_select" ? (
+              <select id={`cp-${p.property_name}`} aria-label={p.property_name} value={typeof val === "string" ? val : ""}
+                onChange={(e) => setValue(p.property_name, e.target.value || null)} style={settingsInputStyle}>
+                <option value="">— unset —</option>
+                {allowed.map((a) => <option key={a} value={a}>{a}</option>)}
+              </select>
+            ) : p.value_type === "multi_select" ? (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem" }}>
+                {allowed.map((a) => {
+                  const arr = Array.isArray(val) ? val : [];
+                  return (
+                    <label key={a} style={{ display: "flex", alignItems: "center", gap: "0.35rem", fontSize: "0.85rem", minHeight: "1.625rem" }}>
+                      <input type="checkbox" aria-label={`${p.property_name}: ${a}`} checked={arr.includes(a)}
+                        onChange={(e) => setValue(p.property_name, e.target.checked ? [...arr, a] : arr.filter((x) => x !== a))} />
+                      {a}
+                    </label>
+                  );
+                })}
+              </div>
+            ) : (
+              <input id={`cp-${p.property_name}`} aria-label={p.property_name} type={p.value_type === "url" ? "url" : "text"}
+                value={typeof val === "string" ? val : ""} onChange={(e) => setValue(p.property_name, e.target.value || null)}
+                style={settingsInputStyle} />
+            )}
+          </div>
+        );
+      })}
+      <div>
+        <Button variant="primary" disabled={save.isPending || Object.keys(edits).length === 0} onClick={submit}>
+          {save.isPending ? "Saving…" : "Save"}
+        </Button>
+      </div>
+    </section>
+  );
+}
+
 // ─── repo Rulesets ─────────────────────────────────────────────────────────
 function RepoRulesetsTab({ owner, repo }: { owner: string; repo: string }) {
   const qc = useQueryClient();
   const [name, setName] = useState("");
   const [target, setTarget] = useState<GithubRulesetTarget>("branch");
   const [enforcement, setEnforcement] = useState<GithubRulesetEnforcement>("active");
+  const [ruleConfig, setRuleConfig] = useState<RulesetRuleConfig>({ rules: [], bypass_actors: [] });
   const [error, setError] = useState<string | null>(null);
   const list = useQuery({ queryKey: ["repo-rulesets", owner, repo], queryFn: () => fetchRepoRulesets(owner, repo) });
   const createMut = useMutation({
-    mutationFn: () => createRepoRuleset(owner, repo, { name: name.trim(), target, enforcement }),
+    mutationFn: () => createRepoRuleset(owner, repo, {
+      name: name.trim(),
+      target,
+      enforcement,
+      rules: ruleConfig.rules,
+      ...(ruleConfig.conditions ? { conditions: ruleConfig.conditions } : {}),
+      bypass_actors: ruleConfig.bypass_actors,
+    }),
     onSuccess: () => { setName(""); setError(null); void qc.invalidateQueries({ queryKey: ["repo-rulesets", owner, repo] }); },
     onError: (e: Error) => setError(e.message),
   });
@@ -2081,11 +2214,14 @@ function RepoRulesetsTab({ owner, repo }: { owner: string; repo: string }) {
       {error && <ErrorBanner>{error}</ErrorBanner>}
       <Box header={<span style={{ fontWeight: 600 }}>New ruleset</span>}>
         <form onSubmit={(e: FormEvent) => { e.preventDefault(); if (name.trim()) createMut.mutate(); }}
-          style={{ padding: "1rem", display: "flex", flexWrap: "wrap", gap: "0.6rem", alignItems: "end" }}>
-          <div><FormLabel id="ruleset-name">Name</FormLabel><input id="ruleset-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ruleset name" style={settingsInputStyle} /></div>
-          <div><FormLabel id="ruleset-target">Target</FormLabel><select id="ruleset-target" value={target} onChange={(e) => setTarget(e.target.value as GithubRulesetTarget)} style={settingsInputStyle}><option value="branch">Branch</option><option value="tag">Tag</option><option value="push">Push</option></select></div>
-          <div><FormLabel id="ruleset-enf">Enforcement</FormLabel><select id="ruleset-enf" value={enforcement} onChange={(e) => setEnforcement(e.target.value as GithubRulesetEnforcement)} style={settingsInputStyle}><option value="active">Active</option><option value="evaluate">Evaluate</option><option value="disabled">Disabled</option></select></div>
-          <Button type="submit" variant="primary" size="sm" disabled={!name.trim() || createMut.isPending}>{createMut.isPending ? "Creating…" : "Create ruleset"}</Button>
+          style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.6rem", alignItems: "end" }}>
+            <div><FormLabel id="ruleset-name">Name</FormLabel><input id="ruleset-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ruleset name" style={settingsInputStyle} /></div>
+            <div><FormLabel id="ruleset-target">Target</FormLabel><select id="ruleset-target" value={target} onChange={(e) => setTarget(e.target.value as GithubRulesetTarget)} style={settingsInputStyle}><option value="branch">Branch</option><option value="tag">Tag</option><option value="push">Push</option></select></div>
+            <div><FormLabel id="ruleset-enf">Enforcement</FormLabel><select id="ruleset-enf" value={enforcement} onChange={(e) => setEnforcement(e.target.value as GithubRulesetEnforcement)} style={settingsInputStyle}><option value="active">Active</option><option value="evaluate">Evaluate</option><option value="disabled">Disabled</option></select></div>
+          </div>
+          <RulesetEditor target={target} onChange={setRuleConfig} />
+          <div><Button type="submit" variant="primary" size="sm" disabled={!name.trim() || createMut.isPending}>{createMut.isPending ? "Creating…" : "Create ruleset"}</Button></div>
         </form>
       </Box>
       {list.isLoading && <Spinner label="loading rulesets" />}

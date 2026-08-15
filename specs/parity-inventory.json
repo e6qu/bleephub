@@ -5652,6 +5652,51 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "rulesets were not authorable: the org RulesetFormModal only toggled bare rule TYPES (no parameters, no targeting conditions, no bypass list) and the repo Settings\u2192Rulesets tab had NO rule selection at all \u2014 you could not set an approval count, status-check contexts, ref-name targeting, or a bypass actor, though the server models all of it",
+        "id": "WEB-113",
+        "location": "web/src/components/RulesetEditor.tsx, web/src/pages/RulesetsPage.tsx, internal/store/store_rulesets.go",
+        "severity": "M",
+        "status": "fixed \u2014 a shared `RulesetEditor` (used by both the org modal and the repo tab, so no jscpd duplication and no entry-bundle growth since both hosts are lazy) authors: ref-name targeting (`~DEFAULT_BRANCH`/`~ALL` + include/exclude patterns), the six no-parameter rules, `pull_request` (spec-complete 5-field parameters \u2014 count, dismiss-stale, code-owner, last-push, thread-resolution), `required_status_checks` (contexts + strict policy), branch/tag `name_pattern` (operator/pattern/negate), and a bypass-actor list (actor_id/type/mode); added the missing `push` target to the org modal. Rule parameters are emitted spec-complete so GitHub's `repository-rule` oneOf matches (partial params tripped the openapi-shape gate with cascading enum/unknown-field errors). Root server fix: `CreateOrgRuleset` now persists `bypass_actors` (org create silently dropped them; repo create + org update already honored them). Verified: Go round-trip test asserts conditions+params+bypass survive org create through the shape validator; org + repo unit tests assert the authored POST bodies; the a11y sweep scans `/ui/orgs/{org}/rulesets` and the repo Rulesets tab (with every parameter sub-form expanded) at 0 violations in both themes",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "there was no equivalent of github.com/search/advanced \u2014 the search page offered only a raw query box and the repositories filter row, with no guided way to assemble qualifiers",
+        "id": "WEB-114",
+        "location": "web/src/pages/SearchPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 an inline **Advanced** query-builder (toggled from the search bar, so it needs no extra route or entry-bundle weight) with aria-labelled fields for keywords, language, repository, user, organization, topic, and minimum stars; a `buildAdvancedQuery` helper assembles them into a GitHub qualifier string (multi-word values quoted, `stars:>=N` range, empty fields dropped) and runs the search. Verified: unit tests for the builder (quoting, drops, invalid stars) and an interaction test that fills the form and asserts the assembled `/search/repositories?q=\u2026`; the a11y sweep opens and scans the advanced form at 0 violations in both themes",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "the org Settings \"Member privileges\" link was a dead-end \u2014 it pointed at the governance page (People/Roles/Custom-properties/Issue-types) which exposed none of the promised controls (base permissions, member repository creation, web-commit signoff), so those org-wide settings were unreachable",
+        "id": "WEB-115",
+        "location": "web/src/pages/OrgGovernancePage.tsx, web/src/pages/OrgSettingsPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added a **Member privileges** governance tab with a base-permissions select (none/read/write/admin), a members-can-create-repositories toggle, and a require-web-commit-signoff toggle, all via `PATCH /api/v3/orgs/{org}` (prefilled from the org GET); made the governance tabs URL-addressable (`?tab=`) and retargeted the settings link to `\u2026/governance?tab=member-privileges`. Verified: unit test loads the org and asserts the PATCH body; the a11y sweep scans `/ui/orgs/{org}/governance?tab=member-privileges` at 0 violations in both themes",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "org custom-property *schemas* were authorable (OrgGovernancePage) but a repo could never set property *values* \u2014 github.com exposes this under repo Settings \u203a Custom properties, which was entirely absent",
+        "id": "WEB-116",
+        "location": "web/src/pages/RepoSettingsPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added a **Custom properties** repo settings tab that reads the org schema (`GET /orgs/{owner}/properties/schema`) and the repo's current values (`GET /repos/{o}/{r}/properties/values`) and renders a value editor per `value_type` (string/url text input, single_select + true_false dropdowns, multi_select checkboxes), saving through `PATCH /repos/{o}/{r}/properties/values {properties:[\u2026]}` (a null value unsets); non-org repos show an empty state. Wrappers live in the lazy settings page (`ghFetch`/`ghSend`). Verified: unit test edits a single-select and a string property and asserts the PATCH body; the a11y sweep seeds an org schema and scans the org repo's Custom properties tab at 0 violations in both themes",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "org-level Actions settings (which repositories may run Actions, the allowed-actions policy, and the default GITHUB_TOKEN workflow permissions) had no UI at all \u2014 only repo-level Actions settings existed",
+        "id": "WEB-117",
+        "location": "web/src/pages/OrgGovernancePage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added an **Actions** governance tab mirroring the repo Actions settings against the org endpoints: enabled-repositories policy (all/selected/none) and allowed-actions policy (all/local_only/selected) via `PUT /orgs/{org}/actions/permissions`, plus read/write workflow permissions and the create/approve-PRs toggle via `PUT /orgs/{org}/actions/permissions/workflow`. Wrappers live in the lazy governance page (`ghFetch`/`ghSend`). Verified: unit test drives a policy radio and the create/approve toggle and asserts each PUT body; the a11y sweep scans `/ui/orgs/{org}/governance?tab=actions` at 0 violations in both themes",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -7068,21 +7113,21 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 110
+            "fixed": 115
           },
-          "total": 112
+          "total": 117
         }
       },
       "severity": {
         "blocker": 167,
-        "major": 398,
-        "minor": 176
+        "major": 399,
+        "minor": 180
       },
       "status": {
         "deferred": 3,
-        "fixed": 738
+        "fixed": 743
       },
-      "total": 741
+      "total": 746
     }
   },
   "rest": {
@@ -28600,19 +28645,34 @@
   "ui": {
     "browser_navigations": [
       {
-        "line": 198,
+        "line": 201,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 439,
+        "line": 451,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 478,
+        "line": 490,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/repos/${seeded.owner}/${seeded.repo}/settings"
+      },
+      {
+        "line": 525,
+        "source": "web/e2e/a11y-theme-sweep.spec.ts",
+        "target": "/ui/repos/${seeded.owner}/${seeded.repo}/settings"
+      },
+      {
+        "line": 563,
+        "source": "web/e2e/a11y-theme-sweep.spec.ts",
+        "target": "/ui/repos/${seeded.org}/org-parity/settings"
+      },
+      {
+        "line": 595,
+        "source": "web/e2e/a11y-theme-sweep.spec.ts",
+        "target": "/ui/search"
       },
       {
         "line": 113,
@@ -30137,7 +30197,7 @@
       }
     ],
     "summary": {
-      "browser_navigations": 69,
+      "browser_navigations": 72,
       "routes": 93,
       "routes_with_direct_render": 90,
       "routes_with_test_reference": 92

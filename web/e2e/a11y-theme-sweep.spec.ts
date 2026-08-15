@@ -177,6 +177,9 @@ function buildRoutes(): { route: string; label: string }[] {
     { route: `/ui/orgs/${org}/teams`, label: "org-teams" },
     { route: `/ui/orgs/${org}/repos`, label: "org-repos" },
     { route: `/ui/orgs/${org}/governance`, label: "org-governance" },
+    { route: `/ui/orgs/${org}/rulesets`, label: "org-rulesets" },
+    { route: `/ui/orgs/${org}/governance?tab=member-privileges`, label: "org-member-privileges" },
+    { route: `/ui/orgs/${org}/governance?tab=actions`, label: "org-actions-settings" },
     { route: `/ui/orgs/${org}/projects/${seeded.projectNumber || 1}`, label: "org-project-detail" },
     // operations console
     { route: "/ui/operations", label: "operations" },
@@ -298,6 +301,15 @@ test.beforeAll(async ({ browser }) => {
   ok("org-repo", await api(page, "POST", `/api/v3/orgs/${seeded.org}/repos`, {
     name: "org-parity",
     auto_init: true,
+  }));
+  // an org custom-property schema so the repo Settings › Custom properties tab
+  // renders its authoring form (not just the empty state) for the a11y scan.
+  ok("org-props", await api(page, "PATCH", `/api/v3/orgs/${seeded.org}/properties/schema`, {
+    properties: [
+      { property_name: "environment", value_type: "single_select", allowed_values: ["prod", "staging"], description: "Deploy tier" },
+      { property_name: "regions", value_type: "multi_select", allowed_values: ["us", "eu"] },
+      { property_name: "team", value_type: "string" },
+    ],
   }));
 
   // a Projects V2 board so /orgs/{org}/projects/{n} renders the table view with
@@ -491,6 +503,110 @@ for (const theme of THEMES) {
       // eslint-disable-next-line no-console
       console.log(
         `[scan] ${theme} settings-actions -> ${
+          record.loadFailure ? "LOAD-FAIL" : `${record.violations.length} rules`
+        }` + record.violations.map((v) => `\n    ! ${v.id}: ${v.targets.join(" | ")}`).join(""),
+      );
+    }
+
+    // Also scan the repo Settings → Rulesets tab, which renders the full inline
+    // ruleset authoring editor (targeting conditions, per-rule parameter
+    // sub-forms, bypass-actor list) — none of it reachable from a base route.
+    {
+      const route = `/ui/repos/${seeded.owner}/${seeded.repo}/settings (Rulesets tab)`;
+      const record: RouteResult = {
+        route,
+        theme,
+        url: BASE + `/ui/repos/${seeded.owner}/${seeded.repo}/settings`,
+        themeApplied: false,
+        loadFailure: false,
+        violations: [],
+      };
+      try {
+        await page.goto(`/ui/repos/${seeded.owner}/${seeded.repo}/settings`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+        await page.waitForSelector("main, [role=main], .app-header", { timeout: 8_000 }).catch(() => {});
+        await page.getByRole("button", { name: "Rulesets", exact: true }).click();
+        // Expand every parameterised rule so its sub-form is scanned too.
+        await page.getByLabel("pull_request").waitFor({ state: "visible", timeout: 8_000 });
+        await page.getByLabel("pull_request").check();
+        await page.getByLabel("required_status_checks").check();
+        await page.getByRole("button", { name: "Add bypass actor" }).click();
+        await page.waitForLoadState("networkidle", { timeout: 6_000 }).catch(() => {});
+        const isDark = await page.evaluate(() => document.documentElement.classList.contains("dark"));
+        record.themeApplied = theme === "dark" ? isDark : !isDark;
+        record.violations = mapViolations(await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze());
+      } catch (err) {
+        record.loadFailure = true;
+        record.error = err instanceof Error ? err.message : String(err);
+      }
+      collected.push(record);
+      // eslint-disable-next-line no-console
+      console.log(
+        `[scan] ${theme} settings-rulesets -> ${
+          record.loadFailure ? "LOAD-FAIL" : `${record.violations.length} rules`
+        }` + record.violations.map((v) => `\n    ! ${v.id}: ${v.targets.join(" | ")}`).join(""),
+      );
+    }
+
+    // Also scan the repo Settings → Custom properties tab (org-owned repo, whose
+    // org has a seeded schema, so the value-authoring form renders) — a
+    // state-gated tab invisible to the base settings scan.
+    {
+      const record: RouteResult = {
+        route: `/ui/repos/${seeded.org}/org-parity/settings (Custom properties tab)`,
+        theme,
+        url: BASE + `/ui/repos/${seeded.org}/org-parity/settings`,
+        themeApplied: false,
+        loadFailure: false,
+        violations: [],
+      };
+      try {
+        await page.goto(`/ui/repos/${seeded.org}/org-parity/settings`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+        await page.waitForSelector("main, [role=main], .app-header", { timeout: 8_000 }).catch(() => {});
+        await page.getByRole("button", { name: "Custom properties", exact: true }).click();
+        await page.getByLabel("environment").waitFor({ state: "visible", timeout: 8_000 });
+        const isDark = await page.evaluate(() => document.documentElement.classList.contains("dark"));
+        record.themeApplied = theme === "dark" ? isDark : !isDark;
+        record.violations = mapViolations(await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze());
+      } catch (err) {
+        record.loadFailure = true;
+        record.error = err instanceof Error ? err.message : String(err);
+      }
+      collected.push(record);
+      // eslint-disable-next-line no-console
+      console.log(
+        `[scan] ${theme} settings-custom-properties -> ${
+          record.loadFailure ? "LOAD-FAIL" : `${record.violations.length} rules`
+        }` + record.violations.map((v) => `\n    ! ${v.id}: ${v.targets.join(" | ")}`).join(""),
+      );
+    }
+
+    // Also scan the search page's Advanced query-builder form, which is toggled
+    // open by a button and so is invisible to the base /ui/search scan.
+    {
+      const record: RouteResult = {
+        route: "/ui/search (advanced form)",
+        theme,
+        url: BASE + "/ui/search",
+        themeApplied: false,
+        loadFailure: false,
+        violations: [],
+      };
+      try {
+        await page.goto("/ui/search", { waitUntil: "domcontentloaded", timeout: 30_000 });
+        await page.waitForSelector("main, [role=main], .app-header", { timeout: 8_000 }).catch(() => {});
+        await page.getByRole("button", { name: "Advanced", exact: true }).click();
+        await page.getByLabel("With these words").waitFor({ state: "visible", timeout: 8_000 });
+        const isDark = await page.evaluate(() => document.documentElement.classList.contains("dark"));
+        record.themeApplied = theme === "dark" ? isDark : !isDark;
+        record.violations = mapViolations(await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze());
+      } catch (err) {
+        record.loadFailure = true;
+        record.error = err instanceof Error ? err.message : String(err);
+      }
+      collected.push(record);
+      // eslint-disable-next-line no-console
+      console.log(
+        `[scan] ${theme} search-advanced -> ${
           record.loadFailure ? "LOAD-FAIL" : `${record.violations.length} rules`
         }` + record.violations.map((v) => `\n    ! ${v.id}: ${v.targets.join(" | ")}`).join(""),
       );

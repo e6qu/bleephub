@@ -18,6 +18,7 @@ import type {
   GithubRulesetSuite,
 } from "../types.js";
 import { confirmAction } from "../components/confirmAction.js";
+import { RulesetEditor, type RulesetRuleConfig } from "../components/RulesetEditor.js";
 import { OrgHeader } from "../components/Shell.js";
 import {
   Box,
@@ -32,18 +33,8 @@ import {
 const col = createColumnHelper<GithubRuleset>();
 const suiteCol = createColumnHelper<GithubRulesetSuite>();
 
-const TARGETS: GithubRulesetTarget[] = ["branch", "tag"];
+const TARGETS: GithubRulesetTarget[] = ["branch", "tag", "push"];
 const ENFORCEMENTS: GithubRulesetEnforcement[] = ["disabled", "active", "evaluate"];
-
-const RULE_TYPES = [
-  "required_linear_history",
-  "required_signatures",
-  "pull_request",
-  "non_fast_forward",
-  "creation",
-  "update",
-  "deletion",
-];
 
 export function RulesetsPage() {
   const { org } = useParams<{ org: string }>();
@@ -465,22 +456,8 @@ function RulesetFormModal({
   const [enforcement, setEnforcement] = useState<GithubRulesetEnforcement>(
     ruleset?.enforcement ?? "active",
   );
-  const [selectedRules, setSelectedRules] = useState<Set<string>>(
-    () => new Set(ruleset?.rules?.map((r) => r.type) ?? []),
-  );
+  const [ruleConfig, setRuleConfig] = useState<RulesetRuleConfig>({ rules: [], bypass_actors: [] });
   const [validationError, setValidationError] = useState<string | null>(null);
-
-  const toggleRule = (type: string) => {
-    setSelectedRules((prev) => {
-      const next = new Set(prev);
-      if (next.has(type)) {
-        next.delete(type);
-      } else {
-        next.add(type);
-      }
-      return next;
-    });
-  };
 
   const handleSubmit = () => {
     setValidationError(null);
@@ -492,7 +469,9 @@ function RulesetFormModal({
       name: name.trim(),
       target,
       enforcement,
-      rules: Array.from(selectedRules).map((type) => ({ type })),
+      rules: ruleConfig.rules,
+      ...(ruleConfig.conditions ? { conditions: ruleConfig.conditions } : {}),
+      bypass_actors: ruleConfig.bypass_actors,
     };
     onSubmit(payload);
   };
@@ -537,18 +516,8 @@ function RulesetFormModal({
         ))}
       </select>
 
-      <FormLabel>Rules</FormLabel>
-      <div className="mb-4" style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
-        {RULE_TYPES.map((type) => (
-          <label key={type} style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.85rem" }}>
-            <input
-              type="checkbox"
-              checked={selectedRules.has(type)}
-              onChange={() => toggleRule(type)}
-            />
-            {type}
-          </label>
-        ))}
+      <div className="mb-4">
+        <RulesetEditor target={target} initial={ruleset} onChange={setRuleConfig} />
       </div>
 
       {(validationError || error) && <ErrorBanner>{validationError ?? (error instanceof Error ? error.message : String(error))}</ErrorBanner>}

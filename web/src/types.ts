@@ -1273,7 +1273,7 @@ export interface GithubRuleset {
     actor_type: string;
     bypass_mode: string;
   }>;
-  conditions?: Record<string, unknown>;
+  conditions?: { ref_name?: { include?: string[]; exclude?: string[] } };
   rules?: Array<{
     type: string;
     parameters?: Record<string, unknown>;

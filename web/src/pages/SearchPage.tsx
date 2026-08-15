@@ -67,6 +67,7 @@ export function SearchPage() {
   const labelsRepo = params.get("repo") ?? "";
   const [draft, setDraft] = useState(q);
   const [labelsRepoDraft, setLabelsRepoDraft] = useState(labelsRepo);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const repositoryFilters: RepositorySearchFilters = {
     visibility: params.get("visibility") ?? "",
     archived: params.get("archived") ?? "",
@@ -125,7 +126,19 @@ export function SearchPage() {
             <SearchIcon size={14} /> Search
           </span>
         </Button>
+        <Button type="button" variant="secondary" aria-expanded={showAdvanced} onClick={() => setShowAdvanced((v) => !v)}>
+          Advanced
+        </Button>
       </form>
+      {showAdvanced && (
+        <AdvancedSearchForm
+          onBuild={(query) => {
+            setDraft(query);
+            update({ q: query, page: "" });
+            setShowAdvanced(false);
+          }}
+        />
+      )}
       <p className="mb-4" style={{ fontSize: "0.78rem", color: "var(--color-fg-muted)" }}>
         Qualifiers: <code>repo:owner/name</code> <code>user:login</code> <code>org:name</code>{" "}
         <code>language:go</code> <code>topic:web</code> <code>-topic:legacy</code>{" "}
@@ -163,6 +176,77 @@ export function SearchPage() {
         />
       )}
     </div>
+  );
+}
+
+interface AdvancedSearchFields {
+  keywords: string;
+  language: string;
+  repo: string;
+  user: string;
+  org: string;
+  topic: string;
+  stars: string;
+}
+
+/** Assemble a GitHub qualifier query from the advanced-search fields. Multi-word
+ *  values are quoted; `stars` becomes a `>=N` range. Empty fields are dropped. */
+export function buildAdvancedQuery(f: AdvancedSearchFields): string {
+  const parts: string[] = [];
+  if (f.keywords.trim()) parts.push(f.keywords.trim());
+  if (f.language.trim()) parts.push(`language:${quotedQualifierValue(f.language.trim())}`);
+  if (f.repo.trim()) parts.push(`repo:${f.repo.trim()}`);
+  if (f.user.trim()) parts.push(`user:${f.user.trim()}`);
+  if (f.org.trim()) parts.push(`org:${f.org.trim()}`);
+  if (f.topic.trim()) parts.push(`topic:${quotedQualifierValue(f.topic.trim())}`);
+  if (f.stars.trim() && !Number.isNaN(Number(f.stars))) parts.push(`stars:>=${Number(f.stars)}`);
+  return parts.join(" ");
+}
+
+// GitHub's /search/advanced query builder, inlined so it needs no extra route.
+function AdvancedSearchForm({ onBuild }: { onBuild: (query: string) => void }) {
+  const [fields, setFields] = useState<AdvancedSearchFields>({
+    keywords: "", language: "", repo: "", user: "", org: "", topic: "", stars: "",
+  });
+  const set = (k: keyof AdvancedSearchFields) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setFields((prev) => ({ ...prev, [k]: e.target.value }));
+  const rows: { key: keyof AdvancedSearchFields; label: string; placeholder: string; type?: string }[] = [
+    { key: "keywords", label: "With these words", placeholder: "exact wording or free text" },
+    { key: "language", label: "Written in language", placeholder: "go" },
+    { key: "repo", label: "In repository", placeholder: "owner/name" },
+    { key: "user", label: "From user", placeholder: "login" },
+    { key: "org", label: "In organization", placeholder: "org login" },
+    { key: "topic", label: "With topic", placeholder: "web" },
+    { key: "stars", label: "With at least this many stars", placeholder: "10", type: "number" },
+  ];
+  const preview = buildAdvancedQuery(fields);
+  return (
+    <Box header={<span style={{ fontWeight: 600 }}>Advanced search</span>}>
+      <form
+        className="flex flex-col gap-3 p-3"
+        onSubmit={(e) => { e.preventDefault(); if (preview) onBuild(preview); }}
+      >
+        <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(16rem, 1fr))" }}>
+          {rows.map((r) => (
+            <label key={r.key} className="flex flex-col gap-1" style={{ fontSize: "0.82rem" }}>
+              <span>{r.label}</span>
+              <input
+                type={r.type ?? "text"}
+                aria-label={r.label}
+                value={fields[r.key]}
+                onChange={set(r.key)}
+                placeholder={r.placeholder}
+                style={{ fontSize: "0.85rem", padding: "0.4rem 0.5rem" }}
+              />
+            </label>
+          ))}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="submit" variant="primary" disabled={!preview}>Build query</Button>
+          {preview && <code style={{ fontSize: "0.78rem", color: "var(--color-fg-muted)" }}>{preview}</code>}
+        </div>
+      </form>
+    </Box>
   );
 }
 

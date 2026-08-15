@@ -361,4 +361,67 @@ describe("OrgGovernancePage issue types tab", () => {
       });
     });
   });
+
+  describe("Actions", () => {
+    it("saves org Actions policy and workflow permissions", async () => {
+      mockFetch.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const base = "/api/v3/orgs/acme/actions/permissions";
+        if ((url === base || url === `${base}/workflow`) && init?.method === "PUT") return Promise.resolve(jsonResponse({}, 204));
+        if (url === base) return Promise.resolve(jsonResponse({ enabled_repositories: "all", allowed_actions: "all" }));
+        if (url === `${base}/workflow`) return Promise.resolve(jsonResponse({ default_workflow_permissions: "read", can_approve_pull_request_reviews: false }));
+        return Promise.resolve(jsonResponse({}));
+      });
+      renderAt("/ui/orgs/acme/governance?tab=actions");
+
+      const selected = await screen.findByLabelText("Selected repositories");
+      fireEvent.click(selected);
+      await waitFor(() => {
+        const put = mockFetch.mock.calls.find(([u, i]) => u === "/api/v3/orgs/acme/actions/permissions" && i?.method === "PUT");
+        expect(put).toBeTruthy();
+        expect(JSON.parse(String(put![1]!.body))).toEqual({ enabled_repositories: "selected" });
+      });
+
+      fireEvent.click(screen.getByLabelText("Allow GitHub Actions to create and approve pull requests"));
+      await waitFor(() => {
+        const put = mockFetch.mock.calls.find(([u, i]) => u === "/api/v3/orgs/acme/actions/permissions/workflow" && i?.method === "PUT");
+        expect(put).toBeTruthy();
+        expect(JSON.parse(String(put![1]!.body))).toMatchObject({ default_workflow_permissions: "read", can_approve_pull_request_reviews: true });
+      });
+    });
+  });
+
+  describe("Member privileges", () => {
+    it("loads and saves base permission + member repo creation + commit signoff", async () => {
+      mockFetch.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url === "/api/v3/orgs/acme" && init?.method === "PATCH") return Promise.resolve(jsonResponse({}, 200));
+        if (url === "/api/v3/orgs/acme") {
+          return Promise.resolve(jsonResponse({
+            default_repository_permission: "read",
+            members_can_create_repositories: true,
+            web_commit_signoff_required: false,
+          }));
+        }
+        return Promise.resolve(jsonResponse({}));
+      });
+      renderAt("/ui/orgs/acme/governance?tab=member-privileges");
+
+      const base = await screen.findByLabelText("Base permissions");
+      await waitFor(() => expect((base as HTMLSelectElement).value).toBe("read"));
+      fireEvent.change(base, { target: { value: "write" } });
+      fireEvent.click(screen.getByLabelText("Require contributors to sign off on web-based commits"));
+      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+      await waitFor(() => {
+        const patch = mockFetch.mock.calls.find(([u, i]) => u === "/api/v3/orgs/acme" && i?.method === "PATCH");
+        expect(patch).toBeTruthy();
+        expect(JSON.parse(String(patch![1]!.body))).toMatchObject({
+          default_repository_permission: "write",
+          members_can_create_repositories: true,
+          web_commit_signoff_required: true,
+        });
+      });
+    });
+  });
 });
