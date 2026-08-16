@@ -99,6 +99,29 @@ describe("IssuesPage detail", () => {
     });
   });
 
+  it("shows closing pull requests in the Development section", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.includes("/api/graphql")) {
+        const body = JSON.parse((init?.body as string) ?? "{}");
+        if (String(body.query).includes("closedByPullRequestsReferences")) {
+          return Promise.resolve(jsonResponse({
+            data: { repository: { issue: { closedByPullRequestsReferences: { nodes: [{ number: 42, title: "Fix it", state: "OPEN" }] } } } },
+          }));
+        }
+        return Promise.resolve(jsonResponse({ data: {} }));
+      }
+      if (u.includes("/issues/7/comments") || u.includes("/timeline")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/reactions")) return Promise.resolve(jsonResponse([]));
+      if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "admin" }));
+      if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/test/issues/7");
+    const link = await screen.findByRole("link", { name: /#42 Fix it/ });
+    expect(link).toHaveAttribute("href", "/ui/repos/admin/test/pulls/42");
+  });
+
   it("interleaves timeline events with comments in the conversation", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL) => {
       const u = url.toString();
@@ -520,6 +543,26 @@ describe("IssuesPage list filter bar", () => {
     await waitFor(() => expect(screen.getByText("done issue")).toBeInTheDocument());
     const calls = mockFetch.mock.calls.map((c) => c[0].toString());
     expect(calls.some((u) => u.includes("/issues?state=closed"))).toBe(true);
+  });
+
+  it("switches to All via the count header, refetching with state=all", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.includes("/pulls")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("state=all")) {
+        return Promise.resolve(jsonResponse([issue(1, "open issue"), issueWith(3, "done issue", { state: "closed" })]));
+      }
+      if (u.includes("state=closed")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/issues?")) return Promise.resolve(jsonResponse([issue(1, "open issue")]));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/test/issues");
+    await waitFor(() => expect(screen.getByText("open issue")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByText(/All$/));
+    await waitFor(() => expect(screen.getByText("done issue")).toBeInTheDocument());
+    const calls = mockFetch.mock.calls.map((c) => c[0].toString());
+    expect(calls.some((u) => u.includes("/issues?state=all"))).toBe(true);
   });
 });
 

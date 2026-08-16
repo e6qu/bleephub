@@ -941,6 +941,14 @@
         "closedAt": {
           "type": "DateTime"
         },
+        "closedByPullRequestsReferences": {
+          "type": "PullRequestConnection",
+          "args": {
+            "after": "String",
+            "first": "Int",
+            "includeClosedPrs": "Boolean"
+          }
+        },
         "comments": {
           "type": "IssueCommentConnection!",
           "args": {

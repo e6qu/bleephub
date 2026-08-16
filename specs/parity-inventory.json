@@ -294,13 +294,13 @@
     "coverage": {
       "bleephub_types": 263,
       "compatibility_gap_count": 9,
-      "implemented_fields": 922,
+      "implemented_fields": 923,
       "official_fields": 8360,
       "official_types": 1807,
       "shared_types": 256,
-      "signature_exact_fields": 921
+      "signature_exact_fields": 922
     },
-    "introspection_snapshot_sha256": "94c24d0cd37c5a3573b1615869def537b31386492f8b1cef70db6bc879cb67c3",
+    "introspection_snapshot_sha256": "aa322f77c55dbd3d1b5abb5bfaeb14f7bc2d0a496892de687bdd39c198496ce5",
     "official_schema": {
       "content_sha256": "b716c6844750283b8c33200f660989337254e7158f40ed869f06418bafb3bc2e",
       "source": "https://docs.github.com/public/fpt/schema.docs.graphql"
@@ -6219,6 +6219,24 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "the issue detail's \"Development\" section was permanently \"No branches or pull requests\" \u2014 the reverse of the PR's closing-issues view (which PRs will close this issue) was not exposed",
+        "id": "WEB-176",
+        "location": "internal/graphqlapi/gh_pulls_graphql.go, web/src/pages/IssuesPage.tsx",
+        "severity": "M",
+        "status": "fixed \u2014 added the GraphQL Issue.closedByPullRequestsReferences field (the mirror of PullRequest.closingIssuesReferences: PRs in the repo whose closing keywords reference this issue; includeClosedPrs narrows to open), a real github.com field, and regenerated the introspection snapshot; IssuesPage now queries it and lists the closing PRs (links + open/merged indicator) in the Development section. Verified: Go test asserts issue #1's closedByPullRequestsReferences lists the PR whose body says \"Fixes #1\" (+ the GraphQL schema + shape ratchets); unit test asserts a closing PR renders as a link",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "the issues/PRs list count header had only Open and Closed toggles; github.com also offers a combined open+closed view, and the server already honors state=all",
+        "id": "WEB-177",
+        "location": "web/src/components/ListControls.tsx, web/src/pages/IssuesPage.tsx, web/src/pages/PullsPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added an \"All\" count pill that drives a state=all server refetch (the fetchers pass state through); the query grammar omits the is:open/closed token for \"all\" (github has no is:all qualifier). Verified: unit test clicks All and asserts the list refetches with state=all",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -7635,21 +7653,21 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 173
+            "fixed": 175
           },
-          "total": 175
+          "total": 177
         }
       },
       "severity": {
         "blocker": 167,
-        "major": 408,
-        "minor": 229
+        "major": 409,
+        "minor": 230
       },
       "status": {
         "deferred": 3,
-        "fixed": 801
+        "fixed": 803
       },
-      "total": 804
+      "total": 806
     }
   },
   "rest": {

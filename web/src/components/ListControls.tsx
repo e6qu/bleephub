@@ -60,8 +60,11 @@ export function filterAndSortItems<T>(
 }
 
 /** Compose the GitHub-style search token string from the active filters. */
-function composeQuery(kind: "issue" | "pr", state: "open" | "closed", f: ListFilterState): string {
-  const tokens = [`is:${kind === "pr" ? "pr" : "issue"}`, `is:${state}`];
+function composeQuery(kind: "issue" | "pr", state: "open" | "closed" | "all", f: ListFilterState): string {
+  const tokens = [`is:${kind === "pr" ? "pr" : "issue"}`];
+  // github.com has no `is:all` qualifier — "all" is simply the absence of an
+  // open/closed filter.
+  if (state !== "all") tokens.push(`is:${state}`);
   if (f.label) tokens.push(`label:${quoteToken(f.label)}`);
   if (f.author) tokens.push(`author:${f.author}`);
   if (f.assignee) tokens.push(`assignee:${f.assignee}`);
@@ -170,8 +173,8 @@ export function ListControls<T>({
   actions,
 }: {
   kind: "issue" | "pr";
-  state: "open" | "closed";
-  onState: (s: "open" | "closed") => void;
+  state: "open" | "closed" | "all";
+  onState: (s: "open" | "closed" | "all") => void;
   openCount?: number | string | undefined;
   closedCount?: number | string | undefined;
   items: T[];
@@ -277,6 +280,9 @@ export function ListControls<T>({
           >
             <IssueClosedIcon size={14} />
             {`${closedCount ?? "–"} Closed`}
+          </button>
+          <button type="button" style={countPill(state === "all")} onClick={() => onState("all")}>
+            {`${typeof openCount === "number" && typeof closedCount === "number" ? openCount + closedCount : "–"} All`}
           </button>
         </div>
         <div className="flex flex-wrap items-center gap-3">

@@ -1993,4 +1993,23 @@ func TestPullRequestGraphQLFilesAndClosingIssuesUseRealState(t *testing.T) {
 	if closingIssue["number"] != float64(1) || closingIssue["title"] != "release blocker" {
 		t.Fatalf("closing issue = %v, want #1 release blocker", closingIssue)
 	}
+
+	// The reverse view: issue #1's Development section lists the PR that closes it.
+	reverse := `query($owner:String!,$repo:String!,$number:Int!){
+		repository(owner:$owner,name:$repo){
+			issue(number:$number){
+				closedByPullRequestsReferences(first:10){ totalCount nodes { number title } }
+			}
+		}
+	}`
+	rd := s.gqlData(t, reverse, map[string]interface{}{"owner": "admin", "repo": repoName, "number": 1})
+	rIssue, _ := rd["repository"].(map[string]interface{})["issue"].(map[string]interface{})
+	closedBy, _ := rIssue["closedByPullRequestsReferences"].(map[string]interface{})
+	if closedBy["totalCount"] != float64(1) {
+		t.Fatalf("closedByPullRequestsReferences.totalCount = %v, want 1: %v", closedBy["totalCount"], closedBy)
+	}
+	closedByNodes, _ := closedBy["nodes"].([]interface{})
+	if len(closedByNodes) != 1 || int(closedByNodes[0].(map[string]interface{})["number"].(float64)) != prNumber {
+		t.Fatalf("closed-by PR = %v, want #%d", closedByNodes, prNumber)
+	}
 }
