@@ -107,6 +107,7 @@ func RepoToJSONForViewer(repo *Repo, st *Store, baseURL string, viewer *User) ma
 		"visibility":        repo.Visibility,
 		"language":          repo.Language,
 		"archived":          repo.Archived,
+		"is_template":       repo.IsTemplate,
 		"disabled":          false,
 		"forks":             forks,
 		"forks_count":       forks,

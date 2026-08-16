@@ -83,6 +83,32 @@ func TestGenerateRepositoryFromTemplate(t *testing.T) {
 	requireStatus(t, resp, 404)
 }
 
+// The repository-list responses carry is_template, which is how a client
+// (e.g. the create-repo dialog's "Repository template" dropdown) discovers the
+// templates a viewer can generate from — GitHub exposes no dedicated
+// list-templates endpoint.
+func TestRepoListSurfacesIsTemplate(t *testing.T) {
+	name := createRepoWriteRepo(t, true)
+	resp := ghPatch(t, "/api/v3/repos/admin/"+name, defaultToken, map[string]interface{}{"is_template": true})
+	requireStatus(t, resp, 200)
+
+	resp = ghGet(t, "/api/v3/user/repos?per_page=100", defaultToken)
+	repos := decodeJSONArray(t, resp)
+	var found map[string]interface{}
+	for _, r := range repos {
+		if r["full_name"] == "admin/"+name {
+			found = r
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("repo admin/%s not present in GET /user/repos", name)
+	}
+	if found["is_template"] != true {
+		t.Fatalf("is_template = %v, want true (list response must expose is_template)", found["is_template"])
+	}
+}
+
 func TestGenerateRepositoryFromTemplate_OrgOwner(t *testing.T) {
 	template := createRepoWriteRepo(t, true)
 	resp := ghPatch(t, "/api/v3/repos/admin/"+template, defaultToken, map[string]interface{}{"is_template": true})

@@ -6350,7 +6350,34 @@
         "id": "WEB-190",
         "location": "web/src/pages/RepoSettingsPage.tsx, web/src/pages/RepoDetailPage.tsx, web/src/types.ts",
         "severity": "M",
-        "status": "fixed \u2014 added a \"Template repository\" checkbox to General settings (wired through the existing `updateRepo` payload) and a \"Use this template\" banner+modal on the code view of a template repo that POSTs to `/generate` (name/description/visibility/include-all-branches; the generate call is defined inline in the lazy page via `ghPostJSON` to keep the entry chunk flat) and navigates to the new repo. Verified: unit tests assert the `is_template` PATCH and the `/generate` POST body. Not done (named): the create-repo dialog's \"Repository template\" source dropdown \u2014 a secondary entry point to the same `/generate` endpoint with no server template-listing API to back a faithful dropdown",
+        "status": "fixed \u2014 added a \"Template repository\" checkbox to General settings (wired through the existing `updateRepo` payload) and a \"Use this template\" banner+modal on the code view of a template repo that POSTs to `/generate` (name/description/visibility/include-all-branches; the generate call is defined inline in the lazy page via `ghPostJSON` to keep the entry chunk flat) and navigates to the new repo. Verified: unit tests assert the `is_template` PATCH and the `/generate` POST body. The create-repo dialog's \"Repository template\" source dropdown, named here as not-yet-done, is completed in WEB-191",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "closes the one deferral named in WEB-190: the create-repo dialog offered no way to start from a template, only the on-repo \"Use this template\" button did. GitHub exposes no list-templates endpoint \u2014 its create dialog lists templates the viewer can reach, which are simply accessible repositories with `is_template` set \u2014 but the repo-LIST responses (`RepoToJSONForViewer`) omitted `is_template`, so a client could not discover them",
+        "id": "WEB-191",
+        "location": "internal/store/repo_json.go, web/src/components/RepoCreateDialog.tsx",
+        "severity": "M",
+        "status": "fixed \u2014 server now emits `is_template` in the shared repo-list JSON (a real field of GitHub's `repository`/`minimal-repository` schema; the shape ratchet stays green), and the dialog gained a \"Repository template\" dropdown populated from `GET /user/repos` (owner + collaborator + org-member affiliation) filtered to `is_template`; selecting one switches submit from create to `POST /repos/{owner}/{repo}/generate` honoring the org target, and hides the README/gitignore/license options that don't apply. Verified: Go test asserts `is_template` surfaces in `GET /user/repos`; unit tests assert selecting a template POSTs to `/generate` (and plain create still POSTs to `/user/repos`)",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "temporary interaction limits had a UI only at repo scope (`RepoSettingsPage` InteractionTab); the org and personal-account scopes had none, though the server fully backs them (`PUT`/`DELETE`/`GET /api/v3/orgs/{org}/interaction-limits` and `.../user/interaction-limits`, both round-trip-tested in Go)",
+        "id": "WEB-192",
+        "location": "web/src/components/InteractionLimitsCard.tsx, web/src/pages/AccountPage.tsx, web/src/pages/OrgGovernancePage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added a shared `InteractionLimitsCard` (GET current, PUT `{limit, expiry}`, DELETE to clear, calls defined inline via `ghSend` to keep the entry chunk flat) and mounted it under the org Governance moderation area and a new user Settings \u2192 Moderation \u2192 \"Interaction limits\" item. Verified: unit tests assert the PUT payload and the clear-DELETE",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "`visibilityMut` (publicize/conceal an org membership) was surfaced by no error path \u2014 absent from the page's `<MutationError of={[inviteMut, roleMut, removeMut]}>` array \u2014 so a failed visibility toggle failed silently (its sibling mutations were all covered)",
+        "id": "WEB-193",
+        "location": "web/src/pages/OrgPeoplePage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added `visibilityMut` to the `<MutationError>` array",
         "status_kind": "fixed"
       },
       {
@@ -7770,21 +7797,21 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 188
+            "fixed": 191
           },
-          "total": 190
+          "total": 193
         }
       },
       "severity": {
         "blocker": 167,
-        "major": 412,
-        "minor": 240
+        "major": 413,
+        "minor": 242
       },
       "status": {
         "deferred": 3,
-        "fixed": 816
+        "fixed": 819
       },
-      "total": 819
+      "total": 822
     }
   },
   "rest": {
