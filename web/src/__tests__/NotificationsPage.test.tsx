@@ -46,7 +46,7 @@ const thread = {
 
 function mockEndpoints() {
   mockFetch.mockImplementation((url: string, init?: RequestInit) => {
-    if (url === "/api/v3/notifications" || url === "/api/v3/notifications?all=true") {
+    if (url.split("?")[0]! === "/api/v3/notifications") {
       return Promise.resolve(jsonResponse([thread]));
     }
     if (url === "/api/v3/notifications/threads/t1/subscription") {
@@ -95,7 +95,7 @@ describe("NotificationsPage", () => {
       url: "/api/v3/notifications/threads/t2",
     };
     mockFetch.mockImplementation((url: string) => {
-      if (url === "/api/v3/notifications" || url === "/api/v3/notifications?all=true") {
+      if (url.split("?")[0]! === "/api/v3/notifications") {
         return Promise.resolve(jsonResponse([thread, t2]));
       }
       return Promise.resolve(jsonResponse({}));
@@ -125,7 +125,7 @@ describe("NotificationsPage", () => {
       url: "/api/v3/notifications/threads/t2",
     };
     mockFetch.mockImplementation((url: string) => {
-      if (url === "/api/v3/notifications" || url === "/api/v3/notifications?all=true") {
+      if (url.split("?")[0]! === "/api/v3/notifications") {
         return Promise.resolve(jsonResponse([thread, t2]));
       }
       return Promise.resolve(jsonResponse({}));
@@ -160,10 +160,12 @@ describe("NotificationsPage", () => {
       expect(screen.getByText("All")).toBeInTheDocument();
       expect(screen.getByText("Issue title")).toBeInTheDocument();
     });
-    expect(mockFetch).toHaveBeenCalledWith(
-      "/api/v3/notifications?all=true",
-      expect.any(Object),
-    );
+    expect(
+      mockFetch.mock.calls.some(([u]) => {
+        const s = String(u);
+        return s.startsWith("/api/v3/notifications?") && s.includes("all=true");
+      }),
+    ).toBe(true);
   });
 
   it("marks a thread read", async () => {

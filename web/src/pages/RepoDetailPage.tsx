@@ -79,6 +79,7 @@ import {
   CheckIcon,
   ChevronDownIcon,
   GearIcon,
+  LawIcon,
 } from "../components/octicons.js";
 
 // Lazy so the fuzzy finder (and its recursive-tree fetch) stay out of the entry
@@ -1059,6 +1060,11 @@ function AboutSidebar({
             </Link>
           </div>
         )}
+        {repoData.license && (
+          <div className="mt-2 inline-flex items-center gap-1.5" style={mutedLink}>
+            <LawIcon size={15} /> {repoData.license.name}
+          </div>
+        )}
       </section>
 
       <hr style={divider} />
@@ -1689,6 +1695,23 @@ export function RepoCommitPage() {
               <b>{commit.stats.total} changes</b>{" "}
               <span style={{ color: "var(--color-status-ok)" }}>+{commit.stats.additions}</span>{" "}
               <span style={{ color: "var(--color-status-error)" }}>−{commit.stats.deletions}</span>
+            </div>
+          )}
+          {commit.parents && commit.parents.length > 0 && (
+            <div className="mt-4 flex flex-wrap items-center gap-1.5" style={{ fontSize: ".82rem" }}>
+              <span style={{ color: "var(--color-fg-muted)" }}>
+                {commit.parents.length} {commit.parents.length === 1 ? "parent" : "parents"}
+              </span>
+              {commit.parents.map((parent) => (
+                <Link
+                  key={parent.sha}
+                  className="font-mono"
+                  to={`/ui/repos/${owner}/${repo}/commits/${parent.sha}`}
+                  style={{ color: "var(--color-accent)", textDecoration: "none" }}
+                >
+                  {parent.sha.slice(0, 7)}
+                </Link>
+              ))}
             </div>
           )}
         </div>

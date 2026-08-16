@@ -52,7 +52,7 @@ const commit = {
 function commonFetch(input: RequestInfo | URL) {
   const url = String(input);
   if (url === "/api/v3/repos/admin/repo") return jsonResponse(repo);
-  if (url.endsWith("/branches")) {
+  if (url.split("?")[0]!.endsWith("/branches")) {
     return jsonResponse([
       { name: "main", commit: { sha: "a".repeat(40) } },
       { name: "feature", commit: { sha: "b".repeat(40) } },
@@ -122,7 +122,7 @@ describe("repository collaboration journeys", () => {
       if (url.includes("/contents/")) return Promise.resolve(jsonResponse([]));
       if (url.includes("/readme")) return Promise.resolve(jsonResponse({ message: "Not Found" }, 404));
       if (url.endsWith("/topics")) return Promise.resolve(jsonResponse({ names: [] }));
-      if (url.endsWith("/releases")) return Promise.resolve(jsonResponse([]));
+      if (url.split("?")[0]!.endsWith("/releases")) return Promise.resolve(jsonResponse([]));
       if (url.includes("/packages")) return Promise.resolve(jsonResponse([]));
       if (url.endsWith("/stargazers") || url.endsWith("/subscribers") || url.endsWith("/forks")) {
         return Promise.resolve(jsonResponse([]));

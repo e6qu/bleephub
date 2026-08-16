@@ -48,7 +48,7 @@ describe("OrgPeoplePage publicize membership", () => {
       const url = String(input);
       const method = init?.method ?? "GET";
       if (url === "/api/v3/user") return Promise.resolve(jsonResponse(alice));
-      if (url === "/api/v3/orgs/acme/members") return Promise.resolve(jsonResponse([alice]));
+      if (url.startsWith("/api/v3/orgs/acme/members")) return Promise.resolve(jsonResponse([alice]));
       if (url === "/api/v3/orgs/acme/public_members" && method === "GET")
         return Promise.resolve(jsonResponse([]));
       if (url === "/api/v3/orgs/acme/public_members/alice" && method === "PUT")

@@ -132,7 +132,7 @@ describe("security journey fidelity", () => {
           jsonResponse({ message: "Branch not protected" }, 404),
         );
       }
-      if (url.endsWith("/branches")) {
+      if (url.split("?")[0]!.endsWith("/branches")) {
         return Promise.resolve(jsonResponse([{ name: "main" }]));
       }
       if (url.endsWith("/repos/admin/repo")) {
@@ -194,7 +194,7 @@ describe("security journey fidelity", () => {
       if (url.endsWith("/branches/main/protection")) {
         return Promise.resolve(jsonResponse(protection));
       }
-      if (url.endsWith("/branches")) {
+      if (url.split("?")[0]!.endsWith("/branches")) {
         return Promise.resolve(jsonResponse([{ name: "main", protected: true, commit: { sha: "a".repeat(40) } }]));
       }
       if (url.endsWith("/repos/admin/repo")) {

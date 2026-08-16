@@ -645,7 +645,7 @@ describe("Notifications application programming interface helpers", () => {
   it("fetchNotifications lists threads", async () => {
     mockFetch.mockResolvedValue(jsonResponse([thread]));
     const threads = await fetchNotifications();
-    expect(mockFetch.mock.calls[0]![0]).toBe("/api/v3/notifications");
+    expect(mockFetch.mock.calls[0]![0]).toBe("/api/v3/notifications?per_page=100");
     expect(threads).toHaveLength(1);
     expect(threads[0]!.id).toBe("t1");
   });

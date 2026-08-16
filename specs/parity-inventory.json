@@ -6138,6 +6138,51 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "the PR detail sidebar dropped Assignees + Milestone (hardcoded to []/null) though the server returns both, and the Commits/Files-changed tabs showed no counts or diffstat",
+        "id": "WEB-167",
+        "location": "web/src/pages/PullsPage.tsx, web/src/types.ts",
+        "severity": "M",
+        "status": "fixed \u2014 added assignees/milestone/additions/deletions/changed_files/commits to the GithubPR type and rendered them: the sidebar now shows real assignees + milestone (editable via IssueSidebar), the tabs show counts (\"Commits N\", \"Files changed N\"), and a diffstat line (\"N changed files with +A \u2212D\"). The diffstat's +/\u2212 colors use the theme-aware --gh-open / --color-status-error tokens (an earlier draft used undefined --color-*-fg tokens that failed dark-mode contrast \u2014 caught by the a11y sweep and fixed). Verified: unit test asserts the assignee/milestone/counts render",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "the repo About sidebar never showed the License, though the repo response carries it and github.com shows it",
+        "id": "WEB-168",
+        "location": "web/src/pages/RepoDetailPage.tsx, web/src/components/octicons.tsx",
+        "severity": "M",
+        "status": "fixed \u2014 the About sidebar now renders the license name with a law icon when repoData.license is set. Verified: unit test asserts the license name renders",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "the commit detail view didn't show the commit's parents, which the response includes and github.com links",
+        "id": "WEB-169",
+        "location": "web/src/pages/RepoDetailPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 the commit detail now renders \"N parent(s)\" with each parent's short SHA linking to its commit page. Verified: unit test asserts a parent SHA renders",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "branches, tags, releases, gists, notifications, packages and org members lists fetched only the server's first page (default 30) with no load-more, silently truncating any list with more items",
+        "id": "WEB-170",
+        "location": "web/src/api.ts, web/src/pages/OrgPeoplePage.tsx",
+        "severity": "M",
+        "status": "fixed \u2014 those fetchers now request per_page=100 (inline for members, in the shared fetcher for the rest), raising the cap well above realistic simulator data; e2e/vitest URL matchers made query-string-tolerant. Verified: full vitest green after the matcher updates",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "many pages used the CSS custom properties --color-danger-fg / --color-success-fg / --color-danger-soft, which were never defined \u2014 so `color: var(--color-danger-fg)` fell back to the inherited color and error text rendered muted instead of red",
+        "id": "WEB-171",
+        "location": "web/src/index.css",
+        "severity": "m",
+        "status": "fixed \u2014 defined those three as aliases of the existing theme-aware --color-danger-text / --color-success-text / --color-status-error-soft tokens (once in :root; they resolve per-theme). Error text now renders red in both themes; the a11y sweep confirms 0 contrast violations after the change",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -7554,21 +7599,21 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 164
+            "fixed": 169
           },
-          "total": 166
+          "total": 171
         }
       },
       "severity": {
         "blocker": 167,
-        "major": 402,
-        "minor": 226
+        "major": 405,
+        "minor": 228
       },
       "status": {
         "deferred": 3,
-        "fixed": 792
+        "fixed": 797
       },
-      "total": 795
+      "total": 800
     }
   },
   "rest": {

@@ -442,6 +442,21 @@ function PRDetail({ owner, repo, number }: { owner: string; repo: string; number
         </span>
       </div>
 
+      {pr.changed_files != null && (
+        <div
+          className="mb-4"
+          style={{ fontSize: "0.82rem", color: "var(--color-fg-muted)" }}
+        >
+          <strong style={{ color: "var(--color-fg)" }}>
+            {pr.changed_files} changed {pr.changed_files === 1 ? "file" : "files"}
+          </strong>
+          {" with "}
+          <span style={{ color: "var(--gh-open)" }}>+{pr.additions ?? 0}</span>
+          {" "}
+          <span style={{ color: "var(--color-status-error)" }}>−{pr.deletions ?? 0}</span>
+        </div>
+      )}
+
       <Tabs
         active={tab}
         onChange={(next) => {
@@ -450,8 +465,15 @@ function PRDetail({ owner, repo, number }: { owner: string; repo: string; number
         }}
         items={[
           { key: "conversation", label: "Conversation" },
-          { key: "commits", label: "Commits" },
-          { key: "files", label: "Files changed" },
+          {
+            key: "commits",
+            label: pr.commits != null ? `Commits ${pr.commits}` : "Commits",
+          },
+          {
+            key: "files",
+            label:
+              pr.changed_files != null ? `Files changed ${pr.changed_files}` : "Files changed",
+          },
           { key: "checks", label: "Checks" },
         ]}
       />
@@ -502,9 +524,9 @@ function PRDetail({ owner, repo, number }: { owner: string; repo: string; number
               repo={repo}
               number={number}
               kind="pr"
-              assignees={[]}
+              assignees={(pr.assignees ?? []).map((a) => a.login)}
               labels={pr.labels}
-              milestone={null}
+              milestone={pr.milestone ?? null}
               participants={pr.user?.login ? [pr.user.login] : []}
               reviewers={<RequestedReviewersSection owner={owner} repo={repo} number={number} />}
               development={

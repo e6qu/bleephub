@@ -909,3 +909,36 @@ describe("PullsPage write actions", () => {
     expect(JSON.parse(String(findCall("/issues/9/comments", "POST")?.body))).toEqual({ body: "nice" });
   });
 });
+
+describe("PullsPage detail field completeness", () => {
+  it("renders the assignee, milestone, and files/commits counts from the PR response", async () => {
+    mockPRApis((u) => {
+      if (u.endsWith("/pulls/9")) {
+        return jsonResponse(
+          pr(9, "Rich PR", {
+            assignees: [{ login: "octocat" }],
+            milestone: { number: 4, title: "v1.0", state: "open" },
+            commits: 3,
+            changed_files: 5,
+            additions: 42,
+            deletions: 7,
+          }),
+        );
+      }
+      return undefined;
+    });
+    renderAt("/ui/repos/admin/test/pulls/9");
+
+    // Assignee login surfaces in the sidebar.
+    expect(await screen.findByText("octocat")).toBeInTheDocument();
+    // Milestone title surfaces in the sidebar.
+    expect(screen.getByText("v1.0")).toBeInTheDocument();
+    // Counts surface in the tab labels.
+    expect(screen.getByRole("tab", { name: /Commits 3/ })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /Files changed 5/ })).toBeInTheDocument();
+    // Diffstat summary near the header.
+    expect(screen.getByText(/5 changed files/)).toBeInTheDocument();
+    expect(screen.getByText("+42")).toBeInTheDocument();
+    expect(screen.getByText("−7")).toBeInTheDocument();
+  });
+});

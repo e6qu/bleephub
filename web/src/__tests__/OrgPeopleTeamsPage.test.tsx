@@ -57,7 +57,7 @@ describe("OrgPeoplePage", () => {
     });
     const link = screen.getByRole("link", { name: "dev" });
     expect(link).toHaveAttribute("href", "/ui/dev");
-    expect(mockFetch).toHaveBeenCalledWith("/api/v3/orgs/acme/members", expect.anything());
+    expect(mockFetch).toHaveBeenCalledWith("/api/v3/orgs/acme/members?per_page=100", expect.anything());
   });
 
   it("surfaces a members load error", async () => {
@@ -96,7 +96,7 @@ describe("OrgPeoplePage", () => {
       if (u.endsWith("/memberships/dev") && init?.method === "PUT") {
         return Promise.resolve(jsonResponse({ state: "active", role: "admin" }));
       }
-      if (u.endsWith("/members")) return Promise.resolve(jsonResponse([member]));
+      if (u.split("?")[0]!.endsWith("/members")) return Promise.resolve(jsonResponse([member]));
       return Promise.resolve(jsonResponse([]));
     });
     renderPeople();
@@ -116,7 +116,7 @@ describe("OrgPeoplePage", () => {
       if (u.endsWith("/memberships/dev") && init?.method === "DELETE") {
         return Promise.resolve(new Response(null, { status: 204 }));
       }
-      if (u.endsWith("/members")) return Promise.resolve(jsonResponse([member]));
+      if (u.split("?")[0]!.endsWith("/members")) return Promise.resolve(jsonResponse([member]));
       return Promise.resolve(jsonResponse([]));
     });
     renderPeople();

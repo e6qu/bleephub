@@ -324,6 +324,15 @@ export interface GithubPR {
   merged: boolean;
   /** Only present on the single-PR detail response, not list items. */
   mergeable_state?: "clean" | "dirty" | "blocked" | "unstable" | "unknown";
+  /** Detail-only: full assignee list (list items omit these). */
+  assignees?: { login: string }[];
+  /** Detail-only: assigned milestone, null when unassigned. */
+  milestone?: { number: number; title: string; state: string } | null;
+  /** Detail-only diffstat fields (single-PR response, not list items). */
+  additions?: number;
+  deletions?: number;
+  changed_files?: number;
+  commits?: number;
 }
 
 /** GitHub comment. */
