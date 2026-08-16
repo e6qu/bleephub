@@ -194,6 +194,7 @@ function IssueList({ owner, repo }: { owner: string; repo: string }) {
         filters={filters}
         onFilters={setFilters}
         accessors={issueAccessors}
+        resultCount={issues.length}
         actions={
           <div className="flex items-center gap-2">
             <Button size="sm" onClick={() => navigate(`/ui/repos/${owner}/${repo}/labels`)}>

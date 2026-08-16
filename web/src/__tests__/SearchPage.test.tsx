@@ -67,7 +67,9 @@ describe("SearchPage", () => {
     await waitFor(() => {
       expect(screen.getByText("admin/hit-repo")).toBeInTheDocument();
     });
-    expect(screen.getByText(/1 repository/)).toBeInTheDocument();
+    // The count is a live region so a screen reader hears the result on arrival.
+    const count = screen.getByRole("status");
+    expect(count).toHaveTextContent(/1 repository/);
     const url = String(mockFetch.mock.calls[0]![0]);
     expect(url).toContain("/api/v3/search/repositories?");
     expect(url).toContain("q=hit");

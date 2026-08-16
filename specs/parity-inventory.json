@@ -6399,6 +6399,24 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "no `@media (prefers-reduced-motion: reduce)` guard existed anywhere, while the app runs non-trivial auto-playing motion: the `reveal-up` keyframe (staggered fade+slide on tables/nav/toasts/modals), an infinite `spinner-slide` loop, and hover-lift `transform` on marketplace cards and repo-action buttons \u2014 a WCAG 2.3.3 / 2.2.2 gap for motion-sensitive users",
+        "id": "WEB-196",
+        "location": "web/core/src/styles/tokens.css",
+        "severity": "m",
+        "status": "fixed \u2014 added one global reduced-motion guard (in the app-wide `tokens.css`, which already hosts global `*` rules and owns `reveal-up`) that collapses every animation/transition to near-zero duration and disables smooth scroll, leaving instant colour/theme changes intact. Verified: the guard ships in the built CSS bundle",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "result counts were not announced to screen readers: (a) the SearchPage count line was a plain `<div>`, so after the \"searching\u2026\" spinner unmounted a blind user heard nothing when results arrived; (b) the Issues/Pulls client-side dropdown filters (Label/Author/Milestone/Assignee) re-narrow the loaded list instantly with no refetch/spinner and nothing announced the new visible count (the Open/Closed/All pills show server totals, unaffected by these filters) \u2014 github announces \"N results\" here",
+        "id": "WEB-197",
+        "location": "web/src/pages/SearchPage.tsx, web/src/components/ListControls.tsx, web/src/pages/IssuesPage.tsx, web/src/pages/PullsPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 made the SearchPage count a `role=\"status\"` live region, and added an optional `resultCount` to `ListControls` that renders a visually-hidden `role=\"status\"` \"N issues\"/\"N pull requests\" updated from the client-filtered length (one shared surface, both pages inherit it; the server-refetching Open/Closed/All toggle already announces via its Spinner, so no double-announcement). Verified: unit tests assert the SearchPage count is a live region and that narrowing the Issues list by label updates the announced count from \"2 issues\" to \"1 issue\"",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -7815,21 +7833,21 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 193
+            "fixed": 195
           },
-          "total": 195
+          "total": 197
         }
       },
       "severity": {
         "blocker": 167,
         "major": 413,
-        "minor": 244
+        "minor": 246
       },
       "status": {
         "deferred": 3,
-        "fixed": 821
+        "fixed": 823
       },
-      "total": 824
+      "total": 826
     }
   },
   "rest": {
