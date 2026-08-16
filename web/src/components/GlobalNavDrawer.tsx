@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
 import { NavLink } from "react-router";
 import {
   Mark,
@@ -107,11 +107,23 @@ function DrawerSection({ title, items, onNavigate }: { title: string; items: Dra
 }
 
 export function GlobalNavDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const navRef = useRef<HTMLElement>(null);
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+    // Move focus into the drawer on open and restore it to the trigger on
+    // close, so a keyboard user is not left focused on the obscured page
+    // behind the backdrop.
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const first = navRef.current?.querySelector<HTMLElement>(
+      'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    );
+    (first ?? navRef.current)?.focus();
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      previouslyFocused?.focus();
+    };
   }, [open, onClose]);
   if (!open) return null;
   return (
@@ -121,6 +133,8 @@ export function GlobalNavDrawer({ open, onClose }: { open: boolean; onClose: () 
         style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 70 }}
       />
       <nav
+        ref={navRef}
+        tabIndex={-1}
         aria-label="Global"
         style={{
           position: "fixed",

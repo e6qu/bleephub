@@ -27,6 +27,7 @@ import type {
 } from "../types.js";
 import { decodeContentsBase64, parseWorkflowDispatch } from "../utils/workflowDispatch.js";
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
+import { useDismiss } from "../hooks/useDismiss.js";
 import { RepoHeader } from "../components/PageHeader.js";
 import { RunStatusIcon } from "../components/RunStatusIcon.js";
 import {
@@ -628,6 +629,7 @@ function WorkflowHeader({
 }) {
   const qc = useQueryClient();
   const [menuOpen, setMenuOpen] = useState(false);
+  const workflowMenuRef = useDismiss<HTMLDivElement>(menuOpen, () => setMenuOpen(false));
   const [dispatchOpen, setDispatchOpen] = useState(false);
   const disabled = workflow.state !== "active";
 
@@ -662,7 +664,7 @@ function WorkflowHeader({
             {workflow.path}
           </span>
         </h2>
-        <div className="relative flex items-center gap-2">
+        <div ref={workflowMenuRef} className="relative flex items-center gap-2">
           {dispatchSpec?.hasDispatch && !disabled && (
             <Button variant="primary" size="sm" onClick={() => setDispatchOpen(true)}>
               Run workflow

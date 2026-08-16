@@ -6381,6 +6381,24 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "two `role=\"menu\"` popups could not be dismissed by keyboard or outside-click (WCAG 2.2 \u00a71.4.13 / focus-management behaviour axe cannot detect): the ActionsPage workflow-options menu and the DiscussionsPage reaction picker closed only on a successful selection \u2014 no Escape, no click-away. (The shared Modal/CommandPalette/GoToFile/HeaderMenu primitives were all verified reference-quality; these two hand-rolled popups were the exceptions.)",
+        "id": "WEB-194",
+        "location": "web/src/hooks/useDismiss.ts, web/src/pages/ActionsPage.tsx, web/src/pages/DiscussionsPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 extracted the existing AppHeader `useDismiss(open, close)` (outside-mousedown + document-level Escape) into a shared `hooks/useDismiss.ts` and attached it to both popups' wrapper (also de-duplicating AppHeader's local copy \u2014 jscpd clean). Verified: unit test asserts Escape and outside-click dismiss while an inside click does not",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "the mobile global-nav drawer is a modal-style overlay (full-screen backdrop over a `<nav>`) but managed no focus: opening it left keyboard focus on the now-obscured page behind the backdrop, and closing did not restore focus to the hamburger trigger (Escape/backdrop-click close were already present)",
+        "id": "WEB-195",
+        "location": "web/src/components/GlobalNavDrawer.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 on open, move focus to the first focusable in the drawer (nav itself as `tabIndex={-1}` fallback) and capture the previously-focused element; on close, restore focus to it. Verified: unit test asserts focus enters the drawer on open and returns to the trigger on Escape-close",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -7797,21 +7815,21 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 191
+            "fixed": 193
           },
-          "total": 193
+          "total": 195
         }
       },
       "severity": {
         "blocker": 167,
         "major": 413,
-        "minor": 242
+        "minor": 244
       },
       "status": {
         "deferred": 3,
-        "fixed": 819
+        "fixed": 821
       },
-      "total": 822
+      "total": 824
     }
   },
   "rest": {
