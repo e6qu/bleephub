@@ -1702,7 +1702,7 @@ export const updatePull = (
   );
 
 export const fetchRepoBranches = (owner: string, repo: string) =>
-  ghFetch<GithubBranch[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches`);
+  ghFetch<GithubBranch[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches?per_page=100`);
 
 export const fetchRepoBranch = (owner: string, repo: string, branch: string) =>
   ghFetch<GithubBranch>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches/${encodeURIComponent(branch)}`);
@@ -1920,7 +1920,7 @@ export const fetchEnvironments = (owner: string, repo: string) =>
   });
 
 export const fetchReleases = (owner: string, repo: string) =>
-  ghFetch<GithubRelease[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/releases`);
+  ghFetch<GithubRelease[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/releases?per_page=100`);
 
 export const fetchRelease = (owner: string, repo: string, releaseId: number) =>
   ghFetch<GithubRelease>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/releases/${releaseId}`);
@@ -2563,8 +2563,8 @@ export const fetchNotifications = (filters: NotificationFilters = {}, signal?: A
   if (filters.participating) query.set("participating", "true");
   if (filters.since) query.set("since", filters.since);
   if (filters.before) query.set("before", filters.before);
-  const suffix = query.size ? `?${query}` : "";
-  return ghFetch<GithubNotificationThread[]>(`/api/v3/notifications${suffix}`, signal);
+  query.set("per_page", "100");
+  return ghFetch<GithubNotificationThread[]>(`/api/v3/notifications?${query}`, signal);
 };
 
 export const markAllNotificationsRead = () =>
@@ -2599,7 +2599,7 @@ export const setThreadSubscription = (threadId: string, subscribed: boolean) =>
 export const deleteThreadSubscription = (threadId: string) =>
   ghSend("DELETE", `/api/v3/notifications/threads/${threadId}/subscription`);
 
-export const fetchGists = () => ghFetch<BleephubGist[]>("/api/v3/gists");
+export const fetchGists = () => ghFetch<BleephubGist[]>("/api/v3/gists?per_page=100");
 
 export const fetchPublicGists = () => ghFetch<BleephubGist[]>("/api/v3/gists/public");
 
@@ -3207,8 +3207,12 @@ export function packageListPath(scope: PackageScope, pkgType?: string): string {
   }
 }
 
-export const fetchPackages = (scope: PackageScope, pkgType?: string) =>
-  ghFetch<GithubPackage[]>(packageListPath(scope, pkgType));
+export const fetchPackages = (scope: PackageScope, pkgType?: string) => {
+  // per_page=100 so package types beyond the server's 30-item first page (the
+  // Packages tab filters by type client-side) aren't silently dropped.
+  const base = packageListPath(scope, pkgType);
+  return ghFetch<GithubPackage[]>(`${base}${base.includes("?") ? "&" : "?"}per_page=100`);
+};
 
 export const fetchPackageVersions = (scope: PackageScope, pkgType: string, pkgName: string) =>
   ghFetch<GithubPackageVersion[]>(`${packageBasePath(scope, pkgType, pkgName)}/versions`);
@@ -4876,7 +4880,7 @@ export const fetchRepoLanguages = (owner: string, repo: string) =>
   ghFetch<Record<string, number>>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/languages`);
 
 export const fetchRepoTags = (owner: string, repo: string) =>
-  ghFetch<GithubTag[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/tags`);
+  ghFetch<GithubTag[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/tags?per_page=100`);
 
 /** Star/watch/fork counters from the full-repository shape. */
 export const fetchRepoSocialCounts = (owner: string, repo: string, signal?: AbortSignal) =>

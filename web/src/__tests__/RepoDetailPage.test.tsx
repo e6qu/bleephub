@@ -131,7 +131,7 @@ function routedFetch(url: RequestInfo | URL): Promise<Response> {
   if (u.endsWith("/topics")) return Promise.resolve(jsonResponse(topicsData));
   if (u.endsWith("/packages")) return Promise.resolve(jsonResponse([]));
   if (u.endsWith("/repos/admin/test")) return Promise.resolve(jsonResponse(repoData));
-  if (u.endsWith("/branches")) return Promise.resolve(jsonResponse(branchesData));
+  if (u.split("?")[0]!.endsWith("/branches")) return Promise.resolve(jsonResponse(branchesData));
   if (u.includes("/commits?")) return Promise.resolve(jsonResponse(commitsData));
   if (u.includes("/readme")) return Promise.resolve(jsonResponse(readmeData));
   if (u.includes("/contents/README.md")) return Promise.resolve(jsonResponse(readmeData));
@@ -195,7 +195,7 @@ describe("RepoDetailPage code", () => {
       if (u.endsWith("/repos/admin/test")) {
         return Promise.resolve(jsonResponse({ ...repoData, pushed_at: null, ssh_url: "" }));
       }
-      if (u.endsWith("/branches")) return Promise.resolve(jsonResponse([]));
+      if (u.split("?")[0]!.endsWith("/branches")) return Promise.resolve(jsonResponse([]));
       return Promise.resolve(jsonResponse([]));
     });
     renderPage();
@@ -397,6 +397,22 @@ describe("RepoDetailPage About sidebar", () => {
     expect(within(about).getByText(/1 fork/)).toBeInTheDocument();
   });
 
+  it("renders the license name when the repo has one", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.endsWith("/repos/admin/test")) {
+        return Promise.resolve(jsonResponse({
+          ...repoData,
+          license: { key: "mit", name: "MIT License", spdx_id: "MIT", url: "" },
+        }));
+      }
+      return routedFetch(url);
+    });
+    renderPage();
+    const about = await screen.findByRole("complementary", { name: "About" });
+    expect(within(about).getByText("MIT License")).toBeInTheDocument();
+  });
+
   it("styles README headings via the markdown-body class", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL) => routedFetch(url));
     const { container } = renderPage();
@@ -417,6 +433,24 @@ describe("repository detail journeys", () => {
     expect(await screen.findByRole("heading", { name: "Initial commit" })).toBeInTheDocument();
     expect(screen.getByText("2 changes")).toBeInTheDocument();
     expect(screen.getByText(/extra detail/)).toBeInTheDocument();
+  });
+
+  it("renders the commit's parents with links", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.endsWith("/commits/abc123")) {
+        return Promise.resolve(jsonResponse({
+          ...commitsData[0],
+          stats: { additions: 2, deletions: 0, total: 2 },
+          files: [],
+          parents: [{ sha: "9999999abcdef", url: "", html_url: "" }],
+        }));
+      }
+      return routedFetch(url);
+    });
+    renderPage("/ui/repos/admin/test/commits/abc123");
+    expect(await screen.findByText("1 parent")).toBeInTheDocument();
+    expect(screen.getByText("9999999")).toBeInTheDocument();
   });
 
   it("adds a commit comment via POST /commits/{sha}/comments", async () => {
@@ -647,7 +681,7 @@ describe("RepoDetailPage refs", () => {
       if (u.endsWith("/git/refs/heads/feature/y") && init?.method === "DELETE") {
         return Promise.resolve(new Response(null, { status: 204 }));
       }
-      if (u.endsWith("/branches")) {
+      if (u.split("?")[0]!.endsWith("/branches")) {
         return Promise.resolve(jsonResponse([
           { name: "main", commit: { sha: "abc" } },
           { name: "feature/y", commit: { sha: "def" } },

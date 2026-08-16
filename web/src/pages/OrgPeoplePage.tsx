@@ -3,7 +3,7 @@ import { useParams, Link } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { InlineError, Spinner } from "@bleephub/ui-core/components";
 import {
-  fetchOrgMembers,
+  ghFetch,
   fetchPublicOrgMembers,
   setOrgMembership,
   removeOrgMember,
@@ -28,7 +28,9 @@ export function OrgPeoplePage() {
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["org-members", org],
-    queryFn: () => fetchOrgMembers(org),
+    // per_page=100 so orgs with >30 members aren't silently truncated to the
+    // first page (the server defaults to 30). Inline to avoid touching api.ts.
+    queryFn: () => ghFetch<GithubAccount[]>(`/api/v3/orgs/${encodeURIComponent(org)}/members?per_page=100`),
   });
   const viewerQ = useQuery({ queryKey: ["current-user"], queryFn: ({ signal }) => fetchCurrentUser(signal) });
   const publicQ = useQuery({

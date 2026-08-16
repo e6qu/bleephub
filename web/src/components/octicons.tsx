@@ -88,6 +88,19 @@ export function BookIcon(p: IconProps) {
   );
 }
 
+export function LawIcon(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path d="M8 1.5v12" />
+      <path d="M5 13.5h6" />
+      <path d="M3 4.5h10" />
+      <path d="M6 2.5a1.4 1.4 0 0 1 4 0" />
+      <path d="M3 4.5 1.5 8.5h3z" />
+      <path d="M13 4.5 11.5 8.5h3z" />
+    </Svg>
+  );
+}
+
 export function FileIcon(p: IconProps) {
   return (
     <Svg {...p}>

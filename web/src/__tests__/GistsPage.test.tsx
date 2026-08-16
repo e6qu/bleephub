@@ -47,7 +47,7 @@ const gist = {
 
 function mockEndpoints() {
   mockFetch.mockImplementation((url: string, init?: RequestInit) => {
-    if (url === "/api/v3/gists") return Promise.resolve(jsonResponse([gist]));
+    if (url.split("?")[0]! === "/api/v3/gists") return Promise.resolve(jsonResponse([gist]));
     if (url === "/api/v3/gists/public") return Promise.resolve(jsonResponse([{ ...gist, id: "g2" }]));
     if (url === "/api/v3/gists/starred") return Promise.resolve(jsonResponse([{ ...gist, id: "g3" }]));
     if (url === "/api/v3/gists/g1") return Promise.resolve(jsonResponse(gist));
@@ -141,7 +141,7 @@ describe("GistsPage", () => {
 
   it("edits the viewer's own gist comment via PATCH", async () => {
     mockFetch.mockImplementation((url: string, init?: RequestInit) => {
-      if (url === "/api/v3/gists") return Promise.resolve(jsonResponse([gist]));
+      if (url.split("?")[0]! === "/api/v3/gists") return Promise.resolve(jsonResponse([gist]));
       if (url === "/api/v3/gists/g1") return Promise.resolve(jsonResponse(gist));
       if (url === "/api/v3/gists/g1/commits") return Promise.resolve(jsonResponse([]));
       if (url === "/api/v3/gists/g1/comments") {
