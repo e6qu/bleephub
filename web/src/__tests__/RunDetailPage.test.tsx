@@ -343,3 +343,46 @@ describe("RunDetailPage", () => {
     });
   });
 });
+
+describe("RunDetailPage — check-run annotations", () => {
+  it("renders annotations derived from the job's check_run_url", async () => {
+    const job = jobData({
+      check_run_url: "/api/v3/repos/admin/test/check-runs/42",
+    });
+    const annotation = {
+      path: "main.go",
+      start_line: 10,
+      end_line: 10,
+      annotation_level: "failure",
+      message: "boom",
+      title: "vet",
+    };
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.endsWith("/check-runs/42/annotations")) {
+        return Promise.resolve(jsonResponse([annotation]));
+      }
+      if (u.includes("/issues") || u.includes("/pulls")) return Promise.resolve(jsonResponse([]));
+      if (u.endsWith("/pending_deployments")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/attempts/")) return Promise.resolve(jsonResponse({ message: "Not Found" }, 404));
+      if (u.endsWith("/jobs?per_page=100")) {
+        return Promise.resolve(jsonResponse({ total_count: 1, jobs: [job] }));
+      }
+      if (u.includes("/actions/jobs/") && u.endsWith("/logs")) {
+        return Promise.resolve(textResponse(""));
+      }
+      if (u.includes("/internal/repos/") && u.endsWith("/summary")) {
+        return Promise.resolve(jsonResponse({ summary: "" }));
+      }
+      if (u.endsWith("/artifacts")) {
+        return Promise.resolve(jsonResponse({ total_count: 0, artifacts: [] }));
+      }
+      if (u.endsWith("/actions/runs/5")) return Promise.resolve(jsonResponse(runData()));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderPage();
+    expect(await screen.findByText("Annotations")).toBeInTheDocument();
+    expect(screen.getByText("boom")).toBeInTheDocument();
+    expect(screen.getByText("main.go:10")).toBeInTheDocument();
+  });
+});

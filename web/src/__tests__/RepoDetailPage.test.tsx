@@ -535,6 +535,31 @@ describe("repository detail journeys", () => {
     });
   });
 
+  it("renders associated pull requests for a commit with links", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.endsWith("/commits/abc123/pulls")) {
+        return Promise.resolve(
+          jsonResponse([
+            {
+              number: 7,
+              title: "Add feature",
+              state: "open",
+              merged_at: null,
+              html_url: "http://x/admin/test/pull/7",
+              user: { login: "admin" },
+            },
+          ]),
+        );
+      }
+      return routedFetch(url);
+    });
+    renderPage("/ui/repos/admin/test/commits/abc123");
+
+    const link = await screen.findByRole("link", { name: /#7 Add feature/ });
+    expect(link).toHaveAttribute("href", "/ui/repos/admin/test/pulls/7");
+  });
+
   it("renders a repository file at its durable URL with Raw + History controls", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL) => routedFetch(url));
     renderPage("/ui/repos/admin/test/blob/main/README.md");
