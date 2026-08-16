@@ -1,7 +1,6 @@
 package graphqlapi
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/e6qu/bleephub/internal/store"
@@ -71,11 +70,11 @@ func (s *Resolver) addModerationMutationsToSchema(mutationType *graphql.Object) 
 			classifier, _ := input["classifier"].(string)
 			c := s.store.LookupCommentByNodeID(nodeID)
 			if c == nil {
-				return nil, fmt.Errorf("could not resolve to a node with the global id of '%s'", nodeID)
+				return nil, gqlMissingNode("node", nodeID)
 			}
 			updated := s.store.SetCommentMinimization(c.ID, user.ID, classifier)
 			if updated == nil {
-				return nil, fmt.Errorf("could not resolve to a node with the global id of '%s'", nodeID)
+				return nil, gqlMissingNode("node", nodeID)
 			}
 			return map[string]interface{}{
 				"minimizedComment": commentToGQL(updated, s.store),
@@ -94,11 +93,11 @@ func (s *Resolver) addModerationMutationsToSchema(mutationType *graphql.Object) 
 			nodeID, _ := input["subjectId"].(string)
 			c := s.store.LookupCommentByNodeID(nodeID)
 			if c == nil {
-				return nil, fmt.Errorf("could not resolve to a node with the global id of '%s'", nodeID)
+				return nil, gqlMissingNode("node", nodeID)
 			}
 			updated := s.store.SetCommentMinimization(c.ID, user.ID, "")
 			if updated == nil {
-				return nil, fmt.Errorf("could not resolve to a node with the global id of '%s'", nodeID)
+				return nil, gqlMissingNode("node", nodeID)
 			}
 			return map[string]interface{}{
 				"unminimizedComment": commentToGQL(updated, s.store),
@@ -154,7 +153,7 @@ func (s *Resolver) addModerationMutationsToSchema(mutationType *graphql.Object) 
 			restReason := graphqlToRESTLockReason(reasonEnum)
 			locked, ok := s.lockByNodeID(nodeID, true, restReason)
 			if !ok {
-				return nil, fmt.Errorf("could not resolve to a lockable node with the global id of '%s'", nodeID)
+				return nil, gqlMissingNode("node", nodeID)
 			}
 			return map[string]interface{}{"lockedRecord": locked}, nil
 		},
@@ -170,7 +169,7 @@ func (s *Resolver) addModerationMutationsToSchema(mutationType *graphql.Object) 
 			nodeID, _ := input["lockableId"].(string)
 			unlocked, ok := s.lockByNodeID(nodeID, false, "")
 			if !ok {
-				return nil, fmt.Errorf("could not resolve to a lockable node with the global id of '%s'", nodeID)
+				return nil, gqlMissingNode("node", nodeID)
 			}
 			return map[string]interface{}{"unlockedRecord": unlocked}, nil
 		},

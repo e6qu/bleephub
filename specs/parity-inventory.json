@@ -3,7 +3,7 @@
     "literal_event_producers": [
       {
         "event": "branch_protection_rule",
-        "line": 346,
+        "line": 347,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_branch_protection.go"
       },
@@ -75,7 +75,7 @@
       },
       {
         "event": "issue_comment",
-        "line": 619,
+        "line": 667,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_issues_rest.go"
       },
@@ -87,7 +87,7 @@
       },
       {
         "event": "issues",
-        "line": 559,
+        "line": 607,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_issues_rest.go"
       },
@@ -189,13 +189,13 @@
       },
       {
         "event": "pull_request",
-        "line": 447,
+        "line": 454,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request",
-        "line": 551,
+        "line": 558,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
@@ -207,19 +207,19 @@
       },
       {
         "event": "pull_request_review",
-        "line": 728,
+        "line": 735,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request_review",
-        "line": 1005,
+        "line": 1012,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request_review",
-        "line": 1059,
+        "line": 1069,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
@@ -2502,6 +2502,69 @@
         "status_kind": "fixed"
       },
       {
+        "category": "REST",
+        "finding": "`PATCH .../pulls/{n}` with `state:open` on a MERGED pull request was a silent no-op returning 200 with the unchanged body; github rejects it (a merged PR's state is terminal)",
+        "id": "REST-126",
+        "location": "gh_pulls_rest.go",
+        "severity": "M",
+        "status": "fixed \u2014 reopening a merged PR now returns 422 with a validation-error envelope before the mutation runs. Verified: unit test asserts the 422",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "locking/unlocking a **pull request** recorded the timeline event via `RecordIssueEvent`, which hardcodes `ParentType=\"issue\"`; the PR timeline filters on `ParentType=\"pull_request\"` so the event was invisible there, and (issue/PR id-spaces being independent) it could surface on an unrelated issue's events instead",
+        "id": "REST-127",
+        "location": "gh_issue_moderation.go, store_issues.go",
+        "severity": "M",
+        "status": "fixed \u2014 added `RecordIssueOrPREvent(repoID, number, \u2026)` which stamps ParentType by resolving whether the number is an issue or PR, and pointed lock/unlock at it (refactored the payload-application into a shared `recordEventLocked`). Removed the now-dead `GetIssueOrPullRequestIDByNumber`. Verified: unit test asserts a locked PR's timeline contains the `locked` event",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "editing labels/assignees/milestone through `PATCH .../issues/{n}` wrote the id slices raw inside the update closure, bypassing the event-recording store methods, so \u2014 unlike github and unlike bleephub's own dedicated sub-resource endpoints \u2014 no `labeled`/`unlabeled`/`assigned`/`unassigned`/`milestoned`/`demilestoned` timeline events were emitted",
+        "id": "REST-128",
+        "location": "gh_issues_rest.go",
+        "severity": "M",
+        "status": "fixed \u2014 the handler now diffs the pre-update snapshot against the requested sets and emits the corresponding event per added/removed label/assignee and per milestone change. Verified: unit test asserts a label+milestone edit produces `labeled` and `milestoned` timeline events",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "dismissing a PR review flipped the review state to DISMISSED but recorded no timeline event; github adds a distinct `review_dismissed` entry (keeping the original `reviewed`)",
+        "id": "REST-129",
+        "location": "gh_pulls_rest.go",
+        "severity": "m",
+        "status": "fixed \u2014 the dismiss handler records a `review_dismissed` PR event. Verified: unit test asserts it appears in the timeline",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "the required-review merge gate computed each reviewer's \"latest\" review by Go map-iteration order (`latestByUser[AuthorID]=state`), not by time, so a reviewer who approved then later requested changes (or vice-versa) was counted nondeterministically across runs",
+        "id": "REST-130",
+        "location": "gh_branch_protection.go",
+        "severity": "m",
+        "status": "fixed \u2014 a shared `latestGateReviewStatesLocked` takes each reviewer's most-recent-by-`SubmittedAt` APPROVED/CHANGES_REQUESTED review (COMMENTED/PENDING/DISMISSED set no gate state, matching github). Verified: unit test with a later CHANGES_REQUESTED inserted before an earlier APPROVED asserts the gate blocks deterministically",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "a newly created repository defaulted `has_wiki=false`, `has_projects=false`, `has_discussions=true` \u2014 all three inverted from github's documented create defaults (`has_wiki`/`has_projects` default true, `has_discussions` default false, confirmed against the vendored spec)",
+        "id": "REST-131",
+        "location": "store_repos.go",
+        "severity": "m",
+        "status": "fixed \u2014 flipped the three defaults in the shared `createRepo` constructor (covers user and org repos). Verified: unit test asserts the fresh-repo defaults match github; the one test relying on default-off wiki now disables it explicitly",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "the commit-list/compare/branch/tags/merge paths emitted `author` and `committer` as empty objects `{}` instead of the nullable `simple-user` github returns (resolved account or null); only the single-commit path resolved them, so `commit.author.login` was absent on all list responses",
+        "id": "REST-132",
+        "location": "gh_repos_compare.go",
+        "severity": "m",
+        "status": "fixed \u2014 `commitToJSON` now resolves both signatures to a GitHub account (or null) via a shared `commitSignatureUserJSON`, removing the single-commit override and the now-dead `commitSignatureUser`. Verified: unit test asserts a commit-list author is a user object with `login` or null, never an empty object; the openapi-shape ratchet stays green",
+        "status_kind": "fixed"
+      },
+      {
         "category": "GQL",
         "finding": "`POST /api/graphql` serves anonymous requests; real GitHub 401s every unauthenticated request",
         "id": "GQL-001",
@@ -3147,6 +3210,15 @@
         "location": "gh_issues_graphql.go",
         "severity": "m",
         "status": "fixed \u2014 a supplied `projectIds` adds the new issue to each named ProjectV2 board (resolved via `LookupProjectByNodeID`, an unknown id erroring like GitHub); `issueTemplate` is a client hint with no server-side state and is accepted for coercion; regression covers a non-null `projectIds`",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "GQL",
+        "finding": "~40 mutation resolvers returned a bare `fmt.Errorf(\"could not resolve to a \u2026\")` for a missing node, so \u2014 unlike the query paths, which use `*ghNotFoundError`/`gqlMissingNode` \u2014 the wire error carried no `type: NOT_FOUND` and used lowercase/period-less casing, leaving a client unable to distinguish \"no such object\" from a transport failure",
+        "id": "GQL-062",
+        "location": "gh_discussions_graphql.go, gh_issues_graphql.go, gh_moderation_graphql.go, gh_pulls_graphql.go, gh_reactions_graphql.go",
+        "severity": "m",
+        "status": "fixed \u2014 every such site now returns `gqlMissingNode(type, id)` (github's canonical `\"Could not resolve to a X with the global id of 'Y'.\"`) or, where the id was already consumed, `gqlMissingNodeType(type)`, both `*ghNotFoundError` so the envelope stamps `NOT_FOUND`. Verified: unit test asserts a mutation on a missing node returns `errors[].type == NOT_FOUND`; the existing query-path NotFound test still passes",
         "status_kind": "fixed"
       },
       {
@@ -7801,9 +7873,9 @@
         },
         "GQL": {
           "status": {
-            "fixed": 61
+            "fixed": 62
           },
-          "total": 61
+          "total": 62
         },
         "PAR": {
           "status": {
@@ -7813,9 +7885,9 @@
         },
         "REST": {
           "status": {
-            "fixed": 125
+            "fixed": 132
           },
-          "total": 125
+          "total": 132
         },
         "STORE": {
           "status": {
@@ -7840,14 +7912,14 @@
       },
       "severity": {
         "blocker": 167,
-        "major": 413,
-        "minor": 246
+        "major": 416,
+        "minor": 251
       },
       "status": {
         "deferred": 3,
-        "fixed": 823
+        "fixed": 831
       },
-      "total": 826
+      "total": 834
     }
   },
   "rest": {
@@ -20947,61 +21019,61 @@
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 39,
+        "line": 40,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 108,
+        "line": 109,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/enforce_admins",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 78,
+        "line": 79,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_pull_request_reviews",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 53,
+        "line": 54,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_signatures",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 46,
+        "line": 47,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 71,
+        "line": 72,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks/contexts",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 83,
+        "line": 84,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 62,
+        "line": 63,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/apps",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 101,
+        "line": 102,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/teams",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 92,
+        "line": 93,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/users",
         "source": "internal/server/gh_branch_protection.go"
@@ -24295,61 +24367,61 @@
         "source": "internal/server/gh_repos_refs.go"
       },
       {
-        "line": 36,
+        "line": 37,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 105,
+        "line": 106,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/enforce_admins",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 75,
+        "line": 76,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_pull_request_reviews",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 50,
+        "line": 51,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_signatures",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 43,
+        "line": 44,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 66,
+        "line": 67,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks/contexts",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 82,
+        "line": 83,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 57,
+        "line": 58,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/apps",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 96,
+        "line": 97,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/teams",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 87,
+        "line": 88,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/users",
         "source": "internal/server/gh_branch_protection.go"
@@ -26617,13 +26689,13 @@
         "source": "internal/server/gh_agents_secrets.go"
       },
       {
-        "line": 76,
+        "line": 77,
         "method": "PATCH",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_pull_request_reviews",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 44,
+        "line": 45,
         "method": "PATCH",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks",
         "source": "internal/server/gh_branch_protection.go"
@@ -27691,37 +27763,37 @@
         "source": "internal/server/gh_repos_autolinks.go"
       },
       {
-        "line": 106,
+        "line": 107,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/enforce_admins",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 51,
+        "line": 52,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_signatures",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 67,
+        "line": 68,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks/contexts",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 58,
+        "line": 59,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/apps",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 97,
+        "line": 98,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/teams",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 88,
+        "line": 89,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/users",
         "source": "internal/server/gh_branch_protection.go"
@@ -29041,31 +29113,31 @@
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 37,
+        "line": 38,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 69,
+        "line": 70,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks/contexts",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 60,
+        "line": 61,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/apps",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 99,
+        "line": 100,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/teams",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 90,
+        "line": 91,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/users",
         "source": "internal/server/gh_branch_protection.go"

@@ -385,7 +385,7 @@ func (s *Server) handleRenameBranch(w http.ResponseWriter, r *http.Request) {
 	if stor != nil {
 		if ref, err := stor.Reference(plumbing.NewBranchReferenceName(req.NewName)); err == nil {
 			if commit := resolveCommit(stor, ref.Hash()); commit != nil {
-				result["commit"] = commitToJSON(commit, repo, base)
+				result["commit"] = commitToJSON(commit, repo, s.store, base)
 			} else {
 				result["commit"] = map[string]interface{}{"sha": ref.Hash().String()}
 			}

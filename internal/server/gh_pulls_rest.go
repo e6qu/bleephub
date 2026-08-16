@@ -395,6 +395,13 @@ func (s *Server) handleUpdatePullRequest(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// GitHub rejects reopening a merged pull request; the state of a merged PR
+	// is terminal. Guard before the mutation so it is not a silent no-op.
+	if v, ok := req["state"].(string); ok && v == "open" && pr.State == "MERGED" {
+		writeGHValidationErrorMessage(w, "PullRequest", "state", "invalid", "State cannot be changed. A merged pull request cannot be reopened.")
+		return
+	}
+
 	priorState := pr.State
 	s.store.UpdatePullRequest(pr.ID, func(p *store.PullRequest) {
 		if v, ok := req["title"].(string); ok {
@@ -1054,6 +1061,9 @@ func (s *Server) handleDismissPRReview(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
+	// GitHub adds a distinct `review_dismissed` timeline event (the original
+	// `reviewed` entry stays); without it a dismissal is invisible in history.
+	s.store.RecordPullRequestEvent(repo.ID, pr.ID, user.ID, "review_dismissed", "", 0)
 
 	review = s.store.GetPullRequestReview(reviewID)
 	s.emitWebhookEvent(repo.FullName, "pull_request_review", "dismissed",
@@ -1385,7 +1395,7 @@ func (s *Server) handleListPullRequestCommits(w http.ResponseWriter, r *http.Req
 	base := s.baseURL(r)
 	out := make([]map[string]interface{}, 0, len(commits))
 	for _, c := range commits {
-		out = append(out, commitToJSON(c, repo, base))
+		out = append(out, commitToJSON(c, repo, s.store, base))
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }

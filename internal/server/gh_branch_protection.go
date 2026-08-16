@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -1465,18 +1466,45 @@ func (s *Server) canMergePullRequest(ctx context.Context, repo *store.Repo, pr *
 	return true, ""
 }
 
-func (s *Server) countApprovingReviews(prID int) int {
-	s.store.Mu.RLock()
-	defer s.store.Mu.RUnlock()
-	latestByUser := map[int]string{}
+// latestGateReviewStatesLocked returns each reviewer's effective merge-gate
+// review state for prID: their most recent (by SubmittedAt) APPROVED or
+// CHANGES_REQUESTED review. COMMENTED / PENDING / DISMISSED reviews set no
+// gate-affecting state, matching github (a later COMMENTED review does not
+// retract a prior APPROVED). Callers hold st.Mu. Iterating the review map
+// without ordering by time previously made "latest per user" nondeterministic.
+func (s *Server) latestGateReviewStatesLocked(prID int) map[int]string {
+	type ts struct {
+		at    time.Time
+		state string
+	}
+	latest := map[int]ts{}
 	for _, rev := range s.store.PRReviews {
 		if rev.PRID != prID {
 			continue
 		}
-		latestByUser[rev.AuthorID] = rev.State
+		if rev.State != "APPROVED" && rev.State != "CHANGES_REQUESTED" {
+			continue
+		}
+		var at time.Time
+		if rev.SubmittedAt != nil {
+			at = *rev.SubmittedAt
+		}
+		if cur, ok := latest[rev.AuthorID]; !ok || at.After(cur.at) {
+			latest[rev.AuthorID] = ts{at, rev.State}
+		}
 	}
+	out := make(map[int]string, len(latest))
+	for u, t := range latest {
+		out[u] = t.state
+	}
+	return out
+}
+
+func (s *Server) countApprovingReviews(prID int) int {
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
 	count := 0
-	for _, state := range latestByUser {
+	for _, state := range s.latestGateReviewStatesLocked(prID) {
 		if state == "APPROVED" {
 			count++
 		}
@@ -1487,14 +1515,7 @@ func (s *Server) countApprovingReviews(prID int) int {
 func (s *Server) hasRequestedChanges(prID int) bool {
 	s.store.Mu.RLock()
 	defer s.store.Mu.RUnlock()
-	latestByUser := map[int]string{}
-	for _, rev := range s.store.PRReviews {
-		if rev.PRID != prID {
-			continue
-		}
-		latestByUser[rev.AuthorID] = rev.State
-	}
-	for _, state := range latestByUser {
+	for _, state := range s.latestGateReviewStatesLocked(prID) {
 		if state == "CHANGES_REQUESTED" {
 			return true
 		}

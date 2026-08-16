@@ -1295,7 +1295,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 
 			repo := store.FindRepoByNodeID(s.store, repoNodeID)
 			if repo == nil {
-				return nil, fmt.Errorf("could not resolve to a Repository with the global id of '%s'", repoNodeID)
+				return nil, gqlMissingNode("Repository", repoNodeID)
 			}
 
 			headRepo, headRefName := store.ResolvePullRequestHead(s.store, repo, headRefName)
@@ -1346,7 +1346,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 
 			pr := store.FindPullRequestByNodeID(s.store, prNodeID)
 			if pr == nil {
-				return nil, fmt.Errorf("could not resolve to a PullRequest")
+				return nil, gqlMissingNodeType("PullRequest")
 			}
 
 			priorState := pr.State
@@ -1391,7 +1391,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			prNodeID, _ := input["pullRequestId"].(string)
 			pr := store.FindPullRequestByNodeID(s.store, prNodeID)
 			if pr == nil {
-				return nil, fmt.Errorf("could not resolve to a PullRequest")
+				return nil, gqlMissingNodeType("PullRequest")
 			}
 			wasDraft := pr.IsDraft
 			s.store.UpdatePullRequest(pr.ID, func(p *store.PullRequest) { p.IsDraft = false })
@@ -1430,7 +1430,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			prNodeID, _ := input["pullRequestId"].(string)
 			pr := store.FindPullRequestByNodeID(s.store, prNodeID)
 			if pr == nil {
-				return nil, fmt.Errorf("could not resolve to a PullRequest")
+				return nil, gqlMissingNodeType("PullRequest")
 			}
 			wasReady := !pr.IsDraft
 			s.store.UpdatePullRequest(pr.ID, func(p *store.PullRequest) { p.IsDraft = true })
@@ -1471,7 +1471,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 
 			pr := store.FindPullRequestByNodeID(s.store, prNodeID)
 			if pr == nil {
-				return nil, fmt.Errorf("could not resolve to a PullRequest")
+				return nil, gqlMissingNodeType("PullRequest")
 			}
 
 			if pr.State == "MERGED" {
@@ -1540,7 +1540,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 
 			pr := store.FindPullRequestByNodeID(s.store, prNodeID)
 			if pr == nil {
-				return nil, fmt.Errorf("could not resolve to a PullRequest")
+				return nil, gqlMissingNodeType("PullRequest")
 			}
 
 			if pr.State != "OPEN" {
@@ -1549,7 +1549,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 
 			repo := s.store.GetRepoByID(pr.RepoID)
 			if repo == nil {
-				return nil, fmt.Errorf("could not resolve to a Repository")
+				return nil, gqlMissingNodeType("Repository")
 			}
 
 			// expectedHeadOid is gh's --match-head-commit interlock: the client
@@ -1783,12 +1783,12 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 
 			pr := store.FindPullRequestByNodeID(s.store, prNodeID)
 			if pr == nil {
-				return nil, fmt.Errorf("could not resolve to a PullRequest")
+				return nil, gqlMissingNodeType("PullRequest")
 			}
 
 			repo := s.store.GetRepoByID(pr.RepoID)
 			if repo == nil {
-				return nil, fmt.Errorf("could not resolve to a Repository")
+				return nil, gqlMissingNodeType("Repository")
 			}
 			labelIDs, err := resolveGQLLabelIDs(s.store, repo.ID, input["labelIds"])
 			if err != nil {

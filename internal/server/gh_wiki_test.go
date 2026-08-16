@@ -90,7 +90,8 @@ func TestWiki_PutGetListUpdateDelete(t *testing.T) {
 func TestWiki_DisabledWikiIs404(t *testing.T) {
 	s := wikiTestServer(t)
 	admin := s.store.UsersByLogin["admin"]
-	repo := s.store.CreateRepo(admin, "no-wiki", "", false) // HasWiki defaults false
+	repo := s.store.CreateRepo(admin, "no-wiki", "", false)
+	s.store.UpdateRepo(admin.Login, "no-wiki", func(r *store.Repo) { r.HasWiki = false }) // github default is on; disable to test the 404 path
 
 	w := doWikiReq(s, adminPAT, "GET", "/ui-data/repos/"+repo.FullName+"/wiki/pages", nil)
 	if w.Code != http.StatusNotFound {

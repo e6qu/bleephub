@@ -203,16 +203,10 @@ func (s *Server) handleLockIssue(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	// PRs are issues internally; resolve whichever one was locked so the
-	// timeline event is recorded against the correct parent ID.
-	parentID := s.store.GetIssueOrPullRequestIDByNumber(repoObj.ID, num)
-	if parentID == 0 {
-		writeGHError(w, http.StatusNotFound, "Not Found")
-		return
-	}
-	// Record a discrete lock event with the actor so the timeline reflects
-	// who performed the lock.
-	s.store.RecordIssueEvent(repoObj.ID, parentID, user.ID, "locked", map[string]interface{}{"lock_reason": req.LockReason})
+	// Record a discrete lock event against the correct parent (issue vs PR) so
+	// the timeline reflects who performed the lock — RecordIssueOrPREvent stamps
+	// ParentType by number so a PR event lands in the PR timeline.
+	s.store.RecordIssueOrPREvent(repoObj.ID, num, user.ID, "locked", map[string]interface{}{"lock_reason": req.LockReason})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -236,11 +230,6 @@ func (s *Server) handleUnlockIssue(w http.ResponseWriter, r *http.Request, numbe
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	parentID := s.store.GetIssueOrPullRequestIDByNumber(repoObj.ID, num)
-	if parentID == 0 {
-		writeGHError(w, http.StatusNotFound, "Not Found")
-		return
-	}
-	s.store.RecordIssueEvent(repoObj.ID, parentID, user.ID, "unlocked", map[string]interface{}{})
+	s.store.RecordIssueOrPREvent(repoObj.ID, num, user.ID, "unlocked", map[string]interface{}{})
 	w.WriteHeader(http.StatusNoContent)
 }

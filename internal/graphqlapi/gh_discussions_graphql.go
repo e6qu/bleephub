@@ -723,11 +723,11 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 
 			repo := store.FindRepoByNodeID(s.store, repoNodeID)
 			if repo == nil {
-				return nil, fmt.Errorf("could not resolve to a Repository with the global id of '%s'", repoNodeID)
+				return nil, gqlMissingNode("Repository", repoNodeID)
 			}
 			cat := store.FindDiscussionCategoryByNodeID(s.store, categoryNodeID)
 			if cat == nil || cat.RepoID != repo.ID {
-				return nil, fmt.Errorf("could not resolve to a DiscussionCategory with the global id of '%s'", categoryNodeID)
+				return nil, gqlMissingNode("DiscussionCategory", categoryNodeID)
 			}
 			if title == "" {
 				return nil, fmt.Errorf("title is required")
@@ -757,7 +757,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 			discussionNodeID, _ := input["discussionId"].(string)
 			d := store.FindDiscussionByNodeID(s.store, discussionNodeID)
 			if d == nil {
-				return nil, fmt.Errorf("could not resolve to a Discussion")
+				return nil, gqlMissingNodeType("Discussion")
 			}
 			s.store.UpdateDiscussion(d.ID, func(disc *store.Discussion) {
 				if v, ok := input["title"].(string); ok {
@@ -789,7 +789,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 			discussionNodeID, _ := input["id"].(string)
 			d := store.FindDiscussionByNodeID(s.store, discussionNodeID)
 			if d == nil {
-				return nil, fmt.Errorf("could not resolve to a Discussion")
+				return nil, gqlMissingNodeType("Discussion")
 			}
 			source := discussionToGQL(d, s.store)
 			s.store.DeleteDiscussion(d.ID)
@@ -812,7 +812,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 			body, _ := input["body"].(string)
 			d := store.FindDiscussionByNodeID(s.store, discussionNodeID)
 			if d == nil {
-				return nil, fmt.Errorf("could not resolve to a Discussion")
+				return nil, gqlMissingNodeType("Discussion")
 			}
 			parentID := 0
 			if replyToID, ok := input["replyToId"].(string); ok && replyToID != "" {
@@ -852,7 +852,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 			body, _ := input["body"].(string)
 			c := store.FindDiscussionCommentByNodeID(s.store, commentNodeID)
 			if c == nil {
-				return nil, fmt.Errorf("could not resolve to a DiscussionComment")
+				return nil, gqlMissingNodeType("DiscussionComment")
 			}
 			s.store.UpdateDiscussionComment(c.ID, func(cc *store.DiscussionComment) {
 				cc.Body = body
@@ -874,7 +874,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 			commentNodeID, _ := input["id"].(string)
 			c := store.FindDiscussionCommentByNodeID(s.store, commentNodeID)
 			if c == nil {
-				return nil, fmt.Errorf("could not resolve to a DiscussionComment")
+				return nil, gqlMissingNodeType("DiscussionComment")
 			}
 			s.store.DeleteDiscussionComment(c.ID)
 			return map[string]interface{}{
@@ -894,11 +894,11 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 			commentNodeID, _ := input["id"].(string)
 			c := store.FindDiscussionCommentByNodeID(s.store, commentNodeID)
 			if c == nil {
-				return nil, fmt.Errorf("could not resolve to a DiscussionComment")
+				return nil, gqlMissingNodeType("DiscussionComment")
 			}
 			d := s.store.GetDiscussion(c.DiscussionID)
 			if d == nil {
-				return nil, fmt.Errorf("could not resolve to a Discussion")
+				return nil, gqlMissingNodeType("Discussion")
 			}
 			cat := s.store.GetDiscussionCategory(d.CategoryID)
 			if cat == nil || !cat.IsAnswerable {
@@ -922,11 +922,11 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 			commentNodeID, _ := input["id"].(string)
 			c := store.FindDiscussionCommentByNodeID(s.store, commentNodeID)
 			if c == nil {
-				return nil, fmt.Errorf("could not resolve to a DiscussionComment")
+				return nil, gqlMissingNodeType("DiscussionComment")
 			}
 			d := s.store.GetDiscussion(c.DiscussionID)
 			if d == nil {
-				return nil, fmt.Errorf("could not resolve to a Discussion")
+				return nil, gqlMissingNodeType("Discussion")
 			}
 			s.store.UnmarkDiscussionCommentAsAnswer(c.ID)
 			return map[string]interface{}{

@@ -145,7 +145,7 @@ func (s *Server) listRepoCommits(repo *store.Repo, owner, repoName string, optio
 				return nil
 			}
 		}
-		commits = append(commits, commitToJSON(commit, repo, baseURL))
+		commits = append(commits, commitToJSON(commit, repo, s.store, baseURL))
 		return nil
 	})
 	if err != nil {

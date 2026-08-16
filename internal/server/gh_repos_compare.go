@@ -21,7 +21,20 @@ import (
 // resolveGitRef, refHash, findMergeBase, commitsBetween moved to
 // internal/store (ARCH-003): shared by REST and the GraphQL resolver layer.
 
-func commitToJSON(c *object.Commit, repo *store.Repo, baseURL string) map[string]interface{} {
+// commitSignatureUserJSON resolves a git signature to a GitHub account (a
+// `simple-user`) or nil, matching real GitHub — a commit's author/committer is
+// the resolved account or null, never an empty object.
+func commitSignatureUserJSON(st *store.Store, sig object.Signature) interface{} {
+	if st == nil {
+		return nil
+	}
+	if u := st.ResolveUserBySignature(sig.Name, sig.Email); u != nil {
+		return store.UserToJSON(u)
+	}
+	return nil
+}
+
+func commitToJSON(c *object.Commit, repo *store.Repo, st *store.Store, baseURL string) map[string]interface{} {
 	if c == nil {
 		return nil
 	}
@@ -43,8 +56,8 @@ func commitToJSON(c *object.Commit, repo *store.Repo, baseURL string) map[string
 		"url":          commitURL,
 		"html_url":     htmlURL,
 		"comments_url": commitURL + "/comments",
-		"author":       map[string]interface{}{},
-		"committer":    map[string]interface{}{},
+		"author":       commitSignatureUserJSON(st, c.Author),
+		"committer":    commitSignatureUserJSON(st, c.Committer),
 		"parents":      parents,
 		"commit": map[string]interface{}{
 			"url":           commitURL,
@@ -264,7 +277,7 @@ func (s *Server) handleCompareRefs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		for _, c := range commitObjs {
-			commits = append(commits, commitToJSON(c, repo, s.baseURL(r)))
+			commits = append(commits, commitToJSON(c, repo, s.store, s.baseURL(r)))
 		}
 	}
 
@@ -334,8 +347,8 @@ func (s *Server) handleCompareRefs(w http.ResponseWriter, r *http.Request) {
 		"permalink_url":     htmlURL,
 		"diff_url":          htmlURL + ".diff",
 		"patch_url":         htmlURL + ".patch",
-		"base_commit":       commitToJSON(baseCommit, repo, s.baseURL(r)),
-		"merge_base_commit": commitToJSON(mergeBaseCommit, repo, s.baseURL(r)),
+		"base_commit":       commitToJSON(baseCommit, repo, s.store, s.baseURL(r)),
+		"merge_base_commit": commitToJSON(mergeBaseCommit, repo, s.store, s.baseURL(r)),
 		"status":            status,
 		"ahead_by":          aheadBy,
 		"behind_by":         behindBy,
@@ -906,5 +919,5 @@ func (s *Server) handleMergeRefs(w http.ResponseWriter, r *http.Request) {
 	s.store.UpdateRepo(owner, name, func(r *store.Repo) {
 		r.PushedAt = time.Now().UTC()
 	})
-	writeJSON(w, http.StatusCreated, commitToJSON(mergeCommit, repo, s.baseURL(r)))
+	writeJSON(w, http.StatusCreated, commitToJSON(mergeCommit, repo, s.store, s.baseURL(r)))
 }
