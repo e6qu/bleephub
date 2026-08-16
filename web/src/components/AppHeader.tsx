@@ -29,6 +29,7 @@ const GlobalNavDrawer = lazy(() =>
 );
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTheme } from "@bleephub/ui-core/hooks";
+import { useDismiss } from "../hooks/useDismiss.js";
 import { useReportError, useToastQueryErrors } from "@bleephub/ui-core/components";
 import {
   Mark,
@@ -65,26 +66,6 @@ import { abortPendingRequests, clearToken, fetchCurrentUser, fetchNotifications,
  */
 
 // ─── click-outside dropdown menu ────────────────────────────────────────────
-
-function useDismiss(open: boolean, close: () => void) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) close();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
-    };
-    document.addEventListener("mousedown", onClick);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onClick);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open, close]);
-  return ref;
-}
 
 function HeaderMenu({
   label,

@@ -1,4 +1,5 @@
 import { useState, type CSSProperties, type ReactNode } from "react";
+import { useDismiss } from "../hooks/useDismiss.js";
 import Markdown from "../components/Markdown";
 import { useParams, Link, useNavigate } from "react-router";
 import { useMutation, useQuery, useQueryClient, useInfiniteQuery } from "@tanstack/react-query";
@@ -611,6 +612,7 @@ function DiscussionReactionBar({ subjectId, groups, invalidateKey }: {
 }) {
   const qc = useQueryClient();
   const [picking, setPicking] = useState(false);
+  const pickerRef = useDismiss<HTMLDivElement>(picking, () => setPicking(false));
   const [error, setError] = useState<string | null>(null);
   const toggle = useMutation({
     mutationFn: ({ content, has }: { content: string; has: boolean }) =>
@@ -636,7 +638,7 @@ function DiscussionReactionBar({ subjectId, groups, invalidateKey }: {
           <span className="tabular-nums">{g.users.totalCount}</span>
         </button>
       ))}
-      <div style={{ position: "relative" }}>
+      <div ref={pickerRef} style={{ position: "relative" }}>
         <button type="button" aria-label="Add reaction" aria-expanded={picking} onClick={() => setPicking((v) => !v)}
           style={{ minHeight: "1.625rem", minWidth: "1.75rem", padding: "0.1rem 0.4rem", border: "1px solid var(--color-border)", borderRadius: "999px", background: "var(--color-bg-subtle)", color: "var(--color-fg-muted)", cursor: "pointer", fontSize: "0.9rem" }}>
           +
