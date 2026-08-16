@@ -42,9 +42,10 @@ import type {
 import { useTheme } from "@bleephub/ui-core/hooks";
 import { PageTitle, Box, Button, ErrorBanner, FormLabel, Blankslate } from "../components/ui.js";
 import { SettingsLayout, type SettingsNavSection } from "../components/SettingsLayout.js";
+import { InteractionLimitsCard } from "../components/InteractionLimitsCard.js";
 import { KeyIcon, LockIcon, GraphIcon } from "../components/octicons.js";
 
-type AccountTab = "profile" | "appearance" | "notifications" | "tokens" | "ssh-keys" | "gpg-keys" | "signing-keys" | "emails" | "blocked" | "authentication" | "codespaces" | "billing";
+type AccountTab = "profile" | "appearance" | "notifications" | "tokens" | "ssh-keys" | "gpg-keys" | "signing-keys" | "emails" | "blocked" | "interaction-limits" | "authentication" | "codespaces" | "billing";
 
 const ACCOUNT_NAV: SettingsNavSection<AccountTab>[] = [
   {
@@ -70,7 +71,7 @@ const ACCOUNT_NAV: SettingsNavSection<AccountTab>[] = [
     items: [{ key: "codespaces", label: "Codespaces" }],
   },
   { title: "Billing", items: [{ key: "billing", label: "Billing and plans" }] },
-  { title: "Moderation", items: [{ key: "blocked", label: "Blocked users" }] },
+  { title: "Moderation", items: [{ key: "blocked", label: "Blocked users" }, { key: "interaction-limits", label: "Interaction limits" }] },
 ];
 
 export function AccountPage() {
@@ -91,6 +92,13 @@ export function AccountPage() {
         {tab === "codespaces" && <CodespacesSecretsTab />}
         {tab === "billing" && <BillingTab />}
         {tab === "blocked" && <BlockedUsersTab />}
+        {tab === "interaction-limits" && (
+          <InteractionLimitsCard
+            path="/api/v3/user/interaction-limits"
+            queryKey={["user-interaction-limit"]}
+            scopeLabel="across all your public repositories"
+          />
+        )}
       </SettingsLayout>
     </div>
   );

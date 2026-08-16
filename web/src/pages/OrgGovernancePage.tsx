@@ -44,6 +44,7 @@ import type {
 } from "../types.js";
 import type { SecretsScope } from "../api.js";
 import { SecretsSection, VariablesSection } from "../components/SecretsManager.js";
+import { InteractionLimitsCard } from "../components/InteractionLimitsCard.js";
 import { OrgHeader } from "../components/PageHeader.js";
 import {
   Box,
@@ -648,6 +649,13 @@ function PeoplePanel({ org }: { org: string }) {
             ))
           ))}
       </Box>
+      <div style={{ marginTop: "1rem" }}>
+        <InteractionLimitsCard
+          path={`/api/v3/orgs/${org}/interaction-limits`}
+          queryKey={["org-interaction-limit", org]}
+          scopeLabel={`across all public repositories owned by ${org}`}
+        />
+      </div>
     </div>
   );
 }

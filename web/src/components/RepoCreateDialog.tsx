@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
-import { createRepo, createOrgRepo, fetchGitignoreTemplates, fetchLicenseTemplates } from "../api.js";
+import { createRepo, createOrgRepo, fetchGitignoreTemplates, fetchLicenseTemplates, ghFetch, ghPostJSON } from "../api.js";
 import type { BleephubRepo } from "../types.js";
 import { Button, Modal } from "./ui.js";
 
@@ -21,9 +21,21 @@ export function RepoCreateDialog({ open, onClose, onCreated, createTarget = "use
   const [autoInit, setAutoInit] = useState(false);
   const [gitignore, setGitignore] = useState("");
   const [license, setLicense] = useState("");
+  const [template, setTemplate] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [createdRepo, setCreatedRepo] = useState<BleephubRepo | null>(null);
+
+  // Templates the viewer can generate from: GitHub exposes no list-templates
+  // endpoint, so a template is any accessible repository with is_template set.
+  // /user/repos already spans owner + collaborator + org-member affiliation.
+  const templatesQ = useQuery({
+    queryKey: ["repo-templates"],
+    queryFn: () => ghFetch<BleephubRepo[]>("/api/v3/user/repos?per_page=100"),
+    enabled: open,
+    select: (repos) => repos.filter((r) => r.is_template),
+  });
+  const templates = templatesQ.data ?? [];
 
   const gitignoresQ = useQuery({
     queryKey: ["gitignore-templates"],
@@ -43,6 +55,7 @@ export function RepoCreateDialog({ open, onClose, onCreated, createTarget = "use
     setAutoInit(false);
     setGitignore("");
     setLicense("");
+    setTemplate("");
     setCreatedRepo(null);
     setError(null);
   };
@@ -57,17 +70,27 @@ export function RepoCreateDialog({ open, onClose, onCreated, createTarget = "use
     setBusy(true);
     setError(null);
     try {
-      const payload = {
-        name: name.trim(),
-        description: description.trim(),
-        visibility,
-        auto_init: autoInit,
-        gitignore_template: gitignore || undefined,
-        license_template: license || undefined,
-      };
-      const repository = org
-        ? await createOrgRepo(org, payload)
-        : await createRepo(payload);
+      let repository: BleephubRepo;
+      if (template) {
+        // POST /repos/{template_owner}/{template_repo}/generate. owner omitted
+        // for a user target (server uses the caller); set to the org otherwise.
+        repository = await ghPostJSON<BleephubRepo>(`/api/v3/repos/${template}/generate`, {
+          owner: org || undefined,
+          name: name.trim(),
+          description: description.trim(),
+          private: visibility === "private",
+        });
+      } else {
+        const payload = {
+          name: name.trim(),
+          description: description.trim(),
+          visibility,
+          auto_init: autoInit,
+          gitignore_template: gitignore || undefined,
+          license_template: license || undefined,
+        };
+        repository = org ? await createOrgRepo(org, payload) : await createRepo(payload);
+      }
       setCreatedRepo(repository);
       onCreated(repository);
     } catch (err) {
@@ -142,6 +165,29 @@ export function RepoCreateDialog({ open, onClose, onCreated, createTarget = "use
           />
         </label>
 
+        {templates.length > 0 && (
+          <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+            <span style={{ fontSize: "0.85rem", fontWeight: 500 }}>Repository template</span>
+            <select
+              aria-label="Repository template"
+              value={template}
+              onChange={(e) => setTemplate(e.target.value)}
+              disabled={busy}
+              style={{ fontSize: "0.9rem", padding: "0.4rem 0.5rem" }}
+            >
+              <option value="">No template</option>
+              {templates.map((t) => (
+                <option key={t.full_name} value={t.full_name}>
+                  {t.full_name}
+                </option>
+              ))}
+            </select>
+            <span style={{ fontSize: "0.75rem", color: "var(--color-fg-muted)" }}>
+              Start with the directory structure and files of an existing template repository.
+            </span>
+          </label>
+        )}
+
         <fieldset style={{ border: "none", padding: 0, margin: 0, display: "flex", gap: "1rem" }}>
           <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.85rem" }}>
             <input
@@ -167,6 +213,7 @@ export function RepoCreateDialog({ open, onClose, onCreated, createTarget = "use
           </label>
         </fieldset>
 
+        {!template && (
         <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.85rem" }}>
           <input
             type="checkbox"
@@ -176,7 +223,9 @@ export function RepoCreateDialog({ open, onClose, onCreated, createTarget = "use
           />
           Initialize this repository with a README
         </label>
+        )}
 
+        {!template && (
         <div className="grid gap-3 sm:grid-cols-2">
           <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
             <span style={{ fontSize: "0.85rem", fontWeight: 500 }}>.gitignore template</span>
@@ -224,6 +273,7 @@ export function RepoCreateDialog({ open, onClose, onCreated, createTarget = "use
             )}
           </label>
         </div>
+        )}
 
         {error && (
           <div style={{ fontSize: "0.85rem", color: "var(--color-danger-fg)", background: "var(--color-danger-soft)", padding: "0.5rem", borderRadius: "var(--radius-md)" }}>

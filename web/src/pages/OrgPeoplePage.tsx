@@ -110,7 +110,7 @@ export function OrgPeoplePage() {
             {inviteMut.isPending ? "Inviting…" : "Invite"}
           </Button>
         </div>
-        <MutationError of={[inviteMut, roleMut, removeMut]} />
+        <MutationError of={[inviteMut, roleMut, removeMut, visibilityMut]} />
       </Box>
 
       {isLoading && <Spinner label="loading members" />}
