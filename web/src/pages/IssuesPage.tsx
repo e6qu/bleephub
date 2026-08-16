@@ -335,6 +335,8 @@ function SubIssuesSection({ owner, repo, number }: { owner: string; repo: string
       </h2>
       <MutationError of={addMut} />
       <MutationError of={removeMut} />
+      {listQ.isLoading && <Spinner label="loading sub-issues" />}
+      {listQ.isError && <ErrorBanner>Failed to load sub-issues: {String(listQ.error)}</ErrorBanner>}
       {subs.length > 0 && (
         <Box className="mb-2">
           {subs.map((s, i) => (

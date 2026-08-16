@@ -19,6 +19,7 @@ import {
   type ReleasePayload,
 } from "../api.js";
 import { ReactionBar } from "../components/ReactionBar.js";
+import Markdown from "../components/Markdown.js";
 import type { GithubRelease, GithubReleaseAsset } from "../types.js";
 import { RepoHeader } from "../components/PageHeader.js";
 import { Blankslate, Box, Button, ErrorBanner, FormLabel, PageTitle } from "../components/ui.js";
@@ -272,7 +273,21 @@ function ReleaseDetail({ owner, repo, releaseId }: { owner: string; repo: string
           {release.data.published_at && ` on ${new Date(release.data.published_at).toLocaleDateString()}`}
         </div>
       )}
-      {release.data.body && <div className="mb-5 whitespace-pre-wrap" style={{ lineHeight: 1.6 }}>{release.data.body}</div>}
+      {release.data.discussion_url && (
+        <div className="mb-4" style={{ fontSize: "0.85rem" }}>
+          <Link
+            to={`/ui/repos/${owner}/${repo}/discussions/${release.data.discussion_url.split("/").pop()}`}
+            style={{ color: "var(--color-accent)", textDecoration: "none" }}
+          >
+            Join the release discussion
+          </Link>
+        </div>
+      )}
+      {release.data.body && (
+        <div className="markdown-body mb-5">
+          <Markdown>{release.data.body}</Markdown>
+        </div>
+      )}
       <div className="mb-5">
         <ReactionBar
           queryKey={["release-reactions", owner, repo, releaseId]}

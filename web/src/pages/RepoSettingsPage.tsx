@@ -152,6 +152,7 @@ export function RepoSettingsPage() {
         {tab === "transfer" && (
           <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
             <TransferTab owner={owner} repo={repo} />
+            <ArchiveRepoCard owner={owner} repo={repo} repoData={data} />
             <DeleteRepoCard owner={owner} repo={repo} />
           </div>
         )}
@@ -280,6 +281,7 @@ function RepoSettingsForm({
   const [hasProjects, setHasProjects] = useState(repo.has_projects);
   const [hasWiki, setHasWiki] = useState(repo.has_wiki);
   const [hasPullRequests, setHasPullRequests] = useState(repo.has_pull_requests);
+  const [isTemplate, setIsTemplate] = useState(repo.is_template);
   const [allowSquashMerge, setAllowSquashMerge] = useState(repo.allow_squash_merge);
   const [allowMergeCommit, setAllowMergeCommit] = useState(repo.allow_merge_commit);
   const [allowRebaseMerge, setAllowRebaseMerge] = useState(repo.allow_rebase_merge);
@@ -298,6 +300,7 @@ function RepoSettingsForm({
       has_projects: hasProjects,
       has_wiki: hasWiki,
       has_pull_requests: hasPullRequests,
+      is_template: isTemplate,
       allow_squash_merge: allowSquashMerge,
       allow_merge_commit: allowMergeCommit,
       allow_rebase_merge: allowRebaseMerge,
@@ -385,6 +388,10 @@ function RepoSettingsForm({
               <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.85rem" }}>
                 <input type="checkbox" checked={hasPullRequests} onChange={(e) => setHasPullRequests(e.target.checked)} />
                 Pull requests
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.85rem" }}>
+                <input type="checkbox" checked={isTemplate} onChange={(e) => setIsTemplate(e.target.checked)} />
+                Template repository
               </label>
             </div>
           </fieldset>
@@ -1251,6 +1258,52 @@ function WebhooksTab({ owner, repo }: { owner: string; repo: string }) {
         </Box>
       )}
     </div>
+  );
+}
+
+function ArchiveRepoCard({ owner, repo, repoData }: { owner: string; repo: string; repoData: BleephubRepo }) {
+  const queryClient = useQueryClient();
+  const [error, setError] = useState<string | null>(null);
+  const archived = repoData.archived;
+
+  const mutation = useMutation({
+    mutationFn: () => updateRepo(owner, repo, { archived: !archived }),
+    onSuccess: () => {
+      setError(null);
+      void queryClient.invalidateQueries({ queryKey: ["repo", owner, repo] });
+      void queryClient.invalidateQueries({ queryKey: ["repos"] });
+    },
+    onError: (err: Error) => setError(err.message),
+  });
+
+  const handleToggle = async () => {
+    if (archived) {
+      mutation.mutate();
+      return;
+    }
+    const confirmed = await confirmAction(
+      `Archiving makes ${owner}/${repo} read-only. Issues, pull requests, and settings can no longer be changed until you unarchive it.`,
+      { title: "Archive this repository?", confirmLabel: "Archive" },
+    );
+    if (confirmed) mutation.mutate();
+  };
+
+  return (
+    <Box header={<span style={{ fontWeight: 600, color: "var(--gh-danger, var(--color-danger-fg))" }}>{archived ? "Unarchive this repository" : "Archive this repository"}</span>}>
+      <div style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+        {error && <ErrorBanner>{error}</ErrorBanner>}
+        <p style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)" }}>
+          {archived
+            ? "This repository is archived and read-only. Unarchive it to allow changes again."
+            : "Mark this repository as archived and read-only. You can unarchive it at any time."}
+        </p>
+        <div className="flex justify-end">
+          <Button variant="danger" onClick={handleToggle} disabled={mutation.isPending}>
+            {archived ? "Unarchive this repository" : "Archive this repository"}
+          </Button>
+        </div>
+      </div>
+    </Box>
   );
 }
 

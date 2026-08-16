@@ -388,7 +388,7 @@ function DiscussionDetail({
       <RepoHeader owner={owner} repo={repo} active="discussions" {...counts} />
 
       <MutationError
-        of={[markAnswerMutation, deleteCommentMutation, editCommentMutation, deleteDiscussionMutation]}
+        of={[lockMutation, markAnswerMutation, deleteCommentMutation, editCommentMutation, deleteDiscussionMutation]}
       />
 
       <div className="mb-1 flex flex-wrap items-baseline gap-2">
@@ -761,7 +761,7 @@ function DiscussionCommentCard({
         <button
           type="button"
           onClick={onDelete}
-          style={{ fontSize: "0.78rem", color: "var(--color-danger, var(--color-fg-muted))", background: "transparent", border: "none", cursor: "pointer" }}
+          style={{ fontSize: "0.78rem", color: "var(--color-danger-fg)", background: "transparent", border: "none", cursor: "pointer" }}
         >
           Delete
         </button>

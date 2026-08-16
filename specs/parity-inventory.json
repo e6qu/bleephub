@@ -6300,6 +6300,60 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "two more undefined CSS custom properties referenced without a resolvable value: `--shadow-sm` on a Classroom card (only `--shadow-resting`/`--shadow-floating` exist, no fallback \u2192 the card rendered with no shadow) and a bare `--color-danger` on the discussion comment Delete button (only `--color-danger-fg`/`-soft`/`-text` exist; the `var(--color-danger, var(--color-fg-muted))` fallback made the destructive control render muted grey instead of danger red)",
+        "id": "WEB-185",
+        "location": "web/src/pages/ClassroomPage.tsx, web/src/pages/DiscussionsPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 `--shadow-sm`\u2192`--shadow-resting`, `--color-danger`\u2192`--color-danger-fg`. Same undefined-token class as WEB-182/183. Verified: full audit scan (defined-in-index.css vs used-without-fallback) now finds only `--ease-out-quint`, which is defined in the imported ui-core tokens.css",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "the release detail rendered the body as raw pre-wrapped text (github renders release notes as Markdown) and never surfaced `discussion_url`, so a release linked to a discussion offered no way to reach it",
+        "id": "WEB-186",
+        "location": "web/src/pages/ReleasesPage.tsx, web/src/types.ts",
+        "severity": "m",
+        "status": "fixed \u2014 body now renders through `<Markdown>` in a `markdown-body` container, and a \"Join the release discussion\" link resolves the API `discussion_url` to the in-app discussion route by number (added `discussion_url` to the GithubRelease type). Verified: unit test asserts the body renders as a real `<h2>` and the link points at `/ui/repos/{owner}/{repo}/discussions/{n}`",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "a few state-changing controls had no failure surface: the discussion lock/unlock mutation, and the delete-branch and delete-tag mutations (only the branch/tag *create* modals carried a `<MutationError>`), so a failed lock or delete was silent",
+        "id": "WEB-187",
+        "location": "web/src/pages/DiscussionsPage.tsx, web/src/pages/RepoDetailPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added `lockMutation` to the discussion-detail `<MutationError>` array and a `<MutationError>` above the branch and tag lists. (The wider audit sweep confirmed the other ~50 flagged mutations were false positives \u2014 already surfaced through `<MutationError of={mut}>` or a dedicated error state)",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "the issue sub-issues section rendered `listQ.data ?? []` with no loading or error branch, so a failed fetch was indistinguishable from \"this issue has no sub-issues\"",
+        "id": "WEB-188",
+        "location": "web/src/pages/IssuesPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added a Spinner while loading and an ErrorBanner on failure",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "the server honored `archived` on `PATCH /repos/{owner}/{repo}` (and `updateRepo` already accepts it) but the danger zone had only Transfer + Delete \u2014 no way to archive/unarchive a repository",
+        "id": "WEB-189",
+        "location": "web/src/pages/RepoSettingsPage.tsx",
+        "severity": "M",
+        "status": "fixed \u2014 added an Archive/Unarchive card to the danger zone (archiving goes through confirmAction; the label and copy flip on the current archived state). Verified: unit test asserts the archive control sends `PATCH { archived: true }`",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "template repositories had no UI though the server fully backs them: `PATCH` sets `is_template` and `POST /repos/{template_owner}/{template_repo}/generate` creates a repo from a template. The settings General tab had no Template checkbox and template repos showed no \"Use this template\" affordance",
+        "id": "WEB-190",
+        "location": "web/src/pages/RepoSettingsPage.tsx, web/src/pages/RepoDetailPage.tsx, web/src/types.ts",
+        "severity": "M",
+        "status": "fixed \u2014 added a \"Template repository\" checkbox to General settings (wired through the existing `updateRepo` payload) and a \"Use this template\" banner+modal on the code view of a template repo that POSTs to `/generate` (name/description/visibility/include-all-branches; the generate call is defined inline in the lazy page via `ghPostJSON` to keep the entry chunk flat) and navigates to the new repo. Verified: unit tests assert the `is_template` PATCH and the `/generate` POST body. Not done (named): the create-repo dialog's \"Repository template\" source dropdown \u2014 a secondary entry point to the same `/generate` endpoint with no server template-listing API to back a faithful dropdown",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -7716,21 +7770,21 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 182
+            "fixed": 188
           },
-          "total": 184
+          "total": 190
         }
       },
       "severity": {
         "blocker": 167,
-        "major": 410,
-        "minor": 236
+        "major": 412,
+        "minor": 240
       },
       "status": {
         "deferred": 3,
-        "fixed": 810
+        "fixed": 816
       },
-      "total": 813
+      "total": 819
     }
   },
   "rest": {

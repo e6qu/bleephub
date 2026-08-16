@@ -742,4 +742,35 @@ describe("RepoDetailPage refs", () => {
       });
     });
   });
+
+  it("generates a repository from a template via POST .../generate", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith("/repos/admin/test/generate") && init?.method === "POST") {
+        return Promise.resolve(jsonResponse({ ...repoData, full_name: "admin/generated" }, 201));
+      }
+      if (u.endsWith("/repos/admin/test")) {
+        return Promise.resolve(jsonResponse({ ...repoData, is_template: true }));
+      }
+      return routedFetch(url);
+    });
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Use this template" }));
+    fireEvent.change(await screen.findByLabelText("Repository name"), { target: { value: "generated" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create repository" }));
+
+    await waitFor(() => {
+      const post = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/repos/admin/test/generate") && c[1]?.method === "POST",
+      );
+      expect(post).toBeTruthy();
+      expect(JSON.parse((post![1] as RequestInit).body as string)).toEqual({
+        name: "generated",
+        description: "",
+        include_all_branches: false,
+        private: false,
+      });
+    });
+  });
 });

@@ -283,6 +283,51 @@ describe("RepoSettingsPage", () => {
     });
   });
 
+  it("archives the repository via PATCH { archived: true } from the danger zone", async () => {
+    mockFetch.mockImplementation((url: string, opts?: { method?: string }) => {
+      if (opts?.method === "PATCH") return Promise.resolve(jsonResponse({ ...repo, archived: true }));
+      const u = url.toString();
+      if (u.includes("/issues") || u.includes("/pulls")) return Promise.resolve(jsonResponse([]));
+      return Promise.resolve(jsonResponse(repo));
+    });
+    renderPage();
+    await waitFor(() => screen.getByDisplayValue("before"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Transfer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Archive this repository" }));
+    // Archiving is confirmed through confirmAction (confirm button labelled "Archive").
+    fireEvent.click(await screen.findByRole("button", { name: "Archive" }));
+
+    await waitFor(() => {
+      const patch = mockFetch.mock.calls.find(
+        (c) => c[0] === "/api/v3/repos/admin/settings-repo" && c[1]?.method === "PATCH",
+      );
+      expect(patch).toBeTruthy();
+      expect(JSON.parse(String(patch![1].body))).toEqual({ archived: true });
+    });
+  });
+
+  it("marks the repository as a template via PATCH { is_template: true }", async () => {
+    mockFetch.mockImplementation((url: string, opts?: { method?: string }) => {
+      if (opts?.method === "PATCH") return Promise.resolve(jsonResponse({ ...repo, is_template: true }));
+      const u = url.toString();
+      if (u.includes("/issues") || u.includes("/pulls")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/topics")) return Promise.resolve(jsonResponse({ names: [] }));
+      return Promise.resolve(jsonResponse(repo));
+    });
+    renderPage();
+    await waitFor(() => screen.getByDisplayValue("before"));
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Template repository" }));
+    fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
+
+    await waitFor(() => {
+      const patch = mockFetch.mock.calls.find((c) => c[1]?.method === "PATCH");
+      expect(patch).toBeTruthy();
+      expect(JSON.parse(String(patch![1].body)).is_template).toBe(true);
+    });
+  });
+
   it("sets custom property values from the Custom properties tab", async () => {
     mockFetch.mockImplementation((url: string, opts?: { method?: string }) => {
       const u = url.toString();
