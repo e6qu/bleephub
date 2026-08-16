@@ -126,4 +126,29 @@ describe("ReleasesPage", () => {
       expect(JSON.parse(String(call![1].body))).toEqual({ content: "heart" });
     });
   });
+
+  it("renders the release body as Markdown and links a linked discussion", async () => {
+    const withDiscussion = {
+      ...release,
+      body: "## Highlights\n\nShipped **everything**.",
+      discussion_url: "https://bleep.example/admin/release/discussions/7",
+    };
+    mockFetch.mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/releases/1/reactions")) return Promise.resolve(response([]));
+      if (url.endsWith("/releases/1")) return Promise.resolve(response(withDiscussion));
+      if (url === "/api/v3/repos/admin/release") return Promise.resolve(response(repo));
+      if (url.endsWith("/user")) return Promise.resolve(response({ login: "admin" }));
+      return Promise.resolve(response([]));
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/ui/repos/admin/release/releases/1"]}><Routes><Route path="/ui/repos/:owner/:repo/releases/:releaseId" element={<ReleasesPage />} /></Routes></MemoryRouter></QueryClientProvider>);
+
+    // Markdown heading is rendered as a real <h2>, not literal "## Highlights".
+    const heading = await screen.findByRole("heading", { name: "Highlights" });
+    expect(heading.tagName).toBe("H2");
+    // The linked discussion resolves to the in-app discussion route by number.
+    const link = screen.getByRole("link", { name: "Join the release discussion" });
+    expect(link.getAttribute("href")).toBe("/ui/repos/admin/release/discussions/7");
+  });
 });

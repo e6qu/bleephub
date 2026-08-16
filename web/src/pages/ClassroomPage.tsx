@@ -174,7 +174,7 @@ function ClassroomGrid({ classrooms }: { classrooms: Classroom[] }) {
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {classrooms.map((classroom, index) => (
           <Link key={classroom.id} to={`/ui/classrooms/${classroom.id}`} style={{ color: "inherit", textDecoration: "none" }}>
-            <Box style={{ height: "100%", boxShadow: "var(--shadow-sm)" }}>
+            <Box style={{ height: "100%", boxShadow: "var(--shadow-resting)" }}>
               <div style={{ height: 7, background: ["#8250df", "#0969da", "#00a6c8", "#cf4a9c", "#bf8700"][index % 5] }} />
               <div style={{ padding: "1rem" }}>
                 <div className="mb-3 flex items-center justify-between gap-3"><OrganizationIcon size={20} /><StateLabel state={classroom.archived ? "draft" : "open"}>{classroom.archived ? "Archived" : "Active"}</StateLabel></div>

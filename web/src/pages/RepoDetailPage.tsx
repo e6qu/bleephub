@@ -36,6 +36,7 @@ import {
   createRef,
   deleteRef,
   ghFetch,
+  ghPostJSON,
 } from "../api.js";
 import { Avatar } from "../components/Avatar.js";
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
@@ -143,6 +144,98 @@ const ACTIVITY_LABELS: Record<string, string> = {
   merge_queue_merge: "merged via merge queue into",
 };
 
+function UseThisTemplateBanner({ owner, repo }: { owner: string; repo: string }) {
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [includeAllBranches, setIncludeAllBranches] = useState(false);
+  const [isPrivate, setIsPrivate] = useState(false);
+
+  const generateMut = useMutation({
+    // POST /repos/{template_owner}/{template_repo}/generate — owner omitted so
+    // the new repository is created under the authenticated viewer's account.
+    mutationFn: () =>
+      ghPostJSON<BleephubRepo>(`/api/v3/repos/${owner}/${repo}/generate`, {
+        name: name.trim(),
+        description: description.trim(),
+        include_all_branches: includeAllBranches,
+        private: isPrivate,
+      }),
+    onSuccess: (created) => {
+      setOpen(false);
+      navigate(`/ui/repos/${created.full_name}`);
+    },
+  });
+
+  return (
+    <div
+      className="mb-4 flex flex-wrap items-center gap-3"
+      style={{
+        border: "1px solid var(--color-border)",
+        borderRadius: "var(--radius-md)",
+        padding: "0.75rem 1rem",
+        background: "var(--color-bg-subtle)",
+      }}
+    >
+      <span style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)" }}>
+        This repository is a template. Generate a new repository with the same directory structure and files.
+      </span>
+      <div style={{ marginLeft: "auto" }}>
+        <Button variant="primary" size="sm" onClick={() => setOpen(true)}>
+          Use this template
+        </Button>
+      </div>
+      {open && (
+        <Modal title="Create a new repository from this template" onClose={() => setOpen(false)}>
+          <FormLabel id="tmpl-name">Repository name</FormLabel>
+          <input
+            id="tmpl-name"
+            autoFocus
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. my-new-project"
+            className="mb-3 w-full"
+          />
+          <FormLabel id="tmpl-description">Description (optional)</FormLabel>
+          <input
+            id="tmpl-description"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            className="mb-3 w-full"
+          />
+          <label className="mb-2 flex items-center gap-2" style={{ fontSize: "0.85rem" }}>
+            <input type="checkbox" checked={isPrivate} onChange={(e) => setIsPrivate(e.target.checked)} />
+            Private
+          </label>
+          <label className="mb-3 flex items-center gap-2" style={{ fontSize: "0.85rem" }}>
+            <input
+              type="checkbox"
+              checked={includeAllBranches}
+              onChange={(e) => setIncludeAllBranches(e.target.checked)}
+            />
+            Include all branches
+          </label>
+          <MutationError of={generateMut} />
+          <DialogActions>
+            <Button variant="ghost" size="sm" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={!name.trim() || generateMut.isPending}
+              onClick={() => generateMut.mutate()}
+            >
+              {generateMut.isPending ? "Creating…" : "Create repository"}
+            </Button>
+          </DialogActions>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
 export function RepoDetailPage({ initialTab = "code" }: { initialTab?: SubTab }) {
   const params = useParams<{ owner: string; repo: string; ref?: string; "*": string }>();
   const owner = params.owner ?? "";
@@ -238,6 +331,8 @@ export function RepoDetailPage({ initialTab = "code" }: { initialTab?: SubTab })
   return (
     <div>
       <RepoHeader owner={owner} repo={repo} active="code" {...counts} />
+
+      {repoData?.is_template && <UseThisTemplateBanner owner={owner} repo={repo} />}
 
       {/* GitHub keeps content destinations close to the Code view and puts
           administrative resources behind Settings/overflow navigation. */}
@@ -2412,6 +2507,7 @@ function BranchesList({
     <>
       <div className="mb-3 flex justify-end">{newBranchButton}</div>
       {newBranchModal}
+      <MutationError of={deleteMut} />
     <Box>
       {branches.map((b, i) => (
         <div
@@ -2570,6 +2666,7 @@ function TagsList({
         </Button>
       </div>
       {newTagModal}
+      <MutationError of={deleteMut} />
       {tags.length === 0 ? (
         <Blankslate icon={<TagIcon size={26} />} title="No tags" />
       ) : (

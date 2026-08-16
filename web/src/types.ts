@@ -719,6 +719,8 @@ export interface GithubRelease {
   /** null until the release is published (drafts). */
   published_at: string | null;
   author?: { login: string; avatar_url?: string } | null;
+  /** present only when the release is linked to a discussion. */
+  discussion_url?: string;
   html_url: string;
   url: string;
   assets_url: string;
