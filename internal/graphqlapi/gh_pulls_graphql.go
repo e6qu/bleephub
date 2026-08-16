@@ -1831,11 +1831,67 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 		},
 	})
 
-	// Update issueOrPullRequest to also check PRs
-	// (it's already defined in gh_issues_graphql.go for issues;
-	// we can't redefine it, but the resolver there already only returns issues.
-	// For completeness we'd need to update it, but gh pr view uses pullRequest(number) directly.)
+	// Issue.closedByPullRequestsReferences — the reverse of
+	// PullRequest.closingIssuesReferences: the pull requests whose body closes
+	// this issue (github.com's issue "Development" section). Registered here,
+	// where both issueType and prConnectionType exist, to avoid schema-ordering
+	// issues (issues are built before pulls). includeClosedPrs=false narrows to
+	// open PRs.
+	issueType.AddFieldConfig("closedByPullRequestsReferences", &graphql.Field{
+		Type: prConnectionType,
+		Args: graphql.FieldConfigArgument{
+			"first":            &graphql.ArgumentConfig{Type: graphql.Int},
+			"after":            &graphql.ArgumentConfig{Type: graphql.String},
+			"includeClosedPrs": &graphql.ArgumentConfig{Type: graphql.Boolean},
+		},
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			src, ok := p.Source.(map[string]interface{})
+			if !ok {
+				return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
+			}
+			issueID, _ := src["databaseId"].(int)
+			issue := s.store.GetIssue(issueID)
+			if issue == nil {
+				return nil, fmt.Errorf("issue %d not found", issueID)
+			}
+			repo := s.store.GetRepoByID(issue.RepoID)
+			if repo == nil {
+				return nil, fmt.Errorf("repository %d not found", issue.RepoID)
+			}
+			includeClosed := true
+			if v, ok := p.Args["includeClosedPrs"].(bool); ok {
+				includeClosed = v
+			}
+			prs := closedByPullRequestsForIssue(s.store, repo, issue, includeClosed)
+			first, _ := intArg(p.Args, "first")
+			after, _ := p.Args["after"].(string)
+			return paginateGQL(prs, first, after, func(pr *store.PullRequest) map[string]interface{} {
+				return pullRequestToGQL(pr, s.store)
+			}, func(pr *store.PullRequest) string { return pr.NodeID }), nil
+		},
+	})
+
 	return pullRequestType
+}
+
+// closedByPullRequestsForIssue returns the pull requests in the issue's repo
+// whose body's closing keywords reference this issue (the reverse of
+// closingIssuesForPullRequest). When includeClosed is false, only open PRs are
+// returned.
+func closedByPullRequestsForIssue(st *store.Store, repo *store.Repo, issue *store.Issue, includeClosed bool) []*store.PullRequest {
+	var out []*store.PullRequest
+	for _, pr := range st.ListPullRequests(repo.ID, "all") {
+		if !includeClosed && pr.State != "OPEN" {
+			continue
+		}
+		for _, ref := range closingIssueRefs(repo.FullName, pr.Body) {
+			if strings.EqualFold(ref.repoFullName, repo.FullName) && ref.number == issue.Number {
+				out = append(out, pr)
+				break
+			}
+		}
+	}
+	return out
 }
 
 // --- GraphQL converter helpers ---

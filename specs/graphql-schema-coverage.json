@@ -3,8 +3,8 @@
   "bleephub_types": 263,
   "shared_types": 256,
   "official_fields": 8360,
-  "implemented_fields": 922,
-  "signature_exact_fields": 921,
+  "implemented_fields": 923,
+  "signature_exact_fields": 922,
   "compatibility_gap_count": 9,
   "missing_types": [
     "AbortQueuedMigrationsInput",
@@ -1796,7 +1796,6 @@
       "bodyResourcePath",
       "bodyText",
       "bodyUrl",
-      "closedByPullRequestsReferences",
       "createdViaEmail",
       "duplicateOf",
       "editor",

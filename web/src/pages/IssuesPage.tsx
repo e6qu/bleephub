@@ -8,6 +8,7 @@ import {
   fetchRepoIssuesFilteredPage,
   fetchIssueDetail,
   fetchIssueTimeline,
+  ghGraphQL,
   createIssue,
   updateIssue,
   fetchSubIssues,
@@ -56,7 +57,7 @@ import {
   DialogActions,
   SectionLabel,
 } from "../components/ui.js";
-import { IssueOpenedIcon, IssueClosedIcon, CommentIcon, TagIcon } from "../components/octicons.js";
+import { IssueOpenedIcon, IssueClosedIcon, CommentIcon, TagIcon, PullRequestIcon } from "../components/octicons.js";
 
 // Spec issue.labels is (string | object)[] and issue.assignees is optional
 // (WEB-013). bleephub always returns label objects; normalise to the pill shape.
@@ -104,7 +105,7 @@ export function IssuesPage({ view }: { view?: "labels" | "milestones" }) {
 }
 
 function IssueList({ owner, repo }: { owner: string; repo: string }) {
-  const [state, setState] = useState<"open" | "closed">("open");
+  const [state, setState] = useState<"open" | "closed" | "all">("open");
   const [filters, setFilters] = useState<ListFilterState>(emptyFilters);
   const counts = useOpenCounts(owner, repo);
   const [creating, setCreating] = useState(false);
@@ -599,10 +600,62 @@ function IssueDetail({ owner, repo, number }: { owner: string; repo: string; num
             milestone={issue.milestone ?? null}
             participants={participants}
             locked={issue.locked ?? false}
+            development={<IssueDevelopmentSection owner={owner} repo={repo} number={number} />}
           />
         </div>
       </div>
     </div>
+  );
+}
+
+// The issue "Development" section: the pull requests that will close this issue
+// (github.com's "successfully merging a pull request may close this issue"),
+// via the GraphQL Issue.closedByPullRequestsReferences field.
+interface ClosedByPR {
+  number: number;
+  title: string;
+  state?: string;
+}
+function IssueDevelopmentSection({ owner, repo, number }: { owner: string; repo: string; number: number }) {
+  const q = useQuery({
+    queryKey: ["issue-closed-by", owner, repo, number],
+    queryFn: ({ signal }) =>
+      ghGraphQL<{ repository?: { issue?: { closedByPullRequestsReferences?: { nodes?: (ClosedByPR | null)[] } } | null } | null }>(
+        `query($owner:String!,$repo:String!,$number:Int!){
+          repository(owner:$owner,name:$repo){
+            issue(number:$number){
+              closedByPullRequestsReferences(first:20){ nodes { number title state } }
+            }
+          }
+        }`,
+        { owner, repo, number },
+        signal,
+      ),
+  });
+  const prs = (q.data?.repository?.issue?.closedByPullRequestsReferences?.nodes ?? []).filter(
+    (n): n is ClosedByPR => n != null,
+  );
+  if (prs.length === 0) {
+    return <span style={{ color: "var(--color-fg-muted)", fontSize: "0.82rem" }}>No branches or pull requests</span>;
+  }
+  return (
+    <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+      {prs.map((pr) => {
+        const open = String(pr.state).toUpperCase() === "OPEN";
+        return (
+          <li key={pr.number} style={{ fontSize: "0.82rem" }}>
+            <Link
+              to={`/ui/repos/${owner}/${repo}/pulls/${pr.number}`}
+              className="inline-flex items-center gap-1.5"
+              style={{ color: "var(--color-accent)", textDecoration: "none" }}
+            >
+              <PullRequestIcon size={14} style={{ color: open ? "var(--gh-open)" : "var(--gh-merged)" }} />
+              #{pr.number} {pr.title}
+            </Link>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 

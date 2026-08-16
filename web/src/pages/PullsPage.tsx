@@ -130,7 +130,7 @@ function usePRClosedCount(owner: string, repo: string): number | string | undefi
 function PRList({ owner, repo }: { owner: string; repo: string }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const [state, setState] = useState<"open" | "closed">("open");
+  const [state, setState] = useState<"open" | "closed" | "all">("open");
   const [filters, setFilters] = useState<ListFilterState>(emptyFilters);
   const counts = useOpenCounts(owner, repo);
   const closedCount = usePRClosedCount(owner, repo);
