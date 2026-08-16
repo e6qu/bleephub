@@ -517,7 +517,14 @@ jobs:
   runner-sockerless:
     name: Runner against Sockerless
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 15 min sat right on top of this job's real runtime: it exercises the
+    # official runner + a real backend through 15 sequential integration tests,
+    # each waiting up to 120-300s for a run to settle, so a passing run lands
+    # ~12-14 min and a load spike tipped it over 15 — the job got SIGTERM'd
+    # mid-test (make Error 143 / step exit 124), a recurring "flake" that always
+    # passed on rerun. 25 min gives a passing run comfortable headroom while a
+    # genuine hang still fails, so this removes the flake without masking bugs.
+    timeout-minutes: 25
     # This job builds an image from the PR's checked-out code and runs it with
     # the host Docker socket bind-mounted (make runner-sockerless-test). Never
     # do that for code from a fork: it would grant untrusted PR code control of
