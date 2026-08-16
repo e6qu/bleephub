@@ -21,6 +21,7 @@ import {
   deleteWorkflowRun,
   deleteWorkflowRunLogs,
   isNotFound,
+  ghFetch,
 } from "../api.js";
 import { confirmAction } from "../components/confirmAction.js";
 import type { GithubJob, GithubJobStep, GithubWorkflowRun } from "../types.js";
@@ -515,6 +516,24 @@ function segmentJobLog(text: string): { segments: LogSegment[]; lines: string[] 
   return { segments, lines };
 }
 
+/** A single check-run annotation — GET .../check-runs/{id}/annotations. */
+interface CheckRunAnnotation {
+  path: string;
+  start_line: number;
+  end_line: number;
+  annotation_level: string; // notice, warning, failure
+  message: string;
+  title?: string;
+  raw_details?: string;
+}
+
+/** Map an annotation level to a legible foreground token. */
+function annotationColor(level: string): string {
+  if (level === "failure") return "var(--color-status-error)";
+  if (level === "warning") return "var(--color-status-warn)";
+  return "var(--color-fg-muted)";
+}
+
 function JobPane({
   owner,
   repo,
@@ -526,6 +545,26 @@ function JobPane({
   job: GithubJob;
   live: boolean;
 }) {
+  // The job JSON carries `.../check-runs/{id}` — the annotation source.
+  const checkRunId = useMemo(() => {
+    const url = job.check_run_url;
+    if (!url) return null;
+    const id = url.split("/check-runs/")[1];
+    return id && /^\d+$/.test(id) ? id : null;
+  }, [job.check_run_url]);
+
+  const annotationsQ = useQuery({
+    queryKey: ["job-annotations", owner, repo, checkRunId],
+    queryFn: ({ signal }) =>
+      ghFetch<CheckRunAnnotation[]>(
+        `/api/v3/repos/${owner}/${repo}/check-runs/${checkRunId}/annotations`,
+        signal,
+      ),
+    enabled: checkRunId !== null,
+    refetchInterval: live ? 2000 : false,
+  });
+  const annotations = Array.isArray(annotationsQ.data) ? annotationsQ.data : [];
+
   const logsQ = useQuery({
     queryKey: ["job-logs", owner, repo, job.id],
     queryFn: ({ signal }) => fetchJobLogs(owner, repo, job.id, signal),
@@ -619,6 +658,55 @@ function JobPane({
             Job log
           </div>
           <LogBlock lines={lines} />
+        </div>
+      )}
+      {annotations.length > 0 && (
+        <div style={{ borderTop: "1px solid var(--color-border)" }}>
+          <div
+            style={{
+              padding: "0.45rem 1rem",
+              fontSize: "0.76rem",
+              fontWeight: 600,
+              color: "var(--color-fg-muted)",
+              background: "var(--color-bg-subtle)",
+            }}
+          >
+            Annotations
+          </div>
+          {annotations.map((a, i) => (
+            <div
+              key={i}
+              style={{
+                padding: "0.55rem 1rem",
+                borderBottom: i < annotations.length - 1 ? "1px solid var(--color-border)" : "none",
+              }}
+            >
+              <div className="flex flex-wrap items-baseline gap-2">
+                <span
+                  style={{
+                    fontSize: "0.68rem",
+                    fontWeight: 700,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.03em",
+                    color: annotationColor(a.annotation_level),
+                  }}
+                >
+                  {a.annotation_level}
+                </span>
+                <span className="font-mono" style={{ fontSize: "0.76rem", color: "var(--color-fg-muted)" }}>
+                  {a.path}:{a.start_line}
+                </span>
+                {a.title && (
+                  <span style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--color-fg)" }}>
+                    {a.title}
+                  </span>
+                )}
+              </div>
+              <div style={{ marginTop: "0.2rem", fontSize: "0.82rem", color: "var(--color-fg)" }}>
+                {a.message}
+              </div>
+            </div>
+          ))}
         </div>
       )}
       {summaryQ.isError && (

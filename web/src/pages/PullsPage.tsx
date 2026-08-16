@@ -38,6 +38,7 @@ import {
   fetchPullReviewCommentReactions,
   addPullReviewCommentReaction,
   removePullReviewCommentReaction,
+  ghGraphQL,
 } from "../api.js";
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
 import type {
@@ -75,6 +76,8 @@ import {
   CheckCircleIcon,
   XCircleIcon,
   DotFillIcon,
+  IssueOpenedIcon,
+  IssueClosedIcon,
 } from "../components/octicons.js";
 
 const prAccessors: ListItemAccessors<GithubPR> = {
@@ -530,13 +533,13 @@ function PRDetail({ owner, repo, number }: { owner: string; repo: string; number
               participants={pr.user?.login ? [pr.user.login] : []}
               reviewers={<RequestedReviewersSection owner={owner} repo={repo} number={number} />}
               development={
-                <span style={{ fontSize: "0.82rem", color: "var(--color-fg)" }}>
-                  <span className="font-mono" style={{ color: "var(--color-accent)" }}>
-                    {pr.head.ref}
-                  </span>
-                  {" → "}
-                  <span className="font-mono">{pr.base.ref}</span>
-                </span>
+                <DevelopmentSection
+                  owner={owner}
+                  repo={repo}
+                  number={number}
+                  headRef={pr.head.ref}
+                  baseRef={pr.base.ref}
+                />
               }
             />
           </div>
@@ -548,6 +551,101 @@ function PRDetail({ owner, repo, number }: { owner: string; repo: string; number
         <PRFilesView owner={owner} repo={repo} number={number} headSha={pr.head.sha} />
       )}
       {tab === "checks" && <ChecksSection owner={owner} repo={repo} sha={pr.head.sha} standalone />}
+    </div>
+  );
+}
+
+// ─── Development section (sidebar: branch + linked/closing issues) ───────
+
+const CLOSING_ISSUES_QUERY = `query($owner:String!,$repo:String!,$number:Int!){
+  repository(owner:$owner,name:$repo){
+    pullRequest(number:$number){
+      closingIssuesReferences(first:20){
+        nodes { number title state url }
+      }
+    }
+  }
+}`;
+
+interface ClosingIssueNode {
+  number: number;
+  title: string;
+  state: string;
+  url: string;
+}
+
+interface ClosingIssuesResponse {
+  repository?: {
+    pullRequest?: {
+      closingIssuesReferences?: {
+        nodes?: (ClosingIssueNode | null)[] | null;
+      } | null;
+    } | null;
+  } | null;
+}
+
+function DevelopmentSection({
+  owner,
+  repo,
+  number,
+  headRef,
+  baseRef,
+}: {
+  owner: string;
+  repo: string;
+  number: number;
+  headRef: string;
+  baseRef: string;
+}) {
+  const q = useQuery({
+    queryKey: ["pr-closing-issues", owner, repo, number],
+    queryFn: ({ signal }) =>
+      ghGraphQL<ClosingIssuesResponse>(
+        CLOSING_ISSUES_QUERY,
+        { owner, repo, number },
+        signal,
+      ),
+  });
+  const nodes = q.data?.repository?.pullRequest?.closingIssuesReferences?.nodes;
+  const issues = (nodes ?? []).filter((n): n is ClosingIssueNode => n != null);
+
+  return (
+    <div style={{ fontSize: "0.82rem", color: "var(--color-fg)" }}>
+      <span>
+        <span className="font-mono" style={{ color: "var(--color-accent)" }}>
+          {headRef}
+        </span>
+        {" → "}
+        <span className="font-mono">{baseRef}</span>
+      </span>
+      {issues.length > 0 && (
+        <ul className="mt-2 flex flex-col gap-1" style={{ listStyle: "none", margin: 0, padding: 0 }}>
+          {issues.map((issue) => {
+            const isOpen = String(issue.state).toUpperCase() === "OPEN";
+            return (
+              <li key={issue.number}>
+                <Link
+                  to={`/ui/repos/${owner}/${repo}/issues/${issue.number}`}
+                  className="inline-flex items-start gap-1.5"
+                  style={{ textDecoration: "none", color: "var(--color-fg)" }}
+                >
+                  <span style={{ marginTop: "0.15rem", flexShrink: 0 }}>
+                    {isOpen ? (
+                      <IssueOpenedIcon size={13} style={{ color: "var(--gh-open)" }} />
+                    ) : (
+                      <IssueClosedIcon size={13} style={{ color: "var(--gh-closed)" }} />
+                    )}
+                  </span>
+                  <span className="min-w-0">
+                    <span style={{ color: "var(--color-fg-muted)" }}>#{issue.number}</span>{" "}
+                    {issue.title}
+                  </span>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }

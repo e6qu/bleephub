@@ -67,6 +67,20 @@ export function TimelineEventRow({ item }: { item: GithubTimelineItem }) {
         </>
       );
       break;
+    case "cross-referenced": {
+      const src = item.source?.issue;
+      text = src ? (
+        <>
+          mentioned this in{" "}
+          <strong>
+            #{src.number} {src.title}
+          </strong>
+        </>
+      ) : (
+        <>mentioned this</>
+      );
+      break;
+    }
     default:
       // Render unrecognised events honestly by their wire name.
       text = <>{item.event.replaceAll("_", " ")}</>;

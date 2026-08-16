@@ -586,6 +586,8 @@ export interface GithubJob {
   steps: GithubJobStep[];
   labels: string[];
   run_attempt: number;
+  /** `.../check-runs/{id}` — source of the job's check-run annotations. */
+  check_run_url?: string;
 }
 
 /** Artifact — GET .../actions/runs/{run_id}/artifacts (items). */
@@ -1803,6 +1805,8 @@ export interface GithubTimelineItem {
   assignee?: { login: string } | null;
   rename?: { from: string; to: string } | null;
   commit_id?: string | null;
+  /** cross-referenced event: the referencing issue/PR. */
+  source?: { type?: string; issue?: { number: number; title: string; state?: string } } | null;
 }
 
 // ─── Search + repo social + account ─────────────────────────────────────

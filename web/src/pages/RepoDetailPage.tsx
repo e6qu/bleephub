@@ -1766,9 +1766,74 @@ export function RepoCommitPage() {
           ))}
         </div>
       )}
+      <CommitPullsSection owner={owner} repo={repo} sha={sha} />
       <CommitStatusesSection owner={owner} repo={repo} sha={sha} />
       <CommitCommentsSection owner={owner} repo={repo} sha={sha} />
     </div>
+  );
+}
+
+// Pull requests that introduce a commit — GET /commits/{sha}/pulls returns an
+// array of pull-request-simple objects. Defined inline per the ghFetch
+// convention; RepoCommitPage is the only caller.
+interface CommitPullSimple {
+  number: number;
+  title: string;
+  state: string;
+  merged_at?: string | null;
+  html_url?: string;
+}
+
+const fetchCommitPulls = (owner: string, repo: string, sha: string) =>
+  ghFetch<CommitPullSimple[]>(
+    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${encodeURIComponent(sha)}/pulls`,
+  );
+
+function CommitPullsSection({ owner, repo, sha }: { owner: string; repo: string; sha: string }) {
+  const pullsQ = useQuery({
+    queryKey: ["commit-pulls", owner, repo, sha],
+    queryFn: () => fetchCommitPulls(owner, repo, sha),
+    enabled: !!owner && !!repo && !!sha,
+  });
+
+  const pulls = Array.isArray(pullsQ.data) ? pullsQ.data : [];
+  if (pulls.length === 0) return null;
+
+  return (
+    <section aria-label="Associated pull requests" className="mt-5">
+      <SectionLabel>Associated pull requests</SectionLabel>
+      <Box>
+        {pulls.map((pr, i) => {
+          const merged = pr.state === "closed" && !!pr.merged_at;
+          const label = merged ? "Merged" : pr.state === "open" ? "Open" : "Closed";
+          const color = merged
+            ? "var(--color-accent)"
+            : pr.state === "open"
+              ? "var(--color-status-ok)"
+              : "var(--color-status-error)";
+          return (
+            <div
+              key={pr.number}
+              className="flex items-center gap-2"
+              style={{ padding: "0.5rem 0.8rem", borderBottom: i === pulls.length - 1 ? "none" : "1px solid var(--color-border)" }}
+            >
+              <span
+                aria-hidden
+                style={{ width: ".55rem", height: ".55rem", borderRadius: "50%", background: color, flexShrink: 0 }}
+              />
+              <Link
+                to={`/ui/repos/${owner}/${repo}/pulls/${pr.number}`}
+                className="min-w-0 flex-1 truncate"
+                style={{ color: "var(--color-accent)", textDecoration: "none" }}
+              >
+                #{pr.number} {pr.title}
+              </Link>
+              <span style={{ fontSize: "0.78rem", color: "var(--color-fg-muted)" }}>{label}</span>
+            </div>
+          );
+        })}
+      </Box>
+    </section>
   );
 }
 

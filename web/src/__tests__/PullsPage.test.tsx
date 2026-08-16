@@ -942,3 +942,40 @@ describe("PullsPage detail field completeness", () => {
     expect(screen.getByText("−7")).toBeInTheDocument();
   });
 });
+
+describe("PullsPage development / closing issues", () => {
+  it("renders closing issue references as links in the Development section", async () => {
+    mockPRApis((u, init) => {
+      if (u.endsWith("/api/graphql") && init?.method === "POST") {
+        const body = JSON.parse(String(init.body ?? "{}")) as { query?: string };
+        if (body.query?.includes("closingIssuesReferences")) {
+          return jsonResponse({
+            data: {
+              repository: {
+                pullRequest: {
+                  closingIssuesReferences: {
+                    nodes: [
+                      {
+                        number: 5,
+                        title: "Fix the bug",
+                        state: "OPEN",
+                        url: "http://x/issues/5",
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+          });
+        }
+        return undefined;
+      }
+      return undefined;
+    });
+
+    renderAt("/ui/repos/admin/test/pulls/9");
+
+    const link = await screen.findByRole("link", { name: /#5\s+Fix the bug/ });
+    expect(link).toHaveAttribute("href", "/ui/repos/admin/test/issues/5");
+  });
+});

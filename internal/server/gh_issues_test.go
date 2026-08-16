@@ -696,6 +696,51 @@ func TestListIssueTimelineREST(t *testing.T) {
 	}
 }
 
+// TestIssueTimelineCrossReferenced verifies that when another issue's body
+// references this issue by #number, a "cross-referenced" event appears on this
+// issue's timeline with the referencing issue as its source.
+func TestIssueTimelineCrossReferenced(t *testing.T) {
+	createTestIssueRepo(t, "xref")
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/xref/issues", defaultToken, map[string]interface{}{
+		"title": "Target issue",
+	}))
+	// Issue #2 references #1 in its body.
+	mustPost(t, ghPost(t, "/api/v3/repos/admin/xref/issues", defaultToken, map[string]interface{}{
+		"title": "Referencing issue",
+		"body":  "This relates to #1 and should thread onto its timeline.",
+	}))
+
+	timeline := decodeJSONArray(t, ghGet(t, "/api/v3/repos/admin/xref/issues/1/timeline", defaultToken))
+	var xref map[string]interface{}
+	for _, item := range timeline {
+		if item["event"] == "cross-referenced" {
+			xref = item
+			break
+		}
+	}
+	if xref == nil {
+		t.Fatalf("expected a cross-referenced event on #1's timeline, got %v", timeline)
+	}
+	source, _ := xref["source"].(map[string]interface{})
+	if source == nil || source["type"] != "issue" {
+		t.Fatalf("cross-referenced source malformed: %v", xref["source"])
+	}
+	srcIssue, _ := source["issue"].(map[string]interface{})
+	if srcIssue == nil || int(srcIssue["number"].(float64)) != 2 {
+		t.Fatalf("expected source.issue.number == 2, got %v", source["issue"])
+	}
+	// A self-reference must not appear.
+	for _, item := range timeline {
+		if item["event"] == "cross-referenced" {
+			s, _ := item["source"].(map[string]interface{})
+			si, _ := s["issue"].(map[string]interface{})
+			if si != nil && int(si["number"].(float64)) == 1 {
+				t.Fatalf("issue #1 must not cross-reference itself")
+			}
+		}
+	}
+}
+
 func TestListIssueEventsREST(t *testing.T) {
 	createTestIssueRepo(t, "issue-events")
 	mustPost(t, ghPost(t, "/api/v3/repos/admin/issue-events/issues", defaultToken, map[string]interface{}{

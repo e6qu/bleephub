@@ -106,6 +106,7 @@ describe("IssuesPage detail", () => {
         return Promise.resolve(jsonResponse([
           { event: "labeled", actor: { login: "admin" }, label: { name: "bug", color: "d73a4a" }, created_at: "2026-01-02T00:00:00Z" },
           { event: "commented", id: 100, body: "on it", user: { login: "admin" }, created_at: "2026-01-03T00:00:00Z" },
+          { event: "cross-referenced", actor: { login: "admin" }, created_at: "2026-01-03T12:00:00Z", source: { type: "issue", issue: { number: 12, title: "related work" } } },
           { event: "closed", actor: { login: "admin" }, created_at: "2026-01-04T00:00:00Z" },
         ]));
       }
@@ -115,10 +116,12 @@ describe("IssuesPage detail", () => {
       return Promise.resolve(jsonResponse([]));
     });
     renderAt("/ui/repos/admin/test/issues/7");
-    // A labeled event, the comment, and a closed event all render.
+    // A labeled event, the comment, a cross-reference, and a closed event all render.
     expect(await screen.findByText(/added the/)).toBeInTheDocument();
     expect(screen.getByText("bug")).toBeInTheDocument();
     expect(screen.getByText("on it")).toBeInTheDocument();
+    expect(screen.getByText(/mentioned this in/)).toBeInTheDocument();
+    expect(screen.getByText(/#12 related work/)).toBeInTheDocument();
     expect(screen.getByText(/closed/)).toBeInTheDocument();
   });
 

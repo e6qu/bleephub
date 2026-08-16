@@ -2,6 +2,7 @@ package bleephub
 
 import (
 	"net/http"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -1132,6 +1133,7 @@ func (s *Server) handleListIssueTimeline(w http.ResponseWriter, r *http.Request)
 	// on real GitHub; resolve the number to whichever exists.
 	if issue := s.store.GetIssueByNumber(repo.ID, num); issue != nil {
 		timeline := s.store.BuildIssueTimeline(repo, issue.ID, s.baseURL(r))
+		timeline = s.mergeCrossReferencedEvents(repo, num, s.baseURL(r), timeline)
 		writeJSON(w, http.StatusOK, paginateAndLink(w, r, timeline))
 		return
 	}
@@ -1145,7 +1147,90 @@ func (s *Server) handleListIssueTimeline(w http.ResponseWriter, r *http.Request)
 		writeGHError(w, http.StatusInternalServerError, "timeline derivation failed")
 		return
 	}
+	timeline = s.mergeCrossReferencedEvents(repo, num, s.baseURL(r), timeline)
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, timeline))
+}
+
+// timelineRefRE matches a GitHub issue/PR reference: an optional owner/repo
+// prefix then #<number>. Mirrors the closing-issue reference grammar used by
+// the GraphQL closingIssuesReferences resolver.
+var timelineRefRE = regexp.MustCompile(`(?:\b([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+))?#([0-9]+)`)
+
+// mergeCrossReferencedEvents appends "cross-referenced" timeline events for
+// every other issue or pull request in the repo whose body references this
+// issue/PR by number (#N or owner/repo#N), then re-sorts by created_at. github.com
+// threads these into the conversation timeline; bleephub derives them at read
+// time from the referencing bodies (no persisted event), matching the
+// timeline-cross-referenced-event schema (event/actor/created_at/updated_at/source).
+func (s *Server) mergeCrossReferencedEvents(repo *store.Repo, targetNumber int, baseURL string, timeline []map[string]interface{}) []map[string]interface{} {
+	refsTarget := func(body string) bool {
+		for _, m := range timelineRefRE.FindAllStringSubmatch(body, -1) {
+			// m[1] = optional owner/repo, m[2] = number
+			if m[1] != "" && !strings.EqualFold(m[1], repo.FullName) {
+				continue
+			}
+			if n, err := strconv.Atoi(m[2]); err == nil && n == targetNumber {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Issue sources.
+	for _, src := range s.store.ListIssues(repo.ID, "all") {
+		if src.Number == targetNumber || !refsTarget(src.Body) {
+			continue
+		}
+		timeline = append(timeline, crossRefEvent(
+			s.store, baseURL, repo.FullName, src.AuthorID, src.CreatedAt, src.UpdatedAt,
+			issueToJSON(src, s.store, baseURL, repo.FullName)))
+	}
+	// Pull request sources (share the number space; render as an issue-shaped source).
+	for _, src := range s.store.ListPullRequests(repo.ID, "all") {
+		if src.Number == targetNumber || !refsTarget(src.Body) {
+			continue
+		}
+		timeline = append(timeline, crossRefEvent(
+			s.store, baseURL, repo.FullName, src.AuthorID, src.CreatedAt, src.UpdatedAt,
+			issueToJSONForPullRequest(src, s.store, baseURL, repo.FullName)))
+	}
+
+	sort.SliceStable(timeline, func(i, j int) bool {
+		return timelineItemTime(timeline[i]) < timelineItemTime(timeline[j])
+	})
+	return timeline
+}
+
+// crossRefEvent builds one timeline-cross-referenced-event map.
+func crossRefEvent(st *store.Store, baseURL, repoFullName string, actorID int, createdAt, updatedAt time.Time, sourceIssue map[string]interface{}) map[string]interface{} {
+	var actor interface{}
+	st.Mu.RLock()
+	if u, ok := st.Users[actorID]; ok {
+		actor = store.UserToJSON(u)
+	}
+	st.Mu.RUnlock()
+	return map[string]interface{}{
+		"event":      "cross-referenced",
+		"actor":      actor,
+		"created_at": createdAt.Format(time.RFC3339),
+		"updated_at": updatedAt.Format(time.RFC3339),
+		"source": map[string]interface{}{
+			"type":  "issue",
+			"issue": sourceIssue,
+		},
+	}
+}
+
+// timelineItemTime reads a timeline entry's sort timestamp (created_at, then
+// submitted_at). RFC3339 strings sort chronologically as plain strings.
+func timelineItemTime(m map[string]interface{}) string {
+	if v, ok := m["created_at"].(string); ok && v != "" {
+		return v
+	}
+	if v, ok := m["submitted_at"].(string); ok && v != "" {
+		return v
+	}
+	return ""
 }
 
 func (s *Server) handleListIssueEvents(w http.ResponseWriter, r *http.Request) {
