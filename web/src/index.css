@@ -82,6 +82,12 @@
   --color-danger-fg: var(--color-danger-text);
   --color-success-fg: var(--color-success-text);
   --color-danger-soft: var(--color-status-error-soft);
+  /* Same story: these were referenced without a fallback but never defined, so
+     the selected-alert-row highlight (SecretScanning/Dependabot/Advisories) and
+     the split-diff gutter divider (PRFilesView) silently vanished. Alias to the
+     theme-aware accent-soft / border tokens. */
+  --color-accent-subtle: var(--color-accent-soft);
+  --color-border-muted: var(--color-border);
 
   /* Typography — platform system stacks, exactly like github.com. */
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans",

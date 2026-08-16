@@ -41,6 +41,7 @@ import { RepoHeader } from "../components/PageHeader.js";
 import {
   ListControls,
   filterAndSortItems,
+  sortToServerParams,
   emptyFilters,
   type ListItemAccessors,
 } from "../components/ListControls.js";
@@ -114,15 +115,39 @@ function IssueList({ owner, repo }: { owner: string; repo: string }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
 
-  // state is server-driven (a real round-trip); label/author/assignee/milestone
-  // + sort are applied client-side over the loaded set by filterAndSortItems so
-  // picking a facet narrows instantly without a full reload.
+  // The milestone facet filters by title in the UI, but the server's `milestone`
+  // param takes the milestone NUMBER — resolve it from the repo's milestones.
+  const { data: milestonesForFilter } = useQuery({
+    queryKey: ["milestones-for-filter", owner, repo],
+    queryFn: () => fetchRepoMilestones(owner, repo, "all"),
+    enabled: !!owner && !!repo,
+  });
+  const milestoneNumber = useMemo(() => {
+    if (!filters.milestone) return undefined;
+    const m = (milestonesForFilter ?? []).find((ms) => ms.title === filters.milestone);
+    return m ? String(m.number) : undefined;
+  }, [filters.milestone, milestonesForFilter]);
+
+  // state + label/author(creator)/assignee/milestone/sort are all carried to the
+  // server so filtering/sorting is correct across every page, not just the loaded
+  // set; filterAndSortItems then re-narrows the loaded set instantly as a client
+  // overlay (consistent with the server order).
+  const serverSort = sortToServerParams(filters.sort);
+  const serverOpts = {
+    state,
+    labels: filters.label ?? undefined,
+    creator: filters.author ?? undefined,
+    assignee: filters.assignee ?? undefined,
+    milestone: milestoneNumber,
+    ...serverSort,
+  };
   const query = useInfiniteQuery({
-    queryKey: ["issues", owner, repo, state, "paged"],
+    queryKey: ["issues", owner, repo, serverOpts, "paged"],
     queryFn: ({ pageParam, signal }) =>
-      fetchRepoIssuesFilteredPage(owner, repo, { state }, pageParam, signal),
+      fetchRepoIssuesFilteredPage(owner, repo, serverOpts, pageParam, signal),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextUrl ?? undefined,
+    placeholderData: (previous) => previous,
     enabled: !!owner && !!repo,
   });
   const rawIssues = useMemo(

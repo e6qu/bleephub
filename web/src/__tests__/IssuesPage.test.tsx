@@ -545,6 +545,26 @@ describe("IssuesPage list filter bar", () => {
     expect(calls.some((u) => u.includes("/issues?state=closed"))).toBe(true);
   });
 
+  it("carries the label + author filters to the server query", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.includes("/pulls")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("state=closed")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/milestones")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/issues?")) return Promise.resolve(jsonResponse([issueWith(1, "bug issue", { labels: [{ name: "bug", color: "d73a4a" }], user: { login: "octo" } })]));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/test/issues");
+    await waitFor(() => expect(screen.getByText("bug issue")).toBeInTheDocument());
+
+    fireEvent.change(screen.getByLabelText("Label"), { target: { value: "bug" } });
+    fireEvent.change(screen.getByLabelText("Author"), { target: { value: "octo" } });
+    await waitFor(() => {
+      const calls = mockFetch.mock.calls.map((c) => c[0].toString());
+      expect(calls.some((u) => u.includes("/issues?") && u.includes("labels=bug") && u.includes("creator=octo"))).toBe(true);
+    });
+  });
+
   it("switches to All via the count header, refetching with state=all", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL) => {
       const u = url.toString();

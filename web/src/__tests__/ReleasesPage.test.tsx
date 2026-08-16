@@ -90,6 +90,8 @@ describe("ReleasesPage", () => {
     render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/ui/repos/admin/release/releases/1"]}><Routes><Route path="/ui/repos/:owner/:repo/releases/:releaseId" element={<ReleasesPage />} /></Routes></MemoryRouter></QueryClientProvider>);
 
     expect(await screen.findByRole("button", { name: "Delete artifact.txt" })).toBeVisible();
+    // The "author released this on date" line surfaces the release's author + published date.
+    expect(screen.getByText(/released this/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     fireEvent.change(screen.getByLabelText("Release title"), { target: { value: "Updated release" } });
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));

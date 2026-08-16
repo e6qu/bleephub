@@ -4801,11 +4801,29 @@ export const searchRepositories = (q: string, page = 1, options: RepositorySearc
 export const searchCode = (q: string, page = 1) =>
   ghSearch<GithubSearchCodeItem>("code", q, page);
 
-export const searchIssues = (q: string, page = 1) =>
-  ghSearch<GithubSearchIssueItem>("issues", q, page);
+export interface IssueSearchOptions {
+  sort?: "comments" | "created" | "updated" | undefined;
+  order?: "asc" | "desc" | undefined;
+}
 
-export const searchUsers = (q: string, page = 1) =>
-  ghSearch<GithubSearchUserItem>("users", q, page);
+export const searchIssues = (q: string, page = 1, options: IssueSearchOptions = {}) => {
+  const extra: Record<string, string> = {};
+  if (options.sort) extra.sort = options.sort;
+  if (options.order) extra.order = options.order;
+  return ghSearch<GithubSearchIssueItem>("issues", q, page, extra);
+};
+
+export interface UserSearchOptions {
+  sort?: "followers" | "created" | "updated" | undefined;
+  order?: "asc" | "desc" | undefined;
+}
+
+export const searchUsers = (q: string, page = 1, options: UserSearchOptions = {}) => {
+  const extra: Record<string, string> = {};
+  if (options.sort) extra.sort = options.sort;
+  if (options.order) extra.order = options.order;
+  return ghSearch<GithubSearchUserItem>("users", q, page, extra);
+};
 
 export const searchCommits = (q: string, page = 1) =>
   ghSearch<GithubSearchCommitItem>("commits", q, page);
@@ -5208,12 +5226,28 @@ export const createMarketplacePlanSettings = (
 export const fetchRepoIssuesFilteredPage = (
   owner: string,
   repo: string,
-  opts: { state?: string },
+  opts: {
+    state?: string;
+    labels?: string | undefined;
+    creator?: string | undefined;
+    assignee?: string | undefined;
+    milestone?: string | undefined;
+    sort?: string | undefined;
+    direction?: string | undefined;
+  },
   pageUrl?: string,
   signal?: AbortSignal,
 ) => {
   if (pageUrl) return ghFetchPage<GithubIssue>(pageUrl, signal);
   const params = new URLSearchParams({ state: opts.state ?? "open", per_page: "50" });
+  // The issues list endpoint honors these server-side, so filtering/sorting is
+  // correct across every page, not just the loaded set.
+  if (opts.labels) params.set("labels", opts.labels);
+  if (opts.creator) params.set("creator", opts.creator);
+  if (opts.assignee) params.set("assignee", opts.assignee);
+  if (opts.milestone) params.set("milestone", opts.milestone);
+  if (opts.sort) params.set("sort", opts.sort);
+  if (opts.direction) params.set("direction", opts.direction);
   return ghFetchPage<GithubIssue>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues?${params}`, signal);
 };
 
@@ -5225,12 +5259,19 @@ export const fetchRepoIssuesFilteredPage = (
 export const fetchRepoPRsFilteredPage = (
   owner: string,
   repo: string,
-  opts: { state?: string },
+  opts: { state?: string; sort?: string | undefined; direction?: string | undefined; base?: string | undefined; head?: string | undefined },
   pageUrl?: string,
   signal?: AbortSignal,
 ) => {
   if (pageUrl) return ghFetchPage<GithubPR>(pageUrl, signal);
   const params = new URLSearchParams({ state: opts.state ?? "open", per_page: "50" });
+  // The pulls list endpoint honors state/sort/direction/base/head server-side.
+  // (Label/author/assignee are not supported by GitHub's REST /pulls, so those
+  // stay client-side in filterAndSortItems.)
+  if (opts.sort) params.set("sort", opts.sort);
+  if (opts.direction) params.set("direction", opts.direction);
+  if (opts.base) params.set("base", opts.base);
+  if (opts.head) params.set("head", opts.head);
   return ghFetchPage<GithubPR>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls?${params}`, signal);
 };
 
