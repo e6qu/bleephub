@@ -102,8 +102,8 @@ func TestRepoGraphQL_GitHubRepoQuery(t *testing.T) {
 	if repo == nil {
 		t.Fatalf("repository null: %v", d)
 	}
-	if v, ok := repo["hasWikiEnabled"].(bool); !ok || v {
-		t.Errorf("hasWikiEnabled = %v, want false for default repo setting", repo["hasWikiEnabled"])
+	if v, ok := repo["hasWikiEnabled"].(bool); !ok || !v {
+		t.Errorf("hasWikiEnabled = %v, want true for default repo setting (github default)", repo["hasWikiEnabled"])
 	}
 	if repo["parent"] != nil {
 		t.Errorf("parent = %v, want null for non-fork repo", repo["parent"])
