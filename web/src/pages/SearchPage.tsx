@@ -49,6 +49,20 @@ const TABS: { key: SearchTab; label: string }[] = [
   { key: "topics", label: "Topics" },
 ];
 
+// Sort keys the server actually honors (gh_search.go: issue rows sort on
+// created/updated plus the comments render-all path; user results sort on
+// followers/created/updated). Only these are offered so no control is a no-op.
+const ISSUE_SORT_OPTIONS: { value: string; label: string }[] = [
+  { value: "created", label: "Newest" },
+  { value: "updated", label: "Recently updated" },
+  { value: "comments", label: "Most commented" },
+];
+const USER_SORT_OPTIONS: { value: string; label: string }[] = [
+  { value: "followers", label: "Most followers" },
+  { value: "created", label: "Recently joined" },
+  { value: "updated", label: "Recently active" },
+];
+
 /** True if the query has at least one non-qualifier free-text token. */
 function hasFreeTextTerm(query: string): boolean {
   return query
@@ -78,6 +92,13 @@ export function SearchPage() {
     sort: params.get("sort") ?? "",
     order: params.get("order") ?? "desc",
   };
+  // Issues and Users share the sort/order URL params with Repositories, so a
+  // sort carried across tabs is normalized to "best match" unless it is valid
+  // for the active tab.
+  const rawSort = params.get("sort") ?? "";
+  const order = params.get("order") === "asc" ? "asc" : "desc";
+  const issuesSort = ISSUE_SORT_OPTIONS.some((o) => o.value === rawSort) ? rawSort : "";
+  const usersSort = USER_SORT_OPTIONS.some((o) => o.value === rawSort) ? rawSort : "";
   const hasSearch =
     !!q.trim() ||
     (tab === "repositories" && !!buildRepositoryQuery("", repositoryFilters));
@@ -158,6 +179,28 @@ export function SearchPage() {
           onChange={(next) => update({ ...next, page: "" })}
         />
       )}
+      {tab === "issues" && (
+        <SortControls
+          title="Issue sort"
+          sortLabel="Issue search sort"
+          orderLabel="Issue search order"
+          sort={issuesSort}
+          order={order}
+          options={ISSUE_SORT_OPTIONS}
+          onChange={(next) => update({ ...next, page: "" })}
+        />
+      )}
+      {tab === "users" && (
+        <SortControls
+          title="User sort"
+          sortLabel="User search sort"
+          orderLabel="User search order"
+          sort={usersSort}
+          order={order}
+          options={USER_SORT_OPTIONS}
+          onChange={(next) => update({ ...next, page: "" })}
+        />
+      )}
       {!hasSearch ? (
         <Blankslate
           icon={<SearchIcon size={26} />}
@@ -172,6 +215,9 @@ export function SearchPage() {
           page={page}
           labelsRepo={labelsRepo}
           repositoryFilters={repositoryFilters}
+          issuesSort={issuesSort}
+          usersSort={usersSort}
+          order={order}
           onPage={(p) => update({ page: String(p) })}
         />
       )}
@@ -256,6 +302,9 @@ function SearchResults({
   page,
   labelsRepo,
   repositoryFilters,
+  issuesSort,
+  usersSort,
+  order,
   onPage,
 }: {
   tab: SearchTab;
@@ -263,6 +312,9 @@ function SearchResults({
   page: number;
   labelsRepo: string;
   repositoryFilters: RepositorySearchFilters;
+  issuesSort: string;
+  usersSort: string;
+  order: "asc" | "desc";
   onPage: (page: number) => void;
 }) {
   switch (tab) {
@@ -349,8 +401,13 @@ function SearchResults({
     case "issues":
       return (
         <ResultList
-          queryKey={["search", "issues", q, page]}
-          queryFn={() => searchIssues(q, page)}
+          queryKey={["search", "issues", q, issuesSort, order, page]}
+          queryFn={() =>
+            searchIssues(q, page, {
+              sort: (issuesSort || undefined) as "comments" | "created" | "updated" | undefined,
+              order: issuesSort ? order : undefined,
+            })
+          }
           page={page}
           onPage={onPage}
           noun={{ singular: "issue or pull request", plural: "issues and pull requests" }}
@@ -376,8 +433,13 @@ function SearchResults({
     case "users":
       return (
         <ResultList
-          queryKey={["search", "users", q, page]}
-          queryFn={() => searchUsers(q, page)}
+          queryKey={["search", "users", q, usersSort, order, page]}
+          queryFn={() =>
+            searchUsers(q, page, {
+              sort: (usersSort || undefined) as "followers" | "created" | "updated" | undefined,
+              order: usersSort ? order : undefined,
+            })
+          }
           page={page}
           onPage={onPage}
           noun={{ singular: "user", plural: "users" }}
@@ -455,6 +517,70 @@ export function buildRepositoryQuery(q: string, filters: RepositorySearchFilters
     filters.language && `language:${quotedQualifierValue(filters.language)}`,
   ].filter(Boolean);
   return [q.trim(), ...qualifiers].filter(Boolean).join(" ");
+}
+
+/** Sort + order controls for the Issues and Users result tabs, mirroring the
+ *  Repositories tab. The Order menu appears only once a sort key is chosen
+ *  (best-match ordering has no direction). */
+function SortControls({
+  title,
+  sortLabel,
+  orderLabel,
+  sort,
+  order,
+  options,
+  onChange,
+}: {
+  title: string;
+  sortLabel: string;
+  orderLabel: string;
+  sort: string;
+  order: string;
+  options: { value: string; label: string }[];
+  onChange: (next: Record<string, string>) => void;
+}) {
+  const selectStyle = { fontSize: "0.78rem", padding: "0.32rem 0.45rem" };
+  return (
+    <Box className="mb-4">
+      <div style={{ padding: "0.75rem 1rem" }}>
+        <div className="mb-2" style={{ fontSize: "0.8rem", fontWeight: 650 }}>
+          {title}
+        </div>
+        <div className="flex flex-wrap items-end gap-2">
+          <label style={{ fontSize: "0.72rem" }}>
+            <span className="mb-1 block">Sort</span>
+            <select
+              aria-label={sortLabel}
+              value={sort}
+              onChange={(event) => onChange({ sort: event.target.value })}
+              style={selectStyle}
+            >
+              <option value="">Best match</option>
+              {options.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          {sort && (
+            <label style={{ fontSize: "0.72rem" }}>
+              <span className="mb-1 block">Order</span>
+              <select
+                aria-label={orderLabel}
+                value={order}
+                onChange={(event) => onChange({ order: event.target.value })}
+                style={selectStyle}
+              >
+                <option value="desc">Descending</option>
+                <option value="asc">Ascending</option>
+              </select>
+            </label>
+          )}
+        </div>
+      </div>
+    </Box>
+  );
 }
 
 function RepositoryFilters({

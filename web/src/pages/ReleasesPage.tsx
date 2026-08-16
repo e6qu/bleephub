@@ -265,6 +265,13 @@ function ReleaseDetail({ owner, repo, releaseId }: { owner: string; repo: string
         actions={<><Button onClick={() => setEditing(true)}>Edit</Button><Button variant="danger" onClick={async () => { if (await confirmAction("Delete this release and all of its assets?")) remove.mutate(); }}><TrashIcon size={14} /> Delete</Button></>}
       />
       {remove.isError && <ErrorBanner>{String(remove.error)}</ErrorBanner>}
+      {(release.data.author || release.data.published_at) && (
+        <div className="mb-4" style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)" }}>
+          {release.data.author && <strong style={{ color: "var(--color-fg)" }}>{release.data.author.login}</strong>}
+          {release.data.author ? " released this" : "Released"}
+          {release.data.published_at && ` on ${new Date(release.data.published_at).toLocaleDateString()}`}
+        </div>
+      )}
       {release.data.body && <div className="mb-5 whitespace-pre-wrap" style={{ lineHeight: 1.6 }}>{release.data.body}</div>}
       <div className="mb-5">
         <ReactionBar

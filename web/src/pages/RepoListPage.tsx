@@ -109,6 +109,22 @@ export function RepoListPage({
         actions={
           <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
             <select
+              aria-label="Type filter"
+              value={filters.type ?? ""}
+              onChange={(e) => {
+                setFilters((f: RepoListFilters) => ({ ...f, type: e.target.value || undefined }));
+                setPageUrl(undefined);
+                setPageStack([]);
+              }}
+            >
+              <option value="">All repositories</option>
+              <option value="public">Public</option>
+              <option value="private">Private</option>
+              <option value="forks">Forks</option>
+              <option value="sources">Sources</option>
+              <option value="member">Member</option>
+            </select>
+            <select
               aria-label="Visibility filter"
               value={filters.visibility ?? ""}
               onChange={(e) => {
@@ -200,7 +216,7 @@ export function RepoListPage({
           <Button onClick={goNext} disabled={!hasNext}>
             Next
           </Button>
-          {(filters.visibility || filters.sort || filters.direction || filter) && (
+          {(filters.type || filters.visibility || filters.sort || filters.direction || filter) && (
             <Button onClick={resetFilters} variant="secondary">
               Clear filters
             </Button>

@@ -62,6 +62,7 @@ import { PRFilesView } from "../components/PRFilesView.js";
 import {
   ListControls,
   filterAndSortItems,
+  sortToServerParams,
   emptyFilters,
   type ListItemAccessors,
 } from "../components/ListControls.js";
@@ -155,11 +156,24 @@ function PRList({ owner, repo }: { owner: string; repo: string }) {
     },
   });
 
+  // base/head are PR-only server filters (github's REST /pulls supports them,
+  // but issues don't have them, so they live here rather than in the shared
+  // ListControls). sort/direction come from the shared sort facet.
+  const [baseFilter, setBaseFilter] = useState("");
+  const [headFilter, setHeadFilter] = useState("");
+  const serverSort = sortToServerParams(filters.sort);
+  const serverOpts = {
+    state,
+    base: baseFilter || undefined,
+    head: headFilter || undefined,
+    ...serverSort,
+  };
   const query = useInfiniteQuery({
-    queryKey: ["prs", owner, repo, state, "paged"],
-    queryFn: ({ pageParam, signal }) => fetchRepoPRsFilteredPage(owner, repo, { state }, pageParam, signal),
+    queryKey: ["prs", owner, repo, serverOpts, "paged"],
+    queryFn: ({ pageParam, signal }) => fetchRepoPRsFilteredPage(owner, repo, serverOpts, pageParam, signal),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextUrl ?? undefined,
+    placeholderData: (previous) => previous,
     enabled: !!owner && !!repo,
   });
   const rawPRs = useMemo(() => query.data?.pages.flatMap((p) => p.items) ?? [], [query.data]);
@@ -187,9 +201,25 @@ function PRList({ owner, repo }: { owner: string; repo: string }) {
         onFilters={setFilters}
         accessors={prAccessors}
         actions={
-          <Button variant="primary" size="sm" onClick={() => setCreating(true)}>
-            New pull request
-          </Button>
+          <div className="flex items-center gap-2">
+            <input
+              aria-label="Filter by base branch"
+              placeholder="base branch"
+              value={baseFilter}
+              onChange={(e) => setBaseFilter(e.target.value)}
+              style={{ width: "9rem", fontSize: "0.82rem" }}
+            />
+            <input
+              aria-label="Filter by head branch"
+              placeholder="head (owner:branch)"
+              value={headFilter}
+              onChange={(e) => setHeadFilter(e.target.value)}
+              style={{ width: "10rem", fontSize: "0.82rem" }}
+            />
+            <Button variant="primary" size="sm" onClick={() => setCreating(true)}>
+              New pull request
+            </Button>
+          </div>
         }
       />
 

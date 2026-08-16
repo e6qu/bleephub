@@ -235,6 +235,58 @@ describe("SearchPage", () => {
   });
 });
 
+describe("SearchPage sort controls", () => {
+  it("re-issues the Issues search with the chosen sort and order", async () => {
+    mockFetch.mockResolvedValue(
+      jsonResponse({ total_count: 0, incomplete_results: false, items: [] }),
+    );
+    renderPage("/ui/search?q=fix&type=issues");
+    await waitFor(() => {
+      expect(String(mockFetch.mock.calls[0]![0])).toContain("/api/v3/search/issues?");
+    });
+    // The initial best-match request carries no sort/order.
+    const firstURL = new URL(String(mockFetch.mock.calls[0]![0]), "http://bleephub.test");
+    expect(firstURL.searchParams.get("sort")).toBeNull();
+
+    fireEvent.change(screen.getByLabelText("Issue search sort"), {
+      target: { value: "created" },
+    });
+    await waitFor(() => {
+      const hit = mockFetch.mock.calls
+        .map((c) => String(c[0]))
+        .find((u) => u.includes("/api/v3/search/issues?") && u.includes("sort=created"));
+      expect(hit).toBeDefined();
+    });
+    // Order defaults to desc once a sort key is selected.
+    const issueURLs = mockFetch.mock.calls
+      .map((c) => String(c[0]))
+      .filter((u) => u.includes("/api/v3/search/issues?"));
+    const sorted = new URL(issueURLs[issueURLs.length - 1]!, "http://bleephub.test");
+    expect(sorted.searchParams.get("sort")).toBe("created");
+    expect(sorted.searchParams.get("order")).toBe("desc");
+  });
+
+  it("re-issues the Users search with the chosen sort", async () => {
+    mockFetch.mockResolvedValue(
+      jsonResponse({ total_count: 0, incomplete_results: false, items: [] }),
+    );
+    renderPage("/ui/search?q=octo&type=users");
+    await waitFor(() => {
+      expect(String(mockFetch.mock.calls[0]![0])).toContain("/api/v3/search/users?");
+    });
+
+    fireEvent.change(screen.getByLabelText("User search sort"), {
+      target: { value: "followers" },
+    });
+    await waitFor(() => {
+      const hit = mockFetch.mock.calls
+        .map((c) => String(c[0]))
+        .find((u) => u.includes("/api/v3/search/users?") && u.includes("sort=followers"));
+      expect(hit).toBeDefined();
+    });
+  });
+});
+
 describe("buildAdvancedQuery", () => {
   it("assembles, quotes multi-word values, and drops empty fields", () => {
     expect(

@@ -193,6 +193,22 @@ describe("PullsPage list pagination", () => {
     const calls = mockFetch.mock.calls.map((c) => c[0]!.toString());
     expect(calls).toContain(page2Url);
   });
+
+  it("carries the base-branch filter to the server query", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.includes("/issues")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/pulls?")) return Promise.resolve(jsonResponse([pr(1, "first pr")]));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/test/pulls");
+    await waitFor(() => expect(screen.getByText("first pr")).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText("Filter by base branch"), { target: { value: "main" } });
+    await waitFor(() => {
+      const calls = mockFetch.mock.calls.map((c) => c[0]!.toString());
+      expect(calls.some((u) => u.includes("/pulls?") && u.includes("base=main"))).toBe(true);
+    });
+  });
 });
 
 describe("PullsPage checks section", () => {

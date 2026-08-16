@@ -6237,6 +6237,69 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "the issues/PRs list filters (label/author/assignee/milestone) and sort were applied CLIENT-side over only the loaded pages, so a match beyond the first page was silently missed and sort reordered only the loaded set",
+        "id": "WEB-178",
+        "location": "web/src/components/ListControls.tsx, web/src/pages/IssuesPage.tsx, web/src/pages/PullsPage.tsx, web/src/api.ts",
+        "severity": "M",
+        "status": "fixed \u2014 the fetchers now carry these to the server (issues: labels/creator/assignee/milestone[title\u2192number]/sort/direction; pulls: sort/direction \u2014 REST /pulls doesn't support label/author/assignee, so those stay client-side, matching github), keyed into the query so a facet change refetches; filterAndSortItems remains a client overlay for instant narrowing, and `placeholderData: keepPrevious` keeps the list from blanking during the refetch. Verified: unit tests assert the issues query carries labels=+creator= and clicking a facet refetches",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "the PR list had no base/head branch filters, which github.com offers and the server honors",
+        "id": "WEB-179",
+        "location": "web/src/pages/PullsPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added base-branch and head (owner:branch) inputs that carry `base`/`head` to the pulls query. Verified: unit test asserts the base filter reaches the server query",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "the search page exposed Sort/Order only on the Repositories tab, though the server honors sort/order for issue and user searches too",
+        "id": "WEB-180",
+        "location": "web/src/pages/SearchPage.tsx, web/src/api.ts",
+        "severity": "m",
+        "status": "fixed \u2014 added Sort/Order controls to the Issues (created/updated/comments) and Users (followers/created) search tabs, wired through searchIssues/searchUsers (only server-honored keys, no dead controls). Verified: unit tests assert each tab re-issues the search with the sort param",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "the org/user repository list exposed visibility/sort/direction but not github.com's Type dimension (all/public/private/forks/sources/member), which the server honors",
+        "id": "WEB-181",
+        "location": "web/src/pages/RepoListPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added a Type select wired to the `type` query param (already emitted by the list URL builder). Verified: unit test asserts selecting a type re-fetches with type=",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "the CSS token `--color-accent-subtle` was referenced without a fallback on the selected-alert-row highlight in three pages (SecretScanningPage, DependabotPage, SecurityAdvisoriesPage) but never defined, so an undefined var made the background compute to transparent \u2014 the selected row rendered identically to unselected and the user couldn't see which alert they'd picked",
+        "id": "WEB-182",
+        "location": "web/src/index.css",
+        "severity": "m",
+        "status": "fixed \u2014 defined `--color-accent-subtle` as an alias of the theme-aware `--color-accent-soft` (once in :root; resolves in both themes). Same undefined-token class as the earlier `--color-danger-fg` fix. Verified: a11y sweep stays at 0 violations with the now-visible highlight",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "`--color-border-muted` was referenced without a fallback for the split-diff gutter divider (PRFilesView) but never defined, so the divider between the line-number gutter and the code silently vanished",
+        "id": "WEB-183",
+        "location": "web/src/index.css",
+        "severity": "m",
+        "status": "fixed \u2014 aliased `--color-border-muted` to `--color-border`",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "the release detail omitted the \"{author} released this on {date}\" line github.com shows, though the release response carries author + published_at",
+        "id": "WEB-184",
+        "location": "web/src/pages/ReleasesPage.tsx, web/src/types.ts",
+        "severity": "m",
+        "status": "fixed \u2014 added the author/published-date line to ReleaseDetail (added `author` to the GithubRelease type). Verified: unit test asserts the \"released this\" line renders",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -7653,21 +7716,21 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 175
+            "fixed": 182
           },
-          "total": 177
+          "total": 184
         }
       },
       "severity": {
         "blocker": 167,
-        "major": 409,
-        "minor": 230
+        "major": 410,
+        "minor": 236
       },
       "status": {
         "deferred": 3,
-        "fixed": 803
+        "fixed": 810
       },
-      "total": 806
+      "total": 813
     }
   },
   "rest": {
@@ -30106,10 +30169,12 @@
         "line": 200,
         "path": "/ui/repos",
         "rendered_tests": [
+          "web/src/__tests__/RepoListPage.test.tsx",
           "web/src/__tests__/ReposPage.test.tsx"
         ],
         "source": "web/src/App.tsx",
         "tests": [
+          "web/src/__tests__/RepoListPage.test.tsx",
           "web/src/__tests__/ReposPage.test.tsx"
         ]
       },

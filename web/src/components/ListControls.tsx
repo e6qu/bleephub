@@ -24,6 +24,22 @@ export const emptyFilters: ListFilterState = {
   sort: "newest",
 };
 
+/** Map the UI sort choice to the server's sort + direction query params. */
+export function sortToServerParams(sort: ListFilterState["sort"]): { sort?: string; direction?: string } {
+  switch (sort) {
+    case "newest":
+      return { sort: "created", direction: "desc" };
+    case "oldest":
+      return { sort: "created", direction: "asc" };
+    case "comments":
+      return { sort: "comments", direction: "desc" };
+    case "updated":
+      return { sort: "updated", direction: "desc" };
+    default:
+      return {};
+  }
+}
+
 /** Apply the client-side dimensions (label/author/assignee/milestone) + sort. */
 export function filterAndSortItems<T>(
   items: T[],
