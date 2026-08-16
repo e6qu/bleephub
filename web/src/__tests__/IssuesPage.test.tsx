@@ -517,6 +517,10 @@ describe("IssuesPage list filter bar", () => {
     // Count header renders Open and Closed toggles.
     expect(screen.getByText(/Open$/)).toBeInTheDocument();
     expect(screen.getByText(/Closed$/)).toBeInTheDocument();
+    // The visible count is announced to screen readers as a live region.
+    const hasStatus = (re: RegExp) =>
+      screen.getAllByRole("status").some((el) => re.test(el.textContent ?? ""));
+    expect(hasStatus(/2 issues/)).toBe(true);
 
     // Selecting the Label filter narrows the list client-side.
     fireEvent.change(screen.getByLabelText("Label"), { target: { value: "bug" } });
@@ -524,6 +528,8 @@ describe("IssuesPage list filter bar", () => {
       expect(screen.queryByText("plain issue")).not.toBeInTheDocument();
     });
     expect(screen.getByText("bug issue")).toBeInTheDocument();
+    // …and the client-side narrowing updates the announced count.
+    expect(hasStatus(/1 issue/)).toBe(true);
   });
 
   it("switches to closed via the count header, refetching with state=closed", async () => {

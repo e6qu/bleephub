@@ -187,6 +187,7 @@ export function ListControls<T>({
   onFilters,
   accessors,
   actions,
+  resultCount,
 }: {
   kind: "issue" | "pr";
   state: "open" | "closed" | "all";
@@ -198,6 +199,10 @@ export function ListControls<T>({
   onFilters: (f: ListFilterState) => void;
   accessors: ListItemAccessors<T>;
   actions?: ReactNode;
+  /** Count of the currently-visible (client-filtered) list, announced to
+   * screen readers — the client-side dropdown filters re-narrow the list with
+   * no refetch/spinner, so without this a blind user gets no feedback. */
+  resultCount?: number | undefined;
 }) {
   const [queryDraft, setQueryDraft] = useState<string | null>(null);
   const query = queryDraft ?? composeQuery(kind, state, filters);
@@ -246,6 +251,11 @@ export function ListControls<T>({
 
   return (
     <div className="mb-4">
+      {typeof resultCount === "number" && (
+        <span className="sr-only" role="status">
+          {resultCount} {kind === "pr" ? (resultCount === 1 ? "pull request" : "pull requests") : resultCount === 1 ? "issue" : "issues"}
+        </span>
+      )}
       {/* Search + actions row */}
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <form

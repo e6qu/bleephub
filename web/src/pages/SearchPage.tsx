@@ -821,7 +821,7 @@ function ResultList<T>({
   const lastPage = Math.max(1, Math.ceil(data.totalCount / SEARCH_PER_PAGE));
   return (
     <div>
-      <div className="mb-2" style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)" }}>
+      <div role="status" className="mb-2" style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)" }}>
         {data.totalCount} {data.totalCount === 1 ? noun.singular : noun.plural}
         {data.incompleteResults ? " (incomplete)" : ""}
       </div>

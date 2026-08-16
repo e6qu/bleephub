@@ -200,6 +200,7 @@ function PRList({ owner, repo }: { owner: string; repo: string }) {
         filters={filters}
         onFilters={setFilters}
         accessors={prAccessors}
+        resultCount={prs.length}
         actions={
           <div className="flex items-center gap-2">
             <input

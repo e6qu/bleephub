@@ -167,6 +167,22 @@ button:not(:disabled) {
   animation-delay: var(--reveal-delay, 0ms);
 }
 
+/* Honor prefers-reduced-motion (WCAG 2.3.3 / 2.2.2): a single global guard
+ * neutralizes every animation and transition — the staggered reveal-up on
+ * tables/nav/toasts/modals, the infinite spinner-slide loop, and the hover-lift
+ * transforms on cards/buttons — while leaving instant colour/theme changes
+ * intact. Near-zero (not 0) durations so transitionend/animationend still fire. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* Scrollbars — thin, accent on thumb when hovered. */
 * {
   scrollbar-width: thin;
