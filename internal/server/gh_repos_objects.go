@@ -234,7 +234,15 @@ func (s *Server) handleGetTree(w http.ResponseWriter, r *http.Request) {
 	}
 
 	entries := make([]map[string]interface{}, 0, len(tree.Entries))
+	truncated := false
 	appendEntry := func(name string, e object.TreeEntry) {
+		// GitHub caps the tree response at 100,000 entries and sets
+		// truncated:true when exceeded, so clients fall back to per-subtree
+		// fetches instead of trusting a partial list as complete.
+		if len(entries) >= gitTreeEntryLimit {
+			truncated = true
+			return
+		}
 		entries = append(entries, gitTreeEntryJSON(stor, s.baseURL(r), repo.FullName, name, e))
 	}
 	if _, recursive := r.URL.Query()["recursive"]; recursive {
@@ -250,10 +258,16 @@ func (s *Server) handleGetTree(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			appendEntry(name, entry)
+			if truncated {
+				break
+			}
 		}
 	} else {
 		for _, entry := range tree.Entries {
 			appendEntry(entry.Name, entry)
+			if truncated {
+				break
+			}
 		}
 	}
 
@@ -261,9 +275,13 @@ func (s *Server) handleGetTree(w http.ResponseWriter, r *http.Request) {
 		"sha":       resolvedSHA.String(),
 		"url":       s.baseURL(r) + "/api/v3/repos/" + repo.FullName + "/git/trees/" + resolvedSHA.String(),
 		"tree":      entries,
-		"truncated": false,
+		"truncated": truncated,
 	})
 }
+
+// gitTreeEntryLimit mirrors GitHub's 100,000-entry ceiling on a single tree
+// response; beyond it the response is truncated.
+const gitTreeEntryLimit = 100000
 
 // resolveGitTreeish implements GitHub's deliberately broader tree_sha
 // contract. A caller may supply a tree object SHA, a commit SHA, or a branch

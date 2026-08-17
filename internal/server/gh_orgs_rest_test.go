@@ -51,9 +51,10 @@ func TestOrgUpdateDeleteAllowSiteAdmin(t *testing.T) {
 		t.Errorf("description = %v, want %q", got["description"], "edited by operator")
 	}
 
-	// Site admin (non-owner) can delete the org.
-	if w := serveTestRequest(s, bearerHeader(store.AdminToken()), "DELETE", "/api/v3/orgs/acme-corp", nil); w.Code != http.StatusNoContent {
-		t.Fatalf("site-admin DELETE org = %d, want 204; body=%s", w.Code, w.Body.String())
+	// Site admin (non-owner) can delete the org. GitHub deletes orgs
+	// asynchronously and answers 202 Accepted, not 204.
+	if w := serveTestRequest(s, bearerHeader(store.AdminToken()), "DELETE", "/api/v3/orgs/acme-corp", nil); w.Code != http.StatusAccepted {
+		t.Fatalf("site-admin DELETE org = %d, want 202; body=%s", w.Code, w.Body.String())
 	}
 	if s.store.GetOrg("acme-corp") != nil {
 		t.Error("org should be deleted")

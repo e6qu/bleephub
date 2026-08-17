@@ -580,7 +580,6 @@ func hookMatchesEvent(hook *store.Webhook, eventType string) bool {
 // deliverWebhook sends an HTTP POST with retries (3 attempts, exponential backoff).
 func (s *Server) deliverWebhook(hook *store.Webhook, event, action string, payloadBytes []byte) {
 	hook = s.store.SnapshotHook(hook)
-	guid := uuid.New().String()
 	backoffs := []time.Duration{0, 1 * time.Second, 5 * time.Second}
 	if _, err := parseWebhookTargetURL(hook.URL); err != nil {
 		// A refused target does not become deliverable by waiting: record the
@@ -593,6 +592,10 @@ func (s *Server) deliverWebhook(hook *store.Webhook, event, action string, paylo
 			time.Sleep(backoff)
 		}
 
+		// Each attempt is its own delivery record with a unique
+		// X-GitHub-Delivery GUID; GitHub never lists two deliveries under one
+		// GUID (a retry is a fresh delivery, flagged as a redelivery).
+		guid := uuid.New().String()
 		delivery := s.doDeliverAttempt(hook, event, action, guid, payloadBytes, attempt > 0)
 		s.store.AddDelivery(delivery)
 		s.recordHookLastResponse(hook, delivery)

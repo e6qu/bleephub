@@ -641,7 +641,16 @@ func (s *Server) handleOIDCCustomSubGet(w http.ResponseWriter, r *http.Request) 
 	s.store.Misc.Mu.RLock()
 	keys := append([]string(nil), s.store.Misc.OidcClaimKeys[scope]...)
 	s.store.Misc.Mu.RUnlock()
-	writeJSON(w, http.StatusOK, map[string]interface{}{"include_claim_keys": keys})
+	body := map[string]interface{}{"include_claim_keys": keys}
+	// The repo route returns oidc-custom-sub-repo, whose required use_default
+	// reports whether the repo falls back to the org/enterprise default
+	// template (true when it carries no custom claim keys). The org route
+	// returns oidc-custom-sub, which has no such member — so add it only for
+	// the repo variant.
+	if r.PathValue("org") == "" {
+		body["use_default"] = len(keys) == 0
+	}
+	writeJSON(w, http.StatusOK, body)
 }
 
 func (s *Server) handleOIDCCustomSubPut(w http.ResponseWriter, r *http.Request) {

@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
-import { createPRReviewComment, fetchPRFiles } from "../api.js";
+import { createPRReview, createPRReviewComment, fetchPRFiles } from "../api.js";
+import type { PRReviewCommentDraft } from "../api.js";
 import type { GithubPRFile } from "../types.js";
 import { Box, Blankslate, Button, FormLabel } from "./ui.js";
 import { FileIcon } from "./octicons.js";
@@ -214,10 +215,20 @@ export function PRFilesView({
   const qc = useQueryClient();
   const [target, setTarget] = useState<{ file: GithubPRFile; line: number; side: "LEFT" | "RIGHT"; source: string } | null>(null);
   const [body, setBody] = useState("");
+  // Pending line comments accumulated for a batched review (GitHub's "Start a
+  // review" flow), submitted together with the verdict via createPRReview.
+  const [pending, setPending] = useState<PRReviewCommentDraft[]>([]);
+  const [reviewBody, setReviewBody] = useState("");
   const q = useQuery({
     queryKey: ["pr-files", owner, repo, number],
     queryFn: () => fetchPRFiles(owner, repo, number),
   });
+  const invalidateReview = () => {
+    qc.invalidateQueries({ queryKey: ["pr-review-comments", owner, repo, number] });
+    qc.invalidateQueries({ queryKey: ["pr-review-threads", owner, repo, number] });
+    qc.invalidateQueries({ queryKey: ["pr-timeline", owner, repo, number] });
+    qc.invalidateQueries({ queryKey: ["pr-reviews", owner, repo, number] });
+  };
   const commentMutation = useMutation({
     mutationFn: () => {
       if (!target) throw new Error("Select a line first");
@@ -232,11 +243,28 @@ export function PRFilesView({
     onSuccess: () => {
       setTarget(null);
       setBody("");
-      qc.invalidateQueries({ queryKey: ["pr-review-comments", owner, repo, number] });
-      qc.invalidateQueries({ queryKey: ["pr-review-threads", owner, repo, number] });
-      qc.invalidateQueries({ queryKey: ["pr-timeline", owner, repo, number] });
+      invalidateReview();
     },
   });
+  const reviewMutation = useMutation({
+    mutationFn: (event: "APPROVE" | "REQUEST_CHANGES" | "COMMENT") =>
+      createPRReview(owner, repo, number, { body: reviewBody.trim(), event, comments: pending }),
+    onSuccess: () => {
+      setPending([]);
+      setReviewBody("");
+      invalidateReview();
+    },
+  });
+  const addToReview = () => {
+    if (!target || !body.trim()) return;
+    setPending((prev) => [
+      ...prev,
+      { path: target.file.filename, body: body.trim(), line: target.line, side: target.side },
+    ]);
+    setTarget(null);
+    setBody("");
+    commentMutation.reset();
+  };
 
   if (q.isLoading) return <Spinner label="loading changed files" />;
   if (q.isError) return <InlineError title="Failed to load changed files" detail={String(q.error)} />;
@@ -301,11 +329,63 @@ export function PRFilesView({
               <Button
                 type="button"
                 size="sm"
+                disabled={!body.trim()}
+                onClick={addToReview}
+              >
+                Start a review
+              </Button>
+              <Button
+                type="button"
+                size="sm"
                 variant="primary"
                 disabled={!body.trim() || commentMutation.isPending}
                 onClick={() => commentMutation.mutate()}
               >
                 {commentMutation.isPending ? "Adding…" : "Add single comment"}
+              </Button>
+            </div>
+          </div>
+        </Box>
+      )}
+      {pending.length > 0 && (
+        <Box header={<span>Finish your review — {pending.length} pending comment{pending.length === 1 ? "" : "s"}</span>} className="mb-3">
+          <div className="space-y-2" style={{ padding: "0.75rem" }}>
+            <ul style={{ margin: 0, paddingLeft: "1.1rem", fontSize: "0.8rem", color: "var(--color-fg-muted)" }}>
+              {pending.map((c, i) => (
+                <li key={`${c.path}:${c.line}:${i}`}>
+                  <span className="font-mono">{c.path}</span>:{c.line} — {c.body.length > 60 ? c.body.slice(0, 60) + "…" : c.body}
+                  <button
+                    type="button"
+                    aria-label={`Remove pending comment on ${c.path} line ${c.line}`}
+                    onClick={() => setPending((prev) => prev.filter((_, j) => j !== i))}
+                    style={{ marginLeft: "0.4rem", border: "none", background: "transparent", color: "var(--color-accent)", cursor: "pointer" }}
+                  >
+                    remove
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <FormLabel id="pr-review-summary">Review summary</FormLabel>
+            <textarea
+              id="pr-review-summary"
+              value={reviewBody}
+              onChange={(event) => setReviewBody(event.target.value)}
+              rows={3}
+              style={{ width: "100%" }}
+              placeholder="Leave a summary comment (optional)…"
+            />
+            {reviewMutation.isError && (
+              <InlineError inline title="Could not submit review" detail={String(reviewMutation.error)} />
+            )}
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button type="button" size="sm" disabled={reviewMutation.isPending} onClick={() => reviewMutation.mutate("COMMENT")}>
+                Comment
+              </Button>
+              <Button type="button" size="sm" disabled={reviewMutation.isPending} onClick={() => reviewMutation.mutate("APPROVE")}>
+                Approve
+              </Button>
+              <Button type="button" size="sm" variant="primary" disabled={reviewMutation.isPending} onClick={() => reviewMutation.mutate("REQUEST_CHANGES")}>
+                Request changes
               </Button>
             </div>
           </div>

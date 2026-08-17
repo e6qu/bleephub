@@ -56,4 +56,40 @@ describe("PRFilesView review comment", () => {
     const keys = invalidateSpy.mock.calls.map((c) => JSON.stringify(c[0]));
     expect(keys).not.toContain(JSON.stringify({ queryKey: ["issue-timeline", "admin", "test", 7] }));
   });
+
+  it("batches pending line comments and submits them with the review verdict", async () => {
+    let reviewBody: unknown = null;
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith("/pulls/7/files")) return Promise.resolve(jsonResponse([prFile]));
+      if (init?.method === "POST" && u.endsWith("/pulls/7/reviews")) {
+        reviewBody = JSON.parse(String(init.body));
+        return Promise.resolve(jsonResponse({ id: 9 }));
+      }
+      return Promise.resolve(jsonResponse({}));
+    });
+
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <PRFilesView owner="admin" repo="test" number={7} headSha="deadbeef" />
+      </QueryClientProvider>,
+    );
+
+    // Accumulate one pending line comment via "Start a review".
+    fireEvent.click(await screen.findByRole("button", { name: "Comment on a.txt line 1" }));
+    fireEvent.change(screen.getByLabelText("Review comment"), { target: { value: "please fix" } });
+    fireEvent.click(screen.getByRole("button", { name: "Start a review" }));
+
+    // The finish-review panel appears; submit as Approve.
+    fireEvent.change(await screen.findByLabelText("Review summary"), { target: { value: "LGTM overall" } });
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+
+    await waitFor(() => expect(reviewBody).not.toBeNull());
+    expect(reviewBody).toMatchObject({
+      event: "APPROVE",
+      body: "LGTM overall",
+      comments: [{ path: "a.txt", line: 1, side: "RIGHT", body: "please fix" }],
+    });
+  });
 });

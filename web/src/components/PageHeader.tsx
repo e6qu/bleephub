@@ -21,7 +21,7 @@ import {
   EyeIcon,
   RepoForkedIcon,
 } from "./octicons.js";
-import { Counter } from "./ui.js";
+import { Counter, Modal } from "./ui.js";
 import {
   fetchRepoSocialCounts,
   fetchRepoDetail,
@@ -83,15 +83,6 @@ export function RepoHeader({
   useEffect(() => {
     if (!forkOwner && currentUser.data?.login) setForkOwner(currentUser.data.login);
   }, [currentUser.data?.login, forkOwner]);
-  useEffect(() => {
-    if (!forkOpen) return;
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setForkOpen(false);
-    };
-    document.addEventListener("keydown", closeOnEscape);
-    return () => document.removeEventListener("keydown", closeOnEscape);
-  }, [forkOpen]);
-
   const refreshSocial = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: socialKey }),
@@ -166,15 +157,8 @@ export function RepoHeader({
           </div>
         )}
         {forkOpen && (
-          <div className="repo-fork-backdrop" role="presentation" onMouseDown={() => setForkOpen(false)}>
-            <div
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="fork-repository-title"
-              className="repo-fork-dialog"
-              onMouseDown={(event) => event.stopPropagation()}
-            >
-              <h2 id="fork-repository-title">Create a new fork</h2>
+          <Modal title="Create a new fork" onClose={() => setForkOpen(false)}>
+            <div className="repo-fork-dialog-body">
               <p>
                 Choose an owner for the real fork of <strong>{owner}/{repo}</strong>.
               </p>
@@ -201,7 +185,7 @@ export function RepoHeader({
                 </button>
               </div>
             </div>
-          </div>
+          </Modal>
         )}
         <nav aria-label="Repository" className="repo-tabs flex items-center gap-1">
         <RepoTabLink to={base} icon={<RepoIcon size={15} />} label="Code" active={active === "code"} />

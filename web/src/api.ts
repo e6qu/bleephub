@@ -4375,12 +4375,29 @@ export const setNotificationSettings = (settings: NotificationSettings) =>
 export const fetchPRReviews = (owner: string, repo: string, number: number) =>
   ghFetch<GithubPRReview[]>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/reviews`);
 
-/** Create + submit a review in one call (event APPROVE/REQUEST_CHANGES/COMMENT). */
+/** A pending line comment submitted as part of a batched review. */
+export interface PRReviewCommentDraft {
+  path: string;
+  body: string;
+  line: number;
+  side: "LEFT" | "RIGHT";
+  start_line?: number;
+}
+
+/**
+ * Create + submit a review in one call (event APPROVE/REQUEST_CHANGES/COMMENT).
+ * The optional comments[] batch attaches pending line comments, exactly as
+ * GitHub's "Start a review" flow submits them together with the verdict.
+ */
 export const createPRReview = (
   owner: string,
   repo: string,
   number: number,
-  payload: { body: string; event: "APPROVE" | "REQUEST_CHANGES" | "COMMENT" },
+  payload: {
+    body: string;
+    event: "APPROVE" | "REQUEST_CHANGES" | "COMMENT";
+    comments?: PRReviewCommentDraft[];
+  },
 ): Promise<GithubPRReview> =>
   ghPostJSON(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/reviews`, payload);
 

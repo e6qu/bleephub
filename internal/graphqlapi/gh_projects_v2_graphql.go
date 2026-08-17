@@ -278,6 +278,7 @@ func (s *Resolver) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 		Name: "ProjectV2CustomFieldType",
 		Values: graphql.EnumValueConfigMap{
 			"SINGLE_SELECT": &graphql.EnumValueConfig{Value: "SINGLE_SELECT"},
+			"MULTI_SELECT":  &graphql.EnumValueConfig{Value: "MULTI_SELECT"},
 			"TEXT":          &graphql.EnumValueConfig{Value: "TEXT"},
 			"NUMBER":        &graphql.EnumValueConfig{Value: "NUMBER"},
 			"DATE":          &graphql.EnumValueConfig{Value: "DATE"},

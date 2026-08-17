@@ -50,6 +50,39 @@ func ErrorIsNotFound(err error) bool {
 	return false
 }
 
+// ghForbiddenError marks a permission denial that must surface as a
+// GitHub-shaped errors[] entry carrying `"type": "FORBIDDEN"` — the sibling of
+// ghNotFoundError. GitHub returns FORBIDDEN when the viewer can read the
+// resource but lacks write/admin standing (or the app lacks the scope), which
+// is distinct from the NOT_FOUND masking used when the resource can't be read
+// at all. Clients discriminate on this `type` channel.
+type ghForbiddenError struct {
+	message string
+}
+
+func (e *ghForbiddenError) Error() string { return e.message }
+
+// ErrorIsForbidden unwraps graphql-go's error layering looking for a
+// ghForbiddenError (mirrors ErrorIsNotFound).
+func ErrorIsForbidden(err error) bool {
+	for err != nil {
+		if _, ok := err.(*ghForbiddenError); ok {
+			return true
+		}
+		switch e := err.(type) {
+		case *gqlerrors.Error:
+			err = e.OriginalError
+		case gqlerrors.Error:
+			err = e.OriginalError
+		case gqlerrors.FormattedError:
+			err = e.OriginalError()
+		default:
+			return false
+		}
+	}
+	return false
+}
+
 // initGraphQLSchema builds the GraphQL schema with all types and resolvers.
 func (s *Resolver) initGraphQLSchema() {
 	s.graphqlTypes = graphQLTypeRegistry{}

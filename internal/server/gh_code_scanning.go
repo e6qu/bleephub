@@ -248,11 +248,35 @@ func (s *Server) handleDeleteCodeScanningAnalysis(w http.ResponseWriter, r *http
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
+	// Capture the set (ref, tool) before deleting so the response can point at
+	// the next analysis in the chain.
+	a := s.store.GetCodeScanningAnalysis(repo.FullName, id)
+	if a == nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
 	if !s.store.DeleteCodeScanningAnalysis(repo.FullName, id) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	// GitHub answers 200 with code-scanning-analysis-deletion, not 204: deleting
+	// an analysis walks a chain within its set. next_analysis_url is the next
+	// deletable analysis (no confirmation needed) and is null once only the
+	// final analysis remains; confirm_delete_url deletes that final analysis
+	// (with ?confirm_delete). Both are null when the set is empty.
+	base := s.baseURL(r)
+	var nextAnalysisURL, confirmDeleteURL interface{} // nil marshals to null
+	if remaining := s.store.ListCodeScanningAnalyses(repo.FullName, a.Ref, a.ToolName); len(remaining) > 0 {
+		u := fmt.Sprintf("%s/api/v3/repos/%s/code-scanning/analyses/%d", base, repo.FullName, remaining[len(remaining)-1].ID)
+		confirmDeleteURL = u + "?confirm_delete"
+		if len(remaining) > 1 {
+			nextAnalysisURL = u
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"next_analysis_url":  nextAnalysisURL,
+		"confirm_delete_url": confirmDeleteURL,
+	})
 }
 
 func (s *Server) handleCreateSARIFUpload(w http.ResponseWriter, r *http.Request) {

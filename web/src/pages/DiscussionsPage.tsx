@@ -1,5 +1,6 @@
 import { useState, type CSSProperties, type ReactNode } from "react";
 import { useDismiss } from "../hooks/useDismiss.js";
+import { confirmAction } from "../components/confirmAction.js";
 import Markdown from "../components/Markdown";
 import { useParams, Link, useNavigate } from "react-router";
 import { useMutation, useQuery, useQueryClient, useInfiniteQuery } from "@tanstack/react-query";
@@ -438,7 +439,16 @@ function DiscussionDetail({
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => deleteDiscussionMutation.mutate()}
+          onClick={async () => {
+            if (
+              await confirmAction("Delete this discussion?", {
+                title: "Delete discussion",
+                confirmLabel: "Delete",
+              })
+            ) {
+              deleteDiscussionMutation.mutate();
+            }
+          }}
           disabled={deleteDiscussionMutation.isPending}
         >
           Delete
@@ -516,11 +526,21 @@ function DiscussionDetail({
               setReplyTo({ id: comment.id, login: comment.author?.login });
               setCommentBody("");
             }}
-            onDelete={() => deleteCommentMutation.mutate(comment.id)}
+            onDelete={async () => {
+              if (
+                await confirmAction("Delete this comment?", {
+                  title: "Delete comment",
+                  confirmLabel: "Delete",
+                })
+              ) {
+                deleteCommentMutation.mutate(comment.id);
+              }
+            }}
             onEdit={() => {
               setEditingComment(comment.id);
               setEditBody(comment.body);
             }}
+            discussionKey={["discussion", owner, repo, number]}
             reactionBar={
               <DiscussionReactionBar
                 subjectId={comment.id}
@@ -687,6 +707,7 @@ function DiscussionCommentCard({
   onDelete,
   onEdit,
   reactionBar,
+  discussionKey,
 }: {
   comment: GithubDiscussionComment;
   isAnswer: boolean;
@@ -696,6 +717,7 @@ function DiscussionCommentCard({
   onDelete: () => void;
   onEdit: () => void;
   reactionBar?: ReactNode;
+  discussionKey: (string | number)[];
 }) {
   return (
     <div
@@ -788,6 +810,11 @@ function DiscussionCommentCard({
               <div className="markdown-body" style={{ fontSize: "0.85rem", lineHeight: 1.5 }}>
                 <Markdown>{reply.body}</Markdown>
               </div>
+              <DiscussionReactionBar
+                subjectId={reply.id}
+                groups={reply.reactionGroups ?? []}
+                invalidateKey={discussionKey}
+              />
             </div>
           ))}
         </div>

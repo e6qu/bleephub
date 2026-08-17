@@ -114,7 +114,7 @@ func (s *Server) handleCreateHook(w http.ResponseWriter, r *http.Request) {
 	// is created (so the consumer can verify the endpoint). Inactive hooks
 	// receive no deliveries.
 	if hook.Active {
-		s.enqueueWebhookDelivery(hook, "ping", "", mustMarshal(buildPingPayload(repo, hook)))
+		s.enqueueWebhookDelivery(hook, "ping", "", mustMarshal(buildPingPayload(repo, hook, user)))
 	}
 
 	hookJSON := s.hookToJSON(hook, s.store.HookLastResp(hook), r, r.PathValue("owner"), r.PathValue("repo"))
@@ -327,7 +327,7 @@ func (s *Server) handlePingHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.enqueueWebhookDelivery(hook, "ping", "", mustMarshal(buildPingPayload(repo, hook)))
+	s.enqueueWebhookDelivery(hook, "ping", "", mustMarshal(buildPingPayload(repo, hook, ghUserFromContext(r.Context()))))
 
 	w.WriteHeader(http.StatusNoContent)
 }

@@ -1162,7 +1162,13 @@ type repoRule struct {
 	// pull_requests:write. One scope for the whole table would refuse apps
 	// GitHub allows.
 	scope store.PermScope
-	level mutationLevel
+	// scopeFor, when set, derives the required scope from the mutation input
+	// instead of the fixed scope above. Reactions need this because one
+	// mutation (addReaction) spans subjects GitHub gates on different grants —
+	// an issue reaction needs issues:write, a pull-request reaction
+	// pull_requests:write.
+	scopeFor func(s *Resolver, input map[string]interface{}) store.PermScope
+	level    mutationLevel
 	// authorMayAct admits the author of the targeted content whatever their
 	// repository access: editing your own issue or hiding your own comment
 	// never required push.
@@ -1174,7 +1180,7 @@ func (r repoRule) check() error {
 	if r.target == nil {
 		return fmt.Errorf("no repository target lookup")
 	}
-	if r.scope == "" {
+	if r.scope == "" && r.scopeFor == nil {
 		return fmt.Errorf("no permission scope")
 	}
 	return nil
@@ -1192,8 +1198,12 @@ func (r repoRule) authorize(s *Resolver, p graphql.ResolveParams, input map[stri
 	// app's grant is not a fact about the bearer. Ordering these the other way
 	// round let a bearer who had merely filed the issue retitle it through an
 	// app installed nowhere.
-	if !s.credentialGrantsRepo(p.Context, target.repo, r.scope, store.PermWrite) {
-		return fmt.Errorf("resource not accessible by integration")
+	scope := r.scope
+	if r.scopeFor != nil {
+		scope = r.scopeFor(s, input)
+	}
+	if !s.credentialGrantsRepo(p.Context, target.repo, scope, store.PermWrite) {
+		return &ghForbiddenError{message: "resource not accessible by integration"}
 	}
 	user := s.ghUserFromContext(p.Context)
 	if r.authorMayAct && target.authorID != 0 && target.authorID == user.ID {
@@ -1202,11 +1212,11 @@ func (r repoRule) authorize(s *Resolver, p graphql.ResolveParams, input map[stri
 	switch r.level {
 	case mutationPushRepo:
 		if !s.principalHoldsRepoCapability(p.Context, target.repo, store.PermWrite) {
-			return fmt.Errorf("must have push access to Repository")
+			return &ghForbiddenError{message: "must have push access to Repository"}
 		}
 	case mutationAdminRepo:
 		if !s.principalHoldsRepoCapability(p.Context, target.repo, store.PermAdmin) {
-			return fmt.Errorf("must have admin rights to Repository")
+			return &ghForbiddenError{message: "must have admin rights to Repository"}
 		}
 	}
 	return nil
@@ -1241,8 +1251,8 @@ var graphqlMutationAuthz = map[string]mutationRule{
 
 	"createDiscussion":                repoRule{scope: store.ScopeDiscussions, level: mutationReadRepo, target: mutationTargetRepo("repositoryId")},
 	"addDiscussionComment":            repoRule{scope: store.ScopeDiscussions, level: mutationReadRepo, target: mutationTargetDiscussion("discussionId")},
-	"addReaction":                     repoRule{scope: store.ScopeDiscussions, level: mutationReadRepo, target: mutationTargetReactable("subjectId")},
-	"removeReaction":                  repoRule{scope: store.ScopeDiscussions, level: mutationReadRepo, target: mutationTargetReactable("subjectId")},
+	"addReaction":                     repoRule{scopeFor: reactableScope("subjectId"), level: mutationReadRepo, target: mutationTargetReactable("subjectId")},
+	"removeReaction":                  repoRule{scopeFor: reactableScope("subjectId"), level: mutationReadRepo, target: mutationTargetReactable("subjectId")},
 	"updateDiscussion":                repoRule{scope: store.ScopeDiscussions, level: mutationAdminRepo, authorMayAct: true, target: mutationTargetDiscussion("discussionId")},
 	"deleteDiscussion":                repoRule{scope: store.ScopeDiscussions, level: mutationAdminRepo, authorMayAct: true, target: mutationTargetDiscussion("id")},
 	"updateDiscussionComment":         repoRule{scope: store.ScopeDiscussions, level: mutationAdminRepo, authorMayAct: true, target: mutationTargetDiscussionComment("commentId")},

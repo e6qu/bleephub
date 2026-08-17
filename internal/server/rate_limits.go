@@ -165,10 +165,16 @@ func (s *Server) rateWindowKeyAndLimit(r *http.Request, resource string) (key st
 	if !ok {
 		resource, limit = "core", apiRateResourceLimits["core"]
 	}
-	// GitHub's unauthenticated core budget is IP-scoped and deliberately much
-	// smaller than an authenticated user's budget.
-	if resource == "core" && r.Header.Get("Authorization") == "" && ghUserFromContext(r.Context()) == nil {
-		limit = 60
+	// GitHub's unauthenticated budgets are IP-scoped and deliberately much
+	// smaller than an authenticated caller's: core drops from 5000 to 60/hour
+	// and Search drops from 30 to 10/minute.
+	if r.Header.Get("Authorization") == "" && ghUserFromContext(r.Context()) == nil {
+		switch resource {
+		case "core":
+			limit = 60
+		case "search", "code_search":
+			limit = 10
+		}
 	}
 	return apiRateIdentity(r) + "\x1f" + resource, limit, resource
 }

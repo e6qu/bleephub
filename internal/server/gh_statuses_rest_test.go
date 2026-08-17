@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -111,6 +112,15 @@ func TestCommitStatuses_CreateListCombined(t *testing.T) {
 	statuses, _ := combined["statuses"].([]any)
 	if len(statuses) != 2 {
 		t.Errorf("combined statuses len = %d, want 2", len(statuses))
+	}
+	// url and commit_url are required members of combined-commit-status.
+	wantURL := "/api/v3/repos/admin/status-repo/commits/" + sha + "/status"
+	if u, _ := combined["url"].(string); !strings.HasSuffix(u, wantURL) {
+		t.Errorf("combined url = %v, want suffix %q", combined["url"], wantURL)
+	}
+	wantCommitURL := "/api/v3/repos/admin/status-repo/commits/" + sha
+	if u, _ := combined["commit_url"].(string); !strings.HasSuffix(u, wantCommitURL) {
+		t.Errorf("combined commit_url = %v, want suffix %q", combined["commit_url"], wantCommitURL)
 	}
 }
 

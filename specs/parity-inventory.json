@@ -141,7 +141,7 @@
       },
       {
         "event": "page_build",
-        "line": 1176,
+        "line": 1185,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_misc_endpoints.go"
       },
@@ -261,7 +261,7 @@
       },
       {
         "event": "status",
-        "line": 95,
+        "line": 100,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_statuses_rest.go"
       },
@@ -300,7 +300,7 @@
       "shared_types": 262,
       "signature_exact_fields": 942
     },
-    "introspection_snapshot_sha256": "423c5a39573e08e00610bd59e067805e582008f74a52f414f7ec5f2f38b4ce9f",
+    "introspection_snapshot_sha256": "4b7995638aea652db899c191148f2861727378167cda7f79320338b2a8faee85",
     "official_schema": {
       "content_sha256": "b716c6844750283b8c33200f660989337254e7158f40ed869f06418bafb3bc2e",
       "source": "https://docs.github.com/public/fpt/schema.docs.graphql"
@@ -326,6 +326,7 @@
       "internal/server/graphql_authz_test.go",
       "internal/server/graphql_cost_test.go",
       "internal/server/graphql_credential_test.go",
+      "internal/server/graphql_reactions_subject_test.go",
       "internal/server/graphql_schema_parity_test.go",
       "internal/server/org_pr_graphql_test.go"
     ]
@@ -2952,6 +2953,78 @@
         "status_kind": "fixed"
       },
       {
+        "category": "REST",
+        "finding": "`DELETE /repos/{o}/{r}/code-scanning/analyses/{id}` returned 204 empty, but GitHub answers 200 with the `code-scanning-analysis-deletion` body (`next_analysis_url`, `confirm_delete_url`) that drives the delete-chain",
+        "id": "REST-175",
+        "location": "gh_code_scanning.go",
+        "severity": "M",
+        "status": "fixed \u2014 the handler fetches the analysis, deletes it, then returns 200 with both members computed from the remaining analyses in the (ref, tool) set: `confirm_delete_url` targets the next deletable analysis with `?confirm_delete`, `next_analysis_url` is non-null only while more than the final analysis remains, and both are null once the set is empty. Verified: tests for the empty (both null) and chained (next non-null) cases",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "the combined commit status omitted the `url` and `commit_url` members that `combined-commit-status` marks required",
+        "id": "REST-176",
+        "location": "gh_statuses_rest.go",
+        "severity": "m",
+        "status": "fixed \u2014 both are emitted, pointing at the combined-status resource and the commit. Verified: unit test asserts both URL suffixes",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "the repository OIDC subject-claim GET omitted the required `use_default` (`oidc-custom-sub-repo`); the org route (`oidc-custom-sub`) has no such member",
+        "id": "REST-177",
+        "location": "gh_misc_endpoints.go",
+        "severity": "m",
+        "status": "fixed \u2014 the repo variant returns `use_default` (true when the repo carries no custom claim keys), added only for the repo route so the org shape is unchanged. Verified: the OIDC test asserts `use_default` tracks the presence of claim keys",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "`DELETE /orgs/{org}` returned 204, but GitHub deletes an organization asynchronously and answers 202 Accepted",
+        "id": "REST-178",
+        "location": "gh_orgs_rest.go",
+        "severity": "m",
+        "status": "fixed \u2014 returns 202. Verified: both org-delete tests updated to expect 202",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "issue and pull-request search 422'd routine documented qualifiers (`created:`, `updated:`, `closed:`, `draft:`, `archived:`) because they were absent from the issues scope",
+        "id": "REST-179",
+        "location": "gh_search.go, gh_search_query.go",
+        "severity": "M",
+        "status": "fixed \u2014 added them to the issues scope with parse-time validation and per-item matching (dates via the existing date-constraint evaluator, draft against the PR draft flag, archived against the owning repo). Verified: a test seeds issues at different dates and asserts `created:>`, `created:<`, `draft:true` and `archived:false` filter correctly",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "commit search still rejects `committer:`, `author-date:`, `committer-date:`, `merge:` and `tree:`, and issue search rejects the interaction qualifiers (`involves:`, `commenter:`, `interactions:`, `reactions:`, `review:`, `linked:`, `head:`, `base:`) and `in:comments`",
+        "id": "REST-180",
+        "location": "gh_search.go, gh_search_query.go",
+        "severity": "m",
+        "status": "open \u2014 the common temporal/state issue qualifiers landed in REST-179; the remaining vocabulary needs commit-metadata and comment-authorship matching plumbing, tracked as a scoped follow-up",
+        "status_kind": "open"
+      },
+      {
+        "category": "REST",
+        "finding": "the unauthenticated Search rate limit was the authenticated 30/min; GitHub caps anonymous Search at 10/min",
+        "id": "REST-181",
+        "location": "rate_limits.go",
+        "severity": "m",
+        "status": "fixed \u2014 the anonymous downgrade now covers `search` (and `code_search`, already 10), not just core. Verified: unit test asserts anonymous search is 10 and authenticated is 30",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "the git tree response was always `truncated:false` with no size ceiling; GitHub caps a tree at 100,000 entries and sets `truncated:true` when exceeded",
+        "id": "REST-182",
+        "location": "gh_repos_objects.go",
+        "severity": "m",
+        "status": "fixed \u2014 the handler caps entries at 100,000 and reports `truncated` accordingly, stopping the walk once the cap is reached",
+        "status_kind": "fixed"
+      },
+      {
         "category": "GQL",
         "finding": "`POST /api/graphql` serves anonymous requests; real GitHub 401s every unauthenticated request",
         "id": "GQL-001",
@@ -3627,6 +3700,42 @@
         "status_kind": "fixed"
       },
       {
+        "category": "GQL",
+        "finding": "`addReaction`/`removeReaction` resolved only Discussion and DiscussionComment subjects and hard-coded the discussions scope, so a client could read an issue's reactionGroups but not add a reaction over GraphQL",
+        "id": "GQL-065",
+        "location": "gh_reactions_graphql.go, gh_repos_graphql.go",
+        "severity": "M",
+        "status": "fixed \u2014 subject resolution now covers Issue, PullRequest and PullRequestReview (mirroring the REST parent-type strings the store already keys), and a subject-typed scope hook gates each reaction on the subject's own grant (issues, pull_requests or discussions) instead of one blanket scope. Verified: a test adds and removes reactions on an issue, a PR and a review over GraphQL and asserts the store rows",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "GQL",
+        "finding": "the `ProjectV2CustomFieldType` enum omitted `MULTI_SELECT`, so `createProjectV2Field(dataType: MULTI_SELECT)` failed enum coercion though the store backs it",
+        "id": "GQL-066",
+        "location": "gh_projects_v2_graphql.go",
+        "severity": "m",
+        "status": "fixed \u2014 added the value; introspection snapshot and official-schema ratchet regenerated",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "GQL",
+        "finding": "GraphQL permission denials carried no `type` member, unlike the NOT_FOUND channel, so clients could not distinguish a forbidden write from an untyped error",
+        "id": "GQL-067",
+        "location": "gh_graphql.go",
+        "severity": "m",
+        "status": "fixed \u2014 a `ghForbiddenError` analog is returned by the authorize permission branches and the serializer stamps `type: FORBIDDEN`, leaving the NOT_FOUND masking for the unreadable-resource path. Verified: a test asserts an under-privileged push-level mutation returns `type: FORBIDDEN` and leaves the resource untouched",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "GQL",
+        "finding": "`AddReactionPayload`/`RemoveReactionPayload` expose only `clientMutationId`; GitHub also exposes `reaction`, `reactionGroups` and `subject`",
+        "id": "GQL-068",
+        "location": "gh_reactions_graphql.go",
+        "severity": "m",
+        "status": "partial \u2014 subject coverage and authz landed in GQL-065; emitting the payload fields needs a `Reactable` interface resolver wired across the concrete reaction subjects plus a snapshot/ratchet pass, tracked as a scoped follow-up",
+        "status_kind": "partial"
+      },
+      {
         "category": "ACT",
         "finding": "`Content-Range` end is unbounded \u2014 a 1-byte body can allocate a terabyte",
         "id": "ACT-001",
@@ -4155,6 +4264,33 @@
         "location": "workflow_schedule.go",
         "severity": "m",
         "status": "fixed \u2014 a nil storer is logged and skipped before use",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "ACT",
+        "finding": "every commit in a `push` webhook hard-coded empty `added`/`removed`/`modified`, so consumers that branch on changed files (CI path filters, deploy bots) saw nothing",
+        "id": "ACT-102",
+        "location": "webhooks_payloads.go",
+        "severity": "M",
+        "status": "fixed \u2014 each commit is diffed against its first parent to fill the three arrays (a root commit reports all files as added). Verified: the push webhook test asserts the pushed file appears in `added`",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "ACT",
+        "finding": "the `ping` webhook payload omitted `sender`, which GitHub includes on every event",
+        "id": "ACT-103",
+        "location": "webhooks_payloads.go, gh_hooks_rest.go",
+        "severity": "m",
+        "status": "fixed \u2014 `buildPingPayload` takes the acting user and emits `sender`; both the create-hook auto-ping and the manual ping pass it. Verified: the ping test asserts `sender.login`",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "ACT",
+        "finding": "automatic delivery retries reused one `X-GitHub-Delivery` GUID across all three attempts, so a deliveries list showed multiple rows under one GUID, impossible on real GitHub",
+        "id": "ACT-104",
+        "location": "webhooks.go",
+        "severity": "m",
+        "status": "fixed \u2014 each attempt mints a fresh GUID (retries stay flagged as redeliveries), matching GitHub's one-GUID-per-delivery model",
         "status_kind": "fixed"
       },
       {
@@ -6921,6 +7057,69 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "the Files-changed tab could only post single line comments immediately; GitHub's \"Start a review\" batches pending line comments and submits them with an Approve/Request-changes/Comment verdict, which the reviews endpoint already backs via `comments[]`",
+        "id": "WEB-201",
+        "location": "web/src/components/PRFilesView.tsx, web/src/api.ts",
+        "severity": "M",
+        "status": "fixed \u2014 a \"Start a review\" action accumulates pending line comments client-side and a \"Finish your review\" panel submits them together via `createPRReview` (payload extended with `comments`), with per-comment removal. Verified: a test accumulates a pending comment and asserts the reviews POST body carries the verdict and the comment batch",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "the repo fork dialog was a hand-rolled `role=\"dialog\"` with Escape and backdrop only \u2014 no focus trap and no focus restore",
+        "id": "WEB-202",
+        "location": "web/src/components/PageHeader.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 replaced with the shared `Modal`, which traps Tab and restores focus to the trigger on close",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "the reaction picker closed only on a second trigger click (no Escape, no outside-click) and its buttons lacked `aria-expanded`/`aria-pressed`",
+        "id": "WEB-203",
+        "location": "web/src/components/ReactionBar.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 the picker uses `useDismiss` for Escape and outside-click, the trigger sets `aria-expanded`, the count pills set `aria-pressed`, and the picker is a `role=\"menu\"` of `menuitem`s, matching DiscussionReactionBar",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "deleting a discussion or a discussion comment fired immediately with no confirmation, unlike every other destructive action",
+        "id": "WEB-204",
+        "location": "web/src/pages/DiscussionsPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 both deletes are gated on `confirmAction`",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "discussion replies rendered author, date and body only, though their `reactionGroups` are already fetched and the reaction mutations back them",
+        "id": "WEB-205",
+        "location": "web/src/pages/DiscussionsPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 each reply now renders a `DiscussionReactionBar`",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "every non-comment timeline event rendered the same generic dot icon",
+        "id": "WEB-206",
+        "location": "web/src/components/TimelineEventRow.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 events map to distinct octicons (reviewed, labeled, assigned, closed, reopened, merged, locked, cross-referenced); unmapped events keep the dot",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "WEB",
+        "finding": "PR line comments cannot span a multi-line range (`start_line`), though the store and the extended `comments[]` payload carry it",
+        "id": "WEB-207",
+        "location": "web/src/components/PRFilesView.tsx",
+        "severity": "m",
+        "status": "open \u2014 needs shift/drag range selection in the diff view, tracked as a scoped follow-up",
+        "status_kind": "open"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -8284,9 +8483,9 @@
       "categories": {
         "ACT": {
           "status": {
-            "fixed": 64
+            "fixed": 67
           },
-          "total": 64
+          "total": 67
         },
         "ARCH": {
           "status": {
@@ -8314,9 +8513,10 @@
         },
         "GQL": {
           "status": {
-            "fixed": 64
+            "fixed": 67,
+            "partial": 1
           },
-          "total": 64
+          "total": 68
         },
         "PAR": {
           "status": {
@@ -8327,9 +8527,10 @@
         "REST": {
           "status": {
             "deferred": 1,
-            "fixed": 173
+            "fixed": 180,
+            "open": 1
           },
-          "total": 174
+          "total": 182
         },
         "STORE": {
           "status": {
@@ -8347,21 +8548,24 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 198
+            "fixed": 204,
+            "open": 1
           },
-          "total": 200
+          "total": 207
         }
       },
       "severity": {
         "blocker": 167,
-        "major": 427,
-        "minor": 289
+        "major": 432,
+        "minor": 306
       },
       "status": {
         "deferred": 4,
-        "fixed": 879
+        "fixed": 898,
+        "open": 2,
+        "partial": 1
       },
-      "total": 883
+      "total": 905
     }
   },
   "rest": {

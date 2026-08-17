@@ -789,18 +789,72 @@ func TestCodeScanning_Analyses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("delete analysis: %v", err)
 	}
-	if resp.StatusCode != http.StatusNoContent {
+	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		t.Fatalf("delete analysis: %d body=%s", resp.StatusCode, b)
 	}
+	var delBody map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&delBody); err != nil {
+		t.Fatalf("decode deletion body: %v", err)
+	}
 	resp.Body.Close()
+	// code-scanning-analysis-deletion carries both members; deleting the last
+	// analysis of the set leaves nothing to chain to, so both are null.
+	for _, k := range []string{"next_analysis_url", "confirm_delete_url"} {
+		if v, ok := delBody[k]; !ok || v != nil {
+			t.Fatalf("deletion body %s = %v (present=%v), want null", k, v, ok)
+		}
+	}
 
 	resp = s.authedGet(t, "/api/v3/repos/admin/cs-analyses/code-scanning/analyses/"+itoa(analysis.ID))
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404 after delete, got %d", resp.StatusCode)
 	}
 	resp.Body.Close()
+}
+
+// TestCodeScanning_DeleteAnalysisChain covers the deletion body when the set
+// still has analyses: next_analysis_url points to the next deletable analysis
+// and confirm_delete_url carries ?confirm_delete, per code-scanning-analysis-deletion.
+func TestCodeScanning_DeleteAnalysisChain(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "cs-chain", "", false)
+	if repo == nil {
+		t.Fatal("create repo failed")
+	}
+	// Three analyses in the same (ref, tool) set so that deleting one leaves at
+	// least two — enough for next_analysis_url (no confirmation) to be non-null.
+	a1 := s.store.CreateCodeScanningAnalysis(repo.FullName, "refs/heads/main", "1111111111111111111111111111111111111111", "key", "cat", "CodeQL", "g1")
+	_ = s.store.CreateCodeScanningAnalysis(repo.FullName, "refs/heads/main", "2222222222222222222222222222222222222222", "key", "cat", "CodeQL", "g2")
+	_ = s.store.CreateCodeScanningAnalysis(repo.FullName, "refs/heads/main", "3333333333333333333333333333333333333333", "key", "cat", "CodeQL", "g3")
+
+	req, _ := http.NewRequest("DELETE", s.baseURL+"/api/v3/repos/admin/cs-chain/code-scanning/analyses/"+itoa(a1.ID), nil)
+	req.Header.Set("Authorization", "Bearer "+defaultToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("delete analysis: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		t.Fatalf("delete analysis: %d body=%s", resp.StatusCode, b)
+	}
+	var body map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode deletion body: %v", err)
+	}
+	resp.Body.Close()
+	next, _ := body["next_analysis_url"].(string)
+	if !strings.Contains(next, "/code-scanning/analyses/") {
+		t.Errorf("next_analysis_url = %v, want a chained analysis URL", body["next_analysis_url"])
+	}
+	confirm, _ := body["confirm_delete_url"].(string)
+	if !strings.HasSuffix(confirm, "?confirm_delete") {
+		t.Errorf("confirm_delete_url = %v, want ?confirm_delete suffix", body["confirm_delete_url"])
+	}
 }
 
 // patchDefaultSetup PATCHes a repo's default setup and returns the response.

@@ -180,6 +180,22 @@ func TestUnauthenticatedCoreRateLimitIsSixty(t *testing.T) {
 	}
 }
 
+// TestUnauthenticatedSearchRateLimitIsTen pins GitHub's anonymous Search budget
+// (10/minute) versus the authenticated 30 — the anonymous downgrade applies to
+// search, not just core. (code_search is already 10 for everyone.)
+func TestUnauthenticatedSearchRateLimitIsTen(t *testing.T) {
+	server := &Server{rateLimits: map[string]*apiRateWindow{}}
+	anon := httptest.NewRequest("GET", "/api/v3/search/repositories?q=x", nil)
+	if got := server.rateLimitSnapshot(anon, "search", true); got.Limit != 10 {
+		t.Errorf("anonymous search limit = %d, want 10", got.Limit)
+	}
+	authed := httptest.NewRequest("GET", "/api/v3/search/repositories?q=x", nil)
+	authed.Header.Set("Authorization", "Bearer "+defaultToken)
+	if got := server.rateLimitSnapshot(authed, "search", true); got.Limit != 30 {
+		t.Errorf("authenticated search limit = %d, want 30", got.Limit)
+	}
+}
+
 func TestAnonymousRateBucketUsesForwardedClientBehindPrivateProxy(t *testing.T) {
 	makeRequest := func(forwardedFor string) *http.Request {
 		request := httptest.NewRequest("GET", "/api/v3/users/octocat", nil)

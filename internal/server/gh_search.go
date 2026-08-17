@@ -327,8 +327,12 @@ func parseSearchQuery(r *http.Request) (searchQuery, error) {
 				}
 			case "location":
 				// User-search location filter; applied in handleSearchUsers.
-			case "created", "pushed":
+			case "created", "pushed", "updated", "closed":
 				if _, err := parseDateSearchConstraint(val); err != nil {
+					return q, unsupportedQualifierError{key: key, value: val}
+				}
+			case "draft":
+				if normalizedValue != "true" && normalizedValue != "false" {
 					return q, unsupportedQualifierError{key: key, value: val}
 				}
 			case "license":
@@ -443,7 +447,8 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 			strings.EqualFold(repo.Visibility, "internal") && q.excludes("is", "internal") {
 			continue
 		}
-		if !searchIssueQualifiersMatchLocked(s.store, q, issue.AuthorID, issue.AssigneeIDs, issue.LabelIDs, issue.MilestoneID, issue.Title+" "+issue.Body) {
+		if !searchIssueQualifiersMatchLocked(s.store, q, issue.AuthorID, issue.AssigneeIDs, issue.LabelIDs, issue.MilestoneID, issue.Title+" "+issue.Body,
+			issueSearchSubject{createdAt: issue.CreatedAt, updatedAt: issue.UpdatedAt, closedAt: issue.ClosedAt, archived: repo.Archived}) {
 			continue
 		}
 		excludedLabel := false
@@ -522,7 +527,8 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 			strings.EqualFold(repo.Visibility, "internal") && q.excludes("is", "internal") {
 			continue
 		}
-		if !searchIssueQualifiersMatchLocked(s.store, q, pr.AuthorID, pr.AssigneeIDs, pr.LabelIDs, pr.MilestoneID, pr.Title+" "+pr.Body) {
+		if !searchIssueQualifiersMatchLocked(s.store, q, pr.AuthorID, pr.AssigneeIDs, pr.LabelIDs, pr.MilestoneID, pr.Title+" "+pr.Body,
+			issueSearchSubject{createdAt: pr.CreatedAt, updatedAt: pr.UpdatedAt, closedAt: pr.ClosedAt, isDraft: pr.IsDraft, archived: repo.Archived}) {
 			continue
 		}
 		excludedLabel := false
@@ -889,7 +895,18 @@ func prHasLabelNames(st *store.Store, pr *store.PullRequest, names []string) boo
 // assignee: (incl. `*`), milestone: (incl. `*`), every positive label: (AND'd —
 // the old code kept only the last), no:label|assignee|milestone, and mentions:.
 // Callers hold st.Mu.RLock; text is the item's title+" "+body for mentions.
-func searchIssueQualifiersMatchLocked(st *store.Store, q searchQuery, authorID int, assigneeIDs, labelIDs []int, milestoneID int, text string) bool {
+// issueSearchSubject carries the per-item fields the temporal and state
+// qualifiers filter on (dates, draft flag, owning-repo archived flag), so the
+// issue and pull-request callers can drive one matcher.
+type issueSearchSubject struct {
+	createdAt time.Time
+	updatedAt time.Time
+	closedAt  *time.Time
+	isDraft   bool
+	archived  bool
+}
+
+func searchIssueQualifiersMatchLocked(st *store.Store, q searchQuery, authorID int, assigneeIDs, labelIDs []int, milestoneID int, text string, subj issueSearchSubject) bool {
 	loginOf := func(id int) string {
 		if u := store.ActorUserLocked(st, id); u != nil {
 			return u.Login
@@ -962,6 +979,28 @@ func searchIssueQualifiersMatchLocked(st *store.Store, q searchQuery, authorID i
 				if milestoneID != 0 {
 					return false
 				}
+			}
+		case "created", "updated":
+			c, err := parseDateSearchConstraint(val)
+			at := subj.createdAt
+			if ql.Key == "updated" {
+				at = subj.updatedAt
+			}
+			if err != nil || !c.matches(at) {
+				return false
+			}
+		case "closed":
+			c, err := parseDateSearchConstraint(val)
+			if err != nil || subj.closedAt == nil || !c.matches(*subj.closedAt) {
+				return false
+			}
+		case "draft":
+			if subj.isDraft != strings.EqualFold(val, "true") {
+				return false
+			}
+		case "archived":
+			if subj.archived != strings.EqualFold(val, "true") {
+				return false
 			}
 		}
 	}

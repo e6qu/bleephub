@@ -40,38 +40,97 @@ func graphQLToReactionContent(enum string) string {
 	return ""
 }
 
-// resolveReactableSubject decodes a Reactable node id (a Discussion or
-// DiscussionComment) to its store (parentType, databaseID). ok=false if the id
-// is not a supported reactable subject.
-func (s *Resolver) resolveReactableSubject(nodeID string) (string, int, bool) {
+// reactableSubject is a resolved Reactable node: the store (parentType,
+// databaseID) the reaction attaches to, plus the owning repo and author used
+// for authorization.
+type reactableSubject struct {
+	parentType string
+	parentID   int
+	repo       *store.Repo
+	authorID   int
+}
+
+// lookupReactableSubject decodes a Reactable node id to its store subject.
+// GitHub's AddReactionInput.subjectId accepts CommitComment, Discussion,
+// DiscussionComment, Issue, IssueComment, PullRequest, PullRequestReview,
+// PullRequestReviewComment and Release; bleephub resolves the subjects that
+// carry node-ID finders today (issues, pull requests, reviews, discussions and
+// discussion comments). The parentType strings mirror the REST reaction
+// handlers so both API surfaces key the same store rows.
+func (s *Resolver) lookupReactableSubject(nodeID string) (reactableSubject, bool) {
 	if d := store.FindDiscussionByNodeID(s.store, nodeID); d != nil {
-		return "discussion", d.ID, true
+		return reactableSubject{"discussion", d.ID, s.store.GetRepoByID(d.RepoID), d.AuthorID}, true
 	}
 	if c := store.FindDiscussionCommentByNodeID(s.store, nodeID); c != nil {
-		return "discussion_comment", c.ID, true
+		rs := reactableSubject{parentType: "discussion_comment", parentID: c.ID, authorID: c.AuthorID}
+		if d := s.store.GetDiscussion(c.DiscussionID); d != nil {
+			rs.repo = s.store.GetRepoByID(d.RepoID)
+		}
+		return rs, true
 	}
-	return "", 0, false
+	if i := store.FindIssueByNodeID(s.store, nodeID); i != nil {
+		return reactableSubject{"issue", i.ID, s.store.GetRepoByID(i.RepoID), i.AuthorID}, true
+	}
+	if pr := store.FindPullRequestByNodeID(s.store, nodeID); pr != nil {
+		return reactableSubject{"pull_request", pr.ID, s.store.GetRepoByID(pr.RepoID), pr.AuthorID}, true
+	}
+	if rv := store.FindReviewByNodeID(s.store, nodeID); rv != nil {
+		rs := reactableSubject{parentType: "pull_request_review", parentID: rv.ID, authorID: rv.AuthorID}
+		if pr := s.store.GetPullRequest(rv.PRID); pr != nil {
+			rs.repo = s.store.GetRepoByID(pr.RepoID)
+		}
+		return rs, true
+	}
+	return reactableSubject{}, false
+}
+
+// resolveReactableSubject decodes a Reactable node id to its store
+// (parentType, databaseID). ok=false if the id is not a supported subject.
+func (s *Resolver) resolveReactableSubject(nodeID string) (string, int, bool) {
+	rs, ok := s.lookupReactableSubject(nodeID)
+	return rs.parentType, rs.parentID, ok
+}
+
+// reactableSubjectScope maps a resolved reaction subject to the app permission
+// scope GitHub requires: issue reactions need issues:write, pull-request and
+// review reactions need pull_requests:write, discussion reactions need
+// discussions:write — never one blanket scope.
+func reactableSubjectScope(parentType string) store.PermScope {
+	switch parentType {
+	case "issue", "issue_comment":
+		return store.ScopeIssues
+	case "pull_request", "pull_request_review", "pull_request_review_comment":
+		return store.ScopePullRequests
+	case "commit_comment":
+		return store.ScopeContents
+	default:
+		return store.ScopeDiscussions
+	}
+}
+
+// reactableScope resolves the subject in the input and returns its required
+// scope, for the subject-typed scopeFor hook on the reaction authz rows.
+func reactableScope(key string) func(*Resolver, map[string]interface{}) store.PermScope {
+	return func(s *Resolver, input map[string]interface{}) store.PermScope {
+		nodeID, _ := input[key].(string)
+		if rs, ok := s.lookupReactableSubject(nodeID); ok {
+			return reactableSubjectScope(rs.parentType)
+		}
+		return store.ScopeDiscussions
+	}
 }
 
 // mutationTargetReactable authorizes a reaction against the repo owning the
-// subject (discussion or discussion comment).
+// resolved subject.
 func mutationTargetReactable(key string) func(*Resolver, map[string]interface{}) mutationTarget {
 	return func(s *Resolver, input map[string]interface{}) mutationTarget {
 		nodeID, _ := input[key].(string)
 		// `missing` stays set so the "can't read the repo" path in authorize
 		// returns a non-nil error rather than silently authorizing.
 		target := mutationTarget{missing: gqlMissingNode("Reactable", nodeID)}
-		if d := store.FindDiscussionByNodeID(s.store, nodeID); d != nil {
-			target.repo = s.store.GetRepoByID(d.RepoID)
-			target.authorID = d.AuthorID
-			return target
-		}
-		if c := store.FindDiscussionCommentByNodeID(s.store, nodeID); c != nil {
-			target.authorID = c.AuthorID
-			if d := s.store.GetDiscussion(c.DiscussionID); d != nil {
-				target.repo = s.store.GetRepoByID(d.RepoID)
-			}
-			return target
+		if rs, ok := s.lookupReactableSubject(nodeID); ok {
+			target.repo = rs.repo
+			target.authorID = rs.authorID
 		}
 		return target
 	}

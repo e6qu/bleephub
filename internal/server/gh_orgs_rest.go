@@ -230,7 +230,9 @@ func (s *Server) handleDeleteOrg(w http.ResponseWriter, r *http.Request) {
 
 	s.store.DeleteOrg(login)
 	s.recordAuditEvent("org.delete", user.Login, login, nil)
-	w.WriteHeader(http.StatusNoContent)
+	// GitHub deletes an organization asynchronously and answers 202 Accepted,
+	// not 204.
+	w.WriteHeader(http.StatusAccepted)
 }
 
 func (s *Server) handleListAuthUserOrgs(w http.ResponseWriter, r *http.Request) {

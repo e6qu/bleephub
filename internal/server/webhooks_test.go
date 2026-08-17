@@ -446,6 +446,29 @@ func TestWebhookPushEvent(t *testing.T) {
 	if lastPayload["ref"] == nil {
 		t.Fatal("push payload missing 'ref' field")
 	}
+	// The pushed root commit adds test.txt, so its added[] must list it — the
+	// per-commit file lists are no longer hard-coded empty.
+	commits, _ := lastPayload["commits"].([]interface{})
+	if len(commits) == 0 {
+		t.Fatal("push payload carried no commits")
+	}
+	foundAdded := false
+	for _, c := range commits {
+		cm, _ := c.(map[string]interface{})
+		for _, a := range asAnySlice(cm["added"]) {
+			if a == "test.txt" {
+				foundAdded = true
+			}
+		}
+	}
+	if !foundAdded {
+		t.Errorf("no commit reported test.txt in added; commits = %v", commits)
+	}
+}
+
+func asAnySlice(v interface{}) []interface{} {
+	s, _ := v.([]interface{})
+	return s
 }
 
 func TestWebhookReleaseLifecycleActions(t *testing.T) {
@@ -1443,6 +1466,11 @@ func TestWebhookPing(t *testing.T) {
 	}
 	if lastPayload["hook_id"] == nil {
 		t.Fatal("ping payload missing 'hook_id' field")
+	}
+	// GitHub's ping event carries the acting user as sender.
+	sender, _ := lastPayload["sender"].(map[string]interface{})
+	if sender == nil || sender["login"] != "admin" {
+		t.Errorf("ping sender = %v, want the admin user", lastPayload["sender"])
 	}
 }
 

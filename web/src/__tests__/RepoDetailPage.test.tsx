@@ -524,7 +524,7 @@ describe("repository detail journeys", () => {
     renderPage("/ui/repos/admin/test/commits/abc123");
 
     fireEvent.click(await screen.findByRole("button", { name: "add reaction" }));
-    fireEvent.click(screen.getByRole("button", { name: "react with heart" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "react with heart" }));
 
     await waitFor(() => {
       const post = mockFetch.mock.calls.find(
