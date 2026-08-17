@@ -202,6 +202,10 @@ func TestProjectsClassic_CardNoteAndIssue(t *testing.T) {
 	if card1["note"] != "remember this" {
 		t.Fatalf("expected note, got %v", card1["note"])
 	}
+	// GitHub's card object always carries the archived flag (round-4).
+	if archived, ok := card1["archived"].(bool); !ok || archived {
+		t.Fatalf("expected archived=false present, got %v", card1["archived"])
+	}
 
 	// Issue card
 	card2 := s.createCard(t, col.ID, map[string]any{"content_id": issue.ID, "content_type": "Issue"})

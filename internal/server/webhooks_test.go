@@ -1819,3 +1819,31 @@ func TestWebhookOrganizationBlock(t *testing.T) {
 		t.Fatalf("missing deliveries: orgSeen=%v userSeen=%v (got %d payloads)", orgSeen, userSeen, len(payloads))
 	}
 }
+
+// TestWebhookRepoAndOrgPayloadHypermedia covers the round-3 residual: the
+// nested repository and organization objects on webhook payloads carry the
+// hypermedia (node_id/url/html_url) GitHub ships, in the same relative form the
+// sender object already uses.
+func TestWebhookRepoAndOrgPayloadHypermedia(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "wh-hypermedia", "", false)
+
+	rp := repoPayload(repo)
+	if rp["node_id"] != repo.NodeID {
+		t.Errorf("repository node_id = %v, want %q", rp["node_id"], repo.NodeID)
+	}
+	if rp["url"] != "/api/v3/repos/"+repo.FullName {
+		t.Errorf("repository url = %v", rp["url"])
+	}
+	if rp["html_url"] != "/"+repo.FullName {
+		t.Errorf("repository html_url = %v", rp["html_url"])
+	}
+
+	org := s.store.CreateOrg(admin, "wh-org", "WH Org", "")
+	op := orgWebhookPayload(org)
+	if op["url"] != "/api/v3/orgs/"+org.Login {
+		t.Errorf("organization url = %v", op["url"])
+	}
+}

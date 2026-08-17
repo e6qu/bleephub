@@ -1278,6 +1278,17 @@ func (s *Server) userMatchesCountQualifiers(q searchQuery, u *store.User) bool {
 			if !matchesNumericQualifier(ql.Value, int64(s.store.CountFollowers(u.Login))) {
 				return false
 			}
+		case "language":
+			matched := false
+			for _, repo := range s.store.ListReposForUser(u, store.RepoListOptions{}) {
+				if !repo.Private && strings.EqualFold(repo.Language, ql.Value) {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				return false
+			}
 		}
 	}
 	return true
@@ -1288,7 +1299,7 @@ func (s *Server) userMatchesCountQualifiers(q searchQuery, u *store.User) bool {
 func queryHasUserScopedQualifier(q searchQuery) bool {
 	for _, ql := range q.Qualifiers {
 		switch ql.Key {
-		case "repos", "followers", "location", "created":
+		case "repos", "followers", "location", "created", "language":
 			return true
 		case "in":
 			for _, f := range strings.Split(strings.ToLower(ql.Value), ",") {

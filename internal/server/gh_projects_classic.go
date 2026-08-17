@@ -731,6 +731,7 @@ func projectCardToJSON(c *store.ProjectCard, st *store.Store, baseURL string) (m
 		"id":          c.ID,
 		"node_id":     c.NodeID,
 		"note":        nullIfEmpty(c.Note),
+		"archived":    false,
 		"creator":     creator,
 		"created_at":  c.CreatedAt.UTC().Format(time.RFC3339),
 		"updated_at":  c.UpdatedAt.UTC().Format(time.RFC3339),

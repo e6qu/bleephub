@@ -818,6 +818,13 @@ var gqlProjectMutationCases = []gqlProjectMutationCase{
 		},
 	},
 	{
+		name: "deleteProjectV2Item",
+		doc:  `mutation($input:DeleteProjectV2ItemInput!){deleteProjectV2Item(input:$input){deletedItemId}}`,
+		input: func(f *gqlProjectAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"projectId": f.project.NodeID, "itemId": f.item.NodeID}
+		},
+	},
+	{
 		name: "createProjectV2Field",
 		doc:  `mutation($input:CreateProjectV2FieldInput!){createProjectV2Field(input:$input){projectV2Field{... on ProjectV2FieldCommon{id}}}}`,
 		input: func(f *gqlProjectAuthzFixture) map[string]interface{} {
@@ -936,5 +943,45 @@ func TestGraphQLAddProjectV2ItemRequiresReadingTheContent(t *testing.T) {
 	})
 	if errs := gqlAuthzErrors(env); len(errs) > 0 {
 		t.Fatalf("readable content was refused: %v", errs)
+	}
+}
+
+// TestGraphQLDeleteProjectV2ItemRemovesTheItem covers the mutation backing
+// `gh project item-delete`: the owner deletes an item, the payload echoes the
+// item's node id, and the item is gone from the project afterwards. An itemId
+// naming an item outside the addressed project is not found.
+func TestGraphQLDeleteProjectV2ItemRemovesTheItem(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	f := s.newGQLProjectAuthzFixture(t, "delitem")
+	doc := `mutation($input:DeleteProjectV2ItemInput!){deleteProjectV2Item(input:$input){deletedItemId}}`
+
+	// An item that belongs to another project is not this project's to delete.
+	other := s.store.ProjectsV2.CreateProject(f.owner.ID, "User", "other", f.owner.ID)
+	otherItem := s.store.ProjectsV2.AddItem(other.ID, "Issue", f.issue.ID, f.owner.ID)
+	env := s.gqlAuthzPost(t, f.ownerToken, doc, map[string]interface{}{
+		"input": map[string]interface{}{"projectId": f.project.NodeID, "itemId": otherItem.NodeID},
+	})
+	if len(gqlAuthzErrors(env)) == 0 {
+		t.Errorf("an item from a different project was deletable: %v", env)
+	}
+	if s.store.ProjectsV2.GetItem(otherItem.ID) == nil {
+		t.Errorf("the other project's item was deleted through the wrong project")
+	}
+
+	// The owner deletes their own item; the payload echoes its node id.
+	env = s.gqlAuthzPost(t, f.ownerToken, doc, map[string]interface{}{
+		"input": map[string]interface{}{"projectId": f.project.NodeID, "itemId": f.item.NodeID},
+	})
+	if errs := gqlAuthzErrors(env); len(errs) > 0 {
+		t.Fatalf("the owner was refused deleting their own item: %v", errs)
+	}
+	data, _ := env["data"].(map[string]interface{})
+	payload, _ := data["deleteProjectV2Item"].(map[string]interface{})
+	if got := payload["deletedItemId"]; got != f.item.NodeID {
+		t.Errorf("deletedItemId = %v, want %q", got, f.item.NodeID)
+	}
+	if s.store.ProjectsV2.GetItem(f.item.ID) != nil {
+		t.Errorf("the item survived the delete mutation")
 	}
 }

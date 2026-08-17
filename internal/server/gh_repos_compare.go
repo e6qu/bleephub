@@ -52,7 +52,7 @@ func commitToJSON(c *object.Commit, repo *store.Repo, st *store.Store, baseURL s
 	}
 	return map[string]interface{}{
 		"sha":          c.Hash.String(),
-		"node_id":      "MDY6Q29tbWl0" + c.Hash.String(),
+		"node_id":      encodeNodeID("Commit", 0, c.Hash.String()),
 		"url":          commitURL,
 		"html_url":     htmlURL,
 		"comments_url": commitURL + "/comments",
@@ -297,7 +297,32 @@ func (s *Server) handleCompareRefs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	accept := r.Header.Get("Accept")
-	if strings.Contains(accept, "application/vnd.github.diff") || strings.Contains(accept, "application/vnd.github.patch") {
+	if strings.Contains(accept, "application/vnd.github.patch") {
+		// github's compare .patch is a series of per-commit git-format-patches
+		// (oldest first), not a single tree diff.
+		commits, err := store.CommitsBetween(stor, baseHash, headHash)
+		if err != nil {
+			writeGHError(w, http.StatusInternalServerError, "Diff computation failed")
+			return
+		}
+		var patch strings.Builder
+		for i := len(commits) - 1; i >= 0; i-- {
+			p, err := commitFormatPatch(commits[i])
+			if err != nil {
+				writeGHError(w, http.StatusInternalServerError, "Diff computation failed")
+				return
+			}
+			patch.WriteString(p)
+			if i > 0 {
+				patch.WriteString("\n")
+			}
+		}
+		w.Header().Set("Content-Type", "application/vnd.github.patch; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, patch.String())
+		return
+	}
+	if strings.Contains(accept, "application/vnd.github.diff") {
 		changes, err := object.DiffTree(baseTree, headTree)
 		if err != nil {
 			writeGHError(w, http.StatusInternalServerError, "Diff computation failed")
@@ -312,11 +337,7 @@ func (s *Server) handleCompareRefs(w http.ResponseWriter, r *http.Request) {
 			}
 			diff.WriteString(patch.String())
 		}
-		mediaType := "application/vnd.github.diff"
-		if strings.Contains(accept, "application/vnd.github.patch") {
-			mediaType = "application/vnd.github.patch"
-		}
-		w.Header().Set("Content-Type", mediaType+"; charset=utf-8")
+		w.Header().Set("Content-Type", "application/vnd.github.diff; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
 		_, _ = io.WriteString(w, diff.String())
 		return

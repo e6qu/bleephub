@@ -1271,6 +1271,7 @@ var graphqlMutationAuthz = map[string]mutationRule{
 	// the owning user themself, or an active member of the owning org.
 	"createProjectV2":               projectRule{target: projectTargetOwner("ownerId")},
 	"addProjectV2ItemById":          projectRule{target: projectTargetProject("projectId")},
+	"deleteProjectV2Item":           projectRule{target: projectTargetProject("projectId")},
 	"createProjectV2Field":          projectRule{target: projectTargetProject("projectId")},
 	"updateProjectV2ItemFieldValue": projectRule{target: projectTargetProject("projectId")},
 }

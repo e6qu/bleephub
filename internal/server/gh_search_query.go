@@ -74,7 +74,7 @@ var searchQualifierScopes = map[string]map[string]bool{
 	"code": qualifierSet(
 		"repo", "user", "org", "language", "path", "extension", "ext", "filename", "file",
 	),
-	"users":   qualifierSet("type", "in", "repos", "followers", "location", "created"),
+	"users":   qualifierSet("type", "in", "repos", "followers", "location", "created", "language"),
 	"commits": qualifierSet("repo", "user", "org", "author", "hash"),
 	"labels":  qualifierSet(),
 	"topics":  qualifierSet(),

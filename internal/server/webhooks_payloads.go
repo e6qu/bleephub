@@ -343,11 +343,16 @@ func repoPayload(repo *store.Repo) map[string]interface{} {
 	if repo == nil {
 		return nil
 	}
+	// Hypermedia is relative, matching the sender object (store.UserToJSON) that
+	// already ships on every payload; the whole webhook body uses one convention.
 	result := map[string]interface{}{
 		"id":             repo.ID,
+		"node_id":        repo.NodeID,
 		"name":           repo.Name,
 		"full_name":      repo.FullName,
 		"private":        repo.Private,
+		"url":            "/api/v3/repos/" + repo.FullName,
+		"html_url":       "/" + repo.FullName,
 		"description":    repo.Description,
 		"fork":           repo.Fork,
 		"default_branch": repo.DefaultBranch,
@@ -368,6 +373,7 @@ func orgWebhookPayload(org *store.Org) map[string]interface{} {
 		"login":       org.Login,
 		"id":          org.ID,
 		"node_id":     org.NodeID,
+		"url":         "/api/v3/orgs/" + org.Login,
 		"avatar_url":  org.AvatarURL,
 		"description": org.Description,
 	}

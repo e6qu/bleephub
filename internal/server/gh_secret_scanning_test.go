@@ -207,6 +207,16 @@ func TestSecretScanning_GetAndLocations(t *testing.T) {
 	if got["state"] != "open" {
 		t.Fatalf("expected state open, got %v", got["state"])
 	}
+	// Round-4: the alert object carries github's full shape — the (synthetic)
+	// secret, validity, and push-protection-bypass members must all be present.
+	for _, field := range []string{"secret", "validity", "resolved_by", "resolution_comment", "push_protection_bypassed", "push_protection_bypassed_by", "push_protection_bypassed_at"} {
+		if _, ok := got[field]; !ok {
+			t.Errorf("alert missing %q field: %v", field, got)
+		}
+	}
+	if got["push_protection_bypassed"] != false {
+		t.Errorf("push_protection_bypassed = %v, want false", got["push_protection_bypassed"])
+	}
 
 	resp = s.authedGet(t, "/api/v3/repos/admin/ss-get/secret-scanning/alerts/"+itoa(number)+"/locations")
 	if resp.StatusCode != http.StatusOK {
@@ -419,20 +429,25 @@ func TestSecretScanning_InvalidResolution(t *testing.T) {
 	created := s.seedSecretAlert(t, "admin", "ss-invalid", "github_personal_access_token")
 	number := int(created["number"].(float64))
 
-	patch, _ := json.Marshal(map[string]any{"state": "resolved", "resolution": "not_a_real_resolution"})
-	req, _ := http.NewRequest("PATCH", s.baseURL+"/api/v3/repos/admin/ss-invalid/secret-scanning/alerts/"+itoa(number), bytes.NewReader(patch))
-	req.Header.Set("Authorization", "Bearer "+defaultToken)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("patch alert: %v", err)
-	}
-	if resp.StatusCode != http.StatusUnprocessableEntity {
-		b, _ := io.ReadAll(resp.Body)
+	// `pattern_deleted`/`pattern_edited` are not client resolutions (github's
+	// secret-scanning resolution enum is false_positive/wont_fix/revoked/used_in_tests
+	// only), so they are rejected like an outright bogus value (round-4).
+	for _, resolution := range []string{"not_a_real_resolution", "pattern_deleted", "pattern_edited"} {
+		patch, _ := json.Marshal(map[string]any{"state": "resolved", "resolution": resolution})
+		req, _ := http.NewRequest("PATCH", s.baseURL+"/api/v3/repos/admin/ss-invalid/secret-scanning/alerts/"+itoa(number), bytes.NewReader(patch))
+		req.Header.Set("Authorization", "Bearer "+defaultToken)
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("patch alert (%s): %v", resolution, err)
+		}
+		if resp.StatusCode != http.StatusUnprocessableEntity {
+			b, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			t.Fatalf("resolution %q: expected 422, got %d body=%s", resolution, resp.StatusCode, b)
+		}
 		resp.Body.Close()
-		t.Fatalf("expected 422, got %d body=%s", resp.StatusCode, b)
 	}
-	resp.Body.Close()
 }
 
 func TestSecretScanning_404(t *testing.T) {

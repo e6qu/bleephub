@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -911,5 +912,20 @@ func TestRepoCompareREST(t *testing.T) {
 	f := files[0].(map[string]interface{})
 	if f["filename"] != "feature.go" {
 		t.Fatalf("expected feature.go, got %v", f["filename"])
+	}
+
+	// The .patch media type serves a real git-format-patch mbox, one patch per
+	// commit in the range (round-4: not the same tree diff .diff serves).
+	patchResp := s.semanticRequest(t, http.MethodGet, "/api/v3/repos/admin/compare-rest/compare/main...feature", "application/vnd.github.patch")
+	patchBody, _ := io.ReadAll(patchResp.Body)
+	patchResp.Body.Close()
+	if patchResp.StatusCode != http.StatusOK {
+		t.Fatalf("compare .patch status = %d", patchResp.StatusCode)
+	}
+	patch := string(patchBody)
+	for _, want := range []string{"From ", "Subject: [PATCH] add feature\n", "feature.go", "\n-- \n"} {
+		if !strings.Contains(patch, want) {
+			t.Errorf("compare format-patch missing %q:\n%s", want, patch)
+		}
 	}
 }

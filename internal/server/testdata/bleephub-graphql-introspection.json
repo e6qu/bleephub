@@ -560,6 +560,25 @@
         }
       }
     },
+    "DeleteProjectV2ItemInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "itemId": "ID!",
+        "projectId": "ID!"
+      }
+    },
+    "DeleteProjectV2ItemPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "deletedItemId": {
+          "type": "ID"
+        }
+      }
+    },
     "DeleteRepositoryInput": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
@@ -1999,6 +2018,12 @@
           "type": "DeleteDiscussionCommentPayload",
           "args": {
             "input": "DeleteDiscussionCommentInput!"
+          }
+        },
+        "deleteProjectV2Item": {
+          "type": "DeleteProjectV2ItemPayload",
+          "args": {
+            "input": "DeleteProjectV2ItemInput!"
           }
         },
         "deleteRepository": {

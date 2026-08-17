@@ -507,6 +507,25 @@ func (s *Server) handleGetReadme(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
+		accept := r.Header.Get("Accept")
+		if strings.Contains(accept, "application/vnd.github.raw") {
+			w.Header().Set("Content-Type", "application/octet-stream")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(content)
+			return
+		}
+		if strings.Contains(accept, "application/vnd.github.html") {
+			rendered, err := s.renderMarkdown(string(content), "gfm", repo.FullName, s.baseURL(r))
+			if err != nil {
+				writeGHError(w, http.StatusInternalServerError, "Markdown rendering failed")
+				return
+			}
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, rendered)
+			return
+		}
+
 		out := contentFileJSON(s.baseURL(r), repo, refName, name, entry.Hash.String(), blob.Size)
 		out["encoding"] = "base64"
 		out["content"] = base64.StdEncoding.EncodeToString(content)

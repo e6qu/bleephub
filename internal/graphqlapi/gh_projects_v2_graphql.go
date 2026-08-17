@@ -226,6 +226,52 @@ func (s *Resolver) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 		},
 	})
 
+	// deleteProjectV2Item — the mutation backing `gh project item-delete`.
+	deleteItemInputType := graphql.NewInputObject(graphql.InputObjectConfig{
+		Name: "DeleteProjectV2ItemInput",
+		Fields: graphql.InputObjectConfigFieldMap{
+			"clientMutationId": &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"projectId":        &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
+			"itemId":           &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
+		},
+	})
+	deleteItemPayloadType := graphql.NewObject(graphql.ObjectConfig{
+		Name: "DeleteProjectV2ItemPayload",
+		Fields: graphql.Fields{
+			"clientMutationId": &graphql.Field{Type: graphql.String},
+			"deletedItemId":    &graphql.Field{Type: graphql.ID},
+		},
+	})
+
+	s.registerMutation(mutationType, "deleteProjectV2Item", &graphql.Field{
+		Type: deleteItemPayloadType,
+		Args: graphql.FieldConfigArgument{
+			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(deleteItemInputType)},
+		},
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			input, _ := p.Args["input"].(map[string]interface{})
+			clientMutationID, _ := input["clientMutationId"].(string)
+			projectNodeID, _ := input["projectId"].(string)
+			itemNodeID, _ := input["itemId"].(string)
+
+			proj := s.store.ProjectsV2.LookupProjectByNodeID(projectNodeID)
+			if proj == nil {
+				return nil, &ghNotFoundError{message: fmt.Sprintf("Could not resolve to a project with the global id of '%s'.", projectNodeID)}
+			}
+			item := s.store.ProjectsV2.LookupItemByNodeID(itemNodeID)
+			// An item id that names an item outside this project is not this
+			// project's item; answer as if it does not exist.
+			if item == nil || item.ProjectID != proj.ID {
+				return nil, &ghNotFoundError{message: fmt.Sprintf("Could not resolve to a node with the global id of '%s'.", itemNodeID)}
+			}
+			s.store.ProjectsV2.DeleteItem(item.ID)
+			return map[string]interface{}{
+				"clientMutationId": clientMutationID,
+				"deletedItemId":    item.NodeID,
+			}, nil
+		},
+	})
+
 	// --- createProjectV2Field ---
 
 	dataTypeEnum := graphql.NewEnum(graphql.EnumConfig{
