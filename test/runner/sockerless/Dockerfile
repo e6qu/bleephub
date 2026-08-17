@@ -1,8 +1,3 @@
-# Integration-only harness, never a published runtime image.
-# trivy:ignore:AVD-DS-0002 # requires root to drive the mounted Docker socket
-# trivy:ignore:AVD-DS-0013 # deliberately builds several independent Go modules from one fixture tree
-# trivy:ignore:AVD-DS-0026 # a finite integration job, not a health-checked service
-
 ARG RUNNER_VERSION=2.336.0
 ARG RUNNER_SOURCE_COMMIT=98aabcd429c4e8402406c56ce2d26387fed3b9ce
 ARG DOTNET_SDK_VERSION=8.0.423

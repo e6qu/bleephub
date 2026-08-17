@@ -117,7 +117,7 @@ All of the following are required CI gates (`.github/workflows/ci.yml`,
 | **staticcheck** | Go | correctness/lint |
 | **govulncheck** | Go (4 modules) | call-reachable vuln gate |
 | **Semgrep** | repo | `p/security-audit` + `p/secrets`, `--error` |
-| **Trivy** | fs (`misconfig,secret`) + images (`vuln`, OS packages) | Go vulns are gated by reachability-aware govulncheck and npm by `bun audit`, so Trivy skips the redundant module-graph `vuln` class on the filesystem; disposable test-harness Dockerfile misconfigs are ignored inline with a justification |
+| **Trivy** | fs (`misconfig,secret`) + images (`vuln`, OS packages) | Go vulns are gated by reachability-aware govulncheck and npm by `bun audit`, so Trivy skips the redundant module-graph `vuln` class on the filesystem; the misconfig scan targets the published `Dockerfile.release` and skips the disposable never-published CI test-harness Dockerfiles (documented in the workflow) |
 | **zizmor** | workflows | GitHub Actions supply-chain audit |
 | **dependency-age** | all ecosystems | 24-hour quarantine (`scripts/check-dependency-age.py`) blocks freshly-published (supply-chain-risky) versions |
 
@@ -129,11 +129,12 @@ paths. It is intentionally not wired into CI.
 
 A finding is suppressed only with a written justification, in one of:
 `ACCEPTED_FINDINGS` (CodeQL, per rule+file), inline `#nosec <rule> -- reason`
-(gosec), `nosemgrep: <rule>` (Semgrep), or an inline `# trivy:ignore:<id>`
-comment in the affected file (Trivy). There is no separate ignore file. Each
-records why the finding is non-exploitable or intentional (e.g. GitHub-compat
-behavior like the SHA-1 `X-Hub-Signature` HMAC, or a disposable CI test-harness
-Dockerfile that runs as root to drive a mounted Docker socket).
+(gosec), or `nosemgrep: <rule>` (Semgrep). Trivy has no ignore file: the
+misconfig scan is scoped in the workflow to the published runtime image, and the
+never-published CI test-harness Dockerfiles are skipped there with a documented
+reason (e.g. the sockerless integration image runs as root to drive a mounted
+Docker socket). Each suppression records why the finding is non-exploitable or
+intentional (e.g. GitHub-compat behavior like the SHA-1 `X-Hub-Signature` HMAC).
 
 ## Reporting
 

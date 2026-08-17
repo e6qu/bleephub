@@ -223,6 +223,13 @@ jobs:
       # module-graph `vuln` class here would only add false positives for
       # unreachable advisories. Trivy runs the misconfig + secret scanners it
       # uniquely provides; the release-image job scans OS packages for CVEs.
+      # The Dockerfile-misconfig scan targets the published runtime image
+      # (Dockerfile.release, which runs non-root with a HEALTHCHECK). The other
+      # Dockerfiles are disposable, never-published CI test harnesses whose
+      # flagged "misconfigs" are intentional: the sockerless integration image
+      # must run as root to drive the mounted Docker socket, and a finite test
+      # job has no HEALTHCHECK to consume. They are skipped rather than carrying
+      # a suppression each.
       - name: Scan infrastructure and secrets
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -231,6 +238,7 @@ jobs:
           scan-ref: .
           scanners: misconfig,secret
           skip-dirs: web/node_modules,web/dist
+          skip-files: Dockerfile.gh-test,Dockerfile.runner,test/shauth/Dockerfile,test/runner/sockerless/Dockerfile,test/runner/sockerless/Dockerfile.spawn-runner
           severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
           exit-code: '1'
 
