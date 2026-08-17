@@ -138,6 +138,41 @@ func TestPRReviewComments_MissingBody422(t *testing.T) {
 	}
 }
 
+// TestPRReviewComments_InvertedRange422 covers a multi-line comment whose
+// start_line does not precede line: GitHub rejects it with 422 rather than
+// storing an inverted range.
+func TestPRReviewComments_InvertedRange422(t *testing.T) {
+	s := newTestServer()
+	s.store.SeedDefaultUser()
+	s.registerGHPRCommentsRoutes()
+
+	user := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(user, "rc3", "", false)
+	seedPullRequestBranches(t, s, repo, "f", "m")
+	pr := s.store.CreatePullRequest(repo.ID, user.ID, "t", "b", "f", "m", false, nil, nil, 0)
+
+	post := func(payload map[string]any) int {
+		body, _ := json.Marshal(payload)
+		req := httptest.NewRequest("POST", "/api/v3/repos/admin/rc3/pulls/"+itoa(pr.Number)+"/comments", bytes.NewReader(body))
+		req.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")
+		w := httptest.NewRecorder()
+		s.requestHandler().ServeHTTP(w, req)
+		return w.Code
+	}
+
+	// start_line >= line is rejected.
+	if code := post(map[string]any{"body": "x", "path": "a.go", "line": 5, "start_line": 5, "side": "RIGHT"}); code != http.StatusUnprocessableEntity {
+		t.Errorf("start_line==line: status %d, want 422", code)
+	}
+	if code := post(map[string]any{"body": "x", "path": "a.go", "line": 5, "start_line": 9, "side": "RIGHT"}); code != http.StatusUnprocessableEntity {
+		t.Errorf("start_line>line: status %d, want 422", code)
+	}
+	// A valid range (start_line < line) is accepted.
+	if code := post(map[string]any{"body": "x", "path": "a.go", "line": 9, "start_line": 5, "side": "RIGHT"}); code != http.StatusCreated {
+		t.Errorf("valid range: status %d, want 201", code)
+	}
+}
+
 func TestPRReviewCommentReadsReturnDetachedSnapshots(t *testing.T) {
 	st := store.NewPRReviewCommentStore(nil)
 	comment := st.CreateRootComment(1, 2, "file.go", "stored", "deadbeef", "RIGHT", 7, 3)

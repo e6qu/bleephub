@@ -219,6 +219,13 @@ export function PRFilesView({
   // review" flow), submitted together with the verdict via createPRReview.
   const [pending, setPending] = useState<PRReviewCommentDraft[]>([]);
   const [reviewBody, setReviewBody] = useState("");
+  // Optional multi-line range: a start line strictly above the selected line
+  // makes the comment span start_line..line (GitHub's multi-line comments).
+  const [startLine, setStartLine] = useState("");
+  const rangeStart =
+    target && /^\d+$/.test(startLine.trim()) && Number(startLine) >= 1 && Number(startLine) < target.line
+      ? Number(startLine)
+      : undefined;
   const q = useQuery({
     queryKey: ["pr-files", owner, repo, number],
     queryFn: () => fetchPRFiles(owner, repo, number),
@@ -238,11 +245,13 @@ export function PRFilesView({
         path: target.file.filename,
         line: target.line,
         side: target.side,
+        ...(rangeStart !== undefined ? { start_line: rangeStart } : {}),
       });
     },
     onSuccess: () => {
       setTarget(null);
       setBody("");
+      setStartLine("");
       invalidateReview();
     },
   });
@@ -259,10 +268,17 @@ export function PRFilesView({
     if (!target || !body.trim()) return;
     setPending((prev) => [
       ...prev,
-      { path: target.file.filename, body: body.trim(), line: target.line, side: target.side },
+      {
+        path: target.file.filename,
+        body: body.trim(),
+        line: target.line,
+        side: target.side,
+        ...(rangeStart !== undefined ? { start_line: rangeStart } : {}),
+      },
     ]);
     setTarget(null);
     setBody("");
+    setStartLine("");
     commentMutation.reset();
   };
 
@@ -292,6 +308,24 @@ export function PRFilesView({
           className="mb-3"
         >
           <div className="space-y-2" style={{ padding: "0.75rem" }}>
+            <div className="flex items-center gap-2">
+              <FormLabel id="inline-review-start-line">Start line (optional)</FormLabel>
+              <input
+                id="inline-review-start-line"
+                type="number"
+                min={1}
+                max={target.line - 1}
+                value={startLine}
+                onChange={(event) => setStartLine(event.target.value)}
+                style={{ width: "6rem" }}
+                placeholder={`< ${target.line}`}
+              />
+              <span style={{ fontSize: "0.78rem", color: "var(--color-fg-muted)" }}>
+                {rangeStart !== undefined
+                  ? `Comment spans lines ${rangeStart}–${target.line}.`
+                  : "Leave blank for a single-line comment."}
+              </span>
+            </div>
             <FormLabel id="inline-review-comment">Review comment</FormLabel>
             <textarea
               id="inline-review-comment"
@@ -321,6 +355,7 @@ export function PRFilesView({
                 onClick={() => {
                   setTarget(null);
                   setBody("");
+                  setStartLine("");
                   commentMutation.reset();
                 }}
               >

@@ -2,6 +2,7 @@ package bleephub
 
 import (
 	"encoding/base64"
+	"net/url"
 	"strconv"
 	"testing"
 )
@@ -70,6 +71,55 @@ func TestSearchCommits(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != 422 {
 		t.Fatalf("empty q status = %d, want 422", resp.StatusCode)
+	}
+}
+
+// TestSearchCommitsQualifiers covers the commit-search identity/date/merge
+// qualifiers GitHub documents but bleephub used to 422 on (REST-180): a query
+// like `committer-date:>… merge:false author-name:…` must filter, not reject.
+func TestSearchCommitsQualifiers(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	repoKey := s.createTestRepo(t)
+	putTestFile(s, t, repoKey, "a.txt", "add alpha marker-xyz", "alpha")
+
+	base := "/api/v3/search/commits?q=marker-xyz+repo:" + repoKey.fullName()
+	env := decodeJSON(t, s.get(t, base, defaultToken))
+	items, _ := env["items"].([]interface{})
+	if len(items) != 1 {
+		t.Fatalf("setup: items = %d, want 1", len(items))
+	}
+	commit, _ := items[0].(map[string]interface{})["commit"].(map[string]interface{})
+	author, _ := commit["author"].(map[string]interface{})
+	authorName, _ := author["name"].(string)
+	if authorName == "" {
+		t.Fatal("setup: commit author name is empty")
+	}
+
+	count := func(q string) float64 {
+		e := decodeJSON(t, s.get(t, "/api/v3/search/commits?q="+url.QueryEscape(q), defaultToken))
+		c, _ := e["total_count"].(float64)
+		return c
+	}
+	rq := "marker-xyz repo:" + repoKey.fullName()
+	if got := count(rq + ` author-name:"` + authorName + `"`); got != 1 {
+		t.Errorf("author-name match total = %v, want 1", got)
+	}
+	if got := count(rq + " author-name:definitely-not-the-author"); got != 0 {
+		t.Errorf("author-name mismatch total = %v, want 0", got)
+	}
+	// A single-file contents commit has one parent (or none): never a merge.
+	if got := count(rq + " merge:false"); got != 1 {
+		t.Errorf("merge:false total = %v, want 1", got)
+	}
+	if got := count(rq + " merge:true"); got != 0 {
+		t.Errorf("merge:true total = %v, want 0", got)
+	}
+	if got := count(rq + " committer-date:>2000-01-01"); got != 1 {
+		t.Errorf("committer-date lower-bound total = %v, want 1", got)
+	}
+	if got := count(rq + " committer-date:<2000-01-01"); got != 0 {
+		t.Errorf("committer-date upper-bound total = %v, want 0", got)
 	}
 }
 
