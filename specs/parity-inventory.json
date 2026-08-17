@@ -207,19 +207,19 @@
       },
       {
         "event": "pull_request_review",
-        "line": 758,
+        "line": 769,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request_review",
-        "line": 1035,
+        "line": 1046,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request_review",
-        "line": 1098,
+        "line": 1109,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
@@ -1428,6 +1428,15 @@
         "location": "identity.go:58, gh_pages_deployments.go:347",
         "severity": "M",
         "status": "fixed \u2014 both now use `newAddressCheckedHTTPTransport` (dial-time `Dialer.Control`); `oidcClientContext` became a `*Server` method to read `allowPrivateOutboundTargets`, and the shauth loopback-issuer browser harness sets `BLEEPHUB_ALLOW_PRIVATE_OUTBOUND_TARGETS=true`",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "AUTH",
+        "finding": "PR merge was a check-then-use TOCTOU: the required-status-check / expected-head guards verified `prHeadSha`, but `completePullRequestMerge` re-resolved the head ref fresh and merged that with no CAS binding it to the checked SHA \u2014 a head branch advanced by a concurrent push between check and merge lands an unchecked commit on a (branch-protected) base, bypassing required checks and `expected_head_sha`",
+        "id": "AUTH-120",
+        "location": "gh_pulls_rest.go, gh_pull_merge_async.go, graphql_seams.go",
+        "severity": "M",
+        "status": "fixed \u2014 `completePullRequestMerge` takes the checked `expectedHead` and refuses (409) if the head it resolves at merge time differs (or no longer resolves); all three merge paths (sync REST, async, GraphQL `mergePullRequest`) pass the SHA their guards validated. Verified: unit test asserts a mismatched expected head is refused and the checked head merges. Found by a TOCTOU sweep of the security-critical paths; the SSRF resolve\u2192dial gate, rate-limit consume, git-ref CAS, and alert-state transitions were verified race-free",
         "status_kind": "fixed"
       },
       {
@@ -2931,6 +2940,15 @@
         "location": "gh_teams_rest.go",
         "severity": "m",
         "status": "fixed \u2014 the handler validates the enum and filters by the member's team role. Verified: unit test asserts `?role=maintainer` returns only the maintainer",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "webhook delivery was https-only (a deliberate deviation: github.com permits `http://` webhook endpoints), enforced by `webhookTargetRequiresHTTPS` at config and every delivery",
+        "id": "REST-174",
+        "location": "webhooks.go, gh_hooks_rest.go",
+        "severity": "m",
+        "status": "fixed \u2014 removed the https-only rule and its call sites; a hook target now only has to be http or https (`parseWebhookTargetURL`) and pass the always-on SSRF address gate, matching github. The `insecure_ssl` TLS-verify opt-out and the address/scheme gates are unchanged. Verified: unit test delivers to a plain-http loopback receiver; the e2e webhook harness now runs the receiver over http with no TLS/cert machinery",
         "status_kind": "fixed"
       },
       {
@@ -8278,9 +8296,9 @@
         },
         "AUTH": {
           "status": {
-            "fixed": 119
+            "fixed": 120
           },
-          "total": 119
+          "total": 120
         },
         "CI": {
           "status": {
@@ -8309,9 +8327,9 @@
         "REST": {
           "status": {
             "deferred": 1,
-            "fixed": 172
+            "fixed": 173
           },
-          "total": 173
+          "total": 174
         },
         "STORE": {
           "status": {
@@ -8336,14 +8354,14 @@
       },
       "severity": {
         "blocker": 167,
-        "major": 426,
-        "minor": 288
+        "major": 427,
+        "minor": 289
       },
       "status": {
         "deferred": 4,
-        "fixed": 877
+        "fixed": 879
       },
-      "total": 881
+      "total": 883
     }
   },
   "rest": {

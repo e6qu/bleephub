@@ -14,7 +14,6 @@ on:
       - 'README.md'
       - 'RELEASING.md'
       - 'SECURITY.md'
-      - 'PLAN.md'
       - 'THIRD-PARTY-NOTICES.md'
       - 'LICENSE'
   push:
@@ -219,14 +218,18 @@ jobs:
             --exclude web/node_modules \
             --exclude web/dist \
             .
-      - name: Scan dependencies, infrastructure, containers, and secrets
+      # Reachability-aware govulncheck (above) is the authoritative Go-vulnerability
+      # gate and `bun audit` (Web job) covers npm, so Trivy's non-reachability
+      # module-graph `vuln` class here would only add false positives for
+      # unreachable advisories. Trivy runs the misconfig + secret scanners it
+      # uniquely provides; the release-image job scans OS packages for CVEs.
+      - name: Scan infrastructure and secrets
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           version: v0.70.0
           scan-type: fs
           scan-ref: .
-          scanners: vuln,misconfig,secret
-          trivyignores: .trivyignore.yaml
+          scanners: misconfig,secret
           skip-dirs: web/node_modules,web/dist
           severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
           exit-code: '1'
@@ -338,7 +341,6 @@ jobs:
           scanners: vuln
           severity: HIGH,CRITICAL
           ignore-unfixed: true
-          trivyignores: .trivyignore.yaml
           exit-code: '1'
       - name: Build the runner image
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
@@ -362,7 +364,6 @@ jobs:
           scanners: vuln
           severity: HIGH,CRITICAL
           ignore-unfixed: true
-          trivyignores: .trivyignore.yaml
           exit-code: '1'
       # The two release bundles are shell scripts run only by the publish
       # workflow, so a syntax error or a broken cross-compile in either reached

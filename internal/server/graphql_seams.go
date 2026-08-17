@@ -121,8 +121,8 @@ func (a graphqlSeams) CanMergePullRequest(ctx context.Context, repo *store.Repo,
 	return a.s.canMergePullRequest(ctx, repo, pr)
 }
 
-func (a graphqlSeams) CompletePullRequestMerge(repo *store.Repo, pr *store.PullRequest, user *store.User, method, commitTitle, commitMessage string) (string, string) {
-	return a.s.completePullRequestMerge(repo, pr, user, method, commitTitle, commitMessage)
+func (a graphqlSeams) CompletePullRequestMerge(repo *store.Repo, pr *store.PullRequest, user *store.User, method, commitTitle, commitMessage, expectedHead string) (string, string) {
+	return a.s.completePullRequestMerge(repo, pr, user, method, commitTitle, commitMessage, expectedHead)
 }
 
 func (a graphqlSeams) BranchProtectionRuleForPR(repo *store.Repo, baseBranch string) map[string]interface{} {

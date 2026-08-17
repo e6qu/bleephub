@@ -206,6 +206,30 @@ func TestWebhookDeliveryReachesLoopbackListener(t *testing.T) {
 	}
 }
 
+// TestWebhookDeliveryAcceptsHTTP covers that webhook delivery is no longer
+// https-only (github permits http:// endpoints): a plain-http loopback receiver
+// is delivered to.
+func TestWebhookDeliveryAcceptsHTTP(t *testing.T) {
+	var hits int32
+	receiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&hits, 1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer receiver.Close()
+
+	s := ssrfTestServer()
+	hook := s.store.CreateHook("octo/repo", receiver.URL, "", "json", "0", []string{"push"}, true)
+	s.deliverWebhook(hook, "push", "", []byte(`{"ref":"refs/heads/main"}`))
+
+	deliveries := s.store.ListDeliveries(hook.ID)
+	if len(deliveries) == 0 || deliveries[len(deliveries)-1].StatusCode != http.StatusOK {
+		t.Fatalf("http webhook delivery = %v, want a 200", deliveries)
+	}
+	if atomic.LoadInt32(&hits) != 1 {
+		t.Fatalf("http receiver reached %d times, want 1", hits)
+	}
+}
+
 // TestWebhookDeliveryDoesNotFollowRedirects — a 3xx is the recorded outcome,
 // not a hop to a second destination no address check saw.
 func TestWebhookDeliveryDoesNotFollowRedirects(t *testing.T) {

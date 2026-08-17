@@ -560,7 +560,7 @@ func (s *Server) handleMergePullRequest(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	mergeSha, errMsg := s.completePullRequestMerge(repo, pr, user, req.MergeMethod, req.CommitTitle, req.CommitMessage)
+	mergeSha, errMsg := s.completePullRequestMerge(repo, pr, user, req.MergeMethod, req.CommitTitle, req.CommitMessage, s.prHeadSha(repo, pr))
 	if errMsg != "" {
 		writeGHError(w, http.StatusMethodNotAllowed, errMsg)
 		return
@@ -583,7 +583,13 @@ func (s *Server) handleMergePullRequest(w http.ResponseWriter, r *http.Request) 
 // the PR merged, and records the merged and closed timeline events. It returns
 // the resulting merge commit SHA or a non-empty error message when the merge
 // cannot be performed (e.g. a merge conflict).
-func (s *Server) completePullRequestMerge(repo *store.Repo, pr *store.PullRequest, user *store.User, method, commitTitle, commitMessage string) (string, string) {
+// completePullRequestMerge merges pr's head into its base. expectedHead is the
+// head SHA the caller's required-status-check / expected-head guards verified;
+// the merge is bound to exactly that commit so a head branch advanced by a
+// concurrent push between the check and here cannot land an unchecked commit on
+// a protected base (a check-then-merge TOCTOU). Pass "" only where no head guard
+// applies.
+func (s *Server) completePullRequestMerge(repo *store.Repo, pr *store.PullRequest, user *store.User, method, commitTitle, commitMessage, expectedHead string) (string, string) {
 	owner, name, _ := store.SplitRepoFullName(repo.FullName)
 	stor := s.store.GetGitStorage(owner, name)
 	var mergeSha string
@@ -595,6 +601,11 @@ func (s *Server) completePullRequestMerge(repo *store.Repo, pr *store.PullReques
 		return "", "Pull Request is not mergeable"
 	}
 	headHash, headErr := store.ResolveGitRef(headStor, pr.HeadRefName)
+	// Refuse if the head moved since it was checked (or can no longer be
+	// resolved): an unverifiable interlock is not a satisfied one.
+	if expectedHead != "" && (headErr != nil || !strings.EqualFold(headHash.String(), expectedHead)) {
+		return "", "Head branch was modified. Review and try the merge again."
+	}
 	if headErr == nil && headRepoFullName != repo.FullName {
 		if err := store.CopyGitObjects(headStor, stor); err != nil {
 			return "", "Pull Request is not mergeable"

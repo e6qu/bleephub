@@ -163,23 +163,6 @@ func parseWebhookTargetURL(raw string) (*url.URL, error) {
 	return u, nil
 }
 
-// webhookTargetRequiresHTTPS enforces the webhook-specific rule that deliveries
-// go only over TLS. Unlike github.com (which permits http:// endpoints), this
-// instance refuses cleartext delivery so a payload and its HMAC signature can
-// never cross the network in the clear. It is applied at webhook configuration
-// and again at every delivery; parseWebhookTargetURL stays scheme-agnostic
-// because repository import fetches also legitimately use http.
-func webhookTargetRequiresHTTPS(rawURL string) error {
-	u, err := url.Parse(strings.TrimSpace(rawURL))
-	if err != nil {
-		return fmt.Errorf("webhook URL %q is not a valid URL: %w", rawURL, err)
-	}
-	if !strings.EqualFold(u.Scheme, "https") {
-		return fmt.Errorf("webhook URL scheme %q is not deliverable; use https", u.Scheme)
-	}
-	return nil
-}
-
 // validateWebhookTargetURL is the configuration-time gate: the shape check
 // plus one name resolution, so a hostname pointing at private space is
 // refused when the hook is stored rather than when it first fires.
@@ -599,9 +582,7 @@ func (s *Server) deliverWebhook(hook *store.Webhook, event, action string, paylo
 	hook = s.store.SnapshotHook(hook)
 	guid := uuid.New().String()
 	backoffs := []time.Duration{0, 1 * time.Second, 5 * time.Second}
-	if err := webhookTargetRequiresHTTPS(hook.URL); err != nil {
-		backoffs = backoffs[:1]
-	} else if _, err := parseWebhookTargetURL(hook.URL); err != nil {
+	if _, err := parseWebhookTargetURL(hook.URL); err != nil {
 		// A refused target does not become deliverable by waiting: record the
 		// refusal once instead of retrying it.
 		backoffs = backoffs[:1]
@@ -708,12 +689,8 @@ func (s *Server) doDeliverAttempt(hook *store.Webhook, event, action, guid strin
 
 	// Every delivery path funnels through here, so this is where the stored
 	// target is re-checked — a hook configured before a rule tightened, or
-	// written straight into the store, is refused just the same. https is
-	// required: a cleartext target is never put on the wire.
-	if err := webhookTargetRequiresHTTPS(hook.URL); err != nil {
-		s.logger.Warn().Err(err).Int("hook_id", hook.ID).Msg("webhook delivery refused")
-		return undelivered(err)
-	}
+	// written straight into the store, is refused just the same (scheme must be
+	// http or https; the address gate applies).
 	if _, err := parseWebhookTargetURL(hook.URL); err != nil {
 		s.logger.Warn().Err(err).Int("hook_id", hook.ID).Msg("webhook delivery refused")
 		return undelivered(err)

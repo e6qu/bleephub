@@ -68,7 +68,7 @@ CI (`.github/workflows/ci.yml`) must be green before merge. The gates are:
   release images, and the Terraform module.
 
 Documentation-only changes (files under `docs/`, and `README.md`, `RELEASING.md`,
-`SECURITY.md`, `PLAN.md`, `THIRD-PARTY-NOTICES.md`, `LICENSE`) skip the pipeline
+`SECURITY.md`, `THIRD-PARTY-NOTICES.md`, `LICENSE`) skip the pipeline
 by design. Any change to code, config, specs, workflows, or `BUGS.md` runs
 everything.
 

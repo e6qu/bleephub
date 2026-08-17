@@ -1,3 +1,7 @@
+# Integration-only harness, never a published runtime image.
+# trivy:ignore:AVD-DS-0002 # requires root to drive the mounted Docker socket
+# trivy:ignore:AVD-DS-0026 # a finite integration job, not a health-checked service
+
 # One-layer derivation of the harness image (already built on the host
 # by the make target) used as the dispatcher's spawn image in TEST 14:
 # same runner tree + deps, ephemeral-runner entrypoint, bleephub

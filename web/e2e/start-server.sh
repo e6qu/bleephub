@@ -22,25 +22,9 @@ BLEEPHUB_SSH_HOST_KEY="$(<"${SSH_KEY_FILE}")"
 export BLEEPHUB_SSH_HOST_KEY
 export BLEEPHUB_E2E_WEBHOOK_PORT="${WEBHOOK_PORT}"
 export BLEEPHUB_E2E_WEBHOOK_SECRET="playwright-marketplace-secret"
-# This harness's webhook receiver runs on loopback, which the address gate
-# permits by policy (only non-loopback private space and the cloud metadata
-# endpoint are refused, always) — so no opt-out is needed.
-
-# The receiver serves HTTPS (real TLS delivery, no cleartext). Generate a
-# disposable self-signed certificate for 127.0.0.1 and make the bleephub
-# process trust it via SSL_CERT_FILE, so delivery verifies the chain normally
-# without any insecure_ssl opt-out. The material lives in a temp dir cleaned up
-# on exit and never leaves this disposable E2E process.
-TLS_DIR="$(mktemp -d)"
-WEBHOOK_TLS_CERT="${TLS_DIR}/webhook.crt"
-WEBHOOK_TLS_KEY="${TLS_DIR}/webhook.key"
-openssl req -x509 -newkey rsa:2048 -nodes \
-  -keyout "${WEBHOOK_TLS_KEY}" -out "${WEBHOOK_TLS_CERT}" \
-  -days 3650 -subj "/CN=127.0.0.1" \
-  -addext "subjectAltName=IP:127.0.0.1" >/dev/null 2>&1
-export BLEEPHUB_E2E_WEBHOOK_TLS_CERT="${WEBHOOK_TLS_CERT}"
-export BLEEPHUB_E2E_WEBHOOK_TLS_KEY="${WEBHOOK_TLS_KEY}"
-export SSL_CERT_FILE="${WEBHOOK_TLS_CERT}"
+# The webhook receiver runs over plain HTTP on loopback: webhook delivery permits
+# http:// targets and the address gate allows loopback, so no TLS/cert or Caddy
+# is needed for local testing.
 
 SERVER_PID=""
 WEBHOOK_PID=""
@@ -51,7 +35,7 @@ cleanup() {
   if [[ -n "${WEBHOOK_PID}" ]]; then
     kill "${WEBHOOK_PID}" 2>/dev/null || true
   fi
-  rm -rf "${SSH_KEY_DIR}" "${TLS_DIR}"
+  rm -rf "${SSH_KEY_DIR}"
 }
 trap cleanup EXIT
 
@@ -64,7 +48,7 @@ SERVER_PID=$!
 # Wait for server to be ready
 for _ in $(seq 1 30); do
   if curl -s "http://localhost:${PORT}/health" > /dev/null 2>&1 &&
-    curl -sk "https://127.0.0.1:${WEBHOOK_PORT}/health" > /dev/null 2>&1; then
+    curl -s "http://127.0.0.1:${WEBHOOK_PORT}/health" > /dev/null 2>&1; then
     break
   fi
   sleep 0.1

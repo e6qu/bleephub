@@ -140,7 +140,7 @@ func (s *Server) handleMergePullRequestAsync(w http.ResponseWriter, r *http.Requ
 	}
 
 	expectedHead := s.prHeadSha(repo, pr)
-	mergeSha, errMsg := s.completePullRequestMerge(repo, pr, user, req.MergeMethod, req.CommitTitle, req.CommitMessage)
+	mergeSha, errMsg := s.completePullRequestMerge(repo, pr, user, req.MergeMethod, req.CommitTitle, req.CommitMessage, expectedHead)
 	if errMsg != "" {
 		writeJSON(w, http.StatusConflict, renderMergeAsyncResult(&store.PullRequestMergeAsync{
 			Status:  MergeAsyncFailed,
