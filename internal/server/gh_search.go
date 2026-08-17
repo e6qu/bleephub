@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -255,6 +256,8 @@ func parseSearchQuery(r *http.Request) (searchQuery, error) {
 					case "body":
 						q.InBody = true
 					case "name", "description", "topics", "readme":
+					// User-search `in:` fields (applied in handleSearchUsers).
+					case "login", "email", "fullname":
 					default:
 						return q, unsupportedQualifierError{key: "in", value: val}
 					}
@@ -318,10 +321,12 @@ func parseSearchQuery(r *http.Request) (searchQuery, error) {
 				if normalizedValue != "public" && normalizedValue != "private" && normalizedValue != "internal" {
 					return q, unsupportedQualifierError{key: key, value: val}
 				}
-			case "size", "followers", "forks", "stars", "topics", "good-first-issues", "help-wanted-issues":
+			case "size", "followers", "forks", "stars", "topics", "good-first-issues", "help-wanted-issues", "repos":
 				if _, err := parseNumericSearchConstraint(val); err != nil {
 					return q, unsupportedQualifierError{key: key, value: val}
 				}
+			case "location":
+				// User-search location filter; applied in handleSearchUsers.
 			case "created", "pushed":
 				if _, err := parseDateSearchConstraint(val); err != nil {
 					return q, unsupportedQualifierError{key: key, value: val}
@@ -1208,6 +1213,94 @@ func (s *Server) handleSearchCode(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, searchEnvelope(results, total, truncated, q, nil))
 }
 
+// userSearchText restricts the free-text match target to the fields named by
+// in: qualifiers (login/name/email/fullname); the default is login+name+bio.
+func userSearchText(q searchQuery, u *store.User) string {
+	var fields []string
+	for _, ql := range q.Qualifiers {
+		if ql.Negated || ql.Key != "in" {
+			continue
+		}
+		fields = append(fields, strings.Split(strings.ToLower(ql.Value), ",")...)
+	}
+	if len(fields) == 0 {
+		return u.Login + " " + u.Name + " " + u.Bio
+	}
+	var parts []string
+	for _, f := range fields {
+		switch f {
+		case "login":
+			parts = append(parts, u.Login)
+		case "name", "fullname":
+			parts = append(parts, u.Name)
+		case "email":
+			parts = append(parts, u.Email)
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+// userMatchesInLockQualifiers applies the user qualifiers readable directly off
+// the User struct (location:, created:). Caller holds st.Mu.RLock.
+func userMatchesInLockQualifiers(q searchQuery, u *store.User) bool {
+	for _, ql := range q.Qualifiers {
+		if ql.Negated {
+			continue
+		}
+		switch ql.Key {
+		case "location":
+			if !strings.Contains(strings.ToLower(u.Location), strings.ToLower(strings.Trim(ql.Value, `"`))) {
+				return false
+			}
+		case "created":
+			if !matchesDateQualifier(ql.Value, u.CreatedAt) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// userMatchesCountQualifiers applies repos:/followers: constraints. Called
+// AFTER the store lock is released — CountPublicRepos/CountFollowers acquire
+// their own locks and would nest under a held st.Mu.RLock.
+func (s *Server) userMatchesCountQualifiers(q searchQuery, u *store.User) bool {
+	for _, ql := range q.Qualifiers {
+		if ql.Negated {
+			continue
+		}
+		switch ql.Key {
+		case "repos":
+			if !matchesNumericQualifier(ql.Value, int64(s.store.CountPublicRepos(u.Login))) {
+				return false
+			}
+		case "followers":
+			if !matchesNumericQualifier(ql.Value, int64(s.store.CountFollowers(u.Login))) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// queryHasUserScopedQualifier reports whether the query carries a qualifier that
+// only applies to users, so organization results should be excluded.
+func queryHasUserScopedQualifier(q searchQuery) bool {
+	for _, ql := range q.Qualifiers {
+		switch ql.Key {
+		case "repos", "followers", "location", "created":
+			return true
+		case "in":
+			for _, f := range strings.Split(strings.ToLower(ql.Value), ",") {
+				if f == "login" || f == "email" || f == "fullname" {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 func (s *Server) handleSearchUsers(w http.ResponseWriter, r *http.Request) {
 	q, ok := searchQueryOrError(w, r, "users")
 	if !ok {
@@ -1227,14 +1320,19 @@ func (s *Server) handleSearchUsers(w http.ResponseWriter, r *http.Request) {
 		if q.excludes("type", "user") {
 			continue
 		}
-		text := u.Login + " " + u.Name + " " + u.Bio
-		if !q.matchesText(text) {
+		if !q.matchesText(userSearchText(q, u)) {
+			continue
+		}
+		if !userMatchesInLockQualifiers(q, u) {
 			continue
 		}
 		users = append(users, u)
 	}
+	// A user-scoped qualifier (repos:/followers:/location:/created:/in:login…)
+	// excludes organizations, which cannot satisfy it.
+	orgsExcluded := queryHasUserScopedQualifier(q)
 	for _, org := range s.store.Orgs {
-		if q.Type == "user" {
+		if q.Type == "user" || orgsExcluded {
 			continue
 		}
 		if q.excludes("type", "org") {
@@ -1247,6 +1345,12 @@ func (s *Server) handleSearchUsers(w http.ResponseWriter, r *http.Request) {
 		orgs = append(orgs, org)
 	}
 	s.store.Mu.RUnlock()
+
+	// repos:/followers: read follower and public-repo counts, whose store
+	// helpers take their own locks — apply them after releasing st.Mu.
+	users = slices.DeleteFunc(users, func(u *store.User) bool {
+		return !s.userMatchesCountQualifiers(q, u)
+	})
 
 	var results []map[string]interface{}
 	for _, u := range users {

@@ -74,7 +74,7 @@ var searchQualifierScopes = map[string]map[string]bool{
 	"code": qualifierSet(
 		"repo", "user", "org", "language", "path", "extension", "ext", "filename", "file",
 	),
-	"users":   qualifierSet("type"),
+	"users":   qualifierSet("type", "in", "repos", "followers", "location", "created"),
 	"commits": qualifierSet("repo", "user", "org", "author", "hash"),
 	"labels":  qualifierSet(),
 	"topics":  qualifierSet(),
@@ -117,7 +117,8 @@ func (q searchQuery) validateFor(searchType string) error {
 			for _, value := range strings.Split(strings.ToLower(qualifier.Value), ",") {
 				valid := searchType == "repositories" &&
 					(value == "name" || value == "description" || value == "topics" || value == "readme") ||
-					searchType == "issues" && (value == "title" || value == "body")
+					searchType == "issues" && (value == "title" || value == "body") ||
+					searchType == "users" && (value == "login" || value == "name" || value == "email" || value == "fullname")
 				if !valid {
 					return unsupportedQualifierError{key: qualifier.Key, value: qualifier.Value}
 				}

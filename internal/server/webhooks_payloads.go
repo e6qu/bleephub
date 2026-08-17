@@ -185,12 +185,16 @@ func buildPullRequestPayload(st *store.Store, repo *store.Repo, pr *store.PullRe
 	}
 
 	prJSON := map[string]interface{}{
-		"number": pr.Number,
-		"title":  pr.Title,
-		"body":   pr.Body,
-		"state":  state,
-		"draft":  pr.IsDraft,
-		"merged": pr.State == "MERGED",
+		"id":      pr.ID,
+		"node_id": pr.NodeID,
+		"number":  pr.Number,
+		"title":   pr.Title,
+		"body":    pr.Body,
+		"state":   state,
+		"locked":  pr.Locked,
+		"user":    senderPayload(st.GetUserByID(pr.AuthorID)),
+		"draft":   pr.IsDraft,
+		"merged":  pr.State == "MERGED",
 		// A merged PR reports its real merge commit; an open one reports its
 		// test-merge commit (GitHub's "potential merge"), so a pull_request
 		// workflow run runs against the merge ref rather than the head (ACT-027).
@@ -241,10 +245,14 @@ func buildIssuesPayload(st *store.Store, repo *store.Repo, issue *store.Issue, s
 	}
 
 	issueJSON := map[string]interface{}{
+		"id":         issue.ID,
+		"node_id":    issue.NodeID,
 		"number":     issue.Number,
 		"title":      issue.Title,
 		"body":       issue.Body,
 		"state":      state,
+		"locked":     issue.Locked,
+		"user":       senderPayload(st.GetUserByID(issue.AuthorID)),
 		"created_at": issue.CreatedAt.UTC().Format(time.RFC3339),
 		"updated_at": issue.UpdatedAt.UTC().Format(time.RFC3339),
 	}
@@ -316,11 +324,12 @@ func buildPingPayload(repo *store.Repo, hook *store.Webhook) map[string]interfac
 		"hook": map[string]interface{}{
 			"id":     hook.ID,
 			"type":   "Repository",
+			"name":   "web",
 			"active": hook.Active,
 			"events": hook.Events,
 			"config": map[string]interface{}{
 				"url":          hook.URL,
-				"content_type": "json",
+				"content_type": store.CoalesceStr(hook.ContentType, "json"),
 			},
 		},
 	}
