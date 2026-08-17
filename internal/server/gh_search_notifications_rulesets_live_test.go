@@ -58,7 +58,7 @@ func TestLiveNotifications_Threads(t *testing.T) {
 	s := newIsolatedServer(t)
 	admin := s.store.UsersByLogin["admin"]
 	repo := s.store.CreateRepo(admin, "live-notif-repo", "", false)
-	if !s.store.SetRepoSubscription(admin.ID, repo.ID, true) {
+	if !s.store.SetRepoSubscription(admin.ID, repo.ID, true, false) {
 		t.Fatal("subscribe to notification fixture repository")
 	}
 	author := s.createTestUser(t, "live-notif-author")

@@ -38,6 +38,20 @@ func (s *Server) handleListOrgMembers(w http.ResponseWriter, r *http.Request) {
 	// the org; a non-member (or anonymous caller) sees just the publicized
 	// members. This mirrors the behaviour of GET /orgs/{org}/members vs
 	// /orgs/{org}/public_members.
+	// GitHub documents ?role (all|admin|member) and ?filter (all|2fa_disabled).
+	role := r.URL.Query().Get("role")
+	if role == "" {
+		role = "all"
+	}
+	if role != "all" && role != "admin" && role != "member" {
+		store.WriteGHValidationError(w, "Membership", "role", "invalid")
+		return
+	}
+	if filter := r.URL.Query().Get("filter"); filter != "" && filter != "all" && filter != "2fa_disabled" {
+		store.WriteGHValidationError(w, "Membership", "filter", "invalid")
+		return
+	}
+
 	var members []*store.User
 	if s.viewerCanReadOrgMembers(r.Context(), orgLogin) {
 		members = s.store.ListOrgMembers(orgLogin)
@@ -46,6 +60,12 @@ func (s *Server) handleListOrgMembers(w http.ResponseWriter, r *http.Request) {
 	}
 	result := make([]map[string]interface{}, 0, len(members))
 	for _, u := range members {
+		if role != "all" {
+			m := s.store.GetMembership(orgLogin, u.ID)
+			if m == nil || string(m.Role) != role {
+				continue
+			}
+		}
 		result = append(result, store.UserToJSON(u))
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, result))

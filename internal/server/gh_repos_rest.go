@@ -415,7 +415,7 @@ func (s *Server) handleSetRepoSubscription(w http.ResponseWriter, r *http.Reques
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	if !s.store.SetRepoSubscription(user.ID, repo.ID, req.Subscribed) {
+	if !s.store.SetRepoSubscription(user.ID, repo.ID, req.Subscribed, req.Ignored) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}

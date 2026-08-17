@@ -528,7 +528,7 @@ func TestUserExtras_Subscriptions(t *testing.T) {
 	if repo == nil {
 		t.Fatal("create repo failed")
 	}
-	s.store.SetRepoSubscription(admin.ID, repo.ID, true)
+	s.store.SetRepoSubscription(admin.ID, repo.ID, true, false)
 
 	resp := s.get(t, "/api/v3/user/subscriptions", defaultToken)
 	if resp.StatusCode != 200 {

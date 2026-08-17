@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { InlineError, Spinner } from "@bleephub/ui-core/components";
 import {
   ghFetch,
+  ghSend,
   fetchPublicOrgMembers,
   setOrgMembership,
   removeOrgMember,
@@ -67,6 +68,14 @@ export function OrgPeoplePage() {
     mutationFn: (login: string) => removeOrgMember(org, login),
     onSuccess: invalidate,
   });
+  // Convert an existing org member into an outside collaborator (github's
+  // "Convert to outside collaborator"). Defined inline via ghSend to avoid a new
+  // api.ts export (the entry bundle sits at its budget).
+  const convertMut = useMutation({
+    mutationFn: (login: string) =>
+      ghSend("PUT", `/api/v3/orgs/${encodeURIComponent(org)}/outside_collaborators/${encodeURIComponent(login)}`),
+    onSuccess: invalidate,
+  });
 
   const filtered = useMemo(() => {
     if (!data) return [];
@@ -110,7 +119,7 @@ export function OrgPeoplePage() {
             {inviteMut.isPending ? "Inviting…" : "Invite"}
           </Button>
         </div>
-        <MutationError of={[inviteMut, roleMut, removeMut, visibilityMut]} />
+        <MutationError of={[inviteMut, roleMut, removeMut, visibilityMut, convertMut]} />
       </Box>
 
       {isLoading && <Spinner label="loading members" />}
@@ -156,7 +165,17 @@ export function OrgPeoplePage() {
                       removeMut.mutate(m.login);
                     }
                   }}
-                  busy={roleMut.isPending || removeMut.isPending || visibilityMut.isPending}
+                  onConvert={async () => {
+                    if (
+                      await confirmAction(`Convert ${m.login} to an outside collaborator of ${org}?`, {
+                        title: "Convert to outside collaborator",
+                        confirmLabel: "Convert",
+                      })
+                    ) {
+                      convertMut.mutate(m.login);
+                    }
+                  }}
+                  busy={roleMut.isPending || removeMut.isPending || visibilityMut.isPending || convertMut.isPending}
                 />
               ))}
             </div>
@@ -174,6 +193,7 @@ function MemberCard({
   onToggleVisibility,
   onSetRole,
   onRemove,
+  onConvert,
   busy,
 }: {
   member: GithubAccount;
@@ -182,6 +202,7 @@ function MemberCard({
   onToggleVisibility: () => void;
   onSetRole: (role: "member" | "admin") => void;
   onRemove: () => void;
+  onConvert: () => void;
   busy: boolean;
 }) {
   return (
@@ -231,6 +252,17 @@ function MemberCard({
         <Button size="sm" aria-label={`Remove ${member.login}`} disabled={busy} onClick={onRemove}>
           Remove
         </Button>
+        {!isSelf && (
+          <Button
+            size="sm"
+            variant="ghost"
+            aria-label={`Convert ${member.login} to outside collaborator`}
+            disabled={busy}
+            onClick={onConvert}
+          >
+            Convert to outside collaborator
+          </Button>
+        )}
       </div>
     </Box>
   );

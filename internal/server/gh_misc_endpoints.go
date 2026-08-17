@@ -141,9 +141,14 @@ func (s *Server) registerGHMiscEndpoints() {
 // verifiable_password_authentication is genuinely false: bleephub's API is
 // token-only.
 func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
+	// ssh_key_fingerprints/ssh_keys let clients seed known_hosts; they reflect
+	// this instance's configured SSH host key (empty when none is configured).
+	fingerprints, sshKeys := metaSSHHostKeys()
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"verifiable_password_authentication": false,
 		"installed_version":                  "3.21.0",
+		"ssh_key_fingerprints":               fingerprints,
+		"ssh_keys":                           sshKeys,
 	})
 }
 
@@ -299,7 +304,7 @@ func (s *Server) handleCreateGPGKey(w http.ResponseWriter, r *http.Request) {
 	}
 	k := &store.GPGKey{
 		ID: id, PublicKey: req.ArmoredPublicKey, Name: req.Name, UserID: user.ID,
-		CreatedAt: time.Now(), CanSign: true, CanEncryptCommits: true, CanCertify: true,
+		CreatedAt: time.Now(), CanSign: true, CanEncryptComms: true, CanEncryptStorage: true, CanCertify: true,
 		Emails: []store.GPGKeyEmail{{Email: email, Verified: true, Primary: true}},
 	}
 	s.store.Misc.GpgKeys[id] = k
@@ -313,6 +318,13 @@ func (s *Server) handleCreateGPGKey(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetGPGKey(w http.ResponseWriter, r *http.Request) {
+	// "Get a GPG key for the authenticated user": it demands a caller and returns
+	// 404 for a key that is not theirs, never disclosing another account's key.
+	user := ghUserFromContext(r.Context())
+	if user == nil {
+		writeGHError(w, http.StatusUnauthorized, "Requires authentication")
+		return
+	}
 	id, err := strconv.Atoi(r.PathValue("gpg_key_id"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -321,7 +333,7 @@ func (s *Server) handleGetGPGKey(w http.ResponseWriter, r *http.Request) {
 	s.store.Misc.Mu.RLock()
 	k := s.store.Misc.GpgKeys[id]
 	s.store.Misc.Mu.RUnlock()
-	if k == nil {
+	if k == nil || k.UserID != user.ID {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -378,16 +390,31 @@ func (s *Server) handleListGPGKeysByLogin(w http.ResponseWriter, r *http.Request
 }
 
 func gpgKeyToJSON(k *store.GPGKey) map[string]interface{} {
+	// github's gpg-key emails items carry only {email, verified}; the stored
+	// struct's `primary` flag is not part of that wire shape.
+	emails := make([]map[string]interface{}, 0, len(k.Emails))
+	for _, e := range k.Emails {
+		emails = append(emails, map[string]interface{}{"email": e.Email, "verified": e.Verified})
+	}
 	m := map[string]interface{}{
-		"id": k.ID, "key_id": k.KeyID, "public_key": k.PublicKey,
-		"can_sign": k.CanSign, "can_encrypt_commits": k.CanEncryptCommits,
-		"can_certify": k.CanCertify, "created_at": k.CreatedAt.UTC().Format(time.RFC3339),
+		"id":                  k.ID,
+		"primary_key_id":      nil, // a top-level key has no parent
+		"key_id":              k.KeyID,
+		"raw_key":             nullOrString(k.RawKey),
+		"public_key":          k.PublicKey,
+		"emails":              emails,
+		"subkeys":             []interface{}{},
+		"can_sign":            k.CanSign,
+		"can_encrypt_comms":   k.CanEncryptComms,
+		"can_encrypt_storage": k.CanEncryptStorage,
+		"can_certify":         k.CanCertify,
+		"created_at":          k.CreatedAt.UTC().Format(time.RFC3339),
+		"expires_at":          nil,
+		"revoked":             k.Revoked,
+		"name":                nullOrString(k.Name),
 	}
-	if k.Name != "" {
-		m["name"] = k.Name
-	}
-	if len(k.Emails) > 0 {
-		m["emails"] = k.Emails
+	if k.PrimaryKeyID != 0 {
+		m["primary_key_id"] = k.PrimaryKeyID
 	}
 	if k.ExpiresAt != nil {
 		m["expires_at"] = k.ExpiresAt.UTC().Format(time.RFC3339)

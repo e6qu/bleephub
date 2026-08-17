@@ -288,6 +288,11 @@ func (s *Server) handleListUserGists(w http.ResponseWriter, r *http.Request) {
 	gists := s.store.ListGistsForUser(user.ID, since)
 	out := make([]map[string]interface{}, 0, len(gists))
 	for _, g := range gists {
+		// "List gists for a user" is public-only; a user's secret gists are
+		// reachable only via GET /gists as the owner. Never leak them here.
+		if !g.Public {
+			continue
+		}
 		out = append(out, s.gistToJSON(g, r, false))
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))

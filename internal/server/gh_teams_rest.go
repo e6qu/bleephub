@@ -489,9 +489,25 @@ func (s *Server) handleListTeamMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// GitHub documents ?role (member|maintainer|all, default all).
+	role := r.URL.Query().Get("role")
+	if role == "" {
+		role = "all"
+	}
+	if role != "all" && role != "member" && role != "maintainer" {
+		store.WriteGHValidationError(w, "TeamMembership", "role", "invalid")
+		return
+	}
+
 	members := s.store.ListTeamMembers(orgLogin, slug)
 	result := make([]map[string]interface{}, 0, len(members))
 	for _, u := range members {
+		if role != "all" {
+			memberRole, ok := team.RoleOf(u.ID)
+			if !ok || string(memberRole) != role {
+				continue
+			}
+		}
 		result = append(result, store.UserToJSON(u))
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, result))

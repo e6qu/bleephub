@@ -2630,8 +2630,10 @@ func RepoSubscriptionKey(userID, repoID int) string {
 	return strconv.Itoa(userID) + ":" + strconv.Itoa(repoID)
 }
 
-// SetRepoSubscription creates or updates a subscription.
-func (st *Store) SetRepoSubscription(userID int, repoID int, subscribed bool) bool {
+// SetRepoSubscription creates or updates a subscription. `ignored` mutes all
+// notifications for the repo (github's watch "ignore" state) and is independent
+// of `subscribed`.
+func (st *Store) SetRepoSubscription(userID int, repoID int, subscribed, ignored bool) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 
@@ -2643,7 +2645,7 @@ func (st *Store) SetRepoSubscription(userID int, repoID int, subscribed bool) bo
 		UserID:     userID,
 		RepoID:     repoID,
 		Subscribed: subscribed,
-		Ignored:    false,
+		Ignored:    ignored,
 		CreatedAt:  st.CurrentTime(),
 	}
 	if existing := st.RepoSubscriptions[key]; existing != nil {
