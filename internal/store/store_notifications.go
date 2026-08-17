@@ -85,9 +85,17 @@ func (st *Store) NotificationRowsFor(user *User, opts NotificationListOptions, c
 	// lookup per thread instead of an O(all-comments) scan per thread (which
 	// made this handler O((issues+PRs) × comments)).
 	commentedOn := make(map[string]struct{})
+	// A comment body that @-mentions the viewer gives the thread reason
+	// "mention" even when the viewer never participated otherwise. Precompute
+	// per-viewer in one pass so the per-thread reason stays O(1).
+	mentionedInComment := make(map[string]struct{})
 	for _, c := range st.Comments {
+		key := strings.ToLower(c.ParentType) + "\x1f" + strconv.Itoa(c.IssueID)
 		if c.AuthorID == user.ID {
-			commentedOn[strings.ToLower(c.ParentType)+"\x1f"+strconv.Itoa(c.IssueID)] = struct{}{}
+			commentedOn[key] = struct{}{}
+		}
+		if bodyMentions(c.Body, user.Login) {
+			mentionedInComment[key] = struct{}{}
 		}
 	}
 
@@ -105,7 +113,7 @@ func (st *Store) NotificationRowsFor(user *User, opts NotificationListOptions, c
 			return
 		}
 
-		reason := notificationReasonWithComments(user, src, commentedOn)
+		reason := notificationReasonWithComments(user, src, commentedOn, mentionedInComment)
 		// Read access alone does not subscribe a user to every issue and pull
 		// request in a repository. A non-participant receives the thread only
 		// after explicitly subscribing to it or watching the repository.
@@ -257,7 +265,7 @@ func bodyMentions(body, login string) bool {
 // a precomputed set of the (parentType, parentID) pairs the user commented on
 // (keyed "type\x1fid"). This keeps the per-thread cost O(1) rather than
 // rescanning every comment in the store.
-func notificationReasonWithComments(user *User, src notificationThreadSource, commentedOn map[string]struct{}) string {
+func notificationReasonWithComments(user *User, src notificationThreadSource, commentedOn, mentionedInComment map[string]struct{}) string {
 	if src.AuthorID == user.ID {
 		return "author"
 	}
@@ -271,10 +279,14 @@ func notificationReasonWithComments(user *User, src notificationThreadSource, co
 			return "review_requested"
 		}
 	}
+	key := strings.ToLower(src.Type) + "\x1f" + strconv.Itoa(src.ID)
 	if bodyMentions(src.Body, user.Login) {
 		return "mention"
 	}
-	if _, ok := commentedOn[strings.ToLower(src.Type)+"\x1f"+strconv.Itoa(src.ID)]; ok {
+	if _, ok := mentionedInComment[key]; ok {
+		return "mention"
+	}
+	if _, ok := commentedOn[key]; ok {
 		return "comment"
 	}
 	return "subscribed"

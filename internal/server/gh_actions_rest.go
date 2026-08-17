@@ -129,6 +129,22 @@ func stableJobID(uuid string) int64 {
 	return store.JsonSafePositiveID(h.Sum64())
 }
 
+// runMatchesStatusFilter implements github's `status` list parameter, whose
+// enum accepts BOTH run status values (queued/in_progress/completed/…) AND
+// conclusion values (success/failure/cancelled/skipped/neutral/timed_out/…):
+// "Returns workflow runs with the check run status or conclusion that you
+// specify." Matching only the status silently dropped `?status=success` etc.
+func runMatchesStatusFilter(wf *store.Workflow, filter string) bool {
+	status := runStatus(wf)
+	if status == filter {
+		return true
+	}
+	if c, ok := runConclusion(status, string(wf.Result)).(string); ok && c == filter {
+		return true
+	}
+	return false
+}
+
 // runStatus maps a Workflow → GitHub's run statuses (`queued`,
 // `in_progress`, `completed`, `waiting`). Bleephub's internal
 // "running" begins at submission, but real GitHub keeps the run
@@ -649,7 +665,7 @@ func (s *Server) handleListWorkflowRuns(w http.ResponseWriter, r *http.Request) 
 		if wf.RepoFullName != "" && wf.RepoFullName != repo {
 			continue
 		}
-		if statusFilter != "" && runStatus(wf) != statusFilter {
+		if statusFilter != "" && !runMatchesStatusFilter(wf, statusFilter) {
 			continue
 		}
 		if branchFilter != "" && headBranchOf(wf) != branchFilter {

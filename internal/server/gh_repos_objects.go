@@ -399,7 +399,10 @@ func gitTreeEntryJSON(stor gitStorage.Storer, baseURL, fullName, name string, en
 	}
 	out := map[string]interface{}{
 		"path": name,
-		"mode": entry.Mode.String(),
+		// GitHub emits the 6-char octal mode (100644); go-git's Mode.String()
+		// is 7-char zero-padded (0100644), which breaks read→create-tree
+		// round-tripping and string comparisons.
+		"mode": fmt.Sprintf("%06o", uint32(entry.Mode)),
 		"type": entryType,
 		"sha":  entry.Hash.String(),
 		"url":  baseURL + "/api/v3/repos/" + fullName + "/git/" + entryType + "s/" + entry.Hash.String(),
@@ -444,6 +447,14 @@ func (s *Server) handleGetBlob(w http.ResponseWriter, r *http.Request) {
 	content, err := io.ReadAll(reader)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// GitHub's blob endpoint serves the raw bytes for the .raw media type.
+	if strings.Contains(r.Header.Get("Accept"), "application/vnd.github.raw") {
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(content)
 		return
 	}
 

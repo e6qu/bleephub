@@ -86,3 +86,52 @@ func TestSearchIssueQualifiers(t *testing.T) {
 		}
 	}
 }
+
+func searchUserLogins(t *testing.T, s *isolatedServer, query string) map[string]bool {
+	t.Helper()
+	resp := s.authedGet(t, "/api/v3/search/users?q="+url.QueryEscape(query))
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		t.Fatalf("search users %q: status %d body=%s", query, resp.StatusCode, body)
+	}
+	var out struct {
+		Items []struct {
+			Login string `json:"login"`
+		} `json:"items"`
+	}
+	json.NewDecoder(resp.Body).Decode(&out)
+	resp.Body.Close()
+	set := map[string]bool{}
+	for _, it := range out.Items {
+		set[it.Login] = true
+	}
+	return set
+}
+
+// User search now honors in:/repos:/location:/created: (round-3: closing the
+// round-2 named remainder) instead of 422'ing them.
+func TestSearchUserQualifiers(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	alice := s.createTestUser(t, "alice-u")
+	bob := s.createTestUser(t, "bob-u")
+	alice.Location = "Berlin"
+	bob.Location = "Paris"
+	// alice owns a repo; bob owns none.
+	s.store.CreateRepo(alice, "alice-repo", "", false)
+
+	loc := searchUserLogins(t, s, "location:Berlin")
+	if !loc["alice-u"] || loc["bob-u"] {
+		t.Errorf("location:Berlin = %v, want alice-u only", loc)
+	}
+	repos := searchUserLogins(t, s, "repos:>=1")
+	if !repos["alice-u"] || repos["bob-u"] {
+		t.Errorf("repos:>=1 = %v, want alice-u (has a repo), not bob-u", repos)
+	}
+	// in:login restricts the free-text match to the login field.
+	inLogin := searchUserLogins(t, s, "alice-u in:login")
+	if !inLogin["alice-u"] {
+		t.Errorf("`alice-u in:login` = %v, want alice-u", inLogin)
+	}
+}
