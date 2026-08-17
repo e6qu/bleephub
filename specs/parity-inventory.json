@@ -21617,7 +21617,7 @@
         "source": "internal/server/gh_immutable_releases.go"
       },
       {
-        "line": 147,
+        "line": 135,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/import",
         "source": "internal/server/gh_import.go"
@@ -25451,19 +25451,19 @@
         "source": "internal/server/gh_immutable_releases.go"
       },
       {
-        "line": 142,
+        "line": 130,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/import",
         "source": "internal/server/gh_import.go"
       },
       {
-        "line": 151,
+        "line": 139,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/import/authors",
         "source": "internal/server/gh_import.go"
       },
       {
-        "line": 154,
+        "line": 142,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/import/large_files",
         "source": "internal/server/gh_import.go"
@@ -27215,19 +27215,19 @@
         "source": "runtime route table (programmatic registration)"
       },
       {
-        "line": 145,
+        "line": 133,
         "method": "PATCH",
         "path": "/api/v3/repos/{owner}/{repo}/import",
         "source": "internal/server/gh_import.go"
       },
       {
-        "line": 152,
+        "line": 140,
         "method": "PATCH",
         "path": "/api/v3/repos/{owner}/{repo}/import/authors/{author_id}",
         "source": "internal/server/gh_import.go"
       },
       {
-        "line": 149,
+        "line": 137,
         "method": "PATCH",
         "path": "/api/v3/repos/{owner}/{repo}/import/lfs",
         "source": "internal/server/gh_import.go"
@@ -29615,7 +29615,7 @@
         "source": "internal/server/gh_immutable_releases.go"
       },
       {
-        "line": 143,
+        "line": 131,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/import",
         "source": "internal/server/gh_import.go"
