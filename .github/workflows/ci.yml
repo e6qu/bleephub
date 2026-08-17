@@ -555,4 +555,7 @@ jobs:
           ref: 5f8763b94e4febb85eddf3a732a9e55980b93830
           path: sockerless
       - name: Exercise the official runner against the real simulator and backend
+        # Keep this timeout below the job's timeout-minutes (25) so the suite is
+        # SIGTERM'd and flushes its log instead of being killed outright; it
+        # tracks the job limit, not the test runtime.
         run: timeout --foreground --kill-after=1m 20m env SOCKERLESS_ROOT="$GITHUB_WORKSPACE/sockerless" make runner-sockerless-test
