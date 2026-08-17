@@ -546,4 +546,16 @@ jobs:
           ref: 5f8763b94e4febb85eddf3a732a9e55980b93830
           path: sockerless
       - name: Exercise the official runner against the real simulator and backend
-        run: timeout --foreground --kill-after=1m 14m env SOCKERLESS_ROOT="$GITHUB_WORKSPACE/sockerless" make runner-sockerless-test
+        # This timeout exists to fire *before* the job's own limit, so the suite
+        # gets SIGTERM, tears down and flushes its log rather than vanishing when
+        # the runner is killed outright. Its value therefore follows
+        # timeout-minutes above (25), less room for that teardown and the log
+        # upload -- it is not an estimate of how long the tests take.
+        #
+        # It was 14m, which the raise of timeout-minutes from 15 to 25 did not
+        # revisit, leaving the inner bound tighter than the outer one that had
+        # already been found too tight. Since a passing run lands ~12-14 min it
+        # fired on healthy runs and reproduced the very failure the comment above
+        # says it removed: make Error 143 and step exit 124, logged after all
+        # fifteen tests had reported PASSED and the harness was cleaning up.
+        run: timeout --foreground --kill-after=1m 20m env SOCKERLESS_ROOT="$GITHUB_WORKSPACE/sockerless" make runner-sockerless-test
