@@ -262,15 +262,16 @@ func (s *Server) handleSetThreadSubscription(w http.ResponseWriter, r *http.Requ
 	}
 
 	var body struct {
-		Subscribed bool `json:"subscribed"`
-		Ignored    bool `json:"ignored"`
+		Ignored bool `json:"ignored"`
 	}
 	if !decodeJSONBodyOptional(w, r, &body) {
 		return
 	}
 
+	// github documents only `ignored` on this PUT — subscribing is implied by the
+	// request itself, so a thread is subscribed unless it is explicitly ignored.
 	sub := &store.ThreadSubscription{
-		Subscribed: body.Subscribed,
+		Subscribed: !body.Ignored,
 		Ignored:    body.Ignored,
 		Reason:     thread.Reason,
 		CreatedAt:  s.currentTime(),

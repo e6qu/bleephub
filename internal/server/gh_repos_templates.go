@@ -34,9 +34,15 @@ func (s *Server) handleGetGitignoreTemplate(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *Server) handleListLicenses(w http.ResponseWriter, r *http.Request) {
+	// GitHub's /licenses returns only the featured (commonly-used) licenses by
+	// default; ?featured=false returns the full catalog.
+	onlyFeatured := r.URL.Query().Get("featured") != "false"
 	keys := listLicenseKeys()
 	out := make([]map[string]interface{}, 0, len(keys))
 	for _, k := range keys {
+		if onlyFeatured && !store.LicenseMetadata[k].Featured {
+			continue
+		}
 		tmpl := store.LicenseTemplates[k]
 		out = append(out, map[string]interface{}{
 			"key":     k,
@@ -56,17 +62,18 @@ func (s *Server) handleGetLicense(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
+	meta := store.LicenseMetadata[key]
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"key":            key,
 		"name":           tmpl.Name,
 		"spdx_id":        tmpl.SpdxID,
 		"body":           tmpl.Body,
-		"description":    tmpl.Name,
-		"implementation": "",
-		"permissions":    []string{},
-		"conditions":     []string{},
-		"limitations":    []string{},
-		"featured":       true,
+		"description":    meta.Description,
+		"implementation": meta.Implementation,
+		"permissions":    nonNilStrings(meta.Permissions),
+		"conditions":     nonNilStrings(meta.Conditions),
+		"limitations":    nonNilStrings(meta.Limitations),
+		"featured":       meta.Featured,
 		"html_url":       "https://choosealicense.com/licenses/" + key + "/",
 		"node_id":        tmpl.NodeID,
 		"url":            s.baseURL(r) + "/api/v3/licenses/" + key,

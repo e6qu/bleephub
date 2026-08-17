@@ -208,6 +208,9 @@ func (s *Server) handleUpdateGist(w http.ResponseWriter, r *http.Request) {
 	var newFiles map[string]*store.GistFile
 	var deleteFiles []string
 	if req.Files != nil {
+		// The current gist supplies the content to carry forward when a file entry
+		// omits `content` (e.g. a pure rename must not blank the file body).
+		current := s.store.GetGist(id)
 		newFiles = make(map[string]*store.GistFile)
 		for name, f := range req.Files {
 			if f == nil {
@@ -217,10 +220,19 @@ func (s *Server) handleUpdateGist(w http.ResponseWriter, r *http.Request) {
 			content := ""
 			if f.Content != nil {
 				content = *f.Content
+			} else if current != nil {
+				if existing, ok := current.Files[name]; ok {
+					content = existing.Content
+				}
 			}
 			filename := name
 			if f.Filename != nil && *f.Filename != "" {
 				filename = *f.Filename
+			}
+			// A rename must remove the file under its old name, not leave a
+			// duplicate alongside the new one.
+			if filename != name {
+				deleteFiles = append(deleteFiles, name)
 			}
 			newFiles[filename] = gistFileFromInput(filename, content, s.baseURL(r), id)
 		}
@@ -558,9 +570,30 @@ func (s *Server) gistToJSON(g *store.Gist, r *http.Request, includeContent bool)
 			"size":     f.Size,
 		}
 		if includeContent {
+			// content + truncated are gist-simple-only file members; the base-gist
+			// list responses omit both.
 			fileJSON["content"] = f.Content
+			fileJSON["truncated"] = false
 		}
 		files[name] = fileJSON
+	}
+
+	// forks lists the gists forked from this one (github populates it on the
+	// single-gist and fork responses); the entries are the fork gist stubs.
+	forks := []interface{}{}
+	for _, f := range s.store.ListGistForks(g.ID) {
+		var forkOwnerJSON interface{}
+		if forkOwner := s.store.GetUserByID(f.OwnerID); forkOwner != nil {
+			// gist-simple forks[].user is a full public-user, not simple-user.
+			forkOwnerJSON = s.fullUserJSON(forkOwner)
+		}
+		forks = append(forks, map[string]interface{}{
+			"id":         f.ID,
+			"url":        base + "/api/v3/gists/" + f.ID,
+			"user":       forkOwnerJSON,
+			"created_at": f.CreatedAt.Format(time.RFC3339),
+			"updated_at": f.UpdatedAt.Format(time.RFC3339),
+		})
 	}
 
 	owner := s.store.GetUserByID(g.OwnerID)
@@ -580,7 +613,7 @@ func (s *Server) gistToJSON(g *store.Gist, r *http.Request, includeContent bool)
 		}
 	}
 
-	return map[string]interface{}{
+	out := map[string]interface{}{
 		"url":          g.URL,
 		"forks_url":    g.ForksURL,
 		"commits_url":  g.CommitsURL,
@@ -597,11 +630,19 @@ func (s *Server) gistToJSON(g *store.Gist, r *http.Request, includeContent bool)
 		"comments_url": g.CommentsURL,
 		"owner":        ownerJSON,
 		"truncated":    false,
-		"forks":        []interface{}{},
+		"forks":        forks,
 		"history":      history,
 		"created_at":   g.CreatedAt.Format(time.RFC3339),
 		"updated_at":   g.UpdatedAt.Format(time.RFC3339),
 	}
+	// fork_of (the parent gist) is a gist-simple-only member — emit it only on
+	// the single-gist responses (includeContent), never on the base-gist list.
+	if includeContent && g.ForkOfID != "" {
+		if parent := s.store.GetGist(g.ForkOfID); parent != nil {
+			out["fork_of"] = s.gistToJSON(parent, r, false)
+		}
+	}
+	return out
 }
 
 func (s *Server) gistCommentToJSON(c *store.GistComment, r *http.Request) map[string]interface{} {

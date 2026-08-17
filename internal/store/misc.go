@@ -55,13 +55,17 @@ type PagesSite struct {
 
 type GPGKey struct {
 	ID                int           `json:"id"`
+	PrimaryKeyID      int           `json:"primary_key_id"`
 	KeyID             string        `json:"key_id"`
+	RawKey            string        `json:"raw_key"`
 	PublicKey         string        `json:"public_key"`
 	Name              string        `json:"name,omitempty"`
 	Emails            []GPGKeyEmail `json:"emails"`
 	CanSign           bool          `json:"can_sign"`
-	CanEncryptCommits bool          `json:"can_encrypt_commits"`
+	CanEncryptComms   bool          `json:"can_encrypt_comms"`
+	CanEncryptStorage bool          `json:"can_encrypt_storage"`
 	CanCertify        bool          `json:"can_certify"`
+	Revoked           bool          `json:"revoked"`
 	CreatedAt         time.Time     `json:"created_at"`
 	ExpiresAt         *time.Time    `json:"expires_at,omitempty"`
 	UserID            int           `json:"-"`

@@ -69,3 +69,34 @@ describe("OrgPeoplePage publicize membership", () => {
     });
   });
 });
+
+const bob = { id: 2, login: "bob", type: "User", site_admin: false, avatar_url: "" };
+
+describe("OrgPeoplePage convert to outside collaborator", () => {
+  it("converts a member via PUT /orgs/{org}/outside_collaborators/{login}", async () => {
+    mockFetch.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url === "/api/v3/user") return Promise.resolve(jsonResponse(alice));
+      if (url.startsWith("/api/v3/orgs/acme/members")) return Promise.resolve(jsonResponse([alice, bob]));
+      if (url === "/api/v3/orgs/acme/public_members" && method === "GET")
+        return Promise.resolve(jsonResponse([]));
+      if (url === "/api/v3/orgs/acme/outside_collaborators/bob" && method === "PUT")
+        return Promise.resolve(new Response(null, { status: 204 }));
+      return Promise.resolve(jsonResponse([]));
+    });
+
+    renderPage();
+
+    fireEvent.click(await screen.findByLabelText("Convert bob to outside collaborator"));
+    // Confirm the action in the dialog.
+    fireEvent.click(await screen.findByRole("button", { name: "Convert" }));
+
+    await waitFor(() => {
+      const put = mockFetch.mock.calls.find(
+        (c) => String(c[0]) === "/api/v3/orgs/acme/outside_collaborators/bob" && c[1]?.method === "PUT",
+      );
+      expect(put).toBeTruthy();
+    });
+  });
+});

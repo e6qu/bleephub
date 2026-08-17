@@ -325,3 +325,35 @@ func flushOnlyGitRequest(reader *bufio.Reader) (bool, error) {
 	}
 	return string(header) == "0000", nil
 }
+
+// metaSSHHostKeys returns the instance's SSH host-key material for GET /meta:
+// the SHA256 fingerprints map (keyed SHA256_<ALG>, value without the "SHA256:"
+// prefix, matching github) and the authorized-key lines. Both are empty when no
+// host key is configured (BLEEPHUB_SSH_HOST_KEY unset), which is spec-valid —
+// the /meta ssh_key_fingerprints/ssh_keys members are optional.
+func metaSSHHostKeys() (fingerprints map[string]string, authorized []string) {
+	fingerprints, authorized = map[string]string{}, []string{}
+	raw := os.Getenv("BLEEPHUB_SSH_HOST_KEY")
+	if raw == "" {
+		return fingerprints, authorized
+	}
+	signer, err := ssh.ParsePrivateKey([]byte(raw))
+	if err != nil {
+		return fingerprints, authorized
+	}
+	pub := signer.PublicKey()
+	alg := "OTHER"
+	switch t := pub.Type(); {
+	case strings.Contains(t, "ed25519"):
+		alg = "ED25519"
+	case strings.Contains(t, "rsa"):
+		alg = "RSA"
+	case strings.Contains(t, "ecdsa"):
+		alg = "ECDSA"
+	case strings.Contains(t, "dss"):
+		alg = "DSA"
+	}
+	fingerprints["SHA256_"+alg] = strings.TrimPrefix(ssh.FingerprintSHA256(pub), "SHA256:")
+	authorized = []string{strings.TrimSpace(string(ssh.MarshalAuthorizedKey(pub)))}
+	return fingerprints, authorized
+}

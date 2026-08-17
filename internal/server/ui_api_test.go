@@ -30,7 +30,7 @@ func TestUIRepoViewerReturnsStableViewerState(t *testing.T) {
 	if !srv.store.StarRepo(admin.ID, "admin", repo.Name) {
 		t.Fatal("star repository")
 	}
-	if !srv.store.SetRepoSubscription(admin.ID, repo.ID, true) {
+	if !srv.store.SetRepoSubscription(admin.ID, repo.ID, true, false) {
 		t.Fatal("subscribe to repository")
 	}
 	state = decodeJSONWithStatus(t, srv.get(t, path, defaultToken), http.StatusOK)

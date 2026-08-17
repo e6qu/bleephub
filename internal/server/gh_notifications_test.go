@@ -263,7 +263,7 @@ func TestNotifications_ParticipatingFilter(t *testing.T) {
 		t.Errorf("read access alone produced notifications: %+v", threads)
 	}
 
-	if !s.store.SetRepoSubscription(other.ID, repo.ID, true) {
+	if !s.store.SetRepoSubscription(other.ID, repo.ID, true, false) {
 		t.Fatal("failed to watch repository")
 	}
 	w = do(otherToken, "GET", "/api/v3/notifications", nil)
@@ -349,7 +349,9 @@ func TestNotifications_ThreadSubscription(t *testing.T) {
 		t.Errorf("get missing subscription: %d", w.Code)
 	}
 
-	body, _ := json.Marshal(map[string]any{"subscribed": true, "ignored": false})
+	// github documents only `ignored` on this PUT; subscribing is implied, so a
+	// spec-shaped `{"ignored": false}` request must yield subscribed:true.
+	body, _ := json.Marshal(map[string]any{"ignored": false})
 	w = do("PUT", "/api/v3/notifications/threads/"+threadID+"/subscription", body)
 	if w.Code != http.StatusOK {
 		t.Fatalf("set subscription: %d body=%s", w.Code, w.Body.String())
@@ -357,7 +359,15 @@ func TestNotifications_ThreadSubscription(t *testing.T) {
 	var sub map[string]any
 	json.Unmarshal(w.Body.Bytes(), &sub)
 	if sub["subscribed"] != true {
-		t.Errorf("subscribed = %v", sub["subscribed"])
+		t.Errorf("subscribed = %v, want true for an unignored PUT", sub["subscribed"])
+	}
+
+	// Ignoring the thread implies not subscribed.
+	ignoredBody, _ := json.Marshal(map[string]any{"ignored": true})
+	w = do("PUT", "/api/v3/notifications/threads/"+threadID+"/subscription", ignoredBody)
+	json.Unmarshal(w.Body.Bytes(), &sub)
+	if sub["ignored"] != true || sub["subscribed"] != false {
+		t.Errorf("ignored PUT: subscribed=%v ignored=%v, want false/true", sub["subscribed"], sub["ignored"])
 	}
 
 	w = do("GET", "/api/v3/notifications/threads/"+threadID+"/subscription", nil)

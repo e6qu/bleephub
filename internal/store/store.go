@@ -356,6 +356,23 @@ type GistHistory struct {
 	CommittedAt  time.Time      `json:"committed_at"`
 	ChangeStatus map[string]int `json:"change_status"`
 	URL          string         `json:"url"`
+	// Files is the file snapshot at this revision, used to reconstruct the gist
+	// as it existed at a given sha (GET /gists/{id}/{sha}). It is internal state,
+	// not part of the wire history shape (which gistToJSON builds explicitly).
+	Files map[string]*GistFile `json:"files,omitempty"`
+}
+
+// snapshotGistFiles deep-copies a gist's file map for a revision snapshot.
+func snapshotGistFiles(files map[string]*GistFile) map[string]*GistFile {
+	snap := make(map[string]*GistFile, len(files))
+	for name, f := range files {
+		if f == nil {
+			continue
+		}
+		clone := *f
+		snap[name] = &clone
+	}
+	return snap
 }
 
 // Gist is a GitHub gist.
@@ -4409,6 +4426,9 @@ func cloneGist(g *Gist) *Gist {
 		for key, value := range history.ChangeStatus {
 			historyClone.ChangeStatus[key] = value
 		}
+		if history.Files != nil {
+			historyClone.Files = snapshotGistFiles(history.Files)
+		}
 		clone.History = append(clone.History, &historyClone)
 	}
 	clone.ForkIDs = append([]string(nil), g.ForkIDs...)
@@ -4466,6 +4486,7 @@ func (st *Store) CreateGistE(owner *User, description string, public bool, files
 			},
 		}},
 	}
+	g.History[0].Files = snapshotGistFiles(g.Files)
 	batch := NewPersistBatch(st.Persist)
 	batch.Put("gists", g.ID, g)
 	if err := batch.Commit(); err != nil {
@@ -4531,6 +4552,7 @@ func (st *Store) UpdateGistE(id string, description *string, files map[string]*G
 			"additions": additions,
 			"deletions": deletions,
 		},
+		Files: snapshotGistFiles(g.Files),
 	})
 	batch := NewPersistBatch(st.Persist)
 	batch.Put("gists", g.ID, g)
@@ -4628,6 +4650,12 @@ func (st *Store) GetGistAtRevision(gistID, sha string) *Gist {
 		if h.Version == sha {
 			cp := *g
 			cp.UpdatedAt = h.CommittedAt
+			// Reconstruct the gist as it existed at this revision, not today's
+			// files (older revisions recorded before snapshots existed fall back
+			// to the current files).
+			if h.Files != nil {
+				cp.Files = snapshotGistFiles(h.Files)
+			}
 			return &cp
 		}
 	}

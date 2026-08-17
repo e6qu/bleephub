@@ -141,7 +141,7 @@
       },
       {
         "event": "page_build",
-        "line": 1149,
+        "line": 1176,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_misc_endpoints.go"
       },
@@ -2815,6 +2815,123 @@
         "severity": "M",
         "status": "deferred \u2014 named remainder: needs a changed-path\u2192CODEOWNERS glob matcher feeding `RequestReviewers`/`RequestTeamReviewers` on PR open, plus a code-owner clause in the merge gate. Scoped for a dedicated follow-up (a matching engine + gating with its own tests), disproportionate to fold into this pass",
         "status_kind": "deferred"
+      },
+      {
+        "category": "REST",
+        "finding": "`PUT /repos/{o}/{r}/subscription` decoded `ignored` but `SetRepoSubscription` hardcoded `Ignored:false`, so repo-watch \"ignore\" was non-functional (`{\"ignored\":true}` returned `ignored:false`), and the notification watch-suppression branch reading it was dead",
+        "id": "REST-161",
+        "location": "gh_repos_rest.go, internal/store/store_repos.go",
+        "severity": "m",
+        "status": "fixed \u2014 `SetRepoSubscription` takes and persists `ignored`; the handler passes it through. Verified: unit test asserts `{\"ignored\":true}` round-trips as `ignored:true`",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "`PUT /notifications/threads/{id}/subscription` derived `subscribed` from a non-documented `subscribed` request field, so a spec-shaped `{\"ignored\":false}` (or `{}`) request returned `subscribed:false`",
+        "id": "REST-162",
+        "location": "gh_notifications.go",
+        "severity": "m",
+        "status": "fixed \u2014 subscribing is implied by the PUT, so `subscribed` is `!ignored`. Verified: unit test asserts an unignored PUT yields `subscribed:true` and an ignored one `subscribed:false`",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "`GET /meta` returned only `verifiable_password_authentication`+`installed_version`, omitting `ssh_key_fingerprints` and `ssh_keys` clients read to seed known_hosts",
+        "id": "REST-163",
+        "location": "gh_misc_endpoints.go, git_ssh.go",
+        "severity": "m",
+        "status": "fixed \u2014 `/meta` now emits `ssh_key_fingerprints` (the instance's configured SSH host-key SHA256 fingerprint map) and `ssh_keys` (the authorized-key lines), empty when no host key is configured; both are api-overview schema members (ratchet-safe). Verified: unit test asserts both are present",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "`GET /licenses/{key}` emitted empty `permissions`/`conditions`/`limitations`, the license *name* as `description`, an empty `implementation`, and `featured:true` unconditionally",
+        "id": "REST-164",
+        "location": "gh_repos_templates.go, internal/store/repos_templates.go",
+        "severity": "m",
+        "status": "fixed \u2014 a per-license `LicenseMetadata` table supplies the real choosealicense slug arrays, description, implementation and featured flag. Verified: unit test asserts mit's permissions start `commercial-use`, description is populated, and featured is true",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "`GET /licenses` ignored the documented `featured` query param, always returning the full catalog",
+        "id": "REST-165",
+        "location": "gh_repos_templates.go",
+        "severity": "m",
+        "status": "fixed \u2014 the default (or `?featured=true`) returns only featured licenses; `?featured=false` returns all. Verified: unit test asserts the default excludes bsd-2-clause and `?featured=false` includes it",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "a gist `PATCH` that renamed a file (setting `filename` without `content`) left the OLD file behind AND blanked the renamed file's body \u2014 `newFiles` was keyed by the new name and the old key was never deleted, and omitted content was written as `\"\"`",
+        "id": "REST-166",
+        "location": "gh_gists_rest.go",
+        "severity": "M",
+        "status": "fixed \u2014 a rename now deletes the old key, and omitted content is carried forward from the current gist. Verified: unit test asserts a pure rename removes the old filename and preserves the body",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "`GET /users/{username}/gists` returned the user's **secret** gists as well as public ones \u2014 a visibility leak (the endpoint is public-only; secret gists are reachable only via `GET /gists` as the owner)",
+        "id": "REST-167",
+        "location": "gh_misc_endpoints_users.go",
+        "severity": "M",
+        "status": "fixed \u2014 the handler now emits only public gists. Verified: unit test asserts a public gist appears and a secret one does not",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "`GET /gists/{id}/{sha}` returned the gist's *current* files with only `updated_at` overridden, not the files as they existed at that revision",
+        "id": "REST-168",
+        "location": "internal/store/store.go",
+        "severity": "m",
+        "status": "fixed \u2014 each history entry now records a file snapshot (at create and every update), and `GetGistAtRevision` reconstructs from it (revisions predating snapshots fall back to current files). Verified: unit test edits a gist then asserts the first revision still serves the original content",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "gist responses hardcoded `forks:[]`, never emitted `fork_of` for a fork, and omitted the per-file `truncated` member",
+        "id": "REST-169",
+        "location": "gh_gists_rest.go",
+        "severity": "m",
+        "status": "fixed \u2014 `forks` is populated from the store (entries carry a full public-user), `fork_of` (the parent) is emitted on the single-gist responses, and per-file `truncated` is emitted \u2014 all three scoped to the gist-simple responses so the base-gist list stays schema-clean. Verified: unit tests assert a fork's `fork_of`, the parent's `forks` entry, and that `truncated` appears on the single-gist GET but not the list",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "the GPG-key JSON used the non-spec field `can_encrypt_commits` (github spells it `can_encrypt_comms`) and omitted required `primary_key_id`, `raw_key`, `can_encrypt_storage`, `subkeys`, `revoked`; `emails` items also carried a non-spec `primary`",
+        "id": "REST-170",
+        "location": "gh_misc_endpoints.go, internal/store/misc.go",
+        "severity": "m",
+        "status": "fixed \u2014 the serializer emits github's full gpg-key required set with the correct names, and `emails` items are trimmed to `{email,verified}`; the store struct gained the backing fields. Verified: unit test asserts `can_encrypt_comms`/the added fields are present and `can_encrypt_commits` is gone",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "`GET /user/gpg_keys/{id}` skipped auth and ownership checks, so any caller (even anonymous) could read any user's GPG key object \u2014 unlike the correct sibling SSH-key handler",
+        "id": "REST-171",
+        "location": "gh_misc_endpoints.go",
+        "severity": "M",
+        "status": "fixed \u2014 the handler now requires a caller (401) and 404s a key that is not theirs. Verified: unit test asserts anonymous access is 401 and another user's access is 404",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "`GET /orgs/{org}/members` ignored the documented `?role` (all/admin/member) and `?filter` (all/2fa_disabled) query params, returning the full list regardless",
+        "id": "REST-172",
+        "location": "gh_members_rest.go",
+        "severity": "m",
+        "status": "fixed \u2014 the handler validates both enums (422 on a bad value) and filters by membership role. Verified: unit test asserts `?role=admin`/`?role=member` narrow correctly and `?role=bogus` is 422'd",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "`GET /orgs/{org}/teams/{slug}/members` ignored the documented `?role` (member/maintainer/all) query param",
+        "id": "REST-173",
+        "location": "gh_teams_rest.go",
+        "severity": "m",
+        "status": "fixed \u2014 the handler validates the enum and filters by the member's team role. Verified: unit test asserts `?role=maintainer` returns only the maintainer",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -6777,6 +6894,15 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "the org People page could change a member's role or remove them but offered no \"Convert to outside collaborator\" action, though the server backs `PUT /orgs/{org}/outside_collaborators/{username}`",
+        "id": "WEB-200",
+        "location": "web/src/pages/OrgPeoplePage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 each non-self member card gained a \"Convert to outside collaborator\" control (confirm-gated) that PUTs the outside-collaborators endpoint (defined inline via the existing `ghSend`, no new api.ts export, to respect the entry-bundle budget) and refreshes the list. Verified: unit test asserts the action PUTs `/orgs/{org}/outside_collaborators/{login}`",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -8183,9 +8309,9 @@
         "REST": {
           "status": {
             "deferred": 1,
-            "fixed": 159
+            "fixed": 172
           },
-          "total": 160
+          "total": 173
         },
         "STORE": {
           "status": {
@@ -8203,21 +8329,21 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 197
+            "fixed": 198
           },
-          "total": 199
+          "total": 200
         }
       },
       "severity": {
         "blocker": 167,
-        "major": 423,
-        "minor": 277
+        "major": 426,
+        "minor": 288
       },
       "status": {
         "deferred": 4,
-        "fixed": 863
+        "fixed": 877
       },
-      "total": 867
+      "total": 881
     }
   },
   "rest": {

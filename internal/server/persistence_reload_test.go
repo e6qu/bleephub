@@ -443,7 +443,7 @@ func TestPersistenceReload_DeleteRepoPurgesIssueAndPullChildren(t *testing.T) {
 		st.ProjectsV2.AddItem(project.ID, "Issue", parent.ID, admin.ID)
 		st.RecordRepoActivity(repo.ID, "refs/heads/main", "0000000", "abcdef0", admin.ID, "push")
 		st.RecordRepoClone(repo.ID, admin.Login)
-		if !st.SetRepoSubscription(admin.ID, repo.ID, true) {
+		if !st.SetRepoSubscription(admin.ID, repo.ID, true, false) {
 			t.Fatal("SetRepoSubscription returned false")
 		}
 		if _, err := st.CreateAttestation(repo.ID, []byte(`{"bundle":true}`), []string{"sha256:deadbeef"}, "https://slsa.dev/provenance/v1", admin.Login); err != nil {

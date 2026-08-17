@@ -1,5 +1,78 @@
 package store
 
+// LicenseMeta carries the choosealicense.com attributes GitHub returns for a
+// license beyond its text: the human description, an implementation note, the
+// permission/condition/limitation slug arrays, and whether it is a featured
+// (commonly-used) license the default /licenses listing includes.
+type LicenseMeta struct {
+	Description    string
+	Implementation string
+	Permissions    []string
+	Conditions     []string
+	Limitations    []string
+	Featured       bool
+}
+
+// LicenseMetadata maps each LicenseTemplates key to its choosealicense metadata.
+var LicenseMetadata = map[string]LicenseMeta{
+	"mit": {
+		Description:    "A short and simple permissive license with conditions only requiring preservation of copyright and license notices. Licensed works, modifications, and larger works may be distributed under different terms and without source code.",
+		Implementation: "Create a text file (typically named LICENSE or LICENSE.txt) in the root of your source code and copy the text of the license into the file. Replace [year] with the current year and [fullname] with the name (or names) of the copyright holders.",
+		Permissions:    []string{"commercial-use", "modifications", "distribution", "private-use"},
+		Conditions:     []string{"include-copyright"},
+		Limitations:    []string{"liability", "warranty"},
+		Featured:       true,
+	},
+	"apache-2.0": {
+		Description:    "A permissive license whose main conditions require preservation of copyright and license notices. Contributors provide an express grant of patent rights. Licensed works, modifications, and larger works may be distributed under different terms and without source code.",
+		Implementation: "Create a text file (typically named LICENSE or LICENSE.txt) in the root of your source code and copy the text of the license into the file. Change the copyright notice at the bottom of the text to include your details.",
+		Permissions:    []string{"commercial-use", "modifications", "distribution", "patent-use", "private-use"},
+		Conditions:     []string{"include-copyright", "document-changes"},
+		Limitations:    []string{"trademark-use", "liability", "warranty"},
+		Featured:       true,
+	},
+	"gpl-3.0": {
+		Description:    "Permissions of this strong copyleft license are conditioned on making available complete source code of licensed works and modifications, which include larger works using a licensed work, under the same license. Copyright and license notices must be preserved. Contributors provide an express grant of patent rights.",
+		Implementation: "Create a text file (typically named LICENSE or LICENSE.txt) in the root of your source code and copy the text of the license into the file.",
+		Permissions:    []string{"commercial-use", "modifications", "distribution", "patent-use", "private-use"},
+		Conditions:     []string{"include-copyright", "document-changes", "disclose-source", "same-license"},
+		Limitations:    []string{"liability", "warranty"},
+		Featured:       true,
+	},
+	"bsd-2-clause": {
+		Description:    "A permissive license that comes in two variants, the BSD 2-Clause and BSD 3-Clause. Both have very minute differences to the MIT license.",
+		Implementation: "Create a text file (typically named LICENSE or LICENSE.txt) in the root of your source code and copy the text of the license into the file. Replace [year] with the current year and [fullname] with the name (or names) of the copyright holders.",
+		Permissions:    []string{"commercial-use", "modifications", "distribution", "private-use"},
+		Conditions:     []string{"include-copyright"},
+		Limitations:    []string{"liability", "warranty"},
+		Featured:       false,
+	},
+	"bsd-3-clause": {
+		Description:    "A permissive license similar to the BSD 2-Clause License, but with a 3rd clause that prohibits others from using the name of the copyright holder or its contributors to promote derived products without written consent.",
+		Implementation: "Create a text file (typically named LICENSE or LICENSE.txt) in the root of your source code and copy the text of the license into the file. Replace [year] with the current year and [fullname] with the name (or names) of the copyright holders.",
+		Permissions:    []string{"commercial-use", "modifications", "distribution", "private-use"},
+		Conditions:     []string{"include-copyright"},
+		Limitations:    []string{"liability", "warranty"},
+		Featured:       false,
+	},
+	"mpl-2.0": {
+		Description:    "Permissions of this weak copyleft license are conditioned on making available source code of licensed files and modifications of those files under the same license (or in certain cases, one of the GNU licenses). Copyright and license notices must be preserved. Contributors provide an express grant of patent rights.",
+		Implementation: "Create a text file (typically named LICENSE or LICENSE.txt) in the root of your source code and copy the text of the license into the file.",
+		Permissions:    []string{"commercial-use", "modifications", "distribution", "patent-use", "private-use"},
+		Conditions:     []string{"disclose-source", "include-copyright", "same-license--file"},
+		Limitations:    []string{"liability", "trademark-use", "warranty"},
+		Featured:       false,
+	},
+	"unlicense": {
+		Description:    "A license with no conditions whatsoever which dedicates works to the public domain. Unlicensed works, modifications, and larger works may be distributed under different terms and without source code.",
+		Implementation: "Create a text file (typically named UNLICENSE or LICENSE) in the root of your source code and copy the text of the license into the file.",
+		Permissions:    []string{"commercial-use", "modifications", "distribution", "private-use"},
+		Conditions:     []string{},
+		Limitations:    []string{"liability", "warranty"},
+		Featured:       false,
+	},
+}
+
 // LicenseTemplates is a curated list of common open-source license keys and
 // full texts. Keys match the SPDX identifiers GitHub accepts in the
 // license_template field of repo creation.
