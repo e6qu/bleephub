@@ -519,6 +519,20 @@ func (s *Server) handleMergePullRequest(w http.ResponseWriter, r *http.Request) 
 		store.WriteGHValidationError(w, "PullRequest", "merge_method", "invalid")
 		return
 	}
+	// GitHub 405s an explicit merge method the repository has disabled.
+	var disallowed string
+	switch {
+	case req.MergeMethod == "merge" && !repo.AllowMergeCommit:
+		disallowed = "Merge commits are not allowed on this repository."
+	case req.MergeMethod == "squash" && !repo.AllowSquashMerge:
+		disallowed = "Squash merges are not allowed on this repository."
+	case req.MergeMethod == "rebase" && !repo.AllowRebaseMerge:
+		disallowed = "Rebase merges are not allowed on this repository."
+	}
+	if disallowed != "" {
+		writeGHError(w, http.StatusMethodNotAllowed, disallowed)
+		return
+	}
 	// Expected-head guard: merging against a stale head SHA is a 409.
 	if req.SHA != "" {
 		if head := s.prHeadSha(repo, pr); head != "" && head != req.SHA {

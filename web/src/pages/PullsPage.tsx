@@ -141,6 +141,7 @@ function PRList({ owner, repo }: { owner: string; repo: string }) {
   const [prBody, setPrBody] = useState("");
   const [prHead, setPrHead] = useState("");
   const [prBase, setPrBase] = useState("");
+  const [prDraft, setPrDraft] = useState(false);
   const { data: branches = [] } = useQuery({
     queryKey: ["branches", owner, repo],
     queryFn: () => fetchRepoBranches(owner, repo),
@@ -148,7 +149,7 @@ function PRList({ owner, repo }: { owner: string; repo: string }) {
   });
   const createMut = useMutation({
     mutationFn: () =>
-      createPull(owner, repo, { title: prTitle, head: prHead, base: prBase, body: prBody }),
+      createPull(owner, repo, { title: prTitle, head: prHead, base: prBase, body: prBody, draft: prDraft }),
     onSuccess: (pr: GithubPR) => {
       qc.invalidateQueries({ queryKey: ["prs", owner, repo] });
       setCreating(false);
@@ -279,6 +280,10 @@ function PRList({ owner, repo }: { owner: string; repo: string }) {
             className="mb-4 w-full"
             style={{ resize: "vertical" }}
           />
+          <label className="mb-3 flex items-center gap-2" style={{ fontSize: "0.85rem" }}>
+            <input type="checkbox" checked={prDraft} onChange={(e) => setPrDraft(e.target.checked)} />
+            Create as a draft pull request
+          </label>
           <MutationError of={createMut} />
           <DialogActions>
             <Button variant="ghost" size="sm" onClick={() => setCreating(false)}>
@@ -290,7 +295,7 @@ function PRList({ owner, repo }: { owner: string; repo: string }) {
               disabled={!prTitle.trim() || !prHead || !prBase || prHead === prBase || createMut.isPending}
               onClick={() => createMut.mutate()}
             >
-              {createMut.isPending ? "Creating…" : "Create pull request"}
+              {createMut.isPending ? "Creating…" : prDraft ? "Create draft pull request" : "Create pull request"}
             </Button>
           </DialogActions>
         </Modal>

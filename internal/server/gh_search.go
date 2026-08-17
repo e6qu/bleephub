@@ -241,6 +241,8 @@ func parseSearchQuery(r *http.Request) (searchQuery, error) {
 					if !negated {
 						q.State = strings.ToLower(val)
 					}
+				case "merged", "unmerged", "draft":
+					// Applied per-pull-request in handleSearchIssues.
 				case "internal", "sponsorable":
 				default:
 					return q, unsupportedQualifierError{key: "is", value: val}
@@ -275,8 +277,26 @@ func parseSearchQuery(r *http.Request) (searchQuery, error) {
 					if !negated {
 						q.Type = strings.ToLower(val)
 					}
+				case "issue":
+					if !negated {
+						v := true
+						q.IsIssue = &v
+					}
+				case "pr", "pull-request":
+					if !negated {
+						v := true
+						q.IsPR = &v
+					}
 				default:
 					return q, unsupportedQualifierError{key: "type", value: val}
+				}
+			case "assignee", "milestone", "mentions":
+				// Applied per-item in handleSearchIssues; no parse-time state.
+			case "no":
+				switch strings.ToLower(val) {
+				case "label", "assignee", "milestone":
+				default:
+					return q, unsupportedQualifierError{key: "no", value: val}
 				}
 			case "author":
 				if !negated {
@@ -418,10 +438,8 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 			strings.EqualFold(repo.Visibility, "internal") && q.excludes("is", "internal") {
 			continue
 		}
-		if q.Label != "" {
-			if !issueHasLabelNames(s.store, issue, []string{q.Label}) {
-				continue
-			}
+		if !searchIssueQualifiersMatchLocked(s.store, q, issue.AuthorID, issue.AssigneeIDs, issue.LabelIDs, issue.MilestoneID, issue.Title+" "+issue.Body) {
+			continue
 		}
 		excludedLabel := false
 		for _, qualifier := range q.Qualifiers {
@@ -442,6 +460,11 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if q.IsPR != nil && *q.IsPR {
+			continue
+		}
+		// is:merged / is:unmerged / is:draft are pull-request-only states, so an
+		// issue never matches them.
+		if q.includes("is", "merged") || q.includes("is", "unmerged") || q.includes("is", "draft") {
 			continue
 		}
 		text := issue.Title + " " + issue.Body
@@ -494,10 +517,8 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 			strings.EqualFold(repo.Visibility, "internal") && q.excludes("is", "internal") {
 			continue
 		}
-		if q.Label != "" {
-			if !prHasLabelNames(s.store, pr, []string{q.Label}) {
-				continue
-			}
+		if !searchIssueQualifiersMatchLocked(s.store, q, pr.AuthorID, pr.AssigneeIDs, pr.LabelIDs, pr.MilestoneID, pr.Title+" "+pr.Body) {
+			continue
 		}
 		excludedLabel := false
 		for _, qualifier := range q.Qualifiers {
@@ -527,6 +548,23 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if q.IsPR != nil && !*q.IsPR {
+			continue
+		}
+		// is:merged / is:unmerged / is:draft (PR-only). MERGED is the merged
+		// terminal state; IsDraft flags a draft PR.
+		if q.includes("is", "merged") && pr.State != "MERGED" {
+			continue
+		}
+		if q.excludes("is", "merged") && pr.State == "MERGED" {
+			continue
+		}
+		if q.includes("is", "unmerged") && pr.State == "MERGED" {
+			continue
+		}
+		if q.includes("is", "draft") && !pr.IsDraft {
+			continue
+		}
+		if q.excludes("is", "draft") && pr.IsDraft {
 			continue
 		}
 		text := pr.Title + " " + pr.Body
@@ -836,6 +874,90 @@ func prHasLabelNames(st *store.Store, pr *store.PullRequest, names []string) boo
 		}
 		if !found {
 			return false
+		}
+	}
+	return true
+}
+
+// searchIssueQualifiersMatchLocked applies the issue/PR-scoped search qualifiers
+// github honors and bleephub previously 422'd or silently dropped: author:,
+// assignee: (incl. `*`), milestone: (incl. `*`), every positive label: (AND'd —
+// the old code kept only the last), no:label|assignee|milestone, and mentions:.
+// Callers hold st.Mu.RLock; text is the item's title+" "+body for mentions.
+func searchIssueQualifiersMatchLocked(st *store.Store, q searchQuery, authorID int, assigneeIDs, labelIDs []int, milestoneID int, text string) bool {
+	loginOf := func(id int) string {
+		if u := store.ActorUserLocked(st, id); u != nil {
+			return u.Login
+		}
+		return ""
+	}
+	for _, ql := range q.Qualifiers {
+		if ql.Negated {
+			continue
+		}
+		val := strings.Trim(ql.Value, `"`)
+		switch ql.Key {
+		case "author":
+			if !strings.EqualFold(loginOf(authorID), val) {
+				return false
+			}
+		case "assignee":
+			if val == "*" {
+				if len(assigneeIDs) == 0 {
+					return false
+				}
+				break
+			}
+			matched := false
+			for _, aid := range assigneeIDs {
+				if strings.EqualFold(loginOf(aid), val) {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				return false
+			}
+		case "milestone":
+			if val == "*" {
+				if milestoneID == 0 {
+					return false
+				}
+				break
+			}
+			if ms := st.Milestones[milestoneID]; ms == nil || !strings.EqualFold(ms.Title, val) {
+				return false
+			}
+		case "label":
+			found := false
+			for _, lid := range labelIDs {
+				if l := st.Labels[lid]; l != nil && strings.EqualFold(l.Name, val) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return false
+			}
+		case "mentions":
+			if !strings.Contains(strings.ToLower(text), "@"+strings.ToLower(val)) {
+				return false
+			}
+		case "no":
+			switch strings.ToLower(val) {
+			case "label":
+				if len(labelIDs) > 0 {
+					return false
+				}
+			case "assignee":
+				if len(assigneeIDs) > 0 {
+					return false
+				}
+			case "milestone":
+				if milestoneID != 0 {
+					return false
+				}
+			}
 		}
 	}
 	return true
