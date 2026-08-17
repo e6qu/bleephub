@@ -195,7 +195,7 @@
       },
       {
         "event": "pull_request",
-        "line": 558,
+        "line": 572,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
@@ -207,19 +207,19 @@
       },
       {
         "event": "pull_request_review",
-        "line": 735,
+        "line": 749,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request_review",
-        "line": 1012,
+        "line": 1026,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request_review",
-        "line": 1069,
+        "line": 1083,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
@@ -2562,6 +2562,33 @@
         "location": "gh_repos_compare.go",
         "severity": "m",
         "status": "fixed \u2014 `commitToJSON` now resolves both signatures to a GitHub account (or null) via a shared `commitSignatureUserJSON`, removing the single-commit override and the now-dead `commitSignatureUser`. Verified: unit test asserts a commit-list author is a user object with `login` or null, never an empty object; the openapi-shape ratchet stays green",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "issue/PR search **422'd** github-standard qualifiers instead of honoring them: `author:`, `assignee:`, `milestone:` (both value + `*`), `mentions:`, `type:issue` / `type:pr`, `is:merged` / `is:unmerged` / `is:draft`, `no:label` / `no:assignee` / `no:milestone` were all rejected by the per-type allow-list; and multiple positive `label:` **silently dropped** all but the last (github ANDs them)",
+        "id": "REST-133",
+        "location": "gh_search.go, gh_search_query.go",
+        "severity": "M",
+        "status": "fixed \u2014 widened the issues qualifier scope and added `searchIssueQualifiersMatchLocked`, applied in both the issue and pull-request scan loops, that honors author/assignee/milestone (+`*`), ANDs every positive label, and implements `no:*`, `mentions:` (word-boundary @-match), `type:issue` / `type:pr`, and `is:merged` / `is:unmerged` / `is:draft` (the last three PR-only). Verified: a unit test drives each qualifier incl. the multi-label AND. Named remainder: the full **user**-search qualifier vocabulary (`in:`/`repos:`/`followers:`/`location:`/`created:`) and `mentions:` inside comment bodies are follow-ups",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "the merge endpoint validated the method name but not whether the repository has that method enabled, so a `squash`/`rebase`/`merge` request succeeded even when the repo disabled it; github 405s",
+        "id": "REST-134",
+        "location": "gh_pulls_rest.go",
+        "severity": "m",
+        "status": "fixed \u2014 an explicit merge method the repo disallows (allow_squash_merge, allow_merge_commit or allow_rebase_merge) now returns 405 with a method-specific message. Verified: unit test asserts squash/rebase 405 while the enabled method still merges",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "notification `reason` never produced `review_requested` or `mention`, and the participant gate meant a requested reviewer or an @-mentioned non-watcher got **no thread at all**",
+        "id": "REST-135",
+        "location": "store_notifications.go",
+        "severity": "m",
+        "status": "fixed \u2014 the reason derivation now returns `review_requested` when the viewer is in a PR's `RequestedReviewerIDs`, and `mention` when the issue/PR body @-mentions the viewer at a word boundary; both bypass the subscribe/watch gate like github. Verified: unit test asserts a requested reviewer sees `review_requested` and a mentioned user sees `mention`. Named remainder: `mention` from a comment body (needs a per-user comment-mention precompute) is a follow-up",
         "status_kind": "fixed"
       },
       {
@@ -6489,6 +6516,15 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "the \"Open a pull request\" modal could only create a ready PR \u2014 no draft affordance \u2014 though `createPull`'s payload and the server both accept `draft` at creation; a user had to open a ready PR and immediately click \"Convert to draft\"",
+        "id": "WEB-198",
+        "location": "web/src/pages/PullsPage.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 added a \"Create as a draft pull request\" checkbox that passes `draft` to `createPull` (the submit label flips to \"Create draft pull request\"). Verified: unit test asserts ticking it POSTs `draft: true`",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -7885,9 +7921,9 @@
         },
         "REST": {
           "status": {
-            "fixed": 132
+            "fixed": 135
           },
-          "total": 132
+          "total": 135
         },
         "STORE": {
           "status": {
@@ -7905,21 +7941,21 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 195
+            "fixed": 196
           },
-          "total": 197
+          "total": 198
         }
       },
       "severity": {
         "blocker": 167,
-        "major": 416,
-        "minor": 251
+        "major": 417,
+        "minor": 254
       },
       "status": {
         "deferred": 3,
-        "fixed": 831
+        "fixed": 835
       },
-      "total": 834
+      "total": 838
     }
   },
   "rest": {

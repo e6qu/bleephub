@@ -871,7 +871,36 @@ describe("PullsPage create", () => {
         head: "feature",
         base: "main",
         body: "",
+        draft: false,
       });
+    });
+  });
+
+  it("creates a draft pull request when the draft checkbox is ticked", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith("/pulls") && init?.method === "POST") {
+        return Promise.resolve(jsonResponse(pr(43, "Draft PR", { draft: true })));
+      }
+      if (u.includes("/branches")) {
+        return Promise.resolve(jsonResponse([{ name: "main" }, { name: "feature" }]));
+      }
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/test/pulls");
+    fireEvent.click(await screen.findByRole("button", { name: /new pull request/i }));
+    await screen.findAllByRole("option", { name: "feature" });
+    fireEvent.change(screen.getByLabelText(/^base$/i), { target: { value: "main" } });
+    fireEvent.change(screen.getByLabelText(/^compare$/i), { target: { value: "feature" } });
+    fireEvent.change(screen.getByLabelText(/^title$/i), { target: { value: "Draft PR" } });
+    fireEvent.click(screen.getByLabelText(/create as a draft/i));
+    fireEvent.click(screen.getByRole("button", { name: /create draft pull request/i }));
+    await waitFor(() => {
+      const posted = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/pulls") && c[1]?.method === "POST",
+      );
+      expect(posted).toBeTruthy();
+      expect(JSON.parse((posted![1] as RequestInit).body as string).draft).toBe(true);
     });
   });
 });

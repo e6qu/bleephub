@@ -33,9 +33,14 @@ type notificationThreadSource struct {
 	RepoID      int
 	Number      int
 	Title       string
+	Body        string
 	UpdatedAt   time.Time
 	AuthorID    int
 	AssigneeIDs []int
+	// RequestedReviewerIDs is set for pull requests: a user whose review is
+	// requested gets a thread with reason "review_requested" (github), even
+	// without watching the repo.
+	RequestedReviewerIDs []int
 }
 
 // NotificationThreadRow is one accepted thread source gathered under the
@@ -153,6 +158,7 @@ func (st *Store) NotificationRowsFor(user *User, opts NotificationListOptions, c
 			RepoID:      issue.RepoID,
 			Number:      issue.Number,
 			Title:       issue.Title,
+			Body:        issue.Body,
 			UpdatedAt:   issue.UpdatedAt,
 			AuthorID:    issue.AuthorID,
 			AssigneeIDs: issue.AssigneeIDs,
@@ -160,14 +166,16 @@ func (st *Store) NotificationRowsFor(user *User, opts NotificationListOptions, c
 	}
 	for _, pr := range st.PullRequests {
 		add(notificationThreadSource{
-			Type:        "PullRequest",
-			ID:          pr.ID,
-			RepoID:      pr.RepoID,
-			Number:      pr.Number,
-			Title:       pr.Title,
-			UpdatedAt:   pr.UpdatedAt,
-			AuthorID:    pr.AuthorID,
-			AssigneeIDs: pr.AssigneeIDs,
+			Type:                 "PullRequest",
+			ID:                   pr.ID,
+			RepoID:               pr.RepoID,
+			Number:               pr.Number,
+			Title:                pr.Title,
+			Body:                 pr.Body,
+			UpdatedAt:            pr.UpdatedAt,
+			AuthorID:             pr.AuthorID,
+			AssigneeIDs:          pr.AssigneeIDs,
+			RequestedReviewerIDs: pr.RequestedReviewerIDs,
 		})
 	}
 
@@ -201,6 +209,14 @@ func notificationReason(st *Store, user *User, src notificationThreadSource) str
 			return "assign"
 		}
 	}
+	for _, rid := range src.RequestedReviewerIDs {
+		if rid == user.ID {
+			return "review_requested"
+		}
+	}
+	if bodyMentions(src.Body, user.Login) {
+		return "mention"
+	}
 	parentType := strings.ToLower(src.Type)
 	for _, c := range st.Comments {
 		if c.AuthorID == user.ID && c.IssueID == src.ID && strings.ToLower(c.ParentType) == parentType {
@@ -208,6 +224,33 @@ func notificationReason(st *Store, user *User, src notificationThreadSource) str
 		}
 	}
 	return "subscribed"
+}
+
+// bodyMentions reports whether body @-mentions login at a word boundary (so
+// "@octocat" matches but "email@octocat.com" and "@octocatx" do not).
+func bodyMentions(body, login string) bool {
+	if login == "" {
+		return false
+	}
+	lb, ll := strings.ToLower(body), strings.ToLower(login)
+	needle := "@" + ll
+	wordByte := func(b byte) bool {
+		return b == '-' || (b >= 'a' && b <= 'z') || (b >= '0' && b <= '9')
+	}
+	for from := 0; ; {
+		i := strings.Index(lb[from:], needle)
+		if i < 0 {
+			return false
+		}
+		pos := from + i
+		okBefore := pos == 0 || !wordByte(lb[pos-1])
+		after := pos + len(needle)
+		okAfter := after >= len(lb) || !wordByte(lb[after])
+		if okBefore && okAfter {
+			return true
+		}
+		from = pos + 1
+	}
 }
 
 // notificationReasonWithComments derives the thread reason for the user using
@@ -222,6 +265,14 @@ func notificationReasonWithComments(user *User, src notificationThreadSource, co
 		if aid == user.ID {
 			return "assign"
 		}
+	}
+	for _, rid := range src.RequestedReviewerIDs {
+		if rid == user.ID {
+			return "review_requested"
+		}
+	}
+	if bodyMentions(src.Body, user.Login) {
+		return "mention"
 	}
 	if _, ok := commentedOn[strings.ToLower(src.Type)+"\x1f"+strconv.Itoa(src.ID)]; ok {
 		return "comment"

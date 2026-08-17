@@ -67,7 +67,10 @@ var searchQualifierScopes = map[string]map[string]bool{
 		"size", "followers", "forks", "stars", "topics", "created", "pushed",
 		"good-first-issues", "help-wanted-issues", "has", "deployable", "deployed",
 	),
-	"issues": qualifierSet("repo", "user", "org", "label", "state", "is", "in"),
+	"issues": qualifierSet(
+		"repo", "user", "org", "label", "state", "is", "in",
+		"author", "assignee", "milestone", "mentions", "no", "type",
+	),
 	"code": qualifierSet(
 		"repo", "user", "org", "language", "path", "extension", "ext", "filename", "file",
 	),
