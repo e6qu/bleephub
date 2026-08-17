@@ -253,7 +253,7 @@ func (s *Server) readPagesDeploymentArtifact(ctx context.Context, repoFullName s
 	// http.DefaultClient: the artifact URL is produced by the deployment run,
 	// but gating the actual dial keeps it from reaching an internal/metadata
 	// address. The request context already bounds the timeout.
-	pagesClient := &http.Client{Transport: newAddressCheckedHTTPTransport(s.allowPrivateOutboundTargets, false)}
+	pagesClient := &http.Client{Transport: newAddressCheckedHTTPTransport(false)}
 	resp, err := pagesClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetch Pages deployment artifact: %w", err)

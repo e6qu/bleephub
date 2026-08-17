@@ -314,10 +314,9 @@ func testActionTarball(t *testing.T) []byte {
 func newTestServer() *Server {
 	logger := zerolog.Nop()
 	s := newServerState("127.0.0.1:0", logger, serverConstruction{
-		maxConcurrentWorkflows:     10,
-		pagesJekyllExecutable:      "bleephub-pages-jekyll",
-		build:                      BuildInfo{Version: "test", Commit: "fixed", PublishedAt: "2042-07-15T12:00:00Z"},
-		allowPrivateOutboundTarget: true,
+		maxConcurrentWorkflows: 10,
+		pagesJekyllExecutable:  "bleephub-pages-jekyll",
+		build:                  BuildInfo{Version: "test", Commit: "fixed", PublishedAt: "2042-07-15T12:00:00Z"},
 	})
 	useFixedTestClock(s)
 	s.store.SeedDefaultUser()

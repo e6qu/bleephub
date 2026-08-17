@@ -63,7 +63,6 @@ validation is all-or-nothing):
 | `BLEEPHUB_SHAUTH_POST_LOGOUT_URL` | Where the provider returns after RP-logout; must be `<external-url>/auth/shauth/logout/complete`. |
 | `BLEEPHUB_EXTERNAL_URL` | The externally-reachable base URL of this bleephub. Its consistency with the post-logout URL is enforced at startup (`validateShauthExternalURL`). |
 | `BLEEPHUB_ALLOW_INSECURE_OIDC` | Dev/test only: permit `http://` issuer/URLs (e.g. loopback Hydra). |
-| `BLEEPHUB_ALLOW_PRIVATE_OUTBOUND_TARGETS` | Dev/test only: permit the SSRF gate to reach a private/loopback issuer. |
 
 ### Register the client at the provider
 
@@ -91,6 +90,8 @@ in [`test/shauth/`](https://github.com/e6qu/bleephub/blob/main/test/shauth) and 
 driven by
 [`scripts/test-shauth-sso.sh`](https://github.com/e6qu/bleephub/blob/main/scripts/test-shauth-sso.sh).
 Because the issuer runs on loopback there, the compose sets
-`BLEEPHUB_ALLOW_INSECURE_OIDC=true` and `BLEEPHUB_ALLOW_PRIVATE_OUTBOUND_TARGETS=true`
-— the pattern to copy for any local IdP. Production deployments use an HTTPS,
-publicly-resolvable issuer and leave both flags unset.
+`BLEEPHUB_ALLOW_INSECURE_OIDC=true` — the pattern to copy for any local IdP.
+(OIDC discovery uses an ordinary client for the operator-configured issuer, not
+the webhook SSRF gate, so a loopback issuer needs no private-address opt-out.)
+Production deployments use an HTTPS, publicly-resolvable issuer and leave the
+flag unset.

@@ -55,7 +55,7 @@ func (s *Server) rejectUndeliverableHookURL(w http.ResponseWriter, target string
 		store.WriteGHValidationError(w, "Hook", "config.url", "invalid")
 		return true
 	}
-	if err := validateWebhookTargetURL(target, s.allowPrivateOutboundTargets); err != nil {
+	if err := validateWebhookTargetURL(target); err != nil {
 		s.logger.Warn().Err(err).Msg("webhook target rejected at configuration time")
 		store.WriteGHValidationError(w, "Hook", "config.url", "invalid")
 		return true

@@ -464,14 +464,10 @@ func cursorPageByID[T any](w http.ResponseWriter, r *http.Request, items []T, id
 }
 
 // restCursorID accepts the opaque base64 "cursor:<id>" values emitted by
-// GitHub-style Link headers. Decimal IDs remain accepted for older Bleephub
-// clients that consumed the pre-ratchet implementation.
+// GitHub-style Link headers.
 func restCursorID(value string) (id int, present, valid bool) {
 	if value == "" {
 		return 0, false, true
-	}
-	if id, err := strconv.Atoi(value); err == nil && id >= 0 {
-		return id, true, true
 	}
 	for _, encoding := range []*base64.Encoding{
 		base64.StdEncoding, base64.RawStdEncoding, base64.URLEncoding, base64.RawURLEncoding,

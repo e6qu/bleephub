@@ -29,11 +29,8 @@ func TestOIDCDiscoveryReachesCoLocatedIssuer(t *testing.T) {
 	issuer = ts.URL
 
 	s := newTestServer()
-	// Production default: the webhook SSRF gate refuses private/loopback targets.
-	// With the old gated OIDC client this made discovery to a co-located provider
-	// fail; the fix uses an ordinary client for the configured IdP.
-	s.allowPrivateOutboundTargets = false
-
+	// OIDC discovery uses an ordinary client for the operator-configured IdP, not
+	// the webhook SSRF gate, so a co-located (loopback/container) issuer resolves.
 	if _, err := oidc.NewProvider(s.oidcClientContext(context.Background()), issuer); err != nil {
 		t.Fatalf("issue #168: OIDC discovery to a co-located (loopback) issuer was refused: %v", err)
 	}

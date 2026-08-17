@@ -41,7 +41,6 @@ services:
       BPH_TLS_CERT: /etc/bleephub/tls/cert.pem
       BPH_TLS_KEY: /etc/bleephub/tls/key.pem
       BLEEPHUB_ALLOW_INSECURE_OIDC: "true"
-      BLEEPHUB_ALLOW_PRIVATE_OUTBOUND_TARGETS: "true"
       BLEEPHUB_SHAUTH_ISSUER: http://localhost:8080
       BLEEPHUB_SHAUTH_CLIENT_ID: bleephub-primary
       BLEEPHUB_SHAUTH_CLIENT_SECRET: ${BLEEPHUB_SSO_PRIMARY_CLIENT_SECRET:?set BLEEPHUB_SSO_PRIMARY_CLIENT_SECRET}
@@ -69,7 +68,6 @@ services:
       BPH_TLS_CERT: /etc/bleephub/tls/cert.pem
       BPH_TLS_KEY: /etc/bleephub/tls/key.pem
       BLEEPHUB_ALLOW_INSECURE_OIDC: "true"
-      BLEEPHUB_ALLOW_PRIVATE_OUTBOUND_TARGETS: "true"
       BLEEPHUB_SHAUTH_ISSUER: http://localhost:8080
       BLEEPHUB_SHAUTH_CLIENT_ID: bleephub-secondary
       BLEEPHUB_SHAUTH_CLIENT_SECRET: ${BLEEPHUB_SSO_SECONDARY_CLIENT_SECRET:?set BLEEPHUB_SSO_SECONDARY_CLIENT_SECRET}

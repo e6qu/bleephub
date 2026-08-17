@@ -54,23 +54,36 @@ const (
 	webhookResolveTimeout  = 2 * time.Second
 )
 
-// webhookAddrBlocked reports whether an IP address is one a webhook delivery
-// must never reach. Anything not routable on the public internet is refused:
-// the loopback interface, link-local space (which carries the cloud
-// instance-metadata endpoint at 169.254.169.254), RFC1918 and IPv6
-// unique-local space, carrier-grade NAT, multicast, and the unspecified and
-// broadcast addresses.
+// webhookAddrBlocked reports whether an IP address is one a server-initiated
+// fetch must never reach. Loopback is the one non-public range permitted:
+// delivering to a service on the same host is a legitimate on-prem/dev feature,
+// and it is what this instance's own test and development receivers use. Every
+// other non-public address is refused unconditionally — there is no operator
+// switch to relax it: the cloud instance-metadata endpoint (169.254.169.254)
+// and the rest of link-local space, RFC1918 and IPv6 unique-local space,
+// carrier-grade NAT, multicast, and the unspecified and broadcast addresses.
 func webhookAddrBlocked(ip net.IP) bool {
 	if ip == nil {
 		return true
+	}
+	// Loopback (incl. its IPv4-mapped/IPv4-compatible spellings, which
+	// net.IP.IsLoopback resolves) is always permitted.
+	if ip.IsLoopback() {
+		return false
 	}
 	if nonPublicIP(ip) {
 		return true
 	}
 	// An IPv6 form that tunnels an IPv4 address reaches whatever that address
-	// reaches, so the embedded address is checked on its own terms.
-	if v4 := tunnelledIPv4(ip); v4 != nil && nonPublicIP(v4) {
-		return true
+	// reaches, so the embedded address is checked on its own terms — a tunnelled
+	// loopback stays permitted, a tunnelled private/metadata address refused.
+	if v4 := tunnelledIPv4(ip); v4 != nil {
+		if v4.IsLoopback() {
+			return false
+		}
+		if nonPublicIP(v4) {
+			return true
+		}
 	}
 	return false
 }
@@ -126,7 +139,7 @@ func isZeroBytes(b []byte) bool {
 // resolution — the scheme, the presence of a host, and a literal IP — and
 // returns the parsed URL. This is the check the delivery path can afford to
 // repeat on every attempt.
-func parseWebhookTargetURL(raw string, allowPrivate bool) (*url.URL, error) {
+func parseWebhookTargetURL(raw string) (*url.URL, error) {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {
 		return nil, fmt.Errorf("webhook URL %q is not a valid URL: %w", raw, err)
@@ -143,9 +156,6 @@ func parseWebhookTargetURL(raw string, allowPrivate bool) (*url.URL, error) {
 	host := u.Hostname()
 	if host == "" {
 		return nil, fmt.Errorf("webhook URL %q names no host", raw)
-	}
-	if allowPrivate {
-		return u, nil
 	}
 	if ip := net.ParseIP(host); ip != nil && webhookAddrBlocked(ip) {
 		return nil, fmt.Errorf("webhook target %s is not a public address", ip)
@@ -177,13 +187,10 @@ func webhookTargetRequiresHTTPS(rawURL string) error {
 // A name that does not resolve is stored. It admits nothing — the address
 // actually dialed is checked again at delivery time, which is also the only
 // point where a rebinding answer can be caught.
-func validateWebhookTargetURL(raw string, allowPrivate bool) error {
-	u, err := parseWebhookTargetURL(raw, allowPrivate)
+func validateWebhookTargetURL(raw string) error {
+	u, err := parseWebhookTargetURL(raw)
 	if err != nil {
 		return err
-	}
-	if allowPrivate {
-		return nil
 	}
 	host := u.Hostname()
 	if net.ParseIP(host) != nil {
@@ -207,11 +214,8 @@ func validateWebhookTargetURL(raw string, allowPrivate bool) error {
 // resolver has answered and before the socket connects, with the address that
 // is about to be dialed — the only point where the address checked and the
 // address reached cannot differ.
-func webhookDialControl(allowPrivate bool) func(network, address string, c syscall.RawConn) error {
+func webhookDialControl() func(network, address string, c syscall.RawConn) error {
 	return func(_, address string, _ syscall.RawConn) error {
-		if allowPrivate {
-			return nil
-		}
 		host, _, err := net.SplitHostPort(address)
 		if err != nil {
 			return fmt.Errorf("webhook target address %q is malformed: %w", address, err)
@@ -228,12 +232,12 @@ func webhookDialControl(allowPrivate bool) func(network, address string, c sysca
 }
 
 // newWebhookClient builds the HTTP client webhook deliveries use.
-func newWebhookClient(allowPrivate, insecureTLS bool) *http.Client {
-	return newWebhookClientWithTimeout(allowPrivate, insecureTLS, webhookRequestTimeout)
+func newWebhookClient(insecureTLS bool) *http.Client {
+	return newWebhookClientWithTimeout(insecureTLS, webhookRequestTimeout)
 }
 
-func newWebhookClientWithTimeout(allowPrivate, insecureTLS bool, timeout time.Duration) *http.Client {
-	transport := newAddressCheckedHTTPTransport(allowPrivate, insecureTLS)
+func newWebhookClientWithTimeout(insecureTLS bool, timeout time.Duration) *http.Client {
+	transport := newAddressCheckedHTTPTransport(insecureTLS)
 	return &http.Client{
 		Timeout:   timeout,
 		Transport: otelhttp.NewTransport(transport),
@@ -249,11 +253,11 @@ func newWebhookClientWithTimeout(allowPrivate, insecureTLS bool, timeout time.Du
 // only Dialer.Control sees the address the kernel is actually about to reach;
 // keeping the transport construction shared prevents webhook and source-import
 // SSRF policy from drifting apart again.
-func newAddressCheckedHTTPTransport(allowPrivate, insecureTLS bool) *http.Transport {
+func newAddressCheckedHTTPTransport(insecureTLS bool) *http.Transport {
 	dialer := &net.Dialer{
 		Timeout:   webhookDialTimeout,
 		KeepAlive: 30 * time.Second,
-		Control:   webhookDialControl(allowPrivate),
+		Control:   webhookDialControl(),
 	}
 	transport := &http.Transport{
 		// No proxy: a proxied request dials the proxy, so the address gate
@@ -320,8 +324,8 @@ func verifyWebhookPeerCertificateValidity(cs tls.ConnectionState) error {
 func (s *Server) webhookDeliveryClient(insecureTLS bool) *http.Client {
 	s.webhookClientsOnce.Do(func() {
 		s.webhookClients = [2]*http.Client{
-			newWebhookClient(s.allowPrivateOutboundTargets, false),
-			newWebhookClient(s.allowPrivateOutboundTargets, true),
+			newWebhookClient(false),
+			newWebhookClient(true),
 		}
 	})
 	if insecureTLS {
@@ -597,7 +601,7 @@ func (s *Server) deliverWebhook(hook *store.Webhook, event, action string, paylo
 	backoffs := []time.Duration{0, 1 * time.Second, 5 * time.Second}
 	if err := webhookTargetRequiresHTTPS(hook.URL); err != nil {
 		backoffs = backoffs[:1]
-	} else if _, err := parseWebhookTargetURL(hook.URL, s.allowPrivateOutboundTargets); err != nil {
+	} else if _, err := parseWebhookTargetURL(hook.URL); err != nil {
 		// A refused target does not become deliverable by waiting: record the
 		// refusal once instead of retrying it.
 		backoffs = backoffs[:1]
@@ -710,7 +714,7 @@ func (s *Server) doDeliverAttempt(hook *store.Webhook, event, action, guid strin
 		s.logger.Warn().Err(err).Int("hook_id", hook.ID).Msg("webhook delivery refused")
 		return undelivered(err)
 	}
-	if _, err := parseWebhookTargetURL(hook.URL, s.allowPrivateOutboundTargets); err != nil {
+	if _, err := parseWebhookTargetURL(hook.URL); err != nil {
 		s.logger.Warn().Err(err).Int("hook_id", hook.ID).Msg("webhook delivery refused")
 		return undelivered(err)
 	}
@@ -725,8 +729,8 @@ func (s *Server) doDeliverAttempt(hook *store.Webhook, event, action, guid strin
 	}
 
 	// #nosec G704 -- webhooks deliver to operator-configured URLs by design;
-	// parseWebhookTargetURL above refuses private targets unless the instance
-	// explicitly opted out (BLEEPHUB_ALLOW_PRIVATE_OUTBOUND_TARGETS).
+	// parseWebhookTargetURL above refuses non-public targets (loopback aside),
+	// and the dial-time gate re-checks the address actually reached.
 	resp, err := s.webhookDeliveryClient(hook.InsecureSSL == "1").Do(httpReq)
 	elapsed := time.Since(start).Seconds()
 

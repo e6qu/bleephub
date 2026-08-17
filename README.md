@@ -167,11 +167,11 @@ carrier-grade NAT and IPv6 unique-local space, and any scheme other than
 configured and again against the address actually dialed, and redirects are not
 followed. Source import is checked at request time only — its fetch runs
 through go-git, whose transport is chosen from a process-global registry, so
-there is no per-fetch dial hook to check the address a second time.
-`BLEEPHUB_ALLOW_PRIVATE_OUTBOUND_TARGETS=true` opts a development or test
-instance out so its hook receivers and import sources can live on loopback; it
-defaults to off, nothing enables it implicitly, and it never relaxes the scheme
-rule.
+there is no per-fetch dial hook to check the address a second time. Loopback is
+the one non-public range permitted — delivering to a service on the same host
+is a legitimate on-prem/dev target — and there is no switch to relax any of the
+rest: the cloud metadata endpoint and other private space stay refused
+unconditionally.
 
 Bleephub verifies discovery metadata, authorization code + PKCE, state, nonce,
 issuer, audience, expiry, role, subject, and the OpenID Connect `sid`. Durable
@@ -436,7 +436,6 @@ Env vars:
 - `BLEEPHUB_ADMIN_HOST` — when set, `GET /` on that hostname serves the dashboard instead of the API root. Unset disables the redirect entirely.
 - `BLEEPHUB_ENTERPRISE_SLUG` — the slug the enterprise endpoints answer on (default `bleephub`).
 - `BLEEPHUB_S3_REGION` — region for the git object store. Falls back to `AWS_REGION`, then `us-east-1` for local simulators.
-- `BLEEPHUB_ALLOW_PRIVATE_OUTBOUND_TARGETS=true` — allow server-initiated fetches (webhook delivery and repository source import) to reach private addresses, for a development instance whose receivers and sources are on loopback. Off by default; see [Webhook delivery](#how-it-works) above for what it turns off. Renamed from `BLEEPHUB_ALLOW_PRIVATE_WEBHOOK_TARGETS`, which is now refused at startup.
 - `BLEEPHUB_PAGES_JEKYLL_EXECUTABLE` — the Pages build binary (default `bleephub-pages-jekyll`).
 
 Git over SSH (all unset by default; the SSH transport does not start without the first two):

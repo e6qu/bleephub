@@ -696,18 +696,19 @@ func TestBranchProtectionRefusesNonAdmins(t *testing.T) {
 
 func TestSourceImportRefusesNonPublicSources(t *testing.T) {
 	s := newTestServer()
-	s.allowPrivateOutboundTargets = false
 	s.store.SeedDefaultUser()
 	s.registerRoutes()
 	admin := s.store.LookupUserByLogin("admin")
 	repo := s.store.CreateRepo(admin, authflowName("import-ssrf"), "", false)
 
+	// Loopback is a permitted delivery/fetch target (see the sibling test); every
+	// OTHER non-public address is refused, as are non-http(s) schemes. The cloud
+	// metadata endpoint, RFC1918, and IPv6 unique-local space must never resolve.
 	for _, hostile := range []string{
-		"http://127.0.0.1/repo.git",
-		"http://[::1]/repo.git",
 		"http://169.254.169.254/latest/meta-data/",
+		"http://[::ffff:169.254.169.254]/latest/meta-data/",
 		"http://10.0.0.5/repo.git",
-		"http://[::ffff:127.0.0.1]/repo.git",
+		"http://[fd00::1]/repo.git",
 		"file:///etc/passwd",
 		"ssh://git@127.0.0.1/repo.git",
 	} {
@@ -726,14 +727,12 @@ func TestSourceImportRefusesNonPublicSources(t *testing.T) {
 	}
 }
 
-// TestPrivateOutboundOptOutCoversBothTransports pins that the one switch gates
-// both server-initiated fetches, and that turning it on still does not relax
-// the scheme rule.
-func TestPrivateOutboundOptOutCoversBothTransports(t *testing.T) {
-	s := newTestServer() // the unit harness enables the opt-out
-	if !s.allowPrivateOutboundTargets {
-		t.Fatal("the unit harness is expected to opt in to private targets")
-	}
+// TestLoopbackDeliveryPermittedNonPublicRefused pins the fixed outbound policy:
+// loopback is a legitimate delivery target for both server-initiated transports,
+// while the scheme rule and the block on every other non-public address still
+// hold. There is no switch to relax any of it.
+func TestLoopbackDeliveryPermittedNonPublicRefused(t *testing.T) {
+	s := newTestServer()
 	s.store.SeedDefaultUser()
 	s.registerRoutes()
 	admin := s.store.LookupUserByLogin("admin")
@@ -749,41 +748,26 @@ func TestPrivateOutboundOptOutCoversBothTransports(t *testing.T) {
 		return w.Code
 	}
 
-	// Opted in, a loopback source is admitted past the address gate (the fetch
-	// itself then fails honestly, which is a 201 carrying an error status).
+	// A loopback source is admitted past the address gate (the fetch itself then
+	// fails honestly, which is a 201 carrying an error status).
 	if got := importSource("http://127.0.0.1:1/repo.git"); got != http.StatusCreated {
-		t.Errorf("opted-in loopback import status = %d, want 201", got)
+		t.Errorf("loopback import status = %d, want 201", got)
 	}
-	// The scheme rule is not part of the opt-out.
+	// The scheme rule is absolute — no http(s), no delivery.
 	for _, badScheme := range []string{"file:///etc/passwd", "ssh://git@127.0.0.1/repo.git"} {
 		if got := importSource(badScheme); got != http.StatusUnprocessableEntity {
-			t.Errorf("opted-in import vcs_url=%q status = %d, want 422 — the opt-out must not relax the scheme rule", badScheme, got)
+			t.Errorf("import vcs_url=%q status = %d, want 422 — the scheme rule is not relaxable", badScheme, got)
 		}
 	}
-	// And webhook configuration reads the same switch (over https, the only
-	// deliverable scheme).
-	if err := validateWebhookTargetURL("https://127.0.0.1/hook", s.allowPrivateOutboundTargets); err != nil {
-		t.Errorf("opted-in webhook target refused: %v", err)
+	// Webhook configuration admits a loopback https target...
+	if err := validateWebhookTargetURL("https://127.0.0.1/hook"); err != nil {
+		t.Errorf("loopback webhook target refused: %v", err)
 	}
-	if err := validateWebhookTargetURL("https://127.0.0.1/hook", false); err == nil {
-		t.Error("opted-out webhook target admitted a loopback address")
-	}
-}
-
-// TestRetiredEnvVarIsRefusedRatherThanIgnored covers the rename itself: an
-// instance still carrying the old variable would otherwise lose its opt-out
-// with nothing said and start refusing its own loopback receivers.
-func TestRetiredEnvVarIsRefusedRatherThanIgnored(t *testing.T) {
-	if msg := retiredEnvVarMessage(); msg != "" {
-		t.Fatalf("the test environment already sets a retired variable: %s", msg)
-	}
-	t.Setenv("BLEEPHUB_ALLOW_PRIVATE_WEBHOOK_TARGETS", "true")
-	msg := retiredEnvVarMessage()
-	if msg == "" {
-		t.Fatal("the retired webhook-targets variable is silently ignored")
-	}
-	if !strings.Contains(msg, "BLEEPHUB_ALLOW_PRIVATE_OUTBOUND_TARGETS") {
-		t.Errorf("refusal message %q does not name the replacement", msg)
+	// ...but never the cloud metadata endpoint or other private space.
+	for _, blocked := range []string{"https://169.254.169.254/hook", "https://10.0.0.5/hook"} {
+		if err := validateWebhookTargetURL(blocked); err == nil {
+			t.Errorf("webhook target %q was admitted; a non-loopback private address must be refused", blocked)
+		}
 	}
 }
 

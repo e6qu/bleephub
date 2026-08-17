@@ -385,7 +385,7 @@ func TestWebhookDeliveryTimeout(t *testing.T) {
 	defer cleanup()
 	defer close(release)
 
-	client := newWebhookClientWithTimeout(true, false, 50*time.Millisecond)
+	client := newWebhookClientWithTimeout(false, 50*time.Millisecond)
 	request, err := http.NewRequest(http.MethodPost, url, strings.NewReader("{}"))
 	if err != nil {
 		t.Fatalf("build webhook request: %v", err)

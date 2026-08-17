@@ -15,7 +15,6 @@ import (
 	"net/url"
 	"os"
 	"runtime/debug"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -71,18 +70,12 @@ type Server struct {
 	// leaves it nil and currentTime uses the process clock. clockMu makes
 	// replacing a test clock safe while owned background workers are winding
 	// down; tests replace it through the synchronized helper in _test.go.
-	clockMu  sync.RWMutex
-	clockNow func() time.Time
-	// allowPrivateOutboundTargets opts every server-initiated fetch — webhook
-	// delivery and source import — out of the public-address requirement, for
-	// a development or test instance whose receivers and sources live on
-	// loopback. Denying is the default; nothing turns this on implicitly, and
-	// it never relaxes the http/https scheme rule.
-	allowPrivateOutboundTargets bool
-	webhookClientsOnce          sync.Once
-	webhookClients              [2]*http.Client // [verifying TLS, insecure_ssl=1]
-	webhookPoolOnce             sync.Once
-	webhookPool                 *webhookDispatcher
+	clockMu            sync.RWMutex
+	clockNow           func() time.Time
+	webhookClientsOnce sync.Once
+	webhookClients     [2]*http.Client // [verifying TLS, insecure_ssl=1]
+	webhookPoolOnce    sync.Once
+	webhookPool        *webhookDispatcher
 	// responseObserver, when set before ListenAndServe, sees every
 	// request/response pair in the handler chain. The test harness
 	// assigns it (same package) to validate /api/v3 response shapes
@@ -143,14 +136,13 @@ func WithBuildInfo(info BuildInfo) ServerOption {
 // but it must not exercise a structurally different six-field Server that
 // production can never create.
 type serverConstruction struct {
-	byteStore                  store.ActionsByteStore
-	dataDir                    string
-	maxConcurrentWorkflows     int
-	externalURL                string
-	pagesJekyllExecutable      string
-	identity                   identityConfig
-	build                      BuildInfo
-	allowPrivateOutboundTarget bool
+	byteStore              store.ActionsByteStore
+	dataDir                string
+	maxConcurrentWorkflows int
+	externalURL            string
+	pagesJekyllExecutable  string
+	identity               identityConfig
+	build                  BuildInfo
 }
 
 func newServerState(addr string, logger zerolog.Logger, construction serverConstruction) *Server {
@@ -159,22 +151,21 @@ func newServerState(addr string, logger zerolog.Logger, construction serverConst
 		panic(fmt.Sprintf("generate identity state HMAC key: %v", err))
 	}
 	s := &Server{
-		addr:                        addr,
-		mux:                         http.NewServeMux(),
-		logger:                      logger,
-		store:                       store.NewStore(),
-		actionCache:                 NewActionCache(),
-		artifactStore:               store.NewArtifactStoreWithByteStore(construction.dataDir, construction.byteStore),
-		metrics:                     NewMetrics(),
-		maxConcurrentWorkflows:      construction.maxConcurrentWorkflows,
-		registryUploads:             map[string]*containerRegistryUpload{},
-		rateLimits:                  map[string]*apiRateWindow{},
-		externalURL:                 construction.externalURL,
-		pagesJekyllExecutable:       construction.pagesJekyllExecutable,
-		identity:                    construction.identity,
-		identityStateKey:            identityStateKey,
-		build:                       construction.build,
-		allowPrivateOutboundTargets: construction.allowPrivateOutboundTarget,
+		addr:                   addr,
+		mux:                    http.NewServeMux(),
+		logger:                 logger,
+		store:                  store.NewStore(),
+		actionCache:            NewActionCache(),
+		artifactStore:          store.NewArtifactStoreWithByteStore(construction.dataDir, construction.byteStore),
+		metrics:                NewMetrics(),
+		maxConcurrentWorkflows: construction.maxConcurrentWorkflows,
+		registryUploads:        map[string]*containerRegistryUpload{},
+		rateLimits:             map[string]*apiRateWindow{},
+		externalURL:            construction.externalURL,
+		pagesJekyllExecutable:  construction.pagesJekyllExecutable,
+		identity:               construction.identity,
+		identityStateKey:       identityStateKey,
+		build:                  construction.build,
 	}
 	s.store.ActionsArtifacts = s.artifactStore
 	// Route the store's own error logging through the configured structured
@@ -312,31 +303,6 @@ func (s *Server) authenticateUIData(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// retiredEnvVars maps an environment variable that no longer exists to the one
-// that replaced it. A renamed switch that is simply ignored is a silent loss of
-// whatever the operator configured — here, an instance that would stop
-// delivering to its own loopback receivers with nothing said — so startup
-// refuses instead.
-var retiredEnvVars = map[string]string{
-	"BLEEPHUB_ALLOW_PRIVATE_WEBHOOK_TARGETS": "BLEEPHUB_ALLOW_PRIVATE_OUTBOUND_TARGETS (it now gates source import as well as webhook delivery)",
-}
-
-// retiredEnvVarMessage returns the startup refusal for the first retired
-// variable still set, or "" when none is.
-func retiredEnvVarMessage() string {
-	names := make([]string, 0, len(retiredEnvVars))
-	for name := range retiredEnvVars {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	for _, name := range names {
-		if _, present := os.LookupEnv(name); present {
-			return name + " has been renamed to " + retiredEnvVars[name] + "; unset the old name and set the new one"
-		}
-	}
-	return ""
-}
-
 // NewServer creates a bleephub server with all routes registered.
 //
 // Honors the persistence-related env vars:
@@ -393,18 +359,14 @@ func NewServer(addr string, logger zerolog.Logger, options ...ServerOption) *Ser
 		logger.Fatal().Err(err).Msg("failed to initialize BLEEPHUB_OBJECT_S3_* byte storage")
 	}
 	s := newServerState(addr, logger, serverConstruction{
-		byteStore:                  byteStore,
-		dataDir:                    dataDir,
-		maxConcurrentWorkflows:     maxWF,
-		externalURL:                strings.TrimRight(os.Getenv("BLEEPHUB_EXTERNAL_URL"), "/"),
-		pagesJekyllExecutable:      store.CoalesceStr(os.Getenv("BLEEPHUB_PAGES_JEKYLL_EXECUTABLE"), "bleephub-pages-jekyll"),
-		identity:                   identityConfigFromEnv(),
-		build:                      BuildInfo{Version: "development", Commit: "none", PublishedAt: "not-yet-published"},
-		allowPrivateOutboundTarget: strings.EqualFold(strings.TrimSpace(os.Getenv("BLEEPHUB_ALLOW_PRIVATE_OUTBOUND_TARGETS")), "true"),
+		byteStore:              byteStore,
+		dataDir:                dataDir,
+		maxConcurrentWorkflows: maxWF,
+		externalURL:            strings.TrimRight(os.Getenv("BLEEPHUB_EXTERNAL_URL"), "/"),
+		pagesJekyllExecutable:  store.CoalesceStr(os.Getenv("BLEEPHUB_PAGES_JEKYLL_EXECUTABLE"), "bleephub-pages-jekyll"),
+		identity:               identityConfigFromEnv(),
+		build:                  BuildInfo{Version: "development", Commit: "none", PublishedAt: "not-yet-published"},
 	})
-	if msg := retiredEnvVarMessage(); msg != "" {
-		logger.Fatal().Msg(msg)
-	}
 	for _, option := range options {
 		option(s)
 	}
