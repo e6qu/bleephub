@@ -2,6 +2,9 @@ package store
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +13,11 @@ import (
 	"sync"
 	"time"
 )
+
+// ErrReleaseAssetNameExists is returned by CreateReleaseAsset when the release
+// already carries an asset with the requested name; GitHub answers this with a
+// 422 rather than a silent duplicate.
+var ErrReleaseAssetNameExists = errors.New("release asset name already exists")
 
 // Release is a tagged release on a repo.
 //
@@ -48,6 +56,7 @@ type ReleaseAsset struct {
 	Label         string    `json:"label"`
 	State         string    `json:"state"`
 	ContentType   string    `json:"content_type"`
+	Digest        string    `json:"digest"`
 	Size          int       `json:"size"`
 	DownloadCount int       `json:"download_count"`
 	UploaderID    int       `json:"-"`
@@ -400,9 +409,17 @@ func (rs *ReleaseStore) CreateReleaseAsset(releaseID, uploaderID int, name, labe
 	if rs.ByID[releaseID] == nil {
 		return nil, fmt.Errorf("release not found")
 	}
+	// A release cannot carry two assets with the same name; GitHub 422s the
+	// second upload rather than creating a duplicate.
+	for _, existing := range rs.ByID[releaseID].Assets {
+		if existing.Name == name {
+			return nil, ErrReleaseAssetNameExists
+		}
+	}
 	now := time.Now().UTC()
 	id := rs.nextAsset
 	rs.nextAsset++
+	sum := sha256.Sum256(data)
 	asset := &ReleaseAsset{
 		ID:          id,
 		NodeID:      fmt.Sprintf("RA_kgDO%08d", id),
@@ -411,6 +428,7 @@ func (rs *ReleaseStore) CreateReleaseAsset(releaseID, uploaderID int, name, labe
 		Label:       label,
 		State:       "uploaded",
 		ContentType: contentType,
+		Digest:      "sha256:" + hex.EncodeToString(sum[:]),
 		Size:        len(data),
 		UploaderID:  uploaderID,
 		CreatedAt:   now,

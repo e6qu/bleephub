@@ -4537,9 +4537,11 @@ export const requestPRReviewers = (
   repo: string,
   number: number,
   logins: string[],
+  teamSlugs: string[] = [],
 ): Promise<GithubPR> =>
   ghPostJSON(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/requested_reviewers`, {
     reviewers: logins,
+    team_reviewers: teamSlugs,
   });
 
 export const removePRRequestedReviewers = (
@@ -4547,9 +4549,11 @@ export const removePRRequestedReviewers = (
   repo: string,
   number: number,
   logins: string[],
+  teamSlugs: string[] = [],
 ): Promise<GithubPR> =>
   ghDeleteJSON(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/requested_reviewers`, {
     reviewers: logins,
+    team_reviewers: teamSlugs,
   });
 
 export async function fetchCombinedStatus(

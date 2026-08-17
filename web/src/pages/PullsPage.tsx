@@ -25,6 +25,7 @@ import {
   setPRReviewThreadResolved,
   fetchPRRequestedReviewers,
   fetchAssignableUsers,
+  fetchOrgTeams,
   requestPRReviewers,
   removePRRequestedReviewers,
   fetchCombinedStatus,
@@ -1128,6 +1129,14 @@ function RequestedReviewersSection({
     queryKey: ["assignable-users", owner, repo],
     queryFn: () => fetchAssignableUsers(owner, repo),
   });
+  // Teams belonging to the repo's owning org, for the team-reviewer picker. A
+  // user-owned repo has no org teams endpoint, so a failure is expected there
+  // and simply leaves the team picker empty (no retry, no error surface).
+  const { data: orgTeams = [] } = useQuery({
+    queryKey: ["org-teams", owner],
+    queryFn: () => fetchOrgTeams(owner),
+    retry: false,
+  });
   const invalidate = () =>
     qc.invalidateQueries({ queryKey: ["pr-requested-reviewers", owner, repo, number] });
   const add = useMutation({
@@ -1138,11 +1147,21 @@ function RequestedReviewersSection({
     mutationFn: (l: string) => removePRRequestedReviewers(owner, repo, number, [l]),
     onSuccess: invalidate,
   });
+  const addTeam = useMutation({
+    mutationFn: (slug: string) => requestPRReviewers(owner, repo, number, [], [slug]),
+    onSuccess: invalidate,
+  });
+  const removeTeam = useMutation({
+    mutationFn: (slug: string) => removePRRequestedReviewers(owner, repo, number, [], [slug]),
+    onSuccess: invalidate,
+  });
 
   if (q.isLoading) return null;
 
   const requestedLogins = new Set((q.data?.users ?? []).map((u) => u.login));
   const addableReviewers = assignableUsers.filter((u) => !requestedLogins.has(u.login));
+  const requestedTeamSlugs = new Set((q.data?.teams ?? []).map((t) => t.slug));
+  const addableTeams = orgTeams.filter((t) => !requestedTeamSlugs.has(t.slug));
 
   // Rendered inside the sidebar's "Reviewers" section, which supplies the
   // heading — so this body carries none of its own.
@@ -1192,15 +1211,33 @@ function RequestedReviewersSection({
           {q.data.teams.map((t) => (
             <span
               key={t.slug}
+              className="inline-flex items-center gap-1.5"
               style={{
                 border: "1px solid var(--color-border)",
                 borderRadius: "2rem",
-                padding: "0.15rem 0.6rem",
+                padding: "0.15rem 0.3rem 0.15rem 0.6rem",
                 fontSize: "0.8rem",
                 color: "var(--color-fg)",
               }}
             >
               {t.name}
+              <button
+                type="button"
+                aria-label={`remove team ${t.slug}`}
+                disabled={removeTeam.isPending}
+                onClick={() => removeTeam.mutate(t.slug)}
+                style={{
+                  border: "none",
+                  background: "transparent",
+                  cursor: "pointer",
+                  color: "var(--color-fg-muted)",
+                  fontSize: "0.85rem",
+                  lineHeight: 1,
+                  padding: "0.1rem 0.3rem",
+                }}
+              >
+                ✕
+              </button>
             </span>
           ))}
           {addableReviewers.length > 0 && (
@@ -1221,6 +1258,24 @@ function RequestedReviewersSection({
               ))}
             </select>
           )}
+          {addableTeams.length > 0 && (
+            <select
+              aria-label="reviewer team"
+              value=""
+              onChange={(e) => {
+                if (e.target.value) addTeam.mutate(e.target.value);
+              }}
+              disabled={addTeam.isPending}
+              style={{ fontSize: "0.8rem" }}
+            >
+              <option value="">{addTeam.isPending ? "Requesting…" : "Request team review…"}</option>
+              {addableTeams.map((t) => (
+                <option key={t.slug} value={t.slug}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
       )}
       {add.isError && (
@@ -1228,6 +1283,12 @@ function RequestedReviewersSection({
       )}
       {remove.isError && (
         <InlineError inline title="Failed to remove reviewer" detail={String(remove.error)} />
+      )}
+      {addTeam.isError && (
+        <InlineError inline title="Failed to request team review" detail={String(addTeam.error)} />
+      )}
+      {removeTeam.isError && (
+        <InlineError inline title="Failed to remove team" detail={String(removeTeam.error)} />
       )}
     </div>
   );

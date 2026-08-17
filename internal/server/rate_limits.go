@@ -156,7 +156,11 @@ func apiRateIdentity(r *http.Request) string {
 	return "anonymous:" + host
 }
 
-func (s *Server) rateLimitSnapshot(r *http.Request, resource string, consume bool) apiRateSnapshot {
+// rateWindowKeyAndLimit resolves the per-identity window key, the applicable
+// limit, and the effective resource name (unknown resources fall back to core;
+// the unauthenticated core budget is the smaller IP-scoped one). Shared by the
+// consume path (rateLimitSnapshot) and the 304 refund path.
+func (s *Server) rateWindowKeyAndLimit(r *http.Request, resource string) (key string, limit int, effective string) {
 	limit, ok := apiRateResourceLimits[resource]
 	if !ok {
 		resource, limit = "core", apiRateResourceLimits["core"]
@@ -166,7 +170,38 @@ func (s *Server) rateLimitSnapshot(r *http.Request, resource string, consume boo
 	if resource == "core" && r.Header.Get("Authorization") == "" && ghUserFromContext(r.Context()) == nil {
 		limit = 60
 	}
-	key := apiRateIdentity(r) + "\x1f" + resource
+	return apiRateIdentity(r) + "\x1f" + resource, limit, resource
+}
+
+// refundRateLimit returns one consumed unit to the caller's window and reports
+// the window's post-refund snapshot. GitHub does not bill a conditional request
+// that results in 304, but bleephub consumes in middleware before the handler
+// decides the response is not-modified, so the unit is handed back here.
+func (s *Server) refundRateLimit(r *http.Request, resource string) apiRateSnapshot {
+	key, limit, effective := s.rateWindowKeyAndLimit(r, resource)
+	now := time.Now().UTC()
+	s.rateLimitsMu.Lock()
+	defer s.rateLimitsMu.Unlock()
+	window := s.rateLimits[key]
+	if window == nil || !now.Before(window.Reset) {
+		// The window rolled over (or never existed); there is nothing to refund.
+		return apiRateSnapshot{Resource: effective, Limit: limit, Remaining: limit,
+			Reset: now.Add(apiRateWindowDuration(effective)).Unix()}
+	}
+	if window.Used > 0 && !window.unbounded {
+		window.Used--
+	}
+	return apiRateSnapshot{
+		Resource:  effective,
+		Limit:     window.Limit,
+		Used:      window.Used,
+		Remaining: max(window.Limit-window.Used, 0),
+		Reset:     window.Reset.Unix(),
+	}
+}
+
+func (s *Server) rateLimitSnapshot(r *http.Request, resource string, consume bool) apiRateSnapshot {
+	key, limit, resource := s.rateWindowKeyAndLimit(r, resource)
 	now := time.Now().UTC()
 
 	s.rateLimitsMu.Lock()

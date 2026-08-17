@@ -2,6 +2,7 @@ package bleephub
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -594,6 +595,10 @@ func (s *Server) handleUploadReleaseAsset(w http.ResponseWriter, r *http.Request
 		return
 	}
 	asset, err := s.store.Releases.CreateReleaseAsset(releaseID, user.ID, name, label, contentType, data)
+	if errors.Is(err, store.ErrReleaseAssetNameExists) {
+		store.WriteGHValidationError(w, "ReleaseAsset", "name", "already_exists")
+		return
+	}
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -759,6 +764,7 @@ func releaseAssetToJSON(asset *store.ReleaseAsset, st *store.Store, baseURL stri
 		"label":                asset.Label,
 		"content_type":         asset.ContentType,
 		"state":                asset.State,
+		"digest":               nullOrString(asset.Digest),
 		"size":                 asset.Size,
 		"download_count":       asset.DownloadCount,
 		"created_at":           asset.CreatedAt.UTC().Format(time.RFC3339),

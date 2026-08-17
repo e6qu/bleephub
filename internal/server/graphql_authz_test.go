@@ -42,6 +42,7 @@ type gqlAuthzFixture struct {
 	discComment   *store.DiscussionComment
 	pr            *store.PullRequest
 	threadNodeID  string
+	reviewNodeID  string
 	headSHA       string
 }
 
@@ -98,6 +99,13 @@ func newGQLAuthzFixture(t *testing.T, srv *Server, tag string, private bool) *gq
 		t.Fatalf("fixture %s: could not seed a review thread", tag)
 	}
 	f.threadNodeID = store.PRReviewThreadNodeID(root.ID)
+
+	// A pending review owned by the repo owner, for the submit/dismiss cases.
+	pendingReview := st.CreatePRReview(f.pr.ID, f.owner.ID, "PENDING", "pending body")
+	if pendingReview == nil {
+		t.Fatalf("fixture %s: could not seed a pending review", tag)
+	}
+	f.reviewNodeID = pendingReview.NodeID
 
 	ownerTok := st.CreateToken(f.owner.ID, "repo")
 	strangerTok := st.CreateToken(f.stranger.ID, "repo")
@@ -288,6 +296,20 @@ var gqlMutationCases = []gqlMutationCase{
 		doc:  `mutation($input:AddPullRequestReviewInput!){addPullRequestReview(input:$input){pullRequestReview{id}}}`,
 		input: func(f *gqlAuthzFixture) map[string]interface{} {
 			return map[string]interface{}{"pullRequestId": f.pr.NodeID, "event": "COMMENT", "body": "from the table"}
+		},
+	},
+	{
+		name: "submitPullRequestReview",
+		doc:  `mutation($input:SubmitPullRequestReviewInput!){submitPullRequestReview(input:$input){pullRequestReview{state}}}`,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"pullRequestReviewId": f.reviewNodeID, "event": "APPROVE"}
+		},
+	},
+	{
+		name: "dismissPullRequestReview",
+		doc:  `mutation($input:DismissPullRequestReviewInput!){dismissPullRequestReview(input:$input){pullRequestReview{state}}}`,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"pullRequestReviewId": f.reviewNodeID, "message": "stale"}
 		},
 	},
 	{
@@ -983,5 +1005,39 @@ func TestGraphQLDeleteProjectV2ItemRemovesTheItem(t *testing.T) {
 	}
 	if s.store.ProjectsV2.GetItem(f.item.ID) != nil {
 		t.Errorf("the item survived the delete mutation")
+	}
+}
+
+// TestGraphQLSubmitAndDismissPullRequestReview covers the review-lifecycle
+// mutations end to end: a pending review is submitted (APPROVE → APPROVED) and
+// then dismissed (→ DISMISSED with the message).
+func TestGraphQLSubmitAndDismissPullRequestReview(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	s.createTestPRRepo(t, "gql-review-lifecycle")
+	prJSON := decodeJSONWithStatus(t, s.post(t, "/api/v3/repos/admin/gql-review-lifecycle/pulls", defaultToken, map[string]interface{}{
+		"title": "lifecycle", "head": "feat", "base": "main",
+	}), 201)
+	prID := int(prJSON["id"].(float64))
+	admin := s.store.UsersByLogin["admin"]
+	review := s.store.CreatePRReview(prID, admin.ID, "PENDING", "pending")
+	if review == nil {
+		t.Fatal("could not seed pending review")
+	}
+
+	// Submit the pending review as an approval.
+	data := s.gqlData(t, `mutation($input:SubmitPullRequestReviewInput!){submitPullRequestReview(input:$input){pullRequestReview{state}}}`,
+		map[string]interface{}{"input": map[string]interface{}{"pullRequestReviewId": review.NodeID, "event": "APPROVE"}})
+	submitted, _ := data["submitPullRequestReview"].(map[string]interface{})["pullRequestReview"].(map[string]interface{})
+	if submitted["state"] != "APPROVED" {
+		t.Errorf("submitted review state = %v, want APPROVED", submitted["state"])
+	}
+
+	// Dismiss it.
+	data = s.gqlData(t, `mutation($input:DismissPullRequestReviewInput!){dismissPullRequestReview(input:$input){pullRequestReview{state}}}`,
+		map[string]interface{}{"input": map[string]interface{}{"pullRequestReviewId": review.NodeID, "message": "no longer relevant"}})
+	dismissed, _ := data["dismissPullRequestReview"].(map[string]interface{})["pullRequestReview"].(map[string]interface{})
+	if dismissed["state"] != "DISMISSED" {
+		t.Errorf("dismissed review state = %v, want DISMISSED", dismissed["state"])
 	}
 }

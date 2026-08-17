@@ -223,9 +223,11 @@ func (s *Server) ghHeadersMiddleware(next http.Handler) http.Handler {
 		resource := apiRateResource(path)
 		// GitHub documents GET /rate_limit as not consuming the primary rate
 		// limit; it observes the current core window instead.
-		rate := s.rateLimitSnapshot(r, resource, path != "/api/v3/rate_limit")
+		consumed := path != "/api/v3/rate_limit"
+		rate := s.rateLimitSnapshot(r, resource, consumed)
 		ctx = context.WithValue(ctx, ctxAPIRateLimit, rate)
 		r = r.WithContext(ctx)
+		refundReq := r
 		rw := &ghResponseWriter{
 			ResponseWriter: w,
 			token:          token,
@@ -234,6 +236,11 @@ func (s *Server) ghHeadersMiddleware(next http.Handler) http.Handler {
 			method:         r.Method,
 			ifNoneMatch:    r.Header.Get("If-None-Match"),
 			rateLimit:      rate,
+		}
+		// A conditional GET that ends in 304 must not be billed; give the
+		// consumed unit back and let the 304's X-RateLimit-* headers reflect it.
+		if consumed {
+			rw.refundRate = func() apiRateSnapshot { return s.refundRateLimit(refundReq, resource) }
 		}
 		if rate.Exceeded {
 			seconds := max(int(time.Until(time.Unix(rate.Reset, 0)).Seconds()), 1)
@@ -432,6 +439,11 @@ type ghResponseWriter struct {
 	method      string
 	ifNoneMatch string
 	rateLimit   apiRateSnapshot
+	// refundRate hands the consumed rate-limit unit back and returns the
+	// post-refund snapshot; set only when the middleware actually consumed a
+	// unit, and invoked when the response turns out to be a 304 (which GitHub
+	// does not bill). nil when nothing was consumed (e.g. GET /rate_limit).
+	refundRate  func() apiRateSnapshot
 	wroteHeader bool
 }
 
@@ -458,6 +470,12 @@ func etagMatches(ifNoneMatch, etag string) bool {
 func (rw *ghResponseWriter) WriteHeader(code int) {
 	if !rw.wroteHeader {
 		rw.wroteHeader = true
+		// A 304 Not Modified is a conditional-request hit GitHub does not bill:
+		// refund the unit consumed in middleware so this response's X-RateLimit-*
+		// headers (and the caller's remaining budget) reflect the non-consumption.
+		if code == http.StatusNotModified && rw.refundRate != nil {
+			rw.rateLimit = rw.refundRate()
+		}
 		h := rw.Header()
 
 		// Upgrade Content-Type to include charset

@@ -866,6 +866,25 @@
         "UPDATED_AT"
       ]
     },
+    "DismissPullRequestReviewInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "message": "String!",
+        "pullRequestReviewId": "ID!"
+      }
+    },
+    "DismissPullRequestReviewPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "pullRequestReview": {
+          "type": "PullRequestReview"
+        }
+      }
+    },
     "Float": {
       "kind": "SCALAR"
     },
@@ -2032,6 +2051,12 @@
             "input": "DeleteRepositoryInput!"
           }
         },
+        "dismissPullRequestReview": {
+          "type": "DismissPullRequestReviewPayload",
+          "args": {
+            "input": "DismissPullRequestReviewInput!"
+          }
+        },
         "lockLockable": {
           "type": "LockLockablePayload",
           "args": {
@@ -2084,6 +2109,12 @@
           "type": "ResolveReviewThreadPayload",
           "args": {
             "input": "ResolveReviewThreadInput!"
+          }
+        },
+        "submitPullRequestReview": {
+          "type": "SubmitPullRequestReviewPayload",
+          "args": {
+            "input": "SubmitPullRequestReviewInput!"
           }
         },
         "unlockLockable": {
@@ -4187,6 +4218,27 @@
         },
         "total": {
           "type": "Int!"
+        }
+      }
+    },
+    "SubmitPullRequestReviewInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "body": "String",
+        "clientMutationId": "String",
+        "event": "PullRequestReviewEvent!",
+        "pullRequestId": "ID",
+        "pullRequestReviewId": "ID"
+      }
+    },
+    "SubmitPullRequestReviewPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "pullRequestReview": {
+          "type": "PullRequestReview"
         }
       }
     },

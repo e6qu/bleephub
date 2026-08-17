@@ -1257,6 +1257,8 @@ var graphqlMutationAuthz = map[string]mutationRule{
 
 	"createPullRequest":             repoRule{scope: store.ScopePullRequests, level: mutationReadRepo, target: mutationTargetRepo("repositoryId")},
 	"addPullRequestReview":          repoRule{scope: store.ScopePullRequests, level: mutationReadRepo, target: mutationTargetPullRequest("pullRequestId")},
+	"submitPullRequestReview":       repoRule{scope: store.ScopePullRequests, level: mutationReadRepo, authorMayAct: true, target: mutationTargetReview("pullRequestReviewId")},
+	"dismissPullRequestReview":      repoRule{scope: store.ScopePullRequests, level: mutationPushRepo, target: mutationTargetReview("pullRequestReviewId")},
 	"closePullRequest":              repoRule{scope: store.ScopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetPullRequest("pullRequestId")},
 	"reopenPullRequest":             repoRule{scope: store.ScopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetPullRequest("pullRequestId")},
 	"updatePullRequest":             repoRule{scope: store.ScopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetPullRequest("pullRequestId")},
@@ -1579,6 +1581,27 @@ func mutationTargetReviewThread(key string) func(*Resolver, map[string]interface
 		}
 		target.repo = s.store.GetRepoByID(pr.RepoID)
 		target.authorID = pr.AuthorID
+		return target
+	}
+}
+
+// mutationTargetReview resolves a pull-request review node id (PRR_…) to the
+// repo of the review's pull request, authorizing the review-lifecycle mutations
+// (submit/dismiss) the same way the other pull-request mutations are gated.
+func mutationTargetReview(key string) func(*Resolver, map[string]interface{}) mutationTarget {
+	return func(s *Resolver, input map[string]interface{}) mutationTarget {
+		nodeID, _ := input[key].(string)
+		target := mutationTarget{missing: gqlMissingNode("PullRequestReview", nodeID)}
+		review := store.FindReviewByNodeID(s.store, nodeID)
+		if review == nil {
+			return target
+		}
+		pr := s.store.GetPullRequest(review.PRID)
+		if pr == nil {
+			return target
+		}
+		target.repo = s.store.GetRepoByID(pr.RepoID)
+		target.authorID = review.AuthorID
 		return target
 	}
 }

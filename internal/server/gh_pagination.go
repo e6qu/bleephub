@@ -134,6 +134,11 @@ func buildLinkHeader(r *http.Request, page, perPage, lastPage int) string {
 	base := (&url.URL{Scheme: scheme, Host: r.Host, Path: r.URL.Path}).String()
 	q := r.URL.Query()
 	q.Del("page")
+	// GitHub only carries per_page into the Link targets when the client actually
+	// sent it (echoing the resolved/clamped value); an unset per_page stays absent
+	// from the rel URLs rather than being materialized to the default.
+	clientSentPerPage := r.URL.Query().Get("per_page") != ""
+	q.Del("per_page")
 
 	linkURL := func(p int) string {
 		qc := make(url.Values)
@@ -141,7 +146,9 @@ func buildLinkHeader(r *http.Request, page, perPage, lastPage int) string {
 			qc[k] = v
 		}
 		qc.Set("page", strconv.Itoa(p))
-		qc.Set("per_page", strconv.Itoa(perPage))
+		if clientSentPerPage {
+			qc.Set("per_page", strconv.Itoa(perPage))
+		}
 		return fmt.Sprintf("<%s?%s>", base, qc.Encode())
 	}
 

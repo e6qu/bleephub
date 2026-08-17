@@ -557,14 +557,55 @@ describe("PullsPage requested reviewers", () => {
       expect(findCall("/pulls/9/requested_reviewers", "POST")).toBeDefined();
     });
     const post = findCall("/pulls/9/requested_reviewers", "POST");
-    expect(JSON.parse(String(post?.body))).toEqual({ reviewers: ["dave"] });
+    expect(JSON.parse(String(post?.body))).toEqual({ reviewers: ["dave"], team_reviewers: [] });
 
     fireEvent.click(screen.getByLabelText("remove reviewer carol"));
     await waitFor(() => {
       expect(findCall("/pulls/9/requested_reviewers", "DELETE")).toBeDefined();
     });
     const del = findCall("/pulls/9/requested_reviewers", "DELETE");
-    expect(JSON.parse(String(del?.body))).toEqual({ reviewers: ["carol"] });
+    expect(JSON.parse(String(del?.body))).toEqual({ reviewers: ["carol"], team_reviewers: [] });
+  });
+
+  it("requests and removes a team reviewer", async () => {
+    mockPRApis((u, init) => {
+      if (u.endsWith("/pulls/9/requested_reviewers") && init?.method === undefined) {
+        return jsonResponse({
+          users: [],
+          teams: [{ id: 5, slug: "platform", name: "Platform" }],
+        });
+      }
+      if (u.endsWith("/pulls/9/requested_reviewers")) {
+        return jsonResponse(pr(9, "Feature PR"), init?.method === "POST" ? 201 : 200);
+      }
+      // The owning org exposes two teams; platform is already requested.
+      if (u.endsWith("/orgs/admin/teams")) {
+        return jsonResponse([
+          { id: 5, slug: "platform", name: "Platform", description: "", privacy: "closed" },
+          { id: 6, slug: "security", name: "Security", description: "", privacy: "closed" },
+        ]);
+      }
+      return undefined;
+    });
+    renderAt("/ui/repos/admin/test/pulls/9");
+
+    // The requested team chip is removable, and only the not-yet-requested team
+    // is offered in the picker.
+    expect(await screen.findByLabelText("remove team platform")).toBeInTheDocument();
+    const teamSelect = await screen.findByLabelText("reviewer team");
+    fireEvent.change(teamSelect, { target: { value: "security" } });
+    await waitFor(() => {
+      expect(findCall("/pulls/9/requested_reviewers", "POST")).toBeDefined();
+    });
+    const post = findCall("/pulls/9/requested_reviewers", "POST");
+    expect(JSON.parse(String(post?.body))).toEqual({ reviewers: [], team_reviewers: ["security"] });
+
+    fireEvent.click(screen.getByLabelText("remove team platform"));
+    await waitFor(() => {
+      expect(findCall("/pulls/9/requested_reviewers", "DELETE")).toBeDefined();
+    });
+    const del = findCall("/pulls/9/requested_reviewers", "DELETE");
+    expect(JSON.parse(String(del?.body))).toEqual({ reviewers: [], team_reviewers: ["platform"] });
   });
 });
 

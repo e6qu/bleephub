@@ -1149,7 +1149,7 @@ func gitCommitToJSON(baseURL, fullName, sha string, c *object.Commit) map[string
 	for _, h := range c.ParentHashes {
 		parents = append(parents, map[string]interface{}{
 			"sha":      h.String(),
-			"url":      baseURL + "/api/v3/repos/" + fullName + "/commits/" + h.String(),
+			"url":      baseURL + "/api/v3/repos/" + fullName + "/git/commits/" + h.String(),
 			"html_url": baseURL + "/" + fullName + "/commit/" + h.String(),
 		})
 	}

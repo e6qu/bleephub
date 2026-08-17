@@ -611,6 +611,19 @@ func (st *Store) SubmitPullRequestReview(id int, event string) bool {
 	return true
 }
 
+// PendingReviewForAuthor returns the author's still-pending review on a PR (a
+// reviewer has at most one), or nil. Used to submit a review by pull-request id.
+func (st *Store) PendingReviewForAuthor(prID, authorID int) *PullRequestReview {
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
+	for _, r := range st.PRReviewsByPR[prID] {
+		if r.AuthorID == authorID && r.State == "PENDING" {
+			return cloneReview(r)
+		}
+	}
+	return nil
+}
+
 // DismissPullRequestReview marks a review as dismissed.
 func (st *Store) DismissPullRequestReview(id int, message string) bool {
 	st.Mu.Lock()

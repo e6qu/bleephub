@@ -36,6 +36,33 @@ func pagedJSONRequest(t *testing.T, s *Server, method, path, token string, body 
 	return w
 }
 
+// TestLinkHeaderPerPageEchoesClientInput pins that the Link targets only carry
+// per_page when the client actually sent it (echoing the resolved value), and
+// omit it entirely otherwise — matching github's Link URL composition.
+func TestLinkHeaderPerPageEchoesClientInput(t *testing.T) {
+	t.Parallel()
+
+	// Client sent per_page: it appears (resolved) in every rel URL.
+	withPerPage := httptest.NewRequest("GET", "/api/v3/repos/o/r/issues?per_page=2&page=1&state=open", nil)
+	link := buildLinkHeader(withPerPage, 1, 2, 3)
+	if !strings.Contains(link, "per_page=2") {
+		t.Errorf("with per_page: Link = %q, want it to contain per_page=2", link)
+	}
+	if !strings.Contains(link, "state=open") || !strings.Contains(link, "page=2") {
+		t.Errorf("with per_page: Link dropped a query param: %q", link)
+	}
+
+	// Client did NOT send per_page: it must not be materialized into the rel URLs.
+	withoutPerPage := httptest.NewRequest("GET", "/api/v3/repos/o/r/issues?page=1&state=open", nil)
+	link = buildLinkHeader(withoutPerPage, 1, 30, 3)
+	if strings.Contains(link, "per_page") {
+		t.Errorf("without per_page: Link = %q, want no per_page in the rel URLs", link)
+	}
+	if !strings.Contains(link, "page=2") || !strings.Contains(link, `rel="next"`) {
+		t.Errorf("without per_page: Link missing next page: %q", link)
+	}
+}
+
 func TestPaginationDefaults(t *testing.T) {
 	repoName := "pg-defaults"
 	createTestIssueRepo(t, repoName)

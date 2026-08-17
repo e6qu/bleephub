@@ -29,6 +29,38 @@ func (s *isolatedServer) getWith(t *testing.T, path, token string, headers map[s
 	return resp, body
 }
 
+// TestConditional304DoesNotConsumeRateLimit pins that a conditional GET which
+// results in 304 Not Modified is not billed against the primary rate limit —
+// GitHub's documented behaviour. bleephub consumes in middleware before the 304
+// decision, so the unit must be refunded and the 304's X-RateLimit-Remaining
+// must match the remaining budget from just before the conditional re-request.
+func TestConditional304DoesNotConsumeRateLimit(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{"name": "cond-rl"}).Body.Close()
+
+	// First read: consumes a unit and hands back an ETag.
+	first, _ := s.getWith(t, "/api/v3/repos/admin/cond-rl", defaultToken, nil)
+	etag := first.Header.Get("ETag")
+	if etag == "" {
+		t.Fatal("first GET carried no ETag")
+	}
+	remainingAfterFirst := first.Header.Get("X-RateLimit-Remaining")
+
+	// Conditional re-read: 304, and the budget must be unchanged from after the
+	// first read (the consumed unit was refunded), not decremented again.
+	second, body := s.getWith(t, "/api/v3/repos/admin/cond-rl", defaultToken, map[string]string{"If-None-Match": etag})
+	if second.StatusCode != http.StatusNotModified {
+		t.Fatalf("conditional GET = %d, want 304", second.StatusCode)
+	}
+	if len(body) != 0 {
+		t.Fatalf("304 carried a %d-byte body, want none", len(body))
+	}
+	if got := second.Header.Get("X-RateLimit-Remaining"); got != remainingAfterFirst {
+		t.Errorf("304 X-RateLimit-Remaining = %q, want %q (a 304 must not be billed)", got, remainingAfterFirst)
+	}
+}
+
 // TestActivityFeedsAdvertisePollInterval pins REST-031: the activity event
 // feeds and the notifications list carry X-Poll-Interval, and unrelated
 // endpoints (including the issues-events list) do not.

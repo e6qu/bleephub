@@ -341,6 +341,17 @@ func TestReleases_AssetLifecycle(t *testing.T) {
 	if asset["size"] != float64(len("hello world")) {
 		t.Errorf("asset size = %v", asset["size"])
 	}
+	// GitHub returns a `sha256:<hex>` digest of the uploaded bytes.
+	wantDigest := "sha256:b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
+	if asset["digest"] != wantDigest {
+		t.Errorf("asset digest = %v, want %v", asset["digest"], wantDigest)
+	}
+
+	// A second upload of the same asset name is rejected (422), not silently
+	// duplicated.
+	if dup := upload(); dup.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("duplicate-name upload: %d body=%s, want 422", dup.Code, dup.Body.String())
+	}
 
 	missingName := httptest.NewRequest("POST", "/api/uploads/repos/admin/asset-repo/releases/"+itoa(relID)+"/assets", strings.NewReader("ignored"))
 	missingName.Header.Set("Authorization", "Bearer bleephub-admin-token-00000000000000000000")

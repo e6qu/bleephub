@@ -177,3 +177,16 @@ func FindPullRequestByNodeID(st *Store, nodeID string) *PullRequest {
 	}
 	return nil
 }
+
+// FindReviewByNodeID resolves a pull-request review from its GraphQL node id
+// (PRR_kgDO…). Reviews are keyed by numeric id, so this scans the review map.
+func FindReviewByNodeID(st *Store, nodeID string) *PullRequestReview {
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
+	for _, review := range st.PRReviews {
+		if review.NodeID == nodeID {
+			return review
+		}
+	}
+	return nil
+}

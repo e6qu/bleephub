@@ -713,7 +713,16 @@ func (s *Server) handleCreatePRReview(w http.ResponseWriter, r *http.Request) {
 	case "COMMENT":
 		state = "COMMENTED"
 	default:
-		store.WriteGHValidationError(w, "PullRequestReview", "event", "invalid")
+		// This operation documents the validation-error-simple 422 shape (a bare
+		// string per error), not the object form.
+		writeGHValidationErrorSimple(w, "Invalid value for event")
+		return
+	}
+
+	// GitHub requires a review body when the event is REQUEST_CHANGES or COMMENT
+	// (an APPROVE or a still-pending review may have an empty body).
+	if (state == "CHANGES_REQUESTED" || state == "COMMENTED") && strings.TrimSpace(req.Body) == "" {
+		writeGHValidationErrorSimple(w, "body is required when the event is REQUEST_CHANGES or COMMENT")
 		return
 	}
 
@@ -722,7 +731,7 @@ func (s *Server) handleCreatePRReview(w http.ResponseWriter, r *http.Request) {
 	// draft behind.
 	for _, rc := range req.Comments {
 		if rc.Path == "" || rc.Body == "" {
-			store.WriteGHValidationError(w, "PullRequestReviewComment", "comments", "invalid")
+			writeGHValidationErrorSimple(w, "Every comment requires a path and a body")
 			return
 		}
 	}
@@ -1062,6 +1071,12 @@ func (s *Server) handleDismissPRReview(w http.ResponseWriter, r *http.Request) {
 		Message string `json:"message"`
 	}
 	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+	// GitHub's dismiss endpoint requires a non-empty message; its 422 documents
+	// the validation-error-simple shape.
+	if strings.TrimSpace(req.Message) == "" {
+		writeGHValidationErrorSimple(w, "message is required")
 		return
 	}
 
@@ -1858,11 +1873,12 @@ func reviewToJSON(review *store.PullRequestReview, st *store.Store, baseURL, rep
 	if u, ok := st.Users[review.AuthorID]; ok {
 		authorJSON = store.UserToJSON(u)
 	}
-	repo := st.ReposByName[repoFullName]
-	if repo != nil && repo.Owner != nil && repo.Owner.ID == review.AuthorID {
-		authorAssociation = "OWNER"
-	} else {
-		authorAssociation = "CONTRIBUTOR"
+	// Match the review author's real relationship to the repo (OWNER / MEMBER /
+	// COLLABORATOR / CONTRIBUTOR / NONE), the same enum the sibling review-comment
+	// serializer uses, rather than the OWNER-or-CONTRIBUTOR-only approximation.
+	authorAssociation = "NONE"
+	if repo := st.ReposByName[repoFullName]; repo != nil {
+		authorAssociation = store.AuthorAssociationLocked(st, review.AuthorID, repo)
 	}
 	st.Mu.RUnlock()
 
