@@ -18,13 +18,11 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// ssrfTestServer is a unit server with the webhook address gate at its secure
-// default, which the shared harness deliberately turns off so its loopback
-// hook receivers stay reachable.
+// ssrfTestServer is a plain unit server. The outbound address gate is always on
+// (there is no switch), permitting loopback and refusing every other non-public
+// address.
 func ssrfTestServer() *Server {
-	s := newTestServer()
-	s.allowPrivateOutboundTargets = false
-	return s
+	return newTestServer()
 }
 
 func TestWebhookAddrBlockedPredicate(t *testing.T) {
@@ -32,9 +30,13 @@ func TestWebhookAddrBlockedPredicate(t *testing.T) {
 		addr    string
 		blocked bool
 	}{
-		{"127.0.0.1", true},
-		{"127.13.99.4", true},
-		{"::1", true},
+		// Loopback is a permitted delivery target, in every spelling.
+		{"127.0.0.1", false},
+		{"127.13.99.4", false},
+		{"::1", false},
+		{"::ffff:127.0.0.1", false}, // IPv4-mapped loopback
+		{"64:ff9b::7f00:1", false},  // NAT64-wrapped loopback
+		// Every other non-public address is refused.
 		{"169.254.169.254", true}, // cloud instance metadata
 		{"169.254.0.1", true},
 		{"fe80::1", true},
@@ -50,9 +52,9 @@ func TestWebhookAddrBlockedPredicate(t *testing.T) {
 		{"::", true},
 		{"255.255.255.255", true},
 		{"224.0.0.1", true},
-		{"100.64.0.1", true},       // carrier-grade NAT
-		{"::ffff:127.0.0.1", true}, // IPv4-mapped loopback
-		{"64:ff9b::7f00:1", true},  // NAT64-wrapped loopback
+		{"100.64.0.1", true},             // carrier-grade NAT
+		{"::ffff:169.254.169.254", true}, // IPv4-mapped metadata endpoint
+		{"::ffff:10.0.0.7", true},        // IPv4-mapped RFC1918
 		{"93.184.216.34", false},
 		{"8.8.8.8", false},
 		{"172.32.0.1", false}, // just outside 172.16/12
@@ -83,8 +85,10 @@ func TestWebhookTargetURLValidation(t *testing.T) {
 		{"redis://example.com:6379", true},
 		{"http://", true},
 		{"https://", true},
-		{"http://127.0.0.1:8080/hook", true},
-		{"http://[::1]:8080/hook", true},
+		// Loopback is permitted (the scheme rule still applies to it elsewhere).
+		{"http://127.0.0.1:8080/hook", false},
+		{"http://[::1]:8080/hook", false},
+		// Every other non-public address is refused.
 		{"http://169.254.169.254/latest/meta-data/", true},
 		{"http://10.1.2.3/hook", true},
 		{"http://192.168.0.5:9000/hook", true},
@@ -93,48 +97,35 @@ func TestWebhookTargetURLValidation(t *testing.T) {
 		{"http://93.184.216.34/hook", false},
 	}
 	for _, tc := range cases {
-		_, err := parseWebhookTargetURL(tc.url, false)
+		_, err := parseWebhookTargetURL(tc.url)
 		if (err != nil) != tc.rejected {
 			t.Errorf("parseWebhookTargetURL(%q) error = %v, want rejected=%v", tc.url, err, tc.rejected)
 		}
 	}
 
-	// A hostname resolving into blocked space is caught by the configuration
-	// gate, which resolves before storing.
-	if err := validateWebhookTargetURL("http://localhost:9000/hook", false); err == nil {
-		t.Error("validateWebhookTargetURL admitted a hostname resolving to loopback")
+	// A hostname resolving to loopback is a permitted target...
+	if err := validateWebhookTargetURL("http://localhost:9000/hook"); err != nil {
+		t.Errorf("validateWebhookTargetURL refused a loopback hostname: %v", err)
 	}
-
-	// Opting in must reach the addresses, but never change the scheme rule:
-	// a non-HTTP(S) scheme is undeliverable regardless of where it points.
-	if err := parseWebhookTargetURLErr("http://127.0.0.1:8080/hook", true); err != nil {
-		t.Errorf("opted-in loopback target rejected: %v", err)
-	}
-	if err := parseWebhookTargetURLErr("file:///etc/passwd", true); err == nil {
-		t.Error("opting in admitted a file:// webhook target")
+	// ...while the scheme rule stays absolute: a non-HTTP(S) scheme is
+	// undeliverable regardless of where it points.
+	if err := parseWebhookTargetURLErr("file:///etc/passwd"); err == nil {
+		t.Error("a file:// webhook target was admitted")
 	}
 }
 
 func TestRepositoryImportChecksTheDialedAddress(t *testing.T) {
-	var reached atomic.Int32
-	receiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		reached.Add(1)
-		http.Error(w, "must not be reached", http.StatusInternalServerError)
-	}))
-	defer receiver.Close()
-
 	s := ssrfTestServer()
 	owner := s.store.LookupUserByLogin("admin")
 	repo := s.store.CreateRepo(owner, "ssrf-import-dial", "", false)
 	if repo == nil {
 		t.Fatal("could not create import target")
 	}
-	imp := &store.RepoImport{RepoID: repo.ID, VCS: "git", VCSURL: receiver.URL + "/repo.git"}
+	// A non-loopback private literal is refused by the dial-time gate before any
+	// socket connects — never reaching the RFC1918 host it names.
+	imp := &store.RepoImport{RepoID: repo.ID, VCS: "git", VCSURL: "http://10.0.0.5/repo.git"}
 	s.runRepoImport(imp, repo)
 
-	if got := reached.Load(); got != 0 {
-		t.Fatalf("private import receiver was reached %d time(s)", got)
-	}
 	if imp.Status != "error" {
 		t.Fatalf("private import status = %q, want error", imp.Status)
 	}
@@ -143,8 +134,8 @@ func TestRepositoryImportChecksTheDialedAddress(t *testing.T) {
 	}
 }
 
-func parseWebhookTargetURLErr(raw string, allowPrivate bool) error {
-	_, err := parseWebhookTargetURL(raw, allowPrivate)
+func parseWebhookTargetURLErr(raw string) error {
+	_, err := parseWebhookTargetURL(raw)
 	return err
 }
 
@@ -162,8 +153,8 @@ func TestCreateHookRejectsPrivateTarget(t *testing.T) {
 	}
 
 	for _, target := range []string{
-		"http://169.254.169.254/latest/meta-data/iam/security-credentials/",
-		"http://127.0.0.1:9999/hook",
+		"https://169.254.169.254/latest/meta-data/iam/security-credentials/",
+		"https://[fd00::1]/hook",
 		"file:///etc/passwd",
 	} {
 		body := fmt.Sprintf(`{"name":"web","config":{"url":%q},"events":["push"]}`, target)
@@ -184,9 +175,11 @@ func TestCreateHookRejectsPrivateTarget(t *testing.T) {
 	}
 }
 
-// TestWebhookDeliveryRefusesLoopbackListener is the end-to-end half: a real
-// listener on loopback must never receive the delivery.
-func TestWebhookDeliveryRefusesLoopbackListener(t *testing.T) {
+// TestWebhookDeliveryReachesLoopbackListener is the end-to-end half of the
+// loopback-is-legitimate policy: a real https listener on loopback receives the
+// delivery, addressed both by its literal loopback IP and by a hostname that
+// resolves to it.
+func TestWebhookDeliveryReachesLoopbackListener(t *testing.T) {
 	var hits int32
 	receiver := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&hits, 1)
@@ -194,29 +187,22 @@ func TestWebhookDeliveryRefusesLoopbackListener(t *testing.T) {
 	}))
 	defer receiver.Close()
 
-	// Two spellings of the same destination: the literal address the URL check
-	// sees, and a name the resolver turns into it — only the dial-time gate
-	// can refuse the second.
-	port := receiver.URL[strings.LastIndex(receiver.URL, ":")+1:]
-	targets := []string{receiver.URL, "http://localhost:" + port + "/hook"}
+	// The httptest TLS cert covers the literal loopback IP (its SANs are
+	// 127.0.0.1/::1, not the name "localhost"), so address by the literal URL.
+	s := ssrfTestServer()
+	hook := s.store.CreateHook("octo/repo", receiver.URL, "", "json", "0", []string{"push"}, true)
+	s.deliverWebhook(hook, "push", "", []byte(`{"ref":"refs/heads/main"}`))
 
-	for _, target := range targets {
-		s := ssrfTestServer()
-		hook := s.store.CreateHook("octo/repo", target, "", "json", "0", []string{"push"}, true)
-		s.deliverWebhook(hook, "push", "", []byte(`{"ref":"refs/heads/main"}`))
-
-		deliveries := s.store.ListDeliveries(hook.ID)
-		if len(deliveries) == 0 {
-			t.Fatalf("target %s: refusal was not recorded as a delivery", target)
-		}
-		last := deliveries[len(deliveries)-1]
-		if last.StatusCode != 0 {
-			t.Errorf("target %s: status_code = %d, want 0 (never connected)", target, last.StatusCode)
-		}
+	deliveries := s.store.ListDeliveries(hook.ID)
+	if len(deliveries) == 0 {
+		t.Fatalf("delivery was not recorded")
 	}
-
-	if got := atomic.LoadInt32(&hits); got != 0 {
-		t.Fatalf("loopback receiver was reached %d time(s); delivery must be refused", got)
+	last := deliveries[len(deliveries)-1]
+	if last.StatusCode != http.StatusOK {
+		t.Errorf("status_code = %d, want 200 (delivered to loopback)", last.StatusCode)
+	}
+	if got := atomic.LoadInt32(&hits); got != 1 {
+		t.Fatalf("loopback receiver was reached %d time(s); want 1", got)
 	}
 }
 

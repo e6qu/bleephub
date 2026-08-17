@@ -22,10 +22,9 @@ BLEEPHUB_SSH_HOST_KEY="$(<"${SSH_KEY_FILE}")"
 export BLEEPHUB_SSH_HOST_KEY
 export BLEEPHUB_E2E_WEBHOOK_PORT="${WEBHOOK_PORT}"
 export BLEEPHUB_E2E_WEBHOOK_SECRET="playwright-marketplace-secret"
-# Webhook delivery refuses private addresses, and this harness's own receiver
-# runs on loopback — which is precisely the case the opt-out exists for. It is
-# set here rather than defaulted anywhere, so a deployed instance never gets it.
-export BLEEPHUB_ALLOW_PRIVATE_OUTBOUND_TARGETS=true
+# This harness's webhook receiver runs on loopback, which the address gate
+# permits by policy (only non-loopback private space and the cloud metadata
+# endpoint are refused, always) — so no opt-out is needed.
 
 # The receiver serves HTTPS (real TLS delivery, no cleartext). Generate a
 # disposable self-signed certificate for 127.0.0.1 and make the bleephub

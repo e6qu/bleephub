@@ -35,9 +35,10 @@ policy cannot drift between call sites.
     [`identity.go`](https://github.com/e6qu/bleephub/blob/main/internal/server/identity.go)),
   - the Pages deployment artifact fetch (`readPagesDeploymentArtifact` in
     [`gh_pages_deployments.go`](https://github.com/e6qu/bleephub/blob/main/internal/server/gh_pages_deployments.go)).
-- **Opt-out** — reaching private addresses is denied by default and only enabled
-  by `BLEEPHUB_ALLOW_PRIVATE_OUTBOUND_TARGETS=true`, for a dev/test instance
-  whose receivers or identity provider live on loopback.
+- **Fixed policy** — loopback is permitted (legitimate same-host delivery for an
+  on-prem/dev instance); every other non-public address — the cloud metadata
+  endpoint, RFC1918, IPv6 unique-local space, carrier-grade NAT, link-local —
+  is refused unconditionally. There is no switch to turn the protection off.
 
 CodeQL still reports `go/request-forgery` on the two operator/deployment-driven
 fetch sites; those are reviewed-safe and documented in

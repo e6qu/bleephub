@@ -136,9 +136,6 @@ func TestMain(m *testing.M) {
 
 	// The admin token has no default — every consumer (incl. the test harness)
 	// must set it explicitly. defaultToken is the non-PAT value the tests use.
-	// Webhook receivers in this suite are httptest servers on loopback, which
-	// delivery refuses unless the instance opts in.
-	os.Setenv("BLEEPHUB_ALLOW_PRIVATE_OUTBOUND_TARGETS", "true")
 	// Webhook delivery is https-only; trust the shared httptest TLS certificate
 	// so loopback httptest.NewTLSServer receivers verify without insecure_ssl.
 	installWebhookTestTLSRoots()

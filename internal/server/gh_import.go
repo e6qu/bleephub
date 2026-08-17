@@ -25,10 +25,8 @@ import (
 )
 
 const (
-	importHTTPPublicScheme   = "bleephub-import-http-public"
-	importHTTPSPublicScheme  = "bleephub-import-https-public"
-	importHTTPPrivateScheme  = "bleephub-import-http-private"
-	importHTTPSPrivateScheme = "bleephub-import-https-private"
+	importHTTPScheme  = "bleephub-import-http"
+	importHTTPSScheme = "bleephub-import-https"
 )
 
 // importHTTPTransport gives go-git a private protocol name while handing its
@@ -65,15 +63,15 @@ func init() {
 
 func installImportProtocols() {
 	installImportProtocolsOnce.Do(func() {
-		install := func(protocol, scheme string, allowPrivate bool) {
+		install := func(protocol, scheme string) {
 			httpClient := &http.Client{
 				Timeout:   importFetchTimeout,
-				Transport: otelhttp.NewTransport(newAddressCheckedHTTPTransport(allowPrivate, false)),
+				Transport: otelhttp.NewTransport(newAddressCheckedHTTPTransport(false)),
 				CheckRedirect: func(req *http.Request, via []*http.Request) error {
 					if len(via) >= 10 {
 						return errors.New("stopped after 10 redirects")
 					}
-					_, err := parseWebhookTargetURL(req.URL.String(), allowPrivate)
+					_, err := parseWebhookTargetURL(req.URL.String())
 					return err
 				},
 			}
@@ -82,34 +80,24 @@ func installImportProtocols() {
 				base:   gitHTTP.NewClient(httpClient),
 			})
 		}
-		install(importHTTPPublicScheme, "http", false)
-		install(importHTTPSPublicScheme, "https", false)
-		install(importHTTPPrivateScheme, "http", true)
-		install(importHTTPSPrivateScheme, "https", true)
+		install(importHTTPScheme, "http")
+		install(importHTTPSScheme, "https")
 	})
 }
 
 // importFetchURL selects an import-only go-git protocol. The URL still carries
 // the original authority and path; the adapter above changes only the protocol
 // seen by go-git's HTTP session after go-git has selected the isolated client.
-func importFetchURL(raw string, allowPrivate bool) (string, error) {
+func importFetchURL(raw string) (string, error) {
 	u, err := url.Parse(raw)
 	if err != nil {
 		return "", err
 	}
 	switch strings.ToLower(u.Scheme) {
 	case "http":
-		if allowPrivate {
-			u.Scheme = importHTTPPrivateScheme
-		} else {
-			u.Scheme = importHTTPPublicScheme
-		}
+		u.Scheme = importHTTPScheme
 	case "https":
-		if allowPrivate {
-			u.Scheme = importHTTPSPrivateScheme
-		} else {
-			u.Scheme = importHTTPSPublicScheme
-		}
+		u.Scheme = importHTTPSScheme
 	default:
 		return "", fmt.Errorf("unsupported import protocol %q", u.Scheme)
 	}
@@ -273,7 +261,7 @@ func (s *Server) handleStartImport(w http.ResponseWriter, r *http.Request) {
 // resolution. This early check remains useful because it rejects an obviously
 // private target before a durable import record and worker are created.
 func (s *Server) acceptImportSource(w http.ResponseWriter, rawURL string) bool {
-	if err := validateWebhookTargetURL(rawURL, s.allowPrivateOutboundTargets); err != nil {
+	if err := validateWebhookTargetURL(rawURL); err != nil {
 		store.WriteGHValidationError(w, "Import", "vcs_url", "invalid")
 		return false
 	}
@@ -509,7 +497,7 @@ func (s *Server) runRepoImport(imp *store.RepoImport, repo *store.Repo) {
 	}
 
 	installImportProtocols()
-	fetchURL, err := importFetchURL(imp.VCSURL, s.allowPrivateOutboundTargets)
+	fetchURL, err := importFetchURL(imp.VCSURL)
 	if err != nil {
 		imp.Status = "error"
 		imp.FailedStep = "detecting"
