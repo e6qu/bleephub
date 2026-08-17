@@ -1596,7 +1596,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			if v, ok := input["authorEmail"].(string); ok && v != "" {
 				merger.Email = v
 			}
-			if _, errMsg := s.completePullRequestMerge(repo, pr, &merger, method, commitHeadline, commitBody); errMsg != "" {
+			if _, errMsg := s.completePullRequestMerge(repo, pr, &merger, method, commitHeadline, commitBody, s.prHeadSha(repo, pr)); errMsg != "" {
 				return nil, fmt.Errorf("%s", errMsg)
 			}
 

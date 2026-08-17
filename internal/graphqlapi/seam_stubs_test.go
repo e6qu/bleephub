@@ -63,7 +63,7 @@ func (stubPulls) MissingRequiredChecks(*store.Repo, string, string) []string { r
 func (stubPulls) CanMergePullRequest(context.Context, *store.Repo, *store.PullRequest) (bool, string) {
 	return false, "stubPulls refuses every merge"
 }
-func (stubPulls) CompletePullRequestMerge(*store.Repo, *store.PullRequest, *store.User, string, string, string) (string, string) {
+func (stubPulls) CompletePullRequestMerge(*store.Repo, *store.PullRequest, *store.User, string, string, string, string) (string, string) {
 	return "", ""
 }
 func (stubPulls) BranchProtectionRuleForPR(*store.Repo, string) map[string]interface{} { return nil }

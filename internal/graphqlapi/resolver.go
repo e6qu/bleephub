@@ -58,7 +58,7 @@ type Pulls interface {
 	// evaluateChecksForMerge, narrowed to what the resolver consumes).
 	MissingRequiredChecks(repo *store.Repo, baseBranch, headSha string) []string
 	CanMergePullRequest(ctx context.Context, repo *store.Repo, pr *store.PullRequest) (bool, string)
-	CompletePullRequestMerge(repo *store.Repo, pr *store.PullRequest, user *store.User, method, commitTitle, commitMessage string) (string, string)
+	CompletePullRequestMerge(repo *store.Repo, pr *store.PullRequest, user *store.User, method, commitTitle, commitMessage, expectedHead string) (string, string)
 	BranchProtectionRuleForPR(repo *store.Repo, baseBranch string) map[string]interface{}
 	ChangedFiles(repo *store.Repo, pr *store.PullRequest, baseURL string) ([]map[string]interface{}, error)
 }
@@ -251,8 +251,8 @@ func (s *Resolver) canMergePullRequest(ctx context.Context, repo *store.Repo, pr
 	return s.pulls.CanMergePullRequest(ctx, repo, pr)
 }
 
-func (s *Resolver) completePullRequestMerge(repo *store.Repo, pr *store.PullRequest, user *store.User, method, commitTitle, commitMessage string) (string, string) {
-	return s.pulls.CompletePullRequestMerge(repo, pr, user, method, commitTitle, commitMessage)
+func (s *Resolver) completePullRequestMerge(repo *store.Repo, pr *store.PullRequest, user *store.User, method, commitTitle, commitMessage, expectedHead string) (string, string) {
+	return s.pulls.CompletePullRequestMerge(repo, pr, user, method, commitTitle, commitMessage, expectedHead)
 }
 
 func (s *Resolver) branchProtectionRuleForPR(repo *store.Repo, baseBranch string) map[string]interface{} {

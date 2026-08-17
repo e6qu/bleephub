@@ -449,6 +449,32 @@ func TestMergePullRequestREST(t *testing.T) {
 	}
 }
 
+// TestCompletePullRequestMergeRefusesChangedHead pins the check-then-merge
+// TOCTOU fix: the merge is bound to the head SHA the caller's checks verified,
+// so a head that moved since (here simulated by passing a mismatched expected
+// head) is refused rather than merged.
+func TestCompletePullRequestMergeRefusesChangedHead(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	s.createTestPRRepo(t, "pr-merge-toctou")
+	s.post(t, "/api/v3/repos/admin/pr-merge-toctou/pulls", defaultToken, map[string]interface{}{
+		"title": "toctou", "head": "feat", "base": "main",
+	}).Body.Close()
+	repo := s.store.GetRepo("admin", "pr-merge-toctou")
+	pr := s.store.GetPullRequestByNumber(repo.ID, 1)
+	admin := s.store.UsersByLogin["admin"]
+
+	// A head that moved since the checks (a mismatched expected SHA) is refused.
+	if _, errMsg := s.completePullRequestMerge(repo, pr, admin, "merge", "", "", strings.Repeat("0", 40)); !strings.Contains(errMsg, "Head branch was modified") {
+		t.Fatalf("stale expected head: errMsg = %q, want a head-modified refusal", errMsg)
+	}
+	// The head SHA that actually passed the checks merges.
+	head := s.prHeadSha(repo, pr)
+	if _, errMsg := s.completePullRequestMerge(repo, pr, admin, "merge", "", "", head); errMsg != "" {
+		t.Fatalf("correct expected head: errMsg = %q, want success", errMsg)
+	}
+}
+
 func TestMergeAlreadyMerged(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)

@@ -47,14 +47,6 @@ func (s *Server) hookRepo(w http.ResponseWriter, r *http.Request) *store.Repo {
 // rejectUndeliverableHookURL writes GitHub's validation error when a webhook
 // target is one deliveries must never reach.
 func (s *Server) rejectUndeliverableHookURL(w http.ResponseWriter, target string) bool {
-	// Webhook delivery is https-only (unlike github.com); reject a cleartext
-	// target at configuration time so the operator gets an error rather than a
-	// hook that silently never delivers.
-	if err := webhookTargetRequiresHTTPS(target); err != nil {
-		s.logger.Warn().Err(err).Msg("webhook target rejected: https required")
-		store.WriteGHValidationError(w, "Hook", "config.url", "invalid")
-		return true
-	}
 	if err := validateWebhookTargetURL(target); err != nil {
 		s.logger.Warn().Err(err).Msg("webhook target rejected at configuration time")
 		store.WriteGHValidationError(w, "Hook", "config.url", "invalid")
