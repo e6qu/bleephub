@@ -292,15 +292,15 @@
   "graphql": {
     "compatibility_gap_count": 9,
     "coverage": {
-      "bleephub_types": 263,
+      "bleephub_types": 265,
       "compatibility_gap_count": 9,
-      "implemented_fields": 923,
+      "implemented_fields": 929,
       "official_fields": 8360,
       "official_types": 1807,
-      "shared_types": 256,
-      "signature_exact_fields": 922
+      "shared_types": 258,
+      "signature_exact_fields": 928
     },
-    "introspection_snapshot_sha256": "aa322f77c55dbd3d1b5abb5bfaeb14f7bc2d0a496892de687bdd39c198496ce5",
+    "introspection_snapshot_sha256": "98cc752a3e3a244e70af0c734eb764da60d3a5410c2c898afae0e9d74df6329d",
     "official_schema": {
       "content_sha256": "b716c6844750283b8c33200f660989337254e7158f40ed869f06418bafb3bc2e",
       "source": "https://docs.github.com/public/fpt/schema.docs.graphql"
@@ -2637,6 +2637,96 @@
         "status_kind": "fixed"
       },
       {
+        "category": "REST",
+        "finding": "closes the named remainder of REST-136: `language:` on **user** search was still rejected with a 422",
+        "id": "REST-141",
+        "location": "gh_search.go, gh_search_query.go",
+        "severity": "m",
+        "status": "fixed \u2014 `language:` joined the users qualifier scope and is honored by scanning the user's public repos for one whose `Language` matches case-insensitively (organizations are excluded, as with the other user-scoped qualifiers). Verified: unit test asserts `language:Go` matches a user who owns a Go repo and not one who owns none",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "closes the named remainder of REST-140: the webhook `repository` and `organization` nested objects carried no hypermedia (`url`/`html_url`/`node_id`)",
+        "id": "REST-142",
+        "location": "webhooks_payloads.go",
+        "severity": "m",
+        "status": "fixed \u2014 `repoPayload` now emits `node_id`, `url` and `html_url`, and `orgWebhookPayload` emits `url`, in the same relative form the `sender` object (`store.UserToJSON`) already uses on every payload \u2014 one convention for the whole body, so no base-URL plumbing was needed after all. Verified: unit test asserts the repository and organization hypermedia",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "the commit and compare `.patch` media types served the same unified tree diff as `.diff`, not a git-format-patch mbox, so `git am` and tools expecting the `From `/`Subject: [PATCH]` envelope broke",
+        "id": "REST-143",
+        "location": "gh_repos_commit_reads.go, gh_repos_compare.go",
+        "severity": "m",
+        "status": "fixed \u2014 a shared `commitFormatPatch` emits the mbox (a `From <sha> Mon Sep 17\u2026` line, `From:`/`Date:`/`Subject: [PATCH] <subject>` headers, the body, `---`, the diff, and the trailing signature); the commit endpoint returns one patch and compare returns one per commit in the range oldest-first, both as `application/vnd.github.patch`. Verified: unit tests assert the mbox headers on the commit and compare endpoints",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "`GET /repos/{o}/{r}/readme` ignored the `.raw` and `.html` media types and always returned the base64 JSON content object",
+        "id": "REST-144",
+        "location": "gh_repos_objects.go",
+        "severity": "m",
+        "status": "fixed \u2014 `application/vnd.github.raw` returns the raw bytes as `application/octet-stream` (a non-`+json` type so the shape ratchet skips the body) and `application/vnd.github.html` returns the rendered markdown as `text/html`. Verified: unit test asserts both media types",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "the code-scanning alert PATCH accepted `state:\"fixed\"` from a client \u2014 only the scanner marks an alert fixed \u2014 and its `dismissed_reason` enum lacked github's `mitigated` value",
+        "id": "REST-145",
+        "location": "store_code_scanning.go",
+        "severity": "M",
+        "status": "fixed \u2014 the client-transition validator now accepts only `open`/`dismissed`, and `mitigated` joined the dismissed-reason enum. Verified: a dedicated test asserts a client PATCH to `state:\"fixed\"` is 422'd, and the detached-snapshot test drives a valid `dismissed` transition",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "the code-scanning alert `rule` object omitted `security_severity_level`, so a security rule's numeric SARIF `security-severity` score never surfaced as github's low/medium/high/critical bucket",
+        "id": "REST-146",
+        "location": "store_code_scanning.go, gh_code_scanning.go",
+        "severity": "m",
+        "status": "fixed \u2014 SARIF rule parsing reads the `security-severity` property and buckets it (github's CVSS-aligned thresholds) into a new `SecuritySeverityLevel`, emitted on the rule object (null for a non-security rule). Verified: unit test uploads a SARIF whose rule scores 8.5 and asserts `rule.security_severity_level == \"high\"`",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "the secret-scanning resolution enum wrongly accepted `pattern_deleted`/`pattern_edited` (not github client resolutions), and the alert object omitted `secret`, `validity`, `resolved_by`, `resolution_comment` and the three `push_protection_bypassed*` members",
+        "id": "REST-147",
+        "location": "store_secret_scanning.go, gh_secret_scanning.go",
+        "severity": "m",
+        "status": "fixed \u2014 the resolution enum is now false_positive/wont_fix/revoked/used_in_tests only, and the alert JSON carries the full shape (a clearly-synthetic `secret` placeholder, `validity:\"unknown\"`, and the bypass members defaulting to unset/false). Verified: unit tests assert the two removed resolutions are 422'd and that every added field is present",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "the `/rate_limit` `resources` object was missing the `copilot_usage_records` and `dependency_sbom` buckets the current REST schema defines",
+        "id": "REST-148",
+        "location": "rate_limits.go",
+        "severity": "m",
+        "status": "fixed \u2014 both buckets were added to the response resource set. Verified: the conformance test asserts every schema-defined bucket, including the two new ones, is present",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "the classic project **card** object omitted github's required `archived` boolean",
+        "id": "REST-149",
+        "location": "gh_projects_classic.go",
+        "severity": "m",
+        "status": "fixed \u2014 `projectCardToJSON` now emits `archived` (the simulator does not model card archiving, so it is always `false`). Verified: the card-note test asserts `archived:false` is present",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "the commit `node_id` in a compare response was hand-built as a malformed `\"MDY6Q29tbWl0\"+sha` string, inconsistent with every other commit serialization which uses `encodeNodeID`",
+        "id": "REST-150",
+        "location": "gh_repos_compare.go",
+        "severity": "m",
+        "status": "fixed \u2014 `commitToJSON` now calls `encodeNodeID(\"Commit\", 0, sha)`, matching the single-commit and PR-commit paths. Verified by the compare REST test (still green)",
+        "status_kind": "fixed"
+      },
+      {
         "category": "GQL",
         "finding": "`POST /api/graphql` serves anonymous requests; real GitHub 401s every unauthenticated request",
         "id": "GQL-001",
@@ -3291,6 +3381,15 @@
         "location": "gh_discussions_graphql.go, gh_issues_graphql.go, gh_moderation_graphql.go, gh_pulls_graphql.go, gh_reactions_graphql.go",
         "severity": "m",
         "status": "fixed \u2014 every such site now returns `gqlMissingNode(type, id)` (github's canonical `\"Could not resolve to a X with the global id of 'Y'.\"`) or, where the id was already consumed, `gqlMissingNodeType(type)`, both `*ghNotFoundError` so the envelope stamps `NOT_FOUND`. Verified: unit test asserts a mutation on a missing node returns `errors[].type == NOT_FOUND`; the existing query-path NotFound test still passes",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "GQL",
+        "finding": "the `deleteProjectV2Item` mutation was absent, so `gh project item-delete` (and any client removing an item from a Projects v2 board) had no server support \u2014 the schema exposed add/update but not delete",
+        "id": "GQL-063",
+        "location": "gh_projects_v2_graphql.go, gh_repos_graphql.go",
+        "severity": "M",
+        "status": "fixed \u2014 added `deleteProjectV2Item(input{projectId,itemId})` returning `deletedItemId`; it resolves the project and item, refuses an item that belongs to another project, deletes through the store, and is gated by the same owner-scoped `projectRule` as the sibling project mutations (with a policy-table row and refusal case, so the coverage tests stay green). Verified: unit tests assert the owner deletes their own item and receives its node id back, a stranger is refused, and an item from another project is not found; the introspection snapshot and official-schema ratchet were regenerated",
         "status_kind": "fixed"
       },
       {
@@ -7963,9 +8062,9 @@
         },
         "GQL": {
           "status": {
-            "fixed": 62
+            "fixed": 63
           },
-          "total": 62
+          "total": 63
         },
         "PAR": {
           "status": {
@@ -7975,9 +8074,9 @@
         },
         "REST": {
           "status": {
-            "fixed": 140
+            "fixed": 150
           },
-          "total": 140
+          "total": 150
         },
         "STORE": {
           "status": {
@@ -8002,14 +8101,14 @@
       },
       "severity": {
         "blocker": 167,
-        "major": 418,
-        "minor": 259
+        "major": 420,
+        "minor": 268
       },
       "status": {
         "deferred": 3,
-        "fixed": 841
+        "fixed": 852
       },
-      "total": 844
+      "total": 855
     }
   },
   "rest": {

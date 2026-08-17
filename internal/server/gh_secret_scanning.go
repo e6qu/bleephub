@@ -380,8 +380,18 @@ func secretScanningAlertToJSON(a *store.SecretScanningAlert, baseURL string, rep
 		"state":                    a.State,
 		"resolution":               nullOrString(string(a.Resolution)),
 		"resolved_at":              resolvedAt,
+		"resolved_by":              nil,
+		"resolution_comment":       nullOrString(a.ResolutionComment),
 		"secret_type":              a.SecretType,
 		"secret_type_display_name": a.SecretTypeDisplayName,
+		// github always returns the detected secret + its validity; bleephub does
+		// not persist a real token, so it emits a clearly-synthetic placeholder
+		// and unknown validity.
+		"secret":                      fmt.Sprintf("EXAMPLE-%s-%d", a.SecretType, a.Number),
+		"validity":                    "unknown",
+		"push_protection_bypassed":    false,
+		"push_protection_bypassed_by": nil,
+		"push_protection_bypassed_at": nil,
 	}
 }
 

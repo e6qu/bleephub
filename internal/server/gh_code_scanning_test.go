@@ -38,14 +38,15 @@ func TestCodeScanningAlertReadsReturnDetachedSnapshots(t *testing.T) {
 		t.Fatalf("stored instances mutated through the getter: %+v", again.Instances)
 	}
 
-	if err := s.store.UpdateCodeScanningAlert(again, "fixed", "", ""); err != nil {
+	// `dismissed` is a valid client-set state (github rejects `fixed` from a PATCH).
+	if err := s.store.UpdateCodeScanningAlert(again, "dismissed", "false positive", ""); err != nil {
 		t.Fatalf("update: %v", err)
 	}
-	if again.State != store.CodeScanningStateFixed {
-		t.Fatalf("returned snapshot state = %q, want fixed", again.State)
+	if again.State != store.CodeScanningStateDismissed {
+		t.Fatalf("returned snapshot state = %q, want dismissed", again.State)
 	}
-	if live := s.store.GetCodeScanningAlert(repo.FullName, alert.Number); live.State != store.CodeScanningStateFixed {
-		t.Fatalf("live alert after update = %q, want fixed", live.State)
+	if live := s.store.GetCodeScanningAlert(repo.FullName, alert.Number); live.State != store.CodeScanningStateDismissed {
+		t.Fatalf("live alert after update = %q, want dismissed", live.State)
 	}
 }
 
@@ -389,6 +390,31 @@ func TestCodeScanning_InvalidDismissedReason(t *testing.T) {
 	resp.Body.Close()
 }
 
+// TestCodeScanning_PatchRejectsClientFixed covers that a client cannot PATCH an
+// alert to state "fixed" — only the scanner marks an alert fixed; github accepts
+// only open/dismissed from the alert-update endpoint.
+func TestCodeScanning_PatchRejectsClientFixed(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	s.store.CreateRepo(s.store.UsersByLogin["admin"], "cs-fixed", "", false)
+	created := s.seedCodeScanningAlert(t, "admin", "cs-fixed", "rule-fixed", "error", "CodeQL")
+	number := int(created["number"].(float64))
+
+	patch, _ := json.Marshal(map[string]any{"state": "fixed"})
+	req, _ := http.NewRequest("PATCH", s.baseURL+"/api/v3/repos/admin/cs-fixed/code-scanning/alerts/"+itoa(number), bytes.NewReader(patch))
+	req.Header.Set("Authorization", "Bearer "+defaultToken)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("patch alert: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("client state=fixed: expected 422, got %d body=%s", resp.StatusCode, b)
+	}
+}
+
 func TestCodeScanning_SARIFUploadCreatesAlerts(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -509,6 +535,80 @@ func TestCodeScanning_SARIFUploadCreatesAlerts(t *testing.T) {
 				t.Fatalf("invalid coordinate = %d body=%s, want 422", invalid.StatusCode, body)
 			}
 		})
+	}
+}
+
+// TestCodeScanning_SARIFSecuritySeverityLevel covers the rule.security_severity_level
+// field: a security rule's numeric SARIF `security-severity` score is bucketed
+// into GitHub's low/medium/high/critical level on the alert's rule object.
+func TestCodeScanning_SARIFSecuritySeverityLevel(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "cs-sev", "", false)
+
+	sarif := map[string]any{
+		"version": "2.1.0",
+		"runs": []map[string]any{
+			{
+				"tool": map[string]any{
+					"driver": map[string]any{
+						"name": "CodeQL",
+						"rules": []map[string]any{
+							{
+								"id":         "js/sql-injection",
+								"properties": map[string]any{"security-severity": "8.5"},
+							},
+						},
+					},
+				},
+				"results": []map[string]any{
+					{
+						"ruleId":  "js/sql-injection",
+						"message": map[string]any{"text": "SQL injection risk"},
+						"locations": []map[string]any{
+							{
+								"physicalLocation": map[string]any{
+									"artifactLocation": map[string]any{"uri": "src/db.js"},
+									"region":           map[string]any{"startLine": 12, "endLine": 12, "startColumn": 3, "endColumn": 20},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	sarifBytes, _ := json.Marshal(sarif)
+	commitSHA := s.putRepoFile(t, repo.FullName, "src/db.js", "const q = true;\n", "add scanned source")
+	body, _ := json.Marshal(map[string]any{
+		"commit_sha": commitSHA,
+		"ref":        "refs/heads/main",
+		"sarif":      base64.StdEncoding.EncodeToString(sarifBytes),
+	})
+	resp, err := s.authedPost("/api/v3/repos/admin/cs-sev/code-scanning/sarifs", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("sarif upload: %v", err)
+	}
+	if resp.StatusCode != http.StatusAccepted {
+		b, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		t.Fatalf("sarif upload: %d body=%s", resp.StatusCode, b)
+	}
+	resp.Body.Close()
+
+	resp = s.authedGet(t, "/api/v3/repos/admin/cs-sev/code-scanning/alerts")
+	var alerts []map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&alerts); err != nil {
+		t.Fatalf("decode alerts: %v", err)
+	}
+	resp.Body.Close()
+	if len(alerts) != 1 {
+		t.Fatalf("expected 1 alert, got %d", len(alerts))
+	}
+	rule, _ := alerts[0]["rule"].(map[string]any)
+	if rule["security_severity_level"] != "high" {
+		t.Errorf("rule.security_severity_level = %v, want high (8.5)", rule["security_severity_level"])
 	}
 }
 

@@ -343,9 +343,11 @@ func validateSecretScanningTransition(currentState, newState, resolution string)
 
 func isValidResolution(r string) bool {
 	switch SecretScanningResolution(r) {
+	// github's secret-scanning-alert-resolution enum is
+	// false_positive|wont_fix|revoked|used_in_tests; pattern_deleted/edited are
+	// system-set response-only values a client PATCH cannot supply (422).
 	case SecretScanningResolutionFalsePositive, SecretScanningResolutionWontFix,
-		SecretScanningResolutionRevoked, SecretScanningResolutionUsedInTests,
-		SecretScanningResolutionPatternDeleted, SecretScanningResolutionPatternEdited:
+		SecretScanningResolutionRevoked, SecretScanningResolutionUsedInTests:
 		return true
 	}
 	return false

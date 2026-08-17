@@ -1,6 +1,7 @@
 package bleephub
 
 import (
+	"fmt"
 	"net/http"
 	"sort"
 	"strings"
@@ -41,17 +42,25 @@ func (s *Server) handleGetSingleCommit(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(commit.Hash.String()))
 		return
 	}
-	if strings.Contains(accept, "application/vnd.github.diff") || strings.Contains(accept, "application/vnd.github.patch") {
+	if strings.Contains(accept, "application/vnd.github.patch") {
+		// github's .patch is a git-format-patch (mbox headers), not a bare diff.
+		patch, err := commitFormatPatch(commit)
+		if err != nil {
+			writeGHError(w, http.StatusInternalServerError, "diff computation failed")
+			return
+		}
+		w.Header().Set("Content-Type", "application/vnd.github.patch; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(patch))
+		return
+	}
+	if strings.Contains(accept, "application/vnd.github.diff") {
 		diff, err := commitUnifiedDiff(commit)
 		if err != nil {
 			writeGHError(w, http.StatusInternalServerError, "diff computation failed")
 			return
 		}
-		mediaType := "application/vnd.github.diff"
-		if strings.Contains(accept, "application/vnd.github.patch") {
-			mediaType = "application/vnd.github.patch"
-		}
-		w.Header().Set("Content-Type", mediaType+"; charset=utf-8")
+		w.Header().Set("Content-Type", "application/vnd.github.diff; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(diff))
 		return
@@ -103,6 +112,32 @@ func commitUnifiedDiff(commit *object.Commit) (string, error) {
 		out.WriteString(patch.String())
 	}
 	return out.String(), nil
+}
+
+// commitFormatPatch renders a commit as a git-format-patch (mbox), matching
+// what github serves for the .patch media type: the `From <sha> Mon Sep 17 …`
+// magic line, From:/Date:/Subject: [PATCH] headers, the message body, a `---`
+// separator, the unified diff, and a git-version signature. Unlike the .diff
+// media type (a bare unified diff), this is directly consumable by `git am`.
+func commitFormatPatch(commit *object.Commit) (string, error) {
+	diff, err := commitUnifiedDiff(commit)
+	if err != nil {
+		return "", err
+	}
+	subject, body, _ := strings.Cut(strings.TrimRight(commit.Message, "\n"), "\n")
+	var b strings.Builder
+	fmt.Fprintf(&b, "From %s Mon Sep 17 00:00:00 2001\n", commit.Hash.String())
+	fmt.Fprintf(&b, "From: %s <%s>\n", commit.Author.Name, commit.Author.Email)
+	fmt.Fprintf(&b, "Date: %s\n", commit.Author.When.Format(time.RFC1123Z))
+	fmt.Fprintf(&b, "Subject: [PATCH] %s\n\n", subject)
+	if body = strings.TrimLeft(body, "\n"); body != "" {
+		b.WriteString(body)
+		b.WriteString("\n\n")
+	}
+	b.WriteString("---\n")
+	b.WriteString(diff)
+	b.WriteString("\n-- \n2.45.0\n")
+	return b.String(), nil
 }
 
 // commitDiffEntries computes the diff-entry list (with per-file patch text

@@ -118,8 +118,9 @@ func TestSearchUserQualifiers(t *testing.T) {
 	bob := s.createTestUser(t, "bob-u")
 	alice.Location = "Berlin"
 	bob.Location = "Paris"
-	// alice owns a repo; bob owns none.
-	s.store.CreateRepo(alice, "alice-repo", "", false)
+	// alice owns a Go repo; bob owns none.
+	aliceRepo := s.store.CreateRepo(alice, "alice-repo", "", false)
+	aliceRepo.Language = "Go"
 
 	loc := searchUserLogins(t, s, "location:Berlin")
 	if !loc["alice-u"] || loc["bob-u"] {
@@ -128,6 +129,12 @@ func TestSearchUserQualifiers(t *testing.T) {
 	repos := searchUserLogins(t, s, "repos:>=1")
 	if !repos["alice-u"] || repos["bob-u"] {
 		t.Errorf("repos:>=1 = %v, want alice-u (has a repo), not bob-u", repos)
+	}
+	// language: matches a user who owns a public repo in that language (round-4:
+	// closing the round-3 named remainder) instead of 422'ing.
+	lang := searchUserLogins(t, s, "language:Go")
+	if !lang["alice-u"] || lang["bob-u"] {
+		t.Errorf("language:Go = %v, want alice-u (owns a Go repo), not bob-u", lang)
 	}
 	// in:login restricts the free-text match to the login field.
 	inLogin := searchUserLogins(t, s, "alice-u in:login")

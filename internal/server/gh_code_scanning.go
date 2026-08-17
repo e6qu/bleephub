@@ -588,10 +588,11 @@ func codeScanningAlertToJSON(a *store.CodeScanningAlert, baseURL string, repo *s
 		"dismissed_reason":  nullOrString(string(a.DismissedReason)),
 		"dismissed_comment": nullOrString(a.DismissedComment),
 		"rule": map[string]interface{}{
-			"id":          a.RuleID,
-			"severity":    nullOrString(a.RuleSeverity),
-			"description": nullOrString(a.RuleDescription),
-			"name":        a.RuleID,
+			"id":                      a.RuleID,
+			"severity":                nullOrString(a.RuleSeverity),
+			"security_severity_level": nullOrString(a.SecuritySeverityLevel),
+			"description":             nullOrString(a.RuleDescription),
+			"name":                    a.RuleID,
 		},
 		"tool": map[string]interface{}{
 			"name":    nullOrString(a.ToolName),

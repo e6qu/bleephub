@@ -342,6 +342,13 @@ func TestConformanceRateLimitEndpoint(t *testing.T) {
 	if graphql == nil {
 		t.Fatal("missing graphql in resources")
 	}
+	// The response must carry every bucket the current REST schema defines,
+	// including copilot_usage_records and dependency_sbom (round-4).
+	for _, bucket := range apiRateResponseResources {
+		if _, ok := resources[bucket].(map[string]interface{}); !ok {
+			t.Errorf("rate_limit resources missing %q bucket: %v", bucket, resources)
+		}
+	}
 	rate, _ := data["rate"].(map[string]interface{})
 	if rate == nil {
 		t.Fatal("missing rate in rate_limit response")

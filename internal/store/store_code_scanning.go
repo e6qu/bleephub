@@ -38,6 +38,7 @@ const (
 	CodeScanningDismissedFalsePositive CodeScanningDismissedReason = "false positive"
 	CodeScanningDismissedWontFix       CodeScanningDismissedReason = "won't fix"
 	CodeScanningDismissedUsedInTests   CodeScanningDismissedReason = "used in tests"
+	CodeScanningDismissedMitigated     CodeScanningDismissedReason = "mitigated"
 )
 
 // CodeScanningAlertInstance is one occurrence of a code-scanning alert.
@@ -58,26 +59,30 @@ type CodeScanningAlertInstance struct {
 // CodeScanningAlert is a repo-scoped code-scanning alert produced by SARIF
 // uploads or the operator seeding endpoint.
 type CodeScanningAlert struct {
-	ID               int                         `json:"id"`
-	NodeID           string                      `json:"node_id"`
-	Number           int                         `json:"number"`
-	RepoKey          string                      `json:"repo_key"`
-	RuleID           string                      `json:"rule_id"`
-	RuleSeverity     string                      `json:"rule_severity"`
-	RuleDescription  string                      `json:"rule_description"`
-	ToolName         string                      `json:"tool_name"`
-	ToolGUID         string                      `json:"tool_guid"`
-	State            CodeScanningState           `json:"state"`
-	DismissedReason  CodeScanningDismissedReason `json:"dismissed_reason"`
-	DismissedComment string                      `json:"dismissed_comment"`
-	DismissedAt      *time.Time                  `json:"dismissed_at"`
-	FixedAt          *time.Time                  `json:"fixed_at"`
-	HTMLURL          string                      `json:"html_url"`
-	URL              string                      `json:"url"`
-	InstancesURL     string                      `json:"instances_url"`
-	Instances        []CodeScanningAlertInstance `json:"instances"`
-	CreatedAt        time.Time                   `json:"created_at"`
-	UpdatedAt        time.Time                   `json:"updated_at"`
+	ID           int    `json:"id"`
+	NodeID       string `json:"node_id"`
+	Number       int    `json:"number"`
+	RepoKey      string `json:"repo_key"`
+	RuleID       string `json:"rule_id"`
+	RuleSeverity string `json:"rule_severity"`
+	// SecuritySeverityLevel is the low/medium/high/critical bucket GitHub derives
+	// from a security rule's numeric SARIF `security-severity` score; empty for a
+	// non-security (quality) rule, which serializes it as null.
+	SecuritySeverityLevel string                      `json:"security_severity_level"`
+	RuleDescription       string                      `json:"rule_description"`
+	ToolName              string                      `json:"tool_name"`
+	ToolGUID              string                      `json:"tool_guid"`
+	State                 CodeScanningState           `json:"state"`
+	DismissedReason       CodeScanningDismissedReason `json:"dismissed_reason"`
+	DismissedComment      string                      `json:"dismissed_comment"`
+	DismissedAt           *time.Time                  `json:"dismissed_at"`
+	FixedAt               *time.Time                  `json:"fixed_at"`
+	HTMLURL               string                      `json:"html_url"`
+	URL                   string                      `json:"url"`
+	InstancesURL          string                      `json:"instances_url"`
+	Instances             []CodeScanningAlertInstance `json:"instances"`
+	CreatedAt             time.Time                   `json:"created_at"`
+	UpdatedAt             time.Time                   `json:"updated_at"`
 }
 
 // CodeScanningAnalysis is a single code-scanning analysis run for a repo.
@@ -275,7 +280,9 @@ func (st *Store) UpdateCodeScanningAlert(a *CodeScanningAlert, state, dismissedR
 }
 
 func validateCodeScanningTransition(currentState, newState, dismissedReason string) error {
-	if newState != "" && newState != "open" && newState != "dismissed" && newState != "fixed" {
+	// github's code-scanning-alert-set-state enum is open|dismissed; `fixed` is
+	// a system-derived response-only state a client PATCH cannot set (422).
+	if newState != "" && newState != "open" && newState != "dismissed" {
 		return fmt.Errorf("invalid state %q", newState)
 	}
 	if newState == "dismissed" && !isValidDismissedReason(dismissedReason) {
@@ -299,7 +306,7 @@ func validateCodeScanningTransition(currentState, newState, dismissedReason stri
 func isValidDismissedReason(r string) bool {
 	switch CodeScanningDismissedReason(r) {
 	case CodeScanningDismissedFalsePositive, CodeScanningDismissedWontFix,
-		CodeScanningDismissedUsedInTests:
+		CodeScanningDismissedUsedInTests, CodeScanningDismissedMitigated:
 		return true
 	}
 	return false
@@ -520,7 +527,7 @@ func (st *Store) createAnalysisAndAlertsLocked(batch *PersistBatch, repoKey, ref
 		if ruleID == "" {
 			ruleID, _ = result["rule_id"].(string)
 		}
-		ruleSeverity, ruleDescription := sarifRuleMetadata(run, ruleID)
+		ruleSeverity, ruleDescription, ruleSecurityLevel := sarifRuleMetadata(run, ruleID)
 		message := ""
 		if msg, ok := result["message"].(map[string]interface{}); ok {
 			message, _ = msg["text"].(string)
@@ -555,19 +562,20 @@ func (st *Store) createAnalysisAndAlertsLocked(batch *PersistBatch, repoKey, ref
 		st.CodeScanningNextNumber[repoKey] = number + 1
 
 		alert := &CodeScanningAlert{
-			ID:              st.NextCodeScanningAlertID,
-			NodeID:          fmt.Sprintf("CSWA%d", st.NextCodeScanningAlertID),
-			Number:          number,
-			RepoKey:         repoKey,
-			RuleID:          ruleID,
-			RuleSeverity:    ruleSeverity,
-			RuleDescription: ruleDescription,
-			ToolName:        toolName,
-			ToolGUID:        toolGUID,
-			State:           "open",
-			Instances:       instances,
-			CreatedAt:       now,
-			UpdatedAt:       now,
+			ID:                    st.NextCodeScanningAlertID,
+			NodeID:                fmt.Sprintf("CSWA%d", st.NextCodeScanningAlertID),
+			Number:                number,
+			RepoKey:               repoKey,
+			RuleID:                ruleID,
+			RuleSeverity:          ruleSeverity,
+			SecuritySeverityLevel: ruleSecurityLevel,
+			RuleDescription:       ruleDescription,
+			ToolName:              toolName,
+			ToolGUID:              toolGUID,
+			State:                 "open",
+			Instances:             instances,
+			CreatedAt:             now,
+			UpdatedAt:             now,
 		}
 		st.NextCodeScanningAlertID++
 
@@ -585,7 +593,7 @@ func (st *Store) createAnalysisAndAlertsLocked(batch *PersistBatch, repoKey, ref
 	return analysis
 }
 
-func sarifRuleMetadata(run map[string]interface{}, ruleID string) (severity, description string) {
+func sarifRuleMetadata(run map[string]interface{}, ruleID string) (severity, description, securityLevel string) {
 	tool, _ := run["tool"].(map[string]interface{})
 	driver, _ := tool["driver"].(map[string]interface{})
 	rules, _ := driver["rules"].([]interface{})
@@ -608,15 +616,42 @@ func sarifRuleMetadata(run map[string]interface{}, ruleID string) (severity, des
 			if severity == "" {
 				severity, _ = props["severity"].(string)
 			}
+			// A security rule carries a numeric "security-severity" score
+			// (0.0–10.0); GitHub buckets it into the alert's security level.
+			if score, ok := props["security-severity"].(string); ok {
+				securityLevel = securitySeverityLevel(score)
+			}
 		}
 		if severity == "" {
 			if cfg, ok := rule["defaultConfiguration"].(map[string]interface{}); ok {
 				severity, _ = cfg["level"].(string)
 			}
 		}
-		return severity, description
+		return severity, description, securityLevel
 	}
-	return "", ""
+	return "", "", ""
+}
+
+// securitySeverityLevel maps a SARIF numeric "security-severity" score to the
+// low/medium/high/critical bucket GitHub reports, using GitHub's CVSS-aligned
+// thresholds. An unparseable or empty score yields no level.
+func securitySeverityLevel(score string) string {
+	value, err := strconv.ParseFloat(strings.TrimSpace(score), 64)
+	if err != nil {
+		return ""
+	}
+	switch {
+	case value >= 9.0:
+		return "critical"
+	case value >= 7.0:
+		return "high"
+	case value >= 4.0:
+		return "medium"
+	case value >= 0.1:
+		return "low"
+	default:
+		return ""
+	}
 }
 
 func codeScanningInstanceFromLocation(loc interface{}, ref, analysisKey, category, commitSHA string) *CodeScanningAlertInstance {
