@@ -1752,6 +1752,100 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 		},
 	})
 
+	// --- submitPullRequestReview (submit a pending review) ---
+	// Matches github's signature: pullRequestId and pullRequestReviewId are both
+	// nullable (submit by review id, or by PR id to submit the viewer's pending
+	// review); event is required.
+	submitPRReviewInputType := graphql.NewInputObject(graphql.InputObjectConfig{
+		Name: "SubmitPullRequestReviewInput",
+		Fields: graphql.InputObjectConfigFieldMap{
+			"pullRequestId":       &graphql.InputObjectFieldConfig{Type: graphql.ID},
+			"pullRequestReviewId": &graphql.InputObjectFieldConfig{Type: graphql.ID},
+			"event":               &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(pullRequestReviewEventEnum)},
+			"body":                &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"clientMutationId":    &graphql.InputObjectFieldConfig{Type: graphql.String},
+		},
+	})
+	submitPRReviewPayloadType := graphql.NewObject(graphql.ObjectConfig{
+		Name: "SubmitPullRequestReviewPayload",
+		Fields: graphql.Fields{
+			"pullRequestReview": &graphql.Field{Type: prReviewType},
+			"clientMutationId":  &graphql.Field{Type: graphql.String},
+		},
+	})
+	s.registerMutation(mutationType, "submitPullRequestReview", &graphql.Field{
+		Type: submitPRReviewPayloadType,
+		Args: graphql.FieldConfigArgument{
+			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(submitPRReviewInputType)},
+		},
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			user := s.ghUserFromContext(p.Context)
+			input, _ := p.Args["input"].(map[string]interface{})
+			reviewNodeID, _ := input["pullRequestReviewId"].(string)
+			event, _ := input["event"].(string)
+			var review *store.PullRequestReview
+			if reviewNodeID != "" {
+				review = store.FindReviewByNodeID(s.store, reviewNodeID)
+			} else if prNodeID, _ := input["pullRequestId"].(string); prNodeID != "" {
+				// Submit the viewer's own pending review on the given PR.
+				if pr := store.FindPullRequestByNodeID(s.store, prNodeID); pr != nil && user != nil {
+					review = s.store.PendingReviewForAuthor(pr.ID, user.ID)
+				}
+			}
+			if review == nil {
+				return nil, gqlMissingNode("PullRequestReview", reviewNodeID)
+			}
+			// Only a pending review can be submitted, and DISMISS is not a submit
+			// action (it is its own mutation).
+			if !s.store.SubmitPullRequestReview(review.ID, event) {
+				return nil, fmt.Errorf("cannot submit a review that is not pending")
+			}
+			return map[string]interface{}{
+				"pullRequestReview": prReviewToGQL(s.store.GetPullRequestReview(review.ID), s.store),
+				"clientMutationId":  clientMutationID(input),
+			}, nil
+		},
+	})
+
+	// --- dismissPullRequestReview ---
+	dismissPRReviewInputType := graphql.NewInputObject(graphql.InputObjectConfig{
+		Name: "DismissPullRequestReviewInput",
+		Fields: graphql.InputObjectConfigFieldMap{
+			"pullRequestReviewId": &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
+			"message":             &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
+			"clientMutationId":    &graphql.InputObjectFieldConfig{Type: graphql.String},
+		},
+	})
+	dismissPRReviewPayloadType := graphql.NewObject(graphql.ObjectConfig{
+		Name: "DismissPullRequestReviewPayload",
+		Fields: graphql.Fields{
+			"pullRequestReview": &graphql.Field{Type: prReviewType},
+			"clientMutationId":  &graphql.Field{Type: graphql.String},
+		},
+	})
+	s.registerMutation(mutationType, "dismissPullRequestReview", &graphql.Field{
+		Type: dismissPRReviewPayloadType,
+		Args: graphql.FieldConfigArgument{
+			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(dismissPRReviewInputType)},
+		},
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			input, _ := p.Args["input"].(map[string]interface{})
+			reviewNodeID, _ := input["pullRequestReviewId"].(string)
+			message, _ := input["message"].(string)
+			review := store.FindReviewByNodeID(s.store, reviewNodeID)
+			if review == nil {
+				return nil, gqlMissingNode("PullRequestReview", reviewNodeID)
+			}
+			if !s.store.DismissPullRequestReview(review.ID, message) {
+				return nil, fmt.Errorf("review dismissal failed")
+			}
+			return map[string]interface{}{
+				"pullRequestReview": prReviewToGQL(s.store.GetPullRequestReview(review.ID), s.store),
+				"clientMutationId":  clientMutationID(input),
+			}, nil
+		},
+	})
+
 	updatePRInputType := graphql.NewInputObject(graphql.InputObjectConfig{
 		Name: "UpdatePullRequestInput",
 		Fields: graphql.InputObjectConfigFieldMap{
@@ -3109,4 +3203,13 @@ func (s *Resolver) searchIssuesAndPRs(query string, viewer *store.User) []gqlCon
 		items = append(items, d.item)
 	}
 	return items
+}
+
+// clientMutationID echoes back the optional Relay clientMutationId from a
+// mutation input (nil when absent/empty), for payloads that expose it.
+func clientMutationID(input map[string]interface{}) interface{} {
+	if v, ok := input["clientMutationId"].(string); ok && v != "" {
+		return v
+	}
+	return nil
 }

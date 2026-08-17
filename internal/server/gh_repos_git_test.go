@@ -144,6 +144,29 @@ func TestGitDataTreeAndCommit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("commit not in storage: %v", err)
 	}
+
+	// A child commit's parents[].url must point at the git-database commit
+	// endpoint (/git/commits/{sha}), matching the commit's own url — not the
+	// plain REST /commits/{sha} path.
+	body, _ = json.Marshal(map[string]any{
+		"message": "child",
+		"tree":    treeSHA,
+		"parents": []string{commitSHA},
+	})
+	w = doMiscReq(s, "POST", "/api/v3/repos/"+repo.FullName+"/git/commits", string(body))
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create child commit status = %d, want 201; body = %s", w.Code, w.Body.String())
+	}
+	var child map[string]any
+	json.Unmarshal(w.Body.Bytes(), &child)
+	parents, _ := child["parents"].([]any)
+	if len(parents) != 1 {
+		t.Fatalf("child parents = %v, want 1", child["parents"])
+	}
+	parentURL, _ := parents[0].(map[string]any)["url"].(string)
+	if !strings.Contains(parentURL, "/git/commits/"+commitSHA) {
+		t.Errorf("parents[0].url = %q, want it to contain /git/commits/%s", parentURL, commitSHA)
+	}
 }
 
 func TestGitDataGetTreeResolvesEveryDocumentedTreeish(t *testing.T) {

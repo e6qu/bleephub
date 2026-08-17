@@ -378,6 +378,16 @@ func (s *Server) handleListPRReviewCommentsForReview(w http.ResponseWriter, r *h
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
 
+// prCommentSubjectType reports GitHub's subject_type for a review comment: a
+// comment anchored to a diff line/position is "line"; one anchored to a whole
+// file (no line and no position) is "file".
+func prCommentSubjectType(c *store.PRReviewComment) string {
+	if c.Line == nil && c.StartLine == nil && c.Position == nil {
+		return "file"
+	}
+	return "line"
+}
+
 func prReviewCommentToJSON(c *store.PRReviewComment, st *store.Store, baseURL string, repo *store.Repo, pr *store.PullRequest) map[string]interface{} {
 	if c == nil {
 		return nil
@@ -405,6 +415,7 @@ func prReviewCommentToJSON(c *store.PRReviewComment, st *store.Store, baseURL st
 		"original_start_line":    c.OriginalStartLine,
 		"side":                   c.Side,
 		"start_side":             nullIfEmpty(c.StartSide),
+		"subject_type":           prCommentSubjectType(c),
 		"commit_id":              c.CommitID,
 		"original_commit_id":     c.OriginalCommitID,
 		"body":                   c.Body,

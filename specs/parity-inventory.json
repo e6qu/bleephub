@@ -207,19 +207,19 @@
       },
       {
         "event": "pull_request_review",
-        "line": 749,
+        "line": 758,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request_review",
-        "line": 1026,
+        "line": 1035,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request_review",
-        "line": 1083,
+        "line": 1098,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
@@ -243,13 +243,13 @@
       },
       {
         "event": "release",
-        "line": 527,
+        "line": 528,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_releases.go"
       },
       {
         "event": "release",
-        "line": 549,
+        "line": 550,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_releases.go"
       },
@@ -292,15 +292,15 @@
   "graphql": {
     "compatibility_gap_count": 9,
     "coverage": {
-      "bleephub_types": 265,
+      "bleephub_types": 269,
       "compatibility_gap_count": 9,
-      "implemented_fields": 929,
+      "implemented_fields": 943,
       "official_fields": 8360,
       "official_types": 1807,
-      "shared_types": 258,
-      "signature_exact_fields": 928
+      "shared_types": 262,
+      "signature_exact_fields": 942
     },
-    "introspection_snapshot_sha256": "98cc752a3e3a244e70af0c734eb764da60d3a5410c2c898afae0e9d74df6329d",
+    "introspection_snapshot_sha256": "423c5a39573e08e00610bd59e067805e582008f74a52f414f7ec5f2f38b4ce9f",
     "official_schema": {
       "content_sha256": "b716c6844750283b8c33200f660989337254e7158f40ed869f06418bafb3bc2e",
       "source": "https://docs.github.com/public/fpt/schema.docs.graphql"
@@ -2727,6 +2727,96 @@
         "status_kind": "fixed"
       },
       {
+        "category": "REST",
+        "finding": "in a git-database commit object the `parents[].url` used the plain REST `/commits/{sha}` path while the commit's own `url` (and every other serializer) uses `/git/commits/{sha}` \u2014 the vendored `git-commit` example anchors parents at the git-database endpoint",
+        "id": "REST-151",
+        "location": "gh_repos_git.go",
+        "severity": "m",
+        "status": "fixed \u2014 `gitCommitToJSON` now builds `parents[].url` with `/git/commits/`, consistent with the commit's own url (affects GET and POST `git/commits`). Verified: unit test creates a child commit and asserts the parent url contains `/git/commits/{sha}`",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "a pull-request review's `author_association` was hardcoded to OWNER-or-CONTRIBUTOR, so an org member reviewer was mislabeled CONTRIBUTOR and an unaffiliated reviewer got CONTRIBUTOR instead of NONE (the sibling review-comment serializer already resolved it correctly)",
+        "id": "REST-152",
+        "location": "gh_pulls_rest.go",
+        "severity": "m",
+        "status": "fixed \u2014 `reviewToJSON` now derives it via `store.AuthorAssociationLocked` (OWNER/MEMBER/COLLABORATOR/CONTRIBUTOR/NONE). Verified: unit test asserts a push collaborator's review reports COLLABORATOR",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "`POST .../pulls/{n}/reviews` accepted an empty `body` for a COMMENT or REQUEST_CHANGES event (github 422s \u2014 body is required for those events), and its 422s used the object `validation-error` shape though this operation documents `validation-error-simple` (errors as strings)",
+        "id": "REST-153",
+        "location": "gh_pulls_rest.go",
+        "severity": "m",
+        "status": "fixed \u2014 the handler 422s a missing body for COMMENT/REQUEST_CHANGES, and all three 422s on this operation (event/comments/body) now emit the simple string-errors shape the spec + shape ratchet require. Verified: unit test asserts COMMENT/REQUEST_CHANGES without a body are 422'd while APPROVE is not; ratchet green",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "`PUT .../reviews/{id}/dismissals` accepted an empty/missing `message` though the vendored spec marks it required",
+        "id": "REST-154",
+        "location": "gh_pulls_rest.go",
+        "severity": "m",
+        "status": "fixed \u2014 the handler 422s an empty message (validation-error-simple shape). Verified: unit test asserts a message-less dismiss is 422'd and a message-carrying one succeeds",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "pull-request review comments omitted github's `subject_type` (`line`/`file`) field",
+        "id": "REST-155",
+        "location": "gh_pr_comments.go",
+        "severity": "m",
+        "status": "fixed \u2014 the serializer now emits `subject_type` (`file` when the comment has no line/position, else `line`). Named remainder: accepting `subject_type=file` on the CREATE endpoint (a genuine file-level comment) needs a stored subject-type + relaxed line validation \u2014 a follow-up",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "the release-asset object omitted the required `digest` field (a `sha256:<hex>` of the uploaded bytes) \u2014 uncaught because asset endpoints are only exercised through the unobserved test server",
+        "id": "REST-156",
+        "location": "gh_releases.go, internal/store/releases.go",
+        "severity": "m",
+        "status": "fixed \u2014 `CreateReleaseAsset` computes and stores the sha256 digest and `releaseAssetToJSON` emits it. Verified: unit test asserts the digest of the uploaded bytes",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "uploading a second release asset with an existing name silently created a duplicate (github 422s)",
+        "id": "REST-157",
+        "location": "gh_releases.go, internal/store/releases.go",
+        "severity": "m",
+        "status": "fixed \u2014 `CreateReleaseAsset` returns a sentinel that the upload handler maps to a 422 name-already-exists validation error. Verified: unit test asserts a duplicate-name upload is 422'd",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "a conditional GET that resulted in `304 Not Modified` still consumed a primary-rate-limit unit and reported the consumed count in its `X-RateLimit-*` headers \u2014 github documents that a 304 is not billed, and bleephub advertises `X-Poll-Interval` to the very pollers this penalizes",
+        "id": "REST-158",
+        "location": "gh_middleware.go, rate_limits.go",
+        "severity": "M",
+        "status": "fixed \u2014 a refund seam on the response writer hands the unit back when a 304 is emitted (both the ETag and Last-Modified paths) and recomputes the headers; the consume/refund share one window-key helper (dupl-clean). Verified: unit test asserts a 304 re-request leaves `X-RateLimit-Remaining` unchanged",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "the `Link` rel URLs always injected `per_page` (materializing the default) even when the client never sent it \u2014 github only carries `per_page` into the Link targets when the client supplied it",
+        "id": "REST-159",
+        "location": "gh_pagination.go",
+        "severity": "m",
+        "status": "fixed \u2014 `buildLinkHeader` echoes the resolved `per_page` only when the request carried one. Verified: unit test asserts per_page appears when sent and is absent otherwise",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "CODEOWNERS are parsed and validated but never auto-requested as reviewers when a PR is opened, and the branch-protection `require_code_owner_reviews` flag is stored but not enforced at merge \u2014 github does both",
+        "id": "REST-160",
+        "location": "gh_pulls_rest.go, gh_branch_protection.go, gh_repos_reads.go",
+        "severity": "M",
+        "status": "deferred \u2014 named remainder: needs a changed-path\u2192CODEOWNERS glob matcher feeding `RequestReviewers`/`RequestTeamReviewers` on PR open, plus a code-owner clause in the merge gate. Scoped for a dedicated follow-up (a matching engine + gating with its own tests), disproportionate to fold into this pass",
+        "status_kind": "deferred"
+      },
+      {
         "category": "GQL",
         "finding": "`POST /api/graphql` serves anonymous requests; real GitHub 401s every unauthenticated request",
         "id": "GQL-001",
@@ -3390,6 +3480,15 @@
         "location": "gh_projects_v2_graphql.go, gh_repos_graphql.go",
         "severity": "M",
         "status": "fixed \u2014 added `deleteProjectV2Item(input{projectId,itemId})` returning `deletedItemId`; it resolves the project and item, refuses an item that belongs to another project, deletes through the store, and is gated by the same owner-scoped `projectRule` as the sibling project mutations (with a policy-table row and refusal case, so the coverage tests stay green). Verified: unit tests assert the owner deletes their own item and receives its node id back, a stranger is refused, and an item from another project is not found; the introspection snapshot and official-schema ratchet were regenerated",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "GQL",
+        "finding": "the GraphQL schema exposed `addPullRequestReview` and thread resolve/unresolve but not the review-lifecycle mutations `submitPullRequestReview` and `dismissPullRequestReview`, though the store fully backs both \u2014 a client could create a review but neither submit a pending one nor dismiss one over GraphQL",
+        "id": "GQL-064",
+        "location": "gh_pulls_graphql.go, gh_repos_graphql.go",
+        "severity": "M",
+        "status": "fixed \u2014 registered both (signature-exact to the official schema: submit takes nullable pullRequestId/pullRequestReviewId + required event, dismiss takes required pullRequestReviewId + message), gated by a new owner-scoped `mutationTargetReview` authz target (read-level submit with authorMayAct, push-level dismiss), each with a policy-table row + refusal/entitled coverage case; introspection snapshot + official-schema ratchet regenerated. Verified: authz refusal/entitled cases plus a behavioral test that submits a pending review (\u2192 APPROVED) then dismisses it (\u2192 DISMISSED). Named remainders: `requestReviews`, `addPullRequestReviewThread`/`addPullRequestReviewComment` (need a team-node resolver + diff-position plumbing), the pending-by-default lifecycle for `addPullRequestReview`, and computing `PullRequestReviewThread.isOutdated` against the head diff \u2014 each a scoped follow-up",
         "status_kind": "fixed"
       },
       {
@@ -6669,6 +6768,15 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "the PR sidebar could request/remove USER reviewers but only *displayed* requested teams \u2014 the team chips were non-interactive and there was no team picker, though `POST/DELETE .../requested_reviewers` accept `team_reviewers` and `fetchOrgTeams` already lists an org's teams",
+        "id": "WEB-199",
+        "location": "web/src/pages/PullsPage.tsx, web/src/api.ts",
+        "severity": "m",
+        "status": "fixed \u2014 `requestPRReviewers`/`removePRRequestedReviewers` gained a `teamSlugs` argument (sending `team_reviewers`); `RequestedReviewersSection` fetches the owning org's teams (tolerating the expected 404 for user-owned repos), makes the team chips removable, and adds a \"Request team review\u2026\" picker of not-yet-requested teams, each with its own error surface. Verified: unit test asserts selecting a team POSTs `team_reviewers:[slug]` and removing one DELETEs it; existing user-reviewer test updated for the `team_reviewers:[]` field",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -8062,9 +8170,9 @@
         },
         "GQL": {
           "status": {
-            "fixed": 63
+            "fixed": 64
           },
-          "total": 63
+          "total": 64
         },
         "PAR": {
           "status": {
@@ -8074,9 +8182,10 @@
         },
         "REST": {
           "status": {
-            "fixed": 150
+            "deferred": 1,
+            "fixed": 159
           },
-          "total": 150
+          "total": 160
         },
         "STORE": {
           "status": {
@@ -8094,21 +8203,21 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 196
+            "fixed": 197
           },
-          "total": 198
+          "total": 199
         }
       },
       "severity": {
         "blocker": 167,
-        "major": 420,
-        "minor": 268
+        "major": 423,
+        "minor": 277
       },
       "status": {
-        "deferred": 3,
-        "fixed": 852
+        "deferred": 4,
+        "fixed": 863
       },
-      "total": 855
+      "total": 867
     }
   },
   "rest": {
@@ -21514,7 +21623,7 @@
         "source": "runtime route table (programmatic registration)"
       },
       {
-        "line": 65,
+        "line": 66,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/releases/{release_id}",
         "source": "internal/server/gh_releases.go"
@@ -25522,7 +25631,7 @@
         "source": "internal/server/gh_repos_reads.go"
       },
       {
-        "line": 52,
+        "line": 53,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/releases",
         "source": "internal/server/gh_releases.go"
@@ -25534,7 +25643,7 @@
         "source": "runtime route table (programmatic registration)"
       },
       {
-        "line": 54,
+        "line": 55,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/releases/latest",
         "source": "internal/server/gh_releases.go"
@@ -25546,7 +25655,7 @@
         "source": "runtime route table (programmatic registration)"
       },
       {
-        "line": 61,
+        "line": 62,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/releases/{release_id}",
         "source": "internal/server/gh_releases.go"
@@ -27070,7 +27179,7 @@
         "source": "runtime route table (programmatic registration)"
       },
       {
-        "line": 63,
+        "line": 64,
         "method": "PATCH",
         "path": "/api/v3/repos/{owner}/{repo}/releases/{release_id}",
         "source": "internal/server/gh_releases.go"
@@ -28342,13 +28451,13 @@
         "source": "internal/server/gh_codespaces.go"
       },
       {
-        "line": 50,
+        "line": 51,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/releases",
         "source": "internal/server/gh_releases.go"
       },
       {
-        "line": 56,
+        "line": 57,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/releases/generate-notes",
         "source": "internal/server/gh_releases.go"
