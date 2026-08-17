@@ -1026,7 +1026,7 @@ func (s *Resolver) addRepoFieldsToSchema(
 
 			found := store.FindRepoByNodeID(s.store, repoID)
 			if found == nil {
-				return nil, fmt.Errorf("could not resolve to a Repository with the global id of '%s'", repoID)
+				return nil, gqlMissingNode("Repository", repoID)
 			}
 
 			if _, err := s.store.DeleteRepo(found.Owner.Login, found.Name); err != nil {
@@ -1396,6 +1396,24 @@ func externalURL(path string) string {
 func gqlMissingNode(typeName, nodeID string) error {
 	return &ghNotFoundError{
 		message: fmt.Sprintf("Could not resolve to a %s with the global id of '%s'.", typeName, nodeID),
+	}
+}
+
+// gqlMissingNodeType is gqlMissingNode for mutation paths that resolve a nested
+// node (or have already consumed the offending id) and know only the type. It
+// still returns a NOT_FOUND-typed error so a client can distinguish "no such
+// object" from a transport failure — the type stamp is what GitHub carries and
+// what these paths previously dropped by returning a bare fmt.Errorf.
+func gqlMissingNodeType(typeName string) error {
+	article := "a"
+	if len(typeName) > 0 {
+		switch typeName[0] {
+		case 'A', 'E', 'I', 'O', 'U':
+			article = "an"
+		}
+	}
+	return &ghNotFoundError{
+		message: fmt.Sprintf("Could not resolve to %s %s with the id provided.", article, typeName),
 	}
 }
 

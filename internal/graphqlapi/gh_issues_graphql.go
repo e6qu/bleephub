@@ -913,7 +913,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 
 			repo := store.FindRepoByNodeID(s.store, repoNodeID)
 			if repo == nil {
-				return nil, fmt.Errorf("could not resolve to a Repository with the global id of '%s'", repoNodeID)
+				return nil, gqlMissingNode("Repository", repoNodeID)
 			}
 
 			labelIDPtr, err := resolveGQLLabelIDs(s.store, repo.ID, input["labelIds"])
@@ -943,7 +943,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 			if itNodeID, ok := input["issueTypeId"].(string); ok && itNodeID != "" {
 				it := store.FindIssueTypeByNodeID(s.store, itNodeID)
 				if it == nil || s.store.GetAssignableIssueTypeForRepo(repo, it.ID) == nil {
-					return nil, fmt.Errorf("could not resolve to an IssueType with the global id of '%s'", itNodeID)
+					return nil, gqlMissingNode("IssueType", itNodeID)
 				}
 				issueTypeID = it.ID
 			}
@@ -970,7 +970,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 					}
 					proj := s.store.ProjectsV2.LookupProjectByNodeID(nodeID)
 					if proj == nil {
-						return nil, fmt.Errorf("could not resolve to a ProjectV2 with the global id of '%s'", nodeID)
+						return nil, gqlMissingNode("ProjectV2", nodeID)
 					}
 					s.store.ProjectsV2.AddItem(proj.ID, "Issue", issue.ID, user.ID)
 				}
@@ -1018,7 +1018,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 
 			issue := store.FindIssueByNodeID(s.store, issueNodeID)
 			if issue == nil {
-				return nil, fmt.Errorf("could not resolve to an Issue")
+				return nil, gqlMissingNodeType("Issue")
 			}
 			previousState := issue.State
 
@@ -1063,7 +1063,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 
 			issue := store.FindIssueByNodeID(s.store, issueNodeID)
 			if issue == nil {
-				return nil, fmt.Errorf("could not resolve to an Issue")
+				return nil, gqlMissingNodeType("Issue")
 			}
 			previousState := issue.State
 
@@ -1138,7 +1138,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 					"subject":     pullRequestToGQL(pr, s.store),
 				}, nil
 			}
-			return nil, fmt.Errorf("could not resolve to a node with the global id of '%s'", subjectNodeID)
+			return nil, gqlMissingNode("node", subjectNodeID)
 		},
 	})
 
@@ -1177,18 +1177,18 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 
 			issue := store.FindIssueByNodeID(s.store, issueNodeID)
 			if issue == nil {
-				return nil, fmt.Errorf("could not resolve to an Issue")
+				return nil, gqlMissingNodeType("Issue")
 			}
 			repo := s.store.GetRepoByID(issue.RepoID)
 			if repo == nil {
-				return nil, fmt.Errorf("could not resolve to a Repository")
+				return nil, gqlMissingNodeType("Repository")
 			}
 			var issueTypeID *int
 			if raw, present := input["issueTypeId"]; present {
 				if itNodeID, ok := raw.(string); ok && itNodeID != "" {
 					it := store.FindIssueTypeByNodeID(s.store, itNodeID)
 					if it == nil || s.store.GetAssignableIssueTypeForRepo(repo, it.ID) == nil {
-						return nil, fmt.Errorf("could not resolve to an IssueType with the global id of '%s'", itNodeID)
+						return nil, gqlMissingNode("IssueType", itNodeID)
 					}
 					resolved := it.ID
 					issueTypeID = &resolved

@@ -366,6 +366,16 @@ func (s *Server) handleGetIssue(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, issueToJSON(issue, s.store, s.baseURL(r), repo.FullName))
 }
 
+// intSet builds a membership set from an int slice, for diffing old vs new
+// label/assignee sets on an issue edit.
+func intSet(ids []int) map[int]bool {
+	m := make(map[int]bool, len(ids))
+	for _, id := range ids {
+		m[id] = true
+	}
+	return m
+}
+
 func (s *Server) handleUpdateIssue(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
@@ -545,6 +555,44 @@ func (s *Server) handleUpdateIssue(w http.ResponseWriter, r *http.Request) {
 	})
 
 	updated := s.store.GetIssue(issue.ID)
+
+	// Editing labels/assignees/milestone through the update-issue endpoint
+	// records the same timeline events github's dedicated sub-resource
+	// endpoints do. `issue` is the pre-update snapshot, so its slices are the
+	// old sets; diff against the requested new sets and emit per change.
+	if labelIDs != nil {
+		old, next := intSet(issue.LabelIDs), intSet(*labelIDs)
+		for _, id := range *labelIDs {
+			if !old[id] {
+				s.store.RecordIssueEvent(repo.ID, issue.ID, user.ID, "labeled", map[string]interface{}{"label_id": id})
+			}
+		}
+		for _, id := range issue.LabelIDs {
+			if !next[id] {
+				s.store.RecordIssueEvent(repo.ID, issue.ID, user.ID, "unlabeled", map[string]interface{}{"label_id": id})
+			}
+		}
+	}
+	if assigneeIDs != nil {
+		old, next := intSet(issue.AssigneeIDs), intSet(*assigneeIDs)
+		for _, id := range *assigneeIDs {
+			if !old[id] {
+				s.store.RecordIssueEvent(repo.ID, issue.ID, user.ID, "assigned", map[string]interface{}{"assignee_id": id, "assigner_id": user.ID})
+			}
+		}
+		for _, id := range issue.AssigneeIDs {
+			if !next[id] {
+				s.store.RecordIssueEvent(repo.ID, issue.ID, user.ID, "unassigned", map[string]interface{}{"assignee_id": id, "assigner_id": user.ID})
+			}
+		}
+	}
+	if milestoneID != nil && *milestoneID != issue.MilestoneID {
+		if *milestoneID != 0 {
+			s.store.RecordIssueEvent(repo.ID, issue.ID, user.ID, "milestoned", map[string]interface{}{"milestone_id": *milestoneID})
+		} else {
+			s.store.RecordIssueEvent(repo.ID, issue.ID, user.ID, "demilestoned", map[string]interface{}{"milestone_id": issue.MilestoneID})
+		}
+	}
 
 	if v, ok := req["state"].(string); ok {
 		action := "edited"

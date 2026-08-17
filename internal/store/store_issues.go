@@ -233,22 +233,53 @@ func (st *Store) recordIssueEventWithIDsBatchLocked(batch *PersistBatch, repoID,
 func (st *Store) RecordIssueEvent(repoID, issueID, actorID int, event string, payload map[string]interface{}) *IssueEvent {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
+	return st.recordEventLocked(repoID, issueID, actorID, event, "issue", payload)
+}
 
-	labelID := intFromPayload(payload, "label_id")
-	assigneeID := intFromPayload(payload, "assignee_id")
-	assignerID := intFromPayload(payload, "assigner_id")
-	milestoneID := intFromPayload(payload, "milestone_id")
-	commentID := intFromPayload(payload, "comment_id")
+// RecordIssueOrPREvent records a timeline event against whichever of the issue
+// or pull request in repoID carries `number`, stamping the correct ParentType.
+// Shared issue+PR endpoints (lock/unlock) must use this rather than
+// RecordIssueEvent, which always parents to an issue — a PR event parented to
+// "issue" is filtered out of the PR timeline and can collide into an unrelated
+// issue's events, since the two ID spaces are independent.
+func (st *Store) RecordIssueOrPREvent(repoID, number, actorID int, event string, payload map[string]interface{}) *IssueEvent {
+	st.Mu.Lock()
+	defer st.Mu.Unlock()
+	parentType := "issue"
+	var parentID int
+	for _, i := range st.Issues {
+		if i.RepoID == repoID && i.Number == number {
+			parentID = i.ID
+			break
+		}
+	}
+	if parentID == 0 {
+		for _, pr := range st.PullRequests {
+			if pr.RepoID == repoID && pr.Number == number {
+				parentID = pr.ID
+				parentType = "pull_request"
+				break
+			}
+		}
+	}
+	if parentID == 0 {
+		return nil
+	}
+	return st.recordEventLocked(repoID, parentID, actorID, event, parentType, payload)
+}
 
+// recordEventLocked builds a complete IssueEvent from payload and persists it in
+// one write. Callers hold st.Mu. parentType is "issue" or "pull_request".
+func (st *Store) recordEventLocked(repoID, parentID, actorID int, event, parentType string, payload map[string]interface{}) *IssueEvent {
 	// Build the event fully before persisting so the row reaches the database
 	// exactly once, complete, instead of a bare put followed by a re-put with
 	// the string fields filled in (STORE-001/002).
-	e := st.buildIssueEventLocked(repoID, issueID, actorID, event, "issue")
-	e.LabelID = labelID
-	e.AssigneeID = assigneeID
-	e.AssignerID = assignerID
-	e.MilestoneID = milestoneID
-	e.CommentID = commentID
+	e := st.buildIssueEventLocked(repoID, parentID, actorID, event, parentType)
+	e.LabelID = intFromPayload(payload, "label_id")
+	e.AssigneeID = intFromPayload(payload, "assignee_id")
+	e.AssignerID = intFromPayload(payload, "assigner_id")
+	e.MilestoneID = intFromPayload(payload, "milestone_id")
+	e.CommentID = intFromPayload(payload, "comment_id")
 	if v, ok := payload["commit_id"].(string); ok {
 		e.CommitID = v
 	}
@@ -1292,26 +1323,6 @@ func (st *Store) CountCommentsFor(parentType string, parentID int) int {
 // st.Mu (the JSON serializers gather under one lock).
 func (st *Store) CountCommentsForLocked(parentType string, parentID int) int {
 	return st.CommentCounts[CommentCountKey(parentType, parentID)]
-}
-
-// GetIssueOrPullRequestIDByNumber returns the global ID of the issue or
-// pull request with the given repo + number, or 0 when neither exists.
-// PRs share the issue number namespace in GitHub, so the same number can
-// identify either kind of object.
-func (st *Store) GetIssueOrPullRequestIDByNumber(repoID, number int) int {
-	st.Mu.RLock()
-	defer st.Mu.RUnlock()
-	for _, i := range st.Issues {
-		if i.RepoID == repoID && i.Number == number {
-			return i.ID
-		}
-	}
-	for _, pr := range st.PullRequests {
-		if pr.RepoID == repoID && pr.Number == number {
-			return pr.ID
-		}
-	}
-	return 0
 }
 
 // ResolveCommentParent resolves the issue or pull request with the given

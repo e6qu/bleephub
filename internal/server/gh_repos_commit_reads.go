@@ -58,9 +58,7 @@ func (s *Server) handleGetSingleCommit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	base := s.baseURL(r)
-	out := commitToJSON(commit, repo, base)
-	out["author"] = s.commitSignatureUser(commit.Author)
-	out["committer"] = s.commitSignatureUser(commit.Committer)
+	out := commitToJSON(commit, repo, s.store, base)
 
 	files, additions, deletions, err := commitDiffEntries(commit, repo, base)
 	if err != nil {
@@ -105,16 +103,6 @@ func commitUnifiedDiff(commit *object.Commit) (string, error) {
 		out.WriteString(patch.String())
 	}
 	return out.String(), nil
-}
-
-// commitSignatureUser resolves a git signature to a real bleephub account by
-// email or login. Unresolvable signatures are null, as on real GitHub for
-// commits authored under an email no account owns.
-func (s *Server) commitSignatureUser(sig object.Signature) interface{} {
-	if u := s.store.ResolveUserBySignature(sig.Name, sig.Email); u != nil {
-		return store.UserToJSON(u)
-	}
-	return nil
 }
 
 // commitDiffEntries computes the diff-entry list (with per-file patch text

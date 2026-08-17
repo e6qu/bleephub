@@ -2,7 +2,6 @@ package graphqlapi
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/e6qu/bleephub/internal/store"
 	"github.com/graphql-go/graphql"
@@ -115,7 +114,7 @@ func (s *Resolver) addReactionMutationsToSchema(mutationType *graphql.Object) {
 			contentEnum, _ := input["content"].(string)
 			parentType, parentID, ok := s.resolveReactableSubject(subjectID)
 			if !ok {
-				return nil, fmt.Errorf("could not resolve to a Reactable with the node id of '%s'", subjectID)
+				return nil, gqlMissingNode("Reactable", subjectID)
 			}
 			if _, _, err := s.store.Reactions.AddReaction(parentType, parentID, viewer.ID, graphQLToReactionContent(contentEnum)); err != nil {
 				return nil, err
@@ -134,7 +133,7 @@ func (s *Resolver) addReactionMutationsToSchema(mutationType *graphql.Object) {
 			contentEnum, _ := input["content"].(string)
 			parentType, parentID, ok := s.resolveReactableSubject(subjectID)
 			if !ok {
-				return nil, fmt.Errorf("could not resolve to a Reactable with the node id of '%s'", subjectID)
+				return nil, gqlMissingNode("Reactable", subjectID)
 			}
 			content := graphQLToReactionContent(contentEnum)
 			for _, r := range s.store.Reactions.ListReactions(parentType, parentID, content) {

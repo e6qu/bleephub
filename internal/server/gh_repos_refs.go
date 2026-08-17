@@ -355,7 +355,7 @@ func (s *Server) handleGetBranch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if commit := resolveCommit(stor, ref.Hash()); commit != nil {
-		result["commit"] = commitToJSON(commit, repo, base)
+		result["commit"] = commitToJSON(commit, repo, s.store, base)
 	}
 
 	writeJSON(w, http.StatusOK, result)
