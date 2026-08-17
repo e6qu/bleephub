@@ -179,7 +179,7 @@ func TestSearchQueryGrammarAndQualifierValidation(t *testing.T) {
 		"reversed-range":        "/api/v3/search/repositories?q=topics%3A7..2",
 		"invalid-date":          "/api/v3/search/repositories?q=created%3Ayesterday",
 		"invalid-boolean":       "/api/v3/search/repositories?q=archived%3Amaybe",
-		"wrong-endpoint":        "/api/v3/search/issues?q=archived%3Atrue",
+		"wrong-endpoint":        "/api/v3/search/issues?q=stars%3A%3E10",
 		"ignored-repo-label":    "/api/v3/search/repositories?q=label%3Abug",
 		"negated-location":      "/api/v3/search/repositories?q=-in%3Aname",
 		"unsupported-has-value": "/api/v3/search/repositories?q=has%3Amagic",

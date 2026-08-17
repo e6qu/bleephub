@@ -89,6 +89,12 @@ func TestOIDCCustomSubIsScopedPerRepository(t *testing.T) {
 			t.Fatal(err)
 		}
 		keys, _ := body["include_claim_keys"].([]interface{})
+		// The repo route returns oidc-custom-sub-repo, whose use_default is
+		// required and false when the repo carries its own claim keys.
+		wantDefault := len(keys) == 0
+		if ud, ok := body["use_default"].(bool); !ok || ud != wantDefault {
+			t.Fatalf("GET %s use_default = %v (present=%v), want %v", repo, body["use_default"], ok, wantDefault)
+		}
 		return keys
 	}
 	if a := get("repo-a"); len(a) != 2 {

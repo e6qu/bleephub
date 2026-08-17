@@ -36,12 +36,17 @@ func (s *Server) handleGetCombinedStatus(w http.ResponseWriter, r *http.Request)
 	for _, st := range page {
 		out = append(out, commitStatusToJSON(st, s.store, s.baseURL(r), repo.FullName))
 	}
+	base := s.baseURL(r)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"state":       state,
 		"sha":         ref,
 		"total_count": total,
 		"statuses":    out,
-		"repository":  store.RepoToJSON(repo, s.store, s.baseURL(r)),
+		"repository":  store.RepoToJSON(repo, s.store, base),
+		// url and commit_url are required members of combined-commit-status;
+		// GitHub points them at the combined-status resource and the commit.
+		"url":        fmt.Sprintf("%s/api/v3/repos/%s/commits/%s/status", base, repo.FullName, ref),
+		"commit_url": fmt.Sprintf("%s/api/v3/repos/%s/commits/%s", base, repo.FullName, ref),
 	})
 }
 

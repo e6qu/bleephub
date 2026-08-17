@@ -117,7 +117,7 @@ describe("ReleasesPage", () => {
     render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/ui/repos/admin/release/releases/1"]}><Routes><Route path="/ui/repos/:owner/:repo/releases/:releaseId" element={<ReleasesPage />} /></Routes></MemoryRouter></QueryClientProvider>);
 
     fireEvent.click(await screen.findByRole("button", { name: "add reaction" }));
-    fireEvent.click(screen.getByRole("button", { name: "react with heart" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "react with heart" }));
     await waitFor(() => {
       const call = mockFetch.mock.calls.find(
         (c) => String(c[0]).endsWith("/releases/1/reactions") && c[1]?.method === "POST",

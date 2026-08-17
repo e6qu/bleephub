@@ -133,6 +133,7 @@ func pushCommitPayloads(stor gitStorage.Storer, before, after plumbing.Hash, rep
 	out := make([]map[string]interface{}, 0, len(commits))
 	for i := len(commits) - 1; i >= 0; i-- {
 		commit := commits[i]
+		added, removed, modified := commitFileChanges(commit)
 		out = append(out, map[string]interface{}{
 			"id":        commit.Hash.String(),
 			"tree_id":   commit.TreeHash.String(),
@@ -150,12 +151,54 @@ func pushCommitPayloads(stor gitStorage.Storer, before, after plumbing.Hash, rep
 				"email":    commit.Committer.Email,
 				"username": nil,
 			},
-			"added":    []string{},
-			"removed":  []string{},
-			"modified": []string{},
+			"added":    added,
+			"removed":  removed,
+			"modified": modified,
 		})
 	}
 	return out
+}
+
+// commitFileChanges diffs a commit against its first parent to fill a push
+// event's per-commit added/removed/modified paths. GitHub populates these and
+// consumers (CI path filters, deploy bots) branch on them, so an empty set is a
+// fidelity break. A root commit (no parent) reports every file as added.
+func commitFileChanges(commit *object.Commit) (added, removed, modified []string) {
+	added, removed, modified = []string{}, []string{}, []string{}
+	commitTree, err := commit.Tree()
+	if err != nil {
+		return
+	}
+	if commit.NumParents() == 0 {
+		_ = commitTree.Files().ForEach(func(f *object.File) error {
+			added = append(added, f.Name)
+			return nil
+		})
+		return
+	}
+	parent, err := commit.Parent(0)
+	if err != nil {
+		return
+	}
+	parentTree, err := parent.Tree()
+	if err != nil {
+		return
+	}
+	changes, err := object.DiffTree(parentTree, commitTree)
+	if err != nil {
+		return
+	}
+	for _, c := range changes {
+		switch {
+		case c.From.Name == "":
+			added = append(added, c.To.Name)
+		case c.To.Name == "":
+			removed = append(removed, c.From.Name)
+		default:
+			modified = append(modified, c.To.Name)
+		}
+	}
+	return
 }
 
 func coalesceUserLogin(user *store.User) string {
@@ -317,7 +360,7 @@ func buildPullRequestReviewPayload(
 	return payload
 }
 
-func buildPingPayload(repo *store.Repo, hook *store.Webhook) map[string]interface{} {
+func buildPingPayload(repo *store.Repo, hook *store.Webhook, sender *store.User) map[string]interface{} {
 	payload := map[string]interface{}{
 		"zen":     "Keep it logically awesome.",
 		"hook_id": hook.ID,
@@ -332,6 +375,8 @@ func buildPingPayload(repo *store.Repo, hook *store.Webhook) map[string]interfac
 				"content_type": store.CoalesceStr(hook.ContentType, "json"),
 			},
 		},
+		// GitHub's ping event carries the acting user like every other event.
+		"sender": senderPayload(sender),
 	}
 	if repo != nil {
 		payload["repository"] = repoPayload(repo)

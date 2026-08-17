@@ -52,7 +52,7 @@ describe("EditableCommentList reactions", () => {
       </QueryClientProvider>,
     );
     fireEvent.click(await screen.findByRole("button", { name: "add reaction" }));
-    fireEvent.click(screen.getByRole("button", { name: "react with heart" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "react with heart" }));
     await waitFor(() => {
       const post = mockFetch.mock.calls.find(([u, i]) => String(u).endsWith("/issues/comments/42/reactions") && i?.method === "POST");
       expect(post).toBeTruthy();

@@ -265,7 +265,7 @@ resource "aws_route_table_association" "private" {
 module "fck_nat" {
   count   = local.uses_existing_network ? 0 : 1
   source  = "RaJiska/fck-nat/aws"
-  version = "1.6.0"
+  version = "1.6.1"
 
   name                 = "${var.name}-fck-nat"
   vpc_id               = aws_vpc.this[0].id

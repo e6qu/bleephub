@@ -244,14 +244,15 @@ func TestUpdateOrg(t *testing.T) {
 	}
 }
 
-// TestDeleteOrg verifies DELETE → 204, subsequent GET → 404.
+// TestDeleteOrg verifies DELETE → 202 (async), subsequent GET → 404.
 func TestDeleteOrg(t *testing.T) {
 	createOrgViaAdminAPI(t, "testorg-delete")
 
 	resp := ghDelete(t, "/api/v3/orgs/testorg-delete", defaultToken)
 	defer resp.Body.Close()
-	if resp.StatusCode != 204 {
-		t.Fatalf("expected 204, got %d", resp.StatusCode)
+	// GitHub deletes organizations asynchronously and answers 202 Accepted.
+	if resp.StatusCode != 202 {
+		t.Fatalf("expected 202, got %d", resp.StatusCode)
 	}
 
 	resp2 := ghGet(t, "/api/v3/orgs/testorg-delete", "")

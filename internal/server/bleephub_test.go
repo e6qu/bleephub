@@ -136,8 +136,9 @@ func TestMain(m *testing.M) {
 
 	// The admin token has no default — every consumer (incl. the test harness)
 	// must set it explicitly. defaultToken is the non-PAT value the tests use.
-	// Webhook delivery is https-only; trust the shared httptest TLS certificate
-	// so loopback httptest.NewTLSServer receivers verify without insecure_ssl.
+	// Webhook delivery accepts http and https; many tests still use TLS
+	// httptest.NewTLSServer receivers, so trust the shared certificate here to
+	// let those loopback receivers verify without insecure_ssl.
 	installWebhookTestTLSRoots()
 	_, hostKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {

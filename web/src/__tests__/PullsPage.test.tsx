@@ -513,7 +513,7 @@ describe("PullsPage review comment threads", () => {
     );
     const addButtons = screen.getAllByRole("button", { name: "add reaction" });
     fireEvent.click(addButtons[addButtons.length - 1]!);
-    fireEvent.click(screen.getByRole("button", { name: "react with heart" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "react with heart" }));
     await waitFor(() => {
       expect(findCall("/pulls/comments/11/reactions", "POST")).toBeDefined();
     });
@@ -721,7 +721,7 @@ describe("PullsPage reactions", () => {
     renderAt("/ui/repos/admin/test/pulls/9");
 
     fireEvent.click(await screen.findByRole("button", { name: "add reaction" }));
-    fireEvent.click(screen.getByRole("button", { name: "react with heart" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "react with heart" }));
     await waitFor(() => {
       expect(findCall("/issues/9/reactions", "POST")).toBeDefined();
     });

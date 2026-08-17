@@ -92,6 +92,8 @@ func (s *Server) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 			}
 			if graphqlapi.ErrorIsNotFound(fe) {
 				item["type"] = "NOT_FOUND"
+			} else if graphqlapi.ErrorIsForbidden(fe) {
+				item["type"] = "FORBIDDEN"
 			}
 			errItems = append(errItems, item)
 		}

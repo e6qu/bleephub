@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { InlineError } from "@bleephub/ui-core/components";
+import { useDismiss } from "../hooks/useDismiss.js";
 import type { GithubReaction, GithubReactionContent } from "../types.js";
 
 export const REACTION_CONTENTS: GithubReactionContent[] = [
@@ -46,6 +47,7 @@ export function ReactionBar({
   const qc = useQueryClient();
   const q = useQuery({ queryKey, queryFn: fetchList });
   const [pickerOpen, setPickerOpen] = useState(false);
+  const pickerRef = useDismiss<HTMLDivElement>(pickerOpen, () => setPickerOpen(false));
   const toggle = useMutation({
     mutationFn: async (content: GithubReactionContent) => {
       const mine = (q.data ?? []).find(
@@ -95,7 +97,7 @@ export function ReactionBar({
 
   return (
     <div style={{ marginTop: "-0.6rem", marginBottom: "1rem" }}>
-      <div className="flex flex-wrap items-center gap-1.5">
+      <div ref={pickerRef} className="flex flex-wrap items-center gap-1.5">
         {REACTION_CONTENTS.filter((c) => (byContent.get(c)?.count ?? 0) > 0).map((content) => {
           const entry = byContent.get(content);
           return (
@@ -103,6 +105,7 @@ export function ReactionBar({
               key={content}
               type="button"
               aria-label={`toggle ${content} reaction`}
+              aria-pressed={entry?.mine ?? false}
               disabled={toggle.isPending}
               onClick={() => toggle.mutate(content)}
               style={pillStyle(entry?.mine ?? false)}
@@ -114,6 +117,7 @@ export function ReactionBar({
         <button
           type="button"
           aria-label="add reaction"
+          aria-expanded={pickerOpen}
           onClick={() => setPickerOpen((v) => !v)}
           style={{
             border: "1px solid var(--color-border)",
@@ -127,26 +131,30 @@ export function ReactionBar({
         >
           🙂＋
         </button>
-        {pickerOpen &&
-          REACTION_CONTENTS.map((content) => (
-            <button
-              key={content}
-              type="button"
-              aria-label={`react with ${content}`}
-              disabled={toggle.isPending}
-              onClick={() => toggle.mutate(content)}
-              style={{
-                border: "1px solid var(--color-border)",
-                background: "var(--color-bg-subtle)",
-                borderRadius: "0.4rem",
-                padding: "0.1rem 0.35rem",
-                fontSize: "0.85rem",
-                cursor: "pointer",
-              }}
-            >
-              {REACTION_EMOJI[content]}
-            </button>
-          ))}
+        {pickerOpen && (
+          <span role="menu" aria-label="Pick a reaction" className="inline-flex flex-wrap items-center gap-1.5">
+            {REACTION_CONTENTS.map((content) => (
+              <button
+                key={content}
+                type="button"
+                role="menuitem"
+                aria-label={`react with ${content}`}
+                disabled={toggle.isPending}
+                onClick={() => toggle.mutate(content)}
+                style={{
+                  border: "1px solid var(--color-border)",
+                  background: "var(--color-bg-subtle)",
+                  borderRadius: "0.4rem",
+                  padding: "0.1rem 0.35rem",
+                  fontSize: "0.85rem",
+                  cursor: "pointer",
+                }}
+              >
+                {REACTION_EMOJI[content]}
+              </button>
+            ))}
+          </span>
+        )}
       </div>
       {toggle.isError && (
         <InlineError inline title="Failed to update reaction" detail={String(toggle.error)} />

@@ -86,8 +86,8 @@ func TestClassicScopesGateOrganizationDeletion(t *testing.T) {
 		t.Fatal("a read:org token deleted the organization")
 	}
 
-	// Positive control: the scope that does grant it still does.
-	requireStatus(t, s.delete(t, "/api/v3/orgs/scopedel-org", admin), http.StatusNoContent)
+	// Positive control: the scope that does grant it still does (async 202).
+	requireStatus(t, s.delete(t, "/api/v3/orgs/scopedel-org", admin), http.StatusAccepted)
 	if s.store.GetOrg("scopedel-org") != nil {
 		t.Fatal("an admin:org token failed to delete the organization")
 	}
