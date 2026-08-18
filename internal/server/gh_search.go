@@ -296,8 +296,14 @@ func parseSearchQuery(r *http.Request) (searchQuery, error) {
 				default:
 					return q, unsupportedQualifierError{key: "type", value: val}
 				}
-			case "assignee", "milestone", "mentions", "involves", "commenter", "head", "base":
+			case "assignee", "milestone", "mentions", "involves", "commenter", "head", "base", "reviewed-by", "review-requested":
 				// Applied per-item in handleSearchIssues; no parse-time state.
+			case "review":
+				switch normalizedValue {
+				case "none", "required", "approved", "changes_requested":
+				default:
+					return q, unsupportedQualifierError{key: key, value: val}
+				}
 			case "reactions", "interactions":
 				if _, err := parseNumericSearchConstraint(val); err != nil {
 					return q, unsupportedQualifierError{key: key, value: val}
@@ -965,11 +971,47 @@ func prHasLabelNames(st *store.Store, pr *store.PullRequest, names []string) boo
 func (q searchQuery) hasInteractionQualifiers() bool {
 	for _, ql := range q.Qualifiers {
 		switch ql.Key {
-		case "involves", "commenter", "reactions", "interactions", "head", "base":
+		case "involves", "commenter", "reactions", "interactions", "head", "base",
+			"review", "reviewed-by", "review-requested":
 			return true
 		}
 	}
 	return false
+}
+
+// prReviewDecision derives a pull request's review decision from its submitted
+// reviews (latest per author): CHANGES_REQUESTED wins over APPROVED; "" when
+// neither. Mirrors the GraphQL reviewDecision derivation.
+func (s *Server) prReviewDecision(prID int) string {
+	latest := map[int]*store.PullRequestReview{}
+	for _, rv := range s.store.ListPRReviews(prID) {
+		switch rv.State {
+		case "APPROVED", "CHANGES_REQUESTED", "DISMISSED":
+		default:
+			continue
+		}
+		cur := latest[rv.AuthorID]
+		if cur == nil || rv.UpdatedAt.After(cur.UpdatedAt) ||
+			(rv.UpdatedAt.Equal(cur.UpdatedAt) && rv.ID > cur.ID) {
+			latest[rv.AuthorID] = rv
+		}
+	}
+	hasApproved, hasChangesRequested := false, false
+	for _, rv := range latest {
+		switch rv.State {
+		case "APPROVED":
+			hasApproved = true
+		case "CHANGES_REQUESTED":
+			hasChangesRequested = true
+		}
+	}
+	if hasChangesRequested {
+		return "CHANGES_REQUESTED"
+	}
+	if hasApproved {
+		return "APPROVED"
+	}
+	return ""
 }
 
 // rowMatchesInteractionQualifiers applies GitHub's issue-search interaction
@@ -1014,6 +1056,30 @@ func (s *Server) rowMatchesInteractionQualifiers(row searchIssueRow, q searchQue
 		t, _ := s.store.Reactions.SummarizeReactions(parentType, parentID)["total_count"].(int)
 		return t
 	}
+	var reviews []*store.PullRequestReview
+	reviewsLoaded := false
+	loadReviews := func() []*store.PullRequestReview {
+		if !reviewsLoaded {
+			if row.pr != nil {
+				reviews = s.store.ListPRReviews(row.pr.ID)
+			}
+			reviewsLoaded = true
+		}
+		return reviews
+	}
+	// submitted reviews exclude a viewer's own PENDING (unsubmitted) review.
+	submittedReviewerLogins := func() map[string]bool {
+		out := map[string]bool{}
+		for _, rv := range loadReviews() {
+			if rv.State == "PENDING" {
+				continue
+			}
+			if l := loginOf(rv.AuthorID); l != "" {
+				out[strings.ToLower(l)] = true
+			}
+		}
+		return out
+	}
 	for _, ql := range q.Qualifiers {
 		val := strings.Trim(ql.Value, `"`)
 		var ok bool
@@ -1047,6 +1113,32 @@ func (s *Server) rowMatchesInteractionQualifiers(row searchIssueRow, q searchQue
 			ok = row.pr != nil && strings.EqualFold(row.pr.HeadRefName, val)
 		case "base":
 			ok = row.pr != nil && strings.EqualFold(row.pr.BaseRefName, val)
+		case "reviewed-by":
+			ok = row.pr != nil && submittedReviewerLogins()[strings.ToLower(val)]
+		case "review-requested":
+			if row.pr != nil {
+				for _, id := range row.pr.RequestedReviewerIDs {
+					if strings.EqualFold(loginOf(id), val) {
+						ok = true
+						break
+					}
+				}
+			}
+		case "review":
+			// review qualifiers apply to pull requests only.
+			if row.pr != nil {
+				switch strings.ToLower(val) {
+				case "approved":
+					ok = s.prReviewDecision(row.pr.ID) == "APPROVED"
+				case "changes_requested":
+					ok = s.prReviewDecision(row.pr.ID) == "CHANGES_REQUESTED"
+				case "none":
+					ok = len(submittedReviewerLogins()) == 0
+				case "required":
+					// A review was requested but the PR is not yet approved.
+					ok = len(row.pr.RequestedReviewerIDs) > 0 && s.prReviewDecision(row.pr.ID) != "APPROVED"
+				}
+			}
 		default:
 			continue
 		}
