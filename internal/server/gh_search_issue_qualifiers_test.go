@@ -106,3 +106,74 @@ func TestSearchIssuesReactionsRollupAndSort(t *testing.T) {
 		t.Errorf("interactions sort head = %q, want high reactions", inter[0].Title)
 	}
 }
+
+// TestSearchIssuesInteractionQualifiers covers the interaction-qualifier FILTERS
+// involves:/commenter:/reactions:/interactions: (REST-180), evaluated after the
+// store lock via comment authors and reaction counts.
+func TestSearchIssuesInteractionQualifiers(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	bob := s.createTestUser(t, "bob-interact")
+	repo := s.store.CreateRepo(admin, "iq", "", false)
+
+	solo := s.store.CreateIssue(repo.ID, admin.ID, "solo issue", "marker-iq", nil, nil, 0)
+	engaged := s.store.CreateIssue(repo.ID, admin.ID, "engaged issue", "marker-iq", nil, nil, 0)
+	_ = solo
+	// bob comments on 'engaged'; it also collects three reactions.
+	s.store.CreateComment(engaged.ID, bob.ID, "chiming in")
+	for _, c := range []string{"heart", "+1", "rocket"} {
+		if _, _, err := s.store.Reactions.AddReaction("issue", engaged.ID, admin.ID, c); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	rq := "marker-iq repo:admin/iq"
+	cases := []struct {
+		q    string
+		want string
+	}{
+		{rq + " commenter:bob-interact", "engaged issue"},
+		{rq + " involves:bob-interact", "engaged issue"}, // bob only commented
+		{rq + " reactions:>2", "engaged issue"},          // 3 reactions
+		{rq + " reactions:0", "solo issue"},              // exactly zero
+		{rq + " interactions:>3", "engaged issue"},       // 3 reactions + 1 comment = 4
+	}
+	for _, tc := range cases {
+		got := searchIssueTitles(t, s, tc.q)
+		if len(got) != 1 || got[0] != tc.want {
+			t.Errorf("%q titles = %v, want [%s]", tc.q, got, tc.want)
+		}
+	}
+}
+
+// TestSearchIssuesHeadBaseQualifiers covers head:/base: — pull-request source and
+// target branch filters that a plain issue never matches (REST-180).
+func TestSearchIssuesHeadBaseQualifiers(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "hb", "", false)
+	seedPullRequestBranches(t, s.Server, repo, "feature-x")
+	// One plain issue and one PR, both carrying the marker.
+	_ = s.store.CreateIssue(repo.ID, admin.ID, "just an issue", "marker-hb", nil, nil, 0)
+	if pr := s.store.CreatePullRequest(repo.ID, admin.ID, "the pull request", "marker-hb", "feature-x", "main", false, nil, nil, 0); pr == nil {
+		t.Fatal("failed to create the pull request fixture")
+	}
+
+	rq := "marker-hb repo:admin/hb"
+	cases := []struct{ q, want string }{
+		{rq + " head:feature-x", "the pull request"},
+		{rq + " base:main", "the pull request"}, // the issue has no base branch
+	}
+	for _, tc := range cases {
+		got := searchIssueTitles(t, s, tc.q)
+		if len(got) != 1 || got[0] != tc.want {
+			t.Errorf("%q titles = %v, want [%s]", tc.q, got, tc.want)
+		}
+	}
+	// A non-matching head returns nothing.
+	if got := searchIssueTitles(t, s, rq+" head:nonexistent"); len(got) != 0 {
+		t.Errorf("head:nonexistent titles = %v, want none", got)
+	}
+}
