@@ -53,6 +53,38 @@ func TestGraphQLReactionsCoverNonDiscussionSubjects(t *testing.T) {
 	}
 }
 
+// TestGraphQLAddReactionReturnsReactionGroups verifies the addReaction payload
+// exposes reactionGroups (GitHub's [ReactionGroup!]), reflecting the subject's
+// reaction state after the mutation without a separate refetch.
+func TestGraphQLAddReactionReturnsReactionGroups(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	f := newGQLAuthzFixture(t, s.Server, "reactgroups", true)
+
+	doc := `mutation($input:AddReactionInput!){addReaction(input:$input){reactionGroups{content viewerHasReacted}}}`
+	env := s.gqlAuthzPost(t, f.ownerToken, doc,
+		map[string]interface{}{"input": map[string]interface{}{"subjectId": f.issue.NodeID, "content": "HEART"}})
+	if errs := gqlAuthzErrors(env); len(errs) > 0 {
+		t.Fatalf("addReaction errored: %v", errs)
+	}
+	data, _ := env["data"].(map[string]interface{})
+	add, _ := data["addReaction"].(map[string]interface{})
+	groups, _ := add["reactionGroups"].([]interface{})
+	found := false
+	for _, g := range groups {
+		gm, _ := g.(map[string]interface{})
+		if gm["content"] == "HEART" {
+			found = true
+			if gm["viewerHasReacted"] != true {
+				t.Errorf("HEART viewerHasReacted = %v, want true", gm["viewerHasReacted"])
+			}
+		}
+	}
+	if !found {
+		t.Errorf("reactionGroups %v missing the HEART group just added", groups)
+	}
+}
+
 // TestGraphQLPermissionDenialCarriesForbiddenType verifies that a permission
 // denial (viewer can read the repo but lacks push standing) surfaces GitHub's
 // `"type": "FORBIDDEN"` errors[] member — the sibling of the NOT_FOUND channel

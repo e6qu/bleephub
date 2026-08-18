@@ -3,8 +3,8 @@
   "bleephub_types": 269,
   "shared_types": 262,
   "official_fields": 8360,
-  "implemented_fields": 943,
-  "signature_exact_fields": 942,
+  "implemented_fields": 945,
+  "signature_exact_fields": 944,
   "compatibility_gap_count": 9,
   "missing_types": [
     "AbortQueuedMigrationsInput",
@@ -1566,7 +1566,6 @@
     ],
     "AddReactionPayload": [
       "reaction",
-      "reactionGroups",
       "subject"
     ],
     "AutoMergeRequest": [
@@ -2624,7 +2623,6 @@
     ],
     "RemoveReactionPayload": [
       "reaction",
-      "reactionGroups",
       "subject"
     ],
     "Repository": [

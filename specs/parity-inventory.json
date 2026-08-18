@@ -294,13 +294,13 @@
     "coverage": {
       "bleephub_types": 269,
       "compatibility_gap_count": 9,
-      "implemented_fields": 943,
+      "implemented_fields": 945,
       "official_fields": 8360,
       "official_types": 1807,
       "shared_types": 262,
-      "signature_exact_fields": 942
+      "signature_exact_fields": 944
     },
-    "introspection_snapshot_sha256": "4b7995638aea652db899c191148f2861727378167cda7f79320338b2a8faee85",
+    "introspection_snapshot_sha256": "3d91817961fed295ba05526d3fbb15a369188891e9342fab9f42feba8a9e4772",
     "official_schema": {
       "content_sha256": "b716c6844750283b8c33200f660989337254e7158f40ed869f06418bafb3bc2e",
       "source": "https://docs.github.com/public/fpt/schema.docs.graphql"
@@ -3737,11 +3737,11 @@
       },
       {
         "category": "GQL",
-        "finding": "`AddReactionPayload`/`RemoveReactionPayload` expose only `clientMutationId`; GitHub also exposes `reaction`, `reactionGroups` and `subject`",
+        "finding": "`AddReactionPayload`/`RemoveReactionPayload` exposed only `clientMutationId`; GitHub also exposes `reaction`, `reactionGroups` and `subject`",
         "id": "GQL-068",
         "location": "gh_reactions_graphql.go",
         "severity": "m",
-        "status": "partial \u2014 subject coverage and authz landed in GQL-065; emitting the payload fields needs a `Reactable` interface resolver wired across the concrete reaction subjects plus a snapshot/ratchet pass, tracked as a scoped follow-up",
+        "status": "partial \u2014 `reactionGroups: [ReactionGroup!]` now resolves off the mutated subject (matching the official signature; introspection snapshot + ratchet regenerated; verified by a test that selects it from addReaction). The remaining `reaction: Reaction` (needs a node-ID-bearing reaction) and `subject: Reactable` (needs a Reactable interface resolver across the concrete subjects) stay open, tracked as a scoped follow-up",
         "status_kind": "partial"
       },
       {

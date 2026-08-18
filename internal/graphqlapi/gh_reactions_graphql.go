@@ -144,10 +144,13 @@ func (s *Resolver) addReactionMutationsToSchema(mutationType *graphql.Object) {
 		"ReactionContent",
 		"CONFUSED", "EYES", "HEART", "HOORAY", "LAUGH", "ROCKET", "THUMBS_DOWN", "THUMBS_UP",
 	)
-	// Payloads expose only clientMutationId (registerMutation supplies it) — a
-	// GitHub-exact subset. Emitting our own reaction/subject shapes would diverge
-	// from GitHub's Reaction/Reactable and trip the schema-parity ratchet; the
-	// client refetches reactionGroups after the mutation instead.
+	// Payloads expose clientMutationId (registerMutation supplies it) plus
+	// reactionGroups — the subject's reaction groups after the mutation, which
+	// GitHub returns as [ReactionGroup!] and clients commonly select instead of
+	// refetching the subject. The remaining official fields (reaction: Reaction,
+	// subject: Reactable) still need a node-ID-bearing reaction and a Reactable
+	// interface resolver; they stay absent (a subset the ratchet accepts).
+	reactionGroupType := s.gqlReactionGroupType()
 	inputFields := func() graphql.InputObjectConfigFieldMap {
 		return graphql.InputObjectConfigFieldMap{
 			"subjectId":        &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
@@ -156,7 +159,18 @@ func (s *Resolver) addReactionMutationsToSchema(mutationType *graphql.Object) {
 		}
 	}
 	payloadFields := func() graphql.Fields {
-		return graphql.Fields{"clientMutationId": &graphql.Field{Type: graphql.String}}
+		return graphql.Fields{
+			"clientMutationId": &graphql.Field{Type: graphql.String},
+			"reactionGroups": &graphql.Field{
+				Type: graphql.NewList(graphql.NewNonNull(reactionGroupType)),
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					src, _ := p.Source.(map[string]interface{})
+					parentType, _ := src["parentType"].(string)
+					parentID, _ := src["parentID"].(int)
+					return reactionGroupsForGraphQL(s.store.Reactions, parentType, parentID, s.viewerReactorID(p.Context)), nil
+				},
+			},
+		}
 	}
 	addInput := graphql.NewInputObject(graphql.InputObjectConfig{Name: "AddReactionInput", Fields: inputFields()})
 	addPayload := graphql.NewObject(graphql.ObjectConfig{Name: "AddReactionPayload", Fields: payloadFields()})
@@ -178,7 +192,7 @@ func (s *Resolver) addReactionMutationsToSchema(mutationType *graphql.Object) {
 			if _, _, err := s.store.Reactions.AddReaction(parentType, parentID, viewer.ID, graphQLToReactionContent(contentEnum)); err != nil {
 				return nil, err
 			}
-			return map[string]interface{}{}, nil
+			return map[string]interface{}{"parentType": parentType, "parentID": parentID}, nil
 		},
 	})
 
@@ -201,7 +215,7 @@ func (s *Resolver) addReactionMutationsToSchema(mutationType *graphql.Object) {
 					break
 				}
 			}
-			return map[string]interface{}{}, nil
+			return map[string]interface{}{"parentType": parentType, "parentID": parentID}, nil
 		},
 	})
 }
