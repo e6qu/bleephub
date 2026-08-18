@@ -206,3 +206,44 @@ func TestSearchIssuesInComments(t *testing.T) {
 		t.Errorf("scopekey in:body,comments = %v, want 1", got)
 	}
 }
+
+// TestSearchIssuesReviewQualifiers covers the review-scoped qualifiers review:/
+// reviewed-by:/review-requested: (REST-180), applied per pull request via the
+// post-lock pass over review + requested-reviewer data.
+func TestSearchIssuesReviewQualifiers(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	alice := s.createTestUser(t, "rev-alice")
+	bob := s.createTestUser(t, "rev-bob")
+	repo := s.store.CreateRepo(admin, "rv", "", false)
+	seedPullRequestBranches(t, s.Server, repo, "feat-a", "feat-b")
+
+	// PR #1: approved by alice.
+	pr1 := s.store.CreatePullRequest(repo.ID, admin.ID, "approved pr marker-rv", "b", "feat-a", "main", false, nil, nil, 0)
+	if pr1 == nil {
+		t.Fatal("create pr1")
+	}
+	s.store.CreatePullRequestReview(repo.FullName, pr1.Number, alice.ID, "lgtm", "APPROVED")
+
+	// PR #2: bob requested as reviewer, no review submitted.
+	pr2 := s.store.CreatePullRequest(repo.ID, admin.ID, "pending pr marker-rv", "b", "feat-b", "main", false, nil, nil, 0)
+	if pr2 == nil {
+		t.Fatal("create pr2")
+	}
+	s.store.RequestReviewers(repo.FullName, pr2.Number, []int{bob.ID}, admin.ID)
+
+	rq := "marker-rv repo:admin/rv"
+	cases := []struct{ q, want string }{
+		{rq + " review:approved", "approved pr marker-rv"},
+		{rq + " reviewed-by:rev-alice", "approved pr marker-rv"},
+		{rq + " review-requested:rev-bob", "pending pr marker-rv"},
+		{rq + " review:none", "pending pr marker-rv"},
+	}
+	for _, tc := range cases {
+		got := searchIssueTitles(t, s, tc.q)
+		if len(got) != 1 || got[0] != tc.want {
+			t.Errorf("%q titles = %v, want [%s]", tc.q, got, tc.want)
+		}
+	}
+}
