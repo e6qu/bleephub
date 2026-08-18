@@ -1,6 +1,6 @@
 # Bleephub bug ledger
 
-906 findings from the continuing full-surface audit: 167 blockers, 432 major, 307 minor. Every
+907 findings from the continuing full-surface audit: 167 blockers, 432 major, 308 minor. Every
 entry carries a location and a one-sentence claim. Severity is `B` blocker, `M` major, `m` minor.
 Status begins with one of `open`, `partial`, `fixed`, or `deferred`; the generated parity
 inventory records the exact counts and fails CI when this summary or a row drifts.
@@ -319,6 +319,7 @@ source or comments. The reasoning behind a fix belongs in its commit message.
 | REST-181 | m | rate_limits.go | the unauthenticated Search rate limit was the authenticated 30/min; GitHub caps anonymous Search at 10/min | fixed — the anonymous downgrade now covers `search` (and `code_search`, already 10), not just core. Verified: unit test asserts anonymous search is 10 and authenticated is 30 |
 | REST-182 | m | gh_repos_objects.go | the git tree response was always `truncated:false` with no size ceiling; GitHub caps a tree at 100,000 entries and sets `truncated:true` when exceeded | fixed — the handler caps entries at 100,000 and reports `truncated` accordingly, stopping the walk once the cap is reached |
 | REST-183 | m | gh_pr_comments.go | the create-review-comment handler decoded `start_line` but never validated it precedes `line`; GitHub rejects an inverted multi-line range with 422 | fixed — a `start_line` at or above `line` now returns a validation-error 422 instead of storing an inverted range. Verified: a test asserts start_line==line and start_line>line 422 while a valid start_line<line is accepted |
+| REST-184 | m | gh_search.go | pull-request search items omitted the `reactions` reaction-rollup that `issue-search-result-item` carries (issue items already had it via issueToJSON), and `sort=reactions`/`sort=interactions` were silently ignored (best-match order) | fixed — PR search items now emit the reaction-rollup (total_count + per-content counts, url at the issues reactions path), and both sort keys order by the rollup total (interactions = reactions + comments) via the render-all path. Verified: a test seeds reactions and asserts the rollup total plus the reactions/interactions ordering |
 
 ## GQL — GraphQL
 
