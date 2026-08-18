@@ -121,6 +121,9 @@
         "clientMutationId": {
           "type": "String"
         },
+        "reaction": {
+          "type": "Reaction"
+        },
         "reactionGroups": {
           "type": "[ReactionGroup!]"
         }
@@ -3589,6 +3592,9 @@
       "fields": {
         "clientMutationId": {
           "type": "String"
+        },
+        "reaction": {
+          "type": "Reaction"
         },
         "reactionGroups": {
           "type": "[ReactionGroup!]"

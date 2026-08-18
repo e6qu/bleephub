@@ -56,6 +56,9 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 			},
 		},
 	})
+	// Share the single Reaction type instance so the addReaction/removeReaction
+	// payloads can expose reaction: Reaction (GQL-068) without redefining it.
+	s.graphqlTypes.reaction = discussionReactionType
 
 	discussionReactionConnectionType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "ReactionConnection",
@@ -1059,17 +1062,24 @@ func discussionReactionConnection(st *store.Store, parentType string, parentID i
 	reactions := st.Reactions.ListReactions(parentType, parentID, "")
 	nodes := make([]map[string]interface{}, 0, len(reactions))
 	for _, r := range reactions {
-		var userMap map[string]interface{}
-		if u := st.GetUserByID(r.UserID); u != nil {
-			userMap = userToGraphQL(u)
-		}
-		nodes = append(nodes, map[string]interface{}{
-			"id":      fmt.Sprintf("REA_kgDO%08d", r.ID),
-			"content": r.Content,
-			"user":    userMap,
-		})
+		nodes = append(nodes, reactionNodeToGraphQL(st, r))
 	}
 	return paginateGQLMaps(nodes, args)
+}
+
+// reactionNodeToGraphQL renders a store reaction as the GraphQL Reaction type's
+// source map (id/content/user). Shared by the reaction connections and the
+// addReaction/removeReaction payloads so the node shape stays in one place.
+func reactionNodeToGraphQL(st *store.Store, r *store.Reaction) map[string]interface{} {
+	var userMap map[string]interface{}
+	if u := st.GetUserByID(r.UserID); u != nil {
+		userMap = userToGraphQL(u)
+	}
+	return map[string]interface{}{
+		"id":      fmt.Sprintf("REA_kgDO%08d", r.ID),
+		"content": r.Content,
+		"user":    userMap,
+	}
 }
 
 func reactionContentToGraphQL(content string) string {

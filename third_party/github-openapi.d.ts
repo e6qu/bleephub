@@ -132017,6 +132017,7 @@ export interface operations {
                 };
             };
             400: components["responses"]["bad_request"];
+            403: components["responses"]["forbidden"];
             404: components["responses"]["not_found"];
         };
     };
