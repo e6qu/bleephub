@@ -72,7 +72,7 @@ var searchQualifierScopes = map[string]map[string]bool{
 		"author", "assignee", "milestone", "mentions", "no", "type",
 		"created", "updated", "closed", "draft", "archived",
 		"involves", "commenter", "reactions", "interactions", "head", "base",
-		"review", "reviewed-by", "review-requested",
+		"review", "reviewed-by", "review-requested", "linked",
 	),
 	"code": qualifierSet(
 		"repo", "user", "org", "language", "path", "extension", "ext", "filename", "file",

@@ -2,6 +2,7 @@ package bleephub
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/url"
 	"testing"
 	"time"
@@ -244,6 +245,41 @@ func TestSearchIssuesReviewQualifiers(t *testing.T) {
 		got := searchIssueTitles(t, s, tc.q)
 		if len(got) != 1 || got[0] != tc.want {
 			t.Errorf("%q titles = %v, want [%s]", tc.q, got, tc.want)
+		}
+	}
+}
+
+// TestSearchIssuesLinkedQualifier covers linked:pr / linked:issue — the issue<->PR
+// closing-reference relationship derived from PR-body keywords (REST-180, the last
+// item). An issue closed by a PR matches linked:pr; the PR matches linked:issue.
+func TestSearchIssuesLinkedQualifier(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "lk", "", false)
+	seedPullRequestBranches(t, s.Server, repo, "fix-branch")
+
+	linked := s.store.CreateIssue(repo.ID, admin.ID, "linked issue marker-lk", "b", nil, nil, 0)
+	_ = s.store.CreateIssue(repo.ID, admin.ID, "lonely issue marker-lk", "b", nil, nil, 0)
+	pr := s.store.CreatePullRequest(repo.ID, admin.ID, "the fix pr marker-lk",
+		fmt.Sprintf("Closes #%d", linked.Number), "fix-branch", "main", false, nil, nil, 0)
+	if pr == nil {
+		t.Fatal("create pr fixture")
+	}
+
+	rq := "marker-lk repo:admin/lk"
+	// linked:pr → only the issue a PR closes.
+	if got := searchIssueTitles(t, s, rq+" linked:pr"); len(got) != 1 || got[0] != "linked issue marker-lk" {
+		t.Errorf("linked:pr = %v, want [linked issue marker-lk]", got)
+	}
+	// linked:issue → only the PR that closes an issue.
+	if got := searchIssueTitles(t, s, rq+" linked:issue"); len(got) != 1 || got[0] != "the fix pr marker-lk" {
+		t.Errorf("linked:issue = %v, want [the fix pr marker-lk]", got)
+	}
+	// -linked:pr excludes the linked issue.
+	for _, tt := range searchIssueTitles(t, s, rq+" -linked:pr") {
+		if tt == "linked issue marker-lk" {
+			t.Errorf("-linked:pr should exclude the linked issue")
 		}
 	}
 }
