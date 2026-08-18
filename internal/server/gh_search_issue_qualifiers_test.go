@@ -177,3 +177,32 @@ func TestSearchIssuesHeadBaseQualifiers(t *testing.T) {
 		t.Errorf("head:nonexistent titles = %v, want none", got)
 	}
 }
+
+// TestSearchIssuesInComments covers in:comments — restricting the term match to
+// comment bodies (REST-180). A term only in a comment is found with in:comments
+// but not by the default title+body match.
+func TestSearchIssuesInComments(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	admin := s.store.UsersByLogin["admin"]
+	repo := s.store.CreateRepo(admin, "ic", "", false)
+	// "needle" appears only in a comment; the title/body carry a different marker.
+	iss := s.store.CreateIssue(repo.ID, admin.ID, "plain title", "plain body scopekey-ic", nil, nil, 0)
+	s.store.CreateComment(iss.ID, admin.ID, "the needle is here")
+
+	// in:comments finds it via the comment body.
+	if got := searchIssueTitles(t, s, "needle repo:admin/ic in:comments"); len(got) != 1 || got[0] != "plain title" {
+		t.Errorf("needle in:comments = %v, want [plain title]", got)
+	}
+	// Default (title+body) and in:title do not — the term is only in a comment.
+	if got := searchIssueTitles(t, s, "needle repo:admin/ic"); len(got) != 0 {
+		t.Errorf("needle default = %v, want none", got)
+	}
+	if got := searchIssueTitles(t, s, "needle repo:admin/ic in:title"); len(got) != 0 {
+		t.Errorf("needle in:title = %v, want none", got)
+	}
+	// A body term is found by the in:body,comments union.
+	if got := searchIssueTitles(t, s, "scopekey-ic repo:admin/ic in:body,comments"); len(got) != 1 {
+		t.Errorf("scopekey in:body,comments = %v, want 1", got)
+	}
+}
