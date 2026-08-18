@@ -164,6 +164,12 @@ func (s *Server) handleCreatePRComment(w http.ResponseWriter, r *http.Request) {
 			store.WriteGHValidationError(w, "PullRequestReviewComment", "path", "missing_field")
 			return
 		}
+		// A multi-line comment's start_line must precede its line; GitHub rejects
+		// start_line >= line with a 422 rather than storing an inverted range.
+		if int(req.StartLine) > 0 && int(req.StartLine) >= int(req.Line) {
+			store.WriteGHValidationError(w, "PullRequestReviewComment", "start_line", "invalid")
+			return
+		}
 		c = s.store.PRReviewComments.CreateRootComment(pr.ID, user.ID, req.Path, req.Body, req.CommitID, req.Side, int(req.Line), int(req.StartLine))
 	}
 	s.emitWebhookEvent(repo.FullName, "pull_request_review_comment", "created",

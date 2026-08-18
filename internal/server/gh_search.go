@@ -309,6 +309,17 @@ func parseSearchQuery(r *http.Request) (searchQuery, error) {
 				if !negated {
 					q.Hash = val
 				}
+			case "committer", "author-name", "author-email", "committer-name", "committer-email":
+				// Commit-search identity qualifiers, applied per-commit in
+				// handleSearchCommits against the git author/committer fields.
+			case "author-date", "committer-date":
+				if _, err := parseDateSearchConstraint(val); err != nil {
+					return q, unsupportedQualifierError{key: key, value: val}
+				}
+			case "merge":
+				if normalizedValue != "true" && normalizedValue != "false" {
+					return q, unsupportedQualifierError{key: key, value: val}
+				}
 			case "archived", "template", "mirror", "deployable", "deployed":
 				if normalizedValue != "true" && normalizedValue != "false" {
 					return q, unsupportedQualifierError{key: key, value: val}
@@ -1785,6 +1796,9 @@ func (s *Server) handleSearchCommits(w http.ResponseWriter, r *http.Request) {
 			if q.Author != "" && !commitAuthorMatches(s.store, commit, q.Author) {
 				return nil
 			}
+			if !commitMatchesCommitQualifiers(s.store, commit, q) {
+				return nil
+			}
 			// Count every match so total_count reflects the full result set;
 			// only the first searchResultCap rows are rendered, and the rest
 			// is reported via incomplete_results.
@@ -1823,6 +1837,61 @@ func commitAuthorMatches(st *store.Store, commit *object.Commit, author string) 
 		}
 	}
 	return false
+}
+
+// commitCommitterMatches mirrors commitAuthorMatches for the committer:
+// qualifier, against the commit's git committer name/email and the login of a
+// store user with that committer email. Must not be called with st.mu held.
+func commitCommitterMatches(st *store.Store, commit *object.Commit, committer string) bool {
+	if strings.EqualFold(commit.Committer.Name, committer) || strings.EqualFold(commit.Committer.Email, committer) {
+		return true
+	}
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
+	for _, u := range st.Users {
+		if strings.EqualFold(u.Login, committer) && strings.EqualFold(u.Email, commit.Committer.Email) {
+			return true
+		}
+	}
+	return false
+}
+
+// commitMatchesCommitQualifiers applies GitHub's commit-search identity, date
+// and merge qualifiers (positive and negated) against a commit. author: and
+// hash: are handled by the caller; everything else this qualifier set allows is
+// resolved here. Must not be called with st.mu held.
+func commitMatchesCommitQualifiers(st *store.Store, commit *object.Commit, q searchQuery) bool {
+	for _, ql := range q.Qualifiers {
+		val := strings.Trim(ql.Value, `"`)
+		var ok bool
+		switch ql.Key {
+		case "committer":
+			ok = commitCommitterMatches(st, commit, val)
+		case "author-name":
+			ok = strings.Contains(strings.ToLower(commit.Author.Name), strings.ToLower(val))
+		case "committer-name":
+			ok = strings.Contains(strings.ToLower(commit.Committer.Name), strings.ToLower(val))
+		case "author-email":
+			ok = strings.EqualFold(commit.Author.Email, val)
+		case "committer-email":
+			ok = strings.EqualFold(commit.Committer.Email, val)
+		case "author-date":
+			c, err := parseDateSearchConstraint(val)
+			ok = err == nil && c.matches(commit.Author.When)
+		case "committer-date":
+			c, err := parseDateSearchConstraint(val)
+			ok = err == nil && c.matches(commit.Committer.When)
+		case "merge":
+			ok = (commit.NumParents() > 1) == strings.EqualFold(val, "true")
+		default:
+			continue
+		}
+		// Positive qualifier must match; negated must not.
+		if ok == ql.Negated {
+			return false
+		}
+	}
+	return true
 }
 
 // commitSearchItemJSON renders the spec `commit-search-result-item` shape.

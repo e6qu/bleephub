@@ -4426,6 +4426,7 @@ export const createPRReviewComment = (
     path: string;
     line: number;
     side: "LEFT" | "RIGHT";
+    start_line?: number;
   },
 ): Promise<GithubPRReviewComment> =>
   ghPostJSON(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/comments`, payload);

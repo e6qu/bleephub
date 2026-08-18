@@ -225,7 +225,7 @@
       },
       {
         "event": "pull_request_review_comment",
-        "line": 169,
+        "line": 175,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pr_comments.go"
       },
@@ -2999,12 +2999,12 @@
       },
       {
         "category": "REST",
-        "finding": "commit search still rejects `committer:`, `author-date:`, `committer-date:`, `merge:` and `tree:`, and issue search rejects the interaction qualifiers (`involves:`, `commenter:`, `interactions:`, `reactions:`, `review:`, `linked:`, `head:`, `base:`) and `in:comments`",
+        "finding": "commit search rejected `committer:`, `author-name:`/`author-email:`/`committer-name:`/`committer-email:`, `author-date:`, `committer-date:` and `merge:`, and issue search rejects the interaction qualifiers (`involves:`, `commenter:`, `interactions:`, `reactions:`, `review:`, `linked:`, `head:`, `base:`) and `in:comments`",
         "id": "REST-180",
         "location": "gh_search.go, gh_search_query.go",
         "severity": "m",
-        "status": "open \u2014 the common temporal/state issue qualifiers landed in REST-179; the remaining vocabulary needs commit-metadata and comment-authorship matching plumbing, tracked as a scoped follow-up",
-        "status_kind": "open"
+        "status": "partial \u2014 the commit-search identity/date/merge qualifiers now parse and filter against the git author/committer fields and parent count (verified by test); the issue-search interaction vocabulary and `in:comments` still need comment-authorship/reaction matching under the search lock, tracked as a scoped follow-up",
+        "status_kind": "partial"
       },
       {
         "category": "REST",
@@ -3022,6 +3022,15 @@
         "location": "gh_repos_objects.go",
         "severity": "m",
         "status": "fixed \u2014 the handler caps entries at 100,000 and reports `truncated` accordingly, stopping the walk once the cap is reached",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "the create-review-comment handler decoded `start_line` but never validated it precedes `line`; GitHub rejects an inverted multi-line range with 422",
+        "id": "REST-183",
+        "location": "gh_pr_comments.go",
+        "severity": "m",
+        "status": "fixed \u2014 a `start_line` at or above `line` now returns a validation-error 422 instead of storing an inverted range. Verified: a test asserts start_line==line and start_line>line 422 while a valid start_line<line is accepted",
         "status_kind": "fixed"
       },
       {
@@ -7116,8 +7125,8 @@
         "id": "WEB-207",
         "location": "web/src/components/PRFilesView.tsx",
         "severity": "m",
-        "status": "open \u2014 needs shift/drag range selection in the diff view, tracked as a scoped follow-up",
-        "status_kind": "open"
+        "status": "fixed \u2014 the inline comment composer gained an optional \"Start line\" input; a start line strictly above the selected line makes the comment span start_line..line, threaded into both the single-comment (createPRReviewComment) and batched-review (createPRReview comments[]) paths. Verified: a test sets a start line and asserts the POST body carries start_line",
+        "status_kind": "fixed"
       },
       {
         "category": "TEST",
@@ -8527,10 +8536,10 @@
         "REST": {
           "status": {
             "deferred": 1,
-            "fixed": 180,
-            "open": 1
+            "fixed": 181,
+            "partial": 1
           },
-          "total": 182
+          "total": 183
         },
         "STORE": {
           "status": {
@@ -8548,8 +8557,7 @@
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 204,
-            "open": 1
+            "fixed": 205
           },
           "total": 207
         }
@@ -8557,15 +8565,14 @@
       "severity": {
         "blocker": 167,
         "major": 432,
-        "minor": 306
+        "minor": 307
       },
       "status": {
         "deferred": 4,
-        "fixed": 898,
-        "open": 2,
-        "partial": 1
+        "fixed": 900,
+        "partial": 2
       },
-      "total": 905
+      "total": 906
     }
   },
   "rest": {

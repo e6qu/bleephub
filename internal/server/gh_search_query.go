@@ -75,10 +75,14 @@ var searchQualifierScopes = map[string]map[string]bool{
 	"code": qualifierSet(
 		"repo", "user", "org", "language", "path", "extension", "ext", "filename", "file",
 	),
-	"users":   qualifierSet("type", "in", "repos", "followers", "location", "created", "language"),
-	"commits": qualifierSet("repo", "user", "org", "author", "hash"),
-	"labels":  qualifierSet(),
-	"topics":  qualifierSet(),
+	"users": qualifierSet("type", "in", "repos", "followers", "location", "created", "language"),
+	"commits": qualifierSet(
+		"repo", "user", "org", "author", "hash",
+		"committer", "author-name", "author-email", "committer-name", "committer-email",
+		"author-date", "committer-date", "merge",
+	),
+	"labels": qualifierSet(),
+	"topics": qualifierSet(),
 }
 
 func qualifierSet(values ...string) map[string]bool {

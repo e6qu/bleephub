@@ -92,4 +92,33 @@ describe("PRFilesView review comment", () => {
       comments: [{ path: "a.txt", line: 1, side: "RIGHT", body: "please fix" }],
     });
   });
+
+  it("includes start_line when a multi-line range is set", async () => {
+    const multi = { ...prFile, filename: "m.txt", patch: "@@ -0,0 +1,3 @@\n+line1\n+line2\n+line3" };
+    let commentBody: unknown = null;
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith("/pulls/7/files")) return Promise.resolve(jsonResponse([multi]));
+      if (init?.method === "POST" && u.endsWith("/pulls/7/comments")) {
+        commentBody = JSON.parse(String(init.body));
+        return Promise.resolve(jsonResponse({ id: 3 }));
+      }
+      return Promise.resolve(jsonResponse({}));
+    });
+
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <PRFilesView owner="admin" repo="test" number={7} headSha="deadbeef" />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Comment on m.txt line 3" }));
+    fireEvent.change(screen.getByLabelText("Start line (optional)"), { target: { value: "1" } });
+    fireEvent.change(screen.getByLabelText("Review comment"), { target: { value: "spans lines" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add single comment" }));
+
+    await waitFor(() => expect(commentBody).not.toBeNull());
+    expect(commentBody).toMatchObject({ path: "m.txt", line: 3, side: "RIGHT", start_line: 1 });
+  });
 });
