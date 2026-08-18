@@ -76,6 +76,7 @@ type searchQuery struct {
 	IsPublic      *bool
 	InTitle       bool
 	InBody        bool
+	InComments    bool
 	Sort          string
 	Order         string
 	PerPage       int
@@ -255,6 +256,8 @@ func parseSearchQuery(r *http.Request) (searchQuery, error) {
 						q.InTitle = true
 					case "body":
 						q.InBody = true
+					case "comments":
+						q.InComments = true
 					case "name", "description", "topics", "readme":
 					// User-search `in:` fields (applied in handleSearchUsers).
 					case "login", "email", "fullname":
@@ -370,6 +373,26 @@ func parseSearchQuery(r *http.Request) (searchQuery, error) {
 	return q, nil
 }
 
+// searchTextFor builds the text a term match runs against, honouring the `in:`
+// qualifier. With no in: field the default is title+body; otherwise the match
+// is restricted to the union of the named fields (title, body, comments).
+func (q searchQuery) searchTextFor(title, body, comments string) string {
+	if !q.InTitle && !q.InBody && !q.InComments {
+		return title + " " + body
+	}
+	parts := make([]string, 0, 3)
+	if q.InTitle {
+		parts = append(parts, title)
+	}
+	if q.InBody {
+		parts = append(parts, body)
+	}
+	if q.InComments {
+		parts = append(parts, comments)
+	}
+	return strings.Join(parts, " ")
+}
+
 func (q searchQuery) matchesText(text string) bool {
 	text = strings.ToLower(text)
 	for _, term := range q.Terms {
@@ -421,6 +444,24 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 	var prRows []prRow
 
 	s.store.Mu.RLock()
+
+	// in:comments restricts the term match to comment bodies. Build a per-subject
+	// concatenation of comment bodies once (reading st.Comments directly under the
+	// held lock — no re-lock), keyed by "parentType:id". Only when the query asks.
+	var commentBodies map[string]string
+	if q.InComments {
+		commentBodies = map[string]string{}
+		for _, c := range s.store.Comments {
+			key := c.ParentType + ":" + strconv.Itoa(c.IssueID)
+			commentBodies[key] += " " + c.Body
+		}
+	}
+	commentBodyFor := func(parentType string, id int) string {
+		if commentBodies == nil {
+			return ""
+		}
+		return commentBodies[parentType+":"+strconv.Itoa(id)]
+	}
 
 	for _, issue := range s.store.Issues {
 		repo := s.store.Repos[issue.RepoID]
@@ -492,12 +533,7 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 		if q.includes("is", "merged") || q.includes("is", "unmerged") || q.includes("is", "draft") {
 			continue
 		}
-		text := issue.Title + " " + issue.Body
-		if q.InTitle && !q.InBody {
-			text = issue.Title
-		} else if q.InBody && !q.InTitle {
-			text = issue.Body
-		}
+		text := q.searchTextFor(issue.Title, issue.Body, commentBodyFor("issue", issue.ID))
 		if !q.matchesText(text) {
 			continue
 		}
@@ -593,12 +629,7 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 		if q.excludes("is", "draft") && pr.IsDraft {
 			continue
 		}
-		text := pr.Title + " " + pr.Body
-		if q.InTitle && !q.InBody {
-			text = pr.Title
-		} else if q.InBody && !q.InTitle {
-			text = pr.Body
-		}
+		text := q.searchTextFor(pr.Title, pr.Body, commentBodyFor("pull_request", pr.ID))
 		if !q.matchesText(text) {
 			continue
 		}

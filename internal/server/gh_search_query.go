@@ -123,7 +123,7 @@ func (q searchQuery) validateFor(searchType string) error {
 			for _, value := range strings.Split(strings.ToLower(qualifier.Value), ",") {
 				valid := searchType == "repositories" &&
 					(value == "name" || value == "description" || value == "topics" || value == "readme") ||
-					searchType == "issues" && (value == "title" || value == "body") ||
+					searchType == "issues" && (value == "title" || value == "body" || value == "comments") ||
 					searchType == "users" && (value == "login" || value == "name" || value == "email" || value == "fullname")
 				if !valid {
 					return unsupportedQualifierError{key: qualifier.Key, value: qualifier.Value}
