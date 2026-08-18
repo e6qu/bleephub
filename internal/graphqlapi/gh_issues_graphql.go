@@ -2348,6 +2348,7 @@ type graphQLTypeRegistry struct {
 	issueComment                     *graphql.Object
 	issueCommentConnection           *graphql.Object
 	reactionGroup                    *graphql.Object
+	reaction                         *graphql.Object
 	ref                              *graphql.Object
 	license                          *graphql.Object
 	organization                     *graphql.Object

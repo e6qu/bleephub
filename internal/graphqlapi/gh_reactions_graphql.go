@@ -151,6 +151,7 @@ func (s *Resolver) addReactionMutationsToSchema(mutationType *graphql.Object) {
 	// subject: Reactable) still need a node-ID-bearing reaction and a Reactable
 	// interface resolver; they stay absent (a subset the ratchet accepts).
 	reactionGroupType := s.gqlReactionGroupType()
+	reactionType := s.graphqlTypes.reaction
 	inputFields := func() graphql.InputObjectConfigFieldMap {
 		return graphql.InputObjectConfigFieldMap{
 			"subjectId":        &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
@@ -161,6 +162,13 @@ func (s *Resolver) addReactionMutationsToSchema(mutationType *graphql.Object) {
 	payloadFields := func() graphql.Fields {
 		return graphql.Fields{
 			"clientMutationId": &graphql.Field{Type: graphql.String},
+			"reaction": &graphql.Field{
+				Type: reactionType,
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					src, _ := p.Source.(map[string]interface{})
+					return src["reaction"], nil
+				},
+			},
 			"reactionGroups": &graphql.Field{
 				Type: graphql.NewList(graphql.NewNonNull(reactionGroupType)),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -189,10 +197,15 @@ func (s *Resolver) addReactionMutationsToSchema(mutationType *graphql.Object) {
 			if !ok {
 				return nil, gqlMissingNode("Reactable", subjectID)
 			}
-			if _, _, err := s.store.Reactions.AddReaction(parentType, parentID, viewer.ID, graphQLToReactionContent(contentEnum)); err != nil {
+			created, _, err := s.store.Reactions.AddReaction(parentType, parentID, viewer.ID, graphQLToReactionContent(contentEnum))
+			if err != nil {
 				return nil, err
 			}
-			return map[string]interface{}{"parentType": parentType, "parentID": parentID}, nil
+			out := map[string]interface{}{"parentType": parentType, "parentID": parentID}
+			if created != nil {
+				out["reaction"] = reactionNodeToGraphQL(s.store, created)
+			}
+			return out, nil
 		},
 	})
 
@@ -209,13 +222,16 @@ func (s *Resolver) addReactionMutationsToSchema(mutationType *graphql.Object) {
 				return nil, gqlMissingNode("Reactable", subjectID)
 			}
 			content := graphQLToReactionContent(contentEnum)
+			out := map[string]interface{}{"parentType": parentType, "parentID": parentID}
 			for _, r := range s.store.Reactions.ListReactions(parentType, parentID, content) {
 				if r.UserID == viewer.ID {
+					// The payload's reaction is the one that was removed.
+					out["reaction"] = reactionNodeToGraphQL(s.store, r)
 					s.store.Reactions.DeleteReactionByUser(parentType, parentID, r.ID, viewer.ID)
 					break
 				}
 			}
-			return map[string]interface{}{"parentType": parentType, "parentID": parentID}, nil
+			return out, nil
 		},
 	})
 }

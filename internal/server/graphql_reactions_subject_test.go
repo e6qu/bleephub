@@ -61,7 +61,7 @@ func TestGraphQLAddReactionReturnsReactionGroups(t *testing.T) {
 	s := newIsolatedServer(t)
 	f := newGQLAuthzFixture(t, s.Server, "reactgroups", true)
 
-	doc := `mutation($input:AddReactionInput!){addReaction(input:$input){reactionGroups{content viewerHasReacted}}}`
+	doc := `mutation($input:AddReactionInput!){addReaction(input:$input){reaction{id content user{login}} reactionGroups{content viewerHasReacted}}}`
 	env := s.gqlAuthzPost(t, f.ownerToken, doc,
 		map[string]interface{}{"input": map[string]interface{}{"subjectId": f.issue.NodeID, "content": "HEART"}})
 	if errs := gqlAuthzErrors(env); len(errs) > 0 {
@@ -69,6 +69,14 @@ func TestGraphQLAddReactionReturnsReactionGroups(t *testing.T) {
 	}
 	data, _ := env["data"].(map[string]interface{})
 	add, _ := data["addReaction"].(map[string]interface{})
+	// The payload's reaction is the one just created.
+	reaction, _ := add["reaction"].(map[string]interface{})
+	if reaction == nil || reaction["content"] != "HEART" {
+		t.Errorf("addReaction.reaction = %v, want content HEART", add["reaction"])
+	}
+	if id, _ := reaction["id"].(string); id == "" {
+		t.Errorf("addReaction.reaction.id is empty")
+	}
 	groups, _ := add["reactionGroups"].([]interface{})
 	found := false
 	for _, g := range groups {
