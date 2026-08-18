@@ -3034,6 +3034,15 @@
         "status_kind": "fixed"
       },
       {
+        "category": "REST",
+        "finding": "pull-request search items omitted the `reactions` reaction-rollup that `issue-search-result-item` carries (issue items already had it via issueToJSON), and `sort=reactions`/`sort=interactions` were silently ignored (best-match order)",
+        "id": "REST-184",
+        "location": "gh_search.go",
+        "severity": "m",
+        "status": "fixed \u2014 PR search items now emit the reaction-rollup (total_count + per-content counts, url at the issues reactions path), and both sort keys order by the rollup total (interactions = reactions + comments) via the render-all path. Verified: a test seeds reactions and asserts the rollup total plus the reactions/interactions ordering",
+        "status_kind": "fixed"
+      },
+      {
         "category": "GQL",
         "finding": "`POST /api/graphql` serves anonymous requests; real GitHub 401s every unauthenticated request",
         "id": "GQL-001",
@@ -8536,10 +8545,10 @@
         "REST": {
           "status": {
             "deferred": 1,
-            "fixed": 181,
+            "fixed": 182,
             "partial": 1
           },
-          "total": 183
+          "total": 184
         },
         "STORE": {
           "status": {
@@ -8565,14 +8574,14 @@
       "severity": {
         "blocker": 167,
         "major": 432,
-        "minor": 307
+        "minor": 308
       },
       "status": {
         "deferred": 4,
-        "fixed": 900,
+        "fixed": 901,
         "partial": 2
       },
-      "total": 906
+      "total": 907
     }
   },
   "rest": {

@@ -642,10 +642,10 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 
 	total := len(rows)
 
-	// The "comments" sort key needs a rendered comment count per row, so it
-	// keeps the render-all path (rare). created/updated/best-match sort only on
-	// row timestamps, so those render just the requested page.
-	if q.Sort == "comments" {
+	// The "comments"/"reactions"/"interactions" sort keys need rendered per-row
+	// counts, so they keep the render-all path (rare). created/updated/best-match
+	// sort only on row timestamps, so those render just the requested page.
+	if q.Sort == "comments" || q.Sort == "reactions" || q.Sort == "interactions" {
 		results := make([]map[string]interface{}, 0, total)
 		for _, row := range rows {
 			results = append(results, render(row))
@@ -810,6 +810,10 @@ func issueToJSONForPullRequest(pr *store.PullRequest, st *store.Store, baseURL, 
 	}
 	numStr := strconv.Itoa(pr.Number)
 	api := baseURL + "/api/v3/repos/" + repoFullName + "/issues/" + numStr
+	// issue-search-result-item carries a reaction-rollup like the issue shape;
+	// PR search rows reuse the issues reactions parent ("pull_request") and URL.
+	reactions := st.Reactions.SummarizeReactions("pull_request", pr.ID)
+	reactions["url"] = api + "/reactions"
 	return map[string]interface{}{
 		"id":                 pr.ID,
 		"node_id":            pr.NodeID,
@@ -839,6 +843,7 @@ func issueToJSONForPullRequest(pr *store.PullRequest, st *store.Store, baseURL, 
 		"closed_by":          pullRequestClosedByJSON(st, pr),
 		"author_association": store.AuthorAssociation(st, pr.AuthorID, repo),
 		"draft":              pr.IsDraft,
+		"reactions":          reactions,
 	}
 }
 
@@ -1606,8 +1611,35 @@ func sortSearchResults(items []map[string]interface{}, sortKey, order string) []
 			}
 			return a > b
 		})
+	case "reactions":
+		sort.SliceStable(items, func(i, j int) bool {
+			if order == "asc" {
+				return itemReactionTotal(items[i]) < itemReactionTotal(items[j])
+			}
+			return itemReactionTotal(items[i]) > itemReactionTotal(items[j])
+		})
+	case "interactions":
+		// GitHub's interactions = reactions + comments on the item.
+		inter := func(m map[string]interface{}) int {
+			c, _ := m["comments"].(int)
+			return itemReactionTotal(m) + c
+		}
+		sort.SliceStable(items, func(i, j int) bool {
+			if order == "asc" {
+				return inter(items[i]) < inter(items[j])
+			}
+			return inter(items[i]) > inter(items[j])
+		})
 	}
 	return items
+}
+
+// itemReactionTotal reads the reaction-rollup total_count off a rendered
+// search item (0 when absent).
+func itemReactionTotal(m map[string]interface{}) int {
+	r, _ := m["reactions"].(map[string]interface{})
+	t, _ := r["total_count"].(int)
+	return t
 }
 
 func sortRepoSearchResults(items []map[string]interface{}, sortKey, order string) []map[string]interface{} {
