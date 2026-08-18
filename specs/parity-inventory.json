@@ -17082,6 +17082,7 @@
         "statuses": [
           "200",
           "400",
+          "403",
           "404"
         ]
       },
@@ -30087,7 +30088,7 @@
         "source": "internal/server/gh_misc_endpoints.go"
       }
     ],
-    "vendored_openapi_sha256": "f1a01c395961f4e4b7bc9b98d775711213baf89b3c8d84e4c76c10e0440caca2"
+    "vendored_openapi_sha256": "bd4d42c338b5a46aef3aa2aa01abe7f9b01ba426dadc98b728f0a007b7820a7c"
   },
   "schema_version": 1,
   "sources": {
