@@ -293,8 +293,12 @@ func parseSearchQuery(r *http.Request) (searchQuery, error) {
 				default:
 					return q, unsupportedQualifierError{key: "type", value: val}
 				}
-			case "assignee", "milestone", "mentions":
+			case "assignee", "milestone", "mentions", "involves", "commenter", "head", "base":
 				// Applied per-item in handleSearchIssues; no parse-time state.
+			case "reactions", "interactions":
+				if _, err := parseNumericSearchConstraint(val); err != nil {
+					return q, unsupportedQualifierError{key: key, value: val}
+				}
 			case "no":
 				switch strings.ToLower(val) {
 				case "label", "assignee", "milestone":
@@ -618,6 +622,20 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 		rows = append(rows, searchIssueRow{pr: row.pr, repo: row.repo, assoc: row.assoc, title: row.title, body: row.body, created: row.created, updated: row.updated})
 	}
 
+	// Interaction qualifiers (involves:/commenter:/reactions:/interactions:) read
+	// comment authors and reaction counts through their own locks, so they are
+	// applied here — after the store read lock is released — rather than in the
+	// under-lock matcher.
+	if q.hasInteractionQualifiers() {
+		kept := rows[:0]
+		for _, row := range rows {
+			if s.rowMatchesInteractionQualifiers(row, q) {
+				kept = append(kept, row)
+			}
+		}
+		rows = kept
+	}
+
 	render := func(row searchIssueRow) map[string]interface{} {
 		if row.issue != nil {
 			item := issueToJSON(row.issue, s.store, base, row.repo.FullName)
@@ -911,6 +929,104 @@ func prHasLabelNames(st *store.Store, pr *store.PullRequest, names []string) boo
 // assignee: (incl. `*`), milestone: (incl. `*`), every positive label: (AND'd —
 // the old code kept only the last), no:label|assignee|milestone, and mentions:.
 // Callers hold st.Mu.RLock; text is the item's title+" "+body for mentions.
+// hasInteractionQualifiers reports whether the query carries any qualifier
+// whose evaluation needs comment/reaction data fetched outside the store lock.
+func (q searchQuery) hasInteractionQualifiers() bool {
+	for _, ql := range q.Qualifiers {
+		switch ql.Key {
+		case "involves", "commenter", "reactions", "interactions", "head", "base":
+			return true
+		}
+	}
+	return false
+}
+
+// rowMatchesInteractionQualifiers applies GitHub's issue-search interaction
+// qualifiers to one matched row, reading comment authors and reaction counts
+// through their own locks. Must be called with the store read lock released.
+func (s *Server) rowMatchesInteractionQualifiers(row searchIssueRow, q searchQuery) bool {
+	var parentType string
+	var parentID, authorID int
+	var assigneeIDs []int
+	var text string
+	if row.issue != nil {
+		parentType, parentID = "issue", row.issue.ID
+		authorID, assigneeIDs, text = row.issue.AuthorID, row.issue.AssigneeIDs, row.issue.Title+" "+row.issue.Body
+	} else {
+		parentType, parentID = "pull_request", row.pr.ID
+		authorID, assigneeIDs, text = row.pr.AuthorID, row.pr.AssigneeIDs, row.pr.Title+" "+row.pr.Body
+	}
+	loginOf := func(id int) string {
+		if u := s.store.GetUserByID(id); u != nil {
+			return u.Login
+		}
+		return ""
+	}
+	var comments []*store.Comment
+	loaded := false
+	loadComments := func() []*store.Comment {
+		if !loaded {
+			comments = s.store.ListCommentsFor(parentType, parentID)
+			loaded = true
+		}
+		return comments
+	}
+	isCommenter := func(login string) bool {
+		for _, c := range loadComments() {
+			if strings.EqualFold(loginOf(c.AuthorID), login) {
+				return true
+			}
+		}
+		return false
+	}
+	reactionTotal := func() int {
+		t, _ := s.store.Reactions.SummarizeReactions(parentType, parentID)["total_count"].(int)
+		return t
+	}
+	for _, ql := range q.Qualifiers {
+		val := strings.Trim(ql.Value, `"`)
+		var ok bool
+		switch ql.Key {
+		case "commenter":
+			ok = isCommenter(val)
+		case "involves":
+			// author, assignee, mentioned, or commenter — GitHub's union.
+			ok = strings.EqualFold(loginOf(authorID), val)
+			for _, aid := range assigneeIDs {
+				if ok {
+					break
+				}
+				ok = strings.EqualFold(loginOf(aid), val)
+			}
+			if !ok {
+				ok = strings.Contains(strings.ToLower(text), "@"+strings.ToLower(val))
+			}
+			if !ok {
+				ok = isCommenter(val)
+			}
+		case "reactions":
+			c, err := parseNumericSearchConstraint(val)
+			ok = err == nil && c.matches(int64(reactionTotal()))
+		case "interactions":
+			c, err := parseNumericSearchConstraint(val)
+			ok = err == nil && c.matches(int64(reactionTotal()+len(loadComments())))
+		case "head":
+			// head:/base: match a pull request's source/target branch; a plain
+			// issue has neither and never matches.
+			ok = row.pr != nil && strings.EqualFold(row.pr.HeadRefName, val)
+		case "base":
+			ok = row.pr != nil && strings.EqualFold(row.pr.BaseRefName, val)
+		default:
+			continue
+		}
+		// Positive qualifier must match; negated must not.
+		if ok == ql.Negated {
+			return false
+		}
+	}
+	return true
+}
+
 // issueSearchSubject carries the per-item fields the temporal and state
 // qualifiers filter on (dates, draft flag, owning-repo archived flag), so the
 // issue and pull-request callers can drive one matcher.
