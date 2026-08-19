@@ -540,7 +540,8 @@ func (s *Resolver) addRepoFieldsToSchema(
 	// release store. The immutable field is derived from the repository and
 	// organization immutable-release settings that the REST surface persists.
 	releaseType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "Release",
+		Name:       "Release",
+		Interfaces: []*graphql.Interface{s.graphqlTypes.reactable},
 		Fields: graphql.Fields{
 			"id": &graphql.Field{
 				Type: graphql.NewNonNull(graphql.ID),
@@ -565,6 +566,8 @@ func (s *Resolver) addRepoFieldsToSchema(
 			"description":  &graphql.Field{Type: graphql.String},
 		},
 	})
+	s.graphqlTypes.release = releaseType
+	s.addReactableFields(releaseType, "release")
 
 	releaseConnectionType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "ReleaseConnection",

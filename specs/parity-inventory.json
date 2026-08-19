@@ -292,15 +292,15 @@
   "graphql": {
     "compatibility_gap_count": 9,
     "coverage": {
-      "bleephub_types": 269,
+      "bleephub_types": 271,
       "compatibility_gap_count": 9,
-      "implemented_fields": 947,
+      "implemented_fields": 982,
       "official_fields": 8360,
       "official_types": 1807,
-      "shared_types": 262,
-      "signature_exact_fields": 946
+      "shared_types": 264,
+      "signature_exact_fields": 981
     },
-    "introspection_snapshot_sha256": "0d8499d46ded8c1ef098fa1381eb2f7e4848d06efe5004cdb61d6a170778a51e",
+    "introspection_snapshot_sha256": "72b21180bdb65fed013573d94e767c13ec305d7f9545dbc2ac42694742c8484a",
     "official_schema": {
       "content_sha256": "b716c6844750283b8c33200f660989337254e7158f40ed869f06418bafb3bc2e",
       "source": "https://docs.github.com/public/fpt/schema.docs.graphql"
@@ -3750,8 +3750,8 @@
         "id": "GQL-068",
         "location": "gh_reactions_graphql.go",
         "severity": "m",
-        "status": "partial \u2014 `reactionGroups: [ReactionGroup!]` resolves off the mutated subject (r29); and `reaction: Reaction` now returns the created/removed reaction, minting a `REA_`-prefixed node id and sharing the single Reaction type via the type registry (r34, introspection snapshot + ratchet regenerated; verified by a test selecting `reaction{id content user{login}}` from addReaction). Only `subject: Reactable` remains \u2014 it needs a Reactable interface resolver registered across the concrete reaction subjects, tracked as a scoped follow-up",
-        "status_kind": "partial"
+        "status": "fixed \u2014 all three fields now resolve. `reactionGroups: [ReactionGroup!]` off the mutated subject (r29); `reaction: Reaction` returns the created/removed reaction with a `REA_` node id via the shared Reaction type (r34); and `subject: Reactable` (r36) returns the fully-populated concrete subject through a real Reactable interface (id/databaseId/reactionGroups/reactions/viewerCanReact) with ResolveType across all nine official concrete types \u2014 Issue, PullRequest, PullRequestReview, Discussion, DiscussionComment, IssueComment, CommitComment (a new GraphQL type), PullRequestReviewComment and Release, each declared to implement it \u2014 and addReaction/removeReaction now resolve every one of the nine subjects (four new node-id finders added). Introspection snapshot + official-schema ratchet regenerated with no new compatibility gaps; verified by a test selecting `subject{__typename ...on Issue{title} viewerCanReact reactionGroups{content}}` from addReaction",
+        "status_kind": "fixed"
       },
       {
         "category": "ACT",
@@ -8531,8 +8531,7 @@
         },
         "GQL": {
           "status": {
-            "fixed": 67,
-            "partial": 1
+            "fixed": 68
           },
           "total": 68
         },
@@ -8577,8 +8576,7 @@
       },
       "status": {
         "deferred": 4,
-        "fixed": 902,
-        "partial": 1
+        "fixed": 903
       },
       "total": 907
     }

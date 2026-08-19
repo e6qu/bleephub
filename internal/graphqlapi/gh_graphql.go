@@ -231,6 +231,12 @@ func (s *Resolver) initGraphQLSchema() {
 	})
 	s.addMetaFieldsToSchema(queryType)
 
+	// Create the shared reaction types (Reaction/ReactionConnection/Reactable)
+	// before any concrete subject type so they can declare they implement
+	// Reactable at config time. The interface's ResolveType reads the registry
+	// lazily, so the concrete types it names may be built afterwards.
+	s.initReactionGraphQLTypes(userType)
+
 	// Add repository types, queries, and mutations
 	repoType, mutationType, ownerRepositoriesField, ownerRepositoryField := s.addRepoFieldsToSchema(userType, queryType, nodeInterface)
 	nodeTypes["Repository"] = repoType
@@ -270,6 +276,10 @@ func (s *Resolver) initGraphQLSchema() {
 	schema, err := graphql.NewSchema(graphql.SchemaConfig{
 		Query:    queryType,
 		Mutation: mutationType,
+		// CommitComment is a Reactable subject not reachable from any root
+		// field, so register it explicitly to include it (and its Reactable
+		// possibleType membership) in the schema.
+		Types: []graphql.Type{s.graphqlTypes.commitComment},
 	})
 	if err != nil {
 		panic(fmt.Sprintf("failed to create graphql schema: %v", err))

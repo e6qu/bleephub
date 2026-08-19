@@ -115,7 +115,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 	// --- Issue type ---
 	issueType := graphql.NewObject(graphql.ObjectConfig{
 		Name:       "Issue",
-		Interfaces: []*graphql.Interface{nodeInterface, s.gqlLockableInterface()},
+		Interfaces: []*graphql.Interface{nodeInterface, s.gqlLockableInterface(), s.graphqlTypes.reactable},
 		Fields: graphql.Fields{
 			"id": &graphql.Field{
 				Type: graphql.NewNonNull(graphql.ID),
@@ -291,8 +291,9 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 		},
 	})
 
-	// Registered for interface ResolveType dispatch (Lockable).
+	// Registered for interface ResolveType dispatch (Lockable, Reactable).
 	s.graphqlTypes.issue = issueType
+	s.addReactableFields(issueType, "issue")
 
 	// parent / subIssues carry GitHub's real signatures (Issue and
 	// IssueConnection!) — added after issueType exists because both are
@@ -1706,7 +1707,7 @@ func (s *Resolver) gqlIssueCommentType() *graphql.Object {
 	)
 	s.graphqlTypes.issueComment = graphql.NewObject(graphql.ObjectConfig{
 		Name:       "IssueComment",
-		Interfaces: []*graphql.Interface{s.gqlMinimizableInterface()},
+		Interfaces: []*graphql.Interface{s.gqlMinimizableInterface(), s.graphqlTypes.reactable},
 		Fields: graphql.Fields{
 			"id": &graphql.Field{
 				Type: graphql.NewNonNull(graphql.ID),
@@ -1821,6 +1822,7 @@ func (s *Resolver) gqlIssueCommentType() *graphql.Object {
 			},
 		},
 	})
+	s.addReactableFields(s.graphqlTypes.issueComment, "issue_comment")
 	return s.graphqlTypes.issueComment
 }
 
@@ -2349,6 +2351,12 @@ type graphQLTypeRegistry struct {
 	issueCommentConnection           *graphql.Object
 	reactionGroup                    *graphql.Object
 	reaction                         *graphql.Object
+	reactionConnection               *graphql.Object
+	reactable                        *graphql.Interface
+	pullRequestReview                *graphql.Object
+	pullRequestReviewComment         *graphql.Object
+	commitComment                    *graphql.Object
+	release                          *graphql.Object
 	ref                              *graphql.Object
 	license                          *graphql.Object
 	organization                     *graphql.Object

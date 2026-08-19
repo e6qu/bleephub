@@ -20,55 +20,11 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 	htmlScalar := s.graphQLStringScalar("HTML")
 
 	// --- Reaction types ---
-	// The shared ReactionGroup from the registry (issues, PRs, and
-	// discussions all expose GitHub's one ReactionGroup type).
+	// The shared ReactionGroup, Reaction and ReactionConnection instances come
+	// from the registry (initReactionGraphQLTypes), so every reactable subject
+	// exposes GitHub's one set of reaction types.
 	discussionReactionGroupType := s.gqlReactionGroupType()
-
-	// Reaction/ReactionConnection/ReactionEdge bear GitHub's real type names;
-	// bleephub implements the subset of fields its reaction store models.
-	discussionReactionType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "Reaction",
-		Fields: graphql.Fields{
-			"id": &graphql.Field{Type: graphql.NewNonNull(graphql.ID)},
-			"content": &graphql.Field{
-				Type: graphql.NewNonNull(s.graphQLEnum(
-					"ReactionContent",
-					"CONFUSED", "EYES", "HEART", "HOORAY", "LAUGH", "ROCKET", "THUMBS_DOWN", "THUMBS_UP",
-				)),
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					r, ok := p.Source.(map[string]interface{})
-					if !ok {
-						return nil, fmt.Errorf("reaction source: unexpected type %T", p.Source)
-					}
-					content, _ := r["content"].(string)
-					return reactionContentToGraphQL(content), nil
-				},
-			},
-			"user": &graphql.Field{
-				Type: userType,
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					r, ok := p.Source.(map[string]interface{})
-					if !ok {
-						return nil, fmt.Errorf("reaction source: unexpected type %T", p.Source)
-					}
-					return r["user"], nil
-				},
-			},
-		},
-	})
-	// Share the single Reaction type instance so the addReaction/removeReaction
-	// payloads can expose reaction: Reaction (GQL-068) without redefining it.
-	s.graphqlTypes.reaction = discussionReactionType
-
-	discussionReactionConnectionType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "ReactionConnection",
-		Fields: graphql.Fields{
-			"nodes":      &graphql.Field{Type: graphql.NewList(discussionReactionType)},
-			"edges":      &graphql.Field{Type: graphql.NewList(graphql.NewObject(graphql.ObjectConfig{Name: "ReactionEdge", Fields: graphql.Fields{"node": &graphql.Field{Type: discussionReactionType}, "cursor": &graphql.Field{Type: graphql.NewNonNull(graphql.String)}}}))},
-			"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
-			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
-		},
-	})
+	discussionReactionConnectionType := s.graphqlTypes.reactionConnection
 
 	// --- Category type ---
 	discussionCategoryType := graphql.NewObject(graphql.ObjectConfig{
@@ -118,7 +74,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 
 	discussionCommentType = graphql.NewObject(graphql.ObjectConfig{
 		Name:       "DiscussionComment",
-		Interfaces: []*graphql.Interface{s.gqlMinimizableInterface()},
+		Interfaces: []*graphql.Interface{s.gqlMinimizableInterface(), s.graphqlTypes.reactable},
 		Fields: graphql.FieldsThunk(func() graphql.Fields {
 			return graphql.Fields{
 				// Minimizable contract — bleephub doesn't model discussion
@@ -208,6 +164,22 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 						return discussionReactionConnection(s.store, "discussion_comment", commentID, p.Args), nil
 					},
 				},
+				// Remaining Reactable interface fields (this type uses a
+				// FieldsThunk, so they are declared here rather than added via
+				// AddFieldConfig).
+				"databaseId": &graphql.Field{
+					Type: graphql.Int,
+					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+						c, _ := p.Source.(map[string]interface{})
+						return reactableDBID(c), nil
+					},
+				},
+				"viewerCanReact": &graphql.Field{
+					Type: graphql.NewNonNull(graphql.Boolean),
+					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+						return s.ghUserFromContext(p.Context) != nil, nil
+					},
+				},
 				"replies": &graphql.Field{
 					Type: graphql.NewNonNull(discussionCommentConnectionType),
 					Args: graphql.FieldConfigArgument{
@@ -259,7 +231,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 
 	discussionType = graphql.NewObject(graphql.ObjectConfig{
 		Name:       "Discussion",
-		Interfaces: []*graphql.Interface{s.gqlLockableInterface()},
+		Interfaces: []*graphql.Interface{s.gqlLockableInterface(), s.graphqlTypes.reactable},
 		Fields: graphql.Fields{
 			"id": &graphql.Field{
 				Type: graphql.NewNonNull(graphql.ID),
@@ -435,6 +407,10 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 	// Registered for interface ResolveType dispatch (Lockable / Minimizable).
 	s.graphqlTypes.discussion = discussionType
 	s.graphqlTypes.discussionComment = discussionCommentType
+	// Discussion uses a literal Fields map, so AddFieldConfig installs the
+	// remaining Reactable fields; DiscussionComment uses a FieldsThunk and
+	// declares them inline above.
+	s.addReactableFields(discussionType, "discussion")
 
 	discussionEdgeType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "DiscussionEdge",
