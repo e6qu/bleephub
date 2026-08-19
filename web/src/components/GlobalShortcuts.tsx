@@ -49,6 +49,16 @@ export function GlobalShortcuts({ login }: { login: string }) {
         }
         return;
       }
+      // github.com focuses the header search on `s` or `/` (the typing guard
+      // above keeps both usable inside form fields).
+      if (e.key === "s" || e.key === "/") {
+        const input = document.getElementById("global-search-input");
+        if (input) {
+          e.preventDefault();
+          input.focus();
+        }
+        return;
+      }
       if (e.key === "g") {
         gPendingRef.current = true;
         // The prefix only stays armed briefly, matching github.com.

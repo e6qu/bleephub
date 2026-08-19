@@ -37,6 +37,7 @@ type Discussion struct {
 	LastEditedAt *time.Time `json:"last_edited_at"`
 	PublishedAt  *time.Time `json:"published_at"`
 	Deleted      bool       `json:"deleted"`
+	UpvoterIDs   []int      `json:"upvoter_ids"` // users who upvoted (addUpvote/removeUpvote)
 }
 
 // DiscussionComment is a comment on a discussion (top-level or reply).
@@ -52,6 +53,7 @@ type DiscussionComment struct {
 	IsAnswer     bool       `json:"is_answer"`
 	ParentID     int        `json:"parent_id"`
 	Deleted      bool       `json:"deleted"`
+	UpvoterIDs   []int      `json:"upvoter_ids"` // users who upvoted (addUpvote/removeUpvote)
 }
 
 func DiscussionCategoryNodeID(id int) string {
@@ -209,7 +211,8 @@ func (st *Store) CreateDiscussion(repoID, categoryID, authorID int, title, body 
 }
 
 // cloneDiscussion returns a copy safe to hand outside the store lock
-// (STORE-021): LastEditedAt and PublishedAt are the only reference fields.
+// (STORE-021): LastEditedAt, PublishedAt and UpvoterIDs are the reference
+// fields.
 func cloneDiscussion(d *Discussion) *Discussion {
 	if d == nil {
 		return nil
@@ -222,6 +225,9 @@ func cloneDiscussion(d *Discussion) *Discussion {
 	if d.PublishedAt != nil {
 		published := *d.PublishedAt
 		clone.PublishedAt = &published
+	}
+	if d.UpvoterIDs != nil {
+		clone.UpvoterIDs = append([]int(nil), d.UpvoterIDs...)
 	}
 	return &clone
 }
@@ -324,17 +330,8 @@ func (st *Store) GetDiscussionComment(id int) *DiscussionComment {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 	// A copy so a reader can't mutate the stored comment through the getter
-	// (STORE-021); LastEditedAt is the only reference field.
-	c := st.DiscussionComments[id]
-	if c == nil {
-		return nil
-	}
-	clone := *c
-	if c.LastEditedAt != nil {
-		edited := *c.LastEditedAt
-		clone.LastEditedAt = &edited
-	}
-	return &clone
+	// (STORE-021); LastEditedAt and UpvoterIDs are the reference fields.
+	return cloneDiscussionComment(st.DiscussionComments[id])
 }
 
 // ListDiscussionComments returns comments for a discussion, optionally scoped to a parent.
@@ -414,6 +411,59 @@ func (st *Store) MarkDiscussionCommentAsAnswer(id int) bool {
 		panic(&PersistenceFailure{Op: "batch", Bucket: "discussion_comments", Key: strconv.Itoa(c.ID), Err: err})
 	}
 	return true
+}
+
+// SetDiscussionUpvote adds (up=true) or removes (up=false) userID's upvote on
+// a discussion. Idempotent both ways; reports whether the discussion exists.
+// Upvotes deliberately bump neither UpdatedAt nor LastEditedAt — a vote is not
+// an edit.
+func (st *Store) SetDiscussionUpvote(id, userID int, up bool) bool {
+	st.Mu.Lock()
+	defer st.Mu.Unlock()
+	d, ok := st.Discussions[id]
+	if !ok || d.Deleted {
+		return false
+	}
+	if changed, next := setUpvoter(d.UpvoterIDs, userID, up); changed {
+		d.UpvoterIDs = next
+		st.persistDiscussion(d)
+	}
+	return true
+}
+
+// SetDiscussionCommentUpvote adds (up=true) or removes (up=false) userID's
+// upvote on a discussion comment. Idempotent both ways; reports whether the
+// comment exists.
+func (st *Store) SetDiscussionCommentUpvote(id, userID int, up bool) bool {
+	st.Mu.Lock()
+	defer st.Mu.Unlock()
+	c, ok := st.DiscussionComments[id]
+	if !ok || c.Deleted {
+		return false
+	}
+	if changed, next := setUpvoter(c.UpvoterIDs, userID, up); changed {
+		c.UpvoterIDs = next
+		st.persistDiscussionComment(c)
+	}
+	return true
+}
+
+// setUpvoter adds or removes userID from an upvoter set, reporting whether the
+// set changed.
+func setUpvoter(ids []int, userID int, up bool) (bool, []int) {
+	for i, existing := range ids {
+		if existing != userID {
+			continue
+		}
+		if up {
+			return false, ids
+		}
+		return true, append(ids[:i], ids[i+1:]...)
+	}
+	if !up {
+		return false, ids
+	}
+	return true, append(ids, userID)
 }
 
 // UnmarkDiscussionCommentAsAnswer unmarks a comment as the answer.

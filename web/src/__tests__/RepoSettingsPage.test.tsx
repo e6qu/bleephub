@@ -192,6 +192,8 @@ describe("RepoSettingsPage", () => {
       if (u.includes("/environments/production/variables")) return Promise.resolve(jsonResponse({ variables: [] }));
       if (u.includes("/environments/production/secrets")) return Promise.resolve(jsonResponse({ secrets: [] }));
       if (u.endsWith("/environments")) return Promise.resolve(jsonResponse({ environments: [envObj] }));
+      if (u.includes("/collaborators")) return Promise.resolve(jsonResponse([{ id: 1, login: "admin" }]));
+      if (u === "/api/v3/orgs/admin/teams") return Promise.resolve(jsonResponse({ message: "Not Found" }, 404));
       if (u.includes("/issues") || u.includes("/pulls")) return Promise.resolve(jsonResponse([]));
       return Promise.resolve(jsonResponse(repo));
     });
@@ -211,7 +213,63 @@ describe("RepoSettingsPage", () => {
         (c) => String(c[0]).includes("/environments/production") && c[1]?.method === "PUT",
       );
       expect(put).toBeDefined();
-      expect(JSON.parse(String(put![1].body))).toEqual({ wait_timer: 30 });
+      expect(JSON.parse(String(put![1].body))).toEqual({ wait_timer: 30, reviewers: [] });
+    });
+  });
+
+  it("adds a required reviewer and PUTs it alongside the wait timer", async () => {
+    const envObj = {
+      id: 1,
+      name: "production",
+      node_id: "e",
+      url: "u",
+      protection_rules: [{ id: 1, node_id: "r", type: "wait_timer", wait_timer: 0 }],
+      deployment_branch_policy: null,
+    };
+    mockFetch.mockImplementation((url: string, opts?: { method?: string }) => {
+      const u = url.toString();
+      if (u.includes("/environments/production") && opts?.method === "PUT") {
+        return Promise.resolve(jsonResponse(envObj, 200));
+      }
+      if (u.includes("/environments/production/variables")) return Promise.resolve(jsonResponse({ variables: [] }));
+      if (u.includes("/environments/production/secrets")) return Promise.resolve(jsonResponse({ secrets: [] }));
+      if (u.endsWith("/environments")) return Promise.resolve(jsonResponse({ environments: [envObj] }));
+      if (u.includes("/collaborators")) return Promise.resolve(jsonResponse([{ id: 42, login: "reviewer-user" }]));
+      if (u === "/api/v3/orgs/admin/teams") return Promise.resolve(jsonResponse([{ id: 7, slug: "platform", name: "Platform" }]));
+      if (u.includes("/issues") || u.includes("/pulls")) return Promise.resolve(jsonResponse([]));
+      return Promise.resolve(jsonResponse(repo));
+    });
+    renderPage();
+    await waitFor(() => screen.getByDisplayValue("before"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Environments" }));
+    fireEvent.click(await screen.findByRole("button", { name: "production" }));
+
+    // Pick a user reviewer.
+    const userPicker = await screen.findByLabelText("Add user reviewer for production");
+    await waitFor(() => expect(screen.getByRole("option", { name: "reviewer-user" })).toBeInTheDocument());
+    fireEvent.change(userPicker, { target: { value: "42" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add user" }));
+
+    // Pick a team reviewer.
+    const teamPicker = await screen.findByLabelText("Add team reviewer for production");
+    fireEvent.change(teamPicker, { target: { value: "7" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add team" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Save protection" }));
+
+    await waitFor(() => {
+      const put = mockFetch.mock.calls.find(
+        (c) => String(c[0]).includes("/environments/production") && c[1]?.method === "PUT",
+      );
+      expect(put).toBeDefined();
+      expect(JSON.parse(String(put![1].body))).toEqual({
+        wait_timer: 0,
+        reviewers: [
+          { type: "User", id: 42 },
+          { type: "Team", id: 7 },
+        ],
+      });
     });
   });
 
@@ -272,8 +330,13 @@ describe("RepoSettingsPage", () => {
     // Open the Danger zone (Transfer) tab, then trigger the delete card.
     fireEvent.click(screen.getByRole("button", { name: "Transfer" }));
     fireEvent.click(screen.getByRole("button", { name: "Delete this repository" }));
-    // Confirm in the confirmAction modal (its confirm button is labelled "Delete").
-    fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+    // Type-to-confirm: the Delete button stays disabled until "{owner}/{repo}" is typed.
+    const confirmDelete = await screen.findByRole("button", { name: "Delete" });
+    expect(confirmDelete).toBeDisabled();
+    fireEvent.change(screen.getByLabelText(/type .* to confirm/i), {
+      target: { value: "admin/settings-repo" },
+    });
+    fireEvent.click(confirmDelete);
 
     await waitFor(() => {
       const del = mockFetch.mock.calls.find(
@@ -295,8 +358,13 @@ describe("RepoSettingsPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Transfer" }));
     fireEvent.click(screen.getByRole("button", { name: "Archive this repository" }));
-    // Archiving is confirmed through confirmAction (confirm button labelled "Archive").
-    fireEvent.click(await screen.findByRole("button", { name: "Archive" }));
+    // Archiving is type-to-confirm on the repository name.
+    const confirmArchive = await screen.findByRole("button", { name: "Archive" });
+    expect(confirmArchive).toBeDisabled();
+    fireEvent.change(screen.getByLabelText(/type .* to confirm/i), {
+      target: { value: "settings-repo" },
+    });
+    fireEvent.click(confirmArchive);
 
     await waitFor(() => {
       const patch = mockFetch.mock.calls.find(
@@ -576,6 +644,228 @@ describe("RepoSettingsPage", () => {
         (c) => c[0] === "/api/v3/repos/admin/settings-repo/immutable-releases" && c[1]?.method === "PUT",
       );
       expect(put).toBeDefined();
+    });
+  });
+
+  it("renames the repository via PATCH { name } and navigates to the new URL", async () => {
+    mockFetch.mockImplementation((url: string, opts?: { method?: string }) => {
+      if (opts?.method === "PATCH") {
+        return Promise.resolve(jsonResponse({ ...repo, name: "renamed-repo", full_name: "admin/renamed-repo" }));
+      }
+      const u = url.toString();
+      if (u.includes("/issues") || u.includes("/pulls")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/topics")) return Promise.resolve(jsonResponse({ names: [] }));
+      return Promise.resolve(jsonResponse(repo));
+    });
+    renderPage();
+    await waitFor(() => screen.getByDisplayValue("before"));
+
+    const nameInput = screen.getByLabelText("Repository name");
+    const renameButton = screen.getByRole("button", { name: "Rename" });
+    // Disabled until the name actually changes.
+    expect(renameButton).toBeDisabled();
+    fireEvent.change(nameInput, { target: { value: "renamed-repo" } });
+    fireEvent.click(renameButton);
+
+    await waitFor(() => {
+      const patch = mockFetch.mock.calls.find((c) => c[1]?.method === "PATCH");
+      expect(patch).toBeTruthy();
+      expect(patch![0]).toBe("/api/v3/repos/admin/settings-repo");
+      expect(JSON.parse(String(patch![1].body))).toEqual({ name: "renamed-repo" });
+    });
+  });
+
+  it("changes visibility from the danger zone with typed confirmation", async () => {
+    mockFetch.mockImplementation((url: string, opts?: { method?: string }) => {
+      if (opts?.method === "PATCH") return Promise.resolve(jsonResponse({ ...repo, private: true }));
+      const u = url.toString();
+      if (u.includes("/issues") || u.includes("/pulls")) return Promise.resolve(jsonResponse([]));
+      return Promise.resolve(jsonResponse(repo));
+    });
+    renderPage();
+    await waitFor(() => screen.getByDisplayValue("before"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Transfer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Make private" }));
+
+    // The confirmAction modal mounts into its own host; scope queries to it
+    // because the danger-zone card has an identically-named button.
+    const dialog = await screen.findByRole("dialog", { name: /change visibility to private/i });
+    const modalConfirm = within(dialog).getByRole("button", { name: "Make private" });
+    expect(modalConfirm).toBeDisabled();
+    fireEvent.change(within(dialog).getByLabelText(/type .* to confirm/i), {
+      target: { value: "admin/settings-repo" },
+    });
+    expect(modalConfirm).toBeEnabled();
+    fireEvent.click(modalConfirm);
+
+    await waitFor(() => {
+      const patch = mockFetch.mock.calls.find((c) => c[1]?.method === "PATCH");
+      expect(patch).toBeTruthy();
+      expect(JSON.parse(String(patch![1].body))).toEqual({ private: true, visibility: "private" });
+    });
+  });
+
+  it("saves discussions, signoff, merge-branch suggestions, and commit-message defaults", async () => {
+    mockFetch.mockImplementation((url: string, opts?: { method?: string }) => {
+      if (opts?.method === "PATCH") return Promise.resolve(jsonResponse(repo));
+      const u = url.toString();
+      if (u.includes("/issues") || u.includes("/pulls")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/topics")) return Promise.resolve(jsonResponse({ names: [] }));
+      return Promise.resolve(jsonResponse(repo));
+    });
+    renderPage();
+    await waitFor(() => screen.getByDisplayValue("before"));
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Discussions" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Require contributors to sign off on web-based commits" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Always suggest updating pull request branches" }));
+    fireEvent.change(screen.getByLabelText("Default squash commit title"), { target: { value: "PR_TITLE" } });
+    fireEvent.change(screen.getByLabelText("Default merge commit message"), { target: { value: "PR_BODY" } });
+    fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
+
+    await waitFor(() => {
+      const patch = mockFetch.mock.calls.find((c) => c[1]?.method === "PATCH");
+      expect(patch).toBeTruthy();
+      const body = JSON.parse(String(patch![1].body));
+      expect(body.has_discussions).toBe(true);
+      expect(body.web_commit_signoff_required).toBe(true);
+      expect(body.allow_update_branch).toBe(true);
+      expect(body.squash_merge_commit_title).toBe("PR_TITLE");
+      expect(body.merge_commit_message).toBe("PR_BODY");
+      // Visibility no longer travels with the general form — it moved to the danger zone.
+      expect(body.private).toBeUndefined();
+      expect(body.visibility).toBeUndefined();
+    });
+  });
+
+  it("toggles security_and_analysis features via PATCH from the security tab", async () => {
+    const secureRepo = {
+      ...repo,
+      security_and_analysis: {
+        advanced_security: { status: "disabled" },
+        secret_scanning: { status: "enabled" },
+        secret_scanning_push_protection: { status: "disabled" },
+        secret_scanning_non_provider_patterns: { status: "disabled" },
+        dependabot_security_updates: { status: "disabled" },
+      },
+    };
+    mockFetch.mockImplementation((url: string, opts?: { method?: string }) => {
+      const u = url.toString();
+      if (u === "/api/v3/repos/admin/settings-repo" && opts?.method === "PATCH") {
+        return Promise.resolve(jsonResponse(secureRepo));
+      }
+      if (u.endsWith("/automated-security-fixes")) return Promise.resolve(jsonResponse({ enabled: false }));
+      if (u.endsWith("/private-vulnerability-reporting")) return Promise.resolve(jsonResponse({ enabled: false }));
+      if (u.endsWith("/vulnerability-alerts")) return Promise.resolve(new Response(null, { status: 404 }));
+      if (u.includes("/issues") || u.includes("/pulls")) return Promise.resolve(jsonResponse([]));
+      return Promise.resolve(jsonResponse(secureRepo));
+    });
+    renderPage();
+    await waitFor(() => screen.getByDisplayValue("before"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Code security and analysis" }));
+    // secret_scanning is enabled → its row offers Disable; advanced_security offers Enable.
+    fireEvent.click(await screen.findByRole("button", { name: "Enable GitHub Advanced Security" }));
+
+    await waitFor(() => {
+      const patch = mockFetch.mock.calls.find(
+        (c) => c[0] === "/api/v3/repos/admin/settings-repo" && c[1]?.method === "PATCH",
+      );
+      expect(patch).toBeTruthy();
+      expect(JSON.parse(String(patch![1].body))).toEqual({
+        security_and_analysis: { advanced_security: { status: "enabled" } },
+      });
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Disable Secret scanning" }));
+    await waitFor(() => {
+      const patches = mockFetch.mock.calls.filter(
+        (c) => c[0] === "/api/v3/repos/admin/settings-repo" && c[1]?.method === "PATCH",
+      );
+      expect(JSON.parse(String(patches.at(-1)![1].body))).toEqual({
+        security_and_analysis: { secret_scanning: { status: "disabled" } },
+      });
+    });
+  });
+
+  it("edits a webhook: PATCHes url, individual events, and a new secret", async () => {
+    const existing = {
+      id: 7,
+      name: "web",
+      active: true,
+      events: ["push", "issues"],
+      config: { url: "https://old.example/hook", content_type: "json" },
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+      url: "",
+      deliveries_url: "",
+      last_response: { code: null, status: "unused", message: null },
+    };
+    mockFetch.mockImplementation((url: string, opts?: { method?: string }) => {
+      const u = url.toString();
+      if (u === "/api/v3/repos/admin/settings-repo/hooks/7" && opts?.method === "PATCH") {
+        return Promise.resolve(jsonResponse({ ...existing, config: { ...existing.config, url: "https://new.example/hook" } }));
+      }
+      if (u === "/api/v3/repos/admin/settings-repo/hooks") return Promise.resolve(jsonResponse([existing]));
+      if (u.includes("/issues") || u.includes("/pulls")) return Promise.resolve(jsonResponse([]));
+      return Promise.resolve(jsonResponse(repo));
+    });
+    renderPage();
+    await waitFor(() => screen.getByDisplayValue("before"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Webhooks" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Edit webhook 7" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Edit webhook #7" });
+    // Prefilled with the hook's current state: individual-events mode with push+issues checked.
+    const urlInput = within(dialog).getByLabelText("Payload URL");
+    expect(urlInput).toHaveValue("https://old.example/hook");
+    expect(within(dialog).getByRole("radio", { name: "Let me select individual events" })).toBeChecked();
+    expect(within(dialog).getByRole("checkbox", { name: "issues" })).toBeChecked();
+
+    fireEvent.change(urlInput, { target: { value: "https://new.example/hook" } });
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "pull_request" }));
+    fireEvent.change(within(dialog).getByLabelText("Secret"), { target: { value: "s3cret" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Update webhook" }));
+
+    await waitFor(() => {
+      const patch = mockFetch.mock.calls.find(
+        (c) => c[0] === "/api/v3/repos/admin/settings-repo/hooks/7" && c[1]?.method === "PATCH",
+      );
+      expect(patch).toBeDefined();
+      expect(JSON.parse(String(patch![1].body))).toEqual({
+        active: true,
+        events: ["issues", "pull_request", "push"],
+        config: { url: "https://new.example/hook", content_type: "json", secret: "s3cret" },
+      });
+    });
+  });
+
+  it("creates a webhook subscribed to everything via the radio trio", async () => {
+    mockFetch.mockImplementation((url: string, opts?: { method?: string }) => {
+      const u = url.toString();
+      if (u === "/api/v3/repos/admin/settings-repo/hooks" && opts?.method === "POST") {
+        return Promise.resolve(jsonResponse({ id: 9 }, 201));
+      }
+      if (u === "/api/v3/repos/admin/settings-repo/hooks") return Promise.resolve(jsonResponse([]));
+      if (u.includes("/issues") || u.includes("/pulls")) return Promise.resolve(jsonResponse([]));
+      return Promise.resolve(jsonResponse(repo));
+    });
+    renderPage();
+    await waitFor(() => screen.getByDisplayValue("before"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Webhooks" }));
+    fireEvent.change(await screen.findByLabelText("Payload URL"), { target: { value: "https://x.test/h" } });
+    fireEvent.click(screen.getByRole("radio", { name: "Send me everything" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add webhook" }));
+
+    await waitFor(() => {
+      const post = mockFetch.mock.calls.find(
+        (c) => c[0] === "/api/v3/repos/admin/settings-repo/hooks" && c[1]?.method === "POST",
+      );
+      expect(post).toBeDefined();
+      expect(JSON.parse(String(post![1].body)).events).toEqual(["*"]);
     });
   });
 });

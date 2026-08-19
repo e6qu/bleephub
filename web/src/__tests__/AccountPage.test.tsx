@@ -46,6 +46,11 @@ function installFetchRoutes(overrides: Record<string, () => Response> = {}) {
         ]),
       );
     if (key === "GET /api/v3/user/gpg_keys") return Promise.resolve(jsonResponse([]));
+    if (key === "GET /api/v3/authorizations") return Promise.resolve(jsonResponse([]));
+    if (key === "GET /settings/personal-access-tokens")
+      return Promise.resolve(
+        jsonResponse({ tokens: [], resource_owners: [{ login: "admin", type: "User" }], repositories: {}, pending_requests: [] }),
+      );
     if (key === "GET /api/v3/user/ssh_signing_keys") return Promise.resolve(jsonResponse([]));
     if (key === "GET /api/v3/user/emails")
       return Promise.resolve(
@@ -78,13 +83,13 @@ function installFetchRoutes(overrides: Record<string, () => Response> = {}) {
   });
 }
 
-function renderPage() {
+function renderPage(initialEntry = "/ui/account") {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={["/ui/account"]}>
+      <MemoryRouter initialEntries={[initialEntry]}>
         <AccountPage />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -464,5 +469,188 @@ describe("AccountPage", () => {
         ((c[1] as RequestInit | undefined)?.method ?? "GET") === "GET",
     );
     expect(summaryGet).toBeDefined();
+  });
+
+  it("opens the tab named by ?tab= so settings sections are deep-linkable", async () => {
+    installFetchRoutes();
+    renderPage("/ui/account?tab=emails");
+    expect(screen.getByRole("button", { name: "Emails" })).toHaveAttribute("aria-current", "page");
+    await waitFor(() => screen.getByText("admin@example.com"));
+    // Selecting another item rewrites the param and swaps the pane.
+    fireEvent.click(screen.getByRole("button", { name: "Appearance" }));
+    expect(screen.getByRole("button", { name: "Appearance" })).toHaveAttribute("aria-current", "page");
+    expect(await screen.findByRole("radio", { name: /sync with system/i })).toBeInTheDocument();
+  });
+
+  it("falls back to Public profile for an unknown ?tab= value", async () => {
+    installFetchRoutes();
+    renderPage("/ui/account?tab=does-not-exist");
+    expect(screen.getByRole("button", { name: "Public profile" })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("offers Light / Dark / Sync with system in Appearance", async () => {
+    installFetchRoutes();
+    // Mount with a persisted explicit override so "system" is not preselected.
+    window.localStorage.setItem("bleephub:theme", "dark");
+    renderPage("/ui/account?tab=appearance");
+    expect(await screen.findByRole("radio", { name: /^Light/ })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /^Dark/ })).toBeChecked();
+    fireEvent.click(screen.getByRole("radio", { name: /sync with system/i }));
+    // System mode clears the persisted override.
+    expect(window.localStorage.getItem("bleephub:theme")).toBe(null);
+  });
+
+  it("sets a verified address as primary via PUT /ui-data/user/emails/primary", async () => {
+    installFetchRoutes({
+      "GET /api/v3/user/emails": () =>
+        jsonResponse([
+          { email: "admin@example.com", primary: true, verified: true, visibility: "private" },
+          { email: "alt@example.com", primary: false, verified: true, visibility: null },
+          { email: "unverified@example.com", primary: false, verified: false, visibility: null },
+        ]),
+      "PUT /ui-data/user/emails/primary": () =>
+        jsonResponse([
+          { email: "alt@example.com", primary: true, verified: true, visibility: "private" },
+          { email: "admin@example.com", primary: false, verified: true, visibility: "private" },
+        ]),
+    });
+    renderPage("/ui/account?tab=emails");
+    await waitFor(() => screen.getByText("alt@example.com"));
+    // Only verified non-primary addresses get the action.
+    expect(screen.queryByRole("button", { name: "Set unverified@example.com as primary" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Set alt@example.com as primary" }));
+    await waitFor(() => {
+      const put = mockFetch.mock.calls.find(
+        (c) => String(c[0]) === "/ui-data/user/emails/primary" && (c[1] as RequestInit | undefined)?.method === "PUT",
+      );
+      expect(put).toBeDefined();
+      expect(String((put![1] as RequestInit).body)).toContain("alt@example.com");
+    });
+  });
+
+  it("lists, creates, and deletes classic tokens via /api/v3/authorizations", async () => {
+    installFetchRoutes({
+      "GET /api/v3/authorizations": () =>
+        jsonResponse([
+          {
+            id: 42, url: "/api/v3/authorizations/42", scopes: ["repo"], token: "",
+            token_last_eight: "abcd1234", hashed_token: "h",
+            app: { client_id: "00000000000000000000", name: "GitHub API", url: "https://github.com" },
+            note: "ci token", note_url: null, fingerprint: null,
+            created_at: "2026-08-01T00:00:00Z", updated_at: "2026-08-01T00:00:00Z", expires_at: null,
+          },
+        ]),
+      "POST /api/v3/authorizations": () =>
+        jsonResponse({
+          id: 43, url: "/api/v3/authorizations/43", scopes: ["repo", "read:org"], token: "ghp_shown_once",
+          token_last_eight: "wxyz9876", hashed_token: "h2",
+          app: { client_id: "00000000000000000000", name: "GitHub API", url: "https://github.com" },
+          note: "new one", note_url: null, fingerprint: null,
+          created_at: "2026-08-19T00:00:00Z", updated_at: "2026-08-19T00:00:00Z", expires_at: null,
+        }, 201),
+      "DELETE /api/v3/authorizations/42": () => new Response(null, { status: 204 }),
+    });
+    renderPage("/ui/account?tab=tokens");
+    expect(await screen.findByText("ci token")).toBeInTheDocument();
+    expect(screen.getByText(/…abcd1234/)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Note"), { target: { value: "new one" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: /repo Full control of private repositories/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Generate classic token" }));
+    expect(await screen.findByText("ghp_shown_once")).toBeInTheDocument();
+    const post = mockFetch.mock.calls.find(
+      (c) => String(c[0]) === "/api/v3/authorizations" && (c[1] as RequestInit | undefined)?.method === "POST",
+    );
+    expect(post).toBeDefined();
+    const body = JSON.parse(String((post![1] as RequestInit).body));
+    expect(body).toMatchObject({ note: "new one", scopes: ["repo"] });
+    // The legacy authorizations API accepts no expiration field.
+    expect(body).not.toHaveProperty("expires_at");
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm" }));
+    await waitFor(() => {
+      const del = mockFetch.mock.calls.find(
+        (c) => String(c[0]) === "/api/v3/authorizations/42" && (c[1] as RequestInit | undefined)?.method === "DELETE",
+      );
+      expect(del).toBeDefined();
+    });
+  });
+
+  it("computes the fine-grained expiration from the preset and warns on no expiration", async () => {
+    installFetchRoutes();
+    renderPage("/ui/account?tab=tokens");
+    const preset = await screen.findByLabelText("Expiration");
+    // Default 30 days: the computed date is displayed.
+    expect((preset as HTMLSelectElement).value).toBe("30");
+    expect(screen.getByText(/The token will expire on/)).toBeInTheDocument();
+    fireEvent.change(preset, { target: { value: "none" } });
+    expect(screen.getByText(/This token will never expire/)).toBeInTheDocument();
+    fireEvent.change(preset, { target: { value: "custom" } });
+    expect(screen.getByLabelText("Custom expiration date")).toBeInTheDocument();
+  });
+
+  it("renames the account via PATCH /api/v3/admin/users/{username} when the viewer is a site admin", async () => {
+    installFetchRoutes({
+      "PATCH /api/v3/admin/users/admin": () =>
+        jsonResponse({ message: "Job queued to rename user.", url: "/user/1" }, 202),
+    });
+    renderPage("/ui/account?tab=account");
+    const input = await screen.findByLabelText("New username");
+    fireEvent.change(input, { target: { value: "root" } });
+    fireEvent.click(screen.getByRole("button", { name: "Change username" }));
+    await waitFor(() => {
+      const patch = mockFetch.mock.calls.find(
+        (c) => String(c[0]) === "/api/v3/admin/users/admin" && (c[1] as RequestInit | undefined)?.method === "PATCH",
+      );
+      expect(patch).toBeDefined();
+      expect(JSON.parse(String((patch![1] as RequestInit).body))).toEqual({ login: "root" });
+    });
+  });
+
+  it("shows a contact-your-administrator note instead of rename/delete for non-admins", async () => {
+    installFetchRoutes({
+      "GET /api/v3/user": () =>
+        jsonResponse({ id: 2, login: "mona", type: "User", site_admin: false }),
+    });
+    renderPage("/ui/account?tab=account");
+    expect(await screen.findByText(/Contact your administrator/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Change username" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Delete your account" })).toBeNull();
+  });
+
+  it("deletes the account after typed confirmation, then leaves via the sign-out form", async () => {
+    const submitSpy = vi
+      .spyOn(HTMLFormElement.prototype, "submit")
+      .mockImplementation(() => {});
+    installFetchRoutes({
+      "DELETE /api/v3/admin/users/admin": () => new Response(null, { status: 204 }),
+    });
+    renderPage("/ui/account?tab=account");
+    fireEvent.click(await screen.findByRole("button", { name: "Delete your account" }));
+    const confirmInput = await screen.findByLabelText(/To confirm, type/);
+    const deleteBtn = screen.getByRole("button", { name: "Delete this account" });
+    expect(deleteBtn).toBeDisabled();
+    fireEvent.change(confirmInput, { target: { value: "admin" } });
+    expect(deleteBtn).not.toBeDisabled();
+    fireEvent.click(deleteBtn);
+    await waitFor(() => {
+      const del = mockFetch.mock.calls.find(
+        (c) => String(c[0]) === "/api/v3/admin/users/admin" && (c[1] as RequestInit | undefined)?.method === "DELETE",
+      );
+      expect(del).toBeDefined();
+      expect(submitSpy).toHaveBeenCalled();
+    });
+    submitSpy.mockRestore();
+  });
+
+  it("renders the Applications tab with the shared authorized-applications list", async () => {
+    installFetchRoutes({
+      "GET /settings/connections/applications": () =>
+        jsonResponse([{ client_id: "c1", name: "Example App", type: "OAuthApp", url: "", scopes: ["repo"], created_at: "2026-01-01T00:00:00Z" }]),
+    });
+    renderPage("/ui/account?tab=applications");
+    expect(await screen.findByText("Example App")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Revoke" })).toBeInTheDocument();
   });
 });

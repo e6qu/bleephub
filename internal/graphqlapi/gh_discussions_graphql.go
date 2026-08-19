@@ -74,9 +74,31 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 
 	discussionCommentType = graphql.NewObject(graphql.ObjectConfig{
 		Name:       "DiscussionComment",
-		Interfaces: []*graphql.Interface{s.gqlMinimizableInterface(), s.graphqlTypes.reactable},
+		Interfaces: []*graphql.Interface{s.gqlMinimizableInterface(), s.graphqlTypes.reactable, s.gqlVotableInterface()},
 		Fields: graphql.FieldsThunk(func() graphql.Fields {
 			return graphql.Fields{
+				// Votable contract.
+				"upvoteCount": &graphql.Field{
+					Type: graphql.NewNonNull(graphql.Int),
+					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+						c, _ := p.Source.(map[string]interface{})
+						ids, _ := c["upvoterIDs"].([]int)
+						return len(ids), nil
+					},
+				},
+				"viewerCanUpvote": &graphql.Field{
+					Type: graphql.NewNonNull(graphql.Boolean),
+					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+						return s.ghUserFromContext(p.Context) != nil, nil
+					},
+				},
+				"viewerHasUpvoted": &graphql.Field{
+					Type: graphql.NewNonNull(graphql.Boolean),
+					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+						c, _ := p.Source.(map[string]interface{})
+						return viewerHasUpvoted(s.ghUserFromContext(p.Context), c), nil
+					},
+				},
 				// Minimizable contract — bleephub doesn't model discussion
 				// comment moderation, so these resolve GitHub's zero values.
 				"isMinimized": &graphql.Field{
@@ -231,8 +253,36 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 
 	discussionType = graphql.NewObject(graphql.ObjectConfig{
 		Name:       "Discussion",
-		Interfaces: []*graphql.Interface{s.gqlLockableInterface(), s.graphqlTypes.reactable},
+		Interfaces: []*graphql.Interface{s.gqlLockableInterface(), s.graphqlTypes.reactable, s.gqlVotableInterface()},
 		Fields: graphql.Fields{
+			// Votable contract.
+			"upvoteCount": &graphql.Field{
+				Type: graphql.NewNonNull(graphql.Int),
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					d, _ := p.Source.(map[string]interface{})
+					ids, _ := d["upvoterIDs"].([]int)
+					return len(ids), nil
+				},
+			},
+			"viewerCanUpvote": &graphql.Field{
+				Type: graphql.NewNonNull(graphql.Boolean),
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					d, _ := p.Source.(map[string]interface{})
+					viewer := s.ghUserFromContext(p.Context)
+					if viewer == nil {
+						return false, nil
+					}
+					locked, _ := d["locked"].(bool)
+					return !locked, nil
+				},
+			},
+			"viewerHasUpvoted": &graphql.Field{
+				Type: graphql.NewNonNull(graphql.Boolean),
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					d, _ := p.Source.(map[string]interface{})
+					return viewerHasUpvoted(s.ghUserFromContext(p.Context), d), nil
+				},
+			},
 			"id": &graphql.Field{
 				Type: graphql.NewNonNull(graphql.ID),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -914,6 +964,111 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 			}, nil
 		},
 	})
+
+	// --- addUpvote / removeUpvote ---
+
+	addUpvoteInputType := graphql.NewInputObject(graphql.InputObjectConfig{
+		Name: "AddUpvoteInput",
+		Fields: graphql.InputObjectConfigFieldMap{
+			"subjectId":        &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
+			"clientMutationId": &graphql.InputObjectFieldConfig{Type: graphql.String},
+		},
+	})
+
+	addUpvotePayloadType := graphql.NewObject(graphql.ObjectConfig{
+		Name: "AddUpvotePayload",
+		Fields: graphql.Fields{
+			"subject":          &graphql.Field{Type: s.gqlVotableInterface()},
+			"clientMutationId": &graphql.Field{Type: graphql.String},
+		},
+	})
+
+	removeUpvoteInputType := graphql.NewInputObject(graphql.InputObjectConfig{
+		Name: "RemoveUpvoteInput",
+		Fields: graphql.InputObjectConfigFieldMap{
+			"subjectId":        &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
+			"clientMutationId": &graphql.InputObjectFieldConfig{Type: graphql.String},
+		},
+	})
+
+	removeUpvotePayloadType := graphql.NewObject(graphql.ObjectConfig{
+		Name: "RemoveUpvotePayload",
+		Fields: graphql.Fields{
+			"subject":          &graphql.Field{Type: s.gqlVotableInterface()},
+			"clientMutationId": &graphql.Field{Type: graphql.String},
+		},
+	})
+
+	// resolveUpvote is the shared body: the subject is any Votable — a
+	// discussion or a discussion comment — and both mutations differ only in
+	// the vote's direction.
+	resolveUpvote := func(up bool) func(graphql.ResolveParams) (interface{}, error) {
+		return func(p graphql.ResolveParams) (interface{}, error) {
+			user := s.ghUserFromContext(p.Context)
+			input, _ := p.Args["input"].(map[string]interface{})
+			subjectNodeID, _ := input["subjectId"].(string)
+
+			if d := store.FindDiscussionByNodeID(s.store, subjectNodeID); d != nil {
+				s.store.SetDiscussionUpvote(d.ID, user.ID, up)
+				return map[string]interface{}{
+					"subject":          discussionToGQL(s.store.GetDiscussion(d.ID), s.store),
+					"clientMutationId": input["clientMutationId"],
+				}, nil
+			}
+			if c := store.FindDiscussionCommentByNodeID(s.store, subjectNodeID); c != nil {
+				s.store.SetDiscussionCommentUpvote(c.ID, user.ID, up)
+				return map[string]interface{}{
+					"subject":          discussionCommentToGQL(s.store.GetDiscussionComment(c.ID), s.store),
+					"clientMutationId": input["clientMutationId"],
+				}, nil
+			}
+			return nil, gqlMissingNode("node", subjectNodeID)
+		}
+	}
+
+	s.registerMutation(mutationType, "addUpvote", &graphql.Field{
+		Type: addUpvotePayloadType,
+		Args: graphql.FieldConfigArgument{
+			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(addUpvoteInputType)},
+		},
+		Resolve: resolveUpvote(true),
+	})
+
+	s.registerMutation(mutationType, "removeUpvote", &graphql.Field{
+		Type: removeUpvotePayloadType,
+		Args: graphql.FieldConfigArgument{
+			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(removeUpvoteInputType)},
+		},
+		Resolve: resolveUpvote(false),
+	})
+}
+
+// gqlVotableInterface returns GitHub's Votable interface (memoized):
+// upvoteCount / viewerCanUpvote / viewerHasUpvoted, exactly the official field
+// set. Discussion and DiscussionComment implement it. ResolveType
+// discriminates on the source map's node id prefix — the registry entries are
+// populated by the time any query executes.
+func (s *Resolver) gqlVotableInterface() *graphql.Interface {
+	if s.graphqlTypes.votable != nil {
+		return s.graphqlTypes.votable
+	}
+	s.graphqlTypes.votable = graphql.NewInterface(graphql.InterfaceConfig{
+		Name: "Votable",
+		Fields: graphql.Fields{
+			"upvoteCount":      &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
+			"viewerCanUpvote":  &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
+			"viewerHasUpvoted": &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
+		},
+		ResolveType: func(p graphql.ResolveTypeParams) *graphql.Object {
+			source, _ := p.Value.(map[string]interface{})
+			nodeID, _ := source["nodeID"].(string)
+			if strings.HasPrefix(nodeID, "DC_") {
+				return s.graphqlTypes.discussionComment
+			}
+			return s.graphqlTypes.discussion
+		},
+	})
+	return s.graphqlTypes.votable
 }
 
 // --- GraphQL converters ---
@@ -987,6 +1142,7 @@ func discussionToGQL(d *store.Discussion, st *store.Store) map[string]interface{
 		"activeLockReason": graphQLLockReason(d.LockedReason),
 		"publishedAt":      publishedAt,
 		"url":              url,
+		"upvoterIDs":       append([]int(nil), d.UpvoterIDs...),
 	}
 }
 
@@ -1016,7 +1172,24 @@ func discussionCommentToGQL(c *store.DiscussionComment, st *store.Store) map[str
 		"updatedAt":    c.UpdatedAt.Format(time.RFC3339),
 		"lastEditedAt": lastEditedAt,
 		"isAnswer":     c.IsAnswer,
+		"upvoterIDs":   append([]int(nil), c.UpvoterIDs...),
 	}
+}
+
+// viewerHasUpvoted reports whether the viewer's id is in a rendered subject's
+// upvoter set (the "upvoterIDs" key discussionToGQL / discussionCommentToGQL
+// carry).
+func viewerHasUpvoted(viewer *store.User, source map[string]interface{}) bool {
+	if viewer == nil {
+		return false
+	}
+	ids, _ := source["upvoterIDs"].([]int)
+	for _, id := range ids {
+		if id == viewer.ID {
+			return true
+		}
+	}
+	return false
 }
 
 func discussionBodyToHTML(body string) string {

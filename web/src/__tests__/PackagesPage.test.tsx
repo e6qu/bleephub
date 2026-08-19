@@ -41,6 +41,92 @@ const deletedPkg = {
   updated_at: "2026-01-01T00:00:00Z",
 };
 
+const npmPkg = {
+  id: 12,
+  name: "web-sdk",
+  package_type: "npm",
+  visibility: "public",
+  url: "",
+  html_url: "",
+  version_count: 1,
+  created_at: "2026-01-01T00:00:00Z",
+  updated_at: "2026-01-02T00:00:00Z",
+  owner: { login: "acme", type: "Organization" },
+  repository: {
+    id: 4,
+    node_id: "R_4",
+    name: "web",
+    full_name: "acme/web",
+    description: "",
+    homepage: null,
+    default_branch: "main",
+    visibility: "public",
+    private: false,
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+    pushed_at: null,
+    size: 0,
+    owner: { login: "acme", type: "Organization" },
+  },
+};
+
+describe("PackagesPage detail", () => {
+  it("shows per-ecosystem installation instructions and a source-repo link", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.includes("/versions")) {
+        return Promise.resolve(
+          jsonResponse([
+            { id: 31, name: "2.1.0", url: "", package_html_url: "", created_at: "2026-01-02T00:00:00Z", updated_at: "2026-01-02T00:00:00Z" },
+          ]),
+        );
+      }
+      if (u.includes("state=deleted")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/packages")) return Promise.resolve(jsonResponse([npmPkg]));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/orgs/acme/packages");
+
+    // Switch to the npm tab, open the package detail.
+    fireEvent.click(await screen.findByRole("tab", { name: "npm" }));
+    fireEvent.click(await screen.findByRole("button", { name: "web-sdk" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Installation")).toBeInTheDocument();
+    });
+    // Latest (non-deleted) version fills the npm install command.
+    expect(await screen.findByText(/npm install web-sdk@2\.1\.0/)).toBeInTheDocument();
+    // Owning repository is linked.
+    expect(screen.getByRole("link", { name: "acme/web" })).toHaveAttribute(
+      "href",
+      "/ui/repos/acme/web",
+    );
+  });
+
+  it("renders a docker pull command for container packages using this host", async () => {
+    const containerPkg = { ...npmPkg, id: 13, name: "svc-image", package_type: "container", repository: null };
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.includes("/versions")) {
+        return Promise.resolve(
+          jsonResponse([
+            { id: 32, name: "v5", url: "", package_html_url: "", created_at: "2026-01-02T00:00:00Z", updated_at: "2026-01-02T00:00:00Z" },
+          ]),
+        );
+      }
+      if (u.includes("state=deleted")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/packages")) return Promise.resolve(jsonResponse([containerPkg]));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/orgs/acme/packages");
+
+    fireEvent.click(await screen.findByRole("button", { name: "svc-image" }));
+    expect(
+      await screen.findByText(new RegExp(`docker pull ${window.location.host}/acme/svc-image:v5`)),
+    ).toBeInTheDocument();
+  });
+});
+
 describe("PackagesPage deleted packages", () => {
   it("lists deleted packages and restores one via POST .../restore", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {

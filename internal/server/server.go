@@ -549,6 +549,7 @@ func (s *Server) registerRoutes() {
 	s.registerGHSecurityAdvisoriesRoutes()
 	s.registerGHRepoAutolinkRoutes()
 	s.registerGHWikiRoutes()
+	s.registerGHUIBootstrapRoutes()
 	s.registerGHPinnedRoutes()
 	s.registerGHAccountSettingsRoutes()
 	s.registerGHRepoInvitationRoutes()
@@ -873,7 +874,11 @@ func (s *Server) requestHandler() http.Handler {
 	if s.responseObserver != nil {
 		observed = s.observeMiddleware(ghWrapped)
 	}
-	bounded := s.requestBodyLimitMiddleware(observed)
+	// Compression sits outside the observer so the shape validator (and the
+	// ETag layer inside ghHeadersMiddleware) keep seeing identity bytes; only
+	// the wire representation is gzipped.
+	compressed := compressionMiddleware(observed)
+	bounded := s.requestBodyLimitMiddleware(compressed)
 	secured := s.securityHeadersMiddleware(bounded)
 	// slowBodyGuard sits outermost, around otelhttp, so its ResponseController
 	// resolves to the base net/http response writer (whose SetReadDeadline

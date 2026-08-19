@@ -18,6 +18,15 @@ func (s *Server) registerGHNotificationsRoutes() {
 	s.route("GET /api/v3/notifications/threads/{thread_id}/subscription", s.handleGetThreadSubscription)
 	s.route("PUT /api/v3/notifications/threads/{thread_id}/subscription", s.handleSetThreadSubscription)
 	s.route("DELETE /api/v3/notifications/threads/{thread_id}/subscription", s.handleDeleteThreadSubscription)
+
+	// The web inbox's Saved (bookmark) flag and reviewable Done list exist only
+	// on github.com — neither is a public REST operation — so they live under
+	// the browser-only /ui-data namespace. The Done set reuses the REST
+	// mark-done state (DELETE thread above); done threads are retained, not
+	// deleted, which is what makes the Done view listable.
+	s.route("GET /ui-data/notifications", s.handleUIListNotifications)
+	s.route("PUT /ui-data/notifications/threads/{thread_id}/saved", s.handleSaveThread)
+	s.route("DELETE /ui-data/notifications/threads/{thread_id}/saved", s.handleUnsaveThread)
 }
 
 func parseNotificationListOptions(w http.ResponseWriter, r *http.Request) (store.NotificationListOptions, bool) {
@@ -329,6 +338,67 @@ func threadSubscriptionToJSON(sub *store.ThreadSubscription, url string) map[str
 		"url":        url,
 		"thread_url": url,
 	}
+}
+
+// handleUIListNotifications serves the web-only inbox views: ?view=saved lists
+// the viewer's bookmarked threads, ?view=done the threads marked done. Items
+// are REST thread shapes plus a simulator-only `saved` flag.
+func (s *Server) handleUIListNotifications(w http.ResponseWriter, r *http.Request) {
+	user := ghUserFromContext(r.Context())
+	if user == nil {
+		writeGHError(w, http.StatusUnauthorized, "Requires authentication")
+		return
+	}
+
+	view := r.URL.Query().Get("view")
+	if view != store.NotificationViewSaved && view != store.NotificationViewDone {
+		store.WriteGHValidationError(w, "Notification", "view", "invalid")
+		return
+	}
+	opts, ok := parseNotificationListOptions(w, r)
+	if !ok {
+		return
+	}
+	opts.View = view
+
+	rows := s.notificationRows(r, user, opts)
+	rows = paginateAndLink(w, r, rows)
+	threads := s.store.BuildNotificationThreads(rows, s.baseURL(r))
+	out := make([]map[string]interface{}, len(threads))
+	for i, t := range threads {
+		out[i] = threadToJSON(t)
+		out[i]["saved"] = rows[i].Saved()
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// handleSaveThread implements PUT /ui-data/notifications/threads/{id}/saved:
+// bookmark the thread for the viewer (the web inbox's Saved view).
+func (s *Server) handleSaveThread(w http.ResponseWriter, r *http.Request) {
+	s.setThreadSaved(w, r, true)
+}
+
+// handleUnsaveThread removes the bookmark set by handleSaveThread.
+func (s *Server) handleUnsaveThread(w http.ResponseWriter, r *http.Request) {
+	s.setThreadSaved(w, r, false)
+}
+
+func (s *Server) setThreadSaved(w http.ResponseWriter, r *http.Request, saved bool) {
+	user := ghUserFromContext(r.Context())
+	if user == nil {
+		writeGHError(w, http.StatusUnauthorized, "Requires authentication")
+		return
+	}
+
+	threadID := r.PathValue("thread_id")
+	// Resolving via notificationThread enforces the viewer's repository reach:
+	// a thread in a repository they cannot read does not exist for them.
+	if s.notificationThread(r, user, threadID) == nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	s.store.SetThreadSaved(user.ID, threadID, saved)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleDeleteThread implements DELETE /notifications/threads/{thread_id}

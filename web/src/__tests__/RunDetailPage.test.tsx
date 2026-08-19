@@ -281,8 +281,13 @@ describe("RunDetailPage", () => {
     expect(await screen.findByText("Artifacts")).toBeInTheDocument();
     expect(screen.getByText("dist")).toBeInTheDocument();
     expect(screen.getByText("2.0 KB")).toBeInTheDocument();
-    const link = screen.getByRole("link", { name: /download/i });
+    const link = screen.getByRole("link", { name: "Download" });
     expect(link).toHaveAttribute("href", "/api/v3/repos/admin/test/actions/artifacts/7/zip");
+    // Run-level "Download log archive" links the logs zip endpoint.
+    expect(screen.getByRole("link", { name: "Download log archive" })).toHaveAttribute(
+      "href",
+      "/api/v3/repos/admin/test/actions/runs/5/logs",
+    );
   });
 
   it("shows the approval banner for a waiting run and POSTs the review", async () => {
@@ -341,6 +346,78 @@ describe("RunDetailPage", () => {
       );
       expect(del).toBeTruthy();
     });
+  });
+});
+
+describe("RunDetailPage — log viewer", () => {
+  it("filters log lines via the search box with highlighted matches and a count", async () => {
+    installMocks({
+      logs: [
+        "2026-01-01T00:00:10Z compiling module alpha",
+        "2026-01-01T00:00:11Z tests passed for alpha",
+        "2026-01-01T00:00:12Z uploading artifact",
+      ].join("\n"),
+    });
+    renderPage();
+    await screen.findByText("Job log");
+    fireEvent.change(screen.getByLabelText("Search logs"), { target: { value: "alpha" } });
+    expect(await screen.findByText(/2 matching lines in this job’s log/)).toBeInTheDocument();
+    // Matches are wrapped in <mark>.
+    await waitFor(() => {
+      expect(document.querySelectorAll("mark").length).toBeGreaterThanOrEqual(2);
+    });
+    // The sidebar job button shows its match-count badge.
+    expect(screen.getByLabelText("2 matching log lines")).toBeInTheDocument();
+  });
+
+  it("hides runner timestamps by default and shows them via the toggle", async () => {
+    installMocks({ logs: "2026-01-01T00:00:10Z hello from the runner\n" });
+    renderPage();
+    expect(await screen.findByText("Job log")).toBeInTheDocument();
+    // Timestamp prefix stripped by default.
+    expect(screen.getByText("hello from the runner")).toBeInTheDocument();
+    expect(screen.queryByText(/2026-01-01T00:00:10Z hello/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText(/show timestamps/i));
+    expect(await screen.findByText(/2026-01-01T00:00:10Z hello from the runner/)).toBeInTheDocument();
+  });
+
+  it("links the per-job raw log view", async () => {
+    installMocks();
+    renderPage();
+    const raw = await screen.findByRole("link", { name: "View raw logs" });
+    expect(raw).toHaveAttribute("href", "/api/v3/repos/admin/test/actions/jobs/99/logs");
+  });
+});
+
+describe("RunDetailPage — job dependencies", () => {
+  it("annotates sidebar jobs with their needs from the workflow file", async () => {
+    const yaml = [
+      "name: CI",
+      "on: push",
+      "jobs:",
+      "  compile:",
+      "    runs-on: ubuntu-latest",
+      "    steps: []",
+      "  build:",
+      "    needs: compile",
+      "    runs-on: ubuntu-latest",
+      "    steps: []",
+    ].join("\n");
+    const encoded = btoa(yaml);
+    installMocks();
+    const base = mockFetch.getMockImplementation()!;
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.includes("/contents/")) {
+        return Promise.resolve(
+          jsonResponse({ name: "ci.yml", path: ".github/workflows/ci.yml", type: "file", encoding: "base64", content: encoded }),
+        );
+      }
+      return base(url, init);
+    });
+    renderPage();
+    // The single job in the fixture is named "build" and needs "compile".
+    expect(await screen.findByText("needs: compile")).toBeInTheDocument();
   });
 });
 

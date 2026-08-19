@@ -17,6 +17,8 @@ function jsonResponse(data: unknown) {
 afterEach(() => {
   cleanup();
   mockFetch.mockReset();
+  // Scope selection persists in the URL query — reset it between tests.
+  window.history.replaceState({}, "", "/");
 });
 
 function renderPage() {
@@ -120,8 +122,67 @@ describe("RunnersPage", () => {
   });
 });
 
+describe("RunnersPage scope selection", () => {
+  it("targets the repository selected via the searchable picker and persists it in the URL", async () => {
+    const twoRepos = [
+      ...reposData,
+      { ...reposData[0], id: 2, name: "second", full_name: "admin/second" },
+    ];
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u === "/api/v3/user/repos?per_page=100") return Promise.resolve(jsonResponse(twoRepos));
+      if (u.includes("/actions/runners")) return Promise.resolve(jsonResponse(runnersData));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderPage();
+    await screen.findByText("gh-runner-7");
+    // Narrow the searchable picker, then select the match.
+    fireEvent.change(screen.getByLabelText("Find a repository"), { target: { value: "sec" } });
+    fireEvent.change(screen.getByLabelText("Repository"), { target: { value: "admin/second" } });
+    await waitFor(() => {
+      const calls = mockFetch.mock.calls.map((c) => c[0].toString());
+      expect(calls).toContain("/api/v3/repos/admin/second/actions/runners");
+    });
+    expect(window.location.search).toContain("repo=admin%2Fsecond");
+  });
+
+  it("offers an organization scope backed by the /orgs runner routes", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u === "/api/v3/user/orgs?per_page=100") {
+        return Promise.resolve(jsonResponse([{ id: 5, login: "acme", name: "Acme", description: "", members_can_create_repositories: true, created_at: "2026-01-01T00:00:00Z" }]));
+      }
+      if (u === "/api/v3/user/repos?per_page=100") return Promise.resolve(jsonResponse(reposData));
+      if (u.endsWith("/actions/runners/registration-token") && init?.method === "POST") {
+        return Promise.resolve(jsonResponse({ token: "ORGTOK", expires_at: "2026-01-01T01:00:00Z" }));
+      }
+      if (u.includes("/actions/runners")) return Promise.resolve(jsonResponse(runnersData));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderPage();
+    await screen.findByText("gh-runner-7");
+    fireEvent.change(screen.getByLabelText("Scope"), { target: { value: "org" } });
+    await waitFor(() => {
+      const calls = mockFetch.mock.calls.map((c) => c[0].toString());
+      expect(calls).toContain("/api/v3/orgs/acme/actions/runners");
+    });
+    expect(window.location.search).toContain("org=acme");
+    // Registration token minted against the org route.
+    fireEvent.click(await screen.findByRole("button", { name: /add runner/i }));
+    await waitFor(() => {
+      const post = mockFetch.mock.calls.find(
+        (c) =>
+          c[0].toString() === "/api/v3/orgs/acme/actions/runners/registration-token" &&
+          c[1]?.method === "POST",
+      );
+      expect(post).toBeTruthy();
+    });
+    expect(await screen.findByText(/ORGTOK/)).toBeInTheDocument();
+  });
+});
+
 describe("RunnersPage add runner", () => {
-  it("generates a registration token and shows the register command", async () => {
+  it("generates a registration token and shows the full GitHub-style register block", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
       const u = url.toString();
       if (u.endsWith("/actions/runners/registration-token") && init?.method === "POST") {
@@ -139,7 +200,15 @@ describe("RunnersPage add runner", () => {
       );
       expect(post).toBeTruthy();
     });
-    expect(await screen.findByText(/AABBCC/)).toBeInTheDocument();
+    // Full download/extract/configure/run block, not just config.sh.
+    const block = await screen.findByText(/AABBCC/);
+    expect(block.textContent).toContain("mkdir actions-runner && cd actions-runner");
+    expect(block.textContent).toContain("tar xzf ./actions-runner-linux-x64.tar.gz");
+    expect(block.textContent).toContain("./config.sh --url");
+    expect(block.textContent).toContain("./run.sh");
+    // OS tabs switch the script flavor.
+    fireEvent.click(screen.getByRole("tab", { name: "Windows" }));
+    expect((await screen.findByText(/AABBCC/)).textContent).toContain("./config.cmd --url");
   });
 
   it("removes a runner via DELETE after confirming", async () => {

@@ -71,6 +71,41 @@ function routeBase(url: string): Response | null {
   return null;
 }
 
+describe("CodeScanningPage alert rows", () => {
+  it("shows the most recent instance's file path and branch as chips", async () => {
+    const alertWithInstance = {
+      ...openAlert,
+      number: 2,
+      most_recent_instance: {
+        ref: "refs/heads/main",
+        state: "open",
+        commit_sha: "abcdef1234567890",
+        location: { path: "internal/server/db.go", start_line: 10, end_line: 12, start_column: 1, end_column: 2 },
+      },
+    };
+    mockFetch.mockImplementation((url: string) => {
+      const u = url.toString();
+      if (u.endsWith("/code-scanning/default-setup")) {
+        return Promise.resolve(jsonResponse({ state: "not-configured", languages: [], updated_at: null, schedule: null }));
+      }
+      if (u.includes("/code-scanning/alerts/2/instances")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/code-scanning/alerts")) return Promise.resolve(jsonResponse([alertWithInstance, openAlert]));
+      const r = routeBase(u);
+      return Promise.resolve(r ?? jsonResponse(repo));
+    });
+    renderPage();
+
+    // Alert #2 carries an instance → path + short branch chips; #1 (null instance) renders none.
+    const pathChip = await screen.findByText("internal/server/db.go");
+    expect(pathChip).toBeInTheDocument();
+    // "main" also appears in the filter bar's <code>; assert on the chip specifically.
+    const row = pathChip.closest("button")!;
+    const branchChip = [...row.querySelectorAll(".security-chip")].find((c) => c.textContent === "main");
+    expect(branchChip).toBeDefined();
+    expect(screen.getByRole("button", { name: /#1 js\/sqli/ })).toBeInTheDocument();
+  });
+});
+
 describe("CodeScanningPage default setup", () => {
   it("enables default setup via PATCH .../code-scanning/default-setup with query_suite", async () => {
     mockFetch.mockImplementation((url: string, opts?: { method?: string }) => {

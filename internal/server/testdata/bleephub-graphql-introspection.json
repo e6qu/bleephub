@@ -132,6 +132,24 @@
         }
       }
     },
+    "AddUpvoteInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "subjectId": "ID!"
+      }
+    },
+    "AddUpvotePayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "subject": {
+          "type": "Votable"
+        }
+      }
+    },
     "AutoMergeRequest": {
       "kind": "OBJECT",
       "fields": {
@@ -610,6 +628,24 @@
         }
       }
     },
+    "DeleteIssueInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "issueId": "ID!"
+      }
+    },
+    "DeleteIssuePayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "repository": {
+          "type": "Repository"
+        }
+      }
+    },
     "DeleteProjectV2ItemInput": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
@@ -713,6 +749,9 @@
         "updatedAt": {
           "type": "DateTime!"
         },
+        "upvoteCount": {
+          "type": "Int!"
+        },
         "url": {
           "type": "URI!"
         },
@@ -724,11 +763,18 @@
         },
         "viewerCanUpdate": {
           "type": "Boolean!"
+        },
+        "viewerCanUpvote": {
+          "type": "Boolean!"
+        },
+        "viewerHasUpvoted": {
+          "type": "Boolean!"
         }
       },
       "interfaces": [
         "Lockable",
-        "Reactable"
+        "Reactable",
+        "Votable"
       ]
     },
     "DiscussionCategory": {
@@ -848,13 +894,23 @@
         "updatedAt": {
           "type": "DateTime!"
         },
+        "upvoteCount": {
+          "type": "Int!"
+        },
         "viewerCanReact": {
+          "type": "Boolean!"
+        },
+        "viewerCanUpvote": {
+          "type": "Boolean!"
+        },
+        "viewerHasUpvoted": {
           "type": "Boolean!"
         }
       },
       "interfaces": [
         "Minimizable",
-        "Reactable"
+        "Reactable",
+        "Votable"
       ]
     },
     "DiscussionCommentConnection": {
@@ -2063,6 +2119,12 @@
             "input": "AddReactionInput!"
           }
         },
+        "addUpvote": {
+          "type": "AddUpvotePayload",
+          "args": {
+            "input": "AddUpvoteInput!"
+          }
+        },
         "closeIssue": {
           "type": "CloseIssuePayload",
           "args": {
@@ -2129,6 +2191,12 @@
             "input": "DeleteDiscussionCommentInput!"
           }
         },
+        "deleteIssue": {
+          "type": "DeleteIssuePayload",
+          "args": {
+            "input": "DeleteIssueInput!"
+          }
+        },
         "deleteProjectV2Item": {
           "type": "DeleteProjectV2ItemPayload",
           "args": {
@@ -2177,10 +2245,22 @@
             "input": "MinimizeCommentInput!"
           }
         },
+        "pinIssue": {
+          "type": "PinIssuePayload",
+          "args": {
+            "input": "PinIssueInput!"
+          }
+        },
         "removeReaction": {
           "type": "RemoveReactionPayload",
           "args": {
             "input": "RemoveReactionInput!"
+          }
+        },
+        "removeUpvote": {
+          "type": "RemoveUpvotePayload",
+          "args": {
+            "input": "RemoveUpvoteInput!"
           }
         },
         "reopenIssue": {
@@ -2207,6 +2287,12 @@
             "input": "SubmitPullRequestReviewInput!"
           }
         },
+        "transferIssue": {
+          "type": "TransferIssuePayload",
+          "args": {
+            "input": "TransferIssueInput!"
+          }
+        },
         "unlockLockable": {
           "type": "UnlockLockablePayload",
           "args": {
@@ -2223,6 +2309,12 @@
           "type": "UnminimizeCommentPayload",
           "args": {
             "input": "UnminimizeCommentInput!"
+          }
+        },
+        "unpinIssue": {
+          "type": "UnpinIssuePayload",
+          "args": {
+            "input": "UnpinIssueInput!"
           }
         },
         "unresolveReviewThread": {
@@ -2410,6 +2502,72 @@
         "MODIFIED",
         "RENAMED"
       ]
+    },
+    "PinIssueInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "issueId": "ID!"
+      }
+    },
+    "PinIssuePayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "issue": {
+          "type": "Issue"
+        }
+      }
+    },
+    "PinnedIssue": {
+      "kind": "OBJECT",
+      "fields": {
+        "databaseId": {
+          "type": "Int"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "issue": {
+          "type": "Issue!"
+        },
+        "pinnedBy": {
+          "type": "Actor!"
+        },
+        "repository": {
+          "type": "Repository!"
+        }
+      }
+    },
+    "PinnedIssueConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[PinnedIssueEdge]"
+        },
+        "nodes": {
+          "type": "[PinnedIssue]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "PinnedIssueEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "PinnedIssue"
+        }
+      }
     },
     "ProjectV2": {
       "kind": "OBJECT",
@@ -3792,6 +3950,24 @@
         }
       }
     },
+    "RemoveUpvoteInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "subjectId": "ID!"
+      }
+    },
+    "RemoveUpvotePayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "subject": {
+          "type": "Votable"
+        }
+      }
+    },
     "ReopenIssueInput": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
@@ -3999,6 +4175,15 @@
         },
         "parent": {
           "type": "Repository"
+        },
+        "pinnedIssues": {
+          "type": "PinnedIssueConnection",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
         },
         "primaryLanguage": {
           "type": "Language"
@@ -4471,6 +4656,26 @@
         }
       }
     },
+    "TransferIssueInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "createLabelsIfMissing": "Boolean",
+        "issueId": "ID!",
+        "repositoryId": "ID!"
+      }
+    },
+    "TransferIssuePayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "issue": {
+          "type": "Issue"
+        }
+      }
+    },
     "URI": {
       "kind": "SCALAR"
     },
@@ -4525,6 +4730,27 @@
         },
         "unminimizedComment": {
           "type": "Minimizable"
+        }
+      }
+    },
+    "UnpinIssueInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "issueId": "ID!"
+      }
+    },
+    "UnpinIssuePayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "id": {
+          "type": "ID"
+        },
+        "issue": {
+          "type": "Issue"
         }
       }
     },
@@ -4749,6 +4975,24 @@
           "type": "Int!"
         }
       }
+    },
+    "Votable": {
+      "kind": "INTERFACE",
+      "fields": {
+        "upvoteCount": {
+          "type": "Int!"
+        },
+        "viewerCanUpvote": {
+          "type": "Boolean!"
+        },
+        "viewerHasUpvoted": {
+          "type": "Boolean!"
+        }
+      },
+      "possible_types": [
+        "Discussion",
+        "DiscussionComment"
+      ]
     },
     "Workflow": {
       "kind": "OBJECT",

@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { useParams, Link, useLocation, useNavigate } from "react-router";
+import { useMemo, useState, type ReactNode } from "react";
+import { useParams, Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
 import {
@@ -10,19 +10,15 @@ import {
   fetchRepoBranches,
   createPull,
   updatePull,
-  mergePR,
   updatePRBranch,
   markPullRequestReadyForReview,
   convertPullRequestToDraft,
   isNotFound,
   fetchAuthenticatedUser,
   fetchPRReviews,
-  createPRReview,
   dismissPRReview,
   fetchPRReviewComments,
-  replyToPRReviewComment,
   fetchPRReviewThreads,
-  setPRReviewThreadResolved,
   fetchPRRequestedReviewers,
   fetchAssignableUsers,
   fetchOrgTeams,
@@ -36,12 +32,25 @@ import {
   fetchIssueCommentReactions,
   addIssueCommentReaction,
   removeIssueCommentReaction,
-  fetchPullReviewCommentReactions,
-  addPullReviewCommentReaction,
-  removePullReviewCommentReaction,
+  fetchRepoDetail,
+  ghFetch,
   ghGraphQL,
+  ghSend,
+  deleteRef,
+  createRef,
 } from "../api.js";
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
+import {
+  checkRunsEnvelopeToPage,
+  fetchPullBootstrap,
+  freshenQueryDefaults,
+  mirrorQueryData,
+  seedQueryCache,
+  useSeededOpenCounts,
+  validCombinedStatus,
+  validReviewRequest,
+  SEED_STALE_TIME,
+} from "../utils/bootstrap.js";
 import type {
   GithubCheckRun,
   GithubCommitStatus,
@@ -50,6 +59,7 @@ import type {
   GithubPRReview,
   GithubPRReviewComment,
   GithubReviewState,
+  GithubTimelineItem,
   ListFilterState,
 } from "../types.js";
 import { formatDuration } from "../utils/format.js";
@@ -61,13 +71,22 @@ import { TimelineEventRow } from "../components/TimelineEventRow.js";
 import { IssueSidebar } from "../components/IssueSidebar.js";
 import { PRFilesView } from "../components/PRFilesView.js";
 import {
+  groupReviewThreads,
+  ReviewThreadCard,
+  type ReviewThreadGroup,
+} from "../components/PRReviewThread.js";
+import { Avatar } from "../components/Avatar.js";
+import { RelativeTime } from "../components/RelativeTime.js";
+import { MarkdownComposer } from "../components/MarkdownComposer.js";
+import Markdown from "../components/Markdown.js";
+import {
   ListControls,
   filterAndSortItems,
   sortToServerParams,
   emptyFilters,
   type ListItemAccessors,
 } from "../components/ListControls.js";
-import { Button, Box, Blankslate, StateLabel, SectionLabel, FormLabel, Tabs, Modal, DialogActions } from "../components/ui.js";
+import { Button, Box, Blankslate, StateLabel, FormLabel, Tabs, Modal, DialogActions } from "../components/ui.js";
 import { MutationError } from "../components/MutationError.js";
 import { CommentComposer } from "../components/CommentComposer.js";
 import {
@@ -85,9 +104,9 @@ import {
 const prAccessors: ListItemAccessors<GithubPR> = {
   labels: (p) => p.labels,
   author: (p) => p.user?.login ?? null,
-  assignees: () => [],
-  milestone: () => null,
-  comments: () => 0,
+  assignees: (p) => (p.assignees ?? []).map((a) => a.login),
+  milestone: (p) => p.milestone?.title ?? null,
+  comments: (p) => p.comments ?? 0,
   createdAt: (p) => p.created_at,
   updatedAt: (p) => p.updated_at,
 };
@@ -137,11 +156,17 @@ function PRList({ owner, repo }: { owner: string; repo: string }) {
   const counts = useOpenCounts(owner, repo);
   const closedCount = usePRClosedCount(owner, repo);
 
-  const [creating, setCreating] = useState(false);
+  // Compare deep-link: /pulls?compare=base...head (the compare view and
+  // branch rows link here) opens the create-PR flow prefilled.
+  const [searchParams] = useSearchParams();
+  const compare = searchParams.get("compare");
+  const compareParts =
+    compare !== null && compare.includes("...") ? compare.split("...", 2) : null;
+  const [creating, setCreating] = useState(compareParts !== null);
   const [prTitle, setPrTitle] = useState("");
   const [prBody, setPrBody] = useState("");
-  const [prHead, setPrHead] = useState("");
-  const [prBase, setPrBase] = useState("");
+  const [prHead, setPrHead] = useState(compareParts?.[1] ?? "");
+  const [prBase, setPrBase] = useState(compareParts?.[0] ?? "");
   const [prDraft, setPrDraft] = useState(false);
   const { data: branches = [] } = useQuery({
     queryKey: ["branches", owner, repo],
@@ -164,6 +189,9 @@ function PRList({ owner, repo }: { owner: string; repo: string }) {
   const [baseFilter, setBaseFilter] = useState("");
   const [headFilter, setHeadFilter] = useState("");
   const serverSort = sortToServerParams(filters.sort);
+  // The shared sort facet speaks the issues dialect; GitHub's /pulls endpoint
+  // calls the most-commented sort "popularity".
+  if (serverSort.sort === "comments") serverSort.sort = "popularity";
   const serverOpts = {
     state,
     base: baseFilter || undefined,
@@ -272,16 +300,15 @@ function PRList({ owner, repo }: { owner: string; repo: string }) {
             className="mb-3 w-full"
           />
           <FormLabel id="pr-body">Description (optional)</FormLabel>
-          <textarea
+          <MarkdownComposer
             id="pr-body"
             value={prBody}
-            onChange={(e) => setPrBody(e.target.value)}
+            onChange={setPrBody}
             rows={5}
+            label="Description (optional)"
             placeholder="Describe the change…"
-            className="mb-4 w-full"
-            style={{ resize: "vertical" }}
           />
-          <label className="mb-3 flex items-center gap-2" style={{ fontSize: "0.85rem" }}>
+          <label className="mb-3 mt-3 flex items-center gap-2" style={{ fontSize: "0.85rem" }}>
             <input type="checkbox" checked={prDraft} onChange={(e) => setPrDraft(e.target.checked)} />
             Create as a draft pull request
           </label>
@@ -338,7 +365,11 @@ function PRList({ owner, repo }: { owner: string; repo: string }) {
                     {" → "}
                     <span className="font-mono">{pr.base.ref}</span>
                   </span>
-                  <span>· opened by {pr.user?.login} · {new Date(pr.created_at).toLocaleDateString()}</span>
+                  <span className="inline-flex items-center gap-1">
+                    · opened <RelativeTime iso={pr.created_at} /> by{" "}
+                    <Avatar login={pr.user?.login ?? "?"} src={pr.user?.avatar_url} size={16} />
+                    {pr.user?.login}
+                  </span>
                 </div>
               </div>
             </Link>
@@ -360,20 +391,105 @@ function PRList({ owner, repo }: { owner: string; repo: string }) {
 type PRTab = "conversation" | "commits" | "files" | "checks";
 
 function PRDetail({ owner, repo, number }: { owner: string; repo: string; number: number }) {
-  const counts = useOpenCounts(owner, repo);
+  const counts = useSeededOpenCounts(owner, repo);
   const location = useLocation();
   const navigate = useNavigate();
   const suffix = location.pathname.split(`/pulls/${number}`)[1]?.split("/")[1];
   const tab: PRTab =
     suffix === "commits" || suffix === "files" || suffix === "checks" ? suffix : "conversation";
+
+  const qc = useQueryClient();
+  // One aggregate request replaces the detail's first-paint fan-out: it seeds
+  // the exact keys the conversation tab, merge box, checks badge and
+  // reviewers panel read, so those hooks are cache hits. On failure nothing
+  // is seeded and every hook fetches standalone as before. (The files list is
+  // NOT aggregated — the Files tab keeps its own fetch.)
+  const bootstrapQ = useQuery({
+    queryKey: ["pull-bootstrap", owner, repo, number],
+    queryFn: async ({ signal }) => {
+      const data = await fetchPullBootstrap(owner, repo, number, signal);
+      const sha = data.pull.head.sha;
+      seedQueryCache(qc, [
+        [["pr", owner, repo, number], data.pull],
+        [["pr-timeline", owner, repo, number], data.timeline],
+        [["pr-reviews", owner, repo, number], data.reviews],
+        [["pr-review-comments", owner, repo, number], data.review_comments],
+        [["pr-requested-reviewers", owner, repo, number], validReviewRequest(data.requested_reviewers)],
+        [["check-runs", owner, repo, sha], checkRunsEnvelopeToPage(data.check_runs)],
+        [["combined-status", owner, repo, sha], validCombinedStatus(data.combined_status)],
+      ]);
+      // ["viewer"] and ["current-user"] both GET /api/v3/user; reuse whichever
+      // response the session already holds instead of refetching it here.
+      mirrorQueryData(qc, ["current-user"], ["viewer"]);
+      freshenQueryDefaults(qc, [
+        ["repo", owner, repo],
+        ["repo-social-counts", owner, repo],
+        ["repo-viewer", owner, repo],
+      ]);
+      return data;
+    },
+    // No numeric guard: a garbage number (NaN) 404s the bootstrap, which
+    // settles it into the error fallback and the not-found path, exactly
+    // like the old standalone fetch.
+    enabled: !!owner && !!repo,
+    staleTime: SEED_STALE_TIME,
+  });
+  const bootstrapSettled = bootstrapQ.isSuccess || bootstrapQ.isError;
+
   const { data: pr, isLoading, isError, error } = useQuery({
     queryKey: ["pr", owner, repo, number],
     queryFn: ({ signal }) => fetchPRDetail(owner, repo, number, signal),
+    enabled: bootstrapSettled,
   });
-  const viewerQ = useQuery({ queryKey: ["viewer"], queryFn: fetchAuthenticatedUser });
-  const viewerLogin = typeof viewerQ.data?.login === "string" ? viewerQ.data.login : null;
 
-  const qc = useQueryClient();
+  // Checks-tab count: check runs + commit statuses on the head SHA (both
+  // queries are shared with the merge box / checks tab via their keys).
+  const headSha = pr?.head.sha ?? "";
+  const checksCountQ = useQuery({
+    queryKey: ["check-runs", owner, repo, headSha],
+    queryFn: () => fetchCheckRuns(owner, repo, headSha),
+    enabled: !!headSha,
+  });
+  const statusCountQ = useQuery({
+    queryKey: ["combined-status", owner, repo, headSha],
+    queryFn: ({ signal }) => fetchCombinedStatus(owner, repo, headSha, signal),
+    enabled: !!headSha,
+  });
+  const checksCount =
+    (checksCountQ.data?.items.length ?? 0) + (statusCountQ.data?.statuses.length ?? 0);
+
+  // Draft-review pending count for the Files-changed tab badge. This is the
+  // usePendingReview logic inlined so its viewer/reviews queries wait for the
+  // bootstrap (the hook itself would fire them on mount and race the seeding
+  // with duplicate fetches); the Files tab's own usePendingReview then reads
+  // the same keys as cache hits.
+  const pendingViewerQ = useQuery({
+    queryKey: ["viewer"],
+    queryFn: fetchAuthenticatedUser,
+    enabled: bootstrapSettled,
+  });
+  const pendingLogin =
+    typeof pendingViewerQ.data?.login === "string" ? pendingViewerQ.data.login : null;
+  const pendingReviewsQ = useQuery({
+    queryKey: ["pr-reviews", owner, repo, number],
+    queryFn: () => fetchPRReviews(owner, repo, number),
+    enabled: bootstrapSettled,
+  });
+  const pendingReview =
+    (Array.isArray(pendingReviewsQ.data) ? pendingReviewsQ.data : []).find(
+      (r) => r.state === "PENDING" && r.user?.login != null && r.user.login === pendingLogin,
+    ) ?? null;
+  const pendingCommentsQ = useQuery({
+    queryKey: ["pr-pending-review-comments", owner, repo, number, pendingReview?.id ?? 0],
+    queryFn: () =>
+      ghFetch<GithubPRReviewComment[]>(
+        `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/reviews/${pendingReview?.id}/comments`,
+      ),
+    enabled: pendingReview != null,
+  });
+  const pendingComments =
+    pendingReview && Array.isArray(pendingCommentsQ.data) ? pendingCommentsQ.data : [];
+
   const invalidatePR = () => {
     qc.invalidateQueries({ queryKey: ["pr", owner, repo, number] });
     qc.invalidateQueries({ queryKey: ["prs", owner, repo] });
@@ -475,7 +591,13 @@ function PRDetail({ owner, repo, number }: { owner: string; repo: string; number
           {stateLabel}
         </StateLabel>
         <span style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)" }}>
-          <strong style={{ color: "var(--color-fg)" }}>{pr.user?.login}</strong> wants to merge into{" "}
+          <strong style={{ color: "var(--color-fg)" }}>{pr.user?.login}</strong> wants to merge{" "}
+          {pr.commits != null && (
+            <>
+              {pr.commits} commit{pr.commits === 1 ? "" : "s"}{" "}
+            </>
+          )}
+          into{" "}
           <span className="font-mono" style={{ color: "var(--color-accent)" }}>{pr.base.ref}</span>
           {" from "}
           <span className="font-mono" style={{ color: "var(--color-accent)" }}>{pr.head.ref}</span>
@@ -511,83 +633,176 @@ function PRDetail({ owner, repo, number }: { owner: string; repo: string; number
           },
           {
             key: "files",
-            label:
-              pr.changed_files != null ? `Files changed ${pr.changed_files}` : "Files changed",
+            label: (
+              <>
+                {pr.changed_files != null ? `Files changed ${pr.changed_files}` : "Files changed"}
+                {pendingComments.length > 0 && (
+                  <span
+                    style={{
+                      marginLeft: "0.4rem",
+                      border: "1px solid var(--color-status-warn)",
+                      color: "var(--color-status-warn)",
+                      borderRadius: "2rem",
+                      padding: "0.02rem 0.45rem",
+                      fontSize: "0.72rem",
+                      fontWeight: 600,
+                    }}
+                  >
+                    Pending {pendingComments.length}
+                  </span>
+                )}
+              </>
+            ),
           },
-          { key: "checks", label: "Checks" },
+          { key: "checks", label: checksCount > 0 ? `Checks ${checksCount}` : "Checks" },
         ]}
       />
 
       {tab === "conversation" && (
-        <div className="flex flex-col gap-6 lg:flex-row">
-          <div className="min-w-0 flex-1">
-            {viewerQ.isError && (
-              <InlineError inline title="Failed to load current user" detail={String(viewerQ.error)} />
-            )}
-            <CommentCard login={pr.user?.login} body={pr.body} date={pr.created_at} isOp />
-            <ReactionBar
-              queryKey={["pr-body-reactions", owner, repo, number]}
-              fetchList={() => fetchIssueReactions(owner, repo, number)}
-              add={(content) => addIssueReaction(owner, repo, number, content)}
-              remove={(reactionId) => removeIssueReaction(owner, repo, number, reactionId)}
-              viewerLogin={viewerLogin}
-            />
-            <ConversationTimeline owner={owner} repo={repo} number={number} viewerLogin={viewerLogin} />
-            <ReviewThreadsSection owner={owner} repo={repo} number={number} viewerLogin={viewerLogin} />
-            <ReviewsSection owner={owner} repo={repo} number={number} />
-            <MergeBox owner={owner} repo={repo} number={number} pr={pr} />
-            <MutationError of={stateMut} />
-            <CommentComposer
-              owner={owner}
-              repo={repo}
-              number={number}
-              invalidateKeys={[
-                ["pr-timeline", owner, repo, number],
-                ["pr", owner, repo, number],
-              ]}
-              extraActions={
-                s !== "merged" && (
-                  <Button
-                    size="sm"
-                    disabled={stateMut.isPending}
-                    onClick={() => stateMut.mutate()}
-                  >
-                    {s === "closed" ? "Reopen pull request" : "Close pull request"}
-                  </Button>
-                )
-              }
-            />
-          </div>
-          <div style={{ width: "100%", maxWidth: "16rem", flexShrink: 0 }}>
-            <IssueSidebar
-              owner={owner}
-              repo={repo}
-              number={number}
-              kind="pr"
-              assignees={(pr.assignees ?? []).map((a) => a.login)}
-              labels={pr.labels}
-              milestone={pr.milestone ?? null}
-              participants={pr.user?.login ? [pr.user.login] : []}
-              reviewers={<RequestedReviewersSection owner={owner} repo={repo} number={number} />}
-              development={
-                <DevelopmentSection
-                  owner={owner}
-                  repo={repo}
-                  number={number}
-                  headRef={pr.head.ref}
-                  baseRef={pr.base.ref}
-                />
-              }
-            />
-          </div>
-        </div>
+        <ConversationTab owner={owner} repo={repo} number={number} pr={pr} stateMut={stateMut} />
       )}
-
       {tab === "commits" && <PRCommitsTab owner={owner} repo={repo} number={number} />}
       {tab === "files" && (
         <PRFilesView owner={owner} repo={repo} number={number} headSha={pr.head.sha} />
       )}
       {tab === "checks" && <ChecksSection owner={owner} repo={repo} sha={pr.head.sha} standalone />}
+    </div>
+  );
+}
+
+// ─── Conversation tab (stream + sidebar) ─────────────────────────────────
+
+function ConversationTab({
+  owner,
+  repo,
+  number,
+  pr,
+  stateMut,
+}: {
+  owner: string;
+  repo: string;
+  number: number;
+  pr: GithubPR;
+  stateMut: { isPending: boolean; mutate: () => void; isError: boolean; error: unknown };
+}) {
+  const viewerQ = useQuery({ queryKey: ["viewer"], queryFn: fetchAuthenticatedUser });
+  const viewerLogin = typeof viewerQ.data?.login === "string" ? viewerQ.data.login : null;
+  const s = prState(pr);
+
+  const timelineQ = useQuery({
+    queryKey: ["pr-timeline", owner, repo, number],
+    queryFn: () => fetchIssueTimeline(owner, repo, number),
+  });
+  const reviewsQ = useQuery({
+    queryKey: ["pr-reviews", owner, repo, number],
+    queryFn: () => fetchPRReviews(owner, repo, number),
+  });
+  const commentsQ = useQuery({
+    queryKey: ["pr-review-comments", owner, repo, number],
+    queryFn: () => fetchPRReviewComments(owner, repo, number),
+  });
+  const threadsQ = useQuery({
+    queryKey: ["pr-review-threads", owner, repo, number],
+    queryFn: () => fetchPRReviewThreads(owner, repo, number),
+  });
+
+  const timeline = Array.isArray(timelineQ.data) ? timelineQ.data : [];
+  const reviews = Array.isArray(reviewsQ.data) ? reviewsQ.data : [];
+  const allComments = Array.isArray(commentsQ.data) ? commentsQ.data : [];
+
+  // Everyone who authored something in the conversation: the PR author,
+  // conversation commenters, reviewers, and inline-thread commenters.
+  const participants = useMemo(() => {
+    const logins = new Set<string>();
+    if (pr.user?.login) logins.add(pr.user.login);
+    for (const item of timeline) {
+      if ((item.event === "commented" || item.event === "reviewed") && item.user?.login) {
+        logins.add(item.user.login);
+      }
+    }
+    for (const r of reviews) {
+      if (r.state !== "PENDING" && r.user?.login) logins.add(r.user.login);
+    }
+    for (const c of allComments) {
+      if (c.user?.login) logins.add(c.user.login);
+    }
+    return [...logins];
+  }, [pr.user?.login, timeline, reviews, allComments]);
+
+  return (
+    <div className="flex flex-col gap-6 lg:flex-row">
+      <div className="min-w-0 flex-1">
+        {viewerQ.isError && (
+          <InlineError inline title="Failed to load current user" detail={String(viewerQ.error)} />
+        )}
+        <CommentCard login={pr.user?.login} body={pr.body} date={pr.created_at} isOp />
+        <ReactionBar
+          queryKey={["pr-body-reactions", owner, repo, number]}
+          fetchList={() => fetchIssueReactions(owner, repo, number)}
+          add={(content) => addIssueReaction(owner, repo, number, content)}
+          remove={(reactionId) => removeIssueReaction(owner, repo, number, reactionId)}
+          viewerLogin={viewerLogin}
+        />
+        <ConversationStream
+          owner={owner}
+          repo={repo}
+          number={number}
+          viewerLogin={viewerLogin}
+          timeline={timeline}
+          timelineError={timelineQ.isError ? String(timelineQ.error) : null}
+          timelineLoading={timelineQ.isLoading}
+          reviews={reviews}
+          reviewsError={reviewsQ.isError ? String(reviewsQ.error) : null}
+          comments={allComments}
+          commentsError={commentsQ.isError ? String(commentsQ.error) : null}
+          threadsError={threadsQ.isError ? String(threadsQ.error) : null}
+          threads={threadsQ.data ?? []}
+        />
+        <MergeBox owner={owner} repo={repo} number={number} pr={pr} />
+        <MutationError of={stateMut} />
+        <CommentComposer
+          owner={owner}
+          repo={repo}
+          number={number}
+          invalidateKeys={[
+            ["pr-timeline", owner, repo, number],
+            ["pr", owner, repo, number],
+          ]}
+          extraActions={
+            s !== "merged" && (
+              <Button
+                size="sm"
+                disabled={stateMut.isPending}
+                onClick={() => stateMut.mutate()}
+              >
+                {s === "closed" ? "Reopen pull request" : "Close pull request"}
+              </Button>
+            )
+          }
+        />
+      </div>
+      <div style={{ width: "100%", maxWidth: "16rem", flexShrink: 0 }}>
+        <IssueSidebar
+          owner={owner}
+          repo={repo}
+          number={number}
+          kind="pr"
+          assignees={(pr.assignees ?? []).map((a) => a.login)}
+          labels={pr.labels}
+          milestone={pr.milestone ?? null}
+          participants={participants}
+          reviewers={<RequestedReviewersSection owner={owner} repo={repo} number={number} />}
+          development={
+            <DevelopmentSection
+              owner={owner}
+              repo={repo}
+              number={number}
+              headRef={pr.head.ref}
+              baseRef={pr.base.ref}
+            />
+          }
+        />
+      </div>
     </div>
   );
 }
@@ -695,6 +910,69 @@ const MERGE_METHODS: { value: "merge" | "squash" | "rebase"; label: string }[] =
   { value: "rebase", label: "Rebase and merge" },
 ];
 
+function defaultCommitTitle(
+  method: "merge" | "squash" | "rebase",
+  owner: string,
+  pr: GithubPR,
+): string {
+  if (method === "squash") return `${pr.title} (#${pr.number})`;
+  return `Merge pull request #${pr.number} from ${owner}/${pr.head.ref}`;
+}
+
+function defaultCommitMessage(method: "merge" | "squash" | "rebase", pr: GithubPR): string {
+  return method === "merge" ? pr.title : "";
+}
+
+/** Delete/restore the head branch after a merge (GitHub's merged-box actions). */
+function MergedBranchActions({
+  owner,
+  repo,
+  pr,
+}: {
+  owner: string;
+  repo: string;
+  pr: GithubPR;
+}) {
+  const qc = useQueryClient();
+  const branchesQ = useQuery({
+    queryKey: ["branches", owner, repo],
+    queryFn: () => fetchRepoBranches(owner, repo),
+  });
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["branches", owner, repo] });
+  const deleteMut = useMutation({
+    mutationFn: () => deleteRef(owner, repo, `heads/${pr.head.ref}`),
+    onSuccess: invalidate,
+  });
+  const restoreMut = useMutation({
+    mutationFn: () => createRef(owner, repo, `refs/heads/${pr.head.ref}`, pr.head.sha),
+    onSuccess: invalidate,
+  });
+
+  // Cross-repo heads and the base branch itself are not deletable from here.
+  if (!branchesQ.data || pr.head.ref === pr.base.ref) return null;
+  const exists = branchesQ.data.some((b) => b.name === pr.head.ref);
+
+  return (
+    <div className="flex flex-col items-end gap-1">
+      {exists ? (
+        <Button size="sm" disabled={deleteMut.isPending} onClick={() => deleteMut.mutate()}>
+          {deleteMut.isPending ? "Deleting…" : "Delete branch"}
+        </Button>
+      ) : (
+        <Button size="sm" disabled={restoreMut.isPending} onClick={() => restoreMut.mutate()}>
+          {restoreMut.isPending ? "Restoring…" : "Restore branch"}
+        </Button>
+      )}
+      {deleteMut.isError && (
+        <InlineError inline title="Failed to delete branch" detail={String(deleteMut.error)} />
+      )}
+      {restoreMut.isError && (
+        <InlineError inline title="Failed to restore branch" detail={String(restoreMut.error)} />
+      )}
+    </div>
+  );
+}
+
 function MergeBox({
   owner,
   repo,
@@ -707,8 +985,15 @@ function MergeBox({
   pr: GithubPR;
 }) {
   const qc = useQueryClient();
-  const navigate = useNavigate();
   const [method, setMethod] = useState<"merge" | "squash" | "rebase">("merge");
+  // GitHub's two-step flow: the merge button opens a confirmation panel with
+  // the editable commit title/message; only "Confirm …" performs the merge.
+  const [confirming, setConfirming] = useState(false);
+  // null = "use the GitHub-style default for the chosen method".
+  const [commitTitle, setCommitTitle] = useState<string | null>(null);
+  const [commitMessage, setCommitMessage] = useState<string | null>(null);
+  const effectiveTitle = commitTitle ?? defaultCommitTitle(method, owner, pr);
+  const effectiveMessage = commitMessage ?? defaultCommitMessage(method, pr);
   const checksQ = useQuery({
     queryKey: ["check-runs", owner, repo, pr.head.sha],
     queryFn: () => fetchCheckRuns(owner, repo, pr.head.sha),
@@ -720,11 +1005,28 @@ function MergeBox({
     enabled: !!pr.head.sha,
   });
   const mergeMutation = useMutation({
-    mutationFn: () => mergePR(owner, repo, number, method),
+    mutationFn: () =>
+      ghSend(
+        "PUT",
+        `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/merge`,
+        {
+          merge_method: method,
+          ...(method !== "rebase" && effectiveTitle.trim()
+            ? { commit_title: effectiveTitle.trim() }
+            : {}),
+          ...(method !== "rebase" && effectiveMessage.trim()
+            ? { commit_message: effectiveMessage.trim() }
+            : {}),
+        },
+      ),
     onSuccess: () => {
+      // Stay on the PR — the refetched detail flips to the merged state
+      // (GitHub keeps you on the page and shows the merged box).
+      setConfirming(false);
       qc.invalidateQueries({ queryKey: ["prs", owner, repo] });
       qc.invalidateQueries({ queryKey: ["pr", owner, repo, number] });
-      navigate(`/ui/repos/${owner}/${repo}/pulls`);
+      qc.invalidateQueries({ queryKey: ["pr-timeline", owner, repo, number] });
+      qc.invalidateQueries({ queryKey: ["branches", owner, repo] });
     },
   });
   const updateBranchMut = useMutation({
@@ -746,11 +1048,12 @@ function MergeBox({
     return (
       <div className="mt-4">
         <Box>
-          <div className="flex items-center gap-2" style={{ padding: "0.85rem 1rem" }}>
+          <div className="flex flex-wrap items-center gap-2" style={{ padding: "0.85rem 1rem" }}>
             <MergedIcon size={18} style={{ color: "var(--gh-merged)" }} />
-            <span style={{ fontWeight: 600, color: "var(--gh-merged)" }}>
+            <span className="min-w-0 flex-1" style={{ fontWeight: 600, color: "var(--gh-merged)" }}>
               Pull request successfully merged and closed
             </span>
+            <MergedBranchActions owner={owner} repo={repo} pr={pr} />
           </div>
         </Box>
       </div>
@@ -810,25 +1113,79 @@ function MergeBox({
               </>
             )}
           </div>
+          {confirming && method !== "rebase" && (
+            <div className="mb-2">
+              <FormLabel id="merge-commit-title">Commit title</FormLabel>
+              <input
+                id="merge-commit-title"
+                value={effectiveTitle}
+                onChange={(e) => setCommitTitle(e.target.value)}
+                disabled={mergeMutation.isPending}
+                className="mb-2 w-full"
+                style={{ fontSize: "0.84rem" }}
+              />
+              <FormLabel id="merge-commit-message">Commit message</FormLabel>
+              <textarea
+                id="merge-commit-message"
+                value={effectiveMessage}
+                onChange={(e) => setCommitMessage(e.target.value)}
+                disabled={mergeMutation.isPending}
+                rows={2}
+                placeholder="Add an optional extended description…"
+                className="w-full"
+                style={{ fontSize: "0.84rem", resize: "vertical" }}
+              />
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="primary"
-              size="sm"
-              disabled={mergeMutation.isPending || mergeBlocked}
-              onClick={() => mergeMutation.mutate()}
-            >
-              {mergeMutation.isPending
-                ? "Merging…"
-                : method === "squash"
+            {confirming ? (
+              <>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={mergeMutation.isPending}
+                  onClick={() => mergeMutation.mutate()}
+                >
+                  {mergeMutation.isPending
+                    ? "Merging…"
+                    : method === "squash"
+                      ? "Confirm squash and merge"
+                      : method === "rebase"
+                        ? "Confirm rebase and merge"
+                        : "Confirm merge"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={mergeMutation.isPending}
+                  onClick={() => setConfirming(false)}
+                >
+                  Cancel
+                </Button>
+              </>
+            ) : (
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={mergeBlocked}
+                onClick={() => setConfirming(true)}
+              >
+                {method === "squash"
                   ? "Squash and merge"
                   : method === "rebase"
                     ? "Rebase and merge"
                     : "Merge pull request"}
-            </Button>
+              </Button>
+            )}
             <select
               aria-label="Merge method"
               value={method}
-              onChange={(e) => setMethod(e.target.value as "merge" | "squash" | "rebase")}
+              onChange={(e) => {
+                setMethod(e.target.value as "merge" | "squash" | "rebase");
+                // A new method gets its own GitHub-style defaults.
+                setCommitTitle(null);
+                setCommitMessage(null);
+              }}
               disabled={mergeMutation.isPending}
               style={{ fontSize: "0.82rem" }}
             >
@@ -887,6 +1244,36 @@ function MergeBox({
 
 // ─── Commits tab ─────────────────────────────────────────────────────────
 
+/** Rolled-up check/status icon for one commit, hidden when nothing reported. */
+function CommitChecksIcon({ owner, repo, sha }: { owner: string; repo: string; sha: string }) {
+  const checksQ = useQuery({
+    queryKey: ["check-runs", owner, repo, sha],
+    queryFn: () => fetchCheckRuns(owner, repo, sha),
+    enabled: !!sha,
+  });
+  const statusQ = useQuery({
+    queryKey: ["combined-status", owner, repo, sha],
+    queryFn: ({ signal }) => fetchCombinedStatus(owner, repo, sha, signal),
+    enabled: !!sha,
+  });
+  const checks = checksQ.data?.items ?? [];
+  const statuses = statusQ.data?.statuses ?? [];
+  if (checks.length === 0 && statuses.length === 0) return null;
+  const summary = mergeBoxSummary(checks, statuses);
+  const icon = summary.pending ? (
+    <DotFillIcon size={14} style={{ color: "var(--color-status-warn)" }} />
+  ) : summary.color === "var(--gh-open)" ? (
+    <CheckCircleIcon size={14} style={{ color: "var(--gh-open)" }} />
+  ) : (
+    <XCircleIcon size={14} style={{ color: "var(--color-status-error)" }} />
+  );
+  return (
+    <span role="img" aria-label={summary.label} title={summary.label}>
+      {icon}
+    </span>
+  );
+}
+
 function PRCommitsTab({ owner, repo, number }: { owner: string; repo: string; number: number }) {
   const q = useQuery({
     queryKey: ["pr-commits", owner, repo, number],
@@ -900,33 +1287,42 @@ function PRCommitsTab({ owner, repo, number }: { owner: string; repo: string; nu
   }
   return (
     <Box>
-      {commits.map((c, i) => (
-        <div
-          key={c.sha}
-          className="flex items-start gap-3"
-          style={{
-            padding: "0.7rem 1rem",
-            borderBottom: i < commits.length - 1 ? "1px solid var(--color-border)" : "none",
-          }}
-        >
-          <BranchIcon size={14} style={{ marginTop: "0.2rem", color: "var(--color-fg-muted)" }} />
-          <div className="min-w-0 flex-1">
-            <div style={{ fontSize: "0.88rem", fontWeight: 600, color: "var(--color-fg)" }}>
-              {c.commit.message.split("\n")[0]}
-            </div>
-            <div className="mt-0.5" style={{ fontSize: "0.78rem", color: "var(--color-fg-muted)" }}>
-              {c.commit.author?.name} committed on{" "}
-              {new Date(c.commit.author?.date ?? "").toLocaleDateString()}
-            </div>
-          </div>
-          <span
-            className="font-mono tabular-nums"
-            style={{ fontSize: "0.76rem", color: "var(--color-fg-muted)" }}
+      {commits.map((c, i) => {
+        const authorLogin = c.author?.login ?? c.commit.author?.name ?? "?";
+        return (
+          <div
+            key={c.sha}
+            className="flex items-start gap-3"
+            style={{
+              padding: "0.7rem 1rem",
+              borderBottom: i < commits.length - 1 ? "1px solid var(--color-border)" : "none",
+            }}
           >
-            {c.sha.slice(0, 7)}
-          </span>
-        </div>
-      ))}
+            <Avatar login={authorLogin} src={c.author?.avatar_url} size={20} />
+            <div className="min-w-0 flex-1">
+              <div style={{ fontSize: "0.88rem", fontWeight: 600, color: "var(--color-fg)" }}>
+                {c.commit.message.split("\n")[0]}
+              </div>
+              <div className="mt-0.5" style={{ fontSize: "0.78rem", color: "var(--color-fg-muted)" }}>
+                {authorLogin} committed <RelativeTime iso={c.commit.author?.date} />
+              </div>
+            </div>
+            <CommitChecksIcon owner={owner} repo={repo} sha={c.sha} />
+            <Link
+              to={`/ui/repos/${owner}/${repo}/commits/${c.sha}`}
+              className="font-mono tabular-nums inline-block"
+              style={{
+                fontSize: "0.76rem",
+                lineHeight: "1.625rem",
+                color: "var(--color-accent)",
+                textDecoration: "none",
+              }}
+            >
+              {c.sha.slice(0, 7)}
+            </Link>
+          </div>
+        );
+      })}
     </Box>
   );
 }
@@ -1108,6 +1504,16 @@ function ChecksSection({
 
 // ─── Requested reviewers ─────────────────────────────────────────────────
 
+function reviewerStateIcon(state: GithubReviewState | null): ReactNode {
+  if (state === "APPROVED") {
+    return <CheckCircleIcon size={13} style={{ color: "var(--gh-open)" }} />;
+  }
+  if (state === "CHANGES_REQUESTED") {
+    return <XCircleIcon size={13} style={{ color: "var(--color-status-error)" }} />;
+  }
+  return <DotFillIcon size={13} style={{ color: "var(--color-status-warn)" }} />;
+}
+
 function RequestedReviewersSection({
   owner,
   repo,
@@ -1122,6 +1528,11 @@ function RequestedReviewersSection({
     queryKey: ["pr-requested-reviewers", owner, repo, number],
     queryFn: ({ signal }) => fetchPRRequestedReviewers(owner, repo, number, signal),
   });
+  // Latest submitted verdict per reviewer, for the per-reviewer state icons.
+  const reviewsQ = useQuery({
+    queryKey: ["pr-reviews", owner, repo, number],
+    queryFn: () => fetchPRReviews(owner, repo, number),
+  });
   // Reviewers must be repo collaborators; a free-text login just produced a 422
   // on a typo. Offer the assignable users the same way IssueSidebar offers
   // assignees.
@@ -1129,16 +1540,26 @@ function RequestedReviewersSection({
     queryKey: ["assignable-users", owner, repo],
     queryFn: () => fetchAssignableUsers(owner, repo),
   });
-  // Teams belonging to the repo's owning org, for the team-reviewer picker. A
-  // user-owned repo has no org teams endpoint, so a failure is expected there
-  // and simply leaves the team picker empty (no retry, no error surface).
+  // Teams belonging to the repo's owning org, for the team-reviewer picker.
+  // Only orgs have a teams endpoint, so gate on the owner type from the
+  // already-cached repo detail (RepoHeader owns that fetch; enabled: false
+  // makes this a read-only cache observer) instead of issuing a fetch that is
+  // guaranteed to fail on user-owned repos.
+  const repoQ = useQuery({
+    queryKey: ["repo", owner, repo],
+    queryFn: ({ signal }) => fetchRepoDetail(owner, repo, signal),
+    enabled: false,
+  });
   const { data: orgTeams = [] } = useQuery({
     queryKey: ["org-teams", owner],
     queryFn: () => fetchOrgTeams(owner),
     retry: false,
+    enabled: repoQ.data?.owner?.type === "Organization",
   });
-  const invalidate = () =>
+  const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["pr-requested-reviewers", owner, repo, number] });
+    qc.invalidateQueries({ queryKey: ["pr-reviews", owner, repo, number] });
+  };
   const add = useMutation({
     mutationFn: (l: string) => requestPRReviewers(owner, repo, number, [l]),
     onSuccess: invalidate,
@@ -1163,6 +1584,32 @@ function RequestedReviewersSection({
   const requestedTeamSlugs = new Set((q.data?.teams ?? []).map((t) => t.slug));
   const addableTeams = orgTeams.filter((t) => !requestedTeamSlugs.has(t.slug));
 
+  // Latest non-pending verdict per login. Reviews come oldest-first, so the
+  // last write wins.
+  const verdictByLogin = new Map<string, GithubReviewState>();
+  const reviews = Array.isArray(reviewsQ.data) ? reviewsQ.data : [];
+  for (const r of reviews) {
+    if (r.state === "PENDING" || !r.user?.login) continue;
+    if (r.state === "DISMISSED") {
+      verdictByLogin.delete(r.user.login);
+      continue;
+    }
+    verdictByLogin.set(r.user.login, r.state);
+  }
+  // Reviewers who already submitted a verdict but are not (or no longer)
+  // requested — shown with their state icon and a re-request affordance.
+  const reviewedNotRequested = [...verdictByLogin.entries()].filter(
+    ([login]) => !requestedLogins.has(login),
+  );
+
+  const chipStyle = {
+    border: "1px solid var(--color-border)",
+    borderRadius: "2rem",
+    padding: "0.15rem 0.3rem 0.15rem 0.6rem",
+    fontSize: "0.8rem",
+    color: "var(--color-fg)",
+  } as const;
+
   // Rendered inside the sidebar's "Reviewers" section, which supplies the
   // heading — so this body carries none of its own.
   return (
@@ -1171,23 +1618,14 @@ function RequestedReviewersSection({
         <InlineError inline title="Failed to load requested reviewers" detail={String(q.error)} />
       ) : (
         <div className="flex flex-wrap items-center gap-2">
-          {q.data.users.length === 0 && q.data.teams.length === 0 && (
+          {q.data.users.length === 0 && q.data.teams.length === 0 && reviewedNotRequested.length === 0 && (
             <span style={{ fontSize: "0.82rem", color: "var(--color-fg-muted)" }}>
               No reviewers requested.
             </span>
           )}
           {q.data.users.map((u) => (
-            <span
-              key={u.login}
-              className="inline-flex items-center gap-1.5"
-              style={{
-                border: "1px solid var(--color-border)",
-                borderRadius: "2rem",
-                padding: "0.15rem 0.3rem 0.15rem 0.6rem",
-                fontSize: "0.8rem",
-                color: "var(--color-fg)",
-              }}
-            >
+            <span key={u.login} className="inline-flex items-center gap-1.5" style={chipStyle}>
+              {reviewerStateIcon(verdictByLogin.get(u.login) ?? null)}
               {u.login}
               <button
                 type="button"
@@ -1208,18 +1646,32 @@ function RequestedReviewersSection({
               </button>
             </span>
           ))}
+          {reviewedNotRequested.map(([login, state]) => (
+            <span key={login} className="inline-flex items-center gap-1.5" style={chipStyle}>
+              {reviewerStateIcon(state)}
+              {login}
+              <button
+                type="button"
+                aria-label={`re-request review from ${login}`}
+                title={`Re-request review from ${login}`}
+                disabled={add.isPending}
+                onClick={() => add.mutate(login)}
+                style={{
+                  border: "none",
+                  background: "transparent",
+                  cursor: "pointer",
+                  color: "var(--color-fg-muted)",
+                  fontSize: "0.85rem",
+                  lineHeight: 1,
+                  padding: "0.1rem 0.3rem",
+                }}
+              >
+                ↻
+              </button>
+            </span>
+          ))}
           {q.data.teams.map((t) => (
-            <span
-              key={t.slug}
-              className="inline-flex items-center gap-1.5"
-              style={{
-                border: "1px solid var(--color-border)",
-                borderRadius: "2rem",
-                padding: "0.15rem 0.3rem 0.15rem 0.6rem",
-                fontSize: "0.8rem",
-                color: "var(--color-fg)",
-              }}
-            >
+            <span key={t.slug} className="inline-flex items-center gap-1.5" style={chipStyle}>
               {t.name}
               <button
                 type="button"
@@ -1294,313 +1746,6 @@ function RequestedReviewersSection({
   );
 }
 
-// ─── Conversation timeline ───────────────────────────────────────────────
-
-
-function ConversationTimeline({
-  owner,
-  repo,
-  number,
-  viewerLogin,
-}: {
-  owner: string;
-  repo: string;
-  number: number;
-  viewerLogin: string | null;
-}) {
-  const q = useQuery({
-    queryKey: ["pr-timeline", owner, repo, number],
-    queryFn: () => fetchIssueTimeline(owner, repo, number),
-  });
-
-  if (q.isLoading) return null;
-  if (q.isError) {
-    return <InlineError title="Failed to load conversation" detail={String(q.error)} />;
-  }
-  const items = q.data ?? [];
-
-  return (
-    <>
-      {items.map((item, i) => {
-        if (item.event === "commented" && typeof item.id === "number") {
-          return (
-            <div key={`commented-${item.id}`}>
-              <CommentCard
-                login={item.user?.login}
-                body={item.body}
-                date={item.created_at ?? ""}
-              />
-              <ReactionBar
-                queryKey={["issue-comment-reactions", owner, repo, item.id]}
-                fetchList={() => fetchIssueCommentReactions(owner, repo, item.id as number)}
-                add={(content) => addIssueCommentReaction(owner, repo, item.id as number, content)}
-                remove={(reactionId) =>
-                  removeIssueCommentReaction(owner, repo, item.id as number, reactionId)
-                }
-                viewerLogin={viewerLogin}
-              />
-            </div>
-          );
-        }
-        if (item.event === "reviewed" && item.body) {
-          return (
-            <div key={`reviewed-${item.id ?? i}`}>
-              <TimelineEventRow item={item} />
-              <div style={{ marginLeft: "1.4rem" }}>
-                <CommentCard
-                  login={item.user?.login}
-                  body={item.body}
-                  date={item.submitted_at ?? item.created_at ?? ""}
-                />
-              </div>
-            </div>
-          );
-        }
-        return <TimelineEventRow key={`${item.event}-${item.id ?? i}`} item={item} />;
-      })}
-    </>
-  );
-}
-
-// ─── Review comment threads ──────────────────────────────────────────────
-
-interface ReviewThreadGroup {
-  root: GithubPRReviewComment;
-  comments: GithubPRReviewComment[];
-}
-
-/** Group flat review comments into threads by following in_reply_to_id. */
-function groupReviewThreads(comments: GithubPRReviewComment[]): ReviewThreadGroup[] {
-  const byId = new Map(comments.map((c) => [c.id, c]));
-  const rootOf = (c: GithubPRReviewComment): GithubPRReviewComment => {
-    let cur = c;
-    const seen = new Set<number>();
-    while (cur.in_reply_to_id != null && byId.has(cur.in_reply_to_id) && !seen.has(cur.id)) {
-      seen.add(cur.id);
-      cur = byId.get(cur.in_reply_to_id) as GithubPRReviewComment;
-    }
-    return cur;
-  };
-  const groups = new Map<number, ReviewThreadGroup>();
-  const sorted = [...comments].sort(
-    (a, b) => a.created_at.localeCompare(b.created_at) || a.id - b.id,
-  );
-  for (const c of sorted) {
-    const root = rootOf(c);
-    const g = groups.get(root.id) ?? { root, comments: [] };
-    g.comments.push(c);
-    groups.set(root.id, g);
-  }
-  return [...groups.values()];
-}
-
-function ReviewThreadCard({
-  owner,
-  repo,
-  number,
-  group,
-  threadInfo,
-  viewerLogin,
-}: {
-  owner: string;
-  repo: string;
-  number: number;
-  group: ReviewThreadGroup;
-  threadInfo: { id: string; isResolved: boolean } | null;
-  viewerLogin: string | null;
-}) {
-  const qc = useQueryClient();
-  const [replyBody, setReplyBody] = useState("");
-  const invalidate = () => {
-    qc.invalidateQueries({ queryKey: ["pr-review-comments", owner, repo, number] });
-    qc.invalidateQueries({ queryKey: ["pr-review-threads", owner, repo, number] });
-  };
-  const reply = useMutation({
-    mutationFn: () => replyToPRReviewComment(owner, repo, number, group.root.id, replyBody.trim()),
-    onSuccess: () => {
-      setReplyBody("");
-      invalidate();
-    },
-  });
-  const resolve = useMutation({
-    mutationFn: (resolved: boolean) => {
-      if (!threadInfo) {
-        throw new Error("thread resolution state unavailable");
-      }
-      return setPRReviewThreadResolved(owner, repo, number, threadInfo.id, resolved);
-    },
-    onSuccess: invalidate,
-  });
-
-  const resolved = threadInfo?.isResolved ?? false;
-
-  return (
-    <div className="mb-3">
-      <Box
-        header={
-          <span className="flex items-center gap-2" style={{ fontSize: "0.82rem" }}>
-            <span className="font-mono min-w-0 flex-1 truncate" style={{ color: "var(--color-fg)" }}>
-              {group.root.path}
-              {group.root.line != null && `:${group.root.line}`}
-            </span>
-            {resolved && (
-              <span
-                style={{
-                  border: "1px solid var(--color-border)",
-                  borderRadius: "2rem",
-                  padding: "0.05rem 0.5rem",
-                  fontSize: "0.72rem",
-                  color: "var(--color-fg-muted)",
-                }}
-              >
-                Resolved
-              </span>
-            )}
-            {threadInfo && (
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={resolve.isPending}
-                onClick={() => resolve.mutate(!resolved)}
-              >
-                {resolve.isPending ? "…" : resolved ? "Unresolve" : "Resolve"}
-              </Button>
-            )}
-          </span>
-        }
-      >
-        {group.root.diff_hunk && (
-          <pre
-            className="font-mono"
-            style={{
-              margin: 0,
-              padding: "0.6rem 1rem",
-              fontSize: "0.76rem",
-              lineHeight: 1.5,
-              overflowX: "auto",
-              background: "var(--color-bg-subtle)",
-              borderBottom: "1px solid var(--color-border)",
-              color: "var(--color-fg)",
-            }}
-          >
-            {group.root.diff_hunk}
-          </pre>
-        )}
-        {group.comments.map((c) => (
-          <div
-            key={c.id}
-            style={{
-              padding: "0.6rem 1rem",
-              borderBottom: "1px solid var(--color-border)",
-              fontSize: "0.86rem",
-            }}
-          >
-            <div style={{ fontSize: "0.78rem", color: "var(--color-fg-muted)", marginBottom: "0.25rem" }}>
-              <span style={{ color: "var(--color-fg)", fontWeight: 600 }}>{c.user?.login}</span>{" "}
-              commented {new Date(c.created_at).toLocaleString()}
-            </div>
-            <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", color: "var(--color-fg)" }}>
-              {c.body}
-            </div>
-            <div className="mt-1">
-              <ReactionBar
-                queryKey={["pr-review-comment-reactions", owner, repo, c.id]}
-                fetchList={() => fetchPullReviewCommentReactions(owner, repo, c.id)}
-                add={(content) => addPullReviewCommentReaction(owner, repo, c.id, content)}
-                remove={(reactionId) => removePullReviewCommentReaction(owner, repo, c.id, reactionId)}
-                viewerLogin={viewerLogin}
-              />
-            </div>
-          </div>
-        ))}
-        <div className="flex items-center gap-2" style={{ padding: "0.55rem 1rem" }}>
-          <input
-            aria-label={`reply to thread on ${group.root.path}`}
-            value={replyBody}
-            onChange={(e) => setReplyBody(e.target.value)}
-            placeholder="Reply…"
-            className="min-w-0 flex-1"
-            style={{ fontSize: "0.82rem", padding: "0.25rem 0.5rem" }}
-          />
-          <Button
-            size="sm"
-            disabled={!replyBody.trim() || reply.isPending}
-            onClick={() => reply.mutate()}
-          >
-            {reply.isPending ? "Replying…" : "Reply"}
-          </Button>
-        </div>
-      </Box>
-      {reply.isError && (
-        <InlineError inline title="Failed to reply" detail={String(reply.error)} />
-      )}
-      {resolve.isError && (
-        <InlineError inline title="Failed to update thread resolution" detail={String(resolve.error)} />
-      )}
-    </div>
-  );
-}
-
-function ReviewThreadsSection({
-  owner,
-  repo,
-  number,
-  viewerLogin,
-}: {
-  owner: string;
-  repo: string;
-  number: number;
-  viewerLogin: string | null;
-}) {
-  const commentsQ = useQuery({
-    queryKey: ["pr-review-comments", owner, repo, number],
-    queryFn: () => fetchPRReviewComments(owner, repo, number),
-  });
-  const threadsQ = useQuery({
-    queryKey: ["pr-review-threads", owner, repo, number],
-    queryFn: () => fetchPRReviewThreads(owner, repo, number),
-  });
-
-  if (commentsQ.isLoading) return null;
-  if (commentsQ.isError) {
-    return <InlineError title="Failed to load review comments" detail={String(commentsQ.error)} />;
-  }
-  const comments = commentsQ.data ?? [];
-  if (comments.length === 0) return null;
-
-  const threadInfoByCommentId = new Map<number, { id: string; isResolved: boolean }>();
-  for (const t of threadsQ.data ?? []) {
-    for (const c of t.comments) {
-      threadInfoByCommentId.set(c.databaseId, { id: t.id, isResolved: t.isResolved });
-    }
-  }
-  const groups = groupReviewThreads(comments);
-
-  return (
-    <div className="mb-4">
-      <SectionLabel>Review comments</SectionLabel>
-      {threadsQ.isError && (
-        <InlineError
-          inline
-          title="Failed to load thread resolution state"
-          detail={String(threadsQ.error)}
-        />
-      )}
-      {groups.map((g) => (
-        <ReviewThreadCard
-          key={g.root.id}
-          owner={owner}
-          repo={repo}
-          number={number}
-          group={g}
-          threadInfo={threadInfoByCommentId.get(g.root.id) ?? null}
-          viewerLogin={viewerLogin}
-        />
-      ))}
-    </div>
-  );
-}
-
 // ─── Reviews ─────────────────────────────────────────────────────────────
 
 const reviewBadge: Record<GithubReviewState, { label: string; color: string }> = {
@@ -1629,16 +1774,27 @@ function ReviewStateBadge({ state }: { state: GithubReviewState }) {
   );
 }
 
-function ReviewRow({
+/**
+ * One submitted review in the conversation stream: verdict header, optional
+ * summary body, and the review's inline comment threads nested inside
+ * (GitHub-style), instead of separate stacked sections.
+ */
+function ReviewCard({
   owner,
   repo,
   number,
   review,
+  groups,
+  threadInfoByCommentId,
+  viewerLogin,
 }: {
   owner: string;
   repo: string;
   number: number;
   review: GithubPRReview;
+  groups: ReviewThreadGroup[];
+  threadInfoByCommentId: Map<number, { id: string; isResolved: boolean }>;
+  viewerLogin: string | null;
 }) {
   const qc = useQueryClient();
   const [dismissing, setDismissing] = useState(false);
@@ -1655,167 +1811,292 @@ function ReviewRow({
   const dismissable = review.state === "APPROVED" || review.state === "CHANGES_REQUESTED";
 
   return (
-    <div
-      style={{
-        padding: "0.6rem 1rem",
-        borderBottom: "1px solid var(--color-border)",
-        fontSize: "0.86rem",
-      }}
-    >
-      <div className="flex flex-wrap items-center gap-2">
-        <span style={{ color: "var(--color-fg)", fontWeight: 600 }}>{review.user?.login}</span>
-        <ReviewStateBadge state={review.state} />
-        {review.submitted_at && (
-          <span style={{ fontSize: "0.76rem", color: "var(--color-fg-muted)" }}>
-            {new Date(review.submitted_at).toLocaleString()}
-          </span>
-        )}
-        <span className="flex-1" />
-        {dismissable && !dismissing && (
-          <Button size="sm" variant="ghost" onClick={() => setDismissing(true)}>
-            Dismiss
-          </Button>
-        )}
-      </div>
-      {review.body && (
+    <div className="mb-3">
+      <Box>
         <div
           style={{
-            marginTop: "0.3rem",
-            whiteSpace: "pre-wrap",
-            wordBreak: "break-word",
-            color: "var(--color-fg)",
+            padding: "0.6rem 1rem",
+            fontSize: "0.86rem",
+            borderBottom: groups.length > 0 ? "1px solid var(--color-border)" : "none",
           }}
         >
-          {review.body}
+          <div className="flex flex-wrap items-center gap-2">
+            <Avatar login={review.user?.login ?? "?"} src={review.user?.avatar_url} size={20} />
+            <span style={{ color: "var(--color-fg)", fontWeight: 600 }}>{review.user?.login}</span>
+            <ReviewStateBadge state={review.state} />
+            {review.submitted_at && (
+              <span style={{ fontSize: "0.76rem", color: "var(--color-fg-muted)" }}>
+                <RelativeTime iso={review.submitted_at} />
+              </span>
+            )}
+            <span className="flex-1" />
+            {dismissable && !dismissing && (
+              <Button size="sm" variant="ghost" onClick={() => setDismissing(true)}>
+                Dismiss
+              </Button>
+            )}
+          </div>
+          {review.body && (
+            <div className="markdown-body" style={{ marginTop: "0.3rem", color: "var(--color-fg)" }}>
+              <Markdown>{review.body}</Markdown>
+            </div>
+          )}
+          {dismissing && (
+            <div className="mt-2 flex items-center gap-2">
+              <input
+                aria-label={`dismissal message for review ${review.id}`}
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                placeholder="Reason for dismissing…"
+                className="min-w-0 flex-1"
+                style={{ fontSize: "0.82rem", padding: "0.25rem 0.5rem" }}
+              />
+              <Button
+                size="sm"
+                variant="danger"
+                disabled={!message.trim() || dismiss.isPending}
+                onClick={() => dismiss.mutate()}
+              >
+                {dismiss.isPending ? "Dismissing…" : "Confirm dismiss"}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setDismissing(false)}>
+                Cancel
+              </Button>
+            </div>
+          )}
+          {dismiss.isError && (
+            <InlineError inline title="Failed to dismiss review" detail={String(dismiss.error)} />
+          )}
         </div>
-      )}
-      {dismissing && (
-        <div className="mt-2 flex items-center gap-2">
-          <input
-            aria-label={`dismissal message for review ${review.id}`}
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            placeholder="Reason for dismissing…"
-            className="min-w-0 flex-1"
-            style={{ fontSize: "0.82rem", padding: "0.25rem 0.5rem" }}
-          />
-          <Button
-            size="sm"
-            variant="danger"
-            disabled={!message.trim() || dismiss.isPending}
-            onClick={() => dismiss.mutate()}
-          >
-            {dismiss.isPending ? "Dismissing…" : "Confirm dismiss"}
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => setDismissing(false)}>
-            Cancel
-          </Button>
-        </div>
-      )}
-      {dismiss.isError && (
-        <InlineError inline title="Failed to dismiss review" detail={String(dismiss.error)} />
-      )}
+        {groups.length > 0 && (
+          <div style={{ padding: "0.6rem 0.75rem 0.1rem" }}>
+            {groups.map((g) => (
+              <ReviewThreadCard
+                key={g.root.id}
+                owner={owner}
+                repo={repo}
+                number={number}
+                group={g}
+                threadInfo={threadInfoByCommentId.get(g.root.id) ?? null}
+                viewerLogin={viewerLogin}
+              />
+            ))}
+          </div>
+        )}
+      </Box>
     </div>
   );
 }
 
-function ReviewsSection({
+// ─── Conversation stream ─────────────────────────────────────────────────
+// Timeline events, issue comments, and reviews (with their inline threads
+// nested inside the review card) merged into one chronological stream.
+
+interface StreamEntry {
+  at: string;
+  key: string;
+  node: ReactNode;
+}
+
+function ConversationStream({
   owner,
   repo,
   number,
+  viewerLogin,
+  timeline,
+  timelineError,
+  timelineLoading,
+  reviews,
+  reviewsError,
+  comments,
+  commentsError,
+  threads,
+  threadsError,
 }: {
   owner: string;
   repo: string;
   number: number;
+  viewerLogin: string | null;
+  timeline: GithubTimelineItem[];
+  timelineError: string | null;
+  timelineLoading: boolean;
+  reviews: GithubPRReview[];
+  reviewsError: string | null;
+  comments: GithubPRReviewComment[];
+  commentsError: string | null;
+  threads: { id: string; isResolved: boolean; comments: { databaseId: number }[] }[];
+  threadsError: string | null;
 }) {
-  const qc = useQueryClient();
-  const q = useQuery({
-    queryKey: ["pr-reviews", owner, repo, number],
-    queryFn: () => fetchPRReviews(owner, repo, number),
-  });
-  const [body, setBody] = useState("");
-  const submit = useMutation({
-    mutationFn: (event: "APPROVE" | "REQUEST_CHANGES" | "COMMENT") =>
-      createPRReview(owner, repo, number, { body: body.trim(), event }),
-    onSuccess: () => {
-      setBody("");
-      qc.invalidateQueries({ queryKey: ["pr-reviews", owner, repo, number] });
-      qc.invalidateQueries({ queryKey: ["pr-timeline", owner, repo, number] });
-    },
+  if (timelineLoading) return null;
+
+  // Draft (pending) reviews and their comments stay out of the public
+  // conversation — GitHub only shows them to their author, in the Files tab.
+  const pendingIds = new Set(reviews.filter((r) => r.state === "PENDING").map((r) => r.id));
+  const submittedById = new Map(
+    reviews.filter((r) => r.state !== "PENDING").map((r) => [r.id, r]),
+  );
+  const publicComments = comments.filter((c) => !pendingIds.has(c.pull_request_review_id));
+
+  const threadInfoByCommentId = new Map<number, { id: string; isResolved: boolean }>();
+  for (const t of threads) {
+    for (const c of t.comments) {
+      threadInfoByCommentId.set(c.databaseId, { id: t.id, isResolved: t.isResolved });
+    }
+  }
+
+  const groups = groupReviewThreads(publicComments);
+  const groupsByReview = new Map<number, ReviewThreadGroup[]>();
+  const orphanGroups: ReviewThreadGroup[] = [];
+  for (const g of groups) {
+    if (submittedById.has(g.root.pull_request_review_id)) {
+      const list = groupsByReview.get(g.root.pull_request_review_id) ?? [];
+      list.push(g);
+      groupsByReview.set(g.root.pull_request_review_id, list);
+    } else {
+      orphanGroups.push(g);
+    }
+  }
+
+  const renderReviewCard = (review: GithubPRReview) => (
+    <ReviewCard
+      owner={owner}
+      repo={repo}
+      number={number}
+      review={review}
+      groups={groupsByReview.get(review.id) ?? []}
+      threadInfoByCommentId={threadInfoByCommentId}
+      viewerLogin={viewerLogin}
+    />
+  );
+
+  const entries: StreamEntry[] = [];
+  const consumedReviewIds = new Set<number>();
+  timeline.forEach((item, i) => {
+    const at = item.created_at ?? item.submitted_at ?? "";
+    if (
+      item.event === "reviewed" &&
+      typeof item.id === "number" &&
+      submittedById.has(item.id)
+    ) {
+      // The full review card replaces the bare timeline row — one rendering
+      // per review, not two.
+      consumedReviewIds.add(item.id);
+      entries.push({
+        at: item.submitted_at ?? at,
+        key: `review-${item.id}`,
+        node: renderReviewCard(submittedById.get(item.id)!),
+      });
+      return;
+    }
+    if (item.event === "reviewed" && typeof item.id === "number" && pendingIds.has(item.id)) {
+      return;
+    }
+    if (item.event === "commented" && typeof item.id === "number") {
+      entries.push({
+        at,
+        key: `commented-${item.id}`,
+        node: (
+          <div>
+            <CommentCard
+              login={item.user?.login}
+              body={item.body}
+              date={item.created_at ?? ""}
+            />
+            <ReactionBar
+              queryKey={["issue-comment-reactions", owner, repo, item.id]}
+              fetchList={() => fetchIssueCommentReactions(owner, repo, item.id as number)}
+              add={(content) => addIssueCommentReaction(owner, repo, item.id as number, content)}
+              remove={(reactionId) =>
+                removeIssueCommentReaction(owner, repo, item.id as number, reactionId)
+              }
+              viewerLogin={viewerLogin}
+            />
+          </div>
+        ),
+      });
+      return;
+    }
+    if (item.event === "reviewed" && item.body) {
+      // A review the reviews endpoint did not return (e.g. hidden by
+      // pagination) still renders from its timeline payload.
+      entries.push({
+        at: item.submitted_at ?? at,
+        key: `reviewed-${item.id ?? i}`,
+        node: (
+          <div>
+            <TimelineEventRow item={item} />
+            <div style={{ marginLeft: "1.4rem" }}>
+              <CommentCard
+                login={item.user?.login}
+                body={item.body}
+                date={item.submitted_at ?? item.created_at ?? ""}
+              />
+            </div>
+          </div>
+        ),
+      });
+      return;
+    }
+    entries.push({
+      at,
+      key: `${item.event}-${item.id ?? i}`,
+      node: <TimelineEventRow item={item} />,
+    });
   });
 
-  if (q.isLoading) return null;
+  // Reviews the timeline did not carry (or an empty timeline) still stream in
+  // chronological position.
+  for (const review of submittedById.values()) {
+    if (consumedReviewIds.has(review.id)) continue;
+    entries.push({
+      at: review.submitted_at ?? "",
+      key: `review-${review.id}`,
+      node: renderReviewCard(review),
+    });
+  }
+
+  // Threads whose review is unknown (single inline comments, unfetched
+  // reviews) render standalone at their root comment's timestamp.
+  for (const g of orphanGroups) {
+    entries.push({
+      at: g.root.created_at,
+      key: `thread-${g.root.id}`,
+      node: (
+        <ReviewThreadCard
+          owner={owner}
+          repo={repo}
+          number={number}
+          group={g}
+          threadInfo={threadInfoByCommentId.get(g.root.id) ?? null}
+          viewerLogin={viewerLogin}
+        />
+      ),
+    });
+  }
+
+  entries.sort((a, b) => a.at.localeCompare(b.at));
 
   return (
-    <div className="mb-4">
-      <SectionLabel>Reviews</SectionLabel>
-      {q.isError || !q.data ? (
-        <InlineError title="Failed to load reviews" detail={String(q.error)} />
-      ) : q.data.length === 0 ? (
-        <div className="mb-3" style={{ fontSize: "0.82rem", color: "var(--color-fg-muted)" }}>
-          No reviews yet.
-        </div>
-      ) : (
-        <div className="mb-3">
-          <Box>
-            {q.data.map((review) => (
-              <ReviewRow
-                key={review.id}
-                owner={owner}
-                repo={repo}
-                number={number}
-                review={review}
-              />
-            ))}
-          </Box>
-        </div>
+    <>
+      {timelineError !== null && (
+        <InlineError title="Failed to load conversation" detail={timelineError} />
       )}
-
-      <Box header={<span style={{ fontWeight: 600 }}>Submit a review</span>}>
-        <div style={{ padding: "0.7rem 1rem" }}>
-          <FormLabel id="review-body">Review comment</FormLabel>
-          <textarea
-            id="review-body"
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            rows={3}
-            placeholder="Leave a review comment…"
-            className="mb-2 w-full"
-            style={{ resize: "vertical" }}
-          />
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              size="sm"
-              variant="primary"
-              disabled={submit.isPending}
-              onClick={() => submit.mutate("APPROVE")}
-            >
-              Approve
-            </Button>
-            <Button
-              size="sm"
-              variant="danger"
-              disabled={!body.trim() || submit.isPending}
-              onClick={() => submit.mutate("REQUEST_CHANGES")}
-            >
-              Request changes
-            </Button>
-            <Button
-              size="sm"
-              disabled={!body.trim() || submit.isPending}
-              onClick={() => submit.mutate("COMMENT")}
-            >
-              Comment
-            </Button>
-            {submit.isPending && (
-              <span style={{ fontSize: "0.8rem", color: "var(--color-fg-muted)" }}>Submitting…</span>
-            )}
-          </div>
-          {submit.isError && (
-            <InlineError inline title="Failed to submit review" detail={String(submit.error)} />
-          )}
-        </div>
-      </Box>
-    </div>
+      {reviewsError !== null && (
+        <InlineError inline title="Failed to load reviews" detail={reviewsError} />
+      )}
+      {commentsError !== null && (
+        <InlineError inline title="Failed to load review comments" detail={commentsError} />
+      )}
+      {threadsError !== null && (
+        <InlineError
+          inline
+          title="Failed to load thread resolution state"
+          detail={threadsError}
+        />
+      )}
+      {entries.map((e) => (
+        <div key={e.key}>{e.node}</div>
+      ))}
+    </>
   );
 }

@@ -4,6 +4,7 @@ import (
 	cryptorand "crypto/rand"
 	_ "embed"
 	"encoding/json"
+	"html"
 	"math/big"
 	"net/http"
 	"regexp"
@@ -84,6 +85,11 @@ func (s *Server) handleGHOctocat(w http.ResponseWriter, r *http.Request) {
 	text := r.URL.Query().Get("s")
 	if !octocatSpeechRe.MatchString(text) {
 		text = randomZenQuote()
+	} else {
+		// The allowlist above admits no HTML metacharacters, so this is a
+		// runtime no-op — it exists to make the non-injectability provable
+		// to taint analysis rather than dependent on the regexp's contents.
+		text = html.EscapeString(text)
 	}
 	w.Header().Set("Content-Type", "application/octocat-stream")
 	w.WriteHeader(http.StatusOK)

@@ -17,6 +17,7 @@
   "dependencies": {
     "@bleephub/ui-core": "workspace:*",
     "@tanstack/react-query": "^5.101.4",
+    "highlight.js": "11.12.0",
     "libsodium-wrappers": "^0.8.4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",

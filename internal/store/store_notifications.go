@@ -19,11 +19,14 @@ type ThreadSubscription struct {
 
 // UserNotificationsState persists per-user notification read/subscription state.
 type UserNotificationsState struct {
-	LastReadAt         time.Time                      `json:"last_read_at,omitempty"`
-	RepoLastReadAt     map[string]time.Time           `json:"repo_last_read_at,omitempty"`
-	ReadThreadIDs      map[string]time.Time           `json:"read_thread_ids,omitempty"`
-	DismissedThreadIDs map[string]bool                `json:"dismissed_thread_ids,omitempty"`
-	Subscriptions      map[string]*ThreadSubscription `json:"subscriptions,omitempty"`
+	LastReadAt         time.Time            `json:"last_read_at,omitempty"`
+	RepoLastReadAt     map[string]time.Time `json:"repo_last_read_at,omitempty"`
+	ReadThreadIDs      map[string]time.Time `json:"read_thread_ids,omitempty"`
+	DismissedThreadIDs map[string]bool      `json:"dismissed_thread_ids,omitempty"`
+	// SavedThreadIDs is the user's bookmark set backing the web inbox's Saved
+	// view (github.com-only; not part of the public REST surface).
+	SavedThreadIDs map[string]bool                `json:"saved_thread_ids,omitempty"`
+	Subscriptions  map[string]*ThreadSubscription `json:"subscriptions,omitempty"`
 }
 
 // notificationThreadSource is the underlying resource a notification thread points at.
@@ -53,7 +56,11 @@ type NotificationThreadRow struct {
 	reason     string
 	unread     bool
 	lastReadAt *time.Time
+	saved      bool
 }
+
+// Saved reports whether the thread is in the user's saved (bookmark) set.
+func (row NotificationThreadRow) Saved() bool { return row.saved }
 
 // BuildNotificationThreads renders a (typically already-paginated) slice of
 // rows into notification threads. buildThread is expensive per row (it embeds
@@ -109,15 +116,32 @@ func (st *Store) NotificationRowsFor(user *User, opts NotificationListOptions, c
 		}
 
 		threadID := NotificationThreadID(src.Type, src.ID)
-		if state.DismissedThreadIDs[threadID] {
-			return
+		// The default inbox hides done ("dismissed") threads; the web-only Done
+		// view lists exactly those, and the Saved view lists the bookmark set
+		// regardless of done/read state.
+		switch opts.View {
+		case NotificationViewDone:
+			if !state.DismissedThreadIDs[threadID] {
+				return
+			}
+		case NotificationViewSaved:
+			if !state.SavedThreadIDs[threadID] {
+				return
+			}
+		default:
+			if state.DismissedThreadIDs[threadID] {
+				return
+			}
 		}
 
 		reason := notificationReasonWithComments(user, src, commentedOn, mentionedInComment)
 		// Read access alone does not subscribe a user to every issue and pull
 		// request in a repository. A non-participant receives the thread only
 		// after explicitly subscribing to it or watching the repository.
-		if reason == "subscribed" {
+		// Membership in the saved/done sets is itself evidence the thread was in
+		// the user's inbox, so those views skip the subscription gate (the user
+		// may have unwatched the repository since).
+		if reason == "subscribed" && opts.View == "" {
 			threadSubscription := state.Subscriptions[threadID]
 			repoSubscription := st.RepoSubscriptions[RepoSubscriptionKey(user.ID, repo.ID)]
 			explicitlySubscribed := threadSubscription != nil && threadSubscription.Subscribed && !threadSubscription.Ignored
@@ -152,11 +176,13 @@ func (st *Store) NotificationRowsFor(user *User, opts NotificationListOptions, c
 				unread = false
 			}
 		}
-		if !opts.All && !unread {
+		// Saved and done threads have typically been read already; those views
+		// list their whole set, so the unread filter applies only to the inbox.
+		if opts.View == "" && !opts.All && !unread {
 			return
 		}
 
-		rows = append(rows, NotificationThreadRow{src, repo, threadID, reason, unread, lastReadAtFor(state, threadID)})
+		rows = append(rows, NotificationThreadRow{src, repo, threadID, reason, unread, lastReadAtFor(state, threadID), state.SavedThreadIDs[threadID]})
 	}
 
 	for _, issue := range st.Issues {
@@ -438,7 +464,7 @@ func (st *Store) notificationIssueRowLocked(user *User, issue *Issue, threadID s
 		AssigneeIDs: issue.AssigneeIDs,
 	}
 	state := st.notificationsStateViewLocked(user.ID)
-	return &NotificationThreadRow{src, repo, threadID, notificationReason(st, user, src), true, lastReadAtFor(state, threadID)}
+	return &NotificationThreadRow{src, repo, threadID, notificationReason(st, user, src), true, lastReadAtFor(state, threadID), state.SavedThreadIDs[threadID]}
 }
 
 func (st *Store) notificationPullRequestRowLocked(user *User, pr *PullRequest, threadID string) *NotificationThreadRow {
@@ -457,7 +483,7 @@ func (st *Store) notificationPullRequestRowLocked(user *User, pr *PullRequest, t
 		AssigneeIDs: pr.AssigneeIDs,
 	}
 	state := st.notificationsStateViewLocked(user.ID)
-	return &NotificationThreadRow{src, repo, threadID, notificationReason(st, user, src), true, lastReadAtFor(state, threadID)}
+	return &NotificationThreadRow{src, repo, threadID, notificationReason(st, user, src), true, lastReadAtFor(state, threadID), state.SavedThreadIDs[threadID]}
 }
 
 // MarkNotificationsRead sets the global last-read timestamp for the user.
@@ -520,7 +546,8 @@ func (st *Store) MarkThreadRead(userID int, threadID string, at time.Time) {
 	st.persistNotificationsState(userID, state)
 }
 
-// MarkThreadDone dismisses a thread for the user.
+// MarkThreadDone dismisses a thread for the user. Done threads are retained
+// (not deleted) so the web-only Done view can list them for review.
 func (st *Store) MarkThreadDone(userID int, threadID string) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -529,6 +556,20 @@ func (st *Store) MarkThreadDone(userID int, threadID string) {
 		state.DismissedThreadIDs = map[string]bool{}
 	}
 	state.DismissedThreadIDs[threadID] = true
+	st.persistNotificationsState(userID, state)
+}
+
+// SetThreadSaved adds or removes a thread from the user's saved (bookmark)
+// set, backing the web inbox's Saved view.
+func (st *Store) SetThreadSaved(userID int, threadID string, saved bool) {
+	st.Mu.Lock()
+	defer st.Mu.Unlock()
+	state := st.notificationsStateFor(userID)
+	if saved {
+		state.SavedThreadIDs[threadID] = true
+	} else {
+		delete(state.SavedThreadIDs, threadID)
+	}
 	st.persistNotificationsState(userID, state)
 }
 
@@ -610,6 +651,12 @@ func (st *Store) deleteNotificationThreadStateBatchLocked(batch *PersistBatch, t
 					changed = true
 				}
 			}
+			if state.SavedThreadIDs != nil {
+				if _, ok := state.SavedThreadIDs[threadID]; ok {
+					delete(state.SavedThreadIDs, threadID)
+					changed = true
+				}
+			}
 			if state.Subscriptions != nil {
 				if _, ok := state.Subscriptions[threadID]; ok {
 					delete(state.Subscriptions, threadID)
@@ -652,6 +699,7 @@ func (st *Store) notificationsStateFor(userID int) *UserNotificationsState {
 			RepoLastReadAt:     map[string]time.Time{},
 			ReadThreadIDs:      map[string]time.Time{},
 			DismissedThreadIDs: map[string]bool{},
+			SavedThreadIDs:     map[string]bool{},
 			Subscriptions:      map[string]*ThreadSubscription{},
 		}
 		st.NotificationsState[userID] = state
@@ -665,6 +713,9 @@ func (st *Store) notificationsStateFor(userID int) *UserNotificationsState {
 	}
 	if state.DismissedThreadIDs == nil {
 		state.DismissedThreadIDs = map[string]bool{}
+	}
+	if state.SavedThreadIDs == nil {
+		state.SavedThreadIDs = map[string]bool{}
 	}
 	if state.Subscriptions == nil {
 		state.Subscriptions = map[string]*ThreadSubscription{}
@@ -695,6 +746,13 @@ type NotificationThread struct {
 	URL              string
 }
 
+// Web-only notification inbox views (/ui-data): the empty view is the normal
+// inbox, Saved is the bookmark set, Done is the reviewable dismissed set.
+const (
+	NotificationViewSaved = "saved"
+	NotificationViewDone  = "done"
+)
+
 // NotificationListOptions controls filtering of ListNotifications.
 type NotificationListOptions struct {
 	All           bool
@@ -702,4 +760,7 @@ type NotificationListOptions struct {
 	Since         time.Time
 	Before        time.Time
 	RepoScope     string
+	// View selects a web-only inbox view ("", NotificationViewSaved, or
+	// NotificationViewDone). The public REST listings always use "".
+	View string
 }

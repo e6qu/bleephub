@@ -151,4 +151,37 @@ describe("ReleasesPage", () => {
     const link = screen.getByRole("link", { name: "Join the release discussion" });
     expect(link.getAttribute("href")).toBe("/ui/repos/admin/release/discussions/7");
   });
+
+  it("renders the index as a feed: notes markdown, chips, and source-code assets", async () => {
+    const feed = [
+      { ...release, id: 2, tag_name: "v2.0.0-rc.1", name: "Release candidate", prerelease: true, body: "", assets: [] },
+      { ...release, id: 1, body: "## Changelog\n\nShipped **things**." },
+    ];
+    mockFetch.mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.split("?")[0] === "/api/v3/repos/admin/release/releases") return Promise.resolve(response(feed));
+      if (url === "/api/v3/repos/admin/release") return Promise.resolve(response(repo));
+      return Promise.resolve(response([]));
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/ui/repos/admin/release/releases"]}><Routes><Route path="/ui/repos/:owner/:repo/releases" element={<ReleasesPage />} /></Routes></MemoryRouter></QueryClientProvider>);
+
+    // Notes render as markdown, not literal "## Changelog".
+    const heading = await screen.findByRole("heading", { name: "Changelog" });
+    expect(heading.tagName).toBe("H2");
+    // Chips: the newest non-draft non-prerelease is Latest; the RC is Pre-release.
+    expect(screen.getByText("Latest")).toBeInTheDocument();
+    expect(screen.getByText("Pre-release")).toBeInTheDocument();
+    // Uploaded asset plus the automatic source archives for the tag.
+    expect(screen.getByRole("link", { name: "Linux artifact" })).toBeInTheDocument();
+    const zips = screen.getAllByRole("link", { name: "Source code (zip)" });
+    expect(zips[0]).toHaveAttribute("href", "/api/v3/repos/admin/release/zipball/v2.0.0-rc.1");
+    expect(zips[1]).toHaveAttribute("href", "/api/v3/repos/admin/release/zipball/v1.0.0");
+    expect(screen.getAllByRole("link", { name: "Source code (tar.gz)" })[1]).toHaveAttribute(
+      "href",
+      "/api/v3/repos/admin/release/tarball/v1.0.0",
+    );
+    // relative published date via <time>
+    expect(document.querySelector("time")).not.toBeNull();
+  });
 });

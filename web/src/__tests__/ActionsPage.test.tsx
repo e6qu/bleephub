@@ -211,6 +211,88 @@ describe("ActionsPage runs list", () => {
   });
 });
 
+describe("ActionsPage run rows", () => {
+  it("titles rows with display_title and shows the workflow/event/actor line", async () => {
+    installMocks();
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.includes("/issues") || u.includes("/pulls")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/actions/workflows") && !u.includes("/runs")) {
+        return Promise.resolve(jsonResponse(workflowsData));
+      }
+      if (u.includes("/actions/runs")) {
+        return Promise.resolve(
+          jsonResponse({
+            total_count: 1,
+            workflow_runs: [run(4, "CI", { display_title: "Fix the flaky test" })],
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderPage();
+    expect(await screen.findByRole("link", { name: "Fix the flaky test" })).toHaveAttribute(
+      "href",
+      "/ui/repos/admin/test/actions/runs/4",
+    );
+    expect(screen.getByText(/CI #4: push by admin on/)).toBeInTheDocument();
+  });
+
+  it("filters runs by actor client-side (the endpoint has no actor param)", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.includes("/issues") || u.includes("/pulls")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/actions/workflows") && !u.includes("/runs")) {
+        return Promise.resolve(jsonResponse(workflowsData));
+      }
+      if (u.includes("/actions/runs")) {
+        return Promise.resolve(
+          jsonResponse({
+            total_count: 2,
+            workflow_runs: [
+              run(2, "CI", { actor: { login: "mona" } }),
+              run(1, "CI", { actor: { login: "admin" } }),
+            ],
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderPage();
+    await waitFor(() => expect(screen.getByText("2 workflow runs")).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText("Actor"), { target: { value: "mona" } });
+    fireEvent.keyDown(screen.getByLabelText("Actor"), { key: "Enter" });
+    await waitFor(() => expect(screen.getByText("1 of 2 workflow runs")).toBeInTheDocument());
+    expect(screen.getByText(/CI #2: push by mona on/)).toBeInTheDocument();
+    expect(screen.queryByText(/CI #1: push by admin on/)).not.toBeInTheDocument();
+    // No ?actor= ever reaches the server.
+    const calls = mockFetch.mock.calls.map((c) => c[0]!.toString());
+    expect(calls.some((c) => c.includes("actor="))).toBe(false);
+  });
+
+  it("offers a per-run kebab with Delete run and View workflow file", async () => {
+    installMocks();
+    renderPage();
+    await waitFor(() => expect(screen.getByText("2 workflow runs")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Options for run #2" }));
+    expect(screen.getByRole("menuitem", { name: "View workflow file" })).toHaveAttribute(
+      "href",
+      "/ui/repos/admin/test/blob/main/.github/workflows/ci.yml",
+    );
+    mockFetch.mockImplementation((_url: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === "DELETE") return Promise.resolve(new Response(null, { status: 204 }));
+      return Promise.resolve(jsonResponse([]));
+    });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete workflow run" }));
+    await waitFor(() => {
+      const del = mockFetch.mock.calls.find(
+        (c) => c[0]!.toString().endsWith("/actions/runs/2") && c[1]?.method === "DELETE",
+      );
+      expect(del).toBeTruthy();
+    });
+  });
+});
+
 describe("ActionsPage storage management", () => {
   it("lists, downloads, and deletes repository artifacts", async () => {
     installMocks({

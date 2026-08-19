@@ -24,6 +24,23 @@ const SIMPLE_RULES: Array<{ type: string; label: string }> = [
 // GitHub's actor_type + bypass_mode enums for the bypass list.
 const ACTOR_TYPES = ["User", "Team", "Integration", "OrganizationAdmin", "RepositoryRole", "DeployKey"];
 const BYPASS_MODES = ["always", "pull_request"];
+
+// GitHub's fixed actor_id values for role-based bypass actors: RepositoryRole
+// uses the documented role ids (2 = maintain, 4 = write, 5 = admin) and
+// OrganizationAdmin always uses actor_id 1. DeployKey carries no meaningful id.
+const REPOSITORY_ROLES: Array<{ id: number; label: string }> = [
+  { id: 5, label: "Repository admin" },
+  { id: 2, label: "Maintain" },
+  { id: 4, label: "Write" },
+];
+const ORGANIZATION_ADMIN_ACTOR_ID = 1;
+
+/** Minimal team shape the bypass picker needs (GithubOrgTeam satisfies it). */
+export interface RulesetTeamOption {
+  id: number;
+  name: string;
+  slug?: string;
+}
 const PATTERN_OPERATORS = ["starts_with", "ends_with", "contains", "regex"];
 
 // splitPatterns turns a newline/comma-separated textarea into a trimmed list.
@@ -61,10 +78,18 @@ export function RulesetEditor({
   target,
   initial,
   onChange,
+  teams,
 }: {
   target: GithubRulesetTarget;
   initial?: GithubRuleset | null;
   onChange: (config: RulesetRuleConfig) => void;
+  /**
+   * Optional org teams for the Team bypass-actor picker. When absent (e.g. a
+   * user-owned repo, or a host that has not wired it) the Team type falls back
+   * to a raw numeric id input — a purely additive prop, existing hosts keep
+   * their behavior.
+   */
+  teams?: RulesetTeamOption[];
 }) {
   const namePatternType = target === "tag" ? "tag_name_pattern" : "branch_name_pattern";
   const showRefConditions = target === "branch" || target === "tag";
@@ -296,15 +321,48 @@ export function RulesetEditor({
         {bypass.length === 0 && <p style={{ fontSize: "0.8rem", color: "var(--color-fg-muted)", margin: "0 0 0.5rem" }}>No actors can bypass this ruleset.</p>}
         {bypass.map((actor, i) => (
           <div key={i} style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", alignItems: "end", marginBottom: "0.5rem" }}>
-            <label style={inlineField}>
-              <span>Actor ID</span>
-              <input type="number" aria-label={`Bypass actor ${i + 1} id`} value={actor.actor_id}
-                onChange={(e) => setBypass(bypass.map((a, j) => (j === i ? { ...a, actor_id: Number(e.target.value) } : a)))} style={numStyle} />
-            </label>
+            {actor.actor_type === "RepositoryRole" ? (
+              <label style={inlineField}>
+                <span>Role</span>
+                <select aria-label={`Bypass actor ${i + 1} role`} value={actor.actor_id}
+                  onChange={(e) => setBypass(bypass.map((a, j) => (j === i ? { ...a, actor_id: Number(e.target.value) } : a)))} style={selStyle}>
+                  {REPOSITORY_ROLES.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
+                </select>
+              </label>
+            ) : actor.actor_type === "Team" && teams && teams.length > 0 ? (
+              <label style={inlineField}>
+                <span>Team</span>
+                <select aria-label={`Bypass actor ${i + 1} team`} value={actor.actor_id}
+                  onChange={(e) => setBypass(bypass.map((a, j) => (j === i ? { ...a, actor_id: Number(e.target.value) } : a)))} style={selStyle}>
+                  <option value={0}>Select team…</option>
+                  {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+              </label>
+            ) : actor.actor_type === "OrganizationAdmin" ? (
+              <span style={{ ...inlineField, justifyContent: "end", color: "var(--color-fg-muted)" }}>
+                <span>Actor ID</span>
+                <span style={{ fontSize: "0.85rem", padding: "0.3rem 0" }}>{ORGANIZATION_ADMIN_ACTOR_ID} (fixed)</span>
+              </span>
+            ) : actor.actor_type === "DeployKey" ? null : (
+              <label style={inlineField}>
+                <span>Actor ID</span>
+                <input type="number" aria-label={`Bypass actor ${i + 1} id`} value={actor.actor_id}
+                  onChange={(e) => setBypass(bypass.map((a, j) => (j === i ? { ...a, actor_id: Number(e.target.value) } : a)))} style={numStyle} />
+              </label>
+            )}
             <label style={inlineField}>
               <span>Type</span>
               <select aria-label={`Bypass actor ${i + 1} type`} value={actor.actor_type}
-                onChange={(e) => setBypass(bypass.map((a, j) => (j === i ? { ...a, actor_type: e.target.value } : a)))} style={selStyle}>
+                onChange={(e) => {
+                  const nextType = e.target.value;
+                  // Reset the id to the type's sensible default so a stale id
+                  // from the previous type never leaks into the payload.
+                  const nextId =
+                    nextType === "RepositoryRole" ? REPOSITORY_ROLES[0]!.id
+                    : nextType === "OrganizationAdmin" ? ORGANIZATION_ADMIN_ACTOR_ID
+                    : 0;
+                  setBypass(bypass.map((a, j) => (j === i ? { ...a, actor_type: nextType, actor_id: nextId } : a)));
+                }} style={selStyle}>
                 {ACTOR_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
               </select>
             </label>

@@ -62,6 +62,8 @@ describe("RepoSocialPage", () => {
       expect(screen.getByText("star-a")).toBeInTheDocument();
     });
     expect(screen.getByText("star-b")).toBeInTheDocument();
+    // Rows link to the account profile via accountRoute (forks-style parity).
+    expect(screen.getByRole("link", { name: "star-a" })).toHaveAttribute("href", "/ui/star-a");
     expect(
       mockFetch.mock.calls.some((c) =>
         String(c[0]).startsWith("/api/v3/repos/admin/social-repo/stargazers"),

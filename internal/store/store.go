@@ -430,45 +430,47 @@ type Store struct {
 	LoginSessions                map[string]*LoginSession // _gh_sess cookie value → session
 	OIDCLogoutClaims             map[string]time.Time     // replay key → expiry (ephemeral stores only)
 	Repos                        map[int]*Repo
-	ReposByName                  map[string]*Repo                       // "owner/name" → repo
-	GitStorages                  map[string]gitStorage.Storer           // "owner/name" → go-git storage (memory or filesystem)
-	Orgs                         map[int]*Org                           // id → org
-	OrgsByLogin                  map[string]*Org                        // login → org
-	Teams                        map[int]*Team                          // id → team
-	TeamsBySlug                  map[string]*Team                       // "org/slug" → team
-	Memberships                  map[string]*Membership                 // "org/user" → membership
-	Issues                       map[int]*Issue                         // id → issue
-	IssuesByRepo                 map[int]map[int]*Issue                 // repoID → number → issue (secondary index)
-	Labels                       map[int]*IssueLabel                    // id → label
-	Milestones                   map[int]*Milestone                     // id → milestone
-	Comments                     map[int]*Comment                       // id → comment
-	CommentCounts                map[string]int                         // "parentType\x1fparentID" → comment count (index)
-	CommentsByParent             map[string][]*Comment                  // "parentType\x1fparentID" → comments (index, avoids scanning every comment per parent)
-	IssueEvents                  map[int]*IssueEvent                    // id → issue event
-	PullRequests                 map[int]*PullRequest                   // id → PR
-	PullsByRepo                  map[int]map[int]*PullRequest           // repoID → number → PR (secondary index)
-	PRReviews                    map[int]*PullRequestReview             // id → review
-	PRReviewsByPR                map[int][]*PullRequestReview           // PR id → reviews (secondary index)
-	Workflows                    map[string]*Workflow                   // id → workflow (run-level)
-	WorkflowFiles                map[int64]*WorkflowFile                // id → workflow file (file-level)
-	PendingMessages              []*TaskAgentMessage                    // messages awaiting delivery
-	RepoSecrets                  map[string]map[string]*Secret          // "owner/repo" → name → secret
-	RepoVariables                map[string]map[string]*ActionsVariable // "owner/repo" → NAME → variable
-	RepoCollaborators            map[string]map[string]string           // "owner/repo" → login → permission (pull/push/admin)
-	RepoAutolinks                map[string]map[int]*RepoAutolink       // "owner/repo" → id → autolink
-	RepoWikiPages                map[string]map[string]*WikiPage        // "owner/repo" → slug → wiki page
-	RepoInvitations              map[string]map[int]*RepoInvitation     // "owner/repo" → id → invitation
-	RepoDeployKeys               map[string]map[int]*RepoDeployKey      // "owner/repo" → id → deploy key
-	RepoSubscriptions            map[string]*RepoSubscription           // "userID:repoID" → subscription
-	OrgSecrets                   map[string]map[string]*OrgSecret       // org login → NAME → org secret
-	OrgVariables                 map[string]map[string]*ActionsVariable // org login → NAME → org variable
-	EnvSecrets                   map[string]map[string]*Secret          // envScopeKey(repo, env) → NAME → secret
-	EnvVariables                 map[string]map[string]*ActionsVariable // envScopeKey(repo, env) → NAME → variable
-	TimelineRecords              map[string][]*TimelineRecord           // planID → runner-uploaded timeline records
-	LogFiles                     map[int][]byte                         // logID → uploaded runner log content
-	LogMasks                     map[string][]string                    // planID → exact values scrubbed from every log surface
-	WorkflowAttempts             map[int][]*Workflow                    // runID → prior attempts (oldest first)
-	RunnerGroups                 map[int]*RunnerGroup                   // org runner groups (global pool overlay)
+	ReposByName                  map[string]*Repo                          // "owner/name" → repo
+	GitStorages                  map[string]gitStorage.Storer              // "owner/name" → go-git storage (memory or filesystem)
+	Orgs                         map[int]*Org                              // id → org
+	OrgsByLogin                  map[string]*Org                           // login → org
+	Teams                        map[int]*Team                             // id → team
+	TeamsBySlug                  map[string]*Team                          // "org/slug" → team
+	Memberships                  map[string]*Membership                    // "org/user" → membership
+	Issues                       map[int]*Issue                            // id → issue
+	IssuesByRepo                 map[int]map[int]*Issue                    // repoID → number → issue (secondary index)
+	IssueOrderByRepo             map[int][]*Issue                          // repoID → issues ordered by (CreatedAt, Number) asc (secondary index; maintained by indexIssueLocked/unindexIssueLocked)
+	Labels                       map[int]*IssueLabel                       // id → label
+	Milestones                   map[int]*Milestone                        // id → milestone
+	Comments                     map[int]*Comment                          // id → comment
+	CommentCounts                map[string]int                            // "parentType\x1fparentID" → comment count (index)
+	CommentsByParent             map[string][]*Comment                     // "parentType\x1fparentID" → comments (index, avoids scanning every comment per parent)
+	IssueEvents                  map[int]*IssueEvent                       // id → issue event
+	PullRequests                 map[int]*PullRequest                      // id → PR
+	PullsByRepo                  map[int]map[int]*PullRequest              // repoID → number → PR (secondary index)
+	PRReviews                    map[int]*PullRequestReview                // id → review
+	PRReviewsByPR                map[int][]*PullRequestReview              // PR id → reviews (secondary index)
+	Workflows                    map[string]*Workflow                      // id → workflow (run-level)
+	WorkflowFiles                map[int64]*WorkflowFile                   // id → workflow file (file-level)
+	PendingMessages              []*TaskAgentMessage                       // messages awaiting delivery
+	RepoSecrets                  map[string]map[string]*Secret             // "owner/repo" → name → secret
+	RepoVariables                map[string]map[string]*ActionsVariable    // "owner/repo" → NAME → variable
+	RepoCollaborators            map[string]map[string]string              // "owner/repo" → login → permission (pull/push/admin)
+	RepoAutolinks                map[string]map[int]*RepoAutolink          // "owner/repo" → id → autolink
+	RepoWikiPages                map[string]map[string]*WikiPage           // "owner/repo" → slug → wiki page
+	RepoWikiRevisions            map[string]map[string][]*WikiPageRevision // "owner/repo" → slug → revisions (oldest first)
+	RepoInvitations              map[string]map[int]*RepoInvitation        // "owner/repo" → id → invitation
+	RepoDeployKeys               map[string]map[int]*RepoDeployKey         // "owner/repo" → id → deploy key
+	RepoSubscriptions            map[string]*RepoSubscription              // "userID:repoID" → subscription
+	OrgSecrets                   map[string]map[string]*OrgSecret          // org login → NAME → org secret
+	OrgVariables                 map[string]map[string]*ActionsVariable    // org login → NAME → org variable
+	EnvSecrets                   map[string]map[string]*Secret             // envScopeKey(repo, env) → NAME → secret
+	EnvVariables                 map[string]map[string]*ActionsVariable    // envScopeKey(repo, env) → NAME → variable
+	TimelineRecords              map[string][]*TimelineRecord              // planID → runner-uploaded timeline records
+	LogFiles                     map[int][]byte                            // logID → uploaded runner log content
+	LogMasks                     map[string][]string                       // planID → exact values scrubbed from every log surface
+	WorkflowAttempts             map[int][]*Workflow                       // runID → prior attempts (oldest first)
+	RunnerGroups                 map[int]*RunnerGroup                      // org runner groups (global pool overlay)
 	NextRunnerGroupID            int
 	Hooks                        map[string][]*Webhook         // "owner/repo" → hooks
 	OrgHooks                     map[string][]*Webhook         // org login → org-level hooks
@@ -941,6 +943,7 @@ func NewStore() *Store {
 		Memberships:                  make(map[string]*Membership),
 		Issues:                       make(map[int]*Issue),
 		IssuesByRepo:                 make(map[int]map[int]*Issue),
+		IssueOrderByRepo:             make(map[int][]*Issue),
 		Labels:                       make(map[int]*IssueLabel),
 		Milestones:                   make(map[int]*Milestone),
 		Comments:                     make(map[int]*Comment),
@@ -958,6 +961,7 @@ func NewStore() *Store {
 		RepoCollaborators:            make(map[string]map[string]string),
 		RepoAutolinks:                make(map[string]map[int]*RepoAutolink),
 		RepoWikiPages:                make(map[string]map[string]*WikiPage),
+		RepoWikiRevisions:            make(map[string]map[string][]*WikiPageRevision),
 		RepoInvitations:              make(map[string]map[int]*RepoInvitation),
 		RepoDeployKeys:               make(map[string]map[int]*RepoDeployKey),
 		RepoSubscriptions:            map[string]*RepoSubscription{},
@@ -1919,6 +1923,14 @@ func (st *Store) loadFromPersistence() error {
 				p.RepoKey = key
 			}
 			st.RepoWikiPages[key] = pages
+			return nil
+		}},
+		{"repo_wiki_revisions", func(key string, raw []byte) error {
+			var revisions map[string][]*WikiPageRevision
+			if err := LoadJSON(raw, &revisions); err != nil {
+				return err
+			}
+			st.RepoWikiRevisions[key] = revisions
 			return nil
 		}},
 		{"repo_invitations", func(key string, raw []byte) error {

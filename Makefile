@@ -18,6 +18,17 @@ web-build:
 test:
 	GOWORK=off go test -tags noui -count=1 -timeout 20m ./...
 
+# Boots a throwaway server, seeds it, and prints the API latency table from
+# scripts/perf/bench.mjs. Requires the embedded binary (`make build`) and node.
+perf: build
+	@set -e; \
+	BLEEPHUB_ADMIN_TOKEN=bleephub-admin-token-00000000000000000000 ./bleephub-server -addr :15599 -log-level warn & \
+	SERVER_PID=$$!; \
+	trap 'kill $$SERVER_PID 2>/dev/null || true' EXIT; \
+	for _ in $$(seq 1 50); do curl -s http://localhost:15599/health >/dev/null 2>&1 && break; sleep 0.2; done; \
+	bash scripts/perf/seed.sh >/dev/null; \
+	node scripts/perf/bench.mjs
+
 gh-test:
 	docker buildx build --load -f Dockerfile.gh-test -t bleephub-gh-test:local .
 	docker run --rm bleephub-gh-test:local

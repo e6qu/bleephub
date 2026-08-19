@@ -520,7 +520,8 @@ test.describe("Repo detail page", () => {
     await page.waitForLoadState("networkidle");
 
     await expect(page.getByText("README.md").first()).toBeVisible();
-    await expect(page.getByRole("combobox", { name: "Branch" })).toHaveValue("main");
+    // The branch <select> became the filterable RefSwitcher trigger button.
+    await expect(page.getByRole("button", { name: "Switch branches or tags" })).toContainText("main");
     await shot(page, "15b-repo-detail-with-readme");
   });
 

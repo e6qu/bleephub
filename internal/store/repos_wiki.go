@@ -69,8 +69,10 @@ func (st *Store) GetWikiPage(repoKey, slug string) *WikiPage {
 
 // UpsertWikiPage creates or replaces a wiki page keyed by its slug (derived from
 // the title). The Home page keeps a stable "home" slug regardless of its title.
+// Every write appends a revision snapshot to the page's history (message is the
+// optional edit summary), capped at MaxWikiPageRevisions with the oldest dropped.
 // Returns the stored page (detached copy).
-func (st *Store) UpsertWikiPage(repoKey, slug, title, body, author string) *WikiPage {
+func (st *Store) UpsertWikiPage(repoKey, slug, title, body, author, message string) *WikiPage {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 
@@ -92,14 +94,39 @@ func (st *Store) UpsertWikiPage(repoKey, slug, title, body, author string) *Wiki
 		page.CreatedAt = existing.CreatedAt
 	}
 	st.RepoWikiPages[repoKey][slug] = page
+
+	if st.RepoWikiRevisions[repoKey] == nil {
+		st.RepoWikiRevisions[repoKey] = map[string][]*WikiPageRevision{}
+	}
+	revisions := st.RepoWikiRevisions[repoKey][slug]
+	nextID := 1
+	if len(revisions) > 0 {
+		nextID = revisions[len(revisions)-1].ID + 1
+	}
+	revisions = append(revisions, &WikiPageRevision{
+		ID:        nextID,
+		Slug:      slug,
+		Title:     title,
+		Body:      body,
+		Editor:    author,
+		Message:   message,
+		CreatedAt: now,
+	})
+	if len(revisions) > MaxWikiPageRevisions {
+		revisions = append([]*WikiPageRevision(nil), revisions[len(revisions)-MaxWikiPageRevisions:]...)
+	}
+	st.RepoWikiRevisions[repoKey][slug] = revisions
+
 	if st.Persist != nil {
 		st.Persist.MustPut("repo_wiki_pages", repoKey, st.RepoWikiPages[repoKey])
+		st.Persist.MustPut("repo_wiki_revisions", repoKey, st.RepoWikiRevisions[repoKey])
 	}
 	cp := *page
 	return &cp
 }
 
-// DeleteWikiPage removes a wiki page by slug. Returns true if it existed.
+// DeleteWikiPage removes a wiki page by slug, along with its revision history
+// (a recreated page starts a fresh history). Returns true if it existed.
 func (st *Store) DeleteWikiPage(repoKey, slug string) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
@@ -112,8 +139,57 @@ func (st *Store) DeleteWikiPage(repoKey, slug string) bool {
 		return false
 	}
 	delete(m, slug)
+	if revs := st.RepoWikiRevisions[repoKey]; revs != nil {
+		delete(revs, slug)
+	}
 	if st.Persist != nil {
 		st.Persist.MustPut("repo_wiki_pages", repoKey, st.RepoWikiPages[repoKey])
+		st.Persist.MustPut("repo_wiki_revisions", repoKey, st.RepoWikiRevisions[repoKey])
 	}
 	return true
+}
+
+// MaxWikiPageRevisions bounds a single page's stored revision history; the
+// oldest snapshots are dropped once the cap is exceeded.
+const MaxWikiPageRevisions = 100
+
+// WikiPageRevision is one saved snapshot of a wiki page edit: the full body as
+// written, who wrote it, when, and the optional edit summary. Reverting is a
+// client-side PUT of an old revision's body — there is no server revert.
+type WikiPageRevision struct {
+	ID        int       `json:"id"`
+	Slug      string    `json:"slug"`
+	Title     string    `json:"title"`
+	Body      string    `json:"body"`
+	Editor    string    `json:"editor,omitempty"`
+	Message   string    `json:"message,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// ListWikiPageRevisions returns a page's revision history, newest first
+// (detached copies).
+func (st *Store) ListWikiPageRevisions(repoKey, slug string) []*WikiPageRevision {
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
+	revisions := st.RepoWikiRevisions[repoKey][slug]
+	out := make([]*WikiPageRevision, 0, len(revisions))
+	for i := len(revisions) - 1; i >= 0; i-- {
+		cp := *revisions[i]
+		out = append(out, &cp)
+	}
+	return out
+}
+
+// GetWikiPageRevision returns one revision of a page by its ID (detached
+// copy), or nil if absent.
+func (st *Store) GetWikiPageRevision(repoKey, slug string, id int) *WikiPageRevision {
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
+	for _, rev := range st.RepoWikiRevisions[repoKey][slug] {
+		if rev.ID == id {
+			cp := *rev
+			return &cp
+		}
+	}
+	return nil
 }

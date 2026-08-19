@@ -128,10 +128,12 @@ describe("DeploymentsPage", () => {
 
     await waitFor(() => screen.getByText("#7"));
     fireEvent.click(screen.getByText("#7"));
+    // The create-status form is collapsed behind the operator disclosure.
+    fireEvent.click(await screen.findByRole("button", { name: /operator tools: create status/i }));
     await waitFor(() => screen.getByLabelText("New status state"));
 
     fireEvent.change(screen.getByLabelText("New status state"), { target: { value: "queued" } });
-    fireEvent.click(screen.getByRole("button", { name: /create status/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Create status" }));
 
     await waitFor(() => {
       const postCall = mockFetch.mock.calls.find(
@@ -245,6 +247,8 @@ describe("DeploymentsPage", () => {
     });
     renderPage();
 
+    // The new-deployment form is collapsed behind the operator disclosure.
+    fireEvent.click(await screen.findByRole("button", { name: "Operator tools" }));
     fireEvent.change(await screen.findByLabelText("Ref"), { target: { value: "main" } });
     fireEvent.click(screen.getByRole("button", { name: "Create deployment" }));
 

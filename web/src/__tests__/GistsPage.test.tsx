@@ -46,43 +46,35 @@ const gist = {
 };
 
 function mockEndpoints() {
-  mockFetch.mockImplementation((url: string, init?: RequestInit) => {
+  mockFetch.mockImplementation((url: string) => {
     if (url.split("?")[0]! === "/api/v3/gists") return Promise.resolve(jsonResponse([gist]));
     if (url === "/api/v3/gists/public") return Promise.resolve(jsonResponse([{ ...gist, id: "g2" }]));
     if (url === "/api/v3/gists/starred") return Promise.resolve(jsonResponse([{ ...gist, id: "g3" }]));
     if (url === "/api/v3/gists/g1") return Promise.resolve(jsonResponse(gist));
-    if (url === "/api/v3/gists/g1/star") {
-      if (init?.method === "GET") return Promise.resolve(new Response(null, { status: 204 }));
-      return Promise.resolve(new Response(null, { status: 204 }));
-    }
-    if (url === "/api/v3/gists/g1/forks") {
-      if (init?.method === "POST") return Promise.resolve(jsonResponse(gist, 201));
-      return Promise.resolve(jsonResponse([]));
-    }
-    if (url === "/api/v3/gists/g1/commits") return Promise.resolve(jsonResponse([]));
-    if (url === "/api/v3/gists/g1/comments") {
-      if (init?.method === "POST") {
-        return Promise.resolve(
-          jsonResponse({ id: 99, body: "great gist", user: { login: "admin" }, created_at: "2026-01-02T00:00:00Z" }, 201),
-        );
-      }
-      return Promise.resolve(
-        jsonResponse([{ id: 1, body: "first!", user: { login: "octocat" }, created_at: "2026-01-01T00:00:00Z" }]),
-      );
-    }
     if (url === "/api/v3/user") return Promise.resolve(jsonResponse({ login: "admin", avatar_url: "" }));
     return Promise.resolve(jsonResponse({}));
   });
 }
 
 describe("GistsPage", () => {
-  it("renders user's gists", async () => {
+  it("renders user's gists as cards with description, file count, and snippet", async () => {
     mockEndpoints();
     renderPage();
     await waitFor(() => {
       expect(screen.getByText("Gists")).toBeInTheDocument();
       expect(screen.getByText("hello world")).toBeInTheDocument();
     });
+    expect(screen.getByText("1 file")).toBeInTheDocument();
+    // The first-file snippet preview (content rides in the mock list payload).
+    expect(screen.getByText("hello")).toBeInTheDocument();
+  });
+
+  it("links each card to the gist permalink page /ui/gists/{id}", async () => {
+    mockEndpoints();
+    renderPage();
+    await waitFor(() => expect(screen.getByText("hello world")).toBeInTheDocument());
+    const link = screen.getByRole("link", { name: /admin \/ hello\.txt/ });
+    expect(link).toHaveAttribute("href", "/ui/gists/g1");
   });
 
   it("switches to public gists", async () => {
@@ -105,81 +97,24 @@ describe("GistsPage", () => {
     });
   });
 
-  it("opens gist detail and shows star/fork actions", async () => {
-    mockEndpoints();
-    renderPage();
-    await waitFor(() => expect(screen.getByText("hello world")).toBeInTheDocument());
-    fireEvent.click(screen.getByText("hello world"));
-    await waitFor(() => {
-      expect(screen.getByText("Unstar")).toBeInTheDocument();
-      expect(screen.getByText("Fork")).toBeInTheDocument();
-      expect(screen.getByText("hello.txt")).toBeInTheDocument();
-    });
-  });
-
-  it("lists gist comments and posts a new one", async () => {
-    mockEndpoints();
-    renderPage();
-    await waitFor(() => expect(screen.getByText("hello world")).toBeInTheDocument());
-    fireEvent.click(screen.getByText("hello world"));
-    await waitFor(() => expect(screen.getByText("hello.txt")).toBeInTheDocument());
-
-    fireEvent.click(screen.getByRole("tab", { name: "Comments" }));
-    await waitFor(() => expect(screen.getByText("first!")).toBeInTheDocument());
-
-    fireEvent.change(screen.getByLabelText("Add a comment"), { target: { value: "great gist" } });
-    fireEvent.click(screen.getByRole("button", { name: "Comment" }));
-
-    await waitFor(() =>
-      expect(
-        mockFetch.mock.calls.some(
-          ([u, init]) => u === "/api/v3/gists/g1/comments" && (init as RequestInit | undefined)?.method === "POST",
-        ),
-      ).toBe(true),
-    );
-  });
-
-  it("edits the viewer's own gist comment via PATCH", async () => {
+  it("deletes an own gist after confirmation", async () => {
     mockFetch.mockImplementation((url: string, init?: RequestInit) => {
+      if (url === "/api/v3/gists/g1" && init?.method === "DELETE") {
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
       if (url.split("?")[0]! === "/api/v3/gists") return Promise.resolve(jsonResponse([gist]));
-      if (url === "/api/v3/gists/g1") return Promise.resolve(jsonResponse(gist));
-      if (url === "/api/v3/gists/g1/commits") return Promise.resolve(jsonResponse([]));
-      if (url === "/api/v3/gists/g1/comments") {
-        if (init?.method === "PATCH") {
-          return Promise.resolve(
-            jsonResponse({ id: 1, body: "edited body", user: { login: "admin" }, created_at: "2026-01-01T00:00:00Z" }),
-          );
-        }
-        return Promise.resolve(
-          jsonResponse([{ id: 1, body: "mine", user: { login: "admin" }, created_at: "2026-01-01T00:00:00Z" }]),
-        );
-      }
-      if (url === "/api/v3/gists/g1/comments/1") {
-        return Promise.resolve(
-          jsonResponse({ id: 1, body: "edited body", user: { login: "admin" }, created_at: "2026-01-01T00:00:00Z" }),
-        );
-      }
       if (url === "/api/v3/user") return Promise.resolve(jsonResponse({ login: "admin", avatar_url: "" }));
       return Promise.resolve(jsonResponse({}));
     });
     renderPage();
     await waitFor(() => expect(screen.getByText("hello world")).toBeInTheDocument());
-    fireEvent.click(screen.getByText("hello world"));
-    await waitFor(() => expect(screen.getByText("hello.txt")).toBeInTheDocument());
-
-    fireEvent.click(screen.getByRole("tab", { name: "Comments" }));
-    await waitFor(() => expect(screen.getByText("mine")).toBeInTheDocument());
-
-    fireEvent.click(screen.getByRole("button", { name: "Edit comment 1" }));
-    fireEvent.change(screen.getByLabelText("Edit comment"), { target: { value: "edited body" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-
+    fireEvent.click(await screen.findByRole("button", { name: "Delete gist g1" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^delete$/i }));
     await waitFor(() => {
-      const patched = mockFetch.mock.calls.find(
-        ([u, init]) => u === "/api/v3/gists/g1/comments/1" && (init as RequestInit | undefined)?.method === "PATCH",
+      const del = mockFetch.mock.calls.find(
+        ([u, init]) => u === "/api/v3/gists/g1" && (init as RequestInit | undefined)?.method === "DELETE",
       );
-      expect(patched).toBeTruthy();
-      expect(JSON.parse((patched![1] as RequestInit).body as string)).toEqual({ body: "edited body" });
+      expect(del).toBeTruthy();
     });
   });
 

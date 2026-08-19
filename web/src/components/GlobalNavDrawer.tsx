@@ -29,10 +29,15 @@ import {
 
 type DrawerItem = { label: string; to: string; icon: ReactNode; end?: boolean };
 
-const GITHUB_NAV: DrawerItem[] = [
+// Issues / Pull requests are viewer-scoped when signed in, matching
+// github.com's global nav ("your" issues and PRs, via search qualifiers).
+function githubNav(viewerLogin?: string): DrawerItem[] {
+  const issuesQ = viewerLogin ? `is:issue author:${viewerLogin}` : "is:issue";
+  const pullsQ = viewerLogin ? `is:pr author:${viewerLogin}` : "is:pr";
+  return [
   { label: "Dashboard", to: "/ui/", icon: <RepoIcon size={16} />, end: true },
-  { label: "Issues", to: "/ui/search?type=issues&q=is%3Aissue", icon: <IssueOpenedIcon size={16} /> },
-  { label: "Pull requests", to: "/ui/search?type=issues&q=is%3Apr", icon: <PullRequestIcon size={16} /> },
+  { label: "Issues", to: `/ui/search?type=issues&q=${encodeURIComponent(issuesQ)}`, icon: <IssueOpenedIcon size={16} /> },
+  { label: "Pull requests", to: `/ui/search?type=issues&q=${encodeURIComponent(pullsQ)}`, icon: <PullRequestIcon size={16} /> },
   { label: "Repositories", to: "/ui/repos", icon: <RepoIcon size={16} /> },
   { label: "Gists", to: "/ui/gists", icon: <GistIcon size={16} /> },
   { label: "Packages", to: "/ui/packages", icon: <PackageIcon size={16} /> },
@@ -43,7 +48,8 @@ const GITHUB_NAV: DrawerItem[] = [
   { label: "Migrations", to: "/ui/migrations", icon: <MigrationIcon size={16} /> },
   { label: "Notifications", to: "/ui/notifications", icon: <NotificationBellIcon size={16} /> },
   { label: "Explore", to: "/ui/search", icon: <SearchIcon size={16} /> },
-];
+  ];
+}
 
 // Bleephub service administration surfaces that map to public GitHub or GitHub
 // Enterprise Server routes stay grouped away from the repository/product nav.
@@ -106,7 +112,15 @@ function DrawerSection({ title, items, onNavigate }: { title: string; items: Dra
   );
 }
 
-export function GlobalNavDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function GlobalNavDrawer({
+  open,
+  onClose,
+  viewerLogin,
+}: {
+  open: boolean;
+  onClose: () => void;
+  viewerLogin?: string | undefined;
+}) {
   const navRef = useRef<HTMLElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -154,7 +168,7 @@ export function GlobalNavDrawer({ open, onClose }: { open: boolean; onClose: () 
           <Mark size={22} />
           <span style={{ fontWeight: 600 }}>bleephub</span>
         </div>
-        <DrawerSection title="GitHub" items={GITHUB_NAV} onNavigate={onClose} />
+        <DrawerSection title="GitHub" items={githubNav(viewerLogin)} onNavigate={onClose} />
         <div style={{ height: 1, background: "var(--color-border)" }} />
         <DrawerSection title="Operations" items={OPS_NAV} onNavigate={onClose} />
       </nav>

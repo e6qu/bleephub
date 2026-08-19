@@ -9,7 +9,7 @@ import {
   type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
-import { Link, useNavigate } from "react-router";
+import { Link, useLocation, useNavigate } from "react-router";
 
 // The command palette is behind a keyboard shortcut, so it is code-split out of
 // the entry bundle and loaded on first ⌘K rather than at initial page load.
@@ -262,10 +262,16 @@ function Avatar({ login, url, size = 24 }: { login: string; url?: string | undef
 
 export function AppHeader() {
   const navigate = useNavigate();
+  const location = useLocation();
+  // Inside a repo route the search box scopes to that repository, like
+  // github.com's header search. Lightweight pathname parse — the header has no
+  // route params of its own.
+  const repoScope = location.pathname.match(/^\/ui\/repos\/([^/]+)\/([^/]+)/);
+  const scopedRepo = repoScope ? `${decodeURIComponent(repoScope[1]!)}/${decodeURIComponent(repoScope[2]!)}` : null;
   const queryClient = useQueryClient();
   const reportError = useReportError();
-  const { theme, toggle } = useTheme("light");
-  const isDark = theme === "dark";
+  const { resolvedTheme, toggle } = useTheme("light");
+  const isDark = resolvedTheme === "dark";
   const [drawer, setDrawer] = useState(false);
   const [q, setQ] = useState("");
   const [scope, setScope] = useState("repositories");
@@ -303,7 +309,10 @@ export function AppHeader() {
 
   const submitSearch = (e: FormEvent) => {
     e.preventDefault();
-    const term = q.trim();
+    let term = q.trim();
+    // Inside a repository, an unqualified query searches that repository —
+    // github.com's "In this repository" scope.
+    if (scopedRepo && term && !/(^|\s)repo:/.test(term)) term = `repo:${scopedRepo} ${term}`;
     const typeParam = scope !== "repositories" ? `&type=${scope}` : "";
     navigate(term ? `/ui/search?q=${encodeURIComponent(term)}${typeParam}` : `/ui/search?type=${scope}`);
   };
@@ -331,7 +340,7 @@ export function AppHeader() {
   return (
     <>
       <Suspense fallback={null}>
-        <GlobalNavDrawer open={drawer} onClose={() => setDrawer(false)} />
+        <GlobalNavDrawer open={drawer} onClose={() => setDrawer(false)} viewerLogin={login || undefined} />
       </Suspense>
       <header className="app-header">
         <div className="mx-auto flex max-w-[1280px] items-center gap-3 px-4 py-2.5">
@@ -374,12 +383,21 @@ export function AppHeader() {
                 <option value="issues">Issues</option>
                 <option value="users">Users &amp; orgs</option>
               </select>
+              {scopedRepo && (
+                <span
+                  title={`Searches are scoped to ${scopedRepo}`}
+                  style={{ fontSize: "0.72rem", color: "var(--color-fg-muted)", whiteSpace: "nowrap" }}
+                >
+                  In this repository
+                </span>
+              )}
               <input
+                id="global-search-input"
                 type="search"
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 placeholder="Search or jump to…"
-                aria-label="Search"
+                aria-label={scopedRepo ? `Search in ${scopedRepo}` : "Search"}
                 style={{
                   flex: 1,
                   border: "none",
@@ -402,14 +420,27 @@ export function AppHeader() {
                   <MenuLink to="/ui/gists?new=1" icon={<GistIcon size={16} />} onClick={close}>New gist</MenuLink>
                   <MenuLink to="/ui/operations/orgs?new=1" icon={<OrganizationIcon size={16} />} onClick={close}>New organization</MenuLink>
                   {login && <MenuLink to={`/ui/${login}?tab=projects`} icon={<ProjectIcon size={16} />} onClick={close}>New project</MenuLink>}
+                  <MenuLink to="/ui/codespaces" icon={<CodespaceIcon size={16} />} onClick={close}>New codespace</MenuLink>
                 </>
               )}
             </HeaderMenu>
 
-            <Link to="/ui/search?type=issues&q=is%3Aissue" aria-label="Issues" title="Issues" className="app-header-control" style={iconButtonStyle()}>
+            <Link
+              to={`/ui/search?type=issues&q=${encodeURIComponent(login ? `is:issue author:${login}` : "is:issue")}`}
+              aria-label={login ? "Your issues" : "Issues"}
+              title={login ? "Your issues" : "Issues"}
+              className="app-header-control"
+              style={iconButtonStyle()}
+            >
               <IssueOpenedIcon size={16} />
             </Link>
-            <Link to="/ui/search?type=issues&q=is%3Apr" aria-label="Pull requests" title="Pull requests" className="app-header-control" style={iconButtonStyle()}>
+            <Link
+              to={`/ui/search?type=issues&q=${encodeURIComponent(login ? `is:pr author:${login}` : "is:pr")}`}
+              aria-label={login ? "Your pull requests" : "Pull requests"}
+              title={login ? "Your pull requests" : "Pull requests"}
+              className="app-header-control"
+              style={iconButtonStyle()}
+            >
               <PullRequestIcon size={16} />
             </Link>
 

@@ -55,6 +55,7 @@ import {
   fetchRepoVulnerabilityAlerts,
   fetchRepoInvitations,
   fetchRepoTopics,
+  fetchOrgTeams,
   inviteRepoCollaborator,
   removeRepoCollaborator,
   renameBranch,
@@ -87,9 +88,30 @@ import type {
 } from "../types.js";
 import { RepoHeader } from "../components/PageHeader.js";
 import { SettingsLayout, type SettingsNavSection } from "../components/SettingsLayout.js";
-import { PageTitle, Button, Box, FormLabel, ErrorBanner } from "../components/ui.js";
+import { PageTitle, Button, ButtonLink, Box, FormLabel, ErrorBanner, Modal, DialogActions } from "../components/ui.js";
+import { RelativeTime } from "../components/RelativeTime.js";
+import { WebhookForm, type WebhookFormValues } from "../components/WebhookForm.js";
 
-type SettingsTab = "general" | "collaborators" | "deploy-keys" | "pages" | "security" | "interaction" | "transfer" | "rename" | "autolinks" | "webhooks" | "actions" | "environments" | "rulesets" | "custom-properties";
+// Repo PATCH fields the server accepts (internal/server/gh_repos_rest.go) that
+// predate the BleephubRepo shape. Kept page-local so types.ts and api.ts stay
+// untouched; updateRepo's Partial<BleephubRepo> payload is widened via RepoPatch.
+interface SecurityAnalysisStatus { status: "enabled" | "disabled" }
+interface RepoSettingsExtras {
+  has_discussions?: boolean;
+  security_and_analysis?: {
+    advanced_security?: SecurityAnalysisStatus;
+    secret_scanning?: SecurityAnalysisStatus;
+    secret_scanning_push_protection?: SecurityAnalysisStatus;
+    secret_scanning_non_provider_patterns?: SecurityAnalysisStatus;
+    /** Read-only in the PATCH payload — toggled via PUT/DELETE /automated-security-fixes. */
+    dependabot_security_updates?: SecurityAnalysisStatus;
+  };
+}
+type RepoPatch = Partial<BleephubRepo> & RepoSettingsExtras & { name?: string };
+const patchRepo = (owner: string, repo: string, payload: RepoPatch) =>
+  updateRepo(owner, repo, payload as Partial<BleephubRepo>);
+
+type SettingsTab = "general" | "collaborators" | "deploy-keys" | "pages" | "security" | "interaction" | "transfer" | "rename" | "autolinks" | "webhooks" | "actions" | "environments" | "rulesets" | "custom-properties" | "branches" | "secrets" | "tags";
 
 const SETTINGS_NAV: SettingsNavSection<SettingsTab>[] = [
   { items: [{ key: "general", label: "General" }] },
@@ -97,6 +119,8 @@ const SETTINGS_NAV: SettingsNavSection<SettingsTab>[] = [
   {
     title: "Code and automation",
     items: [
+      { key: "branches", label: "Branches" },
+      { key: "tags", label: "Tags" },
       { key: "actions", label: "Actions" },
       { key: "rulesets", label: "Rulesets" },
       { key: "environments", label: "Environments" },
@@ -111,7 +135,8 @@ const SETTINGS_NAV: SettingsNavSection<SettingsTab>[] = [
     title: "Security",
     items: [
       { key: "deploy-keys", label: "Deploy keys" },
-      { key: "security", label: "Security" },
+      { key: "secrets", label: "Secrets and variables" },
+      { key: "security", label: "Code security and analysis" },
       { key: "interaction", label: "Interaction limits" },
     ],
   },
@@ -141,7 +166,7 @@ export function RepoSettingsPage() {
         {tab === "collaborators" && <CollaboratorsTab owner={owner} repo={repo} />}
         {tab === "deploy-keys" && <DeployKeysTab owner={owner} repo={repo} />}
         {tab === "pages" && <PagesTab owner={owner} repo={repo} />}
-        {tab === "security" && <SecurityTab owner={owner} repo={repo} />}
+        {tab === "security" && <SecurityTab owner={owner} repo={repo} repoData={data} />}
         {tab === "interaction" && <InteractionTab owner={owner} repo={repo} />}
         {tab === "autolinks" && <AutolinksTab owner={owner} repo={repo} />}
         {tab === "webhooks" && <WebhooksTab owner={owner} repo={repo} />}
@@ -149,8 +174,12 @@ export function RepoSettingsPage() {
         {tab === "rulesets" && <RepoRulesetsTab owner={owner} repo={repo} />}
         {tab === "custom-properties" && <CustomPropertiesTab owner={owner} repo={repo} />}
         {tab === "environments" && <EnvironmentsTab owner={owner} repo={repo} />}
+        {tab === "branches" && <BranchesSettingsTab owner={owner} repo={repo} />}
+        {tab === "secrets" && <SecretsAndVariablesCard owner={owner} repo={repo} />}
+        {tab === "tags" && <TagsSettingsTab owner={owner} repo={repo} />}
         {tab === "transfer" && (
           <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+            <ChangeVisibilityCard owner={owner} repo={repo} repoData={data} />
             <TransferTab owner={owner} repo={repo} />
             <ArchiveRepoCard owner={owner} repo={repo} repoData={data} />
             <DeleteRepoCard owner={owner} repo={repo} />
@@ -166,7 +195,7 @@ function GeneralSettingsTab({ owner, repo, repoData }: { owner: string; repo: st
   const queryClient = useQueryClient();
 
   const mutation = useMutation({
-    mutationFn: (payload: Partial<BleephubRepo>) => updateRepo(owner, repo, payload),
+    mutationFn: (payload: RepoPatch) => patchRepo(owner, repo, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["repo", owner, repo] });
     },
@@ -188,9 +217,8 @@ function GeneralSettingsTab({ owner, repo, repoData }: { owner: string; repo: st
 
   return (
     <>
+      <RenameRepoCard owner={owner} repo={repo} />
       <RepoSettingsForm repo={repoData} onSave={(payload) => mutation.mutate(payload)} />
-      <BranchProtectionCard owner={owner} repo={repo} />
-      <SecretsAndVariablesCard owner={owner} repo={repo} />
       <RepoTopicsForm
         topics={topicsQuery.data?.names ?? []}
         isLoading={topicsQuery.isLoading}
@@ -266,27 +294,100 @@ function RepoTopicsForm({
   );
 }
 
+// GitHub's default-commit-message enums, mirroring the repo PATCH schema.
+const SQUASH_TITLE_OPTIONS = [
+  { value: "COMMIT_OR_PR_TITLE", label: "Commit title (single commit) or PR title" },
+  { value: "PR_TITLE", label: "Pull request title" },
+] as const;
+const SQUASH_MESSAGE_OPTIONS = [
+  { value: "COMMIT_MESSAGES", label: "Commit messages" },
+  { value: "PR_BODY", label: "Pull request body" },
+  { value: "BLANK", label: "Blank" },
+] as const;
+const MERGE_TITLE_OPTIONS = [
+  { value: "MERGE_MESSAGE", label: "Default merge message" },
+  { value: "PR_TITLE", label: "Pull request title" },
+] as const;
+const MERGE_MESSAGE_OPTIONS = [
+  { value: "PR_TITLE", label: "Pull request title" },
+  { value: "PR_BODY", label: "Pull request body" },
+  { value: "BLANK", label: "Blank" },
+] as const;
+
+function RenameRepoCard({ owner, repo }: { owner: string; repo: string }) {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [name, setName] = useState(repo);
+  const [error, setError] = useState<string | null>(null);
+
+  const mutation = useMutation({
+    mutationFn: () => patchRepo(owner, repo, { name: name.trim() }),
+    onSuccess: (updated) => {
+      setError(null);
+      void queryClient.invalidateQueries({ queryKey: ["repos"] });
+      // The PATCH response carries the new full_name — navigate to the renamed repo.
+      const [newOwner, newName] = (updated.full_name ?? `${owner}/${name.trim()}`).split("/");
+      navigate(`/ui/repos/${newOwner}/${newName}/settings`);
+    },
+    onError: (err: Error) => setError(err.message),
+  });
+
+  return (
+    <Box header={<span style={{ fontWeight: 600 }}>Repository name</span>} className="mb-4">
+      <div style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+        {error && <ErrorBanner>{error}</ErrorBanner>}
+        <div style={{ display: "flex", gap: "0.6rem", alignItems: "center", flexWrap: "wrap" }}>
+          <input
+            type="text"
+            aria-label="Repository name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            style={{ fontSize: "0.9rem", padding: "0.4rem 0.5rem", flex: 1, minWidth: "12rem" }}
+          />
+          <Button
+            variant="secondary"
+            onClick={() => {
+              setError(null);
+              mutation.mutate();
+            }}
+            disabled={mutation.isPending || !name.trim() || name.trim() === repo}
+          >
+            Rename
+          </Button>
+        </div>
+      </div>
+    </Box>
+  );
+}
+
 function RepoSettingsForm({
   repo,
   onSave,
 }: {
   repo: BleephubRepo;
-  onSave: (payload: Partial<BleephubRepo>) => void;
+  onSave: (payload: RepoPatch) => void;
 }) {
+  const extras = repo as BleephubRepo & RepoSettingsExtras;
   const [description, setDescription] = useState(repo.description ?? "");
   const [homepage, setHomepage] = useState(repo.homepage ?? "");
   const [defaultBranch, setDefaultBranch] = useState(repo.default_branch);
-  const [private_, setPrivate] = useState(repo.private);
   const [hasIssues, setHasIssues] = useState(repo.has_issues);
   const [hasProjects, setHasProjects] = useState(repo.has_projects);
   const [hasWiki, setHasWiki] = useState(repo.has_wiki);
+  const [hasDiscussions, setHasDiscussions] = useState(extras.has_discussions ?? false);
   const [hasPullRequests, setHasPullRequests] = useState(repo.has_pull_requests);
   const [isTemplate, setIsTemplate] = useState(repo.is_template);
+  const [signoffRequired, setSignoffRequired] = useState(repo.web_commit_signoff_required ?? false);
   const [allowSquashMerge, setAllowSquashMerge] = useState(repo.allow_squash_merge);
   const [allowMergeCommit, setAllowMergeCommit] = useState(repo.allow_merge_commit);
   const [allowRebaseMerge, setAllowRebaseMerge] = useState(repo.allow_rebase_merge);
   const [allowAutoMerge, setAllowAutoMerge] = useState(repo.allow_auto_merge);
+  const [allowUpdateBranch, setAllowUpdateBranch] = useState(repo.allow_update_branch ?? false);
   const [deleteBranchOnMerge, setDeleteBranchOnMerge] = useState(repo.delete_branch_on_merge);
+  const [squashTitle, setSquashTitle] = useState(repo.squash_merge_commit_title || "COMMIT_OR_PR_TITLE");
+  const [squashMessage, setSquashMessage] = useState(repo.squash_merge_commit_message || "COMMIT_MESSAGES");
+  const [mergeTitle, setMergeTitle] = useState(repo.merge_commit_title || "MERGE_MESSAGE");
+  const [mergeMessage, setMergeMessage] = useState(repo.merge_commit_message || "PR_TITLE");
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -294,18 +395,23 @@ function RepoSettingsForm({
       description: description.trim(),
       homepage: homepage.trim() || null,
       default_branch: defaultBranch.trim(),
-      private: private_,
-      visibility: private_ ? "private" : "public",
       has_issues: hasIssues,
       has_projects: hasProjects,
       has_wiki: hasWiki,
+      has_discussions: hasDiscussions,
       has_pull_requests: hasPullRequests,
       is_template: isTemplate,
+      web_commit_signoff_required: signoffRequired,
       allow_squash_merge: allowSquashMerge,
       allow_merge_commit: allowMergeCommit,
       allow_rebase_merge: allowRebaseMerge,
       allow_auto_merge: allowAutoMerge,
+      allow_update_branch: allowUpdateBranch,
       delete_branch_on_merge: deleteBranchOnMerge,
+      squash_merge_commit_title: squashTitle,
+      squash_merge_commit_message: squashMessage,
+      merge_commit_title: mergeTitle,
+      merge_commit_message: mergeMessage,
     });
   };
 
@@ -348,28 +454,6 @@ function RepoSettingsForm({
             />
           </label>
 
-          <fieldset style={{ border: "none", padding: 0, margin: 0, display: "flex", gap: "1rem" }}>
-            <legend style={{ fontSize: "0.85rem", fontWeight: 500, marginBottom: "0.5rem" }}>Visibility</legend>
-            <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.85rem" }}>
-              <input
-                type="radio"
-                name="visibility"
-                checked={!private_}
-                onChange={() => setPrivate(false)}
-              />
-              Public
-            </label>
-            <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.85rem" }}>
-              <input
-                type="radio"
-                name="visibility"
-                checked={private_}
-                onChange={() => setPrivate(true)}
-              />
-              Private
-            </label>
-          </fieldset>
-
           <fieldset style={{ border: "none", padding: 0, margin: 0 }}>
             <legend style={{ fontSize: "0.85rem", fontWeight: 500, marginBottom: "0.5rem" }}>Features</legend>
             <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
@@ -386,12 +470,20 @@ function RepoSettingsForm({
                 Wiki
               </label>
               <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.85rem" }}>
+                <input type="checkbox" checked={hasDiscussions} onChange={(e) => setHasDiscussions(e.target.checked)} />
+                Discussions
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.85rem" }}>
                 <input type="checkbox" checked={hasPullRequests} onChange={(e) => setHasPullRequests(e.target.checked)} />
                 Pull requests
               </label>
               <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.85rem" }}>
                 <input type="checkbox" checked={isTemplate} onChange={(e) => setIsTemplate(e.target.checked)} />
                 Template repository
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.85rem" }}>
+                <input type="checkbox" checked={signoffRequired} onChange={(e) => setSignoffRequired(e.target.checked)} />
+                Require contributors to sign off on web-based commits
               </label>
             </div>
           </fieldset>
@@ -403,10 +495,42 @@ function RepoSettingsForm({
                 <input type="checkbox" checked={allowSquashMerge} onChange={(e) => setAllowSquashMerge(e.target.checked)} />
                 Allow squash merging
               </label>
+              {allowSquashMerge && (
+                <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap", paddingLeft: "1.5rem" }}>
+                  <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem", fontSize: "0.78rem" }}>
+                    Default squash commit title
+                    <select aria-label="Default squash commit title" value={squashTitle} onChange={(e) => setSquashTitle(e.target.value)} style={{ fontSize: "0.85rem", padding: "0.3rem 0.4rem" }}>
+                      {SQUASH_TITLE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                  </label>
+                  <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem", fontSize: "0.78rem" }}>
+                    Default squash commit message
+                    <select aria-label="Default squash commit message" value={squashMessage} onChange={(e) => setSquashMessage(e.target.value)} style={{ fontSize: "0.85rem", padding: "0.3rem 0.4rem" }}>
+                      {SQUASH_MESSAGE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                  </label>
+                </div>
+              )}
               <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.85rem" }}>
                 <input type="checkbox" checked={allowMergeCommit} onChange={(e) => setAllowMergeCommit(e.target.checked)} />
                 Allow merge commits
               </label>
+              {allowMergeCommit && (
+                <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap", paddingLeft: "1.5rem" }}>
+                  <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem", fontSize: "0.78rem" }}>
+                    Default merge commit title
+                    <select aria-label="Default merge commit title" value={mergeTitle} onChange={(e) => setMergeTitle(e.target.value)} style={{ fontSize: "0.85rem", padding: "0.3rem 0.4rem" }}>
+                      {MERGE_TITLE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                  </label>
+                  <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem", fontSize: "0.78rem" }}>
+                    Default merge commit message
+                    <select aria-label="Default merge commit message" value={mergeMessage} onChange={(e) => setMergeMessage(e.target.value)} style={{ fontSize: "0.85rem", padding: "0.3rem 0.4rem" }}>
+                      {MERGE_MESSAGE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                  </label>
+                </div>
+              )}
               <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.85rem" }}>
                 <input type="checkbox" checked={allowRebaseMerge} onChange={(e) => setAllowRebaseMerge(e.target.checked)} />
                 Allow rebase merging
@@ -414,6 +538,10 @@ function RepoSettingsForm({
               <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.85rem" }}>
                 <input type="checkbox" checked={allowAutoMerge} onChange={(e) => setAllowAutoMerge(e.target.checked)} />
                 Allow auto-merge
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.85rem" }}>
+                <input type="checkbox" checked={allowUpdateBranch} onChange={(e) => setAllowUpdateBranch(e.target.checked)} />
+                Always suggest updating pull request branches
               </label>
               <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.85rem" }}>
                 <input type="checkbox" checked={deleteBranchOnMerge} onChange={(e) => setDeleteBranchOnMerge(e.target.checked)} />
@@ -431,14 +559,14 @@ function RepoSettingsForm({
   );
 }
 
-function BranchProtectionCard({ owner, repo }: { owner: string; repo: string }) {
+function BranchesSettingsTab({ owner, repo }: { owner: string; repo: string }) {
   return (
-    <Box header={<span style={{ fontWeight: 600 }}>Branch protection</span>} className="mt-4">
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "1rem" }}>
-        <span style={{ fontSize: "0.9rem" }}>Define merge constraints and required status checks.</span>
-        <Link to={`/ui/repos/${owner}/${repo}/settings/branch-protection`} style={{ display: "inline-flex" }}>
-          <Button variant="secondary" size="sm">Manage branch protection</Button>
-        </Link>
+    <Box header={<span style={{ fontWeight: 600 }}>Branch protection</span>}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", padding: "1rem" }}>
+        <span style={{ fontSize: "0.9rem" }}>Define merge constraints and required status checks per branch.</span>
+        <ButtonLink to={`/ui/repos/${owner}/${repo}/settings/branch-protection`} variant="secondary" size="sm">
+          Manage branch protection
+        </ButtonLink>
       </div>
     </Box>
   );
@@ -446,12 +574,31 @@ function BranchProtectionCard({ owner, repo }: { owner: string; repo: string }) 
 
 function SecretsAndVariablesCard({ owner, repo }: { owner: string; repo: string }) {
   return (
-    <Box header={<span style={{ fontWeight: 600 }}>Secrets and variables</span>} className="mt-4">
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "1rem" }}>
+    <Box header={<span style={{ fontWeight: 600 }}>Secrets and variables</span>}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", padding: "1rem" }}>
         <span style={{ fontSize: "0.9rem" }}>Manage Actions secrets and variables across repository, environment, and organization scopes.</span>
-        <Link to={`/ui/repos/${owner}/${repo}/settings/secrets`} style={{ display: "inline-flex" }}>
-          <Button variant="secondary" size="sm">Manage secrets and variables</Button>
-        </Link>
+        <ButtonLink to={`/ui/repos/${owner}/${repo}/settings/secrets`} variant="secondary" size="sm">
+          Manage secrets and variables
+        </ButtonLink>
+      </div>
+    </Box>
+  );
+}
+
+function TagsSettingsTab({ owner, repo }: { owner: string; repo: string }) {
+  return (
+    <Box header={<span style={{ fontWeight: 600 }}>Protected tags</span>}>
+      <div style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+        <p style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)", margin: 0 }}>
+          This server does not expose the (deprecated) tag-protection API. To restrict who can
+          create or delete tags, create a <strong>tag-targeted ruleset</strong> under
+          Rulesets instead — it supports tag name patterns and bypass lists.
+        </p>
+        <div className="flex gap-2">
+          <ButtonLink to={`/ui/repos/${owner}/${repo}/tags`} variant="secondary" size="sm">
+            View tags
+          </ButtonLink>
+        </div>
       </div>
     </Box>
   );
@@ -620,8 +767,8 @@ function CollaboratorsTab({ owner, repo }: { owner: string; repo: string }) {
                 <div>
                   <span style={{ fontWeight: 500 }}>{inv.invitee?.login ?? "unknown"}</span>
                   <span style={{ marginLeft: "0.5rem", fontSize: "0.78rem", color: "var(--color-fg-muted)" }}>
-                    {inv.permissions} · invited by {inv.inviter?.login ?? "unknown"} on{" "}
-                    {new Date(inv.created_at).toLocaleDateString()}
+                    {inv.permissions} · invited by {inv.inviter?.login ?? "unknown"}{" "}
+                    <RelativeTime iso={inv.created_at} />
                   </span>
                 </div>
                 <Button
@@ -780,7 +927,71 @@ function DeployKeysTab({ owner, repo }: { owner: string; repo: string }) {
   );
 }
 
-function SecurityTab({ owner, repo }: { owner: string; repo: string }) {
+// The four security_and_analysis toggles the repo PATCH accepts
+// (internal/server/gh_repos_rest.go). dependabot_security_updates is read-only
+// in that payload — it goes through PUT/DELETE /automated-security-fixes.
+const SECURITY_ANALYSIS_TOGGLES: { key: keyof NonNullable<RepoSettingsExtras["security_and_analysis"]>; label: string; description: string }[] = [
+  { key: "advanced_security", label: "GitHub Advanced Security", description: "Enable code security features for this repository." },
+  { key: "secret_scanning", label: "Secret scanning", description: "Scan the repository for known secret formats." },
+  { key: "secret_scanning_push_protection", label: "Push protection", description: "Block pushes that contain detected secrets." },
+  { key: "secret_scanning_non_provider_patterns", label: "Scan for non-provider patterns", description: "Also scan for generic secret patterns such as private keys." },
+];
+
+function SecurityAnalysisSection({ owner, repo, repoData }: { owner: string; repo: string; repoData: BleephubRepo }) {
+  const queryClient = useQueryClient();
+  const [error, setError] = useState<string | null>(null);
+  const current = (repoData as BleephubRepo & RepoSettingsExtras).security_and_analysis ?? {};
+
+  const mutation = useMutation({
+    mutationFn: (patch: NonNullable<RepoSettingsExtras["security_and_analysis"]>) =>
+      patchRepo(owner, repo, { security_and_analysis: patch }),
+    onSuccess: () => {
+      setError(null);
+      void queryClient.invalidateQueries({ queryKey: ["repo", owner, repo] });
+    },
+    onError: (err: Error) => setError(err.message),
+  });
+
+  return (
+    <Box header={<span style={{ fontWeight: 600 }}>Code security and analysis</span>}>
+      <div style={{ display: "flex", flexDirection: "column" }}>
+        {error && <div style={{ padding: "0.75rem 1rem 0" }}><ErrorBanner>{error}</ErrorBanner></div>}
+        {SECURITY_ANALYSIS_TOGGLES.map((t, i) => {
+          const enabled = current[t.key]?.status === "enabled";
+          return (
+            <div
+              key={t.key}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: "1rem",
+                padding: "0.75rem 1rem",
+                borderBottom: i < SECURITY_ANALYSIS_TOGGLES.length - 1 ? "1px solid var(--color-border)" : "none",
+              }}
+            >
+              <div>
+                <div style={{ fontSize: "0.9rem", fontWeight: 500 }}>{t.label}</div>
+                <div style={{ fontSize: "0.78rem", color: "var(--color-fg-muted)" }}>{t.description}</div>
+              </div>
+              <Button
+                size="sm"
+                variant={enabled ? "danger" : "secondary"}
+                aria-label={`${enabled ? "Disable" : "Enable"} ${t.label}`}
+                disabled={mutation.isPending}
+                onClick={() => mutation.mutate({ [t.key]: { status: enabled ? "disabled" : "enabled" } })}
+              >
+                {enabled ? "Disable" : "Enable"}
+              </Button>
+            </div>
+          );
+        })}
+      </div>
+    </Box>
+  );
+}
+
+function SecurityTab({ owner, repo, repoData }: { owner: string; repo: string; repoData: BleephubRepo }) {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -833,45 +1044,69 @@ function SecurityTab({ owner, repo }: { owner: string; repo: string }) {
   };
 
   return (
-    <Box header={<span style={{ fontWeight: 600 }}>Security settings</span>}>
-      {securityQuery.isLoading ? (
-        <div style={{ padding: "1rem" }}>
-          <Spinner label="loading security settings" />
+    <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+      <SecurityAnalysisSection owner={owner} repo={repo} repoData={repoData} />
+      <Box header={<span style={{ fontWeight: 600 }}>Dependabot and vulnerability reporting</span>}>
+        {securityQuery.isLoading ? (
+          <div style={{ padding: "1rem" }}>
+            <Spinner label="loading security settings" />
+          </div>
+        ) : (
+        <div style={{ display: "flex", flexDirection: "column" }}>
+          <div style={{ padding: "0.75rem 1rem 0", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            {error && <ErrorBanner>{error}</ErrorBanner>}
+            {success && <div style={{ color: "var(--gh-open)", fontSize: "0.85rem" }}>{success}</div>}
+          </div>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: "1rem",
+              padding: "0.75rem 1rem",
+              borderBottom: "1px solid var(--color-border)",
+            }}
+          >
+            <div>
+              <div style={{ fontSize: "0.9rem", fontWeight: 500 }}>Dependabot security updates</div>
+              <div style={{ fontSize: "0.78rem", color: "var(--color-fg-muted)" }}>
+                Automatically open pull requests that fix vulnerable dependencies.
+              </div>
+            </div>
+            <Button
+              size="sm"
+              variant={flags.automated_security_fixes ? "danger" : "secondary"}
+              aria-label={`${flags.automated_security_fixes ? "Disable" : "Enable"} Dependabot security updates`}
+              disabled={mutation.isPending}
+              onClick={() => toggle("automated_security_fixes")}
+            >
+              {flags.automated_security_fixes ? "Disable" : "Enable"}
+            </Button>
+          </div>
+          <div style={{ padding: "0.75rem 1rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.85rem" }}>
+              <input
+                type="checkbox"
+                checked={flags.private_vulnerability_reporting}
+                onChange={() => toggle("private_vulnerability_reporting")}
+                disabled={mutation.isPending}
+              />
+              Private vulnerability reporting
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.85rem" }}>
+              <input
+                type="checkbox"
+                checked={flags.vulnerability_alerts}
+                onChange={() => toggle("vulnerability_alerts")}
+                disabled={mutation.isPending}
+              />
+              Vulnerability alerts
+            </label>
+          </div>
         </div>
-      ) : (
-      <div style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-        {error && <ErrorBanner>{error}</ErrorBanner>}
-        {success && <div style={{ color: "var(--gh-open)" }}>{success}</div>}
-        <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.85rem" }}>
-          <input
-            type="checkbox"
-            checked={flags.automated_security_fixes}
-            onChange={() => toggle("automated_security_fixes")}
-            disabled={mutation.isPending}
-          />
-          Automated security fixes
-        </label>
-        <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.85rem" }}>
-          <input
-            type="checkbox"
-            checked={flags.private_vulnerability_reporting}
-            onChange={() => toggle("private_vulnerability_reporting")}
-            disabled={mutation.isPending}
-          />
-          Private vulnerability reporting
-        </label>
-        <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.85rem" }}>
-          <input
-            type="checkbox"
-            checked={flags.vulnerability_alerts}
-            onChange={() => toggle("vulnerability_alerts")}
-            disabled={mutation.isPending}
-          />
-          Vulnerability alerts
-        </label>
-      </div>
-      )}
-    </Box>
+        )}
+      </Box>
+    </div>
   );
 }
 
@@ -953,6 +1188,54 @@ function InteractionTab({ owner, repo }: { owner: string; repo: string }) {
   );
 }
 
+function ChangeVisibilityCard({ owner, repo, repoData }: { owner: string; repo: string; repoData: BleephubRepo }) {
+  const queryClient = useQueryClient();
+  const [error, setError] = useState<string | null>(null);
+  const isPrivate = repoData.private;
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      patchRepo(owner, repo, { private: !isPrivate, visibility: isPrivate ? "public" : "private" }),
+    onSuccess: () => {
+      setError(null);
+      void queryClient.invalidateQueries({ queryKey: ["repo", owner, repo] });
+      void queryClient.invalidateQueries({ queryKey: ["repos"] });
+    },
+    onError: (err: Error) => setError(err.message),
+  });
+
+  const handleChange = async () => {
+    const target = isPrivate ? "public" : "private";
+    const confirmed = await confirmAction(
+      isPrivate
+        ? `Making ${owner}/${repo} public exposes its code, issues, and history to everyone.`
+        : `Making ${owner}/${repo} private hides it from everyone without explicit access.`,
+      {
+        title: `Change visibility to ${target}?`,
+        confirmLabel: `Make ${target}`,
+        expectedText: `${owner}/${repo}`,
+      },
+    );
+    if (confirmed) mutation.mutate();
+  };
+
+  return (
+    <Box header={<span style={{ fontWeight: 600, color: "var(--gh-danger, var(--color-danger-fg))" }}>Change repository visibility</span>}>
+      <div style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+        {error && <ErrorBanner>{error}</ErrorBanner>}
+        <p style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)" }}>
+          This repository is currently <strong>{isPrivate ? "private" : "public"}</strong>.
+        </p>
+        <div className="flex justify-end">
+          <Button variant="danger" onClick={handleChange} disabled={mutation.isPending}>
+            {isPrivate ? "Make public" : "Make private"}
+          </Button>
+        </div>
+      </div>
+    </Box>
+  );
+}
+
 function TransferTab({ owner, repo }: { owner: string; repo: string }) {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -971,8 +1254,19 @@ function TransferTab({ owner, repo }: { owner: string; repo: string }) {
     },
   });
 
+  const handleTransfer = async () => {
+    const confirmed = await confirmAction(
+      `Transferring ${owner}/${repo} to ${newOwner.trim()} removes you as owner. You may lose admin access to it.`,
+      { title: "Transfer this repository?", confirmLabel: "Transfer", expectedText: `${owner}/${repo}` },
+    );
+    if (!confirmed) return;
+    setError(null);
+    setSuccess(null);
+    mutation.mutate();
+  };
+
   return (
-    <Box header={<span style={{ fontWeight: 600 }}>Transfer repository</span>}>
+    <Box header={<span style={{ fontWeight: 600, color: "var(--gh-danger, var(--color-danger-fg))" }}>Transfer repository</span>}>
       <div style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
         {error && <ErrorBanner>{error}</ErrorBanner>}
         {success && <div style={{ color: "var(--gh-open)" }}>{success}</div>}
@@ -990,12 +1284,8 @@ function TransferTab({ owner, repo }: { owner: string; repo: string }) {
         />
         <div className="flex justify-end">
           <Button
-            variant="primary"
-            onClick={() => {
-              setError(null);
-              setSuccess(null);
-              mutation.mutate();
-            }}
+            variant="danger"
+            onClick={() => void handleTransfer()}
             disabled={mutation.isPending || !newOwner.trim()}
           >
             Transfer
@@ -1104,13 +1394,21 @@ function AutolinksTab({ owner, repo }: { owner: string; repo: string }) {
   );
 }
 
+// PATCH a repo hook with a full config (url/content_type/secret) — the
+// entry-resident updateRepoHook wrapper's config type has no secret member, so
+// the edit dialog uses this page-local fetcher instead of widening api.ts.
+// A blank secret is omitted: the server keeps the stored secret when
+// config.secret is absent/empty (internal/server/gh_hooks_rest.go).
+const patchRepoHookFull = (
+  owner: string,
+  repo: string,
+  id: number,
+  body: { active: boolean; events: string[]; config: { url: string; content_type: string; secret?: string } },
+) => ghSend("PATCH", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/hooks/${id}`, body);
+
 function WebhooksTab({ owner, repo }: { owner: string; repo: string }) {
   const queryClient = useQueryClient();
-  const [url, setUrl] = useState("");
-  const [contentType, setContentType] = useState("json");
-  const [secret, setSecret] = useState("");
-  const [events, setEvents] = useState("push");
-  const [active, setActive] = useState(true);
+  const [editing, setEditing] = useState<GithubWebhook | null>(null);
 
   const listQ = useQuery({
     queryKey: ["repo-hooks", owner, repo],
@@ -1120,20 +1418,30 @@ function WebhooksTab({ owner, repo }: { owner: string; repo: string }) {
   const invalidate = () => void queryClient.invalidateQueries({ queryKey: ["repo-hooks", owner, repo] });
 
   const createMut = useMutation({
-    mutationFn: () =>
+    mutationFn: (values: WebhookFormValues) =>
       createRepoHook(owner, repo, {
-        url: url.trim(),
-        contentType,
-        secret: secret.trim() || undefined,
-        events: events.split(",").map((e) => e.trim()).filter(Boolean),
-        active,
+        url: values.url,
+        contentType: values.contentType,
+        secret: values.secret || undefined,
+        events: values.events,
+        active: values.active,
+      }),
+    onSuccess: invalidate,
+  });
+  const editMut = useMutation({
+    mutationFn: ({ id, values }: { id: number; values: WebhookFormValues }) =>
+      patchRepoHookFull(owner, repo, id, {
+        active: values.active,
+        events: values.events,
+        config: {
+          url: values.url,
+          content_type: values.contentType,
+          ...(values.secret ? { secret: values.secret } : {}),
+        },
       }),
     onSuccess: () => {
       invalidate();
-      setUrl("");
-      setSecret("");
-      setEvents("push");
-      setActive(true);
+      setEditing(null);
     },
   });
   const toggleMut = useMutation({
@@ -1154,51 +1462,40 @@ function WebhooksTab({ owner, repo }: { owner: string; repo: string }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
       <Box header={<span style={{ fontWeight: 600 }}>Add webhook</span>}>
-        <div style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-          {createMut.error && <ErrorBanner>{String(createMut.error)}</ErrorBanner>}
-          <FormLabel id="hook-url">Payload URL</FormLabel>
-          <input
-            id="hook-url"
-            type="text"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            placeholder="https://example.com/webhook"
-            className="w-full"
+        <div style={{ padding: "1rem" }}>
+          {createMut.error && <div className="mb-2"><ErrorBanner>{String(createMut.error)}</ErrorBanner></div>}
+          <WebhookForm
+            submitLabel="Add webhook"
+            pendingLabel="Adding…"
+            pending={createMut.isPending}
+            onSubmit={(values) => createMut.mutate(values)}
           />
-          <FormLabel id="hook-content-type">Content type</FormLabel>
-          <select id="hook-content-type" value={contentType} onChange={(e) => setContentType(e.target.value)} className="w-full">
-            <option value="json">application/json</option>
-            <option value="form">application/x-www-form-urlencoded</option>
-          </select>
-          <FormLabel id="hook-secret">Secret (optional)</FormLabel>
-          <input
-            id="hook-secret"
-            type="password"
-            value={secret}
-            onChange={(e) => setSecret(e.target.value)}
-            placeholder="Signing secret"
-            className="w-full"
-          />
-          <FormLabel id="hook-events">Events (comma-separated)</FormLabel>
-          <input
-            id="hook-events"
-            type="text"
-            value={events}
-            onChange={(e) => setEvents(e.target.value)}
-            placeholder="push, pull_request"
-            className="w-full"
-          />
-          <label className="flex items-center gap-2" style={{ fontSize: "0.85rem" }}>
-            <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />
-            Active
-          </label>
-          <div className="flex justify-end">
-            <Button variant="primary" disabled={createMut.isPending || !url.trim()} onClick={() => createMut.mutate()}>
-              {createMut.isPending ? "Adding…" : "Add webhook"}
-            </Button>
-          </div>
         </div>
       </Box>
+
+      {editing && (
+        <Modal title={`Edit webhook #${editing.id}`} onClose={() => setEditing(null)}>
+          {editMut.error && <div className="mb-2"><ErrorBanner>{String(editMut.error)}</ErrorBanner></div>}
+          <WebhookForm
+            initial={{
+              url: editing.config.url,
+              contentType: editing.config.content_type,
+              events: editing.events,
+              active: editing.active,
+            }}
+            editingWithSecret
+            submitLabel="Update webhook"
+            pendingLabel="Updating…"
+            pending={editMut.isPending}
+            onSubmit={(values) => editMut.mutate({ id: editing.id, values })}
+          />
+          <DialogActions>
+            <Button variant="ghost" size="sm" onClick={() => setEditing(null)}>
+              Cancel
+            </Button>
+          </DialogActions>
+        </Modal>
+      )}
 
       {(toggleMut.error || pingMut.error || deleteMut.error) && (
         <ErrorBanner>{String(toggleMut.error ?? pingMut.error ?? deleteMut.error)}</ErrorBanner>
@@ -1234,6 +1531,9 @@ function WebhooksTab({ owner, repo }: { owner: string; repo: string }) {
               <Link to={`/ui/repos/${owner}/${repo}/hooks/${h.id}/deliveries`} style={{ fontSize: "0.8rem", color: "var(--color-accent)", textDecoration: "none" }}>
                 Deliveries
               </Link>
+              <Button size="sm" aria-label={`Edit webhook ${h.id}`} disabled={busy} onClick={() => setEditing(h)}>
+                Edit
+              </Button>
               <Button size="sm" aria-label={`Ping webhook ${h.id}`} disabled={busy} onClick={() => pingMut.mutate(h.id)}>
                 Ping
               </Button>
@@ -1283,7 +1583,7 @@ function ArchiveRepoCard({ owner, repo, repoData }: { owner: string; repo: strin
     }
     const confirmed = await confirmAction(
       `Archiving makes ${owner}/${repo} read-only. Issues, pull requests, and settings can no longer be changed until you unarchive it.`,
-      { title: "Archive this repository?", confirmLabel: "Archive" },
+      { title: "Archive this repository?", confirmLabel: "Archive", expectedText: repo },
     );
     if (confirmed) mutation.mutate();
   };
@@ -1325,7 +1625,7 @@ function DeleteRepoCard({ owner, repo }: { owner: string; repo: string }) {
   const handleDelete = async () => {
     const confirmed = await confirmAction(
       `This permanently deletes ${owner}/${repo}, including its issues, pull requests, and all data. This cannot be undone.`,
-      { title: "Delete this repository?", confirmLabel: "Delete" },
+      { title: "Delete this repository?", confirmLabel: "Delete", expectedText: `${owner}/${repo}` },
     );
     if (confirmed) mutation.mutate();
   };
@@ -1818,7 +2118,7 @@ function PagesBuildsCard({
                 <div className="min-w-0 flex-1" style={{ fontSize: "0.8rem" }}>
                   <span className="font-mono">{b.commit.slice(0, 7)}</span>
                   {b.pusher ? ` · by ${b.pusher.login}` : ""} ·{" "}
-                  {new Date(b.created_at).toLocaleString()}
+                  <RelativeTime iso={b.created_at} />
                   {b.error?.message ? (
                     <span style={{ color: "var(--color-danger-fg)" }}> · {b.error.message}</span>
                   ) : null}
@@ -2437,6 +2737,8 @@ function RepoRulesetsTab({ owner, repo }: { owner: string; repo: string }) {
   const [ruleConfig, setRuleConfig] = useState<RulesetRuleConfig>({ rules: [], bypass_actors: [] });
   const [error, setError] = useState<string | null>(null);
   const list = useQuery({ queryKey: ["repo-rulesets", owner, repo], queryFn: () => fetchRepoRulesets(owner, repo) });
+  // Team picker data for bypass actors; 404s for user-owned repos (no org).
+  const teamsQ = useQuery({ queryKey: ["org-teams", owner], queryFn: () => fetchOrgTeams(owner), retry: false });
   const createMut = useMutation({
     mutationFn: () => createRepoRuleset(owner, repo, {
       name: name.trim(),
@@ -2467,7 +2769,7 @@ function RepoRulesetsTab({ owner, repo }: { owner: string; repo: string }) {
             <div><FormLabel id="ruleset-target">Target</FormLabel><select id="ruleset-target" value={target} onChange={(e) => setTarget(e.target.value as GithubRulesetTarget)} style={settingsInputStyle}><option value="branch">Branch</option><option value="tag">Tag</option><option value="push">Push</option></select></div>
             <div><FormLabel id="ruleset-enf">Enforcement</FormLabel><select id="ruleset-enf" value={enforcement} onChange={(e) => setEnforcement(e.target.value as GithubRulesetEnforcement)} style={settingsInputStyle}><option value="active">Active</option><option value="evaluate">Evaluate</option><option value="disabled">Disabled</option></select></div>
           </div>
-          <RulesetEditor target={target} onChange={setRuleConfig} />
+          <RulesetEditor target={target} onChange={setRuleConfig} teams={teamsQ.data ?? []} />
           <div><Button type="submit" variant="primary" size="sm" disabled={!name.trim() || createMut.isPending}>{createMut.isPending ? "Creating…" : "Create ruleset"}</Button></div>
         </form>
       </Box>
@@ -2544,6 +2846,16 @@ function EnvironmentsTab({ owner, repo }: { owner: string; repo: string }) {
   );
 }
 
+// One entry in the environment's required-reviewers PUT payload, plus a label
+// for display. The GET response resolves User reviewers to a user object but
+// carries no id for Team reviewers, so team entries can only round-trip when
+// re-picked here (the limitation is labelled in the UI).
+interface EnvReviewerDraft {
+  type: "User" | "Team";
+  id: number;
+  label: string;
+}
+
 function EnvironmentDetail({ owner, repo, env }: { owner: string; repo: string; env: string }) {
   const qc = useQueryClient();
   const [vname, setVName] = useState("");
@@ -2556,8 +2868,52 @@ function EnvironmentDetail({ owner, repo, env }: { owner: string; repo: string; 
   const currentWait = thisEnv?.protection_rules?.find((r) => r.wait_timer != null)?.wait_timer ?? 0;
   const [waitTimer, setWaitTimer] = useState<string>("");
   useEffect(() => setWaitTimer(String(currentWait)), [currentWait]);
+
+  // ── required reviewers ────────────────────────────────────────────────────
+  const reviewersRule = thisEnv?.protection_rules?.find((r) => r.type === "required_reviewers");
+  const [reviewers, setReviewers] = useState<EnvReviewerDraft[]>([]);
+  const [unresolvedTeams, setUnresolvedTeams] = useState(0);
+  useEffect(() => {
+    const drafts: EnvReviewerDraft[] = [];
+    let unresolved = 0;
+    for (const entry of reviewersRule?.reviewers ?? []) {
+      const reviewer = entry.reviewer as { id?: number; login?: string } | undefined;
+      if (entry.type === "User" && reviewer?.id != null) {
+        drafts.push({ type: "User", id: reviewer.id, label: reviewer.login ?? `#${reviewer.id}` });
+      } else {
+        // Team reviewers (and unresolvable users) come back without an id.
+        unresolved += 1;
+      }
+    }
+    setReviewers(drafts);
+    setUnresolvedTeams(unresolved);
+    // Re-seed when the rule content (not the array identity) changes.
+  }, [JSON.stringify(reviewersRule?.reviewers ?? [])]);
+
+  const collaboratorsQ = useQuery({
+    queryKey: ["repo-collaborators", owner, repo],
+    queryFn: () => fetchRepoCollaborators(owner, repo),
+  });
+  // Team pickers only make sense for org-owned repos; a user owner 404s.
+  const teamsQ = useQuery({
+    queryKey: ["org-teams", owner],
+    queryFn: () => fetchOrgTeams(owner),
+    retry: false,
+  });
+  const [pickUser, setPickUser] = useState("");
+  const [pickTeam, setPickTeam] = useState("");
+
+  const addReviewer = (draft: EnvReviewerDraft) =>
+    setReviewers((prev) =>
+      prev.some((r) => r.type === draft.type && r.id === draft.id) ? prev : [...prev, draft],
+    );
+
   const saveWait = useMutation({
-    mutationFn: () => putEnvironment(owner, repo, env, { wait_timer: Number(waitTimer) || 0 }),
+    mutationFn: () =>
+      putEnvironment(owner, repo, env, {
+        wait_timer: Number(waitTimer) || 0,
+        reviewers: reviewers.map((r) => ({ type: r.type, id: r.id })),
+      }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["environments-detail", owner, repo] }),
   });
   const vars = useQuery({ queryKey: ["env-vars", owner, repo, env], queryFn: () => fetchEnvVariables(owner, repo, env) });
@@ -2572,22 +2928,115 @@ function EnvironmentDetail({ owner, repo, env }: { owner: string; repo: string; 
       <MutationError of={[saveWait, addVar, delVar, delSecret]} />
       <div>
         <h3 style={{ fontSize: "0.85rem", fontWeight: 600, margin: "0.6rem 0 0.3rem" }}>Protection rules</h3>
-        <div style={{ display: "flex", alignItems: "flex-end", gap: "0.4rem", flexWrap: "wrap" }}>
-          <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem", fontSize: "0.75rem", color: "var(--color-fg-muted)" }}>
-            Wait timer (minutes)
-            <input
-              type="number"
-              min={0}
-              max={43200}
-              aria-label={`Wait timer for ${env}`}
-              value={waitTimer}
-              onChange={(e) => setWaitTimer(e.target.value)}
-              style={settingsInputStyle}
-            />
-          </label>
-          <Button size="sm" variant="secondary" disabled={saveWait.isPending} onClick={() => saveWait.mutate()}>
-            {saveWait.isPending ? "Saving…" : "Save protection"}
-          </Button>
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+          <div>
+            <h4 style={{ fontSize: "0.8rem", fontWeight: 600, margin: "0 0 0.25rem" }}>Required reviewers</h4>
+            {reviewers.length === 0 ? (
+              <p style={{ fontSize: "0.78rem", color: "var(--color-fg-muted)", margin: "0 0 0.25rem" }}>
+                No required reviewers.
+              </p>
+            ) : (
+              <ul style={{ listStyle: "none", margin: "0 0 0.25rem", padding: 0 }}>
+                {reviewers.map((r) => (
+                  <li key={`${r.type}-${r.id}`} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: "0.82rem", padding: "0.15rem 0" }}>
+                    <span>
+                      {r.label} <span style={{ color: "var(--color-fg-muted)", fontSize: "0.74rem" }}>{r.type}</span>
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      aria-label={`Remove reviewer ${r.label}`}
+                      onClick={() => setReviewers((prev) => prev.filter((x) => !(x.type === r.type && x.id === r.id)))}
+                    >
+                      Remove
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {unresolvedTeams > 0 && (
+              <p style={{ fontSize: "0.74rem", color: "var(--color-fg-muted)", margin: "0 0 0.25rem" }}>
+                {unresolvedTeams} saved team reviewer{unresolvedTeams === 1 ? "" : "s"} cannot be displayed
+                (the API returns no team id) — re-add {unresolvedTeams === 1 ? "it" : "them"} below before saving,
+                or saving will drop {unresolvedTeams === 1 ? "it" : "them"}.
+              </p>
+            )}
+            <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", alignItems: "flex-end" }}>
+              <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem", fontSize: "0.75rem", color: "var(--color-fg-muted)" }}>
+                Add user reviewer
+                <select
+                  aria-label={`Add user reviewer for ${env}`}
+                  value={pickUser}
+                  onChange={(e) => setPickUser(e.target.value)}
+                  style={settingsInputStyle}
+                >
+                  <option value="">Select collaborator…</option>
+                  {(collaboratorsQ.data ?? []).map((c) => (
+                    <option key={c.id} value={String(c.id)}>{c.login}</option>
+                  ))}
+                </select>
+              </label>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={!pickUser}
+                onClick={() => {
+                  const c = (collaboratorsQ.data ?? []).find((x) => String(x.id) === pickUser);
+                  if (c) addReviewer({ type: "User", id: c.id, label: c.login });
+                  setPickUser("");
+                }}
+              >
+                Add user
+              </Button>
+              {teamsQ.data && teamsQ.data.length > 0 && (
+                <>
+                  <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem", fontSize: "0.75rem", color: "var(--color-fg-muted)" }}>
+                    Add team reviewer
+                    <select
+                      aria-label={`Add team reviewer for ${env}`}
+                      value={pickTeam}
+                      onChange={(e) => setPickTeam(e.target.value)}
+                      style={settingsInputStyle}
+                    >
+                      <option value="">Select team…</option>
+                      {teamsQ.data.map((t) => (
+                        <option key={t.id} value={String(t.id)}>{t.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={!pickTeam}
+                    onClick={() => {
+                      const t = (teamsQ.data ?? []).find((x) => String(x.id) === pickTeam);
+                      if (t) addReviewer({ type: "Team", id: t.id, label: t.name });
+                      setPickTeam("");
+                    }}
+                  >
+                    Add team
+                  </Button>
+                </>
+              )}
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "flex-end", gap: "0.4rem", flexWrap: "wrap" }}>
+            <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem", fontSize: "0.75rem", color: "var(--color-fg-muted)" }}>
+              Wait timer (minutes)
+              <input
+                type="number"
+                min={0}
+                max={43200}
+                aria-label={`Wait timer for ${env}`}
+                value={waitTimer}
+                onChange={(e) => setWaitTimer(e.target.value)}
+                style={settingsInputStyle}
+              />
+            </label>
+            <Button size="sm" variant="secondary" disabled={saveWait.isPending} onClick={() => saveWait.mutate()}>
+              {saveWait.isPending ? "Saving…" : "Save protection"}
+            </Button>
+          </div>
         </div>
       </div>
       <div>

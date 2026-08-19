@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useParams } from "react-router";
+import { Link, useParams } from "react-router";
 import { DataTable, InlineError, Spinner } from "@bleephub/ui-core/components";
 import { createColumnHelper } from "@bleephub/ui-core/components";
 import { confirmAction } from "../components/confirmAction.js";
+import { RelativeTime } from "../components/RelativeTime.js";
 import {
   deletePackage,
   deletePackageVersion,
@@ -24,6 +25,7 @@ import type {
 } from "../types.js";
 import {
   Button,
+  CodeBlock,
   DialogActions,
   ErrorBanner,
   Modal,
@@ -161,7 +163,7 @@ function PackagesList({
       }),
       pkgCol.accessor("updated_at", {
         header: "Updated",
-        cell: (info) => new Date(info.getValue<string>()).toLocaleString(),
+        cell: (info) => <RelativeTime iso={info.getValue<string>()} />,
       }),
       pkgCol.display({
         id: "actions",
@@ -300,6 +302,41 @@ function DeletedPackages({ scope, packageType }: { scope: PackageScope; packageT
   );
 }
 
+/**
+ * GitHub-style per-ecosystem install command. Covers every package type the
+ * server's store accepts (npm/maven/rubygems/nuget/docker/container); the
+ * container/docker pull path uses this host as the registry.
+ */
+function installCommand(pkg: GithubPackage, latestVersion: string | undefined): string {
+  const host = window.location.host;
+  const ownerLogin = pkg.owner?.login ?? "OWNER";
+  const v = latestVersion;
+  switch (pkg.package_type) {
+    case "docker":
+    case "container":
+      return `docker pull ${host}/${ownerLogin}/${pkg.name}${v ? `:${v}` : ""}`;
+    case "npm":
+      return `npm install ${pkg.name}${v ? `@${v}` : ""}`;
+    case "maven": {
+      // Maven package names are "<groupId>.<artifactId>".
+      const dot = pkg.name.lastIndexOf(".");
+      const groupId = dot > 0 ? pkg.name.slice(0, dot) : ownerLogin;
+      const artifactId = dot > 0 ? pkg.name.slice(dot + 1) : pkg.name;
+      return [
+        "<dependency>",
+        `  <groupId>${groupId}</groupId>`,
+        `  <artifactId>${artifactId}</artifactId>`,
+        `  <version>${v ?? "VERSION"}</version>`,
+        "</dependency>",
+      ].join("\n");
+    }
+    case "nuget":
+      return `dotnet add package ${pkg.name}${v ? ` --version ${v}` : ""}`;
+    case "rubygems":
+      return `gem install ${pkg.name}${v ? ` --version "${v}"` : ""}`;
+  }
+}
+
 function PackageDetailDialog({
   scope,
   pkg,
@@ -349,6 +386,12 @@ function PackageDetailDialog({
         header: "Description",
         cell: (info) => info.getValue() || "—",
       }),
+      // The package-version payload carries no download counters (GitHub's
+      // REST schema has none either), so timestamps are the row's metadata.
+      verCol.accessor("created_at", {
+        header: "Published",
+        cell: (info) => <RelativeTime iso={info.getValue<string>()} />,
+      }),
       verCol.display({
         id: "files",
         header: "Files",
@@ -397,8 +440,27 @@ function PackageDetailDialog({
     [deleteMut, restoreMut, scope, pkg],
   );
 
+  const latestVersion = versions?.find((v) => !v.deleted_at)?.name;
+
   return (
     <Modal title={`${pkg.name} versions`} onClose={onClose}>
+      <section className="mb-4">
+        <h3 style={{ fontSize: "0.86rem", fontWeight: 600, marginBottom: "0.35rem" }}>
+          Installation
+        </h3>
+        <CodeBlock>{installCommand(pkg, latestVersion)}</CodeBlock>
+        {pkg.repository && (
+          <div className="mt-2" style={{ fontSize: "0.82rem" }}>
+            Source repository:{" "}
+            <Link
+              to={`/ui/repos/${pkg.repository.full_name}`}
+              style={{ color: "var(--color-accent)", textDecoration: "none" }}
+            >
+              {pkg.repository.full_name}
+            </Link>
+          </div>
+        )}
+      </section>
       {error && <ErrorBanner>{error}</ErrorBanner>}
       {isError ? (
         <InlineError title="Failed to load versions" />

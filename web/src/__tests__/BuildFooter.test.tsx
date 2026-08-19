@@ -7,6 +7,6 @@ describe("BleephubBuildFooter", () => {
     render(<BleephubBuildFooter />);
 
     expect(screen.getByTestId("bleephub-build-footer")).toHaveTextContent("Bleephub development");
-    expect(screen.getByText("Published not yet published")).toBeInTheDocument();
+    expect(screen.getByText("Unreleased build")).toBeInTheDocument();
   });
 });

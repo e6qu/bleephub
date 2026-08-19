@@ -17,6 +17,8 @@ function jsonResponse(data: unknown, status = 200) {
 afterEach(() => {
   cleanup();
   mockFetch.mockReset();
+  // The group-by-repo choice persists in localStorage; isolate the tests.
+  localStorage.clear();
 });
 
 function renderPage() {
@@ -44,8 +46,20 @@ const thread = {
   url: "/api/v3/notifications/threads/t1",
 };
 
-function mockEndpoints() {
+function mockEndpoints({
+  saved = [] as unknown[],
+  done = [] as unknown[],
+} = {}) {
   mockFetch.mockImplementation((url: string, init?: RequestInit) => {
+    if (url.startsWith("/ui-data/notifications/threads/") && url.endsWith("/saved")) {
+      return Promise.resolve(new Response(null, { status: 204 }));
+    }
+    if (url.startsWith("/ui-data/notifications?view=saved")) {
+      return Promise.resolve(jsonResponse(saved));
+    }
+    if (url.startsWith("/ui-data/notifications?view=done")) {
+      return Promise.resolve(jsonResponse(done));
+    }
     if (url.split("?")[0]! === "/api/v3/notifications") {
       return Promise.resolve(jsonResponse([thread]));
     }
@@ -210,6 +224,73 @@ describe("NotificationsPage", () => {
         expect.objectContaining({ method: "DELETE" }),
       );
     });
+  });
+
+  it("defaults to the by-repository grouping and persists a flat-list choice", async () => {
+    mockEndpoints();
+    renderPage();
+    await waitFor(() => expect(screen.getByText("Issue title")).toBeInTheDocument());
+    // Grouped by default: no flat table, and the toggle reflects it.
+    expect(screen.queryByRole("table")).toBeNull();
+    expect(screen.getByRole("button", { name: "By repository" })).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(screen.getByRole("button", { name: "List" }));
+    expect(await screen.findByRole("table")).toBeInTheDocument();
+    expect(localStorage.getItem("bleephub.notifications.group_by_repo")).toBe("flat");
+  });
+
+  it("bookmarks a thread into the Saved view and lists saved threads", async () => {
+    mockEndpoints({ saved: [{ ...thread, saved: true }] });
+    renderPage();
+    await waitFor(() => expect(screen.getByText("Issue title")).toBeInTheDocument());
+
+    // The thread is already saved (per the saved view), so the toggle unsaves.
+    fireEvent.click(screen.getByRole("button", { name: `Remove ${thread.subject.title} from saved` }));
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/ui-data/notifications/threads/t1/saved",
+        expect.objectContaining({ method: "DELETE" }),
+      );
+    });
+
+    // The Saved tab lists the /ui-data saved view.
+    fireEvent.click(screen.getByRole("tab", { name: "Saved" }));
+    await waitFor(() => expect(screen.getByText("Issue title")).toBeInTheDocument());
+    expect(
+      mockFetch.mock.calls.some(([u]) => String(u).startsWith("/ui-data/notifications?view=saved")),
+    ).toBe(true);
+  });
+
+  it("saves an unsaved inbox thread with PUT", async () => {
+    mockEndpoints();
+    renderPage();
+    await waitFor(() => expect(screen.getByText("Issue title")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: `Save ${thread.subject.title}` }));
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledWith(
+        "/ui-data/notifications/threads/t1/saved",
+        expect.objectContaining({ method: "PUT" }),
+      );
+    });
+  });
+
+  it("shows the Done view read-only (the server has no un-done endpoint)", async () => {
+    mockEndpoints({ done: [{ ...thread, unread: false, saved: false }] });
+    renderPage();
+    await waitFor(() => expect(screen.getByText("Issue title")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("tab", { name: "Done" }));
+    await waitFor(() => expect(screen.getByText(/kept here for reference/i)).toBeInTheDocument());
+    expect(
+      mockFetch.mock.calls.some(([u]) => String(u).startsWith("/ui-data/notifications?view=done")),
+    ).toBe(true);
+    await waitFor(() => expect(screen.getByText("Issue title")).toBeInTheDocument());
+    // No Done/Mark read/Subscription actions in the review surface; Saved
+    // toggling stays available.
+    expect(screen.queryByRole("button", { name: "Done" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Mark read" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Subscription" })).toBeNull();
+    expect(screen.getByRole("button", { name: `Save ${thread.subject.title}` })).toBeInTheDocument();
   });
 
   it("marks a repository's notifications read from its group header", async () => {

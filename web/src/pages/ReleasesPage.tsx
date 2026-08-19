@@ -20,9 +20,10 @@ import {
 } from "../api.js";
 import { ReactionBar } from "../components/ReactionBar.js";
 import Markdown from "../components/Markdown.js";
+import { RelativeTime } from "../components/RelativeTime.js";
 import type { GithubRelease, GithubReleaseAsset } from "../types.js";
 import { RepoHeader } from "../components/PageHeader.js";
-import { Blankslate, Box, Button, ErrorBanner, FormLabel, PageTitle } from "../components/ui.js";
+import { Blankslate, Box, Button, ButtonLink, ErrorBanner, FormLabel, PageTitle } from "../components/ui.js";
 import { confirmAction } from "../components/confirmAction.js";
 import { DownloadIcon, PlusIcon, TagIcon, TrashIcon } from "../components/octicons.js";
 
@@ -74,9 +75,9 @@ function ReleaseList({ owner, repo }: { owner: string; repo: string }) {
         title="Releases"
         meta={`${releases.data?.length ?? 0} releases`}
         actions={
-          <Link to={`/ui/repos/${owner}/${repo}/releases/new`} style={{ textDecoration: "none" }}>
-            <Button variant="primary"><PlusIcon size={14} /> New release</Button>
-          </Link>
+          <ButtonLink variant="primary" to={`/ui/repos/${owner}/${repo}/releases/new`}>
+            <PlusIcon size={14} /> New release
+          </ButtonLink>
         }
       />
       {(releases.data?.length ?? 0) === 0 ? (
@@ -84,46 +85,121 @@ function ReleaseList({ owner, repo }: { owner: string; repo: string }) {
           Create a release from a real repository tag and attach distributable files.
         </Blankslate>
       ) : (
-        <Box>
-          {releases.data!.map((release, index) => (
-            <ReleaseRow
+        <div className="flex flex-col gap-4">
+          {releases.data!.map((release) => (
+            <ReleaseFeedItem
               key={release.id}
               owner={owner}
               repo={repo}
               release={release}
-              last={index === releases.data!.length - 1}
+              isLatest={release.id === releases.data!.find((r) => !r.draft && !r.prerelease)?.id}
             />
           ))}
-        </Box>
+        </div>
       )}
     </>
   );
 }
 
-function ReleaseRow({ owner, repo, release, last }: {
+const chipStyle = (color: string, filled = false) =>
+  ({
+    fontSize: "0.68rem",
+    fontWeight: 600,
+    color: filled ? "#ffffff" : color,
+    background: filled ? color : "transparent",
+    border: `1px solid ${color}`,
+    borderRadius: "2rem",
+    padding: "0.05rem 0.5rem",
+    whiteSpace: "nowrap",
+  }) as const;
+
+/** GitHub's releases feed entry: title + chips, meta, rendered notes, assets. */
+function ReleaseFeedItem({ owner, repo, release, isLatest }: {
   owner: string;
   repo: string;
   release: GithubRelease;
-  last: boolean;
+  isLatest: boolean;
 }) {
+  const archiveBase = `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
+  const assetLink = {
+    color: "var(--color-accent)",
+    textDecoration: "none",
+    display: "inline-block",
+    lineHeight: "1.625rem",
+  } as const;
   return (
-    <Link
-      to={`/ui/repos/${owner}/${repo}/releases/${release.id}`}
-      className="flex items-start gap-3"
-      style={{ padding: "0.85rem 1rem", borderBottom: last ? "none" : "1px solid var(--color-border)", textDecoration: "none", color: "inherit" }}
+    <Box
+      header={
+        <div className="flex w-full min-w-0 flex-wrap items-center gap-2">
+          <Link
+            to={`/ui/repos/${owner}/${repo}/releases/${release.id}`}
+            className="min-w-0 truncate"
+            style={{ fontSize: "1.05rem", fontWeight: 600, color: "var(--color-fg)", textDecoration: "none" }}
+          >
+            {release.name || release.tag_name}
+          </Link>
+          {isLatest && <span style={chipStyle("var(--gh-open-solid)", true)}>Latest</span>}
+          {release.prerelease && <span style={chipStyle("var(--color-brand-gold)")}>Pre-release</span>}
+          {release.draft && <span style={chipStyle("var(--color-fg-muted)")}>Draft</span>}
+          <span
+            className="flex flex-wrap items-center gap-2"
+            style={{ marginLeft: "auto", fontSize: "0.78rem", color: "var(--color-fg-muted)" }}
+          >
+            <span className="inline-flex items-center gap-1 font-mono">
+              <TagIcon size={12} /> {release.tag_name}
+            </span>
+            {release.author && <span>{release.author.login}</span>}
+            {release.published_at ? (
+              <span>
+                released <RelativeTime iso={release.published_at} />
+              </span>
+            ) : (
+              <span>
+                drafted <RelativeTime iso={release.created_at} />
+              </span>
+            )}
+          </span>
+        </div>
+      }
     >
-      <TagIcon size={17} style={{ color: "var(--color-fg-muted)", marginTop: 2 }} />
-      <div className="min-w-0 flex-1">
-        <div style={{ fontWeight: 600 }}>{release.name || release.tag_name}</div>
-        <div className="mt-1 flex flex-wrap gap-2" style={{ fontSize: "0.78rem", color: "var(--color-fg-muted)" }}>
-          <span className="font-mono">{release.tag_name}</span>
-          {release.draft && <span>Draft</span>}
-          {release.prerelease && <span>Pre-release</span>}
-          {!release.draft && release.published_at && <span>Published {new Date(release.published_at).toLocaleDateString()}</span>}
-          <span>{release.assets.length} assets</span>
+      <div style={{ padding: "1rem 1.25rem" }}>
+        {release.body.trim() ? (
+          <div className="markdown-body" style={{ fontSize: "0.88rem" }}>
+            <Markdown>{release.body}</Markdown>
+          </div>
+        ) : (
+          <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--color-fg-muted)" }}>No release notes.</p>
+        )}
+        <div className="mt-4" style={{ borderTop: "1px solid var(--color-border)", paddingTop: "0.7rem" }}>
+          <div className="mb-1" style={{ fontSize: "0.8rem", fontWeight: 600 }}>
+            Assets <span style={{ color: "var(--color-fg-muted)", fontWeight: 400 }}>{release.assets.length + 2}</span>
+          </div>
+          <ul style={{ listStyle: "none", margin: 0, padding: 0, fontSize: "0.82rem" }}>
+            {release.assets.map((asset) => (
+              <li key={asset.id} className="flex flex-wrap items-center gap-2" style={{ padding: "0.15rem 0" }}>
+                <Link to={`/ui/repos/${owner}/${repo}/releases/${release.id}`} style={assetLink}>
+                  {asset.label || asset.name}
+                </Link>
+                <span style={{ color: "var(--color-fg-muted)", fontSize: "0.74rem" }}>
+                  {asset.size.toLocaleString()} bytes · {asset.download_count} downloads
+                </span>
+              </li>
+            ))}
+            {/* GitHub auto-lists the source archives for the release's tag. */}
+            <li style={{ padding: "0.15rem 0" }}>
+              <a href={`${archiveBase}/zipball/${encodeURIComponent(release.tag_name)}`} style={assetLink}>
+                Source code (zip)
+              </a>
+            </li>
+            <li style={{ padding: "0.15rem 0" }}>
+              <a href={`${archiveBase}/tarball/${encodeURIComponent(release.tag_name)}`} style={assetLink}>
+                Source code (tar.gz)
+              </a>
+            </li>
+          </ul>
         </div>
       </div>
-    </Link>
+    </Box>
   );
 }
 
@@ -269,8 +345,8 @@ function ReleaseDetail({ owner, repo, releaseId }: { owner: string; repo: string
       {(release.data.author || release.data.published_at) && (
         <div className="mb-4" style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)" }}>
           {release.data.author && <strong style={{ color: "var(--color-fg)" }}>{release.data.author.login}</strong>}
-          {release.data.author ? " released this" : "Released"}
-          {release.data.published_at && ` on ${new Date(release.data.published_at).toLocaleDateString()}`}
+          {release.data.author ? " released this " : "Released "}
+          {release.data.published_at && <RelativeTime iso={release.data.published_at} />}
         </div>
       )}
       {release.data.discussion_url && (

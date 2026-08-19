@@ -89,3 +89,41 @@ describe("RepoListPage type filter", () => {
     });
   });
 });
+
+describe("RepoListPage search across pages", () => {
+  it("finds a match on a later page by walking the Link headers", async () => {
+    const page2Repo = { ...reposData[0]!, id: 2, name: "zebra", full_name: "admin/zebra", description: "page two repo" };
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.includes("page=2")) return Promise.resolve(jsonResponse([page2Repo]));
+      return Promise.resolve(
+        jsonResponse(reposData, 200, {
+          Link: '</api/v3/user/repos?per_page=30&page=2>; rel="next"',
+        }),
+      );
+    });
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText("admin/test")).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText("Find a repository"), { target: { value: "zebra" } });
+    expect(await screen.findByText("admin/zebra")).toBeInTheDocument();
+  });
+
+  it("renders language/stars/forks meta on repo rows", async () => {
+    mockFetch.mockResolvedValue(
+      jsonResponse([{ ...reposData[0]!, language: "Go", stargazers_count: 42, forks_count: 7 }]),
+    );
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText("admin/test")).toBeInTheDocument();
+    });
+    expect(screen.getByText("Go")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "42 stars" })).toHaveAttribute(
+      "href",
+      "/ui/repos/admin/test/stargazers",
+    );
+    expect(screen.getByLabelText("7 forks")).toBeInTheDocument();
+  });
+});

@@ -93,6 +93,18 @@ describe("CommandPalette", () => {
     });
   });
 
+  it("scopes the Issues / Pull requests targets to the signed-in viewer", async () => {
+    renderPalette();
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "your issues" } });
+    const option = await screen.findByRole("option", { name: /Your issues/ });
+    fireEvent.click(option);
+    await waitFor(() => {
+      expect(decodeURIComponent(screen.getByTestId("loc").textContent!)).toBe(
+        "/ui/search?type=issues&q=is:issue author:octocat",
+      );
+    });
+  });
+
   it("closes on Escape", async () => {
     const { onClose } = renderPalette();
     fireEvent.keyDown(screen.getByRole("combobox"), { key: "Escape" });

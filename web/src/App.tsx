@@ -43,6 +43,9 @@ const TeamsPage = lazy(() => import("./pages/TeamsPage.js").then(({ TeamsPage })
 const RulesetsPage = lazy(() => import("./pages/RulesetsPage.js").then(({ RulesetsPage }) => ({ default: RulesetsPage })));
 const AuditLogPage = lazy(() => import("./pages/AuditLogPage.js").then(({ AuditLogPage }) => ({ default: AuditLogPage })));
 const GistsPage = lazy(() => import("./pages/GistsPage.js").then(({ GistsPage }) => ({ default: GistsPage })));
+const GistDetailPage = lazy(() =>
+  import("./pages/GistDetailPage.js").then(({ GistDetailPage }) => ({ default: GistDetailPage })),
+);
 const NotificationsPage = lazy(() => import("./pages/NotificationsPage.js").then(({ NotificationsPage }) => ({ default: NotificationsPage })));
 const MigrationsPage = lazy(() => import("./pages/MigrationsPage.js").then(({ MigrationsPage }) => ({ default: MigrationsPage })));
 const CodespacesPage = lazy(() => import("./pages/CodespacesPage.js").then(({ CodespacesPage }) => ({ default: CodespacesPage })));
@@ -249,6 +252,7 @@ export function App() {
               <Route path="/ui/oauth" element={<OAuthPage />} />
               <Route path="/ui/metrics" element={<MetricsPage />} />
               <Route path="/ui/gists" element={<GistsPage />} />
+              <Route path="/ui/gists/:id" element={<GistDetailPage />} />
               <Route path="/ui/notifications" element={<NotificationsPage />} />
               <Route path="/ui/packages" element={<PackagesPage />} />
               <Route path="/ui/orgs/:org/packages" element={<PackagesPage />} />

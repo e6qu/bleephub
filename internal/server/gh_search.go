@@ -687,9 +687,11 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 		rows = s.filterLinkedQualifiers(rows, q)
 	}
 
+	withTextMatches := acceptsTextMatch(r)
 	render := func(row searchIssueRow) map[string]interface{} {
+		var item map[string]interface{}
 		if row.issue != nil {
-			item := issueToJSON(row.issue, s.store, base, row.repo.FullName)
+			item = issueToJSON(row.issue, s.store, base, row.repo.FullName)
 			// Search returns issue-search-result-item rather than the richer
 			// issue response used by single-issue operations.
 			delete(item, "closed_by")
@@ -699,13 +701,20 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 			// pull_request is optional and non-nullable: GitHub sets it only on
 			// rows that are pull requests, and omits it for plain issues.
 			item["repository"] = store.RepoToJSON(row.repo, s.store, base)
-			return item
+		} else {
+			item = issueToJSONForPR(row.pr, s.store, base, row.repo.FullName)
+			delete(item, "closed_by")
+			item["score"] = searchRelevanceScore(q.Terms, row.title, row.body)
+			item["author_association"] = row.assoc
+			item["repository"] = store.RepoToJSON(row.repo, s.store, base)
 		}
-		item := issueToJSONForPR(row.pr, s.store, base, row.repo.FullName)
-		delete(item, "closed_by")
-		item["score"] = searchRelevanceScore(q.Terms, row.title, row.body)
-		item["author_association"] = row.assoc
-		item["repository"] = store.RepoToJSON(row.repo, s.store, base)
+		if withTextMatches {
+			objectURL, _ := item["url"].(string)
+			item["text_matches"] = searchTextMatches(objectURL, "Issue", []searchTextMatchProperty{
+				{"title", row.title},
+				{"body", row.body},
+			}, q.Terms)
+		}
 		return item
 	}
 
@@ -1412,11 +1421,19 @@ func (s *Server) handleSearchRepositories(w http.ResponseWriter, r *http.Request
 	}
 
 	base := s.baseURL(r)
+	withTextMatches := acceptsTextMatch(r)
 	var results []map[string]interface{}
 	for _, repo := range matched {
 		item := store.RepoToJSON(repo, s.store, base)
 		item["score"] = searchRelevanceScore(q.Terms, repo.Name, repo.Description)
 		item["_help_wanted_issues"] = repoIssueLabelCount(s.store, repo.ID, "help wanted")
+		if withTextMatches {
+			objectURL, _ := item["url"].(string)
+			item["text_matches"] = searchTextMatches(objectURL, "Repository", []searchTextMatchProperty{
+				{"name", repo.Name},
+				{"description", repo.Description},
+			}, q.Terms)
+		}
 		results = append(results, item)
 	}
 
@@ -1507,6 +1524,7 @@ func (s *Server) handleSearchCode(w http.ResponseWriter, r *http.Request) {
 	sort.Slice(searchRepos, func(i, j int) bool { return searchRepos[i].repo.ID < searchRepos[j].repo.ID })
 
 	base := s.baseURL(r)
+	withTextMatches := acceptsTextMatch(r)
 	var results []map[string]interface{}
 	total := 0
 	truncated := false
@@ -1555,6 +1573,7 @@ func (s *Server) handleSearchCode(w http.ResponseWriter, r *http.Request) {
 			}
 
 			matched := false
+			content := ""
 			if len(q.Terms) == 0 {
 				matched = true
 			} else {
@@ -1565,8 +1584,8 @@ func (s *Server) handleSearchCode(w http.ResponseWriter, r *http.Request) {
 						data, err := io.ReadAll(reader)
 						_ = reader.Close()
 						if err == nil && len(data) < 384*1024 {
-							content := strings.ToLower(string(data))
-							if pathMatches(content, q.Terms) || pathMatches(strings.ToLower(path), q.Terms) {
+							content = string(data)
+							if pathMatches(strings.ToLower(content), q.Terms) || pathMatches(strings.ToLower(path), q.Terms) {
 								matched = true
 							}
 						}
@@ -1596,6 +1615,12 @@ func (s *Server) handleSearchCode(w http.ResponseWriter, r *http.Request) {
 				"repository": store.RepoToJSON(repo, s.store, base),
 				"score":      searchRelevanceScore(q.Terms, name, path),
 				"language":   detectLanguage(name),
+			}
+			if withTextMatches {
+				item["text_matches"] = searchTextMatches(api+"/contents/"+path, "FileContent", []searchTextMatchProperty{
+					{"content", content},
+					{"path", path},
+				}, q.Terms)
 			}
 			results = append(results, item)
 			return nil
@@ -2128,6 +2153,7 @@ func (s *Server) handleSearchCommits(w http.ResponseWriter, r *http.Request) {
 	sort.Slice(searchRepos, func(i, j int) bool { return searchRepos[i].repo.ID < searchRepos[j].repo.ID })
 
 	base := s.baseURL(r)
+	withTextMatches := acceptsTextMatch(r)
 	var results []map[string]interface{}
 	total := 0
 	truncated := false
@@ -2179,7 +2205,14 @@ func (s *Server) handleSearchCommits(w http.ResponseWriter, r *http.Request) {
 				truncated = true
 				return nil
 			}
-			results = append(results, s.commitSearchItemJSON(commit, repo, base, q.Terms))
+			item := s.commitSearchItemJSON(commit, repo, base, q.Terms)
+			if withTextMatches {
+				objectURL, _ := item["url"].(string)
+				item["text_matches"] = searchTextMatches(objectURL, "Commit", []searchTextMatchProperty{
+					{"message", strings.TrimRight(commit.Message, "\n")},
+				}, q.Terms)
+			}
+			results = append(results, item)
 			return nil
 		})
 		if err != nil {

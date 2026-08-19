@@ -4,14 +4,14 @@ import { useState } from "react";
 import { MemoryRouter } from "react-router";
 import { GlobalNavDrawer } from "../components/GlobalNavDrawer.js";
 
-function Harness() {
+function Harness({ viewerLogin }: { viewerLogin?: string }) {
   const [open, setOpen] = useState(false);
   return (
     <MemoryRouter>
       <button data-testid="trigger" onClick={() => setOpen(true)}>
         menu
       </button>
-      <GlobalNavDrawer open={open} onClose={() => setOpen(false)} />
+      <GlobalNavDrawer open={open} onClose={() => setOpen(false)} viewerLogin={viewerLogin} />
     </MemoryRouter>
   );
 }
@@ -36,5 +36,26 @@ describe("GlobalNavDrawer focus management", () => {
     fireEvent.keyDown(document, { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("navigation", { name: "Global" })).toBeNull());
     expect(document.activeElement).toBe(trigger);
+  });
+});
+
+describe("GlobalNavDrawer viewer scoping", () => {
+  it("scopes Issues / Pull requests to the signed-in viewer", async () => {
+    render(<Harness viewerLogin="octocat" />);
+    fireEvent.click(screen.getByTestId("trigger"));
+    const issues = await screen.findByRole("link", { name: "Issues" });
+    expect(decodeURIComponent(issues.getAttribute("href")!)).toBe(
+      "/ui/search?type=issues&q=is:issue author:octocat",
+    );
+    expect(
+      decodeURIComponent(screen.getByRole("link", { name: "Pull requests" }).getAttribute("href")!),
+    ).toBe("/ui/search?type=issues&q=is:pr author:octocat");
+  });
+
+  it("falls back to unscoped searches when signed out", async () => {
+    render(<Harness />);
+    fireEvent.click(screen.getByTestId("trigger"));
+    const issues = await screen.findByRole("link", { name: "Issues" });
+    expect(decodeURIComponent(issues.getAttribute("href")!)).toBe("/ui/search?type=issues&q=is:issue");
   });
 });

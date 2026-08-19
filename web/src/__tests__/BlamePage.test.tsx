@@ -84,4 +84,67 @@ describe("BlamePage", () => {
       "/ui/repos/admin/demo/blob/main/src/app.ts",
     );
   });
+
+  it("links each hunk to the blame prior to its change and paints an age strip", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.includes("/ui-data/repos/admin/demo2/blame/src/app.ts")) {
+        return Promise.resolve(
+          jsonResponse({
+            path: "src/app.ts",
+            ref: "main",
+            sha: "c".repeat(40),
+            hunks: [
+              {
+                sha: "a".repeat(40),
+                short_sha: "aaaaaaa",
+                summary: "Initial import",
+                author: "admin",
+                date: "2026-01-01T00:00:00Z",
+                start_line: 1,
+                lines: ["line one"],
+              },
+              {
+                sha: "b".repeat(40),
+                short_sha: "bbbbbbb",
+                summary: "Add feature",
+                author: "octo",
+                date: "2026-08-01T00:00:00Z",
+                start_line: 2,
+                lines: ["line two"],
+              },
+            ],
+          }),
+        );
+      }
+      if (u.endsWith(`/commits/${"b".repeat(40)}`)) {
+        return Promise.resolve(jsonResponse({
+          sha: "b".repeat(40),
+          commit: { message: "Add feature", author: { name: "octo", date: "2026-08-01T00:00:00Z" } },
+          parents: [{ sha: "9".repeat(40), url: "", html_url: "" }],
+        }));
+      }
+      if (u.endsWith(`/commits/${"a".repeat(40)}`)) {
+        // Root commit: no parents, so no prior-blame hop.
+        return Promise.resolve(jsonResponse({
+          sha: "a".repeat(40),
+          commit: { message: "Initial import", author: { name: "admin", date: "2026-01-01T00:00:00Z" } },
+          parents: [],
+        }));
+      }
+      return Promise.resolve(jsonResponse([]));
+    });
+    const { container } = renderAt("/ui/repos/admin/demo2/blame/main/src/app.ts");
+
+    // The hunk with a parent gets the prior-blame hop at the parent sha.
+    const prior = await screen.findByRole("link", { name: "View blame prior to bbbbbbb" });
+    expect(prior).toHaveAttribute("href", `/ui/repos/admin/demo2/blame/${"9".repeat(40)}/src/app.ts`);
+    // The root commit's hunk offers no prior-blame link.
+    expect(screen.queryByRole("link", { name: "View blame prior to aaaaaaa" })).not.toBeInTheDocument();
+    // Age heat strip: one banded cell per hunk, newest hotter than oldest.
+    const strips = container.querySelectorAll("td[title^='Age band']");
+    expect(strips).toHaveLength(2);
+    // Relative dates via <time>.
+    expect(container.querySelector("time")).not.toBeNull();
+  });
 });

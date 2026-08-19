@@ -28,6 +28,8 @@ import type {
   GithubWorkflowRun,
 } from "../types.js";
 import { RepoHeader } from "../components/PageHeader.js";
+import { RelativeTime } from "../components/RelativeTime.js";
+import { Avatar } from "../components/Avatar.js";
 import { PageTitle, Box, Blankslate, Button, Tabs, ErrorBanner, FormLabel } from "../components/ui.js";
 import { ChevronDownIcon, ChevronRightIcon } from "../components/octicons.js";
 
@@ -109,9 +111,20 @@ function DeploymentsTab({ owner, repo }: { owner: string; repo: string }) {
     }
   };
 
+  // GitHub's deployments view groups history under environment headers
+  // (newest deployment first inside each group, groups in first-seen order).
+  const groups: { environment: string; items: GithubDeployment[] }[] = [];
+  for (const d of deployments) {
+    const group = groups.find((g) => g.environment === d.environment);
+    if (group) group.items.push(d);
+    else groups.push({ environment: d.environment, items: [d] });
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-      <NewDeploymentForm owner={owner} repo={repo} />
+      <OperatorTools label="Operator tools">
+        <NewDeploymentForm owner={owner} repo={repo} />
+      </OperatorTools>
       {firstPage.isLoading ? (
         <Spinner label="loading deployments" />
       ) : firstPage.isError ? (
@@ -121,17 +134,9 @@ function DeploymentsTab({ owner, repo }: { owner: string; repo: string }) {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
           {pageError && <ErrorBanner>{pageError}</ErrorBanner>}
-          <Box>
-            {deployments.map((d, i) => (
-              <DeploymentRow
-                key={d.id}
-                owner={owner}
-                repo={repo}
-                deployment={d}
-                last={i === deployments.length - 1}
-              />
-            ))}
-          </Box>
+          {groups.map((group) => (
+            <EnvironmentGroup key={group.environment} owner={owner} repo={repo} group={group} />
+          ))}
           {followUrl && (
             <div className="flex justify-center">
               <Button variant="secondary" size="sm" disabled={loadingMore} onClick={() => void loadMore()}>
@@ -142,6 +147,90 @@ function DeploymentsTab({ owner, repo }: { owner: string; repo: string }) {
         </div>
       )}
     </div>
+  );
+}
+
+/** Collapsed-by-default disclosure for write-side operator forms. */
+function OperatorTools({ label, children }: { label: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div>
+      <Button variant="ghost" size="sm" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        {open ? <ChevronDownIcon size={13} /> : <ChevronRightIcon size={13} />} {label}
+      </Button>
+      {open && <div className="mt-2">{children}</div>}
+    </div>
+  );
+}
+
+/** One environment's deployment history with its latest-status badge. */
+function EnvironmentGroup({
+  owner,
+  repo,
+  group,
+}: {
+  owner: string;
+  repo: string;
+  group: { environment: string; items: GithubDeployment[] };
+}) {
+  return (
+    <Box
+      header={
+        <span className="flex w-full items-center justify-between gap-2">
+          <span style={{ fontWeight: 600, color: "var(--color-fg)" }}>{group.environment}</span>
+          <span className="inline-flex items-center gap-2" style={{ fontSize: "0.76rem", color: "var(--color-fg-muted)" }}>
+            {group.items.length} deployment{group.items.length === 1 ? "" : "s"}
+            <EnvironmentLatestStatus owner={owner} repo={repo} deploymentId={group.items[0]!.id} />
+          </span>
+        </span>
+      }
+    >
+      {group.items.map((d, i) => (
+        <DeploymentRow
+          key={d.id}
+          owner={owner}
+          repo={repo}
+          deployment={d}
+          last={i === group.items.length - 1}
+        />
+      ))}
+    </Box>
+  );
+}
+
+/** Latest status of the environment's newest deployment, as a badge. */
+function EnvironmentLatestStatus({
+  owner,
+  repo,
+  deploymentId,
+}: {
+  owner: string;
+  repo: string;
+  deploymentId: number;
+}) {
+  const statusesQ = useQuery({
+    queryKey: ["deployment-statuses", owner, repo, deploymentId],
+    queryFn: () => fetchDeploymentStatuses(owner, repo, deploymentId),
+  });
+  const latest = statusesQ.data?.[0];
+  const state: GithubDeploymentState | "no status" = latest?.state ?? "no status";
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span
+        aria-hidden
+        style={{
+          width: 8,
+          height: 8,
+          borderRadius: "999px",
+          background:
+            latest && STATE_COLORS[latest.state] ? STATE_COLORS[latest.state] : "var(--color-fg-subtle)",
+          flexShrink: 0,
+        }}
+      />
+      <span className="font-mono" style={{ fontSize: "0.74rem" }}>
+        {state}
+      </span>
+    </span>
   );
 }
 
@@ -240,10 +329,19 @@ function DeploymentRow({
               </span>
             )}
           </div>
-          <div className="font-mono" style={{ fontSize: "0.74rem", color: "var(--color-fg-muted)" }}>
-            {deployment.ref} · {deployment.task}
-            {deployment.creator ? ` · by ${deployment.creator.login}` : ""} ·{" "}
-            {new Date(deployment.created_at).toLocaleString()}
+          <div
+            className="flex flex-wrap items-center gap-x-1.5"
+            style={{ fontSize: "0.74rem", color: "var(--color-fg-muted)" }}
+          >
+            <span className="font-mono">
+              {deployment.ref} · {deployment.task}
+            </span>
+            {deployment.creator && (
+              <span className="inline-flex items-center gap-1">
+                <Avatar login={deployment.creator.login} size={14} /> {deployment.creator.login}
+              </span>
+            )}
+            <RelativeTime iso={deployment.created_at} />
           </div>
         </div>
       </button>
@@ -265,6 +363,7 @@ function DeploymentStatuses({
   const [state, setState] = useState<GithubDeploymentState>("success");
   const [description, setDescription] = useState("");
   const [environmentUrl, setEnvironmentUrl] = useState("");
+  const [operatorOpen, setOperatorOpen] = useState(false);
 
   const statusesQ = useQuery({
     queryKey: ["deployment-statuses", owner, repo, deploymentId],
@@ -306,8 +405,20 @@ function DeploymentStatuses({
           ))}
         </ul>
       )}
+      <div className="mt-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-expanded={operatorOpen}
+          onClick={() => setOperatorOpen((v) => !v)}
+        >
+          {operatorOpen ? <ChevronDownIcon size={13} /> : <ChevronRightIcon size={13} />} Operator
+          tools: create status
+        </Button>
+      </div>
+      {operatorOpen && (
       <form
-        className="mt-3 flex flex-wrap items-end gap-2"
+        className="mt-2 flex flex-wrap items-end gap-2"
         onSubmit={(e) => {
           e.preventDefault();
           createMut.mutate();
@@ -352,6 +463,7 @@ function DeploymentStatuses({
           Create status
         </Button>
       </form>
+      )}
       {createMut.isError && <ErrorBanner>{String(createMut.error)}</ErrorBanner>}
     </div>
   );
@@ -374,7 +486,7 @@ function StatusEntry({ status }: { status: GithubDeploymentStatus }) {
         {status.state}
       </span>
       <span style={{ fontSize: "0.75rem", color: "var(--color-fg-muted)" }}>
-        {new Date(status.created_at).toLocaleString()}
+        <RelativeTime iso={status.created_at} />
         {status.creator ? ` · ${status.creator.login}` : ""}
         {status.description ? ` · ${status.description}` : ""}
         {status.environment_url ? ` · ${status.environment_url}` : ""}

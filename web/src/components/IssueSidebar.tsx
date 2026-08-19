@@ -1,7 +1,9 @@
-import { useState, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { InlineError } from "@bleephub/ui-core/components";
 import {
+  ghFetch,
+  ghSend,
   isNotFound,
   fetchRepoLabels,
   fetchRepoMilestones,
@@ -23,18 +25,28 @@ import {
 } from "../api.js";
 import type { GithubProjectV2 } from "../types.js";
 import { LabelPills } from "./LabelPills.js";
+import { Avatar } from "./Avatar.js";
 import { ErrorBanner } from "./ui.js";
 import { GearIcon } from "./octicons.js";
 
-/** One collapsible-looking sidebar section with a header + gear affordance. */
+/**
+ * One sidebar section. When `gearFor` names an element id, the gear is a
+ * real button that moves focus to that section's picker — github.com's gear
+ * opens the section's editor. Sections whose control is already inline
+ * render no gear at all (no decorative fake-interactive icons).
+ */
 function SidebarSection({
   title,
   children,
   last,
+  gearFor,
+  gearLabel,
 }: {
   title: string;
   children: ReactNode;
   last?: boolean;
+  gearFor?: string | undefined;
+  gearLabel?: string | undefined;
 }) {
   return (
     <div
@@ -48,9 +60,127 @@ function SidebarSection({
         style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--color-fg-muted)" }}
       >
         <span>{title}</span>
-        <GearIcon size={14} style={{ color: "var(--color-fg-subtle)" }} />
+        {gearFor && (
+          <button
+            type="button"
+            aria-label={gearLabel ?? `Edit ${title}`}
+            onClick={() => document.getElementById(gearFor)?.focus()}
+            className="inline-flex items-center justify-center"
+            style={{
+              border: "none",
+              background: "transparent",
+              color: "var(--color-fg-subtle)",
+              cursor: "pointer",
+              minWidth: "1.625rem",
+              minHeight: "1.625rem",
+              padding: 0,
+            }}
+          >
+            <GearIcon size={14} />
+          </button>
+        )}
       </div>
       {children}
+    </div>
+  );
+}
+
+/** GitHub REST lock reasons, exactly as the API accepts them. */
+const LOCK_REASONS = ["off-topic", "too heated", "resolved", "spam"] as const;
+type LockReason = (typeof LOCK_REASONS)[number];
+
+// ─── Notifications (thread subscription) ────────────────────────────────
+//
+// bleephub has no per-issue subscription REST endpoint (GitHub's real one is
+// the notification-thread subscription: /notifications/threads/{id}/subscription,
+// which also exists here). A thread for this conversation exists once the
+// viewer has a notification for it — locate it via the repo notifications
+// list and manage its subscription; without a thread there is nothing to
+// subscribe to, and the section says so instead of faking a control.
+interface NotificationThreadRow {
+  id: string;
+  unread?: boolean;
+  subject?: { title?: string; url?: string; type?: string } | null;
+}
+
+function NotificationsField({
+  owner,
+  repo,
+  number,
+  kind,
+}: {
+  owner: string;
+  repo: string;
+  number: number;
+  kind: "issue" | "pr";
+}) {
+  const muted = { fontSize: "0.82rem", color: "var(--color-fg-muted)" } as const;
+  const subjectSuffix = kind === "pr" ? `/pulls/${number}` : `/issues/${number}`;
+
+  const threadQ = useQuery({
+    queryKey: ["notification-thread", owner, repo, kind, number],
+    queryFn: async ({ signal }) => {
+      const rows = await ghFetch<NotificationThreadRow[]>(
+        `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/notifications?all=true`,
+        signal,
+      );
+      if (!Array.isArray(rows)) return null;
+      return rows.find((t) => (t.subject?.url ?? "").endsWith(subjectSuffix)) ?? null;
+    },
+  });
+  const threadId = threadQ.data?.id ?? null;
+
+  // A thread only exists because the viewer receives its notifications, so
+  // "subscribed" is the initial state whenever a thread is found. Probing
+  // GET .../subscription instead would 404 when no explicit record exists,
+  // and the browser logs every 4xx as a console error (the e2e harness fails
+  // on those), so the state is tracked from the viewer's own toggles.
+  const [explicitSub, setExplicitSub] = useState<boolean | null>(null);
+  const subscribed = explicitSub ?? true;
+  const toggleMut = useMutation({
+    mutationFn: () =>
+      subscribed
+        ? ghSend("DELETE", `/api/v3/notifications/threads/${encodeURIComponent(threadId as string)}/subscription`)
+        : ghSend("PUT", `/api/v3/notifications/threads/${encodeURIComponent(threadId as string)}/subscription`, {
+            ignored: false,
+          }),
+    onSuccess: () => {
+      setExplicitSub(!subscribed);
+    },
+  });
+
+  if (threadQ.isLoading) return <span style={muted}>Loading…</span>;
+  if (threadQ.isError || threadId === null) {
+    // No notification thread for this conversation yet — nothing to
+    // subscribe to on this server, so say so honestly.
+    return <span style={muted}>No notification thread for this conversation yet.</span>;
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <button
+        type="button"
+        onClick={() => toggleMut.mutate()}
+        disabled={toggleMut.isPending}
+        style={{
+          border: "1px solid var(--color-border)",
+          borderRadius: "var(--radius-md)",
+          background: "var(--color-bg-subtle)",
+          color: "var(--color-fg)",
+          fontSize: "0.82rem",
+          fontWeight: 600,
+          padding: "0.3rem 0.6rem",
+          cursor: "pointer",
+        }}
+      >
+        {subscribed ? "Unsubscribe" : "Subscribe"}
+      </button>
+      <span style={muted}>
+        {subscribed
+          ? "You're receiving notifications from this thread."
+          : "You're not receiving notifications from this thread."}
+      </span>
+      {toggleMut.isError && <ErrorBanner>{String(toggleMut.error)}</ErrorBanner>}
     </div>
   );
 }
@@ -90,6 +220,12 @@ export function IssueSidebar({
 }) {
   const qc = useQueryClient();
   const [error, setError] = useState<string | null>(null);
+  const baseId = useId();
+  const assigneeSelectId = `${baseId}-assignee`;
+  const labelSelectId = `${baseId}-label`;
+  const projectSelectId = `${baseId}-project`;
+  const milestoneSelectId = `${baseId}-milestone`;
+  const typeSelectId = `${baseId}-type`;
 
   const { data: repoLabels = [], isError: labelsError, error: labelsErr } = useQuery({
     queryKey: ["labels", owner, repo],
@@ -156,9 +292,14 @@ export function IssueSidebar({
     onSuccess: invalidate,
     onError: (err: Error) => setError(err.message),
   });
+  const [lockReason, setLockReason] = useState<LockReason | "">("");
   const lockMut = useMutation({
-    mutationFn: () => (locked ? unlockIssue(owner, repo, number) : lockIssue(owner, repo, number)),
-    onSuccess: invalidate,
+    mutationFn: () =>
+      locked ? unlockIssue(owner, repo, number) : lockIssue(owner, repo, number, lockReason || undefined),
+    onSuccess: () => {
+      setLockReason("");
+      invalidate();
+    },
     onError: (err: Error) => setError(err.message),
   });
 
@@ -179,7 +320,11 @@ export function IssueSidebar({
 
       {kind === "pr" && reviewers && <SidebarSection title="Reviewers">{reviewers}</SidebarSection>}
 
-      <SidebarSection title="Assignees">
+      <SidebarSection
+        title="Assignees"
+        gearFor={addableAssignees.length > 0 ? assigneeSelectId : undefined}
+        gearLabel="Edit assignees"
+      >
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           {assignees.length === 0 && <span style={muted}>No one —</span>}
           {assignees.map((a) => (
@@ -206,6 +351,7 @@ export function IssueSidebar({
           ))}
           {addableAssignees.length > 0 && (
             <select
+              id={assigneeSelectId}
               aria-label="Add assignee"
               value=""
               onChange={(e) => {
@@ -225,7 +371,11 @@ export function IssueSidebar({
         </div>
       </SidebarSection>
 
-      <SidebarSection title="Labels">
+      <SidebarSection
+        title="Labels"
+        gearFor={!labelsError && addable.length > 0 ? labelSelectId : undefined}
+        gearLabel="Edit labels"
+      >
         {labelsError ? (
           <InlineError inline title="Failed to load repo labels" detail={String(labelsErr)} />
         ) : (
@@ -255,6 +405,7 @@ export function IssueSidebar({
             ))}
             {addable.length > 0 && (
               <select
+                id={labelSelectId}
                 aria-label="Add label"
                 value=""
                 onChange={(e) => {
@@ -275,15 +426,31 @@ export function IssueSidebar({
         )}
       </SidebarSection>
 
-      <SidebarSection title="Projects">
-        <ProjectsField owner={owner} repo={repo} ownerType={ownerType} number={number} kind={kind} />
+      <SidebarSection
+        title="Projects"
+        gearFor={ownerType === "Organization" ? projectSelectId : undefined}
+        gearLabel="Edit projects"
+      >
+        <ProjectsField
+          owner={owner}
+          repo={repo}
+          ownerType={ownerType}
+          number={number}
+          kind={kind}
+          selectId={projectSelectId}
+        />
       </SidebarSection>
 
-      <SidebarSection title="Milestone">
+      <SidebarSection
+        title="Milestone"
+        gearFor={!milestonesError && kind === "issue" ? milestoneSelectId : undefined}
+        gearLabel="Edit milestone"
+      >
         {milestonesError ? (
           <InlineError inline title="Failed to load milestones" detail={String(milestonesErr)} />
         ) : kind === "issue" ? (
           <select
+            id={milestoneSelectId}
             aria-label="Set milestone"
             value={milestone?.number ?? ""}
             onChange={(e) =>
@@ -308,11 +475,16 @@ export function IssueSidebar({
       </SidebarSection>
 
       {kind === "issue" && !issueTypesLoading && !issueTypesUnavailable && (
-        <SidebarSection title="Type">
+        <SidebarSection
+          title="Type"
+          gearFor={issueTypesError ? undefined : typeSelectId}
+          gearLabel="Edit issue type"
+        >
           {issueTypesError ? (
             <InlineError inline title="Failed to load issue types" detail={String(issueTypesErr)} />
           ) : (
             <select
+              id={typeSelectId}
               aria-label="Set issue type"
               value={selectedIssueType?.id ?? ""}
               onChange={(e) =>
@@ -339,22 +511,46 @@ export function IssueSidebar({
         {development ?? <span style={muted}>No branches or pull requests</span>}
       </SidebarSection>
 
+      <SidebarSection title="Notifications">
+        <NotificationsField owner={owner} repo={repo} number={number} kind={kind} />
+      </SidebarSection>
+
       <SidebarSection title="Lock conversation">
-        <button
-          type="button"
-          onClick={() => lockMut.mutate()}
-          disabled={lockMut.isPending}
-          style={{
-            border: "none",
-            background: "transparent",
-            color: "var(--color-accent-fg)",
-            fontSize: "0.82rem",
-            padding: 0,
-            cursor: "pointer",
-          }}
-        >
-          {locked ? "Unlock conversation" : "Lock conversation"}
-        </button>
+        <div className="flex flex-col gap-1.5">
+          {!locked && (
+            <select
+              aria-label="Lock reason"
+              value={lockReason}
+              onChange={(e) => setLockReason(e.target.value as LockReason | "")}
+              disabled={lockMut.isPending}
+              style={{ fontSize: "0.8rem" }}
+            >
+              <option value="">No reason</option>
+              {LOCK_REASONS.map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
+            </select>
+          )}
+          <button
+            type="button"
+            onClick={() => lockMut.mutate()}
+            disabled={lockMut.isPending}
+            className="inline-block text-left"
+            style={{
+              border: "none",
+              background: "transparent",
+              color: "var(--color-accent-fg)",
+              fontSize: "0.82rem",
+              lineHeight: "1.625rem",
+              padding: 0,
+              cursor: "pointer",
+            }}
+          >
+            {locked ? "Unlock conversation" : "Lock conversation"}
+          </button>
+        </div>
       </SidebarSection>
 
       <SidebarSection title={`${participants.length} participant${participants.length === 1 ? "" : "s"}`} last>
@@ -363,7 +559,8 @@ export function IssueSidebar({
         ) : (
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             {participants.map((p) => (
-              <span key={p} style={{ fontSize: "0.82rem", color: "var(--color-fg)" }}>
+              <span key={p} className="inline-flex items-center gap-1" style={{ fontSize: "0.82rem", color: "var(--color-fg)" }}>
+                <Avatar login={p} size={16} />
                 {p}
               </span>
             ))}
@@ -388,12 +585,15 @@ function ProjectsField({
   ownerType,
   number,
   kind,
+  selectId,
 }: {
   owner: string;
   repo: string;
   ownerType?: string | undefined;
   number: number;
   kind: "issue" | "pr";
+  /** id for the "Add to project" select, so the section gear can focus it. */
+  selectId?: string | undefined;
 }) {
   const qc = useQueryClient();
   const isOrg = ownerType === "Organization";
@@ -471,6 +671,7 @@ function ProjectsField({
       ))}
       {addable.length > 0 && (
         <select
+          id={selectId}
           aria-label="Add to project"
           value=""
           onChange={(e) => {

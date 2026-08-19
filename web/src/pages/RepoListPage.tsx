@@ -6,6 +6,8 @@ import type { BleephubRepo, RepoListFilters } from "../types.js";
 import { PageTitle, Blankslate, Button } from "../components/ui.js";
 import { RepoIcon, BranchIcon } from "../components/octicons.js";
 import { RepoCreateDialog } from "../components/RepoCreateDialog.js";
+import { RepoStatsLine, ForkedFromLine } from "../components/RepoCardMeta.js";
+import { walkRepoPages } from "../utils/uiFetch.js";
 import type { Page } from "../api.js";
 import { isForbidden, isRateLimited } from "../api.js";
 
@@ -62,16 +64,26 @@ export function RepoListPage({
       isRateLimited(query.state.error) || isForbidden(query.state.error) ? false : 10000,
   });
 
+  // "Find a repository…" must not silently search only the loaded page: while
+  // a search is active, walk every page (capped) with the current filters and
+  // match against the full set.
+  const searching = filter.trim() !== "";
+  const searchQ = useQuery({
+    queryKey: [...queryKey, "search-walk", filters],
+    queryFn: ({ signal }) => walkRepoPages((f, u) => fetchPage(f, u, signal), filters),
+    enabled: searching,
+  });
+
   const filtered = useMemo(() => {
-    if (!data) return [];
     const q = filter.trim().toLowerCase();
-    if (!q) return data.items;
-    return data.items.filter(
+    if (!q) return data?.items ?? [];
+    const all = searchQ.data?.items ?? [];
+    return all.filter(
       (r) =>
         r.full_name.toLowerCase().includes(q) ||
         (r.description ?? "").toLowerCase().includes(q),
     );
-  }, [data, filter]);
+  }, [data, searchQ.data, filter]);
 
   const hasNext = !!data?.nextUrl;
   const currentPage = pageStack.length + 1;
@@ -189,7 +201,9 @@ export function RepoListPage({
         />
       )}
 
-      {data.items.length === 0 ? (
+      {searching && searchQ.isLoading ? (
+        <Spinner label="searching repositories" />
+      ) : data.items.length === 0 && !searching ? (
         <Blankslate icon={<RepoIcon size={28} />} title="No repositories yet">
           Create one with <code>POST /api/v3/user/repos</code> or push to git.
         </Blankslate>
@@ -198,14 +212,21 @@ export function RepoListPage({
           No repository matches “{filter}”.
         </Blankslate>
       ) : (
-        <ul style={{ borderTop: "1px solid var(--color-border)" }}>
-          {filtered.map((repo) => (
-            <RepoRow key={repo.id} repo={repo} />
-          ))}
-        </ul>
+        <>
+          {searching && searchQ.data?.truncated && (
+            <p style={{ fontSize: "0.78rem", color: "var(--color-fg-muted)" }}>
+              Searched the first {searchQ.data.items.length} repositories only.
+            </p>
+          )}
+          <ul style={{ borderTop: "1px solid var(--color-border)" }}>
+            {filtered.map((repo) => (
+              <RepoRow key={repo.id} repo={repo} />
+            ))}
+          </ul>
+        </>
       )}
 
-      {(pageStack.length > 0 || hasNext) && (
+      {!searching && (pageStack.length > 0 || hasNext) && (
         <div className="mt-4 flex items-center gap-2">
           <Button onClick={goPrev} disabled={pageStack.length === 0}>
             Previous
@@ -267,14 +288,15 @@ function RepoRow({ repo }: { repo: BleephubRepo }) {
           {repo.description}
         </p>
       )}
-      <div
-        className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1"
-        style={{ fontSize: "0.78rem", color: "var(--color-fg-muted)" }}
-      >
-        <span className="inline-flex items-center gap-1">
+      <ForkedFromLine repo={repo} />
+      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
+        <span
+          className="inline-flex items-center gap-1"
+          style={{ fontSize: "0.78rem", color: "var(--color-fg-muted)" }}
+        >
           <BranchIcon size={14} /> {repo.default_branch}
         </span>
-        <span>Updated {new Date(repo.updated_at).toLocaleDateString()}</span>
+        <RepoStatsLine repo={repo} />
       </div>
     </li>
   );

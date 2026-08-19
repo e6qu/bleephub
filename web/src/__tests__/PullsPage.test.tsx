@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, cleanup, screen, waitFor, fireEvent, within } from "@testing-library/react";
+import { render, cleanup, screen, waitFor, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Routes, Route } from "react-router";
 import { PullsPage } from "../pages/PullsPage.js";
@@ -17,6 +17,9 @@ function jsonResponse(data: unknown, status = 200, headers: Record<string, strin
 afterEach(() => {
   cleanup();
   mockFetch.mockReset();
+  // Viewed-file and review-summary state persist per PR in sessionStorage;
+  // keep tests independent.
+  sessionStorage.clear();
 });
 
 function renderAt(path: string) {
@@ -231,8 +234,9 @@ describe("PullsPage checks section", () => {
     renderAt("/ui/repos/admin/test/pulls/9");
     // The Conversation merge box shows the aggregate summary…
     expect(await screen.findByText(/all checks have passed/i)).toBeInTheDocument();
-    // …and the Checks tab lists the per-check rows.
-    fireEvent.click(screen.getByRole("tab", { name: "Checks" }));
+    // …and the Checks tab (labeled with the reported-check count) lists the
+    // per-check rows.
+    fireEvent.click(screen.getByRole("tab", { name: /^Checks/ }));
     expect(await screen.findByText("build")).toBeInTheDocument();
     expect(screen.getByText("lint")).toBeInTheDocument();
     // 42s duration from started/completed timestamps.
@@ -277,7 +281,7 @@ describe("PullsPage checks section", () => {
       ],
     });
     renderAt("/ui/repos/admin/test/pulls/9");
-    fireEvent.click(await screen.findByRole("tab", { name: "Checks" }));
+    fireEvent.click(await screen.findByRole("tab", { name: /^Checks/ }));
     const link = await screen.findByRole("link", { name: /build/i });
     expect(link).toHaveAttribute("href", "/ui/repos/admin/test/actions/runs/42");
   });
@@ -344,23 +348,40 @@ describe("PullsPage reviews", () => {
     expect(JSON.parse(String(init?.body))).toEqual({ message: "stale approval" });
   });
 
-  it("submits a review with the chosen event", async () => {
+  it("submits a review with the chosen event from the Files-changed popover", async () => {
     mockPRApis((u, init) => {
       if (u.endsWith("/pulls/9/reviews") && init?.method === "POST") {
         return jsonResponse(review(9, "admin", "CHANGES_REQUESTED"));
       }
+      if (u.endsWith("/pulls/9/files")) {
+        return jsonResponse([
+          {
+            sha: "abc",
+            filename: "main.go",
+            status: "modified",
+            additions: 1,
+            deletions: 0,
+            changes: 1,
+            patch: "@@ -1,1 +1,2 @@\n old\n+new",
+          },
+        ]);
+      }
       return undefined;
     });
-    renderAt("/ui/repos/admin/test/pulls/9");
+    renderAt("/ui/repos/admin/test/pulls/9/files");
+    await screen.findByText("main.go");
 
-    const textarea = await screen.findByPlaceholderText(/leave a review comment/i);
+    // The review popover lives behind the "Review changes" button.
+    fireEvent.click(screen.getByRole("button", { name: /review changes/i }));
+    const summary = await screen.findByLabelText("Review summary");
+
     // REQUEST_CHANGES / COMMENT need a body; APPROVE does not.
-    expect(screen.getByRole("button", { name: /request changes/i })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /^approve$/i })).toBeEnabled();
+    fireEvent.click(screen.getByRole("radio", { name: /request changes/i }));
+    expect(screen.getByRole("button", { name: /^submit review$/i })).toBeDisabled();
+    fireEvent.change(summary, { target: { value: "needs tests" } });
+    expect(screen.getByRole("button", { name: /^submit review$/i })).toBeEnabled();
 
-    fireEvent.change(textarea, { target: { value: "needs tests" } });
-    fireEvent.click(screen.getByRole("button", { name: /request changes/i }));
-
+    fireEvent.click(screen.getByRole("button", { name: /^submit review$/i }));
     await waitFor(() => {
       expect(findCall("/pulls/9/reviews", "POST")).toBeDefined();
     });
@@ -569,6 +590,17 @@ describe("PullsPage requested reviewers", () => {
 
   it("requests and removes a team reviewer", async () => {
     mockPRApis((u, init) => {
+      // Team reviewers exist only on org-owned repos; the picker gates on the
+      // repo detail's owner type, so serve an Organization owner here.
+      if (u.endsWith("/repos/admin/test") && init?.method === undefined) {
+        return jsonResponse({
+          id: 1,
+          name: "test",
+          full_name: "admin/test",
+          default_branch: "main",
+          owner: { login: "admin", type: "Organization" },
+        });
+      }
       if (u.endsWith("/pulls/9/requested_reviewers") && init?.method === undefined) {
         return jsonResponse({
           users: [],
@@ -632,7 +664,7 @@ describe("PullsPage combined status merge box", () => {
     // The merge box shows the shared failure summary on Conversation…
     expect(await screen.findByText(/some checks were not successful/i)).toBeInTheDocument();
     // …and the Checks tab lists the commit-status contexts + check runs.
-    fireEvent.click(screen.getByRole("tab", { name: "Checks" }));
+    fireEvent.click(screen.getByRole("tab", { name: /^Checks/ }));
     expect(await screen.findByText(/ci\/lint/)).toBeInTheDocument();
     expect(screen.getByText(/lint failed/)).toBeInTheDocument();
     expect(screen.getByText("build")).toBeInTheDocument();
@@ -811,7 +843,7 @@ describe("PullsPage detail sub-tabs", () => {
 });
 
 describe("PullsPage merge box", () => {
-  it("merges with the selected method (squash) via the merge endpoint", async () => {
+  it("merges with the selected method (squash), sending the editable commit title", async () => {
     mockPRApis((u, init) => {
       if (u.endsWith("/pulls/9/merge") && init?.method === "PUT") {
         return jsonResponse({ merged: true });
@@ -819,15 +851,82 @@ describe("PullsPage merge box", () => {
       return undefined;
     });
     renderAt("/ui/repos/admin/test/pulls/9");
-    await screen.findByText("Feature PR");
+    await screen.findByRole("heading", { name: /Feature PR/ });
 
+    // GitHub's two-step flow: the merge button opens a confirmation panel
+    // with the method-specific default commit title, then Confirm merges.
     fireEvent.change(screen.getByLabelText("Merge method"), { target: { value: "squash" } });
-    fireEvent.click(screen.getByRole("button", { name: /squash and merge/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^squash and merge$/i }));
+    expect(screen.getByLabelText("Commit title")).toHaveValue("Feature PR (#9)");
+    fireEvent.click(screen.getByRole("button", { name: /confirm squash and merge/i }));
     await waitFor(() => {
       expect(findCall("/pulls/9/merge", "PUT")).toBeDefined();
     });
     const init = findCall("/pulls/9/merge", "PUT");
-    expect(JSON.parse(String(init?.body))).toEqual({ merge_method: "squash" });
+    expect(JSON.parse(String(init?.body))).toEqual({
+      merge_method: "squash",
+      commit_title: "Feature PR (#9)",
+    });
+  });
+
+  it("stays on the PR after merging and offers Delete branch in the merged box", async () => {
+    let merged = false;
+    mockPRApis((u, init) => {
+      if (u.endsWith("/pulls/9/merge") && init?.method === "PUT") {
+        merged = true;
+        return jsonResponse({ merged: true });
+      }
+      if (u.endsWith("/pulls/9") && init?.method === undefined) {
+        return jsonResponse(pr(9, "Feature PR", { merged, merged_at: merged ? "2026-01-03T00:00:00Z" : null }));
+      }
+      if (u.includes("/branches?")) {
+        return jsonResponse([{ name: "main" }, { name: "feature" }]);
+      }
+      if (u.endsWith("/git/refs/heads/feature") && init?.method === "DELETE") {
+        return new Response(null, { status: 204 });
+      }
+      return undefined;
+    });
+    renderAt("/ui/repos/admin/test/pulls/9");
+    await screen.findByRole("heading", { name: /Feature PR/ });
+
+    fireEvent.click(screen.getByRole("button", { name: /^merge pull request$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^confirm merge$/i }));
+
+    // Refetch flips the page into the merged state without navigating away.
+    expect(await screen.findByText(/successfully merged and closed/i)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /Feature PR/ })).toBeInTheDocument();
+
+    // The merged box offers deleting the (still existing) head branch.
+    fireEvent.click(await screen.findByRole("button", { name: /^delete branch$/i }));
+    await waitFor(() => {
+      expect(findCall("/git/refs/heads/feature", "DELETE")).toBeDefined();
+    });
+  });
+
+  it("offers Restore branch when the merged PR's head branch is gone", async () => {
+    mockPRApis((u, init) => {
+      if (u.endsWith("/pulls/9") && init?.method === undefined) {
+        return jsonResponse(pr(9, "Feature PR", { merged: true, merged_at: "2026-01-03T00:00:00Z" }));
+      }
+      if (u.includes("/branches?")) {
+        return jsonResponse([{ name: "main" }]);
+      }
+      if (u.endsWith("/git/refs") && init?.method === "POST") {
+        return jsonResponse({ ref: "refs/heads/feature", object: { sha: "abc" } }, 201);
+      }
+      return undefined;
+    });
+    renderAt("/ui/repos/admin/test/pulls/9");
+
+    fireEvent.click(await screen.findByRole("button", { name: /^restore branch$/i }));
+    await waitFor(() => {
+      expect(findCall("/git/refs", "POST")).toBeDefined();
+    });
+    expect(JSON.parse(String(findCall("/git/refs", "POST")?.body))).toEqual({
+      ref: "refs/heads/feature",
+      sha: "abc",
+    });
   });
 });
 
@@ -877,7 +976,9 @@ describe("PullsPage conversation timeline", () => {
     expect(screen.getByText(/assigned/)).toBeInTheDocument();
     expect(screen.getByText("bob")).toBeInTheDocument();
     expect(screen.getByText(/approved these changes/)).toBeInTheDocument();
-    expect(screen.getByText("alice")).toBeInTheDocument();
+    // alice appears in the review row and again in the sidebar participants
+    // (reviewers count as participants).
+    expect(screen.getAllByText("alice").length).toBeGreaterThanOrEqual(1);
   });
 });
 
@@ -989,8 +1090,10 @@ describe("PullsPage write actions", () => {
     renderAt("/ui/repos/admin/test/pulls/9");
     const box = await screen.findByPlaceholderText(/leave a comment/i);
     fireEvent.change(box, { target: { value: "nice" } });
-    const composer = box.closest("div") as HTMLElement;
-    fireEvent.click(within(composer).getByRole("button", { name: /^comment$/i }));
+    // The composer is now a MarkdownComposer (Write/Preview + toolbar), so the
+    // textarea's nearest div is an inner tabpanel — find the submit button by
+    // its exact accessible name instead.
+    fireEvent.click(screen.getByRole("button", { name: /^comment$/i }));
     await waitFor(() => expect(findCall("/issues/9/comments", "POST")).toBeDefined());
     expect(JSON.parse(String(findCall("/issues/9/comments", "POST")?.body))).toEqual({ body: "nice" });
   });
@@ -1063,5 +1166,237 @@ describe("PullsPage development / closing issues", () => {
 
     const link = await screen.findByRole("link", { name: /#5\s+Fix the bug/ });
     expect(link).toHaveAttribute("href", "/ui/repos/admin/test/issues/5");
+  });
+});
+
+describe("PullsPage commits tab", () => {
+  it("links each commit SHA to the commit page with author avatar context", async () => {
+    mockPRApis((u) => {
+      if (u.endsWith("/pulls/9/commits")) {
+        return jsonResponse([
+          {
+            sha: "abcdef1234567890",
+            commit: {
+              message: "Add feature\n\nlong body",
+              author: { name: "Ada", date: "2026-01-05T00:00:00Z" },
+            },
+            author: { login: "ada", avatar_url: "" },
+          },
+        ]);
+      }
+      return undefined;
+    });
+    renderAt("/ui/repos/admin/test/pulls/9/commits");
+
+    expect(await screen.findByText("Add feature")).toBeInTheDocument();
+    const link = screen.getByRole("link", { name: "abcdef1" });
+    expect(link).toHaveAttribute("href", "/ui/repos/admin/test/commits/abcdef1234567890");
+    expect(screen.getByText(/ada committed/)).toBeInTheDocument();
+  });
+});
+
+describe("PullsPage unified conversation stream", () => {
+  it("renders each review once, chronologically, with inline threads nested in its card", async () => {
+    mockPRApis((u, init) => {
+      if (u.endsWith("/issues/9/timeline")) {
+        return jsonResponse([
+          {
+            event: "commented",
+            id: 21,
+            user: { login: "admin", avatar_url: "" },
+            body: "later comment",
+            created_at: "2026-01-02T00:00:00Z",
+          },
+          {
+            event: "reviewed",
+            id: 7,
+            user: { login: "alice", avatar_url: "" },
+            state: "APPROVED",
+            body: "ship it",
+            submitted_at: "2026-01-01T00:00:00Z",
+          },
+        ]);
+      }
+      if (u.endsWith("/pulls/9/reviews") && init?.method === undefined) {
+        return jsonResponse([
+          review(7, "alice", "APPROVED", { body: "ship it", submitted_at: "2026-01-01T00:00:00Z" }),
+        ]);
+      }
+      if (u.endsWith("/pulls/9/comments") && init?.method === undefined) {
+        return jsonResponse([
+          {
+            id: 31,
+            pull_request_review_id: 7,
+            diff_hunk: "@@ -1 +1 @@\n+x",
+            path: "main.go",
+            line: 1,
+            side: "RIGHT",
+            body: "inline note",
+            user: { login: "alice", avatar_url: "" },
+            created_at: "2026-01-01T00:00:00Z",
+            updated_at: "2026-01-01T00:00:00Z",
+          },
+        ]);
+      }
+      return undefined;
+    });
+    renderAt("/ui/repos/admin/test/pulls/9");
+
+    expect(await screen.findByText("ship it")).toBeInTheDocument();
+    // The timeline "reviewed" row and the reviews-endpoint copy dedupe into
+    // exactly one review card…
+    expect(screen.getAllByText("Approved").length).toBe(1);
+    // …with the review's inline thread nested inside it — no separate stacked
+    // "Review comments" / "Reviews" sections anymore.
+    expect(screen.getByText("inline note")).toBeInTheDocument();
+    expect(screen.queryByText("Review comments")).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Reviews$/)).not.toBeInTheDocument();
+    // Chronology: the Jan-1 review precedes the Jan-2 conversation comment.
+    const pos = screen
+      .getByText("ship it")
+      .compareDocumentPosition(screen.getByText("later comment"));
+    expect(pos & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});
+
+describe("PullsPage list filters", () => {
+  function listMock(prs: unknown[]) {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.includes("/issues")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/pulls?")) return Promise.resolve(jsonResponse(prs));
+      return Promise.resolve(jsonResponse([]));
+    });
+  }
+
+  it("filters by assignee and milestone from the list payload", async () => {
+    listMock([
+      pr(1, "assigned pr", {
+        assignees: [{ login: "carol" }],
+        milestone: { number: 1, title: "v1", state: "open" },
+      }),
+      pr(2, "other pr"),
+    ]);
+    renderAt("/ui/repos/admin/test/pulls");
+    await screen.findByText("assigned pr");
+
+    fireEvent.change(screen.getByLabelText("Assignee"), { target: { value: "carol" } });
+    await waitFor(() => expect(screen.queryByText("other pr")).not.toBeInTheDocument());
+    expect(screen.getByText("assigned pr")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Assignee"), { target: { value: "" } });
+    fireEvent.change(screen.getByLabelText("Milestones"), { target: { value: "v1" } });
+    await waitFor(() => expect(screen.queryByText("other pr")).not.toBeInTheDocument());
+    expect(screen.getByText("assigned pr")).toBeInTheDocument();
+  });
+
+  it('maps the "Most commented" sort to the pulls endpoint\'s popularity sort', async () => {
+    listMock([pr(1, "first pr")]);
+    renderAt("/ui/repos/admin/test/pulls");
+    await screen.findByText("first pr");
+
+    fireEvent.change(screen.getByLabelText("Sort"), { target: { value: "comments" } });
+    await waitFor(() => {
+      const calls = mockFetch.mock.calls.map((c) => c[0]!.toString());
+      expect(calls.some((u) => u.includes("/pulls?") && u.includes("sort=popularity"))).toBe(true);
+    });
+    // GitHub's /pulls endpoint rejects sort=comments (that's the issues
+    // dialect) — it must never be sent.
+    const calls = mockFetch.mock.calls.map((c) => c[0]!.toString());
+    expect(calls.some((u) => u.includes("sort=comments"))).toBe(false);
+  });
+});
+
+describe("PullsPage compare deep-link", () => {
+  it("opens the create-PR modal prefilled from ?compare=base...head", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith("/pulls") && init?.method === "POST") {
+        return Promise.resolve(jsonResponse(pr(50, "From compare")));
+      }
+      if (u.includes("/branches")) {
+        return Promise.resolve(jsonResponse([{ name: "main" }, { name: "feature" }]));
+      }
+      if (u.includes("/issues")) return Promise.resolve(jsonResponse([]));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/test/pulls?compare=main...feature");
+
+    // The modal opens on its own with base/head prefilled once the branch
+    // options load.
+    await screen.findAllByRole("option", { name: "feature" });
+    expect(screen.getByLabelText(/^base$/i)).toHaveValue("main");
+    expect(screen.getByLabelText(/^compare$/i)).toHaveValue("feature");
+
+    fireEvent.change(screen.getByLabelText(/^title$/i), { target: { value: "From compare" } });
+    fireEvent.click(screen.getByRole("button", { name: /^create pull request$/i }));
+    await waitFor(() => {
+      const posted = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/pulls") && c[1]?.method === "POST",
+      );
+      expect(posted).toBeTruthy();
+      expect(JSON.parse((posted![1] as RequestInit).body as string)).toMatchObject({
+        head: "feature",
+        base: "main",
+      });
+    });
+  });
+});
+
+describe("PullsPage detail bootstrap", () => {
+  it("hydrates the conversation from the pull bootstrap with no standalone refetches", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.includes("/ui-data/bootstrap/repos/admin/test/pulls/9")) {
+        return Promise.resolve(
+          jsonResponse({
+            pull: pr(9, "Bootstrapped PR"),
+            timeline: [],
+            comments: [],
+            reviews: [],
+            review_comments: [],
+            requested_reviewers: emptyReviewers,
+            check_runs: noChecks,
+            combined_status: emptyStatus,
+            files_summary: { changed_files: 1, additions: 2, deletions: 0 },
+          }),
+        );
+      }
+      if (u.endsWith("/api/graphql") && init?.method === "POST") {
+        return Promise.resolve(
+          jsonResponse({ data: { repository: { pullRequest: { reviewThreads: { nodes: [] } } } } }),
+        );
+      }
+      if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse(viewer));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/test/pulls/9");
+    expect(await screen.findByText("Bootstrapped PR")).toBeInTheDocument();
+
+    // Every sub-payload the bootstrap carried must be a cache hit — none of
+    // the standalone endpoints those hooks call may have been fetched.
+    const gets = mockFetch.mock.calls
+      .filter((c) => (c[1] as RequestInit | undefined)?.method === undefined)
+      .map((c) => c[0]!.toString());
+    expect(gets.some((u) => u.includes("/api/v3/") && u.endsWith("/pulls/9"))).toBe(false);
+    expect(gets.some((u) => u.includes("/pulls/9/reviews"))).toBe(false);
+    expect(gets.some((u) => u.includes("/pulls/9/comments"))).toBe(false);
+    expect(gets.some((u) => u.includes("/issues/9/timeline"))).toBe(false);
+    expect(gets.some((u) => u.includes("/pulls/9/requested_reviewers"))).toBe(false);
+    expect(gets.some((u) => u.includes("/check-runs"))).toBe(false);
+    expect(gets.some((u) => u.includes("/commits/abc/status"))).toBe(false);
+  });
+
+  it("falls back to the standalone endpoints when the bootstrap answers 500", async () => {
+    mockPRApis((u) => {
+      if (u.includes("/ui-data/bootstrap/")) return jsonResponse({ message: "boom" }, 500);
+      return undefined;
+    });
+    renderAt("/ui/repos/admin/test/pulls/9");
+    expect(await screen.findByText("Feature PR")).toBeInTheDocument();
+    const gets = mockFetch.mock.calls
+      .filter((c) => (c[1] as RequestInit | undefined)?.method === undefined)
+      .map((c) => c[0]!.toString());
+    expect(gets.some((u) => u.includes("/api/v3/") && u.endsWith("/pulls/9"))).toBe(true);
   });
 });

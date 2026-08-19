@@ -25,7 +25,7 @@ import {
   fetchDeploymentsPage,
   clearToken,
 } from "../api.js";
-import { decodeContentsBase64 } from "../utils/workflowDispatch.js";
+import { decodeContentsBase64 } from "../utils/contents.js";
 
 const mockFetch = vi.fn();
 globalThis.fetch = mockFetch;

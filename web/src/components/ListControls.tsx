@@ -14,6 +14,10 @@ export interface ListItemAccessors<T> {
   comments: (item: T) => number;
   createdAt: (item: T) => string;
   updatedAt: (item: T) => string;
+  /** Haystack for the free-text filter (title + body). Optional: when the
+   * caller doesn't provide it, free-text terms are kept in the box but the
+   * client-side substring filter is skipped. */
+  text?: (item: T) => string;
 }
 
 export const emptyFilters: ListFilterState = {
@@ -22,6 +26,10 @@ export const emptyFilters: ListFilterState = {
   assignee: null,
   milestone: null,
   sort: "newest",
+  text: null,
+  noLabel: false,
+  noMilestone: false,
+  noAssignee: false,
 };
 
 /** Map the UI sort choice to the server's sort + direction query params. */
@@ -59,6 +67,25 @@ export function filterAndSortItems<T>(
   if (filters.milestone) {
     out = out.filter((i) => acc.milestone(i) === filters.milestone);
   }
+  if (filters.noLabel) {
+    out = out.filter((i) => acc.labels(i).length === 0);
+  }
+  if (filters.noMilestone) {
+    out = out.filter((i) => acc.milestone(i) === null);
+  }
+  if (filters.noAssignee) {
+    out = out.filter((i) => acc.assignees(i).length === 0);
+  }
+  const text = (filters.text ?? "").trim().toLowerCase();
+  if (text && acc.text) {
+    // Every free-text term must appear somewhere in the haystack, the way
+    // github.com ANDs search terms.
+    const terms = text.split(/\s+/);
+    out = out.filter((i) => {
+      const hay = acc.text!(i).toLowerCase();
+      return terms.every((t) => hay.includes(t));
+    });
+  }
   const sorted = [...out];
   sorted.sort((a, b) => {
     switch (filters.sort) {
@@ -85,6 +112,10 @@ function composeQuery(kind: "issue" | "pr", state: "open" | "closed" | "all", f:
   if (f.author) tokens.push(`author:${f.author}`);
   if (f.assignee) tokens.push(`assignee:${f.assignee}`);
   if (f.milestone) tokens.push(`milestone:${quoteToken(f.milestone)}`);
+  if (f.noLabel) tokens.push("no:label");
+  if (f.noMilestone) tokens.push("no:milestone");
+  if (f.noAssignee) tokens.push("no:assignee");
+  if (f.text?.trim()) tokens.push(f.text.trim());
   return tokens.join(" ");
 }
 
@@ -92,8 +123,13 @@ function quoteToken(v: string): string {
   return /\s/.test(v) ? `"${v}"` : v;
 }
 
-/** Parse a GitHub-style query back into filter state (state + dimensions). */
-function parseQuery(
+/**
+ * Parse a GitHub-style query back into filter state (state + dimensions).
+ * Anything that isn't a recognised qualifier — bare words and unknown
+ * `key:value` tokens alike — is kept as free text rather than silently
+ * dropped, and applied as a title/body substring filter.
+ */
+export function parseQuery(
   raw: string,
 ): { state?: "open" | "closed" | undefined; filters: Partial<ListFilterState> } {
   const filters: Partial<ListFilterState> = {
@@ -101,16 +137,29 @@ function parseQuery(
     author: null,
     assignee: null,
     milestone: null,
+    text: null,
+    noLabel: false,
+    noMilestone: false,
+    noAssignee: false,
   };
   let state: "open" | "closed" | undefined;
-  const tokenRe = /(\w+):("[^"]*"|\S+)/g;
+  const freeText: string[] = [];
+  // Tokenise on whitespace, keeping quoted qualifier values intact.
+  const tokenRe = /(?:(\w+):("[^"]*"|\S+))|(\S+)/g;
   let m: RegExpExecArray | null;
   while ((m = tokenRe.exec(raw)) !== null) {
+    if (m[3] !== undefined) {
+      freeText.push(m[3]);
+      continue;
+    }
     const key = m[1];
     const val = m[2]!.replace(/^"|"$/g, "");
     switch (key) {
       case "is":
+      case "state":
         if (val === "open" || val === "closed") state = val;
+        // is:issue / is:pr restate the page, so they are neither filters
+        // nor free text.
         break;
       case "label":
         filters.label = val;
@@ -124,8 +173,18 @@ function parseQuery(
       case "milestone":
         filters.milestone = val;
         break;
+      case "no":
+        if (val === "label") filters.noLabel = true;
+        else if (val === "milestone") filters.noMilestone = true;
+        else if (val === "assignee") filters.noAssignee = true;
+        else freeText.push(m[0]!);
+        break;
+      default:
+        // Unknown qualifier — keep it as free text, never drop input.
+        freeText.push(m[0]!);
     }
   }
+  filters.text = freeText.length > 0 ? freeText.join(" ") : null;
   return { state, filters };
 }
 

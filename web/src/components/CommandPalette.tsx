@@ -40,10 +40,14 @@ function staticTargets(viewerLogin?: string): CmdItem[] {
   if (viewerLogin) {
     items.push({ id: "s-profile", label: "Your profile", sublabel: viewerLogin, icon: <PeopleIcon size={16} />, to: `/ui/${viewerLogin}`, group: "Go to" });
   }
+  // Viewer-scoped like the header quick links: signed in, Issues / Pull
+  // requests jump to "yours" via search qualifiers.
+  const issuesQ = viewerLogin ? `is:issue author:${viewerLogin}` : "is:issue";
+  const pullsQ = viewerLogin ? `is:pr author:${viewerLogin}` : "is:pr";
   items.push(
     { id: "s-repos", label: "Your repositories", icon: <RepoIcon size={16} />, to: "/ui/repos", group: "Go to" },
-    { id: "s-issues", label: "Issues", icon: <IssueOpenedIcon size={16} />, to: "/ui/search?type=issues&q=is%3Aissue", group: "Go to" },
-    { id: "s-pulls", label: "Pull requests", icon: <PullRequestIcon size={16} />, to: "/ui/search?type=issues&q=is%3Apr", group: "Go to" },
+    { id: "s-issues", label: viewerLogin ? "Your issues" : "Issues", icon: <IssueOpenedIcon size={16} />, to: `/ui/search?type=issues&q=${encodeURIComponent(issuesQ)}`, group: "Go to" },
+    { id: "s-pulls", label: viewerLogin ? "Your pull requests" : "Pull requests", icon: <PullRequestIcon size={16} />, to: `/ui/search?type=issues&q=${encodeURIComponent(pullsQ)}`, group: "Go to" },
     { id: "s-notifications", label: "Notifications", icon: <NotificationBellIcon size={16} />, to: "/ui/notifications", group: "Go to" },
     { id: "s-explore", label: "Explore", icon: <SearchIcon size={16} />, to: "/ui/search", group: "Go to" },
     { id: "s-marketplace", label: "Marketplace", icon: <PackageIcon size={16} />, to: "/ui/marketplace", group: "Go to" },

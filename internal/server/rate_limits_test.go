@@ -2,6 +2,7 @@ package bleephub
 
 import (
 	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -225,21 +226,90 @@ func TestAnonymousRateBucketIgnoresForwardedHeaderFromPublicPeer(t *testing.T) {
 	}
 }
 
-func TestBrowserSessionGetsAuthenticatedUserBudget(t *testing.T) {
+// TestBrowserSessionDoesNotConsumeCoreBudget pins the first-party UI
+// exemption: a request authenticated by the browser session cookie (no
+// Authorization header, principal resolved from the session) observes the
+// authenticated core window read-only instead of spending from it — GitHub's
+// own web UI does not bill page loads against API quota, and the SPA fires
+// 16-23 calls per page.
+func TestBrowserSessionDoesNotConsumeCoreBudget(t *testing.T) {
 	server := &Server{rateLimits: map[string]*apiRateWindow{}}
 	user := &store.User{ID: 42, Login: "browser-user"}
-	first := httptest.NewRequest(http.MethodGet, "/api/v3/user", nil)
-	first = first.WithContext(contextWithUser(first.Context(), user))
-	second := httptest.NewRequest(http.MethodGet, "/api/v3/notifications", nil)
-	second = second.WithContext(contextWithUser(second.Context(), user))
-
-	got := server.rateLimitSnapshot(first, "core", true)
-	if got.Limit != 5000 || got.Remaining != 4999 {
-		t.Fatalf("browser session core snapshot = %+v, want authenticated budget", got)
+	sessionRequest := func(target string) *http.Request {
+		req := httptest.NewRequest(http.MethodGet, target, nil)
+		return req.WithContext(contextWithUser(req.Context(), user))
 	}
-	got = server.rateLimitSnapshot(second, "core", true)
-	if got.Used != 2 || got.Remaining != 4998 {
-		t.Fatalf("same user in another browser request did not share its budget: %+v", got)
+
+	// A whole page-crawl's worth of session calls leaves core untouched, with
+	// honest headers: the authenticated limit, remaining pinned.
+	for i := 0; i < 100; i++ {
+		got := server.rateLimitSnapshot(sessionRequest("/api/v3/user"), "core", true)
+		if got.Limit != 5000 || got.Used != 0 || got.Remaining != 5000 || got.Exceeded {
+			t.Fatalf("session core snapshot after %d calls = %+v, want read-only 5000 window", i+1, got)
+		}
+	}
+
+	// A 304 refund for a session request must not mint a unit that was never
+	// consumed.
+	refunded := server.refundRateLimit(sessionRequest("/api/v3/user"), "core")
+	if refunded.Used != 0 || refunded.Remaining != 5000 {
+		t.Fatalf("session core refund = %+v, want untouched window", refunded)
+	}
+
+	// /rate_limit for the session reflects the non-consumption.
+	recorder := httptest.NewRecorder()
+	server.handleGHRateLimit(recorder, sessionRequest("/api/v3/rate_limit"))
+	if recorder.Code != 200 {
+		t.Fatalf("rate_limit status = %d", recorder.Code)
+	}
+	var rateLimitBody struct {
+		Rate struct {
+			Limit     int `json:"limit"`
+			Used      int `json:"used"`
+			Remaining int `json:"remaining"`
+		} `json:"rate"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &rateLimitBody); err != nil {
+		t.Fatalf("decode /rate_limit body: %v", err)
+	}
+	if rateLimitBody.Rate.Limit != 5000 || rateLimitBody.Rate.Used != 0 || rateLimitBody.Rate.Remaining != 5000 {
+		t.Fatalf("session /rate_limit core = %+v, want untouched 5000 window", rateLimitBody.Rate)
+	}
+
+	// Non-core session budgets guard expensive scans and still bill: search
+	// consumes down to its authenticated limit and then refuses.
+	for i := 0; i < 30; i++ {
+		got := server.rateLimitSnapshot(sessionRequest("/api/v3/search/repositories?q=x"), "search", true)
+		if got.Limit != 30 || got.Used != i+1 || got.Exceeded {
+			t.Fatalf("session search snapshot %d = %+v", i+1, got)
+		}
+	}
+	if got := server.rateLimitSnapshot(sessionRequest("/api/v3/search/repositories?q=x"), "search", true); !got.Exceeded {
+		t.Fatalf("session search past the budget = %+v, want Exceeded", got)
+	}
+}
+
+// TestBrowserSessionCoreExemptionDoesNotLeakToOtherCallers pins that the
+// exemption is scoped to the session-cookie branch: a PAT presented by the
+// same user and an anonymous caller both keep consuming core exactly as
+// before.
+func TestBrowserSessionCoreExemptionDoesNotLeakToOtherCallers(t *testing.T) {
+	server := &Server{rateLimits: map[string]*apiRateWindow{}}
+	user := &store.User{ID: 42, Login: "browser-user"}
+
+	// A token-authenticated request from the same principal still bills its
+	// credential's window — even with the session user in context.
+	pat := httptest.NewRequest(http.MethodGet, "/api/v3/user", nil)
+	pat.Header.Set("Authorization", "token some-pat")
+	pat = pat.WithContext(contextWithUser(pat.Context(), user))
+	if got := server.rateLimitSnapshot(pat, "core", true); got.Used != 1 || got.Remaining != 4999 {
+		t.Fatalf("PAT core snapshot = %+v, want consumed authenticated window", got)
+	}
+
+	// Anonymous callers keep the small IP-scoped consuming budget.
+	anon := httptest.NewRequest(http.MethodGet, "/api/v3/users/octocat", nil)
+	if got := server.rateLimitSnapshot(anon, "core", true); got.Limit != 60 || got.Used != 1 {
+		t.Fatalf("anonymous core snapshot = %+v, want consumed 60 window", got)
 	}
 }
 

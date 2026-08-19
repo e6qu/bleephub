@@ -1,13 +1,21 @@
 import { useCallback, useEffect, useState } from "react";
 
-export type Theme = "light" | "dark";
+/** "system" follows the OS preference live; light/dark are explicit overrides. */
+export type Theme = "light" | "dark" | "system";
+/** The concrete theme actually painted on the page. */
+export type ResolvedTheme = "light" | "dark";
 
 const STORAGE_KEY = "bleephub:theme";
 
-function readInitialTheme(fallback: Theme): Theme {
-  if (typeof window === "undefined") return fallback;
+function readStoredTheme(): Theme {
+  if (typeof window === "undefined") return "system";
   const stored = window.localStorage.getItem(STORAGE_KEY);
-  if (stored === "light" || stored === "dark") return stored;
+  // Only explicit overrides are persisted; absence of the key means "system".
+  return stored === "light" || stored === "dark" ? stored : "system";
+}
+
+function systemTheme(fallback: ResolvedTheme): ResolvedTheme {
+  if (typeof window === "undefined") return fallback;
   // Honour an explicit OS preference in either direction; only when the
   // OS expresses none do we use the caller's fallback. Operator tools pass
   // "dark" (the brutalist design-system default); bleephub passes "light"
@@ -17,7 +25,7 @@ function readInitialTheme(fallback: Theme): Theme {
   return fallback;
 }
 
-function applyTheme(theme: Theme) {
+function applyTheme(theme: ResolvedTheme) {
   if (typeof document === "undefined") return;
   const root = document.documentElement;
   if (theme === "dark") root.classList.add("dark");
@@ -26,35 +34,50 @@ function applyTheme(theme: Theme) {
 }
 
 /**
- * useTheme reads the current theme + lets callers flip it.
+ * useTheme reads the current theme + lets callers change it.
  *
- * Resolution order on first mount: localStorage → prefers-color-scheme
- * media query → `defaultTheme` (caller-supplied; "dark" for operator
- * tools, "light" for bleephub). Once the user picks a theme it persists
- * until they pick the other one.
+ * `theme` is the user's choice ("light" | "dark" | "system"); `resolvedTheme`
+ * is what is actually painted. Picking "system" clears the localStorage
+ * override and tracks `prefers-color-scheme` live via a matchMedia listener;
+ * picking light/dark persists that override until changed.
  */
 export function useTheme(
-  defaultTheme: Theme = "dark",
-): { theme: Theme; setTheme: (t: Theme) => void; toggle: () => void } {
-  const [theme, setThemeState] = useState<Theme>(() => readInitialTheme(defaultTheme));
+  defaultTheme: ResolvedTheme = "dark",
+): { theme: Theme; resolvedTheme: ResolvedTheme; setTheme: (t: Theme) => void; toggle: () => void } {
+  const [theme, setThemeState] = useState<Theme>(readStoredTheme);
+  const [systemResolved, setSystemResolved] = useState<ResolvedTheme>(() => systemTheme(defaultTheme));
 
-  // Apply on mount + whenever theme changes. The initial apply matters
-  // because tokens.css's `.dark` class is the only switch the design
+  const resolvedTheme = theme === "system" ? systemResolved : theme;
+
+  // Track the OS preference live while in system mode. The re-sync on entering
+  // system mode matters: the OS may have flipped while an override was active.
+  useEffect(() => {
+    if (theme !== "system" || typeof window === "undefined") return;
+    setSystemResolved(systemTheme(defaultTheme));
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const onChange = () => setSystemResolved(systemTheme(defaultTheme));
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, [theme, defaultTheme]);
+
+  // Apply on mount + whenever the resolved theme changes. The initial apply
+  // matters because tokens.css's `.dark` class is the only switch the design
   // system listens to.
   useEffect(() => {
-    applyTheme(theme);
-  }, [theme]);
+    applyTheme(resolvedTheme);
+  }, [resolvedTheme]);
 
   const setTheme = useCallback((next: Theme) => {
     if (typeof window !== "undefined") {
-      window.localStorage.setItem(STORAGE_KEY, next);
+      if (next === "system") window.localStorage.removeItem(STORAGE_KEY);
+      else window.localStorage.setItem(STORAGE_KEY, next);
     }
     setThemeState(next);
   }, []);
 
   const toggle = useCallback(() => {
-    setTheme(theme === "dark" ? "light" : "dark");
-  }, [theme, setTheme]);
+    setTheme(resolvedTheme === "dark" ? "light" : "dark");
+  }, [resolvedTheme, setTheme]);
 
-  return { theme, setTheme, toggle };
+  return { theme, resolvedTheme, setTheme, toggle };
 }

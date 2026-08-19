@@ -2,7 +2,9 @@ package bleephub
 
 import (
 	"net/http"
+	"strconv"
 	"time"
+	"unicode/utf8"
 
 	"github.com/e6qu/bleephub/internal/store"
 )
@@ -20,6 +22,8 @@ func (s *Server) registerGHWikiRoutes() {
 	s.route("GET /ui-data/repos/{owner}/{repo}/wiki/pages/{slug}", s.handleGetWikiPage)
 	s.route("PUT /ui-data/repos/{owner}/{repo}/wiki/pages/{slug}", s.handlePutWikiPage)
 	s.route("DELETE /ui-data/repos/{owner}/{repo}/wiki/pages/{slug}", s.handleDeleteWikiPage)
+	s.route("GET /ui-data/repos/{owner}/{repo}/wiki/pages/{slug}/revisions", s.handleListWikiPageRevisions)
+	s.route("GET /ui-data/repos/{owner}/{repo}/wiki/pages/{slug}/revisions/{revision_id}", s.handleGetWikiPageRevision)
 }
 
 // wikiRepoForRead resolves the repo and enforces read access + wiki-enabled,
@@ -95,6 +99,8 @@ func (s *Server) handlePutWikiPage(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Title string `json:"title"`
 		Body  string `json:"body"`
+		// Message is the optional edit summary recorded on the revision.
+		Message string `json:"message"`
 	}
 	if !decodeJSONBody(w, r, &req) {
 		return
@@ -109,7 +115,7 @@ func (s *Server) handlePutWikiPage(w http.ResponseWriter, r *http.Request) {
 	if u := ghUserFromContext(r.Context()); u != nil {
 		author = u.Login
 	}
-	page := s.store.UpsertWikiPage(repo.FullName, slug, req.Title, req.Body, author)
+	page := s.store.UpsertWikiPage(repo.FullName, slug, req.Title, req.Body, author, req.Message)
 	status := http.StatusOK
 	if !existed {
 		status = http.StatusCreated
@@ -127,6 +133,77 @@ func (s *Server) handleDeleteWikiPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleListWikiPageRevisions lists a page's edit history newest first. Rows
+// carry a short body preview rather than the full body; the single-revision
+// read below returns the complete snapshot.
+func (s *Server) handleListWikiPageRevisions(w http.ResponseWriter, r *http.Request) {
+	repo := s.wikiRepoForRead(w, r)
+	if repo == nil {
+		return
+	}
+	slug := store.WikiSlug(r.PathValue("slug"))
+	if s.store.GetWikiPage(repo.FullName, slug) == nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	revisions := s.store.ListWikiPageRevisions(repo.FullName, slug)
+	out := make([]map[string]interface{}, 0, len(revisions))
+	for _, rev := range revisions {
+		item := wikiRevisionJSON(rev, false)
+		item["body_preview"] = wikiBodyPreview(rev.Body)
+		out = append(out, item)
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) handleGetWikiPageRevision(w http.ResponseWriter, r *http.Request) {
+	repo := s.wikiRepoForRead(w, r)
+	if repo == nil {
+		return
+	}
+	slug := store.WikiSlug(r.PathValue("slug"))
+	id, err := strconv.Atoi(r.PathValue("revision_id"))
+	if err != nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	rev := s.store.GetWikiPageRevision(repo.FullName, slug, id)
+	if rev == nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	writeJSON(w, http.StatusOK, wikiRevisionJSON(rev, true))
+}
+
+func wikiRevisionJSON(rev *store.WikiPageRevision, withBody bool) map[string]interface{} {
+	out := map[string]interface{}{
+		"id":         rev.ID,
+		"slug":       rev.Slug,
+		"title":      rev.Title,
+		"editor":     rev.Editor,
+		"message":    rev.Message,
+		"created_at": rev.CreatedAt.Format(time.RFC3339),
+	}
+	if withBody {
+		out["body"] = rev.Body
+	}
+	return out
+}
+
+// wikiBodyPreview truncates a revision body to a short listing preview on a
+// rune boundary.
+func wikiBodyPreview(body string) string {
+	const max = 140
+	if len(body) <= max {
+		return body
+	}
+	cut := max
+	for cut > 0 && !utf8.RuneStart(body[cut]) {
+		cut--
+	}
+	return body[:cut] + "…"
 }
 
 func wikiPageJSON(p *store.WikiPage) map[string]interface{} {

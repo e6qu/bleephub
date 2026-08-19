@@ -39,6 +39,9 @@ func cloneDiscussionComment(x *DiscussionComment) *DiscussionComment {
 	}
 	c := *x
 	c.LastEditedAt = cloneTimePtr(x.LastEditedAt)
+	if x.UpvoterIDs != nil {
+		c.UpvoterIDs = append([]int(nil), x.UpvoterIDs...)
+	}
 	return &c
 }
 

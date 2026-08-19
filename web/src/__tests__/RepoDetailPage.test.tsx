@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, cleanup, screen, waitFor, fireEvent, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Routes, Route } from "react-router";
-import { RepoCommitPage, RepoDetailPage, RepoFilePage } from "../pages/RepoDetailPage.js";
+import { RepoCommitPage, RepoComparePage, RepoDetailPage, RepoFilePage } from "../pages/RepoDetailPage.js";
 
 const mockFetch = vi.fn();
 globalThis.fetch = mockFetch;
@@ -35,6 +35,7 @@ function renderPage(path = "/ui/repos/admin/test") {
           <Route path="/ui/repos/:owner/:repo/commits/:sha" element={<RepoCommitPage />} />
           <Route path="/ui/repos/:owner/:repo/tree/:ref/*" element={<RepoDetailPage />} />
           <Route path="/ui/repos/:owner/:repo/blob/:ref/*" element={<RepoFilePage />} />
+          <Route path="/ui/repos/:owner/:repo/compare/:range" element={<RepoComparePage />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -149,10 +150,9 @@ describe("RepoDetailPage releases", () => {
       expect(screen.getByText("Draft release")).toBeInTheDocument();
     });
     expect(screen.getByText("draft")).toBeInTheDocument();
-    // the published release still shows its real date
-    expect(
-      screen.getByText(`published ${new Date("2026-02-01T00:00:00Z").toLocaleDateString()}`),
-    ).toBeInTheDocument();
+    // the published release still shows a real (relative) date
+    const published = screen.getByText(/published/);
+    expect(published.querySelector("time")).toHaveAttribute("dateTime", "2026-02-01T00:00:00Z");
     // no zero-time rendering anywhere
     expect(screen.queryByText(/1970/)).not.toBeInTheDocument();
   });
@@ -564,8 +564,14 @@ describe("repository detail journeys", () => {
     mockFetch.mockImplementation((url: RequestInfo | URL) => routedFetch(url));
     renderPage("/ui/repos/admin/test/blob/main/README.md");
 
-    expect(await screen.findByText("admin/test")).toBeInTheDocument();
-    expect(screen.getByText(/extra detail/)).toBeInTheDocument();
+    // Per-segment breadcrumbs: repo root link + the current file plain.
+    const crumbs = await screen.findByRole("navigation", { name: "Breadcrumb" });
+    expect(within(crumbs).getByRole("link", { name: "test" })).toHaveAttribute(
+      "href",
+      "/ui/repos/admin/test/tree/main",
+    );
+    expect(within(crumbs).getByText("README.md")).toHaveAttribute("aria-current", "page");
+    expect(await screen.findByText(/extra detail/)).toBeInTheDocument();
     // github.com's per-file Raw and History affordances.
     expect(screen.getByRole("button", { name: "View raw file" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "History" })).toHaveAttribute(
@@ -743,6 +749,45 @@ describe("RepoDetailPage refs", () => {
     });
   });
 
+  it("renders tag rows with commit date, sha link, archives and a matching release link", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.split("?")[0]!.endsWith("/repos/admin/tagrepo/tags")) {
+        return Promise.resolve(jsonResponse([
+          { name: "v1.0.0", commit: { sha: "tagsha1234567", url: "" }, zipball_url: "/z", tarball_url: "/t" },
+        ]));
+      }
+      if (u.endsWith("/commits/tagsha1234567")) {
+        return Promise.resolve(jsonResponse({
+          sha: "tagsha1234567",
+          commit: { message: "cut release", author: { name: "Admin", date: "2026-08-01T00:00:00Z" } },
+        }));
+      }
+      if (u.endsWith("/repos/admin/tagrepo")) return Promise.resolve(jsonResponse({ ...repoData, full_name: "admin/tagrepo" }));
+      if (u.split("?")[0]!.endsWith("/branches")) return Promise.resolve(jsonResponse(branchesData));
+      if (u.split("?")[0]!.endsWith("/repos/admin/tagrepo/releases")) return Promise.resolve(jsonResponse(releasesData));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderPage("/ui/repos/admin/tagrepo/tags");
+
+    expect(await screen.findByText("v1.0.0")).toBeInTheDocument();
+    // sha column links to the commit page
+    expect(await screen.findByRole("link", { name: "tagsha1" })).toHaveAttribute(
+      "href",
+      "/ui/repos/admin/tagrepo/commits/tagsha1234567",
+    );
+    // creation date resolved from the tagged commit
+    await waitFor(() => {
+      expect(screen.getByRole("link", { name: "tagsha1" }).closest("div")!.querySelector("time")).not.toBeNull();
+    });
+    // a release whose tag_name matches links through
+    expect(screen.getByRole("link", { name: "Release" })).toHaveAttribute(
+      "href",
+      "/ui/repos/admin/tagrepo/releases/1",
+    );
+    expect(screen.getByRole("link", { name: "zip" })).toHaveAttribute("href", "/z");
+  });
+
   it("generates a repository from a template via POST .../generate", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
       const u = url.toString();
@@ -772,5 +817,429 @@ describe("RepoDetailPage refs", () => {
         private: false,
       });
     });
+  });
+});
+
+describe("RepoDetailPage file table metadata", () => {
+  it("shows each file's latest commit message and age, per-path", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.endsWith("/repos/admin/filetab")) return Promise.resolve(jsonResponse({ ...repoData, full_name: "admin/filetab" }));
+      if (u.split("?")[0]!.endsWith("/branches")) return Promise.resolve(jsonResponse(branchesData));
+      if (u.includes("/commits?") && u.includes("path=README.md")) {
+        return Promise.resolve(jsonResponse([
+          { sha: "aaa1111", commit: { message: "touch readme", author: { name: "Admin", date: "2026-08-01T00:00:00Z" } } },
+        ]));
+      }
+      if (u.includes("/commits?") && u.includes("path=src")) {
+        return Promise.resolve(jsonResponse([
+          { sha: "bbb2222", commit: { message: "add src", author: { name: "Admin", date: "2026-07-01T00:00:00Z" } } },
+        ]));
+      }
+      if (u.includes("/commits?")) return Promise.resolve(jsonResponse(commitsData));
+      if (u.includes("/readme")) return Promise.resolve(jsonResponse(readmeData));
+      if (u.includes("/contents/")) return Promise.resolve(jsonResponse(contentsData));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderPage("/ui/repos/admin/filetab");
+
+    // Each row carries the message of the last commit touching that path.
+    const readmeMsg = await screen.findByRole("link", { name: "touch readme" });
+    expect(readmeMsg).toHaveAttribute("href", "/ui/repos/admin/filetab/commits/aaa1111");
+    expect(await screen.findByRole("link", { name: "add src" })).toHaveAttribute(
+      "href",
+      "/ui/repos/admin/filetab/commits/bbb2222",
+    );
+    // and a relative age cell (a <time> element next to the message).
+    await waitFor(() => {
+      expect(readmeMsg.closest("div[class*='flex']")!.parentElement!.querySelector("time")).not.toBeNull();
+    });
+  });
+
+  it("shows a path-scoped latest-commit banner with a History link in subdirectories", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.endsWith("/repos/admin/subdir")) return Promise.resolve(jsonResponse({ ...repoData, full_name: "admin/subdir" }));
+      if (u.split("?")[0]!.endsWith("/branches")) return Promise.resolve(jsonResponse(branchesData));
+      if (u.includes("/commits?") && u.includes("path=src")) {
+        return Promise.resolve(jsonResponse([
+          { sha: "ccc3333", commit: { message: "src only change", author: { name: "Admin", date: "2026-08-02T00:00:00Z" } } },
+        ]));
+      }
+      if (u.includes("/commits?")) return Promise.resolve(jsonResponse(commitsData));
+      if (u.includes("/contents/")) return Promise.resolve(jsonResponse(contentsData));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderPage("/ui/repos/admin/subdir/tree/main/src");
+
+    // The banner surfaces the directory's own latest commit, not the repo's.
+    expect(await screen.findByText(/src only change/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /History/ })).toHaveAttribute(
+      "href",
+      "/ui/repos/admin/subdir/commits?path=src",
+    );
+  });
+});
+
+describe("RepoDetailPage ref switcher", () => {
+  it("filters branches and switches to a tag from the Tags tab", async () => {
+    const calls: string[] = [];
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      calls.push(u);
+      if (u.endsWith("/repos/admin/refsw")) return Promise.resolve(jsonResponse({ ...repoData, full_name: "admin/refsw" }));
+      if (u.split("?")[0]!.endsWith("/branches")) return Promise.resolve(jsonResponse(branchesData));
+      if (u.split("?")[0]!.endsWith("/tags")) {
+        return Promise.resolve(jsonResponse([
+          { name: "v9.9.9", commit: { sha: "abc", url: "" }, zipball_url: "", tarball_url: "" },
+        ]));
+      }
+      if (u.includes("/commits?")) return Promise.resolve(jsonResponse(commitsData));
+      if (u.includes("/readme")) return Promise.resolve(jsonResponse(readmeData));
+      if (u.includes("/contents/")) return Promise.resolve(jsonResponse(contentsData));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderPage("/ui/repos/admin/refsw");
+
+    const trigger = await screen.findByRole("button", { name: "Switch branches or tags" });
+    expect(trigger).toHaveTextContent("main");
+    fireEvent.click(trigger);
+
+    // combobox filter + branches listbox
+    const input = screen.getByRole("combobox", { name: /find a branch/i });
+    fireEvent.change(input, { target: { value: "ma" } });
+    expect(screen.getByRole("option", { name: /main/ })).toBeInTheDocument();
+    // The filter carries across tabs (GitHub keeps it); clear it first.
+    fireEvent.change(input, { target: { value: "" } });
+
+    // Tags tab loads the tag list lazily and navigates on selection.
+    fireEvent.click(screen.getByRole("tab", { name: "Tags" }));
+    const tagOption = await screen.findByRole("option", { name: /v9\.9\.9/ });
+    fireEvent.click(tagOption);
+    await waitFor(() => {
+      expect(calls.some((u) => u.includes("/contents/") && u.includes("ref=v9.9.9"))).toBe(true);
+    });
+  });
+});
+
+describe("RepoDetailPage commits grouping", () => {
+  it("groups commits under 'Commits on {date}' with copy + browse affordances", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.endsWith("/repos/admin/grouped")) return Promise.resolve(jsonResponse({ ...repoData, full_name: "admin/grouped" }));
+      if (u.split("?")[0]!.endsWith("/branches")) return Promise.resolve(jsonResponse(branchesData));
+      if (u.includes("/commits?")) {
+        return Promise.resolve(jsonResponse([
+          { sha: "sha1111111", commit: { message: "second", author: { name: "Admin", date: "2026-08-02T10:00:00Z" } }, author: { login: "admin", avatar_url: "" } },
+          { sha: "sha2222222", commit: { message: "first", author: { name: "Admin", date: "2026-08-02T08:00:00Z" } }, author: { login: "admin", avatar_url: "" } },
+          { sha: "sha3333333", commit: { message: "older", author: { name: "Admin", date: "2026-07-30T08:00:00Z" } }, author: { login: "admin", avatar_url: "" } },
+        ]));
+      }
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderPage("/ui/repos/admin/grouped/commits");
+
+    await screen.findByRole("link", { name: "second" });
+    // Two distinct day groups.
+    expect(screen.getAllByText(/^Commits on /)).toHaveLength(2);
+    // copy-SHA + browse-tree controls per row
+    expect(screen.getByRole("button", { name: "Copy full SHA for sha1111" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Browse repository at sha1111" })).toHaveAttribute(
+      "href",
+      "/ui/repos/admin/grouped/tree/sha1111111",
+    );
+    // relative dates via <time>
+    expect(screen.getByRole("link", { name: "second" }).closest("div")!.parentElement!.querySelector("time")).not.toBeNull();
+  });
+});
+
+describe("RepoDetailPage branches sections", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("buckets branches into Default/Active/Stale with ahead-behind and a New PR link", async () => {
+    // Pinned clock: the stale-branch bucketing compares against "now", so the
+    // fixture dates must be fixed relative to a fixed now (shouldAdvanceTime
+    // keeps waitFor's real timers working).
+    vi.useFakeTimers({ now: new Date("2026-03-01T12:00:00Z"), shouldAdvanceTime: true });
+    const now = new Date("2026-03-01T12:00:00Z").getTime();
+    const recent = new Date(now - 5 * 24 * 3600 * 1000).toISOString();
+    const ancient = new Date(now - 200 * 24 * 3600 * 1000).toISOString();
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.endsWith("/repos/admin/brepo")) return Promise.resolve(jsonResponse({ ...repoData, full_name: "admin/brepo" }));
+      if (u.split("?")[0]!.endsWith("/branches")) {
+        return Promise.resolve(jsonResponse([
+          { name: "main", commit: { sha: "mmm" } },
+          { name: "fresh", commit: { sha: "fff" } },
+          { name: "old", commit: { sha: "ooo" } },
+        ]));
+      }
+      if (u.endsWith("/commits/mmm") || u.endsWith("/commits/fff")) {
+        return Promise.resolve(jsonResponse({
+          sha: "x", commit: { message: "m", author: { name: "Admin", date: recent } }, author: { login: "admin", avatar_url: "" },
+        }));
+      }
+      if (u.endsWith("/commits/ooo")) {
+        return Promise.resolve(jsonResponse({
+          sha: "y", commit: { message: "m", author: { name: "Bob", date: ancient } }, author: { login: "bob", avatar_url: "" },
+        }));
+      }
+      if (u.includes("/compare/main...fresh")) {
+        return Promise.resolve(jsonResponse({ status: "ahead", ahead_by: 3, behind_by: 1, total_commits: 3, commits: [] }));
+      }
+      if (u.includes("/compare/main...old")) {
+        return Promise.resolve(jsonResponse({ status: "behind", ahead_by: 0, behind_by: 9, total_commits: 0, commits: [] }));
+      }
+      if (u.includes("/commits?")) return Promise.resolve(jsonResponse(commitsData));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderPage("/ui/repos/admin/brepo/branches");
+
+    // stale = no commit in 3 months
+    await screen.findByText("Stale branches");
+    expect(screen.getByText("Default")).toBeInTheDocument();
+    expect(screen.getByText("Active branches")).toBeInTheDocument();
+    const stale = screen.getByRole("region", { name: "Stale branches" });
+    expect(within(stale).getByText("old")).toBeInTheDocument();
+    // ahead/behind vs default, per row
+    await waitFor(() => {
+      expect(screen.getByText("3 ahead · 1 behind")).toBeInTheDocument();
+    });
+    // per-row New pull request → compare route
+    expect(screen.getAllByRole("link", { name: "New pull request" })[0]).toHaveAttribute(
+      "href",
+      "/ui/repos/admin/brepo/compare/main...fresh",
+    );
+    // author + relative time from the head commit
+    expect(within(stale).getByText("bob")).toBeInTheDocument();
+  });
+});
+
+describe("RepoComparePage", () => {
+  it("offers Create pull request and renders a colored diff", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.endsWith("/repos/admin/ctest")) return Promise.resolve(jsonResponse({ ...repoData, full_name: "admin/ctest" }));
+      if (u.split("?")[0]!.endsWith("/branches")) return Promise.resolve(jsonResponse(branchesData));
+      if (u.includes("/compare/main...feature")) {
+        return Promise.resolve(jsonResponse({
+          status: "ahead",
+          ahead_by: 1,
+          behind_by: 0,
+          total_commits: 1,
+          commits: [{ sha: "cmp1111111", commit: { message: "compared", author: { name: "Admin", date: "2026-08-01T00:00:00Z" } } }],
+          files: [{ filename: "a.txt", additions: 1, deletions: 0, changes: 1, status: "modified", patch: "@@ -1 +1,2 @@\n line\n+added line" }],
+        }));
+      }
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderPage("/ui/repos/admin/ctest/compare/main...feature");
+
+    const createPr = await screen.findByRole("link", { name: "Create pull request" });
+    // Contract for the pulls page create flow: ?compare={base}...{head}.
+    expect(createPr).toHaveAttribute("href", "/ui/repos/admin/ctest/pulls?compare=main...feature");
+    // colored diff rows instead of a monochrome <pre>
+    const hunkRow = screen.getByText("@@ -1 +1,2 @@").parentElement!;
+    expect(hunkRow.getAttribute("style")).toMatch(/color-mix/);
+    const addedRow = screen.getByText("+added line").parentElement!;
+    expect(addedRow.getAttribute("style")).toMatch(/color-mix/);
+  });
+});
+
+describe("RepoFilePage content types", () => {
+  it("renders code blobs with linkable line-number anchors", async () => {
+    const code = "const a = 1;\nconst b = 2;\nexport { a, b };";
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.endsWith("/repos/admin/blobber")) return Promise.resolve(jsonResponse({ ...repoData, full_name: "admin/blobber" }));
+      if (u.split("?")[0]!.endsWith("/branches")) return Promise.resolve(jsonResponse(branchesData));
+      if (u.includes("/contents/src/app.ts")) {
+        return Promise.resolve(jsonResponse({
+          name: "app.ts", path: "src/app.ts", sha: "blob1", type: "file", size: code.length,
+          encoding: "base64", content: btoa(code),
+        }));
+      }
+      return Promise.resolve(jsonResponse([]));
+    });
+    const { container } = renderPage("/ui/repos/admin/blobber/blob/main/src/app.ts");
+
+    const line2 = await screen.findByRole("link", { name: "Line 2" });
+    expect(line2).toHaveAttribute("href", "#L2");
+    expect(container.querySelector("#L1")).not.toBeNull();
+    expect(container.querySelector("#L3")).not.toBeNull();
+    // clicking a line number targets it (highlight + hash)
+    fireEvent.click(line2);
+    await waitFor(() => {
+      expect((container.querySelector("#L2") as HTMLElement).getAttribute("style")).toMatch(/color-mix/);
+    });
+    // breadcrumbs: intermediate segment links to its tree
+    const crumbs = screen.getByRole("navigation", { name: "Breadcrumb" });
+    expect(within(crumbs).getByRole("link", { name: "src" })).toHaveAttribute(
+      "href",
+      "/ui/repos/admin/blobber/tree/main/src",
+    );
+  });
+
+  it("renders markdown blobs with a Preview default and a Code tab", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => routedFetch(url));
+    renderPage("/ui/repos/admin/test/blob/main/README.md");
+
+    // Preview is the default: markdown renders as HTML.
+    expect(await screen.findByRole("heading", { name: "test" })).toBeInTheDocument();
+    // The Code tab switches to the numbered source view.
+    fireEvent.click(screen.getByRole("tab", { name: "Code" }));
+    expect(await screen.findByRole("link", { name: "Line 1" })).toBeInTheDocument();
+  });
+
+  it("renders image blobs as an <img> from a data: URI", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.endsWith("/repos/admin/imager")) return Promise.resolve(jsonResponse({ ...repoData, full_name: "admin/imager" }));
+      if (u.split("?")[0]!.endsWith("/branches")) return Promise.resolve(jsonResponse(branchesData));
+      if (u.includes("/contents/logo.png")) {
+        return Promise.resolve(jsonResponse({
+          name: "logo.png", path: "logo.png", sha: "img1", type: "file", size: 8,
+          encoding: "base64", content: "iVBORw0KGgo=",
+        }));
+      }
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderPage("/ui/repos/admin/imager/blob/main/logo.png");
+
+    const img = await screen.findByRole("img", { name: "logo.png" });
+    expect(img.getAttribute("src")).toBe("data:image/png;base64,iVBORw0KGgo=");
+  });
+
+  it("shows a binary fallback instead of mojibake, hiding text-only controls", async () => {
+    // 0xFF 0xFE 0x00 is not valid UTF-8.
+    const binary = btoa(String.fromCharCode(0xff, 0xfe, 0x00));
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.endsWith("/repos/admin/binrepo")) return Promise.resolve(jsonResponse({ ...repoData, full_name: "admin/binrepo" }));
+      if (u.split("?")[0]!.endsWith("/branches")) return Promise.resolve(jsonResponse(branchesData));
+      if (u.includes("/contents/data.bin")) {
+        return Promise.resolve(jsonResponse({
+          name: "data.bin", path: "data.bin", sha: "bin1", type: "file", size: 3,
+          encoding: "base64", content: binary,
+        }));
+      }
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderPage("/ui/repos/admin/binrepo/blob/main/data.bin");
+
+    expect(await screen.findByText(/Binary file not shown/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "View raw" })).toHaveAttribute("download", "data.bin");
+    // Edit and Raw-text affordances hide for binary content.
+    expect(screen.queryByRole("button", { name: "View raw file" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
+  });
+});
+
+describe("RepoDetailPage contributors sidebar", () => {
+  it("lists contributor avatars linking to their profiles and to insights", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.endsWith("/repos/admin/test/contributors")) {
+        return Promise.resolve(jsonResponse([
+          { login: "alice", avatar_url: "", type: "User", contributions: 9 },
+          { login: "bob", avatar_url: "", type: "User", contributions: 3 },
+        ]));
+      }
+      return routedFetch(url);
+    });
+    renderPage();
+
+    const about = await screen.findByRole("complementary", { name: "About" });
+    expect(await within(about).findByRole("link", { name: "alice" })).toHaveAttribute("href", "/ui/alice");
+    expect(within(about).getByRole("link", { name: "Contributors 2" })).toHaveAttribute(
+      "href",
+      "/ui/repos/admin/test/insights",
+    );
+  });
+});
+
+describe("RepoDetailPage bootstrap", () => {
+  const bootstrapPayload = {
+    repo: { ...repoData, topics: ["cli", "tooling"] },
+    readme: readmeData,
+    root_entries: contentsData,
+    branches: { first_page: branchesData, total_count: 1 },
+    tags: { first_page: [], total_count: 0 },
+    languages: { Go: 100 },
+    contributors: [{ login: "admin", avatar_url: "", type: "User", contributions: 3 }],
+    latest_release: null,
+    latest_commit: commitsData[0],
+    pulls_open_count: 2,
+    issues_open_count: 4,
+    discussions_enabled: false,
+  };
+  const treeMetaPayload = {
+    ref: "main",
+    path: "",
+    latest_commit: commitsData[0],
+    entries: [
+      {
+        name: "README.md",
+        path: "README.md",
+        type: "file",
+        size: 14,
+        latest: {
+          sha: "abc123",
+          message_headline: "Initial commit",
+          author_login: "admin",
+          author_date: "2026-01-01T00:00:00Z",
+        },
+      },
+      { name: "src", path: "src", type: "dir", size: 0, latest: null },
+    ],
+  };
+
+  it("hydrates the repo home from the bootstrap + tree-meta with no standalone refetches", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.includes("/ui-data/bootstrap/repos/admin/test")) {
+        return Promise.resolve(jsonResponse(bootstrapPayload));
+      }
+      if (u.includes("/tree-meta")) return Promise.resolve(jsonResponse(treeMetaPayload));
+      if (u.includes("/commits?")) return Promise.resolve(jsonResponse(commitsData));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderPage();
+    await screen.findByText("a repo");
+    // File-table columns come from tree-meta; the src row (latest: null)
+    // degrades to the per-path commits fallback, which is also mocked.
+    expect((await screen.findAllByText("Initial commit")).length).toBeGreaterThanOrEqual(1);
+    // Topics seeded off the repo payload.
+    expect(await screen.findByText("tooling")).toBeInTheDocument();
+
+    const gets = mockFetch.mock.calls.map((c) => c[0]!.toString());
+    // Seeded keys must be cache hits — their standalone endpoints untouched.
+    expect(gets.some((u) => u.endsWith("/api/v3/repos/admin/test"))).toBe(false);
+    expect(gets.some((u) => u.includes("/api/v3/repos/admin/test/branches"))).toBe(false);
+    expect(gets.some((u) => u.includes("/readme"))).toBe(false);
+    expect(gets.some((u) => u.includes("/contents/"))).toBe(false);
+    expect(gets.some((u) => u.includes("/languages"))).toBe(false);
+    expect(gets.some((u) => u.includes("/contributors"))).toBe(false);
+    expect(gets.some((u) => u.includes("/topics"))).toBe(false);
+    // Tab badges come from the bootstrap's counts, not the list endpoints.
+    expect(gets.some((u) => u.includes("/issues?state=open"))).toBe(false);
+    expect(gets.some((u) => u.includes("/pulls?state=open"))).toBe(false);
+  });
+
+  it("falls back to the standalone endpoints when the bootstrap answers 500", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.includes("/ui-data/")) return Promise.resolve(jsonResponse({ message: "boom" }, 500));
+      return routedFetch(url);
+    });
+    renderPage();
+    await screen.findByText("a repo");
+    // Per-row latest-commit columns still fill in via the per-path fallback.
+    expect((await screen.findAllByText("Initial commit")).length).toBeGreaterThanOrEqual(1);
+    const gets = mockFetch.mock.calls.map((c) => c[0]!.toString());
+    expect(gets.some((u) => u.endsWith("/api/v3/repos/admin/test"))).toBe(true);
+    expect(gets.some((u) => u.split("?")[0]!.endsWith("/branches"))).toBe(true);
   });
 });

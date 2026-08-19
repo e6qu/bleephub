@@ -899,6 +899,29 @@ func (s *Server) handleUpdateRepo(w http.ResponseWriter, r *http.Request) {
 		if v, ok := req["pull_request_creation_policy"].(string); ok {
 			r.PullRequestCreationPolicy = v
 		}
+		if sa, ok := req["security_and_analysis"].(map[string]interface{}); ok {
+			// The PATCH body's security_and_analysis accepts advanced_security,
+			// secret_scanning, secret_scanning_push_protection and
+			// secret_scanning_non_provider_patterns (dependabot_security_updates
+			// is toggled via PUT/DELETE /automated-security-fixes instead, as on
+			// real GitHub). Each carries {"status": "enabled"|"disabled"}.
+			applyStatus := func(key string, dst *bool) {
+				obj, ok := sa[key].(map[string]interface{})
+				if !ok {
+					return
+				}
+				switch obj["status"] {
+				case "enabled":
+					*dst = true
+				case "disabled":
+					*dst = false
+				}
+			}
+			applyStatus("advanced_security", &r.AdvancedSecurityEnabled)
+			applyStatus("secret_scanning", &r.SecretScanningEnabled)
+			applyStatus("secret_scanning_push_protection", &r.SecretScanningPushProtectionEnabled)
+			applyStatus("secret_scanning_non_provider_patterns", &r.SecretScanningNonProviderPatternsEnabled)
+		}
 	})
 
 	updated := s.store.GetRepo(owner, name)
@@ -1144,6 +1167,17 @@ func fullRepoJSONForViewer(repo *store.Repo, st *store.Store, baseURL string, vi
 	out["web_commit_signoff_required"] = repo.WebCommitSignoffRequired
 	out["is_template"] = repo.IsTemplate
 	out["use_squash_pr_title_as_default"] = repo.UseSquashPRTitleAsDefault
+	// security_and_analysis exists on full-repository (and optionally
+	// minimal-repository) but not on the plain `repository` schema, so it is
+	// rendered here rather than in store.RepoToJSON. dependabot_security_updates
+	// mirrors the automated-security-fixes toggle, exactly as on real GitHub.
+	out["security_and_analysis"] = map[string]interface{}{
+		"advanced_security":                     securityStatusJSON(repo.AdvancedSecurityEnabled),
+		"dependabot_security_updates":           securityStatusJSON(repo.AutomatedSecurityFixesEnabled),
+		"secret_scanning":                       securityStatusJSON(repo.SecretScanningEnabled),
+		"secret_scanning_push_protection":       securityStatusJSON(repo.SecretScanningPushProtectionEnabled),
+		"secret_scanning_non_provider_patterns": securityStatusJSON(repo.SecretScanningNonProviderPatternsEnabled),
+	}
 	if repo.SquashMergeCommitTitle != "" {
 		out["squash_merge_commit_title"] = repo.SquashMergeCommitTitle
 	}
@@ -1168,6 +1202,16 @@ func fullRepoJSONForViewer(repo *store.Repo, st *store.Store, baseURL string, vi
 		}
 	}
 	return out
+}
+
+// securityStatusJSON renders one security_and_analysis toggle in GitHub's
+// {"status": "enabled"|"disabled"} sub-shape.
+func securityStatusJSON(enabled bool) map[string]interface{} {
+	status := "disabled"
+	if enabled {
+		status = "enabled"
+	}
+	return map[string]interface{}{"status": status}
 }
 
 // jsonArray returns s, or a non-nil empty slice when s is nil, so encoding/json
