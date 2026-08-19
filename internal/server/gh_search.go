@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"sort"
 	"strconv"
@@ -301,6 +302,12 @@ func parseSearchQuery(r *http.Request) (searchQuery, error) {
 			case "review":
 				switch normalizedValue {
 				case "none", "required", "approved", "changes_requested":
+				default:
+					return q, unsupportedQualifierError{key: key, value: val}
+				}
+			case "linked":
+				switch normalizedValue {
+				case "pr", "issue":
 				default:
 					return q, unsupportedQualifierError{key: key, value: val}
 				}
@@ -673,6 +680,13 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 		rows = kept
 	}
 
+	// linked:pr / linked:issue derive an issue<->PR closing-reference relationship
+	// from PR bodies (Closes/Fixes/Resolves #N). Built once over the result rows'
+	// repositories under a fresh read lock, then applied as a filter.
+	if q.hasLinkedQualifier() {
+		rows = s.filterLinkedQualifiers(rows, q)
+	}
+
 	render := func(row searchIssueRow) map[string]interface{} {
 		if row.issue != nil {
 			item := issueToJSON(row.issue, s.store, base, row.repo.FullName)
@@ -977,6 +991,93 @@ func (q searchQuery) hasInteractionQualifiers() bool {
 		}
 	}
 	return false
+}
+
+func (q searchQuery) hasLinkedQualifier() bool {
+	for _, ql := range q.Qualifiers {
+		if ql.Key == "linked" {
+			return true
+		}
+	}
+	return false
+}
+
+// prClosingRefPattern matches GitHub's closing keywords followed by a same-repo
+// issue reference, e.g. "Closes #12", "fixes: #3", "Resolved #9".
+var prClosingRefPattern = regexp.MustCompile(`(?i)\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?):?\s+#(\d+)\b`)
+
+// parsePRClosingIssueRefs extracts the issue numbers a pull-request body closes
+// via a closing keyword.
+func parsePRClosingIssueRefs(body string) []int {
+	var out []int
+	for _, m := range prClosingRefPattern.FindAllStringSubmatch(body, -1) {
+		if n, err := strconv.Atoi(m[1]); err == nil {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// filterLinkedQualifiers applies linked:pr / linked:issue. An issue matches
+// linked:pr when some pull request in its repository closes it; a pull request
+// matches linked:issue when it closes at least one issue. The relationship is
+// derived from PR-body closing keywords across the result rows' repositories.
+func (s *Server) filterLinkedQualifiers(rows []searchIssueRow, q searchQuery) []searchIssueRow {
+	repoIDs := map[int]bool{}
+	for _, row := range rows {
+		if row.repo != nil {
+			repoIDs[row.repo.ID] = true
+		}
+	}
+	closedIssueNums := map[int]map[int]bool{} // repoID -> set of closed issue numbers
+	prClosesIssue := map[int]bool{}           // pr.ID -> closes >= 1 issue
+	s.store.Mu.RLock()
+	for _, pr := range s.store.PullRequests {
+		if !repoIDs[pr.RepoID] {
+			continue
+		}
+		refs := parsePRClosingIssueRefs(pr.Body)
+		if len(refs) == 0 {
+			continue
+		}
+		prClosesIssue[pr.ID] = true
+		set := closedIssueNums[pr.RepoID]
+		if set == nil {
+			set = map[int]bool{}
+			closedIssueNums[pr.RepoID] = set
+		}
+		for _, n := range refs {
+			set[n] = true
+		}
+	}
+	s.store.Mu.RUnlock()
+
+	kept := rows[:0]
+	for _, row := range rows {
+		if rowMatchesLinkedQualifiers(row, q, closedIssueNums, prClosesIssue) {
+			kept = append(kept, row)
+		}
+	}
+	return kept
+}
+
+func rowMatchesLinkedQualifiers(row searchIssueRow, q searchQuery, closedIssueNums map[int]map[int]bool, prClosesIssue map[int]bool) bool {
+	for _, ql := range q.Qualifiers {
+		if ql.Key != "linked" {
+			continue
+		}
+		var ok bool
+		switch strings.ToLower(strings.Trim(ql.Value, `"`)) {
+		case "pr":
+			ok = row.issue != nil && row.repo != nil && closedIssueNums[row.repo.ID][row.issue.Number]
+		case "issue":
+			ok = row.pr != nil && prClosesIssue[row.pr.ID]
+		}
+		if ok == ql.Negated {
+			return false
+		}
+	}
+	return true
 }
 
 // prReviewDecision derives a pull request's review decision from its submitted
