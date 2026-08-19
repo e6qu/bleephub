@@ -641,7 +641,7 @@ func (s *Server) handleUIApplySuggestion(w http.ResponseWriter, r *http.Request)
 
 	base := s.baseURL(r)
 	if err := s.scanCommitForSecretScanning(headRepo, stor, commitHash, base); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeGHError(w, http.StatusInternalServerError, "secret scanning failed")
 		return
 	}
 	s.afterCommittedRefUpdate(headRepo, user, branchRef.String(), headHash.String(), commitHash.String(), base)

@@ -173,21 +173,21 @@ type MarketplacePurchase struct {
 }
 
 type MiscStore struct {
-	Mu                        sync.RWMutex                 `json:"-"`
-	UserKeys                  map[int]*UserKey             `json:"-"`
-	KeysByUser                map[int][]*UserKey           `json:"-"`
-	GpgKeys                   map[int]*GPGKey              `json:"-"`
-	GpgKeysByUser             map[int][]*GPGKey            `json:"-"`
-	Follows                   map[string]map[string]bool   `json:"-"`
-	PagesByRepo               map[int]*PagesSite           `json:"-"`
-	PagesBuilds               map[string][]*PagesBuild     `json:"-"`
-	BranchProtection          map[string]*BranchProtection `json:"-"`
+	Mu               sync.RWMutex                 `json:"-"`
+	UserKeys         map[int]*UserKey             `json:"-"`
+	KeysByUser       map[int][]*UserKey           `json:"-"`
+	GpgKeys          map[int]*GPGKey              `json:"-"`
+	GpgKeysByUser    map[int][]*GPGKey            `json:"-"`
+	Follows          map[string]map[string]bool   `json:"-"`
+	PagesByRepo      map[int]*PagesSite           `json:"-"`
+	PagesBuilds      map[string][]*PagesBuild     `json:"-"`
+	BranchProtection map[string]*BranchProtection `json:"-"`
 	// BranchProtectionPatterns holds the web-only fnmatch pattern rules per
 	// repository ID, consulted by the enforcement chokepoint when no
 	// exact-name rule matches (served under /ui-data).
-	BranchProtectionPatterns map[int][]*BranchProtectionPatternRule `json:"-"`
-	AuditLog                 []*AuditEntry                          `json:"-"`
-	AuditLogEvents            []*AuditLogEvent             `json:"-"`
+	BranchProtectionPatterns  map[int][]*BranchProtectionPatternRule `json:"-"`
+	AuditLog                  []*AuditEntry                          `json:"-"`
+	AuditLogEvents            []*AuditLogEvent                       `json:"-"`
 	marketplaceListings       map[string]*MarketplaceListing
 	marketplacePlans          map[int]*MarketplacePlan
 	MarketplacePurchases      map[string]*MarketplacePurchase `json:"-"`

@@ -31,11 +31,11 @@ func newUntrustedTLSServer(t *testing.T, handler http.Handler) *httptest.Server 
 		Subject:      pkix.Name{CommonName: "insecure-hook-test"},
 		// Fixed window covering any realistic run date: TLS validation uses
 		// the real clock, and the wall-clock gate forbids time.Now in tests.
-		NotBefore:    time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC),
-		NotAfter:     time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC),
-		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("::1")},
-		KeyUsage:     x509.KeyUsageDigitalSignature,
-		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		NotBefore:   time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC),
+		NotAfter:    time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC),
+		IPAddresses: []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("::1")},
+		KeyUsage:    x509.KeyUsageDigitalSignature,
+		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 	}
 	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
 	if err != nil {
