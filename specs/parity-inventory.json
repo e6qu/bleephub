@@ -22448,7 +22448,7 @@
         "source": "internal/server/gh_codes_of_conduct.go"
       },
       {
-        "line": 51,
+        "line": 52,
         "method": "GET",
         "path": "/api/v3/emojis",
         "source": "internal/server/gh_meta_extras.go"
@@ -23348,7 +23348,7 @@
         "source": "internal/server/gh_notifications.go"
       },
       {
-        "line": 53,
+        "line": 54,
         "method": "GET",
         "path": "/api/v3/octocat",
         "source": "internal/server/gh_meta_extras.go"
@@ -26924,13 +26924,13 @@
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 54,
+        "line": 55,
         "method": "GET",
         "path": "/api/v3/versions",
         "source": "internal/server/gh_meta_extras.go"
       },
       {
-        "line": 52,
+        "line": 53,
         "method": "GET",
         "path": "/api/v3/zen",
         "source": "internal/server/gh_meta_extras.go"
@@ -27740,7 +27740,7 @@
         "source": "internal/server/gh_apps_oauth_mgmt.go"
       },
       {
-        "line": 55,
+        "line": 56,
         "method": "POST",
         "path": "/api/v3/credentials/revoke",
         "source": "internal/server/gh_meta_extras.go"
