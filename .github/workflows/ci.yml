@@ -477,7 +477,7 @@ jobs:
   browser:
     name: Browser end-to-end
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - *checkout
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -488,8 +488,26 @@ jobs:
       - *bun-install-cache
       - name: Build server and web application
         run: make build
-      - name: Install Chromium and run the real browser suite
-        run: cd web && npx playwright install --with-deps chromium && SERVER_BIN=../bleephub-server bun run test:e2e
+      # `playwright install --with-deps` runs apt-get for Chromium's system
+      # libraries; a stuck Ubuntu mirror has hung it silently until the job
+      # timeout (the browser download and the apt install share one unbounded
+      # step). Cap each attempt with `timeout` and retry so a hung mirror is
+      # killed and re-tried instead of consuming the whole job budget, and keep
+      # the install separate from the suite so a timeout here is attributable.
+      - name: Install Chromium (retry; apt system-dep install can hang on a stuck mirror)
+        run: |
+          cd web || exit 1
+          for attempt in 1 2 3; do
+            if timeout --kill-after=30s 6m npx playwright install --with-deps chromium; then
+              exit 0
+            fi
+            echo "::warning::playwright install attempt ${attempt} failed or timed out; retrying"
+            sleep 5
+          done
+          echo "::error::playwright install --with-deps chromium failed after 3 attempts" >&2
+          exit 1
+      - name: Run the real browser suite
+        run: cd web && SERVER_BIN=../bleephub-server bun run test:e2e
 
   shauth-sso:
     name: Shauth SSO browser contract
