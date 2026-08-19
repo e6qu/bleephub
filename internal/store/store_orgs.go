@@ -89,14 +89,18 @@ type Org struct {
 	MembersCanCreateRepositories *bool  `json:"members_can_create_repositories"`
 	// Granular member-privilege toggles. nil = GitHub's default for that field
 	// (true for repos/pages/teams, false for forking private repos).
-	MembersCanCreatePublicRepositories  *bool     `json:"members_can_create_public_repositories"`
-	MembersCanCreatePrivateRepositories *bool     `json:"members_can_create_private_repositories"`
-	MembersCanCreatePages               *bool     `json:"members_can_create_pages"`
-	MembersCanForkPrivateRepositories   *bool     `json:"members_can_fork_private_repositories"`
-	MembersCanCreateTeams               *bool     `json:"members_can_create_teams"`
-	WebCommitSignoffRequired            bool      `json:"web_commit_signoff_required"`
-	CreatedAt                           time.Time `json:"created_at"`
-	UpdatedAt                           time.Time `json:"updated_at"`
+	MembersCanCreatePublicRepositories  *bool `json:"members_can_create_public_repositories"`
+	MembersCanCreatePrivateRepositories *bool `json:"members_can_create_private_repositories"`
+	MembersCanCreatePages               *bool `json:"members_can_create_pages"`
+	MembersCanForkPrivateRepositories   *bool `json:"members_can_fork_private_repositories"`
+	MembersCanCreateTeams               *bool `json:"members_can_create_teams"`
+	WebCommitSignoffRequired            bool  `json:"web_commit_signoff_required"`
+	// PinnedRepos is the org profile's ordered pinned-repository full names
+	// (max MaxPinnedRepos, all owned by the org); a GraphQL/web-only feature,
+	// served under /ui-data like user pins.
+	PinnedRepos []string  `json:"pinned_repos,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 // Membership represents a user's membership in an organization.
@@ -214,6 +218,7 @@ func cloneOrg(o *Org) *Org {
 	clone.MembersCanCreatePages = dup(o.MembersCanCreatePages)
 	clone.MembersCanForkPrivateRepositories = dup(o.MembersCanForkPrivateRepositories)
 	clone.MembersCanCreateTeams = dup(o.MembersCanCreateTeams)
+	clone.PinnedRepos = append([]string(nil), o.PinnedRepos...)
 	return &clone
 }
 

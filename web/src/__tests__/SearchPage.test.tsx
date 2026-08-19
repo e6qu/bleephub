@@ -2,7 +2,12 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, cleanup, screen, waitFor, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Routes, Route } from "react-router";
-import { SearchPage, buildAdvancedQuery } from "../pages/SearchPage.js";
+import {
+  SearchPage,
+  buildAdvancedQuery,
+  blobRefFromHtmlUrl,
+  splitTextMatchFragment,
+} from "../pages/SearchPage.js";
 
 const mockFetch = vi.fn();
 globalThis.fetch = mockFetch;
@@ -118,7 +123,7 @@ describe("SearchPage", () => {
     expect(requestURL.searchParams.get("q")).toBe("archived:true");
   });
 
-  it("switches tabs and hits the matching search endpoint", async () => {
+  it("switches result types in the sidebar and hits the matching search endpoint", async () => {
     mockFetch.mockResolvedValue(
       jsonResponse({ total_count: 0, incomplete_results: false, items: [] }),
     );
@@ -128,11 +133,139 @@ describe("SearchPage", () => {
     });
     expect(String(mockFetch.mock.calls[0]![0])).toContain("/api/v3/search/issues?");
 
-    fireEvent.click(screen.getByRole("tab", { name: "Commits" }));
+    fireEvent.click(screen.getByRole("button", { name: /Commits/ }));
     await waitFor(() => {
       const urls = mockFetch.mock.calls.map((c) => String(c[0]));
-      expect(urls.some((u) => u.includes("/api/v3/search/commits?"))).toBe(true);
+      // A full-page commits search (per_page=30), not just the sidebar's
+      // per_page=1 count probe.
+      expect(urls.some((u) => u.includes("/api/v3/search/commits?") && u.includes("per_page=30"))).toBe(true);
     });
+  });
+
+  it("probes the other result types' counts lazily and shows them in the sidebar", async () => {
+    mockFetch.mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("per_page=1")) {
+        return Promise.resolve(jsonResponse({ total_count: 42, incomplete_results: false, items: [] }));
+      }
+      return Promise.resolve(jsonResponse({ total_count: 1, incomplete_results: false, items: [repoItem] }));
+    });
+    renderPage("/ui/search?q=hit&type=repositories");
+    await waitFor(() => expect(screen.getByText("admin/hit-repo")).toBeInTheDocument());
+
+    // The active type's count comes from its own result envelope…
+    expect(screen.getByRole("button", { name: /Repositories/ })).toHaveTextContent("1");
+    // …the other types are probed with per_page=1 after the active one lands.
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Commits/ })).toHaveTextContent("42");
+    });
+    const probes = mockFetch.mock.calls.map((c) => String(c[0])).filter((u) => u.includes("per_page=1"));
+    expect(probes.some((u) => u.includes("/api/v3/search/issues?"))).toBe(true);
+    // Labels need a repository_id, so they are never probed blind.
+    expect(probes.some((u) => u.includes("/api/v3/search/labels"))).toBe(false);
+    // Labels show the unknown placeholder.
+    expect(screen.getByRole("button", { name: /Labels/ })).toHaveTextContent("—");
+  });
+
+  it("links code results to the blob view and highlights text-match fragments", async () => {
+    mockFetch.mockResolvedValue(
+      jsonResponse({
+        total_count: 1,
+        incomplete_results: false,
+        items: [
+          {
+            name: "main.go",
+            path: "cmd/main.go",
+            sha: "abc",
+            html_url: "http://bleephub.test/admin/tool/blob/trunk/cmd/main.go",
+            language: "Go",
+            repository: { full_name: "admin/tool", default_branch: "trunk" },
+            text_matches: [
+              {
+                object_url: "http://bleephub.test/api/v3/repos/admin/tool/contents/cmd/main.go",
+                object_type: "FileContent",
+                property: "content",
+                fragment: "func retry() {}",
+                matches: [{ text: "retry", indices: [5, 10] }],
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    renderPage("/ui/search?q=retry&type=code");
+    const link = await screen.findByRole("link", { name: /admin\/tool/ });
+    expect(link).toHaveAttribute("href", "/ui/repos/admin/tool/blob/trunk/cmd/main.go");
+    // The matched span renders as <mark> inside the fragment.
+    const mark = screen.getByText("retry", { selector: "mark" });
+    expect(mark).toBeInTheDocument();
+    // The request opted into the text-match media type.
+    const init = mockFetch.mock.calls[0]![1] as RequestInit;
+    expect((init.headers as Record<string, string>).Accept).toContain("text-match+json");
+  });
+
+  it("links user results to their account route and commit results to the commit page", async () => {
+    mockFetch.mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/search/users")) {
+        return Promise.resolve(
+          jsonResponse({
+            total_count: 1,
+            incomplete_results: false,
+            items: [{ id: 5, login: "acme", type: "Organization", name: "Acme" }],
+          }),
+        );
+      }
+      if (url.includes("/search/commits")) {
+        return Promise.resolve(
+          jsonResponse({
+            total_count: 1,
+            incomplete_results: false,
+            items: [
+              {
+                sha: "deadbeefcafe",
+                commit: { message: "Fix the flake\n\nbody", author: { name: "A", email: "a@x", date: "2026-01-01T00:00:00Z" } },
+                author: { login: "acme" },
+                repository: { full_name: "acme/api" },
+              },
+            ],
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse({ total_count: 0, incomplete_results: false, items: [] }));
+    });
+    renderPage("/ui/search?q=acme&type=users");
+    const userLink = await screen.findByRole("link", { name: "acme" });
+    expect(userLink).toHaveAttribute("href", "/ui/orgs/acme");
+
+    fireEvent.click(screen.getByRole("button", { name: /Commits/ }));
+    const commitLink = await screen.findByRole("link", { name: "Fix the flake" });
+    expect(commitLink).toHaveAttribute("href", "/ui/repos/acme/api/commits/deadbeefcafe");
+  });
+
+  it("shows a friendly countdown and auto-retries once when search is throttled", async () => {
+    let calls = 0;
+    mockFetch.mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("per_page=1")) {
+        return Promise.resolve(jsonResponse({ total_count: 0, incomplete_results: false, items: [] }));
+      }
+      calls += 1;
+      if (calls === 1) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ message: "API rate limit exceeded" }), {
+            status: 403,
+            headers: { "Content-Type": "application/json", "Retry-After": "1" },
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse({ total_count: 1, incomplete_results: false, items: [repoItem] }));
+    });
+    renderPage("/ui/search?q=hit&type=repositories");
+    expect(await screen.findByText("You're searching too fast")).toBeInTheDocument();
+    expect(screen.getByText(/retrying in 1s/i)).toBeInTheDocument();
+    // After the Retry-After window, one automatic retry succeeds.
+    await waitFor(() => expect(screen.getByText("admin/hit-repo")).toBeInTheDocument(), { timeout: 3000 });
   });
 
   it("marks pull requests distinctly in issue results", async () => {
@@ -214,9 +347,13 @@ describe("SearchPage", () => {
   it("surfaces search failures", async () => {
     mockFetch.mockResolvedValue(jsonResponse({ message: "boom" }, 500));
     renderPage("/ui/search?q=zzz&type=users");
-    await waitFor(() => {
-      expect(screen.getByText("Search failed")).toBeInTheDocument();
-    });
+    // The list retries a plain failure once (app-default parity) before erroring.
+    await waitFor(
+      () => {
+        expect(screen.getByText("Search failed")).toBeInTheDocument();
+      },
+      { timeout: 4000 },
+    );
   });
 
   it("builds a qualifier query from the advanced search form and runs it", async () => {
@@ -286,6 +423,44 @@ describe("SearchPage sort controls", () => {
         .find((u) => u.includes("/api/v3/search/users?") && u.includes("sort=followers"));
       expect(hit).toBeDefined();
     });
+  });
+});
+
+describe("splitTextMatchFragment", () => {
+  it("splits on byte indices, merging overlaps and surviving multi-byte text", () => {
+    expect(
+      splitTextMatchFragment("func retry() {}", [{ text: "retry", indices: [5, 10] }]),
+    ).toEqual([
+      { text: "func ", matched: false },
+      { text: "retry", matched: true },
+      { text: "() {}", matched: false },
+    ]);
+    // "é" is two UTF-8 bytes: the match after it lands correctly only when the
+    // indices are treated as byte offsets.
+    expect(
+      splitTextMatchFragment("é retry", [{ text: "retry", indices: [3, 8] }]),
+    ).toEqual([
+      { text: "é ", matched: false },
+      { text: "retry", matched: true },
+    ]);
+    // Overlapping spans merge; out-of-range spans are dropped.
+    expect(
+      splitTextMatchFragment("abcdef", [
+        { text: "abc", indices: [0, 3] },
+        { text: "bcd", indices: [1, 4] },
+        { text: "zz", indices: [4, 99] },
+      ]),
+    ).toEqual([
+      { text: "abcd", matched: true },
+      { text: "ef", matched: false },
+    ]);
+  });
+});
+
+describe("blobRefFromHtmlUrl", () => {
+  it("extracts the ref segment of a blob html_url", () => {
+    expect(blobRefFromHtmlUrl("http://x/o/r/blob/main/a/b.go")).toBe("main");
+    expect(blobRefFromHtmlUrl("http://x/o/r/commit/abc")).toBeNull();
   });
 });
 

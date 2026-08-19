@@ -1225,6 +1225,24 @@ func (r repoRule) authorize(s *Resolver, p graphql.ResolveParams, input map[stri
 	return nil
 }
 
+// issueTransferRule is the policy for transferIssue, the one repository
+// mutation whose input names two repositories: GitHub requires write on both
+// the repository the issue lives in and the repository it moves to, so the
+// rule is two repoRule checks — either refusal stands alone, and a bearer with
+// push on only one side is refused before the resolver runs.
+type issueTransferRule struct{}
+
+func (issueTransferRule) check() error { return nil }
+
+func (issueTransferRule) authorize(s *Resolver, p graphql.ResolveParams, input map[string]interface{}) error {
+	source := repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: mutationTargetIssue("issueId")}
+	if err := source.authorize(s, p, input); err != nil {
+		return err
+	}
+	destination := repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: mutationTargetRepo("repositoryId")}
+	return destination.authorize(s, p, input)
+}
+
 // graphqlMutationAuthz is the whole authorization policy of the mutation
 // surface.
 //
@@ -1252,6 +1270,16 @@ var graphqlMutationAuthz = map[string]mutationRule{
 	"reopenIssue": repoRule{scope: store.ScopeIssues, level: mutationPushRepo, authorMayAct: true, target: mutationTargetIssue("issueId")},
 	"updateIssue": repoRule{scope: store.ScopeIssues, level: mutationPushRepo, authorMayAct: true, target: mutationTargetIssue("id")},
 
+	// GitHub gates pinning at triage; this lattice has no triage level, so
+	// push is the nearest stricter standing. No author exemption: pinning is
+	// curation of the repository's issues list, not of your own content.
+	"pinIssue":   repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: mutationTargetIssue("issueId")},
+	"unpinIssue": repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: mutationTargetIssue("issueId")},
+	// Deleting an issue is GitHub's one admin-gated issue mutation — even the
+	// issue's author may not delete it without admin rights.
+	"deleteIssue":   repoRule{scope: store.ScopeIssues, level: mutationAdminRepo, target: mutationTargetIssue("issueId")},
+	"transferIssue": issueTransferRule{},
+
 	"createDiscussion":                repoRule{scope: store.ScopeDiscussions, level: mutationReadRepo, target: mutationTargetRepo("repositoryId")},
 	"addDiscussionComment":            repoRule{scope: store.ScopeDiscussions, level: mutationReadRepo, target: mutationTargetDiscussion("discussionId")},
 	"addReaction":                     repoRule{scopeFor: reactableScope("subjectId"), level: mutationReadRepo, target: mutationTargetReactable("subjectId")},
@@ -1262,6 +1290,9 @@ var graphqlMutationAuthz = map[string]mutationRule{
 	"deleteDiscussionComment":         repoRule{scope: store.ScopeDiscussions, level: mutationAdminRepo, authorMayAct: true, target: mutationTargetDiscussionComment("id")},
 	"markDiscussionCommentAsAnswer":   repoRule{scope: store.ScopeDiscussions, level: mutationPushRepo, authorMayAct: true, target: mutationTargetAnsweredDiscussion("id")},
 	"unmarkDiscussionCommentAsAnswer": repoRule{scope: store.ScopeDiscussions, level: mutationPushRepo, authorMayAct: true, target: mutationTargetAnsweredDiscussion("id")},
+	// Upvoting is participation, like reacting: any reader may vote.
+	"addUpvote":    repoRule{scope: store.ScopeDiscussions, level: mutationReadRepo, target: mutationTargetVotable("subjectId")},
+	"removeUpvote": repoRule{scope: store.ScopeDiscussions, level: mutationReadRepo, target: mutationTargetVotable("subjectId")},
 
 	"minimizeComment":   repoRule{scope: store.ScopeIssues, level: mutationPushRepo, authorMayAct: true, target: mutationTargetIssueComment("subjectId")},
 	"unminimizeComment": repoRule{scope: store.ScopeIssues, level: mutationPushRepo, authorMayAct: true, target: mutationTargetIssueComment("subjectId")},
@@ -1524,6 +1555,27 @@ func mutationTargetIssueComment(key string) func(*Resolver, map[string]interface
 		}
 		if issue := s.store.GetIssue(c.IssueID); issue != nil {
 			target.repo = s.store.GetRepoByID(issue.RepoID)
+		}
+		return target
+	}
+}
+
+// mutationTargetVotable covers addUpvote / removeUpvote, whose subject is any
+// Votable: a discussion or a discussion comment.
+func mutationTargetVotable(key string) func(*Resolver, map[string]interface{}) mutationTarget {
+	return func(s *Resolver, input map[string]interface{}) mutationTarget {
+		nodeID, _ := input[key].(string)
+		target := mutationTarget{missing: gqlMissingNode("node", nodeID)}
+		if d := store.FindDiscussionByNodeID(s.store, nodeID); d != nil {
+			target.repo = s.store.GetRepoByID(d.RepoID)
+			target.authorID = d.AuthorID
+			return target
+		}
+		if c := store.FindDiscussionCommentByNodeID(s.store, nodeID); c != nil {
+			target.authorID = c.AuthorID
+			if d := s.store.GetDiscussion(c.DiscussionID); d != nil {
+				target.repo = s.store.GetRepoByID(d.RepoID)
+			}
 		}
 		return target
 	}

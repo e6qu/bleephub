@@ -112,8 +112,10 @@ describe("ProfilePage", () => {
     await screen.findByText("The Octocat");
     expect(await screen.findByText("Starred repositories")).toBeInTheDocument();
     expect(await screen.findByText("api")).toBeInTheDocument();
+    // The Stars tab walks the starred list with explicit paging so >30 stars
+    // aren't silently truncated.
     const starredCall = mockFetch.mock.calls.find((c) =>
-      c[0].toString().endsWith("/api/v3/users/octocat/starred"),
+      c[0].toString().includes("/api/v3/users/octocat/starred?per_page="),
     );
     expect(starredCall).toBeTruthy();
   });
@@ -189,6 +191,52 @@ describe("ProfilePage", () => {
     await waitFor(() => {
       expect(screen.getByText(/failed to load profile/i)).toBeInTheDocument();
     });
+  });
+});
+
+describe("ProfilePage repositories filters", () => {
+  it("drives the Type and Sort dropdowns through server-side queries", async () => {
+    mockProfileEndpoints();
+    renderAt("/ui/octocat?tab=repositories");
+    await screen.findByText("The Octocat");
+    await screen.findByText("api");
+
+    fireEvent.change(screen.getByLabelText("Type"), { target: { value: "forks" } });
+    await waitFor(() => {
+      const urls = mockFetch.mock.calls.map((c) => String(c[0]));
+      expect(urls.some((u) => u.includes("/users/octocat/repos") && u.includes("type=forks"))).toBe(true);
+    });
+
+    fireEvent.change(screen.getByLabelText("Sort"), { target: { value: "name" } });
+    await waitFor(() => {
+      const urls = mockFetch.mock.calls.map((c) => String(c[0]));
+      expect(urls.some((u) => u.includes("/users/octocat/repos") && u.includes("sort=full_name"))).toBe(true);
+    });
+  });
+
+  it("finds a search match that lives on a later page (Link-header walk)", async () => {
+    const page2Repo = { ...repo, id: 2, name: "zebra", full_name: "octocat/zebra", description: "on page two" };
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.includes("/users/octocat/repos")) {
+        if (u.includes("page=2")) return Promise.resolve(jsonResponse([page2Repo]));
+        return Promise.resolve(
+          jsonResponse([repo], 200, {
+            Link: '</api/v3/users/octocat/repos?per_page=30&sort=updated&page=2>; rel="next"',
+          }),
+        );
+      }
+      if (u.includes("/readme")) return Promise.resolve(jsonResponse({ message: "Not Found" }, 404));
+      if (u.includes("/pinned") || u.includes("/events") || u.includes("/orgs"))
+        return Promise.resolve(jsonResponse([]));
+      return Promise.resolve(jsonResponse(profile));
+    });
+    renderAt("/ui/octocat?tab=repositories");
+    await screen.findByText("The Octocat");
+    await screen.findByText("api");
+
+    fireEvent.change(screen.getByLabelText("Find a repository"), { target: { value: "zebra" } });
+    expect(await screen.findByText("zebra")).toBeInTheDocument();
   });
 });
 

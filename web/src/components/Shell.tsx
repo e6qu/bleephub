@@ -75,9 +75,11 @@ export function BleephubBuildFooter() {
       style={{ borderTop: "1px solid var(--color-border)", color: "var(--color-fg-muted)", fontSize: "0.75rem" }}
     >
       <span>Bleephub {identity.version}</span>
-      <time dateTime={identity.publishedAt === "not yet published" ? undefined : identity.publishedAt}>
-        Published {publishedLabel}
-      </time>
+      {identity.publishedAt === "not yet published" ? (
+        <span>Unreleased build</span>
+      ) : (
+        <time dateTime={identity.publishedAt}>Published {publishedLabel}</time>
+      )}
     </footer>
   );
 }

@@ -50,14 +50,47 @@ function MarketplaceHero({ subscriptions }: { subscriptions: number }) {
   );
 }
 
+// Listing payloads carry no category taxonomy (the server's Marketplace
+// shape has no categories field), so the sidebar filters on real listing
+// facts — pricing and app kind — instead of dead category anchors.
+type MarketplaceFilter = "all" | "free" | "trial" | "github-apps" | "oauth-apps";
+
+const MARKETPLACE_FILTERS: { key: MarketplaceFilter; label: string }[] = [
+  { key: "all", label: "All apps" },
+  { key: "free", label: "Free plan" },
+  { key: "trial", label: "Free trial" },
+  { key: "github-apps", label: "GitHub Apps" },
+  { key: "oauth-apps", label: "OAuth Apps" },
+];
+
+function matchesMarketplaceFilter(listing: GithubMarketplaceListing, filter: MarketplaceFilter): boolean {
+  switch (filter) {
+    case "all":
+      return true;
+    case "free":
+      return listing.plans.some((plan) => plan.price_model === "FREE");
+    case "trial":
+      return listing.plans.some((plan) => plan.has_free_trial);
+    case "github-apps":
+      return listing.github_app_id !== null;
+    case "oauth-apps":
+      return listing.github_app_id === null;
+  }
+}
+
 function MarketplaceDirectory() {
   const listings = useQuery({ queryKey: ["marketplace", "listings"], queryFn: fetchMarketplaceListings });
   const subscriptions = useQuery({ queryKey: ["marketplace", "subscriptions"], queryFn: fetchMarketplaceSubscriptions });
   const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<MarketplaceFilter>("all");
   const visible = useMemo(() => {
     const query = search.trim().toLowerCase();
-    return (listings.data ?? []).filter((listing) => !query || `${listing.name} ${listing.description}`.toLowerCase().includes(query));
-  }, [listings.data, search]);
+    return (listings.data ?? []).filter(
+      (listing) =>
+        matchesMarketplaceFilter(listing, filter) &&
+        (!query || `${listing.name} ${listing.description}`.toLowerCase().includes(query)),
+    );
+  }, [listings.data, search, filter]);
 
   if (listings.isLoading || subscriptions.isLoading) return <Spinner label="loading Marketplace" />;
   if (listings.isError || subscriptions.isError) return <InlineError title="Marketplace unavailable" detail={String(listings.error || subscriptions.error)} />;
@@ -68,10 +101,18 @@ function MarketplaceDirectory() {
       <div className="marketplace-layout">
         <aside className="marketplace-sidebar">
           <h2>Discover</h2>
-          <a href="#all-apps" className="marketplace-category active">All apps</a>
-          <a href="#developer-tools" className="marketplace-category">Developer tools</a>
-          <a href="#security" className="marketplace-category">Security</a>
-          <a href="#education" className="marketplace-category">Education</a>
+          {MARKETPLACE_FILTERS.map((f) => (
+            <button
+              key={f.key}
+              type="button"
+              className={`marketplace-category${filter === f.key ? " active" : ""}`}
+              aria-pressed={filter === f.key}
+              style={{ background: "transparent", border: "none", textAlign: "left", cursor: "pointer" }}
+              onClick={() => setFilter(f.key)}
+            >
+              {f.label}
+            </button>
+          ))}
           <Link to="/ui/apps" className="marketplace-publisher-link">Publish an app →</Link>
         </aside>
         <main id="all-apps" className="min-w-0">

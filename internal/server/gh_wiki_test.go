@@ -146,7 +146,7 @@ func TestWiki_PrivateNoReadIs404(t *testing.T) {
 	admin := s.store.UsersByLogin["admin"]
 	repo := s.store.CreateRepo(admin, "wiki-secret", "", true)
 	enableWiki(s, repo)
-	s.store.UpsertWikiPage(repo.FullName, "home", "Home", "secret", "admin")
+	s.store.UpsertWikiPage(repo.FullName, "home", "Home", "secret", "admin", "")
 
 	w := doWikiReq(s, "", "GET", "/ui-data/repos/"+repo.FullName+"/wiki/pages", nil)
 	if w.Code != http.StatusNotFound {

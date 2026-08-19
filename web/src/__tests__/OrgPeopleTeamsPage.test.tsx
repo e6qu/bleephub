@@ -69,10 +69,17 @@ describe("OrgPeoplePage", () => {
   });
 
   const member = { id: 2, login: "dev", avatar_url: "", type: "User", site_admin: false };
+  // The write controls are gated on the viewer being an org owner.
+  const adminMembership = (u: string) =>
+    u === "/api/v3/user/memberships/orgs/acme"
+      ? jsonResponse({ state: "active", role: "admin" })
+      : null;
 
   it("invites a member via PUT memberships", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
       const u = url.toString();
+      const gate = adminMembership(u);
+      if (gate) return Promise.resolve(gate);
       if (u.endsWith("/memberships/newdev") && init?.method === "PUT") {
         return Promise.resolve(jsonResponse({ state: "active", role: "member" }));
       }
@@ -93,6 +100,8 @@ describe("OrgPeoplePage", () => {
   it("changes a member's role via the per-member select", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
       const u = url.toString();
+      const gate = adminMembership(u);
+      if (gate) return Promise.resolve(gate);
       if (u.endsWith("/memberships/dev") && init?.method === "PUT") {
         return Promise.resolve(jsonResponse({ state: "active", role: "admin" }));
       }
@@ -113,6 +122,8 @@ describe("OrgPeoplePage", () => {
   it("removes a member after confirmation", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
       const u = url.toString();
+      const gate = adminMembership(u);
+      if (gate) return Promise.resolve(gate);
       if (u.endsWith("/memberships/dev") && init?.method === "DELETE") {
         return Promise.resolve(new Response(null, { status: 204 }));
       }
@@ -151,6 +162,37 @@ describe("OrgTeamsPage", () => {
     renderTeams();
     await waitFor(() => {
       expect(screen.getByText("No teams")).toBeInTheDocument();
+    });
+  });
+
+  it("nests child teams under their parent with an expand toggle", async () => {
+    const parent = { id: 1, slug: "platform", name: "Platform", description: null, privacy: "closed", permission: "push", html_url: "http://x", parent: null };
+    const child = { id: 2, slug: "platform-oncall", name: "Oncall", description: null, privacy: "closed", permission: "push", html_url: "http://x", parent: { slug: "platform", name: "Platform" } };
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u === "/api/v3/orgs/acme/teams") return Promise.resolve(jsonResponse([parent, child]));
+      // team-full hydration for the member/repo counts
+      if (u === "/api/v3/orgs/acme/teams/platform")
+        return Promise.resolve(jsonResponse({ ...parent, members_count: 4, repos_count: 2 }));
+      if (u === "/api/v3/orgs/acme/teams/platform-oncall")
+        return Promise.resolve(jsonResponse({ ...child, members_count: 1, repos_count: 0 }));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderTeams();
+
+    await screen.findByText("Oncall");
+    const toggle = screen.getByRole("button", { name: /collapse child teams of platform/i });
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+
+    // Counts hydrate lazily from the team-full endpoint.
+    await waitFor(() => {
+      expect(screen.getByText("4")).toBeInTheDocument();
+    });
+
+    // Collapsing the parent hides the child row.
+    fireEvent.click(toggle);
+    await waitFor(() => {
+      expect(screen.queryByText("Oncall")).not.toBeInTheDocument();
     });
   });
 });

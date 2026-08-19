@@ -170,7 +170,7 @@ import type {
   GithubMarketplaceSubscription,
   Undef,
 } from "./types.js";
-import { encodeContentsBase64 } from "./utils/workflowDispatch.js";
+import { encodeContentsBase64 } from "./utils/contents.js";
 
 // One AbortController behind every request this module makes.
 //

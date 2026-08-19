@@ -188,9 +188,76 @@ describe("WorkflowsPage", () => {
     const runBtn = buttons.find((b) => /^run\b/i.test(b.textContent ?? ""));
     expect(runBtn, `Found ${buttons.length} buttons: ${buttons.map((b) => b.textContent).join(" | ")}`).toBeDefined();
     fireEvent.click(runBtn!);
-    // Dialog now in the DOM — assert on its inputs field (unique to it).
+    // The workflow file is unreadable in this mock (contents 404s to []),
+    // so the dialog falls back to the raw JSON inputs field.
     await waitFor(() => {
       expect(screen.getByLabelText(/inputs \(json\)/i)).toBeInTheDocument();
+    });
+  });
+
+  it("builds typed dispatch inputs from the workflow YAML and preselects the default branch", async () => {
+    const yaml = [
+      "name: CI Build",
+      "on:",
+      "  workflow_dispatch:",
+      "    inputs:",
+      "      env_name:",
+      "        description: Environment name",
+      "        required: true",
+      "        default: staging",
+      "jobs: {}",
+    ].join("\n");
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (init?.method === "POST" && u.endsWith("/dispatches")) {
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      if (u.includes("/contents/")) {
+        return Promise.resolve(
+          jsonResponse({
+            name: "ci.yml",
+            path: ".github/workflows/ci.yml",
+            type: "file",
+            encoding: "base64",
+            content: btoa(yaml),
+          }),
+        );
+      }
+      if (u.includes("/branches")) {
+        return Promise.resolve(jsonResponse([
+          { name: "dev", commit: { sha: "a" } },
+          { name: "main", commit: { sha: "b" } },
+        ]));
+      }
+      if (u === "/api/v3/repos/admin/test") return Promise.resolve(jsonResponse(reposData[0]));
+      return routedFetch(url);
+    });
+    renderPage();
+    await screen.findByText(".github/workflows/ci.yml");
+    const buttons = screen.getAllByRole("button");
+    fireEvent.click(buttons.find((b) => /^run\b/i.test(b.textContent ?? ""))!);
+
+    // Typed field replaces the raw JSON textarea, default prefilled.
+    const envInput = await screen.findByLabelText(/environment name \*/i);
+    expect(envInput).toHaveValue("staging");
+    expect(screen.queryByLabelText(/inputs \(json\)/i)).not.toBeInTheDocument();
+
+    // Branch select seeded from /branches with the default branch selected.
+    const refSelect = (await screen.findByLabelText(/use workflow from branch/i)) as HTMLSelectElement;
+    await waitFor(() => expect(refSelect.value).toBe("main"));
+    expect(screen.getByRole("option", { name: "dev" })).toBeInTheDocument();
+
+    fireEvent.change(envInput, { target: { value: "production" } });
+    fireEvent.click(screen.getByRole("button", { name: /^run workflow$/i }));
+    await waitFor(() => {
+      const post = mockFetch.mock.calls.find(
+        (c) => c[0]!.toString().endsWith("/actions/workflows/1234/dispatches") && c[1]?.method === "POST",
+      );
+      expect(post).toBeTruthy();
+      expect(JSON.parse(post![1]!.body as string)).toEqual({
+        ref: "main",
+        inputs: { env_name: "production" },
+      });
     });
   });
 });

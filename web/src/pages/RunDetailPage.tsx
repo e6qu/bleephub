@@ -10,6 +10,7 @@ import {
   fetchJobLogs,
   fetchJobSummary,
   fetchRunArtifacts,
+  fetchFileContent,
   fetchPendingDeployments,
   reviewPendingDeployments,
   cancelRun,
@@ -24,8 +25,11 @@ import {
   ghFetch,
 } from "../api.js";
 import { confirmAction } from "../components/confirmAction.js";
+import { RelativeTime } from "../components/RelativeTime.js";
 import type { GithubJob, GithubJobStep, GithubWorkflowRun } from "../types.js";
 import { formatDuration } from "../utils/format.js";
+import { decodeContentsBase64 } from "../utils/contents.js";
+import { needsForJobName, parseWorkflowJobSpecs } from "../utils/workflowNeeds.js";
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
 import { RepoHeader } from "../components/PageHeader.js";
 import { RunStatusIcon } from "../components/RunStatusIcon.js";
@@ -72,6 +76,26 @@ export function RunDetailPage() {
 
   const [selectedJobId, setSelectedJobId] = useState<number | null>(null);
   const selectedJob = jobs.find((j) => j.id === selectedJobId) ?? jobs[0] ?? null;
+  const [logSearch, setLogSearch] = useState("");
+
+  // Job dependencies are not part of the jobs REST payload — the workflow
+  // file is the only client-visible source of `needs`, so parse it
+  // best-effort (missing/unreadable file simply means no dependency chips).
+  const workflowYamlQ = useQuery({
+    queryKey: ["workflow-yaml", owner, repo, run?.path],
+    queryFn: () => fetchFileContent(owner, repo, run!.path),
+    enabled: !!run?.path,
+    retry: false,
+  });
+  const jobSpecs = useMemo(() => {
+    const content = workflowYamlQ.data?.content;
+    if (typeof content !== "string") return [];
+    try {
+      return parseWorkflowJobSpecs(decodeContentsBase64(content));
+    } catch {
+      return [];
+    }
+  }, [workflowYamlQ.data]);
 
   if (runQ.isError) {
     if (isNotFound(runQ.error)) {
@@ -110,35 +134,72 @@ export function RunDetailPage() {
                 No jobs recorded for this run.
               </div>
             )}
-            {jobs.map((job, i) => (
-              <button
-                key={job.id}
-                type="button"
-                onClick={() => setSelectedJobId(job.id)}
-                className="flex w-full items-center gap-2 text-left"
-                style={{
-                  padding: "0.55rem 1rem",
-                  fontSize: "0.84rem",
-                  fontWeight: selectedJob?.id === job.id ? 600 : 500,
-                  color: "var(--color-fg)",
-                  background:
-                    selectedJob?.id === job.id
-                      ? "color-mix(in srgb, var(--color-fg-muted) 10%, transparent)"
-                      : "transparent",
-                  border: "none",
-                  borderBottom: i < jobs.length - 1 ? "1px solid var(--color-border)" : "none",
-                }}
-              >
-                <RunStatusIcon status={job.status} conclusion={job.conclusion} size={15} />
-                <span className="min-w-0 flex-1 truncate">{job.name}</span>
-              </button>
-            ))}
+            {jobs.map((job, i) => {
+              const needs = needsForJobName(jobSpecs, job.name);
+              return (
+                <button
+                  key={job.id}
+                  type="button"
+                  onClick={() => setSelectedJobId(job.id)}
+                  className="flex w-full items-center gap-2 text-left"
+                  style={{
+                    padding: "0.55rem 1rem",
+                    fontSize: "0.84rem",
+                    fontWeight: selectedJob?.id === job.id ? 600 : 500,
+                    color: "var(--color-fg)",
+                    background:
+                      selectedJob?.id === job.id
+                        ? "color-mix(in srgb, var(--color-fg-muted) 10%, transparent)"
+                        : "transparent",
+                    border: "none",
+                    borderBottom: i < jobs.length - 1 ? "1px solid var(--color-border)" : "none",
+                  }}
+                >
+                  <RunStatusIcon status={job.status} conclusion={job.conclusion} size={15} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate">{job.name}</span>
+                    {needs.length > 0 && (
+                      <span
+                        className="block truncate font-mono"
+                        style={{ fontSize: "0.68rem", fontWeight: 400, color: "var(--color-fg-muted)" }}
+                      >
+                        needs: {needs.join(", ")}
+                      </span>
+                    )}
+                  </span>
+                  {logSearch && (
+                    <JobLogMatchCount owner={owner} repo={repo} jobId={job.id} search={logSearch} />
+                  )}
+                </button>
+              );
+            })}
           </Box>
         </aside>
 
         <div className="min-w-0 flex-1">
+          <div className="mb-3 flex items-center gap-2">
+            <label htmlFor="run-log-search" className="sr-only">
+              Search logs
+            </label>
+            <input
+              id="run-log-search"
+              type="search"
+              placeholder="Search logs…"
+              value={logSearch}
+              onChange={(e) => setLogSearch(e.target.value)}
+              className="w-full"
+              style={{
+                padding: "0.32rem 0.6rem",
+                fontSize: "0.82rem",
+                background: "var(--color-bg-subtle)",
+                color: "var(--color-fg)",
+                border: "1px solid var(--color-border)",
+                borderRadius: "var(--radius-md)",
+              }}
+            />
+          </div>
           {selectedJob ? (
-            <JobPane owner={owner} repo={repo} job={selectedJob} live={active} />
+            <JobPane owner={owner} repo={repo} job={selectedJob} live={active} search={logSearch} />
           ) : (
             jobsQ.data && <Blankslate title="No job selected" />
           )}
@@ -146,6 +207,54 @@ export function RunDetailPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Per-job match-count badge shown while a log search is active. Reuses the
+ * ["job-logs", …] cache key so the selected job costs no extra request.
+ */
+function JobLogMatchCount({
+  owner,
+  repo,
+  jobId,
+  search,
+}: {
+  owner: string;
+  repo: string;
+  jobId: number;
+  search: string;
+}) {
+  const logsQ = useQuery({
+    queryKey: ["job-logs", owner, repo, jobId],
+    queryFn: ({ signal }) => fetchJobLogs(owner, repo, jobId, signal),
+    retry: false,
+  });
+  const count = useMemo(() => {
+    if (typeof logsQ.data !== "string" || !search) return null;
+    const needle = search.toLowerCase();
+    let n = 0;
+    for (const line of logsQ.data.split("\n")) {
+      if (line.toLowerCase().includes(needle)) n++;
+    }
+    return n;
+  }, [logsQ.data, search]);
+  if (count === null) return null;
+  return (
+    <span
+      className="tabular-nums shrink-0"
+      aria-label={`${count} matching log line${count === 1 ? "" : "s"}`}
+      style={{
+        fontSize: "0.68rem",
+        fontWeight: 600,
+        color: count > 0 ? "var(--color-fg)" : "var(--color-fg-subtle)",
+        background: "color-mix(in srgb, var(--color-fg-muted) 14%, transparent)",
+        borderRadius: "2rem",
+        padding: "0.05rem 0.45rem",
+      }}
+    >
+      {count}
+    </span>
   );
 }
 
@@ -248,7 +357,10 @@ function RunHeader({
             <span className="font-mono">{shown.head_sha.slice(0, 7)}</span>
             <span>{shown.event}</span>
             {shown.actor && <span>by {shown.actor.login}</span>}
-            <span>{new Date(shown.created_at).toLocaleString()}</span>
+            <RelativeTime iso={shown.created_at} />
+            <span className="tabular-nums">
+              {formatDuration(shown.created_at, shown.status === "completed" ? shown.updated_at : null)}
+            </span>
             {attemptsSupported && (
               <span className="inline-flex items-center gap-1">
                 <label htmlFor="run-attempt-select">Attempt</label>
@@ -326,6 +438,18 @@ function RunHeader({
             >
               {rerunFailedMutation.isPending ? "Re-running…" : "Re-run failed jobs"}
             </Button>
+          )}
+          {completed && (
+            // The run-level logs endpoint answers with the zip archive —
+            // a plain anchor download matches GitHub's "Download log archive".
+            <a
+              href={`/api/v3/repos/${owner}/${repo}/actions/runs/${run.id}/logs`}
+              download
+              className="inline-flex items-center gap-1"
+              style={{ fontSize: "0.8rem", color: "var(--color-accent)", textDecoration: "none" }}
+            >
+              <DownloadIcon size={13} /> Download log archive
+            </a>
           )}
           {completed && (
             <Button
@@ -534,17 +658,23 @@ function annotationColor(level: string): string {
   return "var(--color-fg-muted)";
 }
 
+/** Leading runner-log ISO timestamp ("2026-01-01T00:00:10Z ", incl. fractions). */
+const LOG_TS_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?\s/;
+
 function JobPane({
   owner,
   repo,
   job,
   live,
+  search,
 }: {
   owner: string;
   repo: string;
   job: GithubJob;
   live: boolean;
+  search: string;
 }) {
+  const [showTimestamps, setShowTimestamps] = useState(false);
   // The job JSON carries `.../check-runs/{id}` — the annotation source.
   const checkRunId = useMemo(() => {
     const url = job.check_run_url;
@@ -579,6 +709,14 @@ function JobPane({
     () => segmentJobLog(logsQ.data ?? ""),
     [logsQ.data],
   );
+  const hasTimestamps = useMemo(() => lines.some((l) => LOG_TS_RE.test(l)), [lines]);
+  const matchingLines = useMemo(() => {
+    if (!search) return [];
+    const needle = search.toLowerCase();
+    return lines.filter(
+      (l) => !/##\[(group|endgroup)\]/.test(l) && l.toLowerCase().includes(needle),
+    );
+  }, [lines, search]);
   const segmentByStep = useMemo(() => {
     const map = new Map<number, LogSegment>();
     for (const step of job.steps) {
@@ -613,6 +751,27 @@ function JobPane({
               </span>
             )}
             <span className="tabular-nums">{formatDuration(job.started_at, job.completed_at)}</span>
+            {hasTimestamps && (
+              <label
+                className="inline-flex items-center gap-1"
+                style={{ fontSize: "0.74rem", color: "var(--color-fg-muted)" }}
+              >
+                <input
+                  type="checkbox"
+                  checked={showTimestamps}
+                  onChange={(e) => setShowTimestamps(e.target.checked)}
+                />
+                Show timestamps
+              </label>
+            )}
+            <a
+              href={`/api/v3/repos/${owner}/${repo}/actions/jobs/${job.id}/logs`}
+              target="_blank"
+              rel="noreferrer"
+              style={{ fontSize: "0.76rem", color: "var(--color-accent)", textDecoration: "none" }}
+            >
+              View raw logs
+            </a>
             <Button size="sm" disabled={rerunMut.isPending} onClick={() => rerunMut.mutate()}>
               {rerunMut.isPending ? "Re-running…" : "Re-run job"}
             </Button>
@@ -632,8 +791,29 @@ function JobPane({
             step={step}
             segment={stepSliced ? segmentByStep.get(step.number) ?? null : null}
             expandable={stepSliced && segmentByStep.has(step.number)}
+            search={search}
+            showTimestamps={showTimestamps}
           />
         ))
+      )}
+
+      {search && (
+        <div style={{ borderTop: "1px solid var(--color-border)" }}>
+          <div
+            style={{
+              padding: "0.45rem 1rem",
+              fontSize: "0.76rem",
+              fontWeight: 600,
+              color: "var(--color-fg-muted)",
+              background: "var(--color-bg-subtle)",
+            }}
+          >
+            {matchingLines.length} matching line{matchingLines.length === 1 ? "" : "s"} in this job’s log
+          </div>
+          {matchingLines.length > 0 && (
+            <LogBlock lines={matchingLines} search={search} showTimestamps={showTimestamps} />
+          )}
+        </div>
       )}
 
       {logsQ.isError && !isNotFound(logsQ.error) && (
@@ -657,7 +837,7 @@ function JobPane({
           >
             Job log
           </div>
-          <LogBlock lines={lines} />
+          <LogBlock lines={lines} search={search} showTimestamps={showTimestamps} />
         </div>
       )}
       {annotations.length > 0 && (
@@ -738,10 +918,14 @@ function StepRow({
   step,
   segment,
   expandable,
+  search,
+  showTimestamps,
 }: {
   step: GithubJobStep;
   segment: LogSegment | null;
   expandable: boolean;
+  search: string;
+  showTimestamps: boolean;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -770,12 +954,45 @@ function StepRow({
           {formatDuration(step.started_at, step.completed_at)}
         </span>
       </button>
-      {open && segment && <LogBlock lines={segment.lines} />}
+      {open && segment && (
+        <LogBlock lines={segment.lines} search={search} showTimestamps={showTimestamps} />
+      )}
     </div>
   );
 }
 
-function LogBlock({ lines }: { lines: string[] }) {
+/** Wrap case-insensitive occurrences of `needle` in <mark> for one line. */
+function highlightLine(line: string, needle: string): React.ReactNode {
+  if (!needle) return line;
+  const lower = line.toLowerCase();
+  const needleLower = needle.toLowerCase();
+  const parts: React.ReactNode[] = [];
+  let from = 0;
+  for (;;) {
+    const at = lower.indexOf(needleLower, from);
+    if (at === -1) break;
+    if (at > from) parts.push(line.slice(from, at));
+    parts.push(
+      <mark key={`${at}`} style={{ background: "var(--color-status-warn-soft)", color: "inherit" }}>
+        {line.slice(at, at + needle.length)}
+      </mark>,
+    );
+    from = at + needle.length;
+  }
+  if (parts.length === 0) return line;
+  if (from < line.length) parts.push(line.slice(from));
+  return parts;
+}
+
+function LogBlock({
+  lines,
+  search = "",
+  showTimestamps = true,
+}: {
+  lines: string[];
+  search?: string;
+  showTimestamps?: boolean;
+}) {
   return (
     <pre
       className="font-mono"
@@ -791,7 +1008,14 @@ function LogBlock({ lines }: { lines: string[] }) {
         wordBreak: "break-word",
       }}
     >
-      {lines.join("\n")}
+      {lines.map((raw, i) => {
+        const line = showTimestamps ? raw : raw.replace(LOG_TS_RE, "");
+        return (
+          <span key={i} className="block">
+            {highlightLine(line, search)}
+          </span>
+        );
+      })}
     </pre>
   );
 }

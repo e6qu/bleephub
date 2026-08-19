@@ -75,7 +75,7 @@
       },
       {
         "event": "issue_comment",
-        "line": 667,
+        "line": 699,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_issues_rest.go"
       },
@@ -87,7 +87,7 @@
       },
       {
         "event": "issues",
-        "line": 607,
+        "line": 639,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_issues_rest.go"
       },
@@ -171,7 +171,7 @@
       },
       {
         "event": "public",
-        "line": 908,
+        "line": 931,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_repos_rest.go"
       },
@@ -201,7 +201,7 @@
       },
       {
         "event": "pull_request",
-        "line": 30,
+        "line": 31,
         "producer": "emitWebhookEvent",
         "source": "internal/server/workflow_triggers.go"
       },
@@ -267,7 +267,7 @@
       },
       {
         "event": "watch",
-        "line": 1286,
+        "line": 1330,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_repos_rest.go"
       },
@@ -292,15 +292,15 @@
   "graphql": {
     "compatibility_gap_count": 9,
     "coverage": {
-      "bleephub_types": 271,
+      "bleephub_types": 287,
       "compatibility_gap_count": 9,
-      "implemented_fields": 982,
+      "implemented_fields": 1036,
       "official_fields": 8360,
       "official_types": 1807,
-      "shared_types": 264,
-      "signature_exact_fields": 981
+      "shared_types": 280,
+      "signature_exact_fields": 1035
     },
-    "introspection_snapshot_sha256": "72b21180bdb65fed013573d94e767c13ec305d7f9545dbc2ac42694742c8484a",
+    "introspection_snapshot_sha256": "e8b2da3defc834efcbdf705422f85ea6d07986b7c7b0a19ffb5bada9329b94f3",
     "official_schema": {
       "content_sha256": "b716c6844750283b8c33200f660989337254e7158f40ed869f06418bafb3bc2e",
       "source": "https://docs.github.com/public/fpt/schema.docs.graphql"
@@ -320,6 +320,7 @@
       "internal/server/gh_discussions_graphql_test.go",
       "internal/server/gh_graphql_connection_pagination_test.go",
       "internal/server/gh_graphql_node_test.go",
+      "internal/server/gh_issue_pin_transfer_upvote_graphql_test.go",
       "internal/server/gh_issues_graphql_test.go",
       "internal/server/gh_projects_v2_graphql_test.go",
       "internal/server/gh_sweep_graphql_test.go",
@@ -30257,137 +30258,137 @@
         "target": "/ui/repos/${owner}/readme-test"
       },
       {
-        "line": 529,
+        "line": 530,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 543,
+        "line": 544,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos/admin/${repo}"
       },
       {
-        "line": 553,
+        "line": 554,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 567,
+        "line": 568,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos/${owner}/issues-test"
       },
       {
-        "line": 582,
+        "line": 583,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 597,
+        "line": 598,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos/${owner}/issues-direct/issues"
       },
       {
-        "line": 619,
+        "line": 620,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 629,
+        "line": 630,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos/${owner}/pulls-direct/pulls"
       },
       {
-        "line": 637,
+        "line": 638,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 661,
+        "line": 662,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos/admin/${repo}/pulls/${pull.number}/files"
       },
       {
-        "line": 689,
+        "line": 690,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/apps"
       },
       {
-        "line": 697,
+        "line": 698,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/apps"
       },
       {
-        "line": 708,
+        "line": 709,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/apps"
       },
       {
-        "line": 718,
+        "line": 719,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/oauth"
       },
       {
-        "line": 729,
+        "line": 730,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 761,
+        "line": 762,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/workflows"
       },
       {
-        "line": 780,
+        "line": 781,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/metrics"
       },
       {
-        "line": 791,
+        "line": 792,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 797,
+        "line": 798,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos/${owner}/${repo}/releases"
       },
       {
-        "line": 841,
+        "line": 842,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 848,
+        "line": 849,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos/${owner}/${repo}/security/code-scanning"
       },
       {
-        "line": 896,
+        "line": 897,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/apps"
       },
       {
-        "line": 930,
+        "line": 931,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/marketplace"
       },
       {
-        "line": 980,
+        "line": 981,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/operations"
       },
       {
-        "line": 985,
+        "line": 986,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos"
       },
       {
-        "line": 997,
+        "line": 998,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos/${owner}/dark-theme-repo"
       },
       {
-        "line": 1010,
+        "line": 1011,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/health"
       },
@@ -30465,7 +30466,7 @@
     "routes": [
       {
         "component": "DashboardPage",
-        "line": 196,
+        "line": 199,
         "path": "/ui/",
         "rendered_tests": [
           "web/src/__tests__/DashboardPage.test.tsx"
@@ -30477,7 +30478,7 @@
       },
       {
         "component": "LoginRedirect",
-        "line": 180,
+        "line": 183,
         "path": "/ui/*",
         "rendered_tests": [],
         "source": "web/src/App.tsx",
@@ -30485,7 +30486,7 @@
       },
       {
         "component": "Navigate",
-        "line": 297,
+        "line": 301,
         "path": "/ui/*",
         "rendered_tests": [],
         "source": "web/src/App.tsx",
@@ -30495,7 +30496,7 @@
       },
       {
         "component": "ProfilePage",
-        "line": 296,
+        "line": 300,
         "path": "/ui/:login",
         "rendered_tests": [
           "web/src/__tests__/ProfilePage.test.tsx"
@@ -30507,7 +30508,7 @@
       },
       {
         "component": "AccountPage",
-        "line": 279,
+        "line": 283,
         "path": "/ui/account",
         "rendered_tests": [
           "web/src/__tests__/AccountPage.test.tsx",
@@ -30521,7 +30522,7 @@
       },
       {
         "component": "AppsPage",
-        "line": 247,
+        "line": 250,
         "path": "/ui/apps",
         "rendered_tests": [
           "web/src/__tests__/AppsPage.test.tsx"
@@ -30533,7 +30534,7 @@
       },
       {
         "component": "MarketplacePublisherPage",
-        "line": 248,
+        "line": 251,
         "path": "/ui/apps/:publisher/marketplace",
         "rendered_tests": [
           "web/src/__tests__/MarketplacePublisherPage.test.tsx"
@@ -30545,7 +30546,7 @@
       },
       {
         "component": "ClassroomPage",
-        "line": 261,
+        "line": 265,
         "path": "/ui/classrooms",
         "rendered_tests": [
           "web/src/__tests__/ClassroomPage.test.tsx"
@@ -30558,7 +30559,7 @@
       },
       {
         "component": "ClassroomPage",
-        "line": 262,
+        "line": 266,
         "path": "/ui/classrooms/:classroomId",
         "rendered_tests": [
           "web/src/__tests__/ClassroomPage.test.tsx"
@@ -30571,7 +30572,7 @@
       },
       {
         "component": "ClassroomPage",
-        "line": 263,
+        "line": 267,
         "path": "/ui/classrooms/accept/:inviteCode",
         "rendered_tests": [
           "web/src/__tests__/ClassroomPage.test.tsx"
@@ -30584,7 +30585,7 @@
       },
       {
         "component": "CodespacesPage",
-        "line": 257,
+        "line": 261,
         "path": "/ui/codespaces",
         "rendered_tests": [
           "web/src/__tests__/CodespacesPage.test.tsx"
@@ -30596,7 +30597,7 @@
       },
       {
         "component": "CodespacesPage",
-        "line": 258,
+        "line": 262,
         "path": "/ui/codespaces/:codespaceName",
         "rendered_tests": [
           "web/src/__tests__/CodespacesPage.test.tsx"
@@ -30608,7 +30609,7 @@
       },
       {
         "component": "PersonalCopilotSpacesPage",
-        "line": 260,
+        "line": 264,
         "path": "/ui/copilot/spaces",
         "rendered_tests": [
           "web/src/__tests__/CopilotPage.test.tsx"
@@ -30620,7 +30621,7 @@
       },
       {
         "component": "GistsPage",
-        "line": 251,
+        "line": 254,
         "path": "/ui/gists",
         "rendered_tests": [
           "web/src/__tests__/GistsPage.test.tsx"
@@ -30631,8 +30632,20 @@
         ]
       },
       {
+        "component": "GistDetailPage",
+        "line": 255,
+        "path": "/ui/gists/:id",
+        "rendered_tests": [
+          "web/src/__tests__/GistDetailPage.test.tsx"
+        ],
+        "source": "web/src/App.tsx",
+        "tests": [
+          "web/src/__tests__/GistDetailPage.test.tsx"
+        ]
+      },
+      {
         "component": "LoginPage",
-        "line": 179,
+        "line": 182,
         "path": "/ui/login",
         "rendered_tests": [
           "web/src/__tests__/LoginPage.test.tsx"
@@ -30645,7 +30658,7 @@
       },
       {
         "component": "Navigate",
-        "line": 295,
+        "line": 299,
         "path": "/ui/login",
         "rendered_tests": [],
         "source": "web/src/App.tsx",
@@ -30655,7 +30668,7 @@
       },
       {
         "component": "MarketplacePage",
-        "line": 264,
+        "line": 268,
         "path": "/ui/marketplace",
         "rendered_tests": [
           "web/src/__tests__/MarketplacePage.test.tsx"
@@ -30667,7 +30680,7 @@
       },
       {
         "component": "MarketplacePage",
-        "line": 265,
+        "line": 269,
         "path": "/ui/marketplace/:slug",
         "rendered_tests": [
           "web/src/__tests__/MarketplacePage.test.tsx"
@@ -30679,7 +30692,7 @@
       },
       {
         "component": "MetricsPage",
-        "line": 250,
+        "line": 253,
         "path": "/ui/metrics",
         "rendered_tests": [
           "web/src/__tests__/MetricsPage.test.tsx"
@@ -30691,7 +30704,7 @@
       },
       {
         "component": "MigrationsPage",
-        "line": 256,
+        "line": 260,
         "path": "/ui/migrations",
         "rendered_tests": [
           "web/src/__tests__/MigrationsPage.test.tsx"
@@ -30703,7 +30716,7 @@
       },
       {
         "component": "NotificationsPage",
-        "line": 252,
+        "line": 256,
         "path": "/ui/notifications",
         "rendered_tests": [
           "web/src/__tests__/NotificationsPage.test.tsx"
@@ -30715,7 +30728,7 @@
       },
       {
         "component": "OAuthPage",
-        "line": 249,
+        "line": 252,
         "path": "/ui/oauth",
         "rendered_tests": [
           "web/src/__tests__/OAuthPage.test.tsx"
@@ -30727,7 +30740,7 @@
       },
       {
         "component": "OverviewPage",
-        "line": 266,
+        "line": 270,
         "path": "/ui/operations",
         "rendered_tests": [
           "web/src/__tests__/OverviewPage.test.tsx"
@@ -30739,7 +30752,7 @@
       },
       {
         "component": "AuditLogPage",
-        "line": 271,
+        "line": 275,
         "path": "/ui/operations/audit-log",
         "rendered_tests": [
           "web/src/__tests__/AuditLogPage.test.tsx",
@@ -30753,7 +30766,7 @@
       },
       {
         "component": "EnterprisePage",
-        "line": 270,
+        "line": 274,
         "path": "/ui/operations/enterprise",
         "rendered_tests": [
           "web/src/__tests__/EnterprisePage.test.tsx",
@@ -30767,7 +30780,7 @@
       },
       {
         "component": "OrgsPage",
-        "line": 268,
+        "line": 272,
         "path": "/ui/operations/orgs",
         "rendered_tests": [
           "web/src/__tests__/UiFidelityJourneys.test.tsx",
@@ -30781,7 +30794,7 @@
       },
       {
         "component": "TeamsPage",
-        "line": 269,
+        "line": 273,
         "path": "/ui/operations/teams",
         "rendered_tests": [
           "web/src/__tests__/TeamsPage.test.tsx"
@@ -30793,7 +30806,7 @@
       },
       {
         "component": "UsersPage",
-        "line": 267,
+        "line": 271,
         "path": "/ui/operations/users",
         "rendered_tests": [
           "web/src/__tests__/UsersPage.test.tsx",
@@ -30807,7 +30820,7 @@
       },
       {
         "component": "OrgOverviewPage",
-        "line": 288,
+        "line": 292,
         "path": "/ui/orgs/:org",
         "rendered_tests": [
           "web/src/__tests__/OrgOverviewPage.test.tsx"
@@ -30819,7 +30832,7 @@
       },
       {
         "component": "CopilotPage",
-        "line": 208,
+        "line": 211,
         "path": "/ui/orgs/:org/copilot",
         "rendered_tests": [
           "web/src/__tests__/CopilotPage.test.tsx",
@@ -30833,7 +30846,7 @@
       },
       {
         "component": "OrgGovernancePage",
-        "line": 205,
+        "line": 208,
         "path": "/ui/orgs/:org/governance",
         "rendered_tests": [
           "web/src/__tests__/OrgGovernancePage.test.tsx",
@@ -30847,7 +30860,7 @@
       },
       {
         "component": "OrgHooksPage",
-        "line": 275,
+        "line": 279,
         "path": "/ui/orgs/:org/hooks",
         "rendered_tests": [
           "web/src/__tests__/OrgHooksPage.test.tsx"
@@ -30859,7 +30872,7 @@
       },
       {
         "component": "WebhookDeliveriesPage",
-        "line": 276,
+        "line": 280,
         "path": "/ui/orgs/:org/hooks/:hookId/deliveries",
         "rendered_tests": [
           "web/src/__tests__/WebhookDeliveriesPage.test.tsx",
@@ -30873,7 +30886,7 @@
       },
       {
         "component": "OrgInsightsPage",
-        "line": 207,
+        "line": 210,
         "path": "/ui/orgs/:org/insights",
         "rendered_tests": [
           "web/src/__tests__/OrgInsightsPage.test.tsx"
@@ -30885,7 +30898,7 @@
       },
       {
         "component": "PackagesPage",
-        "line": 254,
+        "line": 258,
         "path": "/ui/orgs/:org/packages",
         "rendered_tests": [
           "web/src/__tests__/PackagesPage.test.tsx",
@@ -30899,7 +30912,7 @@
       },
       {
         "component": "OrgPeoplePage",
-        "line": 289,
+        "line": 293,
         "path": "/ui/orgs/:org/people",
         "rendered_tests": [
           "web/src/__tests__/OrgPeoplePage.test.tsx",
@@ -30913,7 +30926,7 @@
       },
       {
         "component": "OrgProjectsV2Page",
-        "line": 202,
+        "line": 205,
         "path": "/ui/orgs/:org/projects",
         "rendered_tests": [
           "web/src/__tests__/OrgProjectsV2Page.test.tsx"
@@ -30925,7 +30938,7 @@
       },
       {
         "component": "OrgProjectsV2Page",
-        "line": 203,
+        "line": 206,
         "path": "/ui/orgs/:org/projects/:number",
         "rendered_tests": [
           "web/src/__tests__/OrgProjectsV2Page.test.tsx"
@@ -30937,7 +30950,7 @@
       },
       {
         "component": "OrgReposPage",
-        "line": 201,
+        "line": 204,
         "path": "/ui/orgs/:org/repos",
         "rendered_tests": [
           "web/src/__tests__/OrgReposPage.test.tsx"
@@ -30949,7 +30962,7 @@
       },
       {
         "component": "RulesetsPage",
-        "line": 204,
+        "line": 207,
         "path": "/ui/orgs/:org/rulesets",
         "rendered_tests": [
           "web/src/__tests__/RulesetsPage.test.tsx",
@@ -30963,7 +30976,7 @@
       },
       {
         "component": "OrgSettingsPage",
-        "line": 206,
+        "line": 209,
         "path": "/ui/orgs/:org/settings",
         "rendered_tests": [
           "web/src/__tests__/OrgSettingsPage.test.tsx"
@@ -30975,7 +30988,7 @@
       },
       {
         "component": "OrgTeamsPage",
-        "line": 290,
+        "line": 294,
         "path": "/ui/orgs/:org/teams",
         "rendered_tests": [
           "web/src/__tests__/OrgPeopleTeamsPage.test.tsx",
@@ -30989,7 +31002,7 @@
       },
       {
         "component": "OrgTeamDetailPage",
-        "line": 291,
+        "line": 295,
         "path": "/ui/orgs/:org/teams/:slug",
         "rendered_tests": [
           "web/src/__tests__/OrgTeamDetail.test.tsx"
@@ -31001,7 +31014,7 @@
       },
       {
         "component": "PackagesPage",
-        "line": 253,
+        "line": 257,
         "path": "/ui/packages",
         "rendered_tests": [
           "web/src/__tests__/PackagesPage.test.tsx",
@@ -31015,7 +31028,7 @@
       },
       {
         "component": "ReposPage",
-        "line": 200,
+        "line": 203,
         "path": "/ui/repos",
         "rendered_tests": [
           "web/src/__tests__/RepoListPage.test.tsx",
@@ -31029,7 +31042,7 @@
       },
       {
         "component": "RepoDetailPage",
-        "line": 209,
+        "line": 212,
         "path": "/ui/repos/:owner/:repo",
         "rendered_tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx",
@@ -31045,7 +31058,7 @@
       },
       {
         "component": "ActionsPage",
-        "line": 234,
+        "line": 237,
         "path": "/ui/repos/:owner/:repo/actions",
         "rendered_tests": [
           "web/src/__tests__/ActionsPage.test.tsx"
@@ -31057,7 +31070,7 @@
       },
       {
         "component": "RunDetailPage",
-        "line": 235,
+        "line": 238,
         "path": "/ui/repos/:owner/:repo/actions/runs/:runId",
         "rendered_tests": [
           "web/src/__tests__/RunDetailPage.test.tsx"
@@ -31069,7 +31082,7 @@
       },
       {
         "component": "RepoDetailPage",
-        "line": 213,
+        "line": 216,
         "path": "/ui/repos/:owner/:repo/activity",
         "rendered_tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx",
@@ -31085,7 +31098,7 @@
       },
       {
         "component": "BlamePage",
-        "line": 218,
+        "line": 221,
         "path": "/ui/repos/:owner/:repo/blame/:ref/*",
         "rendered_tests": [
           "web/src/__tests__/BlamePage.test.tsx"
@@ -31097,7 +31110,7 @@
       },
       {
         "component": "RepoFilePage",
-        "line": 217,
+        "line": 220,
         "path": "/ui/repos/:owner/:repo/blob/:ref/*",
         "rendered_tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx"
@@ -31109,7 +31122,7 @@
       },
       {
         "component": "RepoDetailPage",
-        "line": 211,
+        "line": 214,
         "path": "/ui/repos/:owner/:repo/branches",
         "rendered_tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx",
@@ -31125,7 +31138,7 @@
       },
       {
         "component": "CodespacesPage",
-        "line": 259,
+        "line": 263,
         "path": "/ui/repos/:owner/:repo/codespaces",
         "rendered_tests": [
           "web/src/__tests__/CodespacesPage.test.tsx"
@@ -31137,7 +31150,7 @@
       },
       {
         "component": "RepoDetailPage",
-        "line": 210,
+        "line": 213,
         "path": "/ui/repos/:owner/:repo/commits",
         "rendered_tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx",
@@ -31153,7 +31166,7 @@
       },
       {
         "component": "RepoCommitPage",
-        "line": 215,
+        "line": 218,
         "path": "/ui/repos/:owner/:repo/commits/:sha",
         "rendered_tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx"
@@ -31165,19 +31178,21 @@
       },
       {
         "component": "RepoComparePage",
-        "line": 216,
+        "line": 219,
         "path": "/ui/repos/:owner/:repo/compare/:range",
         "rendered_tests": [
+          "web/src/__tests__/RepoDetailPage.test.tsx",
           "web/src/__tests__/RepositoryCollaborationJourneys.test.tsx"
         ],
         "source": "web/src/App.tsx",
         "tests": [
+          "web/src/__tests__/RepoDetailPage.test.tsx",
           "web/src/__tests__/RepositoryCollaborationJourneys.test.tsx"
         ]
       },
       {
         "component": "DeploymentsPage",
-        "line": 273,
+        "line": 277,
         "path": "/ui/repos/:owner/:repo/deployments",
         "rendered_tests": [
           "web/src/__tests__/DeploymentsPage.test.tsx",
@@ -31191,7 +31206,7 @@
       },
       {
         "component": "DiscussionsPage",
-        "line": 232,
+        "line": 235,
         "path": "/ui/repos/:owner/:repo/discussions",
         "rendered_tests": [
           "web/src/__tests__/DiscussionsPage.test.tsx"
@@ -31204,7 +31219,7 @@
       },
       {
         "component": "DiscussionsPage",
-        "line": 233,
+        "line": 236,
         "path": "/ui/repos/:owner/:repo/discussions/:number",
         "rendered_tests": [
           "web/src/__tests__/DiscussionsPage.test.tsx"
@@ -31217,7 +31232,7 @@
       },
       {
         "component": "RepoSocialPage",
-        "line": 283,
+        "line": 287,
         "path": "/ui/repos/:owner/:repo/forks",
         "rendered_tests": [
           "web/src/__tests__/RepoSocialPage.test.tsx",
@@ -31231,7 +31246,7 @@
       },
       {
         "component": "WebhookDeliveriesPage",
-        "line": 274,
+        "line": 278,
         "path": "/ui/repos/:owner/:repo/hooks/:hookId/deliveries",
         "rendered_tests": [
           "web/src/__tests__/WebhookDeliveriesPage.test.tsx",
@@ -31245,7 +31260,7 @@
       },
       {
         "component": "InsightsPage",
-        "line": 226,
+        "line": 229,
         "path": "/ui/repos/:owner/:repo/insights",
         "rendered_tests": [
           "web/src/__tests__/InsightsPage.test.tsx",
@@ -31259,7 +31274,7 @@
       },
       {
         "component": "IssuesPage",
-        "line": 222,
+        "line": 225,
         "path": "/ui/repos/:owner/:repo/issues",
         "rendered_tests": [
           "web/src/__tests__/IssuesPage.test.tsx"
@@ -31271,7 +31286,7 @@
       },
       {
         "component": "IssuesPage",
-        "line": 223,
+        "line": 226,
         "path": "/ui/repos/:owner/:repo/issues/:number",
         "rendered_tests": [
           "web/src/__tests__/IssuesPage.test.tsx"
@@ -31283,7 +31298,7 @@
       },
       {
         "component": "IssuesPage",
-        "line": 224,
+        "line": 227,
         "path": "/ui/repos/:owner/:repo/labels",
         "rendered_tests": [
           "web/src/__tests__/IssuesPage.test.tsx"
@@ -31295,7 +31310,7 @@
       },
       {
         "component": "IssuesPage",
-        "line": 225,
+        "line": 228,
         "path": "/ui/repos/:owner/:repo/milestones",
         "rendered_tests": [
           "web/src/__tests__/IssuesPage.test.tsx"
@@ -31307,7 +31322,7 @@
       },
       {
         "component": "PackagesPage",
-        "line": 255,
+        "line": 259,
         "path": "/ui/repos/:owner/:repo/packages",
         "rendered_tests": [
           "web/src/__tests__/PackagesPage.test.tsx",
@@ -31321,7 +31336,7 @@
       },
       {
         "component": "ProjectsClassicPage",
-        "line": 243,
+        "line": 246,
         "path": "/ui/repos/:owner/:repo/projects-classic",
         "rendered_tests": [
           "web/src/__tests__/pageErrorPaths.test.tsx"
@@ -31334,7 +31349,7 @@
       },
       {
         "component": "PullsPage",
-        "line": 227,
+        "line": 230,
         "path": "/ui/repos/:owner/:repo/pulls",
         "rendered_tests": [
           "web/src/__tests__/PullsPage.test.tsx",
@@ -31348,7 +31363,7 @@
       },
       {
         "component": "PullsPage",
-        "line": 228,
+        "line": 231,
         "path": "/ui/repos/:owner/:repo/pulls/:number",
         "rendered_tests": [
           "web/src/__tests__/PullsPage.test.tsx",
@@ -31362,7 +31377,7 @@
       },
       {
         "component": "PullsPage",
-        "line": 231,
+        "line": 234,
         "path": "/ui/repos/:owner/:repo/pulls/:number/checks",
         "rendered_tests": [
           "web/src/__tests__/PullsPage.test.tsx",
@@ -31376,7 +31391,7 @@
       },
       {
         "component": "PullsPage",
-        "line": 229,
+        "line": 232,
         "path": "/ui/repos/:owner/:repo/pulls/:number/commits",
         "rendered_tests": [
           "web/src/__tests__/PullsPage.test.tsx",
@@ -31390,7 +31405,7 @@
       },
       {
         "component": "PullsPage",
-        "line": 230,
+        "line": 233,
         "path": "/ui/repos/:owner/:repo/pulls/:number/files",
         "rendered_tests": [
           "web/src/__tests__/PullsPage.test.tsx",
@@ -31404,7 +31419,7 @@
       },
       {
         "component": "ReleasesPage",
-        "line": 219,
+        "line": 222,
         "path": "/ui/repos/:owner/:repo/releases",
         "rendered_tests": [
           "web/src/__tests__/ReleasesPage.test.tsx"
@@ -31416,7 +31431,7 @@
       },
       {
         "component": "ReleasesPage",
-        "line": 221,
+        "line": 224,
         "path": "/ui/repos/:owner/:repo/releases/:releaseId",
         "rendered_tests": [
           "web/src/__tests__/ReleasesPage.test.tsx"
@@ -31428,7 +31443,7 @@
       },
       {
         "component": "ReleasesPage",
-        "line": 220,
+        "line": 223,
         "path": "/ui/repos/:owner/:repo/releases/new",
         "rendered_tests": [
           "web/src/__tests__/ReleasesPage.test.tsx"
@@ -31440,7 +31455,7 @@
       },
       {
         "component": "RepoSecurityOverviewPage",
-        "line": 238,
+        "line": 241,
         "path": "/ui/repos/:owner/:repo/security",
         "rendered_tests": [
           "web/src/__tests__/RepoSecurityOverviewPage.test.tsx"
@@ -31452,21 +31467,23 @@
       },
       {
         "component": "SecurityAdvisoriesPage",
-        "line": 242,
+        "line": 245,
         "path": "/ui/repos/:owner/:repo/security/advisories",
         "rendered_tests": [
+          "web/src/__tests__/SecurityAdvisoriesPage.test.tsx",
           "web/src/__tests__/UiFidelityJourneys.test.tsx",
           "web/src/__tests__/pageErrorPaths.test.tsx"
         ],
         "source": "web/src/App.tsx",
         "tests": [
+          "web/src/__tests__/SecurityAdvisoriesPage.test.tsx",
           "web/src/__tests__/UiFidelityJourneys.test.tsx",
           "web/src/__tests__/pageErrorPaths.test.tsx"
         ]
       },
       {
         "component": "CodeScanningPage",
-        "line": 240,
+        "line": 243,
         "path": "/ui/repos/:owner/:repo/security/code-scanning",
         "rendered_tests": [
           "web/src/__tests__/CodeScanningPage.test.tsx"
@@ -31478,7 +31495,7 @@
       },
       {
         "component": "DependabotPage",
-        "line": 241,
+        "line": 244,
         "path": "/ui/repos/:owner/:repo/security/dependabot",
         "rendered_tests": [
           "web/src/__tests__/UiFidelityJourneys.test.tsx",
@@ -31492,7 +31509,7 @@
       },
       {
         "component": "SecretScanningPage",
-        "line": 239,
+        "line": 242,
         "path": "/ui/repos/:owner/:repo/security/secret-scanning",
         "rendered_tests": [
           "web/src/__tests__/SecretScanningPage.test.tsx",
@@ -31510,7 +31527,7 @@
       },
       {
         "component": "RepoSettingsPage",
-        "line": 236,
+        "line": 239,
         "path": "/ui/repos/:owner/:repo/settings",
         "rendered_tests": [
           "web/src/__tests__/RepoCollaboratorsTab.test.tsx",
@@ -31526,21 +31543,23 @@
       },
       {
         "component": "BranchProtectionPage",
-        "line": 237,
+        "line": 240,
         "path": "/ui/repos/:owner/:repo/settings/branch-protection",
         "rendered_tests": [
+          "web/src/__tests__/BranchProtectionPage.test.tsx",
           "web/src/__tests__/UiFidelityJourneys.test.tsx",
           "web/src/__tests__/pageErrorPaths.test.tsx"
         ],
         "source": "web/src/App.tsx",
         "tests": [
+          "web/src/__tests__/BranchProtectionPage.test.tsx",
           "web/src/__tests__/UiFidelityJourneys.test.tsx",
           "web/src/__tests__/pageErrorPaths.test.tsx"
         ]
       },
       {
         "component": "RepoSecretsPage",
-        "line": 246,
+        "line": 249,
         "path": "/ui/repos/:owner/:repo/settings/secrets",
         "rendered_tests": [
           "web/src/__tests__/RepoSecretsPage.test.tsx"
@@ -31552,7 +31571,7 @@
       },
       {
         "component": "RepoSocialPage",
-        "line": 281,
+        "line": 285,
         "path": "/ui/repos/:owner/:repo/stargazers",
         "rendered_tests": [
           "web/src/__tests__/RepoSocialPage.test.tsx",
@@ -31566,7 +31585,7 @@
       },
       {
         "component": "RepoDetailPage",
-        "line": 212,
+        "line": 215,
         "path": "/ui/repos/:owner/:repo/tags",
         "rendered_tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx",
@@ -31582,7 +31601,7 @@
       },
       {
         "component": "RepoDetailPage",
-        "line": 214,
+        "line": 217,
         "path": "/ui/repos/:owner/:repo/tree/:ref/*",
         "rendered_tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx",
@@ -31598,7 +31617,7 @@
       },
       {
         "component": "RepoSocialPage",
-        "line": 282,
+        "line": 286,
         "path": "/ui/repos/:owner/:repo/watchers",
         "rendered_tests": [
           "web/src/__tests__/RepoSocialPage.test.tsx",
@@ -31612,7 +31631,7 @@
       },
       {
         "component": "WikiPage",
-        "line": 244,
+        "line": 247,
         "path": "/ui/repos/:owner/:repo/wiki",
         "rendered_tests": [
           "web/src/__tests__/WikiPage.test.tsx"
@@ -31624,7 +31643,7 @@
       },
       {
         "component": "WikiPage",
-        "line": 245,
+        "line": 248,
         "path": "/ui/repos/:owner/:repo/wiki/:slug",
         "rendered_tests": [
           "web/src/__tests__/WikiPage.test.tsx"
@@ -31636,7 +31655,7 @@
       },
       {
         "component": "RunnersPage",
-        "line": 199,
+        "line": 202,
         "path": "/ui/runners",
         "rendered_tests": [
           "web/src/__tests__/RunnersPage.test.tsx"
@@ -31648,7 +31667,7 @@
       },
       {
         "component": "SearchPage",
-        "line": 278,
+        "line": 282,
         "path": "/ui/search",
         "rendered_tests": [
           "web/src/__tests__/SearchPage.test.tsx",
@@ -31662,7 +31681,7 @@
       },
       {
         "component": "MyOrganizationsPage",
-        "line": 280,
+        "line": 284,
         "path": "/ui/settings/organizations",
         "rendered_tests": [
           "web/src/__tests__/MyOrganizationsPage.test.tsx"
@@ -31674,7 +31693,7 @@
       },
       {
         "component": "ProfilePage",
-        "line": 292,
+        "line": 296,
         "path": "/ui/users/:login",
         "rendered_tests": [
           "web/src/__tests__/ProfilePage.test.tsx"
@@ -31686,7 +31705,7 @@
       },
       {
         "component": "WorkflowsPage",
-        "line": 197,
+        "line": 200,
         "path": "/ui/workflows",
         "rendered_tests": [
           "web/src/__tests__/WorkflowsPage.test.tsx"
@@ -31698,7 +31717,7 @@
       },
       {
         "component": "WorkflowDetailPage",
-        "line": 198,
+        "line": 201,
         "path": "/ui/workflows/:id",
         "rendered_tests": [
           "web/src/__tests__/WorkflowDetailPage.test.tsx"
@@ -31711,9 +31730,9 @@
     ],
     "summary": {
       "browser_navigations": 73,
-      "routes": 96,
-      "routes_with_direct_render": 93,
-      "routes_with_test_reference": 95
+      "routes": 97,
+      "routes_with_direct_render": 94,
+      "routes_with_test_reference": 96
     }
   }
 }

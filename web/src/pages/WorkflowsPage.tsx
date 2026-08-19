@@ -2,10 +2,20 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { DataTable, InlineError, Spinner, StatusBadge } from "@bleephub/ui-core/components";
 import { createColumnHelper } from "@bleephub/ui-core/components";
 import { useNavigate } from "react-router";
-import { useState } from "react";
-import { dispatchWorkflow, fetchWorkflowFiles, isForbidden, isRateLimited } from "../api.js";
+import { useEffect, useMemo, useState } from "react";
+import {
+  dispatchWorkflow,
+  fetchFileContent,
+  fetchRepoBranches,
+  fetchRepoDetail,
+  fetchWorkflowFiles,
+  isForbidden,
+  isRateLimited,
+} from "../api.js";
+import { decodeContentsBase64 } from "../utils/contents.js";
+import { parseWorkflowDispatch } from "../utils/workflowDispatch.js";
 import { RUNS_TAB_LIMIT, useRecentWorkflows } from "../hooks/useRecentWorkflows.js";
-import type { BleephubWorkflow, BleephubWorkflowFile } from "../types.js";
+import type { BleephubWorkflow, BleephubWorkflowFile, WorkflowDispatchInput } from "../types.js";
 import {
   PageTitle,
   Tabs,
@@ -174,6 +184,15 @@ function RunsTab() {
   );
 }
 
+function dispatchDefaultFor(def: WorkflowDispatchInput): string {
+  if (def.type === "boolean") {
+    return def.default === true || def.default === "true" ? "true" : "false";
+  }
+  if (typeof def.default === "string") return def.default;
+  if (def.type === "choice" && def.options && def.options.length > 0) return def.options[0]!;
+  return "";
+}
+
 function DispatchDialog({
   target,
   onClose,
@@ -182,17 +201,83 @@ function DispatchDialog({
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
-  const [ref, setRef] = useState("refs/heads/main");
+  const [owner = "", repo = ""] = target.repoFullName.split("/");
+  const [ref, setRef] = useState("main");
+  const [refTouched, setRefTouched] = useState(false);
   const [inputsJSON, setInputsJSON] = useState("{}");
+  const [values, setValues] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
+
+  // Branch selector seeded from the repository's branches, the default
+  // branch preselected; a free-text ref input remains the fallback for
+  // repositories whose branch list can't be read.
+  const branchesQ = useQuery({
+    queryKey: ["branches", owner, repo],
+    queryFn: () => fetchRepoBranches(owner, repo),
+    retry: false,
+  });
+  const repoQ = useQuery({
+    queryKey: ["repo-detail", owner, repo],
+    queryFn: ({ signal }) => fetchRepoDetail(owner, repo, signal),
+    retry: false,
+  });
+  const branches = Array.isArray(branchesQ.data) ? branchesQ.data : [];
+  const defaultBranch = repoQ.data?.default_branch;
+  useEffect(() => {
+    if (refTouched || branches.length === 0) return;
+    const preferred =
+      defaultBranch && branches.some((b) => b.name === defaultBranch)
+        ? defaultBranch
+        : branches[0]!.name;
+    setRef(preferred);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [defaultBranch, branchesQ.data]);
+
+  // Typed inputs from the workflow file's on.workflow_dispatch.inputs;
+  // an unreadable file falls back to the raw JSON inputs textarea.
+  const yamlQ = useQuery({
+    queryKey: ["workflow-yaml", owner, repo, target.path],
+    queryFn: () => fetchFileContent(owner, repo, target.path),
+    retry: false,
+  });
+  const dispatchSpec = useMemo(() => {
+    const content = yamlQ.data?.content;
+    if (typeof content !== "string") return null;
+    try {
+      return parseWorkflowDispatch(decodeContentsBase64(content));
+    } catch {
+      return null;
+    }
+  }, [yamlQ.data]);
+  const typedInputs = dispatchSpec?.hasDispatch ? dispatchSpec.inputs : null;
+  const inputNames = typedInputs ? Object.keys(typedInputs) : [];
+  useEffect(() => {
+    if (!typedInputs) return;
+    setValues((prev) => {
+      const next = { ...prev };
+      for (const name of Object.keys(typedInputs)) {
+        if (!(name in next)) next[name] = dispatchDefaultFor(typedInputs[name]!);
+      }
+      return next;
+    });
+  }, [typedInputs]);
 
   const mutation = useMutation({
     mutationFn: async () => {
       let inputs: Record<string, string> = {};
-      try {
-        inputs = JSON.parse(inputsJSON || "{}");
-      } catch {
-        throw new Error("inputs must be valid JSON");
+      if (typedInputs) {
+        for (const name of inputNames) {
+          if (typedInputs[name]!.required && !(values[name] ?? "")) {
+            throw new Error(`Input "${name}" is required`);
+          }
+        }
+        inputs = Object.fromEntries(inputNames.map((n) => [n, values[n] ?? ""]));
+      } else {
+        try {
+          inputs = JSON.parse(inputsJSON || "{}");
+        } catch {
+          throw new Error("inputs must be valid JSON");
+        }
       }
       await dispatchWorkflow(target.repoFullName, target.id, { ref, inputs });
     },
@@ -203,30 +288,115 @@ function DispatchDialog({
     onError: (err: Error) => setError(err.message),
   });
 
+  const setValue = (name: string, v: string) => setValues((prev) => ({ ...prev, [name]: v }));
+
   return (
     <Modal title={`Run ${target.name}`} onClose={onClose}>
       <div className="mb-4" style={{ fontSize: "0.82rem", color: "var(--color-fg-muted)" }}>
         {target.path} · {target.repoFullName}
       </div>
 
-      <FormLabel id="dispatch-ref">Ref</FormLabel>
-      <input
-        id="dispatch-ref"
-        type="text"
-        value={ref}
-        onChange={(e) => setRef(e.target.value)}
-        className="mb-4 w-full"
-      />
+      <FormLabel id="dispatch-ref">Use workflow from branch</FormLabel>
+      {branches.length > 0 ? (
+        <select
+          id="dispatch-ref"
+          value={ref}
+          onChange={(e) => {
+            setRefTouched(true);
+            setRef(e.target.value);
+          }}
+          className="mb-4 w-full"
+        >
+          {branches.map((b) => (
+            <option key={b.name} value={b.name}>
+              {b.name}
+              {b.name === defaultBranch ? " (default)" : ""}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <input
+          id="dispatch-ref"
+          type="text"
+          value={ref}
+          onChange={(e) => {
+            setRefTouched(true);
+            setRef(e.target.value);
+          }}
+          className="mb-4 w-full"
+        />
+      )}
 
-      <FormLabel id="dispatch-inputs">Inputs (JSON)</FormLabel>
-      <textarea
-        id="dispatch-inputs"
-        value={inputsJSON}
-        onChange={(e) => setInputsJSON(e.target.value)}
-        rows={5}
-        className="mb-4 w-full"
-        style={{ resize: "vertical", fontFamily: "var(--font-mono)" }}
-      />
+      {typedInputs ? (
+        inputNames.map((name) => {
+          const def = typedInputs[name]!;
+          const fieldId = `dispatch-input-${name}`;
+          if (def.type === "boolean") {
+            return (
+              <div key={name} className="mb-4 flex items-center gap-2">
+                <input
+                  id={fieldId}
+                  type="checkbox"
+                  checked={values[name] === "true"}
+                  onChange={(e) => setValue(name, e.target.checked ? "true" : "false")}
+                />
+                <label htmlFor={fieldId} style={{ fontSize: "0.84rem", color: "var(--color-fg)" }}>
+                  {def.description || name}
+                </label>
+              </div>
+            );
+          }
+          if (def.type === "choice") {
+            return (
+              <div key={name} className="mb-4">
+                <FormLabel id={fieldId}>
+                  {def.description || name}
+                  {def.required ? " *" : ""}
+                </FormLabel>
+                <select
+                  id={fieldId}
+                  value={values[name] ?? ""}
+                  onChange={(e) => setValue(name, e.target.value)}
+                  className="w-full"
+                >
+                  {(def.options ?? []).map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            );
+          }
+          return (
+            <div key={name} className="mb-4">
+              <FormLabel id={fieldId}>
+                {def.description || name}
+                {def.required ? " *" : ""}
+              </FormLabel>
+              <input
+                id={fieldId}
+                type="text"
+                value={values[name] ?? ""}
+                onChange={(e) => setValue(name, e.target.value)}
+                className="w-full"
+              />
+            </div>
+          );
+        })
+      ) : (
+        <>
+          <FormLabel id="dispatch-inputs">Inputs (JSON)</FormLabel>
+          <textarea
+            id="dispatch-inputs"
+            value={inputsJSON}
+            onChange={(e) => setInputsJSON(e.target.value)}
+            rows={5}
+            className="mb-4 w-full"
+            style={{ resize: "vertical", fontFamily: "var(--font-mono)" }}
+          />
+        </>
+      )}
 
       {error && <ErrorBanner>{error}</ErrorBanner>}
 

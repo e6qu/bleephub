@@ -147,3 +147,27 @@ describe("MigrationsPage import flow", () => {
     });
   });
 });
+
+describe("MigrationsPage organization scope", () => {
+  it("populates the org picker from /user/orgs and loads the chosen org's migrations", async () => {
+    mockFetch.mockImplementation((url: string) => {
+      const u = url.toString();
+      if (u.startsWith("/api/v3/user/orgs")) {
+        return Promise.resolve(jsonResponse([{ id: 1, login: "acme" }, { id: 2, login: "initech" }]));
+      }
+      return Promise.resolve(baseRouter(u));
+    });
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("tab", { name: "Organization" }));
+    const select = await screen.findByLabelText("Organization");
+    expect(screen.getByRole("option", { name: "acme" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "initech" })).toBeInTheDocument();
+
+    fireEvent.change(select, { target: { value: "acme" } });
+    await waitFor(() => {
+      const get = mockFetch.mock.calls.find((c) => String(c[0]) === "/api/v3/orgs/acme/migrations");
+      expect(get).toBeDefined();
+    });
+  });
+});

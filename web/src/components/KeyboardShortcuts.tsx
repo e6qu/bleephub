@@ -22,6 +22,7 @@ const GROUPS: ShortcutGroup[] = [
     name: "General",
     shortcuts: [
       { keys: ["?"], description: "Show this keyboard-shortcuts help" },
+      { keys: ["s", "/"], description: "Focus the search bar (either key)" },
       { keys: ["⌘", "K"], description: "Open the command palette (Ctrl K on Windows/Linux)" },
       { keys: ["Esc"], description: "Close a dialog or menu" },
     ],

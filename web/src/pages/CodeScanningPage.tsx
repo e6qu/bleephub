@@ -23,6 +23,7 @@ import { RepoHeader } from "../components/PageHeader.js";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
 import { Box } from "../components/ui.js";
 import { MutationError } from "../components/MutationError.js";
+import { RelativeTime } from "../components/RelativeTime.js";
 import type {
   GithubCodeScanningAlert,
   GithubCodeScanningAlertInstance,
@@ -234,18 +235,32 @@ export function CodeScanningPage() {
             <div className="security-empty"><strong>No code scanning alerts</strong><span>New results from SARIF analyses appear here.</span></div>
           ) : (
             <ul className="security-list">
-              {alerts.map((alert) => (
-                <li key={alert.number}>
-                  <button type="button" className={selected?.number === alert.number ? "security-alert-row selected" : "security-alert-row"} onClick={() => setSelected(alert)}>
-                    <span className={`security-severity ${alert.rule.severity ?? "none"}`} aria-hidden="true" />
-                    <span><strong>#{alert.number} {alert.rule.name}</strong><small>
-                    {alert.state}
-                    {alert.dismissed_reason ? ` — ${alert.dismissed_reason}` : ""}
-                    {alert.rule.severity ? ` · ${alert.rule.severity}` : ""}
-                    </small></span>
-                  </button>
-                </li>
-              ))}
+              {alerts.map((alert) => {
+                const instance = alert.most_recent_instance;
+                const path = instance?.location?.path;
+                const branch = shortRef(instance?.ref);
+                return (
+                  <li key={alert.number}>
+                    <button type="button" className={selected?.number === alert.number ? "security-alert-row selected" : "security-alert-row"} onClick={() => setSelected(alert)}>
+                      <span className={`security-severity ${alert.rule.severity ?? "none"}`} aria-hidden="true" />
+                      <span>
+                        <strong>#{alert.number} {alert.rule.name}</strong>
+                        <small>
+                        {alert.state}
+                        {alert.dismissed_reason ? ` — ${alert.dismissed_reason}` : ""}
+                        {alert.rule.severity ? ` · ${alert.rule.severity}` : ""}
+                        </small>
+                        {(path || branch) && (
+                          <small style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap", marginTop: "0.15rem" }}>
+                            {path && <span className="security-chip font-mono" style={chipStyle}>{path}</span>}
+                            {branch && <span className="security-chip font-mono" style={chipStyle}>{branch}</span>}
+                          </small>
+                        )}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </Box>
@@ -281,7 +296,7 @@ export function CodeScanningPage() {
                 <span className="security-language-orb" aria-hidden="true">{database.language.slice(0, 2).toUpperCase()}</span>
                 <div className="security-database-copy">
                   <strong>{database.name}</strong>
-                  <span>{database.language} · {formatBytes(database.size)} · updated {formatDate(database.updated_at)}</span>
+                  <span>{database.language} · {formatBytes(database.size)} · updated <RelativeTime iso={database.updated_at} /></span>
                   {database.commit_oid && <code>{database.commit_oid.slice(0, 12)}</code>}
                 </div>
                 <div className="security-row-actions">
@@ -354,9 +369,23 @@ function formatBytes(size: number): string {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(value));
+/** "refs/heads/main" → "main"; leaves non-branch refs (or missing) alone. */
+function shortRef(ref: string | undefined | null): string | null {
+  if (!ref) return null;
+  return ref.startsWith("refs/heads/") ? ref.slice("refs/heads/".length) : ref;
 }
+
+const chipStyle = {
+  border: "1px solid var(--color-border)",
+  borderRadius: "999px",
+  padding: "0 0.45rem",
+  fontSize: "0.68rem",
+  color: "var(--color-fg-muted)",
+  maxWidth: "16rem",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+} as const;
 
 function DefaultSetupSection({ owner, repo }: { owner: string; repo: string }) {
   const queryClient = useQueryClient();

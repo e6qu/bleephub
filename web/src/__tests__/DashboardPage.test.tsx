@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, cleanup, screen, waitFor } from "@testing-library/react";
+import { render, cleanup, screen, waitFor, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Routes, Route } from "react-router";
 import { DashboardPage } from "../pages/DashboardPage.js";
@@ -93,6 +93,55 @@ describe("DashboardPage", () => {
       expect(screen.getByText(/your feed is quiet/i)).toBeInTheDocument();
     });
     expect(screen.getByText(/no open issues/i)).toBeInTheDocument();
+  });
+
+  it("filters the top repositories client-side and shows more via the Link header", async () => {
+    const page1 = Array.from({ length: 30 }, (_, i) => ({
+      ...repo,
+      id: i + 1,
+      name: `svc-${i}`,
+      full_name: `acme/svc-${i}`,
+    }));
+    const page2 = [{ ...repo, id: 999, name: "extra", full_name: "acme/extra" }];
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.includes("/api/v3/user/repos")) {
+        if (u.includes("page=2")) return Promise.resolve(jsonResponse(page2));
+        return Promise.resolve(
+          jsonResponse(page1, 200, {
+            Link: '</api/v3/user/repos?per_page=30&sort=pushed&page=2>; rel="next", </api/v3/user/repos?per_page=30&sort=pushed&page=2>; rel="last"',
+          }),
+        );
+      }
+      if (u.includes("/received_events")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/api/v3/issues")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/api/v3/user")) return Promise.resolve(jsonResponse({ id: 1, login: "octocat", type: "User", site_admin: true, created_at: "2026-01-01T00:00:00Z" }));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderPage();
+    await waitFor(() => expect(screen.getByText("acme/svc-0")).toBeInTheDocument());
+    // Only the first 8 show before expanding.
+    expect(screen.queryByText("acme/svc-9")).toBeNull();
+
+    // Client-side find-a-repository filter over the fetched list.
+    fireEvent.change(screen.getByLabelText("Find a repository"), { target: { value: "svc-12" } });
+    expect(screen.getByText("acme/svc-12")).toBeInTheDocument();
+    expect(screen.queryByText("acme/svc-0")).toBeNull();
+    // No matches state is honest.
+    fireEvent.change(screen.getByLabelText("Find a repository"), { target: { value: "zzz" } });
+    expect(screen.getByText(/No repositories match/)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Find a repository"), { target: { value: "" } });
+
+    // Show more expands the slice and follows the Link header's next page.
+    const showMore = screen.getByRole("button", { name: "Show more" });
+    fireEvent.click(showMore); // 16 visible
+    expect(screen.getByText("acme/svc-9")).toBeInTheDocument();
+    fireEvent.click(showMore); // 24 visible
+    fireEvent.click(showMore); // 32 → fetches page 2
+    await waitFor(() => expect(screen.getByText("acme/extra")).toBeInTheDocument());
+    expect(
+      mockFetch.mock.calls.some(([u]) => String(u).includes("/api/v3/user/repos") && String(u).includes("page=2")),
+    ).toBe(true);
   });
 
   it("surfaces a feed error instead of swallowing it", async () => {

@@ -24,8 +24,9 @@ func (s *Server) firePullRequestSynchronize(repo *store.Repo, repoKey, branch st
 			continue
 		}
 		// The head branch moved, so recompute the test-merge before the payload
-		// is built (ACT-027).
+		// is built (ACT-027), and refresh the stored diff totals GraphQL serves.
 		s.refreshPullRequestPotentialMerge(baseRepo, pr)
+		s.refreshPullRequestDiffStats(baseRepo, pr)
 		payload := buildPullRequestPayload(s.store, baseRepo, pr, nil, "synchronize")
 		s.emitWebhookEvent(baseRepo.FullName, "pull_request", "synchronize", payload)
 	}

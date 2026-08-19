@@ -550,7 +550,13 @@ export interface GithubWorkflowRun {
   created_at: string;
   updated_at: string;
   /** null when the server can't attribute the run to a user. */
-  actor: { login: string } | null;
+  actor: { login: string; avatar_url?: string } | null;
+  /**
+   * GitHub's row title for the run (commit message / PR title / manual
+   * dispatch title). Always present in the server payload; optional here
+   * because older fixtures omit it — consumers fall back to `name`.
+   */
+  display_title?: string;
 }
 
 /** Workflow file — GET .../actions/workflows (items). */
@@ -1810,6 +1816,22 @@ export interface GithubTimelineItem {
   commit_id?: string | null;
   /** cross-referenced event: the referencing issue/PR. */
   source?: { type?: string; issue?: { number: number; title: string; state?: string } } | null;
+  /** committed event: the commit sha. */
+  sha?: string;
+  /** committed event: the commit message. */
+  message?: string;
+  /** committed event: web URL of the commit. */
+  html_url?: string;
+  /** committed event: git author (no account attached). */
+  author?: { name?: string; email?: string; date?: string } | null;
+  /** head_ref_force_pushed event: the sha the ref moved from, when known. */
+  before?: string | null;
+  /** head_ref_force_pushed event: the sha the ref moved to, when known. */
+  after?: string | null;
+  /** milestoned/demilestoned event: the milestone. */
+  milestone?: { title: string } | null;
+  /** locked event: GitHub's lock reason, when one was given. */
+  lock_reason?: string | null;
 }
 
 // ─── Search + repo social + account ─────────────────────────────────────
@@ -2164,4 +2186,77 @@ export interface ListFilterState {
   assignee: string | null;
   milestone: string | null;
   sort: "newest" | "oldest" | "comments" | "updated";
+  /** Free-text terms from the search box (title/body substring match). */
+  text?: string | null;
+  /** GitHub's `no:label` qualifier — items with no labels. */
+  noLabel?: boolean;
+  /** GitHub's `no:milestone` qualifier — items with no milestone. */
+  noMilestone?: boolean;
+  /** GitHub's `no:assignee` qualifier — items with no assignees. */
+  noAssignee?: boolean;
+}
+
+// ─── Search text-match media type ────────────────────────────────────────
+// Sent by /api/v3/search/* when the request opts in with
+// Accept: application/vnd.github.text-match+json.
+
+/** One term occurrence inside a text-match fragment ([start, end) byte indices). */
+export interface GithubSearchTextMatchSpan {
+  text: string;
+  indices: [number, number];
+}
+
+/** One highlighted property fragment on a search result item. */
+export interface GithubSearchTextMatch {
+  object_url: string;
+  object_type: string;
+  property: string;
+  fragment: string;
+  matches: GithubSearchTextMatchSpan[];
+}
+
+/**
+ * Notification thread as served by the web-only /ui-data/notifications views:
+ * the REST thread shape plus the simulator-only `saved` bookmark flag.
+ */
+export type GithubNotificationThreadWithSaved = GithubNotificationThread & { saved?: boolean };
+
+// ─── Account settings: classic personal access tokens (legacy authorizations API)
+
+/**
+ * A classic authorization row from GET /api/v3/authorizations. `token` is
+ * only populated in the POST response (shown once); list/get return "".
+ */
+export interface GithubClassicAuthorization {
+  id: number;
+  url: string;
+  scopes: string[];
+  token: string;
+  token_last_eight: string;
+  hashed_token: string;
+  app: { client_id: string; name: string; url: string };
+  note: string | null;
+  note_url: string | null;
+  fingerprint: string | null;
+  created_at: string;
+  updated_at: string;
+  expires_at: string | null;
+}
+
+// ─── PR-specific declaration-merged additions (PullsPage/PRFilesView) ─────
+// TypeScript merges same-named interface declarations within a module, so
+// these append optional fields to the interfaces declared above without
+// touching their original definitions.
+
+export interface GithubPR {
+  /**
+   * Issue-comment count. Carried on the single-PR detail response; list
+   * items omit it (GitHub pull-request-simple parity).
+   */
+  comments?: number;
+}
+
+export interface GithubPRReviewComment {
+  /** First line of a multi-line comment's range; null/absent for single-line. */
+  start_line?: number | null;
 }

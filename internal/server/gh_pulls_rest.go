@@ -1862,19 +1862,60 @@ func pullRequestToJSON(pr *store.PullRequest, st *store.Store, baseURL, repoFull
 	out["mergeable_state"] = mergeableState
 	out["maintainer_can_modify"] = pr.MaintainerCanModify
 	out["merged_by"] = mergedByJSON
-	out["additions"] = pr.Additions
-	out["deletions"] = pr.Deletions
-	out["changed_files"] = pr.ChangedFiles
-	out["comments"] = commentCount
-	out["review_comments"] = reviewCommentCount
+	changed, adds, dels := pr.ChangedFiles, pr.Additions, pr.Deletions
 	commitCount := 0
 	if repo := st.GetRepoByID(pr.RepoID); repo != nil {
 		if commits, err := pullRequestCommitObjects(st, repo, pr); err == nil {
 			commitCount = len(commits)
 		}
+		// The diff totals come from the same merge-base diff the files
+		// endpoint serves, recomputed per request while the head can still
+		// move so they track new commits. A closed/merged PR whose refs no
+		// longer resolve (the recompute comes back empty) keeps the totals
+		// recorded while they were still computable.
+		if c, a, d, err := pullRequestDiffStats(st, repo, pr); err == nil &&
+			(pr.State == "OPEN" || c > 0 || a > 0 || d > 0) {
+			changed, adds, dels = c, a, d
+			st.SetPullRequestDiffStats(pr.ID, changed, adds, dels)
+		}
 	}
+	out["additions"] = adds
+	out["deletions"] = dels
+	out["changed_files"] = changed
+	out["comments"] = commentCount
+	out["review_comments"] = reviewCommentCount
 	out["commits"] = commitCount
 	return out
+}
+
+// pullRequestDiffStats sums the per-file additions/deletions of the same
+// merge-base diff GET /pulls/{n}/files serves, giving the detail payload's
+// additions/deletions/changed_files counters (which real GitHub carries on
+// `pull-request` but not on `pull-request-simple` list items).
+func pullRequestDiffStats(st *store.Store, repo *store.Repo, pr *store.PullRequest) (changedFiles, additions, deletions int, err error) {
+	files, err := pullRequestChangedFiles(st, repo, pr, "")
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	for _, f := range files {
+		if a, ok := f["additions"].(int); ok {
+			additions += a
+		}
+		if d, ok := f["deletions"].(int); ok {
+			deletions += d
+		}
+	}
+	return len(files), additions, deletions, nil
+}
+
+// refreshPullRequestDiffStats recomputes and persists a pull request's diff
+// totals after its head moves, so readers that serve the stored fields
+// (GraphQL's additions/deletions/changedFiles) stay current without waiting
+// for a REST detail fetch.
+func (s *Server) refreshPullRequestDiffStats(repo *store.Repo, pr *store.PullRequest) {
+	if changed, adds, dels, err := pullRequestDiffStats(s.store, repo, pr); err == nil {
+		s.store.SetPullRequestDiffStats(pr.ID, changed, adds, dels)
+	}
 }
 
 func reviewToJSON(review *store.PullRequestReview, st *store.Store, baseURL, repoFullName string, prNumber int) map[string]interface{} {

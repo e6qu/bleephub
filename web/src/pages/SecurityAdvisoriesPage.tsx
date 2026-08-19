@@ -15,6 +15,7 @@ import { useOpenCounts } from "../hooks/useOpenCounts.js";
 import { RepoHeader } from "../components/PageHeader.js";
 import { Box, Button, Modal, FormLabel, ErrorBanner, DialogActions } from "../components/ui.js";
 import { MutationError } from "../components/MutationError.js";
+import { RelativeTime } from "../components/RelativeTime.js";
 import type {
   GithubSecurityAdvisory,
   GithubSecurityAdvisorySeverity,
@@ -27,6 +28,52 @@ import type {
 type SeverityFilter = "all" | GithubSecurityAdvisorySeverity;
 
 const SEVERITIES: GithubSecurityAdvisorySeverity[] = ["critical", "high", "medium", "low"];
+
+// ─── Store-backed extras beyond the base advisory payloads ─────────────────────────
+// The server's CreateAdvisoryReq (create + report) also persists cvss_score,
+// cvss_vector, and a vulnerabilities[] product list; the update handler
+// accepts cvss_score/cvss_vector (but not vulnerabilities). Credits are NOT
+// stored (the API always returns empty credits arrays), so no credits UI.
+
+interface AdvisoryVulnerabilityPayload {
+  package: { ecosystem: string; name: string };
+  vulnerable_version_range: string;
+  first_patched_version: string;
+}
+
+type AdvisoryCreateExtras = GithubSecurityAdvisoryCreatePayload & {
+  cvss_score?: number;
+  cvss_vector?: string;
+  vulnerabilities?: AdvisoryVulnerabilityPayload[];
+};
+
+type AdvisoryUpdateExtras = GithubSecurityAdvisoryUpdatePayload & {
+  cvss_score?: number;
+  cvss_vector?: string;
+};
+
+/** Response-side fields the base display type does not declare. */
+type AdvisoryWithExtras = GithubSecurityAdvisory & {
+  cvss?: { vector_string: string | null; score: number | null };
+  vulnerabilities?: {
+    package: { ecosystem: string; name: string } | null;
+    vulnerable_version_range: string | null;
+    patched_versions: string | null;
+  }[];
+};
+
+/** One editable affected-product row in the create/report form. */
+interface VulnerabilityRow {
+  ecosystem: string;
+  name: string;
+  range: string;
+  patched: string;
+}
+
+const ECOSYSTEMS = [
+  "npm", "pip", "rubygems", "maven", "nuget", "composer", "go", "rust",
+  "erlang", "actions", "pub", "swift", "other",
+];
 
 const STATE_LABELS: Record<string, string> = {
   triage: "Triage",
@@ -64,7 +111,7 @@ export function SecurityAdvisoriesPage() {
   });
 
   const createMutation = useMutation({
-    mutationFn: (payload: GithubSecurityAdvisoryCreatePayload) =>
+    mutationFn: (payload: AdvisoryCreateExtras) =>
       createSecurityAdvisory(owner, repo, payload),
     onSuccess: (created) => {
       queryClient.invalidateQueries({ queryKey: ["security-advisories", owner, repo] });
@@ -74,7 +121,8 @@ export function SecurityAdvisoriesPage() {
   });
 
   const reportMutation = useMutation({
-    mutationFn: (payload: GithubVulnerabilityReportPayload) => reportVulnerability(owner, repo, payload),
+    mutationFn: (payload: GithubVulnerabilityReportPayload & AdvisoryCreateExtras) =>
+      reportVulnerability(owner, repo, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["security-advisories", owner, repo] });
       setShowReport(false);
@@ -92,7 +140,7 @@ export function SecurityAdvisoriesPage() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: (payload: GithubSecurityAdvisoryUpdatePayload) =>
+    mutationFn: (payload: AdvisoryUpdateExtras) =>
       updateSecurityAdvisory(owner, repo, selectedId!, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["security-advisories", owner, repo] });
@@ -233,14 +281,7 @@ export function SecurityAdvisoriesPage() {
         <AdvisoryFormModal
           title="Report vulnerability"
           onClose={() => setShowReport(false)}
-          onSubmit={(payload) =>
-            reportMutation.mutate({
-              summary: payload.summary,
-              description: payload.description,
-              severity: payload.severity,
-              cwe_ids: payload.cwe_ids,
-            })
-          }
+          onSubmit={(payload) => reportMutation.mutate(payload)}
           pending={reportMutation.isPending}
           error={reportMutation.error}
         />
@@ -303,15 +344,45 @@ function AdvisoryDetail({
             <strong>CWEs:</strong> {advisory.cwe_ids.join(", ")}
           </div>
         )}
+        {(() => {
+          const extras = advisory as AdvisoryWithExtras;
+          const cvss = extras.cvss;
+          const products = (extras.vulnerabilities ?? []).filter((v) => v.package || v.vulnerable_version_range);
+          return (
+            <>
+              {cvss && (cvss.score != null || cvss.vector_string) && (
+                <div>
+                  <strong>CVSS:</strong>{" "}
+                  {cvss.score != null ? cvss.score : "—"}
+                  {cvss.vector_string ? ` (${cvss.vector_string})` : ""}
+                </div>
+              )}
+              {products.length > 0 && (
+                <div>
+                  <strong>Affected products:</strong>
+                  <ul style={{ margin: "0.25rem 0 0", paddingLeft: "1.2rem" }}>
+                    {products.map((v, i) => (
+                      <li key={i}>
+                        {v.package ? `${v.package.ecosystem} / ${v.package.name}` : "unspecified package"}
+                        {v.vulnerable_version_range ? ` · affected ${v.vulnerable_version_range}` : ""}
+                        {v.patched_versions ? ` · patched in ${v.patched_versions}` : ""}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </>
+          );
+        })()}
         <div>
-          <strong>Created:</strong> {new Date(advisory.created_at).toLocaleString()}
+          <strong>Created:</strong> <RelativeTime iso={advisory.created_at} />
         </div>
         <div>
-          <strong>Updated:</strong> {new Date(advisory.updated_at).toLocaleString()}
+          <strong>Updated:</strong> <RelativeTime iso={advisory.updated_at} />
         </div>
         {advisory.published_at && (
           <div>
-            <strong>Published:</strong> {new Date(advisory.published_at).toLocaleString()}
+            <strong>Published:</strong> <RelativeTime iso={advisory.published_at} />
           </div>
         )}
         <div style={{ marginTop: "0.5rem", whiteSpace: "pre-wrap" }}>
@@ -389,14 +460,17 @@ function AdvisoryEditModal({
 }: {
   advisory: GithubSecurityAdvisory;
   onClose: () => void;
-  onSubmit: (payload: GithubSecurityAdvisoryUpdatePayload) => void;
+  onSubmit: (payload: AdvisoryUpdateExtras) => void;
   pending: boolean;
   error: Error | null;
 }) {
+  const extras = advisory as AdvisoryWithExtras;
   const [summary, setSummary] = useState(advisory.summary);
   const [description, setDescription] = useState(advisory.description ?? "");
   const [severity, setSeverity] = useState(advisory.severity);
   const [cwe, setCwe] = useState((advisory.cwe_ids ?? []).join(", "));
+  const [cvssScore, setCvssScore] = useState(extras.cvss?.score != null ? String(extras.cvss.score) : "");
+  const [cvssVector, setCvssVector] = useState(extras.cvss?.vector_string ?? "");
   const [validationError, setValidationError] = useState<string | null>(null);
 
   const handleSubmit = () => {
@@ -409,6 +483,10 @@ function AdvisoryEditModal({
       setValidationError("Description is required.");
       return;
     }
+    if (cvssScore.trim() && (Number.isNaN(Number(cvssScore)) || Number(cvssScore) < 0 || Number(cvssScore) > 10)) {
+      setValidationError("CVSS score must be a number between 0 and 10.");
+      return;
+    }
     onSubmit({
       summary: summary.trim(),
       description: description.trim(),
@@ -417,6 +495,8 @@ function AdvisoryEditModal({
         .split(",")
         .map((value) => value.trim())
         .filter(Boolean),
+      ...(cvssScore.trim() ? { cvss_score: Number(cvssScore) } : {}),
+      ...(cvssVector.trim() ? { cvss_vector: cvssVector.trim() } : {}),
     });
   };
 
@@ -464,6 +544,33 @@ function AdvisoryEditModal({
         className="mb-4 w-full"
       />
 
+      <div className="mb-4 flex flex-wrap gap-3">
+        <div>
+          <FormLabel id="edit-advisory-cvss-score">CVSS score (0–10, optional)</FormLabel>
+          <input
+            id="edit-advisory-cvss-score"
+            type="number"
+            min={0}
+            max={10}
+            step={0.1}
+            value={cvssScore}
+            onChange={(event) => setCvssScore(event.target.value)}
+            className="w-32"
+          />
+        </div>
+        <div style={{ flex: 1, minWidth: "16rem" }}>
+          <FormLabel id="edit-advisory-cvss-vector">CVSS vector string (optional)</FormLabel>
+          <input
+            id="edit-advisory-cvss-vector"
+            type="text"
+            value={cvssVector}
+            onChange={(event) => setCvssVector(event.target.value)}
+            placeholder="CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
+            className="w-full"
+          />
+        </div>
+      </div>
+
       {(validationError || error) && (
         <ErrorBanner>
           {validationError ?? (error instanceof Error ? error.message : String(error))}
@@ -491,7 +598,7 @@ function AdvisoryFormModal({
 }: {
   title: string;
   onClose: () => void;
-  onSubmit: (payload: GithubSecurityAdvisoryCreatePayload) => void;
+  onSubmit: (payload: GithubVulnerabilityReportPayload & AdvisoryCreateExtras) => void;
   pending: boolean;
   error: Error | null;
 }) {
@@ -499,7 +606,13 @@ function AdvisoryFormModal({
   const [description, setDescription] = useState("");
   const [severity, setSeverity] = useState<GithubSecurityAdvisorySeverity>("medium");
   const [cwe, setCwe] = useState("");
+  const [cvssScore, setCvssScore] = useState("");
+  const [cvssVector, setCvssVector] = useState("");
+  const [products, setProducts] = useState<VulnerabilityRow[]>([]);
   const [validationError, setValidationError] = useState<string | null>(null);
+
+  const setProduct = (index: number, patch: Partial<VulnerabilityRow>) =>
+    setProducts((rows) => rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
 
   const handleSubmit = () => {
     setValidationError(null);
@@ -511,7 +624,18 @@ function AdvisoryFormModal({
       setValidationError("Description is required.");
       return;
     }
-    const payload: GithubSecurityAdvisoryCreatePayload = {
+    if (cvssScore.trim() && (Number.isNaN(Number(cvssScore)) || Number(cvssScore) < 0 || Number(cvssScore) > 10)) {
+      setValidationError("CVSS score must be a number between 0 and 10.");
+      return;
+    }
+    const vulnerabilities: AdvisoryVulnerabilityPayload[] = products
+      .filter((row) => row.name.trim())
+      .map((row) => ({
+        package: { ecosystem: row.ecosystem, name: row.name.trim() },
+        vulnerable_version_range: row.range.trim(),
+        first_patched_version: row.patched.trim(),
+      }));
+    const payload: GithubVulnerabilityReportPayload & AdvisoryCreateExtras = {
       summary: summary.trim(),
       description: description.trim(),
       severity,
@@ -523,6 +647,9 @@ function AdvisoryFormModal({
     if (cweIds.length > 0) {
       payload.cwe_ids = cweIds;
     }
+    if (cvssScore.trim()) payload.cvss_score = Number(cvssScore);
+    if (cvssVector.trim()) payload.cvss_vector = cvssVector.trim();
+    if (vulnerabilities.length > 0) payload.vulnerabilities = vulnerabilities;
     onSubmit(payload);
   };
 
@@ -570,6 +697,114 @@ function AdvisoryFormModal({
         placeholder="CWE-79, CWE-89"
         className="mb-4 w-full"
       />
+
+      <div className="mb-4 flex flex-wrap gap-3">
+        <div>
+          <FormLabel id="advisory-cvss-score">CVSS score (0–10, optional)</FormLabel>
+          <input
+            id="advisory-cvss-score"
+            type="number"
+            min={0}
+            max={10}
+            step={0.1}
+            value={cvssScore}
+            onChange={(e) => setCvssScore(e.target.value)}
+            className="w-32"
+          />
+        </div>
+        <div style={{ flex: 1, minWidth: "16rem" }}>
+          <FormLabel id="advisory-cvss-vector">CVSS vector string (optional)</FormLabel>
+          <input
+            id="advisory-cvss-vector"
+            type="text"
+            value={cvssVector}
+            onChange={(e) => setCvssVector(e.target.value)}
+            placeholder="CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
+            className="w-full"
+          />
+        </div>
+      </div>
+
+      <div className="mb-4">
+        <div className="mb-1 flex items-center justify-between">
+          <span style={{ fontSize: "0.82rem", fontWeight: 600 }}>Affected products</span>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() =>
+              setProducts((rows) => [...rows, { ecosystem: ECOSYSTEMS[0]!, name: "", range: "", patched: "" }])
+            }
+          >
+            Add affected product
+          </Button>
+        </div>
+        {products.length === 0 ? (
+          <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--color-fg-muted)" }}>
+            Optionally list the packages and version ranges this advisory affects.
+          </p>
+        ) : (
+          products.map((row, i) => (
+            <div
+              key={i}
+              className="mb-2 flex flex-wrap items-end gap-2"
+              style={{ border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)", padding: "0.5rem" }}
+            >
+              <div>
+                <FormLabel id={`advisory-vuln-ecosystem-${i}`}>Ecosystem</FormLabel>
+                <select
+                  id={`advisory-vuln-ecosystem-${i}`}
+                  value={row.ecosystem}
+                  onChange={(e) => setProduct(i, { ecosystem: e.target.value })}
+                >
+                  {ECOSYSTEMS.map((eco) => (
+                    <option key={eco} value={eco}>{eco}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <FormLabel id={`advisory-vuln-name-${i}`}>Package name</FormLabel>
+                <input
+                  id={`advisory-vuln-name-${i}`}
+                  type="text"
+                  value={row.name}
+                  onChange={(e) => setProduct(i, { name: e.target.value })}
+                  className="w-40"
+                />
+              </div>
+              <div>
+                <FormLabel id={`advisory-vuln-range-${i}`}>Affected versions</FormLabel>
+                <input
+                  id={`advisory-vuln-range-${i}`}
+                  type="text"
+                  value={row.range}
+                  onChange={(e) => setProduct(i, { range: e.target.value })}
+                  placeholder="< 1.2.3"
+                  className="w-32"
+                />
+              </div>
+              <div>
+                <FormLabel id={`advisory-vuln-patched-${i}`}>Patched version</FormLabel>
+                <input
+                  id={`advisory-vuln-patched-${i}`}
+                  type="text"
+                  value={row.patched}
+                  onChange={(e) => setProduct(i, { patched: e.target.value })}
+                  placeholder="1.2.3"
+                  className="w-28"
+                />
+              </div>
+              <Button
+                size="sm"
+                variant="ghost"
+                aria-label={`Remove affected product ${i + 1}`}
+                onClick={() => setProducts((rows) => rows.filter((_, j) => j !== i))}
+              >
+                Remove
+              </Button>
+            </div>
+          ))
+        )}
+      </div>
 
       {(validationError || error) && <ErrorBanner>{validationError ?? (error instanceof Error ? error.message : String(error))}</ErrorBanner>}
 

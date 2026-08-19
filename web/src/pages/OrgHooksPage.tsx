@@ -1,21 +1,50 @@
 import { useState } from "react";
-import { Link, useParams } from "react-router";
+import { useParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
 import {
   fetchOrgHooksPage,
-  createOrgHook,
   updateOrgHook,
   deleteOrgHook,
   pingOrgHook,
+  ghPostJSON,
+  ghSend,
 } from "../api.js";
 import type { GithubOrgWebhook } from "../types.js";
 import { OrgHeader } from "../components/PageHeader.js";
-import { PageTitle, Box, Blankslate, Button, ErrorBanner, Modal, DialogActions, FormLabel } from "../components/ui.js";
+import { PageTitle, Box, Blankslate, Button, ButtonLink, ErrorBanner, Modal, DialogActions } from "../components/ui.js";
 import { MutationError } from "../components/MutationError.js";
 import { confirmAction } from "../components/confirmAction.js";
+import { WebhookForm, ORG_WEBHOOK_EVENT_CATALOG, type WebhookFormValues } from "../components/WebhookForm.js";
 
-/** Organization webhooks: list, create, ping, enable/disable, and delete. */
+// Page-local hook writers. The entry-resident createOrgHook/updateOrgHook
+// wrappers have no `secret` member in their config types, so the org form
+// posts/patches through these lazy-page fetchers instead of widening api.ts.
+// On PATCH, a blank/absent config.secret keeps the stored secret
+// (internal/server/gh_org_hooks_rest.go mirrors the repo-hook handler).
+const createOrgHookFull = (org: string, values: WebhookFormValues) =>
+  ghPostJSON<GithubOrgWebhook>(`/api/v3/orgs/${encodeURIComponent(org)}/hooks`, {
+    name: "web",
+    active: values.active,
+    events: values.events,
+    config: {
+      url: values.url,
+      content_type: values.contentType,
+      ...(values.secret ? { secret: values.secret } : {}),
+    },
+  });
+const patchOrgHookFull = (org: string, id: number, values: WebhookFormValues) =>
+  ghSend("PATCH", `/api/v3/orgs/${encodeURIComponent(org)}/hooks/${id}`, {
+    active: values.active,
+    events: values.events,
+    config: {
+      url: values.url,
+      content_type: values.contentType,
+      ...(values.secret ? { secret: values.secret } : {}),
+    },
+  });
+
+/** Organization webhooks: list, create, edit, ping, enable/disable, and delete. */
 export function OrgHooksPage() {
   const { org = "" } = useParams<{ org: string }>();
   const qc = useQueryClient();
@@ -24,10 +53,7 @@ export function OrgHooksPage() {
   const [pageError, setPageError] = useState<string | null>(null);
 
   const [creating, setCreating] = useState(false);
-  const [url, setUrl] = useState("");
-  const [contentType, setContentType] = useState("json");
-  const [events, setEvents] = useState("push");
-  const [active, setActive] = useState(true);
+  const [editing, setEditing] = useState<GithubOrgWebhook | null>(null);
 
   const firstPage = useQuery({
     queryKey: ["org-hooks", org],
@@ -41,17 +67,18 @@ export function OrgHooksPage() {
     qc.invalidateQueries({ queryKey: ["org-hooks", org] });
   };
   const createMut = useMutation({
-    mutationFn: () =>
-      createOrgHook(org, {
-        url,
-        contentType,
-        events: events.split(",").map((e) => e.trim()).filter(Boolean),
-        active,
-      }),
+    mutationFn: (values: WebhookFormValues) => createOrgHookFull(org, values),
     onSuccess: () => {
       refresh();
       setCreating(false);
-      setUrl("");
+    },
+  });
+  const editMut = useMutation({
+    mutationFn: ({ id, values }: { id: number; values: WebhookFormValues }) =>
+      patchOrgHookFull(org, id, values),
+    onSuccess: () => {
+      refresh();
+      setEditing(null);
     },
   });
   const toggleMut = useMutation({
@@ -104,49 +131,42 @@ export function OrgHooksPage() {
 
       {creating && (
         <Modal title="Add organization webhook" onClose={() => setCreating(false)}>
-          <FormLabel id="hook-url">Payload URL</FormLabel>
-          <input
-            id="hook-url"
-            autoFocus
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            placeholder="https://example.com/webhook"
-            className="mb-3 w-full"
+          <WebhookForm
+            eventCatalog={ORG_WEBHOOK_EVENT_CATALOG}
+            submitLabel="Add webhook"
+            pendingLabel="Creating…"
+            pending={createMut.isPending}
+            onSubmit={(values) => createMut.mutate(values)}
           />
-          <FormLabel id="hook-content-type">Content type</FormLabel>
-          <select
-            id="hook-content-type"
-            value={contentType}
-            onChange={(e) => setContentType(e.target.value)}
-            className="mb-3 w-full"
-          >
-            <option value="json">application/json</option>
-            <option value="form">application/x-www-form-urlencoded</option>
-          </select>
-          <FormLabel id="hook-events">Events (comma-separated)</FormLabel>
-          <input
-            id="hook-events"
-            value={events}
-            onChange={(e) => setEvents(e.target.value)}
-            placeholder="push, pull_request"
-            className="mb-3 w-full"
-          />
-          <label className="mb-3 flex items-center gap-2" style={{ fontSize: "0.85rem" }}>
-            <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />
-            Active
-          </label>
           <MutationError of={createMut} />
           <DialogActions>
             <Button variant="ghost" size="sm" onClick={() => setCreating(false)}>
               Cancel
             </Button>
-            <Button
-              variant="primary"
-              size="sm"
-              disabled={!url.trim() || createMut.isPending}
-              onClick={() => createMut.mutate()}
-            >
-              {createMut.isPending ? "Creating…" : "Add webhook"}
+          </DialogActions>
+        </Modal>
+      )}
+
+      {editing && (
+        <Modal title={`Edit webhook #${editing.id}`} onClose={() => setEditing(null)}>
+          <WebhookForm
+            eventCatalog={ORG_WEBHOOK_EVENT_CATALOG}
+            initial={{
+              url: editing.config.url,
+              contentType: editing.config.content_type,
+              events: editing.events,
+              active: editing.active,
+            }}
+            editingWithSecret
+            submitLabel="Update webhook"
+            pendingLabel="Updating…"
+            pending={editMut.isPending}
+            onSubmit={(values) => editMut.mutate({ id: editing.id, values })}
+          />
+          <MutationError of={editMut} />
+          <DialogActions>
+            <Button variant="ghost" size="sm" onClick={() => setEditing(null)}>
+              Cancel
             </Button>
           </DialogActions>
         </Modal>
@@ -192,6 +212,14 @@ export function OrgHooksPage() {
                 </div>
                 <Button
                   size="sm"
+                  aria-label={`Edit webhook ${h.id}`}
+                  disabled={editMut.isPending}
+                  onClick={() => setEditing(h)}
+                >
+                  Edit
+                </Button>
+                <Button
+                  size="sm"
                   aria-label={`Ping webhook ${h.id}`}
                   disabled={pingMut.isPending}
                   onClick={() => pingMut.mutate(h.id)}
@@ -222,11 +250,9 @@ export function OrgHooksPage() {
                 >
                   Delete
                 </Button>
-                <Link to={`/ui/orgs/${org}/hooks/${h.id}/deliveries`}>
-                  <Button variant="secondary" size="sm">
-                    Deliveries
-                  </Button>
-                </Link>
+                <ButtonLink to={`/ui/orgs/${org}/hooks/${h.id}/deliveries`} variant="secondary" size="sm">
+                  Deliveries
+                </ButtonLink>
               </div>
             ))}
           </Box>

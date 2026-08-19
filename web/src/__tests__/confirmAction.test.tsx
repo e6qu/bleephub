@@ -30,4 +30,31 @@ describe("confirmAction", () => {
     await expect(result).resolves.toBe(true);
     expect(document.querySelector("[data-confirm-action]")).toBeNull();
   });
+
+  it("keeps the confirm button disabled until the expected text is typed", async () => {
+    const result = confirmAction("Delete the repository?", {
+      confirmLabel: "Delete",
+      expectedText: "octo/repo",
+    });
+    const confirm = await screen.findByRole("button", { name: "Delete" });
+    expect(confirm).toBeDisabled();
+
+    const input = screen.getByLabelText(/type .* to confirm/i);
+    await userEvent.type(input, "octo/nope");
+    expect(confirm).toBeDisabled();
+
+    await userEvent.clear(input);
+    await userEvent.type(input, "octo/repo");
+    expect(confirm).toBeEnabled();
+
+    await userEvent.click(confirm);
+    await expect(result).resolves.toBe(true);
+    expect(document.querySelector("[data-confirm-action]")).toBeNull();
+  });
+
+  it("still cancels a type-to-confirm dialog without typing", async () => {
+    const result = confirmAction("Archive?", { expectedText: "repo" });
+    await userEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+    await expect(result).resolves.toBe(false);
+  });
 });

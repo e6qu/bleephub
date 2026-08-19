@@ -262,72 +262,104 @@ func (s *Server) handleListIssues(w http.ResponseWriter, r *http.Request) {
 	// them made pull requests invisible to any client that reaches for
 	// issues — `gh issue list` among them.
 	base := s.baseURL(r)
+	descending := direction == "desc"
 	type issueRow struct {
 		number       int
 		createdAt    time.Time
 		updatedAt    time.Time
 		commentCount int
-		json         map[string]interface{}
+		issue        *store.Issue       // set for issue rows
+		pr           *store.PullRequest // set for pull-request rows
 	}
-	var rows []issueRow
-	for _, storedIssue := range s.store.ListIssues(repo.ID, stateFilter) {
-		issue := s.store.SnapIssue(storedIssue)
+	// rowLess is the listing's total order: the requested sort key with the
+	// per-repo number (unique across issues and PRs, which share the number
+	// sequence) as tie-break, inverted wholesale for direction=desc.
+	rowLess := func(a, b issueRow) bool {
+		var less bool
+		switch sortField {
+		case "updated":
+			less = a.updatedAt.Before(b.updatedAt)
+			if a.updatedAt.Equal(b.updatedAt) {
+				less = a.number < b.number
+			}
+		case "comments":
+			less = a.commentCount < b.commentCount
+			if a.commentCount == b.commentCount {
+				less = a.number < b.number
+			}
+		default:
+			less = a.createdAt.Before(b.createdAt)
+			if a.createdAt.Equal(b.createdAt) {
+				less = a.number < b.number
+			}
+		}
+		if descending {
+			return !less && a.number != b.number
+		}
+		return less
+	}
+	// Issues come from the store's per-repo creation-order index, already in
+	// the created-sort order (both directions); the PR store still iterates a
+	// map, so PR rows are ordered here. Rows carry only sort keys plus the
+	// detached entity — JSON is rendered after pagination, for the one page a
+	// caller actually receives, instead of for every issue in the repo.
+	var issueRows []issueRow
+	for _, issue := range s.store.ListIssuesOrderedByCreation(repo.ID, stateFilter, descending) {
 		if !selected(issue.LabelIDs, issue.AssigneeIDs) ||
 			!matchesCommon(issue.AuthorID, issue.MilestoneID, issue.UpdatedAt, issue.Body, "issue", issue.ID) {
 			continue
 		}
-		rows = append(rows, issueRow{
+		issueRows = append(issueRows, issueRow{
 			number: issue.Number, createdAt: issue.CreatedAt, updatedAt: issue.UpdatedAt,
-			commentCount: len(s.store.ListCommentsFor("issue", issue.ID)),
-			json:         issueToJSON(issue, s.store, base, repo.FullName),
+			commentCount: s.store.CountCommentsFor("issue", issue.ID),
+			issue:        issue,
 		})
 	}
-	for _, storedPR := range s.store.ListPullRequests(repo.ID, stateFilter) {
-		pr := s.store.SnapPR(storedPR)
+	var prRows []issueRow
+	for _, pr := range s.store.ListPullRequests(repo.ID, stateFilter) {
 		if !selected(pr.LabelIDs, pr.AssigneeIDs) ||
 			!matchesCommon(pr.AuthorID, pr.MilestoneID, pr.UpdatedAt, pr.Body, "pull_request", pr.ID) {
 			continue
 		}
-		rows = append(rows, issueRow{
+		prRows = append(prRows, issueRow{
 			number: pr.Number, createdAt: pr.CreatedAt, updatedAt: pr.UpdatedAt,
-			commentCount: len(s.store.ListCommentsFor("pull_request", pr.ID)),
-			json:         issueToJSONForPR(pr, s.store, base, repo.FullName),
+			commentCount: s.store.CountCommentsFor("pull_request", pr.ID),
+			pr:           pr,
 		})
 	}
 
-	// Newest first, GitHub's default sort. Both stores iterate a map, so
-	// without this the page a caller gets back is a different subset each
-	// time they ask.
-	sort.Slice(rows, func(i, j int) bool {
-		var less bool
-		switch sortField {
-		case "updated":
-			less = rows[i].updatedAt.Before(rows[j].updatedAt)
-			if rows[i].updatedAt.Equal(rows[j].updatedAt) {
-				less = rows[i].number < rows[j].number
-			}
-		case "comments":
-			less = rows[i].commentCount < rows[j].commentCount
-			if rows[i].commentCount == rows[j].commentCount {
-				less = rows[i].number < rows[j].number
-			}
-		default:
-			less = rows[i].createdAt.Before(rows[j].createdAt)
-			if rows[i].createdAt.Equal(rows[j].createdAt) {
-				less = rows[i].number < rows[j].number
+	var rows []issueRow
+	if sortField == "created" {
+		// issueRows are pre-sorted by the index; order the (typically far
+		// fewer) PR rows and merge the two sorted lists.
+		sort.Slice(prRows, func(i, j int) bool { return rowLess(prRows[i], prRows[j]) })
+		rows = make([]issueRow, 0, len(issueRows)+len(prRows))
+		for len(issueRows) > 0 && len(prRows) > 0 {
+			if rowLess(prRows[0], issueRows[0]) {
+				rows = append(rows, prRows[0])
+				prRows = prRows[1:]
+			} else {
+				rows = append(rows, issueRows[0])
+				issueRows = issueRows[1:]
 			}
 		}
-		if direction == "desc" {
-			return !less && rows[i].number != rows[j].number
-		}
-		return less
-	})
-
-	result := make([]map[string]interface{}, 0, len(rows))
-	for _, row := range rows {
-		result = append(result, row.json)
+		rows = append(rows, issueRows...)
+		rows = append(rows, prRows...)
+	} else {
+		rows = append(issueRows, prRows...)
+		sort.Slice(rows, func(i, j int) bool { return rowLess(rows[i], rows[j]) })
 	}
-	writeJSON(w, http.StatusOK, paginateAndLink(w, r, result))
+
+	pageRows := paginateAndLink(w, r, rows)
+	result := make([]map[string]interface{}, 0, len(pageRows))
+	for _, row := range pageRows {
+		if row.issue != nil {
+			result = append(result, issueToJSON(row.issue, s.store, base, repo.FullName))
+		} else {
+			result = append(result, issueToJSONForPR(row.pr, s.store, base, repo.FullName))
+		}
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) handleGetIssue(w http.ResponseWriter, r *http.Request) {

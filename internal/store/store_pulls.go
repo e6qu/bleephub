@@ -339,6 +339,26 @@ func (st *Store) SetPullRequestPotentialMergeSHA(prID int, sha string) {
 	}
 }
 
+// SetPullRequestDiffStats records a pull request's merge-base diff totals
+// (changed_files/additions/deletions on the REST detail payload, and
+// changedFiles/additions/deletions in GraphQL). Like the potential-merge SHA
+// it is derived state, so it does not bump UpdatedAt and is a no-op when
+// unchanged to avoid churning persistence on read-path refreshes.
+func (st *Store) SetPullRequestDiffStats(prID, changedFiles, additions, deletions int) {
+	st.Mu.Lock()
+	defer st.Mu.Unlock()
+	pr := st.PullRequests[prID]
+	if pr == nil || (pr.ChangedFiles == changedFiles && pr.Additions == additions && pr.Deletions == deletions) {
+		return
+	}
+	pr.ChangedFiles = changedFiles
+	pr.Additions = additions
+	pr.Deletions = deletions
+	if st.Persist != nil {
+		st.Persist.MustPut("pull_requests", strconv.Itoa(pr.ID), pr)
+	}
+}
+
 func (st *Store) SetPullRequestLabels(repoID, prNumber int, labelIDs []int, actorID int) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()

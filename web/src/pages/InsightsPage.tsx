@@ -1,11 +1,10 @@
-import { useParams, Link } from "react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useParams, useSearchParams, Link } from "react-router";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
 import {
   fetchRepoForksPage,
   fetchDependencySBOM,
-  fetchRepoPRsPage,
-  fetchRepoIssuesPage,
   fetchRepoContributors,
   fetchCommunityProfile,
   fetchCommitActivity,
@@ -16,31 +15,116 @@ import {
   fetchTrafficClones,
   fetchTrafficPopularPaths,
   fetchTrafficPopularReferrers,
+  fetchRepoDetail,
+  searchIssues,
 } from "../api.js";
 import type { GithubCommunityProfile, GithubTrafficBucket, GithubCommit } from "../types.js";
 import { RepoHeader } from "../components/PageHeader.js";
-import { useOpenCounts } from "../hooks/useOpenCounts.js";
+import {
+  fetchInsightsBootstrap,
+  seedQueryCache,
+  useSeededOpenCounts,
+  SEED_STALE_TIME,
+} from "../utils/bootstrap.js";
 import { Box, Blankslate, SectionLabel, StatCard } from "../components/ui.js";
 import { GraphIcon, PeopleIcon, CheckCircleIcon, XCircleIcon } from "../components/octicons.js";
 
+// GitHub's Insights left-nav sections, URL-addressable via ?section= so a
+// specific pane is linkable without new App routes.
+const INSIGHTS_SECTIONS = [
+  { key: "pulse", label: "Pulse" },
+  { key: "contributors", label: "Contributors" },
+  { key: "community", label: "Community" },
+  { key: "traffic", label: "Traffic" },
+  { key: "commits", label: "Commits" },
+  { key: "code-frequency", label: "Code frequency" },
+  { key: "dependency-graph", label: "Dependency graph" },
+  { key: "network", label: "Network" },
+  { key: "forks", label: "Forks" },
+] as const;
+type InsightsSection = (typeof INSIGHTS_SECTIONS)[number]["key"];
+
 export function InsightsPage() {
   const { owner = "", repo = "" } = useParams<{ owner: string; repo: string }>();
-  const counts = useOpenCounts(owner, repo);
+  const counts = useSeededOpenCounts(owner, repo);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // The default pane (Pulse) is aggregate-backed with a search fallback, and
+  // both answer 200-ish shapes for a nonexistent repository — probe the repo
+  // itself so a bad URL degrades to a visible error instead of a plausible
+  // empty Pulse. Uses the same ["repo", ...] key as RepoHeader so the two
+  // observers share one fetch (and a warm session's seeded repo is a hit).
+  const repoQ = useQuery({
+    queryKey: ["repo", owner, repo],
+    queryFn: ({ signal }) => fetchRepoDetail(owner, repo, signal),
+    retry: false,
+  });
+
+  const raw = searchParams.get("section");
+  const section: InsightsSection = INSIGHTS_SECTIONS.some((s) => s.key === raw)
+    ? (raw as InsightsSection)
+    : "pulse";
+  const selectSection = (key: InsightsSection) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (key === "pulse") next.delete("section");
+      else next.set("section", key);
+      return next;
+    });
+  };
 
   return (
     <div>
       <RepoHeader owner={owner} repo={repo} active="insights" {...counts} />
-      <div className="flex flex-col gap-6">
-        <PulseSection owner={owner} repo={repo} />
-        <CommunityProfileSection owner={owner} repo={repo} />
-        <ContributorsSection owner={owner} repo={repo} />
-        <CommitActivitySection owner={owner} repo={repo} />
-        <CodeFrequencySection owner={owner} repo={repo} />
-        <TrafficSection owner={owner} repo={repo} />
-        <PopularContentSection owner={owner} repo={repo} />
-        <DependencyGraphSection owner={owner} repo={repo} />
-        <NetworkSection owner={owner} repo={repo} />
-        <ForksSection owner={owner} repo={repo} />
+      <div className="flex flex-wrap items-start gap-6 md:flex-nowrap">
+        <aside className="w-full shrink-0 md:w-56">
+          <nav aria-label="Insights" className="flex flex-col">
+            {INSIGHTS_SECTIONS.map((s) => (
+              <button
+                key={s.key}
+                type="button"
+                onClick={() => selectSection(s.key)}
+                aria-current={section === s.key ? "page" : undefined}
+                className="text-left"
+                style={{
+                  padding: "0.4rem 0.5rem",
+                  borderRadius: "var(--radius-md)",
+                  border: "none",
+                  fontSize: "0.85rem",
+                  fontWeight: section === s.key ? 600 : 500,
+                  color: section === s.key ? "var(--color-fg)" : "var(--color-fg-muted)",
+                  background:
+                    section === s.key
+                      ? "color-mix(in srgb, var(--color-fg-muted) 12%, transparent)"
+                      : "transparent",
+                }}
+              >
+                {s.label}
+              </button>
+            ))}
+          </nav>
+        </aside>
+        <div className="min-w-0 flex-1">
+          {repoQ.isError && (
+            <div className="mb-4">
+              <InlineError title="Failed to load repository" detail={String(repoQ.error)} />
+            </div>
+          )}
+          {section === "pulse" && <PulseSection owner={owner} repo={repo} />}
+          {section === "contributors" && <ContributorsSection owner={owner} repo={repo} />}
+          {section === "community" && <CommunityProfileSection owner={owner} repo={repo} />}
+          {section === "traffic" && (
+            <div className="flex flex-col gap-6">
+              <TrafficSection owner={owner} repo={repo} />
+              <PopularContentSection owner={owner} repo={repo} />
+            </div>
+          )}
+          {section === "commits" && <CommitActivitySection owner={owner} repo={repo} />}
+          {section === "code-frequency" && <CodeFrequencySection owner={owner} repo={repo} />}
+          {section === "dependency-graph" && <DependencyGraphSection owner={owner} repo={repo} />}
+          {section === "network" && <NetworkSection owner={owner} repo={repo} />}
+          {section === "forks" && <ForksSection owner={owner} repo={repo} />}
+        </div>
       </div>
     </div>
   );
@@ -741,29 +825,101 @@ function NetworkSection({ owner, repo }: { owner: string; repo: string }) {
   );
 }
 
+const PULSE_PERIODS = [
+  { key: "24h", label: "Last 24 hours", ms: 24 * 3600_000 },
+  { key: "3d", label: "Last 3 days", ms: 3 * 24 * 3600_000 },
+  { key: "1w", label: "Last week", ms: 7 * 24 * 3600_000 },
+  { key: "1m", label: "Last month", ms: 30 * 24 * 3600_000 },
+] as const;
+type PulsePeriod = (typeof PULSE_PERIODS)[number]["key"];
+
+/** Exact count of issues/PRs matching `q` — the search payload's total_count. */
+function usePulseCount(q: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ["pulse-count", q],
+    queryFn: () => searchIssues(q, 1),
+    select: (page) => page.totalCount,
+    enabled,
+  });
+}
+
 function PulseSection({ owner, repo }: { owner: string; repo: string }) {
-  const openPRs = useQuery({ queryKey: ["pulse-pr-open", owner, repo], queryFn: () => fetchRepoPRsPage(owner, repo, "open") });
-  const closedPRs = useQuery({ queryKey: ["pulse-pr-closed", owner, repo], queryFn: () => fetchRepoPRsPage(owner, repo, "closed") });
-  const openIssues = useQuery({ queryKey: ["pulse-iss-open", owner, repo], queryFn: () => fetchRepoIssuesPage(owner, repo, "open") });
-  const closedIssues = useQuery({ queryKey: ["pulse-iss-closed", owner, repo], queryFn: () => fetchRepoIssuesPage(owner, repo, "closed") });
-  const loading = openPRs.isLoading || closedPRs.isLoading || openIssues.isLoading || closedIssues.isLoading;
-  // The /issues endpoint also returns PRs (GitHub quirk); exclude them for issue counts.
-  const issuesOnly = (items: { pull_request?: unknown }[] = []) => items.filter((i) => !i.pull_request).length;
-  const merged = (closedPRs.data?.items ?? []).filter((pr) => Boolean((pr as { merged_at?: string | null }).merged_at)).length;
+  const [period, setPeriod] = useState<PulsePeriod>("1w");
+  const qc = useQueryClient();
+
+  // One aggregate request per period supplies all four Pulse counters (and,
+  // as a bonus, seeds the Commits/languages sections' keys). The old four
+  // search-count queries survive strictly as the bootstrap-failure fallback.
+  const bootstrapQ = useQuery({
+    queryKey: ["insights-bootstrap", owner, repo, period],
+    queryFn: async ({ signal }) => {
+      const data = await fetchInsightsBootstrap(owner, repo, period, signal);
+      seedQueryCache(qc, [
+        [["commit-activity", owner, repo], data.commit_activity],
+        [["repo-languages", owner, repo], data.languages],
+      ]);
+      return data;
+    },
+    staleTime: SEED_STALE_TIME,
+    enabled: !!owner && !!repo,
+  });
+  const searchFallback = bootstrapQ.isError;
+
+  const ms = PULSE_PERIODS.find((p) => p.key === period)!.ms;
+  // RFC3339 without fractional seconds — the shape the search-qualifier
+  // date parser accepts alongside plain dates.
+  const since = new Date(Date.now() - ms).toISOString().replace(/\.\d{3}Z$/, "Z");
+  const scope = `repo:${owner}/${repo}`;
+
+  // Search totals are exact counts (no first-page-length undercounting) and
+  // the created:/closed: qualifiers scope them to the selected period.
+  const merged = usePulseCount(`${scope} is:pr is:merged closed:>=${since}`, searchFallback);
+  const openedPRs = usePulseCount(`${scope} is:pr is:open created:>=${since}`, searchFallback);
+  const closedIssues = usePulseCount(`${scope} is:issue is:closed closed:>=${since}`, searchFallback);
+  const newIssues = usePulseCount(`${scope} is:issue created:>=${since}`, searchFallback);
+
   const stats = [
-    { label: "Merged pull requests", value: merged },
-    { label: "Open pull requests", value: openPRs.data?.items.length ?? 0 },
-    { label: "Closed issues", value: issuesOnly(closedIssues.data?.items) },
-    { label: "Open issues", value: issuesOnly(openIssues.data?.items) },
+    { label: "Merged pull requests", value: bootstrapQ.data?.merged_prs_count, q: merged },
+    { label: "Open pull requests", value: bootstrapQ.data?.opened_prs_count, q: openedPRs },
+    { label: "Closed issues", value: bootstrapQ.data?.closed_issues_count, q: closedIssues },
+    { label: "New issues", value: bootstrapQ.data?.new_issues_count, q: newIssues },
   ];
+  const loading = bootstrapQ.isPending || (searchFallback && stats.some((s) => s.q.isLoading));
+  const failed = searchFallback ? stats.find((s) => s.q.isError) : undefined;
+
   return (
     <section>
-      <SectionLabel>Pulse</SectionLabel>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <SectionLabel>Pulse</SectionLabel>
+        <label className="inline-flex items-center gap-2" style={{ fontSize: "0.8rem", color: "var(--color-fg-muted)" }}>
+          Period
+          <select
+            aria-label="Pulse period"
+            value={period}
+            onChange={(e) => setPeriod(e.target.value as PulsePeriod)}
+            style={{
+              padding: "0.25rem 0.5rem",
+              fontSize: "0.8rem",
+              background: "var(--color-bg-subtle)",
+              color: "var(--color-fg)",
+              border: "1px solid var(--color-border)",
+              borderRadius: "var(--radius-md)",
+            }}
+          >
+            {PULSE_PERIODS.map((p) => (
+              <option key={p.key} value={p.key}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
       {loading && <Spinner label="loading activity overview" />}
-      {!loading && (
+      {failed && <InlineError title="Failed to load activity counts" detail={String(failed.q.error)} />}
+      {!loading && !failed && (
         <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(9rem, 1fr))" }}>
           {stats.map((s) => (
-            <StatCard key={s.label} title={s.label} value={String(s.value)} />
+            <StatCard key={s.label} title={s.label} value={String(s.value ?? s.q.data ?? 0)} />
           ))}
         </div>
       )}

@@ -33,6 +33,7 @@ type gqlAuthzFixture struct {
 	stranger      *store.User
 	strangerToken string
 	repo          *store.Repo
+	repo2         *store.Repo // second repo under the same owner (transferIssue's destination)
 	issue         *store.Issue
 	comment       *store.Comment
 	label         *store.IssueLabel
@@ -75,6 +76,10 @@ func newGQLAuthzFixture(t *testing.T, srv *Server, tag string, private bool) *gq
 	f.repo = st.CreateRepo(f.owner, "gqlauthz-repo", "", private)
 	if f.repo == nil {
 		t.Fatalf("could not create the fixture repository for %s", tag)
+	}
+	f.repo2 = st.CreateRepo(f.owner, "gqlauthz-repo-two", "", private)
+	if f.repo2 == nil {
+		t.Fatalf("could not create the second fixture repository for %s", tag)
 	}
 	branches := seedPullRequestBranches(t, srv, f.repo, "feature", "spare")
 	f.headSHA = branches["feature"]
@@ -177,6 +182,34 @@ var gqlMutationCases = []gqlMutationCase{
 		},
 	},
 	{
+		name: "pinIssue",
+		doc:  `mutation($input:PinIssueInput!){pinIssue(input:$input){issue{isPinned}}}`,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"issueId": f.issue.NodeID}
+		},
+	},
+	{
+		name: "unpinIssue",
+		doc:  `mutation($input:UnpinIssueInput!){unpinIssue(input:$input){issue{isPinned}}}`,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"issueId": f.issue.NodeID}
+		},
+	},
+	{
+		name: "transferIssue",
+		doc:  `mutation($input:TransferIssueInput!){transferIssue(input:$input){issue{number}}}`,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"issueId": f.issue.NodeID, "repositoryId": f.repo2.NodeID}
+		},
+	},
+	{
+		name: "deleteIssue",
+		doc:  `mutation($input:DeleteIssueInput!){deleteIssue(input:$input){clientMutationId}}`,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"issueId": f.issue.NodeID}
+		},
+	},
+	{
 		name: "createDiscussion",
 		doc:  `mutation($input:CreateDiscussionInput!){createDiscussion(input:$input){discussion{number}}}`,
 		input: func(f *gqlAuthzFixture) map[string]interface{} {
@@ -249,6 +282,20 @@ var gqlMutationCases = []gqlMutationCase{
 		doc:  `mutation($input:UnmarkDiscussionCommentAsAnswerInput!){unmarkDiscussionCommentAsAnswer(input:$input){discussion{id}}}`,
 		input: func(f *gqlAuthzFixture) map[string]interface{} {
 			return map[string]interface{}{"id": f.discComment.NodeID}
+		},
+	},
+	{
+		name: "addUpvote",
+		doc:  `mutation($input:AddUpvoteInput!){addUpvote(input:$input){subject{upvoteCount}}}`,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"subjectId": f.discussion.NodeID}
+		},
+	},
+	{
+		name: "removeUpvote",
+		doc:  `mutation($input:RemoveUpvoteInput!){removeUpvote(input:$input){subject{upvoteCount}}}`,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"subjectId": f.discussion.NodeID}
 		},
 	},
 	{
@@ -405,11 +452,15 @@ func (s *isolatedServer) assertGQLFixtureUntouched(t *testing.T, what string, f 
 		t.Errorf("%s: issue title = %q, want the seeded title", what, issue.Title)
 	case issue.Locked:
 		t.Errorf("%s: the issue was locked by a stranger", what)
+	case issue.RepoID != f.repo.ID:
+		t.Errorf("%s: the issue was transferred by a stranger", what)
+	case issue.PinnedAt != nil:
+		t.Errorf("%s: the issue was pinned by a stranger", what)
 	}
 	if c := st.GetComment(f.comment.ID); c == nil || c.MinimizedReason != "" {
 		t.Errorf("%s: the comment was moderated by a stranger: %+v", what, c)
 	}
-	if d := st.GetDiscussion(f.discussion.ID); d == nil || d.Deleted || d.Title != "fixture discussion" {
+	if d := st.GetDiscussion(f.discussion.ID); d == nil || d.Deleted || d.Title != "fixture discussion" || len(d.UpvoterIDs) != 0 {
 		t.Errorf("%s: the discussion was changed by a stranger: %+v", what, d)
 	}
 	if dc := st.GetDiscussionComment(f.discComment.ID); dc == nil || dc.IsAnswer || dc.Body != "fixture answer" {

@@ -3,10 +3,11 @@ import { useParams, Link, useNavigate } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { InlineError, Spinner } from "@bleephub/ui-core/components";
 import { fetchOrgTeams, createTeam } from "../api.js";
+import { limitedGhFetch } from "../utils/uiFetch.js";
 import type { GithubOrgTeam } from "../types.js";
 import { OrgHeader } from "../components/PageHeader.js";
 import { Box, SectionLabel, Blankslate, Button, Modal, FormLabel, DialogActions, ErrorBanner } from "../components/ui.js";
-import { TeamIcon, LockIcon } from "../components/octicons.js";
+import { TeamIcon, LockIcon, ChevronDownIcon, ChevronRightIcon, PeopleIcon, RepoIcon } from "../components/octicons.js";
 
 export function OrgTeamsPage() {
   const { org = "" } = useParams<{ org: string }>();
@@ -58,11 +59,7 @@ export function OrgTeamsPage() {
               No team matches “{filter}”.
             </Blankslate>
           ) : (
-            <Box>
-              {filtered.map((t, i) => (
-                <TeamRow key={t.id} org={org} team={t} last={i === filtered.length - 1} />
-              ))}
-            </Box>
+            <TeamTree org={org} teams={filtered} />
           )}
         </>
       )}
@@ -70,21 +67,137 @@ export function OrgTeamsPage() {
   );
 }
 
-function TeamRow({ org, team, last }: { org: string; team: GithubOrgTeam; last: boolean }) {
+/**
+ * The org team list nested GitHub-style: child teams (list rows carry a
+ * nullable `parent` ref) sit under their parent, expandable and indented.
+ * A child whose parent isn't visible in the list renders as a root.
+ */
+function TeamTree({ org, teams }: { org: string; teams: GithubOrgTeam[] }) {
+  const { roots, children } = useMemo(() => {
+    const slugs = new Set(teams.map((t) => t.slug));
+    const childMap = new Map<string, GithubOrgTeam[]>();
+    const rootList: GithubOrgTeam[] = [];
+    for (const t of teams) {
+      const parentSlug = t.parent?.slug;
+      if (parentSlug && slugs.has(parentSlug)) {
+        const bucket = childMap.get(parentSlug) ?? [];
+        bucket.push(t);
+        childMap.set(parentSlug, bucket);
+      } else {
+        rootList.push(t);
+      }
+    }
+    return { roots: rootList, children: childMap };
+  }, [teams]);
+
   return (
-    <Link
-      to={`/ui/orgs/${org}/teams/${team.slug}`}
+    <Box>
+      <TeamBranch org={org} teams={roots} childMap={children} depth={0} />
+    </Box>
+  );
+}
+
+function TeamBranch({
+  org,
+  teams,
+  childMap,
+  depth,
+}: {
+  org: string;
+  teams: GithubOrgTeam[];
+  childMap: Map<string, GithubOrgTeam[]>;
+  depth: number;
+}) {
+  return (
+    <>
+      {teams.map((t) => (
+        <TeamNode key={t.id} org={org} team={t} childMap={childMap} depth={depth} />
+      ))}
+    </>
+  );
+}
+
+function TeamNode({
+  org,
+  team,
+  childMap,
+  depth,
+}: {
+  org: string;
+  team: GithubOrgTeam;
+  childMap: Map<string, GithubOrgTeam[]>;
+  depth: number;
+}) {
+  const kids = childMap.get(team.slug) ?? [];
+  const [expanded, setExpanded] = useState(true);
+  return (
+    <>
+      <TeamRow
+        org={org}
+        team={team}
+        depth={depth}
+        childCount={kids.length}
+        expanded={expanded}
+        onToggle={() => setExpanded((v) => !v)}
+      />
+      {expanded && kids.length > 0 && (
+        <TeamBranch org={org} teams={kids} childMap={childMap} depth={depth + 1} />
+      )}
+    </>
+  );
+}
+
+function TeamRow({
+  org,
+  team,
+  depth,
+  childCount,
+  expanded,
+  onToggle,
+}: {
+  org: string;
+  team: GithubOrgTeam;
+  depth: number;
+  childCount: number;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div
       className="flex flex-wrap items-center gap-3"
       style={{
         padding: "0.75rem 1rem",
-        borderBottom: last ? "none" : "1px solid var(--color-border)",
-        textDecoration: "none",
-        color: "inherit",
+        paddingLeft: `${1 + depth * 1.5}rem`,
+        borderBottom: "1px solid var(--color-border)",
       }}
     >
-      <TeamIcon size={16} style={{ color: "var(--color-fg-muted)" }} />
+      {childCount > 0 ? (
+        <Button
+          size="sm"
+          variant="ghost"
+          aria-expanded={expanded}
+          aria-label={`${expanded ? "Collapse" : "Expand"} child teams of ${team.name}`}
+          onClick={onToggle}
+        >
+          {expanded ? <ChevronDownIcon size={14} /> : <ChevronRightIcon size={14} />}
+        </Button>
+      ) : (
+        <TeamIcon size={16} style={{ color: "var(--color-fg-muted)" }} />
+      )}
       <div className="min-w-0 flex-1">
-        <span style={{ fontWeight: 600, fontSize: "0.92rem", color: "var(--color-accent)" }}>{team.name}</span>
+        <Link
+          to={`/ui/orgs/${org}/teams/${team.slug}`}
+          style={{
+            fontWeight: 600,
+            fontSize: "0.92rem",
+            color: "var(--color-accent)",
+            textDecoration: "none",
+            display: "inline-block",
+            lineHeight: "1.625rem",
+          }}
+        >
+          {team.name}
+        </Link>
         <span className="ml-2" style={{ fontSize: "0.8rem", color: "var(--color-fg-muted)" }}>
           @{team.slug}
         </span>
@@ -94,6 +207,7 @@ function TeamRow({ org, team, last }: { org: string; team: GithubOrgTeam; last: 
           </p>
         )}
       </div>
+      <TeamCounts org={org} slug={team.slug} />
       <span
         className="inline-flex items-center gap-1"
         style={{ fontSize: "0.75rem", color: "var(--color-fg-muted)" }}
@@ -101,7 +215,39 @@ function TeamRow({ org, team, last }: { org: string; team: GithubOrgTeam; last: 
         {team.privacy === "secret" && <LockIcon size={12} />}
         {team.privacy}
       </span>
-    </Link>
+    </div>
+  );
+}
+
+/**
+ * Member/repo counts for a team row. The list payload is GitHub's `team`
+ * shape (no counts — they only ride on team-full), so hydrate each row
+ * lazily from GET /orgs/{org}/teams/{slug}, concurrency-capped and cached.
+ */
+function TeamCounts({ org, slug }: { org: string; slug: string }) {
+  const { data } = useQuery({
+    queryKey: ["team-counts", org, slug],
+    queryFn: () =>
+      limitedGhFetch<{ members_count?: number; repos_count?: number }>(
+        `/api/v3/orgs/${encodeURIComponent(org)}/teams/${encodeURIComponent(slug)}`,
+      ),
+    staleTime: 60_000,
+    retry: false,
+  });
+  if (typeof data?.members_count !== "number" && typeof data?.repos_count !== "number") return null;
+  return (
+    <span className="inline-flex items-center gap-3" style={{ fontSize: "0.75rem", color: "var(--color-fg-muted)" }}>
+      {typeof data.members_count === "number" && (
+        <span className="inline-flex items-center gap-1">
+          <PeopleIcon size={12} /> {data.members_count}
+        </span>
+      )}
+      {typeof data.repos_count === "number" && (
+        <span className="inline-flex items-center gap-1">
+          <RepoIcon size={12} /> {data.repos_count}
+        </span>
+      )}
+    </span>
   );
 }
 

@@ -6,7 +6,6 @@ import {
   fetchUserProfile,
   fetchUserReposByLoginPage,
   fetchUserOrgsByLogin,
-  fetchUserStarredRepos,
   fetchUserProjectsV2,
   fetchUserEvents,
   fetchRepoReadme,
@@ -19,7 +18,7 @@ import {
   unfollowUser,
   ghFetch,
 } from "../api.js";
-import { decodeContentsBase64 } from "../utils/workflowDispatch.js";
+import { decodeContentsBase64 } from "../utils/contents.js";
 import type {
   BleephubRepo,
   GithubOrgSummary,
@@ -33,6 +32,14 @@ import { SectionLabel, Blankslate, Box, Button } from "../components/ui.js";
 import { MutationError } from "../components/MutationError.js";
 import Markdown from "../components/Markdown.js";
 import { ContributionGraph } from "../components/ContributionGraph.js";
+import { RelativeTime } from "../components/RelativeTime.js";
+import {
+  RepoStatsLine,
+  ForkedFromLine,
+  LocationIcon,
+  MailIcon,
+} from "../components/RepoCardMeta.js";
+import { walkRepoPages, walkNumberedPages, limitedGhFetch } from "../utils/uiFetch.js";
 import {
   RepoIcon,
   BranchIcon,
@@ -231,9 +238,9 @@ function ProfileSidebar({
         </span>
       </div>
       <ul className="flex flex-col gap-1.5" style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)", listStyle: "none", margin: 0, padding: 0 }}>
-        {p.company && <MetaRow>{p.company}</MetaRow>}
-        {p.location && <MetaRow>{p.location}</MetaRow>}
-        {p.email && <MetaRow>{p.email}</MetaRow>}
+        {p.company && <MetaRow icon={<OrganizationIcon size={15} />}>{p.company}</MetaRow>}
+        {p.location && <MetaRow icon={<LocationIcon size={15} />}>{p.location}</MetaRow>}
+        {p.email && <MetaRow icon={<MailIcon size={15} />}>{p.email}</MetaRow>}
         {p.blog && (
           <MetaRow icon={<GlobeIcon size={15} />}>
             <a href={p.blog} style={{ color: "var(--color-accent)", textDecoration: "none" }} rel="noreferrer">
@@ -391,6 +398,9 @@ function PinnedCard({ repo }: { repo: BleephubRepo }) {
           {repo.description}
         </p>
       )}
+      <div className="mt-2">
+        <RepoStatsLine repo={repo} showUpdated={false} />
+      </div>
     </div>
   );
 }
@@ -502,7 +512,7 @@ function ActivityRow({ event }: { event: GithubUserEvent }) {
         </Link>
       )}
       <span style={{ color: "var(--color-fg-muted)", fontSize: "0.76rem", marginLeft: repo ? 0 : "auto" }}>
-        {new Date(event.created_at).toLocaleDateString()}
+        <RelativeTime iso={event.created_at} />
       </span>
     </li>
   );
@@ -510,77 +520,183 @@ function ActivityRow({ event }: { event: GithubUserEvent }) {
 
 // ─── Repositories tab (paginated owned repos) ───────────────────────────────────
 
+type ProfileRepoType = "all" | "sources" | "forks" | "archived";
+type ProfileRepoSort = "updated" | "name" | "stars";
+const LOCAL_PAGE_SIZE = 30;
+
 function ProfileRepos({ login }: { login: string }) {
   const [filter, setFilter] = useState("");
+  const [type, setType] = useState<ProfileRepoType>("all");
+  const [sortKey, setSortKey] = useState<ProfileRepoSort>("updated");
   const [pageUrl, setPageUrl] = useState<string | undefined>(undefined);
   const [pageStack, setPageStack] = useState<string[]>([]);
+  const [localPage, setLocalPage] = useState(1);
 
-  const { data, isLoading, isError, error } = useQuery({
-    queryKey: ["user-profile-repos", login, pageUrl ?? "first"],
-    queryFn: () => fetchUserReposByLoginPage(login, { sort: "updated" }, pageUrl),
+  // Server-side portion of the controls: type sources/forks and the
+  // updated/name sorts map straight onto the repos list API's query params.
+  const serverFilters = useMemo(
+    () => ({
+      type: type === "sources" ? "sources" : type === "forks" ? "forks" : undefined,
+      sort: (sortKey === "name" ? "full_name" : "updated") as "full_name" | "updated",
+    }),
+    [type, sortKey],
+  );
+  // Search text, the Archived type and the Stars sort have no server-side
+  // query (as on real GitHub's REST list) — walk every page (capped) so
+  // matches on later pages are still found, then finish client-side.
+  const needsWalk = filter.trim() !== "" || type === "archived" || sortKey === "stars";
+
+  const resetPaging = () => {
+    setPageUrl(undefined);
+    setPageStack([]);
+    setLocalPage(1);
+  };
+
+  const pageQ = useQuery({
+    queryKey: ["user-profile-repos", login, serverFilters, pageUrl ?? "first"],
+    queryFn: () => fetchUserReposByLoginPage(login, serverFilters, pageUrl),
+    enabled: !needsWalk,
+  });
+  const walkQ = useQuery({
+    queryKey: ["user-profile-repos-walk", login, serverFilters, type],
+    queryFn: () =>
+      walkRepoPages(
+        (f, u) => fetchUserReposByLoginPage(login, f, u),
+        // The archived filter needs the unfiltered set (archived repos can be
+        // sources or forks); other walks keep the server-side type narrowing.
+        type === "archived" ? { sort: serverFilters.sort } : serverFilters,
+      ),
+    enabled: needsWalk,
   });
 
-  const filtered = useMemo(() => {
-    if (!data) return [];
+  const walked = useMemo(() => {
+    if (!walkQ.data) return [];
     const q = filter.trim().toLowerCase();
-    if (!q) return data.items;
-    return data.items.filter(
-      (r) => r.name.toLowerCase().includes(q) || (r.description ?? "").toLowerCase().includes(q),
-    );
-  }, [data, filter]);
+    let repos = walkQ.data.items;
+    if (type === "archived") repos = repos.filter((r) => r.archived);
+    if (q) {
+      repos = repos.filter(
+        (r) => r.name.toLowerCase().includes(q) || (r.description ?? "").toLowerCase().includes(q),
+      );
+    }
+    if (sortKey === "stars") {
+      repos = [...repos].sort((a, b) => (b.stargazers_count ?? 0) - (a.stargazers_count ?? 0));
+    }
+    return repos;
+  }, [walkQ.data, filter, type, sortKey]);
+
+  const isLoading = needsWalk ? walkQ.isLoading : pageQ.isLoading;
+  const isError = needsWalk ? walkQ.isError : pageQ.isError;
+  const error = needsWalk ? walkQ.error : pageQ.error;
+
+  const localPageCount = Math.max(1, Math.ceil(walked.length / LOCAL_PAGE_SIZE));
+  const shown = needsWalk
+    ? walked.slice((localPage - 1) * LOCAL_PAGE_SIZE, localPage * LOCAL_PAGE_SIZE)
+    : pageQ.data?.items ?? [];
 
   const goNext = () => {
-    if (!data?.nextUrl) return;
+    if (needsWalk) {
+      setLocalPage((p) => Math.min(localPageCount, p + 1));
+      return;
+    }
+    if (!pageQ.data?.nextUrl) return;
     setPageStack((s) => [...s, pageUrl ?? ""]);
-    setPageUrl(data.nextUrl);
+    setPageUrl(pageQ.data.nextUrl);
   };
   const goPrev = () => {
+    if (needsWalk) {
+      setLocalPage((p) => Math.max(1, p - 1));
+      return;
+    }
     setPageStack((s) => {
       const prev = s[s.length - 1];
       setPageUrl(prev || undefined);
       return s.slice(0, -1);
     });
   };
+  const hasPrev = needsWalk ? localPage > 1 : pageStack.length > 0;
+  const hasNext = needsWalk ? localPage < localPageCount : !!pageQ.data?.nextUrl;
 
   return (
     <section>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <SectionLabel>Repositories</SectionLabel>
-        <input
-          type="search"
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          placeholder="Find a repository…"
-          aria-label="Find a repository"
-          style={{ fontSize: "0.82rem", minWidth: "14rem" }}
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            type="search"
+            value={filter}
+            onChange={(e) => {
+              setFilter(e.target.value);
+              setLocalPage(1);
+            }}
+            placeholder="Find a repository…"
+            aria-label="Find a repository"
+            style={{ fontSize: "0.82rem", minWidth: "14rem" }}
+          />
+          <select
+            aria-label="Type"
+            value={type}
+            onChange={(e) => {
+              setType(e.target.value as ProfileRepoType);
+              resetPaging();
+            }}
+            style={{ fontSize: "0.82rem" }}
+          >
+            <option value="all">All</option>
+            <option value="sources">Sources</option>
+            <option value="forks">Forks</option>
+            <option value="archived">Archived</option>
+          </select>
+          <select
+            aria-label="Sort"
+            value={sortKey}
+            onChange={(e) => {
+              setSortKey(e.target.value as ProfileRepoSort);
+              resetPaging();
+            }}
+            style={{ fontSize: "0.82rem" }}
+          >
+            <option value="updated">Last updated</option>
+            <option value="name">Name</option>
+            <option value="stars">Stars</option>
+          </select>
+        </div>
       </div>
 
       {isLoading && <Spinner label="loading repositories" />}
       {isError && <InlineError title="Failed to load repositories" detail={String(error)} />}
-      {data &&
-        (data.items.length === 0 ? (
-          <Blankslate icon={<RepoIcon size={28} />} title="No repositories">
-            This user has no repositories.
-          </Blankslate>
-        ) : filtered.length === 0 ? (
-          <Blankslate icon={<RepoIcon size={28} />} title="No matches">
-            No repository matches “{filter}”.
-          </Blankslate>
+      {walkQ.data?.truncated && needsWalk && (
+        <p style={{ fontSize: "0.78rem", color: "var(--color-fg-muted)" }}>
+          Searched the first {walkQ.data.items.length} repositories only.
+        </p>
+      )}
+      {!isLoading &&
+        !isError &&
+        (needsWalk || pageQ.data) &&
+        (shown.length === 0 ? (
+          filter.trim() || type !== "all" ? (
+            <Blankslate icon={<RepoIcon size={28} />} title="No matches">
+              No repository matches the current filters.
+            </Blankslate>
+          ) : (
+            <Blankslate icon={<RepoIcon size={28} />} title="No repositories">
+              This user has no repositories.
+            </Blankslate>
+          )
         ) : (
           <ul style={{ borderTop: "1px solid var(--color-border)" }}>
-            {filtered.map((repo) => (
+            {shown.map((repo) => (
               <ProfileRepoRow key={repo.id} repo={repo} />
             ))}
           </ul>
         ))}
 
-      {(pageStack.length > 0 || data?.nextUrl) && (
+      {(hasPrev || hasNext) && (
         <div className="mt-4 flex items-center gap-2">
-          <Button onClick={goPrev} disabled={pageStack.length === 0}>
+          <Button onClick={goPrev} disabled={!hasPrev}>
             Previous
           </Button>
-          <Button onClick={goNext} disabled={!data?.nextUrl}>
+          <Button onClick={goNext} disabled={!hasNext}>
             Next
           </Button>
         </div>
@@ -626,14 +742,15 @@ function ProfileRepoRow({ repo }: { repo: BleephubRepo }) {
           {repo.description}
         </p>
       )}
-      <div
-        className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1"
-        style={{ fontSize: "0.76rem", color: "var(--color-fg-muted)" }}
-      >
-        <span className="inline-flex items-center gap-1">
+      <ForkedFromLine repo={repo} />
+      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
+        <span
+          className="inline-flex items-center gap-1"
+          style={{ fontSize: "0.76rem", color: "var(--color-fg-muted)" }}
+        >
           <BranchIcon size={13} /> {repo.default_branch}
         </span>
-        <span>Updated {new Date(repo.updated_at).toLocaleDateString()}</span>
+        <RepoStatsLine repo={repo} />
       </div>
     </li>
   );
@@ -641,27 +758,74 @@ function ProfileRepoRow({ repo }: { repo: BleephubRepo }) {
 
 // ─── Stars tab ──────────────────────────────────────────────────────────────────
 
+type StarsSort = "recent" | "stars" | "name";
+
 function ProfileStars({ login }: { login: string }) {
+  const [sortKey, setSortKey] = useState<StarsSort>("recent");
+  const [page, setPage] = useState(1);
+  // Walk every page (capped) so a profile with >30 stars isn't silently
+  // truncated to the server's first page; sort and paginate locally.
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["user-starred", login],
-    queryFn: () => fetchUserStarredRepos(login),
+    queryFn: () => walkNumberedPages<BleephubRepo>(`/api/v3/users/${encodeURIComponent(login)}/starred`),
   });
+
+  const sorted = useMemo(() => {
+    const items = data?.items ?? [];
+    if (sortKey === "stars") return [...items].sort((a, b) => (b.stargazers_count ?? 0) - (a.stargazers_count ?? 0));
+    if (sortKey === "name") return [...items].sort((a, b) => a.full_name.localeCompare(b.full_name));
+    return items;
+  }, [data, sortKey]);
+
+  const pageCount = Math.max(1, Math.ceil(sorted.length / LOCAL_PAGE_SIZE));
+  const shown = sorted.slice((page - 1) * LOCAL_PAGE_SIZE, page * LOCAL_PAGE_SIZE);
+
   return (
     <section>
-      <SectionLabel>Starred repositories</SectionLabel>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <SectionLabel>Starred repositories{data ? ` · ${sorted.length}` : ""}</SectionLabel>
+        <select
+          aria-label="Sort stars"
+          value={sortKey}
+          onChange={(e) => {
+            setSortKey(e.target.value as StarsSort);
+            setPage(1);
+          }}
+          style={{ fontSize: "0.82rem" }}
+        >
+          <option value="recent">Recently starred</option>
+          <option value="stars">Most stars</option>
+          <option value="name">Name</option>
+        </select>
+      </div>
       {isLoading && <Spinner label="loading stars" />}
       {isError && <InlineError title="Failed to load stars" detail={String(error)} />}
       {data &&
-        (data.length === 0 ? (
+        (sorted.length === 0 ? (
           <Blankslate icon={<StarIcon size={28} />} title="No starred repositories">
             This user hasn’t starred any repositories yet.
           </Blankslate>
         ) : (
-          <ul style={{ borderTop: "1px solid var(--color-border)" }}>
-            {data.map((repo) => (
-              <ProfileRepoRow key={repo.id} repo={repo} />
-            ))}
-          </ul>
+          <>
+            <ul style={{ borderTop: "1px solid var(--color-border)" }}>
+              {shown.map((repo) => (
+                <ProfileRepoRow key={repo.id} repo={repo} />
+              ))}
+            </ul>
+            {pageCount > 1 && (
+              <div className="mt-4 flex items-center gap-2">
+                <Button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>
+                  Previous
+                </Button>
+                <span style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)" }}>
+                  Page {page} of {pageCount}
+                </span>
+                <Button onClick={() => setPage((p) => Math.min(pageCount, p + 1))} disabled={page === pageCount}>
+                  Next
+                </Button>
+              </div>
+            )}
+          </>
         ))}
     </section>
   );
@@ -778,20 +942,62 @@ function ProfileFollows({ login, kind }: { login: string; kind: "followers" | "f
           <ul className="grid gap-3 sm:grid-cols-2" style={{ listStyle: "none", margin: 0, padding: 0 }}>
             {data.map((account) => (
               <li key={account.login}>
-                <Box style={{ padding: "0.75rem 1rem" }}>
-                  <Link
-                    to={`/ui/${account.login}`}
-                    className="flex items-center gap-3"
-                    style={{ color: "var(--color-fg)", textDecoration: "none" }}
-                  >
-                    <Avatar login={account.login} src={account.avatar_url} size={40} />
-                    <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>{account.login}</span>
-                  </Link>
-                </Box>
+                <FollowAccountCard account={account} />
               </li>
             ))}
           </ul>
         ))}
     </section>
+  );
+}
+
+/**
+ * A follower/following row hydrated with the account's name/bio/location —
+ * fetched lazily per row (concurrency-capped, cached under the same key the
+ * profile page uses) — plus the Follow/Unfollow control.
+ */
+function FollowAccountCard({ account }: { account: FollowAccount }) {
+  const { data } = useQuery({
+    queryKey: ["user-profile", account.login],
+    queryFn: () => limitedGhFetch<GithubUserProfile>(`/api/v3/users/${encodeURIComponent(account.login)}`),
+    staleTime: 60_000,
+    retry: false,
+  });
+  return (
+    <Box style={{ padding: "0.75rem 1rem" }}>
+      <div className="flex items-start gap-3">
+        <Link to={`/ui/${account.login}`} style={{ flexShrink: 0 }}>
+          <Avatar login={account.login} src={account.avatar_url} size={40} />
+        </Link>
+        <div className="min-w-0 flex-1">
+          <Link
+            to={`/ui/${account.login}`}
+            style={{
+              color: "var(--color-fg)",
+              textDecoration: "none",
+              display: "inline-block",
+              lineHeight: "1.625rem",
+            }}
+          >
+            <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>{data?.name || account.login}</span>{" "}
+            {data?.name && (
+              <span style={{ color: "var(--color-fg-muted)", fontSize: "0.82rem" }}>{account.login}</span>
+            )}
+          </Link>
+          {data?.bio && (
+            <p style={{ fontSize: "0.8rem", color: "var(--color-fg-muted)", margin: 0 }}>{data.bio}</p>
+          )}
+          {data?.location && (
+            <p
+              className="inline-flex items-center gap-1"
+              style={{ fontSize: "0.76rem", color: "var(--color-fg-subtle)", margin: 0 }}
+            >
+              <LocationIcon size={12} /> {data.location}
+            </p>
+          )}
+        </div>
+        <FollowButton login={account.login} />
+      </div>
+    </Box>
   );
 }

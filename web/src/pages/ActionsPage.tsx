@@ -7,11 +7,14 @@ import {
   fetchWorkflowRunsPage,
   fetchFileContent,
   fetchEnvironments,
+  fetchRepoBranches,
+  fetchRepoDetail,
   dispatchWorkflow,
   enableWorkflow,
   disableWorkflow,
   deleteRepoActionsCache,
   deleteRepoArtifact,
+  deleteWorkflowRun,
   fetchRepoActionsCaches,
   fetchRepoActionsCacheUsage,
   fetchRepoArtifacts,
@@ -25,11 +28,15 @@ import type {
   GithubWorkflowRun,
   WorkflowDispatchInput,
 } from "../types.js";
-import { decodeContentsBase64, parseWorkflowDispatch } from "../utils/workflowDispatch.js";
+import { decodeContentsBase64 } from "../utils/contents.js";
+import { parseWorkflowDispatch } from "../utils/workflowDispatch.js";
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
 import { useDismiss } from "../hooks/useDismiss.js";
 import { RepoHeader } from "../components/PageHeader.js";
 import { RunStatusIcon } from "../components/RunStatusIcon.js";
+import { RelativeTime } from "../components/RelativeTime.js";
+import { Avatar } from "../components/Avatar.js";
+import { formatDuration } from "../utils/format.js";
 import {
   Box,
   Blankslate,
@@ -41,6 +48,7 @@ import {
 } from "../components/ui.js";
 import {
   BranchIcon,
+  ClockIcon,
   DownloadIcon,
   KebabIcon,
   PlayIcon,
@@ -206,6 +214,8 @@ function RunsPane({
   const [event, setEvent] = useState("");
   const [branchInput, setBranchInput] = useState("");
   const [branch, setBranch] = useState("");
+  const [actorInput, setActorInput] = useState("");
+  const [actor, setActor] = useState("");
 
   const filters: RunFilters = useMemo(
     () => ({
@@ -224,7 +234,13 @@ function RunsPane({
     getNextPageParam: (last) => last.nextUrl ?? undefined,
     enabled: !!owner && !!repo,
   });
-  const runs = runsQ.data?.pages.flatMap((p) => p.items) ?? [];
+  const loadedRuns = runsQ.data?.pages.flatMap((p) => p.items) ?? [];
+  // The list-runs endpoint has no actor query parameter (it filters by
+  // status/branch/event only), so the actor filter is applied client-side
+  // over the pages loaded so far.
+  const runs = actor
+    ? loadedRuns.filter((r) => r.actor?.login.toLowerCase().includes(actor.toLowerCase()))
+    : loadedRuns;
   const totalCount = runsQ.data?.pages[0]?.totalCount;
 
   return (
@@ -282,9 +298,27 @@ function RunsPane({
           onBlur={() => setBranch(branchInput.trim())}
           style={{ ...filterControlStyle, minWidth: "11rem" }}
         />
+        <label htmlFor="runs-actor-filter" className="sr-only">
+          Actor
+        </label>
+        <input
+          id="runs-actor-filter"
+          type="text"
+          placeholder="Filter by actor…"
+          title="Filters the loaded runs client-side"
+          value={actorInput}
+          onChange={(e) => setActorInput(e.target.value)}
+          onBlur={() => setActor(actorInput.trim())}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") setActor(actorInput.trim());
+          }}
+          style={{ ...filterControlStyle, minWidth: "10rem" }}
+        />
         {totalCount !== undefined && (
           <span className="ml-auto" style={{ fontSize: "0.8rem", color: "var(--color-fg-muted)" }}>
-            {totalCount} workflow run{totalCount === 1 ? "" : "s"}
+            {actor
+              ? `${runs.length} of ${totalCount} workflow run${totalCount === 1 ? "" : "s"}`
+              : `${totalCount} workflow run${totalCount === 1 ? "" : "s"}`}
           </span>
         )}
       </form>
@@ -391,7 +425,7 @@ function RepositoryArtifactsPane({ owner, repo }: { owner: string; repo: string 
               <div className="min-w-0 flex-1">
                 <div style={{ fontSize: "0.88rem", fontWeight: 600 }}>{artifact.name}</div>
                 <div style={{ fontSize: "0.76rem", color: "var(--color-fg-muted)" }}>
-                  {new Date(artifact.created_at).toLocaleString()}
+                  <RelativeTime iso={artifact.created_at} />
                   {artifact.workflow_run?.id ? ` · run #${artifact.workflow_run.id}` : ""}
                 </div>
               </div>
@@ -512,7 +546,7 @@ function RepositoryCachesPane({ owner, repo }: { owner: string; repo: string }) 
                   {cache.key}
                 </div>
                 <div style={{ fontSize: "0.75rem", color: "var(--color-fg-muted)" }}>
-                  {cache.ref} · last used {new Date(cache.last_accessed_at).toLocaleString()}
+                  {cache.ref} · last used <RelativeTime iso={cache.last_accessed_at} />
                 </div>
               </div>
               <span style={{ fontSize: "0.78rem", color: "var(--color-fg-muted)" }}>
@@ -574,45 +608,142 @@ function RunRow({
   last: boolean;
 }) {
   return (
-    <Link
-      to={`/ui/repos/${owner}/${repo}/actions/runs/${run.id}`}
+    <div
       className="flex items-start gap-2.5"
       style={{
         padding: "0.7rem 1rem",
         borderBottom: last ? "none" : "1px solid var(--color-border)",
-        textDecoration: "none",
       }}
     >
       <span style={{ marginTop: "0.1rem" }}>
         <RunStatusIcon status={run.status} conclusion={run.conclusion} />
       </span>
       <div className="min-w-0 flex-1">
-        <div style={{ fontSize: "0.92rem", fontWeight: 600, color: "var(--color-fg)" }}>
-          {run.name}
-        </div>
+        <Link
+          to={`/ui/repos/${owner}/${repo}/actions/runs/${run.id}`}
+          className="inline-block"
+          style={{
+            fontSize: "0.92rem",
+            fontWeight: 600,
+            color: "var(--color-fg)",
+            textDecoration: "none",
+            lineHeight: "1.625rem",
+          }}
+        >
+          {run.display_title || run.name}
+        </Link>
         <div
-          className="mt-1 flex flex-wrap items-center gap-x-2"
+          className="mt-0.5 flex flex-wrap items-center gap-x-1.5"
           style={{ fontSize: "0.78rem", color: "var(--color-fg-muted)" }}
         >
-          <span>#{run.run_number}</span>
-          <span>{run.event}</span>
-          {run.actor && <span>by {run.actor.login}</span>}
-          <span>{new Date(run.created_at).toLocaleString()}</span>
+          {run.actor && <Avatar login={run.actor.login} src={run.actor.avatar_url} size={16} />}
+          <span>
+            {run.name} #{run.run_number}: {run.event}
+            {run.actor ? ` by ${run.actor.login}` : ""} on
+          </span>
+          <span className="inline-flex items-center gap-1 font-mono" style={{ color: "var(--color-accent)" }}>
+            <BranchIcon size={12} /> {run.head_branch}
+          </span>
         </div>
       </div>
       <span
-        className="inline-flex shrink-0 items-center gap-1 font-mono"
-        style={{
-          fontSize: "0.74rem",
-          color: "var(--color-accent)",
-          background: "var(--color-accent-soft)",
-          padding: "0.12rem 0.5rem",
-          borderRadius: "2rem",
-        }}
+        className="flex shrink-0 flex-col items-end gap-0.5 text-right"
+        style={{ fontSize: "0.76rem", color: "var(--color-fg-muted)" }}
       >
-        <BranchIcon size={12} /> {run.head_branch}
+        <RelativeTime iso={run.created_at} />
+        <span className="tabular-nums inline-flex items-center gap-1">
+          <ClockIcon size={12} />
+          {formatDuration(run.created_at, run.status === "completed" ? run.updated_at : null)}
+        </span>
       </span>
-    </Link>
+      <RunRowMenu owner={owner} repo={repo} run={run} />
+    </div>
+  );
+}
+
+/** Per-run kebab: delete the run, jump to the workflow file blob. */
+function RunRowMenu({
+  owner,
+  repo,
+  run,
+}: {
+  owner: string;
+  repo: string;
+  run: GithubWorkflowRun;
+}) {
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const menuRef = useDismiss<HTMLDivElement>(open, () => setOpen(false));
+  const deleteMutation = useMutation({
+    mutationFn: () => deleteWorkflowRun(owner, repo, run.id),
+    onSuccess: () => {
+      setOpen(false);
+      void qc.invalidateQueries({ queryKey: ["runs", owner, repo] });
+    },
+  });
+  return (
+    <div ref={menuRef} className="relative shrink-0">
+      <Button
+        variant="ghost"
+        size="sm"
+        aria-label={`Options for run #${run.run_number}`}
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <KebabIcon size={14} />
+      </Button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 top-full z-10 mt-1"
+          style={{
+            background: "var(--color-surface-raised)",
+            border: "1px solid var(--color-border)",
+            borderRadius: "var(--radius-md)",
+            boxShadow: "0 8px 24px rgba(31,35,40,0.12)",
+            minWidth: "12rem",
+            padding: "0.25rem",
+          }}
+        >
+          <Link
+            role="menuitem"
+            to={`/ui/repos/${owner}/${repo}/blob/${encodeURIComponent(run.head_branch || "HEAD")}/${run.path}`}
+            className="block"
+            style={{
+              padding: "0.4rem 0.6rem",
+              fontSize: "0.82rem",
+              color: "var(--color-fg)",
+              textDecoration: "none",
+              borderRadius: "var(--radius-sm)",
+            }}
+          >
+            View workflow file
+          </Link>
+          <button
+            type="button"
+            role="menuitem"
+            disabled={deleteMutation.isPending}
+            onClick={() => deleteMutation.mutate()}
+            className="block w-full text-left"
+            style={{
+              padding: "0.4rem 0.6rem",
+              fontSize: "0.82rem",
+              color: "var(--color-danger-fg)",
+              background: "transparent",
+              border: "none",
+              borderRadius: "var(--radius-sm)",
+            }}
+          >
+            {deleteMutation.isPending ? "Deleting…" : "Delete workflow run"}
+          </button>
+          {deleteMutation.isError && (
+            <div style={{ padding: "0.3rem 0.6rem", fontSize: "0.74rem", color: "var(--color-status-error)" }}>
+              {String(deleteMutation.error)}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -783,6 +914,31 @@ function DispatchFormModal({
   const qc = useQueryClient();
   const inputNames = Object.keys(inputs);
   const [ref, setRef] = useState("main");
+  const [refTouched, setRefTouched] = useState(false);
+
+  // Seed the branch selector from the repository's branches, preselecting
+  // the default branch. Falls back to a free-text input when the branch
+  // list is unavailable (e.g. an empty repository).
+  const branchesQ = useQuery({
+    queryKey: ["branches", owner, repo],
+    queryFn: () => fetchRepoBranches(owner, repo),
+  });
+  const repoQ = useQuery({
+    queryKey: ["repo-detail", owner, repo],
+    queryFn: ({ signal }) => fetchRepoDetail(owner, repo, signal),
+  });
+  const branches = Array.isArray(branchesQ.data) ? branchesQ.data : [];
+  const defaultBranch = repoQ.data?.default_branch;
+  useEffect(() => {
+    if (refTouched || branches.length === 0) return;
+    const preferred =
+      defaultBranch && branches.some((b) => b.name === defaultBranch)
+        ? defaultBranch
+        : branches[0]!.name;
+    setRef(preferred);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [defaultBranch, branchesQ.data]);
+
   const [values, setValues] = useState<Record<string, string>>(() => {
     const init: Record<string, string> = {};
     for (const name of inputNames) init[name] = defaultValueFor(inputs[name]!);
@@ -834,13 +990,36 @@ function DispatchFormModal({
   return (
     <Modal title={`Run workflow: ${workflow.name}`} onClose={onClose}>
       <FormLabel id="dispatch-ref">Use workflow from branch</FormLabel>
-      <input
-        id="dispatch-ref"
-        type="text"
-        value={ref}
-        onChange={(e) => setRef(e.target.value)}
-        className="mb-4 w-full"
-      />
+      {branches.length > 0 ? (
+        <select
+          id="dispatch-ref"
+          value={ref}
+          onChange={(e) => {
+            setRefTouched(true);
+            setRef(e.target.value);
+          }}
+          className="mb-4 w-full"
+          style={filterControlStyle}
+        >
+          {branches.map((b) => (
+            <option key={b.name} value={b.name}>
+              {b.name}
+              {b.name === defaultBranch ? " (default)" : ""}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <input
+          id="dispatch-ref"
+          type="text"
+          value={ref}
+          onChange={(e) => {
+            setRefTouched(true);
+            setRef(e.target.value);
+          }}
+          className="mb-4 w-full"
+        />
+      )}
 
       {inputNames.map((name) => {
         const def = inputs[name]!;

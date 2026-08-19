@@ -1,4 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
 import { InlineError, Spinner } from "@bleephub/ui-core/components";
 import {
@@ -11,7 +12,7 @@ import {
 } from "../api.js";
 import type { BleephubRepo, GithubFeedIssue, GithubUserEvent } from "../types.js";
 import { Avatar } from "../components/Avatar.js";
-import { Box, SectionLabel, Blankslate, ButtonLink } from "../components/ui.js";
+import { Box, SectionLabel, Blankslate, Button, ButtonLink } from "../components/ui.js";
 import {
   RepoIcon,
   IssueOpenedIcon,
@@ -24,14 +25,26 @@ import {
   GlobeIcon,
 } from "../components/octicons.js";
 
+/** Repositories shown in the left rail before "Show more" expands the list. */
+const TOP_REPOS_INITIAL = 8;
+const TOP_REPOS_STEP = 8;
+
 export function DashboardPage() {
   const user = useQuery({ queryKey: ["current-user"], queryFn: ({ signal }) => fetchCurrentUser(signal) });
-  const repos = useQuery({
+  // Link-paginated: "Show more" walks the next pages instead of capping the
+  // rail at the first 30 repositories.
+  const repos = useInfiniteQuery({
     queryKey: ["dashboard-repos"],
-    queryFn: ({ signal }) => fetchUserReposPage({ sort: "pushed" }, undefined, signal),
+    queryFn: ({ pageParam, signal }) => fetchUserReposPage({ sort: "pushed" }, pageParam, signal),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last) => last.nextUrl ?? undefined,
     refetchInterval: (query) =>
       isRateLimited(query.state.error) || isForbidden(query.state.error) ? false : 30000,
   });
+  // github.com's "Find a repository…" rail filter — client-side over the
+  // fetched pages.
+  const [repoFilter, setRepoFilter] = useState("");
+  const [visibleRepos, setVisibleRepos] = useState(TOP_REPOS_INITIAL);
   const issues = useQuery({
     queryKey: ["dashboard-issues"],
     queryFn: ({ signal }) => fetchDashboardIssues(signal),
@@ -47,7 +60,19 @@ export function DashboardPage() {
       isRateLimited(query.state.error) || isForbidden(query.state.error) ? false : 30000,
   });
 
-  const topRepos = repos.data?.items.slice(0, 8) ?? [];
+  const allRepos = repos.data?.pages.flatMap((p) => p.items) ?? [];
+  const needle = repoFilter.trim().toLowerCase();
+  const topRepos = needle
+    ? allRepos.filter((r) => r.full_name.toLowerCase().includes(needle))
+    : allRepos.slice(0, visibleRepos);
+  const canShowMore = !needle && (allRepos.length > visibleRepos || repos.hasNextPage);
+  const showMoreRepos = () => {
+    const next = visibleRepos + TOP_REPOS_STEP;
+    setVisibleRepos(next);
+    if (allRepos.length <= next && repos.hasNextPage && !repos.isFetchingNextPage) {
+      void repos.fetchNextPage();
+    }
+  };
 
   return (
     <div className="grid gap-6 lg:grid-cols-[280px_1fr_260px]">
@@ -74,6 +99,14 @@ export function DashboardPage() {
             <RepoIcon size={14} /> New
           </ButtonLink>
         </div>
+        <input
+          type="search"
+          aria-label="Find a repository"
+          placeholder="Find a repository…"
+          value={repoFilter}
+          onChange={(e) => setRepoFilter(e.target.value)}
+          style={{ fontSize: "0.82rem", padding: "0.35rem 0.55rem" }}
+        />
         <Box>
           {repos.isLoading && <Spinner label="loading repositories" />}
           {repos.isError && (
@@ -82,11 +115,17 @@ export function DashboardPage() {
           {repos.data &&
             (topRepos.length === 0 ? (
               <div style={{ padding: "0.9rem 1rem", fontSize: "0.85rem", color: "var(--color-fg-muted)" }}>
-                No repositories yet.{" "}
-                <Link to="/ui/repos" style={{ color: "var(--color-accent)", textDecoration: "none" }}>
-                  Create one
-                </Link>
-                .
+                {needle ? (
+                  <>No repositories match “{repoFilter.trim()}”.</>
+                ) : (
+                  <>
+                    No repositories yet.{" "}
+                    <Link to="/ui/repos" style={{ color: "var(--color-accent)", textDecoration: "none" }}>
+                      Create one
+                    </Link>
+                    .
+                  </>
+                )}
               </div>
             ) : (
               topRepos.map((repo, i) => (
@@ -94,6 +133,16 @@ export function DashboardPage() {
               ))
             ))}
         </Box>
+        {canShowMore && (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={showMoreRepos}
+            disabled={repos.isFetchingNextPage}
+          >
+            {repos.isFetchingNextPage ? "Loading…" : "Show more"}
+          </Button>
+        )}
       </aside>
 
       {/* Center: the following/news feed (github.com's home feed), then your issues */}

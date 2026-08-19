@@ -7,6 +7,7 @@ import {
   deleteThreadSubscription,
   fetchNotifications,
   getThreadSubscription,
+  ghFetch,
   markAllNotificationsRead,
   markThreadDone,
   markThreadRead,
@@ -17,7 +18,11 @@ import {
 } from "../api.js";
 
 const enc = encodeURIComponent;
-import type { GithubNotificationThread, GithubThreadSubscription } from "../types.js";
+import type {
+  GithubNotificationThread,
+  GithubNotificationThreadWithSaved,
+  GithubThreadSubscription,
+} from "../types.js";
 import {
   Box,
   Button,
@@ -28,11 +33,28 @@ import {
   StateLabel,
   Tabs,
 } from "../components/ui.js";
+import { Avatar } from "../components/Avatar.js";
+import { RelativeTime } from "../components/RelativeTime.js";
 import { NotificationBellIcon } from "../components/octicons.js";
 
-const col = createColumnHelper<GithubNotificationThread>();
+const col = createColumnHelper<GithubNotificationThreadWithSaved>();
+
+/** github.com's inbox views: Inbox is the REST notification list, Saved the
+ *  bookmarked threads, Done the threads dismissed with "Done". */
+type NotificationView = "inbox" | "saved" | "done";
+
+const GROUP_BY_REPO_KEY = "bleephub.notifications.group_by_repo";
+
+/** Saved/Done are web-only views served from /ui-data (REST thread shape plus
+ *  a `saved` flag). Validated as an array so a contract break surfaces. */
+async function fetchNotificationView(view: "saved" | "done"): Promise<GithubNotificationThreadWithSaved[]> {
+  const body = await ghFetch<unknown>(`/ui-data/notifications?view=${view}&per_page=100`);
+  if (!Array.isArray(body)) throw new Error("malformed response: expected a JSON array");
+  return body as GithubNotificationThreadWithSaved[];
+}
 
 export function NotificationsPage() {
+  const [view, setView] = useState<NotificationView>("inbox");
   const [tab, setTab] = useState<"unread" | "all">("unread");
 
   return (
@@ -43,62 +65,90 @@ export function NotificationsPage() {
         meta="Issue and pull request activity across repositories you can access."
       />
 
-      <Tabs<"unread" | "all">
+      <Tabs<NotificationView>
         items={[
-          { key: "unread", label: "Unread" },
-          { key: "all", label: "All" },
+          { key: "inbox", label: "Inbox" },
+          { key: "saved", label: "Saved" },
+          { key: "done", label: "Done" },
         ]}
-        active={tab}
-        onChange={setTab}
+        active={view}
+        onChange={setView}
       />
 
-      <ThreadsTable all={tab === "all"} />
+      {view === "inbox" && (
+        <div role="group" aria-label="Inbox scope" className="mb-3 flex gap-1">
+          {(["unread", "all"] as const).map((scope) => (
+            <Button
+              key={scope}
+              size="sm"
+              variant={tab === scope ? "primary" : "secondary"}
+              aria-pressed={tab === scope}
+              onClick={() => setTab(scope)}
+            >
+              {scope === "unread" ? "Unread" : "All"}
+            </Button>
+          ))}
+        </div>
+      )}
+
+      <ThreadsList view={view} all={tab === "all"} />
     </div>
   );
 }
 
-function ThreadsTable({ all }: { all: boolean }) {
+function ThreadsList({ view, all }: { view: NotificationView; all: boolean }) {
   const queryClient = useQueryClient();
   const [mutationError, setMutationError] = useState<string | null>(null);
   const [activeThread, setActiveThread] = useState<GithubNotificationThread | null>(null);
   // github.com's inbox filters by repository and by reason; both narrow the
-  // table below the Unread/All tabs and the free-text filter.
+  // list below the view tabs and the free-text filter.
   const [repoFilter, setRepoFilter] = useState("");
   const [reasonFilter, setReasonFilter] = useState("");
-  // github.com's inbox groups threads under per-repository headers; offer that
-  // as an alternative to the flat table.
-  const [groupByRepo, setGroupByRepo] = useState(false);
+  // github.com's inbox groups threads under per-repository headers by default;
+  // the flat table stays available and the choice persists per browser.
+  const [groupByRepo, setGroupByRepo] = useState(
+    () => localStorage.getItem(GROUP_BY_REPO_KEY) !== "flat",
+  );
+  const setGrouping = (grouped: boolean) => {
+    setGroupByRepo(grouped);
+    localStorage.setItem(GROUP_BY_REPO_KEY, grouped ? "repo" : "flat");
+  };
 
-  const { data, isLoading, isError } = useQuery({
+  const inboxQuery = useQuery({
     queryKey: ["notifications", all],
     queryFn: () => fetchNotifications({ all }),
+    enabled: view === "inbox",
     refetchInterval: (query) =>
       isRateLimited(query.state.error) || isForbidden(query.state.error) ? false : 10000,
   });
+  // The saved view doubles as the inbox's bookmark state (the REST list does
+  // not carry the web-only `saved` flag).
+  const savedQuery = useQuery({
+    queryKey: ["notifications", "view", "saved"],
+    queryFn: () => fetchNotificationView("saved"),
+  });
+  const doneQuery = useQuery({
+    queryKey: ["notifications", "view", "done"],
+    queryFn: () => fetchNotificationView("done"),
+    enabled: view === "done",
+  });
 
-  const readMut = useMutation({
-    mutationFn: (id: string) => markThreadRead(id),
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ["notifications"] });
+  const mutationOptions = {
     onSuccess: () => {
       setMutationError(null);
-      queryClient.invalidateQueries({ queryKey: ["notifications"] });
+      invalidate();
     },
     onError: (err: Error) => setMutationError(err.message),
-  });
-  const markAllMut = useMutation({
-    mutationFn: markAllNotificationsRead,
-    onSuccess: () => {
-      setMutationError(null);
-      queryClient.invalidateQueries({ queryKey: ["notifications"] });
-    },
-    onError: (err: Error) => setMutationError(err.message),
-  });
-  const doneMut = useMutation({
-    mutationFn: (id: string) => markThreadDone(id),
-    onSuccess: () => {
-      setMutationError(null);
-      queryClient.invalidateQueries({ queryKey: ["notifications"] });
-    },
-    onError: (err: Error) => setMutationError(err.message),
+  };
+  const readMut = useMutation({ mutationFn: (id: string) => markThreadRead(id), ...mutationOptions });
+  const markAllMut = useMutation({ mutationFn: markAllNotificationsRead, ...mutationOptions });
+  const doneMut = useMutation({ mutationFn: (id: string) => markThreadDone(id), ...mutationOptions });
+  // The Saved bookmark lives in the web-only /ui-data namespace.
+  const saveMut = useMutation({
+    mutationFn: ({ id, saved }: { id: string; saved: boolean }) =>
+      ghSend(saved ? "PUT" : "DELETE", `/ui-data/notifications/threads/${enc(id)}/saved`),
+    ...mutationOptions,
   });
   // github.com clears a whole repository's notifications from its group header:
   // PUT /repos/{owner}/{repo}/notifications marks them all read.
@@ -107,24 +157,38 @@ function ThreadsTable({ all }: { all: boolean }) {
       const [owner = "", repo = ""] = fullName.split("/");
       return ghSend("PUT", `/api/v3/repos/${enc(owner)}/${enc(repo)}/notifications`);
     },
-    onSuccess: () => {
-      setMutationError(null);
-      queryClient.invalidateQueries({ queryKey: ["notifications"] });
-    },
-    onError: (err: Error) => setMutationError(err.message),
+    ...mutationOptions,
   });
 
-  if (isError) return <InlineError title="Failed to load notifications" />;
-  if (isLoading || !data) return <Spinner label="loading notifications" />;
+  const activeQuery = view === "inbox" ? inboxQuery : view === "saved" ? savedQuery : doneQuery;
+  if (activeQuery.isError) return <InlineError title="Failed to load notifications" />;
+  if (activeQuery.isLoading || !activeQuery.data) return <Spinner label="loading notifications" />;
+
+  const savedIds = new Set((savedQuery.data ?? []).map((t) => t.id));
+  const withSaved = (t: GithubNotificationThread): GithubNotificationThreadWithSaved => ({
+    ...t,
+    saved: savedIds.has(t.id),
+  });
+  const data: GithubNotificationThreadWithSaved[] =
+    view === "inbox"
+      ? (inboxQuery.data ?? []).map(withSaved)
+      : view === "saved"
+        ? (savedQuery.data ?? [])
+        : (doneQuery.data ?? []).map((t) => ({ ...t, saved: t.saved ?? savedIds.has(t.id) }));
 
   const repoName = (t: GithubNotificationThread) =>
     typeof t.repository.full_name === "string" ? t.repository.full_name : "";
   const repoOptions = [...new Set(data.map(repoName).filter(Boolean))].sort();
   const reasonOptions = [...new Set(data.map((t) => t.reason).filter(Boolean))].sort();
   const filtered = data
-    .filter((t) => all || t.unread)
+    .filter((t) => view !== "inbox" || all || t.unread)
     .filter((t) => !repoFilter || repoName(t) === repoFilter)
     .filter((t) => !reasonFilter || t.reason === reasonFilter);
+
+  // Done is a review surface: the server keeps done threads listable but has
+  // no mark-unread/undo endpoint, so rows there only link and toggle Saved.
+  const readOnly = view === "done";
+  const busy = readMut.isPending || doneMut.isPending || saveMut.isPending;
 
   const columns = [
     col.accessor("unread", {
@@ -173,13 +237,16 @@ function ThreadsTable({ all }: { all: boolean }) {
         const repo = info.getValue();
         const fullName = typeof repo.full_name === "string" ? repo.full_name : "";
         return (
-          <span style={{ color: "var(--color-fg-muted)", fontSize: "0.82rem" }}>{fullName}</span>
+          <span className="inline-flex items-center gap-1.5" style={{ color: "var(--color-fg-muted)", fontSize: "0.82rem" }}>
+            <RepoAvatar repository={repo} size={18} />
+            {fullName}
+          </span>
         );
       },
     }),
     col.accessor("updated_at", {
       header: "Updated",
-      cell: (info) => new Date(info.getValue()).toLocaleString(),
+      cell: (info) => <RelativeTime iso={info.getValue()} />,
     }),
     col.display({
       id: "actions",
@@ -188,7 +255,7 @@ function ThreadsTable({ all }: { all: boolean }) {
         const thread = info.row.original;
         return (
           <div className="flex flex-wrap items-center gap-1">
-            {thread.unread && (
+            {!readOnly && thread.unread && (
               <Button
                 size="sm"
                 variant="secondary"
@@ -198,22 +265,36 @@ function ThreadsTable({ all }: { all: boolean }) {
                 Mark read
               </Button>
             )}
-            <Button size="sm" variant="ghost" onClick={() => setActiveThread(thread)}>
-              Subscription
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => doneMut.mutate(thread.id)}
-              disabled={doneMut.isPending}
-            >
-              Done
-            </Button>
+            <SaveToggle thread={thread} disabled={saveMut.isPending} onToggle={(id, saved) => saveMut.mutate({ id, saved })} />
+            {!readOnly && (
+              <Button size="sm" variant="ghost" onClick={() => setActiveThread(thread)}>
+                Subscription
+              </Button>
+            )}
+            {!readOnly && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => doneMut.mutate(thread.id)}
+                disabled={doneMut.isPending}
+              >
+                Done
+              </Button>
+            )}
           </div>
         );
       },
     }),
   ];
+
+  const emptyMessage =
+    view === "saved"
+      ? "No saved notifications."
+      : view === "done"
+        ? "No notifications marked done."
+        : all
+          ? "No notifications."
+          : "No unread notifications.";
 
   const filterSelectStyle = { fontSize: "0.82rem", padding: "0.2rem 0.4rem" };
   return (
@@ -262,13 +343,13 @@ function ThreadsTable({ all }: { all: boolean }) {
                 size="sm"
                 variant={(mode === "repo") === groupByRepo ? "primary" : "secondary"}
                 aria-pressed={(mode === "repo") === groupByRepo}
-                onClick={() => setGroupByRepo(mode === "repo")}
+                onClick={() => setGrouping(mode === "repo")}
               >
                 {mode === "list" ? "List" : "By repository"}
               </Button>
             ))}
           </div>
-          {!all && filtered.length > 0 && (
+          {view === "inbox" && !all && filtered.length > 0 && (
             <Button
               size="sm"
               variant="secondary"
@@ -280,24 +361,32 @@ function ThreadsTable({ all }: { all: boolean }) {
           )}
         </div>
       </div>
+      {view === "done" && (
+        <p className="mb-2" style={{ fontSize: "0.78rem", color: "var(--color-fg-muted)" }}>
+          Threads you marked done are kept here for reference.
+        </p>
+      )}
       {groupByRepo ? (
         <NotificationsByRepo
           threads={filtered}
           repoName={repoName}
+          readOnly={readOnly}
+          showRepoMarkRead={view === "inbox"}
           onRead={(id) => readMut.mutate(id)}
           onDone={(id) => doneMut.mutate(id)}
+          onSave={(id, saved) => saveMut.mutate({ id, saved })}
           onSubscription={setActiveThread}
           onMarkRepoRead={(fullName) => markRepoMut.mutate(fullName)}
           repoBusy={markRepoMut.isPending}
-          busy={readMut.isPending || doneMut.isPending}
-          emptyMessage={all ? "No notifications." : "No unread notifications."}
+          busy={busy}
+          emptyMessage={emptyMessage}
         />
       ) : (
         <DataTable
           data={filtered ?? []}
           columns={columns}
           filterPlaceholder="Filter notifications…"
-          emptyMessage={all ? "No notifications." : "No unread notifications."}
+          emptyMessage={emptyMessage}
         />
       )}
       {activeThread && (
@@ -307,21 +396,59 @@ function ThreadsTable({ all }: { all: boolean }) {
   );
 }
 
+/** The Saved bookmark toggle: GitHub's 🔖 in the inbox row. */
+function SaveToggle({
+  thread,
+  disabled,
+  onToggle,
+}: {
+  thread: GithubNotificationThreadWithSaved;
+  disabled: boolean;
+  onToggle: (id: string, saved: boolean) => void;
+}) {
+  const saved = !!thread.saved;
+  return (
+    <Button
+      size="sm"
+      variant="ghost"
+      aria-pressed={saved}
+      aria-label={saved ? `Remove ${thread.subject.title} from saved` : `Save ${thread.subject.title}`}
+      disabled={disabled}
+      onClick={() => onToggle(thread.id, !saved)}
+    >
+      {saved ? "Unsave" : "Save"}
+    </Button>
+  );
+}
+
+/** Repository owner avatar for a REST thread's loosely-typed repository. */
+function RepoAvatar({ repository, size }: { repository: Record<string, unknown>; size: number }) {
+  const owner = repository.owner as { login?: string; avatar_url?: string } | undefined;
+  if (!owner?.login) return null;
+  return <Avatar login={owner.login} src={owner.avatar_url} size={size} />;
+}
+
 function NotificationsByRepo({
   threads,
   repoName,
+  readOnly,
+  showRepoMarkRead,
   onRead,
   onDone,
+  onSave,
   onSubscription,
   onMarkRepoRead,
   repoBusy,
   busy,
   emptyMessage,
 }: {
-  threads: GithubNotificationThread[];
+  threads: GithubNotificationThreadWithSaved[];
   repoName: (t: GithubNotificationThread) => string;
+  readOnly: boolean;
+  showRepoMarkRead: boolean;
   onRead: (id: string) => void;
   onDone: (id: string) => void;
+  onSave: (id: string, saved: boolean) => void;
   onSubscription: (t: GithubNotificationThread) => void;
   onMarkRepoRead: (fullName: string) => void;
   repoBusy: boolean;
@@ -335,7 +462,7 @@ function NotificationsByRepo({
       </Box>
     );
   }
-  const groups = new Map<string, GithubNotificationThread[]>();
+  const groups = new Map<string, GithubNotificationThreadWithSaved[]>();
   for (const t of threads) {
     const name = repoName(t) || "(unknown repository)";
     const list = groups.get(name) ?? [];
@@ -351,11 +478,12 @@ function NotificationsByRepo({
             key={repo}
             header={
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <span style={{ fontWeight: 600 }}>
+                <span className="inline-flex items-center gap-1.5" style={{ fontWeight: 600 }}>
+                  <RepoAvatar repository={list[0]!.repository} size={18} />
                   {repo}{" "}
                   <span style={{ color: "var(--color-fg-muted)", fontWeight: 400 }}>({list.length})</span>
                 </span>
-                {repo.includes("/") && (
+                {showRepoMarkRead && repo.includes("/") && (
                   <Button
                     size="sm"
                     variant="secondary"
@@ -391,20 +519,25 @@ function NotificationsByRepo({
                         <span>{thread.subject.title}</span>
                       )}
                       <span style={{ color: "var(--color-fg-muted)", fontSize: "0.78rem", marginLeft: "0.5rem" }}>
-                        {thread.subject.type} · {thread.reason}
+                        {thread.subject.type} · {thread.reason} · <RelativeTime iso={thread.updated_at} />
                       </span>
                     </span>
-                    {thread.unread && (
+                    {!readOnly && thread.unread && (
                       <Button size="sm" variant="secondary" disabled={busy} onClick={() => onRead(thread.id)}>
                         Mark read
                       </Button>
                     )}
-                    <Button size="sm" variant="ghost" onClick={() => onSubscription(thread)}>
-                      Subscription
-                    </Button>
-                    <Button size="sm" variant="ghost" disabled={busy} onClick={() => onDone(thread.id)}>
-                      Done
-                    </Button>
+                    <SaveToggle thread={thread} disabled={busy} onToggle={onSave} />
+                    {!readOnly && (
+                      <Button size="sm" variant="ghost" onClick={() => onSubscription(thread)}>
+                        Subscription
+                      </Button>
+                    )}
+                    {!readOnly && (
+                      <Button size="sm" variant="ghost" disabled={busy} onClick={() => onDone(thread.id)}>
+                        Done
+                      </Button>
+                    )}
                   </li>
                 );
               })}

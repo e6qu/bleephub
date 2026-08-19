@@ -156,6 +156,15 @@ func apiRateIdentity(r *http.Request) string {
 	return "anonymous:" + host
 }
 
+// isBrowserSessionRequest reports whether the request was authenticated by the
+// first-party browser session cookie: no Authorization header was presented
+// and the principal was still resolved — exactly the apiRateIdentity branch
+// that keys the window "user:{id}". PATs, OAuth/app tokens and Basic auth all
+// arrive as an Authorization header, so they never match.
+func isBrowserSessionRequest(r *http.Request) bool {
+	return r.Header.Get("Authorization") == "" && ghUserFromContext(r.Context()) != nil
+}
+
 // rateWindowKeyAndLimit resolves the per-identity window key, the applicable
 // limit, and the effective resource name (unknown resources fall back to core;
 // the unauthenticated core budget is the smaller IP-scoped one). Shared by the
@@ -185,6 +194,12 @@ func (s *Server) rateWindowKeyAndLimit(r *http.Request, resource string) (key st
 // decides the response is not-modified, so the unit is handed back here.
 func (s *Server) refundRateLimit(r *http.Request, resource string) apiRateSnapshot {
 	key, limit, effective := s.rateWindowKeyAndLimit(r, resource)
+	// A browser-session request never consumed a core unit (see
+	// rateLimitSnapshot), so a 304 has nothing to hand back; report the same
+	// read-only core snapshot the consume path produced.
+	if effective == "core" && isBrowserSessionRequest(r) {
+		return s.rateLimitSnapshot(r, resource, false)
+	}
 	now := time.Now().UTC()
 	s.rateLimitsMu.Lock()
 	defer s.rateLimitsMu.Unlock()
@@ -208,6 +223,16 @@ func (s *Server) refundRateLimit(r *http.Request, resource string) apiRateSnapsh
 
 func (s *Server) rateLimitSnapshot(r *http.Request, resource string, consume bool) apiRateSnapshot {
 	key, limit, resource := s.rateWindowKeyAndLimit(r, resource)
+	// The first-party web UI does not spend API quota on GitHub, and the SPA
+	// fires 16-23 calls per page — billing them against core would cap a
+	// browser user at a few hundred page views per hour. A session request
+	// therefore observes the core window read-only (honest X-RateLimit-*
+	// headers, remaining stays pinned) instead of consuming from it. Every
+	// non-core budget (search, code_search, graphql, ...) still bills the
+	// session normally: those windows guard expensive scans, not page loads.
+	if consume && resource == "core" && isBrowserSessionRequest(r) {
+		consume = false
+	}
 	now := time.Now().UTC()
 
 	s.rateLimitsMu.Lock()

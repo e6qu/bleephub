@@ -6,8 +6,8 @@ import { useTheme } from "../hooks/useTheme.js";
  * by class — no JS-side icon swap, easier to keep accessible.
  */
 export function ThemeToggle() {
-  const { theme, toggle } = useTheme();
-  const isDark = theme === "dark";
+  const { resolvedTheme, toggle } = useTheme();
+  const isDark = resolvedTheme === "dark";
   return (
     <button
       type="button"

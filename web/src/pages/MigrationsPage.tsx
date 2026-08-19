@@ -8,6 +8,7 @@ import {
   createUserMigration,
   deleteMigrationArchive,
   downloadMigrationArchive,
+  fetchAuthenticatedUserOrgs,
   fetchOrgMigrationLockStatus,
   fetchOrgMigrations,
   fetchRepos,
@@ -18,6 +19,7 @@ import {
   ghFetch,
   ghSend,
 } from "../api.js";
+import { RelativeTime } from "../components/RelativeTime.js";
 import type { BleephubRepo, GithubMigration, GithubMigrationState } from "../types.js";
 import { confirmAction } from "../components/confirmAction.js";
 import {
@@ -65,6 +67,43 @@ interface GithubImportAuthor {
   remote_name: string;
   email: string;
   name: string;
+}
+
+/**
+ * The viewer's organizations as a select — migrations can only target orgs
+ * the viewer belongs to, so a free-text login field only invited typos.
+ */
+function OrgSelect({
+  id,
+  value,
+  onChange,
+}: {
+  id: string;
+  value: string;
+  onChange: (org: string) => void;
+}) {
+  const orgsQ = useQuery({ queryKey: ["my-orgs"], queryFn: () => fetchAuthenticatedUserOrgs() });
+  if (orgsQ.isLoading) return <Spinner label="loading your organizations" />;
+  if (orgsQ.isError)
+    return <InlineError title="Failed to load your organizations" detail={String(orgsQ.error)} />;
+  const orgs = orgsQ.data ?? [];
+  if (orgs.length === 0) {
+    return (
+      <span style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)" }}>
+        You are not a member of any organization.
+      </span>
+    );
+  }
+  return (
+    <select id={id} value={value} onChange={(e) => onChange(e.target.value)} className="w-64">
+      <option value="">Choose an organization…</option>
+      {orgs.map((org) => (
+        <option key={org.login} value={org.login}>
+          {org.login}
+        </option>
+      ))}
+    </select>
+  );
 }
 
 function stateLabel(state: GithubMigrationState): { state: "open" | "closed" | "draft"; label: string } {
@@ -118,22 +157,14 @@ export function MigrationsPage() {
       {tab === "org" && (
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <FormLabel id="migration-org">Organization</FormLabel>
-          <input
+          <OrgSelect
             id="migration-org"
-            type="text"
             value={orgInput}
-            onChange={(e) => setOrgInput(e.target.value)}
-            placeholder="org-login"
-            className="w-64"
+            onChange={(org) => {
+              setOrgInput(org);
+              setLoadedOrg(org);
+            }}
           />
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => setLoadedOrg(orgInput.trim())}
-            disabled={!orgInput.trim()}
-          >
-            Load
-          </Button>
         </div>
       )}
 
@@ -143,7 +174,7 @@ export function MigrationsPage() {
         <MigrationsList scope={{ kind: "org", org: loadedOrg }} />
       ) : (
         <Blankslate title="Organization migrations" icon={<MigrationIcon size={32} />}>
-          Enter an organization login and click Load to see its migrations.
+          Choose one of your organizations to see its migrations.
         </Blankslate>
       )}
 
@@ -630,7 +661,7 @@ function MigrationsList({ scope }: { scope: Scope }) {
       }),
       col.accessor("created_at", {
         header: "Created",
-        cell: (info) => new Date(info.getValue<string>()).toLocaleString(),
+        cell: (info) => <RelativeTime iso={info.getValue<string>()} />,
       }),
       col.display({
         id: "actions",
@@ -751,7 +782,7 @@ function MigrationDetailDialog({
       </div>
 
       <div className="mb-4 text-sm" style={{ color: "var(--color-fg-muted)" }}>
-        Created {new Date(migration.created_at).toLocaleString()} ·{" "}
+        Created <RelativeTime iso={migration.created_at} /> ·{" "}
         {migration.repositories.length} repositor
         {migration.repositories.length === 1 ? "y" : "ies"}
       </div>
@@ -925,14 +956,7 @@ function CreateMigrationDialog({
       {tab === "org" && (
         <div className="mb-4">
           <FormLabel id="create-org">Organization</FormLabel>
-          <input
-            id="create-org"
-            type="text"
-            value={org}
-            onChange={(e) => setOrg(e.target.value)}
-            placeholder="org-login"
-            className="w-full"
-          />
+          <OrgSelect id="create-org" value={org} onChange={setOrg} />
         </div>
       )}
 

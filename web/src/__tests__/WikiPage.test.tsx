@@ -110,4 +110,76 @@ describe("WikiPage", () => {
       expect(put).toBeTruthy();
     });
   });
+
+  it("sends the edit summary through the save payload", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith("/wiki/pages/home") && init?.method === "PUT") {
+        return Promise.resolve(jsonResponse(home));
+      }
+      if (u.endsWith("/wiki/pages")) return Promise.resolve(jsonResponse([home]));
+      if (u.endsWith("/wiki/pages/home")) return Promise.resolve(jsonResponse(home));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/hello/wiki/home");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    fireEvent.change(await screen.findByLabelText(/wiki edit message/i), {
+      target: { value: "clarify intro" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /save page/i }));
+
+    await waitFor(() => {
+      const put = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/wiki/pages/home") && c[1]?.method === "PUT",
+      );
+      expect(put).toBeTruthy();
+      expect(JSON.parse(String((put![1] as RequestInit).body))).toEqual({
+        title: "Home",
+        body: home.body,
+        message: "clarify intro",
+      });
+    });
+  });
+
+  it("lists page revisions and restores an old version with a Restore message", async () => {
+    const revisions = [
+      { id: 3, slug: "home", title: "Home", editor: "admin", message: "tweak wording", created_at: "2026-03-01T00:00:00Z", body_preview: "# Welcome v3" },
+      { id: 2, slug: "home", title: "Home", editor: "octo", message: "", created_at: "2026-02-01T00:00:00Z", body_preview: "# Welcome v2" },
+    ];
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith("/wiki/pages/home/revisions/2")) {
+        return Promise.resolve(jsonResponse({ ...revisions[1], body: "# Welcome v2\n\nold body" }));
+      }
+      if (u.endsWith("/wiki/pages/home/revisions")) return Promise.resolve(jsonResponse(revisions));
+      if (u.endsWith("/wiki/pages/home") && init?.method === "PUT") {
+        return Promise.resolve(jsonResponse(home));
+      }
+      if (u.endsWith("/wiki/pages")) return Promise.resolve(jsonResponse([home]));
+      if (u.endsWith("/wiki/pages/home")) return Promise.resolve(jsonResponse(home));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/hello/wiki/home");
+
+    fireEvent.click(await screen.findByRole("button", { name: "History" }));
+    // Newest-first rows with message, editor and a relative <time>.
+    expect(await screen.findByText("tweak wording")).toBeInTheDocument();
+    expect(screen.getByText("(no edit summary)")).toBeInTheDocument();
+    expect(screen.getByText(/octo ·/)).toBeInTheDocument();
+    expect(screen.getByText("# Welcome v2")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Restore revision 2" }));
+    await waitFor(() => {
+      const put = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/wiki/pages/home") && c[1]?.method === "PUT",
+      );
+      expect(put).toBeTruthy();
+      expect(JSON.parse(String((put![1] as RequestInit).body))).toEqual({
+        title: "Home",
+        body: "# Welcome v2\n\nold body",
+        message: "Restore revision 2",
+      });
+    });
+  });
 });

@@ -10,24 +10,29 @@ import {
   ghGraphQL,
 } from "../api.js";
 import type { GithubTimelineItem } from "../types.js";
-import { Button, DialogActions, FormLabel } from "./ui.js";
+import { Button, DialogActions } from "./ui.js";
 import { MutationError } from "./MutationError.js";
 import { confirmAction } from "./confirmAction.js";
 import { ReactionBar } from "./ReactionBar.js";
 import { TimelineEventRow } from "./TimelineEventRow.js";
+import { Avatar } from "./Avatar.js";
+import { RelativeTime } from "./RelativeTime.js";
+import { MarkdownComposer } from "./MarkdownComposer.js";
 
 export interface CommentCardProps {
   login?: string | undefined;
   body?: string | undefined;
   date: string;
   isOp?: boolean | undefined;
+  /** Author avatar image; falls back to a monogram tile when absent. */
+  avatarUrl?: string | null | undefined;
   /** Rendered at the right of the header — e.g. Edit/Delete controls. */
   headerActions?: ReactNode | undefined;
   /** When set, task-list checkboxes become interactive (index + new state). */
   onToggleTask?: ((index: number, checked: boolean) => void) | undefined;
 }
 
-export function CommentCard({ login, body, date, isOp = false, headerActions, onToggleTask }: CommentCardProps) {
+export function CommentCard({ login, body, date, isOp = false, avatarUrl, headerActions, onToggleTask }: CommentCardProps) {
   return (
     <div
       style={{
@@ -47,8 +52,11 @@ export function CommentCard({ login, body, date, isOp = false, headerActions, on
           color: "var(--color-fg-muted)",
         }}
       >
+        <Avatar login={login ?? "?"} src={avatarUrl} size={20} />
         <span style={{ color: "var(--color-fg)", fontWeight: 600 }}>{login}</span>
-        <span>commented {new Date(date).toLocaleString()}</span>
+        <span>
+          commented <RelativeTime iso={date} />
+        </span>
         <span className="flex items-center gap-2" style={{ marginLeft: "auto" }}>
           {isOp && (
             <span
@@ -255,15 +263,16 @@ export function EditableCommentList({
               padding: "0.85rem 1rem",
             }}
           >
-            <FormLabel id={`edit-comment-${c.id}`}>Edit comment</FormLabel>
-            <textarea
-              id={`edit-comment-${c.id}`}
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              rows={4}
-              className="mb-2 w-full"
-              style={{ resize: "vertical" }}
-            />
+            <div className="mb-2">
+              <MarkdownComposer
+                id={`edit-comment-${c.id}`}
+                label="Edit comment"
+                value={draft}
+                onChange={setDraft}
+                rows={4}
+                disabled={editMut.isPending}
+              />
+            </div>
             <MutationError of={editMut} />
             <DialogActions>
               <Button variant="ghost" size="sm" onClick={() => setEditingId(null)}>
@@ -283,6 +292,7 @@ export function EditableCommentList({
           <div key={c.id}>
           <CommentCard
             login={c.user?.login}
+            avatarUrl={c.user?.avatar_url}
             body={c.body}
             date={c.created_at}
             headerActions={

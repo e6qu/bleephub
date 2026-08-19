@@ -1082,6 +1082,281 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 		},
 	})
 
+	// --- Pinned issues (pinIssue / unpinIssue, Repository.pinnedIssues) ---
+
+	pinnedIssueType := graphql.NewObject(graphql.ObjectConfig{
+		Name: "PinnedIssue",
+		Fields: graphql.Fields{
+			"id": &graphql.Field{
+				Type: graphql.NewNonNull(graphql.ID),
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					n, ok := p.Source.(map[string]interface{})
+					if !ok {
+						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
+					}
+					return n["nodeID"], nil
+				},
+			},
+			"databaseId": &graphql.Field{Type: graphql.Int},
+			"issue":      &graphql.Field{Type: graphql.NewNonNull(issueType)},
+			"pinnedBy":   &graphql.Field{Type: graphql.NewNonNull(s.graphqlTypes.actor)},
+			"repository": &graphql.Field{Type: graphql.NewNonNull(repoType)},
+		},
+	})
+
+	pinnedIssueEdgeType := graphql.NewObject(graphql.ObjectConfig{
+		Name: "PinnedIssueEdge",
+		Fields: graphql.Fields{
+			"node":   &graphql.Field{Type: pinnedIssueType},
+			"cursor": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+		},
+	})
+
+	pinnedIssueConnectionType := graphql.NewObject(graphql.ObjectConfig{
+		Name: "PinnedIssueConnection",
+		Fields: graphql.Fields{
+			"nodes":      &graphql.Field{Type: graphql.NewList(pinnedIssueType)},
+			"edges":      &graphql.Field{Type: graphql.NewList(pinnedIssueEdgeType)},
+			"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
+			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
+		},
+	})
+
+	repoType.AddFieldConfig("pinnedIssues", &graphql.Field{
+		Type: pinnedIssueConnectionType,
+		Args: relayConnectionArgs(),
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			repo, ok := p.Source.(map[string]interface{})
+			if !ok {
+				return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
+			}
+			repoID, _ := repo["databaseId"].(int)
+			issues := s.store.ListPinnedIssues(repoID)
+			nodes := make([]map[string]interface{}, 0, len(issues))
+			for _, issue := range issues {
+				pinner := s.store.GetUserByID(issue.PinnedByID)
+				if pinner == nil {
+					// The pinner's account can be gone; the issue author keeps
+					// the non-null Actor contract honest.
+					pinner = s.store.GetUserByID(issue.AuthorID)
+				}
+				var pinnedBy map[string]interface{}
+				if pinner != nil {
+					pinnedBy = userToGraphQL(pinner)
+				}
+				nodes = append(nodes, map[string]interface{}{
+					"nodeID":     pinnedIssueNodeID(issue.ID),
+					"databaseId": issue.ID,
+					"issue":      issueToGQL(issue, s.store),
+					"pinnedBy":   pinnedBy,
+					"repository": repo,
+				})
+			}
+			return paginateGQLMaps(nodes, p.Args), nil
+		},
+	})
+
+	pinIssueInputType := graphql.NewInputObject(graphql.InputObjectConfig{
+		Name: "PinIssueInput",
+		Fields: graphql.InputObjectConfigFieldMap{
+			"issueId": &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
+		},
+	})
+
+	pinIssuePayloadType := graphql.NewObject(graphql.ObjectConfig{
+		Name: "PinIssuePayload",
+		Fields: graphql.Fields{
+			"issue": &graphql.Field{Type: issueType},
+		},
+	})
+
+	s.registerMutation(mutationType, "pinIssue", &graphql.Field{
+		Type: pinIssuePayloadType,
+		Args: graphql.FieldConfigArgument{
+			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(pinIssueInputType)},
+		},
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			user := s.ghUserFromContext(p.Context)
+			input, _ := p.Args["input"].(map[string]interface{})
+			issueNodeID, _ := input["issueId"].(string)
+
+			issue := store.FindIssueByNodeID(s.store, issueNodeID)
+			if issue == nil {
+				return nil, gqlMissingNodeType("Issue")
+			}
+			alreadyPinned := issue.PinnedAt != nil
+			if err := s.store.PinIssue(issue.ID, user.ID); err != nil {
+				return nil, err
+			}
+			updated := s.store.GetIssue(issue.ID)
+			if !alreadyPinned {
+				if repo := s.store.GetRepoByID(updated.RepoID); repo != nil {
+					s.emitWebhookEvent(repo.FullName, "issues", "pinned", s.buildIssuesPayload(repo, updated, user, "pinned"))
+				}
+			}
+			return map[string]interface{}{
+				"issue": issueToGQL(updated, s.store),
+			}, nil
+		},
+	})
+
+	unpinIssueInputType := graphql.NewInputObject(graphql.InputObjectConfig{
+		Name: "UnpinIssueInput",
+		Fields: graphql.InputObjectConfigFieldMap{
+			"issueId": &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
+		},
+	})
+
+	unpinIssuePayloadType := graphql.NewObject(graphql.ObjectConfig{
+		Name: "UnpinIssuePayload",
+		Fields: graphql.Fields{
+			// The id of the pinned issue that was unpinned (GitHub's payload).
+			"id":    &graphql.Field{Type: graphql.ID},
+			"issue": &graphql.Field{Type: issueType},
+		},
+	})
+
+	s.registerMutation(mutationType, "unpinIssue", &graphql.Field{
+		Type: unpinIssuePayloadType,
+		Args: graphql.FieldConfigArgument{
+			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(unpinIssueInputType)},
+		},
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			user := s.ghUserFromContext(p.Context)
+			input, _ := p.Args["input"].(map[string]interface{})
+			issueNodeID, _ := input["issueId"].(string)
+
+			issue := store.FindIssueByNodeID(s.store, issueNodeID)
+			if issue == nil {
+				return nil, gqlMissingNodeType("Issue")
+			}
+			wasPinned := s.store.UnpinIssue(issue.ID, user.ID)
+			updated := s.store.GetIssue(issue.ID)
+			var unpinnedID interface{}
+			if wasPinned {
+				unpinnedID = pinnedIssueNodeID(updated.ID)
+				if repo := s.store.GetRepoByID(updated.RepoID); repo != nil {
+					s.emitWebhookEvent(repo.FullName, "issues", "unpinned", s.buildIssuesPayload(repo, updated, user, "unpinned"))
+				}
+			}
+			return map[string]interface{}{
+				"id":    unpinnedID,
+				"issue": issueToGQL(updated, s.store),
+			}, nil
+		},
+	})
+
+	// --- transferIssue / deleteIssue ---
+
+	transferIssueInputType := graphql.NewInputObject(graphql.InputObjectConfig{
+		Name: "TransferIssueInput",
+		Fields: graphql.InputObjectConfigFieldMap{
+			"issueId":               &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
+			"repositoryId":          &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
+			"createLabelsIfMissing": &graphql.InputObjectFieldConfig{Type: graphql.Boolean, DefaultValue: false},
+		},
+	})
+
+	transferIssuePayloadType := graphql.NewObject(graphql.ObjectConfig{
+		Name: "TransferIssuePayload",
+		Fields: graphql.Fields{
+			"issue": &graphql.Field{Type: issueType},
+		},
+	})
+
+	s.registerMutation(mutationType, "transferIssue", &graphql.Field{
+		Type: transferIssuePayloadType,
+		Args: graphql.FieldConfigArgument{
+			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(transferIssueInputType)},
+		},
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			user := s.ghUserFromContext(p.Context)
+			input, _ := p.Args["input"].(map[string]interface{})
+			issueNodeID, _ := input["issueId"].(string)
+			repoNodeID, _ := input["repositoryId"].(string)
+			createLabelsIfMissing, _ := input["createLabelsIfMissing"].(bool)
+
+			issue := store.FindIssueByNodeID(s.store, issueNodeID)
+			if issue == nil {
+				return nil, gqlMissingNodeType("Issue")
+			}
+			target := store.FindRepoByNodeID(s.store, repoNodeID)
+			if target == nil {
+				return nil, gqlMissingNode("Repository", repoNodeID)
+			}
+			source := s.store.GetRepoByID(issue.RepoID)
+			if source == nil {
+				return nil, gqlMissingNodeType("Repository")
+			}
+			if target.ID == source.ID {
+				return nil, fmt.Errorf("issue is already in %s", target.FullName)
+			}
+			// GitHub's restriction: an issue only transfers between
+			// repositories that belong to the same user or organization.
+			if target.OwnerID != source.OwnerID {
+				return nil, fmt.Errorf("issues can only be transferred between repositories owned by the same user or organization")
+			}
+			moved := s.store.TransferIssue(issue.ID, target.ID, user.ID, createLabelsIfMissing)
+			if moved == nil {
+				return nil, gqlMissingNodeType("Issue")
+			}
+			// The webhook fires on the repository the issue left, the way
+			// GitHub delivers issues/transferred.
+			s.emitWebhookEvent(source.FullName, "issues", "transferred", s.buildIssuesPayload(source, moved, user, "transferred"))
+			return map[string]interface{}{
+				"issue": issueToGQL(moved, s.store),
+			}, nil
+		},
+	})
+
+	deleteIssueInputType := graphql.NewInputObject(graphql.InputObjectConfig{
+		Name: "DeleteIssueInput",
+		Fields: graphql.InputObjectConfigFieldMap{
+			"issueId": &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
+		},
+	})
+
+	deleteIssuePayloadType := graphql.NewObject(graphql.ObjectConfig{
+		Name: "DeleteIssuePayload",
+		Fields: graphql.Fields{
+			"repository": &graphql.Field{Type: repoType},
+		},
+	})
+
+	s.registerMutation(mutationType, "deleteIssue", &graphql.Field{
+		Type: deleteIssuePayloadType,
+		Args: graphql.FieldConfigArgument{
+			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(deleteIssueInputType)},
+		},
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			user := s.ghUserFromContext(p.Context)
+			input, _ := p.Args["input"].(map[string]interface{})
+			issueNodeID, _ := input["issueId"].(string)
+
+			issue := store.FindIssueByNodeID(s.store, issueNodeID)
+			if issue == nil {
+				return nil, gqlMissingNodeType("Issue")
+			}
+			repo := s.store.GetRepoByID(issue.RepoID)
+			// The webhook payload has to render before the rows disappear.
+			var payload map[string]interface{}
+			if repo != nil {
+				payload = s.buildIssuesPayload(repo, issue, user, "deleted")
+			}
+			if !s.store.DeleteIssue(issue.ID) {
+				return nil, gqlMissingNodeType("Issue")
+			}
+			if repo != nil {
+				s.emitWebhookEvent(repo.FullName, "issues", "deleted", payload)
+			}
+			result := map[string]interface{}{"repository": nil}
+			if repo != nil {
+				result["repository"] = repoToGraphQL(s.store, s.store.SnapRepo(repo))
+			}
+			return result, nil
+		},
+	})
+
 	addCommentInputType := graphql.NewInputObject(graphql.InputObjectConfig{
 		Name: "AddCommentInput",
 		Fields: graphql.InputObjectConfigFieldMap{
@@ -1519,7 +1794,7 @@ func issueToGQL(issue *store.Issue, st *store.Store) map[string]interface{} {
 		"createdAt":        issue.CreatedAt.Format(time.RFC3339),
 		"updatedAt":        issue.UpdatedAt.Format(time.RFC3339),
 		"closedAt":         closedAt,
-		"isPinned":         false,
+		"isPinned":         issue.PinnedAt != nil,
 		"locked":           issue.Locked,
 		"activeLockReason": graphQLLockReason(string(issue.ActiveLockReason)),
 		"author":           author,
@@ -1896,6 +2171,13 @@ func (s *Resolver) gqlIssueOrderType(fieldType, directionType graphql.Input) *gr
 		},
 	})
 	return s.graphqlTypes.issueOrder
+}
+
+// pinnedIssueNodeID renders the PinnedIssue global id for an issue. The pin
+// row has no store identity of its own (pinned state lives on the issue), so
+// the issue's database id is the stable discriminator.
+func pinnedIssueNodeID(issueID int) string {
+	return fmt.Sprintf("PI_kgDO%08d", issueID)
 }
 
 func relayConnectionArgs() graphql.FieldConfigArgument {
@@ -2362,6 +2644,7 @@ type graphQLTypeRegistry struct {
 	organization                     *graphql.Object
 	lockable                         *graphql.Interface
 	minimizable                      *graphql.Interface
+	votable                          *graphql.Interface
 	issue                            *graphql.Object
 	pullRequest                      *graphql.Object
 	discussion                       *graphql.Object

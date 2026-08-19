@@ -10,6 +10,9 @@ import {
 import type { GithubAccount } from "../types.js";
 import { RepoHeader } from "../components/PageHeader.js";
 import { PageTitle, Box, Blankslate, Button } from "../components/ui.js";
+import { Avatar } from "../components/Avatar.js";
+import { RelativeTime } from "../components/RelativeTime.js";
+import { accountRoute } from "../routes.js";
 import { StarIcon, RepoIcon } from "../components/octicons.js";
 
 export type RepoSocialKind = "stargazers" | "watchers" | "forks";
@@ -47,7 +50,19 @@ function UserRows({ users }: { users: GithubAccount[] }) {
             borderBottom: i < users.length - 1 ? "1px solid var(--color-border)" : "none",
           }}
         >
-          <span style={{ fontWeight: 500 }}>{u.login}</span>
+          <Avatar login={u.login} src={u.avatar_url} size={28} />
+          <Link
+            to={accountRoute(u.login, u.type)}
+            style={{
+              fontWeight: 500,
+              color: "var(--color-accent)",
+              textDecoration: "none",
+              display: "inline-block",
+              lineHeight: "1.625rem",
+            }}
+          >
+            {u.login}
+          </Link>
           <span style={{ fontSize: "0.78rem", color: "var(--color-fg-muted)" }}>{u.type}</span>
         </div>
       ))}
@@ -183,7 +198,7 @@ function ForksList({ owner, repo }: { owner: string; repo: string }) {
               {f.full_name}
             </Link>
             <span style={{ fontSize: "0.76rem", color: "var(--color-fg-muted)" }}>
-              updated {new Date(f.updated_at).toLocaleDateString()}
+              updated <RelativeTime iso={f.updated_at} />
             </span>
           </div>
         ))}

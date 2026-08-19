@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, cleanup, screen, waitFor } from "@testing-library/react";
+import { render, cleanup, screen, waitFor, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Routes, Route } from "react-router";
 import { InsightsPage } from "../pages/InsightsPage.js";
@@ -91,6 +91,9 @@ function mockInsightsEndpoints(overrides: Record<string, () => Response> = {}) {
     }
     if (u.includes("/traffic/popular/paths")) return Promise.resolve(jsonResponse([]));
     if (u.includes("/traffic/popular/referrers")) return Promise.resolve(jsonResponse([]));
+    if (u.includes("/search/issues")) {
+      return Promise.resolve(jsonResponse({ total_count: 3, incomplete_results: false, items: [] }));
+    }
     // useOpenCounts issue/PR badge fetches
     return Promise.resolve(jsonResponse([]));
   });
@@ -112,9 +115,96 @@ const networkCommits = [
 ];
 
 describe("InsightsPage", () => {
-  it("renders contributors, community health, commit activity, and traffic", async () => {
+  it("renders the sectioned sidebar with Pulse as the default pane", async () => {
     mockInsightsEndpoints();
     renderAt("/ui/repos/admin/test/insights");
+
+    // Sidebar nav with every section entry.
+    const nav = await screen.findByRole("navigation", { name: "Insights" });
+    for (const label of ["Pulse", "Contributors", "Community", "Traffic", "Commits", "Code frequency", "Dependency graph", "Network", "Forks"]) {
+      expect(nav).toHaveTextContent(label);
+    }
+    // Pulse pane: exact totals come from search total_count (mocked as 3),
+    // never from first-page item lengths.
+    await waitFor(() => {
+      expect(screen.getByText("Merged pull requests")).toBeInTheDocument();
+    });
+    expect(screen.getAllByText("3").length).toBeGreaterThanOrEqual(4);
+    const searchCalls = mockFetch.mock.calls
+      .map((c) => decodeURIComponent(c[0]!.toString()).replace(/\+/g, " "))
+      .filter((u) => u.includes("/search/issues"));
+    expect(searchCalls.some((u) => u.includes("is:pr is:merged closed:>="))).toBe(true);
+    expect(searchCalls.some((u) => u.includes("is:issue created:>="))).toBe(true);
+    // Only the selected pane renders.
+    expect(screen.queryByText("@admin")).not.toBeInTheDocument();
+  });
+
+  it("renders Pulse from the insights bootstrap and re-queries it per period", async () => {
+    // The aggregate answers, so Pulse must render its exact counters and the
+    // search-count fallback must stay quiet.
+    mockInsightsEndpoints({
+      "/ui-data/bootstrap/repos/admin/test/insights": () =>
+        jsonResponse({
+          period: "1w",
+          merged_prs_count: 7,
+          opened_prs_count: 5,
+          closed_issues_count: 2,
+          new_issues_count: 9,
+          active_contributors: 1,
+          top_contributors: [{ login: "admin", commits: 4 }],
+          commit_activity: [],
+          languages: { Go: 100 },
+        }),
+    });
+    renderAt("/ui/repos/admin/test/insights");
+    await waitFor(() => {
+      expect(screen.getByText("Merged pull requests")).toBeInTheDocument();
+    });
+    expect(screen.getByText("7")).toBeInTheDocument();
+    expect(screen.getByText("9")).toBeInTheDocument();
+
+    const bootstrapCalls = () =>
+      mockFetch.mock.calls
+        .map((c) => c[0]!.toString())
+        .filter((u) => u.includes("/ui-data/bootstrap/repos/admin/test/insights"));
+    expect(bootstrapCalls().some((u) => u.includes("period=1w"))).toBe(true);
+
+    fireEvent.change(screen.getByLabelText("Pulse period"), { target: { value: "24h" } });
+    await waitFor(() => {
+      expect(bootstrapCalls().some((u) => u.includes("period=24h"))).toBe(true);
+    });
+    // The standalone search counts never ran — the aggregate replaced them.
+    const searchCalls = mockFetch.mock.calls
+      .map((c) => c[0]!.toString())
+      .filter((u) => u.includes("/search/issues"));
+    expect(searchCalls).toEqual([]);
+  });
+
+  it("falls back to the search counts (nearer since per period) when the bootstrap fails", async () => {
+    // mockInsightsEndpoints serves no bootstrap route, so the aggregate call
+    // falls through to the [] fallback and errors — Pulse must degrade to the
+    // four standalone search-count queries.
+    mockInsightsEndpoints();
+    renderAt("/ui/repos/admin/test/insights");
+    await waitFor(() => {
+      const searchCalls = mockFetch.mock.calls
+        .map((c) => decodeURIComponent(c[0]!.toString()).replace(/\+/g, " "))
+        .filter((u) => u.includes("/search/issues"));
+      expect(new Set(searchCalls).size).toBeGreaterThanOrEqual(4);
+    });
+    fireEvent.change(screen.getByLabelText("Pulse period"), { target: { value: "24h" } });
+    await waitFor(() => {
+      const searchCalls = mockFetch.mock.calls
+        .map((c) => decodeURIComponent(c[0]!.toString()).replace(/\+/g, " "))
+        .filter((u) => u.includes("/search/issues"));
+      // 4 stats × 2 periods = 8 distinct queries once the period changes.
+      expect(new Set(searchCalls).size).toBeGreaterThanOrEqual(8);
+    });
+  });
+
+  it("renders contributors in the contributors section", async () => {
+    mockInsightsEndpoints();
+    renderAt("/ui/repos/admin/test/insights?section=contributors");
 
     await waitFor(() => {
       expect(screen.getByText("@admin")).toBeInTheDocument();
@@ -122,16 +212,34 @@ describe("InsightsPage", () => {
     expect(screen.getByText("12 commits")).toBeInTheDocument();
     // anonymous contributor rendered by name/email
     expect(screen.getByText(/Ghost <ghost@example.com>/)).toBeInTheDocument();
+  });
+
+  it("renders community health, commit activity, code frequency, and traffic panes", async () => {
+    mockInsightsEndpoints();
+    const { unmount } = renderAt("/ui/repos/admin/test/insights?section=community");
     // community health score
-    expect(screen.getByText("43%")).toBeInTheDocument();
-    // commit activity total
-    expect(screen.getByText(/4 commits on the default branch/)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("43%")).toBeInTheDocument());
+    unmount();
+
+    mockInsightsEndpoints();
+    const { unmount: unmount2 } = renderAt("/ui/repos/admin/test/insights?section=commits");
+    await waitFor(() =>
+      expect(screen.getByText(/4 commits on the default branch/)).toBeInTheDocument(),
+    );
+    unmount2();
+
+    mockInsightsEndpoints();
+    const { unmount: unmount3 } = renderAt("/ui/repos/admin/test/insights?section=code-frequency");
     // code frequency: 40+7 additions and 12+3 deletions across 2 weeks
-    expect(screen.getByText("+47")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("+47")).toBeInTheDocument());
     expect(screen.getByText("−15")).toBeInTheDocument();
     expect(screen.getByText(/additions and/)).toBeInTheDocument();
+    unmount3();
+
+    mockInsightsEndpoints();
+    renderAt("/ui/repos/admin/test/insights?section=traffic");
     // clone traffic bucket list rendered, view traffic honestly empty
-    expect(screen.getByText(/5 \(2 unique\)/)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText(/5 \(2 unique\)/)).toBeInTheDocument());
     expect(screen.getByText(/No views in the last 14 days/)).toBeInTheDocument();
     // popular content empty states
     expect(screen.getByText(/No path traffic recorded/)).toBeInTheDocument();
@@ -147,7 +255,7 @@ describe("InsightsPage", () => {
           { name: "feature", commit: { sha: "ffffffff" } },
         ]),
     });
-    renderAt("/ui/repos/admin/test/insights");
+    renderAt("/ui/repos/admin/test/insights?section=network");
 
     // The header reports the commit count and >1 lane (feature branch forks one).
     await waitFor(() => {
@@ -169,7 +277,7 @@ describe("InsightsPage", () => {
     mockInsightsEndpoints({
       "/contributors": () => new Response(null, { status: 204 }),
     });
-    renderAt("/ui/repos/admin/test/insights");
+    renderAt("/ui/repos/admin/test/insights?section=contributors");
 
     await waitFor(() => {
       expect(screen.getByText(/no contributors yet/i)).toBeInTheDocument();
@@ -180,14 +288,12 @@ describe("InsightsPage", () => {
     mockInsightsEndpoints({
       "/community/profile": () => jsonResponse({ message: "boom" }, 500),
     });
-    renderAt("/ui/repos/admin/test/insights");
+    renderAt("/ui/repos/admin/test/insights?section=community");
 
     await waitFor(() => {
       expect(screen.getByText(/failed to load community profile/i)).toBeInTheDocument();
     });
-    // other sections still render
-    await waitFor(() => {
-      expect(screen.getByText("@admin")).toBeInTheDocument();
-    });
+    // the sidebar remains navigable despite the pane error
+    expect(screen.getByRole("navigation", { name: "Insights" })).toBeInTheDocument();
   });
 });

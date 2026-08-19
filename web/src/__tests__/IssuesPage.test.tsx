@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, cleanup, screen, waitFor, fireEvent } from "@testing-library/react";
+import { render, cleanup, screen, waitFor, fireEvent, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Routes, Route } from "react-router";
 import { IssuesPage } from "../pages/IssuesPage.js";
@@ -40,6 +40,7 @@ function renderAt(path: string) {
 function issue(number: number, title: string) {
   return {
     id: number,
+    node_id: `I_kwDO${number.toString().padStart(8, "0")}`,
     number,
     title,
     body: "body",
@@ -824,5 +825,765 @@ describe("IssuesPage detail triage", () => {
     expect(
       mockFetch.mock.calls.some((c) => c[0].toString().includes("/api/v3/orgs/admin/issue-types")),
     ).toBe(false);
+  });
+});
+
+// ─── PR rows must never leak into the Issues list (BLOCKER regression) ────
+
+describe("IssuesPage PR filtering", () => {
+  it("hides pull-request rows from a mixed /issues payload and excludes them from counts", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.includes("/pulls")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/search/issues")) return Promise.resolve(jsonResponse({}));
+      if (u.includes("state=closed")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/issues?")) {
+        return Promise.resolve(
+          jsonResponse([
+            issue(1, "a real issue"),
+            { ...issue(2, "actually a pull request"), pull_request: { url: "http://x/pulls/2" } },
+          ]),
+        );
+      }
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/test/issues");
+    await waitFor(() => expect(screen.getByText("a real issue")).toBeInTheDocument());
+    // The PR row is filtered out of the list…
+    expect(screen.queryByText("actually a pull request")).not.toBeInTheDocument();
+    // …and out of the open count ("1 Open", not "2 Open").
+    expect(screen.getByText(/1 Open/)).toBeInTheDocument();
+  });
+});
+
+// ─── Exact counts via the search API ──────────────────────────────────────
+
+describe("IssuesPage exact counts", () => {
+  it("prefers search total_count over the truncated page count", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.includes("/pulls")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/search/issues")) {
+        const q = decodeURIComponent(u);
+        return Promise.resolve(jsonResponse({ total_count: q.includes("is:open") ? 120 : 45 }));
+      }
+      if (u.includes("state=closed")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/issues?")) {
+        return Promise.resolve(
+          jsonResponse([issue(1, "first issue")], 200, {
+            Link: `</api/v3/repos/admin/test/issues?state=open&per_page=50&page=2>; rel="next"`,
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/test/issues");
+    await waitFor(() => expect(screen.getByText(/120 Open/)).toBeInTheDocument());
+    expect(screen.getByText(/45 Closed/)).toBeInTheDocument();
+    // All = exact open + exact closed.
+    expect(screen.getByText(/165 All/)).toBeInTheDocument();
+  });
+});
+
+// ─── List row anatomy ─────────────────────────────────────────────────────
+
+describe("IssuesPage list rows", () => {
+  it("shows comment count, milestone chip and the not-planned skip icon", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.includes("/pulls")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/search/issues")) return Promise.resolve(jsonResponse({}));
+      if (u.includes("/issues?")) {
+        return Promise.resolve(
+          jsonResponse([
+            {
+              ...issue(1, "discussed issue"),
+              comments: 4,
+              milestone: milestone(1, "v1.0"),
+            },
+            {
+              ...issue(2, "skipped issue"),
+              state: "closed",
+              state_reason: "not_planned",
+            },
+            {
+              ...issue(3, "done issue"),
+              state: "closed",
+              state_reason: "completed",
+            },
+          ]),
+        );
+      }
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/test/issues");
+    await waitFor(() => expect(screen.getByText("discussed issue")).toBeInTheDocument());
+    // Comment count badge with an accessible name.
+    expect(screen.getByLabelText("4 comments")).toBeInTheDocument();
+    // Milestone chip renders inside the row (the facet dropdown also lists it).
+    const row = screen.getByRole("link", { name: /discussed issue/ });
+    expect(within(row).getByText("v1.0")).toBeInTheDocument();
+    // Closed-as-not-planned gray skip icon vs completed purple check.
+    expect(screen.getByLabelText("Closed as not planned")).toBeInTheDocument();
+    expect(screen.getByLabelText("Closed as completed")).toBeInTheDocument();
+    // Relative time is a <time> element.
+    expect(document.querySelector("time")).not.toBeNull();
+  });
+});
+
+// ─── Free-text search (server pass-through + no silent drops) ─────────────
+
+describe("IssuesPage free-text search", () => {
+  it("passes free text to the server search and renders its results", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.includes("/pulls")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/search/issues")) {
+        const q = decodeURIComponent(u);
+        if (q.includes("per_page=1")) return Promise.resolve(jsonResponse({}));
+        if (q.includes("crash")) {
+          return Promise.resolve(jsonResponse({ total_count: 1, items: [issue(9, "crash on save")] }));
+        }
+        return Promise.resolve(jsonResponse({ total_count: 0, items: [] }));
+      }
+      if (u.includes("/issues?")) {
+        return Promise.resolve(jsonResponse([issue(1, "unrelated issue")]));
+      }
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/test/issues");
+    await waitFor(() => expect(screen.getByText("unrelated issue")).toBeInTheDocument());
+
+    const box = screen.getByLabelText("Search issues and pull requests");
+    fireEvent.change(box, { target: { value: "is:issue is:open crash" } });
+    fireEvent.submit(box.closest("form") as HTMLFormElement);
+
+    await waitFor(() => expect(screen.getByText("crash on save")).toBeInTheDocument());
+    expect(screen.queryByText("unrelated issue")).not.toBeInTheDocument();
+    // The server search was queried with the free text.
+    const calls = mockFetch.mock.calls.map((c) => decodeURIComponent(c[0].toString()));
+    expect(calls.some((u) => u.includes("/search/issues") && u.includes("crash"))).toBe(true);
+    // The free text stays visible in the box — never silently dropped.
+    expect((screen.getByLabelText("Search issues and pull requests") as HTMLInputElement).value).toContain("crash");
+  });
+
+  it("supports the no:label qualifier client-side", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.includes("/pulls")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/search/issues")) return Promise.resolve(jsonResponse({}));
+      if (u.includes("/issues?")) {
+        return Promise.resolve(
+          jsonResponse([
+            { ...issue(1, "labeled issue"), labels: [{ name: "bug", color: "d73a4a" }] },
+            issue(2, "bare issue"),
+          ]),
+        );
+      }
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/test/issues");
+    await waitFor(() => expect(screen.getByText("labeled issue")).toBeInTheDocument());
+
+    const box = screen.getByLabelText("Search issues and pull requests");
+    fireEvent.change(box, { target: { value: "is:issue is:open no:label" } });
+    fireEvent.submit(box.closest("form") as HTMLFormElement);
+
+    await waitFor(() => expect(screen.queryByText("labeled issue")).not.toBeInTheDocument());
+    expect(screen.getByText("bare issue")).toBeInTheDocument();
+  });
+});
+
+// ─── New-issue template chooser ───────────────────────────────────────────
+
+describe("IssuesPage new-issue templates", () => {
+  const templateMd = [
+    "---",
+    "name: Bug report",
+    "about: Report something broken",
+    "title: '[Bug]: '",
+    "labels: bug, needs-triage",
+    "---",
+    "**Steps to reproduce**",
+    "",
+  ].join("\n");
+
+  it("offers the template chooser and pre-fills title/body/labels from front-matter", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.includes("/pulls")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/search/issues")) return Promise.resolve(jsonResponse({}));
+      if (u.includes("/contents/.github/ISSUE_TEMPLATE/bug_report.md")) {
+        return Promise.resolve(
+          jsonResponse({
+            type: "file",
+            name: "bug_report.md",
+            path: ".github/ISSUE_TEMPLATE/bug_report.md",
+            content: btoa(templateMd),
+            encoding: "base64",
+          }),
+        );
+      }
+      if (u.includes("/contents/.github/ISSUE_TEMPLATE")) {
+        return Promise.resolve(
+          jsonResponse([
+            { type: "file", name: "bug_report.md", path: ".github/ISSUE_TEMPLATE/bug_report.md", sha: "x" },
+            { type: "file", name: "config.yml", path: ".github/ISSUE_TEMPLATE/config.yml", sha: "y" },
+          ]),
+        );
+      }
+      if (u.includes("/ui-data/bootstrap/repos/")) {
+        return Promise.resolve(
+          jsonResponse({
+            repo: {},
+            branches: { first_page: [], total_count: 0 },
+            tags: { first_page: [], total_count: 0 },
+            contributors: [],
+            root_entries: [{ type: "dir", name: ".github", path: ".github" }],
+          }),
+        );
+      }
+      if (u.includes("/contents/")) {
+        // Root and .github listings for the top-down template walk.
+        return Promise.resolve(
+          jsonResponse([
+            { type: "dir", name: ".github", path: ".github" },
+            { type: "dir", name: "ISSUE_TEMPLATE", path: ".github/ISSUE_TEMPLATE" },
+          ]),
+        );
+      }
+      if (u.endsWith("/issues") && init?.method === "POST") {
+        return Promise.resolve(jsonResponse(issue(11, "[Bug]: boom"), 201));
+      }
+      // Post-create navigation lands on the issue detail.
+      if (u.includes("/issues/11")) return Promise.resolve(jsonResponse(issue(11, "[Bug]: boom")));
+      if (u.includes("/issues?")) return Promise.resolve(jsonResponse([]));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/test/issues");
+    await waitFor(() => expect(screen.getByRole("button", { name: "New issue" })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "New issue" }));
+
+    // Chooser lists the markdown template (config.yml is not a template).
+    expect(await screen.findByText("bug_report")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Get started" }));
+
+    // Front-matter pre-fills the form.
+    const title = await screen.findByPlaceholderText("Issue title");
+    expect((title as HTMLInputElement).value).toBe("[Bug]: ");
+    fireEvent.change(title, { target: { value: "[Bug]: boom" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create issue" }));
+
+    await waitFor(() => {
+      const post = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/issues") && c[1]?.method === "POST",
+      );
+      expect(post).toBeTruthy();
+      expect(JSON.parse(String(post![1]!.body))).toMatchObject({
+        title: "[Bug]: boom",
+        labels: ["bug", "needs-triage"],
+      });
+      expect(JSON.parse(String(post![1]!.body)).body).toContain("**Steps to reproduce**");
+    });
+  });
+
+  it("offers 'Open a blank issue' from the chooser", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.includes("/pulls")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/search/issues")) return Promise.resolve(jsonResponse({}));
+      if (u.includes("/contents/.github/ISSUE_TEMPLATE")) {
+        return Promise.resolve(
+          jsonResponse([{ type: "file", name: "bug_report.md", path: ".github/ISSUE_TEMPLATE/bug_report.md", sha: "x" }]),
+        );
+      }
+      if (u.includes("/ui-data/bootstrap/repos/")) {
+        return Promise.resolve(
+          jsonResponse({
+            repo: {},
+            branches: { first_page: [], total_count: 0 },
+            tags: { first_page: [], total_count: 0 },
+            contributors: [],
+            root_entries: [{ type: "dir", name: ".github", path: ".github" }],
+          }),
+        );
+      }
+      if (u.includes("/contents/")) {
+        return Promise.resolve(
+          jsonResponse([
+            { type: "dir", name: ".github", path: ".github" },
+            { type: "dir", name: "ISSUE_TEMPLATE", path: ".github/ISSUE_TEMPLATE" },
+          ]),
+        );
+      }
+      if (u.includes("/issues?")) return Promise.resolve(jsonResponse([]));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/test/issues");
+    await waitFor(() => expect(screen.getByRole("button", { name: "New issue" })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "New issue" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open a blank issue" }));
+    const title = await screen.findByPlaceholderText("Issue title");
+    expect((title as HTMLInputElement).value).toBe("");
+  });
+});
+
+// ─── Pinned issues ────────────────────────────────────────────────────────
+
+describe("IssuesPage pinned issues", () => {
+  it("renders the pinned issues section from Repository.pinnedIssues", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.includes("/api/graphql")) {
+        const body = JSON.parse((init?.body as string) ?? "{}");
+        if (String(body.query).includes("pinnedIssues")) {
+          return Promise.resolve(
+            jsonResponse({
+              data: {
+                repository: {
+                  pinnedIssues: {
+                    nodes: [{ issue: { number: 5, title: "read me first", state: "OPEN", stateReason: null } }],
+                  },
+                },
+              },
+            }),
+          );
+        }
+        return Promise.resolve(jsonResponse({ data: {} }));
+      }
+      if (u.includes("/pulls")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/search/issues")) return Promise.resolve(jsonResponse({}));
+      if (u.includes("/issues?")) return Promise.resolve(jsonResponse([issue(1, "ordinary issue")]));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/test/issues");
+    await waitFor(() => expect(screen.getByText("read me first")).toBeInTheDocument());
+    const section = screen.getByRole("region", { name: "Pinned issues" });
+    expect(section).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /read me first/ })).toHaveAttribute(
+      "href",
+      "/ui/repos/admin/test/issues/5",
+    );
+  });
+});
+
+// ─── Overflow menu: pin / transfer / delete ───────────────────────────────
+
+describe("IssuesPage overflow menu", () => {
+  function mockMenuEndpoints(overrides?: (u: string, init?: RequestInit) => Response | undefined) {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      const custom = overrides?.(u, init);
+      if (custom) return Promise.resolve(custom);
+      if (u.includes("/api/graphql")) {
+        const body = JSON.parse((init?.body as string) ?? "{}");
+        const q = String(body.query);
+        if (q.includes("isPinned") && q.includes("pinnedIssues")) {
+          return Promise.resolve(
+            jsonResponse({
+              data: { repository: { issue: { isPinned: false }, pinnedIssues: { totalCount: 1 } } },
+            }),
+          );
+        }
+        return Promise.resolve(jsonResponse({ data: {} }));
+      }
+      if (u.endsWith("/api/v3/repos/admin/test")) {
+        return Promise.resolve(
+          jsonResponse({ owner: { login: "admin", type: "User" }, permissions: { admin: true } }),
+        );
+      }
+      if (u.endsWith("/api/v3/users/admin/repos?per_page=100")) {
+        return Promise.resolve(
+          jsonResponse([
+            { id: 1, node_id: "R_1", name: "test", full_name: "admin/test" },
+            { id: 2, node_id: "R_2", name: "other", full_name: "admin/other" },
+          ]),
+        );
+      }
+      if (u.includes("/issues/7/comments") || u.includes("/timeline")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/issues/7/reactions")) return Promise.resolve(jsonResponse([]));
+      if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "admin" }));
+      if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
+      // The transfer flow navigates to the moved issue in admin/other.
+      if (u.includes("/issues/3")) return Promise.resolve(jsonResponse(issue(3, "Transferred issue")));
+      return Promise.resolve(jsonResponse([]));
+    });
+  }
+
+  const graphqlCall = (needle: string) =>
+    mockFetch.mock.calls.find(
+      ([u, i]) => u.toString().includes("/api/graphql") && String((i as RequestInit)?.body).includes(needle),
+    );
+
+  it("pins the issue via the pinIssue mutation", async () => {
+    mockMenuEndpoints((u, init) => {
+      if (u.includes("/api/graphql")) {
+        const q = String(JSON.parse((init?.body as string) ?? "{}").query);
+        if (q.includes("pinIssue(")) {
+          return jsonResponse({ data: { pinIssue: { issue: { isPinned: true } } } });
+        }
+      }
+      return undefined;
+    });
+    renderAt("/ui/repos/admin/test/issues/7");
+    fireEvent.click(await screen.findByRole("button", { name: "Issue actions" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /Pin issue/ }));
+    await waitFor(() => {
+      const mut = graphqlCall("pinIssue(");
+      expect(mut).toBeTruthy();
+      const vars = JSON.parse(String((mut![1] as RequestInit).body)).variables;
+      expect(vars.input.issueId).toBe(issue(7, "x").node_id);
+    });
+  });
+
+  it("disables Pin when the repo already has 3 pinned issues", async () => {
+    mockMenuEndpoints((u, init) => {
+      if (u.includes("/api/graphql")) {
+        const q = String(JSON.parse((init?.body as string) ?? "{}").query);
+        if (q.includes("isPinned") && q.includes("pinnedIssues")) {
+          return jsonResponse({
+            data: { repository: { issue: { isPinned: false }, pinnedIssues: { totalCount: 3 } } },
+          });
+        }
+      }
+      return undefined;
+    });
+    renderAt("/ui/repos/admin/test/issues/7");
+    fireEvent.click(await screen.findByRole("button", { name: "Issue actions" }));
+    const pinItem = await screen.findByRole("menuitem", { name: /Pin issue/ });
+    expect(pinItem).toBeDisabled();
+    expect(pinItem.getAttribute("title")).toMatch(/3 pinned issues/);
+  });
+
+  it("transfers the issue to a same-owner repo and navigates to the new URL", async () => {
+    mockMenuEndpoints((u, init) => {
+      if (u.includes("/api/graphql")) {
+        const q = String(JSON.parse((init?.body as string) ?? "{}").query);
+        if (q.includes("transferIssue(")) {
+          return jsonResponse({
+            data: {
+              transferIssue: {
+                issue: { number: 3, repository: { name: "other", owner: { login: "admin" } } },
+              },
+            },
+          });
+        }
+      }
+      return undefined;
+    });
+    renderAt("/ui/repos/admin/test/issues/7");
+    fireEvent.click(await screen.findByRole("button", { name: "Issue actions" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Transfer issue" }));
+
+    const select = await screen.findByLabelText("Choose a repository");
+    // Wait for the candidate repos to load; the current repo is not a destination.
+    await screen.findByRole("option", { name: "admin/other" });
+    expect(screen.queryByRole("option", { name: "admin/test" })).not.toBeInTheDocument();
+    fireEvent.change(select, { target: { value: "R_2" } });
+    fireEvent.click(screen.getByRole("button", { name: "Transfer issue" }));
+
+    await waitFor(() => {
+      const mut = graphqlCall("transferIssue(");
+      expect(mut).toBeTruthy();
+      const vars = JSON.parse(String((mut![1] as RequestInit).body)).variables;
+      expect(vars.input).toMatchObject({ issueId: issue(7, "x").node_id, repositoryId: "R_2" });
+    });
+    // Navigated to the transferred issue's new home.
+    await waitFor(() => {
+      expect(screen.queryByText("A real issue")).not.toBeInTheDocument();
+    });
+  });
+
+  it("deletes the issue only after the typed confirmation matches", async () => {
+    mockMenuEndpoints((u, init) => {
+      if (u.includes("/api/graphql")) {
+        const q = String(JSON.parse((init?.body as string) ?? "{}").query);
+        if (q.includes("deleteIssue(")) {
+          return jsonResponse({ data: { deleteIssue: { repository: { name: "test" } } } });
+        }
+      }
+      return undefined;
+    });
+    renderAt("/ui/repos/admin/test/issues/7");
+    fireEvent.click(await screen.findByRole("button", { name: "Issue actions" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Delete issue" }));
+
+    const confirmBtn = await screen.findByRole("button", { name: "Delete this issue" });
+    expect(confirmBtn).toBeDisabled();
+    fireEvent.change(screen.getByLabelText(/to confirm/), { target: { value: "admin/test#7" } });
+    expect(confirmBtn).not.toBeDisabled();
+    fireEvent.click(confirmBtn);
+
+    await waitFor(() => {
+      const mut = graphqlCall("deleteIssue(");
+      expect(mut).toBeTruthy();
+      const vars = JSON.parse(String((mut![1] as RequestInit).body)).variables;
+      expect(vars.input.issueId).toBe(issue(7, "x").node_id);
+    });
+  });
+});
+
+// ─── Close with comment ───────────────────────────────────────────────────
+
+describe("IssuesPage close with comment", () => {
+  it("posts the pending comment first, then the state change, on one click", async () => {
+    const order: string[] = [];
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith("/issues/7/comments") && init?.method === "POST") {
+        order.push("comment");
+        return Promise.resolve(jsonResponse({ id: 1, body: "wrapping up" }, 201));
+      }
+      if (u.endsWith("/issues/7") && init?.method === "PATCH") {
+        order.push("patch");
+        return Promise.resolve(jsonResponse({ ...issue(7, "A real issue"), state: "closed" }));
+      }
+      if (u.includes("/issues/7/comments") || u.includes("/timeline")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/issues/7/reactions")) return Promise.resolve(jsonResponse([]));
+      if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "admin" }));
+      if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/test/issues/7");
+    const box = await screen.findByPlaceholderText(/leave a comment/i);
+    fireEvent.change(box, { target: { value: "wrapping up" } });
+    // With a draft present the close button reads "Close with comment".
+    const closeBtn = await screen.findByRole("button", { name: "Close with comment" });
+    fireEvent.click(closeBtn);
+    await waitFor(() => {
+      expect(order).toEqual(["comment", "patch"]);
+    });
+    const posted = mockFetch.mock.calls.find(
+      (c) => c[0].toString().endsWith("/issues/7/comments") && c[1]?.method === "POST",
+    );
+    expect(JSON.parse(String(posted![1]!.body))).toEqual({ body: "wrapping up" });
+  });
+});
+
+// ─── Lock with reason ─────────────────────────────────────────────────────
+
+describe("IssuesPage lock reason", () => {
+  it("passes the selected lock_reason on PUT /lock", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith("/issues/7/lock") && init?.method === "PUT") {
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      if (u.includes("/issues/7/comments") || u.includes("/timeline")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/issues/7/reactions")) return Promise.resolve(jsonResponse([]));
+      if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "admin" }));
+      if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/test/issues/7");
+    fireEvent.change(await screen.findByLabelText("Lock reason"), { target: { value: "spam" } });
+    fireEvent.click(screen.getByRole("button", { name: /lock conversation/i }));
+    await waitFor(() => {
+      const locked = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/issues/7/lock") && c[1]?.method === "PUT",
+      );
+      expect(locked).toBeTruthy();
+      expect(JSON.parse(String(locked![1]!.body))).toEqual({ lock_reason: "spam" });
+    });
+  });
+});
+
+// ─── Notifications (thread subscription) ──────────────────────────────────
+
+describe("IssuesPage notifications section", () => {
+  it("subscribes via the notification-thread subscription endpoint", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.includes("/repos/admin/test/notifications")) {
+        return Promise.resolve(
+          jsonResponse([
+            {
+              id: "42",
+              subject: { title: "A real issue", url: "http://x/api/v3/repos/admin/test/issues/7", type: "Issue" },
+            },
+          ]),
+        );
+      }
+      if (u.endsWith("/notifications/threads/42/subscription")) {
+        if (init?.method === "DELETE") return Promise.resolve(jsonResponse({}, 200));
+        return Promise.resolve(jsonResponse({ subscribed: true, ignored: false }));
+      }
+      if (u.includes("/issues/7/comments") || u.includes("/timeline")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/issues/7/reactions")) return Promise.resolve(jsonResponse([]));
+      if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "admin" }));
+      if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/test/issues/7");
+    // A thread exists, so the viewer is receiving notifications: the initial
+    // action is Unsubscribe (no state probe — a GET would 404 without an
+    // explicit subscription record and fail the console-error e2e gate).
+    const unsub = await screen.findByRole("button", { name: "Unsubscribe" });
+    fireEvent.click(unsub);
+    await waitFor(() => {
+      const del = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/notifications/threads/42/subscription") && c[1]?.method === "DELETE",
+      );
+      expect(del).toBeTruthy();
+    });
+    const btn = await screen.findByRole("button", { name: "Subscribe" });
+    fireEvent.click(btn);
+    await waitFor(() => {
+      const put = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/notifications/threads/42/subscription") && c[1]?.method === "PUT",
+      );
+      expect(put).toBeTruthy();
+      expect(JSON.parse(String(put![1]!.body))).toEqual({ ignored: false });
+    });
+  });
+
+  it("says so when there is no notification thread to subscribe to", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.includes("/repos/admin/test/notifications")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/issues/7/comments") || u.includes("/timeline")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/issues/7/reactions")) return Promise.resolve(jsonResponse([]));
+      if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "admin" }));
+      if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/test/issues/7");
+    await waitFor(() =>
+      expect(screen.getByText(/No notification thread for this conversation yet/)).toBeInTheDocument(),
+    );
+    expect(screen.queryByRole("button", { name: "Subscribe" })).not.toBeInTheDocument();
+  });
+});
+
+// ─── Sidebar gear buttons ─────────────────────────────────────────────────
+
+describe("IssueSidebar gear buttons", () => {
+  it("renders a real gear button that focuses the section's picker", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.endsWith("/repos/admin/test/assignees")) {
+        return Promise.resolve(jsonResponse([{ login: "bob" }]));
+      }
+      if (u.includes("/issues/7/comments") || u.includes("/timeline")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/issues/7/reactions")) return Promise.resolve(jsonResponse([]));
+      if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "admin" }));
+      if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/test/issues/7");
+    const gear = await screen.findByRole("button", { name: "Edit assignees" });
+    fireEvent.click(gear);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Add assignee")).toHaveFocus();
+    });
+  });
+});
+
+// ─── Milestones view: links + progress bars ───────────────────────────────
+
+describe("IssuesPage milestones links", () => {
+  it("links each milestone to the pre-filtered issues list and shows a progress bar", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.includes("/milestones?")) return Promise.resolve(jsonResponse([milestone(1, "v1.0")]));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/test/milestones");
+    const link = await screen.findByRole("link", { name: "v1.0" });
+    expect(link).toHaveAttribute("href", "/ui/repos/admin/test/issues?milestone=v1.0");
+    const bar = screen.getByRole("progressbar", { name: "v1.0 progress" });
+    expect(bar).toHaveAttribute("aria-valuenow", "75");
+  });
+
+  it("pre-filters the issues list from the milestone query param", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.includes("/pulls")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/search/issues")) return Promise.resolve(jsonResponse({}));
+      if (u.includes("/milestones")) return Promise.resolve(jsonResponse([milestone(1, "v1.0")]));
+      if (u.includes("/issues?")) {
+        return Promise.resolve(
+          jsonResponse([
+            { ...issue(1, "in milestone"), milestone: milestone(1, "v1.0") },
+            issue(2, "not in milestone"),
+          ]),
+        );
+      }
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/test/issues?milestone=v1.0");
+    await waitFor(() => expect(screen.getByText("in milestone")).toBeInTheDocument());
+    expect(screen.queryByText("not in milestone")).not.toBeInTheDocument();
+  });
+});
+
+describe("IssuesPage detail bootstrap", () => {
+  it("hydrates the issue detail from the bootstrap with no standalone refetches", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.includes("/ui-data/bootstrap/repos/admin/test/issues/7")) {
+        return Promise.resolve(
+          jsonResponse({
+            issue: issue(7, "Bootstrapped issue"),
+            comments: [],
+            timeline: [
+              {
+                event: "commented",
+                id: 900,
+                node_id: "IC_900",
+                body: "seeded comment",
+                created_at: "2026-01-02T00:00:00Z",
+                user: { login: "admin", avatar_url: "" },
+              },
+            ],
+            labels: [{ id: 1, name: "bug", color: "ff0000" }],
+            milestones: [],
+            assignees_available: [{ login: "admin" }],
+          }),
+        );
+      }
+      if (u.endsWith("/api/graphql") && init?.method === "POST") {
+        return Promise.resolve(
+          jsonResponse({
+            data: { repository: { issue: { isPinned: false }, pinnedIssues: { totalCount: 0 } } },
+          }),
+        );
+      }
+      if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "admin" }));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/test/issues/7");
+    expect(await screen.findByText("Bootstrapped issue")).toBeInTheDocument();
+    expect(await screen.findByText("seeded comment")).toBeInTheDocument();
+
+    // Every sub-payload the bootstrap carried must be a cache hit — none of
+    // the standalone endpoints those hooks call may have been fetched.
+    const gets = mockFetch.mock.calls
+      .filter((c) => (c[1] as RequestInit | undefined)?.method === undefined)
+      .map((c) => c[0]!.toString());
+    expect(gets.some((u) => u.includes("/api/v3/") && u.endsWith("/issues/7"))).toBe(false);
+    expect(gets.some((u) => u.includes("/issues/7/timeline"))).toBe(false);
+    expect(gets.some((u) => u.includes("/api/v3/repos/admin/test/labels"))).toBe(false);
+    expect(gets.some((u) => u.includes("/assignees"))).toBe(false);
+  });
+
+  it("falls back to the standalone endpoints when the bootstrap answers 500", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.includes("/ui-data/bootstrap/")) {
+        return Promise.resolve(jsonResponse({ message: "boom" }, 500));
+      }
+      if (u.includes("/issues/7/comments") || u.includes("/timeline")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/issues/7/reactions")) return Promise.resolve(jsonResponse([]));
+      if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "admin" }));
+      if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "Fallback issue")));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/test/issues/7");
+    expect(await screen.findByText("Fallback issue")).toBeInTheDocument();
+    const gets = mockFetch.mock.calls
+      .filter((c) => (c[1] as RequestInit | undefined)?.method === undefined)
+      .map((c) => c[0]!.toString());
+    expect(gets.some((u) => u.includes("/api/v3/") && u.endsWith("/issues/7"))).toBe(true);
   });
 });

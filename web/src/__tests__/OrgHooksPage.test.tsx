@@ -141,6 +141,72 @@ describe("OrgHooksPage write actions", () => {
     });
   });
 
+  it("creates a webhook with a secret and individual events", async () => {
+    mockFetch.mockImplementation((url: string, init?: RequestInit) => {
+      if (url.endsWith("/hooks") && init?.method === "POST") {
+        return Promise.resolve(jsonResponse({ ...orgHook, id: 10 }));
+      }
+      if (url.startsWith("/api/v3/orgs/acme/hooks?")) return Promise.resolve(jsonResponse([]));
+      return Promise.resolve(jsonResponse({ message: "Not Found" }, 404));
+    });
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: /new webhook/i }));
+    fireEvent.change(await screen.findByLabelText(/payload url/i), {
+      target: { value: "https://x.test/h" },
+    });
+    fireEvent.change(screen.getByLabelText(/secret/i), { target: { value: "org-s3cret" } });
+    fireEvent.click(screen.getByRole("radio", { name: "Let me select individual events" }));
+    // "push" is pre-selected (it seeds the individual list); add "organization".
+    expect(screen.getByRole("checkbox", { name: "push" })).toBeChecked();
+    fireEvent.click(screen.getByRole("checkbox", { name: "organization" }));
+    fireEvent.click(screen.getByRole("button", { name: /add webhook/i }));
+    await waitFor(() => {
+      const post = mockFetch.mock.calls.find(
+        (c) => String(c[0]).endsWith("/hooks") && c[1]?.method === "POST",
+      );
+      expect(post).toBeTruthy();
+      const body = JSON.parse((post![1] as RequestInit).body as string);
+      expect(body.config.secret).toBe("org-s3cret");
+      expect(body.events).toEqual(["organization", "push"]);
+    });
+  });
+
+  it("edits a webhook via PATCH, keeping the stored secret when left blank", async () => {
+    mockFetch.mockImplementation((url: string, init?: RequestInit) => {
+      if (url.endsWith("/hooks/3") && init?.method === "PATCH") {
+        return Promise.resolve(new Response(null, { status: 200 }));
+      }
+      if (url.startsWith("/api/v3/orgs/acme/hooks?")) return Promise.resolve(jsonResponse([orgHook]));
+      return Promise.resolve(jsonResponse({ message: "Not Found" }, 404));
+    });
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: /edit webhook 3/i }));
+
+    const urlInput = await screen.findByLabelText(/payload url/i);
+    expect(urlInput).toHaveValue("https://ci.example.test/org-hook");
+    // push+issues → individual-events mode, prechecked.
+    expect(screen.getByRole("radio", { name: "Let me select individual events" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "issues" })).toBeChecked();
+
+    fireEvent.change(urlInput, { target: { value: "https://ci.example.test/v2" } });
+    fireEvent.click(screen.getByRole("button", { name: /update webhook/i }));
+
+    await waitFor(() => {
+      const patch = mockFetch.mock.calls.find(
+        (c) => String(c[0]).endsWith("/hooks/3") && c[1]?.method === "PATCH",
+      );
+      expect(patch).toBeTruthy();
+      const body = JSON.parse((patch![1] as RequestInit).body as string);
+      expect(body).toEqual({
+        active: true,
+        events: ["issues", "push"],
+        config: { url: "https://ci.example.test/v2", content_type: "json" },
+      });
+      // Blank secret is omitted so the server keeps the stored one.
+      expect(body.config.secret).toBeUndefined();
+    });
+  });
+
   it("deletes a webhook after confirmation", async () => {
     mockFetch.mockImplementation((url: string, init?: RequestInit) => {
       if (url.endsWith("/hooks/3") && init?.method === "DELETE") {

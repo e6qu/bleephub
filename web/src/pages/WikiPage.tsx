@@ -15,8 +15,32 @@ import {
   putWikiPage,
   deleteWikiPage,
   wikiSlug,
+  ghFetch,
 } from "../api.js";
+import { RelativeTime } from "../components/RelativeTime.js";
 import type { GithubWikiPage } from "../types.js";
+
+/** One row of a page's edit history (see internal/server/gh_wiki.go). */
+interface WikiRevision {
+  id: number;
+  slug: string;
+  title: string;
+  editor: string;
+  message: string;
+  created_at: string;
+  body_preview?: string;
+  /** Present only on the single-revision read. */
+  body?: string;
+}
+
+// Inline fetchers (ghFetch convention) — this page is the only caller, so the
+// wrappers ride this lazy chunk instead of api.ts / the entry bundle.
+const wikiRevisionsPath = (owner: string, repo: string, slug: string) =>
+  `/ui-data/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/wiki/pages/${encodeURIComponent(slug)}/revisions`;
+const fetchWikiRevisions = (owner: string, repo: string, slug: string) =>
+  ghFetch<WikiRevision[]>(wikiRevisionsPath(owner, repo, slug));
+const fetchWikiRevision = (owner: string, repo: string, slug: string, id: number) =>
+  ghFetch<WikiRevision>(`${wikiRevisionsPath(owner, repo, slug)}/${id}`);
 
 /**
  * Repository wiki. github.com puts a Wiki tab on repos with wikis enabled; the
@@ -35,6 +59,7 @@ export function WikiPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [editing, setEditing] = useState<null | { slug: string; title: string; body: string; isNew: boolean }>(null);
+  const [showHistory, setShowHistory] = useState(false);
 
   const pagesQ = useQuery({
     queryKey: ["wiki-pages", owner, repo],
@@ -50,11 +75,18 @@ export function WikiPage() {
   });
 
   const save = useMutation({
-    mutationFn: (input: { slug: string; title: string; body: string }) =>
-      putWikiPage(owner, repo, input.slug, { title: input.title, body: input.body }),
+    mutationFn: (input: { slug: string; title: string; body: string; message: string }) => {
+      // The PUT handler records an optional `message` edit summary on the
+      // revision. putWikiPage's declared payload is {title, body}; passing a
+      // wider object through a variable is sound (structural assignability)
+      // and keeps api.ts untouched.
+      const payload = { title: input.title, body: input.body, message: input.message };
+      return putWikiPage(owner, repo, input.slug, payload);
+    },
     onSuccess: (saved) => {
       qc.invalidateQueries({ queryKey: ["wiki-pages", owner, repo] });
       qc.invalidateQueries({ queryKey: ["wiki-page", owner, repo] });
+      qc.invalidateQueries({ queryKey: ["wiki-revisions", owner, repo] });
       setEditing(null);
       navigate(`/ui/repos/${owner}/${repo}/wiki/${encodeURIComponent(saved.slug)}`);
     },
@@ -91,12 +123,19 @@ export function WikiPage() {
               pending={save.isPending}
               error={<MutationError of={save} />}
               onCancel={() => setEditing(null)}
-              onSave={(title, body) => {
+              onSave={(title, body, message) => {
                 const slug = editing.isNew
                   ? wikiSlug(title) || "page"
                   : editing.slug;
-                save.mutate({ slug, title, body });
+                save.mutate({ slug, title, body, message });
               }}
+            />
+          ) : showHistory && activeSlug ? (
+            <WikiHistory
+              owner={owner}
+              repo={repo}
+              slug={activeSlug}
+              onBack={() => setShowHistory(false)}
             />
           ) : (
             <WikiView
@@ -105,6 +144,7 @@ export function WikiPage() {
               activeSlug={activeSlug}
               onNew={startNew}
               onEdit={startEdit}
+              onHistory={() => setShowHistory(true)}
               onDelete={async (p) => {
                 if (await confirmAction(`Delete the wiki page “${p.title}”?`)) {
                   remove.mutate(p.slug);
@@ -178,6 +218,7 @@ function WikiView({
   activeSlug,
   onNew,
   onEdit,
+  onHistory,
   onDelete,
   removeError,
 }: {
@@ -186,6 +227,7 @@ function WikiView({
   activeSlug: string | undefined;
   onNew: () => void;
   onEdit: (p: GithubWikiPage) => void;
+  onHistory: () => void;
   onDelete: (p: GithubWikiPage) => void;
   removeError: React.ReactNode;
 }) {
@@ -214,6 +256,7 @@ function WikiView({
         <h1 style={{ fontSize: "1.5rem", fontWeight: 600, margin: 0 }}>{page.title}</h1>
         <div className="flex items-center gap-2">
           <Button size="sm" onClick={() => onEdit(page)}>Edit</Button>
+          <Button size="sm" onClick={onHistory}>History</Button>
           <Button size="sm" variant="danger" onClick={() => onDelete(page)}>Delete</Button>
         </div>
       </div>
@@ -228,7 +271,7 @@ function WikiView({
         </div>
       </Box>
       <div className="mt-2" style={{ fontSize: "0.76rem", color: "var(--color-fg-muted)" }}>
-        Last edited {new Date(page.updated_at).toLocaleString()}
+        Last edited <RelativeTime iso={page.updated_at} />
         {page.author ? ` by ${page.author}` : ""}
       </div>
     </article>
@@ -246,17 +289,18 @@ function WikiEditor({
   pending: boolean;
   error: React.ReactNode;
   onCancel: () => void;
-  onSave: (title: string, body: string) => void;
+  onSave: (title: string, body: string, message: string) => void;
 }) {
   const [title, setTitle] = useState(initial.title);
   const [body, setBody] = useState(initial.body);
+  const [message, setMessage] = useState("");
   const slugPreview = useMemo(() => (title.trim() ? wikiSlug(title) || "page" : ""), [title]);
 
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        if (title.trim()) onSave(title.trim(), body);
+        if (title.trim()) onSave(title.trim(), body, message.trim());
       }}
       className="flex flex-col gap-3"
     >
@@ -291,6 +335,18 @@ function WikiEditor({
           style={{ fontFamily: "var(--font-mono)", fontSize: "0.85rem" }}
         />
       </div>
+      <div className="flex flex-col gap-1">
+        <label htmlFor="wiki-message" style={{ fontSize: "0.82rem", fontWeight: 600 }}>
+          Edit message (optional)
+        </label>
+        <input
+          id="wiki-message"
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          placeholder="Describe this change"
+          aria-label="Wiki edit message"
+        />
+      </div>
       {error}
       <div className="flex items-center gap-2">
         <Button type="submit" variant="primary" disabled={pending || !title.trim()}>
@@ -301,5 +357,102 @@ function WikiEditor({
         </Button>
       </div>
     </form>
+  );
+}
+
+/**
+ * A page's revision history (newest first): edit summary, editor, age and a
+ * body preview, plus GitHub's "restore this version" — a PUT of the old body
+ * with a "Restore revision {id}" summary.
+ */
+function WikiHistory({
+  owner,
+  repo,
+  slug,
+  onBack,
+}: {
+  owner: string;
+  repo: string;
+  slug: string;
+  onBack: () => void;
+}) {
+  const qc = useQueryClient();
+  const revisionsQ = useQuery({
+    queryKey: ["wiki-revisions", owner, repo, slug],
+    queryFn: () => fetchWikiRevisions(owner, repo, slug),
+  });
+  const restore = useMutation({
+    mutationFn: async (rev: WikiRevision) => {
+      // The list rows carry only a preview; fetch the full snapshot to restore.
+      const full = await fetchWikiRevision(owner, repo, slug, rev.id);
+      const payload = {
+        title: full.title,
+        body: full.body ?? "",
+        message: `Restore revision ${full.id}`,
+      };
+      return putWikiPage(owner, repo, slug, payload);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["wiki-pages", owner, repo] });
+      qc.invalidateQueries({ queryKey: ["wiki-page", owner, repo] });
+      qc.invalidateQueries({ queryKey: ["wiki-revisions", owner, repo, slug] });
+      onBack();
+    },
+  });
+
+  return (
+    <section aria-label="Page history">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <h1 style={{ fontSize: "1.2rem", fontWeight: 600, margin: 0 }}>History</h1>
+        <Button size="sm" onClick={onBack}>Back to page</Button>
+      </div>
+      <MutationError of={restore} />
+      {revisionsQ.isLoading ? (
+        <Spinner label="loading history" />
+      ) : revisionsQ.isError ? (
+        <InlineError title="Failed to load history" detail={String(revisionsQ.error)} />
+      ) : (revisionsQ.data?.length ?? 0) === 0 ? (
+        <p style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)" }}>No revisions recorded.</p>
+      ) : (
+        <Box>
+          {revisionsQ.data!.map((rev, i) => (
+            <div
+              key={rev.id}
+              className="flex flex-wrap items-center gap-3"
+              style={{
+                padding: "0.65rem 1rem",
+                fontSize: "0.85rem",
+                borderBottom: i < revisionsQ.data!.length - 1 ? "1px solid var(--color-border)" : "none",
+              }}
+            >
+              <div className="min-w-0 flex-1">
+                <div style={{ fontWeight: 500, color: "var(--color-fg)" }}>
+                  {rev.message || "(no edit summary)"}
+                </div>
+                <div className="mt-0.5" style={{ fontSize: "0.76rem", color: "var(--color-fg-muted)" }}>
+                  {rev.editor || "unknown"} · <RelativeTime iso={rev.created_at} />
+                </div>
+                {rev.body_preview && (
+                  <div
+                    className="mt-0.5 truncate"
+                    style={{ fontSize: "0.76rem", color: "var(--color-fg-muted)", fontFamily: "var(--font-mono)" }}
+                  >
+                    {rev.body_preview}
+                  </div>
+                )}
+              </div>
+              <Button
+                size="sm"
+                aria-label={`Restore revision ${rev.id}`}
+                disabled={restore.isPending}
+                onClick={() => restore.mutate(rev)}
+              >
+                Restore
+              </Button>
+            </div>
+          ))}
+        </Box>
+      )}
+    </section>
   );
 }

@@ -193,6 +193,67 @@ func (st *Store) SetPrimaryEmailVisibility(userID int, visibility string) []User
 	return updated
 }
 
+// setPrimaryEmailResult reports the outcome of SetPrimaryUserEmail. Exported
+// values mirror the deleteEmailsResult convention: only the outcomes callers
+// branch on are exported.
+type setPrimaryEmailResult int
+
+const (
+	SetPrimaryEmailOK setPrimaryEmailResult = iota
+	setPrimaryEmailNotFound
+	SetPrimaryEmailUnknown
+	SetPrimaryEmailUnverified
+)
+
+// SetPrimaryUserEmail promotes one of the user's existing verified email
+// addresses to primary (the github.com Settings → Emails web action; the REST
+// API cannot change the primary address). The demoted primary keeps its entry;
+// the promoted address inherits the old primary's visibility when it has none
+// of its own. Returns the updated entries, primary first.
+func (st *Store) SetPrimaryUserEmail(userID int, email string) ([]UserEmail, setPrimaryEmailResult) {
+	st.Mu.Lock()
+	defer st.Mu.Unlock()
+	u := st.Users[userID]
+	if u == nil {
+		return nil, setPrimaryEmailNotFound
+	}
+	materializeEmailsLocked(u)
+	target := -1
+	oldVisibility := ""
+	for i := range u.Emails {
+		if u.Emails[i].Primary {
+			oldVisibility = u.Emails[i].Visibility
+		}
+		if strings.EqualFold(u.Emails[i].Email, email) {
+			target = i
+		}
+	}
+	if target < 0 {
+		return nil, SetPrimaryEmailUnknown
+	}
+	if !u.Emails[target].Verified {
+		return nil, SetPrimaryEmailUnverified
+	}
+	for i := range u.Emails {
+		u.Emails[i].Primary = i == target
+	}
+	if u.Emails[target].Visibility == "" {
+		u.Emails[target].Visibility = oldVisibility
+	}
+	u.Email = u.Emails[target].Email
+	u.UpdatedAt = time.Now().UTC()
+	st.persistUserLocked(u)
+
+	out := make([]UserEmail, 0, len(u.Emails))
+	out = append(out, u.Emails[target])
+	for i, e := range u.Emails {
+		if i != target {
+			out = append(out, e)
+		}
+	}
+	return out, SetPrimaryEmailOK
+}
+
 // setPrimaryEmailLocked changes the account's primary email address
 // (PATCH /user `email`). Caller must hold st.Mu.
 func (st *Store) SetPrimaryEmailLocked(u *User, email string) {

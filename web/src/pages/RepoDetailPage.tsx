@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, lazy, Suspense } from "react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
 import Markdown from "../components/Markdown";
@@ -30,6 +30,7 @@ import {
   fetchEnvironments,
   fetchReleases,
   fetchPackages,
+  fetchRepoContributors,
   putFile,
   uploadFile,
   deleteFile,
@@ -40,11 +41,24 @@ import {
 } from "../api.js";
 import { Avatar } from "../components/Avatar.js";
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
-import { decodeContentsBase64 } from "../utils/workflowDispatch.js";
+import {
+  fetchRepoBootstrap,
+  fetchTreeMeta,
+  repoBootstrapKey,
+  seedQueryCache,
+  useSeededOpenCounts,
+  SEED_STALE_TIME,
+  type TreeMetaLatest,
+} from "../utils/bootstrap.js";
+import { decodeContentsBase64 } from "../utils/contents.js";
 import { confirmAction } from "../components/confirmAction.js";
 import { MutationError } from "../components/MutationError.js";
-import { relativeTimeFromNow } from "../utils/format.js";
-import { repoCodeRoute } from "../routes.js";
+import { RelativeTime } from "../components/RelativeTime.js";
+import { RefSwitcher } from "../components/RefSwitcher.js";
+import { PathBreadcrumbs } from "../components/PathBreadcrumbs.js";
+import { DiffText } from "../components/DiffText.js";
+import { BlobContent, decodeBlobText, parseLineHash } from "../components/BlobContent.js";
+import { repoCodeRoute, accountRoute } from "../routes.js";
 import type {
   BleephubRepo,
   GithubBranch,
@@ -99,6 +113,74 @@ function fileToBase64(file: File): Promise<string> {
     reader.readAsDataURL(file);
   });
 }
+
+/*
+ * Per-row metadata fetches (latest commit per file, head commit per branch or
+ * tag, ahead/behind per branch) fan out across many rows, so they run through
+ * a small shared semaphore and a session cache: one request per key, at most
+ * MAX_META_FETCHES in flight at a time.
+ */
+const MAX_META_FETCHES = 6;
+let metaInFlight = 0;
+const metaWaiters: Array<() => void> = [];
+const metaAcquire = () =>
+  new Promise<void>((resolve) => {
+    if (metaInFlight < MAX_META_FETCHES) {
+      metaInFlight++;
+      resolve();
+    } else {
+      metaWaiters.push(() => {
+        metaInFlight++;
+        resolve();
+      });
+    }
+  });
+const metaRelease = () => {
+  metaInFlight--;
+  metaWaiters.shift()?.();
+};
+
+const metaCache = new Map<string, Promise<unknown>>();
+function cachedMeta<T>(key: string, fetcher: () => Promise<T>): Promise<T> {
+  let p = metaCache.get(key) as Promise<T> | undefined;
+  if (!p) {
+    p = (async () => {
+      await metaAcquire();
+      try {
+        return await fetcher();
+      } finally {
+        metaRelease();
+      }
+    })();
+    metaCache.set(key, p);
+    // Do not cache failures — a retry should re-fetch.
+    p.catch(() => metaCache.delete(key));
+  }
+  return p;
+}
+
+/** Latest commit touching `path` at `ref` (GitHub's file-table columns). */
+const latestCommitForPath = (owner: string, repo: string, ref: string, path: string): Promise<GithubCommit | null> =>
+  cachedMeta(`file:${owner}/${repo}@${ref}:${path}`, async () => {
+    const commits = await fetchRepoCommits(owner, repo, { sha: ref, path, perPage: 1 });
+    const c = Array.isArray(commits) ? commits[0] : undefined;
+    return c && typeof c === "object" && "commit" in c ? c : null;
+  });
+
+/** Full commit object for a sha (branch/tag head dates). Answers null when the
+ * response is not commit-shaped, so metadata rows degrade to em-dashes. */
+const commitBySha = (owner: string, repo: string, sha: string): Promise<GithubCommit | null> =>
+  cachedMeta(`commit:${owner}/${repo}@${sha}`, async () => {
+    const c = await fetchRepoCommit(owner, repo, sha);
+    return c && typeof c === "object" && "commit" in c ? c : null;
+  });
+
+/** Ahead/behind counts for a branch against the default branch. */
+const aheadBehind = (owner: string, repo: string, base: string, head: string) =>
+  cachedMeta(`cmp:${owner}/${repo}@${base}...${head}`, async () => {
+    const cmp = await fetchRepoComparison(owner, repo, base, head);
+    return { ahead: cmp.ahead_by, behind: cmp.behind_by };
+  });
 
 type SubTab = "code" | "commits" | "branches" | "tags" | "activity" | "releases" | "webhooks" | "secrets" | "environments";
 
@@ -248,15 +330,54 @@ export function RepoDetailPage({ initialTab = "code" }: { initialTab?: SubTab })
     setTab(initialTab);
   }, [initialTab]);
 
+  const mainQc = useQueryClient();
+  // One aggregate request replaces the page's first-paint fan-out: on success
+  // it seeds the exact query keys the hooks below (and RepoHeader / the About
+  // sidebar / CodeView) read, so those hooks become cache hits. On failure
+  // nothing is seeded and every hook fetches standalone as before.
+  const bootstrapQ = useQuery({
+    queryKey: repoBootstrapKey(owner, repo),
+    queryFn: async ({ signal }) => {
+      const data = await fetchRepoBootstrap(owner, repo, signal);
+      const defaultBranch = data.repo.default_branch;
+      // Decode the README the same way the readme hook does; a corrupt
+      // payload just skips the seed so that hook fetches and errors itself.
+      let readmeSeed: { name: string; text: string } | null = null;
+      try {
+        readmeSeed = data.readme
+          ? { name: data.readme.name, text: decodeContentsBase64(data.readme.content) }
+          : null;
+      } catch {
+        readmeSeed = null;
+      }
+      seedQueryCache(mainQc, [
+        [["repo", owner, repo], data.repo],
+        // Same endpoint, counter-typed subset — RepoHeader's social counters.
+        [["repo-social-counts", owner, repo], data.repo],
+        [["branches", owner, repo], data.branches.first_page],
+        [["repo-tags", owner, repo], data.tags.first_page],
+        [["repo-languages", owner, repo], data.languages],
+        [["repo-contributors", owner, repo], data.contributors],
+        [["repo-topics", owner, repo], Array.isArray(data.repo.topics) ? { names: data.repo.topics } : null],
+        [["contents", owner, repo, "", defaultBranch], data.root_entries],
+        [["readme", owner, repo, defaultBranch], readmeSeed],
+      ]);
+      return data;
+    },
+    enabled: !!owner && !!repo,
+    staleTime: SEED_STALE_TIME,
+  });
+  const bootstrapSettled = bootstrapQ.isSuccess || bootstrapQ.isError;
+
   const { data: repoData, isLoading, isError, error } = useQuery({
     queryKey: ["repo", owner, repo],
     queryFn: ({ signal }) => fetchRepoDetail(owner, repo, signal),
-    enabled: !!owner && !!repo,
+    enabled: !!owner && !!repo && bootstrapSettled,
   });
   const { data: branches = [] } = useQuery({
     queryKey: ["branches", owner, repo],
     queryFn: () => fetchRepoBranches(owner, repo),
-    enabled: !!owner && !!repo,
+    enabled: !!owner && !!repo && bootstrapSettled,
   });
   const {
     data: commits = [],
@@ -274,8 +395,9 @@ export function RepoDetailPage({ initialTab = "code" }: { initialTab?: SubTab })
       && repoData !== undefined
       && repoData.pushed_at !== null,
   });
-  const counts = useOpenCounts(owner, repo);
-  const mainQc = useQueryClient();
+  // Tab badges from the bootstrap's exact open counts; the standalone count
+  // fetches only run when the bootstrap itself failed.
+  const counts = useSeededOpenCounts(owner, repo, { fallbackEnabled: bootstrapQ.isError });
   const syncForkMut = useMutation({
     mutationFn: () => syncFork(owner, repo, repoData?.default_branch ?? ""),
     onSuccess: () => {
@@ -306,7 +428,9 @@ export function RepoDetailPage({ initialTab = "code" }: { initialTab?: SubTab })
   const { data: tags = [], isError: tagsError, error: tagsErr } = useQuery({
     queryKey: ["repo-tags", owner, repo],
     queryFn: () => fetchRepoTags(owner, repo),
-    enabled: tab === "tags" && !!owner && !!repo,
+    // bootstrapSettled: the bootstrap seeds this key, so a deep link straight
+    // to the Tags tab must not race it with a duplicate standalone fetch.
+    enabled: tab === "tags" && !!owner && !!repo && bootstrapSettled,
   });
   const { data: activity = [], isLoading: activityLoading, isError: activityError, error: activityErr } = useQuery({
     queryKey: ["repo-activity", owner, repo],
@@ -316,15 +440,15 @@ export function RepoDetailPage({ initialTab = "code" }: { initialTab?: SubTab })
   const { data: socialCounts } = useQuery({
     queryKey: ["repo-social-counts", owner, repo],
     queryFn: () => fetchRepoSocialCounts(owner, repo),
-    enabled: !!owner && !!repo,
+    enabled: !!owner && !!repo && bootstrapSettled,
   });
   const { data: languages } = useQuery({
     queryKey: ["repo-languages", owner, repo],
     queryFn: () => fetchRepoLanguages(owner, repo),
-    enabled: !!owner && !!repo,
+    enabled: !!owner && !!repo && bootstrapSettled,
   });
 
-  if (isLoading) return <Spinner label={`loading ${owner}/${repo}`} />;
+  if (bootstrapQ.isPending || isLoading) return <Spinner label={`loading ${owner}/${repo}`} />;
   if (isError || !repoData)
     return <InlineError title={`Failed to load ${owner}/${repo}`} detail={String(error)} />;
 
@@ -644,6 +768,36 @@ function CodeView({
     },
   });
 
+  // One tree-meta call per (ref, path) supplies every file row's
+  // latest-commit column and the subdirectory banner, replacing the old
+  // per-entry `commits?path=&per_page=1` fan-out.
+  const treeMetaQ = useQuery({
+    queryKey: ["tree-meta", owner, repo, branch, path],
+    queryFn: ({ signal }) => fetchTreeMeta(owner, repo, branch, path, signal),
+    enabled: commits.length > 0,
+    staleTime: SEED_STALE_TIME,
+  });
+  const treeLatestByPath = new Map(
+    (treeMetaQ.data?.entries ?? []).map((entry) => [entry.path, entry.latest]),
+  );
+  const treeMetaStatus: "pending" | "error" | "success" = treeMetaQ.isError
+    ? "error"
+    : treeMetaQ.isSuccess
+      ? "success"
+      : "pending";
+
+  // GitHub shows the latest-commit banner in subdirectories too, scoped to
+  // the commits that touched the directory. Per-path fallback only when
+  // tree-meta failed or could not attribute the directory.
+  const dirCommitQ = useQuery({
+    queryKey: ["dir-latest-commit", owner, repo, branch, path],
+    queryFn: () => latestCommitForPath(owner, repo, branch, path),
+    enabled:
+      commits.length > 0
+      && path !== ""
+      && (treeMetaQ.isError || (treeMetaQ.isSuccess && !treeMetaQ.data.latest_commit)),
+  });
+
   if (loading || itemsLoading || readmeLoading) return <Spinner label="loading code" />;
   if (commits.length === 0) {
     return <EmptyRepoSetup owner={owner} repo={repo} defaultBranch={defaultBranch} sshUrl={sshUrl} />;
@@ -651,46 +805,27 @@ function CodeView({
   if (itemsError) return <InlineError title="Failed to load files" detail={String(itemsErr)} />;
 
   const fileList = Array.isArray(items) ? items : [];
-  // Only the repository root shows the "latest commit" banner — it is the
-  // repo's most recent commit, not a per-directory one, so surfacing it in a
-  // sub-tree would misattribute it. No per-file commit data is fabricated.
-  const latestCommit = path === "" ? commits[0] : undefined;
+  const latestCommit =
+    path === ""
+      ? commits[0]
+      : treeMetaQ.data?.latest_commit ?? dirCommitQ.data ?? undefined;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
       <div className="flex flex-wrap items-center gap-2">
-        <select
-          aria-label="Branch"
-          value={branch}
-          onChange={(e) => {
-            const nextRef = e.target.value;
-            navigate(repoCodeRoute(owner, repo, { kind: "tree", ref: nextRef }));
-          }}
-          style={{ fontSize: "0.85rem", padding: "0.35rem 0.5rem" }}
-        >
-          {!branches.includes(branch) && (
-            <option value={branch}>{branch} (detached)</option>
-          )}
-          {branches.map((b) => (
-            <option key={b} value={b}>
-              {b}
-            </option>
-          ))}
-        </select>
-        {path && (
-          <button
-            type="button"
-            aria-label="Go to parent directory"
-            onClick={() => {
-              const parent = path.split("/").slice(0, -1).join("/");
-              navigate(repoCodeRoute(owner, repo, { kind: "tree", ref: branch, path: parent }));
-            }}
-            style={{ fontSize: "0.85rem", color: "var(--color-accent)", background: "transparent", border: "none" }}
-          >
-            ..
-          </button>
-        )}
-        <span style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)", flex: 1 }}>{path}</span>
+        <RefSwitcher
+          owner={owner}
+          repo={repo}
+          current={branch}
+          branches={branches}
+          defaultBranch={defaultBranch}
+          onSelect={(nextRef) =>
+            navigate(repoCodeRoute(owner, repo, { kind: "tree", ref: nextRef, ...(path ? { path } : {}) }))
+          }
+        />
+        <div className="min-w-0 flex-1">
+          {path && <PathBreadcrumbs owner={owner} repo={repo} gitRef={branch} path={path} />}
+        </div>
         <Button size="sm" onClick={() => setGoToFileOpen(true)}>
           Go to file
         </Button>
@@ -809,8 +944,9 @@ function CodeView({
                 owner={owner}
                 repo={repo}
                 commit={latestCommit}
-                total={commits.length}
-                hasMore={commits.length >= 100}
+                {...(path === ""
+                  ? { total: commits.length, hasMore: commits.length >= 100 }
+                  : { historyPath: path })}
               />
             ) : undefined
           }
@@ -818,7 +954,12 @@ function CodeView({
           {fileList.map((item, i) => (
             <FileRow
               key={item.sha}
+              owner={owner}
+              repo={repo}
+              gitRef={branch}
               item={item}
+              treeMetaStatus={treeMetaStatus}
+              treeLatest={treeLatestByPath.get(item.path) ?? null}
               isLast={i === fileList.length - 1}
               href={repoCodeRoute(owner, repo, item.type === "dir"
                 ? { kind: "tree", ref: branch, path: item.path }
@@ -857,25 +998,30 @@ function LatestCommitBanner({
   commit,
   total,
   hasMore = false,
+  historyPath,
 }: {
   owner: string;
   repo: string;
   commit: GithubCommit;
-  total: number;
+  /** Repo-root banner: total commit count. Absent in subdirectories. */
+  total?: number;
   // The commits query fetches a single page (per_page=100); when it comes back
   // full there are likely more, so render "100+" rather than assert an exact
   // count we did not fetch. A precise total would need a dedicated count endpoint.
   hasMore?: boolean;
+  /** Subdirectory banner: link to the path-scoped history instead of a count. */
+  historyPath?: string;
 }) {
   return (
     <div className="flex w-full min-w-0 items-center gap-2">
+      <Avatar login={commit.author?.login ?? commit.commit.author?.name ?? "?"} src={commit.author?.avatar_url} size={20} />
       <Link
         to={`/ui/repos/${owner}/${repo}/commits/${commit.sha}`}
         className="min-w-0 flex-1 truncate"
         style={{ color: "var(--color-fg)", textDecoration: "none" }}
         title={commit.commit.message}
       >
-        <span style={{ fontWeight: 600 }}>{commit.commit.author?.name}</span>{" "}
+        <span style={{ fontWeight: 600 }}>{commit.author?.login ?? commit.commit.author?.name}</span>{" "}
         {commit.commit.message.split("\n")[0]}
       </Link>
       <Link
@@ -886,16 +1032,26 @@ function LatestCommitBanner({
         {commit.sha.slice(0, 7)}
       </Link>
       <span style={{ color: "var(--color-fg-muted)" }}>
-        · {relativeTimeFromNow(commit.commit.author?.date)}
+        · <RelativeTime iso={commit.commit.author?.date} />
       </span>
-      <Link
-        to={`/ui/repos/${owner}/${repo}/commits`}
-        className="inline-flex items-center gap-1"
-        style={{ color: "var(--color-fg-muted)", textDecoration: "none", whiteSpace: "nowrap" }}
-      >
-        <CommentIcon size={14} /> {total}
-        {hasMore ? "+" : ""} {total === 1 ? "commit" : "commits"}
-      </Link>
+      {total !== undefined ? (
+        <Link
+          to={`/ui/repos/${owner}/${repo}/commits`}
+          className="inline-flex items-center gap-1"
+          style={{ color: "var(--color-fg-muted)", textDecoration: "none", whiteSpace: "nowrap" }}
+        >
+          <CommentIcon size={14} /> {total}
+          {hasMore ? "+" : ""} {total === 1 ? "commit" : "commits"}
+        </Link>
+      ) : (
+        <Link
+          to={`/ui/repos/${owner}/${repo}/commits?path=${encodeURIComponent(historyPath ?? "")}`}
+          className="inline-flex items-center gap-1"
+          style={{ color: "var(--color-fg-muted)", textDecoration: "none", whiteSpace: "nowrap" }}
+        >
+          <CommentIcon size={14} /> History
+        </Link>
+      )}
     </div>
   );
 }
@@ -1087,6 +1243,11 @@ function AboutSidebar({
     queryFn: () => fetchPackages({ kind: "repo", owner, repo }),
     enabled: !!owner && !!repo,
   });
+  const { data: contributors, isError: contributorsError } = useQuery({
+    queryKey: ["repo-contributors", owner, repo],
+    queryFn: () => fetchRepoContributors(owner, repo),
+    enabled: !!owner && !!repo,
+  });
 
   const base = `/ui/repos/${owner}/${repo}`;
   const topicNames = topics?.names ?? [];
@@ -1219,6 +1380,39 @@ function AboutSidebar({
         )}
       </section>
 
+      {!contributorsError && (contributors?.length ?? 0) > 0 && (
+        <>
+          <hr style={divider} />
+          <section>
+            <SectionLabel>
+              <Link
+                to={`/ui/repos/${owner}/${repo}/insights`}
+                style={{ color: "inherit", textDecoration: "none" }}
+              >
+                Contributors {contributors!.length}
+              </Link>
+            </SectionLabel>
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              {contributors!.slice(0, 14).map((c, i) =>
+                c.login ? (
+                  <Link
+                    key={c.login}
+                    to={accountRoute(c.login, c.type)}
+                    aria-label={c.login}
+                    title={c.login}
+                    style={{ display: "inline-flex" }}
+                  >
+                    <Avatar login={c.login} src={c.avatar_url} size={28} />
+                  </Link>
+                ) : (
+                  <Avatar key={`anon-${i}`} login={c.name ?? "?"} size={28} />
+                ),
+              )}
+            </div>
+          </section>
+        </>
+      )}
+
       {languages && Object.keys(languages).length > 0 && (
         <>
           <hr style={divider} />
@@ -1233,21 +1427,62 @@ function AboutSidebar({
 }
 
 function FileRow({
+  owner,
+  repo,
+  gitRef,
   item,
+  treeMetaStatus,
+  treeLatest,
   isLast,
   href,
 }: {
+  owner: string;
+  repo: string;
+  gitRef: string;
   item: GithubContentItem;
+  /** State of the directory's single tree-meta call (shared by all rows). */
+  treeMetaStatus: "pending" | "error" | "success";
+  /** This entry's latest commit from tree-meta; null when unattributed. */
+  treeLatest: TreeMetaLatest | null;
   isLast: boolean;
   href: string;
 }) {
   const isDir = item.type === "dir";
-  const content = (
+  // GitHub's per-file columns come from the directory's ONE tree-meta call.
+  // The old per-path commits fetch survives strictly as a fallback: when
+  // tree-meta failed outright, or answered but could not attribute this
+  // entry (latest: null). While tree-meta is pending the row shows em-dashes.
+  const fallbackEnabled =
+    treeMetaStatus === "error" || (treeMetaStatus === "success" && treeLatest === null);
+  const commitQ = useQuery({
+    queryKey: ["file-latest-commit", owner, repo, gitRef, item.path],
+    queryFn: () => latestCommitForPath(owner, repo, gitRef, item.path),
+    staleTime: 5 * 60_000,
+    enabled: fallbackEnabled,
+  });
+  const fallback = fallbackEnabled ? commitQ.data ?? null : null;
+  const latest: { sha: string; headline: string; title: string; date?: string | undefined } | null =
+    treeLatest
+      ? {
+          sha: treeLatest.sha,
+          headline: treeLatest.message_headline,
+          title: treeLatest.message_headline,
+          date: treeLatest.author_date,
+        }
+      : fallback
+        ? {
+            sha: fallback.sha,
+            headline: fallback.commit.message.split("\n")[0] ?? "",
+            title: fallback.commit.message,
+            date: fallback.commit.author?.date,
+          }
+        : null;
+  const nameLink = (
     <>
       <span style={{ color: isDir ? "var(--color-accent)" : "var(--color-fg-muted)", display: "flex" }}>
         {isDir ? <DirectoryIcon size={16} /> : <FileIcon size={16} />}
       </span>
-      <span style={{ color: "var(--color-fg)", fontWeight: 400, flex: 1, textAlign: "left" }}>
+      <span style={{ color: "var(--color-fg)", fontWeight: 400, textAlign: "left" }} className="truncate">
         {item.name}
       </span>
       {(item.type === "symlink" || item.type === "submodule") && (
@@ -1255,20 +1490,47 @@ function FileRow({
       )}
     </>
   );
-  const style = {
-    width: "100%",
-    padding: "0.55rem 1rem",
+  const linkStyle = {
+    minWidth: 0,
+    flex: "0 1 34%",
     border: "none",
-    borderBottom: isLast ? "none" : "1px solid var(--color-border)",
     cursor: "pointer",
-    fontSize: "0.85rem",
     background: "transparent",
     textDecoration: "none",
+    lineHeight: "1.625rem",
   } as const;
-  if (item.type === "submodule" && item.submodule_git_url) {
-    return <a href={item.submodule_git_url} className="flex items-center gap-2" style={style}>{content}</a>;
-  }
-  return <Link to={href} className="flex items-center gap-2" style={style}>{content}</Link>;
+  return (
+    <div
+      className="flex w-full items-center gap-2"
+      style={{
+        padding: "0.35rem 1rem",
+        fontSize: "0.85rem",
+        borderBottom: isLast ? "none" : "1px solid var(--color-border)",
+      }}
+    >
+      {item.type === "submodule" && item.submodule_git_url ? (
+        <a href={item.submodule_git_url} className="flex items-center gap-2" style={linkStyle}>{nameLink}</a>
+      ) : (
+        <Link to={href} className="flex items-center gap-2" style={linkStyle}>{nameLink}</Link>
+      )}
+      <span className="min-w-0 flex-1 truncate" style={{ color: "var(--color-fg-muted)" }}>
+        {latest ? (
+          <Link
+            to={`/ui/repos/${owner}/${repo}/commits/${latest.sha}`}
+            title={latest.title}
+            style={{ color: "var(--color-fg-muted)", textDecoration: "none", display: "inline-block", lineHeight: "1.625rem" }}
+          >
+            {latest.headline}
+          </Link>
+        ) : (
+          <span aria-hidden>—</span>
+        )}
+      </span>
+      <span style={{ color: "var(--color-fg-muted)", fontSize: "0.78rem", whiteSpace: "nowrap" }}>
+        {latest ? <RelativeTime iso={latest.date} /> : <span aria-hidden>—</span>}
+      </span>
+    </div>
+  );
 }
 
 function EmptyRepoSetup({
@@ -1485,6 +1747,40 @@ function CommitHistory({
   );
 }
 
+/** Small clipboard button with GitHub's check-mark copy feedback. */
+function CopyShaButton({ sha }: { sha: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      aria-label={`Copy full SHA for ${sha.slice(0, 7)}`}
+      title="Copy full SHA"
+      className="inline-flex items-center justify-center"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(sha);
+          setCopied(true);
+          window.setTimeout(() => setCopied(false), 1500);
+        } catch {
+          // Clipboard denied — leave the icon unchanged.
+        }
+      }}
+      style={{
+        flexShrink: 0,
+        width: 28,
+        height: 28,
+        background: "var(--color-bg-subtle)",
+        border: "1px solid var(--color-border)",
+        borderRadius: "var(--radius-sm)",
+        color: copied ? "var(--color-status-ok)" : "var(--color-fg-muted)",
+        cursor: "pointer",
+      }}
+    >
+      {copied ? <CheckIcon size={14} /> : <CopyIcon size={14} />}
+    </button>
+  );
+}
+
 function CommitsList({
   owner,
   repo,
@@ -1498,53 +1794,101 @@ function CommitsList({
 }) {
   if (loading) return <Spinner label="loading commits" />;
   if (commits.length === 0) return <Blankslate title="No commits yet" />;
+
+  // GitHub groups the history under "Commits on {date}" headers.
+  const groups: { date: string; items: GithubCommit[] }[] = [];
+  for (const c of commits) {
+    const date = new Date(c.commit.author?.date ?? c.commit.committer?.date ?? "").toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+    const last = groups[groups.length - 1];
+    if (last && last.date === date) last.items.push(c);
+    else groups.push({ date, items: [c] });
+  }
+
   return (
-    <Box>
-      {commits.map((c, i) => (
-        <div
-          key={c.sha}
-          className="flex items-center gap-3"
-          style={{
-            padding: "0.65rem 1rem",
-            borderBottom: i < commits.length - 1 ? "1px solid var(--color-border)" : "none",
-          }}
-        >
-          <div className="min-w-0 flex-1">
-            <Link
-              to={`/ui/repos/${owner}/${repo}/commits/${c.sha}`}
-              style={{
-                fontSize: "0.88rem",
-                color: "var(--color-fg)",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-                textDecoration: "none",
-              }}
-            >
-              {c.commit.message.split("\n")[0]}
-            </Link>
-            <div className="mt-0.5" style={{ fontSize: "0.76rem", color: "var(--color-fg-muted)" }}>
-              {c.commit.author?.name} · {new Date(c.commit.author?.date ?? "").toLocaleDateString()}
-            </div>
+    <div className="flex flex-col gap-3">
+      {groups.map((group) => (
+        <section key={group.date} aria-label={`Commits on ${group.date}`}>
+          <div className="mb-1.5" style={{ fontSize: "0.8rem", fontWeight: 600, color: "var(--color-fg-muted)" }}>
+            Commits on {group.date}
           </div>
-          <Link
-            to={`/ui/repos/${owner}/${repo}/commits/${c.sha}`}
-            className="font-mono"
-            style={{
-              fontSize: "0.74rem",
-              color: "var(--color-fg-muted)",
-              background: "var(--color-bg-subtle)",
-              border: "1px solid var(--color-border)",
-              padding: "0.1rem 0.4rem",
-              borderRadius: "var(--radius-sm)",
-              textDecoration: "none",
-            }}
-          >
-            {c.sha.slice(0, 7)}
-          </Link>
-        </div>
+          <Box>
+            {group.items.map((c, i) => {
+              const login = c.author?.login ?? c.commit.author?.name ?? "unknown";
+              return (
+                <div
+                  key={c.sha}
+                  className="flex items-center gap-3"
+                  style={{
+                    padding: "0.65rem 1rem",
+                    borderBottom: i < group.items.length - 1 ? "1px solid var(--color-border)" : "none",
+                  }}
+                >
+                  <div className="min-w-0 flex-1">
+                    <Link
+                      to={`/ui/repos/${owner}/${repo}/commits/${c.sha}`}
+                      style={{
+                        fontSize: "0.88rem",
+                        color: "var(--color-fg)",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                        textDecoration: "none",
+                      }}
+                    >
+                      {c.commit.message.split("\n")[0]}
+                    </Link>
+                    <div className="mt-0.5 flex items-center gap-1.5" style={{ fontSize: "0.76rem", color: "var(--color-fg-muted)" }}>
+                      <Avatar login={login} src={c.author?.avatar_url} size={16} />
+                      <span style={{ fontWeight: 600, color: "var(--color-fg)" }}>{login}</span>
+                      <span>
+                        committed <RelativeTime iso={c.commit.author?.date} />
+                      </span>
+                    </div>
+                  </div>
+                  <Link
+                    to={`/ui/repos/${owner}/${repo}/commits/${c.sha}`}
+                    className="font-mono"
+                    style={{
+                      fontSize: "0.74rem",
+                      color: "var(--color-fg-muted)",
+                      background: "var(--color-bg-subtle)",
+                      border: "1px solid var(--color-border)",
+                      padding: "0.28rem 0.4rem",
+                      borderRadius: "var(--radius-sm)",
+                      textDecoration: "none",
+                    }}
+                  >
+                    {c.sha.slice(0, 7)}
+                  </Link>
+                  <CopyShaButton sha={c.sha} />
+                  <Link
+                    to={repoCodeRoute(owner, repo, { kind: "tree", ref: c.sha })}
+                    aria-label={`Browse repository at ${c.sha.slice(0, 7)}`}
+                    title="Browse repository at this commit"
+                    className="inline-flex items-center justify-center"
+                    style={{
+                      flexShrink: 0,
+                      width: 28,
+                      height: 28,
+                      border: "1px solid var(--color-border)",
+                      borderRadius: "var(--radius-sm)",
+                      color: "var(--color-fg-muted)",
+                      background: "var(--color-bg-subtle)",
+                    }}
+                  >
+                    <CodeIcon size={14} />
+                  </Link>
+                </div>
+              );
+            })}
+          </Box>
+        </section>
       ))}
-    </Box>
+    </div>
   );
 }
 
@@ -1574,7 +1918,7 @@ function ActivityFeed({ items, loading }: { items: RepoActivityItem[]; loading: 
               <span className="font-mono" style={{ color: "var(--color-fg)" }}>{shortRef}</span>
             </div>
             <span style={{ fontSize: "0.76rem", color: "var(--color-fg-muted)", whiteSpace: "nowrap" }}>
-              {relativeTimeFromNow(a.timestamp)}
+              <RelativeTime iso={a.timestamp} />
             </span>
           </div>
         );
@@ -1719,7 +2063,7 @@ function ReleasesList({ owner, repo, releases }: { owner: string; repo: string; 
             <div style={{ fontSize: "0.76rem", color: "var(--color-fg-muted)" }}>
               {r.published_at === null
                 ? "draft"
-                : `published ${new Date(r.published_at).toLocaleDateString()}`}
+                : <>published <RelativeTime iso={r.published_at} /></>}
             </div>
           </Link>
         </div>
@@ -1771,7 +2115,7 @@ export function RepoCommitPage() {
               {commit.commit.message.split("\n")[0]}
             </h1>
             <div className="mt-1" style={{ color: "var(--color-fg-muted)", fontSize: ".78rem" }}>
-              {commit.commit.author?.name} committed {relativeTimeFromNow(commit.commit.author?.date)}
+              {commit.commit.author?.name} committed <RelativeTime iso={commit.commit.author?.date} />
             </div>
           </div>
         }
@@ -1839,19 +2183,7 @@ export function RepoCommitPage() {
               }
             >
               {file.patch ? (
-                <pre
-                  className="font-mono"
-                  style={{
-                    margin: 0,
-                    padding: "1rem",
-                    overflowX: "auto",
-                    fontSize: ".76rem",
-                    whiteSpace: "pre",
-                    background: "var(--color-bg-subtle)",
-                  }}
-                >
-                  {file.patch}
-                </pre>
+                <DiffText patch={file.patch} />
               ) : (
                 <div style={{ padding: "1rem", color: "var(--color-fg-muted)" }}>
                   Binary file or patch unavailable.
@@ -2137,11 +2469,22 @@ export function RepoComparePage() {
       {query.data && (
         <div className="mt-4 flex flex-col gap-4">
           <Box>
-            <div style={{ padding: "1rem" }}>
-              <b>{query.data.status}</b>
-              <span style={{ color: "var(--color-fg-muted)" }}>
-                {" "}· {query.data.ahead_by} ahead · {query.data.behind_by} behind · {query.data.total_commits} commits
+            <div className="flex flex-wrap items-center gap-3" style={{ padding: "1rem" }}>
+              <span className="min-w-0 flex-1">
+                <b>{query.data.status}</b>
+                <span style={{ color: "var(--color-fg-muted)" }}>
+                  {" "}· {query.data.ahead_by} ahead · {query.data.behind_by} behind · {query.data.total_commits} commits
+                </span>
               </span>
+              {/* PullsPage has no query-param prefill yet; ?compare={base}...{head}
+                  is the agreed hand-off contract for its create flow. */}
+              <ButtonLink
+                variant="primary"
+                size="sm"
+                to={`/ui/repos/${owner}/${repo}/pulls?compare=${encodeURIComponent(base)}...${encodeURIComponent(head)}`}
+              >
+                Create pull request
+              </ButtonLink>
             </div>
           </Box>
           <CommitsList owner={owner} repo={repo} commits={query.data.commits} loading={false} />
@@ -2156,12 +2499,13 @@ export function RepoComparePage() {
                 </div>
               }
             >
-              <pre
-                className="font-mono"
-                style={{ margin: 0, padding: "1rem", overflowX: "auto", fontSize: ".76rem", whiteSpace: "pre" }}
-              >
-                {file.patch ?? "Binary file or patch unavailable."}
-              </pre>
+              {file.patch ? (
+                <DiffText patch={file.patch} />
+              ) : (
+                <div style={{ padding: "1rem", color: "var(--color-fg-muted)" }}>
+                  Binary file or patch unavailable.
+                </div>
+              )}
             </Box>
           ))}
         </div>
@@ -2182,10 +2526,16 @@ export function RepoFilePage() {
   const ref = params.ref ?? "";
   const path = params["*"] ?? "";
   const counts = useOpenCounts(owner, repo);
+  const location = useLocation();
   const query = useQuery<GithubContentFile>({
     queryKey: ["file", owner, repo, ref, path],
     queryFn: () => fetchRepoFile(owner, repo, path, ref),
     enabled: !!owner && !!repo && !!ref && !!path,
+  });
+  const { data: branchList = [] } = useQuery({
+    queryKey: ["branches", owner, repo],
+    queryFn: () => fetchRepoBranches(owner, repo),
+    enabled: !!owner && !!repo,
   });
   const qc = useQueryClient();
   const navigate = useNavigate();
@@ -2194,13 +2544,15 @@ export function RepoFilePage() {
   const [message, setMessage] = useState("");
   const [copied, setCopied] = useState(false);
   // "Copy permalink" pins the URL to the ref's current commit SHA (github.com's
-  // `y` shortcut), so the link keeps pointing at this exact revision.
+  // `y` shortcut), so the link keeps pointing at this exact revision. The
+  // current #L… selection rides along.
   const copyPermalink = async () => {
     try {
       const commits = await fetchRepoCommits(owner, repo, { sha: ref, perPage: 1 });
       const sha = commits[0]?.sha ?? ref;
+      const hash = parseLineHash(location.hash) ? location.hash : "";
       await navigator.clipboard.writeText(
-        `${window.location.origin}/ui/repos/${owner}/${repo}/blob/${sha}/${path}`,
+        `${window.location.origin}/ui/repos/${owner}/${repo}/blob/${sha}/${path}${hash}`,
       );
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1500);
@@ -2236,26 +2588,23 @@ export function RepoFilePage() {
     return <InlineError title={`Failed to load ${path}`} detail={String(query.error)} />;
   }
 
-  let content: string;
-  try {
-    content = decodeContentsBase64(query.data.content);
-  } catch (error) {
-    return <InlineError title={`Could not decode ${path}`} detail={String(error)} />;
-  }
+  // null means the bytes are not UTF-8 text (image or other binary); the
+  // BlobContent viewer picks the right rendering, and text-only affordances
+  // (Raw, Edit) hide themselves.
+  const content = decodeBlobText(query.data.content);
 
   return (
     <div>
       <RepoHeader owner={owner} repo={repo} active="code" {...counts} />
       <div className="mb-4 flex flex-wrap items-center gap-2" style={{ fontSize: ".84rem" }}>
-        <Link
-          to={`/ui/repos/${owner}/${repo}`}
-          style={{ color: "var(--color-accent)", textDecoration: "none" }}
-        >
-          {owner}/{repo}
-        </Link>
-        <span style={{ color: "var(--color-fg-muted)" }}>/</span>
-        <span className="font-mono">{path}</span>
-        <span style={{ color: "var(--color-fg-muted)" }}>on {ref}</span>
+        <RefSwitcher
+          owner={owner}
+          repo={repo}
+          current={ref}
+          branches={branchList.map((b) => b.name)}
+          onSelect={(nextRef) => navigate(repoCodeRoute(owner, repo, { kind: "blob", ref: nextRef, path }))}
+        />
+        <PathBreadcrumbs owner={owner} repo={repo} gitRef={ref} path={path} />
       </div>
       <Box
         header={
@@ -2267,6 +2616,7 @@ export function RepoFilePage() {
             </span>
             {!editing && (
               <>
+                {content !== null && (
                 <Button
                   size="sm"
                   aria-label="View raw file"
@@ -2280,6 +2630,7 @@ export function RepoFilePage() {
                 >
                   Raw
                 </Button>
+                )}
                 <ButtonLink size="sm" to={`/ui/repos/${owner}/${repo}/commits?path=${encodeURIComponent(path)}&sha=${encodeURIComponent(ref)}`}>
                   History
                 </ButtonLink>
@@ -2289,6 +2640,7 @@ export function RepoFilePage() {
                 <Button size="sm" onClick={copyPermalink}>
                   {copied ? "Copied!" : "Copy permalink"}
                 </Button>
+                {content !== null && (
                 <Button
                   size="sm"
                   onClick={() => {
@@ -2299,6 +2651,7 @@ export function RepoFilePage() {
                 >
                   Edit
                 </Button>
+                )}
                 <Button
                   size="sm"
                   aria-label="Delete file"
@@ -2357,20 +2710,12 @@ export function RepoFilePage() {
             </DialogActions>
           </div>
         ) : (
-          <pre
-            className="font-mono"
-            style={{
-              margin: 0,
-              padding: "1rem",
-              overflowX: "auto",
-              fontSize: ".8rem",
-              lineHeight: 1.55,
-              whiteSpace: "pre",
-              background: "var(--color-surface)",
-            }}
-          >
-            {content}
-          </pre>
+          <BlobContent
+            path={path}
+            name={query.data.name || path.split("/").pop() || path}
+            base64={query.data.content}
+            size={query.data.size}
+          />
         )}
       </Box>
       <MutationError of={deleteMut} />
@@ -2502,85 +2847,197 @@ function BranchesList({
     </Modal>
   );
 
+  // Head commits for every branch (author + date), concurrency-capped and
+  // cached; used both for the row metadata and the Active/Stale bucketing.
+  const headsQ = useQuery({
+    queryKey: ["branch-heads", owner, repo, branches.map((b) => b.commit.sha).join(",")],
+    queryFn: async () => {
+      const entries = await Promise.all(
+        branches.map(async (b) => {
+          try {
+            return [b.name, await commitBySha(owner, repo, b.commit.sha)] as const;
+          } catch {
+            return [b.name, null] as const;
+          }
+        }),
+      );
+      return new Map(entries);
+    },
+    enabled: branches.length > 0,
+    staleTime: 60_000,
+  });
+  const heads = headsQ.data;
+
   if (branches.length === 0) return <Blankslate icon={<BranchIcon size={26} />} title="No branches" />;
+
+  // GitHub's branches page: Default / Active / Stale (no commit in 3 months).
+  const staleCutoff = Date.now() - 90 * 24 * 3600 * 1000;
+  const defaultRows = branches.filter((b) => b.name === defaultBranch);
+  const rest = branches.filter((b) => b.name !== defaultBranch);
+  const isStale = (name: string) => {
+    const date = heads?.get(name)?.commit.author?.date;
+    return !!date && new Date(date).getTime() < staleCutoff;
+  };
+  const sections: { title: string; rows: GithubBranch[] }[] = [
+    { title: "Default", rows: defaultRows },
+    { title: "Active branches", rows: rest.filter((b) => !isStale(b.name)) },
+    { title: "Stale branches", rows: rest.filter((b) => isStale(b.name)) },
+  ].filter((s) => s.rows.length > 0);
+
   return (
     <>
       <div className="mb-3 flex justify-end">{newBranchButton}</div>
       {newBranchModal}
       <MutationError of={deleteMut} />
-    <Box>
-      {branches.map((b, i) => (
-        <div
-          key={b.name}
-          className="flex items-center gap-3"
-          style={{
-            padding: "0.65rem 1rem",
-            borderBottom: i < branches.length - 1 ? "1px solid var(--color-border)" : "none",
-          }}
-        >
-          <BranchIcon size={14} style={{ color: "var(--color-fg-muted)" }} />
-          <span className="font-mono" style={{ fontSize: "0.85rem", fontWeight: 500, flex: 1 }}>
-            {b.name}
-            {b.name === defaultBranch && (
-              <span
-                style={{
-                  marginLeft: "0.6rem",
-                  fontSize: "0.72rem",
-                  fontWeight: 600,
-                  color: "var(--color-accent)",
-                  border: "1px solid var(--color-accent)",
-                  borderRadius: "2rem",
-                  padding: "0.05rem 0.5rem",
-                }}
-              >
-                default
-              </span>
-            )}
-            {b.protected && (
-              <Link
-                to={`/ui/repos/${owner}/${repo}/settings/branch-protection`}
-                style={{
-                  marginLeft: "0.45rem",
-                  fontSize: "0.72rem",
-                  fontWeight: 600,
-                  color: "var(--color-success-fg)",
-                  textDecoration: "none",
-                }}
-              >
-                protected
-              </Link>
-            )}
-          </span>
-          <span className="font-mono" style={{ fontSize: "0.74rem", color: "var(--color-fg-muted)" }}>
-            {b.commit.sha.slice(0, 7)}
-          </span>
-          {b.name !== defaultBranch && (
-            <Link
-              to={repoCodeRoute(owner, repo, { kind: "compare", base: defaultBranch, head: b.name })}
-              style={{ color: "var(--color-accent)", fontSize: "0.78rem", textDecoration: "none" }}
-            >
-              Compare
-            </Link>
-          )}
-          {b.name !== defaultBranch && !b.protected && (
-            <Button
-              size="sm"
-              variant="danger"
-              aria-label={`Delete branch ${b.name}`}
-              disabled={deleteMut.isPending}
-              onClick={async () => {
-                if (await confirmAction(`Delete branch "${b.name}"?`, { title: "Delete branch", confirmLabel: "Delete" })) {
-                  deleteMut.mutate(b.name);
-                }
-              }}
-            >
-              Delete
-            </Button>
-          )}
-        </div>
-      ))}
-    </Box>
+      <div className="flex flex-col gap-4">
+        {sections.map((section) => (
+          <section key={section.title} aria-label={section.title}>
+            <div className="mb-1.5" style={{ fontSize: "0.8rem", fontWeight: 600, color: "var(--color-fg-muted)" }}>
+              {section.title}
+            </div>
+            <Box>
+              {section.rows.map((b, i) => (
+                <BranchRow
+                  key={b.name}
+                  owner={owner}
+                  repo={repo}
+                  branch={b}
+                  head={heads?.get(b.name) ?? null}
+                  defaultBranch={defaultBranch}
+                  isLast={i === section.rows.length - 1}
+                  deletePending={deleteMut.isPending}
+                  onDelete={async () => {
+                    if (await confirmAction(`Delete branch "${b.name}"?`, { title: "Delete branch", confirmLabel: "Delete" })) {
+                      deleteMut.mutate(b.name);
+                    }
+                  }}
+                />
+              ))}
+            </Box>
+          </section>
+        ))}
+      </div>
     </>
+  );
+}
+
+function BranchRow({
+  owner,
+  repo,
+  branch: b,
+  head,
+  defaultBranch,
+  isLast,
+  deletePending,
+  onDelete,
+}: {
+  owner: string;
+  repo: string;
+  branch: GithubBranch;
+  head: GithubCommit | null;
+  defaultBranch: string;
+  isLast: boolean;
+  deletePending: boolean;
+  onDelete: () => void;
+}) {
+  const isDefault = b.name === defaultBranch;
+  // Ahead/behind vs the default branch, computed lazily per rendered row and
+  // cached (cachedMeta), so the fan-out stays bounded.
+  const cmpQ = useQuery({
+    queryKey: ["branch-ahead-behind", owner, repo, defaultBranch, b.name],
+    queryFn: () => aheadBehind(owner, repo, defaultBranch, b.name),
+    enabled: !isDefault && !!defaultBranch,
+    staleTime: 60_000,
+  });
+  const authorLogin = head?.author?.login ?? head?.commit.author?.name;
+  return (
+    <div
+      className="flex flex-wrap items-center gap-3"
+      style={{
+        padding: "0.65rem 1rem",
+        borderBottom: isLast ? "none" : "1px solid var(--color-border)",
+      }}
+    >
+      <BranchIcon size={14} style={{ color: "var(--color-fg-muted)" }} />
+      <span className="font-mono min-w-0" style={{ fontSize: "0.85rem", fontWeight: 500, flex: "1 1 12rem" }}>
+        {b.name}
+        {isDefault && (
+          <span
+            style={{
+              marginLeft: "0.6rem",
+              fontSize: "0.72rem",
+              fontWeight: 600,
+              color: "var(--color-accent)",
+              border: "1px solid var(--color-accent)",
+              borderRadius: "2rem",
+              padding: "0.05rem 0.5rem",
+            }}
+          >
+            default
+          </span>
+        )}
+        {b.protected && (
+          <Link
+            to={`/ui/repos/${owner}/${repo}/settings/branch-protection`}
+            style={{
+              marginLeft: "0.45rem",
+              fontSize: "0.72rem",
+              fontWeight: 600,
+              color: "var(--color-success-fg)",
+              textDecoration: "none",
+            }}
+          >
+            protected
+          </Link>
+        )}
+      </span>
+      <span className="inline-flex items-center gap-1.5" style={{ fontSize: "0.76rem", color: "var(--color-fg-muted)" }}>
+        {authorLogin ? (
+          <>
+            <Avatar login={authorLogin} src={head?.author?.avatar_url} size={16} />
+            <span>{authorLogin}</span>
+            <RelativeTime iso={head?.commit.author?.date} />
+          </>
+        ) : (
+          <span aria-hidden>—</span>
+        )}
+      </span>
+      {!isDefault && (
+        <span className="tabular-nums" style={{ fontSize: "0.76rem", color: "var(--color-fg-muted)", whiteSpace: "nowrap" }}>
+          {cmpQ.data ? `${cmpQ.data.ahead} ahead · ${cmpQ.data.behind} behind` : <span aria-hidden>—</span>}
+        </span>
+      )}
+      <span className="font-mono" style={{ fontSize: "0.74rem", color: "var(--color-fg-muted)" }}>
+        {b.commit.sha.slice(0, 7)}
+      </span>
+      {!isDefault && (
+        <Link
+          to={repoCodeRoute(owner, repo, { kind: "compare", base: defaultBranch, head: b.name })}
+          style={{ color: "var(--color-accent)", fontSize: "0.78rem", textDecoration: "none", display: "inline-block", lineHeight: "1.625rem" }}
+        >
+          Compare
+        </Link>
+      )}
+      {!isDefault && (
+        <ButtonLink
+          size="sm"
+          to={repoCodeRoute(owner, repo, { kind: "compare", base: defaultBranch, head: b.name })}
+        >
+          New pull request
+        </ButtonLink>
+      )}
+      {!isDefault && !b.protected && (
+        <Button
+          size="sm"
+          variant="danger"
+          aria-label={`Delete branch ${b.name}`}
+          disabled={deletePending}
+          onClick={onDelete}
+        >
+          Delete
+        </Button>
+      )}
+    </div>
   );
 }
 
@@ -2601,6 +3058,12 @@ function TagsList({
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [source, setSource] = useState(defaultBranch);
+  // A tag with a same-named release links through to it (GitHub's tag list).
+  const { data: releases = [] } = useQuery({
+    queryKey: ["releases", owner, repo],
+    queryFn: () => fetchReleases(owner, repo),
+    enabled: !!owner && !!repo,
+  });
   const createMut = useMutation({
     mutationFn: () => {
       const sha = branches.find((b) => b.name === source)?.commit.sha ?? "";
@@ -2672,50 +3135,101 @@ function TagsList({
       ) : (
     <Box>
       {tags.map((t, i) => (
-        <div
+        <TagRow
           key={t.name}
-          className="flex items-center gap-3"
-          style={{
-            padding: "0.65rem 1rem",
-            borderBottom: i < tags.length - 1 ? "1px solid var(--color-border)" : "none",
+          owner={owner}
+          repo={repo}
+          tag={t}
+          release={releases.find((r) => r.tag_name === t.name)}
+          isLast={i === tags.length - 1}
+          deletePending={deleteMut.isPending}
+          onDelete={async () => {
+            if (await confirmAction(`Delete tag "${t.name}"?`, { title: "Delete tag", confirmLabel: "Delete" })) {
+              deleteMut.mutate(t.name);
+            }
           }}
-        >
-          <TagIcon size={14} style={{ color: "var(--color-fg-muted)" }} />
-          <span className="font-mono" style={{ fontSize: "0.85rem", fontWeight: 500, flex: 1 }}>
-            {t.name}
-          </span>
-          <span className="font-mono" style={{ fontSize: "0.74rem", color: "var(--color-fg-muted)" }}>
-            {t.commit.sha.slice(0, 7)}
-          </span>
-          <a
-            href={t.zipball_url}
-            style={{ fontSize: "0.78rem", color: "var(--color-accent)", textDecoration: "none" }}
-          >
-            zip
-          </a>
-          <a
-            href={t.tarball_url}
-            style={{ fontSize: "0.78rem", color: "var(--color-accent)", textDecoration: "none" }}
-          >
-            tar.gz
-          </a>
-          <Button
-            size="sm"
-            variant="danger"
-            aria-label={`Delete tag ${t.name}`}
-            disabled={deleteMut.isPending}
-            onClick={async () => {
-              if (await confirmAction(`Delete tag "${t.name}"?`, { title: "Delete tag", confirmLabel: "Delete" })) {
-                deleteMut.mutate(t.name);
-              }
-            }}
-          >
-            Delete
-          </Button>
-        </div>
+        />
       ))}
     </Box>
       )}
     </>
+  );
+}
+
+const smallLink = {
+  fontSize: "0.78rem",
+  color: "var(--color-accent)",
+  textDecoration: "none",
+  display: "inline-block",
+  lineHeight: "1.625rem",
+} as const;
+
+function TagRow({
+  owner,
+  repo,
+  tag: t,
+  release,
+  isLast,
+  deletePending,
+  onDelete,
+}: {
+  owner: string;
+  repo: string;
+  tag: GithubTag;
+  release: GithubRelease | undefined;
+  isLast: boolean;
+  deletePending: boolean;
+  onDelete: () => void;
+}) {
+  // The tags REST payload carries only the commit sha; GitHub's tag list also
+  // shows when the tagged commit landed, so resolve it (capped + cached).
+  const commitQ = useQuery({
+    queryKey: ["tag-commit", owner, repo, t.commit.sha],
+    queryFn: () => commitBySha(owner, repo, t.commit.sha),
+    staleTime: 5 * 60_000,
+  });
+  return (
+    <div
+      className="flex flex-wrap items-center gap-3"
+      style={{
+        padding: "0.65rem 1rem",
+        borderBottom: isLast ? "none" : "1px solid var(--color-border)",
+      }}
+    >
+      <TagIcon size={14} style={{ color: "var(--color-fg-muted)" }} />
+      <span className="font-mono min-w-0" style={{ fontSize: "0.85rem", fontWeight: 500, flex: "1 1 10rem" }}>
+        {t.name}
+      </span>
+      <span style={{ fontSize: "0.76rem", color: "var(--color-fg-muted)", whiteSpace: "nowrap" }}>
+        {commitQ.data ? <RelativeTime iso={commitQ.data.commit.author?.date} /> : <span aria-hidden>—</span>}
+      </span>
+      <Link
+        to={`/ui/repos/${owner}/${repo}/commits/${t.commit.sha}`}
+        className="font-mono"
+        style={{ ...smallLink, fontSize: "0.74rem", color: "var(--color-fg-muted)" }}
+      >
+        {t.commit.sha.slice(0, 7)}
+      </Link>
+      {release && (
+        <Link to={`/ui/repos/${owner}/${repo}/releases/${release.id}`} style={smallLink}>
+          Release
+        </Link>
+      )}
+      <a href={t.zipball_url} style={smallLink}>
+        zip
+      </a>
+      <a href={t.tarball_url} style={smallLink}>
+        tar.gz
+      </a>
+      <Button
+        size="sm"
+        variant="danger"
+        aria-label={`Delete tag ${t.name}`}
+        disabled={deletePending}
+        onClick={onDelete}
+      >
+        Delete
+      </Button>
+    </div>
   );
 }

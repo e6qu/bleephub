@@ -80,6 +80,8 @@ type Issue struct {
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 	ClosedAt         *time.Time
+	PinnedAt         *time.Time // non-nil while pinned to the repo issues list; doubles as the pin order
+	PinnedByID       int        // user who pinned the issue; 0 when not pinned
 }
 
 // Comment represents a conversation comment on an issue or PR. Real
@@ -675,9 +677,10 @@ func (st *Store) CreateIssue(repoID, authorID int, title, body string, labelIDs,
 	return issue
 }
 
-// indexIssueLocked records the issue in the per-repo secondary index so
+// indexIssueLocked records the issue in the per-repo secondary indexes so
 // GetIssueByNumber and ListIssues resolve in O(issues-in-repo) instead of a
-// full scan of every issue in the store. Caller holds st.Mu.
+// full scan of every issue in the store, and the creation-ordered listing
+// needs no per-request sort. Caller holds st.Mu.
 func (st *Store) indexIssueLocked(issue *Issue) {
 	m := st.IssuesByRepo[issue.RepoID]
 	if m == nil {
@@ -685,9 +688,25 @@ func (st *Store) indexIssueLocked(issue *Issue) {
 		st.IssuesByRepo[issue.RepoID] = m
 	}
 	m[issue.Number] = issue
+	// Keep the per-repo creation-order slice sorted by (CreatedAt, Number)
+	// ascending. Insertion sorts because the load path replays issues in
+	// arbitrary bucket-key order; live creation appends at the end in O(1)
+	// comparisons. Both keys are immutable after creation and issues never
+	// change repos, so the slice never needs re-sorting.
+	order := st.IssueOrderByRepo[issue.RepoID]
+	pos := sort.Search(len(order), func(i int) bool {
+		if !order[i].CreatedAt.Equal(issue.CreatedAt) {
+			return order[i].CreatedAt.After(issue.CreatedAt)
+		}
+		return order[i].Number > issue.Number
+	})
+	order = append(order, nil)
+	copy(order[pos+1:], order[pos:])
+	order[pos] = issue
+	st.IssueOrderByRepo[issue.RepoID] = order
 }
 
-// unindexIssueLocked removes the issue from the per-repo secondary index.
+// unindexIssueLocked removes the issue from the per-repo secondary indexes.
 // Caller holds st.Mu.
 func (st *Store) unindexIssueLocked(issue *Issue) {
 	if m := st.IssuesByRepo[issue.RepoID]; m != nil {
@@ -695,6 +714,16 @@ func (st *Store) unindexIssueLocked(issue *Issue) {
 		if len(m) == 0 {
 			delete(st.IssuesByRepo, issue.RepoID)
 		}
+	}
+	order := st.IssueOrderByRepo[issue.RepoID]
+	for i, existing := range order {
+		if existing.Number == issue.Number {
+			st.IssueOrderByRepo[issue.RepoID] = append(order[:i], order[i+1:]...)
+			break
+		}
+	}
+	if len(st.IssueOrderByRepo[issue.RepoID]) == 0 {
+		delete(st.IssueOrderByRepo, issue.RepoID)
 	}
 }
 
@@ -718,6 +747,10 @@ func cloneIssue(i *Issue) *Issue {
 		closed := *i.ClosedAt
 		clone.ClosedAt = &closed
 	}
+	if i.PinnedAt != nil {
+		pinned := *i.PinnedAt
+		clone.PinnedAt = &pinned
+	}
 	return &clone
 }
 
@@ -734,19 +767,41 @@ func (st *Store) GetIssueByNumber(repoID, number int) *Issue {
 	return cloneIssue(st.IssuesByRepo[repoID][number])
 }
 
-// ListIssues returns issues for a repository, optionally filtered by state.
-// State filter matches "OPEN"/"CLOSED"; empty or "all" returns all.
-func (st *Store) ListIssues(repoID int, state string) []*Issue {
-	st.Mu.RLock()
-	defer st.Mu.RUnlock()
-	var issues []*Issue
-	for _, issue := range st.IssuesByRepo[repoID] {
-		if state != "" && state != "all" {
-			if issue.State != state {
-				continue
-			}
+// listIssuesOrderedLocked returns the repo's live issue pointers filtered by
+// state, in (CreatedAt, Number) ascending order via the maintained per-repo
+// order index. Caller holds st.Mu and must detach before returning results.
+func (st *Store) listIssuesOrderedLocked(repoID int, state string) []*Issue {
+	order := st.IssueOrderByRepo[repoID]
+	issues := make([]*Issue, 0, len(order))
+	for _, issue := range order {
+		if state != "" && state != "all" && issue.State != state {
+			continue
 		}
 		issues = append(issues, issue)
+	}
+	return issues
+}
+
+// ListIssues returns issues for a repository, optionally filtered by state,
+// ordered oldest-created first (number tie-break).
+// State filter matches "OPEN"/"CLOSED"; empty or "all" returns all.
+func (st *Store) ListIssues(repoID int, state string) []*Issue {
+	return st.ListIssuesOrderedByCreation(repoID, state, false)
+}
+
+// ListIssuesOrderedByCreation returns issues for a repository filtered by
+// state and ordered by creation time with the per-repo issue number as the
+// tie-break — ascending, or descending (GitHub's default listing order) when
+// desc is true. The order comes from the maintained per-repo index, so no
+// per-request sort happens. Results are detached snapshots (STORE-021).
+func (st *Store) ListIssuesOrderedByCreation(repoID int, state string, desc bool) []*Issue {
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
+	issues := st.listIssuesOrderedLocked(repoID, state)
+	if desc {
+		for i, j := 0, len(issues)-1; i < j; i, j = i+1, j-1 {
+			issues[i], issues[j] = issues[j], issues[i]
+		}
 	}
 	return snapshotIssues(issues)
 }
@@ -1041,6 +1096,198 @@ func (st *Store) UnlockIssue(repoKey string, issueNumber int) bool {
 		panic(&PersistenceFailure{Op: "batch", Bucket: "issues", Key: strconv.Itoa(issue.ID), Err: err})
 	}
 	return true
+}
+
+// MaxPinnedIssuesPerRepo mirrors GitHub's cap on issues pinned to a
+// repository's issues list.
+const MaxPinnedIssuesPerRepo = 3
+
+// PinIssue pins an issue to its repository's issues list on behalf of actorID.
+// Pinning an already-pinned issue is a no-op. GitHub caps pinned issues at
+// three per repository; the count is checked and the pin applied under one
+// lock so two concurrent pins cannot both squeeze under the cap.
+func (st *Store) PinIssue(issueID, actorID int) error {
+	st.Mu.Lock()
+	defer st.Mu.Unlock()
+	issue, ok := st.Issues[issueID]
+	if !ok {
+		return fmt.Errorf("issue does not exist")
+	}
+	if issue.PinnedAt != nil {
+		return nil
+	}
+	pinned := 0
+	for _, other := range st.IssuesByRepo[issue.RepoID] {
+		if other.PinnedAt != nil {
+			pinned++
+		}
+	}
+	if pinned >= MaxPinnedIssuesPerRepo {
+		return fmt.Errorf("cannot pin more than %d issues to a repository", MaxPinnedIssuesPerRepo)
+	}
+	now := st.CurrentTime()
+	issue.PinnedAt = &now
+	issue.PinnedByID = actorID
+	issue.UpdatedAt = now
+	// One transaction: the issue row and its "pinned" event commit together
+	// (STORE-001/002).
+	batch := NewPersistBatch(st.Persist)
+	batch.Put("issues", strconv.Itoa(issue.ID), issue)
+	st.recordIssueEventBatchLocked(batch, issue.RepoID, issue.ID, actorID, "pinned")
+	if err := batch.Commit(); err != nil {
+		panic(&PersistenceFailure{Op: "batch", Bucket: "issues", Key: strconv.Itoa(issue.ID), Err: err})
+	}
+	return nil
+}
+
+// UnpinIssue clears an issue's pinned state on behalf of actorID. It reports
+// whether the issue had been pinned; unpinning an unpinned issue is a no-op
+// (mirroring removeReaction's idempotence). A missing issue reports false.
+func (st *Store) UnpinIssue(issueID, actorID int) bool {
+	st.Mu.Lock()
+	defer st.Mu.Unlock()
+	issue, ok := st.Issues[issueID]
+	if !ok || issue.PinnedAt == nil {
+		return false
+	}
+	issue.PinnedAt = nil
+	issue.PinnedByID = 0
+	issue.UpdatedAt = st.CurrentTime()
+	// One transaction: the issue row and its "unpinned" event commit together
+	// (STORE-001/002).
+	batch := NewPersistBatch(st.Persist)
+	batch.Put("issues", strconv.Itoa(issue.ID), issue)
+	st.recordIssueEventBatchLocked(batch, issue.RepoID, issue.ID, actorID, "unpinned")
+	if err := batch.Commit(); err != nil {
+		panic(&PersistenceFailure{Op: "batch", Bucket: "issues", Key: strconv.Itoa(issue.ID), Err: err})
+	}
+	return true
+}
+
+// ListPinnedIssues returns the repository's pinned issues in pin order
+// (oldest pin first, the order GitHub shows them).
+func (st *Store) ListPinnedIssues(repoID int) []*Issue {
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
+	var issues []*Issue
+	for _, issue := range st.IssuesByRepo[repoID] {
+		if issue.PinnedAt != nil {
+			issues = append(issues, issue)
+		}
+	}
+	sort.Slice(issues, func(i, j int) bool {
+		if !issues[i].PinnedAt.Equal(*issues[j].PinnedAt) {
+			return issues[i].PinnedAt.Before(*issues[j].PinnedAt)
+		}
+		return issues[i].ID < issues[j].ID
+	})
+	return snapshotIssues(issues)
+}
+
+// DeleteIssue removes an issue and everything parented to it — comments (and
+// their reactions), timeline events, sub-issue links, blocked-by references,
+// project items, field values, notification threads, and the issue's own
+// reactions — in one transaction (STORE-001/002).
+func (st *Store) DeleteIssue(issueID int) bool {
+	st.Mu.Lock()
+	defer st.Mu.Unlock()
+	issue, ok := st.Issues[issueID]
+	if !ok {
+		return false
+	}
+	batch := NewPersistBatch(st.Persist)
+	delete(st.Issues, issueID)
+	st.unindexIssueLocked(issue)
+	batch.Delete("issues", strconv.Itoa(issueID))
+	// The zero repoID keeps the cascade's repo-wide event sweep inert (no
+	// event carries RepoID 0); the issue-scoped clauses do all the work.
+	st.deleteRepoIssueAndPullChildrenLocked(batch, 0, map[int]bool{issueID: true}, nil)
+	if err := batch.Commit(); err != nil {
+		panic(&PersistenceFailure{Op: "batch", Bucket: "issues", Key: strconv.Itoa(issueID), Err: err})
+	}
+	return true
+}
+
+// TransferIssue moves an issue into targetRepoID, allocating the target
+// repository's next issue number the same way CreateIssue does. Labels are
+// re-matched by name in the target repository (created there when
+// createLabelsIfMissing, dropped otherwise), the milestone and pinned state do
+// not follow the issue, and the issue's existing timeline events are re-homed
+// so its history survives the move. Returns the moved issue, or nil when the
+// issue or target repository is missing or the target is the issue's own
+// repository.
+func (st *Store) TransferIssue(issueID, targetRepoID, actorID int, createLabelsIfMissing bool) *Issue {
+	st.Mu.Lock()
+	defer st.Mu.Unlock()
+	issue, ok := st.Issues[issueID]
+	if !ok {
+		return nil
+	}
+	target := st.Repos[targetRepoID]
+	if target == nil || target.ID == issue.RepoID {
+		return nil
+	}
+	batch := NewPersistBatch(st.Persist)
+	// Labels belong to a repository, so the source repo's label IDs must not
+	// travel: re-match by name against the target's labels.
+	newLabelIDs := []int{}
+	for _, lid := range issue.LabelIDs {
+		src := st.Labels[lid]
+		if src == nil {
+			continue
+		}
+		var match *IssueLabel
+		for _, l := range st.Labels {
+			if l.RepoID == target.ID && l.Name == src.Name {
+				match = l
+				break
+			}
+		}
+		if match == nil && createLabelsIfMissing {
+			match = &IssueLabel{
+				ID:          st.NextLabel,
+				NodeID:      fmt.Sprintf("LA_kgDO%08d", st.NextLabel),
+				RepoID:      target.ID,
+				Name:        src.Name,
+				Description: src.Description,
+				Color:       src.Color,
+				CreatedAt:   st.CurrentTime(),
+			}
+			st.NextLabel++
+			st.Labels[match.ID] = match
+			batch.Put("labels", strconv.Itoa(match.ID), match)
+		}
+		if match != nil {
+			newLabelIDs = append(newLabelIDs, match.ID)
+		}
+	}
+	oldRepoID := issue.RepoID
+	st.unindexIssueLocked(issue)
+	issue.RepoID = target.ID
+	issue.Number = target.NextIssueNumber
+	target.NextIssueNumber++
+	issue.LabelIDs = newLabelIDs
+	issue.MilestoneID = 0 // milestones are per-repo and do not follow the issue
+	issue.PinnedAt = nil  // GitHub unpins on transfer
+	issue.PinnedByID = 0
+	issue.UpdatedAt = st.CurrentTime()
+	st.indexIssueLocked(issue)
+	// Re-home the existing timeline so per-issue event listings (filtered by
+	// RepoID) keep showing the issue's history after the move.
+	for _, e := range st.IssueEvents {
+		if e.ParentType == "issue" && e.IssueID == issue.ID && e.RepoID == oldRepoID {
+			e.RepoID = target.ID
+			batch.Put("issue_events", strconv.Itoa(e.ID), e)
+		}
+	}
+	// One transaction: the moved issue row, its re-homed events, any created
+	// labels, and the "transferred" event commit together (STORE-001/002).
+	batch.Put("issues", strconv.Itoa(issue.ID), issue)
+	st.recordIssueEventBatchLocked(batch, target.ID, issue.ID, actorID, "transferred")
+	if err := batch.Commit(); err != nil {
+		panic(&PersistenceFailure{Op: "batch", Bucket: "issues", Key: strconv.Itoa(issue.ID), Err: err})
+	}
+	return cloneIssue(issue)
 }
 
 // ListIssueComments returns all conversation comments for the issue with the

@@ -1,5 +1,42 @@
 # PLAN — GitHub UX-parity gaps & production performance
 
+## Outcome (implemented 2026-08-19, same PR)
+
+Everything below was implemented in this PR except the explicitly-listed carve-outs. Verified by:
+whole-tree typecheck clean, 878 vitest tests green, full Go suite green apart from the documented
+local MinIO/OOM environment flakes, the Playwright e2e suite, and a live seeded walkthrough
+re-measurement.
+
+**Live re-measurements after the fix:**
+- Entry JS wire size 163.8 KB → **37.3 KB** (gzip + `Cache-Control: immutable` on hashed assets,
+  ETag+304 on the shell and API; `vendor-yaml` and the new `vendor-hljs` are lazy chunks).
+- First-load API fan-out: repo home 16 → **8**, insights 23 → **8**, issue detail 17 → **14**,
+  PR detail 22 → **16** (cold full-page loads; warm SPA navigations are lower because the
+  `/ui-data/bootstrap/*` aggregates seed the query cache), via 5 new aggregate endpoints whose
+  sub-payloads are byte-identical to the standalone endpoints.
+- Issues list at 10k issues: **210 ms → 2.3 ms** per request (per-repo sorted index; the dominant
+  cost was serializing every issue per request, now only the paginated page renders).
+- Browser sessions no longer consume the core REST budget (P3); search stays 30/min with UI
+  debounce and a friendly retry state.
+
+**Carve-outs (not implemented, with reasons):**
+- No public GitHub API exists (official-schema/route ratchets forbid inventing them):
+  convert-issue-to-discussion (G28 part), pinned discussions (G35 part), commit-suggestion
+  apply (G40, render-only), auto-merge (G33 part — no `enablePullRequestAutoMerge` server-side).
+- Server capability gaps kept honest in the UI instead of dead controls: branch-protection
+  patterns match exact names only (G71, stated in the form), `require_last_push_approval` /
+  `lock_branch` / required-deployments not in the BP handler (G83 part), PR files whitespace
+  toggle (G43 part), classic-PAT expiry (no field on the legacy authorizations API), advisory
+  credits (server emits empty), package download counts (absent from the payload), achievements
+  (G67 part, needs a server feature), tag protection (no server surface).
+- Accepted deviations, documented: the repo sub-tab row (G9), the gradient header (G10),
+  breadcrumb placement (G57), 4-toggle notification settings (G102), `/ui/repos/:owner/:repo`
+  URL namespace. 2FA is relabeled as a simulated flag rather than growing a fake TOTP flow (G91)
+  because production auth is delegated to the SSO IdP.
+
+_The sections below are the original audit, kept for reference; the Section-3 numbers are the
+**pre-fix** baseline._
+
 _2026-08-19. Sources: a code-level audit of all 62 `/ui` pages against github.com journeys
 (every "missing" claim re-verified by reading the component and grepping all of `web/src`),
 a live walkthrough of a freshly built binary seeded with an org, two users, a repo with 11
@@ -192,8 +229,10 @@ Writes: 1,000 issue creations, 8-way parallel: **1.07 s wall ≈ 940 writes/s**.
 - **No cache headers on hashed assets**: `/ui/assets/*-{hash}.js` carries no
   `Cache-Control`/`ETag`/`Last-Modified` — every visit re-downloads everything. (The emoji
   handler already sets `public, max-age=31536000, immutable`, so the precedent exists.)
-- **CloudFront is configured with the `caching_disabled` policy** (terraform/main.tf:665-689),
-  so the edge amplifies rather than absorbs both problems.
+- **No edge layer compensates**: the app is fronted by API Gateway (HTTP API → VPC link →
+  ECS), which neither compresses nor caches; the CloudFront distribution in terraform serves
+  only the static startup document (its `caching_disabled` policy is correct for that), so
+  every asset byte comes from the origin, uncompressed, on every visit.
 - API responses carry no `ETag` → TanStack Query refetches always pay full payloads (GitHub
   serves ETags and 304s).
 - Local FCP 16–28 ms; per-navigation wall time dominated by API fan-out, not paint.
@@ -211,7 +250,7 @@ views/hour per user** before the UI starts seeing 403s; the search page burns th
 
 | # | Priority | Work | Acceptance |
 |---|---|---|---|
-| P1 | **P0 — delivery** | Serve embedded assets precompressed (gzip at embed-build time; zstd optional) with `Content-Encoding` negotiation; add `Cache-Control: public, max-age=31536000, immutable` to hashed `/ui/assets/*`, `no-cache` + `ETag` on the shell; enable gzip for JSON API responses above ~1 kB. Flip CloudFront to a caching-enabled policy for `/ui/assets/*` (+ `compress = true`) while keeping API/`/ui` shell uncached. | Entry JS travels ≤ 40 kB wire; repeat visit re-downloads zero asset bytes; terraform tests updated. |
+| P1 | **P0 — delivery** | Serve embedded assets precompressed (gzip at embed-build time; zstd optional) with `Content-Encoding` negotiation; add `Cache-Control: public, max-age=31536000, immutable` to hashed `/ui/assets/*`, `no-cache` + `ETag` on the shell; enable gzip for JSON API responses above ~1 kB. (The app sits behind API Gateway, which passes these headers through — the origin is the whole fix; the terraform CloudFront distribution only serves the startup document and stays as-is.) | Entry JS travels ≤ 40 kB wire; repeat visit re-downloads zero asset bytes. |
 | P2 | **P0 — fan-out** | Per-page bootstrap endpoints under `/ui-data` (auto-authed, exempt from the `/api/v3` route gates) for the worst pages: repo-home, issue-detail, PR-detail, insights — one round trip returning what the page's queries need; keep TanStack keys, hydrate from the bundle. Add `ETag`/`If-None-Match` to hot REST GETs so refetches 304. | Repo home ≤ 4 requests, PR detail ≤ 6; e2e `waitForResponse` matchers updated in the same PR (grep vitest + Playwright per the API-path rule). |
 | P3 | **P1 — quota** | Decide the first-party-UI rate-limit story: browser-session credentials get a separate (or waived) primary budget, or `/ui-data` reads bypass the REST budget. Also debounce the search page and surface the 403+`Retry-After` as a friendly "you're searching too fast" state instead of an error. | A user clicking through pages all day cannot 403; API parity budgets unchanged for tokens. |
 | P4 | **P1 — bundle** | Move `vendor-yaml` (96 kB) out of the eager graph — it is only needed by Actions/workflow parsing; audit `vendor-misc` (163 kB) composition; entry chunk sits at its budget ceiling (163.8 kB), so the highlighter (G4) and any new deps must land in lazy page chunks only. | Eager JS ≤ ~630 kB raw / ~180 kB wire; bundle budget gate stays green. |

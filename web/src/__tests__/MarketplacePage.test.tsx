@@ -39,6 +39,40 @@ describe("MarketplacePage", () => {
     expect(document.querySelector(".marketplace-hero")).toBeInTheDocument();
   });
 
+  it("filters listings via the working sidebar chips", async () => {
+    const oauthListing = {
+      ...listing,
+      slug: "oauth-only",
+      name: "OAuth Only App",
+      github_app_id: null,
+      oauth_app_client_id: "abc",
+      plans: [{ ...plans[1], id: 21 }], // paid, no free plan
+    };
+    mockFetch.mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/subscriptions")) return Promise.resolve(jsonResponse([]));
+      return Promise.resolve(jsonResponse([listing, oauthListing]));
+    });
+    renderAt("/ui/marketplace");
+    expect(await screen.findByRole("link", { name: /Spark App/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /OAuth Only App/ })).toBeInTheDocument();
+
+    // "Free plan" keeps only the listing with a FREE-priced plan.
+    fireEvent.click(screen.getByRole("button", { name: "Free plan" }));
+    expect(screen.getByRole("link", { name: /Spark App/ })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /OAuth Only App/ })).not.toBeInTheDocument();
+
+    // "OAuth Apps" keeps only the listing without a GitHub App id.
+    fireEvent.click(screen.getByRole("button", { name: "OAuth Apps" }));
+    expect(screen.getByRole("link", { name: /OAuth Only App/ })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Spark App/ })).not.toBeInTheDocument();
+
+    // "All apps" restores the full directory; no dead category anchors remain.
+    fireEvent.click(screen.getByRole("button", { name: "All apps" }));
+    expect(screen.getByRole("link", { name: /Spark App/ })).toBeInTheDocument();
+    expect(document.querySelector('a[href^="#"]')).toBeNull();
+  });
+
   it("completes a real plan purchase and exposes the setup handoff", async () => {
     mockFetch.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);

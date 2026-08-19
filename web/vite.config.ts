@@ -42,6 +42,7 @@ export default defineConfig({
           }
           if (id.includes("/@tanstack/")) return "vendor-tanstack";
           if (id.includes("/libsodium-wrappers/")) return "vendor-crypto";
+          if (id.includes("/highlight.js/")) return "vendor-hljs";
           if (id.includes("/yaml/")) return "vendor-yaml";
           return "vendor-misc";
         },
