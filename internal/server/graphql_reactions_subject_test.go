@@ -120,3 +120,34 @@ func TestGraphQLPermissionDenialCarriesForbiddenType(t *testing.T) {
 		t.Errorf("the issue was closed despite the refusal: %+v", issue)
 	}
 }
+
+// TestGraphQLAddReactionExposesSubjectReactable verifies the addReaction payload's
+// subject: Reactable field resolves to the concrete reacted subject (GQL-068):
+// selecting a fragment on the subject's concrete type returns its fields.
+func TestGraphQLAddReactionExposesSubjectReactable(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	f := newGQLAuthzFixture(t, s.Server, "reactsubj-field", true)
+
+	doc := `mutation($input:AddReactionInput!){addReaction(input:$input){subject{__typename ... on Issue { title databaseId } viewerCanReact reactionGroups{content}}}}`
+	env := s.gqlAuthzPost(t, f.ownerToken, doc,
+		map[string]interface{}{"input": map[string]interface{}{"subjectId": f.issue.NodeID, "content": "ROCKET"}})
+	if errs := gqlAuthzErrors(env); len(errs) > 0 {
+		t.Fatalf("addReaction errored: %v", errs)
+	}
+	data, _ := env["data"].(map[string]interface{})
+	add, _ := data["addReaction"].(map[string]interface{})
+	subject, _ := add["subject"].(map[string]interface{})
+	if subject == nil {
+		t.Fatalf("addReaction.subject is nil: %v", add)
+	}
+	if subject["__typename"] != "Issue" {
+		t.Errorf("subject.__typename = %v, want Issue", subject["__typename"])
+	}
+	if subject["title"] != "fixture issue" {
+		t.Errorf("subject.title = %v, want the fixture issue title", subject["title"])
+	}
+	if subject["viewerCanReact"] != true {
+		t.Errorf("subject.viewerCanReact = %v, want true", subject["viewerCanReact"])
+	}
+}

@@ -338,7 +338,8 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 
 	// --- Review types ---
 	prReviewType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "PullRequestReview",
+		Name:       "PullRequestReview",
+		Interfaces: []*graphql.Interface{s.graphqlTypes.reactable},
 		Fields: graphql.Fields{
 			"id": &graphql.Field{
 				Type: graphql.NewNonNull(graphql.ID),
@@ -487,7 +488,8 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 
 	// --- PR Review thread types ---
 	prReviewCommentType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "PullRequestReviewComment",
+		Name:       "PullRequestReviewComment",
+		Interfaces: []*graphql.Interface{s.graphqlTypes.reactable},
 		Fields: graphql.Fields{
 			"id": &graphql.Field{
 				Type: graphql.NewNonNull(graphql.ID),
@@ -562,7 +564,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 	// --- PullRequest type ---
 	pullRequestType := graphql.NewObject(graphql.ObjectConfig{
 		Name:       "PullRequest",
-		Interfaces: []*graphql.Interface{nodeInterface, s.gqlLockableInterface()},
+		Interfaces: []*graphql.Interface{nodeInterface, s.gqlLockableInterface(), s.graphqlTypes.reactable},
 		Fields: graphql.Fields{
 			"id": &graphql.Field{
 				Type: graphql.NewNonNull(graphql.ID),
@@ -977,6 +979,11 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 
 	// Registered for interface ResolveType dispatch (Lockable).
 	s.graphqlTypes.pullRequest = pullRequestType
+	s.graphqlTypes.pullRequestReview = prReviewType
+	s.graphqlTypes.pullRequestReviewComment = prReviewCommentType
+	s.addReactableFields(pullRequestType, "pull_request")
+	s.addReactableFields(prReviewType, "pull_request_review")
+	s.addReactableFields(prReviewCommentType, "pull_request_review_comment")
 
 	// --- PR Connection ---
 	prEdgeType := graphql.NewObject(graphql.ObjectConfig{
@@ -2361,6 +2368,36 @@ func pullRequestToGQL(pr *store.PullRequest, st *store.Store) map[string]interfa
 // records as the GraphQL source map shape expected by the
 // PullRequestReviewThread / PullRequestReviewComment types below.
 // Caller must hold st.mu.RLock.
+// prReviewCommentToGQL renders a store PR review comment as its GraphQL source
+// map (matching the PullRequestReviewComment type's field keys). Self-locking;
+// used by the Reactable subject resolver.
+func prReviewCommentToGQL(c *store.PRReviewComment, st *store.Store) map[string]interface{} {
+	var author map[string]interface{}
+	if u := st.GetUserByID(c.AuthorID); u != nil {
+		author = userToGraphQL(u)
+	}
+	var line, position interface{}
+	if c.Line != nil {
+		line = *c.Line
+	}
+	if c.Position != nil {
+		position = *c.Position
+	}
+	return map[string]interface{}{
+		"nodeID":     c.NodeID,
+		"databaseId": c.ID,
+		"body":       c.Body,
+		"path":       c.Path,
+		"diffHunk":   c.DiffHunk,
+		"line":       line,
+		"position":   position,
+		"createdAt":  c.CreatedAt.Format(time.RFC3339),
+		"updatedAt":  c.UpdatedAt.Format(time.RFC3339),
+		"author":     author,
+		"state":      "SUBMITTED",
+	}
+}
+
 func reviewThreadsForGraphQL(threads []*store.ReviewThread, st *store.Store) []map[string]interface{} {
 	out := make([]map[string]interface{}, 0, len(threads))
 	for _, t := range threads {

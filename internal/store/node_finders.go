@@ -190,3 +190,71 @@ func FindReviewByNodeID(st *Store, nodeID string) *PullRequestReview {
 	}
 	return nil
 }
+
+// FindIssueCommentByNodeID resolves an issue/PR conversation comment (IC_kgDO…).
+func FindIssueCommentByNodeID(st *Store, nodeID string) *Comment {
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
+	if id, ok := DecodeNodeDBID(nodeID, "IC_kgDO"); ok {
+		if c := st.Comments[id]; c != nil && c.NodeID == nodeID {
+			return c
+		}
+	}
+	for _, c := range st.Comments {
+		if c.NodeID == nodeID {
+			return c
+		}
+	}
+	return nil
+}
+
+// FindCommitCommentByNodeID resolves a commit comment (CC_kgDO…).
+func FindCommitCommentByNodeID(st *Store, nodeID string) *CommitComment {
+	st.CommitComments.Mu.RLock()
+	defer st.CommitComments.Mu.RUnlock()
+	if id, ok := DecodeNodeDBID(nodeID, "CC_kgDO"); ok {
+		if c := st.CommitComments.ByID[id]; c != nil && c.NodeID == nodeID {
+			return c
+		}
+	}
+	for _, c := range st.CommitComments.ByID {
+		if c.NodeID == nodeID {
+			return c
+		}
+	}
+	return nil
+}
+
+// FindPullRequestReviewCommentByNodeID resolves a PR review comment (PRRC_kgDO…).
+func FindPullRequestReviewCommentByNodeID(st *Store, nodeID string) *PRReviewComment {
+	st.PRReviewComments.Mu.RLock()
+	defer st.PRReviewComments.Mu.RUnlock()
+	if id, ok := DecodeNodeDBID(nodeID, "PRRC_kgDO"); ok {
+		if c := st.PRReviewComments.ByID[id]; c != nil && c.NodeID == nodeID {
+			return c
+		}
+	}
+	for _, c := range st.PRReviewComments.ByID {
+		if c.NodeID == nodeID {
+			return c
+		}
+	}
+	return nil
+}
+
+// FindReleaseByNodeID resolves a release (RE_kgDO…).
+func FindReleaseByNodeID(st *Store, nodeID string) *Release {
+	st.Releases.Mu.RLock()
+	defer st.Releases.Mu.RUnlock()
+	if id, ok := DecodeNodeDBID(nodeID, "RE_kgDO"); ok {
+		if r := st.Releases.ByID[id]; r != nil && r.NodeID == nodeID {
+			return r
+		}
+	}
+	for _, r := range st.Releases.ByID {
+		if r.NodeID == nodeID {
+			return r
+		}
+	}
+	return nil
+}

@@ -126,6 +126,9 @@
         },
         "reactionGroups": {
           "type": "[ReactionGroup!]"
+        },
+        "subject": {
+          "type": "Reactable"
         }
       }
     },
@@ -370,6 +373,47 @@
           "type": "StatusCheckRollup"
         }
       }
+    },
+    "CommitComment": {
+      "kind": "OBJECT",
+      "fields": {
+        "author": {
+          "type": "Actor"
+        },
+        "body": {
+          "type": "String!"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "databaseId": {
+          "type": "Int"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "path": {
+          "type": "String"
+        },
+        "reactionGroups": {
+          "type": "[ReactionGroup!]"
+        },
+        "reactions": {
+          "type": "ReactionConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "viewerCanReact": {
+          "type": "Boolean!"
+        }
+      },
+      "interfaces": [
+        "Reactable"
+      ]
     },
     "ConvertPullRequestToDraftInput": {
       "kind": "INPUT_OBJECT",
@@ -633,6 +677,9 @@
         "createdAt": {
           "type": "DateTime!"
         },
+        "databaseId": {
+          "type": "Int"
+        },
         "id": {
           "type": "ID!"
         },
@@ -680,7 +727,8 @@
         }
       },
       "interfaces": [
-        "Lockable"
+        "Lockable",
+        "Reactable"
       ]
     },
     "DiscussionCategory": {
@@ -755,6 +803,9 @@
         "createdAt": {
           "type": "DateTime!"
         },
+        "databaseId": {
+          "type": "Int"
+        },
         "discussion": {
           "type": "Discussion"
         },
@@ -796,10 +847,14 @@
         },
         "updatedAt": {
           "type": "DateTime!"
+        },
+        "viewerCanReact": {
+          "type": "Boolean!"
         }
       },
       "interfaces": [
-        "Minimizable"
+        "Minimizable",
+        "Reactable"
       ]
     },
     "DiscussionCommentConnection": {
@@ -1057,6 +1112,15 @@
         "reactionGroups": {
           "type": "[ReactionGroup!]"
         },
+        "reactions": {
+          "type": "ReactionConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
         "repository": {
           "type": "Repository!"
         },
@@ -1086,11 +1150,15 @@
         },
         "url": {
           "type": "URI!"
+        },
+        "viewerCanReact": {
+          "type": "Boolean!"
         }
       },
       "interfaces": [
         "Lockable",
-        "Node"
+        "Node",
+        "Reactable"
       ]
     },
     "IssueClosedStateReason": {
@@ -1114,6 +1182,9 @@
         },
         "createdAt": {
           "type": "DateTime!"
+        },
+        "databaseId": {
+          "type": "Int"
         },
         "editor": {
           "type": "Actor"
@@ -1139,18 +1210,31 @@
         "reactionGroups": {
           "type": "[ReactionGroup!]"
         },
+        "reactions": {
+          "type": "ReactionConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
         "updatedAt": {
           "type": "DateTime!"
         },
         "url": {
           "type": "URI!"
         },
+        "viewerCanReact": {
+          "type": "Boolean!"
+        },
         "viewerDidAuthor": {
           "type": "Boolean!"
         }
       },
       "interfaces": [
-        "Minimizable"
+        "Minimizable",
+        "Reactable"
       ]
     },
     "IssueCommentConnection": {
@@ -2990,6 +3074,15 @@
         "reactionGroups": {
           "type": "[ReactionGroup!]"
         },
+        "reactions": {
+          "type": "ReactionConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
         "reviewDecision": {
           "type": "PullRequestReviewDecision"
         },
@@ -3031,11 +3124,15 @@
         },
         "url": {
           "type": "URI!"
+        },
+        "viewerCanReact": {
+          "type": "Boolean!"
         }
       },
       "interfaces": [
         "Lockable",
-        "Node"
+        "Node",
+        "Reactable"
       ]
     },
     "PullRequestChangedFile": {
@@ -3142,11 +3239,23 @@
         "createdAt": {
           "type": "DateTime!"
         },
+        "databaseId": {
+          "type": "Int"
+        },
         "id": {
           "type": "ID!"
         },
         "reactionGroups": {
           "type": "[ReactionGroup!]"
+        },
+        "reactions": {
+          "type": "ReactionConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
         },
         "state": {
           "type": "PullRequestReviewState!"
@@ -3156,8 +3265,14 @@
         },
         "updatedAt": {
           "type": "DateTime!"
+        },
+        "viewerCanReact": {
+          "type": "Boolean!"
         }
-      }
+      },
+      "interfaces": [
+        "Reactable"
+      ]
     },
     "PullRequestReviewComment": {
       "kind": "OBJECT",
@@ -3189,13 +3304,31 @@
         "position": {
           "type": "Int"
         },
+        "reactionGroups": {
+          "type": "[ReactionGroup!]"
+        },
+        "reactions": {
+          "type": "ReactionConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
         "state": {
           "type": "PullRequestReviewCommentState!"
         },
         "updatedAt": {
           "type": "DateTime!"
+        },
+        "viewerCanReact": {
+          "type": "Boolean!"
         }
-      }
+      },
+      "interfaces": [
+        "Reactable"
+      ]
     },
     "PullRequestReviewCommentConnection": {
       "kind": "OBJECT",
@@ -3419,6 +3552,43 @@
         }
       }
     },
+    "Reactable": {
+      "kind": "INTERFACE",
+      "fields": {
+        "databaseId": {
+          "type": "Int"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "reactionGroups": {
+          "type": "[ReactionGroup!]"
+        },
+        "reactions": {
+          "type": "ReactionConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "viewerCanReact": {
+          "type": "Boolean!"
+        }
+      },
+      "possible_types": [
+        "CommitComment",
+        "Discussion",
+        "DiscussionComment",
+        "Issue",
+        "IssueComment",
+        "PullRequest",
+        "PullRequestReview",
+        "PullRequestReviewComment",
+        "Release"
+      ]
+    },
     "ReactingUserConnection": {
       "kind": "OBJECT",
       "fields": {
@@ -3543,13 +3713,31 @@
         "publishedAt": {
           "type": "DateTime"
         },
+        "reactionGroups": {
+          "type": "[ReactionGroup!]"
+        },
+        "reactions": {
+          "type": "ReactionConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
         "tagName": {
           "type": "String!"
         },
         "url": {
           "type": "URI!"
+        },
+        "viewerCanReact": {
+          "type": "Boolean!"
         }
-      }
+      },
+      "interfaces": [
+        "Reactable"
+      ]
     },
     "ReleaseConnection": {
       "kind": "OBJECT",
@@ -3598,6 +3786,9 @@
         },
         "reactionGroups": {
           "type": "[ReactionGroup!]"
+        },
+        "subject": {
+          "type": "Reactable"
         }
       }
     },
