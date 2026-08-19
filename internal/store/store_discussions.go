@@ -348,7 +348,14 @@ func (st *Store) ListDiscussionComments(discussionID, parentID int) []*Discussio
 		}
 		out = append(out, c)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
+	// ID tie-break: carried-over comments (issue conversion) can share a
+	// CreatedAt, and sort.Slice is unstable for equal keys.
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].CreatedAt.Equal(out[j].CreatedAt) {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].CreatedAt.Before(out[j].CreatedAt)
+	})
 	return snapshotDiscussionComments(out)
 }
 
