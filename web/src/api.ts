@@ -47,7 +47,6 @@ import type {
   GithubCheckRun,
   GithubPublicKey,
   GithubVariable,
-  GithubRunner,
   GithubContentFile,
   GithubOrgVisibility,
   GithubContentItem,
@@ -140,7 +139,6 @@ import type {
   GithubReactionContent,
   GithubTimelineItem,
   GithubSearchIssueItem,
-  GithubSearchCodeItem,
   GithubSearchUserItem,
   GithubSearchCommitItem,
   GithubSearchLabelItem,
@@ -1818,25 +1816,6 @@ export async function createIssue(
   return res.json();
 }
 
-export async function mergePR(
-  owner: string,
-  repo: string,
-  number: number,
-  mergeMethod = "merge",
-): Promise<void> {
-  const res = await apiFetch(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/merge`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json", ...authHeaders() },
-    body: JSON.stringify({ merge_method: mergeMethod }),
-  });
-  if (!res.ok) {
-    handleUnauthorized(res);
-    // 405 = "not mergeable" (already merged/closed) — a real failure the
-    // caller must see, not a success path.
-    const text = await res.text();
-    throw new Error(`merge ${res.status}: ${text || res.statusText}`);
-  }
-}
 
 // Bring the PR's head branch up to date with its base (the "Update branch"
 // button on a behind PR).
@@ -2225,20 +2204,6 @@ export const fetchCheckRuns = (owner: string, repo: string, sha: string) =>
     `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${sha}/check-runs`,
     "check_runs",
   );
-
-export const fetchActionsRunners = (owner: string, repo: string) =>
-  ghFetchEnvelope<GithubRunner>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runners`, "runners");
-
-/** Mint a short-lived self-hosted runner registration token for a repo. */
-export const createRunnerRegistrationToken = (owner: string, repo: string) =>
-  ghPostJSON<{ token: string; expires_at: string }>(
-    `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runners/registration-token`,
-    {},
-  );
-
-/** Remove a registered self-hosted runner from a repo. */
-export const deleteActionsRunner = (owner: string, repo: string, runnerId: number) =>
-  ghSend("DELETE", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runners/${runnerId}`);
 
 // ─── Secrets & variables (repo / environment / org scopes) ──────────────
 
@@ -4230,18 +4195,6 @@ export const fetchOrgHooksPage = (
 ): Promise<Page<GithubOrgWebhook>> =>
   ghFetchPage<GithubOrgWebhook>(pageUrl ?? `/api/v3/orgs/${encodeURIComponent(org)}/hooks?per_page=30`);
 
-/** Create an organization webhook — POST orgs/{org}/hooks. */
-export const createOrgHook = (
-  org: string,
-  payload: { url: string; contentType?: string; events?: string[]; active?: boolean },
-) =>
-  ghPostJSON<GithubOrgWebhook>(`/api/v3/orgs/${encodeURIComponent(org)}/hooks`, {
-    name: "web",
-    active: payload.active ?? true,
-    events: payload.events ?? ["push"],
-    config: { url: payload.url, content_type: payload.contentType ?? "json" },
-  });
-
 /** Patch an organization webhook (e.g. toggle `active`) — PATCH orgs/{org}/hooks/{id}. */
 export const updateOrgHook = (
   org: string,
@@ -4383,23 +4336,6 @@ export interface PRReviewCommentDraft {
   side: "LEFT" | "RIGHT";
   start_line?: number;
 }
-
-/**
- * Create + submit a review in one call (event APPROVE/REQUEST_CHANGES/COMMENT).
- * The optional comments[] batch attaches pending line comments, exactly as
- * GitHub's "Start a review" flow submits them together with the verdict.
- */
-export const createPRReview = (
-  owner: string,
-  repo: string,
-  number: number,
-  payload: {
-    body: string;
-    event: "APPROVE" | "REQUEST_CHANGES" | "COMMENT";
-    comments?: PRReviewCommentDraft[];
-  },
-): Promise<GithubPRReview> =>
-  ghPostJSON(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/reviews`, payload);
 
 export const dismissPRReview = (
   owner: string,
@@ -4820,9 +4756,6 @@ export const searchRepositories = (q: string, page = 1, options: RepositorySearc
   return ghSearch<BleephubRepo>("repositories", q, page, extra);
 };
 
-export const searchCode = (q: string, page = 1) =>
-  ghSearch<GithubSearchCodeItem>("code", q, page);
-
 export interface IssueSearchOptions {
   sort?: "comments" | "created" | "updated" | undefined;
   order?: "asc" | "desc" | undefined;
@@ -5022,9 +4955,6 @@ export const fetchUserOrgsByLogin = (login: string) =>
   ghFetch<GithubOrgSummary[]>(`/api/v3/users/${encodeURIComponent(login)}/orgs`);
 
 /** Repositories a named user has starred — the profile Stars tab (GET /users/{login}/starred). */
-export const fetchUserStarredRepos = (login: string) =>
-  ghFetch<BleephubRepo[]>(`/api/v3/users/${encodeURIComponent(login)}/starred`);
-
 /**
  * A user's pinned repositories (profile Overview grid). GitHub exposes pins only
  * over GraphQL, so the simulator serves them from /ui-data. `setPinnedRepos`

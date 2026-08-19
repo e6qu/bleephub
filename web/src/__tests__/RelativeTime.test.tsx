@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, cleanup, screen } from "@testing-library/react";
 import { formatRelative } from "../utils/relativeTime.js";
 import { RelativeTime } from "../components/RelativeTime.js";
@@ -36,12 +36,18 @@ describe("formatRelative", () => {
 
 describe("RelativeTime", () => {
   it("renders a <time> with machine-readable dateTime and a full-title hover", () => {
-    const iso = new Date(Date.now() - 2 * 3600 * 1000).toISOString();
-    render(<RelativeTime iso={iso} />);
-    const time = screen.getByText("2 hours ago");
-    expect(time.tagName).toBe("TIME");
-    expect(time).toHaveAttribute("datetime", iso);
-    expect(time.getAttribute("title")).toMatch(/\d{4}/);
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-01T12:00:00Z"));
+    try {
+      const iso = "2026-03-01T10:00:00.000Z";
+      render(<RelativeTime iso={iso} />);
+      const time = screen.getByText("2 hours ago");
+      expect(time.tagName).toBe("TIME");
+      expect(time).toHaveAttribute("datetime", iso);
+      expect(time.getAttribute("title")).toMatch(/\d{4}/);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("renders nothing for missing or unparsable input", () => {

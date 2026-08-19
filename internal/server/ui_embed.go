@@ -13,7 +13,6 @@ import (
 	"path"
 	"strconv"
 	"strings"
-	"sync"
 )
 
 //go:embed all:dist
@@ -69,30 +68,38 @@ var uiCompressibleTypes = map[string]string{
 	".wasm": "application/wasm",
 }
 
-// uiDelivery caches gzipped copies of embedded assets, compressed once on
-// first request rather than per request (the bytes are immutable for the life
-// of the binary). A nil cached value records "not worth serving compressed"
-// (too small, or the file did not shrink) so the decision is also made once.
+// uiDelivery holds gzipped copies of the embedded assets, all compressed at
+// construction by walking the embedded filesystem (the bytes are immutable for
+// the life of the binary). Serving is a pure map read: no request-derived
+// string ever reaches a file read, so the response bytes provably originate
+// from the embed and never from the request.
 type uiDelivery struct {
-	fsys fs.FS
-	mu   sync.Mutex
-	gz   map[string][]byte
+	gz map[string][]byte
+}
+
+func newUIDelivery(fsys fs.FS) *uiDelivery {
+	d := &uiDelivery{gz: map[string][]byte{}}
+	_ = fs.WalkDir(fsys, ".", func(p string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() {
+			return nil
+		}
+		if _, compressible := uiCompressibleTypes[path.Ext(p)]; !compressible {
+			return nil
+		}
+		data, readErr := fs.ReadFile(fsys, p)
+		if readErr != nil || len(data) < uiGzipMinSize {
+			return nil
+		}
+		if compressed := gzipBytes(data); len(compressed) < len(data) {
+			d.gz[p] = compressed
+		}
+		return nil
+	})
+	return d
 }
 
 func (d *uiDelivery) gzipFor(reqPath string) []byte {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	if gz, ok := d.gz[reqPath]; ok {
-		return gz
-	}
-	var gz []byte
-	if data, err := fs.ReadFile(d.fsys, reqPath); err == nil && len(data) >= uiGzipMinSize {
-		if compressed := gzipBytes(data); len(compressed) < len(data) {
-			gz = compressed
-		}
-	}
-	d.gz[reqPath] = gz
-	return gz
+	return d.gz[reqPath]
 }
 
 // gzipBytes compresses data at the best ratio; startup-or-once cost, so CPU
@@ -107,7 +114,7 @@ func gzipBytes(data []byte) []byte {
 
 func spaHandler(fsys fs.FS, pathPrefix string) http.Handler {
 	fileServer := http.StripPrefix(pathPrefix, http.FileServer(http.FS(fsys)))
-	delivery := &uiDelivery{fsys: fsys, gz: map[string][]byte{}}
+	delivery := newUIDelivery(fsys)
 
 	// The shell is read once at startup: index.html is served under every SPA
 	// route name, so it can never be cached by URL (Cache-Control: no-cache),

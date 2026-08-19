@@ -954,8 +954,16 @@ describe("RepoDetailPage commits grouping", () => {
 });
 
 describe("RepoDetailPage branches sections", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("buckets branches into Default/Active/Stale with ahead-behind and a New PR link", async () => {
-    const now = Date.now();
+    // Pinned clock: the stale-branch bucketing compares against "now", so the
+    // fixture dates must be fixed relative to a fixed now (shouldAdvanceTime
+    // keeps waitFor's real timers working).
+    vi.useFakeTimers({ now: new Date("2026-03-01T12:00:00Z"), shouldAdvanceTime: true });
+    const now = new Date("2026-03-01T12:00:00Z").getTime();
     const recent = new Date(now - 5 * 24 * 3600 * 1000).toISOString();
     const ancient = new Date(now - 200 * 24 * 3600 * 1000).toISOString();
     mockFetch.mockImplementation((url: RequestInfo | URL) => {
