@@ -14,9 +14,12 @@ import {
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
 import { RepoHeader } from "../components/PageHeader.js";
 import { Box, Button, Modal, FormLabel, ErrorBanner, DialogActions } from "../components/ui.js";
+import { Avatar } from "../components/Avatar.js";
 import { MutationError } from "../components/MutationError.js";
 import { RelativeTime } from "../components/RelativeTime.js";
 import type {
+  GithubAdvisoryCredit,
+  GithubAdvisoryCreditType,
   GithubSecurityAdvisory,
   GithubSecurityAdvisorySeverity,
   GithubSecurityAdvisoryState,
@@ -32,8 +35,10 @@ const SEVERITIES: GithubSecurityAdvisorySeverity[] = ["critical", "high", "mediu
 // ─── Store-backed extras beyond the base advisory payloads ─────────────────────────
 // The server's CreateAdvisoryReq (create + report) also persists cvss_score,
 // cvss_vector, and a vulnerabilities[] product list; the update handler
-// accepts cvss_score/cvss_vector (but not vulnerabilities). Credits are NOT
-// stored (the API always returns empty credits arrays), so no credits UI.
+// accepts cvss_score/cvss_vector (but not vulnerabilities). Create and update
+// accept credits: [{login, type}] (unknown login/type → 422); the private
+// vulnerability REPORT endpoint does NOT accept credits, so the report form
+// intentionally has no credits editor.
 
 interface AdvisoryVulnerabilityPayload {
   package: { ecosystem: string; name: string };
@@ -74,6 +79,104 @@ const ECOSYSTEMS = [
   "npm", "pip", "rubygems", "maven", "nuget", "composer", "go", "rust",
   "erlang", "actions", "pub", "swift", "other",
 ];
+
+const CREDIT_TYPES: GithubAdvisoryCreditType[] = [
+  "analyst",
+  "coordinator",
+  "finder",
+  "remediation_developer",
+  "remediation_reviewer",
+  "remediation_verifier",
+  "reporter",
+  "sponsor",
+  "tool",
+  "other",
+];
+
+/** "remediation_developer" → "Remediation developer". */
+function creditTypeLabel(type: string): string {
+  const words = type.replace(/_/g, " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/**
+ * Repeatable {login, type} credit rows shared by the create and edit forms.
+ * The private vulnerability report form must NOT render this (the report
+ * endpoint rejects a credits member).
+ */
+function CreditsEditor({
+  idPrefix,
+  credits,
+  onChange,
+}: {
+  idPrefix: string;
+  credits: GithubAdvisoryCredit[];
+  onChange: (credits: GithubAdvisoryCredit[]) => void;
+}) {
+  const setCredit = (index: number, patch: Partial<GithubAdvisoryCredit>) =>
+    onChange(credits.map((row, i) => (i === index ? { ...row, ...patch } : row)));
+
+  return (
+    <div className="mb-4">
+      <div className="mb-1 flex items-center justify-between">
+        <span style={{ fontSize: "0.82rem", fontWeight: 600 }}>Credits</span>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => onChange([...credits, { login: "", type: "finder" }])}
+        >
+          Add credit
+        </Button>
+      </div>
+      {credits.length === 0 ? (
+        <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--color-fg-muted)" }}>
+          Optionally credit the people who found, reported, or fixed this vulnerability.
+        </p>
+      ) : (
+        credits.map((row, i) => (
+          <div
+            key={i}
+            className="mb-2 flex flex-wrap items-end gap-2"
+            style={{ border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)", padding: "0.5rem" }}
+          >
+            <div>
+              <FormLabel id={`${idPrefix}-credit-login-${i}`}>Credited login</FormLabel>
+              <input
+                id={`${idPrefix}-credit-login-${i}`}
+                type="text"
+                value={row.login}
+                onChange={(e) => setCredit(i, { login: e.target.value })}
+                className="w-40"
+              />
+            </div>
+            <div>
+              <FormLabel id={`${idPrefix}-credit-type-${i}`}>Credit type</FormLabel>
+              <select
+                id={`${idPrefix}-credit-type-${i}`}
+                value={row.type}
+                onChange={(e) => setCredit(i, { type: e.target.value as GithubAdvisoryCreditType })}
+              >
+                {CREDIT_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {creditTypeLabel(t)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <Button
+              size="sm"
+              variant="ghost"
+              aria-label={`Remove credit ${i + 1}`}
+              onClick={() => onChange(credits.filter((_, j) => j !== i))}
+            >
+              Remove
+            </Button>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
 
 const STATE_LABELS: Record<string, string> = {
   triage: "Triage",
@@ -270,6 +373,7 @@ export function SecurityAdvisoriesPage() {
       {showCreate && (
         <AdvisoryFormModal
           title="Create security advisory"
+          withCredits
           onClose={() => setShowCreate(false)}
           onSubmit={(payload) => createMutation.mutate(payload)}
           pending={createMutation.isPending}
@@ -385,6 +489,23 @@ function AdvisoryDetail({
             <strong>Published:</strong> <RelativeTime iso={advisory.published_at} />
           </div>
         )}
+        {(advisory.credits_detailed ?? []).length > 0 && (
+          <div style={{ marginTop: "0.5rem" }}>
+            <strong>Credits:</strong>
+            <ul style={{ margin: "0.25rem 0 0", paddingLeft: "1.2rem", listStyle: "none" }}>
+              {(advisory.credits_detailed ?? []).map((credit, i) => (
+                <li key={i} className="flex items-center gap-2" style={{ marginBottom: "0.25rem" }}>
+                  <Avatar login={credit.user.login} src={credit.user.avatar_url} size={20} />
+                  <span>
+                    {credit.user.login}
+                    {" · "}
+                    {creditTypeLabel(credit.type)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         <div style={{ marginTop: "0.5rem", whiteSpace: "pre-wrap" }}>
           {advisory.description || "No description provided."}
         </div>
@@ -471,6 +592,9 @@ function AdvisoryEditModal({
   const [cwe, setCwe] = useState((advisory.cwe_ids ?? []).join(", "));
   const [cvssScore, setCvssScore] = useState(extras.cvss?.score != null ? String(extras.cvss.score) : "");
   const [cvssVector, setCvssVector] = useState(extras.cvss?.vector_string ?? "");
+  const [credits, setCredits] = useState<GithubAdvisoryCredit[]>(
+    (advisory.credits ?? []).map((c) => ({ login: c.login, type: c.type })),
+  );
   const [validationError, setValidationError] = useState<string | null>(null);
 
   const handleSubmit = () => {
@@ -497,6 +621,10 @@ function AdvisoryEditModal({
         .filter(Boolean),
       ...(cvssScore.trim() ? { cvss_score: Number(cvssScore) } : {}),
       ...(cvssVector.trim() ? { cvss_vector: cvssVector.trim() } : {}),
+      // Always send the full current credit list so removals persist.
+      credits: credits
+        .filter((c) => c.login.trim())
+        .map((c) => ({ login: c.login.trim(), type: c.type })),
     });
   };
 
@@ -571,6 +699,8 @@ function AdvisoryEditModal({
         </div>
       </div>
 
+      <CreditsEditor idPrefix="edit-advisory" credits={credits} onChange={setCredits} />
+
       {(validationError || error) && (
         <ErrorBanner>
           {validationError ?? (error instanceof Error ? error.message : String(error))}
@@ -591,12 +721,17 @@ function AdvisoryEditModal({
 
 function AdvisoryFormModal({
   title,
+  withCredits = false,
   onClose,
   onSubmit,
   pending,
   error,
 }: {
   title: string;
+  /** Render the credits editor and include `credits` in the payload. Must
+   * stay false for the private vulnerability report — that endpoint does
+   * not accept credits. */
+  withCredits?: boolean;
   onClose: () => void;
   onSubmit: (payload: GithubVulnerabilityReportPayload & AdvisoryCreateExtras) => void;
   pending: boolean;
@@ -609,6 +744,7 @@ function AdvisoryFormModal({
   const [cvssScore, setCvssScore] = useState("");
   const [cvssVector, setCvssVector] = useState("");
   const [products, setProducts] = useState<VulnerabilityRow[]>([]);
+  const [credits, setCredits] = useState<GithubAdvisoryCredit[]>([]);
   const [validationError, setValidationError] = useState<string | null>(null);
 
   const setProduct = (index: number, patch: Partial<VulnerabilityRow>) =>
@@ -650,6 +786,12 @@ function AdvisoryFormModal({
     if (cvssScore.trim()) payload.cvss_score = Number(cvssScore);
     if (cvssVector.trim()) payload.cvss_vector = cvssVector.trim();
     if (vulnerabilities.length > 0) payload.vulnerabilities = vulnerabilities;
+    if (withCredits) {
+      const rows = credits
+        .filter((c) => c.login.trim())
+        .map((c) => ({ login: c.login.trim(), type: c.type }));
+      if (rows.length > 0) payload.credits = rows;
+    }
     onSubmit(payload);
   };
 
@@ -805,6 +947,10 @@ function AdvisoryFormModal({
           ))
         )}
       </div>
+
+      {withCredits && (
+        <CreditsEditor idPrefix="advisory" credits={credits} onChange={setCredits} />
+      )}
 
       {(validationError || error) && <ErrorBanner>{validationError ?? (error instanceof Error ? error.message : String(error))}</ErrorBanner>}
 

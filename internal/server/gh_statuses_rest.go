@@ -107,6 +107,11 @@ func (s *Server) handleCreateCommitStatus(w http.ResponseWriter, r *http.Request
 		"repository":  store.RepoToJSON(repo, s.store, s.baseURL(r)),
 		"sender":      store.UserToJSON(user),
 	})
+	// A successful commit status for a PR head can clear the condition an
+	// armed auto-merge was waiting for.
+	if strings.EqualFold(string(st.State), "success") {
+		s.maybeAutoMergeHeadSHA(repo, sha)
+	}
 	statusJSON := commitStatusToJSON(st, s.store, s.baseURL(r), repo.FullName)
 	writeJSONCreated(w, jsonStringField(statusJSON, "url"), statusJSON)
 }

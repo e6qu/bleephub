@@ -61,6 +61,10 @@ type Pulls interface {
 	CompletePullRequestMerge(repo *store.Repo, pr *store.PullRequest, user *store.User, method, commitTitle, commitMessage, expectedHead string) (string, string)
 	BranchProtectionRuleForPR(repo *store.Repo, baseBranch string) map[string]interface{}
 	ChangedFiles(repo *store.Repo, pr *store.PullRequest, baseURL string) ([]map[string]interface{}, error)
+	// MaybeAutoMerge re-evaluates a pull request's armed auto-merge request
+	// after a review lands or is dismissed through GraphQL — the merge
+	// itself runs through the server's REST-shared merge gate.
+	MaybeAutoMerge(prID int)
 }
 
 // RateSnapshot is the API rate-limit accounting the rateLimit root field
@@ -261,6 +265,10 @@ func (s *Resolver) branchProtectionRuleForPR(repo *store.Repo, baseBranch string
 
 func (s *Resolver) pullRequestChangedFiles(repo *store.Repo, pr *store.PullRequest, baseURL string) ([]map[string]interface{}, error) {
 	return s.pulls.ChangedFiles(repo, pr, baseURL)
+}
+
+func (s *Resolver) maybeAutoMerge(prID int) {
+	s.pulls.MaybeAutoMerge(prID)
 }
 
 func (s *Resolver) ghUserFromContext(ctx context.Context) *store.User {

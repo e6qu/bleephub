@@ -480,6 +480,65 @@ func (st *Store) UnmarkDiscussionCommentAsAnswer(id int) bool {
 	return true
 }
 
+// CreateDiscussionCommentAt is CreateDiscussionComment with caller-supplied
+// timestamps, for flows that carry comments over from another conversation
+// (issue → discussion conversion) and must preserve the original authorship
+// times rather than stamping the conversion time.
+func (st *Store) CreateDiscussionCommentAt(discussionID, authorID int, body string, parentID int, createdAt time.Time) *DiscussionComment {
+	st.Mu.Lock()
+	defer st.Mu.Unlock()
+
+	c := &DiscussionComment{
+		ID:           st.NextDiscussionCommentID,
+		NodeID:       discussionCommentNodeID(st.NextDiscussionCommentID),
+		DiscussionID: discussionID,
+		AuthorID:     authorID,
+		Body:         body,
+		CreatedAt:    createdAt,
+		UpdatedAt:    createdAt,
+		ParentID:     parentID,
+	}
+	st.DiscussionComments[c.ID] = c
+	st.NextDiscussionCommentID++
+	st.persistDiscussionComment(c)
+	return c
+}
+
+// MaxPinnedDiscussions matches github.com's limit of four pinned discussions
+// per repository.
+const MaxPinnedDiscussions = 4
+
+// ListPinnedDiscussions returns the repo's ordered pinned discussion IDs as a
+// detached copy (STORE-021), dropping IDs whose discussion has since been
+// deleted.
+func (st *Store) ListPinnedDiscussions(repoID int) []int {
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
+	ids := st.PinnedDiscussions[repoID]
+	out := make([]int, 0, len(ids))
+	for _, id := range ids {
+		if d := st.Discussions[id]; d != nil && !d.Deleted && d.RepoID == repoID {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// SetPinnedDiscussions replaces the repo's ordered pinned discussion list.
+// The caller validates membership and the MaxPinnedDiscussions cap; the store
+// keeps a detached copy of ids so a caller cannot mutate the stored slice
+// afterwards (STORE-021).
+func (st *Store) SetPinnedDiscussions(repoID int, ids []int) []int {
+	st.Mu.Lock()
+	defer st.Mu.Unlock()
+	stored := append([]int(nil), ids...)
+	st.PinnedDiscussions[repoID] = stored
+	if st.Persist != nil {
+		st.Persist.MustPut("pinned_discussions", strconv.Itoa(repoID), stored)
+	}
+	return append([]int(nil), stored...)
+}
+
 // --- Persistence helpers ---
 
 func (st *Store) persistDiscussionCategory(cat *DiscussionCategory) {

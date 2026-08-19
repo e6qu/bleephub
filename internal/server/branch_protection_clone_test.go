@@ -24,6 +24,8 @@ func TestBranchProtectionCloneCoversEveryField(t *testing.T) {
 		"BlockCreations":                 true,
 		"RequiredConversationResolution": true,
 		"RequiredSignatures":             true,
+		"LockBranch":                     true,
+		"AllowForkSyncing":               true,
 		"URL":                            true,
 	}
 	model := reflect.TypeOf(store.BranchProtection{})
@@ -54,6 +56,8 @@ func TestBranchProtectionCloneCoversEveryField(t *testing.T) {
 		BlockCreations:                 &store.BPEnabled{Enabled: true},
 		RequiredConversationResolution: &store.BPEnabled{Enabled: true},
 		RequiredSignatures:             &store.BPEnabledURL{Enabled: true},
+		LockBranch:                     &store.BPEnabled{Enabled: true},
+		AllowForkSyncing:               &store.BPEnabled{Enabled: true},
 		URL:                            "https://one.example/protection",
 	}
 	before, err := json.Marshal(original)
@@ -74,6 +78,8 @@ func TestBranchProtectionCloneCoversEveryField(t *testing.T) {
 	cloned.BlockCreations.Enabled = false
 	cloned.RequiredConversationResolution.Enabled = false
 	cloned.RequiredSignatures.Enabled = false
+	cloned.LockBranch.Enabled = false
+	cloned.AllowForkSyncing.Enabled = false
 	cloned.URL = "https://two.example/protection"
 
 	after, err := json.Marshal(original)

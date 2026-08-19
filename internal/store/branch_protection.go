@@ -15,6 +15,8 @@ type BranchProtection struct {
 	BlockCreations                 *BPEnabled            `json:"block_creations,omitempty"`
 	RequiredConversationResolution *BPEnabled            `json:"required_conversation_resolution,omitempty"`
 	RequiredSignatures             *BPEnabledURL         `json:"required_signatures,omitempty"`
+	LockBranch                     *BPEnabled            `json:"lock_branch,omitempty"`
+	AllowForkSyncing               *BPEnabled            `json:"allow_fork_syncing,omitempty"`
 	URL                            string                `json:"url,omitempty"`
 }
 
@@ -32,7 +34,9 @@ func (bp *BranchProtection) IsProtected() bool {
 		bp.AllowDeletions != nil ||
 		bp.BlockCreations != nil ||
 		bp.RequiredConversationResolution != nil ||
-		bp.RequiredSignatures != nil
+		bp.RequiredSignatures != nil ||
+		bp.LockBranch != nil ||
+		bp.AllowForkSyncing != nil
 }
 
 // BPEnabled is the shape used by required_linear_history, allow_force_pushes,
@@ -58,6 +62,7 @@ type BPPullRequestReviews struct {
 	URL                          string              `json:"url,omitempty"`
 	DismissStaleReviews          bool                `json:"dismiss_stale_reviews"`
 	RequireCodeOwnerReviews      bool                `json:"require_code_owner_reviews"`
+	RequireLastPushApproval      bool                `json:"require_last_push_approval"`
 	RequiredApprovingReviewCount int                 `json:"required_approving_review_count"`
 	DismissalRestrictions        *BPRestrictions     `json:"dismissal_restrictions,omitempty"`
 	BypassPullRequestAllowances  *BPBypassAllowances `json:"bypass_pull_request_allowances,omitempty"`

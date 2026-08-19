@@ -587,6 +587,7 @@ type Store struct {
 	Discussions                  map[int]*Discussion
 	DiscussionCategories         map[int]*DiscussionCategory
 	DiscussionComments           map[int]*DiscussionComment
+	PinnedDiscussions            map[int][]int // repoID → ordered pinned discussion IDs (≤ MaxPinnedDiscussions)
 	NextDiscussionID             int
 	NextDiscussionNumber         map[int]int // repoID → next per-repo discussion number (high-water; monotonic across tombstones)
 	NextDiscussionCategoryID     int
@@ -1043,6 +1044,7 @@ func NewStore() *Store {
 		Discussions:                  map[int]*Discussion{},
 		DiscussionCategories:         map[int]*DiscussionCategory{},
 		DiscussionComments:           map[int]*DiscussionComment{},
+		PinnedDiscussions:            map[int][]int{},
 		OrgActionsPermissions:        map[string]*OrgActionsPermissions{},
 		RepoActionsPermissions:       map[string]*RepoActionsPermissions{},
 		JobsByPlanID:                 make(map[string]*Job),
@@ -2367,6 +2369,18 @@ func (st *Store) loadFromPersistence() error {
 			st.Misc.BranchProtection[key] = &bp
 			return nil
 		}},
+		{"branch_protection_patterns", func(key string, raw []byte) error {
+			repoID, err := strconv.Atoi(key)
+			if err != nil {
+				return fmt.Errorf("branch_protection_patterns key %q: %w", key, err)
+			}
+			var rules []*BranchProtectionPatternRule
+			if err := LoadJSON(raw, &rules); err != nil {
+				return err
+			}
+			st.Misc.BranchProtectionPatterns[repoID] = rules
+			return nil
+		}},
 		{"gpg_keys", func(_ string, raw []byte) error {
 			var k GPGKey
 			if err := LoadJSON(raw, &k); err != nil {
@@ -2703,6 +2717,18 @@ func (st *Store) loadFromPersistence() error {
 			if c.ID >= st.NextDiscussionCommentID {
 				st.NextDiscussionCommentID = c.ID + 1
 			}
+			return nil
+		}},
+		{"pinned_discussions", func(key string, raw []byte) error {
+			repoID, err := strconv.Atoi(key)
+			if err != nil {
+				return err
+			}
+			var ids []int
+			if err := LoadJSON(raw, &ids); err != nil {
+				return err
+			}
+			st.PinnedDiscussions[repoID] = ids
 			return nil
 		}},
 		{"org_actions_permissions", func(key string, raw []byte) error {

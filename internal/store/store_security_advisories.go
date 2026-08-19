@@ -36,6 +36,27 @@ type SecurityAdvisory struct {
 	PrivateForkID          int                             `json:"private_fork_id"`
 	VulnerableVersionRange string                          `json:"vulnerable_version_range"`
 	Vulnerabilities        []SecurityAdvisoryVulnerability `json:"vulnerabilities,omitempty"`
+	Credits                []SecurityAdvisoryCredit        `json:"credits,omitempty"`
+}
+
+// SecurityAdvisoryCredit is one credited participant on a repository security
+// advisory, matching the spec's request member shape ({login, type}). bleephub
+// auto-accepts credits, so no per-credit state is stored — the rendered
+// credits_detailed state is always "accepted".
+type SecurityAdvisoryCredit struct {
+	Login string `json:"login"`
+	Type  string `json:"type"`
+}
+
+// ValidAdvisoryCreditType reports whether t is one of the spec's
+// security-advisory-credit-types enum values.
+func ValidAdvisoryCreditType(t string) bool {
+	switch t {
+	case "analyst", "finder", "reporter", "coordinator", "remediation_developer",
+		"remediation_reviewer", "remediation_verifier", "tool", "sponsor", "other":
+		return true
+	}
+	return false
 }
 
 type SecurityAdvisoryVulnerability struct {
@@ -79,6 +100,7 @@ type CreateAdvisoryReq struct {
 		FirstPatchedVersion    string `json:"first_patched_version"`
 		PatchedVersions        string `json:"patched_versions"`
 	} `json:"vulnerabilities"`
+	Credits []SecurityAdvisoryCredit `json:"credits"`
 }
 
 func ValidAdvisorySeverity(s string) bool {
@@ -191,6 +213,9 @@ func (st *Store) CreateSecurityAdvisoryE(repoID, authorID int, req CreateAdvisor
 	if adv.CWEs == nil {
 		adv.CWEs = []string{}
 	}
+	if len(req.Credits) > 0 {
+		adv.Credits = append([]SecurityAdvisoryCredit(nil), req.Credits...)
+	}
 	st.NextSecurityAdvisoryID++
 
 	if st.SecurityAdvisoriesByRepo[repo.FullName] == nil {
@@ -205,9 +230,10 @@ func (st *Store) CreateSecurityAdvisoryE(repoID, authorID int, req CreateAdvisor
 
 // ListSecurityAdvisories returns all security advisories for a repo, newest first.
 // cloneSecurityAdvisory returns a deep copy safe to hand outside the store
-// lock (STORE-021). CWEs, Vulnerabilities and PublishedAt are the only
-// reference fields; SecurityAdvisoryVulnerability is all-value, so copying the
-// two slices and the time pointer detaches the result. Mutations go through
+// lock (STORE-021). CWEs, Vulnerabilities, Credits and PublishedAt are the
+// only reference fields; SecurityAdvisoryVulnerability and
+// SecurityAdvisoryCredit are all-value, so copying the three slices and the
+// time pointer detaches the result. Mutations go through
 // UpdateSecurityAdvisory (keyed by id), never the getter's result.
 func cloneSecurityAdvisory(a *SecurityAdvisory) *SecurityAdvisory {
 	if a == nil {
@@ -219,6 +245,9 @@ func cloneSecurityAdvisory(a *SecurityAdvisory) *SecurityAdvisory {
 	}
 	if a.Vulnerabilities != nil {
 		clone.Vulnerabilities = append([]SecurityAdvisoryVulnerability(nil), a.Vulnerabilities...)
+	}
+	if a.Credits != nil {
+		clone.Credits = append([]SecurityAdvisoryCredit(nil), a.Credits...)
 	}
 	if a.PublishedAt != nil {
 		published := *a.PublishedAt

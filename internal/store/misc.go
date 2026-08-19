@@ -182,7 +182,11 @@ type MiscStore struct {
 	PagesByRepo               map[int]*PagesSite           `json:"-"`
 	PagesBuilds               map[string][]*PagesBuild     `json:"-"`
 	BranchProtection          map[string]*BranchProtection `json:"-"`
-	AuditLog                  []*AuditEntry                `json:"-"`
+	// BranchProtectionPatterns holds the web-only fnmatch pattern rules per
+	// repository ID, consulted by the enforcement chokepoint when no
+	// exact-name rule matches (served under /ui-data).
+	BranchProtectionPatterns map[int][]*BranchProtectionPatternRule `json:"-"`
+	AuditLog                 []*AuditEntry                          `json:"-"`
 	AuditLogEvents            []*AuditLogEvent             `json:"-"`
 	marketplaceListings       map[string]*MarketplaceListing
 	marketplacePlans          map[int]*MarketplacePlan
@@ -218,6 +222,7 @@ func newMiscStore() *MiscStore {
 		PagesByRepo:               map[int]*PagesSite{},
 		PagesBuilds:               map[string][]*PagesBuild{},
 		BranchProtection:          map[string]*BranchProtection{},
+		BranchProtectionPatterns:  map[int][]*BranchProtectionPatternRule{},
 		marketplaceListings:       map[string]*MarketplaceListing{},
 		marketplacePlans:          map[int]*MarketplacePlan{},
 		MarketplacePurchases:      map[string]*MarketplacePurchase{},

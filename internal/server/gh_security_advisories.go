@@ -161,6 +161,9 @@ func (s *Server) handleCreateSecurityAdvisory(w http.ResponseWriter, r *http.Req
 		store.WriteGHValidationError(w, "SecurityAdvisory", "severity", "invalid")
 		return
 	}
+	if !s.validAdvisoryCredits(w, req.Credits) {
+		return
+	}
 
 	adv, err := s.store.CreateSecurityAdvisoryE(repo.ID, user.ID, req)
 	if err != nil {
@@ -225,6 +228,9 @@ func (s *Server) handleUpdateSecurityAdvisory(w http.ResponseWriter, r *http.Req
 		CVSSVector  string   `json:"cvss_vector"`
 		CWEs        []string `json:"cwe_ids"`
 		State       string   `json:"state"`
+		// A pointer distinguishes an absent (or null) credits member — keep
+		// the stored list — from a present one, which replaces it ([] clears).
+		Credits *[]store.SecurityAdvisoryCredit `json:"credits"`
 	}
 	if !decodeJSONBody(w, r, &req) {
 		return
@@ -236,6 +242,9 @@ func (s *Server) handleUpdateSecurityAdvisory(w http.ResponseWriter, r *http.Req
 	}
 	if req.Severity != "" && !store.ValidAdvisorySeverity(req.Severity) {
 		store.WriteGHValidationError(w, "SecurityAdvisory", "severity", "invalid")
+		return
+	}
+	if req.Credits != nil && !s.validAdvisoryCredits(w, *req.Credits) {
 		return
 	}
 
@@ -265,6 +274,9 @@ func (s *Server) handleUpdateSecurityAdvisory(w http.ResponseWriter, r *http.Req
 				now := time.Now().UTC()
 				a.PublishedAt = &now
 			}
+		}
+		if req.Credits != nil {
+			a.Credits = append([]store.SecurityAdvisoryCredit(nil), (*req.Credits)...)
 		}
 	}) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -377,6 +389,10 @@ func (s *Server) handleSecurityAdvisoryReportsDispatch(w http.ResponseWriter, r 
 	}
 
 	req.State = "triage"
+	// The spec's private-vulnerability-report-create request has no credits
+	// member (only repository-advisory-create/update carry one), so a report
+	// never seeds credits even when the decoded body happened to include them.
+	req.Credits = nil
 	adv, err := s.store.CreateSecurityAdvisoryE(repo.ID, user.ID, req)
 	if err != nil {
 		writeGHError(w, http.StatusInternalServerError, err.Error())
@@ -401,6 +417,51 @@ func (s *Server) handleSecurityAdvisoryReportsDispatch(w http.ResponseWriter, r 
 	adv.SubmissionAccepted = true
 	advJSON := securityAdvisoryToJSON(adv, repo, s.baseURL(r), s.store)
 	writeJSONCreated(w, jsonStringField(advJSON, "url"), advJSON)
+}
+
+// validAdvisoryCredits enforces the spec's credit member constraints — a
+// known credit type from the security-advisory-credit-types enum and a login
+// that resolves to a user (credits_detailed must render a non-null user
+// object). Writes the 422 and reports false when a credit is invalid.
+func (s *Server) validAdvisoryCredits(w http.ResponseWriter, credits []store.SecurityAdvisoryCredit) bool {
+	for _, c := range credits {
+		if c.Login == "" || s.store.LookupUserByLogin(c.Login) == nil {
+			store.WriteGHValidationError(w, "SecurityAdvisory", "credits.login", "invalid")
+			return false
+		}
+		if !store.ValidAdvisoryCreditType(c.Type) {
+			store.WriteGHValidationError(w, "SecurityAdvisory", "credits.type", "invalid")
+			return false
+		}
+	}
+	return true
+}
+
+// securityAdvisoryCreditsJSON renders the advisory's credits in both published
+// shapes: `credits` echoes the {login, type} request members, and
+// `credits_detailed` resolves each login to its user object with the credit
+// state — bleephub auto-accepts, so the state is always "accepted".
+func securityAdvisoryCreditsJSON(a *store.SecurityAdvisory, st *store.Store) (credits, detailed []map[string]interface{}) {
+	credits = []map[string]interface{}{}
+	detailed = []map[string]interface{}{}
+	for _, c := range a.Credits {
+		u := st.LookupUserByLogin(c.Login)
+		if u == nil {
+			// The credited account disappeared after storage; the response
+			// schema requires a user object, so drop the row from both views.
+			continue
+		}
+		credits = append(credits, map[string]interface{}{
+			"login": c.Login,
+			"type":  c.Type,
+		})
+		detailed = append(detailed, map[string]interface{}{
+			"user":  store.UserToJSON(u),
+			"type":  c.Type,
+			"state": "accepted",
+		})
+	}
+	return credits, detailed
 }
 
 func securityAdvisoryToJSON(a *store.SecurityAdvisory, repo *store.Repo, baseURL string, st *store.Store) map[string]interface{} {
@@ -459,6 +520,8 @@ func securityAdvisoryToJSON(a *store.SecurityAdvisory, repo *store.Repo, baseURL
 			"vulnerable_functions":     []string{},
 		})
 	}
+	creditsJSON, creditsDetailedJSON := securityAdvisoryCreditsJSON(a, st)
+
 	if len(vulnerabilities) == 0 && a.VulnerableVersionRange != "" {
 		vulnerabilities = append(vulnerabilities, map[string]interface{}{
 			// package itself is nullable; its ecosystem/name are not, so emit a
@@ -492,8 +555,8 @@ func securityAdvisoryToJSON(a *store.SecurityAdvisory, repo *store.Repo, baseURL
 		"cvss":                map[string]interface{}{"vector_string": nullOrString(a.CVSSVector), "score": cvssScore},
 		"cwes":                cwes,
 		"cwe_ids":             cweIDs,
-		"credits":             []map[string]interface{}{},
-		"credits_detailed":    []map[string]interface{}{},
+		"credits":             creditsJSON,
+		"credits_detailed":    creditsDetailedJSON,
 		"collaborating_users": []map[string]interface{}{},
 		"collaborating_teams": []map[string]interface{}{},
 		"private_fork":        privateFork,

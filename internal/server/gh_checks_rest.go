@@ -126,6 +126,11 @@ func (s *Server) handleCreateCheckRun(w http.ResponseWriter, r *http.Request) {
 		actor = user.Login
 	}
 	s.recordAuditEvent("check_run.create", actor, "", map[string]interface{}{"repo": repoKey, "check_run_id": cr.ID})
+	// A check run created already-completed can be the condition an armed
+	// auto-merge was waiting for.
+	if run := s.store.GetCheckRun(cr.ID); run != nil && run.Status == "completed" {
+		s.maybeAutoMergeHeadSHA(repo, run.HeadSHA)
+	}
 	checkRunJSON := s.checkRunToJSON(s.store.GetCheckRun(cr.ID), s.baseURL(r))
 	writeJSONCreated(w, jsonStringField(checkRunJSON, "url"), checkRunJSON)
 }
@@ -221,6 +226,11 @@ func (s *Server) handleUpdateCheckRun(w http.ResponseWriter, r *http.Request) {
 	if !found {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
+	}
+	// A check run transitioning to completed can clear the condition an
+	// armed auto-merge was waiting for.
+	if run := s.store.GetCheckRun(id); run != nil && run.Status == "completed" {
+		s.maybeAutoMergeHeadSHA(s.store.GetRepoByFullName(run.RepoKey), run.HeadSHA)
 	}
 	writeJSON(w, http.StatusOK, s.checkRunToJSON(s.store.GetCheckRun(id), s.baseURL(r)))
 }

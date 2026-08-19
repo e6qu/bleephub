@@ -70,7 +70,12 @@ export interface IssueBootstrap {
   comments: GithubComment[];
   timeline: GithubTimelineItem[];
   labels: GithubLabel[];
-  /** state=open — the shape NewIssue's ["milestones", o, r, "open"] hook reads. */
+  /**
+   * state=ALL — the list IssueSidebar's ["milestones", o, r, "all"] hook
+   * reads. NewIssue's ["milestones", o, r, "open"] key is seeded from the
+   * same list filtered client-side to state === "open" (identical to what
+   * the standalone state=open fetch answers).
+   */
   milestones: GithubMilestone[];
   assignees_available: Array<{ login: string }>;
 }
@@ -86,6 +91,12 @@ export interface PullBootstrap {
   check_runs: { total_count: number; check_runs: GithubCheckRun[] } | null;
   combined_status: GithubCombinedStatus | null;
   files_summary: { changed_files: number; additions: number; deletions: number };
+  /** Same sidebar sub-payloads the issue aggregate carries, so the PR
+   * sidebar's labels / milestones (state=ALL) / assignees hooks are cache
+   * hits too. */
+  labels: GithubLabel[];
+  milestones: GithubMilestone[];
+  assignees_available: Array<{ login: string }>;
 }
 
 export interface InsightsBootstrap {

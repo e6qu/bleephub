@@ -511,9 +511,22 @@ export function PRFilesView({
       ? Number(startLine)
       : undefined;
 
+  // GitHub's "Hide whitespace changes": the /ui-data variant recomputes each
+  // patch ignoring whitespace-only line changes; same item shape as the REST
+  // list. The flag stays INSIDE the ["pr-files", owner, repo, number] prefix
+  // so existing invalidations reach both variants.
+  const [hideWhitespace, setHideWhitespace] = useState(false);
   const q = useQuery({
-    queryKey: ["pr-files", owner, repo, number],
-    queryFn: () => fetchPRFiles(owner, repo, number),
+    queryKey: ["pr-files", owner, repo, number, hideWhitespace],
+    queryFn: () =>
+      hideWhitespace
+        ? ghFetch<GithubPRFile[]>(
+            `/ui-data/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/files?ignore_whitespace=1`,
+          )
+        : fetchPRFiles(owner, repo, number),
+    // Keep the previous list rendered while the other variant loads, so the
+    // toolbar (and the checkbox itself) doesn't blink out mid-toggle.
+    placeholderData: (prev: GithubPRFile[] | undefined) => prev,
   });
   const reviewsQ = useQuery({
     queryKey: ["pr-reviews", owner, repo, number],
@@ -716,7 +729,9 @@ export function PRFilesView({
   if (q.isLoading) return <Spinner label="loading changed files" />;
   if (q.isError) return <InlineError title="Failed to load changed files" detail={String(q.error)} />;
   const files = q.data ?? [];
-  if (files.length === 0) {
+  // While hiding whitespace an empty list means "all changes were
+  // whitespace-only" — keep the toolbar so the checkbox can be untoggled.
+  if (files.length === 0 && !hideWhitespace) {
     return <Blankslate icon={<FileIcon size={26} />} title="No file changes" />;
   }
 
@@ -767,6 +782,17 @@ export function PRFilesView({
           <span style={{ color: "var(--gh-open)" }}>{totalAdd} additions</span> and{" "}
           <span style={{ color: "var(--color-status-error)" }}>{totalDel} deletions</span>.
         </div>
+        <label
+          className="inline-flex items-center gap-1.5"
+          style={{ fontSize: "0.78rem", color: "var(--color-fg-muted)", whiteSpace: "nowrap" }}
+        >
+          <input
+            type="checkbox"
+            checked={hideWhitespace}
+            onChange={(event) => setHideWhitespace(event.target.checked)}
+          />
+          Hide whitespace changes
+        </label>
         <div ref={finishRef} style={{ position: "relative" }}>
           <Button
             variant="primary"
@@ -984,6 +1010,9 @@ export function PRFilesView({
       )}
       {removeDraftMutation.isError && (
         <InlineError inline title="Could not remove pending comment" detail={String(removeDraftMutation.error)} />
+      )}
+      {files.length === 0 && (
+        <Blankslate icon={<FileIcon size={26} />} title="No changes once whitespace is ignored" />
       )}
       {files.map((f) => (
         <FileDiff

@@ -7,6 +7,7 @@ import { confirmAction } from "../components/confirmAction.js";
 import { RulesetEditor, type RulesetRuleConfig } from "../components/RulesetEditor.js";
 import {
   ghFetch,
+  ghPostJSON,
   ghSend,
   isNotFound,
   fetchOrgCustomProperties,
@@ -30,7 +31,6 @@ import {
   addRepoDeployKey,
   createRepoAutolink,
   fetchWebhooks,
-  createRepoHook,
   updateRepoHook,
   deleteRepoHook,
   pingRepoHook,
@@ -1394,16 +1394,23 @@ function AutolinksTab({ owner, repo }: { owner: string; repo: string }) {
   );
 }
 
-// PATCH a repo hook with a full config (url/content_type/secret) — the
-// entry-resident updateRepoHook wrapper's config type has no secret member, so
-// the edit dialog uses this page-local fetcher instead of widening api.ts.
+// Create/PATCH a repo hook with a full config (url/content_type/secret/
+// insecure_ssl) — the entry-resident createRepoHook/updateRepoHook wrappers'
+// config types carry neither secret nor insecure_ssl, so the webhooks tab
+// posts/patches through these lazy-page fetchers instead of widening api.ts.
 // A blank secret is omitted: the server keeps the stored secret when
 // config.secret is absent/empty (internal/server/gh_hooks_rest.go).
+type RepoHookConfigBody = { url: string; content_type: string; insecure_ssl: string; secret?: string };
+const createRepoHookFull = (
+  owner: string,
+  repo: string,
+  body: { name: "web"; active: boolean; events: string[]; config: RepoHookConfigBody },
+) => ghPostJSON<GithubWebhook>(`/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/hooks`, body);
 const patchRepoHookFull = (
   owner: string,
   repo: string,
   id: number,
-  body: { active: boolean; events: string[]; config: { url: string; content_type: string; secret?: string } },
+  body: { active: boolean; events: string[]; config: RepoHookConfigBody },
 ) => ghSend("PATCH", `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/hooks/${id}`, body);
 
 function WebhooksTab({ owner, repo }: { owner: string; repo: string }) {
@@ -1419,12 +1426,16 @@ function WebhooksTab({ owner, repo }: { owner: string; repo: string }) {
 
   const createMut = useMutation({
     mutationFn: (values: WebhookFormValues) =>
-      createRepoHook(owner, repo, {
-        url: values.url,
-        contentType: values.contentType,
-        secret: values.secret || undefined,
-        events: values.events,
+      createRepoHookFull(owner, repo, {
+        name: "web",
         active: values.active,
+        events: values.events,
+        config: {
+          url: values.url,
+          content_type: values.contentType,
+          insecure_ssl: values.insecureSsl,
+          ...(values.secret ? { secret: values.secret } : {}),
+        },
       }),
     onSuccess: invalidate,
   });
@@ -1436,6 +1447,7 @@ function WebhooksTab({ owner, repo }: { owner: string; repo: string }) {
         config: {
           url: values.url,
           content_type: values.contentType,
+          insecure_ssl: values.insecureSsl,
           ...(values.secret ? { secret: values.secret } : {}),
         },
       }),
@@ -1480,6 +1492,13 @@ function WebhooksTab({ owner, repo }: { owner: string; repo: string }) {
             initial={{
               url: editing.config.url,
               contentType: editing.config.content_type,
+              // The GET config carries insecure_ssl; GithubWebhook.config's
+              // inline type omits it (types.ts is entry-resident), so read it
+              // through a local widening.
+              insecureSsl:
+                (editing.config as GithubWebhook["config"] & { insecure_ssl?: string }).insecure_ssl === "1"
+                  ? "1"
+                  : "0",
               events: editing.events,
               active: editing.active,
             }}
@@ -2847,13 +2866,15 @@ function EnvironmentsTab({ owner, repo }: { owner: string; repo: string }) {
 }
 
 // One entry in the environment's required-reviewers PUT payload, plus a label
-// for display. The GET response resolves User reviewers to a user object but
-// carries no id for Team reviewers, so team entries can only round-trip when
-// re-picked here (the limitation is labelled in the UI).
+// for display. The GET response resolves each reviewer to its user/team
+// object (id + login for users, id + slug/name for teams), so both kinds
+// round-trip their ids on save.
 interface EnvReviewerDraft {
   type: "User" | "Team";
   id: number;
   label: string;
+  /** Team reviewers only: the team slug, shown alongside the name. */
+  slug?: string;
 }
 
 function EnvironmentDetail({ owner, repo, env }: { owner: string; repo: string; env: string }) {
@@ -2872,21 +2893,27 @@ function EnvironmentDetail({ owner, repo, env }: { owner: string; repo: string; 
   // ── required reviewers ────────────────────────────────────────────────────
   const reviewersRule = thisEnv?.protection_rules?.find((r) => r.type === "required_reviewers");
   const [reviewers, setReviewers] = useState<EnvReviewerDraft[]>([]);
-  const [unresolvedTeams, setUnresolvedTeams] = useState(0);
   useEffect(() => {
     const drafts: EnvReviewerDraft[] = [];
-    let unresolved = 0;
     for (const entry of reviewersRule?.reviewers ?? []) {
-      const reviewer = entry.reviewer as { id?: number; login?: string } | undefined;
-      if (entry.type === "User" && reviewer?.id != null) {
-        drafts.push({ type: "User", id: reviewer.id, label: reviewer.login ?? `#${reviewer.id}` });
+      // The typed reviewer only declares login; the payload carries the full
+      // simple-user | team union (id, and slug/name for teams).
+      const reviewer = entry.reviewer as
+        | { id?: number; login?: string; slug?: string; name?: string }
+        | undefined;
+      if (reviewer?.id == null) continue;
+      if (entry.type === "Team") {
+        drafts.push({
+          type: "Team",
+          id: reviewer.id,
+          label: reviewer.name ?? reviewer.slug ?? `#${reviewer.id}`,
+          ...(reviewer.slug ? { slug: reviewer.slug } : {}),
+        });
       } else {
-        // Team reviewers (and unresolvable users) come back without an id.
-        unresolved += 1;
+        drafts.push({ type: "User", id: reviewer.id, label: reviewer.login ?? `#${reviewer.id}` });
       }
     }
     setReviewers(drafts);
-    setUnresolvedTeams(unresolved);
     // Re-seed when the rule content (not the array identity) changes.
   }, [JSON.stringify(reviewersRule?.reviewers ?? [])]);
 
@@ -2940,7 +2967,11 @@ function EnvironmentDetail({ owner, repo, env }: { owner: string; repo: string; 
                 {reviewers.map((r) => (
                   <li key={`${r.type}-${r.id}`} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: "0.82rem", padding: "0.15rem 0" }}>
                     <span>
-                      {r.label} <span style={{ color: "var(--color-fg-muted)", fontSize: "0.74rem" }}>{r.type}</span>
+                      {r.label}{" "}
+                      <span style={{ color: "var(--color-fg-muted)", fontSize: "0.74rem" }}>
+                        {r.type}
+                        {r.slug ? ` · ${r.slug}` : ""}
+                      </span>
                     </span>
                     <Button
                       size="sm"
@@ -2953,13 +2984,6 @@ function EnvironmentDetail({ owner, repo, env }: { owner: string; repo: string; 
                   </li>
                 ))}
               </ul>
-            )}
-            {unresolvedTeams > 0 && (
-              <p style={{ fontSize: "0.74rem", color: "var(--color-fg-muted)", margin: "0 0 0.25rem" }}>
-                {unresolvedTeams} saved team reviewer{unresolvedTeams === 1 ? "" : "s"} cannot be displayed
-                (the API returns no team id) — re-add {unresolvedTeams === 1 ? "it" : "them"} below before saving,
-                or saving will drop {unresolvedTeams === 1 ? "it" : "them"}.
-              </p>
             )}
             <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", alignItems: "flex-end" }}>
               <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem", fontSize: "0.75rem", color: "var(--color-fg-muted)" }}>

@@ -30,7 +30,8 @@ import (
 // route has one), so each sub-object is byte-identical to the standalone
 // endpoint's body and the SPA can hydrate its TanStack Query caches from it.
 // List sub-payloads are the standalone endpoint's FIRST page with default
-// pagination (per_page=30, no Link headers are forwarded). A nullable
+// pagination (per_page=30, no Link headers are forwarded) unless a key's
+// comment names an explicit query. A nullable
 // sub-resource whose standalone endpoint would answer non-2xx (missing README,
 // no releases, empty repo) is null; a list whose standalone endpoint answers
 // 204 (contributors on an empty repo) is []. Repo resolution and 404 semantics
@@ -45,8 +46,10 @@ import (
 //	  repo                 GET /api/v3/repos/{o}/{r}
 //	  readme               GET .../readme                        (null when 404)
 //	  root_entries         GET .../contents/ (default ref root)  (null when unavailable)
-//	  branches             { first_page: GET .../branches, total_count: int }
-//	  tags                 { first_page: GET .../tags,     total_count: int }
+//	  branches             { first_page: GET .../branches?per_page=100, total_count: int }
+//	  tags                 { first_page: GET .../tags?per_page=100,     total_count: int }
+//	                       (per_page=100 matches the UI's branch/tag hooks,
+//	                       so the seeded cache is the page they re-fetch)
 //	  languages            GET .../languages
 //	  contributors         GET .../contributors                  ([] when 204)
 //	  latest_release       GET .../releases/latest               (null when 404)
@@ -68,7 +71,10 @@ import (
 //	  comments             GET .../issues/{number}/comments
 //	  timeline             GET .../issues/{number}/timeline
 //	  labels               GET .../labels (repo labels)
-//	  milestones           GET .../milestones?state=open
+//	  milestones           GET .../milestones?state=all
+//	                       (KEY CHANGE: previously state=open — the UI's
+//	                       milestone picker queries state=all, so the seeded
+//	                       cache key now matches the query the page issues)
 //	  assignees_available  GET .../assignees
 //
 //	GET /ui-data/bootstrap/repos/{owner}/{repo}/pulls/{number}
@@ -81,6 +87,9 @@ import (
 //	  check_runs           GET .../commits/{head_sha}/check-runs
 //	  combined_status      GET .../commits/{head_sha}/status
 //	  files_summary        { changed_files, additions, deletions } (from the pull)
+//	  labels               GET .../labels (repo labels; same source as the issue aggregate)
+//	  milestones           GET .../milestones?state=all (same source as the issue aggregate)
+//	  assignees_available  GET .../assignees (same source as the issue aggregate)
 //
 //	GET /ui-data/bootstrap/repos/{owner}/{repo}/insights?period={24h|3d|1w|1m}
 //	  period               echoed (defaults to 1w; anything else is a 422)
@@ -269,8 +278,11 @@ func (s *Server) handleUIBootstrapRepo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	branches := uiSubGET(r, s.handleListBranches, api+"/branches", nil, nil)
-	tags := uiSubGET(r, s.handleListTags, api+"/tags", nil, nil)
+	// The UI's branch/tag hooks fetch per_page=100; embedding that page keeps
+	// the seeded cache byte-identical to the request the page would repeat.
+	first100 := url.Values{"per_page": {"100"}}
+	branches := uiSubGET(r, s.handleListBranches, api+"/branches", first100, nil)
+	tags := uiSubGET(r, s.handleListTags, api+"/tags", first100, nil)
 	readme := uiSubGET(r, s.handleGetReadme, api+"/readme", nil, nil)
 	rootEntries := uiSubGET(r, s.handleGetContents, api+"/contents/", nil, map[string]string{"path": ""})
 	languages := uiSubGET(r, s.handleGetRepoLanguages, api+"/languages", nil, nil)
@@ -322,7 +334,7 @@ func (s *Server) handleUIBootstrapIssue(w http.ResponseWriter, r *http.Request) 
 	timeline := uiSubGET(r, s.handleListIssueTimeline, api+"/issues/"+number+"/timeline", nil, nil)
 	labels := uiSubGET(r, s.handleListLabels, api+"/labels", nil, nil)
 	milestones := uiSubGET(r, s.handleListMilestones, api+"/milestones",
-		url.Values{"state": {"open"}}, nil)
+		url.Values{"state": {"all"}}, nil)
 	assignees := uiSubGET(r, s.handleListRepoAssignees, api+"/assignees", nil, nil)
 
 	writeJSON(uiConditional(w, r), http.StatusOK, map[string]interface{}{
@@ -375,6 +387,12 @@ func (s *Server) handleUIBootstrapPull(w http.ResponseWriter, r *http.Request) {
 		api+"/commits/"+pull.Head.SHA+"/check-runs", nil, map[string]string{"sha": pull.Head.SHA})
 	combinedStatus := uiSubGET(r, s.handleGetCombinedStatus,
 		api+"/commits/"+pull.Head.SHA+"/status", nil, map[string]string{"ref": pull.Head.SHA})
+	// The PR sidebar shares the issue sidebar's pickers, so the PR aggregate
+	// embeds the same labels / milestones / assignees sources.
+	labels := uiSubGET(r, s.handleListLabels, api+"/labels", nil, nil)
+	milestones := uiSubGET(r, s.handleListMilestones, api+"/milestones",
+		url.Values{"state": {"all"}}, nil)
+	assignees := uiSubGET(r, s.handleListRepoAssignees, api+"/assignees", nil, nil)
 
 	writeJSON(uiConditional(w, r), http.StatusOK, map[string]interface{}{
 		"pull":                json.RawMessage(pullResp.body()),
@@ -390,6 +408,9 @@ func (s *Server) handleUIBootstrapPull(w http.ResponseWriter, r *http.Request) {
 			"additions":     pull.Additions,
 			"deletions":     pull.Deletions,
 		},
+		"labels":              uiSubJSONOrEmptyList(labels),
+		"milestones":          uiSubJSONOrEmptyList(milestones),
+		"assignees_available": uiSubJSONOrEmptyList(assignees),
 	})
 }
 

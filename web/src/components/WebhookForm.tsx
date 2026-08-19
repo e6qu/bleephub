@@ -48,6 +48,8 @@ export interface WebhookFormValues {
   contentType: string;
   /** Empty string = not set (create) / keep the current secret (edit). */
   secret: string;
+  /** config.insecure_ssl: "0" verifies SSL certificates (default), "1" skips verification. */
+  insecureSsl: "0" | "1";
   events: string[];
   active: boolean;
 }
@@ -88,6 +90,7 @@ export function WebhookForm({
   const [url, setUrl] = useState(initial?.url ?? "");
   const [contentType, setContentType] = useState(initial?.contentType ?? "json");
   const [secret, setSecret] = useState("");
+  const [insecureSsl, setInsecureSsl] = useState<"0" | "1">(initial?.insecureSsl ?? "0");
   const [active, setActive] = useState(initial?.active ?? true);
   const [mode, setMode] = useState<EventMode>(modeFromEvents(initialEvents));
   const [selected, setSelected] = useState<Set<string>>(
@@ -106,7 +109,7 @@ export function WebhookForm({
     mode === "push" ? ["push"] : mode === "all" ? ["*"] : [...selected].sort();
 
   const submit = () =>
-    onSubmit({ url: url.trim(), contentType, secret: secret.trim(), events, active });
+    onSubmit({ url: url.trim(), contentType, secret: secret.trim(), insecureSsl, events, active });
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
@@ -139,6 +142,36 @@ export function WebhookForm({
         placeholder={editingWithSecret ? "Leave blank to keep the current secret" : "Signing secret"}
         className="w-full"
       />
+      <fieldset style={{ border: "none", padding: 0, margin: "0.25rem 0 0" }}>
+        <legend style={{ fontSize: "0.85rem", fontWeight: 500, marginBottom: "0.35rem" }}>
+          SSL verification
+        </legend>
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+          <label style={radioRow}>
+            <input
+              type="radio"
+              name={`${uid}-hook-insecure-ssl`}
+              checked={insecureSsl === "0"}
+              onChange={() => setInsecureSsl("0")}
+            />
+            Enable SSL verification
+          </label>
+          <label style={radioRow}>
+            <input
+              type="radio"
+              name={`${uid}-hook-insecure-ssl`}
+              checked={insecureSsl === "1"}
+              onChange={() => setInsecureSsl("1")}
+            />
+            Disable (not recommended)
+          </label>
+        </div>
+        {insecureSsl === "1" && (
+          <p role="alert" style={{ fontSize: "0.78rem", color: "var(--color-danger-text)", margin: "0.35rem 0 0" }}>
+            Warning: SSL certificates will not be verified when delivering payloads.
+          </p>
+        )}
+      </fieldset>
       <fieldset style={{ border: "none", padding: 0, margin: "0.25rem 0 0" }}>
         <legend style={{ fontSize: "0.85rem", fontWeight: 500, marginBottom: "0.35rem" }}>
           Which events would you like to trigger this webhook?

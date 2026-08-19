@@ -30,6 +30,8 @@ type bpRequest struct {
 	BlockCreations                 *flexBool                   `json:"block_creations"`
 	RequiredConversationResolution *flexBool                   `json:"required_conversation_resolution"`
 	RequiredSignatures             *flexBool                   `json:"required_signatures"`
+	LockBranch                     *flexBool                   `json:"lock_branch"`
+	AllowForkSyncing               *flexBool                   `json:"allow_fork_syncing"`
 }
 
 func (s *Server) registerGHBranchProtectionRoutes() {
@@ -167,6 +169,23 @@ func (s *Server) branchProtectionFor(repoID int, branch string) *store.BranchPro
 	return cloneBranchProtection(s.store.Misc.BranchProtection[store.BpKey(repoID, branch)])
 }
 
+// effectiveBranchProtectionFor is the enforcement chokepoint's protection
+// lookup: the exact-name rule when one exists, otherwise the first matching
+// web-only pattern rule (/ui-data branch-protection-patterns). The REST
+// protection resource handlers keep reading branchProtectionFor directly —
+// GitHub's classic protection API addresses exact names only.
+func (s *Server) effectiveBranchProtectionFor(repoID int, branch string) *store.BranchProtection {
+	if bp := s.branchProtectionFor(repoID, branch); bp != nil {
+		return bp
+	}
+	for _, rule := range s.store.ListBranchProtectionPatterns(repoID) {
+		if rule.Protection != nil && store.MatchBranchPattern(rule.Pattern, branch) {
+			return cloneBranchProtection(rule.Protection)
+		}
+	}
+	return nil
+}
+
 // cloneBranchProtection deep-copies a protection rule so that no caller holds a
 // pointer into the stored table. Every field is copied explicitly and
 // TestBranchProtectionCloneCoversEveryField fails when a new one is added
@@ -207,6 +226,8 @@ func cloneBranchProtection(bp *store.BranchProtection) *store.BranchProtection {
 	out.BlockCreations = store.ClonePointer(bp.BlockCreations)
 	out.RequiredConversationResolution = store.ClonePointer(bp.RequiredConversationResolution)
 	out.RequiredSignatures = store.ClonePointer(bp.RequiredSignatures)
+	out.LockBranch = store.ClonePointer(bp.LockBranch)
+	out.AllowForkSyncing = store.ClonePointer(bp.AllowForkSyncing)
 	return &out
 }
 
@@ -249,6 +270,9 @@ func (s *Server) setBranchProtection(repo *store.Repo, branch string, bp *store.
 		}
 	}
 	s.store.Misc.Mu.Unlock()
+	// A protection state change can clear the condition an armed auto-merge
+	// was waiting for (every protection sub-resource handler funnels here).
+	s.maybeAutoMergeBranch(repo, branch)
 }
 
 func (s *Server) branchProtectionNotFound(w http.ResponseWriter) {
@@ -339,6 +363,9 @@ func (s *Server) handleBranchProtectionPut(w http.ResponseWriter, r *http.Reques
 		}
 		s.emitBranchProtectionRuleEvent(repo, branch, action, r)
 	}
+	// A protection state change can clear the condition an armed auto-merge
+	// was waiting for.
+	s.maybeAutoMergeBranch(repo, branch)
 	writeJSON(w, http.StatusOK, bp)
 }
 
@@ -404,6 +431,12 @@ func (s *Server) applyBranchProtectionRequest(bp *store.BranchProtection, req *b
 	}
 	if req.RequiredSignatures != nil {
 		bp.RequiredSignatures = &store.BPEnabledURL{Enabled: bool(*req.RequiredSignatures)}
+	}
+	if req.LockBranch != nil {
+		bp.LockBranch = &store.BPEnabled{Enabled: bool(*req.LockBranch)}
+	}
+	if req.AllowForkSyncing != nil {
+		bp.AllowForkSyncing = &store.BPEnabled{Enabled: bool(*req.AllowForkSyncing)}
 	}
 	return bp
 }
@@ -675,7 +708,7 @@ func (s *Server) handleBPReviewsPatch(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	if req.RequiredApprovingReviewCount > 0 || req.DismissStaleReviews || req.RequireCodeOwnerReviews || req.DismissalRestrictions != nil || req.BypassPullRequestAllowances != nil {
+	if req.RequiredApprovingReviewCount > 0 || req.DismissStaleReviews || req.RequireCodeOwnerReviews || req.RequireLastPushApproval || req.DismissalRestrictions != nil || req.BypassPullRequestAllowances != nil {
 		bp.RequiredPullRequestReviews = &req
 	} else {
 		bp.RequiredPullRequestReviews = nil
@@ -1287,9 +1320,17 @@ func (s *Server) protectedRefWriteRefusal(ctx context.Context, repo *store.Repo,
 	}
 	rulesetRefusal := s.evaluateRulesetsForRefWrite(ctx, repo, stor, ref, kind, target)
 	branch := ref.Short()
-	bp := s.branchProtectionFor(repo.ID, branch)
+	bp := s.effectiveBranchProtectionFor(repo.ID, branch)
 	if bp == nil {
 		return rulesetRefusal
+	}
+	// lock_branch makes the branch read-only for everyone, administrators
+	// included (unlocking is how you write to it): every ref write — push,
+	// force push, deletion, creation — is refused, on both git transports and
+	// the REST ref-write routes, since they all decide here. Decided before
+	// the enforce_admins bypass, matching the merge gate.
+	if bp.LockBranch != nil && bp.LockBranch.Enabled {
+		return "Cannot update this locked branch: " + branch + " is read-only."
 	}
 	// enforce_admins is the setting that decides whether the rule binds a
 	// repository administrator; with it off an administrator bypasses the
@@ -1429,12 +1470,19 @@ func (s *Server) viewerIsRestrictedPusher(ctx context.Context, repo *store.Repo,
 // It returns (ok, errorMessage). ok==false with empty message means the caller
 // should fall back to the existing required-status-check message.
 func (s *Server) canMergePullRequest(ctx context.Context, repo *store.Repo, pr *store.PullRequest) (bool, string) {
-	bp := s.branchProtectionFor(repo.ID, pr.BaseRefName)
+	bp := s.effectiveBranchProtectionFor(repo.ID, pr.BaseRefName)
 	if bp == nil {
 		return true, ""
 	}
 
 	isAdmin := s.viewerCanAdminRepo(ctx, repo)
+
+	// A locked branch is read-only for everyone, admins included — GitHub's
+	// lock_branch has no enforce_admins carve-out. A merge writes the base
+	// branch, so it is refused before any bypass applies.
+	if bp.LockBranch != nil && bp.LockBranch.Enabled {
+		return false, "Cannot merge into locked branch " + pr.BaseRefName + "."
+	}
 
 	// Admin bypass only when enforce_admins is not enabled.
 	if isAdmin && (bp.EnforceAdmins == nil || !bp.EnforceAdmins.Enabled) {
@@ -1458,12 +1506,79 @@ func (s *Server) canMergePullRequest(ctx context.Context, repo *store.Repo, pr *
 		}
 	}
 
+	// require_last_push_approval: the most recent reviewable push must be
+	// approved by someone other than the person who pushed it.
+	if bp.RequiredPullRequestReviews != nil && bp.RequiredPullRequestReviews.RequireLastPushApproval {
+		if !s.lastPushApproved(repo, pr) {
+			return false, "The most recent push must be approved by someone other than the person who pushed it."
+		}
+	}
+
 	// Requested changes block merge
 	if s.hasRequestedChanges(pr.ID) {
 		return false, "Changes have been requested on this pull request."
 	}
 
 	return true, ""
+}
+
+// lastPushApproved reports whether somebody other than the head branch's
+// last pusher holds a current APPROVED review on the pull request. The
+// pusher of the latest head commit is resolved from the commit's committer
+// identity (email match first, then the login-derived local part, then the
+// committer name); when nothing resolves, the PR's author stands in — the
+// author proposed the head and must not self-satisfy the gate.
+func (s *Server) lastPushApproved(repo *store.Repo, pr *store.PullRequest) bool {
+	pusherID := s.lastHeadPusherID(repo, pr)
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
+	for userID, state := range s.latestGateReviewStatesLocked(pr.ID) {
+		if state == "APPROVED" && userID != pusherID {
+			return true
+		}
+	}
+	return false
+}
+
+// lastHeadPusherID resolves the user behind the PR's current head commit.
+func (s *Server) lastHeadPusherID(repo *store.Repo, pr *store.PullRequest) int {
+	headStor, _ := store.PullRequestGitStorage(s.store, repo, pr)
+	if headStor != nil {
+		if hash, err := store.ResolveGitRef(headStor, pr.HeadRefName); err == nil {
+			if commit, err := object.GetCommit(headStor, hash); err == nil {
+				if id := s.userIDForCommitIdentity(commit.Committer.Name, commit.Committer.Email); id != 0 {
+					return id
+				}
+				if id := s.userIDForCommitIdentity(commit.Author.Name, commit.Author.Email); id != 0 {
+					return id
+				}
+			}
+		}
+	}
+	return pr.AuthorID
+}
+
+// userIDForCommitIdentity maps a git signature to a store user: exact email
+// match, then the email's local part as a login, then the name as a login.
+func (s *Server) userIDForCommitIdentity(name, email string) int {
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
+	if email != "" {
+		for _, u := range s.store.Users {
+			if u.Email != "" && strings.EqualFold(u.Email, email) {
+				return u.ID
+			}
+		}
+		if local, _, ok := strings.Cut(email, "@"); ok {
+			if u := s.store.UsersByLogin[local]; u != nil {
+				return u.ID
+			}
+		}
+	}
+	if u := s.store.UsersByLogin[name]; u != nil {
+		return u.ID
+	}
+	return 0
 }
 
 // latestGateReviewStatesLocked returns each reviewer's effective merge-gate
@@ -1526,7 +1641,7 @@ func (s *Server) hasRequestedChanges(prID int) bool {
 // requiredCheckContexts returns the base branch's protected status-check
 // contexts from the typed model.
 func (s *Server) requiredCheckContexts(repoID int, baseBranch string) []string {
-	bp := s.branchProtectionFor(repoID, baseBranch)
+	bp := s.effectiveBranchProtectionFor(repoID, baseBranch)
 	if bp == nil || bp.RequiredStatusChecks == nil {
 		return nil
 	}

@@ -42,6 +42,22 @@ type PullRequest struct {
 	UpdatedAt               time.Time
 	ClosedAt                *time.Time
 	MergedAt                *time.Time
+	// AutoMerge is the armed auto-merge request (GraphQL
+	// enablePullRequestAutoMerge; REST pull-request.auto_merge). Nil when
+	// auto-merge is off. Cleared whenever the PR leaves the OPEN state —
+	// merging or closing retires the request, exactly as on GitHub.
+	AutoMerge *PullRequestAutoMerge
+}
+
+// PullRequestAutoMerge captures who armed auto-merge on a pull request and
+// the merge parameters to use once its blocking conditions clear.
+type PullRequestAutoMerge struct {
+	EnabledByID    int
+	MergeMethod    string // "MERGE", "SQUASH", "REBASE"
+	CommitHeadline string
+	CommitBody     string
+	AuthorEmail    string
+	EnabledAt      time.Time
 }
 
 // PullRequestReview represents a review on a pull request.
@@ -216,6 +232,10 @@ func clonePullRequest(pr *PullRequest) *PullRequest {
 		merged := *pr.MergedAt
 		clone.MergedAt = &merged
 	}
+	if pr.AutoMerge != nil {
+		autoMerge := *pr.AutoMerge
+		clone.AutoMerge = &autoMerge
+	}
 	return &clone
 }
 
@@ -263,6 +283,12 @@ func (st *Store) UpdatePullRequest(id int, fn func(*PullRequest)) bool {
 		return false
 	}
 	fn(pr)
+	// Every state transition funnels through here, so retiring an armed
+	// auto-merge request when the PR leaves OPEN (merged or closed) needs no
+	// per-call-site bookkeeping.
+	if pr.State != "OPEN" {
+		pr.AutoMerge = nil
+	}
 	pr.UpdatedAt = st.CurrentTime()
 	if st.Persist != nil {
 		st.Persist.MustPut("pull_requests", strconv.Itoa(pr.ID), pr)

@@ -429,7 +429,7 @@ func environmentToJSON(e *store.Environment, st *store.Store, baseURL string, re
 			"id":        e.ID*10 + 2,
 			"node_id":   fmt.Sprintf("GA_kwDO%08d", e.ID*10+2),
 			"type":      "required_reviewers",
-			"reviewers": environmentReviewersJSON(e, st),
+			"reviewers": environmentReviewersJSON(e, st, baseURL),
 		})
 	}
 	if branchPolicy != nil {
@@ -444,9 +444,11 @@ func environmentToJSON(e *store.Environment, st *store.Store, baseURL string, re
 }
 
 // environmentReviewersJSON renders the configured reviewers with their
-// resolved user objects, the shape protection rules and pending
-// deployments share.
-func environmentReviewersJSON(e *store.Environment, st *store.Store) []map[string]interface{} {
+// resolved reviewer objects — the vendored `environment` schema's reviewer is
+// a simple-user | team union keyed by the deployment-reviewer-type — the
+// shape protection rules and pending deployments share. Must not be called
+// with st.Mu held (team resolution takes RLock).
+func environmentReviewersJSON(e *store.Environment, st *store.Store, baseURL string) []map[string]interface{} {
 	out := []map[string]interface{}{}
 	for _, rev := range e.Reviewers {
 		revType, _ := rev["type"].(string)
@@ -458,11 +460,20 @@ func environmentReviewersJSON(e *store.Environment, st *store.Store) []map[strin
 			id = int(v)
 		}
 		entry := map[string]interface{}{"type": revType}
-		st.Mu.RLock()
-		if u := st.Users[id]; u != nil {
-			entry["reviewer"] = store.UserToJSON(u)
+		switch revType {
+		case "Team":
+			if team := st.GetTeamByID(id); team != nil {
+				if org := st.GetOrgByID(team.OrgID); org != nil {
+					entry["reviewer"] = teamSimpleJSON(team, org, st, baseURL)
+				}
+			}
+		default: // "User"
+			st.Mu.RLock()
+			if u := st.Users[id]; u != nil {
+				entry["reviewer"] = store.UserToJSON(u)
+			}
+			st.Mu.RUnlock()
 		}
-		st.Mu.RUnlock()
 		out = append(out, entry)
 	}
 	return out

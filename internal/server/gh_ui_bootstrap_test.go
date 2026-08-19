@@ -80,9 +80,11 @@ func TestUIBootstrapRepoSubPayloadsMatchStandaloneEndpoints(t *testing.T) {
 	if err := json.Unmarshal(agg["branches"], &branches); err != nil {
 		t.Fatalf("decode branches: %v", err)
 	}
-	_, wantBranches := fetchTrimmedBody(t, s, repo.path()+"/branches", defaultToken)
+	// first_page is the standalone endpoint's per_page=100 page — the query
+	// the UI's branch/tag hooks issue.
+	_, wantBranches := fetchTrimmedBody(t, s, repo.path()+"/branches?per_page=100", defaultToken)
 	if !bytes.Equal(bytes.TrimSpace(branches.FirstPage), wantBranches) {
-		t.Errorf("branches.first_page != standalone /branches:\n got: %.300s\nwant: %.300s", branches.FirstPage, wantBranches)
+		t.Errorf("branches.first_page != standalone /branches?per_page=100:\n got: %.300s\nwant: %.300s", branches.FirstPage, wantBranches)
 	}
 	// sweepRepo seeds main + the "feature" PR branch.
 	if branches.TotalCount != 2 {
@@ -181,6 +183,13 @@ func TestUIBootstrapIssueSubPayloadsMatchStandaloneEndpoints(t *testing.T) {
 		map[string]interface{}{"name": "bug", "color": "ff0000"}))
 	mustPost(t, s.post(t, repo.path()+"/milestones", defaultToken,
 		map[string]interface{}{"title": "v1"}))
+	// A closed milestone makes state=all observably different from state=open,
+	// pinning the aggregate's milestones source as ?state=all.
+	closedMilestone := decodeJSONWithStatus(t, s.post(t, repo.path()+"/milestones", defaultToken,
+		map[string]interface{}{"title": "v0-closed"}), http.StatusCreated)
+	closedNum := itoa(int(closedMilestone["number"].(float64)))
+	decodeJSONWithStatus(t, s.patch(t, repo.path()+"/milestones/"+closedNum, defaultToken,
+		map[string]interface{}{"state": "closed"}), http.StatusOK)
 
 	agg := decodeBootstrap(t, s, "/ui-data/bootstrap"+trimAPIPrefix(repo.path())+"/issues/"+numStr)
 
@@ -188,8 +197,16 @@ func TestUIBootstrapIssueSubPayloadsMatchStandaloneEndpoints(t *testing.T) {
 	assertSubEqualsStandalone(t, s, agg, "comments", repo.path()+"/issues/"+numStr+"/comments")
 	assertSubEqualsStandalone(t, s, agg, "timeline", repo.path()+"/issues/"+numStr+"/timeline")
 	assertSubEqualsStandalone(t, s, agg, "labels", repo.path()+"/labels")
-	assertSubEqualsStandalone(t, s, agg, "milestones", repo.path()+"/milestones?state=open")
+	assertSubEqualsStandalone(t, s, agg, "milestones", repo.path()+"/milestones?state=all")
 	assertSubEqualsStandalone(t, s, agg, "assignees_available", repo.path()+"/assignees")
+	// state=all embeds both milestones; state=open would drop the closed one.
+	var milestones []json.RawMessage
+	if err := json.Unmarshal(agg["milestones"], &milestones); err != nil {
+		t.Fatalf("decode milestones: %v", err)
+	}
+	if len(milestones) != 2 {
+		t.Errorf("milestones embeds %d rows, want 2 (state=all includes the closed one)", len(milestones))
+	}
 
 	// A number the issue endpoint refuses is refused identically here.
 	status, body := fetchTrimmedBody(t, s, "/ui-data/bootstrap"+trimAPIPrefix(repo.path())+"/issues/999999", defaultToken)
@@ -222,6 +239,10 @@ func TestUIBootstrapPullSubPayloadsMatchStandaloneEndpoints(t *testing.T) {
 	assertSubEqualsStandalone(t, s, agg, "reviews", repo.path()+"/pulls/"+numStr+"/reviews")
 	assertSubEqualsStandalone(t, s, agg, "review_comments", repo.path()+"/pulls/"+numStr+"/comments")
 	assertSubEqualsStandalone(t, s, agg, "requested_reviewers", repo.path()+"/pulls/"+numStr+"/requested_reviewers")
+	// The PR aggregate embeds the same sidebar sources as the issue aggregate.
+	assertSubEqualsStandalone(t, s, agg, "labels", repo.path()+"/labels")
+	assertSubEqualsStandalone(t, s, agg, "milestones", repo.path()+"/milestones?state=all")
+	assertSubEqualsStandalone(t, s, agg, "assignees_available", repo.path()+"/assignees")
 
 	var pull struct {
 		Head struct {

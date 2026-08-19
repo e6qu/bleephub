@@ -1359,6 +1359,9 @@ describe("PullsPage detail bootstrap", () => {
             check_runs: noChecks,
             combined_status: emptyStatus,
             files_summary: { changed_files: 1, additions: 2, deletions: 0 },
+            labels: [{ id: 1, name: "bug", color: "ff0000", description: "" }],
+            milestones: [{ number: 4, title: "v1.0", state: "open" }],
+            assignees_available: [{ login: "admin" }, { login: "carol" }],
           }),
         );
       }
@@ -1387,6 +1390,55 @@ describe("PullsPage detail bootstrap", () => {
     expect(gets.some((u) => u.includes("/commits/abc/status"))).toBe(false);
   });
 
+  it("seeds the sidebar labels/milestones/assignees keys from the bootstrap", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.includes("/ui-data/bootstrap/repos/admin/test/pulls/9")) {
+        return Promise.resolve(
+          jsonResponse({
+            pull: pr(9, "Bootstrapped PR"),
+            timeline: [],
+            comments: [],
+            reviews: [],
+            review_comments: [],
+            requested_reviewers: emptyReviewers,
+            check_runs: noChecks,
+            combined_status: emptyStatus,
+            files_summary: { changed_files: 1, additions: 2, deletions: 0 },
+            labels: [{ id: 1, name: "bug", color: "ff0000", description: "" }],
+            milestones: [{ number: 4, title: "v1.0", state: "open" }],
+            assignees_available: [{ login: "admin" }, { login: "carol" }],
+          }),
+        );
+      }
+      if (u.endsWith("/api/graphql") && init?.method === "POST") {
+        return Promise.resolve(
+          jsonResponse({ data: { repository: { pullRequest: { reviewThreads: { nodes: [] } } } } }),
+        );
+      }
+      if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse(viewer));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/test/pulls/9");
+    expect(await screen.findByText("Bootstrapped PR")).toBeInTheDocument();
+
+    // The sidebar consumes the seeded entries: the assignee picker offers the
+    // bootstrap logins and the label picker the bootstrap labels (the PR
+    // milestone field is read-only, so its seed is only assertable via the
+    // absence of the standalone fetch below).
+    // (carol appears in both the assignee picker and the reviewers picker —
+    // both read the seeded ["assignable-users"] key.)
+    expect((await screen.findAllByRole("option", { name: "carol" })).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByRole("option", { name: "bug" })).toBeInTheDocument();
+    // …without any standalone sidebar fetches.
+    const gets = mockFetch.mock.calls
+      .filter((c) => (c[1] as RequestInit | undefined)?.method === undefined)
+      .map((c) => c[0]!.toString());
+    expect(gets.some((u) => u.includes("/api/v3/repos/admin/test/labels"))).toBe(false);
+    expect(gets.some((u) => u.includes("/api/v3/repos/admin/test/milestones"))).toBe(false);
+    expect(gets.some((u) => u.endsWith("/api/v3/repos/admin/test/assignees"))).toBe(false);
+  });
+
   it("falls back to the standalone endpoints when the bootstrap answers 500", async () => {
     mockPRApis((u) => {
       if (u.includes("/ui-data/bootstrap/")) return jsonResponse({ message: "boom" }, 500);
@@ -1398,5 +1450,144 @@ describe("PullsPage detail bootstrap", () => {
       .filter((c) => (c[1] as RequestInit | undefined)?.method === undefined)
       .map((c) => c[0]!.toString());
     expect(gets.some((u) => u.includes("/api/v3/") && u.endsWith("/pulls/9"))).toBe(true);
+  });
+});
+
+describe("PullsPage auto-merge", () => {
+  const autoMergeRepo = {
+    id: 1,
+    name: "test",
+    full_name: "admin/test",
+    default_branch: "main",
+    owner: { login: "admin", type: "User" },
+    allow_auto_merge: true,
+  };
+
+  function findGraphQL(mutationName: string) {
+    return mockFetch.mock.calls.find(
+      (c) =>
+        c[0].toString().endsWith("/api/graphql") &&
+        (c[1] as RequestInit | undefined)?.method === "POST" &&
+        String((c[1] as RequestInit).body ?? "").includes(mutationName),
+    );
+  }
+
+  function mockBlockedAutoMergePR(
+    graphqlAnswer: (query: string) => Response | undefined,
+  ) {
+    mockPRApis((u, init) => {
+      if (u.endsWith("/repos/admin/test") && init?.method === undefined) {
+        return jsonResponse(autoMergeRepo);
+      }
+      if (u.endsWith("/pulls/9") && init?.method === undefined) {
+        return jsonResponse(
+          pr(9, "Blocked PR", { mergeable_state: "blocked", node_id: "PR_kwDO123" }),
+        );
+      }
+      if (u.endsWith("/api/graphql") && init?.method === "POST") {
+        const body = JSON.parse(String(init.body ?? "{}")) as { query?: string };
+        return graphqlAnswer(body.query ?? "");
+      }
+      return undefined;
+    });
+  }
+
+  it("enables auto-merge on a blocked PR with the chosen method", async () => {
+    mockBlockedAutoMergePR((query) =>
+      query.includes("enablePullRequestAutoMerge")
+        ? jsonResponse({ data: { enablePullRequestAutoMerge: { clientMutationId: null } } })
+        : undefined,
+    );
+    renderAt("/ui/repos/admin/test/pulls/9");
+
+    fireEvent.change(await screen.findByLabelText("Merge method"), {
+      target: { value: "squash" },
+    });
+    fireEvent.click(await screen.findByRole("button", { name: /^enable auto-merge$/i }));
+    // The confirmation panel reuses the merge box's commit title/message
+    // fields, prefilled with the method-specific defaults.
+    expect(screen.getByLabelText("Commit title")).toHaveValue("Blocked PR (#9)");
+    fireEvent.click(screen.getByRole("button", { name: /^confirm auto-merge$/i }));
+
+    await waitFor(() => expect(findGraphQL("enablePullRequestAutoMerge")).toBeDefined());
+    const body = JSON.parse(
+      String((findGraphQL("enablePullRequestAutoMerge")![1] as RequestInit).body),
+    ) as { variables: { input: unknown } };
+    expect(body.variables.input).toEqual({
+      pullRequestId: "PR_kwDO123",
+      mergeMethod: "SQUASH",
+      commitHeadline: "Blocked PR (#9)",
+    });
+  });
+
+  it("renders the clean-status refusal inline instead of crashing", async () => {
+    mockBlockedAutoMergePR((query) =>
+      query.includes("enablePullRequestAutoMerge")
+        ? jsonResponse({ errors: [{ message: "Pull request is in clean status" }] })
+        : undefined,
+    );
+    renderAt("/ui/repos/admin/test/pulls/9");
+
+    fireEvent.click(await screen.findByRole("button", { name: /^enable auto-merge$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^confirm auto-merge$/i }));
+
+    expect(await screen.findByText(/pull request is in clean status/i)).toBeInTheDocument();
+  });
+
+  it("shows the armed state and disables auto-merge via GraphQL", async () => {
+    mockPRApis((u, init) => {
+      if (u.endsWith("/pulls/9") && init?.method === undefined) {
+        return jsonResponse(
+          pr(9, "Armed PR", {
+            node_id: "PR_kwDO123",
+            auto_merge: {
+              enabled_by: { login: "alice" },
+              merge_method: "squash",
+              commit_title: "Armed PR (#9)",
+              commit_message: "",
+            },
+          }),
+        );
+      }
+      if (u.endsWith("/api/graphql") && init?.method === "POST") {
+        const body = JSON.parse(String(init.body ?? "{}")) as { query?: string };
+        if (body.query?.includes("disablePullRequestAutoMerge")) {
+          return jsonResponse({ data: { disablePullRequestAutoMerge: { clientMutationId: null } } });
+        }
+        return undefined;
+      }
+      return undefined;
+    });
+    renderAt("/ui/repos/admin/test/pulls/9");
+
+    expect(
+      await screen.findByText(/auto-merge enabled by alice \(squash\)/i),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /^disable auto-merge$/i }));
+    await waitFor(() => expect(findGraphQL("disablePullRequestAutoMerge")).toBeDefined());
+    const body = JSON.parse(
+      String((findGraphQL("disablePullRequestAutoMerge")![1] as RequestInit).body),
+    ) as { variables: { input: unknown } };
+    expect(body.variables.input).toEqual({ pullRequestId: "PR_kwDO123" });
+  });
+
+  it("hides the enable affordance when the repo does not allow auto-merge", async () => {
+    mockPRApis((u, init) => {
+      if (u.endsWith("/repos/admin/test") && init?.method === undefined) {
+        return jsonResponse({ ...autoMergeRepo, allow_auto_merge: false });
+      }
+      if (u.endsWith("/pulls/9") && init?.method === undefined) {
+        return jsonResponse(
+          pr(9, "Blocked PR", { mergeable_state: "blocked", node_id: "PR_kwDO123" }),
+        );
+      }
+      return undefined;
+    });
+    renderAt("/ui/repos/admin/test/pulls/9");
+    expect(
+      await screen.findByText(/merging is blocked — required checks must pass/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /enable auto-merge/i })).not.toBeInTheDocument();
   });
 });

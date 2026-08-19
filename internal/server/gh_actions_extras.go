@@ -625,7 +625,7 @@ func (s *Server) handleGetPendingDeployments(w http.ResponseWriter, r *http.Requ
 			"wait_timer":               env.WaitTimer,
 			"wait_timer_started_at":    p.WaitTimerStartedAt.UTC().Format(time.RFC3339),
 			"current_user_can_approve": true,
-			"reviewers":                environmentReviewersJSON(env, s.store),
+			"reviewers":                environmentReviewersJSON(env, s.store, base),
 		})
 	}
 	writeJSON(w, http.StatusOK, out)
