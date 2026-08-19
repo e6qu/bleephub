@@ -38,7 +38,7 @@
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.0.5",
     "@vitest/coverage-v8": "4.1.10",
-    "jscpd": "5.0.15",
+    "jscpd": "5.0.16",
     "jsdom": "30.0.1",
     "knip": "6.32.2",
     "octokit": "^5.0.5",
