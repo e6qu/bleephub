@@ -40,6 +40,7 @@ import { RelativeTime } from "../components/RelativeTime.js";
 import { CodeHighlight } from "../components/CodeHighlight.js";
 import { SignInPrompt } from "../components/SignInPrompt.js";
 import { loginPath, useSignedIn } from "../session.js";
+import { useComposerDraft, clearComposerDraft } from "../hooks/useComposerDraft.js";
 import Markdown from "../components/Markdown.js";
 
 /**
@@ -367,6 +368,9 @@ function GistComments({ id }: { id: string }) {
   const [error, setError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editBody, setEditBody] = useState("");
+  // Draft durability for the gist comment box (github.com restores it).
+  const draftKey = `gist-comment:${id}`;
+  useComposerDraft(draftKey, body, setBody);
 
   // Anonymous visitors read comments but cannot author them.
   const signedIn = useSignedIn();
@@ -386,6 +390,7 @@ function GistComments({ id }: { id: string }) {
     mutationFn: () => createGistComment(id, body.trim()),
     onSuccess: () => {
       setBody("");
+      clearComposerDraft(draftKey);
       setError(null);
       invalidate();
     },

@@ -53,7 +53,8 @@ import { useRepoPermissions } from "../hooks/useRepoPermissions.js";
 import type { BleephubRepo, GithubIssue, GithubLabel, GithubMilestone, ListFilterState } from "../types.js";
 import { CommentCard, EditableCommentList } from "../components/CommentCard.js";
 import { toggleTaskInMarkdown } from "../components/Markdown.js";
-import { CommentComposer } from "../components/CommentComposer.js";
+import { CommentComposer, issueCommentDraftKey } from "../components/CommentComposer.js";
+import { clearComposerDraft } from "../hooks/useComposerDraft.js";
 import { SignInPrompt } from "../components/SignInPrompt.js";
 import { loginPath, useSignedIn } from "../session.js";
 import { MutationError } from "../components/MutationError.js";
@@ -1021,6 +1022,8 @@ function IssueDetail({ owner, repo, number }: { owner: string; repo: string; num
     },
     onSuccess: () => {
       setCommentDraft("");
+      // Close-with-comment posts the composer draft; drop the stored copy too.
+      clearComposerDraft(issueCommentDraftKey(owner, repo, number));
       invalidateIssue();
       qc.invalidateQueries({ queryKey: ["issue-timeline", owner, repo, number] });
     },

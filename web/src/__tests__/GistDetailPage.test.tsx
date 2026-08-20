@@ -17,6 +17,8 @@ function jsonResponse(data: unknown, status = 200) {
 afterEach(() => {
   cleanup();
   mockFetch.mockReset();
+  // Comment drafts persist in sessionStorage; keep tests independent.
+  sessionStorage.clear();
 });
 
 function renderAt(id = "g1") {

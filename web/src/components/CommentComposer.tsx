@@ -4,6 +4,12 @@ import { createIssueComment } from "../api.js";
 import { Button } from "./ui.js";
 import { MutationError } from "./MutationError.js";
 import { MarkdownComposer } from "./MarkdownComposer.js";
+import { clearComposerDraft } from "../hooks/useComposerDraft.js";
+
+/** Draft-durability key for an issue/PR conversation composer (shared with
+ * the close-with-comment path, which posts the same draft). */
+export const issueCommentDraftKey = (owner: string, repo: string, number: number) =>
+  `issue-comment:${owner}/${repo}/${number}`;
 
 /**
  * Comment composer for an issue or pull request. GitHub models a PR's
@@ -40,11 +46,13 @@ export function CommentComposer({
   const controlled = controlledBody !== undefined && onBodyChange !== undefined;
   const body = controlled ? controlledBody : ownBody;
   const setBody = controlled ? onBodyChange : setOwnBody;
+  const draftKey = issueCommentDraftKey(owner, repo, number);
   const mut = useMutation({
     mutationFn: () => createIssueComment(owner, repo, number, body),
     onSuccess: () => {
       for (const key of invalidateKeys) qc.invalidateQueries({ queryKey: key });
       setBody("");
+      clearComposerDraft(draftKey);
     },
   });
 
@@ -57,6 +65,7 @@ export function CommentComposer({
         <MarkdownComposer
           id="new-comment"
           label="Add a comment"
+          draftKey={draftKey}
           value={body}
           onChange={setBody}
           rows={4}
