@@ -4,7 +4,9 @@ import { useQuery } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
 import { fetchEnvironments, type SecretsScope } from "../api.js";
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
+import { useRepoPermissions } from "../hooks/useRepoPermissions.js";
 import { RepoHeader } from "../components/PageHeader.js";
+import { RepoNotFound } from "../components/RepoNotFound.js";
 import { Tabs, SectionLabel } from "../components/ui.js";
 import { SecretsSection, VariablesSection } from "../components/SecretsManager.js";
 
@@ -24,6 +26,12 @@ export function RepoSecretsPage() {
   });
   const envs = envsQ.data ?? [];
   const effectiveEnv = envName || envs[0]?.name || "";
+  // Secrets and variables are admin-only: github.com 404s this URL for
+  // non-admin viewers. Wait for the permissions payload before deciding so
+  // admins never see a 404 flash.
+  const { isAdmin, loaded } = useRepoPermissions(owner, repo);
+  if (!loaded) return <Spinner label={`loading ${owner}/${repo}`} />;
+  if (!isAdmin) return <RepoNotFound />;
 
   const scope: SecretsScope | null =
     kind === "repo"

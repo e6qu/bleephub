@@ -31,6 +31,7 @@ import type {
 import { decodeContentsBase64 } from "../utils/contents.js";
 import { parseWorkflowDispatch } from "../utils/workflowDispatch.js";
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
+import { useRepoPermissions } from "../hooks/useRepoPermissions.js";
 import { useDismiss } from "../hooks/useDismiss.js";
 import { RepoHeader } from "../components/PageHeader.js";
 import { RunStatusIcon } from "../components/RunStatusIcon.js";
@@ -210,6 +211,8 @@ function RunsPane({
   repo: string;
   workflow: GithubWorkflow | null;
 }) {
+  // Deleting runs (per-row kebab) needs push access; the runs stay readable.
+  const { canPush } = useRepoPermissions(owner, repo);
   const [status, setStatus] = useState("");
   const [event, setEvent] = useState("");
   const [branchInput, setBranchInput] = useState("");
@@ -341,6 +344,7 @@ function RunsPane({
                   owner={owner}
                   repo={repo}
                   run={run}
+                  canPush={canPush}
                   last={i === runs.length - 1}
                 />
               ))}
@@ -381,6 +385,8 @@ function formatStorageBytes(bytes: number): string {
 
 function RepositoryArtifactsPane({ owner, repo }: { owner: string; repo: string }) {
   const qc = useQueryClient();
+  // Artifact deletion needs push access; downloads stay for everyone.
+  const { canPush } = useRepoPermissions(owner, repo);
   const [pendingDelete, setPendingDelete] = useState<GithubArtifact | null>(null);
   const artifactsQ = useQuery({
     queryKey: ["repo-artifacts", owner, repo],
@@ -440,18 +446,20 @@ function RepositoryArtifactsPane({ owner, repo }: { owner: string; repo: string 
               >
                 <DownloadIcon size={13} /> Download
               </a>
-              <Button
-                variant="danger"
-                size="sm"
-                aria-label={`Delete artifact ${artifact.name}`}
-                disabled={deleteMutation.isPending}
-                onClick={() => {
-                  deleteMutation.reset();
-                  setPendingDelete(artifact);
-                }}
-              >
-                <TrashIcon size={13} />
-              </Button>
+              {canPush && (
+                <Button
+                  variant="danger"
+                  size="sm"
+                  aria-label={`Delete artifact ${artifact.name}`}
+                  disabled={deleteMutation.isPending}
+                  onClick={() => {
+                    deleteMutation.reset();
+                    setPendingDelete(artifact);
+                  }}
+                >
+                  <TrashIcon size={13} />
+                </Button>
+              )}
             </div>
           ))}
         </Box>
@@ -486,6 +494,8 @@ function RepositoryArtifactsPane({ owner, repo }: { owner: string; repo: string 
 
 function RepositoryCachesPane({ owner, repo }: { owner: string; repo: string }) {
   const qc = useQueryClient();
+  // Cache eviction needs push access; the cache list stays readable.
+  const { canPush } = useRepoPermissions(owner, repo);
   const [pendingDelete, setPendingDelete] = useState<GithubActionsCache | null>(null);
   const cachesQ = useQuery({
     queryKey: ["repo-actions-caches", owner, repo],
@@ -552,18 +562,20 @@ function RepositoryCachesPane({ owner, repo }: { owner: string; repo: string }) 
               <span style={{ fontSize: "0.78rem", color: "var(--color-fg-muted)" }}>
                 {formatStorageBytes(cache.size_in_bytes)}
               </span>
-              <Button
-                variant="danger"
-                size="sm"
-                aria-label={`Delete cache ${cache.key}`}
-                disabled={deleteMutation.isPending}
-                onClick={() => {
-                  deleteMutation.reset();
-                  setPendingDelete(cache);
-                }}
-              >
-                <TrashIcon size={13} />
-              </Button>
+              {canPush && (
+                <Button
+                  variant="danger"
+                  size="sm"
+                  aria-label={`Delete cache ${cache.key}`}
+                  disabled={deleteMutation.isPending}
+                  onClick={() => {
+                    deleteMutation.reset();
+                    setPendingDelete(cache);
+                  }}
+                >
+                  <TrashIcon size={13} />
+                </Button>
+              )}
             </div>
           ))}
         </Box>
@@ -600,11 +612,13 @@ function RunRow({
   owner,
   repo,
   run,
+  canPush,
   last,
 }: {
   owner: string;
   repo: string;
   run: GithubWorkflowRun;
+  canPush: boolean;
   last: boolean;
 }) {
   return (
@@ -656,20 +670,22 @@ function RunRow({
           {formatDuration(run.created_at, run.status === "completed" ? run.updated_at : null)}
         </span>
       </span>
-      <RunRowMenu owner={owner} repo={repo} run={run} />
+      <RunRowMenu owner={owner} repo={repo} run={run} canPush={canPush} />
     </div>
   );
 }
 
-/** Per-run kebab: delete the run, jump to the workflow file blob. */
+/** Per-run kebab: delete the run (push access), jump to the workflow file blob. */
 function RunRowMenu({
   owner,
   repo,
   run,
+  canPush,
 }: {
   owner: string;
   repo: string;
   run: GithubWorkflowRun;
+  canPush: boolean;
 }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -719,23 +735,25 @@ function RunRowMenu({
           >
             View workflow file
           </Link>
-          <button
-            type="button"
-            role="menuitem"
-            disabled={deleteMutation.isPending}
-            onClick={() => deleteMutation.mutate()}
-            className="block w-full text-left"
-            style={{
-              padding: "0.4rem 0.6rem",
-              fontSize: "0.82rem",
-              color: "var(--color-danger-fg)",
-              background: "transparent",
-              border: "none",
-              borderRadius: "var(--radius-sm)",
-            }}
-          >
-            {deleteMutation.isPending ? "Deleting…" : "Delete workflow run"}
-          </button>
+          {canPush && (
+            <button
+              type="button"
+              role="menuitem"
+              disabled={deleteMutation.isPending}
+              onClick={() => deleteMutation.mutate()}
+              className="block w-full text-left"
+              style={{
+                padding: "0.4rem 0.6rem",
+                fontSize: "0.82rem",
+                color: "var(--color-danger-fg)",
+                background: "transparent",
+                border: "none",
+                borderRadius: "var(--radius-sm)",
+              }}
+            >
+              {deleteMutation.isPending ? "Deleting…" : "Delete workflow run"}
+            </button>
+          )}
           {deleteMutation.isError && (
             <div style={{ padding: "0.3rem 0.6rem", fontSize: "0.74rem", color: "var(--color-status-error)" }}>
               {String(deleteMutation.error)}
@@ -759,6 +777,8 @@ function WorkflowHeader({
   workflow: GithubWorkflow;
 }) {
   const qc = useQueryClient();
+  // Dispatching and enabling/disabling a workflow both need push access.
+  const { canPush } = useRepoPermissions(owner, repo);
   const [menuOpen, setMenuOpen] = useState(false);
   const workflowMenuRef = useDismiss<HTMLDivElement>(menuOpen, () => setMenuOpen(false));
   const [dispatchOpen, setDispatchOpen] = useState(false);
@@ -796,11 +816,12 @@ function WorkflowHeader({
           </span>
         </h2>
         <div ref={workflowMenuRef} className="relative flex items-center gap-2">
-          {dispatchSpec?.hasDispatch && !disabled && (
+          {dispatchSpec?.hasDispatch && !disabled && canPush && (
             <Button variant="primary" size="sm" onClick={() => setDispatchOpen(true)}>
               Run workflow
             </Button>
           )}
+          {canPush && (
           <Button
             variant="secondary"
             size="sm"
@@ -810,6 +831,7 @@ function WorkflowHeader({
           >
             <KebabIcon size={14} />
           </Button>
+          )}
           {menuOpen && (
             <div
               role="menu"

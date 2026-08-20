@@ -24,6 +24,7 @@ import {
   deleteOrgProjectV2Item,
 } from "../api.js";
 import type { GithubProjectV2 } from "../types.js";
+import { useRepoPermissions } from "../hooks/useRepoPermissions.js";
 import { LabelPills } from "./LabelPills.js";
 import { Avatar } from "./Avatar.js";
 import { ErrorBanner } from "./ui.js";
@@ -219,6 +220,11 @@ export function IssueSidebar({
   locked?: boolean;
 }) {
   const qc = useQueryClient();
+  // github.com renders this sidebar read-only for viewers without write
+  // access: current values as plain chips/text, no pickers, no gears, and no
+  // Lock section. While the repo payload is still loading we render the same
+  // neutral state so no 403-able control flashes in.
+  const { canPush } = useRepoPermissions(owner, repo);
   const [error, setError] = useState<string | null>(null);
   const baseId = useId();
   const assigneeSelectId = `${baseId}-assignee`;
@@ -322,7 +328,7 @@ export function IssueSidebar({
 
       <SidebarSection
         title="Assignees"
-        gearFor={addableAssignees.length > 0 ? assigneeSelectId : undefined}
+        gearFor={canPush && addableAssignees.length > 0 ? assigneeSelectId : undefined}
         gearLabel="Edit assignees"
       >
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -330,26 +336,28 @@ export function IssueSidebar({
           {assignees.map((a) => (
             <span key={a} className="inline-flex items-center gap-1">
               <span style={{ fontSize: "0.82rem", fontWeight: 600, color: "var(--color-fg)" }}>{a}</span>
-              <button
-                type="button"
-                aria-label={`Unassign ${a}`}
-                onClick={() => removeAssigneeMut.mutate(a)}
-                disabled={removeAssigneeMut.isPending}
-                style={{
-                  border: "none",
-                  background: "transparent",
-                  color: "var(--color-fg-muted)",
-                  fontSize: "0.75rem",
-                  lineHeight: 1,
-                  padding: "0 0.15rem",
-                  cursor: "pointer",
-                }}
-              >
-                ✕
-              </button>
+              {canPush && (
+                <button
+                  type="button"
+                  aria-label={`Unassign ${a}`}
+                  onClick={() => removeAssigneeMut.mutate(a)}
+                  disabled={removeAssigneeMut.isPending}
+                  style={{
+                    border: "none",
+                    background: "transparent",
+                    color: "var(--color-fg-muted)",
+                    fontSize: "0.75rem",
+                    lineHeight: 1,
+                    padding: "0 0.15rem",
+                    cursor: "pointer",
+                  }}
+                >
+                  ✕
+                </button>
+              )}
             </span>
           ))}
-          {addableAssignees.length > 0 && (
+          {canPush && addableAssignees.length > 0 && (
             <select
               id={assigneeSelectId}
               aria-label="Add assignee"
@@ -373,7 +381,7 @@ export function IssueSidebar({
 
       <SidebarSection
         title="Labels"
-        gearFor={!labelsError && addable.length > 0 ? labelSelectId : undefined}
+        gearFor={canPush && !labelsError && addable.length > 0 ? labelSelectId : undefined}
         gearLabel="Edit labels"
       >
         {labelsError ? (
@@ -384,26 +392,28 @@ export function IssueSidebar({
             {labels.map((l) => (
               <span key={l.name} className="inline-flex items-center gap-1">
                 <LabelPills labels={[l]} />
-                <button
-                  type="button"
-                  aria-label={`Remove label ${l.name}`}
-                  onClick={() => removeLabelMut.mutate(l.name)}
-                  disabled={removeLabelMut.isPending}
-                  style={{
-                    border: "none",
-                    background: "transparent",
-                    color: "var(--color-fg-muted)",
-                    fontSize: "0.75rem",
-                    lineHeight: 1,
-                    padding: "0 0.15rem",
-                    cursor: "pointer",
-                  }}
-                >
-                  ✕
-                </button>
+                {canPush && (
+                  <button
+                    type="button"
+                    aria-label={`Remove label ${l.name}`}
+                    onClick={() => removeLabelMut.mutate(l.name)}
+                    disabled={removeLabelMut.isPending}
+                    style={{
+                      border: "none",
+                      background: "transparent",
+                      color: "var(--color-fg-muted)",
+                      fontSize: "0.75rem",
+                      lineHeight: 1,
+                      padding: "0 0.15rem",
+                      cursor: "pointer",
+                    }}
+                  >
+                    ✕
+                  </button>
+                )}
               </span>
             ))}
-            {addable.length > 0 && (
+            {canPush && addable.length > 0 && (
               <select
                 id={labelSelectId}
                 aria-label="Add label"
@@ -428,7 +438,7 @@ export function IssueSidebar({
 
       <SidebarSection
         title="Projects"
-        gearFor={ownerType === "Organization" ? projectSelectId : undefined}
+        gearFor={canPush && ownerType === "Organization" ? projectSelectId : undefined}
         gearLabel="Edit projects"
       >
         <ProjectsField
@@ -438,17 +448,18 @@ export function IssueSidebar({
           number={number}
           kind={kind}
           selectId={projectSelectId}
+          canPush={canPush}
         />
       </SidebarSection>
 
       <SidebarSection
         title="Milestone"
-        gearFor={!milestonesError && kind === "issue" ? milestoneSelectId : undefined}
+        gearFor={canPush && !milestonesError && kind === "issue" ? milestoneSelectId : undefined}
         gearLabel="Edit milestone"
       >
         {milestonesError ? (
           <InlineError inline title="Failed to load milestones" detail={String(milestonesErr)} />
-        ) : kind === "issue" ? (
+        ) : kind === "issue" && canPush ? (
           <select
             id={milestoneSelectId}
             aria-label="Set milestone"
@@ -477,11 +488,17 @@ export function IssueSidebar({
       {kind === "issue" && !issueTypesLoading && !issueTypesUnavailable && (
         <SidebarSection
           title="Type"
-          gearFor={issueTypesError ? undefined : typeSelectId}
+          gearFor={canPush && !issueTypesError ? typeSelectId : undefined}
           gearLabel="Edit issue type"
         >
           {issueTypesError ? (
             <InlineError inline title="Failed to load issue types" detail={String(issueTypesErr)} />
+          ) : !canPush ? (
+            selectedIssueType ? (
+              <span style={{ fontSize: "0.82rem", color: "var(--color-fg)" }}>{selectedIssueType.name}</span>
+            ) : (
+              <span style={muted}>No type</span>
+            )
           ) : (
             <select
               id={typeSelectId}
@@ -515,6 +532,7 @@ export function IssueSidebar({
         <NotificationsField owner={owner} repo={repo} number={number} kind={kind} />
       </SidebarSection>
 
+      {canPush && (
       <SidebarSection title="Lock conversation">
         <div className="flex flex-col gap-1.5">
           {!locked && (
@@ -552,6 +570,7 @@ export function IssueSidebar({
           </button>
         </div>
       </SidebarSection>
+      )}
 
       <SidebarSection title={`${participants.length} participant${participants.length === 1 ? "" : "s"}`} last>
         {participants.length === 0 ? (
@@ -586,6 +605,7 @@ function ProjectsField({
   number,
   kind,
   selectId,
+  canPush,
 }: {
   owner: string;
   repo: string;
@@ -594,6 +614,8 @@ function ProjectsField({
   kind: "issue" | "pr";
   /** id for the "Add to project" select, so the section gear can focus it. */
   selectId?: string | undefined;
+  /** Read-only (memberships as plain text, no add/remove) when false. */
+  canPush: boolean;
 }) {
   const qc = useQueryClient();
   const isOrg = ownerType === "Organization";
@@ -646,30 +668,32 @@ function ProjectsField({
 
   return (
     <div className="flex flex-col gap-1.5">
-      {memberships.length === 0 && addable.length === 0 && <span style={muted}>None yet</span>}
+      {memberships.length === 0 && (!canPush || addable.length === 0) && <span style={muted}>None yet</span>}
       {memberships.map(({ project, itemId }) => (
         <div key={project.id} className="flex items-center gap-1">
           <span style={{ fontSize: "0.85rem", color: "var(--color-fg)" }}>{project.title}</span>
-          <button
-            type="button"
-            aria-label={`Remove from project ${project.title}`}
-            onClick={() => removeMut.mutate({ projectNumber: project.number, itemId })}
-            disabled={busy}
-            style={{
-              border: "none",
-              background: "transparent",
-              color: "var(--color-fg-muted)",
-              fontSize: "0.75rem",
-              lineHeight: 1,
-              padding: "0 0.15rem",
-              cursor: "pointer",
-            }}
-          >
-            ✕
-          </button>
+          {canPush && (
+            <button
+              type="button"
+              aria-label={`Remove from project ${project.title}`}
+              onClick={() => removeMut.mutate({ projectNumber: project.number, itemId })}
+              disabled={busy}
+              style={{
+                border: "none",
+                background: "transparent",
+                color: "var(--color-fg-muted)",
+                fontSize: "0.75rem",
+                lineHeight: 1,
+                padding: "0 0.15rem",
+                cursor: "pointer",
+              }}
+            >
+              ✕
+            </button>
+          )}
         </div>
       ))}
-      {addable.length > 0 && (
+      {canPush && addable.length > 0 && (
         <select
           id={selectId}
           aria-label="Add to project"

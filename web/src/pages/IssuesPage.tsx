@@ -49,6 +49,7 @@ import {
   SEED_STALE_TIME,
 } from "../utils/bootstrap.js";
 import { useDismiss } from "../hooks/useDismiss.js";
+import { useRepoPermissions } from "../hooks/useRepoPermissions.js";
 import type { BleephubRepo, GithubIssue, GithubLabel, GithubMilestone, ListFilterState } from "../types.js";
 import { CommentCard, EditableCommentList } from "../components/CommentCard.js";
 import { toggleTaskInMarkdown } from "../components/Markdown.js";
@@ -813,6 +814,7 @@ function NewIssueDialog({ owner, repo, onClose }: { owner: string; repo: string;
 
 function SubIssuesSection({ owner, repo, number }: { owner: string; repo: string; number: number }) {
   const qc = useQueryClient();
+  const { canPush } = useRepoPermissions(owner, repo);
   const [childNumber, setChildNumber] = useState("");
   const listQ = useQuery({
     queryKey: ["sub-issues", owner, repo, number],
@@ -866,31 +868,35 @@ function SubIssuesSection({ owner, repo, number }: { owner: string; repo: string
               >
                 {s.title} <span style={{ color: "var(--color-fg-muted)" }}>#{s.number}</span>
               </Link>
-              <Button
-                size="sm"
-                variant="ghost"
-                aria-label={`Remove sub-issue #${s.number}`}
-                disabled={removeMut.isPending}
-                onClick={() => removeMut.mutate(s.id)}
-              >
-                Remove
-              </Button>
+              {canPush && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  aria-label={`Remove sub-issue #${s.number}`}
+                  disabled={removeMut.isPending}
+                  onClick={() => removeMut.mutate(s.id)}
+                >
+                  Remove
+                </Button>
+              )}
             </div>
           ))}
         </Box>
       )}
-      <div className="flex items-center gap-2">
-        <input
-          aria-label="sub-issue number"
-          value={childNumber}
-          onChange={(e) => setChildNumber(e.target.value)}
-          placeholder="Issue number"
-          style={{ maxWidth: "10rem", fontSize: "0.85rem", padding: "0.25rem 0.5rem" }}
-        />
-        <Button size="sm" disabled={!validNumber || addMut.isPending} onClick={() => addMut.mutate()}>
-          {addMut.isPending ? "Adding…" : "Add sub-issue"}
-        </Button>
-      </div>
+      {canPush && (
+        <div className="flex items-center gap-2">
+          <input
+            aria-label="sub-issue number"
+            value={childNumber}
+            onChange={(e) => setChildNumber(e.target.value)}
+            placeholder="Issue number"
+            style={{ maxWidth: "10rem", fontSize: "0.85rem", padding: "0.25rem 0.5rem" }}
+          />
+          <Button size="sm" disabled={!validNumber || addMut.isPending} onClick={() => addMut.mutate()}>
+            {addMut.isPending ? "Adding…" : "Add sub-issue"}
+          </Button>
+        </div>
+      )}
     </section>
   );
 }
@@ -961,6 +967,14 @@ function IssueDetail({ owner, repo, number }: { owner: string; repo: string; num
     enabled: bootstrapSettled,
   });
   const viewerLogin = typeof viewerQ.data?.login === "string" ? viewerQ.data.login : null;
+
+  // github.com hides triage/close controls the viewer cannot use: closing,
+  // reopening and title-editing need write access OR issue authorship (GitHub
+  // lets authors close/reopen their own issues). While permissions load, the
+  // neutral (hidden) state renders so nothing 403-able flashes in.
+  const { canPush } = useRepoPermissions(owner, repo);
+  const isIssueAuthor = viewerLogin !== null && viewerLogin === issue?.user?.login;
+  const canClose = canPush || isIssueAuthor;
 
   const invalidateIssue = () => {
     qc.invalidateQueries({ queryKey: ["issue", owner, repo, number] });
@@ -1049,16 +1063,18 @@ function IssueDetail({ owner, repo, number }: { owner: string; repo: string; num
           {issue.title}{" "}
           <span style={{ color: "var(--color-fg-muted)" }}>#{issue.number}</span>
         </h1>
-        <Button
-          size="sm"
-          onClick={() => {
-            setEditTitle(issue.title);
-            setEditBody(issue.body ?? "");
-            setEditing(true);
-          }}
-        >
-          Edit
-        </Button>
+        {canClose && (
+          <Button
+            size="sm"
+            onClick={() => {
+              setEditTitle(issue.title);
+              setEditBody(issue.body ?? "");
+              setEditing(true);
+            }}
+          >
+            Edit
+          </Button>
+        )}
         <IssueActionsMenu owner={owner} repo={repo} issue={issue} repoDetail={repoDetail} />
       </div>
 
@@ -1148,6 +1164,7 @@ function IssueDetail({ owner, repo, number }: { owner: string; repo: string; num
                 number={number}
                 items={timeline}
                 viewerLogin={viewerLogin}
+                canPush={canPush}
                 invalidateKeys={[
                   ["issue-timeline", owner, repo, number],
                   ["issue", owner, repo, number],
@@ -1172,26 +1189,28 @@ function IssueDetail({ owner, repo, number }: { owner: string; repo: string; num
               ["issue", owner, repo, number],
             ]}
             extraActions={
-              <div style={{ display: "flex", gap: ".5rem", alignItems: "center" }}>
-                {open && (
-                  <select
-                    aria-label="Reason for closing"
-                    value={closeReason}
-                    onChange={(e) => setCloseReason(e.target.value as "completed" | "not_planned")}
+              canClose && (
+                <div style={{ display: "flex", gap: ".5rem", alignItems: "center" }}>
+                  {open && (
+                    <select
+                      aria-label="Reason for closing"
+                      value={closeReason}
+                      onChange={(e) => setCloseReason(e.target.value as "completed" | "not_planned")}
+                      disabled={stateMut.isPending}
+                    >
+                      <option value="completed">Close as completed</option>
+                      <option value="not_planned">Close as not planned</option>
+                    </select>
+                  )}
+                  <Button
+                    size="sm"
                     disabled={stateMut.isPending}
+                    onClick={() => stateMut.mutate()}
                   >
-                    <option value="completed">Close as completed</option>
-                    <option value="not_planned">Close as not planned</option>
-                  </select>
-                )}
-                <Button
-                  size="sm"
-                  disabled={stateMut.isPending}
-                  onClick={() => stateMut.mutate()}
-                >
-                  {open ? (commentDraft.trim() ? "Close with comment" : "Close issue") : "Reopen issue"}
-                </Button>
-              </div>
+                    {open ? (commentDraft.trim() ? "Close with comment" : "Close issue") : "Reopen issue"}
+                  </Button>
+                </div>
+              )
             }
           />
         </div>
@@ -1266,10 +1285,15 @@ function IssueActionsMenu({
   const [deleting, setDeleting] = useState(false);
   const dismissRef = useDismiss<HTMLDivElement>(openMenu, () => setOpenMenu(false));
 
+  // github.com's viewer-role rules for this menu: pin/transfer/convert need
+  // write access, delete needs repo admin. When neither applies the whole
+  // kebab is hidden (rendered below, after all hooks have run).
+  const { isAdmin, canPush } = useRepoPermissions(owner, repo);
+
   // Convert-to-discussion is offered only when the repo has discussions
   // enabled — derived from the repo payload already loaded for this page,
   // never probed.
-  const canConvert = repoDetail?.has_discussions === true;
+  const canConvert = canPush && repoDetail?.has_discussions === true;
 
   // Pin state + how many pins the repo has left (GitHub caps pins at 3).
   // Shares one GraphQL request with the Development section via the key.
@@ -1296,10 +1320,8 @@ function IssueActionsMenu({
     },
   });
 
-  // Delete is repo-admin only; the repo detail's permissions say whether the
-  // viewer has it (when the field is absent, show it and let the server rule).
-  const perms = (repoDetail as { permissions?: { admin?: boolean } } | undefined)?.permissions;
-  const canDelete = perms?.admin !== false;
+  // Delete is repo-admin only (github.com hides it from everyone else).
+  const canDelete = isAdmin;
 
   const itemStyle = {
     display: "block",
@@ -1312,6 +1334,10 @@ function IssueActionsMenu({
     padding: "0.45rem 0.85rem",
     cursor: "pointer",
   } as const;
+
+  // No item applies (read-only viewer, or permissions still loading): no
+  // kebab at all — github.com shows this menu only to collaborators.
+  if (!canPush && !canDelete) return null;
 
   return (
     <div ref={dismissRef} style={{ position: "relative", display: "inline-block" }}>
@@ -1342,32 +1368,36 @@ function IssueActionsMenu({
             padding: "0.25rem 0",
           }}
         >
-          <button
-            type="button"
-            role="menuitem"
-            style={itemStyle}
-            disabled={pinMut.isPending || pinCapReached}
-            title={pinCapReached ? `A repository can have at most ${MAX_PINNED} pinned issues` : undefined}
-            onClick={() => pinMut.mutate()}
-          >
-            {isPinned ? "Unpin issue" : "Pin issue"}
-            {pinCapReached && (
-              <span style={{ display: "block", fontSize: "0.72rem", color: "var(--color-fg-muted)" }}>
-                Pin limit of {MAX_PINNED} reached
-              </span>
-            )}
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            style={itemStyle}
-            onClick={() => {
-              setOpenMenu(false);
-              setTransferring(true);
-            }}
-          >
-            Transfer issue
-          </button>
+          {canPush && (
+            <button
+              type="button"
+              role="menuitem"
+              style={itemStyle}
+              disabled={pinMut.isPending || pinCapReached}
+              title={pinCapReached ? `A repository can have at most ${MAX_PINNED} pinned issues` : undefined}
+              onClick={() => pinMut.mutate()}
+            >
+              {isPinned ? "Unpin issue" : "Pin issue"}
+              {pinCapReached && (
+                <span style={{ display: "block", fontSize: "0.72rem", color: "var(--color-fg-muted)" }}>
+                  Pin limit of {MAX_PINNED} reached
+                </span>
+              )}
+            </button>
+          )}
+          {canPush && (
+            <button
+              type="button"
+              role="menuitem"
+              style={itemStyle}
+              onClick={() => {
+                setOpenMenu(false);
+                setTransferring(true);
+              }}
+            >
+              Transfer issue
+            </button>
+          )}
           {canConvert && (
             <button
               type="button"
@@ -1723,6 +1753,9 @@ function IssueDevelopmentSection({ owner, repo, number }: { owner: string; repo:
 function LabelsView({ owner, repo }: { owner: string; repo: string }) {
   const counts = useSeededOpenCounts(owner, repo);
   const qc = useQueryClient();
+  // Label management (create/edit/delete) needs write access — github.com
+  // shows read-only labels to everyone else.
+  const { canPush } = useRepoPermissions(owner, repo);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<GithubLabel | null>(null);
@@ -1751,9 +1784,11 @@ function LabelsView({ owner, repo }: { owner: string; repo: string }) {
       <RepoHeader owner={owner} repo={repo} active="issues" {...counts} />
       <div className="mb-4 flex items-center justify-between gap-3">
         <SectionLabel>Labels</SectionLabel>
-        <Button variant="primary" size="sm" onClick={() => setCreating(true)}>
-          New label
-        </Button>
+        {canPush && (
+          <Button variant="primary" size="sm" onClick={() => setCreating(true)}>
+            New label
+          </Button>
+        )}
       </div>
       {error && <ErrorBanner>{error}</ErrorBanner>}
       {labels.length === 0 ? (
@@ -1775,19 +1810,23 @@ function LabelsView({ owner, repo }: { owner: string; repo: string }) {
               <span className="min-w-0 flex-1" style={{ fontSize: "0.83rem", color: "var(--color-fg-muted)" }}>
                 {label.description || "No description"}
               </span>
-              <Button size="sm" variant="ghost" onClick={() => setEditing(label)}>
-                edit
-              </Button>
-              <Button
-                size="sm"
-                variant="danger"
-                disabled={deleteMut.isPending}
-                onClick={async () => {
-                  if (await confirmAction(`Delete label ${label.name}?`)) deleteMut.mutate(label.name);
-                }}
-              >
-                delete
-              </Button>
+              {canPush && (
+                <>
+                  <Button size="sm" variant="ghost" onClick={() => setEditing(label)}>
+                    edit
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    disabled={deleteMut.isPending}
+                    onClick={async () => {
+                      if (await confirmAction(`Delete label ${label.name}?`)) deleteMut.mutate(label.name);
+                    }}
+                  >
+                    delete
+                  </Button>
+                </>
+              )}
             </div>
           ))}
         </Box>
@@ -1883,6 +1922,8 @@ function LabelDialog({
 function MilestonesView({ owner, repo }: { owner: string; repo: string }) {
   const counts = useSeededOpenCounts(owner, repo);
   const qc = useQueryClient();
+  // Milestone management (create/close/reopen/delete) needs write access.
+  const { canPush } = useRepoPermissions(owner, repo);
   const [state, setState] = useState<"open" | "closed">("open");
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -1923,9 +1964,11 @@ function MilestonesView({ owner, repo }: { owner: string; repo: string }) {
           labels={{ open: "Open", closed: "Closed" }}
           onChange={setState}
         />
-        <Button variant="primary" size="sm" onClick={() => setCreating(true)}>
-          New milestone
-        </Button>
+        {canPush && (
+          <Button variant="primary" size="sm" onClick={() => setCreating(true)}>
+            New milestone
+          </Button>
+        )}
       </div>
       {error && <ErrorBanner>{error}</ErrorBanner>}
       {milestones.length === 0 ? (
@@ -1940,6 +1983,7 @@ function MilestonesView({ owner, repo }: { owner: string; repo: string }) {
               owner={owner}
               repo={repo}
               milestone={ms}
+              canManage={canPush}
               last={i === milestones.length - 1}
               onToggleState={(next) => stateMut.mutate({ number: ms.number, next })}
               onDelete={async () => {
@@ -1961,6 +2005,7 @@ function MilestoneRow({
   owner,
   repo,
   milestone: ms,
+  canManage,
   last,
   onToggleState,
   onDelete,
@@ -1969,6 +2014,8 @@ function MilestoneRow({
   owner: string;
   repo: string;
   milestone: GithubMilestone;
+  /** close/reopen/delete render only with write access. */
+  canManage: boolean;
   last: boolean;
   onToggleState: (next: "open" | "closed") => void;
   onDelete: () => void;
@@ -2022,17 +2069,21 @@ function MilestoneRow({
           {ms.description && ` · ${ms.description}`}
         </div>
       </div>
-      <Button
-        size="sm"
-        variant="ghost"
-        disabled={busy}
-        onClick={() => onToggleState(ms.state === "open" ? "closed" : "open")}
-      >
-        {ms.state === "open" ? "close" : "reopen"}
-      </Button>
-      <Button size="sm" variant="danger" disabled={busy} onClick={onDelete}>
-        delete
-      </Button>
+      {canManage && (
+        <>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={busy}
+            onClick={() => onToggleState(ms.state === "open" ? "closed" : "open")}
+          >
+            {ms.state === "open" ? "close" : "reopen"}
+          </Button>
+          <Button size="sm" variant="danger" disabled={busy} onClick={onDelete}>
+            delete
+          </Button>
+        </>
+      )}
     </div>
   );
 }

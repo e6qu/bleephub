@@ -23,10 +23,12 @@ import {
   updateDiscussionComment,
   addReaction,
   removeReaction,
+  fetchAuthenticatedUser,
   ghFetch,
   ghSend,
 } from "../api.js";
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
+import { useRepoPermissions } from "../hooks/useRepoPermissions.js";
 import type { GithubDiscussion, GithubDiscussionComment, GithubReactionGroup } from "../types.js";
 import { RepoHeader } from "../components/PageHeader.js";
 import {
@@ -405,17 +407,16 @@ function DiscussionDetail({
     queryFn: ({ signal }) => fetchDiscussionCategories(owner, repo, signal),
   });
 
-  const { data: repoDetail } = useQuery({
-    queryKey: ["repo-detail", owner, repo],
-    queryFn: () => fetchRepoDetail(owner, repo),
-  });
-
   const { data: pinned = [] } = useQuery({
     queryKey: ["pinned-discussions", owner, repo],
     queryFn: ({ signal }) => fetchPinnedDiscussions(owner, repo, signal),
   });
 
-  const canPush = repoDetail?.permissions?.push === true;
+  // Pin/unpin needs write access; mark-as-answer follows github.com's
+  // author-or-write rule, so the viewer's login is needed for the comparison.
+  const { canPush } = useRepoPermissions(owner, repo);
+  const viewerQ = useQuery({ queryKey: ["viewer"], queryFn: fetchAuthenticatedUser });
+  const viewerLogin = typeof viewerQ.data?.login === "string" ? viewerQ.data.login : null;
   const isPinned = pinned.some((p) => p.number === number);
   const pinListFull = !isPinned && pinned.length >= MAX_PINNED_DISCUSSIONS;
 
@@ -652,7 +653,10 @@ function DiscussionDetail({
             key={comment.id}
             comment={comment}
             isAnswer={comment.isAnswer}
-            canMarkAnswer={discussion.category.isAnswerable}
+            canMarkAnswer={
+              discussion.category.isAnswerable &&
+              (canPush || (viewerLogin !== null && viewerLogin === discussion.author?.login))
+            }
             onMarkAnswer={() => markAnswerMutation.mutate({ commentId: comment.id, mark: !comment.isAnswer })}
             onReply={() => {
               setReplyTo({ id: comment.id, login: comment.author?.login });

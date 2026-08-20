@@ -59,6 +59,7 @@ const repoData = {
   forks_count: 1,
   ssh_url: "git@bleephub.example:admin/test.git",
   owner: { login: "admin", type: "User" },
+  permissions: { admin: true, push: true, pull: true },
 };
 
 const topicsData = { names: ["cli", "tooling"] };
@@ -1241,5 +1242,88 @@ describe("RepoDetailPage bootstrap", () => {
     const gets = mockFetch.mock.calls.map((c) => c[0]!.toString());
     expect(gets.some((u) => u.endsWith("/api/v3/repos/admin/test"))).toBe(true);
     expect(gets.some((u) => u.split("?")[0]!.endsWith("/branches"))).toBe(true);
+  });
+});
+
+describe("RepoDetailPage read-only viewer gating", () => {
+  // A pull-only outsider: github.com hides every write affordance instead of
+  // rendering buttons that would 403.
+  const viewerRepo = { ...repoData, permissions: { admin: false, push: false, pull: true } };
+  const viewerFetch = (url: RequestInfo | URL): Promise<Response> => {
+    const u = url.toString();
+    if (u.endsWith("/repos/admin/test")) return Promise.resolve(jsonResponse(viewerRepo));
+    return routedFetch(url);
+  };
+
+  it("hides Add file/Upload files, the Settings tab and the admin menu from a viewer", async () => {
+    mockFetch.mockImplementation(viewerFetch);
+    renderPage();
+    await screen.findAllByText("README.md");
+
+    // Read affordances stay.
+    expect(screen.getByRole("button", { name: "Go to file" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Code", expanded: false })).toBeInTheDocument();
+    // Write affordances are gone.
+    expect(screen.queryByRole("button", { name: "Add file" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Upload files" })).not.toBeInTheDocument();
+    // Repo nav: no Settings tab; no administration overflow menu.
+    expect(screen.queryByRole("link", { name: "Settings" })).not.toBeInTheDocument();
+    expect(screen.queryByText("All repository settings")).not.toBeInTheDocument();
+    expect(screen.queryByText("Repository administration")).not.toBeInTheDocument();
+  });
+
+  it("hides branch create/delete and downgrades the protected badge for a viewer", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.split("?")[0]!.endsWith("/branches")) {
+        return Promise.resolve(jsonResponse([
+          { name: "main", commit: { sha: "abc" } },
+          { name: "feature/y", commit: { sha: "def" } },
+          { name: "release", protected: true, commit: { sha: "eee" } },
+        ]));
+      }
+      return viewerFetch(url);
+    });
+    renderPage("/ui/repos/admin/test/branches");
+    await screen.findByText("feature/y");
+
+    expect(screen.queryByRole("button", { name: /new branch/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete branch feature/y" })).not.toBeInTheDocument();
+    // Compare / New pull request stay readable.
+    expect(screen.getAllByRole("link", { name: "Compare" }).length).toBeGreaterThan(0);
+    // The protected badge stays informational but is no longer a settings link.
+    expect(screen.getByText("protected")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "protected" })).not.toBeInTheDocument();
+  });
+
+  it("hides tag create/delete from a viewer", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.split("?")[0]!.endsWith("/repos/admin/test/tags")) {
+        return Promise.resolve(jsonResponse([
+          { name: "v1.0.0", commit: { sha: "abc", url: "" }, zipball_url: "/z", tarball_url: "/t" },
+        ]));
+      }
+      return viewerFetch(url);
+    });
+    renderPage("/ui/repos/admin/test/tags");
+    await screen.findByText("v1.0.0");
+
+    expect(screen.queryByRole("button", { name: /new tag/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete tag v1.0.0" })).not.toBeInTheDocument();
+    // Archives stay downloadable.
+    expect(screen.getByRole("link", { name: "zip" })).toBeInTheDocument();
+  });
+
+  it("hides blob Edit/Delete from a viewer but keeps Raw/History/Blame/permalink", async () => {
+    mockFetch.mockImplementation(viewerFetch);
+    renderPage("/ui/repos/admin/test/blob/main/README.md");
+    await screen.findByRole("button", { name: "Copy permalink" });
+
+    expect(screen.getByRole("button", { name: "View raw file" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "History" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Blame" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete file" })).not.toBeInTheDocument();
   });
 });

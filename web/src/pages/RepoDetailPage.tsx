@@ -41,6 +41,7 @@ import {
 } from "../api.js";
 import { Avatar } from "../components/Avatar.js";
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
+import { useRepoPermissions } from "../hooks/useRepoPermissions.js";
 import {
   fetchRepoBootstrap,
   fetchTreeMeta,
@@ -398,6 +399,14 @@ export function RepoDetailPage({ initialTab = "code" }: { initialTab?: SubTab })
   // Tab badges from the bootstrap's exact open counts; the standalone count
   // fetches only run when the bootstrap itself failed.
   const counts = useSeededOpenCounts(owner, repo, { fallbackEnabled: bootstrapQ.isError });
+  // github.com hides what the viewer cannot do: write affordances need push,
+  // the administration menu needs admin. Read straight off the page's own
+  // repo query (NOT useRepoPermissions): that hook's query is ungated, and
+  // mounting it here would race the bootstrap seed with a standalone
+  // /repos/{owner}/{repo} fetch. Child components mount after the seed, so
+  // they use the hook as a pure cache hit.
+  const isAdmin = repoData?.permissions?.admin === true;
+  const canPush = repoData?.permissions?.push === true;
   const syncForkMut = useMutation({
     mutationFn: () => syncFork(owner, repo, repoData?.default_branch ?? ""),
     onSuccess: () => {
@@ -508,6 +517,7 @@ export function RepoDetailPage({ initialTab = "code" }: { initialTab?: SubTab })
           );
         })}
         </div>
+        {isAdmin && (
         <details className="repo-more-menu">
           <summary className="repo-more-trigger">
             <GearIcon size={14} />
@@ -532,6 +542,7 @@ export function RepoDetailPage({ initialTab = "code" }: { initialTab?: SubTab })
             <Link to={`/ui/repos/${owner}/${repo}/settings`}>All repository settings</Link>
           </div>
         </details>
+        )}
       </nav>
 
       {/* GitHub's two-column Code page: file browser + README on the left,
@@ -543,7 +554,7 @@ export function RepoDetailPage({ initialTab = "code" }: { initialTab?: SubTab })
         ) : (
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_296px]">
             <div className="min-w-0">
-              {repoData.fork && (
+              {repoData.fork && canPush && (
                 <div className="mb-3 flex items-center gap-2">
                   <Button
                     size="sm"
@@ -669,6 +680,9 @@ function CodeView({
   initialPath?: string;
 }) {
   const navigate = useNavigate();
+  // File writes need push access; read affordances (Go to file, clone box)
+  // stay for everyone.
+  const { canPush } = useRepoPermissions(owner, repo);
   const [branch, setBranch] = useState(initialRef || defaultBranch);
   const [path, setPath] = useState(initialPath ?? "");
 
@@ -829,12 +843,16 @@ function CodeView({
         <Button size="sm" onClick={() => setGoToFileOpen(true)}>
           Go to file
         </Button>
-        <Button size="sm" onClick={() => setAdding(true)}>
-          Add file
-        </Button>
-        <Button size="sm" onClick={() => setUploading(true)}>
-          Upload files
-        </Button>
+        {canPush && (
+          <Button size="sm" onClick={() => setAdding(true)}>
+            Add file
+          </Button>
+        )}
+        {canPush && (
+          <Button size="sm" onClick={() => setUploading(true)}>
+            Upload files
+          </Button>
+        )}
         <CloneButton owner={owner} repo={repo} sshUrl={sshUrl} archiveRef={branch} />
       </div>
 
@@ -2023,9 +2041,13 @@ function EnvironmentsList({ environments }: { environments: GithubEnvironment[] 
 }
 
 function ReleasesList({ owner, repo, releases }: { owner: string; repo: string; releases: GithubRelease[] }) {
+  // Creating releases needs push access; the feed stays readable for everyone.
+  const { canPush } = useRepoPermissions(owner, repo);
   if (releases.length === 0) return (
     <Blankslate icon={<TagIcon size={26} />} title="No releases">
-      <Link to={`/ui/repos/${owner}/${repo}/releases/new`}>Create the first release</Link>
+      {canPush
+        ? <Link to={`/ui/repos/${owner}/${repo}/releases/new`}>Create the first release</Link>
+        : <p>There aren’t any releases here.</p>}
     </Blankslate>
   );
   return (
@@ -2526,6 +2548,9 @@ export function RepoFilePage() {
   const ref = params.ref ?? "";
   const path = params["*"] ?? "";
   const counts = useOpenCounts(owner, repo);
+  // Blob Edit/Delete are push affordances; Raw/History/Blame/permalink stay
+  // for everyone.
+  const { canPush } = useRepoPermissions(owner, repo);
   const location = useLocation();
   const query = useQuery<GithubContentFile>({
     queryKey: ["file", owner, repo, ref, path],
@@ -2640,7 +2665,7 @@ export function RepoFilePage() {
                 <Button size="sm" onClick={copyPermalink}>
                   {copied ? "Copied!" : "Copy permalink"}
                 </Button>
-                {content !== null && (
+                {content !== null && canPush && (
                 <Button
                   size="sm"
                   onClick={() => {
@@ -2652,6 +2677,7 @@ export function RepoFilePage() {
                   Edit
                 </Button>
                 )}
+                {canPush && (
                 <Button
                   size="sm"
                   aria-label="Delete file"
@@ -2669,6 +2695,7 @@ export function RepoFilePage() {
                 >
                   Delete
                 </Button>
+                )}
               </>
             )}
           </div>
@@ -2782,6 +2809,9 @@ function BranchesList({
   defaultBranch: string;
 }) {
   const qc = useQueryClient();
+  // Creating and deleting branches needs push access (github.com hides both
+  // from read-only viewers).
+  const { canPush } = useRepoPermissions(owner, repo);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [source, setSource] = useState(defaultBranch);
@@ -2801,7 +2831,7 @@ function BranchesList({
     onSuccess: () => qc.invalidateQueries({ queryKey: ["branches", owner, repo] }),
   });
 
-  const newBranchButton = branches.length > 0 && (
+  const newBranchButton = branches.length > 0 && canPush && (
     <Button size="sm" onClick={() => setCreating(true)}>
       New branch
     </Button>
@@ -2905,6 +2935,7 @@ function BranchesList({
                   head={heads?.get(b.name) ?? null}
                   defaultBranch={defaultBranch}
                   isLast={i === section.rows.length - 1}
+                  canPush={canPush}
                   deletePending={deleteMut.isPending}
                   onDelete={async () => {
                     if (await confirmAction(`Delete branch "${b.name}"?`, { title: "Delete branch", confirmLabel: "Delete" })) {
@@ -2928,6 +2959,7 @@ function BranchRow({
   head,
   defaultBranch,
   isLast,
+  canPush,
   deletePending,
   onDelete,
 }: {
@@ -2937,6 +2969,7 @@ function BranchRow({
   head: GithubCommit | null;
   defaultBranch: string;
   isLast: boolean;
+  canPush: boolean;
   deletePending: boolean;
   onDelete: () => void;
 }) {
@@ -2977,18 +3010,33 @@ function BranchRow({
           </span>
         )}
         {b.protected && (
-          <Link
-            to={`/ui/repos/${owner}/${repo}/settings/branch-protection`}
-            style={{
-              marginLeft: "0.45rem",
-              fontSize: "0.72rem",
-              fontWeight: 600,
-              color: "var(--color-success-fg)",
-              textDecoration: "none",
-            }}
-          >
-            protected
-          </Link>
+          // The protection editor is an admin settings surface; read-only
+          // viewers get the informational badge without the link affordance.
+          canPush ? (
+            <Link
+              to={`/ui/repos/${owner}/${repo}/settings/branch-protection`}
+              style={{
+                marginLeft: "0.45rem",
+                fontSize: "0.72rem",
+                fontWeight: 600,
+                color: "var(--color-success-fg)",
+                textDecoration: "none",
+              }}
+            >
+              protected
+            </Link>
+          ) : (
+            <span
+              style={{
+                marginLeft: "0.45rem",
+                fontSize: "0.72rem",
+                fontWeight: 600,
+                color: "var(--color-success-fg)",
+              }}
+            >
+              protected
+            </span>
+          )
         )}
       </span>
       <span className="inline-flex items-center gap-1.5" style={{ fontSize: "0.76rem", color: "var(--color-fg-muted)" }}>
@@ -3026,7 +3074,7 @@ function BranchRow({
           New pull request
         </ButtonLink>
       )}
-      {!isDefault && !b.protected && (
+      {!isDefault && !b.protected && canPush && (
         <Button
           size="sm"
           variant="danger"
@@ -3055,6 +3103,8 @@ function TagsList({
   defaultBranch: string;
 }) {
   const qc = useQueryClient();
+  // Creating and deleting tags needs push access.
+  const { canPush } = useRepoPermissions(owner, repo);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [source, setSource] = useState(defaultBranch);
@@ -3123,11 +3173,13 @@ function TagsList({
 
   return (
     <>
-      <div className="mb-3 flex justify-end">
-        <Button size="sm" disabled={!branches.length} onClick={() => setCreating(true)}>
-          New tag
-        </Button>
-      </div>
+      {canPush && (
+        <div className="mb-3 flex justify-end">
+          <Button size="sm" disabled={!branches.length} onClick={() => setCreating(true)}>
+            New tag
+          </Button>
+        </div>
+      )}
       {newTagModal}
       <MutationError of={deleteMut} />
       {tags.length === 0 ? (
@@ -3142,6 +3194,7 @@ function TagsList({
           tag={t}
           release={releases.find((r) => r.tag_name === t.name)}
           isLast={i === tags.length - 1}
+          canPush={canPush}
           deletePending={deleteMut.isPending}
           onDelete={async () => {
             if (await confirmAction(`Delete tag "${t.name}"?`, { title: "Delete tag", confirmLabel: "Delete" })) {
@@ -3170,6 +3223,7 @@ function TagRow({
   tag: t,
   release,
   isLast,
+  canPush,
   deletePending,
   onDelete,
 }: {
@@ -3178,6 +3232,7 @@ function TagRow({
   tag: GithubTag;
   release: GithubRelease | undefined;
   isLast: boolean;
+  canPush: boolean;
   deletePending: boolean;
   onDelete: () => void;
 }) {
@@ -3221,15 +3276,17 @@ function TagRow({
       <a href={t.tarball_url} style={smallLink}>
         tar.gz
       </a>
-      <Button
-        size="sm"
-        variant="danger"
-        aria-label={`Delete tag ${t.name}`}
-        disabled={deletePending}
-        onClick={onDelete}
-      >
-        Delete
-      </Button>
+      {canPush && (
+        <Button
+          size="sm"
+          variant="danger"
+          aria-label={`Delete tag ${t.name}`}
+          disabled={deletePending}
+          onClick={onDelete}
+        >
+          Delete
+        </Button>
+      )}
     </div>
   );
 }

@@ -31,6 +31,7 @@ import { formatDuration } from "../utils/format.js";
 import { decodeContentsBase64 } from "../utils/contents.js";
 import { needsForJobName, parseWorkflowJobSpecs } from "../utils/workflowNeeds.js";
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
+import { useRepoPermissions } from "../hooks/useRepoPermissions.js";
 import { RepoHeader } from "../components/PageHeader.js";
 import { RunStatusIcon } from "../components/RunStatusIcon.js";
 import { Box, Blankslate, Button, ErrorBanner } from "../components/ui.js";
@@ -270,6 +271,9 @@ function RunHeader({
   run: GithubWorkflowRun;
 }) {
   const qc = useQueryClient();
+  // Run mutations (approve/cancel/re-run/delete) need push access; the log
+  // archive download stays for everyone.
+  const { canPush } = useRepoPermissions(owner, repo);
   const [attempt, setAttempt] = useState<number | null>(null);
 
   // Attempt history is optional server surface: probe attempt 1 and hide
@@ -389,7 +393,7 @@ function RunHeader({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {run.status === "waiting" && (
+          {run.status === "waiting" && canPush && (
             <Button
               variant="primary"
               size="sm"
@@ -399,7 +403,7 @@ function RunHeader({
               {approveMutation.isPending ? "Approving…" : "Approve"}
             </Button>
           )}
-          {cancellable && (
+          {cancellable && canPush && (
             <Button
               variant="danger"
               size="sm"
@@ -409,7 +413,7 @@ function RunHeader({
               {cancelMutation.isPending ? "Cancelling…" : "Cancel workflow"}
             </Button>
           )}
-          {cancellable && (
+          {cancellable && canPush && (
             <Button
               variant="secondary"
               size="sm"
@@ -419,7 +423,7 @@ function RunHeader({
               {forceCancelMutation.isPending ? "Force cancelling…" : "Force cancel"}
             </Button>
           )}
-          {completed && (
+          {completed && canPush && (
             <Button
               variant="secondary"
               size="sm"
@@ -429,7 +433,7 @@ function RunHeader({
               {rerunMutation.isPending ? "Re-running…" : "Re-run all jobs"}
             </Button>
           )}
-          {completed && run.conclusion === "failure" && (
+          {completed && run.conclusion === "failure" && canPush && (
             <Button
               variant="secondary"
               size="sm"
@@ -451,7 +455,7 @@ function RunHeader({
               <DownloadIcon size={13} /> Download log archive
             </a>
           )}
-          {completed && (
+          {completed && canPush && (
             <Button
               variant="secondary"
               size="sm"
@@ -465,7 +469,7 @@ function RunHeader({
               {deleteLogsMutation.isPending ? "Deleting…" : "Delete all logs"}
             </Button>
           )}
-          {completed && (
+          {completed && canPush && (
             <Button
               variant="danger"
               size="sm"
@@ -675,6 +679,8 @@ function JobPane({
   search: string;
 }) {
   const [showTimestamps, setShowTimestamps] = useState(false);
+  // Re-running a job needs push access; logs stay readable for everyone.
+  const { canPush } = useRepoPermissions(owner, repo);
   // The job JSON carries `.../check-runs/{id}` — the annotation source.
   const checkRunId = useMemo(() => {
     const url = job.check_run_url;
@@ -772,9 +778,11 @@ function JobPane({
             >
               View raw logs
             </a>
-            <Button size="sm" disabled={rerunMut.isPending} onClick={() => rerunMut.mutate()}>
-              {rerunMut.isPending ? "Re-running…" : "Re-run job"}
-            </Button>
+            {canPush && (
+              <Button size="sm" disabled={rerunMut.isPending} onClick={() => rerunMut.mutate()}>
+                {rerunMut.isPending ? "Re-running…" : "Re-run job"}
+              </Button>
+            )}
           </span>
         </div>
       }

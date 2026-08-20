@@ -68,6 +68,7 @@ const repo = {
   merge_commit_title: "PR_TITLE",
   merge_commit_message: "PR_BODY",
   pull_request_creation_policy: "open",
+  permissions: { admin: true, push: true, pull: true },
 };
 
 describe("RepoSettingsPage", () => {
@@ -1003,5 +1004,16 @@ describe("RepoSettingsPage", () => {
       expect(post).toBeDefined();
       expect(JSON.parse(String(post![1].body)).events).toEqual(["*"]);
     });
+  });
+});
+
+describe("RepoSettingsPage non-admin guard", () => {
+  it("renders a GitHub-style 404 for a non-admin viewer instead of the settings form", async () => {
+    const viewerRepo = { ...repo, permissions: { admin: false, push: false, pull: true } };
+    mockFetch.mockResolvedValue(jsonResponse(viewerRepo));
+    renderPage();
+    expect(await screen.findByText("This page does not exist")).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("before")).not.toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "Settings" })).not.toBeInTheDocument();
   });
 });

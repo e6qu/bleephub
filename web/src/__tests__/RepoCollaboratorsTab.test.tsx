@@ -29,6 +29,7 @@ const repo = {
   visibility: "private",
   private: true,
   owner: { login: "admin", type: "User" },
+  permissions: { admin: true, push: true, pull: true },
   has_issues: true,
   has_projects: false,
   has_wiki: false,

@@ -31,6 +31,16 @@ const prFile = {
   patch: "@@ -1,1 +1,1 @@\n+hello",
 };
 
+// Viewer-role gating reads the repo payload's permissions; the admin fixture
+// carries full access so the write affordances render as they always did.
+const adminRepo = {
+  id: 1,
+  name: "test",
+  full_name: "admin/test",
+  owner: { login: "admin", type: "User" },
+  permissions: { admin: true, push: true, pull: true },
+};
+
 describe("PRFilesView review comment", () => {
   it("invalidates the pr-timeline cache (not the stale issue-timeline key) after commenting", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
@@ -207,6 +217,7 @@ describe("PRFilesView inline threads", () => {
   it("renders existing review threads under their diff row with a reply box and resolve control", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
       const u = url.toString();
+      if (u.endsWith("/api/v3/repos/admin/test")) return Promise.resolve(jsonResponse(adminRepo));
       if (u.endsWith("/pulls/7/files")) return Promise.resolve(jsonResponse([prFile]));
       if (u.endsWith("/pulls/7/comments") && init?.method === undefined) {
         return Promise.resolve(jsonResponse([reviewComment(61, { body: "existing thread" })]));
@@ -353,6 +364,7 @@ describe("PRFilesView commit suggestion", () => {
     let applyCall: { url: string } | null = null;
     mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
       const u = url.toString();
+      if (u.endsWith("/api/v3/repos/admin/test")) return Promise.resolve(jsonResponse(adminRepo));
       if (u.endsWith("/pulls/7/files")) return Promise.resolve(jsonResponse([prFile]));
       if (u.endsWith("/pulls/7/comments") && init?.method === undefined) {
         return Promise.resolve(jsonResponse([comment]));
@@ -430,5 +442,68 @@ describe("PRFilesView commit suggestion", () => {
     const fileLevelButton = await screen.findByRole("button", { name: "Commit suggestion" });
     expect(fileLevelButton).toBeDisabled();
     expect(fileLevelButton.getAttribute("title")).toBe("File-level suggestions can't be applied");
+  });
+});
+
+// ─── Viewer-role gating ────────────────────────────────────────────────────
+
+describe("PRFilesView viewer-role gating", () => {
+  const readerRepo = { ...adminRepo, permissions: { admin: false, push: false, pull: true } };
+
+  it("hides Commit suggestion from a pull-only viewer (the mini-diff still renders)", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith("/api/v3/repos/admin/test")) return Promise.resolve(jsonResponse(readerRepo));
+      if (u.endsWith("/pulls/7/files")) return Promise.resolve(jsonResponse([prFile]));
+      if (u.endsWith("/pulls/7/comments") && init?.method === undefined) {
+        return Promise.resolve(
+          jsonResponse([reviewComment(62, { body: "Try this:\n```suggestion\nhello world\n```" })]),
+        );
+      }
+      if (u.endsWith("/pulls/7/reviews")) return Promise.resolve(jsonResponse([]));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderFiles();
+
+    expect(await screen.findByText("Suggested change")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Commit suggestion" })).not.toBeInTheDocument();
+  });
+
+  it("hides Resolve from a pull-only non-participant but keeps the reply box", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith("/api/v3/repos/admin/test")) return Promise.resolve(jsonResponse(readerRepo));
+      if (u.endsWith("/api/v3/user")) {
+        return Promise.resolve(jsonResponse({ id: 2, login: "reader", avatar_url: "", type: "User" }));
+      }
+      if (u.endsWith("/pulls/7/files")) return Promise.resolve(jsonResponse([prFile]));
+      if (u.endsWith("/pulls/7/comments") && init?.method === undefined) {
+        return Promise.resolve(jsonResponse([reviewComment(61, { body: "existing thread" })]));
+      }
+      if (u.endsWith("/api/graphql") && init?.method === "POST") {
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              repository: {
+                pullRequest: {
+                  reviewThreads: {
+                    nodes: [{ id: "T1", isResolved: false, comments: { nodes: [{ databaseId: 61 }] } }],
+                  },
+                },
+              },
+            },
+          }),
+        );
+      }
+      if (u.endsWith("/pulls/7/reviews")) return Promise.resolve(jsonResponse([]));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderFiles();
+
+    expect(await screen.findByText("existing thread")).toBeInTheDocument();
+    // Replying (reviewing) stays open to every reader…
+    expect(screen.getByLabelText("reply to thread on a.txt")).toBeInTheDocument();
+    // …but resolving needs write access or thread authorship.
+    expect(screen.queryByRole("button", { name: /^resolve$/i })).not.toBeInTheDocument();
   });
 });

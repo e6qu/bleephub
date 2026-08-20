@@ -43,6 +43,24 @@ fixed: discussion category emoji rendered as raw `:shortcode:` text, and the pro
 blind probes (the last console-404 sources) replaced by an always-200
 `/ui-data/users/{login}/profile-readme` wrapper with byte-identical readme payloads.
 
+**Fourth round (2026-08-20) — viewer-role parity:** a dual-role live audit (site admin vs a
+read-only outsider over the same pages) found that NO repository control was role-gated — the
+Settings tab, merge button, Add file/Upload, blob Edit/Delete, branch Delete, release/wiki/
+Actions write controls, the issue sidebar editors, Lock, the issue overflow menu, label/milestone
+CRUD and reviewer management all rendered for a viewer who would only 403. github.com hides what
+the viewer cannot do. Now gated end-to-end on the repo payload's viewer-scoped `permissions`
+via a shared `useRepoPermissions` hook: admin → settings surfaces (which 404 like GitHub on
+direct URLs), push → every write affordance (the lattice has no triage tier), author-rules for
+closing/editing own issues/PRs and managing own comments, and GitHub's exact "Only those with
+write access to this repository can merge pull requests" notice in the merge box. Verified by
+re-running the dual-role audit live: 39 privileged control instances across 12 pages hidden for
+the read-only viewer, zero leaks, zero console errors.
+
+**Scale re-measurement (same round):** 12k issues = 62 MB RSS (~2 KB/issue), ~775 writes/s
+sustained through persistence, 0.4 ms issue-list reads, 10 ms search, 0.1 s graceful shutdown
+and 0.1 s cold boot — the earlier 34 s reload reading was a measurement artifact (raced the
+dying process). No scale work needed at this size.
+
 **Still not implemented, with reasons:**
 - package download counts: absent from GitHub's package-version payload shape.
 - tag protection: GitHub retired tag protection rules in favor of rulesets, which bleephub

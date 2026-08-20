@@ -38,6 +38,7 @@ const repo = {
   full_name: "admin/bp-repo",
   default_branch: "main",
   owner: { login: "admin", type: "User" },
+  permissions: { admin: true, push: true, pull: true },
 };
 
 const mainProtection = {
@@ -361,5 +362,21 @@ describe("BranchProtectionPage", () => {
       (c) => String(c[0]).endsWith("/branch-protection-patterns") && c[1]?.method === "PUT",
     );
     expect(put).toBeFalsy();
+  });
+});
+
+describe("BranchProtectionPage non-admin guard", () => {
+  it("renders a GitHub-style 404 for a non-admin viewer instead of the editor", async () => {
+    const viewerRepo = { ...repo, permissions: { admin: false, push: false, pull: true } };
+    mockFetch.mockImplementation((url: string) => {
+      const u = url.toString();
+      if (u === "/api/v3/repos/admin/bp-repo") return Promise.resolve(jsonResponse(viewerRepo));
+      const r = route(u);
+      return Promise.resolve(r ?? jsonResponse({ message: "Not Found" }, 404));
+    });
+    renderPage();
+    expect(await screen.findByText("This page does not exist")).toBeInTheDocument();
+    expect(screen.queryByText("Branch protection rules")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Save changes" })).not.toBeInTheDocument();
   });
 });

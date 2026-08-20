@@ -56,6 +56,15 @@ function run(id: number, name: string, overrides: Record<string, unknown> = {}) 
   };
 }
 
+const repoDetail = {
+  id: 1,
+  name: "test",
+  full_name: "admin/test",
+  default_branch: "main",
+  owner: { login: "admin", type: "User" },
+  permissions: { admin: true, push: true, pull: true },
+};
+
 const workflowsData = {
   total_count: 2,
   workflows: [
@@ -125,6 +134,7 @@ function installMocks({
   mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
     const u = url.toString();
     const method = init?.method ?? "GET";
+    if (u.endsWith("/repos/admin/test")) return Promise.resolve(jsonResponse(repoDetail));
     if (u.includes("/issues") || u.includes("/pulls")) return Promise.resolve(jsonResponse([]));
     if (u.includes("/actions/workflows/10/runs")) {
       return Promise.resolve(
@@ -216,6 +226,7 @@ describe("ActionsPage run rows", () => {
     installMocks();
     mockFetch.mockImplementation((url: RequestInfo | URL) => {
       const u = url.toString();
+      if (u.endsWith("/repos/admin/test")) return Promise.resolve(jsonResponse(repoDetail));
       if (u.includes("/issues") || u.includes("/pulls")) return Promise.resolve(jsonResponse([]));
       if (u.includes("/actions/workflows") && !u.includes("/runs")) {
         return Promise.resolve(jsonResponse(workflowsData));
@@ -241,6 +252,7 @@ describe("ActionsPage run rows", () => {
   it("filters runs by actor client-side (the endpoint has no actor param)", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL) => {
       const u = url.toString();
+      if (u.endsWith("/repos/admin/test")) return Promise.resolve(jsonResponse(repoDetail));
       if (u.includes("/issues") || u.includes("/pulls")) return Promise.resolve(jsonResponse([]));
       if (u.includes("/actions/workflows") && !u.includes("/runs")) {
         return Promise.resolve(jsonResponse(workflowsData));
@@ -464,5 +476,69 @@ describe("parseWorkflowDispatch", () => {
 
   it("treats unparsable YAML as no dispatch trigger", () => {
     expect(parseWorkflowDispatch(":::: not yaml {").hasDispatch).toBe(false);
+  });
+});
+
+describe("ActionsPage read-only viewer gating", () => {
+  const viewerRepo = { ...repoDetail, permissions: { admin: false, push: false, pull: true } };
+  function installViewerMocks(opts: Parameters<typeof installMocks>[0] = {}) {
+    installMocks(opts);
+    const base = mockFetch.getMockImplementation()!;
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith("/repos/admin/test")) return Promise.resolve(jsonResponse(viewerRepo));
+      return base(url, init);
+    });
+  }
+
+  it("hides Run workflow and the enable/disable kebab from a viewer", async () => {
+    installViewerMocks();
+    renderPage();
+    await waitFor(() => expect(screen.getByRole("button", { name: "CI" })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "CI" }));
+    // Header renders (runs stay readable) without the dispatch or options controls.
+    await screen.findByText(".github/workflows/ci.yml");
+    expect(screen.queryByRole("button", { name: "Run workflow" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Workflow options" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the run kebab's View workflow file but hides Delete workflow run", async () => {
+    installViewerMocks();
+    renderPage();
+    await waitFor(() => expect(screen.getByText("2 workflow runs")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Options for run #2" }));
+    expect(screen.getByRole("menuitem", { name: "View workflow file" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Delete workflow run" })).not.toBeInTheDocument();
+  });
+
+  it("keeps artifact downloads but hides artifact/cache deletes from a viewer", async () => {
+    installViewerMocks({
+      artifacts: [{
+        id: 7,
+        name: "dist",
+        size_in_bytes: 2048,
+        expired: false,
+        created_at: "2026-01-01T00:00:00Z",
+        workflow_run: { id: 12, head_branch: "main", head_sha: "abc" },
+      }],
+      caches: [{
+        id: 21,
+        ref: "refs/heads/main",
+        key: "bun-cache",
+        version: "v1",
+        last_accessed_at: "2026-01-02T00:00:00Z",
+        created_at: "2026-01-01T00:00:00Z",
+        size_in_bytes: 4096,
+      }],
+    });
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Artifacts" }));
+    expect(await screen.findByText("dist")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /download/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete artifact dist" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Caches" }));
+    expect(await screen.findByText("bun-cache")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete cache bun-cache" })).not.toBeInTheDocument();
   });
 });

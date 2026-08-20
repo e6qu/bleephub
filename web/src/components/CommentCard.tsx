@@ -158,6 +158,7 @@ export function EditableCommentList({
   items,
   invalidateKeys,
   viewerLogin,
+  canPush = false,
 }: {
   owner: string;
   repo: string;
@@ -165,6 +166,12 @@ export function EditableCommentList({
   items: GithubTimelineItem[];
   invalidateKeys: QueryKey[];
   viewerLogin?: string | null | undefined;
+  /**
+   * Whether the viewer has write access. Edit/Delete/Hide render only for
+   * writers or the comment's own author (github.com: moderation needs write;
+   * authors manage their own comments). Reactions stay for everyone.
+   */
+  canPush?: boolean;
 }) {
   const qc = useQueryClient();
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -216,6 +223,10 @@ export function EditableCommentList({
           return <TimelineEventRow key={`${item.event}-${item.id ?? index}`} item={item} />;
         }
         const c = { id: item.id, node_id: item.node_id, body: item.body, created_at: item.created_at ?? "", user: item.user };
+        // github.com: write access moderates any comment; authors manage
+        // their own. Everyone else gets a read-only card (reactions stay).
+        const canManage =
+          canPush || (viewerLogin != null && c.user?.login != null && c.user.login === viewerLogin);
         const min = minimized.get(c.id);
         // A minimized comment renders collapsed until the viewer clicks Show.
         if (min?.isMinimized && !shown.has(c.id)) {
@@ -238,7 +249,7 @@ export function EditableCommentList({
                 <Button size="sm" variant="ghost" onClick={() => setShown((s) => new Set(s).add(c.id))}>
                   Show
                 </Button>
-                {c.node_id && (
+                {canManage && c.node_id && (
                   <Button
                     size="sm"
                     variant="ghost"
@@ -296,6 +307,7 @@ export function EditableCommentList({
             body={c.body}
             date={c.created_at}
             headerActions={
+              canManage && (
               <>
                 <Button
                   size="sm"
@@ -368,6 +380,7 @@ export function EditableCommentList({
                   )
                 )}
               </>
+              )
             }
           />
           <ReactionBar
