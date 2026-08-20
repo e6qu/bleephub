@@ -234,7 +234,7 @@ function PRList({ owner, repo }: { owner: string; repo: string }) {
         accessors={prAccessors}
         resultCount={prs.length}
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <input
               aria-label="Filter by base branch"
               placeholder="base branch"
@@ -556,7 +556,7 @@ function PRDetail({ owner, repo, number }: { owner: string; repo: string; number
       <RepoHeader owner={owner} repo={repo} active="pulls" {...counts} />
 
       <div className="mb-2 flex flex-wrap items-baseline gap-2">
-        <h1 style={{ fontSize: "1.5rem", fontWeight: 400, color: "var(--color-fg)" }}>
+        <h1 style={{ fontSize: "1.5rem", fontWeight: 400, color: "var(--color-fg)", overflowWrap: "anywhere" }}>
           {pr.title} <span style={{ color: "var(--color-fg-muted)" }}>#{pr.number}</span>
         </h1>
         {canEdit && (

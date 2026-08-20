@@ -75,7 +75,7 @@ export function DashboardPage() {
   };
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[280px_1fr_260px]">
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[280px_minmax(0,1fr)_260px]">
       {/* Left rail: top repositories + New */}
       <aside className="flex flex-col gap-3">
         <div className="flex items-center justify-between gap-2">
@@ -270,6 +270,10 @@ function FeedIssueRow({ issue, last }: { issue: GithubFeedIssue; last: boolean }
             fontSize: "0.9rem",
             lineHeight: "1.625rem",
             textDecoration: "none",
+            // List rows must survive unbroken 200+-char titles without
+            // widening the page (the detail page wraps; rows break).
+            overflowWrap: "anywhere",
+            maxWidth: "100%",
           }}
         >
           {issue.title}

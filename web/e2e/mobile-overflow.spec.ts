@@ -24,7 +24,8 @@ const seeded = {
   owner: "admin",
   repo: "mobile-overflow",
   issueNumber: 1,
-  pullNumber: 2,
+  stressIssueNumber: 2,
+  pullNumber: 3,
 };
 
 async function api(
@@ -80,6 +81,21 @@ test.beforeAll(async ({ browser }) => {
   if (issueRes.ok && issueRes.json && typeof issueRes.json === "object") {
     seeded.issueNumber = (issueRes.json as { number: number }).number;
   }
+  // Hostile content: a 220-char unbroken title (title wrap), an unbroken body
+  // word (markdown wrap), and an extreme label name (sidebar select width) —
+  // each has broken page width before.
+  const unbroken = "W".repeat(220);
+  const stressRes = await api(page, "POST", `${repo}/issues`, {
+    title: unbroken,
+    body: `Unbroken ${unbroken}${unbroken} word.`,
+  });
+  if (stressRes.ok && stressRes.json && typeof stressRes.json === "object") {
+    seeded.stressIssueNumber = (stressRes.json as { number: number }).number;
+  }
+  await api(page, "POST", `${repo}/labels`, {
+    name: "an-extremely-long-label-name-that-goes-on-and-on-forever-and-ever",
+    color: "5319e7",
+  });
   const mainRef = await api(page, "GET", `${repo}/git/ref/heads/main`);
   if (mainRef.ok && mainRef.json) {
     const sha = (mainRef.json as { object: { sha: string } }).object.sha;
@@ -113,6 +129,10 @@ const ROUTES: { label: string; route: () => string }[] = [
     route: () => `/ui/repos/${seeded.owner}/${seeded.repo}/issues/${seeded.issueNumber}`,
   },
   {
+    label: "issue-detail-hostile-content",
+    route: () => `/ui/repos/${seeded.owner}/${seeded.repo}/issues/${seeded.stressIssueNumber}`,
+  },
+  {
     label: "pull-files",
     route: () => `/ui/repos/${seeded.owner}/${seeded.repo}/pulls/${seeded.pullNumber}/files`,
   },
@@ -128,13 +148,43 @@ const ROUTES: { label: string; route: () => string }[] = [
 for (const { label, route } of ROUTES) {
   test(`no page-level horizontal overflow at 375px: ${label}`, async ({ page }) => {
     await page.goto(route(), { waitUntil: "networkidle" });
-    const metrics = await page.evaluate(() => ({
-      scrollWidth: document.scrollingElement?.scrollWidth ?? 0,
-      innerWidth: window.innerWidth,
-    }));
+    const metrics = await page.evaluate(() => {
+      const scrollWidth = document.scrollingElement?.scrollWidth ?? 0;
+      const innerWidth = window.innerWidth;
+      // Name the widest unclipped leaf elements so a failure says WHAT
+      // overflowed, not just that something did.
+      const offenders: string[] = [];
+      if (scrollWidth > innerWidth + 2) {
+        for (const el of Array.from(document.querySelectorAll("*"))) {
+          const r = el.getBoundingClientRect();
+          if (r.right <= innerWidth + 4 || r.width < 30) continue;
+          let anc = el.parentElement;
+          let clipped = false;
+          while (anc) {
+            const o = getComputedStyle(anc).overflowX;
+            if (o === "auto" || o === "hidden" || o === "scroll") {
+              clipped = true;
+              break;
+            }
+            anc = anc.parentElement;
+          }
+          if (clipped) continue;
+          const widerChild = Array.from(el.children).some(
+            (c) => c.getBoundingClientRect().right > innerWidth + 4,
+          );
+          if (widerChild) continue;
+          offenders.push(
+            `${el.tagName}.${String(el.className).slice(0, 50)} '${(el.textContent ?? "")
+              .trim()
+              .slice(0, 40)}' w=${Math.round(r.width)}`,
+          );
+        }
+      }
+      return { scrollWidth, innerWidth, offenders: [...new Set(offenders)].slice(0, 5) };
+    });
     expect(
       metrics.scrollWidth,
-      `document scrollWidth ${metrics.scrollWidth} exceeds viewport ${metrics.innerWidth} on ${route()}`,
+      `document scrollWidth ${metrics.scrollWidth} exceeds viewport ${metrics.innerWidth} on ${route()}; offenders: ${metrics.offenders.join(" | ")}`,
     ).toBeLessThanOrEqual(metrics.innerWidth + 2);
   });
 }
