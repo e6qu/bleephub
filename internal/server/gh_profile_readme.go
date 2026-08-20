@@ -26,14 +26,20 @@ func (s *Server) handleGetProfileReadme(w http.ResponseWriter, r *http.Request) 
 		}
 		repoName = ".github"
 	}
-	var readme json.RawMessage
+	var readme interface{}
 	if repo := s.store.GetRepoByFullName(login + "/" + repoName); repo != nil {
 		sub := uiSubGET(r, s.handleGetReadme, "/api/v3/repos/"+login+"/"+repoName+"/readme", nil, map[string]string{
 			"owner": login,
 			"repo":  repoName,
 		})
 		if sub.status == http.StatusOK {
-			readme = json.RawMessage(sub.buf.Bytes())
+			// Unmarshal→marshal instead of embedding the sub-response bytes
+			// verbatim: the re-marshal is the escaping boundary taint analysis
+			// needs to see between the request-derived path and the response.
+			var parsed map[string]interface{}
+			if err := json.Unmarshal(sub.buf.Bytes(), &parsed); err == nil {
+				readme = parsed
+			}
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"readme": readme})
