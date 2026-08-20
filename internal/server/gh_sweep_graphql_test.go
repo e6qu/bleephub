@@ -869,7 +869,7 @@ func TestPRGraphQL_ResolveReviewThread(t *testing.T) {
 		"in_reply_to": rootID,
 	}), http.StatusCreated)
 
-	query := `query($owner:String!,$repo:String!,$n:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$n){reviewThreads(first:10){nodes{id,isResolved,isOutdated,path,line,comments{totalCount,nodes{body,path,line,state,author{login}}}}}}}}`
+	query := `query($owner:String!,$repo:String!,$n:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$n){reviewThreads(first:10){nodes{id,isResolved,isOutdated,path,line,comments(first:100){totalCount,nodes{body,path,line,state,author{login}}}}}}}}`
 	d := s.gqlData(t, query, map[string]interface{}{"owner": owner, "repo": name, "n": prNum})
 	threads := d["repository"].(map[string]interface{})["pullRequest"].(map[string]interface{})["reviewThreads"].(map[string]interface{})
 	nodes, _ := threads["nodes"].([]interface{})

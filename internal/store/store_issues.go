@@ -1382,6 +1382,13 @@ func (st *Store) BuildIssueTimeline(repo *Repo, issueID int, baseURL string) []m
 
 	items := make([]timelineItem, 0, len(events)+len(comments))
 	for _, e := range events {
+		// The comment entries below carry the conversation; GitHub's timeline
+		// has no separate "commented" event row, and rendering the stored one
+		// would duplicate every comment under the event's id (whose reactions
+		// endpoint 404s — comment ids and event ids are different spaces).
+		if e.Event == "commented" {
+			continue
+		}
 		items = append(items, timelineItem{CreatedAt: e.CreatedAt, kind: "event", event: e})
 	}
 	for _, c := range comments {

@@ -2764,8 +2764,16 @@ function RepoRulesetsTab({ owner, repo }: { owner: string; repo: string }) {
   const [ruleConfig, setRuleConfig] = useState<RulesetRuleConfig>({ rules: [], bypass_actors: [] });
   const [error, setError] = useState<string | null>(null);
   const list = useQuery({ queryKey: ["repo-rulesets", owner, repo], queryFn: () => fetchRepoRulesets(owner, repo) });
-  // Team picker data for bypass actors; 404s for user-owned repos (no org).
-  const teamsQ = useQuery({ queryKey: ["org-teams", owner], queryFn: () => fetchOrgTeams(owner), retry: false });
+  // Team picker data for bypass actors — org-owned repos only: probing the
+  // org-teams endpoint for a user owner 404s into the browser console.
+  const repoQ = useQuery({ queryKey: ["repo", owner, repo], queryFn: () => fetchRepoDetail(owner, repo) });
+  const ownerIsOrg = repoQ.data?.owner?.type === "Organization";
+  const teamsQ = useQuery({
+    queryKey: ["org-teams", owner],
+    queryFn: () => fetchOrgTeams(owner),
+    retry: false,
+    enabled: ownerIsOrg,
+  });
   const createMut = useMutation({
     mutationFn: () => createRepoRuleset(owner, repo, {
       name: name.trim(),
@@ -2929,11 +2937,14 @@ function EnvironmentDetail({ owner, repo, env }: { owner: string; repo: string; 
     queryKey: ["repo-collaborators", owner, repo],
     queryFn: () => fetchRepoCollaborators(owner, repo),
   });
-  // Team pickers only make sense for org-owned repos; a user owner 404s.
+  // Team pickers only make sense for org-owned repos — and probing the
+  // org-teams endpoint for a user owner 404s into the browser console.
+  const envRepoQ = useQuery({ queryKey: ["repo", owner, repo], queryFn: () => fetchRepoDetail(owner, repo) });
   const teamsQ = useQuery({
     queryKey: ["org-teams", owner],
     queryFn: () => fetchOrgTeams(owner),
     retry: false,
+    enabled: envRepoQ.data?.owner?.type === "Organization",
   });
   const [pickUser, setPickUser] = useState("");
   const [pickTeam, setPickTeam] = useState("");

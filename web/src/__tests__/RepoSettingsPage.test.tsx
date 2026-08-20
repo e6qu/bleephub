@@ -238,7 +238,8 @@ describe("RepoSettingsPage", () => {
       if (u.includes("/collaborators")) return Promise.resolve(jsonResponse([{ id: 42, login: "reviewer-user" }]));
       if (u === "/api/v3/orgs/admin/teams") return Promise.resolve(jsonResponse([{ id: 7, slug: "platform", name: "Platform" }]));
       if (u.includes("/issues") || u.includes("/pulls")) return Promise.resolve(jsonResponse([]));
-      return Promise.resolve(jsonResponse(repo));
+      // Team reviewers only exist for org-owned repos; the picker gates on it.
+      return Promise.resolve(jsonResponse({ ...repo, owner: { login: "admin", type: "Organization" } }));
     });
     renderPage();
     await waitFor(() => screen.getByDisplayValue("before"));

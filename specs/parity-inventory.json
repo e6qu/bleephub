@@ -312,7 +312,7 @@
       "shared_types": 284,
       "signature_exact_fields": 1052
     },
-    "introspection_snapshot_sha256": "26677a7d13ff5e6f0349af824592c6ecdee57b4fe02e41f8197c678941835403",
+    "introspection_snapshot_sha256": "197f865d680fe8e40814809b732df62f894ebad8d51cf74589130c98f152781a",
     "official_schema": {
       "content_sha256": "30347e4f3bb975195f982351e55636ca03c76969c279980ca515a96ea7b40c3d",
       "source": "https://docs.github.com/public/fpt/schema.docs.graphql"

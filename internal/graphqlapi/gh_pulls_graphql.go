@@ -539,7 +539,19 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			"resolvedBy": &graphql.Field{Type: userType},
 			"path":       &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
 			"line":       &graphql.Field{Type: graphql.Int},
-			"comments":   &graphql.Field{Type: graphql.NewNonNull(prReviewCommentConnectionType)},
+			"comments": &graphql.Field{
+				Type: graphql.NewNonNull(prReviewCommentConnectionType),
+				// The official field is a connection with relay args; the SPA
+				// queries comments(first: N) and errored without them.
+				Args: relayConnectionArgs(),
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					thread, ok := p.Source.(map[string]interface{})
+					if !ok {
+						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
+					}
+					return repaginateConnection(thread["comments"], p.Args), nil
+				},
+			},
 		},
 	})
 	prReviewThreadConnectionType := graphql.NewObject(graphql.ObjectConfig{

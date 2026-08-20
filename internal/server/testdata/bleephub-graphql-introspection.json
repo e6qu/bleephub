@@ -3613,7 +3613,13 @@
       "kind": "OBJECT",
       "fields": {
         "comments": {
-          "type": "PullRequestReviewCommentConnection!"
+          "type": "PullRequestReviewCommentConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
         },
         "id": {
           "type": "ID!"
