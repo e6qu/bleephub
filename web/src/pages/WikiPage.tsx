@@ -146,7 +146,7 @@ export function WikiPage() {
             <WikiView
               pagesQ={pagesQ}
               pageQ={pageQ}
-              activeSlug={activeSlug}
+              activeSlug={activeSlug ?? ""}
               canPush={canPush}
               onNew={startNew}
               onCreateMissing={(title) =>
@@ -239,7 +239,8 @@ function WikiView({
 }: {
   pagesQ: { isLoading: boolean; isError: boolean; error: unknown; data: GithubWikiPage[] | undefined };
   pageQ: { isLoading: boolean; isError: boolean; error: unknown; data: GithubWikiPage | undefined };
-  activeSlug: string | undefined;
+  /** "" only on the empty-wiki path, which returns before any use. */
+  activeSlug: string;
   canPush: boolean;
   onNew: () => void;
   onCreateMissing: (title: string) => void;
@@ -270,9 +271,7 @@ function WikiView({
     // not exist. github.com offers writers a title-prefilled "create this
     // page" affordance; readers just get the 404 text. The list rail stays.
     if (isNotFoundError(pageQ.error)) {
-      // The page query only runs with a slug, so this branch always has one.
-      const slug = activeSlug ?? "";
-      const missingTitle = slug.replace(/-+/g, " ").trim() || slug;
+      const missingTitle = activeSlug.replace(/-+/g, " ").trim() || "this page";
       return (
         <Blankslate
           icon={<BookIcon size={28} />}

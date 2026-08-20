@@ -30497,7 +30497,9 @@
         "component": "RepoNotFound",
         "line": 327,
         "path": "/ui/*",
-        "rendered_tests": [],
+        "rendered_tests": [
+          "web/src/__tests__/notFoundPages.test.tsx"
+        ],
         "source": "web/src/App.tsx",
         "tests": [
           "web/src/__tests__/notFoundPages.test.tsx"
@@ -31763,7 +31765,7 @@
     "summary": {
       "browser_navigations": 74,
       "routes": 94,
-      "routes_with_direct_render": 93,
+      "routes_with_direct_render": 94,
       "routes_with_test_reference": 94
     }
   }
