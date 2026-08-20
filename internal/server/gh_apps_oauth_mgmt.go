@@ -44,6 +44,12 @@ func (s *Server) registerGHAppsOAuthMgmtRoutes() {
 	s.route("PUT /api/v3/authorizations/clients/{client_id}/{fingerprint}", s.handleGetOrCreateLegacyAuthorization)
 	s.route("GET /settings/oauth-apps", s.handleListBrowserOAuthApps)
 	s.route("POST /settings/oauth-apps/new", s.handleCreateBrowserOAuthApp)
+	// The legacy /api/v3/authorizations API has no expires_at request field
+	// (matching GitHub's published spec); on github.com a classic PAT's
+	// expiration is chosen in the web settings UI. That browser-only creation
+	// flow therefore lives under /ui-data (`s.route` auto-wraps /ui-data with
+	// authenticateUIData).
+	s.route("POST /ui-data/user/tokens/classic", s.handleCreateClassicTokenWeb)
 
 }
 

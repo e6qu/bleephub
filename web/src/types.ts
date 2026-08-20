@@ -2327,3 +2327,15 @@ export interface GithubSecurityAdvisoryCreatePayload {
 export interface GithubSecurityAdvisoryUpdatePayload {
   credits?: GithubAdvisoryCredit[] | undefined;
 }
+
+/**
+ * A profile achievement badge from GET /ui-data/users/{login}/achievements.
+ * Server-computed from stored state; `tier` is GitHub's multiplier level
+ * (1 = base badge) and `count` the raw number that earned it.
+ */
+export interface GithubAchievement {
+  slug: string;
+  name: string;
+  tier: number;
+  count: number;
+}

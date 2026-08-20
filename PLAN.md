@@ -32,10 +32,19 @@ environment Team reviewers rendering; webhook `insecure_ssl` (already server-com
 delivery-behavior coverage and form UI); bootstrap aggregates extended (PR sidebar data,
 milestones state=all, per_page=100 first pages).
 
+**Third round (2026-08-20):** a visual verification pass over every newly-built surface (zero
+console errors end-state) plus the last two implementable deferrals — profile **achievements**
+(GitHub's real badge set — Pull Shark, YOLO, Quickdraw, Galaxy Brain, Starstruck, Pair
+Extraordinaire — computed per request from store data, served at
+`/ui-data/users/{login}/achievements`, profile sidebar badges) and **classic-PAT expiry**
+(web-only on GitHub → `POST /ui-data/user/tokens/classic` honoring `expires_at`; expired tokens
+refused by the existing auth check; expiry preset picker in the UI). The pass also surfaced and
+fixed: discussion category emoji rendered as raw `:shortcode:` text, and the profile/org README
+blind probes (the last console-404 sources) replaced by an always-200
+`/ui-data/users/{login}/profile-readme` wrapper with byte-identical readme payloads.
+
 **Still not implemented, with reasons:**
-- classic-PAT expiry: the legacy authorizations API has no expiry field in the vendored spec.
 - package download counts: absent from GitHub's package-version payload shape.
-- achievements (G67 part): a whole server feature with GitHub-internal semantics; deferred.
 - tag protection: GitHub retired tag protection rules in favor of rulesets, which bleephub
   already implements with tag targeting — N/A rather than a gap.
 - Accepted deviations, documented: the repo sub-tab row (G9), the gradient header (G10),

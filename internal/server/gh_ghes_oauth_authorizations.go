@@ -143,6 +143,47 @@ func (s *Server) handleCreateLegacyAuthorization(w http.ResponseWriter, r *http.
 	writeJSON(w, http.StatusCreated, classicAuthorizationJSON(token.Value, &copy, user, true))
 }
 
+// handleCreateClassicTokenWeb serves POST /ui-data/user/tokens/classic — the
+// browser settings flow for minting a classic PAT with an optional
+// expiration. It mirrors handleCreateLegacyAuthorization's classic-PAT branch
+// (same stored fields, same classic-authorization response JSON with the
+// token revealed once) and additionally honors expires_at, which the legacy
+// API cannot accept. An expired token is refused by store.LookupToken exactly
+// like an expired fine-grained PAT.
+func (s *Server) handleCreateClassicTokenWeb(w http.ResponseWriter, r *http.Request) {
+	user := ghUserFromContext(r.Context())
+	if user == nil {
+		writeGHError(w, http.StatusUnauthorized, "Requires authentication")
+		return
+	}
+	var req struct {
+		Note      string   `json:"note"`
+		Scopes    []string `json:"scopes"`
+		ExpiresAt *string  `json:"expires_at"` // RFC3339, or null/absent for no expiration
+	}
+	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+	var expiresAt *time.Time
+	if req.ExpiresAt != nil && *req.ExpiresAt != "" {
+		parsed, err := time.Parse(time.RFC3339, *req.ExpiresAt)
+		if err != nil {
+			writeGHError(w, http.StatusUnprocessableEntity, "expires_at is not a valid RFC 3339 timestamp")
+			return
+		}
+		utc := parsed.UTC()
+		expiresAt = &utc
+	}
+	token := s.store.CreateToken(user.ID, strings.Join(req.Scopes, ", "))
+	s.store.Mu.Lock()
+	token.Note = req.Note
+	token.ExpiresAt = expiresAt
+	s.store.PersistTokenLocked(token)
+	copy := *token
+	s.store.Mu.Unlock()
+	writeJSON(w, http.StatusCreated, classicAuthorizationJSON(token.Value, &copy, user, true))
+}
+
 func (s *Server) handleGetOrCreateLegacyAuthorization(w http.ResponseWriter, r *http.Request) {
 	user := s.legacyAuthorizationUser(w, r)
 	if user == nil {

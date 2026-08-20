@@ -540,13 +540,13 @@ describe("AccountPage", () => {
             created_at: "2026-08-01T00:00:00Z", updated_at: "2026-08-01T00:00:00Z", expires_at: null,
           },
         ]),
-      "POST /api/v3/authorizations": () =>
+      "POST /ui-data/user/tokens/classic": () =>
         jsonResponse({
           id: 43, url: "/api/v3/authorizations/43", scopes: ["repo", "read:org"], token: "ghp_shown_once",
           token_last_eight: "wxyz9876", hashed_token: "h2",
           app: { client_id: "00000000000000000000", name: "GitHub API", url: "https://github.com" },
           note: "new one", note_url: null, fingerprint: null,
-          created_at: "2026-08-19T00:00:00Z", updated_at: "2026-08-19T00:00:00Z", expires_at: null,
+          created_at: "2026-08-19T00:00:00Z", updated_at: "2026-08-19T00:00:00Z", expires_at: "2026-09-19T23:59:59Z",
         }, 201),
       "DELETE /api/v3/authorizations/42": () => new Response(null, { status: 204 }),
     });
@@ -558,14 +558,16 @@ describe("AccountPage", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: /repo Full control of private repositories/ }));
     fireEvent.click(screen.getByRole("button", { name: "Generate classic token" }));
     expect(await screen.findByText("ghp_shown_once")).toBeInTheDocument();
+    // Creation goes through the browser-only /ui-data endpoint — the legacy
+    // /api/v3/authorizations API accepts no expiration field.
     const post = mockFetch.mock.calls.find(
-      (c) => String(c[0]) === "/api/v3/authorizations" && (c[1] as RequestInit | undefined)?.method === "POST",
+      (c) => String(c[0]) === "/ui-data/user/tokens/classic" && (c[1] as RequestInit | undefined)?.method === "POST",
     );
     expect(post).toBeDefined();
     const body = JSON.parse(String((post![1] as RequestInit).body));
     expect(body).toMatchObject({ note: "new one", scopes: ["repo"] });
-    // The legacy authorizations API accepts no expiration field.
-    expect(body).not.toHaveProperty("expires_at");
+    // The default preset (30 days) posts a concrete RFC 3339 expires_at.
+    expect(body.expires_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/);
 
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
     fireEvent.click(await screen.findByRole("button", { name: "Confirm" }));
@@ -580,14 +582,48 @@ describe("AccountPage", () => {
   it("computes the fine-grained expiration from the preset and warns on no expiration", async () => {
     installFetchRoutes();
     renderPage("/ui/account?tab=tokens");
-    const preset = await screen.findByLabelText("Expiration");
-    // Default 30 days: the computed date is displayed.
+    // The tokens tab renders two expiration pickers: fine-grained first,
+    // classic second (wait for the classic form so both are mounted).
+    await screen.findByText("New classic token");
+    const presets = await screen.findAllByLabelText("Expiration");
+    expect(presets).toHaveLength(2);
+    const preset = presets[0]!;
+    // Default 30 days: the computed date is displayed (by both pickers).
     expect((preset as HTMLSelectElement).value).toBe("30");
-    expect(screen.getByText(/The token will expire on/)).toBeInTheDocument();
+    expect(screen.getAllByText(/The token will expire on/).length).toBeGreaterThan(0);
     fireEvent.change(preset, { target: { value: "none" } });
     expect(screen.getByText(/This token will never expire/)).toBeInTheDocument();
     fireEvent.change(preset, { target: { value: "custom" } });
     expect(screen.getByLabelText("Custom expiration date")).toBeInTheDocument();
+  });
+
+  it("posts null expires_at when a classic token is created with No expiration", async () => {
+    installFetchRoutes({
+      "POST /ui-data/user/tokens/classic": () =>
+        jsonResponse({
+          id: 44, url: "/api/v3/authorizations/44", scopes: [], token: "ghp_eternal",
+          token_last_eight: "eeee8888", hashed_token: "h3",
+          app: { client_id: "00000000000000000000", name: "GitHub API", url: "https://github.com" },
+          note: "forever", note_url: null, fingerprint: null,
+          created_at: "2026-08-19T00:00:00Z", updated_at: "2026-08-19T00:00:00Z", expires_at: null,
+        }, 201),
+    });
+    renderPage("/ui/account?tab=tokens");
+    await screen.findByText("New classic token");
+    const presets = await screen.findAllByLabelText("Expiration");
+    expect(presets).toHaveLength(2);
+    const classicPreset = presets[1]!;
+    fireEvent.change(classicPreset, { target: { value: "none" } });
+    expect(screen.getByText(/This token will never expire/)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Note"), { target: { value: "forever" } });
+    fireEvent.click(screen.getByRole("button", { name: "Generate classic token" }));
+    expect(await screen.findByText("ghp_eternal")).toBeInTheDocument();
+    const post = mockFetch.mock.calls.find(
+      (c) => String(c[0]) === "/ui-data/user/tokens/classic" && (c[1] as RequestInit | undefined)?.method === "POST",
+    );
+    expect(post).toBeDefined();
+    const body = JSON.parse(String((post![1] as RequestInit).body));
+    expect(body.expires_at).toBeNull();
   });
 
   it("renames the account via PATCH /api/v3/admin/users/{username} when the viewer is a site admin", async () => {
