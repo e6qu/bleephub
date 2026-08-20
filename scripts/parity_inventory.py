@@ -36,7 +36,9 @@ LEDGER_HEADER = re.compile(
 )
 ROUTE = re.compile(r's\.route\(\s*"([A-Z]+) (/api/v3[^"]*)"')
 UI_ROUTE = re.compile(
-    r'<Route\s+path="([^"]+)"\s+element=\{<([A-Za-z][A-Za-z0-9]*)'
+    # element={<Page />} or element={gate(<Page />)} — gate() is the
+    # signed-out login redirect wrapper for viewer-scoped routes.
+    r'<Route\s+path="([^"]+)"\s+element=\{(?:gate\()?<([A-Za-z][A-Za-z0-9]*)'
 )
 ACTION_PRODUCER = re.compile(
     r'\b(emitWebhookEvent|emitOrgWebhookEvent)\(\s*[^,\n]+,\s*"([a-z_]+)"'

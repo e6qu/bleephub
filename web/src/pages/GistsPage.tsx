@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router";
+import { Link, useLocation, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { InlineError, Spinner } from "@bleephub/ui-core/components";
 import { confirmAction } from "../components/confirmAction.js";
@@ -18,6 +18,7 @@ import {
   Blankslate,
   Box,
   Button,
+  ButtonLink,
   DialogActions,
   ErrorBanner,
   FormLabel,
@@ -31,12 +32,17 @@ import { Avatar } from "../components/Avatar.js";
 import { RelativeTime } from "../components/RelativeTime.js";
 import { CodeHighlight } from "../components/CodeHighlight.js";
 import { limitedGhFetch } from "../utils/uiFetch.js";
+import { loginPath, useSignedIn } from "../session.js";
 
 type GistScope = "yours" | "public" | "starred";
 
 export function GistsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [scope, setScope] = useState<GistScope>("yours");
+  // Anonymous visitors see public gists only: "yours" and "starred" are
+  // viewer-scoped lists whose reads 401 without a session.
+  const signedIn = useSignedIn();
+  const location = useLocation();
+  const [scope, setScope] = useState<GistScope>(signedIn ? "yours" : "public");
   const [showCreate, setShowCreate] = useState(false);
 
   useEffect(() => {
@@ -61,18 +67,28 @@ export function GistsPage() {
         title="Gists"
         meta="Code snippets and notes."
         actions={
-          <Button variant="primary" size="sm" onClick={() => setShowCreate(true)}>
-            New gist
-          </Button>
+          signedIn ? (
+            <Button variant="primary" size="sm" onClick={() => setShowCreate(true)}>
+              New gist
+            </Button>
+          ) : (
+            <ButtonLink variant="primary" size="sm" to={loginPath(location)}>
+              New gist
+            </ButtonLink>
+          )
         }
       />
 
       <Tabs<GistScope>
-        items={[
-          { key: "yours", label: "Yours" },
-          { key: "public", label: "Public" },
-          { key: "starred", label: "Starred" },
-        ]}
+        items={
+          signedIn
+            ? [
+                { key: "yours", label: "Yours" },
+                { key: "public", label: "Public" },
+                { key: "starred", label: "Starred" },
+              ]
+            : [{ key: "public", label: "Public" }]
+        }
         active={scope}
         onChange={setScope}
       />
@@ -105,7 +121,14 @@ function GistList({ scope }: { scope: GistScope }) {
   const [filter, setFilter] = useState("");
   const [mutationError, setMutationError] = useState<string | null>(null);
 
-  const viewer = useQuery({ queryKey: ["current-user"], queryFn: ({ signal }) => fetchCurrentUser(signal) });
+  // Anonymous visitors have no viewer (the read would 401); owner-only row
+  // actions simply stay hidden.
+  const signedIn = useSignedIn();
+  const viewer = useQuery({
+    queryKey: ["current-user"],
+    queryFn: ({ signal }) => fetchCurrentUser(signal),
+    enabled: signedIn,
+  });
   const { data, isLoading, isError } = useQuery({
     queryKey: ["gists", scope],
     queryFn: gistsQueryFn(scope),

@@ -161,7 +161,11 @@ export function PageTitle({
           </div>
         )}
       </div>
-      {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+      {/* max-w-full + flex-wrap: at phone widths a long actions row clamps to
+          the header width and wraps instead of forcing page-level horizontal
+          scroll; on desktop the row is narrower than the header so both are
+          inert and shrink-0 keeps titles from squeezing the controls. */}
+      {actions && <div className="flex max-w-full shrink-0 flex-wrap items-center gap-2">{actions}</div>}
     </header>
   );
 }

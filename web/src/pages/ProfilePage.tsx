@@ -32,6 +32,8 @@ import { SectionLabel, Blankslate, Box, Button } from "../components/ui.js";
 import { MutationError } from "../components/MutationError.js";
 import Markdown from "../components/Markdown.js";
 import { ContributionGraph } from "../components/ContributionGraph.js";
+import { useSignedIn } from "../session.js";
+import { SignInPrompt } from "../components/SignInPrompt.js";
 import { RelativeTime } from "../components/RelativeTime.js";
 import {
   RepoStatsLine,
@@ -88,9 +90,13 @@ export function ProfilePage() {
   }
 
   return (
-    <div className="grid gap-6 md:grid-cols-[296px_1fr]">
+    // min-w-0 on both grid children: without it the implicit (phone) and 1fr
+    // (desktop) tracks inherit the min-content width of wide descendants —
+    // e.g. the contribution-graph table — and force page-level horizontal
+    // scroll instead of letting inner overflow-x-auto wrappers scroll.
+    <div className="grid gap-6 md:grid-cols-[296px_minmax(0,1fr)]">
       <ProfileSidebar profile={profile.data} orgs={orgs.data} />
-      <div>
+      <div className="min-w-0">
         <ProfileTabs login={login} active={tab} repoCount={profile.data.public_repos} />
         <div className="mt-4">
           {tab === "overview" && <ProfileOverview login={login} />}
@@ -178,7 +184,10 @@ function Counter({ children }: { children: React.ReactNode }) {
  */
 function FollowButton({ login }: { login: string }) {
   const qc = useQueryClient();
-  const viewer = useQuery({ queryKey: ["viewer"], queryFn: fetchAuthenticatedUser });
+  // Anonymous visitors have no viewer (the read would 401); viewerLogin
+  // stays null and the button renders nothing, matching the null-viewer path.
+  const signedIn = useSignedIn();
+  const viewer = useQuery({ queryKey: ["viewer"], queryFn: fetchAuthenticatedUser, enabled: signedIn });
   const viewerLogin = typeof viewer.data?.login === "string" ? viewer.data.login : null;
   const isSelf = viewerLogin !== null && viewerLogin === login;
   const following = useQuery({
@@ -215,7 +224,7 @@ function ProfileSidebar({
 }) {
   const p = profile;
   return (
-    <aside className="flex flex-col gap-3">
+    <aside className="min-w-0 flex flex-col gap-3">
       <Avatar login={p.login} src={p.avatar_url} size={200} />
       <div>
         <div style={{ fontSize: "1.5rem", fontWeight: 600, lineHeight: 1.2 }}>{p.name || p.login}</div>
@@ -425,7 +434,9 @@ function ProfileOverview({ login }: { login: string }) {
 
 function PinnedSection({ login }: { login: string }) {
   const qc = useQueryClient();
-  const viewer = useQuery({ queryKey: ["viewer"], queryFn: fetchAuthenticatedUser });
+  // Signed out there is no "self" — the viewer read would 401.
+  const signedIn = useSignedIn();
+  const viewer = useQuery({ queryKey: ["viewer"], queryFn: fetchAuthenticatedUser, enabled: signedIn });
   const isSelf = typeof viewer.data?.login === "string" && viewer.data.login === login;
   const pinnedQ = useQuery({ queryKey: ["pinned", login], queryFn: () => fetchPinnedRepos(login) });
   const [editing, setEditing] = useState(false);
@@ -920,10 +931,21 @@ function ProfileStars({ login }: { login: string }) {
 // ─── Packages tab ───────────────────────────────────────────────────────────────
 
 function ProfilePackages({ login }: { login: string }) {
+  // Package reads 401 anonymously, so this tab asks visitors to sign in.
+  const signedIn = useSignedIn();
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["user-packages", login],
     queryFn: () => fetchPackages({ kind: "user", username: login }) as Promise<GithubPackage[]>,
+    enabled: signedIn,
   });
+  if (!signedIn) {
+    return (
+      <section>
+        <SectionLabel>Packages</SectionLabel>
+        <SignInPrompt action="view packages" />
+      </section>
+    );
+  }
   return (
     <section>
       <SectionLabel>Packages</SectionLabel>
@@ -961,10 +983,21 @@ function ProfilePackages({ login }: { login: string }) {
 // ─── Projects tab (ProjectsV2) ──────────────────────────────────────────────────
 
 function ProfileProjects({ login }: { login: string }) {
+  // Project reads 401 anonymously, so this tab asks visitors to sign in.
+  const signedIn = useSignedIn();
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["user-projects-v2", login],
     queryFn: () => fetchUserProjectsV2(login),
+    enabled: signedIn,
   });
+  if (!signedIn) {
+    return (
+      <section>
+        <SectionLabel>Projects</SectionLabel>
+        <SignInPrompt action="view projects" />
+      </section>
+    );
+  }
   return (
     <section>
       <SectionLabel>Projects</SectionLabel>

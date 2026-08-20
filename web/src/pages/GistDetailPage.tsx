@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { InlineError, Spinner } from "@bleephub/ui-core/components";
 import { confirmAction } from "../components/confirmAction.js";
@@ -23,6 +23,7 @@ import type { BleephubGist, BleephubGistFile, GithubGistCommit } from "../types.
 import {
   Box,
   Button,
+  ButtonLink,
   DialogActions,
   ErrorBanner,
   FormLabel,
@@ -35,6 +36,8 @@ import { GistIcon, StarIcon, BranchIcon } from "../components/octicons.js";
 import { Avatar } from "../components/Avatar.js";
 import { RelativeTime } from "../components/RelativeTime.js";
 import { CodeHighlight } from "../components/CodeHighlight.js";
+import { SignInPrompt } from "../components/SignInPrompt.js";
+import { loginPath, useSignedIn } from "../session.js";
 import Markdown from "../components/Markdown.js";
 
 /**
@@ -51,7 +54,15 @@ export function GistDetailPage() {
   const [tab, setTab] = useState<"files" | "commits" | "forks" | "comments">("files");
   const [actionError, setActionError] = useState<string | null>(null);
 
-  const viewer = useQuery({ queryKey: ["current-user"], queryFn: ({ signal }) => fetchCurrentUser(signal) });
+  // The viewer and star-state reads 401 for an anonymous visitor; the gist
+  // itself is a public read.
+  const signedIn = useSignedIn();
+  const location = useLocation();
+  const viewer = useQuery({
+    queryKey: ["current-user"],
+    queryFn: ({ signal }) => fetchCurrentUser(signal),
+    enabled: signedIn,
+  });
   const { data, isLoading, isError } = useQuery({
     queryKey: ["gists", id],
     queryFn: () => fetchGist(id),
@@ -60,6 +71,7 @@ export function GistDetailPage() {
   const { data: starred, isLoading: starLoading } = useQuery({
     queryKey: ["gists", id, "starred"],
     queryFn: () => isGistStarred(id),
+    enabled: signedIn,
   });
 
   const starMut = useMutation({
@@ -123,17 +135,31 @@ export function GistDetailPage() {
         }
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <Button
-              size="sm"
-              variant={starred ? "primary" : "secondary"}
-              onClick={() => starMut.mutate()}
-              disabled={starLoading || starMut.isPending}
-            >
-              <StarIcon size={14} /> {starred ? "Unstar" : "Star"}
-            </Button>
-            <Button size="sm" variant="secondary" onClick={() => forkMut.mutate()} disabled={forkMut.isPending}>
-              <BranchIcon size={14} /> Fork
-            </Button>
+            {signedIn ? (
+              <>
+                <Button
+                  size="sm"
+                  variant={starred ? "primary" : "secondary"}
+                  onClick={() => starMut.mutate()}
+                  disabled={starLoading || starMut.isPending}
+                >
+                  <StarIcon size={14} /> {starred ? "Unstar" : "Star"}
+                </Button>
+                <Button size="sm" variant="secondary" onClick={() => forkMut.mutate()} disabled={forkMut.isPending}>
+                  <BranchIcon size={14} /> Fork
+                </Button>
+              </>
+            ) : (
+              // Signed out, Star/Fork link to sign-in (github.com prompts on click).
+              <>
+                <ButtonLink size="sm" variant="secondary" to={loginPath(location)}>
+                  <StarIcon size={14} /> Star
+                </ButtonLink>
+                <ButtonLink size="sm" variant="secondary" to={loginPath(location)}>
+                  <BranchIcon size={14} /> Fork
+                </ButtonLink>
+              </>
+            )}
             {isOwn && (
               <>
                 <Button size="sm" variant="ghost" onClick={() => setEditing(data)}>
@@ -337,7 +363,13 @@ function GistComments({ id }: { id: string }) {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editBody, setEditBody] = useState("");
 
-  const viewer = useQuery({ queryKey: ["current-user"], queryFn: ({ signal }) => fetchCurrentUser(signal) });
+  // Anonymous visitors read comments but cannot author them.
+  const signedIn = useSignedIn();
+  const viewer = useQuery({
+    queryKey: ["current-user"],
+    queryFn: ({ signal }) => fetchCurrentUser(signal),
+    enabled: signedIn,
+  });
   const { data, isLoading, isError } = useQuery({
     queryKey: ["gists", id, "comments"],
     queryFn: () => fetchGistComments(id),
@@ -461,7 +493,8 @@ function GistComments({ id }: { id: string }) {
         </Box>
       ))}
 
-      <form
+      {!signedIn && <SignInPrompt action="comment" />}
+      {signedIn && <form
         onSubmit={(event) => {
           event.preventDefault();
           if (body.trim()) createMut.mutate();
@@ -490,7 +523,7 @@ function GistComments({ id }: { id: string }) {
             {createMut.isPending ? "Commenting…" : "Comment"}
           </Button>
         </div>
-      </form>
+      </form>}
     </div>
   );
 }

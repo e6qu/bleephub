@@ -119,7 +119,7 @@ export function RepoListPage({
         title={title}
         meta={`page ${currentPage} of ${lastPage}`}
         actions={
-          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+          <div className="flex flex-wrap items-center gap-2">
             <select
               aria-label="Type filter"
               value={filters.type ?? ""}

@@ -35,6 +35,7 @@ import {
 } from "../api.js";
 import { accountRoute } from "../routes.js";
 import { useRepoPermissions } from "../hooks/useRepoPermissions.js";
+import { loginPath, useSignedIn } from "../session.js";
 
 // ─── Repo context header + tabs ────────────────────────────────────────
 
@@ -68,13 +69,25 @@ export function RepoHeader({
   const [forkOwner, setForkOwner] = useState("");
   const socialKey = ["repo-social-counts", owner, repo] as const;
   const viewerKey = ["repo-viewer", owner, repo] as const;
+  // The viewer-state and current-user reads 401 for an anonymous visitor, so
+  // they only run signed in; the social counters are public.
+  const signedIn = useSignedIn();
   const social = useQuery({ queryKey: socialKey, queryFn: ({ signal }) => fetchRepoSocialCounts(owner, repo, signal) });
-  const viewer = useQuery({ queryKey: viewerKey, queryFn: ({ signal }) => fetchRepoViewerState(owner, repo, signal) });
+  const viewer = useQuery({
+    queryKey: viewerKey,
+    queryFn: ({ signal }) => fetchRepoViewerState(owner, repo, signal),
+    enabled: signedIn,
+  });
   const repository = useQuery({
     queryKey: ["repo", owner, repo],
     queryFn: ({ signal }) => fetchRepoDetail(owner, repo, signal),
   });
-  const currentUser = useQuery({ queryKey: ["current-user"], queryFn: ({ signal }) => fetchCurrentUser(signal), staleTime: 60_000 });
+  const currentUser = useQuery({
+    queryKey: ["current-user"],
+    queryFn: ({ signal }) => fetchCurrentUser(signal),
+    staleTime: 60_000,
+    enabled: signedIn,
+  });
   // github.com shows the Settings tab only to repo admins; while permissions
   // load the tab is simply absent (it appears once the payload arrives).
   const { isAdmin } = useRepoPermissions(owner, repo);
@@ -82,7 +95,7 @@ export function RepoHeader({
     queryKey: ["viewer-organizations"],
     queryFn: ({ signal }) => fetchAuthenticatedUserOrgs(signal),
     staleTime: 60_000,
-    enabled: forkOpen,
+    enabled: forkOpen && signedIn,
   });
   useEffect(() => {
     if (!forkOwner && currentUser.data?.login) setForkOwner(currentUser.data.login);
@@ -128,31 +141,43 @@ export function RepoHeader({
             </Link>
           </div>
           <div className="repo-actions" aria-label="Repository actions">
-            <RepoAction
-              icon={<EyeIcon size={15} />}
-              label={viewer.data?.subscribed ? "Unwatch" : "Watch"}
-              count={social.data?.subscribers_count}
-              busy={watchMutation.isPending}
-              onClick={() => watchMutation.mutate()}
-              tone="watch"
-            />
-            <RepoAction
-              icon={<RepoForkedIcon size={15} />}
-              label="Fork"
-              count={social.data?.forks_count}
-              busy={forkMutation.isPending}
-              onClick={() => setForkOpen(true)}
-              tone="fork"
-            />
-            <RepoAction
-              icon={<StarIcon size={15} />}
-              label={viewer.data?.starred ? "Unstar" : "Star"}
-              count={social.data?.stargazers_count}
-              busy={starMutation.isPending}
-              onClick={() => starMutation.mutate()}
-              active={viewer.data?.starred}
-              tone="star"
-            />
+            {signedIn ? (
+              <>
+                <RepoAction
+                  icon={<EyeIcon size={15} />}
+                  label={viewer.data?.subscribed ? "Unwatch" : "Watch"}
+                  count={social.data?.subscribers_count}
+                  busy={watchMutation.isPending}
+                  onClick={() => watchMutation.mutate()}
+                  tone="watch"
+                />
+                <RepoAction
+                  icon={<RepoForkedIcon size={15} />}
+                  label="Fork"
+                  count={social.data?.forks_count}
+                  busy={forkMutation.isPending}
+                  onClick={() => setForkOpen(true)}
+                  tone="fork"
+                />
+                <RepoAction
+                  icon={<StarIcon size={15} />}
+                  label={viewer.data?.starred ? "Unstar" : "Star"}
+                  count={social.data?.stargazers_count}
+                  busy={starMutation.isPending}
+                  onClick={() => starMutation.mutate()}
+                  active={viewer.data?.starred}
+                  tone="star"
+                />
+              </>
+            ) : (
+              // Signed out, the actions keep their counts but link to
+              // sign-in — github.com prompts for login on click.
+              <>
+                <RepoActionLoginLink icon={<EyeIcon size={15} />} label="Watch" count={social.data?.subscribers_count} tone="watch" />
+                <RepoActionLoginLink icon={<RepoForkedIcon size={15} />} label="Fork" count={social.data?.forks_count} tone="fork" />
+                <RepoActionLoginLink icon={<StarIcon size={15} />} label="Star" count={social.data?.stargazers_count} tone="star" />
+              </>
+            )}
           </div>
         </div>
         {actionError && (
@@ -289,6 +314,32 @@ export function RepoHeader({
         )}
       </div>
     </div>
+  );
+}
+
+/** Signed-out Watch/Fork/Star: same chrome, but a link to the sign-in page. */
+function RepoActionLoginLink({
+  icon,
+  label,
+  count,
+  tone,
+}: {
+  icon: ReactNode;
+  label: string;
+  count?: number | undefined;
+  tone: "watch" | "fork" | "star";
+}) {
+  const location = useLocation();
+  return (
+    <Link
+      to={loginPath(location)}
+      className={`repo-action-button tone-${tone}`}
+      style={{ textDecoration: "none" }}
+    >
+      {icon}
+      <span>{label}</span>
+      {count != null && <Counter>{count}</Counter>}
+    </Link>
   );
 }
 

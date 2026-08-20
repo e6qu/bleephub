@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { renderEmojiShortcodes } from "../utils/emoji.js";
-import { useParams, Link, useNavigate, useSearchParams } from "react-router";
+import { useParams, Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
 import { parse as parseYaml } from "yaml";
@@ -54,6 +54,8 @@ import type { BleephubRepo, GithubIssue, GithubLabel, GithubMilestone, ListFilte
 import { CommentCard, EditableCommentList } from "../components/CommentCard.js";
 import { toggleTaskInMarkdown } from "../components/Markdown.js";
 import { CommentComposer } from "../components/CommentComposer.js";
+import { SignInPrompt } from "../components/SignInPrompt.js";
+import { loginPath, useSignedIn } from "../session.js";
 import { MutationError } from "../components/MutationError.js";
 import { LabelPills } from "../components/LabelPills.js";
 import { StateToggle } from "../components/StateToggle.js";
@@ -72,6 +74,7 @@ import { IssueSidebar } from "../components/IssueSidebar.js";
 import { ReactionBar } from "../components/ReactionBar.js";
 import {
   Button,
+  ButtonLink,
   Box,
   Blankslate,
   StateLabel,
@@ -232,6 +235,10 @@ export function IssuesPage({ view }: { view?: "labels" | "milestones" }) {
 }
 
 function IssueList({ owner, repo }: { owner: string; repo: string }) {
+  // Signed out, "New issue" links to sign-in instead of opening the dialog
+  // (github.com prompts anonymous visitors to log in first).
+  const signedIn = useSignedIn();
+  const location = useLocation();
   // Deep links (e.g. a milestone row) pre-filter the list via query params.
   const [searchParams] = useSearchParams();
   const [state, setState] = useState<"open" | "closed" | "all">(() => {
@@ -337,9 +344,15 @@ function IssueList({ owner, repo }: { owner: string; repo: string }) {
             <Button size="sm" onClick={() => navigate(`/ui/repos/${owner}/${repo}/milestones`)}>
               Milestones
             </Button>
-            <Button variant="primary" size="sm" onClick={() => setCreating(true)}>
-              New issue
-            </Button>
+            {signedIn ? (
+              <Button variant="primary" size="sm" onClick={() => setCreating(true)}>
+                New issue
+              </Button>
+            ) : (
+              <ButtonLink variant="primary" size="sm" to={loginPath(location)}>
+                New issue
+              </ButtonLink>
+            )}
           </div>
         }
       />
@@ -464,7 +477,11 @@ interface PinnedIssueNode {
 }
 
 function PinnedIssuesSection({ owner, repo }: { owner: string; repo: string }) {
+  // Pinned issues ride GraphQL, which refuses anonymous callers — the
+  // section quietly disappears for signed-out visitors.
+  const signedIn = useSignedIn();
   const q = useQuery({
+    enabled: signedIn,
     queryKey: ["pinned-issues", owner, repo],
     queryFn: ({ signal }) =>
       ghGraphQL<{ repository?: { pinnedIssues?: { nodes?: (PinnedIssueNode | null)[] } | null } | null }>(
@@ -959,12 +976,14 @@ function IssueDetail({ owner, repo, number }: { owner: string; repo: string; num
   // Comments are the "commented" timeline events — used for the count and the
   // participants list; the full timeline drives the interleaved conversation.
   const comments = timeline.filter((i) => i.event === "commented");
+  const signedIn = useSignedIn();
   const viewerQ = useQuery({
     queryKey: ["viewer"],
     queryFn: fetchAuthenticatedUser,
     // Wait for the bootstrap: it mirrors the session's cached /api/v3/user
     // response onto this key, so mounting first would fetch redundantly.
-    enabled: bootstrapSettled,
+    // Anonymous visitors have no viewer to fetch (the read would 401).
+    enabled: bootstrapSettled && signedIn,
   });
   const viewerLogin = typeof viewerQ.data?.login === "string" ? viewerQ.data.login : null;
 
@@ -1178,7 +1197,8 @@ function IssueDetail({ owner, repo, number }: { owner: string; repo: string; num
             </>
           )}
           <MutationError of={stateMut} />
-          <CommentComposer
+          {!signedIn && <SignInPrompt action="comment" />}
+          {signedIn && <CommentComposer
             owner={owner}
             repo={repo}
             number={number}
@@ -1212,7 +1232,7 @@ function IssueDetail({ owner, repo, number }: { owner: string; repo: string; num
                 </div>
               )
             }
-          />
+          />}
         </div>
         <div style={{ width: "100%", maxWidth: "16rem", flexShrink: 0 }}>
           <IssueSidebar
@@ -1297,9 +1317,12 @@ function IssueActionsMenu({
 
   // Pin state + how many pins the repo has left (GitHub caps pins at 3).
   // Shares one GraphQL request with the Development section via the key.
+  // GraphQL refuses anonymous callers; the menu is hidden signed-out anyway.
+  const signedIn = useSignedIn();
   const pinStateQ = useQuery({
     queryKey: ["issue-pin-state", owner, repo, issue.number],
     queryFn: ({ signal }) => fetchIssueGraphQLMeta(owner, repo, issue.number, signal),
+    enabled: signedIn,
   });
   const isPinned = pinStateQ.data?.repository?.issue?.isPinned === true;
   const pinnedCount = pinStateQ.data?.repository?.pinnedIssues?.totalCount ?? null;
@@ -1717,9 +1740,13 @@ interface ClosedByPR {
 function IssueDevelopmentSection({ owner, repo, number }: { owner: string; repo: string; number: number }) {
   // Same key + fetcher as the actions menu's pin-state query: TanStack Query
   // deduplicates the two observers into one GraphQL request per issue.
+  // GraphQL refuses anonymous callers, so signed out this renders its empty
+  // state without fetching.
+  const signedIn = useSignedIn();
   const q = useQuery({
     queryKey: ["issue-pin-state", owner, repo, number],
     queryFn: ({ signal }) => fetchIssueGraphQLMeta(owner, repo, number, signal),
+    enabled: signedIn,
   });
   const prs = (q.data?.repository?.issue?.closedByPullRequestsReferences?.nodes ?? []).filter(
     (n): n is ClosedByPR => n != null,

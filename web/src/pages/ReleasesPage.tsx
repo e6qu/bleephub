@@ -25,6 +25,7 @@ import type { GithubRelease, GithubReleaseAsset } from "../types.js";
 import { RepoHeader } from "../components/PageHeader.js";
 import { RepoNotFound } from "../components/RepoNotFound.js";
 import { useRepoPermissions } from "../hooks/useRepoPermissions.js";
+import { useSignedIn } from "../session.js";
 import { Blankslate, Box, Button, ButtonLink, ErrorBanner, FormLabel, PageTitle } from "../components/ui.js";
 import { confirmAction } from "../components/confirmAction.js";
 import { DownloadIcon, PlusIcon, TagIcon, TrashIcon } from "../components/octicons.js";
@@ -335,7 +336,9 @@ function ReleaseDetail({ owner, repo, releaseId }: { owner: string; repo: string
   // Editing/deleting a release (and managing its assets) needs push access.
   const { canPush } = useRepoPermissions(owner, repo);
   const release = useQuery({ queryKey: ["release", owner, repo, releaseId], queryFn: () => fetchRelease(owner, repo, releaseId) });
-  const viewerQ = useQuery({ queryKey: ["viewer"], queryFn: fetchAuthenticatedUser });
+  // Anonymous visitors have no viewer (the read would 401).
+  const signedIn = useSignedIn();
+  const viewerQ = useQuery({ queryKey: ["viewer"], queryFn: fetchAuthenticatedUser, enabled: signedIn });
   const viewerLogin = typeof viewerQ.data?.login === "string" ? viewerQ.data.login : null;
   const remove = useMutation({
     mutationFn: () => deleteRelease(owner, repo, releaseId),

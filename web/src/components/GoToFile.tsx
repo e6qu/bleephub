@@ -3,6 +3,8 @@ import { useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Spinner } from "@bleephub/ui-core/components";
 import { fetchRepoTreeRecursive } from "../api.js";
+import { useSignedIn } from "../session.js";
+import { SignInPrompt } from "./SignInPrompt.js";
 
 /**
  * GitHub's repo "Go to file" fuzzy finder (the `t` shortcut / "Go to file"
@@ -37,9 +39,13 @@ export function GoToFile({
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // The recursive git-tree read is auth-gated on the server (401
+  // anonymously); the dialog asks signed-out visitors to sign in instead.
+  const signedIn = useSignedIn();
   const treeQ = useQuery({
     queryKey: ["repo-tree-recursive", owner, repo, gitRef],
     queryFn: () => fetchRepoTreeRecursive(owner, repo, gitRef),
+    enabled: signedIn,
   });
 
   const files = useMemo(
@@ -134,7 +140,11 @@ export function GoToFile({
           />
         </div>
         <div id="gtf-listbox" role="listbox" aria-label="Files" style={{ overflowY: "auto", padding: "0.35rem" }}>
-          {treeQ.isLoading ? (
+          {!signedIn ? (
+            <div style={{ padding: "0.5rem" }}>
+              <SignInPrompt action="search files" />
+            </div>
+          ) : treeQ.isLoading ? (
             <div style={{ padding: "1rem" }}>
               <Spinner label="loading files" />
             </div>

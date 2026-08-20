@@ -60,6 +60,8 @@ import { PathBreadcrumbs } from "../components/PathBreadcrumbs.js";
 import { DiffText } from "../components/DiffText.js";
 import { BlobContent, decodeBlobText, parseLineHash } from "../components/BlobContent.js";
 import { repoCodeRoute, accountRoute } from "../routes.js";
+import { SignInPrompt } from "../components/SignInPrompt.js";
+import { useSignedIn } from "../session.js";
 import type {
   BleephubRepo,
   GithubBranch,
@@ -1256,10 +1258,13 @@ function AboutSidebar({
     queryFn: () => fetchReleases(owner, repo),
     enabled: !!owner && !!repo,
   });
+  // The /ui-data package handlers require a user, so the sidebar section is
+  // signed-in only (an anonymous fetch would 401 into the console).
+  const sidebarSignedIn = useSignedIn();
   const { data: packages, isError: packagesError } = useQuery({
     queryKey: ["repo-packages", owner, repo],
     queryFn: () => fetchPackages({ kind: "repo", owner, repo }),
-    enabled: !!owner && !!repo,
+    enabled: !!owner && !!repo && sidebarSignedIn,
   });
   const { data: contributors, isError: contributorsError } = useQuery({
     queryKey: ["repo-contributors", owner, repo],
@@ -2382,7 +2387,10 @@ function CommitCommentsSection({ owner, repo, sha }: { owner: string; repo: stri
       setBody("");
     },
   });
-  const viewerQ = useQuery({ queryKey: ["viewer"], queryFn: fetchAuthenticatedUser });
+  // Anonymous visitors have no viewer (the read would 401); reactions render
+  // read-only and the composer is replaced by a sign-in prompt.
+  const signedIn = useSignedIn();
+  const viewerQ = useQuery({ queryKey: ["viewer"], queryFn: fetchAuthenticatedUser, enabled: signedIn });
   const viewerLogin = typeof viewerQ.data?.login === "string" ? viewerQ.data.login : null;
 
   const comments = listQ.data ?? [];
@@ -2409,26 +2417,29 @@ function CommitCommentsSection({ owner, repo, sha }: { owner: string; repo: stri
           No comments yet.
         </div>
       )}
-      <div className="flex flex-col gap-2">
-        <textarea
-          aria-label="commit comment"
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          placeholder="Leave a comment on this commit"
-          rows={3}
-          className="w-full"
-          style={{ fontSize: "0.88rem", padding: "0.5rem" }}
-        />
-        <div className="flex justify-end">
-          <Button
-            variant="primary"
-            disabled={createMut.isPending || !body.trim()}
-            onClick={() => createMut.mutate()}
-          >
-            Comment
-          </Button>
+      {!signedIn && <SignInPrompt action="comment" />}
+      {signedIn && (
+        <div className="flex flex-col gap-2">
+          <textarea
+            aria-label="commit comment"
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            placeholder="Leave a comment on this commit"
+            rows={3}
+            className="w-full"
+            style={{ fontSize: "0.88rem", padding: "0.5rem" }}
+          />
+          <div className="flex justify-end">
+            <Button
+              variant="primary"
+              disabled={createMut.isPending || !body.trim()}
+              onClick={() => createMut.mutate()}
+            >
+              Comment
+            </Button>
+          </div>
         </div>
-      </div>
+      )}
     </section>
   );
 }

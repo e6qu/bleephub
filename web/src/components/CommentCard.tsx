@@ -18,6 +18,7 @@ import { TimelineEventRow } from "./TimelineEventRow.js";
 import { Avatar } from "./Avatar.js";
 import { RelativeTime } from "./RelativeTime.js";
 import { MarkdownComposer } from "./MarkdownComposer.js";
+import { useSignedIn } from "../session.js";
 
 export interface CommentCardProps {
   login?: string | undefined;
@@ -191,10 +192,13 @@ export function EditableCommentList({
     onSuccess: invalidate,
   });
 
+  // Minimization state rides the GraphQL endpoint, which refuses anonymous
+  // callers — signed out the comments simply render unminimized.
+  const signedIn = useSignedIn();
   const minimizedQuery = useQuery({
     queryKey: ["issue-comment-minimization", owner, repo, number],
     queryFn: () => fetchCommentMinimization(owner, repo, number as number),
-    enabled: typeof number === "number",
+    enabled: typeof number === "number" && signedIn,
   });
   const minimized = minimizedQuery.data ?? new Map<number, MinimizationState>();
   const refetchMinimized = () => {

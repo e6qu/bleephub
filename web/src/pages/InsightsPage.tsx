@@ -28,6 +28,7 @@ import {
 } from "../utils/bootstrap.js";
 import { Box, Blankslate, SectionLabel, StatCard } from "../components/ui.js";
 import { GraphIcon, PeopleIcon, CheckCircleIcon, XCircleIcon } from "../components/octicons.js";
+import { useSignedIn } from "../session.js";
 
 // GitHub's Insights left-nav sections, URL-addressable via ?section= so a
 // specific pane is linkable without new App routes.
@@ -60,8 +61,12 @@ export function InsightsPage() {
     retry: false,
   });
 
+  // Traffic reads require push access and 403 for an anonymous visitor, so
+  // the pane is absent signed-out (github.com shows it to pushers only).
+  const signedIn = useSignedIn();
+  const sections = signedIn ? INSIGHTS_SECTIONS : INSIGHTS_SECTIONS.filter((s) => s.key !== "traffic");
   const raw = searchParams.get("section");
-  const section: InsightsSection = INSIGHTS_SECTIONS.some((s) => s.key === raw)
+  const section: InsightsSection = sections.some((s) => s.key === raw)
     ? (raw as InsightsSection)
     : "pulse";
   const selectSection = (key: InsightsSection) => {
@@ -79,7 +84,7 @@ export function InsightsPage() {
       <div className="flex flex-wrap items-start gap-6 md:flex-nowrap">
         <aside className="w-full shrink-0 md:w-56">
           <nav aria-label="Insights" className="flex flex-col">
-            {INSIGHTS_SECTIONS.map((s) => (
+            {sections.map((s) => (
               <button
                 key={s.key}
                 type="button"

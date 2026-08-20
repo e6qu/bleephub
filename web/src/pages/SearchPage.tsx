@@ -32,6 +32,8 @@ import type {
 import { accountRoute, repoCodeRoute } from "../routes.js";
 import { PageTitle, Box, Blankslate, Button, StateLabel } from "../components/ui.js";
 import { SearchIcon } from "../components/octicons.js";
+import { SignInPrompt } from "../components/SignInPrompt.js";
+import { useSignedIn } from "../session.js";
 
 type SearchTab = "repositories" | "code" | "issues" | "users" | "commits" | "labels" | "topics";
 type RepositorySearchFilters = {
@@ -217,6 +219,9 @@ export function SearchPage() {
   // search has answered (so a throttled session doesn't fan out further), one
   // cheap per_page=1 request per type, cached for a minute per (type, query).
   const trimmedQ = q.trim();
+  // Code search requires authentication (the server, like real GitHub, 401s
+  // anonymous code queries), so its count probe is signed-in only.
+  const signedIn = useSignedIn();
   const countQueries = useQueries({
     queries: COUNTABLE_TABS.map((key) => ({
       queryKey: ["search-count", key, trimmedQ],
@@ -225,7 +230,7 @@ export function SearchPage() {
         !!trimmedQ &&
         activeCount !== null &&
         key !== tab &&
-        (key !== "code" || hasFreeTextTerm(trimmedQ)),
+        (key !== "code" || (signedIn && hasFreeTextTerm(trimmedQ))),
       staleTime: 60_000,
       retry: false,
     })),
@@ -513,6 +518,8 @@ function SearchResults({
   onPage: (page: number) => void;
   onCount: (count: number) => void;
 }) {
+  // Code search is signed-in only (see the "code" case below).
+  const signedIn = useSignedIn();
   switch (tab) {
     case "repositories": {
       const repositoryQuery = buildRepositoryQuery(q, repositoryFilters);
@@ -566,6 +573,11 @@ function SearchResults({
       );
     }
     case "code":
+      // Code search requires authentication on the server (and on real
+      // GitHub, which asks anonymous visitors to sign in for code search).
+      if (!signedIn) {
+        return <SignInPrompt action="search code" />;
+      }
       // The server (and real GitHub) 422 a code query with no free-text term
       // (qualifiers only). Guide instead of firing a request that errors.
       if (!hasFreeTextTerm(q)) {
