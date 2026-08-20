@@ -91,6 +91,21 @@ pages. The mobile-overflow e2e gate now seeds hostile content itself and names t
 unclipped elements on failure, and the full-suite spec coupling (each spec's data visible to
 the others) is kept deliberately: it caught two of these bugs.
 
+**Seventh round (2026-08-20) — interaction sweep:** ~20 end-to-end flows driven as a user
+(labels, milestones, wiki cycle incl. history restore, branch create, compare→PR prefill, blob
+edit, comment preview/post/close/reopen, reactions, pin, release edit, notifications save/done,
+gist create, environments, rulesets, auto-merge arm, whitespace toggle, commit-suggestion apply
+as a real commit) with console/network/error-banner monitoring. Three real bugs found and fixed:
+issue timelines emitted every comment twice — once as the comment and once as the stored
+"commented" event whose event-space id 404s the reactions endpoint (GitHub has no such event row;
+now filtered from timeline and both events endpoints, regression-tested); the SPA's
+`comments(first: N)` query against `PullRequestReviewThread` errored — the field took no relay
+args — surfacing a visible "Failed to load thread resolution state" banner on PRs with review
+threads (args added per the official schema, snapshot regenerated, the sweep test now uses the
+client's exact query shape); and the repo-settings Rulesets/Environments tabs blind-probed
+`/orgs/{owner}/teams` for user-owned repos (the last console-404 sources — now gated on owner
+type). Everything else operated cleanly end-to-end.
+
 **Still not implemented, with reasons:**
 - package download counts: absent from GitHub's package-version payload shape.
 - tag protection: GitHub retired tag protection rules in favor of rulesets, which bleephub

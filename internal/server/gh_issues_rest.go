@@ -1348,6 +1348,12 @@ func (s *Server) handleListIssueEvents(w http.ResponseWriter, r *http.Request) {
 	base := s.baseURL(r)
 	result := make([]map[string]interface{}, 0, len(events))
 	for _, e := range events {
+		// GitHub's issue-events surface excludes comments — they live on the
+		// comments endpoint (a "commented" row here would carry an event id
+		// that is not a comment id).
+		if e.Event == "commented" {
+			continue
+		}
 		result = append(result, issueEventForIssueToJSON(e, s.store, base, repo.FullName))
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, result))
@@ -1370,6 +1376,9 @@ func (s *Server) handleListRepoIssueEvents(w http.ResponseWriter, r *http.Reques
 	base := s.baseURL(r)
 	result := make([]map[string]interface{}, 0, len(events))
 	for _, e := range events {
+		if e.Event == "commented" {
+			continue
+		}
 		result = append(result, issueEventToJSON(e, s.store, base, repo.FullName))
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, result))

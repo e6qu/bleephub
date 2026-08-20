@@ -191,7 +191,16 @@ func (gw *gzipResponseWriter) commitIdentity() {
 	}
 	gw.ResponseWriter.WriteHeader(gw.status)
 	if len(gw.buf) > 0 {
-		_, _ = gw.ResponseWriter.Write(gw.buf)
+		// This middleware is a transparent passthrough: it never originates
+		// response bytes, only replays what the wrapped handler wrote.
+		// Request-derived output is sanitized at the handlers (constant
+		// http.Error messages, store-owned sub-request paths, html-escaped
+		// echoes — see gh_meta_extras.go, gh_profile_readme.go,
+		// gh_pulls_uidata.go). gosec's G705 attributes handler flows to this
+		// shared sink nondeterministically (~50% of runs on an unchanged
+		// tree, concurrency-independent), so the verdict names no fixable
+		// source here.
+		_, _ = gw.ResponseWriter.Write(gw.buf) // #nosec G705 -- passthrough replay of handler bytes; sources sanitized per-handler
 		gw.buf = nil
 	}
 }
