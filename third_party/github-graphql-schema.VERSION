@@ -1,7 +1,7 @@
 vendored: GitHub GraphQL public schema
 source: https://docs.github.com/public/fpt/schema.docs.graphql
-content sha256: b716c6844750283b8c33200f660989337254e7158f40ed869f06418bafb3bc2e
-gzip sha256: 5ac53230ddc3577898bef61c7f6ea47bc9ee5e6e9e8c33caae58aab6651b1077
-lines: 74589
-refreshed: 2026-08-13
+content sha256: 30347e4f3bb975195f982351e55636ca03c76969c279980ca515a96ea7b40c3d
+gzip sha256: 19f62df55cd3e639a5bf0ef09a15ce002ab51ace54a7043aa831834fba80a56c
+lines: 74684
+refreshed: 2026-08-20
 refresh: scripts/update-github-graphql-schema.sh
