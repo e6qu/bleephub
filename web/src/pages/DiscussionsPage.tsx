@@ -1,4 +1,5 @@
 import { useState, type CSSProperties, type ReactNode } from "react";
+import { renderEmojiShortcodes } from "../utils/emoji.js";
 import { useDismiss } from "../hooks/useDismiss.js";
 import { confirmAction } from "../components/confirmAction.js";
 import Markdown from "../components/Markdown";
@@ -180,7 +181,7 @@ function DiscussionList({ owner, repo }: { owner: string; repo: string }) {
                     className="mb-1"
                     style={{ fontSize: "0.75rem", color: "var(--color-fg-muted)" }}
                   >
-                    {p.category.emoji} {p.category.name}
+                    {renderEmojiShortcodes(p.category.emoji)} {p.category.name}
                   </div>
                 )}
                 <div
@@ -217,7 +218,7 @@ function DiscussionList({ owner, repo }: { owner: string; repo: string }) {
           {categories.map((cat) => (
             <CategoryPill
               key={cat.id}
-              label={`${cat.emoji} ${cat.name}`}
+              label={`${renderEmojiShortcodes(cat.emoji)} ${cat.name}`}
               active={selectedCategory === cat.id}
               onClick={() => setSelectedCategory(cat.id)}
             />
@@ -248,7 +249,7 @@ function DiscussionList({ owner, repo }: { owner: string; repo: string }) {
           >
             {categories.map((cat) => (
               <option key={cat.id} value={cat.id}>
-                {cat.emoji} {cat.name}
+                {renderEmojiShortcodes(cat.emoji)} {cat.name}
               </option>
             ))}
           </select>
@@ -315,7 +316,7 @@ function DiscussionList({ owner, repo }: { owner: string; repo: string }) {
                         borderRadius: "var(--radius-md)",
                       }}
                     >
-                      {d.category.emoji} {d.category.name}
+                      {renderEmojiShortcodes(d.category.emoji)} {d.category.name}
                     </span>
                   </div>
                   <div className="mt-1" style={{ fontSize: "0.78rem", color: "var(--color-fg-muted)" }}>
@@ -529,7 +530,7 @@ function DiscussionDetail({
             borderRadius: "var(--radius-md)",
           }}
         >
-          {discussion.category.emoji} {discussion.category.name}
+          {renderEmojiShortcodes(discussion.category.emoji)} {discussion.category.name}
         </span>
         <span style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)" }}>
           {discussion.author?.login ?? "unknown"} started this on{" "}
@@ -607,7 +608,7 @@ function DiscussionDetail({
           >
             {categories.map((cat) => (
               <option key={cat.id} value={cat.id}>
-                {cat.emoji} {cat.name}
+                {renderEmojiShortcodes(cat.emoji)} {cat.name}
               </option>
             ))}
           </select>

@@ -8,7 +8,6 @@ import {
   fetchUserOrgsByLogin,
   fetchUserProjectsV2,
   fetchUserEvents,
-  fetchRepoReadme,
   fetchPackages,
   fetchAuthenticatedUser,
   fetchPinnedRepos,
@@ -21,6 +20,7 @@ import {
 import { decodeContentsBase64 } from "../utils/contents.js";
 import type {
   BleephubRepo,
+  GithubAchievement,
   GithubOrgSummary,
   GithubUserProfile,
   GithubProjectV2,
@@ -250,6 +250,7 @@ function ProfileSidebar({
         )}
         {p.twitter_username && <MetaRow>@{p.twitter_username}</MetaRow>}
       </ul>
+      <AchievementsSection login={p.login} />
       {orgs && orgs.length > 0 && (
         <div>
           <SectionLabel>Organizations</SectionLabel>
@@ -269,6 +270,92 @@ function ProfileSidebar({
   );
 }
 
+// ─── Achievements (profile sidebar badges) ──────────────────────────────────────
+
+/** Distinctive stand-in glyph per badge (no GitHub artwork). */
+const ACHIEVEMENT_EMOJI: Record<string, string> = {
+  "pull-shark": "🦈",
+  yolo: "🎲",
+  quickdraw: "⚡",
+  "galaxy-brain": "🧠",
+  starstruck: "🌟",
+  "pair-extraordinaire": "👥",
+};
+
+const fetchUserAchievements = (login: string) =>
+  ghFetch<GithubAchievement[]>(`/ui-data/users/${encodeURIComponent(login)}/achievements`);
+
+/**
+ * The profile sidebar "Achievements" badge row, server-computed from stored
+ * activity (GET /ui-data/users/{login}/achievements). Like github.com, the
+ * whole section is hidden when the user has earned nothing.
+ */
+function AchievementsSection({ login }: { login: string }) {
+  const { data } = useQuery({
+    queryKey: ["user-achievements", login],
+    queryFn: () => fetchUserAchievements(login),
+    retry: false,
+  });
+  const achievements = Array.isArray(data) ? data : [];
+  if (achievements.length === 0) return null;
+  return (
+    <div>
+      <SectionLabel>Achievements</SectionLabel>
+      <ul className="flex flex-wrap gap-2" style={{ listStyle: "none", margin: 0, padding: 0 }}>
+        {achievements.map((a) => (
+          <li key={a.slug}>
+            <AchievementBadge achievement={a} />
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function AchievementBadge({ achievement }: { achievement: GithubAchievement }) {
+  const a = achievement;
+  const label = `${a.name}${a.tier > 1 ? ` x${a.tier}` : ""} — ${a.count}`;
+  return (
+    <span role="img" aria-label={label} title={label} style={{ position: "relative", display: "inline-flex" }}>
+      <span
+        aria-hidden="true"
+        style={{
+          width: "3.25rem",
+          height: "3.25rem",
+          borderRadius: "50%",
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: "1.6rem",
+          border: "1px solid var(--color-border)",
+          background: "var(--color-bg-subtle)",
+        }}
+      >
+        {ACHIEVEMENT_EMOJI[a.slug] ?? "🏅"}
+      </span>
+      {a.tier > 1 && (
+        <span
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            bottom: "-0.2rem",
+            right: "-0.2rem",
+            fontSize: "0.62rem",
+            fontWeight: 700,
+            padding: "0 0.3rem",
+            borderRadius: "2rem",
+            border: "1px solid var(--color-border)",
+            background: "var(--color-bg)",
+            color: "var(--color-fg)",
+          }}
+        >
+          x{a.tier}
+        </span>
+      )}
+    </span>
+  );
+}
+
 function MetaRow({ icon, children }: { icon?: React.ReactNode; children: React.ReactNode }) {
   return (
     <li className="flex items-center gap-2">
@@ -283,15 +370,14 @@ function MetaRow({ icon, children }: { icon?: React.ReactNode; children: React.R
 function ProfileOverview({ login }: { login: string }) {
   const readme = useQuery({
     queryKey: ["profile-readme", login],
-    // The profile README is the README of the <login>/<login> repo. A 404 (no
-    // such repo / no README) is the common, non-error case — treat it as "none".
+    // The profile README is the README of the <login>/<login> repo. The
+    // /ui-data wrapper answers 200 with readme: null when absent (the common
+    // case) — probing the readme endpoint directly would log a console 404.
     queryFn: async () => {
-      try {
-        const file = await fetchRepoReadme(login, login);
-        return decodeContentsBase64(file.content);
-      } catch {
-        return null;
-      }
+      const out = await ghFetch<{ readme: { content: string } | null }>(
+        `/ui-data/users/${encodeURIComponent(login)}/profile-readme`,
+      );
+      return out.readme ? decodeContentsBase64(out.readme.content) : null;
     },
     retry: false,
   });

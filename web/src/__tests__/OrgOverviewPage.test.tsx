@@ -100,8 +100,8 @@ describe("OrgOverviewPage", () => {
     // "# Welcome to Acme" in contents-API base64.
     const b64 = btoa("# Welcome to Acme");
     mockOverview((u) =>
-      u.includes("/.github/readme") || u.includes("/repos/acme/.github/readme")
-        ? jsonResponse({ content: b64, encoding: "base64", name: "README.md", path: "README.md" })
+      u.includes("/ui-data/users/acme/profile-readme")
+        ? jsonResponse({ readme: { content: b64, encoding: "base64", name: "README.md", path: "README.md" } })
         : null,
     );
     renderPage();

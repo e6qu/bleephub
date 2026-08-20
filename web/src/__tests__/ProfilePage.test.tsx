@@ -66,9 +66,10 @@ const repo = {
 // The Overview tab (default) fetches the profile README and the events feed;
 // other tabs fetch starred/packages/projectsV2. Answer them all so whichever
 // tab a test lands on renders without an unmocked-fetch crash.
-function mockProfileEndpoints() {
+function mockProfileEndpoints(achievements: unknown[] = []) {
   mockFetch.mockImplementation((url: RequestInfo | URL) => {
     const u = url.toString();
+    if (u.includes("/achievements")) return Promise.resolve(jsonResponse(achievements));
     if (u.includes("/readme")) return Promise.resolve(jsonResponse({ message: "Not Found" }, 404));
     if (u.includes("/pinned")) return Promise.resolve(jsonResponse([]));
     if (u.includes("/events")) return Promise.resolve(jsonResponse([]));
@@ -178,6 +179,37 @@ describe("ProfilePage", () => {
       expect(screen.getByText("The Octocat")).toBeInTheDocument();
     });
     expect(mockFetch).toHaveBeenCalledWith("/api/v3/users/octocat", expect.anything());
+  });
+
+  it("renders the achievements badges from GET /ui-data/users/{login}/achievements", async () => {
+    mockProfileEndpoints([
+      { slug: "pull-shark", name: "Pull Shark", tier: 2, count: 16 },
+      { slug: "yolo", name: "YOLO", tier: 1, count: 1 },
+    ]);
+    renderAt("/ui/octocat");
+    await screen.findByText("The Octocat");
+    expect(await screen.findByText("Achievements")).toBeInTheDocument();
+    // Tier > 1 gets GitHub's multiplier chip; the accessible name carries
+    // name, multiplier, and the raw count.
+    expect(screen.getByRole("img", { name: "Pull Shark x2 — 16" })).toBeInTheDocument();
+    expect(screen.getByText("x2")).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "YOLO — 1" })).toBeInTheDocument();
+    const call = mockFetch.mock.calls.find((c) =>
+      c[0].toString().endsWith("/ui-data/users/octocat/achievements"),
+    );
+    expect(call).toBeTruthy();
+  });
+
+  it("hides the Achievements section entirely when the list is empty", async () => {
+    mockProfileEndpoints([]);
+    renderAt("/ui/octocat");
+    await screen.findByText("The Octocat");
+    await waitFor(() => {
+      expect(
+        mockFetch.mock.calls.some((c) => c[0].toString().endsWith("/ui-data/users/octocat/achievements")),
+      ).toBe(true);
+    });
+    expect(screen.queryByText("Achievements")).not.toBeInTheDocument();
   });
 
   it("surfaces a load error instead of a blank profile", async () => {

@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { renderEmojiShortcodes } from "../utils/emoji.js";
 import { useParams, Link, useNavigate, useSearchParams } from "react-router";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
@@ -1489,7 +1490,7 @@ function ConvertToDiscussionDialog({
         <option value="">Select a category…</option>
         {categories.map((cat) => (
           <option key={cat.id} value={cat.id}>
-            {cat.emoji} {cat.name}
+            {renderEmojiShortcodes(cat.emoji)} {cat.name}
           </option>
         ))}
       </select>

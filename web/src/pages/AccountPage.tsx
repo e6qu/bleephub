@@ -401,15 +401,20 @@ function ClassicTokensSection() {
   const query = useQuery({ queryKey: ["classic-pats"], queryFn: fetchClassicAuthorizations });
   const [note, setNote] = useState("");
   const [scopes, setScopes] = useState<string[]>([]);
+  const [expiryPreset, setExpiryPreset] = useState<ExpiryPreset>("30");
+  const [expires, setExpires] = useState(() => dateInDays(30));
   const [credential, setCredential] = useState<string | null>(null);
 
   const createMutation = useMutation({
-    // The legacy authorizations handler accepts scopes/note/note_url/
-    // fingerprint only — it has no expiration field, so none is offered here.
+    // The legacy /api/v3/authorizations API has no expiration field (as on
+    // GitHub, where a classic PAT's expiry is chosen in the web UI), so
+    // creation goes through the browser-only /ui-data endpoint, which accepts
+    // expires_at (RFC 3339, or null for no expiration) alongside note/scopes.
     mutationFn: () =>
-      ghPostJSON<GithubClassicAuthorization>("/api/v3/authorizations", {
+      ghPostJSON<GithubClassicAuthorization>("/ui-data/user/tokens/classic", {
         scopes,
         note: note.trim(),
+        expires_at: expires ? new Date(`${expires}T23:59:59Z`).toISOString() : null,
       }),
     onSuccess: (created) => {
       setCredential(created.token);
@@ -434,8 +439,7 @@ function ClassicTokensSection() {
         <h2 style={{ fontSize: "1.05rem", fontWeight: 700 }}>Tokens (classic)</h2>
         <p style={{ color: "var(--color-fg-muted)", marginTop: ".25rem", fontSize: "0.85rem" }}>
           Classic personal access tokens grant broad, scope-based access. Prefer a fine-grained
-          token when you can. Classic tokens on this server are created without an expiration
-          date — the legacy authorizations API does not accept one.
+          token when you can.
         </p>
       </div>
       {credential && (
@@ -453,6 +457,7 @@ function ClassicTokensSection() {
             <FormLabel id="classic-pat-note">Note</FormLabel>
             <input id="classic-pat-note" className="w-full" value={note} onChange={(e) => setNote(e.target.value)} placeholder="What's this token for?" />
           </div>
+          <ExpirationPicker idPrefix="classic-pat" preset={expiryPreset} onPresetChange={setExpiryPreset} expires={expires} onExpiresChange={setExpires} />
           <div>
             <FormLabel id="classic-pat-scopes">Select scopes</FormLabel>
             <div id="classic-pat-scopes" className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))" }}>

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useParams, Link } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { InlineError, Spinner } from "@bleephub/ui-core/components";
-import { fetchOrgProfile, fetchOrgReposPage, fetchOrgMembers, fetchRepoReadme, ghFetch, ghSend } from "../api.js";
+import { fetchOrgProfile, fetchOrgReposPage, fetchOrgMembers, ghFetch, ghSend } from "../api.js";
 import { decodeContentsBase64 } from "../utils/contents.js";
 import { fetchViewerOrgRole } from "../utils/uiFetch.js";
 import type { BleephubRepo } from "../types.js";
@@ -30,17 +30,16 @@ export function OrgOverviewPage() {
     queryKey: ["org-overview-members", org],
     queryFn: () => fetchOrgMembers(org),
   });
-  // The org profile README is the README of the {org}/.github repo; 404
-  // (no repo / no README) is the common non-error case.
+  // The org profile README is the README of the {org}/.github repo. The
+  // /ui-data wrapper answers 200 with readme: null when absent (the common
+  // case) — probing the readme endpoint directly would log a console 404.
   const readme = useQuery({
     queryKey: ["org-profile-readme", org],
     queryFn: async () => {
-      try {
-        const file = await fetchRepoReadme(org, ".github");
-        return decodeContentsBase64(file.content);
-      } catch {
-        return null;
-      }
+      const out = await ghFetch<{ readme: { content: string } | null }>(
+        `/ui-data/users/${encodeURIComponent(org)}/profile-readme`,
+      );
+      return out.readme ? decodeContentsBase64(out.readme.content) : null;
     },
     retry: false,
   });

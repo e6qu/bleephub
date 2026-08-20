@@ -554,6 +554,8 @@ func (s *Server) registerRoutes() {
 	s.registerGHDiscussionsUIDataRoutes()
 	s.registerGHPullsUIDataRoutes()
 	s.registerGHPinnedRoutes()
+	s.registerGHAchievementsRoutes()
+	s.registerGHProfileReadmeRoutes()
 	s.registerGHAccountSettingsRoutes()
 	s.registerGHRepoInvitationRoutes()
 	s.registerGHTemplateRoutes()
