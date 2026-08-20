@@ -1469,6 +1469,124 @@ describe("PullsPage detail bootstrap", () => {
   });
 });
 
+describe("PullsPage merge-box live polling", () => {
+  const bootstrapPayload = (prPayload: Record<string, unknown>) => ({
+    pull: prPayload,
+    timeline: [],
+    comments: [],
+    reviews: [],
+    review_comments: [],
+    requested_reviewers: emptyReviewers,
+    check_runs: noChecks,
+    combined_status: emptyStatus,
+    files_summary: { changed_files: 1, additions: 2, deletions: 0 },
+    labels: [],
+    milestones: [],
+    assignees_available: [],
+  });
+  // Standalone GETs only (the bootstrap URL also ends with /pulls/9).
+  const detailGets = () =>
+    mockFetch.mock.calls.filter((c) => c[0]!.toString() === "/api/v3/repos/admin/test/pulls/9")
+      .length;
+  const statusGets = () =>
+    mockFetch.mock.calls.filter((c) => c[0]!.toString().includes("/commits/abc/status")).length;
+  const checkRunGets = () =>
+    mockFetch.mock.calls.filter((c) => c[0]!.toString().includes("/commits/abc/check-runs")).length;
+
+  it("refetches the PR and check/status queries on the interval while the PR is open", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      mockPRApis((u) => {
+        if (u.includes("/ui-data/bootstrap/")) {
+          return jsonResponse(bootstrapPayload(pr(9, "Feature PR")));
+        }
+        return undefined;
+      });
+      renderAt("/ui/repos/admin/test/pulls/9");
+      expect(await screen.findByText("Feature PR")).toBeInTheDocument();
+      // The bootstrap seeded every key (SEED_STALE_TIME): nothing standalone yet.
+      expect(detailGets()).toBe(0);
+      expect(statusGets()).toBe(0);
+      expect(checkRunGets()).toBe(0);
+
+      // The 15s interval fires REGARDLESS of the seed's staleTime.
+      await vi.advanceTimersByTimeAsync(15_100);
+      await waitFor(() => {
+        expect(detailGets()).toBeGreaterThanOrEqual(1);
+        expect(statusGets()).toBeGreaterThanOrEqual(1);
+        expect(checkRunGets()).toBeGreaterThanOrEqual(1);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stops polling once the refetched PR reports merged", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      // Bootstrap says open; the standalone detail (what the poll fetches)
+      // answers merged — the interval must shut itself off on that response.
+      const merged = pr(9, "Feature PR", {
+        state: "closed",
+        merged: true,
+        merged_at: "2026-01-02T00:00:00Z",
+      });
+      mockPRApis((u) => {
+        if (u.includes("/ui-data/bootstrap/")) {
+          return jsonResponse(bootstrapPayload(pr(9, "Feature PR")));
+        }
+        if (u === "/api/v3/repos/admin/test/pulls/9") return jsonResponse(merged);
+        return undefined;
+      });
+      renderAt("/ui/repos/admin/test/pulls/9");
+      expect(await screen.findByText("Feature PR")).toBeInTheDocument();
+
+      // First tick: PR + check/status polls fire; the PR now reports merged.
+      await vi.advanceTimersByTimeAsync(15_100);
+      await waitFor(() => {
+        expect(detailGets()).toBe(1);
+      });
+      // The refetched merged state must render (which recomputes the interval
+      // options to `false`) before the next would-be tick.
+      expect((await screen.findAllByText(/Merged/)).length).toBeGreaterThanOrEqual(1);
+      const statusAfterFirstTick = statusGets();
+
+      // Two more would-be ticks: nothing polls a merged PR.
+      await vi.advanceTimersByTimeAsync(31_000);
+      expect(detailGets()).toBe(1);
+      expect(statusGets()).toBe(statusAfterFirstTick);
+      expect(checkRunGets()).toBeLessThanOrEqual(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not poll a PR that loads already merged", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      mockPRApis((u) => {
+        if (u.includes("/ui-data/bootstrap/")) {
+          return jsonResponse(
+            bootstrapPayload(
+              pr(9, "Merged PR", { state: "closed", merged: true, merged_at: "2026-01-02T00:00:00Z" }),
+            ),
+          );
+        }
+        return undefined;
+      });
+      renderAt("/ui/repos/admin/test/pulls/9");
+      expect(await screen.findByText("Merged PR")).toBeInTheDocument();
+
+      await vi.advanceTimersByTimeAsync(31_000);
+      expect(detailGets()).toBe(0);
+      expect(statusGets()).toBe(0);
+      expect(checkRunGets()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("PullsPage auto-merge", () => {
   const autoMergeRepo = {
     id: 1,

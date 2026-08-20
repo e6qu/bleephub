@@ -16,6 +16,7 @@ import { Box, Button } from "./ui.js";
 import { Avatar } from "./Avatar.js";
 import { RelativeTime } from "./RelativeTime.js";
 import { MarkdownComposer } from "./MarkdownComposer.js";
+import { clearComposerDraft } from "../hooks/useComposerDraft.js";
 import Markdown from "./Markdown.js";
 import { ReactionBar } from "./ReactionBar.js";
 
@@ -306,6 +307,9 @@ export function ReviewThreadCard({
     group.comments.some((c) => c.user?.login != null && c.user.login === viewerLogin);
   const canResolve = canPush || isThreadParticipant;
   const [replyBody, setReplyBody] = useState("");
+  // Draft durability per thread (github.com keeps a distinct draft per
+  // review-thread reply box); the root comment id is the thread's identity.
+  const replyDraftKey = `pr-review-reply:${owner}/${repo}/${number}:${group.root.id}`;
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["pr-review-comments", owner, repo, number] });
     qc.invalidateQueries({ queryKey: ["pr-review-threads", owner, repo, number] });
@@ -314,6 +318,7 @@ export function ReviewThreadCard({
     mutationFn: () => replyToPRReviewComment(owner, repo, number, group.root.id, replyBody.trim()),
     onSuccess: () => {
       setReplyBody("");
+      clearComposerDraft(replyDraftKey);
       invalidate();
     },
   });
@@ -414,6 +419,7 @@ export function ReviewThreadCard({
         ))}
         <div style={{ padding: "0.55rem 1rem" }}>
           <MarkdownComposer
+            draftKey={replyDraftKey}
             value={replyBody}
             onChange={setReplyBody}
             rows={2}

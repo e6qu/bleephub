@@ -126,6 +126,20 @@ type). Everything else operated cleanly end-to-end.
   the real (merged) state. Breadcrumb casing still echoes the URL rather than canonical — noted,
   cosmetic.
 
+**Ninth round (2026-08-20) — session sweep (leaks, drafts, liveness):**
+- Long-session health measured over 480 SPA navigations via CDP: heap plateaus at ~12 MB after
+  cache warm-up with ZERO DOM-node or listener growth across the last 360 navigations — no leaks.
+- Comment drafts were lost on navigation (github.com restores them): a sessionStorage-backed
+  draft layer now restores composer text per conversation (issues/PRs, discussion comments and
+  replies, review-thread replies, gist comments), cleared on successful submit.
+- The blocked merge box never converged while open (github.com live-updates it) — and the probe
+  exposed a server bug beneath: a successful CLASSIC commit status never satisfied a required
+  status-check context (only check runs did), so `mergeable_state` stayed "blocked" forever for
+  status-reporting CI. Statuses now satisfy contexts and feed pending/failing exactly like check
+  runs (regression-tested), and the PR page polls the merge-box queries every 15 s while the PR
+  is open (off when merged/closed or backgrounded; sessions are core-budget-exempt). Verified
+  live: the box converges ~15 s after the check lands, with no reload.
+
 **Still not implemented, with reasons:**
 - package download counts: absent from GitHub's package-version payload shape.
 - tag protection: GitHub retired tag protection rules in favor of rulesets, which bleephub

@@ -17,6 +17,8 @@ function jsonResponse(data: unknown, status = 200, headers: Record<string, strin
 afterEach(() => {
   cleanup();
   mockFetch.mockReset();
+  // Comment drafts persist in sessionStorage; keep tests independent.
+  sessionStorage.clear();
 });
 
 function renderAt(path: string) {
@@ -255,6 +257,52 @@ describe("IssuesPage detail", () => {
       );
       expect(posted).toBeTruthy();
       expect(JSON.parse((posted![1] as RequestInit).body as string)).toEqual({ body: "looks good" });
+    });
+  });
+
+  it("restores a comment draft after leaving and returning; posting clears it", async () => {
+    const impl = (url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith("/issues/7/comments") && init?.method === "POST") {
+        return Promise.resolve(
+          jsonResponse(
+            { id: 1, body: "half-typed thought", user: { login: "admin" }, created_at: "2026-01-02T00:00:00Z" },
+            201,
+          ),
+        );
+      }
+      if (u.includes("/issues/7/comments") || u.includes("/timeline")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/issues/7/reactions")) return Promise.resolve(jsonResponse([]));
+      if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "admin" }));
+      if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
+      return Promise.resolve(jsonResponse([]));
+    };
+    mockFetch.mockImplementation(impl);
+    const first = renderAt("/ui/repos/admin/test/issues/7");
+    const box = await screen.findByPlaceholderText(/leave a comment/i);
+    fireEvent.change(box, { target: { value: "half-typed thought" } });
+    // Navigating away unmounts the page; the draft stays in sessionStorage.
+    first.unmount();
+    expect(sessionStorage.getItem("bleephub:draft:issue-comment:admin/test/7")).toBe(
+      "half-typed thought",
+    );
+
+    // Returning restores the text into the composer.
+    mockFetch.mockImplementation(impl);
+    renderAt("/ui/repos/admin/test/issues/7");
+    const restored = await screen.findByPlaceholderText(/leave a comment/i);
+    await waitFor(() => {
+      expect((restored as HTMLTextAreaElement).value).toBe("half-typed thought");
+    });
+
+    // Posting the comment clears the stored draft.
+    fireEvent.click(screen.getByRole("button", { name: /^comment$/i }));
+    await waitFor(() => {
+      const posted = mockFetch.mock.calls.find(
+        (c) => c[0].toString().endsWith("/issues/7/comments") && c[1]?.method === "POST",
+      );
+      expect(posted).toBeTruthy();
+      expect(sessionStorage.getItem("bleephub:draft:issue-comment:admin/test/7")).toBeNull();
     });
   });
 

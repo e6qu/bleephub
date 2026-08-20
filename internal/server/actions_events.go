@@ -145,7 +145,25 @@ func (s *Server) evaluateChecksForMerge(repo *store.Repo, baseBranch, headSha st
 			state.AnyFailing = true
 		}
 	}
+	// Classic commit statuses satisfy required contexts and contribute to
+	// pending/failing exactly like check runs on real GitHub — most external
+	// CI reports through the statuses API, and ignoring them left
+	// mergeable_state "blocked" forever after the required context succeeded.
+	_, _, statuses := s.store.CommitStatuses.Combined(repoKey, headSha)
+	statusByCtx := map[string]string{}
+	for _, cs := range statuses {
+		statusByCtx[cs.Context] = string(cs.State)
+		switch string(cs.State) {
+		case "pending":
+			state.AnyPending = true
+		case "failure", "error":
+			state.AnyFailing = true
+		}
+	}
 	for _, ctx := range s.requiredCheckContexts(repo.ID, baseBranch) {
+		if statusByCtx[ctx] == "success" {
+			continue
+		}
 		cr, ok := byName[ctx]
 		if !ok || cr.Status != "completed" || (cr.Conclusion != "success" && cr.Conclusion != "neutral" && cr.Conclusion != "skipped") {
 			state.MissingRequired = append(state.MissingRequired, ctx)

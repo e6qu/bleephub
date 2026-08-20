@@ -28,6 +28,7 @@ import {
   ghSend,
 } from "../api.js";
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
+import { useComposerDraft, clearComposerDraft } from "../hooks/useComposerDraft.js";
 import { useRepoPermissions } from "../hooks/useRepoPermissions.js";
 import type { GithubDiscussion, GithubDiscussionComment, GithubReactionGroup } from "../types.js";
 import { RepoHeader } from "../components/PageHeader.js";
@@ -399,6 +400,13 @@ function DiscussionDetail({
   const [editDiscBody, setEditDiscBody] = useState("");
   const [editCategory, setEditCategory] = useState("");
 
+  // Draft durability, github.com-style: the comment box and each reply box
+  // keep distinct drafts (switching reply targets switches drafts too).
+  const commentDraftKey = replyTo
+    ? `discussion-comment:${owner}/${repo}/${number}:reply:${replyTo.id}`
+    : `discussion-comment:${owner}/${repo}/${number}`;
+  useComposerDraft(commentDraftKey, commentBody, setCommentBody);
+
   const { data: discussion, isLoading, isError, error } = useQuery({
     queryKey: ["discussion", owner, repo, number],
     queryFn: ({ signal }) => fetchDiscussionDetail(owner, repo, number, signal),
@@ -439,6 +447,7 @@ function DiscussionDetail({
       qc.invalidateQueries({ queryKey: ["discussion", owner, repo, number] });
       qc.invalidateQueries({ queryKey: ["discussions", owner, repo] });
       setCommentBody("");
+      clearComposerDraft(commentDraftKey);
       setReplyTo(null);
       setCommentError(null);
     },

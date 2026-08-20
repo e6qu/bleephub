@@ -133,6 +133,17 @@ function prState(pr: GithubPR): "open" | "merged" | "closed" | "draft" {
   return "closed";
 }
 
+/**
+ * Live merge-box convergence: while a PR is open (draft included) the detail
+ * page polls the PR itself plus the check-runs/combined-status keys the merge
+ * box reads, so a required check completing elsewhere flips the blocked box
+ * without a manual reload — github.com's live-update behaviour. TanStack's
+ * default `refetchIntervalInBackground: false` pauses the poll while the tab
+ * is hidden, and the interval turns off once the PR reports merged/closed.
+ * Sessions are exempt from the core rate budget, so 15s is affordable.
+ */
+const MERGE_BOX_POLL_MS = 15_000;
+
 function PRStateIcon({ pr, size }: { pr: GithubPR; size?: number }) {
   const s = prState(pr);
   if (s === "merged") return <MergedIcon size={size} style={{ color: "var(--gh-merged)" }} />;
@@ -448,6 +459,11 @@ function PRDetail({ owner, repo, number }: { owner: string; repo: string; number
     queryKey: ["pr", owner, repo, number],
     queryFn: ({ signal }) => fetchPRDetail(owner, repo, number, signal),
     enabled: bootstrapSettled,
+    // Function form: the interval reads the FETCHED state, so it turns itself
+    // off on the refetch that reports merged/closed. Interval refetches ignore
+    // staleTime, so the bootstrap-seeded entry (SEED_STALE_TIME) still polls.
+    refetchInterval: (query) =>
+      query.state.data?.state === "open" ? MERGE_BOX_POLL_MS : false,
   });
 
   // Checks-tab count: check runs + commit statuses on the head SHA (both
@@ -456,15 +472,21 @@ function PRDetail({ owner, repo, number }: { owner: string; repo: string; number
   // statuses are public.
   const signedIn = useSignedIn();
   const headSha = pr?.head.sha ?? "";
+  // While the PR is open these observers poll so the merge box (whose own
+  // hooks share these exact keys) converges live; a head-sha change from the
+  // polled PR detail re-keys them naturally.
+  const checksPollInterval = pr?.state === "open" ? MERGE_BOX_POLL_MS : false;
   const checksCountQ = useQuery({
     queryKey: ["check-runs", owner, repo, headSha],
     queryFn: () => fetchCheckRuns(owner, repo, headSha),
     enabled: !!headSha && signedIn,
+    refetchInterval: checksPollInterval,
   });
   const statusCountQ = useQuery({
     queryKey: ["combined-status", owner, repo, headSha],
     queryFn: ({ signal }) => fetchCombinedStatus(owner, repo, headSha, signal),
     enabled: !!headSha,
+    refetchInterval: checksPollInterval,
   });
   const checksCount =
     (checksCountQ.data?.items.length ?? 0) + (statusCountQ.data?.statuses.length ?? 0);

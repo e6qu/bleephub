@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import Markdown from "./Markdown.js";
+import { useComposerDraft } from "../hooks/useComposerDraft.js";
 
 /*
  * GitHub-style comment box: Write/Preview tabs plus a markdown toolbar over a
@@ -119,6 +120,7 @@ export function MarkdownComposer({
   rows = 4,
   disabled = false,
   id,
+  draftKey,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -127,7 +129,14 @@ export function MarkdownComposer({
   rows?: number;
   disabled?: boolean;
   id?: string;
+  /**
+   * Stable identity for sessionStorage draft durability (github.com restores
+   * half-typed comments after navigating away). null/undefined disables it —
+   * the default, so existing callers and modal editors are unaffected.
+   */
+  draftKey?: string | null;
 }) {
+  useComposerDraft(draftKey ?? null, value, onChange);
   const [tab, setTab] = useState<ComposerTab>("write");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const pendingSelection = useRef<{ start: number; end: number } | null>(null);
