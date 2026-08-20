@@ -769,6 +769,11 @@ func (s *Server) handleCreatePRReview(w http.ResponseWriter, r *http.Request) {
 		s.emitWebhookEvent(repo.FullName, "pull_request_review", "submitted",
 			buildPullRequestReviewPayload(s.store, repo, pr, review, user, "submitted", s.baseURL(r)))
 	}
+	// An approval can be the required review an armed auto-merge was
+	// waiting for.
+	if review.State == "APPROVED" {
+		s.maybeAutoMergePR(pr.ID)
+	}
 	writeJSON(w, http.StatusOK, reviewToJSON(review, s.store, s.baseURL(r), repo.FullName, pr.Number))
 }
 
@@ -1045,6 +1050,11 @@ func (s *Server) handleSubmitPRReview(w http.ResponseWriter, r *http.Request) {
 	review = s.store.GetPullRequestReview(reviewID)
 	s.emitWebhookEvent(repo.FullName, "pull_request_review", "submitted",
 		buildPullRequestReviewPayload(s.store, repo, pr, review, user, "submitted", s.baseURL(r)))
+	// An approval can be the required review an armed auto-merge was
+	// waiting for.
+	if review != nil && review.State == "APPROVED" {
+		s.maybeAutoMergePR(pr.ID)
+	}
 	writeJSON(w, http.StatusOK, reviewToJSON(review, s.store, s.baseURL(r), repo.FullName, pr.Number))
 }
 
@@ -1108,6 +1118,9 @@ func (s *Server) handleDismissPRReview(w http.ResponseWriter, r *http.Request) {
 	review = s.store.GetPullRequestReview(reviewID)
 	s.emitWebhookEvent(repo.FullName, "pull_request_review", "dismissed",
 		buildPullRequestReviewPayload(s.store, repo, pr, review, user, "dismissed", s.baseURL(r)))
+	// Dismissing a blocking CHANGES_REQUESTED review can clear the condition
+	// an armed auto-merge was waiting for.
+	s.maybeAutoMergePR(pr.ID)
 	writeJSON(w, http.StatusOK, reviewToJSON(review, s.store, s.baseURL(r), repo.FullName, pr.Number))
 }
 
@@ -1666,6 +1679,22 @@ func pullRequestSimpleJSON(pr *store.PullRequest, st *store.Store, baseURL, repo
 		}
 	}
 
+	// auto_merge: null when off; when armed, the enabled_by user plus the
+	// merge parameters, per the published auto-merge shape.
+	var autoMerge interface{}
+	if pr.AutoMerge != nil {
+		var enabledBy map[string]interface{}
+		if u, ok := st.Users[pr.AutoMerge.EnabledByID]; ok {
+			enabledBy = store.UserToJSON(u)
+		}
+		autoMerge = map[string]interface{}{
+			"enabled_by":     enabledBy,
+			"merge_method":   strings.ToLower(pr.AutoMerge.MergeMethod),
+			"commit_title":   pr.AutoMerge.CommitHeadline,
+			"commit_message": pr.AutoMerge.CommitBody,
+		}
+	}
+
 	// Milestone and repo conversion happens after unlock: both derive
 	// counts under their own locks.
 	var milestone *store.Milestone
@@ -1794,7 +1823,7 @@ func pullRequestSimpleJSON(pr *store.PullRequest, st *store.Store, baseURL, repo
 		"requested_reviewers": requestedReviewers,
 		"requested_teams":     requestedTeams,
 		"author_association":  authorAssociation,
-		"auto_merge":          nil,
+		"auto_merge":          autoMerge,
 		"merged_at":           mergedAt,
 		"merge_commit_sha":    mergeCommitSHA,
 		"created_at":          pr.CreatedAt.Format(time.RFC3339),

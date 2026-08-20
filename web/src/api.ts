@@ -1836,27 +1836,6 @@ const repoHooksPath = (owner: string, repo: string): string =>
   `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/hooks`;
 
 /** Create a repository webhook — POST repos/{owner}/{repo}/hooks. */
-export const createRepoHook = (
-  owner: string,
-  repo: string,
-  payload: {
-    url: string;
-    contentType?: string | undefined;
-    secret?: string | undefined;
-    events?: string[] | undefined;
-    active?: boolean | undefined;
-  },
-) =>
-  ghPostJSON<GithubWebhook>(repoHooksPath(owner, repo), {
-    name: "web",
-    active: payload.active ?? true,
-    events: payload.events ?? ["push"],
-    config: {
-      url: payload.url,
-      content_type: payload.contentType ?? "json",
-      ...(payload.secret ? { secret: payload.secret } : {}),
-    },
-  });
 
 /** Patch a repository webhook (toggle active, change events/url) — PATCH repos/{owner}/{repo}/hooks/{id}. */
 export const updateRepoHook = (

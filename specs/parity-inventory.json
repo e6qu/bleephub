@@ -3,7 +3,7 @@
     "literal_event_producers": [
       {
         "event": "branch_protection_rule",
-        "line": 347,
+        "line": 374,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_branch_protection.go"
       },
@@ -78,6 +78,12 @@
         "line": 699,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_issues_rest.go"
+      },
+      {
+        "event": "issues",
+        "line": 155,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_discussions_uidata.go"
       },
       {
         "event": "issues",
@@ -177,6 +183,12 @@
       },
       {
         "event": "pull_request",
+        "line": 131,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_auto_merge.go"
+      },
+      {
+        "event": "pull_request",
         "line": 155,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pull_merge_async.go"
@@ -213,13 +225,13 @@
       },
       {
         "event": "pull_request_review",
-        "line": 1046,
+        "line": 1051,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request_review",
-        "line": 1109,
+        "line": 1119,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
@@ -292,15 +304,15 @@
   "graphql": {
     "compatibility_gap_count": 9,
     "coverage": {
-      "bleephub_types": 287,
+      "bleephub_types": 291,
       "compatibility_gap_count": 9,
-      "implemented_fields": 1036,
+      "implemented_fields": 1053,
       "official_fields": 8360,
       "official_types": 1807,
-      "shared_types": 280,
-      "signature_exact_fields": 1035
+      "shared_types": 284,
+      "signature_exact_fields": 1052
     },
-    "introspection_snapshot_sha256": "e8b2da3defc834efcbdf705422f85ea6d07986b7c7b0a19ffb5bada9329b94f3",
+    "introspection_snapshot_sha256": "26677a7d13ff5e6f0349af824592c6ecdee57b4fe02e41f8197c678941835403",
     "official_schema": {
       "content_sha256": "b716c6844750283b8c33200f660989337254e7158f40ed869f06418bafb3bc2e",
       "source": "https://docs.github.com/public/fpt/schema.docs.graphql"
@@ -21680,61 +21692,61 @@
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 40,
+        "line": 42,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 109,
+        "line": 111,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/enforce_admins",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 79,
+        "line": 81,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_pull_request_reviews",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 54,
+        "line": 56,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_signatures",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 47,
+        "line": 49,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 72,
+        "line": 74,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks/contexts",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 84,
+        "line": 86,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 63,
+        "line": 65,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/apps",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 102,
+        "line": 104,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/teams",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 93,
+        "line": 95,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/users",
         "source": "internal/server/gh_branch_protection.go"
@@ -25028,61 +25040,61 @@
         "source": "internal/server/gh_repos_refs.go"
       },
       {
-        "line": 37,
+        "line": 39,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 106,
+        "line": 108,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/enforce_admins",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 76,
+        "line": 78,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_pull_request_reviews",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 51,
+        "line": 53,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_signatures",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 44,
+        "line": 46,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 67,
+        "line": 69,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks/contexts",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 83,
+        "line": 85,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 58,
+        "line": 60,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/apps",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 97,
+        "line": 99,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/teams",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 88,
+        "line": 90,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/users",
         "source": "internal/server/gh_branch_protection.go"
@@ -27350,13 +27362,13 @@
         "source": "internal/server/gh_agents_secrets.go"
       },
       {
-        "line": 77,
+        "line": 79,
         "method": "PATCH",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_pull_request_reviews",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 45,
+        "line": 47,
         "method": "PATCH",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks",
         "source": "internal/server/gh_branch_protection.go"
@@ -28424,37 +28436,37 @@
         "source": "internal/server/gh_repos_autolinks.go"
       },
       {
-        "line": 107,
+        "line": 109,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/enforce_admins",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 52,
+        "line": 54,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_signatures",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 68,
+        "line": 70,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks/contexts",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 59,
+        "line": 61,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/apps",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 98,
+        "line": 100,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/teams",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 89,
+        "line": 91,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/users",
         "source": "internal/server/gh_branch_protection.go"
@@ -29774,31 +29786,31 @@
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 38,
+        "line": 40,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 70,
+        "line": 72,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks/contexts",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 61,
+        "line": 63,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/apps",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 100,
+        "line": 102,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/teams",
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 91,
+        "line": 93,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/protection/restrictions/users",
         "source": "internal/server/gh_branch_protection.go"

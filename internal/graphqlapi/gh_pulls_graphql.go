@@ -819,8 +819,8 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 				},
 			},
 			"autoMergeRequest": &graphql.Field{
-				// No auto-merge feature: null, the value real GitHub returns
-				// when auto-merge isn't enabled on the PR.
+				// The armed auto-merge request, or null — the value real
+				// GitHub returns when auto-merge isn't enabled on the PR.
 				Type: graphql.NewObject(graphql.ObjectConfig{
 					Name: "AutoMergeRequest",
 					Fields: graphql.Fields{
@@ -833,6 +833,15 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 					},
 				}),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					pr, _, err := pullRequestAndRepoFromGQLSource(p.Source, s.store)
+					if err != nil {
+						return nil, err
+					}
+					// A typed nil map inside the interface would make
+					// graphql-go descend into the null object.
+					if request := autoMergeRequestToGQL(pr, s.store); request != nil {
+						return request, nil
+					}
 					return nil, nil
 				},
 			},
@@ -1622,6 +1631,164 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 		},
 	})
 
+	// --- enablePullRequestAutoMerge / disablePullRequestAutoMerge ---
+	// Auto-merge arms a merge that runs later, through the same REST-shared
+	// merge gate, once the base branch's blocking conditions clear. GitHub
+	// only lets it be armed while something actually blocks the merge — a
+	// PR that could merge right now is refused with "Pull request is in
+	// clean status" — so an enable can never race a green check.
+	enableAutoMergeInputType := graphql.NewInputObject(graphql.InputObjectConfig{
+		Name: "EnablePullRequestAutoMergeInput",
+		Fields: graphql.InputObjectConfigFieldMap{
+			"pullRequestId":    &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
+			"mergeMethod":      &graphql.InputObjectFieldConfig{Type: pullRequestMergeMethodEnum, DefaultValue: "MERGE"},
+			"commitHeadline":   &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"commitBody":       &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"authorEmail":      &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"expectedHeadOid":  &graphql.InputObjectFieldConfig{Type: gitObjectID},
+			"clientMutationId": &graphql.InputObjectFieldConfig{Type: graphql.String},
+		},
+	})
+	enableAutoMergePayloadType := graphql.NewObject(graphql.ObjectConfig{
+		Name: "EnablePullRequestAutoMergePayload",
+		Fields: graphql.Fields{
+			"actor":            &graphql.Field{Type: s.graphqlTypes.actor},
+			"pullRequest":      &graphql.Field{Type: pullRequestType},
+			"clientMutationId": &graphql.Field{Type: graphql.String},
+		},
+	})
+	s.registerMutation(mutationType, "enablePullRequestAutoMerge", &graphql.Field{
+		Type: enableAutoMergePayloadType,
+		Args: graphql.FieldConfigArgument{
+			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(enableAutoMergeInputType)},
+		},
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			user := s.ghUserFromContext(p.Context)
+			input, _ := p.Args["input"].(map[string]interface{})
+			prNodeID, _ := input["pullRequestId"].(string)
+
+			pr := store.FindPullRequestByNodeID(s.store, prNodeID)
+			if pr == nil {
+				return nil, gqlMissingNodeType("PullRequest")
+			}
+			if pr.State != "OPEN" {
+				return nil, fmt.Errorf("pull request is not open")
+			}
+			repo := s.store.GetRepoByID(pr.RepoID)
+			if repo == nil {
+				return nil, gqlMissingNodeType("Repository")
+			}
+			if !repo.AllowAutoMerge {
+				//lint:ignore ST1005 GitHub GraphQL parity requires this exact upstream message.
+				return nil, fmt.Errorf("Auto merge is not allowed for this repository")
+			}
+
+			method := "MERGE"
+			if v, ok := input["mergeMethod"].(string); ok && v != "" {
+				method = v
+			}
+			// GitHub refuses an explicit merge method the repository has
+			// disabled, exactly as the REST merge endpoint does.
+			var disallowed string
+			switch {
+			case method == "MERGE" && !repo.AllowMergeCommit:
+				disallowed = "Merge commits are not allowed on this repository."
+			case method == "SQUASH" && !repo.AllowSquashMerge:
+				disallowed = "Squash merges are not allowed on this repository."
+			case method == "REBASE" && !repo.AllowRebaseMerge:
+				disallowed = "Rebase merges are not allowed on this repository."
+			}
+			if disallowed != "" {
+				return nil, fmt.Errorf("%s", disallowed)
+			}
+
+			headSha := s.prHeadSha(repo, pr)
+			// The same interlock mergePullRequest honours: the client names
+			// the commit it reviewed, and a moved head refuses.
+			if expected, ok := input["expectedHeadOid"].(string); ok && expected != "" {
+				if headSha == "" || !strings.EqualFold(headSha, expected) {
+					//lint:ignore ST1005 GitHub GraphQL parity requires this exact upstream message.
+					return nil, fmt.Errorf("Head branch was modified. Review and try the merge again.")
+				}
+			}
+
+			// Auto-merge only arms while a blocking condition exists. A PR
+			// the caller could merge right now is refused, so there is no
+			// armed-after-green race to poll for.
+			checksClean := headSha == "" || len(s.missingRequiredChecks(repo, pr.BaseRefName, headSha)) == 0
+			if mergeable, _ := s.canMergePullRequest(p.Context, repo, pr); mergeable && checksClean {
+				//lint:ignore ST1005 GitHub GraphQL parity requires this exact upstream message.
+				return nil, fmt.Errorf("Pull request is in clean status")
+			}
+
+			commitHeadline, _ := input["commitHeadline"].(string)
+			commitBody, _ := input["commitBody"].(string)
+			authorEmail, _ := input["authorEmail"].(string)
+			s.store.UpdatePullRequest(pr.ID, func(p *store.PullRequest) {
+				p.AutoMerge = &store.PullRequestAutoMerge{
+					EnabledByID:    user.ID,
+					MergeMethod:    method,
+					CommitHeadline: commitHeadline,
+					CommitBody:     commitBody,
+					AuthorEmail:    authorEmail,
+					EnabledAt:      s.store.CurrentTime(),
+				}
+			})
+			s.store.RecordPullRequestEvent(pr.RepoID, pr.ID, user.ID, "auto_merge_enabled", "", 0)
+
+			return map[string]interface{}{
+				"actor":            userToGraphQL(user),
+				"pullRequest":      pullRequestToGQL(s.store.GetPullRequest(pr.ID), s.store),
+				"clientMutationId": clientMutationID(input),
+			}, nil
+		},
+	})
+
+	disableAutoMergeInputType := graphql.NewInputObject(graphql.InputObjectConfig{
+		Name: "DisablePullRequestAutoMergeInput",
+		Fields: graphql.InputObjectConfigFieldMap{
+			"pullRequestId":    &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
+			"clientMutationId": &graphql.InputObjectFieldConfig{Type: graphql.String},
+		},
+	})
+	disableAutoMergePayloadType := graphql.NewObject(graphql.ObjectConfig{
+		Name: "DisablePullRequestAutoMergePayload",
+		Fields: graphql.Fields{
+			"actor":            &graphql.Field{Type: s.graphqlTypes.actor},
+			"pullRequest":      &graphql.Field{Type: pullRequestType},
+			"clientMutationId": &graphql.Field{Type: graphql.String},
+		},
+	})
+	s.registerMutation(mutationType, "disablePullRequestAutoMerge", &graphql.Field{
+		Type: disableAutoMergePayloadType,
+		Args: graphql.FieldConfigArgument{
+			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(disableAutoMergeInputType)},
+		},
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			user := s.ghUserFromContext(p.Context)
+			input, _ := p.Args["input"].(map[string]interface{})
+			prNodeID, _ := input["pullRequestId"].(string)
+
+			pr := store.FindPullRequestByNodeID(s.store, prNodeID)
+			if pr == nil {
+				return nil, gqlMissingNodeType("PullRequest")
+			}
+			if pr.AutoMerge == nil {
+				return nil, fmt.Errorf("auto-merge is not enabled for this pull request")
+			}
+			s.store.UpdatePullRequest(pr.ID, func(p *store.PullRequest) {
+				p.AutoMerge = nil
+			})
+			s.store.RecordPullRequestEvent(pr.RepoID, pr.ID, user.ID, "auto_merge_disabled", "", 0)
+
+			return map[string]interface{}{
+				"actor":            userToGraphQL(user),
+				"pullRequest":      pullRequestToGQL(s.store.GetPullRequest(pr.ID), s.store),
+				"clientMutationId": clientMutationID(input),
+			}, nil
+		},
+	})
+
 	// --- addPullRequestReview (gh pr review) ---
 	// gh submits reviews via mutation PullRequestReviewAdd($input:
 	// AddPullRequestReviewInput!){addPullRequestReview(input:$input)
@@ -1698,6 +1865,11 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			review := s.store.CreatePRReview(pr.ID, user.ID, state, body)
 			if review == nil {
 				return nil, fmt.Errorf("review creation failed")
+			}
+			// An approval can be the required review an armed auto-merge was
+			// waiting for.
+			if state == "APPROVED" {
+				s.maybeAutoMerge(pr.ID)
 			}
 
 			var clientMutationID interface{}
@@ -1807,6 +1979,11 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			if !s.store.SubmitPullRequestReview(review.ID, event) {
 				return nil, fmt.Errorf("cannot submit a review that is not pending")
 			}
+			// An approval can be the required review an armed auto-merge was
+			// waiting for.
+			if event == "APPROVE" {
+				s.maybeAutoMerge(review.PRID)
+			}
 			return map[string]interface{}{
 				"pullRequestReview": prReviewToGQL(s.store.GetPullRequestReview(review.ID), s.store),
 				"clientMutationId":  clientMutationID(input),
@@ -1846,6 +2023,9 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			if !s.store.DismissPullRequestReview(review.ID, message) {
 				return nil, fmt.Errorf("review dismissal failed")
 			}
+			// Dismissing a blocking CHANGES_REQUESTED review can clear the
+			// condition an armed auto-merge was waiting for.
+			s.maybeAutoMerge(review.PRID)
 			return map[string]interface{}{
 				"pullRequestReview": prReviewToGQL(s.store.GetPullRequestReview(review.ID), s.store),
 				"clientMutationId":  clientMutationID(input),
@@ -2015,6 +2195,32 @@ func pullRequestAndRepoFromGQLSource(src interface{}, st *store.Store) (*store.P
 		return nil, nil, fmt.Errorf("repository not found")
 	}
 	return pr, repo, nil
+}
+
+// autoMergeRequestToGQL renders a PR's armed auto-merge request in the
+// AutoMergeRequest shape, or nil when auto-merge is off.
+func autoMergeRequestToGQL(pr *store.PullRequest, st *store.Store) map[string]interface{} {
+	if pr == nil || pr.AutoMerge == nil {
+		return nil
+	}
+	var enabledBy map[string]interface{}
+	st.Mu.RLock()
+	if u := st.Users[pr.AutoMerge.EnabledByID]; u != nil {
+		enabledBy = userToGraphQL(u)
+	}
+	st.Mu.RUnlock()
+	var authorEmail interface{}
+	if pr.AutoMerge.AuthorEmail != "" {
+		authorEmail = pr.AutoMerge.AuthorEmail
+	}
+	return map[string]interface{}{
+		"authorEmail":    authorEmail,
+		"commitBody":     pr.AutoMerge.CommitBody,
+		"commitHeadline": pr.AutoMerge.CommitHeadline,
+		"mergeMethod":    pr.AutoMerge.MergeMethod,
+		"enabledAt":      pr.AutoMerge.EnabledAt.UTC().Format(time.RFC3339),
+		"enabledBy":      enabledBy,
+	}
 }
 
 func pullRequestChangedFileToGQL(file map[string]interface{}) map[string]interface{} {

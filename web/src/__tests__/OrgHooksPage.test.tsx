@@ -119,6 +119,37 @@ describe("OrgHooksPage write actions", () => {
       const body = JSON.parse((post![1] as RequestInit).body as string);
       expect(body.config.url).toBe("https://x.test/h");
       expect(body.events).toEqual(["push"]);
+      // SSL verification defaults to enabled.
+      expect(body.config.insecure_ssl).toBe("0");
+    });
+  });
+
+  it("creates a webhook with SSL verification disabled", async () => {
+    mockFetch.mockImplementation((url: string, init?: RequestInit) => {
+      if (url.endsWith("/hooks") && init?.method === "POST") {
+        return Promise.resolve(jsonResponse({ ...orgHook, id: 11 }));
+      }
+      if (url.startsWith("/api/v3/orgs/acme/hooks?")) return Promise.resolve(jsonResponse([]));
+      return Promise.resolve(jsonResponse({ message: "Not Found" }, 404));
+    });
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: /new webhook/i }));
+    fireEvent.change(await screen.findByLabelText(/payload url/i), {
+      target: { value: "https://x.test/h" },
+    });
+    expect(screen.getByRole("radio", { name: "Enable SSL verification" })).toBeChecked();
+    fireEvent.click(screen.getByRole("radio", { name: "Disable (not recommended)" }));
+    expect(
+      screen.getByText("Warning: SSL certificates will not be verified when delivering payloads."),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /add webhook/i }));
+    await waitFor(() => {
+      const post = mockFetch.mock.calls.find(
+        (c) => String(c[0]).endsWith("/hooks") && c[1]?.method === "POST",
+      );
+      expect(post).toBeTruthy();
+      const body = JSON.parse((post![1] as RequestInit).body as string);
+      expect(body.config.insecure_ssl).toBe("1");
     });
   });
 
@@ -200,10 +231,35 @@ describe("OrgHooksPage write actions", () => {
       expect(body).toEqual({
         active: true,
         events: ["issues", "push"],
-        config: { url: "https://ci.example.test/v2", content_type: "json" },
+        config: { url: "https://ci.example.test/v2", content_type: "json", insecure_ssl: "0" },
       });
       // Blank secret is omitted so the server keeps the stored one.
       expect(body.config.secret).toBeUndefined();
+    });
+  });
+
+  it("pre-selects Disable when editing a hook whose config has insecure_ssl \"1\"", async () => {
+    const insecureHook = { ...orgHook, config: { ...orgHook.config, insecure_ssl: "1" } };
+    mockFetch.mockImplementation((url: string, init?: RequestInit) => {
+      if (url.endsWith("/hooks/3") && init?.method === "PATCH") {
+        return Promise.resolve(new Response(null, { status: 200 }));
+      }
+      if (url.startsWith("/api/v3/orgs/acme/hooks?")) return Promise.resolve(jsonResponse([insecureHook]));
+      return Promise.resolve(jsonResponse({ message: "Not Found" }, 404));
+    });
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: /edit webhook 3/i }));
+
+    expect(await screen.findByRole("radio", { name: "Disable (not recommended)" })).toBeChecked();
+    fireEvent.click(screen.getByRole("button", { name: /update webhook/i }));
+
+    await waitFor(() => {
+      const patch = mockFetch.mock.calls.find(
+        (c) => String(c[0]).endsWith("/hooks/3") && c[1]?.method === "PATCH",
+      );
+      expect(patch).toBeTruthy();
+      const body = JSON.parse((patch![1] as RequestInit).body as string);
+      expect(body.config.insecure_ssl).toBe("1");
     });
   });
 

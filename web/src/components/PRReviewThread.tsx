@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { InlineError } from "@bleephub/ui-core/components";
 import {
@@ -7,6 +7,8 @@ import {
   fetchPullReviewCommentReactions,
   addPullReviewCommentReaction,
   removePullReviewCommentReaction,
+  ghPostJSON,
+  ApiError,
 } from "../api.js";
 import type { GithubPRReviewComment } from "../types.js";
 import { Box, Button } from "./ui.js";
@@ -94,9 +96,9 @@ const suggestionRowStyle = {
 
 /**
  * A ```suggestion fence rendered as a small diff: the original line struck
- * out in red, the suggested replacement in green. Render-only — the server
- * has no apply-suggestion endpoint, so there is no "Commit suggestion"
- * action.
+ * out in red, the suggested replacement in green. The "Commit suggestion"
+ * action renders separately (CommitSuggestionButton) when the caller
+ * provides PR coordinates.
  */
 function SuggestionBlock({ suggestion, original }: { suggestion: string; original: string | null }) {
   return (
@@ -152,15 +154,115 @@ function SuggestionBlock({ suggestion, original }: { suggestion: string; origina
   );
 }
 
-/** A review comment's body with ```suggestion fences rendered as mini-diffs. */
-export function ReviewCommentBody({ comment }: { comment: GithubPRReviewComment }) {
+/**
+ * "Commit suggestion" — applies the comment's FIRST ```suggestion fence to
+ * the PR head branch via the /ui-data apply-suggestion endpoint. The server
+ * is the authority on push access and PR state, so those refusals (403/422)
+ * surface inline; a 409 marks the suggestion outdated.
+ */
+function CommitSuggestionButton({
+  owner,
+  repo,
+  number,
+  comment,
+}: {
+  owner: string;
+  repo: string;
+  number: number;
+  comment: GithubPRReviewComment;
+}) {
+  const qc = useQueryClient();
+  const apply = useMutation({
+    mutationFn: () =>
+      ghPostJSON<{ sha: string }>(
+        `/ui-data/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/review-comments/${comment.id}/apply-suggestion`,
+        {},
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["pr-files", owner, repo, number] });
+      qc.invalidateQueries({ queryKey: ["pr-timeline", owner, repo, number] });
+    },
+  });
+  const errorMessage = apply.error instanceof Error ? apply.error.message : String(apply.error ?? "");
+  const outdated = apply.error instanceof ApiError && apply.error.status === 409;
+  // LEFT-side and file-level suggestions can never apply — the server would
+  // 422; disable up front with the reason.
+  const disabledReason =
+    comment.side === "LEFT"
+      ? "Suggestions on the deleted side can't be applied"
+      : comment.line == null
+        ? "File-level suggestions can't be applied"
+        : null;
+
+  if (outdated) {
+    return (
+      <div className="mb-2 flex justify-end">
+        <Button size="sm" disabled title={errorMessage}>
+          Suggestion outdated
+        </Button>
+      </div>
+    );
+  }
+  if (apply.isSuccess) {
+    return (
+      <div className="mb-2 flex justify-end">
+        <Button size="sm" disabled>
+          Suggestion applied
+        </Button>
+      </div>
+    );
+  }
+  return (
+    <div className="mb-2">
+      <div className="flex justify-end">
+        <Button
+          size="sm"
+          disabled={disabledReason != null || apply.isPending}
+          title={disabledReason ?? "Commit this suggestion to the pull request head branch"}
+          onClick={() => apply.mutate()}
+        >
+          {apply.isPending ? "Committing…" : "Commit suggestion"}
+        </Button>
+      </div>
+      {apply.isError && (
+        <InlineError inline title="Could not apply suggestion" detail={errorMessage} />
+      )}
+    </div>
+  );
+}
+
+/**
+ * A review comment's body with ```suggestion fences rendered as mini-diffs.
+ * When PR coordinates are provided (all of owner/repo/number), the first
+ * suggestion fence gets a "Commit suggestion" action — the server applies
+ * only the first fence. Coordinates are optional so render-only callers
+ * (pending drafts, older call sites) stay unchanged.
+ */
+export function ReviewCommentBody({
+  comment,
+  owner,
+  repo,
+  number,
+}: {
+  comment: GithubPRReviewComment;
+  owner?: string;
+  repo?: string;
+  number?: number;
+}) {
   const segments = splitSuggestionSegments(comment.body);
   const original = suggestionTargetLine(comment.diff_hunk);
+  const canCommit = owner !== undefined && repo !== undefined && number !== undefined;
+  const firstSuggestion = segments.findIndex((seg) => seg.kind === "suggestion");
   return (
     <div style={{ color: "var(--color-fg)" }} className="markdown-body">
       {segments.map((seg, i) =>
         seg.kind === "suggestion" ? (
-          <SuggestionBlock key={i} suggestion={seg.content} original={original} />
+          <Fragment key={i}>
+            <SuggestionBlock suggestion={seg.content} original={original} />
+            {canCommit && i === firstSuggestion && (
+              <CommitSuggestionButton owner={owner} repo={repo} number={number} comment={comment} />
+            )}
+          </Fragment>
         ) : seg.content.trim() === "" ? null : (
           <Markdown key={i}>{seg.content}</Markdown>
         ),
@@ -286,7 +388,7 @@ export function ReviewThreadCard({
                 commented <RelativeTime iso={c.created_at} />
               </span>
             </div>
-            <ReviewCommentBody comment={c} />
+            <ReviewCommentBody comment={c} owner={owner} repo={repo} number={number} />
             <div className="mt-1">
               <ReactionBar
                 queryKey={["pr-review-comment-reactions", owner, repo, c.id]}

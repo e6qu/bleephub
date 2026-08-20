@@ -39,7 +39,6 @@ import {
   deleteRef,
   createRef,
 } from "../api.js";
-import { useOpenCounts } from "../hooks/useOpenCounts.js";
 import {
   checkRunsEnvelopeToPage,
   fetchPullBootstrap,
@@ -153,7 +152,7 @@ function PRList({ owner, repo }: { owner: string; repo: string }) {
   const qc = useQueryClient();
   const [state, setState] = useState<"open" | "closed" | "all">("open");
   const [filters, setFilters] = useState<ListFilterState>(emptyFilters);
-  const counts = useOpenCounts(owner, repo);
+  const counts = useSeededOpenCounts(owner, repo);
   const closedCount = usePRClosedCount(owner, repo);
 
   // Compare deep-link: /pulls?compare=base...head (the compare view and
@@ -417,6 +416,11 @@ function PRDetail({ owner, repo, number }: { owner: string; repo: string; number
         [["pr-requested-reviewers", owner, repo, number], validReviewRequest(data.requested_reviewers)],
         [["check-runs", owner, repo, sha], checkRunsEnvelopeToPage(data.check_runs)],
         [["combined-status", owner, repo, sha], validCombinedStatus(data.combined_status)],
+        // Sidebar sub-payloads (same keys IssueSidebar and the reviewers
+        // picker read), so the PR sidebar stops fetching them standalone.
+        [["labels", owner, repo], data.labels],
+        [["milestones", owner, repo, "all"], data.milestones],
+        [["assignable-users", owner, repo], data.assignees_available],
       ]);
       // ["viewer"] and ["current-user"] both GET /api/v3/user; reuse whichever
       // response the session already holds instead of refetching it here.
@@ -986,9 +990,10 @@ function MergeBox({
 }) {
   const qc = useQueryClient();
   const [method, setMethod] = useState<"merge" | "squash" | "rebase">("merge");
-  // GitHub's two-step flow: the merge button opens a confirmation panel with
-  // the editable commit title/message; only "Confirm …" performs the merge.
-  const [confirming, setConfirming] = useState(false);
+  // GitHub's two-step flow: the merge (or enable-auto-merge) button opens a
+  // confirmation panel with the editable commit title/message; only
+  // "Confirm …" performs the mutation.
+  const [confirming, setConfirming] = useState<false | "merge" | "auto-merge">(false);
   // null = "use the GitHub-style default for the chosen method".
   const [commitTitle, setCommitTitle] = useState<string | null>(null);
   const [commitMessage, setCommitMessage] = useState<string | null>(null);
@@ -1032,6 +1037,45 @@ function MergeBox({
   const updateBranchMut = useMutation({
     mutationFn: () => updatePRBranch(owner, repo, number),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["pr", owner, repo, number] }),
+  });
+  // Whether the repo allows auto-merge, read from the repo detail RepoHeader
+  // already fetched (enabled: false makes this a read-only cache observer).
+  const repoQ = useQuery({
+    queryKey: ["repo", owner, repo],
+    queryFn: ({ signal }) => fetchRepoDetail(owner, repo, signal),
+    enabled: false,
+  });
+  const invalidateAutoMerge = () => {
+    setConfirming(false);
+    qc.invalidateQueries({ queryKey: ["pr", owner, repo, number] });
+    qc.invalidateQueries({ queryKey: ["pr-timeline", owner, repo, number] });
+  };
+  const enableAutoMergeMut = useMutation({
+    mutationFn: () =>
+      ghGraphQL(
+        `mutation($input: EnablePullRequestAutoMergeInput!) { enablePullRequestAutoMerge(input: $input) { clientMutationId } }`,
+        {
+          input: {
+            pullRequestId: pr.node_id,
+            mergeMethod: method.toUpperCase(),
+            ...(method !== "rebase" && effectiveTitle.trim()
+              ? { commitHeadline: effectiveTitle.trim() }
+              : {}),
+            ...(method !== "rebase" && effectiveMessage.trim()
+              ? { commitBody: effectiveMessage.trim() }
+              : {}),
+          },
+        },
+      ),
+    onSuccess: invalidateAutoMerge,
+  });
+  const disableAutoMergeMut = useMutation({
+    mutationFn: () =>
+      ghGraphQL(
+        `mutation($input: DisablePullRequestAutoMergeInput!) { disablePullRequestAutoMerge(input: $input) { clientMutationId } }`,
+        { input: { pullRequestId: pr.node_id } },
+      ),
+    onSuccess: invalidateAutoMerge,
   });
   const invalidatePR = () => qc.invalidateQueries({ queryKey: ["pr", owner, repo, number] });
   const readyMut = useMutation({
@@ -1078,6 +1122,14 @@ function MergeBox({
   const statuses = statusQ.data?.statuses ?? [];
   const summary = mergeBoxSummary(checks, statuses);
   const mergeBlocked = pr.mergeable_state === "blocked" || pr.draft;
+  // Auto-merge only arms while merging is not currently possible (GitHub
+  // refuses to arm a clean PR), and only when the repo allows it.
+  const notMergeableNow =
+    pr.mergeable_state === "blocked" ||
+    pr.mergeable_state === "unstable" ||
+    pr.mergeable_state === "unknown";
+  const canEnableAutoMerge =
+    repoQ.data?.allow_auto_merge === true && notMergeableNow && !pr.draft && !pr.auto_merge;
 
   return (
     <div className="mt-4">
@@ -1113,6 +1165,24 @@ function MergeBox({
               </>
             )}
           </div>
+          {pr.auto_merge && (
+            <div
+              className="mb-2 flex flex-wrap items-center gap-2"
+              style={{ fontSize: "0.86rem", color: "var(--color-fg)" }}
+            >
+              <span style={{ fontWeight: 600 }}>
+                Auto-merge enabled by {pr.auto_merge.enabled_by?.login ?? "unknown"} (
+                {pr.auto_merge.merge_method})
+              </span>
+              <Button
+                size="sm"
+                disabled={disableAutoMergeMut.isPending}
+                onClick={() => disableAutoMergeMut.mutate()}
+              >
+                {disableAutoMergeMut.isPending ? "Disabling…" : "Disable auto-merge"}
+              </Button>
+            </div>
+          )}
           {confirming && method !== "rebase" && (
             <div className="mb-2">
               <FormLabel id="merge-commit-title">Commit title</FormLabel>
@@ -1138,7 +1208,7 @@ function MergeBox({
             </div>
           )}
           <div className="flex flex-wrap items-center gap-2">
-            {confirming ? (
+            {confirming === "merge" ? (
               <>
                 <Button
                   variant="primary"
@@ -1163,19 +1233,45 @@ function MergeBox({
                   Cancel
                 </Button>
               </>
+            ) : confirming === "auto-merge" ? (
+              <>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={enableAutoMergeMut.isPending}
+                  onClick={() => enableAutoMergeMut.mutate()}
+                >
+                  {enableAutoMergeMut.isPending ? "Enabling…" : "Confirm auto-merge"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={enableAutoMergeMut.isPending}
+                  onClick={() => setConfirming(false)}
+                >
+                  Cancel
+                </Button>
+              </>
             ) : (
-              <Button
-                variant="primary"
-                size="sm"
-                disabled={mergeBlocked}
-                onClick={() => setConfirming(true)}
-              >
-                {method === "squash"
-                  ? "Squash and merge"
-                  : method === "rebase"
-                    ? "Rebase and merge"
-                    : "Merge pull request"}
-              </Button>
+              <>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={mergeBlocked}
+                  onClick={() => setConfirming("merge")}
+                >
+                  {method === "squash"
+                    ? "Squash and merge"
+                    : method === "rebase"
+                      ? "Rebase and merge"
+                      : "Merge pull request"}
+                </Button>
+                {canEnableAutoMerge && (
+                  <Button variant="primary" size="sm" onClick={() => setConfirming("auto-merge")}>
+                    Enable auto-merge
+                  </Button>
+                )}
+              </>
             )}
             <select
               aria-label="Merge method"
@@ -1234,6 +1330,21 @@ function MergeBox({
             <div className="mt-2" style={{ fontSize: "0.8rem", color: "var(--color-status-error)" }}>
               Merge failed:{" "}
               {mergeMutation.error instanceof Error ? mergeMutation.error.message : "unknown error"}
+            </div>
+          )}
+          {enableAutoMergeMut.isError && (
+            <div className="mt-2" style={{ fontSize: "0.8rem", color: "var(--color-status-error)" }}>
+              {enableAutoMergeMut.error instanceof Error
+                ? enableAutoMergeMut.error.message
+                : "Failed to enable auto-merge"}
+            </div>
+          )}
+          {disableAutoMergeMut.isError && (
+            <div className="mt-2" style={{ fontSize: "0.8rem", color: "var(--color-status-error)" }}>
+              Failed to disable auto-merge:{" "}
+              {disableAutoMergeMut.error instanceof Error
+                ? disableAutoMergeMut.error.message
+                : "unknown error"}
             </div>
           )}
         </div>

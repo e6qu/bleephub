@@ -55,6 +55,9 @@ describe("DiscussionsPage list", () => {
   it("renders the discussion list", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
       const u = url.toString();
+      if (u.includes("/discussions/pinned")) {
+        return Promise.resolve(jsonResponse([]));
+      }
       if (u.includes("/repos/admin/test")) {
         return Promise.resolve(jsonResponse({ id: 1, node_id: "R_kgDO00000001" }));
       }
@@ -88,6 +91,9 @@ describe("DiscussionsPage list", () => {
   it("shows category filters", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
       const u = url.toString();
+      if (u.includes("/discussions/pinned")) {
+        return Promise.resolve(jsonResponse([]));
+      }
       if (u.includes("/repos/admin/test")) {
         return Promise.resolve(jsonResponse({ id: 1, node_id: "R_kgDO00000001" }));
       }
@@ -256,5 +262,142 @@ describe("DiscussionsPage detail", () => {
     await waitFor(() => {
       expect(screen.getByText(/failed to load discussion #999/i)).toBeInTheDocument();
     });
+  });
+});
+
+function pinnedDiscussion(number: number, title: string) {
+  return {
+    number,
+    title,
+    user: { login: "admin" },
+    category: { name: "General", emoji: ":speech_balloon:" },
+    created_at: "2026-01-01T00:00:00Z",
+    comments: 0,
+  };
+}
+
+/** Mocks the detail route's endpoints: pinned list, repo detail (with the
+ * given permissions), and the discussion GraphQL queries. */
+function mockDetailRoute({
+  pinned,
+  permissions,
+}: {
+  pinned: ReturnType<typeof pinnedDiscussion>[];
+  permissions?: { admin: boolean; push: boolean; pull: boolean };
+}) {
+  mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+    const u = url.toString();
+    if (u.includes("/discussions/pinned")) {
+      return Promise.resolve(jsonResponse(pinned));
+    }
+    if (u.includes("/repos/admin/test")) {
+      return Promise.resolve(
+        jsonResponse({ id: 1, node_id: "R_kgDO00000001", ...(permissions ? { permissions } : {}) }),
+      );
+    }
+    if (u.includes("/api/graphql")) {
+      const body = JSON.parse((init?.body as string) ?? "{}");
+      if (body.query.includes("discussionCategories")) {
+        return Promise.resolve(jsonResponse({ data: { repository: { discussionCategories: { nodes: [category] } } } }));
+      }
+      return Promise.resolve(jsonResponse({
+        data: { repository: { discussion: {
+          ...discussion(7, "A real discussion"), body: "details", bodyHTML: "<p>details</p>", comments: { nodes: [], totalCount: 0 },
+        } } },
+      }));
+    }
+    return Promise.resolve(jsonResponse([]));
+  });
+}
+
+describe("DiscussionsPage pinned discussions", () => {
+  it("renders pinned discussion cards from the pinned endpoint", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.includes("/discussions/pinned")) {
+        return Promise.resolve(jsonResponse([pinnedDiscussion(2, "Pinned one"), pinnedDiscussion(5, "Pinned two")]));
+      }
+      if (u.includes("/repos/admin/test")) {
+        return Promise.resolve(jsonResponse({ id: 1, node_id: "R_kgDO00000001" }));
+      }
+      if (u.includes("/api/graphql")) {
+        const body = JSON.parse((init?.body as string) ?? "{}");
+        if (body.query.includes("discussionCategories")) {
+          return Promise.resolve(jsonResponse({ data: { repository: { discussionCategories: { nodes: [category] } } } }));
+        }
+        return Promise.resolve(
+          jsonResponse({ data: { repository: { discussions: { nodes: [], totalCount: 0, pageInfo: { hasNextPage: false, endCursor: null } } } } }),
+        );
+      }
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/test/discussions");
+    await waitFor(() => {
+      expect(screen.getByText("Pinned one")).toBeInTheDocument();
+    });
+    expect(screen.getByText("Pinned discussions")).toBeInTheDocument();
+    expect(screen.getByText("Pinned two")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Pinned one/ })).toHaveAttribute(
+      "href",
+      "/ui/repos/admin/test/discussions/2",
+    );
+  });
+
+  it("pins a discussion by PUTting the numbers list including its number", async () => {
+    mockDetailRoute({
+      pinned: [pinnedDiscussion(2, "Other pinned")],
+      permissions: { admin: false, push: true, pull: true },
+    });
+    renderAt("/ui/repos/admin/test/discussions/7");
+    fireEvent.click(await screen.findByRole("button", { name: "Pin discussion" }));
+    await waitFor(() => {
+      const put = mockFetch.mock.calls.find(
+        ([u2, i2]) => u2.toString().includes("/discussions/pinned") && (i2 as RequestInit)?.method === "PUT",
+      );
+      expect(put).toBeTruthy();
+      expect(JSON.parse(String((put![1] as RequestInit).body))).toEqual({ numbers: [2, 7] });
+    });
+  });
+
+  it("unpins a discussion by PUTting the numbers list without its number", async () => {
+    mockDetailRoute({
+      pinned: [pinnedDiscussion(7, "A real discussion"), pinnedDiscussion(2, "Other pinned")],
+      permissions: { admin: false, push: true, pull: true },
+    });
+    renderAt("/ui/repos/admin/test/discussions/7");
+    fireEvent.click(await screen.findByRole("button", { name: "Unpin discussion" }));
+    await waitFor(() => {
+      const put = mockFetch.mock.calls.find(
+        ([u2, i2]) => u2.toString().includes("/discussions/pinned") && (i2 as RequestInit)?.method === "PUT",
+      );
+      expect(put).toBeTruthy();
+      expect(JSON.parse(String((put![1] as RequestInit).body))).toEqual({ numbers: [2] });
+    });
+  });
+
+  it("hides the pin control without push permission", async () => {
+    mockDetailRoute({
+      pinned: [pinnedDiscussion(2, "Other pinned")],
+      permissions: { admin: false, push: false, pull: true },
+    });
+    renderAt("/ui/repos/admin/test/discussions/7");
+    await screen.findByRole("button", { name: "Lock conversation" });
+    await waitFor(() => {
+      const repoCall = mockFetch.mock.calls.some(([u2]) => u2.toString().includes("/repos/admin/test") && !u2.toString().includes("pinned"));
+      expect(repoCall).toBe(true);
+    });
+    expect(screen.queryByRole("button", { name: "Pin discussion" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Unpin discussion" })).toBeNull();
+  });
+
+  it("disables pinning when 4 discussions are already pinned", async () => {
+    mockDetailRoute({
+      pinned: [1, 2, 3, 4].map((n) => pinnedDiscussion(n, `Pinned ${n}`)),
+      permissions: { admin: false, push: true, pull: true },
+    });
+    renderAt("/ui/repos/admin/test/discussions/7");
+    const btn = await screen.findByRole("button", { name: "Pin discussion" });
+    expect(btn).toBeDisabled();
+    expect(btn).toHaveAttribute("title", "A repository can have at most 4 pinned discussions");
   });
 });

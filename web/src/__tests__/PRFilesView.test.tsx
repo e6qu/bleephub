@@ -241,7 +241,7 @@ describe("PRFilesView inline threads", () => {
     expect(screen.getByLabelText("reply to thread on a.txt")).toBeInTheDocument();
   });
 
-  it("renders ```suggestion fences as a mini-diff without a commit action", async () => {
+  it("renders ```suggestion fences as a mini-diff", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
       const u = url.toString();
       if (u.endsWith("/pulls/7/files")) return Promise.resolve(jsonResponse([prFile]));
@@ -262,8 +262,6 @@ describe("PRFilesView inline threads", () => {
     // Suggested replacement inserted, original line struck through.
     expect(screen.getByText("hello world")).toBeInTheDocument();
     expect(document.querySelector("del")?.textContent).toBe("hello");
-    // The server has no apply-suggestion endpoint, so render-only.
-    expect(screen.queryByRole("button", { name: /commit suggestion/i })).not.toBeInTheDocument();
   });
 });
 
@@ -308,5 +306,129 @@ describe("PRFilesView per-file controls", () => {
     expect(toggle).toHaveAttribute("aria-expanded", "false");
     fireEvent.click(toggle);
     expect(screen.getByText("+hello")).toBeInTheDocument();
+  });
+});
+
+describe("PRFilesView whitespace toggle", () => {
+  it("fetches the /ui-data ignore-whitespace source while checked and returns to REST when unchecked", async () => {
+    const iwFile = { ...prFile, patch: "@@ -1,1 +1,1 @@\n+iw-only" };
+    const restFilesURL = (u: string) => u.includes("/api/v3/") && u.endsWith("/pulls/7/files");
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.includes("/ui-data/repos/admin/test/pulls/7/files") && u.includes("ignore_whitespace=1")) {
+        return Promise.resolve(jsonResponse([iwFile]));
+      }
+      if (restFilesURL(u)) return Promise.resolve(jsonResponse([prFile]));
+      return Promise.resolve(jsonResponse([]));
+    });
+
+    renderFiles();
+    expect(await screen.findByText("+hello")).toBeInTheDocument();
+
+    // Check → the list comes from the /ui-data variant.
+    fireEvent.click(screen.getByRole("checkbox", { name: "Hide whitespace changes" }));
+    expect(await screen.findByText("+iw-only")).toBeInTheDocument();
+    const iwCalls = mockFetch.mock.calls.filter((c) =>
+      c[0]!.toString().includes("/ui-data/repos/admin/test/pulls/7/files?ignore_whitespace=1"),
+    );
+    expect(iwCalls.length).toBe(1);
+
+    // Uncheck → back to the REST source (a fresh REST fetch fires).
+    const restCallsBefore = mockFetch.mock.calls.filter((c) => restFilesURL(c[0]!.toString())).length;
+    fireEvent.click(screen.getByRole("checkbox", { name: "Hide whitespace changes" }));
+    expect(await screen.findByText("+hello")).toBeInTheDocument();
+    await waitFor(() => {
+      const restCalls = mockFetch.mock.calls.filter((c) => restFilesURL(c[0]!.toString())).length;
+      expect(restCalls).toBeGreaterThan(restCallsBefore);
+    });
+  });
+});
+
+describe("PRFilesView commit suggestion", () => {
+  const suggestionComment = (overrides: Record<string, unknown> = {}) =>
+    reviewComment(62, { body: "Try this:\n```suggestion\nhello world\n```", ...overrides });
+
+  function suggestionMock(opts: { comment?: Record<string, unknown>; applyResponse?: Response } = {}) {
+    const comment = opts.comment ?? suggestionComment();
+    let applyCall: { url: string } | null = null;
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith("/pulls/7/files")) return Promise.resolve(jsonResponse([prFile]));
+      if (u.endsWith("/pulls/7/comments") && init?.method === undefined) {
+        return Promise.resolve(jsonResponse([comment]));
+      }
+      if (init?.method === "POST" && u.includes("/apply-suggestion")) {
+        applyCall = { url: u };
+        return Promise.resolve(
+          opts.applyResponse ??
+            new Response(JSON.stringify({ sha: "abc123" }), {
+              status: 201,
+              headers: { "Content-Type": "application/json" },
+            }),
+        );
+      }
+      if (u.endsWith("/pulls/7/reviews")) return Promise.resolve(jsonResponse([]));
+      return Promise.resolve(jsonResponse([]));
+    });
+    return () => applyCall;
+  }
+
+  it("commits a RIGHT-side line-anchored suggestion and invalidates pr-files and pr-timeline", async () => {
+    const getApplyCall = suggestionMock();
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    render(
+      <QueryClientProvider client={queryClient}>
+        <PRFilesView owner="admin" repo="test" number={7} headSha="deadbeef" />
+      </QueryClientProvider>,
+    );
+
+    const button = await screen.findByRole("button", { name: "Commit suggestion" });
+    expect(button).not.toBeDisabled();
+    fireEvent.click(button);
+
+    await waitFor(() => expect(getApplyCall()).not.toBeNull());
+    expect(getApplyCall()!.url).toContain(
+      "/ui-data/repos/admin/test/pulls/7/review-comments/62/apply-suggestion",
+    );
+    await screen.findByRole("button", { name: "Suggestion applied" });
+    const keys = invalidateSpy.mock.calls.map((c) => JSON.stringify(c[0]));
+    expect(keys).toContain(JSON.stringify({ queryKey: ["pr-files", "admin", "test", 7] }));
+    expect(keys).toContain(JSON.stringify({ queryKey: ["pr-timeline", "admin", "test", 7] }));
+  });
+
+  it("a 409 puts the comment's button into the outdated state", async () => {
+    suggestionMock({
+      applyResponse: new Response(
+        JSON.stringify({ message: "The suggestion is outdated: the file changed since the comment was made" }),
+        { status: 409, statusText: "Conflict", headers: { "Content-Type": "application/json" } },
+      ),
+    });
+    renderFiles();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Commit suggestion" }));
+
+    const outdated = await screen.findByRole("button", { name: "Suggestion outdated" });
+    expect(outdated).toBeDisabled();
+    expect(outdated.getAttribute("title")).toContain("The suggestion is outdated");
+  });
+
+  it("disables the button with a reason for LEFT-side and file-level suggestions", async () => {
+    suggestionMock({ comment: suggestionComment({ side: "LEFT" }) });
+    renderFiles();
+
+    const leftButton = await screen.findByRole("button", { name: "Commit suggestion" });
+    expect(leftButton).toBeDisabled();
+    expect(leftButton.getAttribute("title")).toBe("Suggestions on the deleted side can't be applied");
+
+    cleanup();
+    mockFetch.mockReset();
+
+    suggestionMock({ comment: suggestionComment({ line: null }) });
+    renderFiles();
+
+    const fileLevelButton = await screen.findByRole("button", { name: "Commit suggestion" });
+    expect(fileLevelButton).toBeDisabled();
+    expect(fileLevelButton.getAttribute("title")).toBe("File-level suggestions can't be applied");
   });
 });

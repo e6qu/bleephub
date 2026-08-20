@@ -22,6 +22,8 @@ import {
   updateDiscussionComment,
   addReaction,
   removeReaction,
+  ghFetch,
+  ghSend,
 } from "../api.js";
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
 import type { GithubDiscussion, GithubDiscussionComment, GithubReactionGroup } from "../types.js";
@@ -37,6 +39,26 @@ import {
 } from "../components/ui.js";
 import { MutationError } from "../components/MutationError.js";
 import { DiscussionIcon } from "../components/octicons.js";
+
+/** Cap enforced by the server's PUT /ui-data/.../discussions/pinned handler. */
+const MAX_PINNED_DISCUSSIONS = 4;
+
+/** REST-style snake_case discussion row served by the /ui-data pinned surface. */
+interface PinnedDiscussion {
+  number: number;
+  title: string;
+  user: { login: string; avatar_url?: string } | null;
+  category: { name: string; emoji: string } | null;
+  created_at: string;
+  comments: number;
+}
+
+function pinnedDiscussionsPath(owner: string, repo: string) {
+  return `/ui-data/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/discussions/pinned`;
+}
+
+const fetchPinnedDiscussions = (owner: string, repo: string, signal?: AbortSignal) =>
+  ghFetch<PinnedDiscussion[]>(pinnedDiscussionsPath(owner, repo), signal);
 
 export function DiscussionsPage() {
   const { owner = "", repo = "", number } = useParams<{
@@ -72,6 +94,12 @@ function DiscussionList({ owner, repo }: { owner: string; repo: string }) {
   const { data: categories = [] } = useQuery({
     queryKey: ["discussion-categories", owner, repo],
     queryFn: ({ signal }) => fetchDiscussionCategories(owner, repo, signal),
+    enabled: !!owner && !!repo,
+  });
+
+  const { data: pinned = [] } = useQuery({
+    queryKey: ["pinned-discussions", owner, repo],
+    queryFn: ({ signal }) => fetchPinnedDiscussions(owner, repo, signal),
     enabled: !!owner && !!repo,
   });
 
@@ -112,6 +140,72 @@ function DiscussionList({ owner, repo }: { owner: string; repo: string }) {
   return (
     <div>
       <RepoHeader owner={owner} repo={repo} active="discussions" {...counts} />
+
+      {pinned.length > 0 && (
+        <section aria-label="Pinned discussions" className="mb-4">
+          <h2
+            style={{
+              fontSize: "0.75rem",
+              fontWeight: 600,
+              textTransform: "uppercase",
+              letterSpacing: "0.03em",
+              color: "var(--color-fg-muted)",
+              marginBottom: "0.5rem",
+            }}
+          >
+            Pinned discussions
+          </h2>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+              gap: "0.75rem",
+            }}
+          >
+            {pinned.map((p) => (
+              <Link
+                key={p.number}
+                to={`/ui/repos/${owner}/${repo}/discussions/${p.number}`}
+                style={{
+                  display: "block",
+                  border: "1px solid var(--color-border)",
+                  borderRadius: "var(--radius-md)",
+                  padding: "0.7rem 0.85rem",
+                  textDecoration: "none",
+                  background: "var(--color-bg-subtle)",
+                }}
+              >
+                {p.category && (
+                  <div
+                    className="mb-1"
+                    style={{ fontSize: "0.75rem", color: "var(--color-fg-muted)" }}
+                  >
+                    {p.category.emoji} {p.category.name}
+                  </div>
+                )}
+                <div
+                  style={{
+                    fontSize: "0.92rem",
+                    fontWeight: 600,
+                    color: "var(--color-fg)",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    display: "-webkit-box",
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: "vertical",
+                  }}
+                >
+                  {p.title}
+                </div>
+                <div className="mt-1" style={{ fontSize: "0.78rem", color: "var(--color-fg-muted)" }}>
+                  {p.user?.login ?? "unknown"} · {new Date(p.created_at).toLocaleDateString()}
+                  {p.comments > 0 && ` · ${p.comments} comments`}
+                </div>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       <div className="mb-4 flex items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-1">
@@ -310,6 +404,32 @@ function DiscussionDetail({
     queryFn: ({ signal }) => fetchDiscussionCategories(owner, repo, signal),
   });
 
+  const { data: repoDetail } = useQuery({
+    queryKey: ["repo-detail", owner, repo],
+    queryFn: () => fetchRepoDetail(owner, repo),
+  });
+
+  const { data: pinned = [] } = useQuery({
+    queryKey: ["pinned-discussions", owner, repo],
+    queryFn: ({ signal }) => fetchPinnedDiscussions(owner, repo, signal),
+  });
+
+  const canPush = repoDetail?.permissions?.push === true;
+  const isPinned = pinned.some((p) => p.number === number);
+  const pinListFull = !isPinned && pinned.length >= MAX_PINNED_DISCUSSIONS;
+
+  const pinMutation = useMutation({
+    mutationFn: () => {
+      const numbers = isPinned
+        ? pinned.filter((p) => p.number !== number).map((p) => p.number)
+        : [...pinned.map((p) => p.number), number];
+      return ghSend("PUT", pinnedDiscussionsPath(owner, repo), { numbers });
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["pinned-discussions", owner, repo] });
+    },
+  });
+
   const addCommentMutation = useMutation({
     mutationFn: () => addDiscussionComment(discussion!.id, commentBody, replyTo?.id ?? undefined),
     onSuccess: () => {
@@ -390,7 +510,7 @@ function DiscussionDetail({
       <RepoHeader owner={owner} repo={repo} active="discussions" {...counts} />
 
       <MutationError
-        of={[lockMutation, markAnswerMutation, deleteCommentMutation, editCommentMutation, deleteDiscussionMutation]}
+        of={[lockMutation, markAnswerMutation, deleteCommentMutation, editCommentMutation, deleteDiscussionMutation, pinMutation]}
       />
 
       <div className="mb-1 flex flex-wrap items-baseline gap-2">
@@ -436,6 +556,17 @@ function DiscussionDetail({
         >
           {discussion.locked ? "Unlock conversation" : "Lock conversation"}
         </Button>
+        {canPush && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => pinMutation.mutate()}
+            disabled={pinMutation.isPending || pinListFull}
+            title={pinListFull ? "A repository can have at most 4 pinned discussions" : undefined}
+          >
+            {isPinned ? "Unpin discussion" : "Pin discussion"}
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="sm"

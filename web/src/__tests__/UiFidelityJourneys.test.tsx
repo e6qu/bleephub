@@ -127,6 +127,9 @@ describe("security journey fidelity", () => {
   it("treats a normal unprotected branch as editable state and does not issue a failing delete", async () => {
     mockFetch.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      if (url.endsWith("/branch-protection-patterns")) {
+        return Promise.resolve(jsonResponse([]));
+      }
       if (url.endsWith("/branches/main/protection")) {
         return Promise.resolve(
           jsonResponse({ message: "Branch not protected" }, 404),
@@ -188,6 +191,9 @@ describe("security journey fidelity", () => {
     };
     mockFetch.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      if (url.endsWith("/branch-protection-patterns")) {
+        return Promise.resolve(jsonResponse([]));
+      }
       if (url.endsWith("/restrictions/users") || url.endsWith("/restrictions/teams")) {
         return Promise.resolve(jsonResponse([]));
       }

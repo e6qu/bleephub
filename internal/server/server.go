@@ -517,6 +517,7 @@ func (s *Server) registerRoutes() {
 
 	// Branch protection API (gh_branch_protection.go)
 	s.registerGHBranchProtectionRoutes()
+	s.registerGHBranchProtectionPatternRoutes()
 
 	// Projects classic (v1) API (gh_projects_classic.go)
 	s.registerGHProjectsClassicRoutes()
@@ -550,6 +551,8 @@ func (s *Server) registerRoutes() {
 	s.registerGHRepoAutolinkRoutes()
 	s.registerGHWikiRoutes()
 	s.registerGHUIBootstrapRoutes()
+	s.registerGHDiscussionsUIDataRoutes()
+	s.registerGHPullsUIDataRoutes()
 	s.registerGHPinnedRoutes()
 	s.registerGHAccountSettingsRoutes()
 	s.registerGHRepoInvitationRoutes()

@@ -584,6 +584,10 @@ func (st *Store) ListMilestones(repoID int, state string) []*Milestone {
 		}
 		milestones = append(milestones, ms)
 	}
+	// Map iteration order is random; without a sort the milestones endpoint
+	// answered two identical requests in different orders once a repo had a
+	// second milestone. Number order matches creation order.
+	sort.Slice(milestones, func(i, j int) bool { return milestones[i].Number < milestones[j].Number })
 	return snapshotMilestones(milestones)
 }
 

@@ -52,7 +52,11 @@ function eventIcon(event: string): ReactNode {
     case "reopened":
       return <IssueOpenedIcon {...iconProps} />;
     case "merged":
+    case "auto_merge_enabled":
+    case "auto_merge_disabled":
       return <MergedIcon {...iconProps} />;
+    case "converted_to_discussion":
+      return <CommentIcon {...iconProps} />;
     case "locked":
     case "unlocked":
       return <LockIcon {...iconProps} />;
@@ -226,6 +230,15 @@ export function TimelineEventRow({ item }: { item: GithubTimelineItem }) {
       break;
     case "transferred":
       text = <>transferred this issue</>;
+      break;
+    case "auto_merge_enabled":
+      text = <>enabled auto-merge</>;
+      break;
+    case "auto_merge_disabled":
+      text = <>disabled auto-merge</>;
+      break;
+    case "converted_to_discussion":
+      text = <>converted this issue into a discussion</>;
       break;
     case "pinned":
       text = <>pinned this issue</>;

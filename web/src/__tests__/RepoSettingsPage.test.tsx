@@ -273,6 +273,69 @@ describe("RepoSettingsPage", () => {
     });
   });
 
+  it("renders saved team reviewers from the payload and round-trips their ids on save", async () => {
+    const envObj = {
+      id: 1,
+      name: "production",
+      node_id: "e",
+      url: "u",
+      protection_rules: [
+        {
+          id: 12,
+          node_id: "r",
+          type: "required_reviewers",
+          reviewers: [
+            { type: "User", reviewer: { id: 42, login: "reviewer-user" } },
+            { type: "Team", reviewer: { id: 7, slug: "platform", name: "Platform" } },
+          ],
+        },
+      ],
+      deployment_branch_policy: null,
+    };
+    mockFetch.mockImplementation((url: string, opts?: { method?: string }) => {
+      const u = url.toString();
+      if (u.includes("/environments/production") && opts?.method === "PUT") {
+        return Promise.resolve(jsonResponse(envObj, 200));
+      }
+      if (u.includes("/environments/production/variables")) return Promise.resolve(jsonResponse({ variables: [] }));
+      if (u.includes("/environments/production/secrets")) return Promise.resolve(jsonResponse({ secrets: [] }));
+      if (u.endsWith("/environments")) return Promise.resolve(jsonResponse({ environments: [envObj] }));
+      if (u.includes("/collaborators")) return Promise.resolve(jsonResponse([{ id: 42, login: "reviewer-user" }]));
+      if (u === "/api/v3/orgs/admin/teams") return Promise.resolve(jsonResponse([{ id: 7, slug: "platform", name: "Platform" }]));
+      if (u.includes("/issues") || u.includes("/pulls")) return Promise.resolve(jsonResponse([]));
+      return Promise.resolve(jsonResponse(repo));
+    });
+    renderPage();
+    await waitFor(() => screen.getByDisplayValue("before"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Environments" }));
+    fireEvent.click(await screen.findByRole("button", { name: "production" }));
+
+    // Both saved reviewers render from the payload — the team with its
+    // name + slug, the user with its login — each removable. No
+    // "cannot be displayed" caveat anymore.
+    expect(await screen.findByRole("button", { name: "Remove reviewer Platform" })).toBeInTheDocument();
+    expect(screen.getByText("Team · platform")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Remove reviewer reviewer-user" })).toBeInTheDocument();
+    expect(screen.queryByText(/cannot be displayed/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save protection" }));
+
+    await waitFor(() => {
+      const put = mockFetch.mock.calls.find(
+        (c) => String(c[0]).includes("/environments/production") && c[1]?.method === "PUT",
+      );
+      expect(put).toBeDefined();
+      expect(JSON.parse(String(put![1].body))).toEqual({
+        wait_timer: 0,
+        reviewers: [
+          { type: "User", id: 42 },
+          { type: "Team", id: 7 },
+        ],
+      });
+    });
+  });
+
   it("lists and creates a repository webhook from the Webhooks tab", async () => {
     const existing = {
       id: 7,
@@ -311,7 +374,7 @@ describe("RepoSettingsPage", () => {
       );
       expect(post).toBeDefined();
       const body = JSON.parse(String(post![1].body));
-      expect(body).toMatchObject({ name: "web", active: true, events: ["push"], config: { url: "https://new.example/hook", content_type: "json" } });
+      expect(body).toMatchObject({ name: "web", active: true, events: ["push"], config: { url: "https://new.example/hook", content_type: "json", insecure_ssl: "0" } });
     });
   });
 
@@ -837,8 +900,81 @@ describe("RepoSettingsPage", () => {
       expect(JSON.parse(String(patch![1].body))).toEqual({
         active: true,
         events: ["issues", "pull_request", "push"],
-        config: { url: "https://new.example/hook", content_type: "json", secret: "s3cret" },
+        config: { url: "https://new.example/hook", content_type: "json", insecure_ssl: "0", secret: "s3cret" },
       });
+    });
+  });
+
+  it("creates a webhook with SSL verification disabled via the radio group", async () => {
+    mockFetch.mockImplementation((url: string, opts?: { method?: string }) => {
+      const u = url.toString();
+      if (u === "/api/v3/repos/admin/settings-repo/hooks" && opts?.method === "POST") {
+        return Promise.resolve(jsonResponse({ id: 11 }, 201));
+      }
+      if (u === "/api/v3/repos/admin/settings-repo/hooks") return Promise.resolve(jsonResponse([]));
+      if (u.includes("/issues") || u.includes("/pulls")) return Promise.resolve(jsonResponse([]));
+      return Promise.resolve(jsonResponse(repo));
+    });
+    renderPage();
+    await waitFor(() => screen.getByDisplayValue("before"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Webhooks" }));
+    fireEvent.change(await screen.findByLabelText("Payload URL"), { target: { value: "https://x.test/h" } });
+    // "Enable SSL verification" is the default; flipping to Disable surfaces the warning.
+    expect(screen.getByRole("radio", { name: "Enable SSL verification" })).toBeChecked();
+    fireEvent.click(screen.getByRole("radio", { name: "Disable (not recommended)" }));
+    expect(
+      screen.getByText("Warning: SSL certificates will not be verified when delivering payloads."),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Add webhook" }));
+
+    await waitFor(() => {
+      const post = mockFetch.mock.calls.find(
+        (c) => c[0] === "/api/v3/repos/admin/settings-repo/hooks" && c[1]?.method === "POST",
+      );
+      expect(post).toBeDefined();
+      expect(JSON.parse(String(post![1].body)).config.insecure_ssl).toBe("1");
+    });
+  });
+
+  it("pre-selects Disable when editing a hook whose config has insecure_ssl \"1\"", async () => {
+    const existing = {
+      id: 7,
+      name: "web",
+      active: true,
+      events: ["push"],
+      config: { url: "https://old.example/hook", content_type: "json", insecure_ssl: "1" },
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+      url: "",
+      deliveries_url: "",
+      last_response: { code: null, status: "unused", message: null },
+    };
+    mockFetch.mockImplementation((url: string, opts?: { method?: string }) => {
+      const u = url.toString();
+      if (u === "/api/v3/repos/admin/settings-repo/hooks/7" && opts?.method === "PATCH") {
+        return Promise.resolve(jsonResponse(existing));
+      }
+      if (u === "/api/v3/repos/admin/settings-repo/hooks") return Promise.resolve(jsonResponse([existing]));
+      if (u.includes("/issues") || u.includes("/pulls")) return Promise.resolve(jsonResponse([]));
+      return Promise.resolve(jsonResponse(repo));
+    });
+    renderPage();
+    await waitFor(() => screen.getByDisplayValue("before"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Webhooks" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Edit webhook 7" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Edit webhook #7" });
+    expect(within(dialog).getByRole("radio", { name: "Disable (not recommended)" })).toBeChecked();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Update webhook" }));
+
+    await waitFor(() => {
+      const patch = mockFetch.mock.calls.find(
+        (c) => c[0] === "/api/v3/repos/admin/settings-repo/hooks/7" && c[1]?.method === "PATCH",
+      );
+      expect(patch).toBeDefined();
+      expect(JSON.parse(String(patch![1].body)).config.insecure_ssl).toBe("1");
     });
   });
 

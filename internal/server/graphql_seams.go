@@ -132,3 +132,7 @@ func (a graphqlSeams) BranchProtectionRuleForPR(repo *store.Repo, baseBranch str
 func (a graphqlSeams) ChangedFiles(repo *store.Repo, pr *store.PullRequest, baseURL string) ([]map[string]interface{}, error) {
 	return pullRequestChangedFiles(a.s.store, repo, pr, baseURL)
 }
+
+func (a graphqlSeams) MaybeAutoMerge(prID int) {
+	a.s.maybeAutoMergePR(prID)
+}

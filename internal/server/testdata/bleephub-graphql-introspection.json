@@ -680,6 +680,27 @@
         }
       }
     },
+    "DisablePullRequestAutoMergeInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "pullRequestId": "ID!"
+      }
+    },
+    "DisablePullRequestAutoMergePayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "clientMutationId": {
+          "type": "String"
+        },
+        "pullRequest": {
+          "type": "PullRequest"
+        }
+      }
+    },
     "Discussion": {
       "kind": "OBJECT",
       "fields": {
@@ -999,6 +1020,32 @@
         },
         "pullRequestReview": {
           "type": "PullRequestReview"
+        }
+      }
+    },
+    "EnablePullRequestAutoMergeInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "authorEmail": "String",
+        "clientMutationId": "String",
+        "commitBody": "String",
+        "commitHeadline": "String",
+        "expectedHeadOid": "GitObjectID",
+        "mergeMethod": "PullRequestMergeMethod",
+        "pullRequestId": "ID!"
+      }
+    },
+    "EnablePullRequestAutoMergePayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "clientMutationId": {
+          "type": "String"
+        },
+        "pullRequest": {
+          "type": "PullRequest"
         }
       }
     },
@@ -2209,10 +2256,22 @@
             "input": "DeleteRepositoryInput!"
           }
         },
+        "disablePullRequestAutoMerge": {
+          "type": "DisablePullRequestAutoMergePayload",
+          "args": {
+            "input": "DisablePullRequestAutoMergeInput!"
+          }
+        },
         "dismissPullRequestReview": {
           "type": "DismissPullRequestReviewPayload",
           "args": {
             "input": "DismissPullRequestReviewInput!"
+          }
+        },
+        "enablePullRequestAutoMerge": {
+          "type": "EnablePullRequestAutoMergePayload",
+          "args": {
+            "input": "EnablePullRequestAutoMergeInput!"
           }
         },
         "lockLockable": {

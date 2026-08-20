@@ -133,6 +133,11 @@ type gqlMutationCase struct {
 	name  string
 	doc   string
 	input func(f *gqlAuthzFixture) map[string]interface{}
+	// setup, when set, arranges preconditions the mutation's own semantics
+	// demand beyond the plain fixture (e.g. enablePullRequestAutoMerge is
+	// only legal while something blocks the merge). It runs before the
+	// request in both the refusal and the entitled table.
+	setup func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture)
 }
 
 // gqlMutationCases covers every mutation that names an existing resource.
@@ -402,6 +407,42 @@ var gqlMutationCases = []gqlMutationCase{
 		},
 	},
 	{
+		name: "enablePullRequestAutoMerge",
+		doc:  `mutation($input:EnablePullRequestAutoMergeInput!){enablePullRequestAutoMerge(input:$input){pullRequest{autoMergeRequest{mergeMethod}}}}`,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"pullRequestId": f.pr.NodeID, "mergeMethod": "SQUASH"}
+		},
+		// Enabling auto-merge requires the repo to allow it and the PR to be
+		// blocked from merging right now (a clean PR is refused).
+		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+			t.Helper()
+			owner, name, _ := store.SplitRepoFullName(f.repo.FullName)
+			s.store.UpdateRepo(owner, name, func(r *store.Repo) { r.AllowAutoMerge = true })
+			s.setBranchProtection(f.repo, "main", &store.BranchProtection{
+				RequiredStatusChecks: &store.BPStatusChecks{Contexts: []string{"ci"}},
+				EnforceAdmins:        &store.BPEnforceAdmins{Enabled: true},
+			})
+		},
+	},
+	{
+		name: "disablePullRequestAutoMerge",
+		doc:  `mutation($input:DisablePullRequestAutoMergeInput!){disablePullRequestAutoMerge(input:$input){pullRequest{autoMergeRequest{mergeMethod}}}}`,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"pullRequestId": f.pr.NodeID}
+		},
+		// Disabling requires an armed request to disarm.
+		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+			t.Helper()
+			s.store.UpdatePullRequest(f.pr.ID, func(p *store.PullRequest) {
+				p.AutoMerge = &store.PullRequestAutoMerge{
+					EnabledByID: f.owner.ID,
+					MergeMethod: "MERGE",
+					EnabledAt:   fixedTestTime.UTC(),
+				}
+			})
+		},
+	},
+	{
 		name: "resolveReviewThread",
 		doc:  `mutation($input:ResolveReviewThreadInput!){resolveReviewThread(input:$input){thread{isResolved}}}`,
 		input: func(f *gqlAuthzFixture) map[string]interface{} {
@@ -425,6 +466,9 @@ func TestGraphQLMutationsRefuseAnUnrelatedAuthenticatedUser(t *testing.T) {
 	// refusal after it.
 	for _, tc := range gqlMutationCases {
 		f := newGQLAuthzFixture(t, s.Server, "stranger-"+tc.name, true)
+		if tc.setup != nil {
+			tc.setup(t, s, f)
+		}
 		env := s.gqlAuthzPost(t, f.strangerToken, tc.doc, map[string]interface{}{"input": tc.input(f)})
 		if len(gqlAuthzErrors(env)) == 0 {
 			t.Errorf("%s: an account with no access to the repository was served: %v", tc.name, env)
@@ -497,6 +541,9 @@ func TestGraphQLMutationsStillServeTheirEntitledCaller(t *testing.T) {
 	s := newIsolatedServer(t)
 	for _, tc := range gqlMutationCases {
 		f := newGQLAuthzFixture(t, s.Server, "owner-"+tc.name, true)
+		if tc.setup != nil {
+			tc.setup(t, s, f)
+		}
 		env := s.gqlAuthzPost(t, f.ownerToken, tc.doc, map[string]interface{}{"input": tc.input(f)})
 		if errs := gqlAuthzErrors(env); len(errs) > 0 {
 			t.Errorf("%s: the repository owner was refused: %v", tc.name, errs)

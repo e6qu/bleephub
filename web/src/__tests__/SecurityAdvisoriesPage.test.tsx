@@ -35,6 +35,14 @@ const advisory = {
   html_url: "",
   private_fork: null,
   cvss: { vector_string: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H", score: 9.8 },
+  credits: [
+    { login: "alice", type: "finder" },
+    { login: "bob", type: "remediation_developer" },
+  ],
+  credits_detailed: [
+    { user: { login: "alice" }, type: "finder", state: "accepted" },
+    { user: { login: "bob" }, type: "remediation_developer", state: "accepted" },
+  ],
   vulnerabilities: [
     {
       package: { ecosystem: "npm", name: "widget-parser" },
@@ -157,5 +165,145 @@ describe("SecurityAdvisoriesPage", () => {
       expect(body.cvss_score).toBe(8.1);
       expect(body.cvss_vector).toBe(advisory.cvss.vector_string);
     });
+  });
+
+  it("creates an advisory with two credit rows", async () => {
+    installRoutes({
+      "POST /api/v3/repos/octo/widgets/security-advisories": () =>
+        jsonResponse({ ...advisory, ghsa_id: "GHSA-new2-new2-new2" }, 201),
+    });
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "New advisory" }));
+
+    fireEvent.change(screen.getByLabelText("Summary"), { target: { value: "Credited bug" } });
+    fireEvent.change(screen.getByLabelText("Description"), { target: { value: "Details." } });
+    fireEvent.click(screen.getByRole("button", { name: "Add credit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add credit" }));
+    const logins = screen.getAllByLabelText("Credited login");
+    const types = screen.getAllByLabelText("Credit type");
+    fireEvent.change(logins[0]!, { target: { value: "alice" } });
+    fireEvent.change(types[0]!, { target: { value: "finder" } });
+    fireEvent.change(logins[1]!, { target: { value: "bob" } });
+    fireEvent.change(types[1]!, { target: { value: "remediation_developer" } });
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+
+    await waitFor(() => {
+      const post = mockFetch.mock.calls.find(
+        (c) =>
+          String(c[0]) === "/api/v3/repos/octo/widgets/security-advisories" &&
+          (c[1] as RequestInit | undefined)?.method === "POST",
+      );
+      expect(post).toBeDefined();
+      const body = JSON.parse(String((post![1] as RequestInit).body));
+      expect(body.credits).toEqual([
+        { login: "alice", type: "finder" },
+        { login: "bob", type: "remediation_developer" },
+      ]);
+    });
+  });
+
+  it("prefills credits when editing and sends the modified list", async () => {
+    installRoutes({
+      [`PATCH /api/v3/repos/octo/widgets/security-advisories/${advisory.ghsa_id}`]: () =>
+        jsonResponse(advisory),
+    });
+    renderPage();
+    fireEvent.click(await screen.findByText("Injection in the widget parser"));
+    fireEvent.click(await screen.findByRole("button", { name: "Edit advisory" }));
+
+    const logins = await screen.findAllByLabelText("Credited login");
+    expect(logins.map((el) => (el as HTMLInputElement).value)).toEqual(["alice", "bob"]);
+    const types = screen.getAllByLabelText("Credit type");
+    expect((types[1] as HTMLSelectElement).value).toBe("remediation_developer");
+
+    // Drop bob and retype alice as a reporter.
+    fireEvent.click(screen.getByRole("button", { name: "Remove credit 2" }));
+    fireEvent.change(screen.getAllByLabelText("Credit type")[0]!, {
+      target: { value: "reporter" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => {
+      const patch = mockFetch.mock.calls.find(
+        (c) =>
+          String(c[0]) === `/api/v3/repos/octo/widgets/security-advisories/${advisory.ghsa_id}` &&
+          (c[1] as RequestInit | undefined)?.method === "PATCH",
+      );
+      expect(patch).toBeDefined();
+      const body = JSON.parse(String((patch![1] as RequestInit).body));
+      expect(body.credits).toEqual([{ login: "alice", type: "reporter" }]);
+    });
+  });
+
+  it("renders credits_detailed rows on the advisory detail", async () => {
+    installRoutes();
+    renderPage();
+    fireEvent.click(await screen.findByText("Injection in the widget parser"));
+    await waitFor(() => expect(screen.getByText("Credits:")).toBeInTheDocument());
+    expect(screen.getByText(/alice · Finder/)).toBeInTheDocument();
+    expect(screen.getByText(/bob · Remediation developer/)).toBeInTheDocument();
+  });
+
+  it("skips the credits section when credits_detailed is empty", async () => {
+    const bare = { ...advisory, credits: [], credits_detailed: [] };
+    installRoutes({
+      "GET /api/v3/repos/octo/widgets/security-advisories": () => jsonResponse([bare]),
+      [`GET /api/v3/repos/octo/widgets/security-advisories/${advisory.ghsa_id}`]: () =>
+        jsonResponse(bare),
+    });
+    renderPage();
+    fireEvent.click(await screen.findByText("Injection in the widget parser"));
+    await waitFor(() => expect(screen.getByText("Crafted widgets execute code.")).toBeInTheDocument());
+    expect(screen.queryByText("Credits:")).toBeNull();
+  });
+
+  it("reports a vulnerability without any credits field or credits UI", async () => {
+    installRoutes({
+      "POST /api/v3/repos/octo/widgets/security-advisories/reports": () =>
+        jsonResponse({ ...advisory, ghsa_id: "GHSA-rept-rept-rept", state: "triage" }, 201),
+    });
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Report vulnerability" }));
+
+    // The private report endpoint rejects credits: the modal must not offer them.
+    expect(screen.queryByRole("button", { name: "Add credit" })).toBeNull();
+    expect(screen.queryByLabelText("Credited login")).toBeNull();
+
+    fireEvent.change(screen.getByLabelText("Summary"), { target: { value: "Reported bug" } });
+    fireEvent.change(screen.getByLabelText("Description"), { target: { value: "Details." } });
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+
+    await waitFor(() => {
+      const post = mockFetch.mock.calls.find(
+        (c) =>
+          String(c[0]) === "/api/v3/repos/octo/widgets/security-advisories/reports" &&
+          (c[1] as RequestInit | undefined)?.method === "POST",
+      );
+      expect(post).toBeDefined();
+      const body = JSON.parse(String((post![1] as RequestInit).body));
+      expect(body).not.toHaveProperty("credits");
+    });
+  });
+
+  it("surfaces a 422 credits validation error inline in the create modal", async () => {
+    installRoutes({
+      "POST /api/v3/repos/octo/widgets/security-advisories": () =>
+        jsonResponse(
+          {
+            message: "Validation Failed",
+            errors: [{ resource: "SecurityAdvisory", field: "credits.login", code: "invalid" }],
+          },
+          422,
+        ),
+    });
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "New advisory" }));
+    fireEvent.change(screen.getByLabelText("Summary"), { target: { value: "Bad credit" } });
+    fireEvent.change(screen.getByLabelText("Description"), { target: { value: "Details." } });
+    fireEvent.click(screen.getByRole("button", { name: "Add credit" }));
+    fireEvent.change(screen.getByLabelText("Credited login"), { target: { value: "ghost" } });
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+
+    await waitFor(() => expect(screen.getByText(/Validation Failed/)).toBeInTheDocument());
   });
 });

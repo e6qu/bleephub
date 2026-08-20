@@ -34,9 +34,10 @@ import {
   fetchRepoContents,
   fetchRepoFile,
   fetchAssignableUsers,
+  fetchDiscussionCategories,
+  ApiError,
 } from "../api.js";
 import { decodeContentsBase64 } from "../utils/contents.js";
-import { useOpenCounts } from "../hooks/useOpenCounts.js";
 import {
   fetchIssueBootstrap,
   fetchRepoBootstrap,
@@ -242,7 +243,7 @@ function IssueList({ owner, repo }: { owner: string; repo: string }) {
     assignee: searchParams.get("assignee"),
     milestone: searchParams.get("milestone"),
   }));
-  const counts = useOpenCounts(owner, repo);
+  const counts = useSeededOpenCounts(owner, repo);
   const issueCounts = useIssueCounts(owner, repo);
   const [creating, setCreating] = useState(false);
   const navigate = useNavigate();
@@ -908,10 +909,12 @@ function IssueDetail({ owner, repo, number }: { owner: string; repo: string; num
         [["issue", owner, repo, number], data.issue],
         [["issue-timeline", owner, repo, number], data.timeline],
         [["labels", owner, repo], data.labels],
-        // The aggregate's milestones are state=open — the key NewIssue reads.
-        // (IssueSidebar's ["milestones", o, r, "all"] is a different list and
-        // keeps its standalone fetch.)
-        [["milestones", owner, repo, "open"], data.milestones],
+        // The aggregate's milestones are state=ALL — the key IssueSidebar
+        // reads. NewIssue's state=open key is seeded from the same list
+        // filtered client-side, which yields exactly the list the standalone
+        // state=open fetch answers.
+        [["milestones", owner, repo, "all"], data.milestones],
+        [["milestones", owner, repo, "open"], data.milestones.filter((m) => m.state === "open")],
         [["assignable-users", owner, repo], data.assignees_available],
       ]);
       // ["viewer"] and ["current-user"] both GET /api/v3/user; reuse whichever
@@ -1258,8 +1261,14 @@ function IssueActionsMenu({
   const qc = useQueryClient();
   const [openMenu, setOpenMenu] = useState(false);
   const [transferring, setTransferring] = useState(false);
+  const [converting, setConverting] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const dismissRef = useDismiss<HTMLDivElement>(openMenu, () => setOpenMenu(false));
+
+  // Convert-to-discussion is offered only when the repo has discussions
+  // enabled — derived from the repo payload already loaded for this page,
+  // never probed.
+  const canConvert = repoDetail?.has_discussions === true;
 
   // Pin state + how many pins the repo has left (GitHub caps pins at 3).
   // Shares one GraphQL request with the Development section via the key.
@@ -1358,6 +1367,19 @@ function IssueActionsMenu({
           >
             Transfer issue
           </button>
+          {canConvert && (
+            <button
+              type="button"
+              role="menuitem"
+              style={itemStyle}
+              onClick={() => {
+                setOpenMenu(false);
+                setConverting(true);
+              }}
+            >
+              Convert to discussion
+            </button>
+          )}
           {canDelete && (
             <button
               type="button"
@@ -1383,10 +1405,117 @@ function IssueActionsMenu({
           onClose={() => setTransferring(false)}
         />
       )}
+      {converting && (
+        <ConvertToDiscussionDialog owner={owner} repo={repo} issue={issue} onClose={() => setConverting(false)} />
+      )}
       {deleting && (
         <DeleteIssueDialog owner={owner} repo={repo} issue={issue} onClose={() => setDeleting(false)} />
       )}
     </div>
+  );
+}
+
+// The GraphQL DiscussionCategory id is the category's node id
+// (store.DiscussionCategoryNodeID: "DGC_kgDO%08d"); the /ui-data convert
+// endpoint takes the numeric store id, which is the node id's trailing digits.
+function discussionCategoryDatabaseId(nodeId: string): number | null {
+  const digits = /(\d+)$/.exec(nodeId)?.[1];
+  return digits ? parseInt(digits, 10) : null;
+}
+
+function ConvertToDiscussionDialog({
+  owner,
+  repo,
+  issue,
+  onClose,
+}: {
+  owner: string;
+  repo: string;
+  issue: GithubIssue;
+  onClose: () => void;
+}) {
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  const [category, setCategory] = useState<string>("");
+
+  // Same key + fetcher DiscussionsPage uses, so a visited Discussions tab
+  // makes this list a cache hit.
+  const categoriesQ = useQuery({
+    queryKey: ["discussion-categories", owner, repo],
+    queryFn: ({ signal }) => fetchDiscussionCategories(owner, repo, signal),
+    enabled: !!owner && !!repo,
+  });
+  const categories = categoriesQ.data ?? [];
+
+  const mut = useMutation({
+    mutationFn: (categoryId: number) =>
+      ghPostJSON<{ number: number }>(
+        `/ui-data/repos/${owner}/${repo}/issues/${issue.number}/convert-to-discussion`,
+        { category_id: categoryId },
+      ),
+    onSuccess: (d) => {
+      // The conversion closed the issue as not_planned and recorded a
+      // converted_to_discussion timeline event server-side.
+      void qc.invalidateQueries({ queryKey: ["issue", owner, repo, issue.number] });
+      void qc.invalidateQueries({ queryKey: ["issue-timeline", owner, repo, issue.number] });
+      void qc.invalidateQueries({ queryKey: ["issues", owner, repo] });
+      void qc.invalidateQueries({ queryKey: ["issue-count-exact", owner, repo] });
+      void qc.invalidateQueries({ queryKey: ["discussions", owner, repo] });
+      onClose();
+      navigate(`/ui/repos/${owner}/${repo}/discussions/${d.number}`);
+    },
+  });
+
+  const categoryId = category ? discussionCategoryDatabaseId(category) : null;
+
+  return (
+    <Modal title="Convert to discussion" onClose={onClose}>
+      <p className="mb-3" style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)" }}>
+        The issue will be closed as not planned and its conversation will move to a new discussion.
+        This cannot be undone from here.
+      </p>
+      {categoriesQ.isError && (
+        <ErrorBanner>Failed to load discussion categories: {String(categoriesQ.error)}</ErrorBanner>
+      )}
+      {categoriesQ.isLoading && <Spinner label="loading discussion categories" />}
+      <FormLabel id="convert-category">Category</FormLabel>
+      <select
+        id="convert-category"
+        value={category}
+        onChange={(e) => setCategory(e.target.value)}
+        className="mb-4 w-full"
+        style={{ fontSize: "0.85rem" }}
+      >
+        <option value="">Select a category…</option>
+        {categories.map((cat) => (
+          <option key={cat.id} value={cat.id}>
+            {cat.emoji} {cat.name}
+          </option>
+        ))}
+      </select>
+      {mut.isError && (
+        <ErrorBanner>
+          {mut.error instanceof ApiError && mut.error.status === 422
+            ? "This issue can't be converted: discussions may be disabled for this repository, or the category is invalid."
+            : mut.error.message}
+        </ErrorBanner>
+      )}
+      <DialogActions>
+        <Button variant="ghost" size="sm" onClick={onClose} disabled={mut.isPending}>
+          Cancel
+        </Button>
+        <Button
+          variant="primary"
+          size="sm"
+          disabled={categoryId === null || mut.isPending}
+          onClick={() => {
+            if (categoryId !== null) mut.mutate(categoryId);
+          }}
+        >
+          {mut.isPending ? "Converting…" : "I understand, convert this issue"}
+        </Button>
+      </DialogActions>
+    </Modal>
   );
 }
 
@@ -1591,7 +1720,7 @@ function IssueDevelopmentSection({ owner, repo, number }: { owner: string; repo:
 // ─── Repo labels management ─────────────────────────────────────────────
 
 function LabelsView({ owner, repo }: { owner: string; repo: string }) {
-  const counts = useOpenCounts(owner, repo);
+  const counts = useSeededOpenCounts(owner, repo);
   const qc = useQueryClient();
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -1751,7 +1880,7 @@ function LabelDialog({
 // ─── Repo milestones management ─────────────────────────────────────────
 
 function MilestonesView({ owner, repo }: { owner: string; repo: string }) {
-  const counts = useOpenCounts(owner, repo);
+  const counts = useSeededOpenCounts(owner, repo);
   const qc = useQueryClient();
   const [state, setState] = useState<"open" | "closed">("open");
   const [error, setError] = useState<string | null>(null);

@@ -23,7 +23,7 @@ function renderAt(path: string) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  return render(
+  const utils = render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[path]}>
         <Routes>
@@ -31,10 +31,16 @@ function renderAt(path: string) {
           <Route path="/ui/repos/:owner/:repo/issues/:number" element={<IssuesPage />} />
           <Route path="/ui/repos/:owner/:repo/labels" element={<IssuesPage view="labels" />} />
           <Route path="/ui/repos/:owner/:repo/milestones" element={<IssuesPage view="milestones" />} />
+          {/* Marker for navigations out of the issues page (convert-to-discussion). */}
+          <Route
+            path="/ui/repos/:owner/:repo/discussions/:number"
+            element={<div>discussion detail route</div>}
+          />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
   );
+  return { ...utils, queryClient };
 }
 
 function issue(number: number, title: string) {
@@ -1567,6 +1573,36 @@ describe("IssuesPage detail bootstrap", () => {
     expect(gets.some((u) => u.includes("/assignees"))).toBe(false);
   });
 
+  it("seeds the all-states milestone key and a client-filtered open key from the bootstrap", async () => {
+    const openMs = milestone(1, "v1.0", "open");
+    const closedMs = milestone(2, "v0.9", "closed");
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.includes("/ui-data/bootstrap/repos/admin/test/issues/7")) {
+        return Promise.resolve(
+          jsonResponse({
+            issue: issue(7, "Bootstrapped issue"),
+            comments: [],
+            timeline: [],
+            labels: [],
+            // The aggregate list is state=ALL: it carries open AND closed.
+            milestones: [openMs, closedMs],
+            assignees_available: [],
+          }),
+        );
+      }
+      if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "admin" }));
+      return Promise.resolve(jsonResponse([]));
+    });
+    const { queryClient } = renderAt("/ui/repos/admin/test/issues/7");
+    expect(await screen.findByText("Bootstrapped issue")).toBeInTheDocument();
+
+    // The key IssueSidebar reads gets the full state=ALL list…
+    expect(queryClient.getQueryData(["milestones", "admin", "test", "all"])).toEqual([openMs, closedMs]);
+    // …and the key NewIssue reads gets only the open milestones.
+    expect(queryClient.getQueryData(["milestones", "admin", "test", "open"])).toEqual([openMs]);
+  });
+
   it("falls back to the standalone endpoints when the bootstrap answers 500", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL) => {
       const u = url.toString();
@@ -1585,5 +1621,120 @@ describe("IssuesPage detail bootstrap", () => {
       .filter((c) => (c[1] as RequestInit | undefined)?.method === undefined)
       .map((c) => c[0]!.toString());
     expect(gets.some((u) => u.includes("/api/v3/") && u.endsWith("/issues/7"))).toBe(true);
+  });
+});
+
+// ─── Convert issue to discussion ──────────────────────────────────────────
+
+describe("IssuesPage convert to discussion", () => {
+  // The GraphQL category id is the node id; its trailing digits are the
+  // numeric store id the /ui-data convert endpoint takes.
+  const generalCategory = {
+    id: "DGC_kgDO00000005",
+    name: "General",
+    emoji: "💬",
+    description: "",
+    isAnswerable: false,
+  };
+
+  function mockConvertEndpoints(opts: {
+    hasDiscussions: boolean;
+    convert?: (init?: RequestInit) => Response;
+  }) {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith("/convert-to-discussion") && init?.method === "POST") {
+        return Promise.resolve(
+          opts.convert?.(init) ??
+            jsonResponse({ id: 1, number: 12, title: "A real issue", category: generalCategory }, 201),
+        );
+      }
+      if (u.includes("/api/graphql")) {
+        const q = String(JSON.parse((init?.body as string) ?? "{}").query);
+        if (q.includes("discussionCategories")) {
+          return Promise.resolve(
+            jsonResponse({
+              data: { repository: { discussionCategories: { nodes: [generalCategory] } } },
+            }),
+          );
+        }
+        return Promise.resolve(
+          jsonResponse({
+            data: { repository: { issue: { isPinned: false }, pinnedIssues: { totalCount: 0 } } },
+          }),
+        );
+      }
+      if (u.endsWith("/api/v3/repos/admin/test")) {
+        return Promise.resolve(
+          jsonResponse({
+            owner: { login: "admin", type: "User" },
+            has_discussions: opts.hasDiscussions,
+            permissions: { admin: true },
+          }),
+        );
+      }
+      if (u.includes("/issues/7/comments") || u.includes("/timeline")) return Promise.resolve(jsonResponse([]));
+      if (u.includes("/issues/7/reactions")) return Promise.resolve(jsonResponse([]));
+      if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "admin" }));
+      if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
+      return Promise.resolve(jsonResponse([]));
+    });
+  }
+
+  it("converts via the actions menu, POSTing the chosen category and navigating to the discussion", async () => {
+    mockConvertEndpoints({ hasDiscussions: true });
+    renderAt("/ui/repos/admin/test/issues/7");
+    fireEvent.click(await screen.findByRole("button", { name: "Issue actions" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Convert to discussion" }));
+
+    // The dialog lists the repo's discussion categories.
+    const select = await screen.findByLabelText("Category");
+    await screen.findByRole("option", { name: /General/ });
+    fireEvent.change(select, { target: { value: generalCategory.id } });
+    fireEvent.click(screen.getByRole("button", { name: "I understand, convert this issue" }));
+
+    await waitFor(() => {
+      const post = mockFetch.mock.calls.find(
+        (c) =>
+          c[0].toString().endsWith("/ui-data/repos/admin/test/issues/7/convert-to-discussion") &&
+          c[1]?.method === "POST",
+      );
+      expect(post).toBeTruthy();
+      expect(JSON.parse(String(post![1]!.body))).toEqual({ category_id: 5 });
+    });
+    // Navigated to the new discussion's detail route.
+    expect(await screen.findByText("discussion detail route")).toBeInTheDocument();
+  });
+
+  it("does not offer Convert to discussion when the repo has discussions disabled", async () => {
+    mockConvertEndpoints({ hasDiscussions: false });
+    renderAt("/ui/repos/admin/test/issues/7");
+    fireEvent.click(await screen.findByRole("button", { name: "Issue actions" }));
+    // The menu is open (Transfer is always offered) but Convert is absent.
+    expect(await screen.findByRole("menuitem", { name: "Transfer issue" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Convert to discussion" })).not.toBeInTheDocument();
+  });
+
+  it("surfaces a 422 inline in the dialog", async () => {
+    mockConvertEndpoints({
+      hasDiscussions: true,
+      convert: () =>
+        jsonResponse(
+          { message: "Validation Failed", errors: [{ resource: "Discussion", field: "category_id", code: "invalid" }] },
+          422,
+        ),
+    });
+    renderAt("/ui/repos/admin/test/issues/7");
+    fireEvent.click(await screen.findByRole("button", { name: "Issue actions" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Convert to discussion" }));
+
+    const select = await screen.findByLabelText("Category");
+    await screen.findByRole("option", { name: /General/ });
+    fireEvent.change(select, { target: { value: generalCategory.id } });
+    fireEvent.click(screen.getByRole("button", { name: "I understand, convert this issue" }));
+
+    // The 422 renders inline; the dialog stays open (Category still visible).
+    expect(await screen.findByText(/can't be converted/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Category")).toBeInTheDocument();
   });
 });

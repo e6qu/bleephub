@@ -1309,8 +1309,12 @@ var graphqlMutationAuthz = map[string]mutationRule{
 	"markPullRequestReadyForReview": repoRule{scope: store.ScopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetPullRequest("pullRequestId")},
 	"convertPullRequestToDraft":     repoRule{scope: store.ScopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetPullRequest("pullRequestId")},
 	"mergePullRequest":              repoRule{scope: store.ScopePullRequests, level: mutationPushRepo, target: mutationTargetPullRequest("pullRequestId")},
-	"resolveReviewThread":           repoRule{scope: store.ScopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetReviewThread("threadId")},
-	"unresolveReviewThread":         repoRule{scope: store.ScopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetReviewThread("threadId")},
+	// Auto-merge arms/disarms a deferred merge of the base branch, so both
+	// sides demand the same standing as mergePullRequest itself: push.
+	"enablePullRequestAutoMerge":  repoRule{scope: store.ScopePullRequests, level: mutationPushRepo, target: mutationTargetPullRequest("pullRequestId")},
+	"disablePullRequestAutoMerge": repoRule{scope: store.ScopePullRequests, level: mutationPushRepo, target: mutationTargetPullRequest("pullRequestId")},
+	"resolveReviewThread":         repoRule{scope: store.ScopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetReviewThread("threadId")},
+	"unresolveReviewThread":       repoRule{scope: store.ScopePullRequests, level: mutationPushRepo, authorMayAct: true, target: mutationTargetReviewThread("threadId")},
 
 	// Projects v2. A project belongs to a user or an organization, not to a
 	// repository, so write is the owner-scoped predicate the REST surface uses:

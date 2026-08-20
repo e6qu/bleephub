@@ -30,6 +30,7 @@ const createOrgHookFull = (org: string, values: WebhookFormValues) =>
     config: {
       url: values.url,
       content_type: values.contentType,
+      insecure_ssl: values.insecureSsl,
       ...(values.secret ? { secret: values.secret } : {}),
     },
   });
@@ -40,6 +41,7 @@ const patchOrgHookFull = (org: string, id: number, values: WebhookFormValues) =>
     config: {
       url: values.url,
       content_type: values.contentType,
+      insecure_ssl: values.insecureSsl,
       ...(values.secret ? { secret: values.secret } : {}),
     },
   });
@@ -154,6 +156,7 @@ export function OrgHooksPage() {
             initial={{
               url: editing.config.url,
               contentType: editing.config.content_type,
+              insecureSsl: editing.config.insecure_ssl === "1" ? "1" : "0",
               events: editing.events,
               active: editing.active,
             }}

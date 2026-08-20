@@ -2260,3 +2260,70 @@ export interface GithubPRReviewComment {
   /** First line of a multi-line comment's range; null/absent for single-line. */
   start_line?: number | null;
 }
+
+// ─── Server-conformance additions (auto-merge, fork syncing, credits, repo
+// viewer permissions) — same declaration-merging convention as above. ──────
+
+/** REST pull payload `auto_merge` member (null when auto-merge is not armed). */
+export interface GithubPRAutoMerge {
+  enabled_by: { login: string; avatar_url?: string } | null;
+  merge_method: "merge" | "squash" | "rebase";
+  commit_title: string;
+  commit_message: string;
+}
+
+export interface GithubPR {
+  /** Detail-only: armed auto-merge state; null/absent when off. */
+  auto_merge?: GithubPRAutoMerge | null;
+}
+
+export interface BleephubRepo {
+  /** Whether GitHub Discussions are enabled on the repository. */
+  has_discussions?: boolean;
+  /** The viewer's own capabilities on the repository. */
+  permissions?: { admin: boolean; push: boolean; pull: boolean };
+}
+
+export interface GithubBranchProtection {
+  /** {enabled} toggle: forks of the repo can sync this locked branch. */
+  allow_fork_syncing?: GithubProtectionToggle;
+}
+
+/** security-advisory-credit-types enum (10 members, spec order). */
+export type GithubAdvisoryCreditType =
+  | "analyst"
+  | "coordinator"
+  | "finder"
+  | "remediation_developer"
+  | "remediation_reviewer"
+  | "remediation_verifier"
+  | "reporter"
+  | "sponsor"
+  | "tool"
+  | "other";
+
+/** A `credits` request/response row: the credited login and its credit type. */
+export interface GithubAdvisoryCredit {
+  login: string;
+  type: GithubAdvisoryCreditType;
+}
+
+/** A `credits_detailed` row: resolved user object, type, acceptance state. */
+export interface GithubAdvisoryCreditDetailed {
+  user: { login: string; avatar_url?: string };
+  type: GithubAdvisoryCreditType;
+  state: string;
+}
+
+export interface GithubSecurityAdvisory {
+  credits?: GithubAdvisoryCredit[];
+  credits_detailed?: GithubAdvisoryCreditDetailed[];
+}
+
+export interface GithubSecurityAdvisoryCreatePayload {
+  credits?: GithubAdvisoryCredit[] | undefined;
+}
+
+export interface GithubSecurityAdvisoryUpdatePayload {
+  credits?: GithubAdvisoryCredit[] | undefined;
+}

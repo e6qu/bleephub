@@ -19,16 +19,25 @@ re-measurement.
 - Browser sessions no longer consume the core REST budget (P3); search stays 30/min with UI
   debounce and a friendly retry state.
 
-**Carve-outs (not implemented, with reasons):**
-- No public GitHub API exists (official-schema/route ratchets forbid inventing them):
-  convert-issue-to-discussion (G28 part), pinned discussions (G35 part), commit-suggestion
-  apply (G40, render-only), auto-merge (G33 part — no `enablePullRequestAutoMerge` server-side).
-- Server capability gaps kept honest in the UI instead of dead controls: branch-protection
-  patterns match exact names only (G71, stated in the form), `require_last_push_approval` /
-  `lock_branch` / required-deployments not in the BP handler (G83 part), PR files whitespace
-  toggle (G43 part), classic-PAT expiry (no field on the legacy authorizations API), advisory
-  credits (server emits empty), package download counts (absent from the payload), achievements
-  (G67 part, needs a server feature), tag protection (no server surface).
+**Carve-out closure round (second PR, 2026-08-20):** most of the original carve-outs turned out
+implementable and are now closed — auto-merge (the real `enablePullRequestAutoMerge`/`disable…`
+GraphQL mutations, REST `auto_merge` payload, merge-when-ready triggers at every check/status/
+review/protection completion site, merge-box UI); branch-protection completeness (`lock_branch`,
+`allow_fork_syncing`, `require_last_push_approval`, enforced at the ref-write and merge
+chokepoints, plus web-style wildcard pattern rules under /ui-data with fnmatch semantics and
+exact-rule precedence); convert-issue-to-discussion, pinned discussions (cap 4), and
+commit-suggestion apply (all web-only on GitHub → /ui-data); whitespace-ignoring PR diffs
+(/ui-data, Myers diff over ws-stripped lines); advisory credits (spec fields, auto-accepted);
+environment Team reviewers rendering; webhook `insecure_ssl` (already server-complete — gained
+delivery-behavior coverage and form UI); bootstrap aggregates extended (PR sidebar data,
+milestones state=all, per_page=100 first pages).
+
+**Still not implemented, with reasons:**
+- classic-PAT expiry: the legacy authorizations API has no expiry field in the vendored spec.
+- package download counts: absent from GitHub's package-version payload shape.
+- achievements (G67 part): a whole server feature with GitHub-internal semantics; deferred.
+- tag protection: GitHub retired tag protection rules in favor of rulesets, which bleephub
+  already implements with tag targeting — N/A rather than a gap.
 - Accepted deviations, documented: the repo sub-tab row (G9), the gradient header (G10),
   breadcrumb placement (G57), 4-toggle notification settings (G102), `/ui/repos/:owner/:repo`
   URL namespace. 2FA is relabeled as a simulated flag rather than growing a fake TOTP flow (G91)
