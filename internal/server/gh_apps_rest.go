@@ -331,7 +331,9 @@ func (s *Server) browserManageableInstallation(w http.ResponseWriter, r *http.Re
 }
 
 func (s *Server) resolveInstallTarget(ctx context.Context, user *store.User, targetLogin string) (string, int, bool) {
-	if targetLogin == user.Login {
+	// Resolve the login case-insensitively and compare identities, not raw
+	// strings: "ADMIN" names the same account as "admin".
+	if u := s.store.LookupUserByLogin(targetLogin); u != nil && u.ID == user.ID {
 		return "User", user.ID, true
 	}
 	if org := s.store.GetOrg(targetLogin); org != nil {

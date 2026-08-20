@@ -358,7 +358,7 @@ func (st *Store) CreateTemporaryFork(repoID int, ghsaID string) *Repo {
 	name := baseName
 	fullName := owner.Login + "/" + name
 	for i := 2; ; i++ {
-		if _, exists := st.ReposByName[fullName]; !exists {
+		if st.RepoByNameLocked(fullName) == nil {
 			break
 		}
 		name = fmt.Sprintf("%s-%d", baseName, i)
@@ -433,6 +433,7 @@ func (st *Store) CreateTemporaryFork(repoID int, ghsaID string) *Repo {
 
 	st.Repos[fork.ID] = fork
 	st.ReposByName[fullName] = fork
+	st.IndexRepoNameLocked(fullName)
 	st.GitStorages[fullName] = stor
 
 	// One transaction: the advisory's PrivateForkID, the fork repo row, and its

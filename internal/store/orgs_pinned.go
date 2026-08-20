@@ -10,8 +10,8 @@ import (
 func (st *Store) ListOrgPinnedRepos(orgLogin string) ([]string, bool) {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
-	org, ok := st.OrgsByLogin[orgLogin]
-	if !ok {
+	org := st.OrgByLoginLocked(orgLogin)
+	if org == nil {
 		return nil, false
 	}
 	out := make([]string, len(org.PinnedRepos))
@@ -27,8 +27,8 @@ func (st *Store) ListOrgPinnedRepos(orgLogin string) ([]string, bool) {
 func (st *Store) SetOrgPinnedRepos(orgLogin string, fullNames []string) ([]string, bool) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
-	org, ok := st.OrgsByLogin[orgLogin]
-	if !ok {
+	org := st.OrgByLoginLocked(orgLogin)
+	if org == nil {
 		return nil, false
 	}
 	seen := map[string]bool{}

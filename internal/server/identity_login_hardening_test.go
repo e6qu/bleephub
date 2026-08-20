@@ -217,8 +217,10 @@ func TestInternalUserCreationFoldsCase(t *testing.T) {
 	if u := s.store.LookupUserByLogin("alice"); u == nil {
 		t.Fatalf("Alice was not stored under its case-folded login %q", "alice")
 	}
-	if u := s.store.LookupUserByLogin("Alice"); u != nil {
-		t.Fatalf("Alice was stored under a non-canonical login")
+	// Case-variant lookups intentionally resolve (GitHub parity via the
+	// folded index) — canonical storage is proven by the resolved login.
+	if u := s.store.LookupUserByLogin("Alice"); u == nil || u.Login != "alice" {
+		t.Fatalf("case-variant lookup = %+v, want the canonical alice account", u)
 	}
 
 	dup := httptest.NewRecorder()

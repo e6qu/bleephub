@@ -33,6 +33,8 @@ import {
   Tabs,
 } from "../components/ui.js";
 import { GistIcon, StarIcon, BranchIcon } from "../components/octicons.js";
+import { RepoNotFound } from "../components/RepoNotFound.js";
+import { isNotFoundError } from "../components/notFound.js";
 import { Avatar } from "../components/Avatar.js";
 import { RelativeTime } from "../components/RelativeTime.js";
 import { CodeHighlight } from "../components/CodeHighlight.js";
@@ -63,7 +65,7 @@ export function GistDetailPage() {
     queryFn: ({ signal }) => fetchCurrentUser(signal),
     enabled: signedIn,
   });
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, error } = useQuery({
     queryKey: ["gists", id],
     queryFn: () => fetchGist(id),
   });
@@ -102,6 +104,9 @@ export function GistDetailPage() {
     onError: (err: Error) => setActionError(err.message),
   });
 
+  // Unknown gist id → github.com's full-page 404 (also cloaks secret gists);
+  // other failures keep the banner.
+  if (isError && isNotFoundError(error)) return <RepoNotFound />;
   if (isError) return <InlineError title="Failed to load gist" />;
   if (isLoading || !data) return <Spinner label="loading gist" />;
 

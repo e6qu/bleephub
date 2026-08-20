@@ -19,6 +19,7 @@ import {
   ghFetch,
 } from "../api.js";
 import { RelativeTime } from "../components/RelativeTime.js";
+import { isNotFoundError } from "../components/notFound.js";
 import type { GithubWikiPage } from "../types.js";
 
 /** One row of a page's edit history (see internal/server/gh_wiki.go). */
@@ -145,9 +146,12 @@ export function WikiPage() {
             <WikiView
               pagesQ={pagesQ}
               pageQ={pageQ}
-              activeSlug={activeSlug}
+              activeSlug={activeSlug ?? ""}
               canPush={canPush}
               onNew={startNew}
+              onCreateMissing={(title) =>
+                setEditing({ slug: "", title, body: "", isNew: true })
+              }
               onEdit={startEdit}
               onHistory={() => setShowHistory(true)}
               onDelete={async (p) => {
@@ -227,6 +231,7 @@ function WikiView({
   activeSlug,
   canPush,
   onNew,
+  onCreateMissing,
   onEdit,
   onHistory,
   onDelete,
@@ -234,9 +239,11 @@ function WikiView({
 }: {
   pagesQ: { isLoading: boolean; isError: boolean; error: unknown; data: GithubWikiPage[] | undefined };
   pageQ: { isLoading: boolean; isError: boolean; error: unknown; data: GithubWikiPage | undefined };
-  activeSlug: string | undefined;
+  /** "" only on the empty-wiki path, which returns before any use. */
+  activeSlug: string;
   canPush: boolean;
   onNew: () => void;
+  onCreateMissing: (title: string) => void;
   onEdit: (p: GithubWikiPage) => void;
   onHistory: () => void;
   onDelete: (p: GithubWikiPage) => void;
@@ -260,6 +267,27 @@ function WikiView({
   }
   if (pageQ.isLoading) return <Spinner label="loading page" />;
   if (pageQ.isError || !pageQ.data) {
+    // The wiki itself loaded — a 404 here is a URL naming a page that does
+    // not exist. github.com offers writers a title-prefilled "create this
+    // page" affordance; readers just get the 404 text. The list rail stays.
+    if (isNotFoundError(pageQ.error)) {
+      const missingTitle = activeSlug.replace(/-+/g, " ").trim() || "this page";
+      return (
+        <Blankslate
+          icon={<BookIcon size={28} />}
+          title={canPush ? "New page?" : "This page does not exist"}
+        >
+          <p>This wiki page does not exist{canPush ? " yet" : ""}.</p>
+          {canPush && (
+            <div className="mt-3">
+              <Button variant="primary" onClick={() => onCreateMissing(missingTitle)}>
+                <PlusIcon size={14} /> Create “{missingTitle}”
+              </Button>
+            </div>
+          )}
+        </Blankslate>
+      );
+    }
     return <InlineError title="Failed to load page" detail={String(pageQ.error)} />;
   }
   const page = pageQ.data;

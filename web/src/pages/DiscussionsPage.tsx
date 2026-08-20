@@ -42,6 +42,7 @@ import {
 } from "../components/ui.js";
 import { MutationError } from "../components/MutationError.js";
 import { DiscussionIcon } from "../components/octicons.js";
+import { isNotFoundError } from "../components/notFound.js";
 
 /** Cap enforced by the server's PUT /ui-data/.../discussions/pinned handler. */
 const MAX_PINNED_DISCUSSIONS = 4;
@@ -497,6 +498,18 @@ function DiscussionDetail({
   });
 
   if (isError) {
+    // Missing discussion inside an existing repo: keep the repo chrome and
+    // show a 404 state, github.com-style; other failures keep the banner.
+    if (isNotFoundError(error)) {
+      return (
+        <div>
+          <RepoHeader owner={owner} repo={repo} active="discussions" {...counts} />
+          <Blankslate icon={<DiscussionIcon size={26} />} title={`Discussion #${number} not found`}>
+            It may have been deleted, or the number may be wrong.
+          </Blankslate>
+        </div>
+      );
+    }
     return (
       <div>
         <RepoHeader owner={owner} repo={repo} active="discussions" {...counts} />

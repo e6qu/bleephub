@@ -1013,7 +1013,7 @@ func (s *Server) upsertExternalUser(issuer, subject, login, name, email, avatarU
 	// so a principal cannot escalate by claiming a privileged username. A
 	// non-primary provider, or an account that already belongs to a DIFFERENT
 	// federated identity, is refused: neither may seize an existing account.
-	if existing := s.store.UsersByLogin[login]; existing != nil {
+	if existing := s.store.UserByLoginLocked(login); existing != nil {
 		if !roleAuthoritative || len(existing.ExternalIdentities) > 0 {
 			return nil, errFederatedLogin
 		}
@@ -1028,6 +1028,7 @@ func (s *Server) upsertExternalUser(issuer, subject, login, name, email, avatarU
 	now := time.Now().UTC()
 	user := &store.User{ID: s.store.ReserveGlobalID("next_user", &s.store.NextUser), NodeID: "U_bleephub_" + login, Login: login, Name: name, Email: email, AvatarURL: avatarURL, Type: "User", SiteAdmin: siteAdmin, StarredRepos: map[string]bool{}, CreatedAt: now, UpdatedAt: now}
 	s.store.Users[user.ID], s.store.UsersByLogin[user.Login] = user, user
+	s.store.IndexUserLoginLocked(user.Login)
 	s.bindExternalIdentityLocked(user, externalKey)
 	if s.store.Persist != nil {
 		s.store.Persist.MustPut("users", fmt.Sprint(user.ID), user)

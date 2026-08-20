@@ -8,6 +8,8 @@ import { fetchViewerOrgRole } from "../utils/uiFetch.js";
 import { useSignedIn } from "../session.js";
 import type { BleephubRepo } from "../types.js";
 import { OrgHeader } from "../components/PageHeader.js";
+import { RepoNotFound } from "../components/RepoNotFound.js";
+import { isNotFoundError } from "../components/notFound.js";
 import { Avatar } from "../components/Avatar.js";
 import { Box, SectionLabel, Blankslate, Button, Modal, DialogActions } from "../components/ui.js";
 import { MutationError } from "../components/MutationError.js";
@@ -62,6 +64,8 @@ export function OrgOverviewPage() {
 
   if (profile.isLoading) return <Spinner label="loading organization" />;
   if (profile.isError || !profile.data) {
+    // Unknown org → github.com's full-page 404; other failures keep the banner.
+    if (isNotFoundError(profile.error)) return <RepoNotFound />;
     return <InlineError title="Failed to load organization" detail={String(profile.error)} />;
   }
   const p = profile.data;

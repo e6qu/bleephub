@@ -154,7 +154,10 @@ func (st *Store) CreateOrg(creator *User, login, name, description string) *Org 
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 
-	if _, exists := st.OrgsByLogin[login]; exists {
+	// Folded existence check: GitHub rejects an organization whose login
+	// differs from an existing one only by case, and the folded index
+	// (name_fold.go) relies on canonical logins never colliding under folding.
+	if st.OrgByLoginLocked(login) != nil {
 		return nil
 	}
 
@@ -173,6 +176,7 @@ func (st *Store) CreateOrg(creator *User, login, name, description string) *Org 
 
 	st.Orgs[org.ID] = org
 	st.OrgsByLogin[login] = org
+	st.IndexOrgLoginLocked(login)
 
 	// Add creator as admin
 	key := MembershipKey(login, creator.ID)
@@ -225,7 +229,7 @@ func cloneOrg(o *Org) *Org {
 func (st *Store) GetOrg(login string) *Org {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
-	return cloneOrg(st.OrgsByLogin[login])
+	return cloneOrg(st.OrgByLoginLocked(login))
 }
 
 // GetOrgByID returns an organization by its numeric ID, or nil.
@@ -257,8 +261,8 @@ func (st *Store) UpdateOrg(login string, fn func(*Org)) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 
-	org, ok := st.OrgsByLogin[login]
-	if !ok {
+	org := st.OrgByLoginLocked(login)
+	if org == nil {
 		return false
 	}
 	fn(org)
@@ -283,6 +287,11 @@ func (st *Store) DeleteOrg(login string) bool {
 // organization row that goes away while its repositories stay behind leaves
 // every later start rejecting those rows as an unknown owner.
 func (st *Store) DeleteOrgWithError(login string) (bool, error) {
+	// Canonicalize up front: the deletion intent recorded by
+	// deleteOrgMetadata and the intent cleared below must use one key.
+	if org := st.GetOrg(login); org != nil {
+		login = org.Login
+	}
 	repoIntents, orgIntent, deleted, err := st.deleteOrgMetadata(login)
 	if err != nil || !deleted {
 		return deleted, err
@@ -310,10 +319,11 @@ func (st *Store) deleteOrgMetadata(login string) ([]PendingDeletion, PendingDele
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 
-	org, ok := st.OrgsByLogin[login]
-	if !ok {
+	org := st.OrgByLoginLocked(login)
+	if org == nil {
 		return nil, PendingDeletion{}, false, nil
 	}
+	login = org.Login
 
 	// Build the org's own deletion intent, scheduling the file bytes of packages
 	// owned directly by the organization (not via one of its repositories) for
@@ -418,6 +428,7 @@ func (st *Store) deleteOrgMetadata(login string) ([]PendingDeletion, PendingDele
 
 	delete(st.Orgs, org.ID)
 	delete(st.OrgsByLogin, login)
+	st.UnindexOrgLoginLocked(login)
 	batch.Delete("orgs", strconv.Itoa(org.ID))
 	if err := batch.Commit(); err != nil {
 		return nil, PendingDeletion{}, true, fmt.Errorf("delete organization %s: %w", login, err)
@@ -568,11 +579,13 @@ func (st *Store) SetMembership(orgLogin string, userID int, role OrgRole, state 
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 
-	org, ok := st.OrgsByLogin[orgLogin]
-	if !ok {
+	org := st.OrgByLoginLocked(orgLogin)
+	if org == nil {
 		return nil
 	}
+	orgLogin = org.Login
 
+	orgLogin = st.canonicalOrgLoginLocked(orgLogin)
 	key := MembershipKey(orgLogin, userID)
 	m := st.Memberships[key]
 	if m == nil {
@@ -599,6 +612,7 @@ func (st *Store) SetMembershipPublic(orgLogin string, userID int, public bool) b
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 
+	orgLogin = st.canonicalOrgLoginLocked(orgLogin)
 	key := MembershipKey(orgLogin, userID)
 	m := st.Memberships[key]
 	if m == nil || m.State != MembershipStateActive {
@@ -616,7 +630,7 @@ func (st *Store) ListPublicOrgMembers(orgLogin string) []*User {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 
-	org := st.OrgsByLogin[orgLogin]
+	org := st.OrgByLoginLocked(orgLogin)
 	if org == nil {
 		return nil
 	}
@@ -673,7 +687,7 @@ func (st *Store) GetMembership(orgLogin string, userID int) *Membership {
 	// A copy so a reader can't mutate the stored membership through the getter
 	// (STORE-021); Membership is all-value, so a shallow copy detaches. Its 24
 	// callers only read State/Role, and writes go through keyed store methods.
-	m := st.Memberships[MembershipKey(orgLogin, userID)]
+	m := st.Memberships[MembershipKey(st.canonicalOrgLoginLocked(orgLogin), userID)]
 	if m == nil {
 		return nil
 	}
@@ -686,6 +700,7 @@ func (st *Store) RemoveMembership(orgLogin string, userID int) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 
+	orgLogin = st.canonicalOrgLoginLocked(orgLogin)
 	key := MembershipKey(orgLogin, userID)
 	if _, ok := st.Memberships[key]; !ok {
 		return false
@@ -697,7 +712,7 @@ func (st *Store) RemoveMembership(orgLogin string, userID int) bool {
 	delete(st.Memberships, key)
 	batch.Delete("memberships", key)
 
-	org := st.OrgsByLogin[orgLogin]
+	org := st.OrgByLoginLocked(orgLogin)
 	if org != nil {
 		for _, t := range st.TeamsBySlug {
 			if t.OrgID == org.ID {
@@ -723,7 +738,7 @@ func (st *Store) ListOrgMembers(orgLogin string) []*User {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 
-	org := st.OrgsByLogin[orgLogin]
+	org := st.OrgByLoginLocked(orgLogin)
 	if org == nil {
 		return nil
 	}
@@ -754,12 +769,14 @@ func (st *Store) CreateTeam(orgLogin, name string, opts TeamOptions) *Team {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 
-	org, ok := st.OrgsByLogin[orgLogin]
-	if !ok {
+	org := st.OrgByLoginLocked(orgLogin)
+	if org == nil {
 		return nil
 	}
+	orgLogin = org.Login
 
 	slug := Slugify(name)
+	orgLogin = st.canonicalOrgLoginLocked(orgLogin)
 	key := TeamSlugKey(orgLogin, slug)
 	if _, exists := st.TeamsBySlug[key]; exists {
 		return nil
@@ -841,7 +858,7 @@ func cloneTeam(t *Team) *Team {
 func (st *Store) GetTeam(orgLogin, slug string) *Team {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
-	return cloneTeam(st.TeamsBySlug[TeamSlugKey(orgLogin, slug)])
+	return cloneTeam(st.TeamsBySlug[TeamSlugKey(st.canonicalOrgLoginLocked(orgLogin), slug)])
 }
 
 // GetTeamByID returns a team by its numeric ID, or nil.
@@ -866,6 +883,7 @@ func (st *Store) UpdateTeamChecked(orgLogin, slug string, fn func(*Team)) error 
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 
+	orgLogin = st.canonicalOrgLoginLocked(orgLogin)
 	key := TeamSlugKey(orgLogin, slug)
 	team, ok := st.TeamsBySlug[key]
 	if !ok {
@@ -920,7 +938,7 @@ func (st *Store) ListChildTeams(orgLogin string, parentID int) []*Team {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 
-	org := st.OrgsByLogin[orgLogin]
+	org := st.OrgByLoginLocked(orgLogin)
 	if org == nil {
 		return nil
 	}
@@ -939,6 +957,7 @@ func (st *Store) DeleteTeam(orgLogin, slug string) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 
+	orgLogin = st.canonicalOrgLoginLocked(orgLogin)
 	key := TeamSlugKey(orgLogin, slug)
 	team, ok := st.TeamsBySlug[key]
 	if !ok {
@@ -972,7 +991,7 @@ func (st *Store) ListTeams(orgLogin string) []*Team {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 
-	org := st.OrgsByLogin[orgLogin]
+	org := st.OrgByLoginLocked(orgLogin)
 	if org == nil {
 		return nil
 	}
@@ -991,7 +1010,7 @@ func (st *Store) ListTeamMembers(orgLogin, slug string) []*User {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 
-	team := st.TeamsBySlug[TeamSlugKey(orgLogin, slug)]
+	team := st.TeamsBySlug[TeamSlugKey(st.canonicalOrgLoginLocked(orgLogin), slug)]
 	if team == nil {
 		return nil
 	}
@@ -1010,7 +1029,7 @@ func (st *Store) GetTeamMembership(orgLogin, slug string, userID int) (TeamRole,
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 
-	team := st.TeamsBySlug[TeamSlugKey(orgLogin, slug)]
+	team := st.TeamsBySlug[TeamSlugKey(st.canonicalOrgLoginLocked(orgLogin), slug)]
 	if team == nil {
 		return "", false
 	}
@@ -1022,7 +1041,7 @@ func (st *Store) SetTeamMembership(orgLogin, slug string, userID int, role TeamR
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 
-	team := st.TeamsBySlug[TeamSlugKey(orgLogin, slug)]
+	team := st.TeamsBySlug[TeamSlugKey(st.canonicalOrgLoginLocked(orgLogin), slug)]
 	if team == nil {
 		return false
 	}
@@ -1050,7 +1069,7 @@ func (st *Store) RemoveTeamMembership(orgLogin, slug string, userID int) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 
-	team := st.TeamsBySlug[TeamSlugKey(orgLogin, slug)]
+	team := st.TeamsBySlug[TeamSlugKey(st.canonicalOrgLoginLocked(orgLogin), slug)]
 	if team == nil {
 		return false
 	}
@@ -1071,7 +1090,7 @@ func (st *Store) ListTeamRepos(orgLogin, slug string) []*Repo {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 
-	team := st.TeamsBySlug[TeamSlugKey(orgLogin, slug)]
+	team := st.TeamsBySlug[TeamSlugKey(st.canonicalOrgLoginLocked(orgLogin), slug)]
 	if team == nil {
 		return nil
 	}
@@ -1096,9 +1115,12 @@ func (st *Store) GetTeamRepoPermission(orgLogin, slug, fullName string) (TeamPer
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 
-	team := st.TeamsBySlug[TeamSlugKey(orgLogin, slug)]
+	team := st.TeamsBySlug[TeamSlugKey(st.canonicalOrgLoginLocked(orgLogin), slug)]
 	if team == nil {
 		return "", false
+	}
+	if repo := st.RepoByNameLocked(fullName); repo != nil {
+		fullName = repo.FullName
 	}
 	if !slices.Contains(team.RepoNames, fullName) {
 		return "", false
@@ -1117,13 +1139,17 @@ func (st *Store) SetTeamRepoPermission(orgLogin, slug, fullName string, perm Tea
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 
-	team := st.TeamsBySlug[TeamSlugKey(orgLogin, slug)]
+	team := st.TeamsBySlug[TeamSlugKey(st.canonicalOrgLoginLocked(orgLogin), slug)]
 	if team == nil {
 		return false
 	}
-	if st.ReposByName[fullName] == nil {
+	// Store the canonical repo key: the permission lattice (rbac.go) compares
+	// team.RepoNames against repo.FullName.
+	repo := st.RepoByNameLocked(fullName)
+	if repo == nil {
 		return false
 	}
+	fullName = repo.FullName
 
 	found := false
 	for _, rn := range team.RepoNames {
@@ -1171,9 +1197,14 @@ func (st *Store) AddTeamRepo(orgLogin, slug, repoFullName string) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 
-	team := st.TeamsBySlug[TeamSlugKey(orgLogin, slug)]
+	team := st.TeamsBySlug[TeamSlugKey(st.canonicalOrgLoginLocked(orgLogin), slug)]
 	if team == nil {
 		return false
+	}
+	// Store the canonical repo key: the permission lattice (rbac.go) compares
+	// team.RepoNames against repo.FullName.
+	if repo := st.RepoByNameLocked(repoFullName); repo != nil {
+		repoFullName = repo.FullName
 	}
 
 	for _, rn := range team.RepoNames {
@@ -1198,9 +1229,12 @@ func (st *Store) RemoveTeamRepo(orgLogin, slug, repoFullName string) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 
-	team := st.TeamsBySlug[TeamSlugKey(orgLogin, slug)]
+	team := st.TeamsBySlug[TeamSlugKey(st.canonicalOrgLoginLocked(orgLogin), slug)]
 	if team == nil {
 		return false
+	}
+	if repo := st.RepoByNameLocked(repoFullName); repo != nil {
+		repoFullName = repo.FullName
 	}
 
 	for i, rn := range team.RepoNames {

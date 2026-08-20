@@ -86,7 +86,7 @@ func (st *Store) createRepo(fullName, name, description string, private bool, ow
 	if st.PendingRepoCreations == nil {
 		st.PendingRepoCreations = make(map[string]bool)
 	}
-	if st.ReposByName[fullName] != nil || st.PendingRepoCreations[fullName] {
+	if st.RepoByNameLocked(fullName) != nil || st.PendingRepoCreations[fullName] {
 		st.Mu.Unlock()
 		return nil
 	}
@@ -112,7 +112,7 @@ func (st *Store) createRepo(fullName, name, description string, private bool, ow
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 	delete(st.PendingRepoCreations, fullName)
-	if st.ReposByName[fullName] != nil {
+	if st.RepoByNameLocked(fullName) != nil {
 		return nil
 	}
 	return st.createRepoLocked(nil, fullName, name, description, private, ownerID, ownerType, owner, stor)
@@ -125,7 +125,10 @@ func (st *Store) createRepo(fullName, name, description string, private bool, ow
 // caller's transaction instead (e.g. PublishCodespace commits the repo and
 // codespace rows together) and the caller commits.
 func (st *Store) createRepoLocked(batch *PersistBatch, fullName, name, description string, private bool, ownerID int, ownerType string, owner *User, stor gitStorage.Storer) *Repo {
-	if _, exists := st.ReposByName[fullName]; exists {
+	// Folded existence check: GitHub rejects a repository whose name differs
+	// from an existing one only by case, and the folded index (name_fold.go)
+	// relies on canonical names never colliding under folding.
+	if st.RepoByNameLocked(fullName) != nil {
 		return nil
 	}
 
@@ -184,6 +187,7 @@ func (st *Store) createRepoLocked(batch *PersistBatch, fullName, name, descripti
 	batch.Put("repos", strconv.Itoa(repo.ID), repo)
 	st.Repos[repo.ID] = repo
 	st.ReposByName[fullName] = repo
+	st.IndexRepoNameLocked(fullName)
 	st.GitStorages[fullName] = stor
 
 	st.ensureDefaultDiscussionCategoriesBatchLocked(batch, repo.ID)
@@ -199,7 +203,7 @@ func (st *Store) createRepoLocked(batch *PersistBatch, fullName, name, descripti
 func (st *Store) GetRepo(owner, name string) *Repo {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
-	return cloneRepo(st.ReposByName[owner+"/"+name])
+	return cloneRepo(st.RepoByNameLocked(owner + "/" + name))
 }
 
 // GetRepoByFullName resolves an "owner/name" key under the read lock.
@@ -212,7 +216,7 @@ func (st *Store) GetRepo(owner, name string) *Repo {
 func (st *Store) GetRepoByFullName(fullName string) *Repo {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
-	return cloneRepo(st.ReposByName[fullName])
+	return cloneRepo(st.RepoByNameLocked(fullName))
 }
 
 func (st *Store) GetRepoByID(id int) *Repo {
@@ -225,11 +229,13 @@ func (st *Store) UpdateRepo(owner, name string, fn func(*Repo)) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 
-	repoKey := owner + "/" + name
-	current, ok := st.ReposByName[repoKey]
-	if !ok {
+	current := st.RepoByNameLocked(owner + "/" + name)
+	if current == nil {
 		return false
 	}
+	// The write must land under the repo's canonical key even when the caller
+	// spelled the name with different casing.
+	repoKey := current.FullName
 	repo := cloneRepo(current)
 	fn(repo)
 	repo.UpdatedAt = st.CurrentTime()
@@ -252,7 +258,7 @@ func (st *Store) ForkRepo(owner *User, sourceRepo *Repo, name string) *Repo {
 	if st.PendingRepoCreations == nil {
 		st.PendingRepoCreations = make(map[string]bool)
 	}
-	if st.ReposByName[fullName] != nil || st.PendingRepoCreations[fullName] {
+	if st.RepoByNameLocked(fullName) != nil || st.PendingRepoCreations[fullName] {
 		st.Mu.Unlock()
 		return nil
 	}
@@ -290,7 +296,7 @@ func (st *Store) ForkRepo(owner *User, sourceRepo *Repo, name string) *Repo {
 	}
 
 	st.Mu.Lock()
-	if st.Repos[source.ID] != liveSource || st.ReposByName[fullName] != nil {
+	if st.Repos[source.ID] != liveSource || st.RepoByNameLocked(fullName) != nil {
 		st.Mu.Unlock()
 		_ = deleteRepoGitStorage(fullName)
 		st.Mu.Lock()
@@ -362,6 +368,7 @@ func (st *Store) ForkRepo(owner *User, sourceRepo *Repo, name string) *Repo {
 
 	st.Repos[repo.ID] = repo
 	st.ReposByName[fullName] = repo
+	st.IndexRepoNameLocked(fullName)
 	st.GitStorages[fullName] = stor
 
 	st.ensureDefaultDiscussionCategoriesBatchLocked(batch, repo.ID)
@@ -652,16 +659,20 @@ func (st *Store) renameRepoUnderLock(owner, name, newName string) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 
-	oldFull := owner + "/" + name
-	newFull := owner + "/" + newName
+	// Resolve the source case-insensitively and continue with its canonical
+	// key; the target must not collide with any live repo under folding —
+	// except the repo itself, so a case-only rename (hello → Hello) works.
+	repo := st.RepoByNameLocked(owner + "/" + name)
+	if repo == nil {
+		return false
+	}
+	oldFull := repo.FullName
+	canonicalOwner, _, _ := strings.Cut(oldFull, "/")
+	newFull := canonicalOwner + "/" + newName
 	if oldFull == newFull {
 		return true
 	}
-	repo, ok := st.ReposByName[oldFull]
-	if !ok {
-		return false
-	}
-	if _, exists := st.ReposByName[newFull]; exists {
+	if conflict := st.RepoByNameLocked(newFull); conflict != nil && conflict != repo {
 		return false
 	}
 
@@ -688,7 +699,9 @@ func (st *Store) renameRepoUnderLock(owner, name, newName string) bool {
 	repo.UpdatedAt = st.CurrentTime()
 
 	st.ReposByName[newFull] = repo
+	st.IndexRepoNameLocked(newFull)
 	delete(st.ReposByName, oldFull)
+	st.UnindexRepoNameLocked(oldFull)
 
 	if stor != nil {
 		st.GitStorages[newFull] = stor
@@ -713,23 +726,26 @@ func (st *Store) renameRepoUnderLock(owner, name, newName string) bool {
 // the old prefix outside the lock. A crash at any point is finished by
 // finishInterruptedRenames.
 func (st *Store) renameRepoS3(owner, name, newName string) bool {
-	oldFull := owner + "/" + name
-	newFull := owner + "/" + newName
-
 	st.Mu.Lock()
+	// Resolve the source case-insensitively and continue with its canonical
+	// key; the target must not collide with any live repo under folding —
+	// except the repo itself, so a case-only rename (hello → Hello) works.
+	repo := st.RepoByNameLocked(owner + "/" + name)
+	if repo == nil {
+		st.Mu.Unlock()
+		return false
+	}
+	oldFull := repo.FullName
+	canonicalOwner, _, _ := strings.Cut(oldFull, "/")
+	newFull := canonicalOwner + "/" + newName
 	if oldFull == newFull {
 		st.Mu.Unlock()
 		return true
 	}
-	repo, ok := st.ReposByName[oldFull]
-	if !ok {
-		st.Mu.Unlock()
-		return false
-	}
 	if st.PendingRepoCreations == nil {
 		st.PendingRepoCreations = make(map[string]bool)
 	}
-	if st.ReposByName[newFull] != nil || st.PendingRepoCreations[newFull] {
+	if conflict := st.RepoByNameLocked(newFull); (conflict != nil && conflict != repo) || st.PendingRepoCreations[newFull] {
 		st.Mu.Unlock()
 		return false
 	}
@@ -756,7 +772,7 @@ func (st *Store) renameRepoS3(owner, name, newName string) bool {
 	// name (a concurrent delete or competing rename may have moved it).
 	st.Mu.Lock()
 	live := st.Repos[repoID]
-	if live == nil || live.FullName != oldFull || (st.ReposByName[newFull] != nil && st.ReposByName[newFull] != live) {
+	if conflict := st.RepoByNameLocked(newFull); live == nil || live.FullName != oldFull || (conflict != nil && conflict != live) {
 		st.Mu.Unlock()
 		st.abortRenameReservation(newFull)
 		return false
@@ -777,7 +793,9 @@ func (st *Store) renameRepoS3(owner, name, newName string) bool {
 	live.FullName = newFull
 	live.UpdatedAt = st.CurrentTime()
 	st.ReposByName[newFull] = live
+	st.IndexRepoNameLocked(newFull)
 	delete(st.ReposByName, oldFull)
+	st.UnindexRepoNameLocked(oldFull)
 	if stor != nil {
 		st.GitStorages[newFull] = stor
 		delete(st.GitStorages, oldFull)
@@ -925,11 +943,13 @@ func (st *Store) deleteRepoMetadata(owner, name string) (bool, PendingDeletion, 
 // from the database. Caller must hold st.Mu and must call
 // purgeDeletedRepoBytes afterwards to finish the deletion.
 func (st *Store) deleteRepoLocked(owner, name string) (bool, PendingDeletion, error) {
-	fullName := owner + "/" + name
-	repo, ok := st.ReposByName[fullName]
-	if !ok {
+	repo := st.RepoByNameLocked(owner + "/" + name)
+	if repo == nil {
 		return false, PendingDeletion{}, nil
 	}
+	// Cascades below key off the canonical name, whatever casing the caller
+	// used.
+	fullName := repo.FullName
 
 	intent := st.repoDeletionIntentLocked(repo)
 	planIDs, logIDs := st.repoWorkflowCleanupIDsLocked(fullName)
@@ -959,6 +979,7 @@ func (st *Store) deleteRepoLocked(owner, name string) (bool, PendingDeletion, er
 
 	delete(st.Repos, repo.ID)
 	delete(st.ReposByName, fullName)
+	st.UnindexRepoNameLocked(fullName)
 	delete(st.GitStorages, fullName)
 	batch.Delete("repos", strconv.Itoa(repo.ID))
 
@@ -2244,7 +2265,9 @@ func FilterSortRepos(repos []*Repo, opts RepoListOptions) []*Repo {
 func (st *Store) GetGitStorage(owner, name string) gitStorage.Storer {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
-	return st.GitStorages[owner+"/"+name]
+	// GitStorages is keyed by the canonical full name; resolve a case-variant
+	// clone URL to it, matching GitHub's case-insensitive git transport.
+	return st.GitStorages[st.canonicalRepoKeyLocked(owner+"/"+name)]
 }
 
 func (st *Store) GitStorageForRepoID(repoID int) (gitStorage.Storer, string) {
@@ -2299,20 +2322,22 @@ func (st *Store) AddRepoCollaborator(owner, name, login, permission string) bool
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 
-	fullName := owner + "/" + name
-	repo, ok := st.ReposByName[fullName]
-	if !ok {
+	repo := st.RepoByNameLocked(owner + "/" + name)
+	if repo == nil {
 		return false
 	}
-	u := st.UsersByLogin[login]
+	u := st.UserByLoginLocked(login)
 	if u == nil {
 		return false
 	}
+	// Key the grant by canonical names so the permission lattice (rbac.go)
+	// finds it regardless of the casing the request used.
+	fullName := repo.FullName
 	perm := normalizeRepoPermission(permission)
 	if st.RepoCollaborators[fullName] == nil {
 		st.RepoCollaborators[fullName] = map[string]string{}
 	}
-	st.RepoCollaborators[fullName][login] = perm
+	st.RepoCollaborators[fullName][u.Login] = perm
 	repo.UpdatedAt = st.CurrentTime()
 	// One transaction: the collaborator set and the repo's updated_at must not
 	// disagree across a crash mid-persist.
@@ -2331,10 +2356,13 @@ func (st *Store) RemoveRepoCollaborator(owner, name, login string) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 
-	fullName := owner + "/" + name
-	repo, ok := st.ReposByName[fullName]
-	if !ok {
+	repo := st.RepoByNameLocked(owner + "/" + name)
+	if repo == nil {
 		return false
+	}
+	fullName := repo.FullName
+	if u := st.UserByLoginLocked(login); u != nil {
+		login = u.Login
 	}
 	if st.RepoCollaborators[fullName] == nil {
 		return false
@@ -2362,6 +2390,12 @@ func (st *Store) GetRepoCollaboratorPermission(owner, name, login string) string
 	defer st.Mu.RUnlock()
 
 	fullName := owner + "/" + name
+	if repo := st.RepoByNameLocked(fullName); repo != nil {
+		fullName = repo.FullName
+	}
+	if u := st.UserByLoginLocked(login); u != nil {
+		login = u.Login
+	}
 	if st.RepoCollaborators[fullName] == nil {
 		return ""
 	}
@@ -2374,6 +2408,9 @@ func (st *Store) ListRepoCollaborators(owner, name string) map[string]string {
 	defer st.Mu.RUnlock()
 
 	fullName := owner + "/" + name
+	if repo := st.RepoByNameLocked(fullName); repo != nil {
+		fullName = repo.FullName
+	}
 	out := make(map[string]string, len(st.RepoCollaborators[fullName]))
 	for k, v := range st.RepoCollaborators[fullName] {
 		out[k] = v
@@ -2400,11 +2437,11 @@ func (st *Store) StarRepo(userID int, owner, name string) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 
-	fullName := owner + "/" + name
-	repo, ok := st.ReposByName[fullName]
-	if !ok {
+	repo := st.RepoByNameLocked(owner + "/" + name)
+	if repo == nil {
 		return false
 	}
+	fullName := repo.FullName
 	user, ok := st.Users[userID]
 	if !ok {
 		return false
@@ -2440,11 +2477,11 @@ func (st *Store) UnstarRepo(userID int, owner, name string) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 
-	fullName := owner + "/" + name
-	repo, ok := st.ReposByName[fullName]
-	if !ok {
+	repo := st.RepoByNameLocked(owner + "/" + name)
+	if repo == nil {
 		return false
 	}
+	fullName := repo.FullName
 	user, ok := st.Users[userID]
 	if !ok {
 		return false
@@ -2475,8 +2512,8 @@ func (st *Store) IsRepoStarredBy(userID int, owner, name string) bool {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 
-	repo, ok := st.ReposByName[owner+"/"+name]
-	if !ok || repo.Stargazers == nil {
+	repo := st.RepoByNameLocked(owner + "/" + name)
+	if repo == nil || repo.Stargazers == nil {
 		return false
 	}
 	return repo.Stargazers[userID]
@@ -2488,8 +2525,8 @@ func (st *Store) ListRepoStargazers(owner, name string) []int {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 
-	repo, ok := st.ReposByName[owner+"/"+name]
-	if !ok || repo.Stargazers == nil {
+	repo := st.RepoByNameLocked(owner + "/" + name)
+	if repo == nil || repo.Stargazers == nil {
 		return nil
 	}
 	out := make([]int, 0, len(repo.Stargazers))
@@ -2723,25 +2760,35 @@ func (st *Store) TransferRepo(owner, name, newOwner string) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 
-	oldFull := owner + "/" + name
-	newFull := newOwner + "/" + name
+	// Resolve source repo and destination account case-insensitively, then
+	// compare and re-key on canonical names only: a raw-string comparison here
+	// would treat "Admin" and "admin" as different owners and let a transfer
+	// "move" a repository onto itself under a second casing.
+	repo := st.RepoByNameLocked(owner + "/" + name)
+	if repo == nil {
+		return false
+	}
+	oldFull := repo.FullName
+
+	newOwnerUser := st.UserByLoginLocked(newOwner)
+	var newOwnerOrg *Org
+	if newOwnerUser == nil {
+		newOwnerOrg = st.OrgByLoginLocked(newOwner)
+	}
+	if newOwnerUser == nil && newOwnerOrg == nil {
+		return false
+	}
+	var canonicalNewOwner string
+	if newOwnerUser != nil {
+		canonicalNewOwner = newOwnerUser.Login
+	} else {
+		canonicalNewOwner = newOwnerOrg.Login
+	}
+	newFull := canonicalNewOwner + "/" + repo.Name
 	if oldFull == newFull {
 		return true
 	}
-	repo, ok := st.ReposByName[oldFull]
-	if !ok {
-		return false
-	}
-	if _, exists := st.ReposByName[newFull]; exists {
-		return false
-	}
-
-	newOwnerUser := st.UsersByLogin[newOwner]
-	var newOwnerOrg *Org
-	if newOwnerUser == nil {
-		newOwnerOrg = st.OrgsByLogin[newOwner]
-	}
-	if newOwnerUser == nil && newOwnerOrg == nil {
+	if conflict := st.RepoByNameLocked(newFull); conflict != nil && conflict != repo {
 		return false
 	}
 
@@ -2772,7 +2819,9 @@ func (st *Store) TransferRepo(owner, name, newOwner string) bool {
 	}
 
 	st.ReposByName[newFull] = repo
+	st.IndexRepoNameLocked(newFull)
 	delete(st.ReposByName, oldFull)
+	st.UnindexRepoNameLocked(oldFull)
 
 	if stor != nil {
 		st.GitStorages[newFull] = stor

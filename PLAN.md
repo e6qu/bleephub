@@ -106,6 +106,26 @@ client's exact query shape); and the repo-settings Rulesets/Environments tabs bl
 `/orgs/{owner}/teams` for user-owned repos (the last console-404 sources — now gated on owner
 type). Everything else operated cleanly end-to-end.
 
+**Eighth round (2026-08-20) — robustness sweep (deep links, round-trip fidelity, stale state):**
+- Deep-link probing found missing resources spinning ~5s through pointless 404 retries into a raw
+  `ApiError: 404` dump, unknown SPA routes silently landing on the dashboard, and case-variant
+  URLs 404ing where GitHub resolves case-insensitively. Fixed: the query layer no longer retries
+  4xx (except 429); every detail surface renders a GitHub-style 404 (full-page for missing
+  owners/repos/gists/profiles, in-repo-shell for missing issues/PRs/releases/runs/discussions/
+  refs/paths, and missing wiki slugs offer writers a title-prefilled "New page?" create CTA);
+  unknown routes get a real 404 page; and the store resolves repo/user/org names
+  case-insensitively through NFKC-folded secondary indexes maintained across create/rename/
+  transfer/delete — with canonical casing in payloads, working case-variant git clone URLs, and
+  a security audit that fixed four raw-string comparisons the folding would have skewed
+  (including a case-variant path bypass of the admin self-demote guard).
+- Edit round-trip fidelity verified byte-exact (entities, CRLF, unicode, script tags render
+  escaped; open-edit-save changes nothing).
+- Stale-state conflicts: closing an already-closed issue converges silently; a stale merge click
+  previously dumped `Merge failed: PUT 405: {json}` over live merge controls — merge-box errors
+  now surface the API's own message and a failed merge refetches the PR so the box converges to
+  the real (merged) state. Breadcrumb casing still echoes the URL rather than canonical — noted,
+  cosmetic.
+
 **Still not implemented, with reasons:**
 - package download counts: absent from GitHub's package-version payload shape.
 - tag protection: GitHub retired tag protection rules in favor of rulesets, which bleephub

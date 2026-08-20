@@ -182,7 +182,7 @@ func (s *Server) createSCIMBackingUser(w http.ResponseWriter, req *scimUserReque
 		}
 	}
 	s.store.Mu.Lock()
-	if s.store.UsersByLogin[login] != nil {
+	if s.store.UserByLoginLocked(login) != nil {
 		s.store.Mu.Unlock()
 		writeSCIMError(w, http.StatusConflict, "userName already exists")
 		return nil, false
@@ -197,6 +197,7 @@ func (s *Server) createSCIMBackingUser(w http.ResponseWriter, req *scimUserReque
 	}
 	s.store.Users[user.ID] = user
 	s.store.UsersByLogin[user.Login] = user
+	s.store.IndexUserLoginLocked(user.Login)
 	if s.store.Persist != nil {
 		s.store.Persist.MustPut("users", strconv.Itoa(user.ID), user)
 	}
@@ -265,18 +266,20 @@ func (s *Server) replaceSCIMUser(w http.ResponseWriter, r *http.Request, req *sc
 		return nil
 	}
 	login := normalizeGitHubLogin(req.UserName)
-	if login == "" || (login != backing.Login && s.store.UsersByLogin[login] != nil) {
+	if login == "" || (login != backing.Login && s.store.UserByLoginLocked(login) != nil) {
 		s.store.Mu.Unlock()
 		writeSCIMError(w, http.StatusConflict, "userName already exists")
 		return nil
 	}
 	delete(s.store.UsersByLogin, backing.Login)
+	s.store.UnindexUserLoginLocked(backing.Login)
 	backing.Login = login
 	backing.Name = req.DisplayName
 	backing.Email = primarySCIMEmail(req.Emails)
 	backing.Suspended = req.Active != nil && !*req.Active
 	backing.UpdatedAt = s.store.CurrentTime()
 	s.store.UsersByLogin[login] = backing
+	s.store.IndexUserLoginLocked(login)
 	user.ExternalID, user.UserName, user.Name, user.DisplayName = req.ExternalID, login, req.Name, req.DisplayName
 	user.Active = req.Active == nil || *req.Active
 	user.Emails = append([]store.EnterpriseSCIMEmail(nil), req.Emails...)

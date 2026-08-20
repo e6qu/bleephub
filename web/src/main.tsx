@@ -16,7 +16,16 @@ installUnhandledRejectionReporter();
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      retry: 1,
+      // Client errors are deterministic — retrying a 404/403 only stretches
+      // the spinner before the same answer (github.com 404s immediately).
+      // Transient shapes (network faults, 5xx, 429) keep one retry.
+      retry: (failureCount, error) => {
+        const status = (error as { status?: number }).status;
+        if (typeof status === "number" && status >= 400 && status < 500 && status !== 429) {
+          return false;
+        }
+        return failureCount < 1;
+      },
       refetchOnWindowFocus: false,
     },
   },

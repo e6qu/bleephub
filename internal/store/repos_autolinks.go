@@ -10,6 +10,7 @@ import (
 func (st *Store) CreateRepoAutolink(repoKey, keyPrefix, urlTemplate string, isAlphanumeric bool) *RepoAutolink {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
+	repoKey = st.canonicalRepoKeyLocked(repoKey)
 
 	autolink := &RepoAutolink{
 		ID:             st.NextAutolinkID,
@@ -35,6 +36,7 @@ func (st *Store) CreateRepoAutolink(repoKey, keyPrefix, urlTemplate string, isAl
 func (st *Store) ListRepoAutolinks(repoKey string) []*RepoAutolink {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
+	repoKey = st.canonicalRepoKeyLocked(repoKey)
 
 	m := st.RepoAutolinks[repoKey]
 	out := make([]*RepoAutolink, 0, len(m))
@@ -49,6 +51,7 @@ func (st *Store) ListRepoAutolinks(repoKey string) []*RepoAutolink {
 func (st *Store) GetRepoAutolink(repoKey string, id int) *RepoAutolink {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
+	repoKey = st.canonicalRepoKeyLocked(repoKey)
 	if st.RepoAutolinks[repoKey] == nil {
 		return nil
 	}
@@ -59,6 +62,7 @@ func (st *Store) GetRepoAutolink(repoKey string, id int) *RepoAutolink {
 func (st *Store) DeleteRepoAutolink(repoKey string, id int) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
+	repoKey = st.canonicalRepoKeyLocked(repoKey)
 
 	if st.RepoAutolinks[repoKey] == nil {
 		return false

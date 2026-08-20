@@ -78,6 +78,8 @@ import type {
   GithubRepoSocialCounts,
 } from "../types.js";
 import { RepoHeader } from "../components/PageHeader.js";
+import { RepoNotFound } from "../components/RepoNotFound.js";
+import { isNotFoundError } from "../components/notFound.js";
 import { Box, Blankslate, Button, ButtonLink, CodeBlock, SectionLabel, Modal, DialogActions, FormLabel } from "../components/ui.js";
 import { CommentCard } from "../components/CommentCard.js";
 import { ReactionBar } from "../components/ReactionBar.js";
@@ -460,8 +462,12 @@ export function RepoDetailPage({ initialTab = "code" }: { initialTab?: SubTab })
   });
 
   if (bootstrapQ.isPending || isLoading) return <Spinner label={`loading ${owner}/${repo}`} />;
-  if (isError || !repoData)
+  if (isError || !repoData) {
+    // A missing repository gets github.com's full-page 404 (which also cloaks
+    // private repos); every other failure keeps the raw error banner.
+    if (isNotFoundError(error)) return <RepoNotFound />;
     return <InlineError title={`Failed to load ${owner}/${repo}`} detail={String(error)} />;
+  }
 
   return (
     <div>
@@ -552,7 +558,16 @@ export function RepoDetailPage({ initialTab = "code" }: { initialTab?: SubTab })
           languages, social counts) on the right. */}
       {tab === "code" && (
         commitsError ? (
-          <InlineError title="Failed to load repository contents" detail={String(commitsErr)} />
+          // The repo exists (its query succeeded above), so a 404 here means
+          // the URL names a ref the repository does not have — stay inside
+          // the repo shell, github.com-style.
+          isNotFoundError(commitsErr) ? (
+            <Blankslate icon={<BranchIcon size={26} />} title="This branch could not be found">
+              {`${routeRef ? `The "${routeRef}" branch or ref` : "The requested ref"} does not exist in ${owner}/${repo}.`}
+            </Blankslate>
+          ) : (
+            <InlineError title="Failed to load repository contents" detail={String(commitsErr)} />
+          )
         ) : (
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_296px]">
             <div className="min-w-0">
@@ -818,7 +833,19 @@ function CodeView({
   if (commits.length === 0) {
     return <EmptyRepoSetup owner={owner} repo={repo} defaultBranch={defaultBranch} sshUrl={sshUrl} />;
   }
-  if (itemsError) return <InlineError title="Failed to load files" detail={String(itemsErr)} />;
+  if (itemsError) {
+    // The repository exists — a 404 on the contents read means the ref/path
+    // combination doesn't. Rendered inside the repo shell (this component is
+    // a Code-tab body), matching github.com's in-repo missing-path page.
+    if (isNotFoundError(itemsErr)) {
+      return (
+        <Blankslate icon={<DirectoryIcon size={26} />} title="This branch or path could not be found">
+          {`The "${branch}" branch of ${owner}/${repo} does not contain the path "${path || "/"}".`}
+        </Blankslate>
+      );
+    }
+    return <InlineError title="Failed to load files" detail={String(itemsErr)} />;
+  }
 
   const fileList = Array.isArray(items) ? items : [];
   const latestCommit =
@@ -2621,6 +2648,18 @@ export function RepoFilePage() {
 
   if (query.isLoading) return <Spinner label={`loading ${path}`} />;
   if (query.isError || !query.data) {
+    // Missing blob (bad ref or bad path) inside an existing repo: keep the
+    // repo chrome and show github.com's missing-path state, not the banner.
+    if (isNotFoundError(query.error)) {
+      return (
+        <div>
+          <RepoHeader owner={owner} repo={repo} active="code" {...counts} />
+          <Blankslate icon={<FileIcon size={26} />} title="This branch or path could not be found">
+            {`The "${ref}" ref of ${owner}/${repo} does not contain the path "${path}".`}
+          </Blankslate>
+        </div>
+      );
+    }
     return <InlineError title={`Failed to load ${path}`} detail={String(query.error)} />;
   }
 

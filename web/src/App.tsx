@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-route
 import { ErrorBoundary, InlineError, Spinner, ToastProvider } from "@bleephub/ui-core/components";
 import { fetchBrowserSession, isLoggedIn, UNAUTHORIZED_EVENT } from "./api.js";
 import { BleephubShell } from "./components/Shell.js";
+import { RepoNotFound } from "./components/RepoNotFound.js";
 import { SessionContext } from "./session.js";
 import { Button } from "./components/ui.js";
 
@@ -321,7 +322,9 @@ function AppRoutes({ signedIn }: { signedIn: boolean }) {
                   (which, signed out, redirects to sign-in). /ui/login is
                   handled above, before the shell. */}
               <Route path="/ui/:login" element={<ProfilePage />} />
-                <Route path="/ui/*" element={<Navigate to="/ui/" replace />} />
+                {/* github.com shows a 404 for unknown paths; silently landing
+                    on the dashboard hides typos and broken links. */}
+                <Route path="/ui/*" element={<RepoNotFound />} />
               </Routes>
         </Suspense>
       </RouteErrorBoundary>
