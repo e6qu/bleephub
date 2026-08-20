@@ -19,6 +19,7 @@ import { FileIcon, ChevronDownIcon, ChevronRightIcon } from "./octicons.js";
 import { MarkdownComposer } from "./MarkdownComposer.js";
 import { languageFromPath, highlightLines } from "./CodeHighlight.js";
 import { useDismiss } from "../hooks/useDismiss.js";
+import { useSignedIn } from "../session.js";
 import {
   groupReviewThreads,
   ReviewThreadCard,
@@ -119,11 +120,15 @@ function asArray<T>(value: unknown): T[] {
  * cannot lose them. Shared with PullsPage for the Files-tab "Pending" badge.
  */
 export function usePendingReview(owner: string, repo: string, number: number) {
-  const viewerQ = useQuery({ queryKey: ["viewer"], queryFn: fetchAuthenticatedUser });
+  // No viewer, no pending review: the /api/v3/user read 401s anonymously.
+  const signedIn = useSignedIn();
+  const viewerQ = useQuery({ queryKey: ["viewer"], queryFn: fetchAuthenticatedUser, enabled: signedIn });
   const viewerLogin = typeof viewerQ.data?.login === "string" ? viewerQ.data.login : null;
+  // The reviews read is auth-gated on the server too (401 anonymously).
   const reviewsQ = useQuery({
     queryKey: ["pr-reviews", owner, repo, number],
     queryFn: () => fetchPRReviews(owner, repo, number),
+    enabled: signedIn,
   });
   const reviews = asArray<GithubPRReview>(reviewsQ.data);
   const review =
@@ -284,6 +289,8 @@ function FileDiff({
   removingDraft: boolean;
 }) {
   const highlighted = useHighlightedPatch(file.filename, file.patch);
+  // Inline review comments need a session; anonymous diffs render read-only.
+  const signedIn = useSignedIn();
   const parsed = useMemo(() => (file.patch ? parseDiffLines(file.patch) : []), [file.patch]);
   const matchedIds = new Set<number>();
   const attachmentsFor = (line: ParsedDiffLine) => {
@@ -355,7 +362,7 @@ function FileDiff({
                 {line.newLine ?? ""}
               </span>
               <span style={{ width: "2rem", flexShrink: 0, textAlign: "center" }}>
-                {line.commentLine && line.side ? (
+                {signedIn && line.commentLine && line.side ? (
                   <button
                     type="button"
                     aria-label={`Comment on ${file.filename} line ${line.commentLine}`}
@@ -528,9 +535,14 @@ export function PRFilesView({
     // toolbar (and the checkbox itself) doesn't blink out mid-toggle.
     placeholderData: (prev: GithubPRFile[] | undefined) => prev,
   });
+  // Reviews are auth-gated on the server (401 anonymously); review comments
+  // are a public read. Signed out the diff renders comments without reviews
+  // and without thread overlays (GraphQL refuses anonymous callers too).
+  const signedIn = useSignedIn();
   const reviewsQ = useQuery({
     queryKey: ["pr-reviews", owner, repo, number],
     queryFn: () => fetchPRReviews(owner, repo, number),
+    enabled: signedIn,
   });
   const commentsQ = useQuery({
     queryKey: ["pr-review-comments", owner, repo, number],
@@ -540,6 +552,7 @@ export function PRFilesView({
     queryKey: ["pr-review-threads", owner, repo, number],
     queryFn: () => fetchPRReviewThreads(owner, repo, number),
     retry: false,
+    enabled: signedIn,
   });
   const pending = usePendingReview(owner, repo, number);
 
@@ -794,15 +807,18 @@ export function PRFilesView({
           Hide whitespace changes
         </label>
         <div ref={finishRef} style={{ position: "relative" }}>
-          <Button
-            variant="primary"
-            size="sm"
-            aria-expanded={finishOpen}
-            aria-haspopup="dialog"
-            onClick={() => setFinishOpen((open) => !open)}
-          >
-            {pendingCount > 0 ? `Finish your review (${pendingCount})` : "Review changes"}
-          </Button>
+          {/* Reviews need a session; github.com hides the control signed out. */}
+          {signedIn && (
+            <Button
+              variant="primary"
+              size="sm"
+              aria-expanded={finishOpen}
+              aria-haspopup="dialog"
+              onClick={() => setFinishOpen((open) => !open)}
+            >
+              {pendingCount > 0 ? `Finish your review (${pendingCount})` : "Review changes"}
+            </Button>
+          )}
           {finishOpen && (
             <div
               role="dialog"

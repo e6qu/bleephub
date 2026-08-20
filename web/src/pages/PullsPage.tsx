@@ -63,6 +63,8 @@ import type {
 } from "../types.js";
 import { formatDuration } from "../utils/format.js";
 import { useRepoPermissions } from "../hooks/useRepoPermissions.js";
+import { useSignedIn } from "../session.js";
+import { SignInPrompt } from "../components/SignInPrompt.js";
 import { CommentCard } from "../components/CommentCard.js";
 import { RepoHeader } from "../components/PageHeader.js";
 import { RunStatusIcon } from "../components/RunStatusIcon.js";
@@ -449,11 +451,14 @@ function PRDetail({ owner, repo, number }: { owner: string; repo: string; number
 
   // Checks-tab count: check runs + commit statuses on the head SHA (both
   // queries are shared with the merge box / checks tab via their keys).
+  // Check-run reads are auth-gated on the server (401 anonymously); commit
+  // statuses are public.
+  const signedIn = useSignedIn();
   const headSha = pr?.head.sha ?? "";
   const checksCountQ = useQuery({
     queryKey: ["check-runs", owner, repo, headSha],
     queryFn: () => fetchCheckRuns(owner, repo, headSha),
-    enabled: !!headSha,
+    enabled: !!headSha && signedIn,
   });
   const statusCountQ = useQuery({
     queryKey: ["combined-status", owner, repo, headSha],
@@ -471,14 +476,19 @@ function PRDetail({ owner, repo, number }: { owner: string; repo: string; number
   const pendingViewerQ = useQuery({
     queryKey: ["viewer"],
     queryFn: fetchAuthenticatedUser,
-    enabled: bootstrapSettled,
+    // Anonymous visitors have no viewer (the read would 401) and no
+    // pending review either.
+    enabled: bootstrapSettled && signedIn,
   });
   const pendingLogin =
     typeof pendingViewerQ.data?.login === "string" ? pendingViewerQ.data.login : null;
+  // The reviews read is auth-gated on the server (401 anonymously); the
+  // bootstrap seeds this key for everyone, so signed out we render the
+  // seeded snapshot without ever refetching it.
   const pendingReviewsQ = useQuery({
     queryKey: ["pr-reviews", owner, repo, number],
     queryFn: () => fetchPRReviews(owner, repo, number),
-    enabled: bootstrapSettled,
+    enabled: bootstrapSettled && signedIn,
   });
   const pendingReview =
     (Array.isArray(pendingReviewsQ.data) ? pendingReviewsQ.data : []).find(
@@ -697,7 +707,8 @@ function ConversationTab({
   pr: GithubPR;
   stateMut: { isPending: boolean; mutate: () => void; isError: boolean; error: unknown };
 }) {
-  const viewerQ = useQuery({ queryKey: ["viewer"], queryFn: fetchAuthenticatedUser });
+  const signedIn = useSignedIn();
+  const viewerQ = useQuery({ queryKey: ["viewer"], queryFn: fetchAuthenticatedUser, enabled: signedIn });
   const viewerLogin = typeof viewerQ.data?.login === "string" ? viewerQ.data.login : null;
   const s = prState(pr);
 
@@ -711,17 +722,24 @@ function ConversationTab({
     queryKey: ["pr-timeline", owner, repo, number],
     queryFn: () => fetchIssueTimeline(owner, repo, number),
   });
+  // Reviews are auth-gated on the server (401 anonymously); signed out the
+  // conversation renders from the public timeline plus the bootstrap-seeded
+  // snapshot of this key.
   const reviewsQ = useQuery({
     queryKey: ["pr-reviews", owner, repo, number],
     queryFn: () => fetchPRReviews(owner, repo, number),
+    enabled: signedIn,
   });
   const commentsQ = useQuery({
     queryKey: ["pr-review-comments", owner, repo, number],
     queryFn: () => fetchPRReviewComments(owner, repo, number),
   });
+  // Review threads ride GraphQL, which refuses anonymous callers; signed
+  // out the conversation renders from the public REST timeline alone.
   const threadsQ = useQuery({
     queryKey: ["pr-review-threads", owner, repo, number],
     queryFn: () => fetchPRReviewThreads(owner, repo, number),
+    enabled: signedIn,
   });
 
   const timeline = Array.isArray(timelineQ.data) ? timelineQ.data : [];
@@ -778,7 +796,8 @@ function ConversationTab({
         />
         <MergeBox owner={owner} repo={repo} number={number} pr={pr} canPush={canPush} isPRAuthor={isPRAuthor} />
         <MutationError of={stateMut} />
-        <CommentComposer
+        {!signedIn && <SignInPrompt action="comment" />}
+        {signedIn && <CommentComposer
           owner={owner}
           repo={repo}
           number={number}
@@ -798,7 +817,7 @@ function ConversationTab({
               </Button>
             )
           }
-        />
+        />}
       </div>
       <div style={{ width: "100%", maxWidth: "16rem", flexShrink: 0 }}>
         <IssueSidebar
@@ -868,6 +887,9 @@ function DevelopmentSection({
   headRef: string;
   baseRef: string;
 }) {
+  // GraphQL refuses anonymous callers — signed out the section renders its
+  // empty state without fetching.
+  const signedIn = useSignedIn();
   const q = useQuery({
     queryKey: ["pr-closing-issues", owner, repo, number],
     queryFn: ({ signal }) =>
@@ -876,6 +898,7 @@ function DevelopmentSection({
         { owner, repo, number },
         signal,
       ),
+    enabled: signedIn,
   });
   const nodes = q.data?.repository?.pullRequest?.closingIssuesReferences?.nodes;
   const issues = (nodes ?? []).filter((n): n is ClosingIssueNode => n != null);
@@ -1022,10 +1045,12 @@ function MergeBox({
   const [commitMessage, setCommitMessage] = useState<string | null>(null);
   const effectiveTitle = commitTitle ?? defaultCommitTitle(method, owner, pr);
   const effectiveMessage = commitMessage ?? defaultCommitMessage(method, pr);
+  // Check-run reads are auth-gated on the server (401 anonymously).
+  const signedIn = useSignedIn();
   const checksQ = useQuery({
     queryKey: ["check-runs", owner, repo, pr.head.sha],
     queryFn: () => fetchCheckRuns(owner, repo, pr.head.sha),
-    enabled: !!pr.head.sha,
+    enabled: !!pr.head.sha && signedIn,
   });
   const statusQ = useQuery({
     queryKey: ["combined-status", owner, repo, pr.head.sha],
@@ -1404,10 +1429,12 @@ function MergeBox({
 
 /** Rolled-up check/status icon for one commit, hidden when nothing reported. */
 function CommitChecksIcon({ owner, repo, sha }: { owner: string; repo: string; sha: string }) {
+  // Check-run reads are auth-gated on the server (401 anonymously).
+  const signedIn = useSignedIn();
   const checksQ = useQuery({
     queryKey: ["check-runs", owner, repo, sha],
     queryFn: () => fetchCheckRuns(owner, repo, sha),
-    enabled: !!sha,
+    enabled: !!sha && signedIn,
   });
   const statusQ = useQuery({
     queryKey: ["combined-status", owner, repo, sha],
@@ -1537,10 +1564,13 @@ function ChecksSection({
   sha: string;
   standalone?: boolean;
 }) {
+  // Check-run reads are auth-gated on the server (401 anonymously); the
+  // checks pane shows statuses alone for signed-out visitors.
+  const signedIn = useSignedIn();
   const checksQ = useQuery({
     queryKey: ["check-runs", owner, repo, sha],
     queryFn: () => fetchCheckRuns(owner, repo, sha),
-    enabled: !!sha,
+    enabled: !!sha && signedIn,
     refetchInterval: (query) =>
       query.state.data?.items.some((c) => c.status !== "completed") ? 5000 : false,
   });
@@ -1685,14 +1715,19 @@ function RequestedReviewersSection({
   // Requesting, re-requesting, and removing reviewers needs write access —
   // github.com shows read-only reviewer chips to everyone else.
   const { canPush } = useRepoPermissions(owner, repo);
+  // Both reads are auth-gated on the server (401 anonymously); signed out
+  // the section renders the bootstrap-seeded snapshots (or empty).
+  const signedIn = useSignedIn();
   const q = useQuery({
     queryKey: ["pr-requested-reviewers", owner, repo, number],
     queryFn: ({ signal }) => fetchPRRequestedReviewers(owner, repo, number, signal),
+    enabled: signedIn,
   });
   // Latest submitted verdict per reviewer, for the per-reviewer state icons.
   const reviewsQ = useQuery({
     queryKey: ["pr-reviews", owner, repo, number],
     queryFn: () => fetchPRReviews(owner, repo, number),
+    enabled: signedIn,
   });
   // Reviewers must be repo collaborators; a free-text login just produced a 422
   // on a typo. Offer the assignable users the same way IssueSidebar offers

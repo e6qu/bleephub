@@ -36,6 +36,7 @@ import { RepoHeader } from "../components/PageHeader.js";
 import { RunStatusIcon } from "../components/RunStatusIcon.js";
 import { Box, Blankslate, Button, ErrorBanner } from "../components/ui.js";
 import { MutationError } from "../components/MutationError.js";
+import { useSignedIn } from "../session.js";
 import {
   BranchIcon,
   ChevronDownIcon,
@@ -689,6 +690,9 @@ function JobPane({
     return id && /^\d+$/.test(id) ? id : null;
   }, [job.check_run_url]);
 
+  // Annotation reads are auth-gated on the server (401 anonymously); logs
+  // stay readable without them.
+  const signedIn = useSignedIn();
   const annotationsQ = useQuery({
     queryKey: ["job-annotations", owner, repo, checkRunId],
     queryFn: ({ signal }) =>
@@ -696,7 +700,7 @@ function JobPane({
         `/api/v3/repos/${owner}/${repo}/check-runs/${checkRunId}/annotations`,
         signal,
       ),
-    enabled: checkRunId !== null,
+    enabled: checkRunId !== null && signedIn,
     refetchInterval: live ? 2000 : false,
   });
   const annotations = Array.isArray(annotationsQ.data) ? annotationsQ.data : [];

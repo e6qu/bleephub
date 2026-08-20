@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { InlineError } from "@bleephub/ui-core/components";
 import { useDismiss } from "../hooks/useDismiss.js";
+import { useSignedIn } from "../session.js";
 import type { GithubReaction, GithubReactionContent } from "../types.js";
 
 export const REACTION_CONTENTS: GithubReactionContent[] = [
@@ -45,6 +46,9 @@ export function ReactionBar({
   viewerLogin: string | null;
 }) {
   const qc = useQueryClient();
+  // Reaction lists are public reads; toggling them is not. Signed out the row
+  // renders read-only — counts as static pills, no picker (github.com).
+  const signedIn = useSignedIn();
   const q = useQuery({ queryKey, queryFn: fetchList });
   const [pickerOpen, setPickerOpen] = useState(false);
   const pickerRef = useDismiss<HTMLDivElement>(pickerOpen, () => setPickerOpen(false));
@@ -100,6 +104,13 @@ export function ReactionBar({
       <div ref={pickerRef} className="flex flex-wrap items-center gap-1.5">
         {REACTION_CONTENTS.filter((c) => (byContent.get(c)?.count ?? 0) > 0).map((content) => {
           const entry = byContent.get(content);
+          if (!signedIn) {
+            return (
+              <span key={content} style={{ ...pillStyle(false), cursor: "default" }}>
+                {REACTION_EMOJI[content]} {entry?.count}
+              </span>
+            );
+          }
           return (
             <button
               key={content}
@@ -114,24 +125,26 @@ export function ReactionBar({
             </button>
           );
         })}
-        <button
-          type="button"
-          aria-label="add reaction"
-          aria-expanded={pickerOpen}
-          onClick={() => setPickerOpen((v) => !v)}
-          style={{
-            border: "1px solid var(--color-border)",
-            background: "transparent",
-            borderRadius: "2rem",
-            padding: "0.1rem 0.55rem",
-            fontSize: "0.78rem",
-            cursor: "pointer",
-            color: "var(--color-fg-muted)",
-          }}
-        >
-          🙂＋
-        </button>
-        {pickerOpen && (
+        {signedIn && (
+          <button
+            type="button"
+            aria-label="add reaction"
+            aria-expanded={pickerOpen}
+            onClick={() => setPickerOpen((v) => !v)}
+            style={{
+              border: "1px solid var(--color-border)",
+              background: "transparent",
+              borderRadius: "2rem",
+              padding: "0.1rem 0.55rem",
+              fontSize: "0.78rem",
+              cursor: "pointer",
+              color: "var(--color-fg-muted)",
+            }}
+          >
+            🙂＋
+          </button>
+        )}
+        {signedIn && pickerOpen && (
           <span role="menu" aria-label="Pick a reaction" className="inline-flex flex-wrap items-center gap-1.5">
             {REACTION_CONTENTS.map((content) => (
               <button

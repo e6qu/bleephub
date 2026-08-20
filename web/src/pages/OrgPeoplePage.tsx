@@ -15,6 +15,7 @@ import {
   fetchCurrentUser,
 } from "../api.js";
 import { fetchViewerOrgRole } from "../utils/uiFetch.js";
+import { useSignedIn } from "../session.js";
 import type { GithubAccount } from "../types.js";
 import { OrgHeader } from "../components/PageHeader.js";
 import { Avatar } from "../components/Avatar.js";
@@ -28,6 +29,9 @@ type PeopleTab = "members" | "outside";
 export function OrgPeoplePage() {
   const { org = "" } = useParams<{ org: string }>();
   const [tab, setTab] = useState<PeopleTab>("members");
+  // Anonymous visitors see the public members list only: the viewer-role
+  // read 401s signed out, and outside collaborators are member-only data.
+  const signedIn = useSignedIn();
 
   // The viewer's own membership role gates the write controls: only org
   // owners see the invite box and the per-member role/remove/convert actions
@@ -36,6 +40,7 @@ export function OrgPeoplePage() {
     queryKey: ["viewer-org-role", org],
     queryFn: () => fetchViewerOrgRole(org),
     retry: false,
+    enabled: signedIn,
   });
   const isOrgAdmin = roleQ.data === "admin";
 
@@ -43,10 +48,14 @@ export function OrgPeoplePage() {
     <div>
       <OrgHeader org={org} active="people" />
       <Tabs<PeopleTab>
-        items={[
-          { key: "members", label: "Members" },
-          { key: "outside", label: "Outside collaborators" },
-        ]}
+        items={
+          signedIn
+            ? [
+                { key: "members", label: "Members" },
+                { key: "outside", label: "Outside collaborators" },
+              ]
+            : [{ key: "members", label: "Members" }]
+        }
         active={tab}
         onChange={setTab}
       />
@@ -71,7 +80,12 @@ function OrgMembersPanel({ org, isOrgAdmin }: { org: string; isOrgAdmin: boolean
     // first page (the server defaults to 30). Inline to avoid touching api.ts.
     queryFn: () => ghFetch<GithubAccount[]>(`/api/v3/orgs/${encodeURIComponent(org)}/members?per_page=100`),
   });
-  const viewerQ = useQuery({ queryKey: ["current-user"], queryFn: ({ signal }) => fetchCurrentUser(signal) });
+  const signedIn = useSignedIn();
+  const viewerQ = useQuery({
+    queryKey: ["current-user"],
+    queryFn: ({ signal }) => fetchCurrentUser(signal),
+    enabled: signedIn,
+  });
   const publicQ = useQuery({
     queryKey: ["org-public-members", org],
     queryFn: () => fetchPublicOrgMembers(org),

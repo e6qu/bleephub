@@ -56,6 +56,7 @@ import {
   StarIcon,
 } from "./octicons.js";
 import { abortPendingRequests, clearToken, fetchCurrentUser, fetchNotifications, isRateLimited } from "../api.js";
+import { loginPath, useSignedIn } from "../session.js";
 
 /**
  * GitHub-faithful global header: hamburger → global-nav drawer, brand, a
@@ -221,6 +222,9 @@ function MenuSeparator() {
 
 // ─── header ─────────────────────────────────────────────────────────────────
 
+// Display/alignment intentionally live in the className (see iconButtonClass)
+// rather than here: an inline `display` would override the responsive `hidden`
+// utilities that collapse some of these controls at phone widths.
 function iconButtonStyle(): CSSProperties {
   return {
     background: "transparent",
@@ -229,12 +233,15 @@ function iconButtonStyle(): CSSProperties {
     borderRadius: "var(--radius-md)",
     height: 32,
     width: 32,
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
     position: "relative",
   };
 }
+
+const iconButtonClass = "app-header-control inline-flex items-center justify-center";
+// Phone widths can't fit every header control; like github.com, the Issues /
+// Pull requests quick links collapse below md (they remain reachable through
+// the global-nav drawer and search).
+const iconButtonMdUpClass = "app-header-control hidden items-center justify-center md:inline-flex";
 
 function Avatar({ login, url, size = 24 }: { login: string; url?: string | undefined; size?: number }) {
   if (url) {
@@ -277,8 +284,14 @@ export function AppHeader() {
   const [scope, setScope] = useState("repositories");
   const [paletteOpen, setPaletteOpen] = useState(false);
 
+  // A signed-out visitor gets github.com's anonymous header: brand + search +
+  // a Sign in button. No create menu, bell, avatar menu, drawer, palette or
+  // shortcuts — and, critically, none of their viewer-scoped fetches/polls.
+  const signedIn = useSignedIn();
+
   // Global ⌘K / Ctrl-K opens the command palette (github.com's "jump to").
   useEffect(() => {
+    if (!signedIn) return;
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && !e.altKey && (e.key === "k" || e.key === "K")) {
         e.preventDefault();
@@ -287,7 +300,7 @@ export function AppHeader() {
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, []);
+  }, [signedIn]);
 
   // A throttled 403 is final for the current window: retrying it only deepens
   // the exhaustion (same guard pattern as useMetricsData). Surface it instead
@@ -297,14 +310,20 @@ export function AppHeader() {
     queryFn: ({ signal }) => fetchCurrentUser(signal),
     staleTime: 60_000,
     retry: (failureCount, err) => !isRateLimited(err) && failureCount < 1,
+    enabled: signedIn,
   });
   useToastQueryErrors(isRateLimited(userError) ? userError : undefined, "API rate limit exceeded");
+  // enabled:false also stops the 30s poll — an anonymous session must never
+  // touch the notifications endpoint (it would 401 on every tick).
   const { data: notifications } = useQuery({
     queryKey: ["notifications", "header"],
     queryFn: ({ signal }) => fetchNotifications({}, signal),
     refetchInterval: (query) => (isRateLimited(query.state.error) ? false : 30_000),
+    enabled: signedIn,
   });
-  const unread = notifications?.filter((n) => n.unread).length ?? 0;
+  // Tolerate a non-array body: the header must keep rendering (and the
+  // sign-out transition must keep working) even when this poll gets garbage.
+  const unread = Array.isArray(notifications) ? notifications.filter((n) => n.unread).length : 0;
   const login = user?.login ?? "";
 
   const submitSearch = (e: FormEvent) => {
@@ -339,14 +358,18 @@ export function AppHeader() {
 
   return (
     <>
-      <Suspense fallback={null}>
-        <GlobalNavDrawer open={drawer} onClose={() => setDrawer(false)} viewerLogin={login || undefined} />
-      </Suspense>
+      {signedIn && (
+        <Suspense fallback={null}>
+          <GlobalNavDrawer open={drawer} onClose={() => setDrawer(false)} viewerLogin={login || undefined} />
+        </Suspense>
+      )}
       <header className="app-header">
         <div className="mx-auto flex max-w-[1280px] items-center gap-3 px-4 py-2.5">
-          <button type="button" aria-label="Open global navigation" onClick={() => setDrawer(true)} className="app-header-control" style={iconButtonStyle()}>
-            <ThreeBarsIcon size={16} />
-          </button>
+          {signedIn && (
+            <button type="button" aria-label="Open global navigation" onClick={() => setDrawer(true)} className={iconButtonClass} style={iconButtonStyle()}>
+              <ThreeBarsIcon size={16} />
+            </button>
+          )}
 
           <Link to="/ui/" className="inline-flex items-center gap-2" style={{ textDecoration: "none", color: "var(--color-fg)", minHeight: "1.625rem" }}>
             <Mark size={24} />
@@ -355,9 +378,9 @@ export function AppHeader() {
             </span>
           </Link>
 
-          <form onSubmit={submitSearch} className="flex flex-1 items-center" style={{ maxWidth: 480 }}>
+          <form onSubmit={submitSearch} className="flex min-w-0 flex-1 items-center" style={{ maxWidth: 480 }}>
             <div
-              className="app-header-search flex w-full items-center gap-2"
+              className="app-header-search flex w-full min-w-0 items-center gap-2"
               style={{
                 border: "1px solid var(--color-border)",
                 borderRadius: "var(--radius-md)",
@@ -370,6 +393,7 @@ export function AppHeader() {
                 aria-label="Search scope"
                 value={scope}
                 onChange={(e) => setScope(e.target.value)}
+                className="hidden sm:block"
                 style={{
                   border: "none",
                   outline: "none",
@@ -386,6 +410,7 @@ export function AppHeader() {
               {scopedRepo && (
                 <span
                   title={`Searches are scoped to ${scopedRepo}`}
+                  className="hidden md:inline"
                   style={{ fontSize: "0.72rem", color: "var(--color-fg-muted)", whiteSpace: "nowrap" }}
                 >
                   In this repository
@@ -400,6 +425,7 @@ export function AppHeader() {
                 aria-label={scopedRepo ? `Search in ${scopedRepo}` : "Search"}
                 style={{
                   flex: 1,
+                  minWidth: 0,
                   border: "none",
                   outline: "none",
                   background: "transparent",
@@ -410,6 +436,28 @@ export function AppHeader() {
             </div>
           </form>
 
+          {!signedIn && (
+            // github.com's anonymous header ends in a Sign in affordance that
+            // returns the visitor to the page they were reading.
+            <Link
+              to={loginPath(location)}
+              className="app-header-control inline-flex items-center"
+              style={{
+                border: "1px solid var(--color-border)",
+                borderRadius: "var(--radius-md)",
+                padding: "0.3rem 0.75rem",
+                color: "var(--color-fg)",
+                textDecoration: "none",
+                fontSize: "0.85rem",
+                fontWeight: 600,
+                whiteSpace: "nowrap",
+                minHeight: "1.625rem",
+              }}
+            >
+              Sign in
+            </Link>
+          )}
+          {signedIn && (
           <div className="flex items-center gap-2">
             {/* create menu */}
             <HeaderMenu label="Create new…" trigger={<><PlusIcon size={14} /><TriangleDownIcon size={12} /></>}>
@@ -429,7 +477,7 @@ export function AppHeader() {
               to={`/ui/search?type=issues&q=${encodeURIComponent(login ? `is:issue author:${login}` : "is:issue")}`}
               aria-label={login ? "Your issues" : "Issues"}
               title={login ? "Your issues" : "Issues"}
-              className="app-header-control"
+              className={iconButtonMdUpClass}
               style={iconButtonStyle()}
             >
               <IssueOpenedIcon size={16} />
@@ -438,13 +486,13 @@ export function AppHeader() {
               to={`/ui/search?type=issues&q=${encodeURIComponent(login ? `is:pr author:${login}` : "is:pr")}`}
               aria-label={login ? "Your pull requests" : "Pull requests"}
               title={login ? "Your pull requests" : "Pull requests"}
-              className="app-header-control"
+              className={iconButtonMdUpClass}
               style={iconButtonStyle()}
             >
               <PullRequestIcon size={16} />
             </Link>
 
-            <Link to="/ui/notifications" aria-label={unread ? `Notifications (${unread} unread)` : "Notifications"} title="Notifications" className="app-header-control" style={iconButtonStyle()}>
+            <Link to="/ui/notifications" aria-label={unread ? `Notifications (${unread} unread)` : "Notifications"} title="Notifications" className={iconButtonClass} style={iconButtonStyle()}>
               <NotificationBellIcon size={16} />
               {unread > 0 && (
                 <span
@@ -501,16 +549,19 @@ export function AppHeader() {
               )}
             </HeaderMenu>
           </div>
+          )}
         </div>
       </header>
-      {paletteOpen && (
+      {signedIn && paletteOpen && (
         <Suspense fallback={null}>
           <CommandPalette open onClose={() => setPaletteOpen(false)} viewerLogin={login || undefined} />
         </Suspense>
       )}
-      <Suspense fallback={null}>
-        <GlobalShortcuts login={login} />
-      </Suspense>
+      {signedIn && (
+        <Suspense fallback={null}>
+          <GlobalShortcuts login={login} />
+        </Suspense>
+      )}
     </>
   );
 }

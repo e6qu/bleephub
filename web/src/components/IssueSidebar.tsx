@@ -25,6 +25,7 @@ import {
 } from "../api.js";
 import type { GithubProjectV2 } from "../types.js";
 import { useRepoPermissions } from "../hooks/useRepoPermissions.js";
+import { useSignedIn } from "../session.js";
 import { LabelPills } from "./LabelPills.js";
 import { Avatar } from "./Avatar.js";
 import { ErrorBanner } from "./ui.js";
@@ -118,8 +119,12 @@ function NotificationsField({
   const muted = { fontSize: "0.82rem", color: "var(--color-fg-muted)" } as const;
   const subjectSuffix = kind === "pr" ? `/pulls/${number}` : `/issues/${number}`;
 
+  // Notification threads are viewer-scoped: the list read 401s anonymously,
+  // and there is nothing to subscribe to without a session.
+  const signedIn = useSignedIn();
   const threadQ = useQuery({
     queryKey: ["notification-thread", owner, repo, kind, number],
+    enabled: signedIn,
     queryFn: async ({ signal }) => {
       const rows = await ghFetch<NotificationThreadRow[]>(
         `/api/v3/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/notifications?all=true`,
@@ -150,6 +155,10 @@ function NotificationsField({
     },
   });
 
+  if (!signedIn) {
+    // github.com asks anonymous visitors to sign in before subscribing.
+    return <span style={muted}>Sign in to receive notifications for this thread.</span>;
+  }
   if (threadQ.isLoading) return <span style={muted}>Loading…</span>;
   if (threadQ.isError || threadId === null) {
     // No notification thread for this conversation yet — nothing to
@@ -241,6 +250,9 @@ export function IssueSidebar({
     queryKey: ["milestones", owner, repo, "all"],
     queryFn: () => fetchRepoMilestones(owner, repo, "all"),
   });
+  // Issue types ride org-admin REST + GraphQL reads, both of which refuse
+  // anonymous callers — signed out the Type section simply stays empty.
+  const signedIn = useSignedIn();
   const {
     data: issueTypes = [],
     isLoading: issueTypesLoading,
@@ -249,12 +261,12 @@ export function IssueSidebar({
   } = useQuery({
     queryKey: ["org-issue-types", owner],
     queryFn: () => fetchOrgIssueTypes(owner),
-    enabled: kind === "issue" && ownerType === "Organization",
+    enabled: kind === "issue" && ownerType === "Organization" && signedIn,
   });
   const { data: graphQLIssueType = null } = useQuery({
     queryKey: ["issue-type", owner, repo, number],
     queryFn: () => fetchIssueGraphQLIssueType(owner, repo, number),
-    enabled: kind === "issue" && ownerType === "Organization",
+    enabled: kind === "issue" && ownerType === "Organization" && signedIn,
   });
 
   const invalidate = () => {
@@ -622,11 +634,14 @@ function ProjectsField({
   const contentType = kind === "pr" ? "PullRequest" : "Issue";
   const muted = { fontSize: "0.82rem", color: "var(--color-fg-muted)" } as const;
 
+  // Org project reads 401 anonymously, so the section stays at "None yet"
+  // for signed-out visitors instead of firing refused requests.
+  const signedIn = useSignedIn();
   // Fetch the org's projects and, for each, whether this item is in it (and the
   // membership's item id, needed to remove it).
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["issue-projects", owner, repo, kind, number],
-    enabled: isOrg,
+    enabled: isOrg && signedIn,
     queryFn: async () => {
       const projects = await fetchOrgProjectsV2(owner);
       return Promise.all(

@@ -61,6 +61,23 @@ sustained through persistence, 0.4 ms issue-list reads, 10 ms search, 0.1 s grac
 and 0.1 s cold boot — the earlier 34 s reload reading was a measurement artifact (raced the
 dying process). No scale work needed at this size.
 
+**Fifth round (2026-08-20) — remaining journey classes:**
+- **Collaborator tier validated**: the push-but-not-admin case (invited via the real invitation
+  flow, accepted through `PATCH /user/repository_invitations/{id}`) shows every write control
+  and no Settings tab — zero findings, zero console errors.
+- **Anonymous browsing**: the SPA force-redirected every route to login while the server already
+  served anonymous public reads (REST 60/hr budget and the /ui-data aggregates both answer
+  anonymously). Now signed-out visitors browse public content like github.com: repo code/issues/
+  PRs/actions/wiki/releases, profiles, orgs, search and gists render with a Sign-in header,
+  read-only reactions, "Sign in to comment" boxes, and Star/Watch/Fork as count links to login;
+  viewer-scoped surfaces (dashboard, notifications, settings, operations) still gate, as do the
+  surfaces whose data layer requires a user server-side (discussions/GraphQL, security alerts,
+  packages, marketplace). 45 viewer-scoped fetches gated so an anonymous page fires zero 4xx.
+- **Mobile**: every page horizontally overflowed a 375px viewport; the sole page-level source
+  was the global header's non-shrinking flex row (plus profile-grid min-content and the
+  PageTitle actions row). Fixed responsive-only — desktop layout byte-identical — with 48 routes
+  verified at 375×812 and a new `mobile-overflow.spec.ts` e2e gate (11 routes) in CI.
+
 **Still not implemented, with reasons:**
 - package download counts: absent from GitHub's package-version payload shape.
 - tag protection: GitHub retired tag protection rules in favor of rulesets, which bleephub

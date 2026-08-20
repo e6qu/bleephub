@@ -5,6 +5,7 @@ import { InlineError, Spinner } from "@bleephub/ui-core/components";
 import { fetchOrgProfile, fetchOrgReposPage, fetchOrgMembers, ghFetch, ghSend } from "../api.js";
 import { decodeContentsBase64 } from "../utils/contents.js";
 import { fetchViewerOrgRole } from "../utils/uiFetch.js";
+import { useSignedIn } from "../session.js";
 import type { BleephubRepo } from "../types.js";
 import { OrgHeader } from "../components/PageHeader.js";
 import { Avatar } from "../components/Avatar.js";
@@ -17,6 +18,9 @@ import { RepoIcon, PeopleIcon, GlobeIcon, LockIcon, BookIcon } from "../componen
 
 export function OrgOverviewPage() {
   const { org = "" } = useParams<{ org: string }>();
+  // The viewer's own membership read 401s anonymously; signed out the page
+  // renders the public view (no admin affordances).
+  const signedIn = useSignedIn();
 
   const profile = useQuery({
     queryKey: ["org-profile", org],
@@ -52,6 +56,7 @@ export function OrgOverviewPage() {
     queryKey: ["viewer-org-role", org],
     queryFn: () => fetchViewerOrgRole(org),
     retry: false,
+    enabled: signedIn,
   });
   const isOrgAdmin = roleQ.data === "admin";
 
@@ -68,8 +73,8 @@ export function OrgOverviewPage() {
     <div>
       <OrgHeader org={org} active="overview" />
 
-      <div className="grid gap-6 md:grid-cols-[260px_1fr]">
-        <aside className="flex flex-col gap-3">
+      <div className="grid gap-6 md:grid-cols-[260px_minmax(0,1fr)]">
+        <aside className="min-w-0 flex flex-col gap-3">
           <div className="flex items-center gap-3">
             <Avatar login={p.login} src={p.avatar_url} size={64} square />
             <div className="min-w-0">
@@ -105,7 +110,7 @@ export function OrgOverviewPage() {
           </ul>
         </aside>
 
-        <div className="flex flex-col gap-5">
+        <div className="min-w-0 flex flex-col gap-5">
           {readme.data && (
             <Box header={<span className="inline-flex items-center gap-2"><BookIcon size={14} />{org}/.github · README.md</span>}>
               <div style={{ padding: "1rem 1.25rem" }} className="markdown-body">

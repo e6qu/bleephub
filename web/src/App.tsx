@@ -1,8 +1,9 @@
-import { lazy, Suspense, useCallback, useEffect, useState, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState, type ReactElement, type ReactNode } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router";
 import { ErrorBoundary, InlineError, Spinner, ToastProvider } from "@bleephub/ui-core/components";
 import { fetchBrowserSession, isLoggedIn, UNAUTHORIZED_EVENT } from "./api.js";
 import { BleephubShell } from "./components/Shell.js";
+import { SessionContext } from "./session.js";
 import { Button } from "./components/ui.js";
 
 const LoginPage = lazy(() => import("./pages/LoginPage.js").then(({ LoginPage }) => ({ default: LoginPage })));
@@ -173,42 +174,64 @@ export function App() {
     );
   }
 
-  if (state.status === "signed-out") {
-    return (
-      <ErrorBoundary>
-        <BrowserRouter>
-          <Suspense fallback={<Spinner label="Loading sign-in" />}>
-            <Routes>
-              <Route path="/ui/login" element={<LoginPage />} />
-              <Route path="/ui/*" element={<LoginRedirect />} />
-            </Routes>
-          </Suspense>
-        </BrowserRouter>
-      </ErrorBoundary>
-    );
-  }
-
+  const signedIn = state.status === "signed-in";
   return (
     <ErrorBoundary>
-      <ToastProvider>
-        <BrowserRouter>
-          <BleephubShell>
-            <RouteErrorBoundary>
-              <Suspense fallback={<Spinner label="Loading page" />}>
+      <SessionContext.Provider value={signedIn}>
+        <ToastProvider>
+          <BrowserRouter>
+            <AppRoutes signedIn={signedIn} />
+          </BrowserRouter>
+        </ToastProvider>
+      </SessionContext.Provider>
+    </ErrorBoundary>
+  );
+}
+
+/**
+ * The full route table, rendered for signed-in AND signed-out visitors so
+ * public content is browsable anonymously (github.com behaviour). Every
+ * viewer-scoped surface is wrapped in `gate(...)`: signed-in renders the
+ * page, signed-out redirects to the sign-in page preserving the location.
+ *
+ * A route is gated when its page's data is viewer-scoped (dashboard,
+ * notifications, settings, …) OR when the server refuses its reads
+ * anonymously (discussions and projects-classic are GraphQL/auth-only,
+ * packages / marketplace / org teams & projects / security alerts all 401
+ * without a session) — an anonymous page must fire zero 401ing requests.
+ */
+function AppRoutes({ signedIn }: { signedIn: boolean }) {
+  const location = useLocation();
+  // The sign-in page renders chromeless, exactly as the signed-out app did
+  // before anonymous browsing existed; a signed-in visitor bounces home.
+  if (location.pathname === "/ui/login") {
+    return signedIn ? (
+      <Navigate to="/ui/" replace />
+    ) : (
+      <Suspense fallback={<Spinner label="Loading sign-in" />}>
+        <LoginPage />
+      </Suspense>
+    );
+  }
+  const gate = (element: ReactElement) => (signedIn ? element : <LoginRedirect />);
+  return (
+    <BleephubShell>
+      <RouteErrorBoundary>
+        <Suspense fallback={<Spinner label="Loading page" />}>
               <Routes>
-                <Route path="/ui/" element={<DashboardPage />} />
-              <Route path="/ui/workflows" element={<WorkflowsPage />} />
-              <Route path="/ui/workflows/:id" element={<WorkflowDetailPage />} />
-              <Route path="/ui/runners" element={<RunnersPage />} />
-              <Route path="/ui/repos" element={<ReposPage />} />
+                <Route path="/ui/" element={gate(<DashboardPage />)} />
+              <Route path="/ui/workflows" element={gate(<WorkflowsPage />)} />
+              <Route path="/ui/workflows/:id" element={gate(<WorkflowDetailPage />)} />
+              <Route path="/ui/runners" element={gate(<RunnersPage />)} />
+              <Route path="/ui/repos" element={gate(<ReposPage />)} />
               <Route path="/ui/orgs/:org/repos" element={<OrgReposPage />} />
-              <Route path="/ui/orgs/:org/projects" element={<OrgProjectsV2Page />} />
-              <Route path="/ui/orgs/:org/projects/:number" element={<OrgProjectsV2Page />} />
-              <Route path="/ui/orgs/:org/rulesets" element={<RulesetsPage />} />
-              <Route path="/ui/orgs/:org/governance" element={<OrgGovernancePage />} />
-              <Route path="/ui/orgs/:org/settings" element={<OrgSettingsPage />} />
-              <Route path="/ui/orgs/:org/insights" element={<OrgInsightsPage />} />
-              <Route path="/ui/orgs/:org/copilot" element={<CopilotPage />} />
+              <Route path="/ui/orgs/:org/projects" element={gate(<OrgProjectsV2Page />)} />
+              <Route path="/ui/orgs/:org/projects/:number" element={gate(<OrgProjectsV2Page />)} />
+              <Route path="/ui/orgs/:org/rulesets" element={gate(<RulesetsPage />)} />
+              <Route path="/ui/orgs/:org/governance" element={gate(<OrgGovernancePage />)} />
+              <Route path="/ui/orgs/:org/settings" element={gate(<OrgSettingsPage />)} />
+              <Route path="/ui/orgs/:org/insights" element={gate(<OrgInsightsPage />)} />
+              <Route path="/ui/orgs/:org/copilot" element={gate(<CopilotPage />)} />
               <Route path="/ui/repos/:owner/:repo" element={<RepoDetailPage />} />
               <Route path="/ui/repos/:owner/:repo/commits" element={<RepoDetailPage initialTab="commits" />} />
               <Route path="/ui/repos/:owner/:repo/branches" element={<RepoDetailPage initialTab="branches" />} />
@@ -232,56 +255,56 @@ export function App() {
               <Route path="/ui/repos/:owner/:repo/pulls/:number/commits" element={<PullsPage />} />
               <Route path="/ui/repos/:owner/:repo/pulls/:number/files" element={<PullsPage />} />
               <Route path="/ui/repos/:owner/:repo/pulls/:number/checks" element={<PullsPage />} />
-              <Route path="/ui/repos/:owner/:repo/discussions" element={<DiscussionsPage />} />
-              <Route path="/ui/repos/:owner/:repo/discussions/:number" element={<DiscussionsPage />} />
+              <Route path="/ui/repos/:owner/:repo/discussions" element={gate(<DiscussionsPage />)} />
+              <Route path="/ui/repos/:owner/:repo/discussions/:number" element={gate(<DiscussionsPage />)} />
               <Route path="/ui/repos/:owner/:repo/actions" element={<ActionsPage />} />
               <Route path="/ui/repos/:owner/:repo/actions/runs/:runId" element={<RunDetailPage />} />
-              <Route path="/ui/repos/:owner/:repo/settings" element={<RepoSettingsPage />} />
-              <Route path="/ui/repos/:owner/:repo/settings/branch-protection" element={<BranchProtectionPage />} />
-              <Route path="/ui/repos/:owner/:repo/security" element={<RepoSecurityOverviewPage />} />
-              <Route path="/ui/repos/:owner/:repo/security/secret-scanning" element={<SecretScanningPage />} />
-              <Route path="/ui/repos/:owner/:repo/security/code-scanning" element={<CodeScanningPage />} />
-              <Route path="/ui/repos/:owner/:repo/security/dependabot" element={<DependabotPage />} />
-              <Route path="/ui/repos/:owner/:repo/security/advisories" element={<SecurityAdvisoriesPage />} />
-              <Route path="/ui/repos/:owner/:repo/projects-classic" element={<ProjectsClassicPage />} />
+              <Route path="/ui/repos/:owner/:repo/settings" element={gate(<RepoSettingsPage />)} />
+              <Route path="/ui/repos/:owner/:repo/settings/branch-protection" element={gate(<BranchProtectionPage />)} />
+              <Route path="/ui/repos/:owner/:repo/security" element={gate(<RepoSecurityOverviewPage />)} />
+              <Route path="/ui/repos/:owner/:repo/security/secret-scanning" element={gate(<SecretScanningPage />)} />
+              <Route path="/ui/repos/:owner/:repo/security/code-scanning" element={gate(<CodeScanningPage />)} />
+              <Route path="/ui/repos/:owner/:repo/security/dependabot" element={gate(<DependabotPage />)} />
+              <Route path="/ui/repos/:owner/:repo/security/advisories" element={gate(<SecurityAdvisoriesPage />)} />
+              <Route path="/ui/repos/:owner/:repo/projects-classic" element={gate(<ProjectsClassicPage />)} />
               <Route path="/ui/repos/:owner/:repo/wiki" element={<WikiPage />} />
               <Route path="/ui/repos/:owner/:repo/wiki/:slug" element={<WikiPage />} />
-              <Route path="/ui/repos/:owner/:repo/settings/secrets" element={<RepoSecretsPage />} />
-              <Route path="/ui/apps" element={<AppsPage />} />
-              <Route path="/ui/apps/:publisher/marketplace" element={<MarketplacePublisherPage />} />
-              <Route path="/ui/oauth" element={<OAuthPage />} />
-              <Route path="/ui/metrics" element={<MetricsPage />} />
+              <Route path="/ui/repos/:owner/:repo/settings/secrets" element={gate(<RepoSecretsPage />)} />
+              <Route path="/ui/apps" element={gate(<AppsPage />)} />
+              <Route path="/ui/apps/:publisher/marketplace" element={gate(<MarketplacePublisherPage />)} />
+              <Route path="/ui/oauth" element={gate(<OAuthPage />)} />
+              <Route path="/ui/metrics" element={gate(<MetricsPage />)} />
               <Route path="/ui/gists" element={<GistsPage />} />
               <Route path="/ui/gists/:id" element={<GistDetailPage />} />
-              <Route path="/ui/notifications" element={<NotificationsPage />} />
-              <Route path="/ui/packages" element={<PackagesPage />} />
-              <Route path="/ui/orgs/:org/packages" element={<PackagesPage />} />
-              <Route path="/ui/repos/:owner/:repo/packages" element={<PackagesPage />} />
-              <Route path="/ui/migrations" element={<MigrationsPage />} />
-              <Route path="/ui/codespaces" element={<CodespacesPage />} />
-              <Route path="/ui/codespaces/:codespaceName" element={<CodespacesPage />} />
-              <Route path="/ui/repos/:owner/:repo/codespaces" element={<CodespacesPage />} />
-              <Route path="/ui/copilot/spaces" element={<PersonalCopilotSpacesPage />} />
-              <Route path="/ui/classrooms" element={<ClassroomPage />} />
-              <Route path="/ui/classrooms/:classroomId" element={<ClassroomPage />} />
-              <Route path="/ui/classrooms/accept/:inviteCode" element={<ClassroomPage />} />
-              <Route path="/ui/marketplace" element={<MarketplacePage />} />
-              <Route path="/ui/marketplace/:slug" element={<MarketplacePage />} />
-              <Route path="/ui/operations" element={<OverviewPage />} />
-              <Route path="/ui/operations/users" element={<UsersPage />} />
-              <Route path="/ui/operations/orgs" element={<OrgsPage />} />
-              <Route path="/ui/operations/teams" element={<TeamsPage />} />
-              <Route path="/ui/operations/enterprise" element={<EnterprisePage />} />
-              <Route path="/ui/operations/audit-log" element={<AuditLogPage />} />
+              <Route path="/ui/notifications" element={gate(<NotificationsPage />)} />
+              <Route path="/ui/packages" element={gate(<PackagesPage />)} />
+              <Route path="/ui/orgs/:org/packages" element={gate(<PackagesPage />)} />
+              <Route path="/ui/repos/:owner/:repo/packages" element={gate(<PackagesPage />)} />
+              <Route path="/ui/migrations" element={gate(<MigrationsPage />)} />
+              <Route path="/ui/codespaces" element={gate(<CodespacesPage />)} />
+              <Route path="/ui/codespaces/:codespaceName" element={gate(<CodespacesPage />)} />
+              <Route path="/ui/repos/:owner/:repo/codespaces" element={gate(<CodespacesPage />)} />
+              <Route path="/ui/copilot/spaces" element={gate(<PersonalCopilotSpacesPage />)} />
+              <Route path="/ui/classrooms" element={gate(<ClassroomPage />)} />
+              <Route path="/ui/classrooms/:classroomId" element={gate(<ClassroomPage />)} />
+              <Route path="/ui/classrooms/accept/:inviteCode" element={gate(<ClassroomPage />)} />
+              <Route path="/ui/marketplace" element={gate(<MarketplacePage />)} />
+              <Route path="/ui/marketplace/:slug" element={gate(<MarketplacePage />)} />
+              <Route path="/ui/operations" element={gate(<OverviewPage />)} />
+              <Route path="/ui/operations/users" element={gate(<UsersPage />)} />
+              <Route path="/ui/operations/orgs" element={gate(<OrgsPage />)} />
+              <Route path="/ui/operations/teams" element={gate(<TeamsPage />)} />
+              <Route path="/ui/operations/enterprise" element={gate(<EnterprisePage />)} />
+              <Route path="/ui/operations/audit-log" element={gate(<AuditLogPage />)} />
               {/* Deployments + webhook deliveries + Pages */}
               <Route path="/ui/repos/:owner/:repo/deployments" element={<DeploymentsPage />} />
-              <Route path="/ui/repos/:owner/:repo/hooks/:hookId/deliveries" element={<WebhookDeliveriesPage />} />
-              <Route path="/ui/orgs/:org/hooks" element={<OrgHooksPage />} />
-              <Route path="/ui/orgs/:org/hooks/:hookId/deliveries" element={<WebhookDeliveriesPage />} />
+              <Route path="/ui/repos/:owner/:repo/hooks/:hookId/deliveries" element={gate(<WebhookDeliveriesPage />)} />
+              <Route path="/ui/orgs/:org/hooks" element={gate(<OrgHooksPage />)} />
+              <Route path="/ui/orgs/:org/hooks/:hookId/deliveries" element={gate(<WebhookDeliveriesPage />)} />
               {/* Search + repo social + account */}
               <Route path="/ui/search" element={<SearchPage />} />
-              <Route path="/ui/account" element={<AccountPage />} />
-              <Route path="/ui/settings/organizations" element={<MyOrganizationsPage />} />
+              <Route path="/ui/account" element={gate(<AccountPage />)} />
+              <Route path="/ui/settings/organizations" element={gate(<MyOrganizationsPage />)} />
               <Route path="/ui/repos/:owner/:repo/stargazers" element={<RepoSocialPage kind="stargazers" />} />
               <Route path="/ui/repos/:owner/:repo/watchers" element={<RepoSocialPage kind="watchers" />} />
               <Route path="/ui/repos/:owner/:repo/forks" element={<RepoSocialPage kind="forks" />} />
@@ -291,20 +314,17 @@ export function App() {
                   every literal /ui/<page> route wins over it. */}
               <Route path="/ui/orgs/:org" element={<OrgOverviewPage />} />
               <Route path="/ui/orgs/:org/people" element={<OrgPeoplePage />} />
-              <Route path="/ui/orgs/:org/teams" element={<OrgTeamsPage />} />
-              <Route path="/ui/orgs/:org/teams/:slug" element={<OrgTeamDetailPage />} />
+              <Route path="/ui/orgs/:org/teams" element={gate(<OrgTeamsPage />)} />
+              <Route path="/ui/orgs/:org/teams/:slug" element={gate(<OrgTeamDetailPage />)} />
               <Route path="/ui/users/:login" element={<ProfilePage />} />
-              {/* A logged-in user hitting /ui/login (bookmark) or any
-                  unknown /ui/* path lands back on the dashboard. */}
-              <Route path="/ui/login" element={<Navigate to="/ui/" replace />} />
+              {/* Any unknown /ui/* path lands back on the dashboard
+                  (which, signed out, redirects to sign-in). /ui/login is
+                  handled above, before the shell. */}
               <Route path="/ui/:login" element={<ProfilePage />} />
                 <Route path="/ui/*" element={<Navigate to="/ui/" replace />} />
               </Routes>
-              </Suspense>
-            </RouteErrorBoundary>
-          </BleephubShell>
-        </BrowserRouter>
-      </ToastProvider>
-    </ErrorBoundary>
+        </Suspense>
+      </RouteErrorBoundary>
+    </BleephubShell>
   );
 }
