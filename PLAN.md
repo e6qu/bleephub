@@ -78,6 +78,19 @@ dying process). No scale work needed at this size.
   PageTitle actions row). Fixed responsive-only — desktop layout byte-identical — with 48 routes
   verified at 375×812 and a new `mobile-overflow.spec.ts` e2e gate (11 routes) in CI.
 
+**Sixth round (2026-08-20) — content robustness, keyboard, dark theme:** a hostile-content
+audit (220-char unbroken titles/words, RTL + emoji floods, 14-column tables, 150-char code
+lines, extreme label names) found and fixed the page-width breakers GitHub handles: unwrapped
+detail H1s, select elements inflated by their longest option (now globally clamped), dashboard
+and notification rows crushed by unbreakable titles (which also drove four notification action
+buttons under the 24px target-size floor), a min-content dashboard grid track, and a
+non-wrapping PR-list filter row. A 45-stop keyboard walk found zero focus traps and zero
+invisible focus targets; its only finding — the header search pair suppressing the global
+focus ring with inline outline:none — is fixed. Dark theme verified clean over the hostile
+pages. The mobile-overflow e2e gate now seeds hostile content itself and names the widest
+unclipped elements on failure, and the full-suite spec coupling (each spec's data visible to
+the others) is kept deliberately: it caught two of these bugs.
+
 **Still not implemented, with reasons:**
 - package download counts: absent from GitHub's package-version payload shape.
 - tag protection: GitHub retired tag protection rules in favor of rulesets, which bleephub

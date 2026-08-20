@@ -206,11 +206,11 @@ function ThreadsList({ view, all }: { view: NotificationView; all: boolean }) {
         const subject = info.getValue();
         const href = subjectUrlToUI(subject.url);
         return href ? (
-          <Link to={href} style={{ color: "var(--color-accent)", textDecoration: "none" }}>
+          <Link to={href} style={{ color: "var(--color-accent)", textDecoration: "none", overflowWrap: "anywhere" }}>
             {subject.title}
           </Link>
         ) : (
-          <span>{subject.title}</span>
+          <span style={{ overflowWrap: "anywhere" }}>{subject.title}</span>
         );
       },
     }),
@@ -511,12 +511,22 @@ function NotificationsByRepo({
                       {href ? (
                         <Link
                           to={href}
-                          style={{ display: "inline-block", color: "var(--color-accent)", textDecoration: "none", lineHeight: "1.625rem" }}
+                          style={{
+                            display: "inline-block",
+                            color: "var(--color-accent)",
+                            textDecoration: "none",
+                            lineHeight: "1.625rem",
+                            // An unbroken 200+-char subject must wrap instead
+                            // of crushing the row's action buttons under the
+                            // 24px target-size floor.
+                            overflowWrap: "anywhere",
+                            maxWidth: "100%",
+                          }}
                         >
                           {thread.subject.title}
                         </Link>
                       ) : (
-                        <span>{thread.subject.title}</span>
+                        <span style={{ overflowWrap: "anywhere" }}>{thread.subject.title}</span>
                       )}
                       <span style={{ color: "var(--color-fg-muted)", fontSize: "0.78rem", marginLeft: "0.5rem" }}>
                         {thread.subject.type} · {thread.reason} · <RelativeTime iso={thread.updated_at} />

@@ -192,6 +192,13 @@ h3,
   border-radius: var(--radius-sm);
 }
 
+/* A select's intrinsic width is its longest option; an extreme option label
+   (e.g. a long label name in the issue-sidebar picker) must squeeze into the
+   container, not push the page wider. */
+select {
+  max-width: 100%;
+}
+
 /* Native form controls — GitHub field look (sans, soft radius). */
 input[type="text"],
 input[type="search"],

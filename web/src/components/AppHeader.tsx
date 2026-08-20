@@ -396,7 +396,6 @@ export function AppHeader() {
                 className="hidden sm:block"
                 style={{
                   border: "none",
-                  outline: "none",
                   background: "transparent",
                   color: "var(--color-fg-muted)",
                   fontSize: "0.78rem",
@@ -427,7 +426,6 @@ export function AppHeader() {
                   flex: 1,
                   minWidth: 0,
                   border: "none",
-                  outline: "none",
                   background: "transparent",
                   color: "var(--color-fg)",
                   fontSize: "0.85rem",

@@ -1078,7 +1078,7 @@ function IssueDetail({ owner, repo, number }: { owner: string; repo: string; num
       <RepoHeader owner={owner} repo={repo} active="issues" {...counts} />
 
       <div className="mb-1 flex flex-wrap items-baseline gap-2">
-        <h1 style={{ fontSize: "1.5rem", fontWeight: 400, color: "var(--color-fg)" }}>
+        <h1 style={{ fontSize: "1.5rem", fontWeight: 400, color: "var(--color-fg)", overflowWrap: "anywhere" }}>
           {issue.title}{" "}
           <span style={{ color: "var(--color-fg-muted)" }}>#{issue.number}</span>
         </h1>
