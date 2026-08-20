@@ -61,7 +61,7 @@ func (s *Server) handleAdminCreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.store.Mu.Lock()
-	if _, exists := s.store.UsersByLogin[login]; exists {
+	if s.store.UserByLoginLocked(login) != nil {
 		s.store.Mu.Unlock()
 		store.WriteGHValidationError(w, "User", "login", "already_exists")
 		return
@@ -92,6 +92,7 @@ func (s *Server) handleAdminCreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 	s.store.Users[u.ID] = u
 	s.store.UsersByLogin[u.Login] = u
+	s.store.IndexUserLoginLocked(u.Login)
 	if s.store.Persist != nil {
 		s.store.Persist.MustPut("users", strconv.Itoa(u.ID), u)
 	}
@@ -117,21 +118,23 @@ func (s *Server) handleAdminRenameUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.store.Mu.Lock()
-	u := s.store.UsersByLogin[username]
+	u := s.store.UserByLoginLocked(username)
 	if u == nil {
 		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if existing := s.store.UsersByLogin[nextLogin]; existing != nil && existing.ID != u.ID {
+	if existing := s.store.UserByLoginLocked(nextLogin); existing != nil && existing.ID != u.ID {
 		s.store.Mu.Unlock()
 		store.WriteGHValidationError(w, "User", "login", "already_exists")
 		return
 	}
 	delete(s.store.UsersByLogin, u.Login)
+	s.store.UnindexUserLoginLocked(u.Login)
 	u.Login = nextLogin
 	u.UpdatedAt = time.Now().UTC()
 	s.store.UsersByLogin[u.Login] = u
+	s.store.IndexUserLoginLocked(u.Login)
 	if s.store.Persist != nil {
 		s.store.Persist.MustPut("users", strconv.Itoa(u.ID), u)
 	}
@@ -149,7 +152,7 @@ func (s *Server) handleAdminDeleteUser(w http.ResponseWriter, r *http.Request) {
 	}
 	username := r.PathValue("username")
 	s.store.Mu.Lock()
-	u := s.store.UsersByLogin[username]
+	u := s.store.UserByLoginLocked(username)
 	if u == nil {
 		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -172,6 +175,7 @@ func (s *Server) handleAdminDeleteUser(w http.ResponseWriter, r *http.Request) {
 	}
 	delete(s.store.Users, u.ID)
 	delete(s.store.UsersByLogin, u.Login)
+	s.store.UnindexUserLoginLocked(u.Login)
 	s.store.ForgetExternalIdentitiesLocked(u)
 	for val, t := range s.store.Tokens {
 		if t.UserID == u.ID {
@@ -217,7 +221,9 @@ func (s *Server) handleAdminDemoteUser(w http.ResponseWriter, r *http.Request) {
 	if admin == nil {
 		return
 	}
-	if admin.Login == r.PathValue("username") {
+	// Compare resolved identities, not raw strings: the path resolves
+	// case-insensitively, so "ADMIN" names the same account as "admin".
+	if target := s.store.LookupUserByLogin(r.PathValue("username")); target != nil && target.ID == admin.ID {
 		writeGHError(w, http.StatusForbidden, "You cannot demote your own account.")
 		return
 	}
@@ -229,7 +235,9 @@ func (s *Server) handleAdminSuspendUser(w http.ResponseWriter, r *http.Request) 
 	if admin == nil {
 		return
 	}
-	if admin.Login == r.PathValue("username") {
+	// Compare resolved identities, not raw strings: the path resolves
+	// case-insensitively, so "ADMIN" names the same account as "admin".
+	if target := s.store.LookupUserByLogin(r.PathValue("username")); target != nil && target.ID == admin.ID {
 		writeGHError(w, http.StatusForbidden, "You cannot suspend your own account.")
 		return
 	}
@@ -254,7 +262,7 @@ func (s *Server) handleAdminSetUserFlags(w http.ResponseWriter, r *http.Request,
 
 func (s *Server) setUserFlags(w http.ResponseWriter, username string, update adminUserFlagUpdate) {
 	s.store.Mu.Lock()
-	u := s.store.UsersByLogin[username]
+	u := s.store.UserByLoginLocked(username)
 	if u == nil {
 		s.store.Mu.Unlock()
 		writeGHError(w, http.StatusNotFound, "Not Found")

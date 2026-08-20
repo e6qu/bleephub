@@ -35,6 +35,7 @@ func WikiSlug(title string) string {
 func (st *Store) ListWikiPages(repoKey string) []*WikiPage {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
+	repoKey = st.canonicalRepoKeyLocked(repoKey)
 
 	m := st.RepoWikiPages[repoKey]
 	out := make([]*WikiPage, 0, len(m))
@@ -55,6 +56,7 @@ func (st *Store) ListWikiPages(repoKey string) []*WikiPage {
 func (st *Store) GetWikiPage(repoKey, slug string) *WikiPage {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
+	repoKey = st.canonicalRepoKeyLocked(repoKey)
 	m := st.RepoWikiPages[repoKey]
 	if m == nil {
 		return nil
@@ -75,6 +77,7 @@ func (st *Store) GetWikiPage(repoKey, slug string) *WikiPage {
 func (st *Store) UpsertWikiPage(repoKey, slug, title, body, author, message string) *WikiPage {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
+	repoKey = st.canonicalRepoKeyLocked(repoKey)
 
 	if st.RepoWikiPages[repoKey] == nil {
 		st.RepoWikiPages[repoKey] = map[string]*WikiPage{}
@@ -130,6 +133,7 @@ func (st *Store) UpsertWikiPage(repoKey, slug, title, body, author, message stri
 func (st *Store) DeleteWikiPage(repoKey, slug string) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
+	repoKey = st.canonicalRepoKeyLocked(repoKey)
 
 	m := st.RepoWikiPages[repoKey]
 	if m == nil {
@@ -171,6 +175,7 @@ type WikiPageRevision struct {
 func (st *Store) ListWikiPageRevisions(repoKey, slug string) []*WikiPageRevision {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
+	repoKey = st.canonicalRepoKeyLocked(repoKey)
 	revisions := st.RepoWikiRevisions[repoKey][slug]
 	out := make([]*WikiPageRevision, 0, len(revisions))
 	for i := len(revisions) - 1; i >= 0; i-- {
@@ -185,6 +190,7 @@ func (st *Store) ListWikiPageRevisions(repoKey, slug string) []*WikiPageRevision
 func (st *Store) GetWikiPageRevision(repoKey, slug string, id int) *WikiPageRevision {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
+	repoKey = st.canonicalRepoKeyLocked(repoKey)
 	for _, rev := range st.RepoWikiRevisions[repoKey][slug] {
 		if rev.ID == id {
 			cp := *rev

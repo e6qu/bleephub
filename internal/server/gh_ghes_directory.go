@@ -169,12 +169,15 @@ func (s *Server) handleRenameGHESOrganization(w http.ResponseWriter, r *http.Req
 // exhaustive repo-key migration used by the normal transfer API.
 func (s *Server) renameGHESOrganization(oldLogin, newLogin string) bool {
 	s.store.Mu.Lock()
-	org := s.store.OrgsByLogin[oldLogin]
-	if org == nil || s.store.OrgsByLogin[newLogin] != nil || s.store.UsersByLogin[newLogin] != nil {
+	org := s.store.OrgByLoginLocked(oldLogin)
+	if org == nil || (s.store.OrgByLoginLocked(newLogin) != nil && s.store.OrgByLoginLocked(newLogin) != org) ||
+		s.store.UserByLoginLocked(newLogin) != nil {
 		s.store.Mu.Unlock()
 		return false
 	}
+	oldLogin = org.Login
 	s.store.OrgsByLogin[newLogin] = org
+	s.store.IndexOrgLoginLocked(newLogin)
 	org.Login = newLogin
 	org.UpdatedAt = s.store.CurrentTime()
 	repoNames := make([]string, 0)
@@ -198,6 +201,7 @@ func (s *Server) renameGHESOrganization(oldLogin, newLogin string) bool {
 	// organization split across its old and new login (STORE-001/002).
 	batch := store.NewPersistBatch(s.store.Persist)
 	delete(s.store.OrgsByLogin, oldLogin)
+	s.store.UnindexOrgLoginLocked(oldLogin)
 	for key, membership := range s.store.Memberships {
 		if membership.OrgID != org.ID {
 			continue

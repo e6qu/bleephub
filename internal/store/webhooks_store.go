@@ -104,6 +104,7 @@ type WebhookDelivery struct {
 func (st *Store) CreateHook(repoKey, url, secret, contentType, insecureSSL string, events []string, active bool) *Webhook {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
+	repoKey = st.canonicalRepoKeyLocked(repoKey)
 
 	if st.Hooks == nil {
 		st.Hooks = make(map[string][]*Webhook)
@@ -141,6 +142,7 @@ func (st *Store) CreateHook(repoKey, url, secret, contentType, insecureSSL strin
 func (st *Store) GetHook(repoKey string, hookID int) *Webhook {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
+	repoKey = st.canonicalRepoKeyLocked(repoKey)
 
 	for _, h := range st.Hooks[repoKey] {
 		if h.ID == hookID {
@@ -154,6 +156,7 @@ func (st *Store) GetHook(repoKey string, hookID int) *Webhook {
 func (st *Store) ListHooks(repoKey string) []*Webhook {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
+	repoKey = st.canonicalRepoKeyLocked(repoKey)
 
 	hooks := st.Hooks[repoKey]
 	out := make([]*Webhook, len(hooks))
@@ -167,6 +170,7 @@ func (st *Store) ListHooks(repoKey string) []*Webhook {
 func (st *Store) UpdateHook(repoKey string, hookID int, fn func(h *Webhook)) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
+	repoKey = st.canonicalRepoKeyLocked(repoKey)
 
 	for _, h := range st.Hooks[repoKey] {
 		if h.ID == hookID {
@@ -185,6 +189,7 @@ func (st *Store) UpdateHook(repoKey string, hookID int, fn func(h *Webhook)) boo
 func (st *Store) DeleteHook(repoKey string, hookID int) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
+	repoKey = st.canonicalRepoKeyLocked(repoKey)
 
 	hooks := st.Hooks[repoKey]
 	for i, h := range hooks {
@@ -243,6 +248,7 @@ func (st *Store) HookLastResp(h *Webhook) *HookLastResponse {
 func (st *Store) SetHookLastResponse(repoKey string, hookID int, lr *HookLastResponse) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
+	repoKey = st.canonicalRepoKeyLocked(repoKey)
 	for _, h := range st.Hooks[repoKey] {
 		if h.ID == hookID {
 			h.LastResponse = lr

@@ -216,10 +216,11 @@ func (st *Store) consumeOrgInvitationLocked(inv *OrgInvitation) {
 // invited-team joins happen at acceptance time. Callers must hold st.Mu
 // for writing.
 func (st *Store) consumeOrgInvitationsForUserLocked(orgLogin string, userID int) {
-	org := st.OrgsByLogin[orgLogin]
+	org := st.OrgByLoginLocked(orgLogin)
 	if org == nil {
 		return
 	}
+	orgLogin = org.Login
 	for _, inv := range st.OrgInvitations {
 		if inv.OrgID == org.ID && inv.UserID == userID && inv.FailedAt == nil {
 			st.consumeOrgInvitationLocked(inv)
@@ -233,10 +234,11 @@ func (st *Store) ListPendingOrgInvitations(orgLogin string) []*OrgInvitation {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 
-	org := st.OrgsByLogin[orgLogin]
+	org := st.OrgByLoginLocked(orgLogin)
 	if org == nil {
 		return nil
 	}
+	orgLogin = org.Login
 	// Reads are pure: the invitation state machine (expire/consume/cancel) is
 	// applied durably by the background reconciler (ReconcileAllOrgInvitations on
 	// the dispatcher tick), not on a GET. A GET must not take the write lock and
@@ -257,10 +259,11 @@ func (st *Store) ListFailedOrgInvitations(orgLogin string) []*OrgInvitation {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 
-	org := st.OrgsByLogin[orgLogin]
+	org := st.OrgByLoginLocked(orgLogin)
 	if org == nil {
 		return nil
 	}
+	orgLogin = org.Login
 	var out []*OrgInvitation
 	for _, inv := range st.OrgInvitations {
 		if inv.OrgID == org.ID && inv.FailedAt != nil {
@@ -293,10 +296,11 @@ func (st *Store) GetOrgInvitation(orgLogin string, id int) *OrgInvitation {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 
-	org := st.OrgsByLogin[orgLogin]
+	org := st.OrgByLoginLocked(orgLogin)
 	if org == nil {
 		return nil
 	}
+	orgLogin = org.Login
 	inv := st.OrgInvitations[id]
 	if inv == nil || inv.OrgID != org.ID || inv.FailedAt != nil {
 		return nil
@@ -310,10 +314,11 @@ func (st *Store) CancelOrgInvitation(orgLogin string, id int) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 
-	org := st.OrgsByLogin[orgLogin]
+	org := st.OrgByLoginLocked(orgLogin)
 	if org == nil {
 		return false
 	}
+	orgLogin = org.Login
 	inv := st.OrgInvitations[id]
 	if inv == nil || inv.OrgID != org.ID || inv.FailedAt != nil {
 		return false
@@ -571,10 +576,11 @@ func (st *Store) ListTeamsWithOrgRole(orgLogin string, roleID int) []*Team {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 
-	org := st.OrgsByLogin[orgLogin]
+	org := st.OrgByLoginLocked(orgLogin)
 	if org == nil {
 		return nil
 	}
+	orgLogin = org.Login
 	ids := append([]int{}, st.OrgRoleTeamAssignments[orgLogin][roleID]...)
 	sort.Ints(ids)
 	out := make([]*Team, 0, len(ids))
@@ -595,10 +601,11 @@ func (st *Store) ListUsersWithOrgRole(orgLogin string, roleID int) map[int]strin
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 
-	org := st.OrgsByLogin[orgLogin]
+	org := st.OrgByLoginLocked(orgLogin)
 	if org == nil {
 		return nil
 	}
+	orgLogin = org.Login
 	activeMember := func(userID int) bool {
 		m := st.Memberships[MembershipKey(orgLogin, userID)]
 		return m != nil && m.State == MembershipStateActive
@@ -639,10 +646,11 @@ func (st *Store) ListOutsideCollaborators(orgLogin string) []*User {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 
-	org := st.OrgsByLogin[orgLogin]
+	org := st.OrgByLoginLocked(orgLogin)
 	if org == nil {
 		return nil
 	}
+	orgLogin = org.Login
 	prefix := orgLogin + "/"
 	seen := map[int]bool{}
 	var out []*User
@@ -679,10 +687,11 @@ func (st *Store) GrantTeamRepoAccessAsCollaborator(orgLogin string, user *User) 
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 
-	org := st.OrgsByLogin[orgLogin]
+	org := st.OrgByLoginLocked(orgLogin)
 	if org == nil {
 		return
 	}
+	orgLogin = org.Login
 	levels := map[string]int{"pull": 1, "push": 2, "admin": 3}
 	permName := func(p TeamPermission) string {
 		switch p {

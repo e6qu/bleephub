@@ -6,6 +6,7 @@ import "time"
 func (st *Store) CreateOrgHook(orgLogin, url, secret, contentType, insecureSSL string, events []string, active bool) *Webhook {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
+	orgLogin = st.canonicalOrgLoginLocked(orgLogin)
 
 	if contentType == "" {
 		contentType = "form"
@@ -38,6 +39,7 @@ func (st *Store) CreateOrgHook(orgLogin, url, secret, contentType, insecureSSL s
 func (st *Store) GetOrgHook(orgLogin string, hookID int) *Webhook {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
+	orgLogin = st.canonicalOrgLoginLocked(orgLogin)
 	for _, h := range st.OrgHooks[orgLogin] {
 		if h.ID == hookID {
 			return CloneWebhook(h)
@@ -50,6 +52,7 @@ func (st *Store) GetOrgHook(orgLogin string, hookID int) *Webhook {
 func (st *Store) ListOrgHooks(orgLogin string) []*Webhook {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
+	orgLogin = st.canonicalOrgLoginLocked(orgLogin)
 	hooks := st.OrgHooks[orgLogin]
 	out := make([]*Webhook, len(hooks))
 	for i, hook := range hooks {
@@ -62,6 +65,7 @@ func (st *Store) ListOrgHooks(orgLogin string) []*Webhook {
 func (st *Store) UpdateOrgHook(orgLogin string, hookID int, fn func(h *Webhook)) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
+	orgLogin = st.canonicalOrgLoginLocked(orgLogin)
 	for _, h := range st.OrgHooks[orgLogin] {
 		if h.ID == hookID {
 			fn(h)
@@ -79,6 +83,7 @@ func (st *Store) UpdateOrgHook(orgLogin string, hookID int, fn func(h *Webhook))
 func (st *Store) DeleteOrgHook(orgLogin string, hookID int) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
+	orgLogin = st.canonicalOrgLoginLocked(orgLogin)
 	hooks := st.OrgHooks[orgLogin]
 	for i, h := range hooks {
 		if h.ID == hookID {
@@ -100,6 +105,7 @@ func (st *Store) DeleteOrgHook(orgLogin string, hookID int) bool {
 func (st *Store) SetOrgHookLastResponse(orgLogin string, hookID int, lr *HookLastResponse) {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
+	orgLogin = st.canonicalOrgLoginLocked(orgLogin)
 	for _, h := range st.OrgHooks[orgLogin] {
 		if h.ID == hookID {
 			h.LastResponse = lr

@@ -485,9 +485,11 @@ func TestRepositorySecretWriteRefusesAStranger(t *testing.T) {
 	}
 }
 
-// TestRepositorySecretRejectsCaseVariantScope pins the shadow-scope failure:
-// a path spelling the repository differently used to key a scope map nobody
-// reads, so the operator got a 201 and the job ran without the secret.
+// TestRepositorySecretRejectsCaseVariantScope pins the shadow-scope failure
+// mode: a path spelling the repository differently must never key a scope map
+// nobody reads. Since case-insensitive resolution (GitHub parity), the
+// variant path resolves to the canonical repository, so the write must land
+// under the canonical key — the one the job injector reads — and succeed.
 func TestRepositorySecretRejectsCaseVariantScope(t *testing.T) {
 	s := newTestServer()
 	s.store.SeedDefaultUser()
@@ -511,8 +513,8 @@ func TestRepositorySecretRejectsCaseVariantScope(t *testing.T) {
 	w := httptest.NewRecorder()
 	s.handlePutSecret(w, withUser(req, admin))
 
-	if w.Code == http.StatusCreated || w.Code == http.StatusNoContent {
-		t.Errorf("case-variant secret PUT status = %d; a write nothing reads must fail loudly", w.Code)
+	if w.Code != http.StatusCreated {
+		t.Errorf("case-variant secret PUT status = %d; want 201 landing on the canonical repository", w.Code)
 	}
 	s.store.Mu.RLock()
 	shadow := len(s.store.RepoSecrets[variantOwner+"/"+repo.Name])
@@ -521,8 +523,8 @@ func TestRepositorySecretRejectsCaseVariantScope(t *testing.T) {
 	if shadow != 0 {
 		t.Errorf("case-variant path wrote %d secrets under the shadow key %q", shadow, variantOwner+"/"+repo.Name)
 	}
-	if real != 0 {
-		t.Errorf("case-variant path wrote %d secrets under the real key %q", real, repo.FullName)
+	if real != 1 {
+		t.Errorf("case-variant path wrote %d secrets under the real key %q; want 1", real, repo.FullName)
 	}
 }
 

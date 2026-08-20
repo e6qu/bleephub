@@ -523,10 +523,14 @@ func (s *Server) runnerScopeFromRequest(r *http.Request) (store.RunnerScope, err
 		return store.RunnerScope{Repo: found.FullName}, nil
 	}
 	if org := r.PathValue("org"); org != "" {
-		if s.store.GetOrg(org) == nil {
+		resolved := s.store.GetOrg(org)
+		if resolved == nil {
 			return store.RunnerScope{}, fmt.Errorf("organization %s not found", org)
 		}
-		return store.RunnerScope{Org: org}, nil
+		// Scope by the canonical login: GetOrg resolves case-insensitively, and
+		// a scope carrying the request's casing would not match later
+		// canonical-name scope comparisons.
+		return store.RunnerScope{Org: resolved.Login}, nil
 	}
 	if enterprise := r.PathValue("enterprise"); enterprise != "" {
 		if enterprise != s.enterpriseSlug() {

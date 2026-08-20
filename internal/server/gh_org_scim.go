@@ -102,7 +102,7 @@ func (s *Server) createOrResolveOrganizationSCIMBackingUser(w http.ResponseWrite
 		return nil, false
 	}
 	s.store.Mu.Lock()
-	if existing := s.store.UsersByLogin[login]; existing != nil {
+	if existing := s.store.UserByLoginLocked(login); existing != nil {
 		// Only reuse an account this same org's SCIM already provisioned.
 		// Adopting any other pre-existing account would let an org owner bind a
 		// SCIM record to a victim's global account, force-enroll them, and then
@@ -126,6 +126,7 @@ func (s *Server) createOrResolveOrganizationSCIMBackingUser(w http.ResponseWrite
 	}
 	s.store.Users[user.ID] = user
 	s.store.UsersByLogin[user.Login] = user
+	s.store.IndexUserLoginLocked(user.Login)
 	if s.store.Persist != nil {
 		s.store.Persist.MustPut("users", strconv.Itoa(user.ID), user)
 	}
@@ -253,15 +254,17 @@ func (s *Server) replaceOrganizationSCIMUser(w http.ResponseWriter, r *http.Requ
 		writeSCIMError(w, http.StatusConflict, "userName is not managed by this organization")
 		return nil
 	}
-	if other := s.store.UsersByLogin[login]; other != nil && other.ID != backing.ID {
+	if other := s.store.UserByLoginLocked(login); other != nil && other.ID != backing.ID {
 		s.store.Mu.Unlock()
 		writeSCIMError(w, http.StatusConflict, "userName already exists")
 		return nil
 	}
 	delete(s.store.UsersByLogin, backing.Login)
+	s.store.UnindexUserLoginLocked(backing.Login)
 	backing.Login, backing.Name, backing.Email = login, req.DisplayName, primarySCIMEmail(req.Emails)
 	backing.UpdatedAt = s.currentTime()
 	s.store.UsersByLogin[backing.Login] = backing
+	s.store.IndexUserLoginLocked(backing.Login)
 	active := req.Active == nil || *req.Active
 	user.ExternalID, user.UserName, user.Name, user.DisplayName = req.ExternalID, login, req.Name, req.DisplayName
 	user.Active, user.Emails, user.UpdatedAt = active, append([]store.EnterpriseSCIMEmail(nil), req.Emails...), backing.UpdatedAt

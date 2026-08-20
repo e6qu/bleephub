@@ -148,11 +148,13 @@ describe("OrgOverviewPage", () => {
   });
 
   it("surfaces an org load error", async () => {
+    // 500, not 404: a missing org now renders the dedicated 404 page
+    // (covered in notFoundPages.test.tsx); this keeps the generic banner path.
     mockFetch.mockImplementation((url: RequestInfo | URL) => {
       const u = url.toString();
       if (u.includes("/repos")) return Promise.resolve(jsonResponse([], 200, { Link: "" }));
       if (u.includes("/members")) return Promise.resolve(jsonResponse([]));
-      return Promise.resolve(jsonResponse({ message: "Not Found" }, 404));
+      return Promise.resolve(jsonResponse({ message: "Internal Server Error" }, 500));
     });
     renderPage("missing");
     await waitFor(() => {

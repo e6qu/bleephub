@@ -24,6 +24,7 @@ import { RelativeTime } from "../components/RelativeTime.js";
 import type { GithubRelease, GithubReleaseAsset } from "../types.js";
 import { RepoHeader } from "../components/PageHeader.js";
 import { RepoNotFound } from "../components/RepoNotFound.js";
+import { isNotFoundError } from "../components/notFound.js";
 import { useRepoPermissions } from "../hooks/useRepoPermissions.js";
 import { useSignedIn } from "../session.js";
 import { Blankslate, Box, Button, ButtonLink, ErrorBanner, FormLabel, PageTitle } from "../components/ui.js";
@@ -348,7 +349,18 @@ function ReleaseDetail({ owner, repo, releaseId }: { owner: string; repo: string
     },
   });
   if (release.isLoading) return <Spinner label="loading release" />;
-  if (release.isError || !release.data) return <InlineError title="Failed to load release" detail={String(release.error)} />;
+  if (release.isError || !release.data) {
+    // The repo shell is rendered by the parent — a 404 here is a missing
+    // release inside an existing repo, so the chrome stays (github.com-style).
+    if (isNotFoundError(release.error)) {
+      return (
+        <Blankslate icon={<TagIcon size={26} />} title="Release not found">
+          It may have been deleted, or the id may be wrong.
+        </Blankslate>
+      );
+    }
+    return <InlineError title="Failed to load release" detail={String(release.error)} />;
+  }
   if (editing) return <ReleaseEditor owner={owner} repo={repo} release={release.data} onSaved={(saved) => {
     queryClient.setQueryData(["release", owner, repo, releaseId], saved);
     setEditing(false);

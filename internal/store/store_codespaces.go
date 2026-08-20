@@ -227,12 +227,13 @@ func (st *Store) ReserveCodespace(ownerLogin, repoKey, gitRef, location string, 
 	var stor gitStorage.Storer
 	st.Mu.RLock()
 	if repoKey != "" {
-		repo = st.ReposByName[repoKey]
-		stor = st.GitStorages[repoKey]
+		repo = st.RepoByNameLocked(repoKey)
 		if repo == nil {
 			st.Mu.RUnlock()
 			return nil, "", nil, fmt.Errorf("repo not found")
 		}
+		repoKey = repo.FullName
+		stor = st.GitStorages[repoKey]
 		if gitRef == "" {
 			gitRef = repo.DefaultBranch
 		}

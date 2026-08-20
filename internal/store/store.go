@@ -611,7 +611,14 @@ type Store struct {
 	RepoPrefixCopy       func(oldFull, newFull string) error `json:"-"`
 	RepoPrefixDelete     func(fullName string) error         `json:"-"`
 	PendingRepoCreations map[string]bool                     `json:"-"`
-	replicaRefreshMu     sync.Mutex
+	// Folded secondary indexes for GitHub-parity case-insensitive resolution
+	// (see name_fold.go): FoldName(key) → canonical key of the primary map.
+	// Maintained by the Index*/Unindex*Locked helpers at every create, rename,
+	// transfer, delete and load of the corresponding primary map.
+	foldedUserLogins map[string]string // FoldName(login) → UsersByLogin key
+	foldedOrgLogins  map[string]string // FoldName(login) → OrgsByLogin key
+	foldedRepoNames  map[string]string // FoldName("owner/name") → ReposByName key
+	replicaRefreshMu sync.Mutex
 	// mu guards the Store's maps and counters. sync.RWMutex read locks are
 	// NOT reentrant: once a writer queues on Lock, new RLock calls block, so
 	// a goroutine that re-acquires mu while already holding it deadlocks.
@@ -927,6 +934,9 @@ func NewStore() *Store {
 		Jobs:                         make(map[string]*Job),
 		Users:                        make(map[int]*User),
 		UsersByLogin:                 make(map[string]*User),
+		foldedUserLogins:             make(map[string]string),
+		foldedOrgLogins:              make(map[string]string),
+		foldedRepoNames:              make(map[string]string),
 		UsersByExternalID:            make(map[string]*User),
 		Tokens:                       make(map[string]*Token),
 		DeviceCodes:                  make(map[string]*DeviceCode),
@@ -1389,6 +1399,7 @@ func (st *Store) loadFromPersistence() error {
 		}
 		st.Users[u.ID] = &u
 		st.UsersByLogin[u.Login] = &u
+		st.IndexUserLoginLocked(u.Login)
 		for _, identity := range u.ExternalIdentities {
 			if key := ExternalIdentityKey(identity.Issuer, identity.Subject); key != "" {
 				st.UsersByExternalID[key] = &u
@@ -1573,6 +1584,7 @@ func (st *Store) loadFromPersistence() error {
 		}
 		st.Orgs[o.ID] = &o
 		st.OrgsByLogin[o.Login] = &o
+		st.IndexOrgLoginLocked(o.Login)
 		if o.ID >= st.NextOrg {
 			st.NextOrg = o.ID + 1
 		}
@@ -1629,6 +1641,7 @@ func (st *Store) loadFromPersistence() error {
 		r.NextMilestoneNumber = 1
 		st.Repos[r.ID] = &r
 		st.ReposByName[r.FullName] = &r
+		st.IndexRepoNameLocked(r.FullName)
 		if r.ID >= st.NextRepo {
 			st.NextRepo = r.ID + 1
 		}
@@ -4277,6 +4290,7 @@ func (st *Store) SeedDefaultUser() {
 	}
 	st.Users[u.ID] = u
 	st.UsersByLogin[u.Login] = u
+	st.IndexUserLoginLocked(u.Login)
 
 	t := &Token{
 		Value:     AdminToken(),
@@ -4310,11 +4324,13 @@ func (st *Store) LookupToken(tokenStr string) (*Token, *User) {
 	return t, st.Users[t.UserID]
 }
 
-// LookupUserByLogin returns the user with the given login, or nil.
+// LookupUserByLogin returns the user with the given login, or nil. The login
+// resolves case-insensitively (GitHub parity); the returned user carries its
+// canonical casing.
 func (st *Store) LookupUserByLogin(login string) *User {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
-	return st.UsersByLogin[login]
+	return st.UserByLoginLocked(login)
 }
 
 // GetUserByID returns the user with the given ID, or nil.

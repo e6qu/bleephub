@@ -28,6 +28,8 @@ import type {
   GithubUserEvent,
 } from "../types.js";
 import { Avatar } from "../components/Avatar.js";
+import { RepoNotFound } from "../components/RepoNotFound.js";
+import { isNotFoundError } from "../components/notFound.js";
 import { SectionLabel, Blankslate, Box, Button } from "../components/ui.js";
 import { MutationError } from "../components/MutationError.js";
 import Markdown from "../components/Markdown.js";
@@ -86,6 +88,8 @@ export function ProfilePage() {
 
   if (profile.isLoading) return <Spinner label="loading profile" />;
   if (profile.isError || !profile.data) {
+    // Unknown login → github.com's full-page 404; other failures keep the banner.
+    if (isNotFoundError(profile.error)) return <RepoNotFound />;
     return <InlineError title="Failed to load profile" detail={String(profile.error)} />;
   }
 

@@ -90,7 +90,7 @@ func (st *Store) OrgCodespacesInvalidUsers(org *Org, usernames []string) []strin
 
 	var invalid []string
 	for _, username := range usernames {
-		u := st.UsersByLogin[username]
+		u := st.UserByLoginLocked(username)
 		if u != nil {
 			m := st.Memberships[MembershipKey(org.Login, u.ID)]
 			if m != nil && m.State == MembershipStateActive {

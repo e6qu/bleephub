@@ -259,9 +259,13 @@ describe("DiscussionsPage detail", () => {
       return Promise.resolve(jsonResponse([]));
     });
     renderAt("/ui/repos/admin/test/discussions/999");
+    // A GraphQL NOT_FOUND on the primary read renders the in-shell 404 state,
+    // not the raw error banner (the banner stays for non-404 failures —
+    // covered in notFoundPages.test.tsx).
     await waitFor(() => {
-      expect(screen.getByText(/failed to load discussion #999/i)).toBeInTheDocument();
+      expect(screen.getByText(/discussion #999 not found/i)).toBeInTheDocument();
     });
+    expect(screen.queryByText(/failed to load discussion #999/i)).not.toBeInTheDocument();
   });
 });
 

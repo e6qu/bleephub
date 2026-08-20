@@ -466,6 +466,7 @@ func (st *Store) ListSecretScanningPatternConfigurations(orgLogin string) map[st
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 
+	orgLogin = st.canonicalOrgLoginLocked(orgLogin)
 	cfg := st.SecretScanningPatternConfigs[orgLogin]
 	org := st.OrgsByLogin[orgLogin]
 

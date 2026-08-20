@@ -64,6 +64,7 @@ import type {
 import { formatDuration } from "../utils/format.js";
 import { useRepoPermissions } from "../hooks/useRepoPermissions.js";
 import { useSignedIn } from "../session.js";
+import { humanApiError } from "../utils/apiErrorText.js";
 import { SignInPrompt } from "../components/SignInPrompt.js";
 import { CommentCard } from "../components/CommentCard.js";
 import { RepoHeader } from "../components/PageHeader.js";
@@ -1081,6 +1082,11 @@ function MergeBox({
       qc.invalidateQueries({ queryKey: ["pr-timeline", owner, repo, number] });
       qc.invalidateQueries({ queryKey: ["branches", owner, repo] });
     },
+    onError: () => {
+      // A 405 usually means the PR changed behind this tab (merged/closed by
+      // someone else) — refetch so the box converges to the real state.
+      qc.invalidateQueries({ queryKey: ["pr", owner, repo, number] });
+    },
   });
   const updateBranchMut = useMutation({
     mutationFn: () => updatePRBranch(owner, repo, number),
@@ -1395,20 +1401,18 @@ function MergeBox({
           {updateBranchMut.isError && (
             <div className="mt-2" style={{ fontSize: "0.8rem", color: "var(--color-status-error)" }}>
               Update branch failed:{" "}
-              {updateBranchMut.error instanceof Error ? updateBranchMut.error.message : "unknown error"}
+              {humanApiError(updateBranchMut.error, "unknown error")}
             </div>
           )}
           {mergeMutation.isError && (
             <div className="mt-2" style={{ fontSize: "0.8rem", color: "var(--color-status-error)" }}>
               Merge failed:{" "}
-              {mergeMutation.error instanceof Error ? mergeMutation.error.message : "unknown error"}
+              {humanApiError(mergeMutation.error, "unknown error")}
             </div>
           )}
           {enableAutoMergeMut.isError && (
             <div className="mt-2" style={{ fontSize: "0.8rem", color: "var(--color-status-error)" }}>
-              {enableAutoMergeMut.error instanceof Error
-                ? enableAutoMergeMut.error.message
-                : "Failed to enable auto-merge"}
+              {humanApiError(enableAutoMergeMut.error, "Failed to enable auto-merge")}
             </div>
           )}
           {disableAutoMergeMut.isError && (

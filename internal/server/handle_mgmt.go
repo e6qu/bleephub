@@ -458,7 +458,7 @@ func (s *Server) handleCreateUserInternal(w http.ResponseWriter, r *http.Request
 	}
 
 	s.store.Mu.Lock()
-	if _, exists := s.store.UsersByLogin[req.Login]; exists {
+	if s.store.UserByLoginLocked(req.Login) != nil {
 		s.store.Mu.Unlock()
 		store.WriteGHValidationError(w, "User", "login", "already_exists")
 		return
@@ -487,6 +487,7 @@ func (s *Server) handleCreateUserInternal(w http.ResponseWriter, r *http.Request
 	}
 	s.store.Users[u.ID] = u
 	s.store.UsersByLogin[u.Login] = u
+	s.store.IndexUserLoginLocked(u.Login)
 	if s.store.Persist != nil {
 		s.store.Persist.MustPut("users", strconv.Itoa(u.ID), u)
 	}
@@ -575,6 +576,7 @@ func (s *Server) handleDeleteUserInternal(w http.ResponseWriter, r *http.Request
 	}
 	delete(s.store.Users, u.ID)
 	delete(s.store.UsersByLogin, u.Login)
+	s.store.UnindexUserLoginLocked(u.Login)
 	s.store.ForgetExternalIdentitiesLocked(u)
 	for val, t := range s.store.Tokens {
 		if t.UserID == u.ID {

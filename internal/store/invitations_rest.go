@@ -13,6 +13,7 @@ import (
 func (st *Store) CreateRepoInvitation(repoKey, inviteeLogin, inviteeEmail string, inviterID int, permission string) *RepoInvitation {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
+	repoKey = st.canonicalRepoKeyLocked(repoKey)
 
 	perm := normalizeRepoPermission(permission)
 	inv := &RepoInvitation{
@@ -41,6 +42,7 @@ func (st *Store) CreateRepoInvitation(repoKey, inviteeLogin, inviteeEmail string
 func (st *Store) ListPendingRepoInvitations(repoKey string) []*RepoInvitation {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
+	repoKey = st.canonicalRepoKeyLocked(repoKey)
 
 	m := st.RepoInvitations[repoKey]
 	out := make([]*RepoInvitation, 0, len(m))
@@ -57,6 +59,7 @@ func (st *Store) ListPendingRepoInvitations(repoKey string) []*RepoInvitation {
 func (st *Store) GetRepoInvitation(repoKey string, id int) *RepoInvitation {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
+	repoKey = st.canonicalRepoKeyLocked(repoKey)
 	if st.RepoInvitations[repoKey] == nil {
 		return nil
 	}
@@ -68,6 +71,7 @@ func (st *Store) GetRepoInvitation(repoKey string, id int) *RepoInvitation {
 func (st *Store) UpdateRepoInvitation(repoKey string, id int, permission string) *RepoInvitation {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
+	repoKey = st.canonicalRepoKeyLocked(repoKey)
 
 	if st.RepoInvitations[repoKey] == nil {
 		return nil
@@ -87,6 +91,7 @@ func (st *Store) UpdateRepoInvitation(repoKey string, id int, permission string)
 func (st *Store) DeleteRepoInvitation(repoKey string, id int) bool {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
+	repoKey = st.canonicalRepoKeyLocked(repoKey)
 
 	if st.RepoInvitations[repoKey] == nil {
 		return false

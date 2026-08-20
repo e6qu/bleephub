@@ -538,14 +538,8 @@ func (s *Server) findWorkflowByBackendID(backendID string) *store.Workflow {
 func (s *Server) repoIDByFullName(fullName string) int {
 	s.store.Mu.RLock()
 	defer s.store.Mu.RUnlock()
-	if repo := s.store.ReposByName[fullName]; repo != nil {
+	if repo := s.store.RepoByNameLocked(fullName); repo != nil {
 		return repo.ID
-	}
-	lowerFullName := strings.ToLower(fullName)
-	for name, repo := range s.store.ReposByName {
-		if strings.ToLower(name) == lowerFullName {
-			return repo.ID
-		}
 	}
 	return 0
 }
