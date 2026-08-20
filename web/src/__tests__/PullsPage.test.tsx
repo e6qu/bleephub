@@ -65,6 +65,17 @@ const noChecks = { total_count: 0, check_runs: [] };
 const emptyStatus = { state: "pending", sha: "abc", total_count: 0, statuses: [] };
 const emptyReviewers = { users: [], teams: [] };
 const viewer = { id: 1, login: "admin", avatar_url: "", type: "User", site_admin: true };
+// Viewer-role gating reads the repo payload's permissions; the admin fixture
+// carries full access so the write affordances render as they always did.
+const adminPerms = { admin: true, push: true, pull: true };
+const adminRepo = {
+  id: 1,
+  name: "test",
+  full_name: "admin/test",
+  default_branch: "main",
+  owner: { login: "admin", type: "User" },
+  permissions: adminPerms,
+};
 
 /**
  * Detail-view mock: overrides() is consulted first; everything else gets an
@@ -79,6 +90,7 @@ function mockPRApis(overrides: (u: string, init?: RequestInit) => Response | und
     if (u.includes("/commits/abc/status")) return Promise.resolve(jsonResponse(emptyStatus));
     if (u.includes("/requested_reviewers")) return Promise.resolve(jsonResponse(emptyReviewers));
     if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse(viewer));
+    if (u.endsWith("/api/v3/repos/admin/test")) return Promise.resolve(jsonResponse(adminRepo));
     if (u.endsWith("/pulls/9")) return Promise.resolve(jsonResponse(pr(9, "Feature PR")));
     if (u.endsWith("/api/graphql")) {
       return Promise.resolve(
@@ -221,6 +233,7 @@ describe("PullsPage checks section", () => {
       if (u.includes("/commits/abc/check-runs")) return Promise.resolve(jsonResponse(checks));
       if (u.includes("/commits/abc/status")) return Promise.resolve(jsonResponse(combinedStatus));
       if (u.includes("/requested_reviewers")) return Promise.resolve(jsonResponse(emptyReviewers));
+      if (u.endsWith("/api/v3/repos/admin/test")) return Promise.resolve(jsonResponse(adminRepo));
       if (u.endsWith("/pulls/9")) return Promise.resolve(jsonResponse(prData));
       return Promise.resolve(jsonResponse([]));
     });
@@ -599,6 +612,7 @@ describe("PullsPage requested reviewers", () => {
           full_name: "admin/test",
           default_branch: "main",
           owner: { login: "admin", type: "Organization" },
+          permissions: adminPerms,
         });
       }
       if (u.endsWith("/pulls/9/requested_reviewers") && init?.method === undefined) {
@@ -1371,6 +1385,7 @@ describe("PullsPage detail bootstrap", () => {
         );
       }
       if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse(viewer));
+      if (u.endsWith("/api/v3/repos/admin/test")) return Promise.resolve(jsonResponse(adminRepo));
       return Promise.resolve(jsonResponse([]));
     });
     renderAt("/ui/repos/admin/test/pulls/9");
@@ -1417,6 +1432,7 @@ describe("PullsPage detail bootstrap", () => {
         );
       }
       if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse(viewer));
+      if (u.endsWith("/api/v3/repos/admin/test")) return Promise.resolve(jsonResponse(adminRepo));
       return Promise.resolve(jsonResponse([]));
     });
     renderAt("/ui/repos/admin/test/pulls/9");
@@ -1461,6 +1477,7 @@ describe("PullsPage auto-merge", () => {
     default_branch: "main",
     owner: { login: "admin", type: "User" },
     allow_auto_merge: true,
+    permissions: adminPerms,
   };
 
   function findGraphQL(mutationName: string) {
@@ -1589,5 +1606,80 @@ describe("PullsPage auto-merge", () => {
       await screen.findByText(/merging is blocked — required checks must pass/i),
     ).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /enable auto-merge/i })).not.toBeInTheDocument();
+  });
+});
+
+// ─── Viewer-role gating (pull-only outsider vs PR author) ─────────────────
+
+describe("PullsPage viewer-role gating", () => {
+  const readerRepo = { ...adminRepo, permissions: { admin: false, push: false, pull: true } };
+  const reader = { id: 2, login: "reader", avatar_url: "", type: "User", site_admin: false };
+
+  it("replaces the merge actions with the write-access notice for a pull-only viewer", async () => {
+    mockPRApis((u, init) => {
+      if (u.endsWith("/api/v3/repos/admin/test") && init?.method === undefined) {
+        return jsonResponse(readerRepo);
+      }
+      if (u.endsWith("/api/v3/user")) return jsonResponse(reader);
+      if (u.endsWith("/pulls/9/requested_reviewers") && init?.method === undefined) {
+        return jsonResponse({
+          users: [{ id: 3, login: "carol", avatar_url: "", type: "User", site_admin: false }],
+          teams: [],
+        });
+      }
+      if (u.endsWith("/assignees")) return jsonResponse([{ login: "bob" }]);
+      return undefined;
+    });
+    renderAt("/ui/repos/admin/test/pulls/9");
+
+    // github.com's exact read-only merge-box notice…
+    expect(
+      await screen.findByText("Only those with write access to this repository can merge pull requests."),
+    ).toBeInTheDocument();
+    // …while the conflict/checks status display stays visible.
+    expect(screen.getByText(/no conflicts with the base branch/i)).toBeInTheDocument();
+
+    // The merge action row is gone.
+    expect(screen.queryByRole("button", { name: /merge pull request/i })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Merge method")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Update branch" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Convert to draft" })).not.toBeInTheDocument();
+
+    // Close/edit follow author-or-write; the reader is neither.
+    expect(screen.queryByRole("button", { name: /close pull request/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^edit$/i })).not.toBeInTheDocument();
+
+    // Reviewers render as read-only chips: no request/re-request/remove.
+    expect(await screen.findByText("carol")).toBeInTheDocument();
+    expect(screen.queryByLabelText("remove reviewer carol")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("reviewer login")).not.toBeInTheDocument();
+
+    // Sidebar pickers hidden; commenting stays for everyone.
+    expect(screen.queryByLabelText("Add assignee")).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/leave a comment/i)).toBeInTheDocument();
+  });
+
+  it("keeps Ready for review, Close and Edit for the PR author without push", async () => {
+    mockPRApis((u, init) => {
+      if (u.endsWith("/api/v3/repos/admin/test") && init?.method === undefined) {
+        return jsonResponse(readerRepo);
+      }
+      // The default /api/v3/user viewer is "admin" — the PR author.
+      if (u.endsWith("/pulls/9") && init?.method === undefined) {
+        return jsonResponse(pr(9, "Draft PR", { draft: true, node_id: "PR_kwDO123" }));
+      }
+      return undefined;
+    });
+    renderAt("/ui/repos/admin/test/pulls/9");
+
+    expect(await screen.findByRole("button", { name: "Ready for review" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /close pull request/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^edit$/i })).toBeInTheDocument();
+    // Authorship still does not unlock merging.
+    expect(
+      screen.getByText("Only those with write access to this repository can merge pull requests."),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /merge pull request/i })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Merge method")).not.toBeInTheDocument();
   });
 });

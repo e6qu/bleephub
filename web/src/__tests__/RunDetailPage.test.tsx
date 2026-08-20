@@ -94,6 +94,15 @@ function jobData(overrides: Record<string, unknown> = {}) {
   };
 }
 
+const repoDetail = {
+  id: 1,
+  name: "test",
+  full_name: "admin/test",
+  default_branch: "main",
+  owner: { login: "admin", type: "User" },
+  permissions: { admin: true, push: true, pull: true },
+};
+
 interface MockState {
   run?: Record<string, unknown>;
   job?: Record<string, unknown>;
@@ -114,6 +123,7 @@ function installMocks({
   mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
     const u = url.toString();
     const method = init?.method ?? "GET";
+    if (u.endsWith("/repos/admin/test")) return Promise.resolve(jsonResponse(repoDetail));
     if (u.includes("/issues") || u.includes("/pulls")) return Promise.resolve(jsonResponse([]));
     if (method === "POST" && u.endsWith("/cancel")) {
       return Promise.resolve(new Response(null, { status: 202 }));
@@ -439,6 +449,7 @@ describe("RunDetailPage — check-run annotations", () => {
       if (u.endsWith("/check-runs/42/annotations")) {
         return Promise.resolve(jsonResponse([annotation]));
       }
+      if (u.endsWith("/repos/admin/test")) return Promise.resolve(jsonResponse(repoDetail));
       if (u.includes("/issues") || u.includes("/pulls")) return Promise.resolve(jsonResponse([]));
       if (u.endsWith("/pending_deployments")) return Promise.resolve(jsonResponse([]));
       if (u.includes("/attempts/")) return Promise.resolve(jsonResponse({ message: "Not Found" }, 404));
@@ -461,5 +472,44 @@ describe("RunDetailPage — check-run annotations", () => {
     expect(await screen.findByText("Annotations")).toBeInTheDocument();
     expect(screen.getByText("boom")).toBeInTheDocument();
     expect(screen.getByText("main.go:10")).toBeInTheDocument();
+  });
+});
+
+describe("RunDetailPage read-only viewer gating", () => {
+  const viewerRepo = { ...repoDetail, permissions: { admin: false, push: false, pull: true } };
+  function installViewerMocks(state: MockState = {}) {
+    installMocks(state);
+    const base = mockFetch.getMockImplementation()!;
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.endsWith("/repos/admin/test")) return Promise.resolve(jsonResponse(viewerRepo));
+      return base(url, init);
+    });
+  }
+
+  it("keeps logs readable but hides re-run/delete controls on a completed run", async () => {
+    installViewerMocks();
+    renderPage();
+    await waitFor(() => expect(screen.getByRole("heading", { name: /CI/ })).toBeInTheDocument());
+    await screen.findByText("Set up job");
+    // Read affordances stay.
+    expect(screen.getByRole("link", { name: /download log archive/i })).toBeInTheDocument();
+    // Every mutation control is hidden for a pull-only viewer.
+    expect(screen.queryByRole("button", { name: /re-run all jobs/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /re-run failed jobs/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /re-run job/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /delete all logs/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /delete workflow run/i })).not.toBeInTheDocument();
+  });
+
+  it("hides Cancel/Force cancel from a viewer while a run is in progress", async () => {
+    installViewerMocks({
+      run: runData({ status: "in_progress", conclusion: null }),
+      job: jobData({ status: "in_progress", conclusion: null, completed_at: null }),
+    });
+    renderPage();
+    await waitFor(() => expect(screen.getByRole("heading", { name: /CI/ })).toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: /cancel workflow/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /force cancel/i })).not.toBeInTheDocument();
   });
 });

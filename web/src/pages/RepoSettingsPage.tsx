@@ -87,6 +87,8 @@ import type {
   GithubRepoInvitation,
 } from "../types.js";
 import { RepoHeader } from "../components/PageHeader.js";
+import { RepoNotFound } from "../components/RepoNotFound.js";
+import { useRepoPermissions } from "../hooks/useRepoPermissions.js";
 import { SettingsLayout, type SettingsNavSection } from "../components/SettingsLayout.js";
 import { PageTitle, Button, ButtonLink, Box, FormLabel, ErrorBanner, Modal, DialogActions } from "../components/ui.js";
 import { RelativeTime } from "../components/RelativeTime.js";
@@ -152,10 +154,16 @@ export function RepoSettingsPage() {
     queryFn: () => fetchRepoDetail(owner, repo),
     enabled: !!owner && !!repo,
   });
+  // Settings is admin-only: github.com answers this URL with a 404 for
+  // non-admin viewers rather than explaining what it is. The repo query
+  // above is the same payload the hook reads, so once it has resolved the
+  // decision is final — admins never see a 404 flash.
+  const { isAdmin } = useRepoPermissions(owner, repo);
 
   if (isLoading) return <Spinner label={`loading ${owner}/${repo}`} />;
   if (isError || !data)
     return <InlineError title={`Failed to load ${owner}/${repo}`} detail={String(error)} />;
+  if (!isAdmin) return <RepoNotFound />;
 
   return (
     <div>

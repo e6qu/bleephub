@@ -35,6 +35,15 @@ function renderPage() {
   );
 }
 
+const repoDetail = {
+  id: 1,
+  name: "test",
+  full_name: "admin/test",
+  default_branch: "main",
+  owner: { login: "admin", type: "User" },
+  permissions: { admin: true, push: true, pull: true },
+};
+
 const repoSecrets = {
   total_count: 1,
   secrets: [
@@ -80,6 +89,7 @@ async function installMocks() {
   mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
     const u = url.toString();
     const method = init?.method ?? "GET";
+    if (u.endsWith("/repos/admin/test")) return Promise.resolve(jsonResponse(repoDetail));
     if (u.includes("/issues") || u.includes("/pulls")) return Promise.resolve(jsonResponse([]));
     if (u.endsWith("/secrets/public-key")) return Promise.resolve(jsonResponse(publicKey));
     if (method === "PUT" && u.includes("/secrets/")) {
@@ -254,5 +264,19 @@ describe("RepoSecretsPage org scope", () => {
       );
       expect(sodium.to_string(opened)).toBe("org-value");
     });
+  });
+});
+
+describe("RepoSecretsPage non-admin guard", () => {
+  it("renders a GitHub-style 404 for a non-admin viewer instead of the secrets manager", async () => {
+    const viewerRepo = { ...repoDetail, permissions: { admin: false, push: false, pull: true } };
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.endsWith("/repos/admin/test")) return Promise.resolve(jsonResponse(viewerRepo));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderPage();
+    expect(await screen.findByText("This page does not exist")).toBeInTheDocument();
+    expect(screen.queryByText("Actions secrets and variables")).not.toBeInTheDocument();
   });
 });

@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { InlineError, Spinner } from "@bleephub/ui-core/components";
 import { RepoHeader } from "../components/PageHeader.js";
 import { useOpenCounts } from "../hooks/useOpenCounts.js";
+import { useRepoPermissions } from "../hooks/useRepoPermissions.js";
 import { Box, Blankslate, Button, SectionLabel } from "../components/ui.js";
 import { MutationError } from "../components/MutationError.js";
 import Markdown from "../components/Markdown.js";
@@ -46,8 +47,8 @@ const fetchWikiRevision = (owner: string, repo: string, slug: string, id: number
  * Repository wiki. github.com puts a Wiki tab on repos with wikis enabled; the
  * simulator backs it with a per-repo page store (see internal/server/gh_wiki.go).
  * A left rail lists pages; the main pane views a page's markdown or edits it.
- * Write actions (New/Edit/Delete) call the store and surface a 403 for viewers
- * without push access rather than being hidden.
+ * Write actions (New/Edit/Delete/Restore) need push access and are hidden from
+ * read-only viewers, matching github.com; the wiki stays readable for everyone.
  */
 export function WikiPage() {
   const { owner = "", repo = "", slug: routeSlug } = useParams<{
@@ -56,6 +57,7 @@ export function WikiPage() {
     slug?: string;
   }>();
   const counts = useOpenCounts(owner, repo);
+  const { canPush } = useRepoPermissions(owner, repo);
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [editing, setEditing] = useState<null | { slug: string; title: string; body: string; isNew: boolean }>(null);
@@ -114,6 +116,7 @@ export function WikiPage() {
           repo={repo}
           pages={pagesQ.data}
           activeSlug={activeSlug}
+          canPush={canPush}
           onNew={startNew}
         />
         <div>
@@ -135,6 +138,7 @@ export function WikiPage() {
               owner={owner}
               repo={repo}
               slug={activeSlug}
+              canPush={canPush}
               onBack={() => setShowHistory(false)}
             />
           ) : (
@@ -142,6 +146,7 @@ export function WikiPage() {
               pagesQ={pagesQ}
               pageQ={pageQ}
               activeSlug={activeSlug}
+              canPush={canPush}
               onNew={startNew}
               onEdit={startEdit}
               onHistory={() => setShowHistory(true)}
@@ -164,21 +169,25 @@ function WikiSidebar({
   repo,
   pages,
   activeSlug,
+  canPush,
   onNew,
 }: {
   owner: string;
   repo: string;
   pages: GithubWikiPage[] | undefined;
   activeSlug: string | undefined;
+  canPush: boolean;
   onNew: () => void;
 }) {
   return (
     <aside className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
         <SectionLabel>Pages</SectionLabel>
-        <Button size="sm" onClick={onNew}>
-          <PlusIcon size={13} /> New
-        </Button>
+        {canPush && (
+          <Button size="sm" onClick={onNew}>
+            <PlusIcon size={13} /> New
+          </Button>
+        )}
       </div>
       {pages && pages.length > 0 ? (
         <nav aria-label="Wiki pages">
@@ -216,6 +225,7 @@ function WikiView({
   pagesQ,
   pageQ,
   activeSlug,
+  canPush,
   onNew,
   onEdit,
   onHistory,
@@ -225,6 +235,7 @@ function WikiView({
   pagesQ: { isLoading: boolean; isError: boolean; error: unknown; data: GithubWikiPage[] | undefined };
   pageQ: { isLoading: boolean; isError: boolean; error: unknown; data: GithubWikiPage | undefined };
   activeSlug: string | undefined;
+  canPush: boolean;
   onNew: () => void;
   onEdit: (p: GithubWikiPage) => void;
   onHistory: () => void;
@@ -237,11 +248,13 @@ function WikiView({
     return (
       <Blankslate icon={<BookIcon size={28} />} title="Welcome to the wiki">
         <p>This repository’s wiki has no pages yet.</p>
-        <div className="mt-3">
-          <Button variant="primary" onClick={onNew}>
-            <PlusIcon size={14} /> Create the first page
-          </Button>
-        </div>
+        {canPush && (
+          <div className="mt-3">
+            <Button variant="primary" onClick={onNew}>
+              <PlusIcon size={14} /> Create the first page
+            </Button>
+          </div>
+        )}
       </Blankslate>
     );
   }
@@ -255,9 +268,9 @@ function WikiView({
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h1 style={{ fontSize: "1.5rem", fontWeight: 600, margin: 0 }}>{page.title}</h1>
         <div className="flex items-center gap-2">
-          <Button size="sm" onClick={() => onEdit(page)}>Edit</Button>
+          {canPush && <Button size="sm" onClick={() => onEdit(page)}>Edit</Button>}
           <Button size="sm" onClick={onHistory}>History</Button>
-          <Button size="sm" variant="danger" onClick={() => onDelete(page)}>Delete</Button>
+          {canPush && <Button size="sm" variant="danger" onClick={() => onDelete(page)}>Delete</Button>}
         </div>
       </div>
       {removeError}
@@ -369,11 +382,13 @@ function WikiHistory({
   owner,
   repo,
   slug,
+  canPush,
   onBack,
 }: {
   owner: string;
   repo: string;
   slug: string;
+  canPush: boolean;
   onBack: () => void;
 }) {
   const qc = useQueryClient();
@@ -441,14 +456,16 @@ function WikiHistory({
                   </div>
                 )}
               </div>
-              <Button
-                size="sm"
-                aria-label={`Restore revision ${rev.id}`}
-                disabled={restore.isPending}
-                onClick={() => restore.mutate(rev)}
-              >
-                Restore
-              </Button>
+              {canPush && (
+                <Button
+                  size="sm"
+                  aria-label={`Restore revision ${rev.id}`}
+                  disabled={restore.isPending}
+                  onClick={() => restore.mutate(rev)}
+                >
+                  Restore
+                </Button>
+              )}
             </div>
           ))}
         </Box>

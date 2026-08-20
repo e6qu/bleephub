@@ -20,6 +20,8 @@ import type {
   GithubBranchProtectionRestrictions,
 } from "../types.js";
 import { RepoHeader } from "../components/PageHeader.js";
+import { RepoNotFound } from "../components/RepoNotFound.js";
+import { useRepoPermissions } from "../hooks/useRepoPermissions.js";
 import { PageTitle, Button, Box, ErrorBanner } from "../components/ui.js";
 import { confirmAction } from "../components/confirmAction.js";
 
@@ -215,6 +217,10 @@ function summarizeRule(bp: Partial<GithubBranchProtection>): string {
 export function BranchProtectionPage() {
   const { owner = "", repo = "" } = useParams<{ owner: string; repo: string }>();
   const queryClient = useQueryClient();
+  // Branch protection editing is admin-only: github.com 404s this URL for
+  // non-admin viewers. The guard renders after the repo query settles (the
+  // hook reads the same payload), so admins never see a 404 flash.
+  const { isAdmin } = useRepoPermissions(owner, repo);
 
   const repoQuery = useQuery({
     queryKey: ["repo", owner, repo],
@@ -360,6 +366,7 @@ export function BranchProtectionPage() {
   if (repoQuery.isLoading || branchesQuery.isLoading) return <Spinner label={`loading ${owner}/${repo}`} />;
   if (repoQuery.isError || branchesQuery.isError)
     return <InlineError title={`Failed to load ${owner}/${repo}`} detail={String(repoQuery.error ?? branchesQuery.error)} />;
+  if (!isAdmin) return <RepoNotFound />;
 
   const branches = branchesQuery.data ?? [];
   const branchInList = branches.some((b: GithubBranch) => b.name === branch);

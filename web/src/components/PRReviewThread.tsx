@@ -11,6 +11,7 @@ import {
   ApiError,
 } from "../api.js";
 import type { GithubPRReviewComment } from "../types.js";
+import { useRepoPermissions } from "../hooks/useRepoPermissions.js";
 import { Box, Button } from "./ui.js";
 import { Avatar } from "./Avatar.js";
 import { RelativeTime } from "./RelativeTime.js";
@@ -172,6 +173,9 @@ function CommitSuggestionButton({
   comment: GithubPRReviewComment;
 }) {
   const qc = useQueryClient();
+  // Committing a suggestion pushes to the PR head branch — github.com only
+  // offers it to viewers with write access (hidden, not disabled, below).
+  const { canPush } = useRepoPermissions(owner, repo);
   const apply = useMutation({
     mutationFn: () =>
       ghPostJSON<{ sha: string }>(
@@ -194,6 +198,7 @@ function CommitSuggestionButton({
         ? "File-level suggestions can't be applied"
         : null;
 
+  if (!canPush) return null;
   if (outdated) {
     return (
       <div className="mb-2 flex justify-end">
@@ -293,6 +298,13 @@ export function ReviewThreadCard({
   hideDiffHunk?: boolean;
 }) {
   const qc = useQueryClient();
+  // Resolving/unresolving a thread needs write access or authorship of one of
+  // the thread's comments (github.com's rule); replying stays for everyone.
+  const { canPush } = useRepoPermissions(owner, repo);
+  const isThreadParticipant =
+    viewerLogin !== null &&
+    group.comments.some((c) => c.user?.login != null && c.user.login === viewerLogin);
+  const canResolve = canPush || isThreadParticipant;
   const [replyBody, setReplyBody] = useState("");
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["pr-review-comments", owner, repo, number] });
@@ -339,7 +351,7 @@ export function ReviewThreadCard({
                 Resolved
               </span>
             )}
-            {threadInfo && (
+            {threadInfo && canResolve && (
               <Button
                 size="sm"
                 variant="ghost"

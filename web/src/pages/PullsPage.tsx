@@ -62,6 +62,7 @@ import type {
   ListFilterState,
 } from "../types.js";
 import { formatDuration } from "../utils/format.js";
+import { useRepoPermissions } from "../hooks/useRepoPermissions.js";
 import { CommentCard } from "../components/CommentCard.js";
 import { RepoHeader } from "../components/PageHeader.js";
 import { RunStatusIcon } from "../components/RunStatusIcon.js";
@@ -494,6 +495,11 @@ function PRDetail({ owner, repo, number }: { owner: string; repo: string; number
   const pendingComments =
     pendingReview && Array.isArray(pendingCommentsQ.data) ? pendingCommentsQ.data : [];
 
+  // Title/body editing follows github.com's author-or-write rule; while
+  // permissions load the neutral (hidden) state renders.
+  const { canPush } = useRepoPermissions(owner, repo);
+  const canEdit = canPush || (pendingLogin !== null && pendingLogin === pr?.user?.login);
+
   const invalidatePR = () => {
     qc.invalidateQueries({ queryKey: ["pr", owner, repo, number] });
     qc.invalidateQueries({ queryKey: ["prs", owner, repo] });
@@ -543,16 +549,18 @@ function PRDetail({ owner, repo, number }: { owner: string; repo: string; number
         <h1 style={{ fontSize: "1.5rem", fontWeight: 400, color: "var(--color-fg)" }}>
           {pr.title} <span style={{ color: "var(--color-fg-muted)" }}>#{pr.number}</span>
         </h1>
-        <Button
-          size="sm"
-          onClick={() => {
-            setEditTitle(pr.title);
-            setEditBody(pr.body ?? "");
-            setEditing(true);
-          }}
-        >
-          Edit
-        </Button>
+        {canEdit && (
+          <Button
+            size="sm"
+            onClick={() => {
+              setEditTitle(pr.title);
+              setEditBody(pr.body ?? "");
+              setEditing(true);
+            }}
+          >
+            Edit
+          </Button>
+        )}
       </div>
 
       {editing && (
@@ -693,6 +701,12 @@ function ConversationTab({
   const viewerLogin = typeof viewerQ.data?.login === "string" ? viewerQ.data.login : null;
   const s = prState(pr);
 
+  // github.com's viewer-role rules: merge-area actions need write access;
+  // closing/reopening (like ready-for-review) follow author-or-write.
+  const { canPush } = useRepoPermissions(owner, repo);
+  const isPRAuthor = viewerLogin !== null && viewerLogin === pr.user?.login;
+  const canClose = canPush || isPRAuthor;
+
   const timelineQ = useQuery({
     queryKey: ["pr-timeline", owner, repo, number],
     queryFn: () => fetchIssueTimeline(owner, repo, number),
@@ -762,7 +776,7 @@ function ConversationTab({
           threadsError={threadsQ.isError ? String(threadsQ.error) : null}
           threads={threadsQ.data ?? []}
         />
-        <MergeBox owner={owner} repo={repo} number={number} pr={pr} />
+        <MergeBox owner={owner} repo={repo} number={number} pr={pr} canPush={canPush} isPRAuthor={isPRAuthor} />
         <MutationError of={stateMut} />
         <CommentComposer
           owner={owner}
@@ -773,7 +787,8 @@ function ConversationTab({
             ["pr", owner, repo, number],
           ]}
           extraActions={
-            s !== "merged" && (
+            s !== "merged" &&
+            canClose && (
               <Button
                 size="sm"
                 disabled={stateMut.isPending}
@@ -938,6 +953,7 @@ function MergedBranchActions({
   pr: GithubPR;
 }) {
   const qc = useQueryClient();
+  const { canPush } = useRepoPermissions(owner, repo);
   const branchesQ = useQuery({
     queryKey: ["branches", owner, repo],
     queryFn: () => fetchRepoBranches(owner, repo),
@@ -952,8 +968,9 @@ function MergedBranchActions({
     onSuccess: invalidate,
   });
 
-  // Cross-repo heads and the base branch itself are not deletable from here.
-  if (!branchesQ.data || pr.head.ref === pr.base.ref) return null;
+  // Cross-repo heads and the base branch itself are not deletable from here;
+  // branch deletion/restoration needs push, like the branches tab.
+  if (!canPush || !branchesQ.data || pr.head.ref === pr.base.ref) return null;
   const exists = branchesQ.data.some((b) => b.name === pr.head.ref);
 
   return (
@@ -982,11 +999,17 @@ function MergeBox({
   repo,
   number,
   pr,
+  canPush,
+  isPRAuthor,
 }: {
   owner: string;
   repo: string;
   number: number;
   pr: GithubPR;
+  /** Write access: merge/auto-merge/update-branch/convert-to-draft need it. */
+  canPush: boolean;
+  /** "Ready for review" follows github.com's author-or-write rule. */
+  isPRAuthor: boolean;
 }) {
   const qc = useQueryClient();
   const [method, setMethod] = useState<"merge" | "squash" | "rebase">("merge");
@@ -1174,16 +1197,18 @@ function MergeBox({
                 Auto-merge enabled by {pr.auto_merge.enabled_by?.login ?? "unknown"} (
                 {pr.auto_merge.merge_method})
               </span>
-              <Button
-                size="sm"
-                disabled={disableAutoMergeMut.isPending}
-                onClick={() => disableAutoMergeMut.mutate()}
-              >
-                {disableAutoMergeMut.isPending ? "Disabling…" : "Disable auto-merge"}
-              </Button>
+              {canPush && (
+                <Button
+                  size="sm"
+                  disabled={disableAutoMergeMut.isPending}
+                  onClick={() => disableAutoMergeMut.mutate()}
+                >
+                  {disableAutoMergeMut.isPending ? "Disabling…" : "Disable auto-merge"}
+                </Button>
+              )}
             </div>
           )}
-          {confirming && method !== "rebase" && (
+          {canPush && confirming && method !== "rebase" && (
             <div className="mb-2">
               <FormLabel id="merge-commit-title">Commit title</FormLabel>
               <input
@@ -1207,6 +1232,27 @@ function MergeBox({
               />
             </div>
           )}
+          {!canPush ? (
+            // github.com's read-only merge box: the checks/conflict status
+            // above stays visible, the action row is replaced by the notice.
+            <>
+              <div style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)" }}>
+                Only those with write access to this repository can merge pull requests.
+              </div>
+              {pr.draft && isPRAuthor && (
+                <div className="mt-2">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={readyMut.isPending}
+                    onClick={() => readyMut.mutate()}
+                  >
+                    {readyMut.isPending ? "…" : "Ready for review"}
+                  </Button>
+                </div>
+              )}
+            </>
+          ) : (
           <div className="flex flex-wrap items-center gap-2">
             {confirming === "merge" ? (
               <>
@@ -1319,6 +1365,7 @@ function MergeBox({
               {updateBranchMut.isPending ? "Updating…" : "Update branch"}
             </Button>
           </div>
+          )}
           <MutationError of={[readyMut, draftMut]} />
           {updateBranchMut.isError && (
             <div className="mt-2" style={{ fontSize: "0.8rem", color: "var(--color-status-error)" }}>
@@ -1635,6 +1682,9 @@ function RequestedReviewersSection({
   number: number;
 }) {
   const qc = useQueryClient();
+  // Requesting, re-requesting, and removing reviewers needs write access —
+  // github.com shows read-only reviewer chips to everyone else.
+  const { canPush } = useRepoPermissions(owner, repo);
   const q = useQuery({
     queryKey: ["pr-requested-reviewers", owner, repo, number],
     queryFn: ({ signal }) => fetchPRRequestedReviewers(owner, repo, number, signal),
@@ -1738,6 +1788,7 @@ function RequestedReviewersSection({
             <span key={u.login} className="inline-flex items-center gap-1.5" style={chipStyle}>
               {reviewerStateIcon(verdictByLogin.get(u.login) ?? null)}
               {u.login}
+              {canPush && (
               <button
                 type="button"
                 aria-label={`remove reviewer ${u.login}`}
@@ -1755,12 +1806,14 @@ function RequestedReviewersSection({
               >
                 ✕
               </button>
+              )}
             </span>
           ))}
           {reviewedNotRequested.map(([login, state]) => (
             <span key={login} className="inline-flex items-center gap-1.5" style={chipStyle}>
               {reviewerStateIcon(state)}
               {login}
+              {canPush && (
               <button
                 type="button"
                 aria-label={`re-request review from ${login}`}
@@ -1779,11 +1832,13 @@ function RequestedReviewersSection({
               >
                 ↻
               </button>
+              )}
             </span>
           ))}
           {q.data.teams.map((t) => (
             <span key={t.slug} className="inline-flex items-center gap-1.5" style={chipStyle}>
               {t.name}
+              {canPush && (
               <button
                 type="button"
                 aria-label={`remove team ${t.slug}`}
@@ -1801,9 +1856,10 @@ function RequestedReviewersSection({
               >
                 ✕
               </button>
+              )}
             </span>
           ))}
-          {addableReviewers.length > 0 && (
+          {canPush && addableReviewers.length > 0 && (
             <select
               aria-label="reviewer login"
               value=""
@@ -1821,7 +1877,7 @@ function RequestedReviewersSection({
               ))}
             </select>
           )}
-          {addableTeams.length > 0 && (
+          {canPush && addableTeams.length > 0 && (
             <select
               aria-label="reviewer team"
               value=""
@@ -1908,6 +1964,7 @@ function ReviewCard({
   viewerLogin: string | null;
 }) {
   const qc = useQueryClient();
+  const { canPush } = useRepoPermissions(owner, repo);
   const [dismissing, setDismissing] = useState(false);
   const [message, setMessage] = useState("");
   const dismiss = useMutation({
@@ -1919,7 +1976,8 @@ function ReviewCard({
       qc.invalidateQueries({ queryKey: ["pr-timeline", owner, repo, number] });
     },
   });
-  const dismissable = review.state === "APPROVED" || review.state === "CHANGES_REQUESTED";
+  // Dismissing someone's review is a write-access action on GitHub.
+  const dismissable = canPush && (review.state === "APPROVED" || review.state === "CHANGES_REQUESTED");
 
   return (
     <div className="mb-3">

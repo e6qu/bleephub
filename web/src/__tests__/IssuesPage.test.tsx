@@ -43,6 +43,11 @@ function renderAt(path: string) {
   return { ...utils, queryClient };
 }
 
+// Viewer-role gating reads the repo payload's permissions; the admin fixture
+// carries full access so the write affordances render as they always did.
+const adminPerms = { admin: true, push: true, pull: true };
+const adminRepo = { id: 1, name: "test", full_name: "admin/test", owner: { login: "admin", type: "User" }, permissions: adminPerms };
+
 function issue(number: number, title: string) {
   return {
     id: number,
@@ -204,6 +209,7 @@ describe("IssuesPage detail", () => {
       if (u.includes("/issues/7/comments") || u.includes("/timeline")) return Promise.resolve(jsonResponse([]));
       if (u.includes("/issues/7/reactions")) return Promise.resolve(jsonResponse([]));
       if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "admin" }));
+      if (u.endsWith("/repos/admin/test")) return Promise.resolve(jsonResponse(adminRepo));
       if (u.endsWith("/issues/9")) return Promise.resolve(jsonResponse(issue(9, "Child issue")));
       if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
       return Promise.resolve(jsonResponse([]));
@@ -401,6 +407,7 @@ describe("IssuesPage detail", () => {
       if (u.endsWith("/issues/7/assignees") && init?.method === "POST") {
         return Promise.resolve(jsonResponse(issue(7, "A real issue")));
       }
+      if (u.endsWith("/api/v3/repos/admin/test")) return Promise.resolve(jsonResponse(adminRepo));
       if (u.endsWith("/repos/admin/test/assignees")) {
         return Promise.resolve(jsonResponse([{ login: "bob" }]));
       }
@@ -428,6 +435,7 @@ describe("IssuesPage detail", () => {
       if (u.endsWith("/issues/7/lock") && init?.method === "PUT") {
         return Promise.resolve(new Response(null, { status: 204 }));
       }
+      if (u.endsWith("/api/v3/repos/admin/test")) return Promise.resolve(jsonResponse(adminRepo));
       if (u.includes("/issues/7/comments") || u.includes("/timeline")) return Promise.resolve(jsonResponse([]));
       if (u.includes("/issues/7/reactions")) return Promise.resolve(jsonResponse([]));
       if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "admin" }));
@@ -668,6 +676,7 @@ describe("IssuesPage labels view", () => {
   it("creates a label through the dialog", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
       const u = url.toString();
+      if (u.endsWith("/api/v3/repos/admin/test")) return Promise.resolve(jsonResponse(adminRepo));
       if (u.includes("/labels") && init?.method === "POST") {
         return Promise.resolve(jsonResponse(bugLabel, 201));
       }
@@ -695,6 +704,7 @@ describe("IssuesPage milestones view", () => {
   it("lists milestones with progress and supports closing", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
       const u = url.toString();
+      if (u.endsWith("/api/v3/repos/admin/test")) return Promise.resolve(jsonResponse(adminRepo));
       if (u.includes("/milestones/1") && init?.method === "PATCH") {
         return Promise.resolve(jsonResponse(milestone(1, "v1.0", "closed")));
       }
@@ -735,7 +745,7 @@ describe("IssuesPage detail triage", () => {
       const u = url.toString();
       if (u.endsWith("/api/v3/repos/admin/test")) {
         return Promise.resolve(
-          jsonResponse({ owner: { login: "admin", type: "Organization" } }),
+          jsonResponse({ owner: { login: "admin", type: "Organization" }, permissions: adminPerms }),
         );
       }
       if (u.includes("/issues/7") && init?.method === "PATCH") {
@@ -1195,7 +1205,7 @@ describe("IssuesPage overflow menu", () => {
       }
       if (u.endsWith("/api/v3/repos/admin/test")) {
         return Promise.resolve(
-          jsonResponse({ owner: { login: "admin", type: "User" }, permissions: { admin: true } }),
+          jsonResponse({ owner: { login: "admin", type: "User" }, permissions: adminPerms }),
         );
       }
       if (u.endsWith("/api/v3/users/admin/repos?per_page=100")) {
@@ -1375,6 +1385,7 @@ describe("IssuesPage lock reason", () => {
       if (u.endsWith("/issues/7/lock") && init?.method === "PUT") {
         return Promise.resolve(new Response(null, { status: 204 }));
       }
+      if (u.endsWith("/api/v3/repos/admin/test")) return Promise.resolve(jsonResponse(adminRepo));
       if (u.includes("/issues/7/comments") || u.includes("/timeline")) return Promise.resolve(jsonResponse([]));
       if (u.includes("/issues/7/reactions")) return Promise.resolve(jsonResponse([]));
       if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "admin" }));
@@ -1467,6 +1478,7 @@ describe("IssueSidebar gear buttons", () => {
   it("renders a real gear button that focuses the section's picker", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL) => {
       const u = url.toString();
+      if (u.endsWith("/api/v3/repos/admin/test")) return Promise.resolve(jsonResponse(adminRepo));
       if (u.endsWith("/repos/admin/test/assignees")) {
         return Promise.resolve(jsonResponse([{ login: "bob" }]));
       }
@@ -1669,7 +1681,7 @@ describe("IssuesPage convert to discussion", () => {
           jsonResponse({
             owner: { login: "admin", type: "User" },
             has_discussions: opts.hasDiscussions,
-            permissions: { admin: true },
+            permissions: adminPerms,
           }),
         );
       }
@@ -1736,5 +1748,112 @@ describe("IssuesPage convert to discussion", () => {
     // The 422 renders inline; the dialog stays open (Category still visible).
     expect(await screen.findByText(/can't be converted/)).toBeInTheDocument();
     expect(screen.getByLabelText("Category")).toBeInTheDocument();
+  });
+});
+
+// ─── Viewer-role gating (pull-only outsider vs author) ────────────────────
+
+describe("IssuesPage viewer-role gating", () => {
+  const readerRepo = { ...adminRepo, permissions: { admin: false, push: false, pull: true } };
+
+  function mockReadOnlyDetail(viewerLogin: string) {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.endsWith("/api/v3/repos/admin/test")) return Promise.resolve(jsonResponse(readerRepo));
+      if (u.endsWith("/repos/admin/test/assignees")) return Promise.resolve(jsonResponse([{ login: "bob" }]));
+      if (u.includes("/issues/7/timeline")) {
+        return Promise.resolve(
+          jsonResponse([
+            {
+              event: "commented",
+              id: 100,
+              node_id: "IC_100",
+              body: "someone else's comment",
+              user: { login: "admin" },
+              created_at: "2026-01-02T00:00:00Z",
+            },
+          ]),
+        );
+      }
+      if (u.includes("/reactions")) return Promise.resolve(jsonResponse([]));
+      if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: viewerLogin }));
+      if (u.includes("/issues/7")) {
+        return Promise.resolve(jsonResponse({ ...issue(7, "A real issue"), assignees: [{ login: "carol" }] }));
+      }
+      return Promise.resolve(jsonResponse([]));
+    });
+  }
+
+  it("hides every 403-able control from a pull-only outsider", async () => {
+    mockReadOnlyDetail("reader");
+    renderAt("/ui/repos/admin/test/issues/7");
+
+    // The conversation, composer and reactions stay for everyone.
+    expect(await screen.findByText("someone else's comment")).toBeInTheDocument();
+    expect(await screen.findByPlaceholderText(/leave a comment/i)).toBeInTheDocument();
+    expect((await screen.findAllByRole("button", { name: "add reaction" })).length).toBeGreaterThan(0);
+
+    // Close/reopen, title edit, and the overflow menu are write-or-author.
+    expect(screen.queryByRole("button", { name: /close issue/i })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Reason for closing")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^edit$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Issue actions" })).not.toBeInTheDocument();
+
+    // The sidebar renders read-only: values as plain text, no pickers, no
+    // gears, and no Lock conversation section.
+    expect(screen.getByText("carol")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Add assignee")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Unassign carol")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit assignees" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Add label")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Set milestone")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /lock conversation/i })).not.toBeInTheDocument();
+
+    // Comment moderation is write-or-author; this comment is someone else's.
+    expect(screen.queryByRole("button", { name: "Edit comment" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete comment" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Hide comment" })).not.toBeInTheDocument();
+  });
+
+  it("lets the issue author close, edit and manage their own comment without push", async () => {
+    mockReadOnlyDetail("admin"); // issue #7 and comment 100 are authored by admin
+    renderAt("/ui/repos/admin/test/issues/7");
+
+    expect(await screen.findByRole("button", { name: /close issue/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^edit$/i })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Edit comment" })).toBeInTheDocument();
+
+    // Authorship does not grant triage: the kebab and sidebar stay read-only.
+    expect(screen.queryByRole("button", { name: "Issue actions" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Add assignee")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /lock conversation/i })).not.toBeInTheDocument();
+  });
+
+  it("renders the labels view read-only without push access", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.endsWith("/api/v3/repos/admin/test")) return Promise.resolve(jsonResponse(readerRepo));
+      if (u.includes("/labels")) return Promise.resolve(jsonResponse([bugLabel]));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/test/labels");
+    expect(await screen.findByText("bug")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /new label/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "edit" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "delete" })).not.toBeInTheDocument();
+  });
+
+  it("renders the milestones view read-only without push access", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL) => {
+      const u = url.toString();
+      if (u.endsWith("/api/v3/repos/admin/test")) return Promise.resolve(jsonResponse(readerRepo));
+      if (u.includes("/milestones?")) return Promise.resolve(jsonResponse([milestone(1, "v1.0")]));
+      return Promise.resolve(jsonResponse([]));
+    });
+    renderAt("/ui/repos/admin/test/milestones");
+    expect(await screen.findByText("v1.0")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /new milestone/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "close" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "delete" })).not.toBeInTheDocument();
   });
 });

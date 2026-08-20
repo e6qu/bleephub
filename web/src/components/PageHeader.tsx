@@ -34,6 +34,7 @@ import {
   unstarRepo,
 } from "../api.js";
 import { accountRoute } from "../routes.js";
+import { useRepoPermissions } from "../hooks/useRepoPermissions.js";
 
 // ─── Repo context header + tabs ────────────────────────────────────────
 
@@ -74,6 +75,9 @@ export function RepoHeader({
     queryFn: ({ signal }) => fetchRepoDetail(owner, repo, signal),
   });
   const currentUser = useQuery({ queryKey: ["current-user"], queryFn: ({ signal }) => fetchCurrentUser(signal), staleTime: 60_000 });
+  // github.com shows the Settings tab only to repo admins; while permissions
+  // load the tab is simply absent (it appears once the payload arrives).
+  const { isAdmin } = useRepoPermissions(owner, repo);
   const organizations = useQuery({
     queryKey: ["viewer-organizations"],
     queryFn: ({ signal }) => fetchAuthenticatedUserOrgs(signal),
@@ -241,12 +245,14 @@ export function RepoHeader({
           label="Security"
           active={onSecurity}
         />
-        <RepoTabLink
-          to={`${base}/settings`}
-          icon={<GearIcon size={15} />}
-          label="Settings"
-          active={active === "settings"}
-        />
+        {isAdmin && (
+          <RepoTabLink
+            to={`${base}/settings`}
+            icon={<GearIcon size={15} />}
+            label="Settings"
+            active={active === "settings"}
+          />
+        )}
         </nav>
       {onSecurity && (
         <nav

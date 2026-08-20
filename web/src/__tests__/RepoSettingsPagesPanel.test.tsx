@@ -48,6 +48,7 @@ const repo = {
   pushed_at: "2026-01-02T00:00:00Z",
   size: 0,
   owner: { login: "admin", type: "User" },
+  permissions: { admin: true, push: true, pull: true },
   license: null,
   has_issues: true,
   has_projects: false,

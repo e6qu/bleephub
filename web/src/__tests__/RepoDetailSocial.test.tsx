@@ -31,6 +31,7 @@ const repo = {
   stargazers_count: 3,
   subscribers_count: 2,
   forks_count: 1,
+  permissions: { admin: true, push: true, pull: true },
 };
 
 function installFetchRoutes() {

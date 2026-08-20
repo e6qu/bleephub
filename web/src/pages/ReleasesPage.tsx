@@ -23,6 +23,8 @@ import Markdown from "../components/Markdown.js";
 import { RelativeTime } from "../components/RelativeTime.js";
 import type { GithubRelease, GithubReleaseAsset } from "../types.js";
 import { RepoHeader } from "../components/PageHeader.js";
+import { RepoNotFound } from "../components/RepoNotFound.js";
+import { useRepoPermissions } from "../hooks/useRepoPermissions.js";
 import { Blankslate, Box, Button, ButtonLink, ErrorBanner, FormLabel, PageTitle } from "../components/ui.js";
 import { confirmAction } from "../components/confirmAction.js";
 import { DownloadIcon, PlusIcon, TagIcon, TrashIcon } from "../components/octicons.js";
@@ -45,12 +47,22 @@ export function ReleasesPage() {
   const location = useLocation();
   const creating = location.pathname.endsWith("/releases/new");
   const id = releaseId ? Number(releaseId) : 0;
+  // /releases/new is a write surface: github.com 404s it for viewers without
+  // push access. Wait for the permissions payload before deciding so writers
+  // never see a 404 flash.
+  const { canPush, loaded } = useRepoPermissions(owner, repo);
 
   return (
     <div>
       <RepoHeader owner={owner} repo={repo} active="code" />
       {creating ? (
-        <ReleaseEditor owner={owner} repo={repo} />
+        !loaded ? (
+          <Spinner label="loading repository" />
+        ) : canPush ? (
+          <ReleaseEditor owner={owner} repo={repo} />
+        ) : (
+          <RepoNotFound />
+        )
       ) : id > 0 ? (
         <ReleaseDetail owner={owner} repo={repo} releaseId={id} />
       ) : (
@@ -61,6 +73,8 @@ export function ReleasesPage() {
 }
 
 function ReleaseList({ owner, repo }: { owner: string; repo: string }) {
+  // "New release" needs push access; the feed stays readable for everyone.
+  const { canPush } = useRepoPermissions(owner, repo);
   const releases = useQuery({
     queryKey: ["releases", owner, repo],
     queryFn: () => fetchReleases(owner, repo),
@@ -75,9 +89,11 @@ function ReleaseList({ owner, repo }: { owner: string; repo: string }) {
         title="Releases"
         meta={`${releases.data?.length ?? 0} releases`}
         actions={
-          <ButtonLink variant="primary" to={`/ui/repos/${owner}/${repo}/releases/new`}>
-            <PlusIcon size={14} /> New release
-          </ButtonLink>
+          canPush ? (
+            <ButtonLink variant="primary" to={`/ui/repos/${owner}/${repo}/releases/new`}>
+              <PlusIcon size={14} /> New release
+            </ButtonLink>
+          ) : undefined
         }
       />
       {(releases.data?.length ?? 0) === 0 ? (
@@ -316,6 +332,8 @@ function ReleaseDetail({ owner, repo, releaseId }: { owner: string; repo: string
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
+  // Editing/deleting a release (and managing its assets) needs push access.
+  const { canPush } = useRepoPermissions(owner, repo);
   const release = useQuery({ queryKey: ["release", owner, repo, releaseId], queryFn: () => fetchRelease(owner, repo, releaseId) });
   const viewerQ = useQuery({ queryKey: ["viewer"], queryFn: fetchAuthenticatedUser });
   const viewerLogin = typeof viewerQ.data?.login === "string" ? viewerQ.data.login : null;
@@ -339,7 +357,7 @@ function ReleaseDetail({ owner, repo, releaseId }: { owner: string; repo: string
         icon={<TagIcon size={22} />}
         title={release.data.name || release.data.tag_name}
         meta={<><span className="font-mono">{release.data.tag_name}</span>{release.data.draft ? " · Draft" : release.data.prerelease ? " · Pre-release" : " · Published"}</>}
-        actions={<><Button onClick={() => setEditing(true)}>Edit</Button><Button variant="danger" onClick={async () => { if (await confirmAction("Delete this release and all of its assets?")) remove.mutate(); }}><TrashIcon size={14} /> Delete</Button></>}
+        actions={canPush ? <><Button onClick={() => setEditing(true)}>Edit</Button><Button variant="danger" onClick={async () => { if (await confirmAction("Delete this release and all of its assets?")) remove.mutate(); }}><TrashIcon size={14} /> Delete</Button></> : undefined}
       />
       {remove.isError && <ErrorBanner>{String(remove.error)}</ErrorBanner>}
       {(release.data.author || release.data.published_at) && (
@@ -373,12 +391,12 @@ function ReleaseDetail({ owner, repo, releaseId }: { owner: string; repo: string
           viewerLogin={viewerLogin}
         />
       </div>
-      <ReleaseAssets owner={owner} repo={repo} release={release.data} />
+      <ReleaseAssets owner={owner} repo={repo} release={release.data} canPush={canPush} />
     </>
   );
 }
 
-function ReleaseAssets({ owner, repo, release }: { owner: string; repo: string; release: GithubRelease }) {
+function ReleaseAssets({ owner, repo, release, canPush }: { owner: string; repo: string; release: GithubRelease; canPush: boolean }) {
   const queryClient = useQueryClient();
   const [file, setFile] = useState<File | null>(null);
   const [label, setLabel] = useState("");
@@ -414,16 +432,18 @@ function ReleaseAssets({ owner, repo, release }: { owner: string; repo: string; 
             <div key={asset.id} className="flex flex-wrap items-center gap-3" style={{ padding: "0.65rem 1rem", borderBottom: index === release.assets.length - 1 ? "none" : "1px solid var(--color-border)" }}>
               <div className="min-w-0 flex-1"><div style={{ fontWeight: 500 }}>{asset.label || asset.name}</div><div style={{ fontSize: "0.76rem", color: "var(--color-fg-muted)" }}>{asset.name} · {asset.size.toLocaleString()} bytes · {asset.download_count} downloads</div></div>
               <Button size="sm" aria-label={`Download ${asset.name}`} onClick={() => void download(asset)}><DownloadIcon size={14} /></Button>
-              <Button size="sm" variant="danger" aria-label={`Delete ${asset.name}`} onClick={() => remove.mutate(asset.id)}><TrashIcon size={14} /></Button>
+              {canPush && <Button size="sm" variant="danger" aria-label={`Delete ${asset.name}`} onClick={() => remove.mutate(asset.id)}><TrashIcon size={14} /></Button>}
             </div>
           ))}
         </Box>
       )}
-      <div className="flex flex-wrap items-end gap-3">
-        <label><FormLabel>Asset file</FormLabel><input aria-label="Asset file" type="file" onChange={(e) => setFile(e.target.files?.[0] ?? null)} /></label>
-        <label><FormLabel>Label</FormLabel><input aria-label="Asset label" value={label} onChange={(e) => setLabel(e.target.value)} style={{ ...inputStyle, minWidth: 220 }} /></label>
-        <Button variant="primary" disabled={!file || upload.isPending} onClick={() => upload.mutate()}><PlusIcon size={14} /> Upload asset</Button>
-      </div>
+      {canPush && (
+        <div className="flex flex-wrap items-end gap-3">
+          <label><FormLabel>Asset file</FormLabel><input aria-label="Asset file" type="file" onChange={(e) => setFile(e.target.files?.[0] ?? null)} /></label>
+          <label><FormLabel>Label</FormLabel><input aria-label="Asset label" value={label} onChange={(e) => setLabel(e.target.value)} style={{ ...inputStyle, minWidth: 220 }} /></label>
+          <Button variant="primary" disabled={!file || upload.isPending} onClick={() => upload.mutate()}><PlusIcon size={14} /> Upload asset</Button>
+        </div>
+      )}
     </section>
   );
 }

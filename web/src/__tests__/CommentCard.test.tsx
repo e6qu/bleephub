@@ -60,3 +60,42 @@ describe("EditableCommentList reactions", () => {
     });
   });
 });
+
+describe("EditableCommentList viewer-role gating", () => {
+  const items = [
+    {
+      event: "commented",
+      id: 42,
+      body: "someone else's comment",
+      created_at: "2026-01-01T00:00:00Z",
+      user: { login: "author" },
+    } as never,
+  ];
+
+  function renderList(props: { viewerLogin: string; canPush: boolean }) {
+    const mockFetch = vi.fn(() =>
+      Promise.resolve(new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } })),
+    );
+    globalThis.fetch = mockFetch as typeof fetch;
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <EditableCommentList owner="admin" repo="r" items={items} invalidateKeys={[]} {...props} />
+      </QueryClientProvider>,
+    );
+  }
+
+  it("hides Edit/Delete from a reader who is not the author (reactions stay)", async () => {
+    renderList({ viewerLogin: "reader", canPush: false });
+    expect(await screen.findByText("someone else's comment")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "add reaction" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit comment" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete comment" })).not.toBeInTheDocument();
+  });
+
+  it("shows moderation to a writer on someone else's comment", async () => {
+    renderList({ viewerLogin: "maintainer", canPush: true });
+    expect(await screen.findByRole("button", { name: "Edit comment" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Delete comment" })).toBeInTheDocument();
+  });
+});

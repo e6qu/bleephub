@@ -16,6 +16,7 @@ const release = {
 const repo = {
   id: 1, name: "release", full_name: "admin/release", private: false, visibility: "public", default_branch: "main",
   owner: { login: "admin", type: "User" }, has_issues: true, has_projects: true, has_wiki: true,
+  permissions: { admin: true, push: true, pull: true },
 };
 
 function response(data: unknown, status = 200) {
@@ -183,5 +184,57 @@ describe("ReleasesPage", () => {
     );
     // relative published date via <time>
     expect(document.querySelector("time")).not.toBeNull();
+  });
+});
+
+describe("ReleasesPage read-only viewer gating", () => {
+  const viewerRepo = { ...repo, permissions: { admin: false, push: false, pull: true } };
+
+  it("keeps the feed readable but hides New release from a viewer", async () => {
+    mockFetch.mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.split("?")[0] === "/api/v3/repos/admin/release/releases") return Promise.resolve(response([release]));
+      if (url === "/api/v3/repos/admin/release") return Promise.resolve(response(viewerRepo));
+      return Promise.resolve(response([]));
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/ui/repos/admin/release/releases"]}><Routes><Route path="/ui/repos/:owner/:repo/releases" element={<ReleasesPage />} /></Routes></MemoryRouter></QueryClientProvider>);
+
+    expect(await screen.findByRole("heading", { name: "Releases" })).toBeInTheDocument();
+    expect(screen.getByText("First release", { exact: false })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /new release/i })).not.toBeInTheDocument();
+  });
+
+  it("hides Edit/Delete and asset management on the detail page for a viewer", async () => {
+    mockFetch.mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/releases/1/reactions")) return Promise.resolve(response([]));
+      if (url.endsWith("/releases/1")) return Promise.resolve(response(release));
+      if (url === "/api/v3/repos/admin/release") return Promise.resolve(response(viewerRepo));
+      if (url.endsWith("/user")) return Promise.resolve(response({ login: "viewer" }));
+      return Promise.resolve(response([]));
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/ui/repos/admin/release/releases/1"]}><Routes><Route path="/ui/repos/:owner/:repo/releases/:releaseId" element={<ReleasesPage />} /></Routes></MemoryRouter></QueryClientProvider>);
+
+    // Assets remain downloadable; every write control is gone.
+    expect(await screen.findByRole("button", { name: "Download artifact.txt" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /delete$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete artifact.txt" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /upload asset/i })).not.toBeInTheDocument();
+  });
+
+  it("404s /releases/new for a viewer, GitHub-style", async () => {
+    mockFetch.mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/v3/repos/admin/release") return Promise.resolve(response(viewerRepo));
+      return Promise.resolve(response([]));
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/ui/repos/admin/release/releases/new"]}><Routes><Route path="/ui/repos/:owner/:repo/releases/new" element={<ReleasesPage />} /></Routes></MemoryRouter></QueryClientProvider>);
+
+    expect(await screen.findByText("This page does not exist")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Tag")).not.toBeInTheDocument();
   });
 });

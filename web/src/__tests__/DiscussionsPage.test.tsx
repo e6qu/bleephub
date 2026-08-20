@@ -401,3 +401,82 @@ describe("DiscussionsPage pinned discussions", () => {
     expect(btn).toHaveAttribute("title", "A repository can have at most 4 pinned discussions");
   });
 });
+
+// ─── Mark-as-answer gating (author-or-write) ──────────────────────────────
+
+describe("DiscussionsPage mark-as-answer gating", () => {
+  const answerable = { id: "DGC_kgDO00000009", name: "Q&A", emoji: ":pray:", description: "", isAnswerable: true };
+
+  function mockAnswerableDetail({
+    permissions,
+    viewerLogin,
+  }: {
+    permissions: { admin: boolean; push: boolean; pull: boolean };
+    viewerLogin: string;
+  }) {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.includes("/discussions/pinned")) return Promise.resolve(jsonResponse([]));
+      if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: viewerLogin }));
+      if (u.includes("/repos/admin/test")) {
+        return Promise.resolve(jsonResponse({ id: 1, node_id: "R_kgDO00000001", permissions }));
+      }
+      if (u.includes("/api/graphql")) {
+        const body = JSON.parse((init?.body as string) ?? "{}");
+        if (body.query.includes("discussionCategories")) {
+          return Promise.resolve(jsonResponse({ data: { repository: { discussionCategories: { nodes: [answerable] } } } }));
+        }
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              repository: {
+                discussion: {
+                  ...discussion(7, "How do I frobnicate?"),
+                  category: answerable,
+                  body: "details",
+                  bodyText: "details",
+                  comments: {
+                    nodes: [
+                      {
+                        id: "DC_kgDO00000001",
+                        author: { login: "helper" },
+                        body: "an answer",
+                        createdAt: "2026-01-02T00:00:00Z",
+                        isAnswer: false,
+                        reactionGroups: [],
+                        replies: { nodes: [] },
+                      },
+                    ],
+                    totalCount: 1,
+                  },
+                },
+              },
+            },
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse([]));
+    });
+  }
+
+  it("hides Mark as answer from a pull-only outsider (Reply stays)", async () => {
+    mockAnswerableDetail({ permissions: { admin: false, push: false, pull: true }, viewerLogin: "reader" });
+    renderAt("/ui/repos/admin/test/discussions/7");
+    expect(await screen.findByText("an answer")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reply" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Mark as answer" })).not.toBeInTheDocument();
+  });
+
+  it("shows Mark as answer to the discussion author without push", async () => {
+    // discussion() is authored by admin.
+    mockAnswerableDetail({ permissions: { admin: false, push: false, pull: true }, viewerLogin: "admin" });
+    renderAt("/ui/repos/admin/test/discussions/7");
+    expect(await screen.findByRole("button", { name: "Mark as answer" })).toBeInTheDocument();
+  });
+
+  it("shows Mark as answer to a writer who is not the author", async () => {
+    mockAnswerableDetail({ permissions: { admin: false, push: true, pull: true }, viewerLogin: "maintainer" });
+    renderAt("/ui/repos/admin/test/discussions/7");
+    expect(await screen.findByRole("button", { name: "Mark as answer" })).toBeInTheDocument();
+  });
+});

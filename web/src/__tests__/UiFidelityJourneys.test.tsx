@@ -140,7 +140,7 @@ describe("security journey fidelity", () => {
       }
       if (url.endsWith("/repos/admin/repo")) {
         return Promise.resolve(
-          jsonResponse({ name: "repo", full_name: "admin/repo", default_branch: "main" }),
+          jsonResponse({ name: "repo", full_name: "admin/repo", default_branch: "main", permissions: { admin: true, push: true, pull: true } }),
         );
       }
       if (init?.method === "DELETE") {
@@ -204,7 +204,7 @@ describe("security journey fidelity", () => {
         return Promise.resolve(jsonResponse([{ name: "main", protected: true, commit: { sha: "a".repeat(40) } }]));
       }
       if (url.endsWith("/repos/admin/repo")) {
-        return Promise.resolve(jsonResponse({ name: "repo", full_name: "admin/repo", default_branch: "main" }));
+        return Promise.resolve(jsonResponse({ name: "repo", full_name: "admin/repo", default_branch: "main", permissions: { admin: true, push: true, pull: true } }));
       }
       return Promise.resolve(jsonResponse({ method: init?.method }));
     });
