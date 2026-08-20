@@ -3,6 +3,7 @@ package bleephub
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 )
 
 // The profile README convention is web-only on GitHub (the README of the
@@ -26,20 +27,19 @@ func (s *Server) handleGetProfileReadme(w http.ResponseWriter, r *http.Request) 
 		}
 		repoName = ".github"
 	}
-	var readme interface{}
+	var readme json.RawMessage
+	// Build the sub-request path from the store-owned FullName rather than
+	// the request-derived login (the same pattern as the bootstrap handlers):
+	// the store lookup is the boundary between request data and the bytes
+	// this handler emits.
 	if repo := s.store.GetRepoByFullName(login + "/" + repoName); repo != nil {
-		sub := uiSubGET(r, s.handleGetReadme, "/api/v3/repos/"+login+"/"+repoName+"/readme", nil, map[string]string{
-			"owner": login,
-			"repo":  repoName,
+		ownerPart, namePart, _ := strings.Cut(repo.FullName, "/")
+		sub := uiSubGET(r, s.handleGetReadme, "/api/v3/repos/"+repo.FullName+"/readme", nil, map[string]string{
+			"owner": ownerPart,
+			"repo":  namePart,
 		})
 		if sub.status == http.StatusOK {
-			// Unmarshal→marshal instead of embedding the sub-response bytes
-			// verbatim: the re-marshal is the escaping boundary taint analysis
-			// needs to see between the request-derived path and the response.
-			var parsed map[string]interface{}
-			if err := json.Unmarshal(sub.buf.Bytes(), &parsed); err == nil {
-				readme = parsed
-			}
+			readme = json.RawMessage(sub.buf.Bytes())
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"readme": readme})
