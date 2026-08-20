@@ -220,7 +220,6 @@ func (st *Store) consumeOrgInvitationsForUserLocked(orgLogin string, userID int)
 	if org == nil {
 		return
 	}
-	orgLogin = org.Login
 	for _, inv := range st.OrgInvitations {
 		if inv.OrgID == org.ID && inv.UserID == userID && inv.FailedAt == nil {
 			st.consumeOrgInvitationLocked(inv)
@@ -238,7 +237,6 @@ func (st *Store) ListPendingOrgInvitations(orgLogin string) []*OrgInvitation {
 	if org == nil {
 		return nil
 	}
-	orgLogin = org.Login
 	// Reads are pure: the invitation state machine (expire/consume/cancel) is
 	// applied durably by the background reconciler (ReconcileAllOrgInvitations on
 	// the dispatcher tick), not on a GET. A GET must not take the write lock and
@@ -263,7 +261,6 @@ func (st *Store) ListFailedOrgInvitations(orgLogin string) []*OrgInvitation {
 	if org == nil {
 		return nil
 	}
-	orgLogin = org.Login
 	var out []*OrgInvitation
 	for _, inv := range st.OrgInvitations {
 		if inv.OrgID == org.ID && inv.FailedAt != nil {
@@ -300,7 +297,6 @@ func (st *Store) GetOrgInvitation(orgLogin string, id int) *OrgInvitation {
 	if org == nil {
 		return nil
 	}
-	orgLogin = org.Login
 	inv := st.OrgInvitations[id]
 	if inv == nil || inv.OrgID != org.ID || inv.FailedAt != nil {
 		return nil
@@ -318,7 +314,6 @@ func (st *Store) CancelOrgInvitation(orgLogin string, id int) bool {
 	if org == nil {
 		return false
 	}
-	orgLogin = org.Login
 	inv := st.OrgInvitations[id]
 	if inv == nil || inv.OrgID != org.ID || inv.FailedAt != nil {
 		return false
@@ -691,7 +686,6 @@ func (st *Store) GrantTeamRepoAccessAsCollaborator(orgLogin string, user *User) 
 	if org == nil {
 		return
 	}
-	orgLogin = org.Login
 	levels := map[string]int{"pull": 1, "push": 2, "admin": 3}
 	permName := func(p TeamPermission) string {
 		switch p {

@@ -270,7 +270,9 @@ function WikiView({
     // not exist. github.com offers writers a title-prefilled "create this
     // page" affordance; readers just get the 404 text. The list rail stays.
     if (isNotFoundError(pageQ.error)) {
-      const missingTitle = (activeSlug ?? "").replace(/-+/g, " ").trim() || activeSlug || "";
+      // The page query only runs with a slug, so this branch always has one.
+      const slug = activeSlug ?? "";
+      const missingTitle = slug.replace(/-+/g, " ").trim() || slug;
       return (
         <Blankslate
           icon={<BookIcon size={28} />}

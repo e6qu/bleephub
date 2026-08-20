@@ -18,6 +18,7 @@ import { ReleasesPage } from "../pages/ReleasesPage.js";
 import { DiscussionsPage } from "../pages/DiscussionsPage.js";
 import { RunDetailPage } from "../pages/RunDetailPage.js";
 import { WikiPage } from "../pages/WikiPage.js";
+import { RepoNotFound } from "../components/RepoNotFound.js";
 
 const mockFetch = vi.fn();
 globalThis.fetch = mockFetch;
@@ -351,5 +352,14 @@ describe("WikiPage missing page", () => {
     renderAt(wikiRoutes, "/ui/repos/admin/test/wiki/getting-started");
     expect(await screen.findByText(/Failed to load page/i)).toBeInTheDocument();
     expect(screen.queryByText("New page?")).not.toBeInTheDocument();
+  });
+});
+
+describe("catch-all 404 route", () => {
+  // App.tsx routes /ui/* to this page so unknown paths get github.com's 404
+  // instead of silently landing on the dashboard.
+  it("renders the not-found page for unknown routes", () => {
+    render(<RepoNotFound />);
+    expect(screen.getByText("This page does not exist")).toBeInTheDocument();
   });
 });
