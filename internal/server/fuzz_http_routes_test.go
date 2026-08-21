@@ -799,6 +799,7 @@ var fuzzRoutePatterns = []string{
 	"GET /api/v3/repos/{owner}/{repo}/security-advisories",
 	"GET /api/v3/repos/{owner}/{repo}/security-advisories/{ghsa_id}",
 	"GET /api/v3/repos/{owner}/{repo}/stargazers",
+	"GET /api/v3/repos/{owner}/{repo}/stargazers/count",
 	"GET /api/v3/repos/{owner}/{repo}/stats/code_frequency",
 	"GET /api/v3/repos/{owner}/{repo}/stats/commit_activity",
 	"GET /api/v3/repos/{owner}/{repo}/stats/contributors",
