@@ -107,6 +107,14 @@ func (a graphqlSeams) RepoPayload(repo *store.Repo) map[string]interface{} {
 	return repoPayload(repo)
 }
 
+func (a graphqlSeams) EmitIssueChanges(repo *store.Repo, issue *store.Issue, sender *store.User, change store.SubjectChange) {
+	a.s.issueEmitter(repo, issue, sender).emitChanges(change)
+}
+
+func (a graphqlSeams) EmitPullRequestChanges(repo *store.Repo, pr *store.PullRequest, sender *store.User, change store.SubjectChange) {
+	a.s.pullRequestEmitter(repo, pr, sender).emitChanges(change)
+}
+
 // --- graphqlapi.Pulls ------------------------------------------------------
 
 func (a graphqlSeams) PRHeadSha(repo *store.Repo, pr *store.PullRequest) string {

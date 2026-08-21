@@ -1388,6 +1388,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			}
 
 			updated := s.store.GetPullRequest(pr.ID)
+			s.emitPullRequestAction(updated, user, "closed", priorState == "OPEN")
 			return map[string]interface{}{
 				"pullRequest": pullRequestToGQL(updated, s.store),
 			}, nil
@@ -1426,6 +1427,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			if wasDraft && user != nil {
 				s.store.RecordPullRequestEvent(pr.RepoID, pr.ID, user.ID, "ready_for_review", "", 0)
 			}
+			s.emitPullRequestAction(s.store.GetPullRequest(pr.ID), user, "ready_for_review", wasDraft)
 			return map[string]interface{}{
 				"pullRequest":      pullRequestToGQL(s.store.GetPullRequest(pr.ID), s.store),
 				"clientMutationId": input["clientMutationId"],
@@ -1465,6 +1467,9 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			if wasReady && user != nil {
 				s.store.RecordPullRequestEvent(pr.RepoID, pr.ID, user.ID, "convert_to_draft", "", 0)
 			}
+			// The timeline event is `convert_to_draft`; the webhook action
+			// GitHub ships is spelled `converted_to_draft`.
+			s.emitPullRequestAction(s.store.GetPullRequest(pr.ID), user, "converted_to_draft", wasReady)
 			return map[string]interface{}{
 				"pullRequest":      pullRequestToGQL(s.store.GetPullRequest(pr.ID), s.store),
 				"clientMutationId": input["clientMutationId"],
@@ -1516,6 +1521,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			}
 
 			updated := s.store.GetPullRequest(pr.ID)
+			s.emitPullRequestAction(updated, user, "reopened", priorState == "CLOSED")
 			return map[string]interface{}{
 				"pullRequest": pullRequestToGQL(updated, s.store),
 			}, nil
@@ -1747,6 +1753,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 				}
 			})
 			s.store.RecordPullRequestEvent(pr.RepoID, pr.ID, user.ID, "auto_merge_enabled", "", 0)
+			s.emitPullRequestAction(s.store.GetPullRequest(pr.ID), user, "auto_merge_enabled", true)
 
 			return map[string]interface{}{
 				"actor":            userToGraphQL(user),
@@ -1792,6 +1799,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 				p.AutoMerge = nil
 			})
 			s.store.RecordPullRequestEvent(pr.RepoID, pr.ID, user.ID, "auto_merge_disabled", "", 0)
+			s.emitPullRequestAction(s.store.GetPullRequest(pr.ID), user, "auto_merge_disabled", true)
 
 			return map[string]interface{}{
 				"actor":            userToGraphQL(user),
@@ -2096,6 +2104,13 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 				return nil, err
 			}
 
+			// The node finders hand back the live row, which UpdatePullRequest
+			// mutates in place; take a detached snapshot for the before-values
+			// the webhook fan-out diffs against.
+			before := s.store.GetPullRequest(pr.ID)
+			if before == nil {
+				return nil, gqlMissingNodeType("PullRequest")
+			}
 			s.store.UpdatePullRequest(pr.ID, func(p *store.PullRequest) {
 				if v, ok := input["title"].(string); ok {
 					p.Title = v
@@ -2118,6 +2133,27 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			})
 
 			updated := s.store.GetPullRequest(pr.ID)
+			// This mutation is the only route to a pull request's assignees
+			// and milestone, so it owns the assigned/unassigned and
+			// milestoned/demilestoned actions.
+			change := store.SubjectChange{
+				LabelsFrom:    before.LabelIDs,
+				LabelsTo:      labelIDs,
+				AssigneesFrom: before.AssigneeIDs,
+				AssigneesTo:   assigneeIDs,
+				MilestoneFrom: before.MilestoneID,
+				MilestoneTo:   milestoneID,
+			}
+			if v, ok := input["title"].(string); ok && v != before.Title {
+				change.TitleFrom = &before.Title
+			}
+			if v, ok := input["body"].(string); ok && v != before.Body {
+				change.BodyFrom = &before.Body
+			}
+			if v, ok := input["baseRefName"].(string); ok && v != before.BaseRefName {
+				change.BaseRefFrom = &before.BaseRefName
+			}
+			s.emitPullRequestChanges(repo, updated, s.ghUserFromContext(p.Context), change)
 			return map[string]interface{}{
 				"pullRequest": pullRequestToGQL(updated, s.store),
 			}, nil
@@ -2165,6 +2201,22 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 	})
 
 	return pullRequestType
+}
+
+// emitPullRequestAction delivers one `pull_request` webhook action for a
+// GraphQL-driven change. Draft toggling and auto-merge arming have no REST
+// endpoint, so these resolvers are the only site that can emit them, and gh
+// drives close/reopen here too — a workflow `on: pull_request` must fire the
+// same either way. A no-op mutation emits nothing: callers pass changed=false.
+func (s *Resolver) emitPullRequestAction(pr *store.PullRequest, user *store.User, action string, changed bool) {
+	if !changed || pr == nil || user == nil {
+		return
+	}
+	repo := s.store.GetRepoByID(pr.RepoID)
+	if repo == nil {
+		return
+	}
+	s.emitWebhookEvent(repo.FullName, "pull_request", action, s.buildPullRequestPayload(repo, pr, user, action))
 }
 
 // closedByPullRequestsForIssue returns the pull requests in the issue's repo

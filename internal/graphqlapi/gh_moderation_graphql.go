@@ -151,7 +151,7 @@ func (s *Resolver) addModerationMutationsToSchema(mutationType *graphql.Object) 
 			nodeID, _ := input["lockableId"].(string)
 			reasonEnum, _ := input["lockReason"].(string)
 			restReason := graphqlToRESTLockReason(reasonEnum)
-			locked, ok := s.lockByNodeID(nodeID, true, restReason)
+			locked, ok := s.lockByNodeID(nodeID, true, restReason, s.ghUserFromContext(p.Context))
 			if !ok {
 				return nil, gqlMissingNode("node", nodeID)
 			}
@@ -167,7 +167,7 @@ func (s *Resolver) addModerationMutationsToSchema(mutationType *graphql.Object) 
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			input, _ := p.Args["input"].(map[string]interface{})
 			nodeID, _ := input["lockableId"].(string)
-			unlocked, ok := s.lockByNodeID(nodeID, false, "")
+			unlocked, ok := s.lockByNodeID(nodeID, false, "", s.ghUserFromContext(p.Context))
 			if !ok {
 				return nil, gqlMissingNode("node", nodeID)
 			}
@@ -196,13 +196,22 @@ func graphqlToRESTLockReason(enum string) string {
 // requested lock state, and returns the full GraphQL source map for the
 // Lockable interface (the concrete Issue/PullRequest type resolves any
 // selection, and activeLockReason serializes through the LockReason enum).
-// The bool indicates whether a target was found.
-func (s *Resolver) lockByNodeID(nodeID string, locked bool, reason string) (map[string]interface{}, bool) {
+// The bool indicates whether a target was found. An issue or pull request also
+// delivers the locked/unlocked webhook action the REST lock endpoint delivers,
+// so the two surfaces stay indistinguishable to a consumer.
+func (s *Resolver) lockByNodeID(nodeID string, locked bool, reason string, user *store.User) (map[string]interface{}, bool) {
+	action := "unlocked"
+	if locked {
+		action = "locked"
+	}
 	if issue := store.FindIssueByNodeID(s.store, nodeID); issue != nil {
 		s.store.SetIssueOrPRLock(issue.RepoID, issue.Number, locked, reason)
 		refreshed := s.store.GetIssue(issue.ID)
 		if refreshed == nil {
 			refreshed = issue
+		}
+		if repo := s.store.GetRepoByID(issue.RepoID); repo != nil && user != nil {
+			s.emitWebhookEvent(repo.FullName, "issues", action, s.buildIssuesPayload(repo, refreshed, user, action))
 		}
 		return issueToGQL(refreshed, s.store), true
 	}
@@ -212,6 +221,7 @@ func (s *Resolver) lockByNodeID(nodeID string, locked bool, reason string) (map[
 		if refreshed == nil {
 			refreshed = pr
 		}
+		s.emitPullRequestAction(refreshed, user, action, true)
 		return pullRequestToGQL(refreshed, s.store), true
 	}
 	if d := store.FindDiscussionByNodeID(s.store, nodeID); d != nil {

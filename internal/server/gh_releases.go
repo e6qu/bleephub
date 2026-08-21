@@ -292,7 +292,7 @@ func (s *Server) handleCreateRelease(w http.ResponseWriter, r *http.Request) {
 	if discussionCategory != nil {
 		s.linkReleaseDiscussion(repo, release, user, discussionCategory)
 	}
-	s.emitReleaseEvent(repo, release, user, "created", s.baseURL(r))
+	s.emitReleaseEvents(repo, release, user, releaseCreateActions(release.Draft, release.Prerelease), s.baseURL(r))
 	s.recordAuditEvent("release.create", user.Login, "", map[string]interface{}{"repo": repo.FullName, "release_id": release.ID, "tag": release.TagName})
 	releaseJSON := releaseToJSON(release, s.store, s.baseURL(r), repo)
 	writeJSONCreated(w, jsonStringField(releaseJSON, "url"), releaseJSON)
@@ -458,8 +458,8 @@ func (s *Server) handleUpdateRelease(w http.ResponseWriter, r *http.Request) {
 	if discussionCategory != nil {
 		s.linkReleaseDiscussion(repo, updated, ghUserFromContext(r.Context()), discussionCategory)
 	}
-	action := releaseUpdateAction(wasDraft, wasPrerelease, updated.Draft, updated.Prerelease)
-	s.emitReleaseEvent(repo, updated, ghUserFromContext(r.Context()), action, s.baseURL(r))
+	actions := releaseUpdateActions(wasDraft, wasPrerelease, updated.Draft, updated.Prerelease)
+	s.emitReleaseEvents(repo, updated, ghUserFromContext(r.Context()), actions, s.baseURL(r))
 	writeJSON(w, http.StatusOK, releaseToJSON(updated, s.store, s.baseURL(r), repo))
 }
 
@@ -530,24 +530,56 @@ func (s *Server) handleDeleteRelease(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func releaseUpdateAction(wasDraft, wasPrerelease, draft, prerelease bool) string {
+// releaseCreateActions returns the actions a create delivers. GitHub fans a
+// single publish out into several: a draft is only `created`, while a release
+// saved straight to published is `created` (published without ever having been
+// a draft), then `published`, then the flavour of publish it was —
+// `prereleased` for a pre-release, `released` for a full one.
+func releaseCreateActions(draft, prerelease bool) []string {
+	if draft {
+		return []string{"created"}
+	}
+	return append([]string{"created"}, releasePublishActions(prerelease)...)
+}
+
+// releaseUpdateActions returns the actions an edit delivers, given the release's
+// draft/prerelease flags before and after. Publishing a draft does not repeat
+// `created` — the release was already saved once.
+func releaseUpdateActions(wasDraft, wasPrerelease, draft, prerelease bool) []string {
 	switch {
 	case !wasDraft && draft:
-		return "unpublished"
+		return []string{"unpublished"}
 	case wasDraft && !draft:
-		return "published"
+		return releasePublishActions(prerelease)
 	case !draft && !wasPrerelease && prerelease:
-		return "prereleased"
+		return []string{"prereleased"}
 	case !draft && wasPrerelease && !prerelease:
-		return "released"
+		return []string{"released"}
 	default:
-		return "edited"
+		return []string{"edited"}
 	}
+}
+
+// releasePublishActions is the pair delivered whenever a release becomes
+// published: `published` for any release, then the qualifier for its kind.
+func releasePublishActions(prerelease bool) []string {
+	if prerelease {
+		return []string{"published", "prereleased"}
+	}
+	return []string{"published", "released"}
 }
 
 func (s *Server) emitReleaseEvent(repo *store.Repo, release *store.Release, sender *store.User, action, baseURL string) {
 	payload := s.buildReleaseEventPayload(repo, release, sender, action, baseURL)
 	s.emitWebhookEvent(repo.FullName, "release", action, payload)
+}
+
+// emitReleaseEvents delivers a release fan-out in order; each action gets its
+// own payload so every delivery carries its own `action` value.
+func (s *Server) emitReleaseEvents(repo *store.Repo, release *store.Release, sender *store.User, actions []string, baseURL string) {
+	for _, action := range actions {
+		s.emitReleaseEvent(repo, release, sender, action, baseURL)
+	}
 }
 
 func readUploadAssetBody(r *http.Request) (name, label, contentType string, data []byte, ok bool, err error) {

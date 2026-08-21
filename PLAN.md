@@ -140,6 +140,28 @@ type). Everything else operated cleanly end-to-end.
   is open (off when merged/closed or backgrounded; sessions are core-budget-exempt). Verified
   live: the box converges ~15 s after the check lands, with no reload.
 
+**Tenth round (2026-08-21) — integrity sweep (fan-out, search truth, pagination):**
+- Pagination boundaries and search-qualifier truthfulness both probed clean: per_page caps at
+  100 like GitHub, invalid values 422, no phantom `next` link at an exact-page boundary, pages
+  past the end return `[]`; and 8 qualifier families (state/is/label/author/in/no:) returned
+  zero rows violating their own filter, with `total_count` arithmetic consistent.
+- Notification fan-out delivers every GitHub reason (author, mention, subscribed, assign,
+  review_requested) — but watching a repository RETROACTIVELY flooded the inbox with every
+  pre-existing issue and pull request (measured 4 → 30 threads with zero new activity), because
+  threads are derived at read time from watch state. Watching now opens a notification window at
+  the subscription's creation time: activity before it is not delivered (explicit per-thread
+  subscribes are unaffected, and records with no stamp keep the old inclusive behaviour).
+- Webhook fan-out was badly incomplete: `issues` emitted 3 of GitHub's 16 actions,
+  `pull_request` 4 of ~19, and a non-draft release fired only `created` where GitHub fans out
+  `created`+`published`+`released`. All of it is now implemented behind one shared emitter
+  (issues and pull requests cannot diverge again), with the action-specific payload members
+  (`label`, `assignee`, `milestone`, `changes`, `requested_reviewer`/`requested_team`), plus
+  `pull_request_review.edited` and `pull_request_review_comment.edited/deleted`. Fixing it also
+  removed a bogus `issues.edited` fired by a no-op state PATCH and exposed that
+  `Find*ByNodeID` returns the LIVE row, so pre-mutation diffs read post-mutation values —
+  every before/after emitter now snapshots through `Get*` first. Skipped with evidence:
+  merge-queue actions (no feature), `issues.typed/untyped`, discussion lock actions.
+
 **Still not implemented, with reasons:**
 - package download counts: absent from GitHub's package-version payload shape.
 - tag protection: GitHub retired tag protection rules in favor of rulesets, which bleephub

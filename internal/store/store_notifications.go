@@ -149,6 +149,18 @@ func (st *Store) NotificationRowsFor(user *User, opts NotificationListOptions, c
 			if !explicitlySubscribed && !watchingRepo {
 				return
 			}
+			// Watching a repository notifies about activity from that point
+			// on: github.com does not backfill the inbox with every
+			// pre-existing issue and pull request (measured here as 4 → 30
+			// threads on a plain subscribe). An explicit per-thread subscribe
+			// still surfaces its own thread — the user picked exactly that
+			// one — and a zero CreatedAt (records predating the stamp) keeps
+			// the old inclusive behaviour rather than hiding a thread.
+			if !explicitlySubscribed && watchingRepo &&
+				!repoSubscription.CreatedAt.IsZero() &&
+				src.UpdatedAt.Before(repoSubscription.CreatedAt) {
+				return
+			}
 		}
 		if opts.Participating && reason == "subscribed" {
 			return

@@ -398,16 +398,6 @@ func (s *Server) handleGetIssue(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, issueToJSON(issue, s.store, s.baseURL(r), repo.FullName))
 }
 
-// intSet builds a membership set from an int slice, for diffing old vs new
-// label/assignee sets on an issue edit.
-func intSet(ids []int) map[int]bool {
-	m := make(map[int]bool, len(ids))
-	for _, id := range ids {
-		m[id] = true
-	}
-	return m
-}
-
 func (s *Server) handleUpdateIssue(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
@@ -588,34 +578,45 @@ func (s *Server) handleUpdateIssue(w http.ResponseWriter, r *http.Request) {
 
 	updated := s.store.GetIssue(issue.ID)
 
+	// One PATCH is several GitHub events: the edit, then each triage change,
+	// then the state transition. `issue` is the pre-update snapshot, so it
+	// carries the before-values the fan-out diffs against.
+	change := store.SubjectChange{
+		LabelsFrom:    issue.LabelIDs,
+		LabelsTo:      labelIDs,
+		AssigneesFrom: issue.AssigneeIDs,
+		AssigneesTo:   assigneeIDs,
+		MilestoneFrom: issue.MilestoneID,
+		MilestoneTo:   milestoneID,
+		StateFrom:     previousState,
+		StateTo:       updated.State,
+	}
+	if v, ok := req["title"].(string); ok && v != issue.Title {
+		change.TitleFrom = &issue.Title
+	}
+	if v, ok := req["body"].(string); ok && v != issue.Body {
+		change.BodyFrom = &issue.Body
+	}
+
 	// Editing labels/assignees/milestone through the update-issue endpoint
 	// records the same timeline events github's dedicated sub-resource
-	// endpoints do. `issue` is the pre-update snapshot, so its slices are the
-	// old sets; diff against the requested new sets and emit per change.
+	// endpoints do. Diff against the requested new sets and record per change.
 	if labelIDs != nil {
-		old, next := intSet(issue.LabelIDs), intSet(*labelIDs)
-		for _, id := range *labelIDs {
-			if !old[id] {
-				s.store.RecordIssueEvent(repo.ID, issue.ID, user.ID, "labeled", map[string]interface{}{"label_id": id})
-			}
+		added, removed := intSetDelta(issue.LabelIDs, *labelIDs)
+		for _, id := range added {
+			s.store.RecordIssueEvent(repo.ID, issue.ID, user.ID, "labeled", map[string]interface{}{"label_id": id})
 		}
-		for _, id := range issue.LabelIDs {
-			if !next[id] {
-				s.store.RecordIssueEvent(repo.ID, issue.ID, user.ID, "unlabeled", map[string]interface{}{"label_id": id})
-			}
+		for _, id := range removed {
+			s.store.RecordIssueEvent(repo.ID, issue.ID, user.ID, "unlabeled", map[string]interface{}{"label_id": id})
 		}
 	}
 	if assigneeIDs != nil {
-		old, next := intSet(issue.AssigneeIDs), intSet(*assigneeIDs)
-		for _, id := range *assigneeIDs {
-			if !old[id] {
-				s.store.RecordIssueEvent(repo.ID, issue.ID, user.ID, "assigned", map[string]interface{}{"assignee_id": id, "assigner_id": user.ID})
-			}
+		added, removed := intSetDelta(issue.AssigneeIDs, *assigneeIDs)
+		for _, id := range added {
+			s.store.RecordIssueEvent(repo.ID, issue.ID, user.ID, "assigned", map[string]interface{}{"assignee_id": id, "assigner_id": user.ID})
 		}
-		for _, id := range issue.AssigneeIDs {
-			if !next[id] {
-				s.store.RecordIssueEvent(repo.ID, issue.ID, user.ID, "unassigned", map[string]interface{}{"assignee_id": id, "assigner_id": user.ID})
-			}
+		for _, id := range removed {
+			s.store.RecordIssueEvent(repo.ID, issue.ID, user.ID, "unassigned", map[string]interface{}{"assignee_id": id, "assigner_id": user.ID})
 		}
 	}
 	if milestoneID != nil && *milestoneID != issue.MilestoneID {
@@ -627,17 +628,14 @@ func (s *Server) handleUpdateIssue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if v, ok := req["state"].(string); ok {
-		action := "edited"
 		if v == "closed" && previousState != "CLOSED" {
-			action = "closed"
-			s.store.RecordIssueEvent(repo.ID, issue.ID, user.ID, action, nil)
+			s.store.RecordIssueEvent(repo.ID, issue.ID, user.ID, "closed", nil)
 		} else if v == "open" && previousState != "OPEN" {
-			action = "reopened"
-			s.store.RecordIssueEvent(repo.ID, issue.ID, user.ID, action, nil)
+			s.store.RecordIssueEvent(repo.ID, issue.ID, user.ID, "reopened", nil)
 		}
-		repoKey := owner + "/" + repoName
-		s.emitWebhookEvent(repoKey, "issues", action, buildIssuesPayload(s.store, repo, updated, user, action))
 	}
+
+	s.issueEmitter(repo, updated, user).emitChanges(change)
 
 	writeJSON(w, http.StatusOK, issueToJSON(updated, s.store, s.baseURL(r), repo.FullName))
 }
@@ -814,6 +812,7 @@ func (s *Server) handleAddIssueLabels(w http.ResponseWriter, r *http.Request) {
 		// exposes; PRs share the issue number space.
 		s.store.AddPullRequestLabels(repo.ID, pr.Number, newLabelIDs, user.ID)
 		updated := s.store.GetPullRequestByNumber(repo.ID, pr.Number)
+		s.pullRequestEmitter(repo, updated, user).emitLabelDelta(pr.LabelIDs, updated.LabelIDs)
 		writeJSON(w, http.StatusOK, s.labelIDsToJSON(updated.LabelIDs, base, repo.FullName))
 		return
 	}
@@ -835,6 +834,7 @@ func (s *Server) handleAddIssueLabels(w http.ResponseWriter, r *http.Request) {
 
 	// Return current labels
 	updated := s.store.GetIssue(issue.ID)
+	s.issueEmitter(repo, updated, user).emitLabelDelta(issue.LabelIDs, updated.LabelIDs)
 	writeJSON(w, http.StatusOK, s.labelIDsToJSON(updated.LabelIDs, base, repo.FullName))
 }
 
@@ -878,6 +878,8 @@ func (s *Server) handleRemoveIssueLabel(w http.ResponseWriter, r *http.Request) 
 
 	if pr != nil {
 		s.store.RemovePullRequestLabel(repo.ID, pr.Number, label.ID, user.ID)
+		updated := s.store.GetPullRequestByNumber(repo.ID, pr.Number)
+		s.pullRequestEmitter(repo, updated, user).emitLabelDelta(pr.LabelIDs, updated.LabelIDs)
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -891,6 +893,8 @@ func (s *Server) handleRemoveIssueLabel(w http.ResponseWriter, r *http.Request) 
 		}
 	})
 
+	updated := s.store.GetIssue(issue.ID)
+	s.issueEmitter(repo, updated, user).emitLabelDelta(issue.LabelIDs, updated.LabelIDs)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -1007,6 +1011,7 @@ func (s *Server) handleSetIssueLabels(w http.ResponseWriter, r *http.Request) {
 	if pr != nil {
 		s.store.SetPullRequestLabels(repo.ID, pr.Number, labelIDs, user.ID)
 		updated := s.store.GetPullRequestByNumber(repo.ID, pr.Number)
+		s.pullRequestEmitter(repo, updated, user).emitLabelDelta(pr.LabelIDs, updated.LabelIDs)
 		writeJSON(w, http.StatusOK, s.labelIDsToJSON(updated.LabelIDs, base, repo.FullName))
 		return
 	}
@@ -1014,6 +1019,7 @@ func (s *Server) handleSetIssueLabels(w http.ResponseWriter, r *http.Request) {
 	s.store.SetIssueLabels(repo.ID, issue.Number, labelIDs, user.ID)
 
 	updated := s.store.GetIssue(issue.ID)
+	s.issueEmitter(repo, updated, user).emitLabelDelta(issue.LabelIDs, updated.LabelIDs)
 	writeJSON(w, http.StatusOK, s.labelIDsToJSON(updated.LabelIDs, base, repo.FullName))
 }
 
@@ -1043,6 +1049,8 @@ func (s *Server) handleClearIssueLabels(w http.ResponseWriter, r *http.Request) 
 	if issue == nil {
 		if pr := s.store.GetPullRequestByNumber(repo.ID, num); pr != nil {
 			s.store.ClearPullRequestLabels(repo.ID, pr.Number, user.ID)
+			updated := s.store.GetPullRequestByNumber(repo.ID, pr.Number)
+			s.pullRequestEmitter(repo, updated, user).emitLabelDelta(pr.LabelIDs, updated.LabelIDs)
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
@@ -1051,6 +1059,8 @@ func (s *Server) handleClearIssueLabels(w http.ResponseWriter, r *http.Request) 
 	}
 
 	s.store.ClearIssueLabels(repo.ID, issue.Number, user.ID)
+	updated := s.store.GetIssue(issue.ID)
+	s.issueEmitter(repo, updated, user).emitLabelDelta(issue.LabelIDs, updated.LabelIDs)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -1072,8 +1082,10 @@ func (s *Server) handleAddIssueAssignees(w http.ResponseWriter, r *http.Request)
 
 	assigneeIDs := resolveUserIDs(s.store, req.Assignees)
 	s.store.AddIssueAssignees(repo.ID, issue.Number, assigneeIDs, user.ID)
+	updated := s.store.GetIssue(issue.ID)
+	s.issueEmitter(repo, updated, user).emitAssigneeDelta(issue.AssigneeIDs, updated.AssigneeIDs)
 	// Real GitHub responds 201 Created when adding assignees.
-	issueJSON := issueToJSON(s.store.GetIssue(issue.ID), s.store, s.baseURL(r), repo.FullName)
+	issueJSON := issueToJSON(updated, s.store, s.baseURL(r), repo.FullName)
 	writeJSONCreated(w, jsonStringField(issueJSON, "url"), issueJSON)
 }
 
@@ -1093,7 +1105,9 @@ func (s *Server) handleRemoveIssueAssignees(w http.ResponseWriter, r *http.Reque
 
 	assigneeIDs := resolveUserIDs(s.store, req.Assignees)
 	s.store.RemoveIssueAssignees(repo.ID, issue.Number, assigneeIDs, user.ID)
-	writeJSON(w, http.StatusOK, issueToJSON(s.store.GetIssue(issue.ID), s.store, s.baseURL(r), repo.FullName))
+	updated := s.store.GetIssue(issue.ID)
+	s.issueEmitter(repo, updated, user).emitAssigneeDelta(issue.AssigneeIDs, updated.AssigneeIDs)
+	writeJSON(w, http.StatusOK, issueToJSON(updated, s.store, s.baseURL(r), repo.FullName))
 }
 
 // --- Comment pin handlers ---

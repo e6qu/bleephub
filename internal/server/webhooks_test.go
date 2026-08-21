@@ -519,15 +519,17 @@ func TestWebhookReleaseLifecycleActions(t *testing.T) {
 	deleted := ghDelete(t, "/api/v3/repos/admin/"+repo+"/releases/"+itoa(releaseID), defaultToken)
 	deleted.Body.Close()
 
+	// Saving a draft is only `created`; publishing it fans out to `published`
+	// plus the flavour of publish it was (`released` for a non-prerelease).
 	testutil.TestEventually(5*time.Second, 20*time.Millisecond, func() bool {
 		mu.Lock()
 		count := len(actions)
 		mu.Unlock()
-		return count == 3
+		return count == 4
 	})
 	mu.Lock()
 	defer mu.Unlock()
-	if fmt.Sprint(actions) != "[created published deleted]" {
+	if fmt.Sprint(actions) != "[created published released deleted]" {
 		t.Fatalf("release webhook actions = %v", actions)
 	}
 }

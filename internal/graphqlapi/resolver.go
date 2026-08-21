@@ -47,6 +47,12 @@ type Events interface {
 	BuildIssuesPayload(repo *store.Repo, issue *store.Issue, sender *store.User, action string) map[string]interface{}
 	BuildPullRequestPayload(repo *store.Repo, pr *store.PullRequest, sender *store.User, action string) map[string]interface{}
 	RepoPayload(repo *store.Repo) map[string]interface{}
+	// EmitIssueChanges / EmitPullRequestChanges fan one mutation out into
+	// GitHub's per-change actions (edited, labeled, assigned, milestoned, …).
+	// The derivation lives behind the seam so the REST handlers and these
+	// resolvers cannot drift on which actions a change produces.
+	EmitIssueChanges(repo *store.Repo, issue *store.Issue, sender *store.User, change store.SubjectChange)
+	EmitPullRequestChanges(repo *store.Repo, pr *store.PullRequest, sender *store.User, change store.SubjectChange)
 }
 
 // Pulls is the merge gate plus the PR file-diff renderer, shared with the
@@ -241,6 +247,14 @@ func (s *Resolver) buildPullRequestPayload(repo *store.Repo, pr *store.PullReque
 
 func (s *Resolver) repoPayload(repo *store.Repo) map[string]interface{} {
 	return s.events.RepoPayload(repo)
+}
+
+func (s *Resolver) emitIssueChanges(repo *store.Repo, issue *store.Issue, sender *store.User, change store.SubjectChange) {
+	s.events.EmitIssueChanges(repo, issue, sender, change)
+}
+
+func (s *Resolver) emitPullRequestChanges(repo *store.Repo, pr *store.PullRequest, sender *store.User, change store.SubjectChange) {
+	s.events.EmitPullRequestChanges(repo, pr, sender, change)
 }
 
 func (s *Resolver) prHeadSha(repo *store.Repo, pr *store.PullRequest) string {

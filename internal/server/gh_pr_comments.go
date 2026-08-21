@@ -271,11 +271,16 @@ func (s *Server) handleUpdatePRComment(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
+	priorBody := c.Body
 	if !s.store.PRReviewComments.Update(c.ID, req.Body) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	writeJSON(w, http.StatusOK, prReviewCommentToJSON(s.store.PRReviewComments.Get(c.ID), s.store, s.baseURL(r), repo, pr))
+	updated := s.store.PRReviewComments.Get(c.ID)
+	payload := buildPRReviewCommentEventPayload(repo, pr, updated, user, "edited")
+	payload["changes"] = map[string]interface{}{"body": map[string]interface{}{"from": priorBody}}
+	s.emitWebhookEvent(repo.FullName, "pull_request_review_comment", "edited", payload)
+	writeJSON(w, http.StatusOK, prReviewCommentToJSON(updated, s.store, s.baseURL(r), repo, pr))
 }
 
 func (s *Server) handleDeletePRComment(w http.ResponseWriter, r *http.Request) {
@@ -289,7 +294,7 @@ func (s *Server) handleDeletePRComment(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	c, _ := s.prReviewCommentInRepo(w, r, repo)
+	c, pr := s.prReviewCommentInRepo(w, r, repo)
 	if c == nil {
 		return
 	}
@@ -297,10 +302,13 @@ func (s *Server) handleDeletePRComment(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusForbidden, "Must have push access to delete another user's comment")
 		return
 	}
+	// The payload has to render before the row disappears.
+	payload := buildPRReviewCommentEventPayload(repo, pr, c, user, "deleted")
 	if !s.store.PRReviewComments.Delete(c.ID, s.store.Reactions) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
+	s.emitWebhookEvent(repo.FullName, "pull_request_review_comment", "deleted", payload)
 	w.WriteHeader(http.StatusNoContent)
 }
 

@@ -75,7 +75,7 @@
       },
       {
         "event": "issue_comment",
-        "line": 699,
+        "line": 697,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_issues_rest.go"
       },
@@ -88,12 +88,6 @@
       {
         "event": "issues",
         "line": 96,
-        "producer": "emitWebhookEvent",
-        "source": "internal/server/gh_issues_rest.go"
-      },
-      {
-        "event": "issues",
-        "line": 639,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_issues_rest.go"
       },
@@ -201,13 +195,7 @@
       },
       {
         "event": "pull_request",
-        "line": 454,
-        "producer": "emitWebhookEvent",
-        "source": "internal/server/gh_pulls_rest.go"
-      },
-      {
-        "event": "pull_request",
-        "line": 572,
+        "line": 575,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
@@ -219,25 +207,43 @@
       },
       {
         "event": "pull_request_review",
-        "line": 769,
+        "line": 772,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request_review",
-        "line": 1051,
+        "line": 958,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request_review",
-        "line": 1119,
+        "line": 1059,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_pulls_rest.go"
+      },
+      {
+        "event": "pull_request_review",
+        "line": 1127,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request_review_comment",
         "line": 175,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_pr_comments.go"
+      },
+      {
+        "event": "pull_request_review_comment",
+        "line": 282,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_pr_comments.go"
+      },
+      {
+        "event": "pull_request_review_comment",
+        "line": 311,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pr_comments.go"
       },
@@ -261,7 +267,7 @@
       },
       {
         "event": "release",
-        "line": 550,
+        "line": 574,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_releases.go"
       },
