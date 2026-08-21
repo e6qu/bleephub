@@ -52,6 +52,17 @@ func (s *Server) orgCustomPatternScope(w http.ResponseWriter, r *http.Request) (
 
 func (s *Server) listCustomPatterns(w http.ResponseWriter, r *http.Request, scope string) {
 	patterns := s.store.ListSecretScanningCustomPatterns(scope)
+	// GitHub documents cursor pagination (before/after) on the org and repo
+	// custom-pattern lists alongside page/per_page; the shared helper honours
+	// the cursors and 422s an unparsable one.
+	if r.URL.Query().Get("before") != "" || r.URL.Query().Get("after") != "" {
+		page, ok := cursorPageByID(w, r, patterns, func(p *store.SecretScanningCustomPattern) int { return p.ID })
+		if !ok {
+			return
+		}
+		writeJSON(w, http.StatusOK, page)
+		return
+	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, patterns))
 }
 
