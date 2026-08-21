@@ -75,7 +75,7 @@
       },
       {
         "event": "issue_comment",
-        "line": 699,
+        "line": 697,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_issues_rest.go"
       },
@@ -88,12 +88,6 @@
       {
         "event": "issues",
         "line": 96,
-        "producer": "emitWebhookEvent",
-        "source": "internal/server/gh_issues_rest.go"
-      },
-      {
-        "event": "issues",
-        "line": 639,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_issues_rest.go"
       },
@@ -177,7 +171,7 @@
       },
       {
         "event": "public",
-        "line": 931,
+        "line": 932,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_repos_rest.go"
       },
@@ -201,13 +195,7 @@
       },
       {
         "event": "pull_request",
-        "line": 454,
-        "producer": "emitWebhookEvent",
-        "source": "internal/server/gh_pulls_rest.go"
-      },
-      {
-        "event": "pull_request",
-        "line": 572,
+        "line": 575,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
@@ -219,25 +207,43 @@
       },
       {
         "event": "pull_request_review",
-        "line": 769,
+        "line": 772,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request_review",
-        "line": 1051,
+        "line": 958,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request_review",
-        "line": 1119,
+        "line": 1059,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_pulls_rest.go"
+      },
+      {
+        "event": "pull_request_review",
+        "line": 1127,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request_review_comment",
         "line": 175,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_pr_comments.go"
+      },
+      {
+        "event": "pull_request_review_comment",
+        "line": 282,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_pr_comments.go"
+      },
+      {
+        "event": "pull_request_review_comment",
+        "line": 311,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pr_comments.go"
       },
@@ -261,7 +267,7 @@
       },
       {
         "event": "release",
-        "line": 550,
+        "line": 574,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_releases.go"
       },
@@ -279,7 +285,7 @@
       },
       {
         "event": "watch",
-        "line": 1330,
+        "line": 1343,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_repos_rest.go"
       },
@@ -18363,6 +18369,15 @@
       },
       {
         "method": "GET",
+        "operation_id": "activity/get-stargazer-count-for-repo",
+        "path": "/repos/{owner}/{repo}/stargazers/count",
+        "statuses": [
+          "200",
+          "404"
+        ]
+      },
+      {
+        "method": "GET",
         "operation_id": "repos/get-code-frequency-stats",
         "path": "/repos/{owner}/{repo}/stats/code_frequency",
         "statuses": [
@@ -20574,7 +20589,7 @@
           "represented_operations": 1190
         },
         "ghec": {
-          "documented_operations": 1469,
+          "documented_operations": 1470,
           "missing_operations": [
             "GET /enterprises/{}/actions/runners/deprecations/{}",
             "GET /orgs/{}/actions/runners/deprecations/{}",
@@ -20584,7 +20599,7 @@
             "POST /orgs/{}/credential-authorizations/{}/revoke",
             "POST /orgs/{}/credential-authorizations/{}/revoke-credential-type"
           ],
-          "represented_operations": 1462
+          "represented_operations": 1463
         },
         "ghes-2.22": {
           "documented_operations": 642,
@@ -20742,8 +20757,18 @@
           "represented_operations": 904
         },
         "ghes-3.21": {
-          "documented_operations": 1092,
-          "missing_operations": [],
+          "documented_operations": 1101,
+          "missing_operations": [
+            "GET /enterprise/live-migrations",
+            "GET /enterprise/live-migrations/{}",
+            "POST /enterprise/live-migrations",
+            "POST /enterprise/live-migrations/{}/cancel",
+            "POST /enterprise/live-migrations/{}/cutover",
+            "POST /enterprise/live-migrations/{}/pause",
+            "POST /enterprise/live-migrations/{}/resume",
+            "POST /enterprise/live-migrations/{}/revert-cutover",
+            "POST /enterprise/live-migrations/{}/start"
+          ],
           "represented_operations": 1092
         }
       },
@@ -21686,7 +21711,7 @@
         "source": "internal/server/gh_repos_autolinks.go"
       },
       {
-        "line": 63,
+        "line": 64,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/automated-security-fixes",
         "source": "internal/server/gh_repos_rest.go"
@@ -21776,7 +21801,7 @@
         "source": "internal/server/gh_codespaces.go"
       },
       {
-        "line": 40,
+        "line": 41,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/collaborators/{username}",
         "source": "internal/server/gh_repos_rest.go"
@@ -21872,7 +21897,7 @@
         "source": "internal/server/gh_import.go"
       },
       {
-        "line": 69,
+        "line": 70,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/interaction-limits",
         "source": "internal/server/gh_repos_rest.go"
@@ -21926,7 +21951,7 @@
         "source": "internal/server/gh_labels_rest.go"
       },
       {
-        "line": 52,
+        "line": 53,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/keys/{key_id}",
         "source": "internal/server/gh_repos_rest.go"
@@ -21962,7 +21987,7 @@
         "source": "internal/server/gh_ghes_pre_receive.go"
       },
       {
-        "line": 65,
+        "line": 66,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/private-vulnerability-reporting",
         "source": "internal/server/gh_repos_rest.go"
@@ -22022,13 +22047,13 @@
         "source": "internal/server/gh_secret_scanning.go"
       },
       {
-        "line": 57,
+        "line": 58,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/subscription",
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 67,
+        "line": 68,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/vulnerability-alerts",
         "source": "internal/server/gh_repos_rest.go"
@@ -22178,7 +22203,7 @@
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 34,
+        "line": 35,
         "method": "DELETE",
         "path": "/api/v3/user/starred/{owner}/{repo}",
         "source": "internal/server/gh_repos_rest.go"
@@ -25022,7 +25047,7 @@
         "source": "internal/server/gh_repos_autolinks.go"
       },
       {
-        "line": 58,
+        "line": 59,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/automated-security-fixes",
         "source": "internal/server/gh_repos_rest.go"
@@ -25298,7 +25323,7 @@
         "source": "internal/server/gh_codespaces.go"
       },
       {
-        "line": 37,
+        "line": 38,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/collaborators",
         "source": "internal/server/gh_repos_rest.go"
@@ -25310,7 +25335,7 @@
         "source": "internal/server/gh_repos_reads.go"
       },
       {
-        "line": 38,
+        "line": 39,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/collaborators/{username}/permission",
         "source": "internal/server/gh_repos_rest.go"
@@ -25724,7 +25749,7 @@
         "source": "internal/server/gh_apps_rest.go"
       },
       {
-        "line": 61,
+        "line": 62,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/interaction-limits",
         "source": "internal/server/gh_repos_rest.go"
@@ -25796,13 +25821,13 @@
         "source": "internal/server/gh_labels_rest.go"
       },
       {
-        "line": 49,
+        "line": 50,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/keys",
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 51,
+        "line": 52,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/keys/{key_id}",
         "source": "internal/server/gh_repos_rest.go"
@@ -25904,7 +25929,7 @@
         "source": "internal/server/gh_ghes_pre_receive.go"
       },
       {
-        "line": 59,
+        "line": 60,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/private-vulnerability-reporting",
         "source": "internal/server/gh_repos_rest.go"
@@ -26150,6 +26175,12 @@
         "source": "internal/server/gh_repos_rest.go"
       },
       {
+        "line": 33,
+        "method": "GET",
+        "path": "/api/v3/repos/{owner}/{repo}/stargazers/count",
+        "source": "internal/server/gh_repos_rest.go"
+      },
+      {
         "line": 43,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/stats/code_frequency",
@@ -26240,7 +26271,7 @@
         "source": "internal/server/gh_repos_reads.go"
       },
       {
-        "line": 60,
+        "line": 61,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/vulnerability-alerts",
         "source": "internal/server/gh_repos_rest.go"
@@ -26648,7 +26679,7 @@
         "source": "internal/server/gh_user_surface.go"
       },
       {
-        "line": 35,
+        "line": 36,
         "method": "GET",
         "path": "/api/v3/user/starred",
         "source": "internal/server/gh_repos_rest.go"
@@ -26924,7 +26955,7 @@
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 36,
+        "line": 37,
         "method": "GET",
         "path": "/api/v3/users/{username}/starred",
         "source": "internal/server/gh_repos_rest.go"
@@ -28472,7 +28503,7 @@
         "source": "internal/server/gh_branch_protection.go"
       },
       {
-        "line": 55,
+        "line": 56,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}/rename",
         "source": "internal/server/gh_repos_rest.go"
@@ -28718,7 +28749,7 @@
         "source": "internal/server/gh_labels_rest.go"
       },
       {
-        "line": 50,
+        "line": 51,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/keys",
         "source": "internal/server/gh_repos_rest.go"
@@ -28730,7 +28761,7 @@
         "source": "internal/server/gh_labels_rest.go"
       },
       {
-        "line": 54,
+        "line": 55,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/merge-upstream",
         "source": "internal/server/gh_repos_rest.go"
@@ -28916,7 +28947,7 @@
         "source": "internal/server/gh_statuses_rest.go"
       },
       {
-        "line": 53,
+        "line": 54,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/transfer",
         "source": "internal/server/gh_repos_rest.go"
@@ -29780,7 +29811,7 @@
         "source": "internal/server/gh_agents_secrets.go"
       },
       {
-        "line": 62,
+        "line": 63,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/automated-security-fixes",
         "source": "internal/server/gh_repos_rest.go"
@@ -29822,7 +29853,7 @@
         "source": "internal/server/gh_codespaces.go"
       },
       {
-        "line": 39,
+        "line": 40,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/collaborators/{username}",
         "source": "internal/server/gh_repos_rest.go"
@@ -29870,7 +29901,7 @@
         "source": "internal/server/gh_import.go"
       },
       {
-        "line": 68,
+        "line": 69,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/interaction-limits",
         "source": "internal/server/gh_repos_rest.go"
@@ -29924,7 +29955,7 @@
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 64,
+        "line": 65,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/private-vulnerability-reporting",
         "source": "internal/server/gh_repos_rest.go"
@@ -29966,7 +29997,7 @@
         "source": "internal/server/gh_rulesets.go"
       },
       {
-        "line": 56,
+        "line": 57,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/subscription",
         "source": "internal/server/gh_repos_rest.go"
@@ -29978,7 +30009,7 @@
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 66,
+        "line": 67,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/vulnerability-alerts",
         "source": "internal/server/gh_repos_rest.go"
@@ -30062,7 +30093,7 @@
         "source": "internal/server/gh_user_surface.go"
       },
       {
-        "line": 33,
+        "line": 34,
         "method": "PUT",
         "path": "/api/v3/user/starred/{owner}/{repo}",
         "source": "internal/server/gh_repos_rest.go"
@@ -30098,7 +30129,7 @@
         "source": "internal/server/gh_misc_endpoints.go"
       }
     ],
-    "vendored_openapi_sha256": "bd4d42c338b5a46aef3aa2aa01abe7f9b01ba426dadc98b728f0a007b7820a7c"
+    "vendored_openapi_sha256": "cb574397e102477ebc9b714e5cb8c90c786a17746777d97b90dc7ab5d817a56d"
   },
   "schema_version": 1,
   "sources": {

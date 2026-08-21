@@ -207,6 +207,7 @@ func (s *Server) handleLockIssue(w http.ResponseWriter, r *http.Request) {
 	// the timeline reflects who performed the lock — RecordIssueOrPREvent stamps
 	// ParentType by number so a PR event lands in the PR timeline.
 	s.store.RecordIssueOrPREvent(repoObj.ID, num, user.ID, "locked", map[string]interface{}{"lock_reason": req.LockReason})
+	s.emitLockAction(repoObj, num, user, true)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -231,5 +232,6 @@ func (s *Server) handleUnlockIssue(w http.ResponseWriter, r *http.Request, numbe
 		return
 	}
 	s.store.RecordIssueOrPREvent(repoObj.ID, num, user.ID, "unlocked", map[string]interface{}{})
+	s.emitLockAction(repoObj, num, user, false)
 	w.WriteHeader(http.StatusNoContent)
 }

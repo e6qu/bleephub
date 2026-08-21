@@ -53,7 +53,10 @@ func (stubEvents) BuildIssuesPayload(*store.Repo, *store.Issue, *store.User, str
 func (stubEvents) BuildPullRequestPayload(*store.Repo, *store.PullRequest, *store.User, string) map[string]interface{} {
 	return nil
 }
-func (stubEvents) RepoPayload(*store.Repo) map[string]interface{} { return nil }
+func (stubEvents) RepoPayload(*store.Repo) map[string]interface{}                               { return nil }
+func (stubEvents) EmitIssueChanges(*store.Repo, *store.Issue, *store.User, store.SubjectChange) {}
+func (stubEvents) EmitPullRequestChanges(*store.Repo, *store.PullRequest, *store.User, store.SubjectChange) {
+}
 
 // stubPulls refuses every merge.
 type stubPulls struct{}

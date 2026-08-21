@@ -30,6 +30,7 @@ func (s *Server) registerGHRepoRoutes() {
 	s.route("POST /api/v3/repos/{owner}/{repo}/forks", s.handleCreateFork)
 	s.route("GET /api/v3/repos/{owner}/{repo}/forks", s.handleListForks)
 	s.route("GET /api/v3/repos/{owner}/{repo}/stargazers", s.handleListStargazers)
+	s.route("GET /api/v3/repos/{owner}/{repo}/stargazers/count", s.handleStargazerCount)
 	s.route("PUT /api/v3/user/starred/{owner}/{repo}", s.handleStarRepo)
 	s.route("DELETE /api/v3/user/starred/{owner}/{repo}", s.handleUnstarRepo)
 	s.route("GET /api/v3/user/starred", s.handleListStarredRepos)
@@ -1310,6 +1311,18 @@ func (s *Server) handleListStargazers(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
+}
+
+// handleStargazerCount serves GET /repos/{owner}/{repo}/stargazers/count —
+// the count alone, so a caller does not have to page the stargazer list.
+func (s *Server) handleStargazerCount(w http.ResponseWriter, r *http.Request) {
+	repo := s.lookupReadableRepoFromPath(w, r)
+	if repo == nil {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"count": len(s.store.ListRepoStargazers(repo.Owner.Login, repo.Name)),
+	})
 }
 
 func (s *Server) handleStarRepo(w http.ResponseWriter, r *http.Request) {

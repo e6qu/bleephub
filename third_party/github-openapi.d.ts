@@ -18426,6 +18426,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/repos/{owner}/{repo}/stargazers/count": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get stargazer count
+         * @description Gets the current number of users who have starred the repository. Users who previously starred the repository but later removed their star are not included.
+         */
+        get: operations["activity/get-stargazer-count-for-repo"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/repos/{owner}/{repo}/stats/code_frequency": {
         parameters: {
             query?: never;
@@ -37669,7 +37689,7 @@ export interface components {
                 html_url?: string;
             };
             /**
-             * @description The commit SHA associated with this dependency snapshot. Maximum length: 40 characters.
+             * @description The commit SHA associated with this dependency snapshot. Maximum length: 64 characters.
              * @example ddc951f4b1293222421f2c8df679786153acf689
              */
             sha: string;
@@ -117443,6 +117463,10 @@ export interface operations {
                 page?: components["parameters"]["page"];
                 /** @description The number of results per page (max 100). For more information, see "[Using pagination in the REST API](https://docs.github.com/rest/using-the-rest-api/using-pagination-in-the-rest-api)." */
                 per_page?: components["parameters"]["per-page"];
+                /** @description A cursor, as given in the [Link header](https://docs.github.com/rest/guides/using-pagination-in-the-rest-api#using-link-headers). If specified, the query only searches for results before this cursor. For more information, see "[Using pagination in the REST API](https://docs.github.com/rest/using-the-rest-api/using-pagination-in-the-rest-api)." */
+                before?: components["parameters"]["pagination-before"];
+                /** @description A cursor, as given in the [Link header](https://docs.github.com/rest/guides/using-pagination-in-the-rest-api#using-link-headers). If specified, the query only searches for results after this cursor. For more information, see "[Using pagination in the REST API](https://docs.github.com/rest/using-the-rest-api/using-pagination-in-the-rest-api)." */
+                after?: components["parameters"]["pagination-after"];
             };
             header?: never;
             path: {
@@ -136229,6 +136253,10 @@ export interface operations {
                 page?: components["parameters"]["page"];
                 /** @description The number of results per page (max 100). For more information, see "[Using pagination in the REST API](https://docs.github.com/rest/using-the-rest-api/using-pagination-in-the-rest-api)." */
                 per_page?: components["parameters"]["per-page"];
+                /** @description A cursor, as given in the [Link header](https://docs.github.com/rest/guides/using-pagination-in-the-rest-api#using-link-headers). If specified, the query only searches for results before this cursor. For more information, see "[Using pagination in the REST API](https://docs.github.com/rest/using-the-rest-api/using-pagination-in-the-rest-api)." */
+                before?: components["parameters"]["pagination-before"];
+                /** @description A cursor, as given in the [Link header](https://docs.github.com/rest/guides/using-pagination-in-the-rest-api#using-link-headers). If specified, the query only searches for results after this cursor. For more information, see "[Using pagination in the REST API](https://docs.github.com/rest/using-the-rest-api/using-pagination-in-the-rest-api)." */
+                after?: components["parameters"]["pagination-after"];
             };
             header?: never;
             path: {
@@ -137030,6 +137058,35 @@ export interface operations {
                 };
             };
             422: components["responses"]["validation_failed"];
+        };
+    };
+    "activity/get-stargazer-count-for-repo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The account owner of the repository. The name is not case sensitive. */
+                owner: components["parameters"]["owner"];
+                /** @description The name of the repository without the `.git` extension. The name is not case sensitive. */
+                repo: components["parameters"]["repo"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @example 42 */
+                        count: number;
+                    };
+                };
+            };
+            404: components["responses"]["not_found"];
         };
     };
     "repos/get-code-frequency-stats": {

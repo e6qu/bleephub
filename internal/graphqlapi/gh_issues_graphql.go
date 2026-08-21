@@ -1509,6 +1509,14 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 				return nil, err
 			}
 
+			// The node finders hand back the live row, which UpdateIssue
+			// mutates in place; take a detached snapshot for the before-values
+			// the webhook fan-out diffs against.
+			before := s.store.GetIssue(issue.ID)
+			if before == nil {
+				return nil, gqlMissingNodeType("Issue")
+			}
+			previousState := before.State
 			s.store.UpdateIssue(issue.ID, func(i *store.Issue) {
 				if v, ok := input["title"].(string); ok {
 					i.Title = v
@@ -1534,6 +1542,32 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 			})
 
 			updated := s.store.GetIssue(issue.ID)
+			// gh mutates issues over GraphQL, so this mutation has to deliver
+			// the same per-change action fan-out the REST PATCH does.
+			change := store.SubjectChange{
+				LabelsFrom:    before.LabelIDs,
+				LabelsTo:      labelIDs,
+				AssigneesFrom: before.AssigneeIDs,
+				AssigneesTo:   assigneeIDs,
+				MilestoneFrom: before.MilestoneID,
+				MilestoneTo:   milestoneID,
+			}
+			if v, ok := input["title"].(string); ok && v != before.Title {
+				change.TitleFrom = &before.Title
+			}
+			if v, ok := input["body"].(string); ok && v != before.Body {
+				change.BodyFrom = &before.Body
+			}
+			user := s.ghUserFromContext(p.Context)
+			s.emitIssueChanges(repo, updated, user, change)
+			// The state transition goes through the shared helper so it also
+			// records the timeline event closeIssue/reopenIssue record.
+			switch newState {
+			case "CLOSED":
+				s.emitIssueStateChange(updated, user, previousState, "closed")
+			case "OPEN":
+				s.emitIssueStateChange(updated, user, previousState, "reopened")
+			}
 			return map[string]interface{}{
 				"issue": issueToGQL(updated, s.store),
 			}, nil

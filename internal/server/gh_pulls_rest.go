@@ -442,17 +442,20 @@ func (s *Server) handleUpdatePullRequest(w http.ResponseWriter, r *http.Request)
 		s.store.RecordPullRequestEvent(repo.ID, pr.ID, user.ID, "reopened", "", 0)
 	}
 
-	if v, ok := req["state"].(string); ok {
-		action := "edited"
-		if v == "closed" {
-			action = "closed"
-		} else if v == "open" {
-			action = "reopened"
-		}
-		repoKey := owner + "/" + repoName
-		payload := buildPullRequestPayload(s.store, repo, updated, user, action)
-		s.emitWebhookEvent(repoKey, "pull_request", action, payload)
+	// One PATCH is several GitHub events: the edit itself, then the state
+	// transition. `pr` is the pre-update snapshot, so it carries the
+	// before-values the `changes` member reports.
+	change := store.SubjectChange{StateFrom: priorState, StateTo: updated.State}
+	if v, ok := req["title"].(string); ok && v != pr.Title {
+		change.TitleFrom = &pr.Title
 	}
+	if v, ok := req["body"].(string); ok && v != pr.Body {
+		change.BodyFrom = &pr.Body
+	}
+	if v, ok := req["base"].(string); ok && v != pr.BaseRefName {
+		change.BaseRefFrom = &pr.BaseRefName
+	}
+	s.pullRequestEmitter(repo, updated, user).emitChanges(change)
 
 	writeJSON(w, http.StatusOK, pullRequestToJSON(updated, s.store, s.baseURL(r), repo.FullName))
 }
@@ -938,6 +941,7 @@ func (s *Server) handleUpdatePRReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	priorBody := review.Body
 	if !s.store.UpdatePullRequestReview(reviewID, req.Body) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -948,6 +952,10 @@ func (s *Server) handleUpdatePRReview(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
+
+	payload := buildPullRequestReviewPayload(s.store, repo, pr, review, user, "edited", s.baseURL(r))
+	payload["changes"] = map[string]interface{}{"body": map[string]interface{}{"from": priorBody}}
+	s.emitWebhookEvent(repo.FullName, "pull_request_review", "edited", payload)
 
 	writeJSON(w, http.StatusOK, reviewToJSON(review, s.store, s.baseURL(r), repo.FullName, pr.Number))
 }
@@ -1180,6 +1188,9 @@ func (s *Server) handleRequestReviewers(w http.ResponseWriter, r *http.Request) 
 	}
 
 	updated := s.store.GetPullRequestByNumber(repo.ID, num)
+	s.pullRequestEmitter(repo, updated, user).emitReviewRequestDelta(
+		pr.RequestedReviewerIDs, updated.RequestedReviewerIDs,
+		pr.RequestedTeamIDs, updated.RequestedTeamIDs)
 	updatedJSON := pullRequestSimpleJSON(updated, s.store, s.baseURL(r), repo.FullName)
 	writeJSONCreated(w, jsonStringField(updatedJSON, "url"), updatedJSON)
 }
@@ -1235,6 +1246,9 @@ func (s *Server) handleRemoveRequestedReviewers(w http.ResponseWriter, r *http.R
 	}
 
 	updated := s.store.GetPullRequestByNumber(repo.ID, num)
+	s.pullRequestEmitter(repo, updated, user).emitReviewRequestDelta(
+		pr.RequestedReviewerIDs, updated.RequestedReviewerIDs,
+		pr.RequestedTeamIDs, updated.RequestedTeamIDs)
 	writeJSON(w, http.StatusOK, pullRequestSimpleJSON(updated, s.store, s.baseURL(r), repo.FullName))
 }
 
