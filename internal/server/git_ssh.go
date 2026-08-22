@@ -16,7 +16,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v5/plumbing/transport"
-	gitserver "github.com/go-git/go-git/v5/plumbing/transport/server"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -217,7 +216,10 @@ func parseGitSSHCommand(command string) (service, owner, repo string, ok bool) {
 // sshChannelReader deliberately does not implement io.Closer. go-git's
 // receive-pack decoder retains the supplied reader as its packfile and closes
 // it after ingestion; closing an SSH channel there would also close its output
-// side before the required report-status response can be written.
+// side before the required report-status response can be written. The buffered
+// reader wrapped around it — needed so the shallow lines a push from a shallow
+// clone starts with can be consumed a whole pkt-line at a time — hides Close as
+// well, so the guarantee is stated here rather than depending on that.
 type sshChannelReader struct{ io.Reader }
 
 func (s *Server) runGitSSHService(channel ssh.Channel, service, owner, repoName string, user *store.User) error {
@@ -244,25 +246,16 @@ func (s *Server) runGitSSHService(channel ssh.Channel, service, owner, repoName 
 	if service == "git-receive-pack" && !s.viewerCanPushRepo(ctx, repo) {
 		return errors.New("repository write access denied")
 	}
-	ep, err := transport.NewEndpoint(fmt.Sprintf("/%s/%s", owner, repoName))
-	if err != nil {
-		return err
-	}
-	server := gitserver.NewServer(fixedGitLoader{storer: stor})
 	if service == "git-upload-pack" {
-		session, err := server.NewUploadPackSession(ep, nil)
+		// The advertisement and the negotiation are the shared ones in
+		// git_uploadpack.go, so SSH and smart HTTP cannot drift apart on which
+		// capabilities they promise or how they answer a deepening request.
+		info, err := gitUploadPackAdvertisement(stor)
 		if err != nil {
 			return err
 		}
-		info, err := session.AdvertisedReferencesContext(context.Background())
-		if err != nil && !errors.Is(err, transport.ErrEmptyRemoteRepository) {
-			return err
-		}
-		if info != nil {
-			if err := info.Encode(channel); err != nil {
-				return err
-			}
-		} else if err := pktline.NewEncoder(channel).Flush(); err != nil {
+		advertiseDefaultBranchSymref(info, repo)
+		if err := info.Encode(channel); err != nil {
 			return err
 		}
 		requestReader := bufio.NewReader(channel)
@@ -273,17 +266,10 @@ func (s *Server) runGitSSHService(channel ssh.Channel, service, owner, repoName 
 		if empty {
 			return pktline.NewEncoder(channel).Flush()
 		}
-		request := packp.NewUploadPackRequest()
-		if err := request.Decode(requestReader); err != nil {
-			return err
-		}
-		response, err := session.UploadPack(context.Background(), request)
-		if err != nil {
-			return err
-		}
-		return response.Encode(channel)
+		_, err = serveGitUploadPack(context.Background(), stor, requestReader, channel)
+		return err
 	}
-	session, err := server.NewReceivePackSession(ep, nil)
+	session, err := s.newGitReceivePackSession(owner, repoName, stor)
 	if err != nil {
 		return err
 	}
@@ -292,14 +278,19 @@ func (s *Server) runGitSSHService(channel ssh.Channel, service, owner, repoName 
 		return err
 	}
 	if info != nil {
+		advertiseDefaultBranchSymref(info, repo)
 		if err := info.Encode(channel); err != nil {
 			return err
 		}
 	} else if err := pktline.NewEncoder(channel).Flush(); err != nil {
 		return err
 	}
+	pushReader := bufio.NewReader(sshChannelReader{Reader: channel})
+	if err := skipPushedShallowLines(pushReader); err != nil {
+		return err
+	}
 	request := packp.NewReferenceUpdateRequest()
-	if err := request.Decode(sshChannelReader{Reader: channel}); err != nil {
+	if err := request.Decode(pushReader); err != nil {
 		return err
 	}
 	result, err := s.applyReceivePack(ctx, repo, stor, session, request)

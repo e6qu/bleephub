@@ -58,7 +58,8 @@ func TestGitSSHTransportPushAndClone(t *testing.T) {
 		t.Helper()
 		command := exec.Command("git", args...)
 		command.Dir = dir
-		command.Env = append(os.Environ(), "GIT_SSH_COMMAND=ssh -i "+keyPath+" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null")
+		command.Env = append(os.Environ(), hermeticGitTestEnv(temp)...)
+		command.Env = append(command.Env, "GIT_SSH_COMMAND=ssh -i "+keyPath+" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null")
 		if output, runErr := command.CombinedOutput(); runErr != nil {
 			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), runErr, output)
 		}
@@ -67,7 +68,8 @@ func TestGitSSHTransportPushAndClone(t *testing.T) {
 		t.Helper()
 		command := exec.Command("git", args...)
 		command.Dir = dir
-		command.Env = append(os.Environ(), "GIT_SSH_COMMAND=ssh -i "+keyPath+" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null")
+		command.Env = append(os.Environ(), hermeticGitTestEnv(temp)...)
+		command.Env = append(command.Env, "GIT_SSH_COMMAND=ssh -i "+keyPath+" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null")
 		output, runErr := command.CombinedOutput()
 		if runErr == nil {
 			t.Fatalf("git %s succeeded, want refusal containing %q\n%s", strings.Join(args, " "), want, output)

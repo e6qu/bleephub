@@ -2,6 +2,7 @@ package bleephub
 
 import (
 	"encoding/json"
+	"net/http"
 	"strings"
 	"testing"
 )
@@ -223,13 +224,26 @@ func TestListRefs_TagsNamespaceEmpty(t *testing.T) {
 		"auto_init": true,
 	})
 
+	// The legacy GET /git/refs/{namespace} answers 404 when nothing matches --
+	// its long-standing documented behaviour, and the reason the modern
+	// GET /git/matching-refs/{ref} was introduced alongside it to return an
+	// empty array instead. This test used to pin 200 + [], which is the
+	// matching-refs contract rather than this one's; the vendored spec no
+	// longer documents a GET on this path at all (only DELETE and PATCH).
 	resp := s.get(t, "/api/v3/repos/admin/refs-tags-empty-repo/git/refs/tags", defaultToken)
 	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404 for an empty namespace, got %d", resp.StatusCode)
+	}
+
+	// The modern endpoint is the one that answers [] for the same query.
+	matching := s.get(t, "/api/v3/repos/admin/refs-tags-empty-repo/git/matching-refs/tags", defaultToken)
+	defer matching.Body.Close()
+	if matching.StatusCode != http.StatusOK {
+		t.Fatalf("matching-refs expected 200, got %d", matching.StatusCode)
 	}
 	var refs []map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&refs); err != nil {
+	if err := json.NewDecoder(matching.Body).Decode(&refs); err != nil {
 		t.Fatal(err)
 	}
 	if len(refs) != 0 {

@@ -140,22 +140,28 @@ func (st *Store) createRepoLocked(batch *PersistBatch, fullName, name, descripti
 
 	repoID := st.ReserveGlobalID("next_repo", &st.NextRepo)
 	repo := &Repo{
-		ID:                        repoID,
-		NodeID:                    fmt.Sprintf("R_kgDO%08d", repoID),
-		Name:                      name,
-		FullName:                  fullName,
-		Description:               description,
-		DefaultBranch:             "main",
-		Visibility:                visibility,
-		Owner:                     owner,
-		OwnerID:                   ownerID,
-		OwnerType:                 ownerType,
-		Private:                   private,
-		HasIssues:                 true,
-		HasProjects:               true,
-		HasWiki:                   true,
-		HasDiscussions:            BoolPointer(false),
-		HasPullRequests:           true,
+		ID:              repoID,
+		NodeID:          fmt.Sprintf("R_kgDO%08d", repoID),
+		Name:            name,
+		FullName:        fullName,
+		Description:     description,
+		DefaultBranch:   "main",
+		Visibility:      visibility,
+		Owner:           owner,
+		OwnerID:         ownerID,
+		OwnerType:       ownerType,
+		Private:         private,
+		HasIssues:       true,
+		HasProjects:     true,
+		HasWiki:         true,
+		HasDiscussions:  BoolPointer(false),
+		HasPullRequests: true,
+		// Git LFS is on for every new repository, as it is on github.com and on
+		// a GHES instance whose site admin enabled LFS; the per-repository
+		// PUT/DELETE /repos/{owner}/{repo}/lfs toggle exists to turn it *off*.
+		// A default of false would make `git lfs push` fail on every freshly
+		// created repository until someone called an enterprise-only endpoint.
+		LFSEnabled:                true,
 		AllowSquashMerge:          true,
 		AllowMergeCommit:          true,
 		AllowRebaseMerge:          true,
@@ -189,6 +195,11 @@ func (st *Store) createRepoLocked(batch *PersistBatch, fullName, name, descripti
 	st.ReposByName[fullName] = repo
 	st.IndexRepoNameLocked(fullName)
 	st.GitStorages[fullName] = stor
+	// git.Init leaves HEAD on refs/heads/master; the repository's default
+	// branch is what a clone must check out.
+	if err := SetGitHeadBranch(stor, repo.DefaultBranch); err != nil {
+		st.Logger.Error().Str("repo", fullName).Err(err).Msg("create repo: could not point git HEAD at the default branch")
+	}
 
 	st.ensureDefaultDiscussionCategoriesBatchLocked(batch, repo.ID)
 
@@ -370,6 +381,11 @@ func (st *Store) ForkRepo(owner *User, sourceRepo *Repo, name string) *Repo {
 	st.ReposByName[fullName] = repo
 	st.IndexRepoNameLocked(fullName)
 	st.GitStorages[fullName] = stor
+	// The copied storage carries the source repository's HEAD, which may name
+	// a branch the fork does not treat as its default.
+	if err := SetGitHeadBranch(stor, repo.DefaultBranch); err != nil {
+		st.Logger.Error().Str("repo", fullName).Err(err).Msg("fork repo: could not point git HEAD at the default branch")
+	}
 
 	st.ensureDefaultDiscussionCategoriesBatchLocked(batch, repo.ID)
 	if err := batch.Commit(); err != nil {
@@ -996,6 +1012,11 @@ func (st *Store) deleteRepoLocked(owner, name string) (bool, PendingDeletion, er
 	delete(st.RepoVariables, fullName)
 	delete(st.RepoCollaborators, fullName)
 	delete(st.RepoAutolinks, fullName)
+	// The LFS object bytes are content-addressed and shared with any other
+	// repository holding the same content, so deleting a repository drops its
+	// membership rows, not the bytes.
+	delete(st.LFSObjects, fullName)
+	delete(st.LFSLocks, fullName)
 	delete(st.RepoInvitations, fullName)
 	delete(st.RepoDeployKeys, fullName)
 	delete(st.CheckSuitePrefs, fullName)
@@ -1028,6 +1049,8 @@ func (st *Store) deleteRepoLocked(owner, name string) (bool, PendingDeletion, er
 	batch.Delete("repo_variables", fullName)
 	batch.Delete("repo_collaborators", fullName)
 	batch.Delete("repo_autolinks", fullName)
+	batch.Delete("lfs_objects", fullName)
+	batch.Delete("lfs_locks", fullName)
 	batch.Delete("repo_invitations", fullName)
 	batch.Delete("repo_deploy_keys", fullName)
 	batch.Delete("check_suite_prefs", fullName)
@@ -2974,6 +2997,25 @@ func (st *Store) moveRepoKeyLocked(batch *PersistBatch, oldFull, newFull string)
 			batch.Delete("repo_autolinks", oldFull)
 		}
 	}
+	if v := st.LFSObjects[oldFull]; v != nil {
+		st.LFSObjects[newFull] = v
+		delete(st.LFSObjects, oldFull)
+		if st.Persist != nil {
+			batch.Put("lfs_objects", newFull, v)
+			batch.Delete("lfs_objects", oldFull)
+		}
+	}
+	if v := st.LFSLocks[oldFull]; v != nil {
+		for _, lock := range v {
+			lock.RepoKey = newFull
+		}
+		st.LFSLocks[newFull] = v
+		delete(st.LFSLocks, oldFull)
+		if st.Persist != nil {
+			batch.Put("lfs_locks", newFull, v)
+			batch.Delete("lfs_locks", oldFull)
+		}
+	}
 	if v := st.RepoInvitations[oldFull]; v != nil {
 		for _, inv := range v {
 			inv.RepoKey = newFull
@@ -3356,6 +3398,11 @@ func (st *Store) RenameBranch(repoID int, branch, newName string) bool {
 	batch := NewPersistBatch(st.Persist)
 	if repo.DefaultBranch == branch {
 		repo.DefaultBranch = newName
+		// HEAD followed the old name; renaming the default branch must move it
+		// or the next clone checks out nothing.
+		if err := SetGitHeadBranch(stor, newName); err != nil {
+			st.Logger.Error().Str("repo", repo.FullName).Err(err).Msg("rename branch: could not point git HEAD at the default branch")
+		}
 	}
 	oldProtectionKey := BpKey(repo.ID, branch)
 	newProtectionKey := BpKey(repo.ID, newName)

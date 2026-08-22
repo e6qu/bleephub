@@ -54,9 +54,14 @@ func (s *Server) handleListTags(w http.ResponseWriter, r *http.Request) {
 		}
 		tagName := ref.Name().Short()
 		tags = append(tags, map[string]interface{}{
-			"name":        tagName,
-			"zipball_url": base + "/" + repo.FullName + "/legacy.zip/refs/tags/" + tagName,
-			"tarball_url": base + "/" + repo.FullName + "/legacy.tar.gz/refs/tags/" + tagName,
+			"name": tagName,
+			// github.com advertises the API-shaped archive endpoints here
+			// (https://api.github.com/repos/{o}/{r}/zipball/refs/tags/{tag}),
+			// which 302 to codeload. Advertising bleephub's internal codeload
+			// URL instead handed clients a link that skips the documented
+			// endpoint entirely.
+			"zipball_url": base + "/api/v3/repos/" + repo.FullName + "/zipball/refs/tags/" + tagName,
+			"tarball_url": base + "/api/v3/repos/" + repo.FullName + "/tarball/refs/tags/" + tagName,
 			"commit": map[string]interface{}{
 				"sha": target.String(),
 				"url": base + "/api/v3/repos/" + repo.FullName + "/commits/" + target.String(),
@@ -65,14 +70,92 @@ func (s *Server) handleListTags(w http.ResponseWriter, r *http.Request) {
 		})
 		return nil
 	})
+	// github.com lists the newest version first, not ascending by name: a
+	// client reading tags[0] as "latest" must get v2.0.0, not v1.0.0. The
+	// order is a version-aware descending compare — kubernetes/kubernetes
+	// answers v1.38.0-alpha.0 before v1.36.4 (plain descending text would
+	// put v1.9.x first), nodejs/node answers every v26.x before every v25.x,
+	// and golang/go answers weekly.* before release.* before go1.* (so it is
+	// not chronological either).
 	sort.Slice(tags, func(i, j int) bool {
-		return fmt.Sprint(tags[i]["name"]) < fmt.Sprint(tags[j]["name"])
+		return compareTagNames(fmt.Sprint(tags[i]["name"]), fmt.Sprint(tags[j]["name"])) > 0
 	})
 
 	if tags == nil {
 		tags = []map[string]interface{}{}
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, tags))
+}
+
+// compareTagNames orders two tag names the way github.com's tag list does:
+// version-aware, so embedded numbers compare as numbers (v1.38 > v1.9) and a
+// prerelease sorts below the release it qualifies (v1.36.0 > v1.36.0-rc.1),
+// with everything else falling back to a byte compare (weekly.* > release.* >
+// go1.*). It returns >0 when a sorts after b, so handleListTags can sort
+// descending — newest first, which is what a client reading tags[0] expects.
+func compareTagNames(a, b string) int {
+	ar, br := versionRuns(a), versionRuns(b)
+	for i := 0; i < len(ar) && i < len(br); i++ {
+		x, y := ar[i], br[i]
+		xNum, yNum := isDigitRun(x), isDigitRun(y)
+		if xNum && yNum {
+			if c := compareNumericRuns(x, y); c != 0 {
+				return c
+			}
+			continue
+		}
+		if x != y {
+			if x < y {
+				return -1
+			}
+			return 1
+		}
+	}
+	if len(ar) == len(br) {
+		return 0
+	}
+	// One name is a prefix of the other. A '-' starts a semver prerelease, and
+	// a prerelease ranks below its release; any other continuation ranks above
+	// the shorter name.
+	longer, sign := br, -1
+	if len(ar) > len(br) {
+		longer, sign = ar, 1
+	}
+	if strings.HasPrefix(longer[min(len(ar), len(br))], "-") {
+		sign = -sign
+	}
+	return sign
+}
+
+// versionRuns splits a name into alternating runs of digits and non-digits.
+func versionRuns(s string) []string {
+	var runs []string
+	start := 0
+	for i := 1; i <= len(s); i++ {
+		if i == len(s) || isASCIIDigit(s[i]) != isASCIIDigit(s[start]) {
+			runs = append(runs, s[start:i])
+			start = i
+		}
+	}
+	return runs
+}
+
+func isASCIIDigit(c byte) bool { return c >= '0' && c <= '9' }
+
+func isDigitRun(s string) bool { return s != "" && isASCIIDigit(s[0]) }
+
+// compareNumericRuns compares two all-digit runs as numbers of unbounded
+// width, so no tag name can overflow the comparison.
+func compareNumericRuns(a, b string) int {
+	a = strings.TrimLeft(a, "0")
+	b = strings.TrimLeft(b, "0")
+	if len(a) != len(b) {
+		if len(a) < len(b) {
+			return -1
+		}
+		return 1
+	}
+	return strings.Compare(a, b)
 }
 
 func peelRepositoryTagTarget(stor storer.EncodedObjectStorer, hash plumbing.Hash) plumbing.Hash {
@@ -136,12 +219,6 @@ func (s *Server) handleGetRefs(w http.ResponseWriter, r *http.Request) {
 		prefix += "/"
 	}
 
-	// If the requested path looks like a leaf (no trailing slash and at least
-	// two segments), and there is nothing under it, return 404 to match the
-	// GitHub behavior for a missing single ref. Otherwise return the listing.
-	segments := strings.Split(strings.TrimSuffix(refPath, "/"), "/")
-	looksLikeSingleRef := len(segments) >= 2
-
 	refs, err := stor.IterReferences()
 	if err != nil {
 		writeGHError(w, http.StatusInternalServerError, "Git reference lookup failed")
@@ -157,17 +234,18 @@ func (s *Server) handleGetRefs(w http.ResponseWriter, r *http.Request) {
 		return nil
 	})
 
-	if len(items) == 0 && looksLikeSingleRef {
+	// A namespace holding no refs is a 404 on github.com, whatever its depth —
+	// GET /git/refs/tags on a repository without tags, GET /git/refs/bogusns
+	// and GET /git/refs/HEAD all answer 404, not an empty array. (Only the
+	// modern GET /git/matching-refs/{ref} returns [] for an empty match.)
+	if len(items) == 0 {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
-	}
-	if items == nil {
-		items = []map[string]interface{}{}
 	}
 	sort.Slice(items, func(i, j int) bool {
 		return fmt.Sprint(items[i]["ref"]) < fmt.Sprint(items[j]["ref"])
 	})
-	writeJSON(w, http.StatusOK, items)
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, items))
 }
 
 func (s *Server) listRefs(w http.ResponseWriter, r *http.Request, baseURL, fullName string, stor gitStorage.Storer, prefix string) {
@@ -195,7 +273,10 @@ func (s *Server) listRefs(w http.ResponseWriter, r *http.Request, baseURL, fullN
 	sort.Slice(items, func(i, j int) bool {
 		return fmt.Sprint(items[i]["ref"]) < fmt.Sprint(items[j]["ref"])
 	})
-	writeJSON(w, http.StatusOK, items)
+	// GitHub paginates the ref listing at 30 per page with Link headers, the
+	// same as the modern GET /git/matching-refs/{ref} this legacy path shares
+	// its shape with.
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, items))
 }
 
 func refToJSON(stor gitStorage.Storer, baseURL, fullName string, ref *plumbing.Reference) map[string]interface{} {

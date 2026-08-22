@@ -162,6 +162,67 @@ type). Everything else operated cleanly end-to-end.
   every before/after emitter now snapshots through `Get*` first. Skipped with evidence:
   merge-queue actions (no feature), `issues.typed/untyped`, discussion lock actions.
 
+**Git-completeness round (2026-08-22):** the sweep moved from the web UI to the git surface itself,
+on the principle that anything git can do against github.com and cannot do against bleephub is a
+bug, and that all of it must keep working over the S3-backed object storer rather than a real git
+binary on a filesystem.
+
+- **Shallow clone, both transports.** `git clone --depth`, `--shallow-since` and `--shallow-exclude`
+  all failed outright: bleephub drove go-git's `plumbing/transport/server`, which refuses every
+  shallow request (`shallow not supported`) and advertises none of the shallow capabilities, so
+  clients gave up at the advertisement. The whole server side of upload-pack is now bleephub's
+  (`git_uploadpack.go`), built from go-git *plumbing* (packp/revlist/packfile) over whatever
+  `storer.Storer` the repo resolves to — nothing touches a filesystem or shells out. Depth is a BFS
+  from the peeled wants; boundary commits emit `shallow`, and a previously-shallow commit whose
+  parents now arrive emits `unshallow`, so deepening fetches and `--unshallow` work, not just the
+  initial clone. Smart-HTTP and SSH both call the one `serveGitUploadPack`, so a client cannot
+  observe a different protocol depending on the URL scheme it dialed.
+  Advertised capabilities are exactly the implemented ones (`shallow`, `deepen-since`, `deepen-not`,
+  `ofs-delta`, `agent`); `side-band-64k`, `multi_ack*`, `thin-pack`, `include-tag`, `no-progress`
+  and `deepen-relative` are deliberately absent, each with its consequence documented at the
+  declaration — advertising a capability that is not honoured is worse than omitting it.
+- **Git LFS, absent entirely → implemented.** There was no `info/lfs` route at all, so `git lfs`
+  clones left 130-byte pointer files in the working tree (the smudge filter's batch call 404'd with
+  a non-LFS body) and pushes aborted in the pre-push hook. Now: the v1 batch API, object
+  upload/download, and the locking API, with bytes streamed through the existing S3
+  `ActionsByteStore` (`PutStream`/`GetStream`, never buffered), content-addressed at
+  `lfs/objects/ab/cd/<oid>`. Uploads are rejected unless the bytes actually hash to the advertised
+  oid, the oid is validated as a strict SHA-256 digest before it can become a storage key, and
+  cross-repository object access is tested rather than assumed.
+- **Every `download_url` / `raw_url` was a dead 404.** The contents API, commit and PR file lists
+  and compare all advertise `{base}/{owner}/{repo}/raw/{ref}/{path}`, and nothing served that shape;
+  an existing test asserted only that the field was *present*, never that it resolved. Now served,
+  with the private-repo gate, `{ref}/{path}` ambiguity resolved by probing ref candidates
+  longest-first, and `text/plain` + `nosniff` so a raw `.html`/`.svg` cannot execute in-origin.
+- **Nine git object/ref fidelity bugs**, each pinned by a test: the literal ref `HEAD` resolved
+  nowhere (`?ref=HEAD`, `/git/trees/HEAD`, `/commits/HEAD`, `/tarball/HEAD` all 404'd); archiving
+  any repository containing a submodule 500'd (a gitlink was read as a blob — now an empty directory
+  in both tar and zip, and deliberately *not* fixed in the shared `flattenTree`, whose merge caller
+  needs the gitlink or merges would silently drop submodules); no size ceiling on contents/blobs
+  (GitHub's `encoding:"none"` above 1 MB and `403 too_large` above 100 MB); `verification` hardcoded
+  to `unsigned` and `POST /git/commits` silently dropping `signature`; the legacy ref listing
+  unpaginated; tag order (newest-first, version-aware) and API-shaped archive URLs; gitlink tree
+  entries advertising a guaranteed-404 `url`; uncapped directory listings; and `POST /git/blobs`
+  capped at 25 MB instead of 100 MB.
+- **The test suite was reaching into the macOS login keychain.** Every `git` subprocess in the
+  package inherited the developer's configuration, and `credential.helper=osxkeychain` is set in
+  both `/opt/homebrew/etc/gitconfig` and `~/.gitconfig`, so authenticating test clones called
+  `git-credential-osxkeychain`. It is invisible on CI (no keychain, no personal config) and only
+  ever bites whoever runs the suite locally — it was costing 111 of the LFS round-trip's 113
+  seconds in blocked credential lookups. Every git subprocess is now hermetic
+  (`GIT_CONFIG_NOSYSTEM`, a per-test global config, no prompting), enforced by a ratchet so a new
+  test cannot reintroduce it. That test now runs in 1.4 s.
+
+_Verified: full `go test ./...` green (exit 0), gofmt/vet clean, bugs ledger OK (907 rows), parity
+inventory regenerated (line-number drift only). Real `git` and `git lfs` binaries drive the shallow,
+SSH and LFS tests end-to-end rather than a mocked client._
+
+**Deliberately still not implemented (git):** protocol **v2** (`ls-refs`/`fetch`, which would also
+give empty repositories a proper `unborn` HEAD advertisement) and **partial clone**
+(`filter=blob:none` / `tree:0`), which is currently ignored rather than refused, so a `--filter`
+client silently falls back to a full clone. Both are additive on top of the new upload-pack rather
+than rework of it.
+
 **Still not implemented, with reasons:**
 - package download counts: absent from GitHub's package-version payload shape.
 - tag protection: GitHub retired tag protection rules in favor of rulesets, which bleephub

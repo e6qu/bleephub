@@ -676,8 +676,19 @@ func (s *Server) handleCatchAll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Git LFS: /{owner}/{repo}[.git]/info/lfs/... (batch API, transfers, locks)
+	if s.tryHandleLFSRequest(w, r) {
+		return
+	}
+
 	// Codeload-style source archive downloads (legacy.tar.gz / legacy.zip)
 	if s.tryHandleArchiveRequest(w, r) {
+		return
+	}
+
+	// Raw file contents, the target of every download_url/raw_url the REST
+	// surface advertises.
+	if s.tryHandleRawRequest(w, r) {
 		return
 	}
 

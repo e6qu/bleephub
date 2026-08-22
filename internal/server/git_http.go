@@ -2,12 +2,14 @@ package bleephub
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/e6qu/bleephub/internal/store"
@@ -157,16 +159,8 @@ func (s *Server) handleGitInfoRefs(w http.ResponseWriter, r *http.Request, owner
 		return
 	}
 
-	_, _, _, stor, ok := s.authorizeGitHTTP(w, r, owner, repoName, service == "git-receive-pack")
+	_, _, repo, stor, ok := s.authorizeGitHTTP(w, r, owner, repoName, service == "git-receive-pack")
 	if !ok {
-		return
-	}
-
-	server := gitserver.NewServer(fixedGitLoader{storer: stor})
-
-	ep, err := transport.NewEndpoint(fmt.Sprintf("/%s/%s", owner, repoName))
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -188,28 +182,20 @@ func (s *Server) handleGitInfoRefs(w http.ResponseWriter, r *http.Request, owner
 
 	switch service {
 	case "git-upload-pack":
-		sess, err := server.NewUploadPackSession(ep, nil)
+		// Built here rather than by go-git's server transport, which cannot
+		// advertise the shallow capabilities — see git_uploadpack.go.
+		info, err := gitUploadPackAdvertisement(stor)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		info, err := sess.AdvertisedReferencesContext(r.Context())
-		if err != nil {
-			if err == transport.ErrEmptyRemoteRepository {
-				if flushErr := enc.Flush(); flushErr != nil {
-					s.logger.Debug().Err(flushErr).Str("service", service).Msg("git-http: empty-repo flush failed")
-				}
-				return
-			}
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
+		advertiseDefaultBranchSymref(info, repo)
 		if err := info.Encode(w); err != nil {
 			s.logger.Error().Err(err).Msg("failed to encode advertised refs")
 		}
 
 	case "git-receive-pack":
-		sess, err := server.NewReceivePackSession(ep, nil)
+		sess, err := s.newGitReceivePackSession(owner, repoName, stor)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -217,37 +203,79 @@ func (s *Server) handleGitInfoRefs(w http.ResponseWriter, r *http.Request, owner
 		info, err := sess.AdvertisedReferencesContext(r.Context())
 		if err != nil {
 			if err == transport.ErrEmptyRemoteRepository {
-				if flushErr := enc.Flush(); flushErr != nil {
-					s.logger.Debug().Err(flushErr).Str("service", service).Msg("git-http: empty-repo flush failed")
-				}
+				s.advertiseEmptyRepository(w, enc, repo, service)
 				return
 			}
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		advertiseDefaultBranchSymref(info, repo)
 		if err := info.Encode(w); err != nil {
 			s.logger.Error().Err(err).Msg("failed to encode advertised refs")
 		}
 	}
 }
 
+// advertiseDefaultBranchSymref names the repository's default branch in the ref
+// advertisement, the way github does.
+//
+// Without the symref=HEAD:refs/heads/<default> capability a client cannot be
+// told which branch to check out: it falls back to matching the advertised HEAD
+// object id against the ref list and takes the first branch that matches, so
+// two branches sharing a tip — or a HEAD that drifted off the default branch —
+// silently produce a clone on the wrong branch. Deriving both the capability
+// and the advertised HEAD id from the repository's recorded default branch
+// makes the answer deterministic rather than a property of ref ordering.
+//
+// Set (not Add) replaces whatever HEAD symref go-git derived from storage, so
+// exactly one is advertised. A repository with no refs at all still advertises
+// the capability — that is how `git clone` of an empty repository learns the
+// branch name its first commit should land on — but one whose default branch
+// simply carries no commits yet does not, because pointing a client at a ref
+// that is missing from an otherwise populated advertisement only draws a
+// warning.
+// advertiseEmptyRepository answers a repository with no refs.
+//
+// github still names the default branch here — `git ls-remote --symref` on an
+// empty repository reports it — and that is how a client's first commit lands
+// on the branch the repository expects rather than on whatever its local
+// init.defaultBranch happens to be. An empty flush conveys nothing, so send a
+// reference-less advertisement carrying the symref capability instead.
+func (s *Server) advertiseEmptyRepository(w io.Writer, enc *pktline.Encoder, repo *store.Repo, service string) {
+	if repo == nil || repo.DefaultBranch == "" {
+		if err := enc.Flush(); err != nil {
+			s.logger.Debug().Err(err).Str("service", service).Msg("git-http: empty-repo flush failed")
+		}
+		return
+	}
+	info := packp.NewAdvRefs()
+	info.Capabilities.Set(capability.SymRef,
+		plumbing.HEAD.String()+":"+plumbing.NewBranchReferenceName(repo.DefaultBranch).String())
+	if err := info.Encode(w); err != nil {
+		s.logger.Debug().Err(err).Str("service", service).Msg("git-http: empty-repo advertisement failed")
+	}
+}
+
+func advertiseDefaultBranchSymref(info *packp.AdvRefs, repo *store.Repo) {
+	if info == nil || repo == nil || repo.DefaultBranch == "" {
+		return
+	}
+	target := plumbing.NewBranchReferenceName(repo.DefaultBranch)
+	tip, exists := info.References[target.String()]
+	if !exists && len(info.References) > 0 {
+		return
+	}
+	if err := info.Capabilities.Set(capability.SymRef, plumbing.HEAD.String()+":"+target.String()); err != nil {
+		return
+	}
+	if exists {
+		info.Head = &tip
+	}
+}
+
 func (s *Server) handleGitUploadPack(w http.ResponseWriter, r *http.Request, owner, repoName string) {
 	_, user, repo, stor, ok := s.authorizeGitHTTP(w, r, owner, repoName, false)
 	if !ok {
-		return
-	}
-
-	server := gitserver.NewServer(fixedGitLoader{storer: stor})
-
-	ep, err := transport.NewEndpoint(fmt.Sprintf("/%s/%s", owner, repoName))
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	sess, err := server.NewUploadPackSession(ep, nil)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -268,22 +296,30 @@ func (s *Server) handleGitUploadPack(w http.ResponseWriter, r *http.Request, own
 		return
 	}
 
-	upreq := packp.NewUploadPackRequest()
-	if err := upreq.Decode(requestReader); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	resp, err := sess.UploadPack(r.Context(), upreq)
+	// A smart-HTTP upload-pack answer is a 200 whose body is the pkt-line
+	// exchange, so the header is set up front; once the first shallow or NAK
+	// line is out there is no status code left to fail with, and the refusal
+	// has to travel in the stream. A request rejected before that — a malformed
+	// pkt-line, no wants, a capability never advertised — is still answerable
+	// with a 400.
+	w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
+	result, err := serveGitUploadPack(r.Context(), stor, requestReader, w)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		if !result.responded {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		s.logger.Error().Err(err).Str("repo", owner+"/"+repoName).Msg("git HTTP upload-pack failed")
 		return
 	}
 
-	// A fetch with no haves is a full clone; count it for the traffic API.
-	// The actor identity is the authenticated login, or the remote host for
-	// anonymous clones of public repos.
-	if len(upreq.Haves) == 0 {
+	// A fetch that carried no haves is a full clone; count it for the traffic
+	// API, but only once the client actually asked for a pack — the first
+	// request of a stateless deepening fetch asks for the shallow boundary
+	// alone and is the same clone as the request that follows it. The actor
+	// identity is the authenticated login, or the remote host for anonymous
+	// clones of public repos.
+	if result.packed && result.clone {
 		actor := r.RemoteAddr
 		if host, _, splitErr := net.SplitHostPort(r.RemoteAddr); splitErr == nil {
 			actor = host
@@ -293,11 +329,18 @@ func (s *Server) handleGitUploadPack(w http.ResponseWriter, r *http.Request, own
 		}
 		s.store.RecordRepoClone(repo.ID, actor)
 	}
+}
 
-	w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
-	if err := resp.Encode(w); err != nil {
-		s.logger.Error().Err(err).Msg("failed to encode upload-pack response")
+// newGitReceivePackSession builds the go-git receive-pack session both
+// transports push through. Only the fetch half of go-git's server transport was
+// replaced (it cannot do shallow); the push half is still go-git's, wrapped by
+// applyReceivePack for branch protection and atomic ref updates.
+func (s *Server) newGitReceivePackSession(owner, repoName string, stor storer.Storer) (transport.ReceivePackSession, error) { //nolint:ireturn
+	ep, err := transport.NewEndpoint(fmt.Sprintf("/%s/%s", owner, repoName))
+	if err != nil {
+		return nil, err
 	}
+	return gitserver.NewServer(fixedGitLoader{storer: stor}).NewReceivePackSession(ep, nil)
 }
 
 func (s *Server) handleGitReceivePack(w http.ResponseWriter, r *http.Request, owner, repoName string) {
@@ -306,22 +349,19 @@ func (s *Server) handleGitReceivePack(w http.ResponseWriter, r *http.Request, ow
 		return
 	}
 
-	server := gitserver.NewServer(fixedGitLoader{storer: stor})
-
-	ep, err := transport.NewEndpoint(fmt.Sprintf("/%s/%s", owner, repoName))
+	sess, err := s.newGitReceivePackSession(owner, repoName, stor)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	sess, err := server.NewReceivePackSession(ep, nil)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	body := bufio.NewReader(r.Body)
+	if err := skipPushedShallowLines(body); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-
 	req := packp.NewReferenceUpdateRequest()
-	if err := req.Decode(r.Body); err != nil {
+	if err := req.Decode(body); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -492,6 +532,49 @@ func classifyPushedRefWrite(stor storer.Storer, command *packp.Command) (refWrit
 	return refForcePush, nil
 }
 
+// gitPushShallowLineLengths are the pkt-line lengths a "shallow <oid>" line
+// from a shallow clone can carry: the 4-byte length prefix, the keyword, a
+// space and a 40-character object id, with or without a trailing newline.
+var gitPushShallowLineLengths = map[int]bool{4 + 48: true, 4 + 49: true}
+
+// skipPushedShallowLines consumes the shallow lines a push from a shallow clone
+// prefixes its reference-update request with.
+//
+// git sends one per boundary commit — a repository cloned with --depth 1 and
+// then committed to sends two — and go-git's ReferenceUpdateRequest decoder
+// models the field as a single optional hash, so it reads the second one as a
+// command and fails the push with "capabilities delimiter not found". The lines
+// carry nothing this server needs: it holds the complete history, so whether a
+// pushed update is a fast-forward is answered from its own graph rather than
+// from the client's truncated one.
+//
+// Only whole pkt-lines are consumed, so the reader is left positioned exactly
+// at the first command line for the decoder that follows. Anything that is not
+// a shallow line — including a short or truncated body — is left untouched for
+// that decoder to report on.
+func skipPushedShallowLines(body *bufio.Reader) error {
+	for {
+		header, err := body.Peek(4)
+		if err != nil {
+			return nil
+		}
+		length, err := strconv.ParseUint(string(header), 16, 32)
+		if err != nil || !gitPushShallowLineLengths[int(length)] {
+			return nil
+		}
+		line, err := body.Peek(int(length))
+		if err != nil {
+			return nil
+		}
+		if !bytes.HasPrefix(line[4:], []byte("shallow ")) {
+			return nil
+		}
+		if _, err := body.Discard(int(length)); err != nil {
+			return err
+		}
+	}
+}
+
 // ingestPushedObjects stores the objects a receive-pack request carries and
 // leaves the request without a packfile, so the session that applies the
 // surviving commands does not read the stream a second time. A push that only
@@ -545,27 +628,43 @@ func (s *Server) afterGitReceivePack(repo *store.Repo, user *store.User, applied
 	s.store.UpdateRepo(owner, repo.Name, func(updated *store.Repo) {
 		updated.PushedAt = updated.UpdatedAt
 	})
-	if stor != nil {
-		needsUpdate := false
-		headRef, headErr := stor.Reference(plumbing.HEAD)
-		if headErr != nil {
-			needsUpdate = true
-		} else if headRef.Type() == plumbing.SymbolicReference {
-			_, targetErr := stor.Reference(headRef.Target())
-			needsUpdate = targetErr != nil
-		}
-		if needsUpdate {
-			for _, branch := range []string{"main", "master"} {
-				ref := plumbing.NewBranchReferenceName(branch)
-				if _, err := stor.Reference(ref); err == nil {
-					_ = stor.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, ref))
-					s.store.UpdateRepo(owner, repo.Name, func(updated *store.Repo) { updated.DefaultBranch = branch })
-					break
-				}
-			}
-		}
-	}
+	s.repairGitHead(owner, repo, stor)
 	for _, command := range applied {
 		s.afterCommittedRefUpdate(repo, user, command.Name.String(), command.Old.String(), command.New.String(), baseURL)
+	}
+}
+
+// repairGitHead re-points a repository's git HEAD after a push.
+//
+// HEAD must be a symbolic reference to the default branch, because that is what
+// a clone checks out. Re-pointing it on every push also heals a repository
+// whose HEAD drifted — a repository restored from storage that never had one,
+// or one an older write path left detached at a commit.
+func (s *Server) repairGitHead(owner string, repo *store.Repo, stor storer.Storer) {
+	if stor == nil || repo == nil {
+		return
+	}
+	setHead := func(branch string) {
+		if err := store.SetGitHeadBranch(stor, branch); err != nil {
+			s.logger.Error().Err(err).Str("repo", repo.FullName).Str("branch", branch).
+				Msg("could not point git HEAD at the default branch")
+		}
+	}
+	if repo.DefaultBranch != "" {
+		if _, err := stor.Reference(plumbing.NewBranchReferenceName(repo.DefaultBranch)); err == nil {
+			setHead(repo.DefaultBranch)
+			return
+		}
+	}
+	// The recorded default branch carries no commits. Adopt the first
+	// conventional branch that does, matching github, where the first branch
+	// pushed to an empty repository becomes its default.
+	for _, branch := range []string{"main", "master"} {
+		if _, err := stor.Reference(plumbing.NewBranchReferenceName(branch)); err != nil {
+			continue
+		}
+		setHead(branch)
+		s.store.UpdateRepo(owner, repo.Name, func(updated *store.Repo) { updated.DefaultBranch = branch })
+		return
 	}
 }
