@@ -77,13 +77,7 @@ func commitToJSON(c *object.Commit, repo *store.Repo, st *store.Store, baseURL s
 				"sha": c.TreeHash.String(),
 				"url": apiRepoURL + "/git/trees/" + c.TreeHash.String(),
 			},
-			"verification": map[string]interface{}{
-				"verified":    false,
-				"reason":      "unsigned",
-				"signature":   nil,
-				"payload":     nil,
-				"verified_at": nil,
-			},
+			"verification": gitCommitVerificationJSON(c),
 		},
 	}
 }

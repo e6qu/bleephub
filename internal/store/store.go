@@ -459,6 +459,8 @@ type Store struct {
 	RepoAutolinks                map[string]map[int]*RepoAutolink          // "owner/repo" → id → autolink
 	RepoWikiPages                map[string]map[string]*WikiPage           // "owner/repo" → slug → wiki page
 	RepoWikiRevisions            map[string]map[string][]*WikiPageRevision // "owner/repo" → slug → revisions (oldest first)
+	LFSObjects                   map[string]map[string]int64               // "owner/repo" → Git LFS oid (sha256 hex) → size in bytes (bytes live in the object store)
+	LFSLocks                     map[string]map[int]*LFSLock               // "owner/repo" → lock id → Git LFS file lock
 	RepoInvitations              map[string]map[int]*RepoInvitation        // "owner/repo" → id → invitation
 	RepoDeployKeys               map[string]map[int]*RepoDeployKey         // "owner/repo" → id → deploy key
 	RepoSubscriptions            map[string]*RepoSubscription              // "userID:repoID" → subscription
@@ -580,6 +582,7 @@ type Store struct {
 	NextUserMigrationID          int
 	NextOrgMigrationID           int
 	NextAutolinkID               int
+	NextLFSLockID                int
 	NextInvitationID             int
 	NextDeployKeyID              int
 	NextSecurityAdvisoryID       int
@@ -973,6 +976,8 @@ func NewStore() *Store {
 		RepoAutolinks:                make(map[string]map[int]*RepoAutolink),
 		RepoWikiPages:                make(map[string]map[string]*WikiPage),
 		RepoWikiRevisions:            make(map[string]map[string][]*WikiPageRevision),
+		LFSObjects:                   make(map[string]map[string]int64),
+		LFSLocks:                     make(map[string]map[int]*LFSLock),
 		RepoInvitations:              make(map[string]map[int]*RepoInvitation),
 		RepoDeployKeys:               make(map[string]map[int]*RepoDeployKey),
 		RepoSubscriptions:            map[string]*RepoSubscription{},
@@ -1102,6 +1107,7 @@ func NewStore() *Store {
 		NextCodespaceID:              1,
 		NextCodespaceSecretID:        1,
 		NextAutolinkID:               1,
+		NextLFSLockID:                1,
 		NextInvitationID:             1,
 		NextIssueEventID:             1,
 		NextDeployKeyID:              1,
@@ -1927,6 +1933,28 @@ func (st *Store) loadFromPersistence() error {
 				}
 			}
 			st.RepoAutolinks[key] = autolinks
+			return nil
+		}},
+		{"lfs_objects", func(key string, raw []byte) error {
+			var objects map[string]int64
+			if err := LoadJSON(raw, &objects); err != nil {
+				return err
+			}
+			st.LFSObjects[key] = objects
+			return nil
+		}},
+		{"lfs_locks", func(key string, raw []byte) error {
+			var locks map[int]*LFSLock
+			if err := LoadJSON(raw, &locks); err != nil {
+				return err
+			}
+			for _, lock := range locks {
+				lock.RepoKey = key
+				if lock.ID >= st.NextLFSLockID {
+					st.NextLFSLockID = lock.ID + 1
+				}
+			}
+			st.LFSLocks[key] = locks
 			return nil
 		}},
 		{"repo_wiki_pages", func(key string, raw []byte) error {

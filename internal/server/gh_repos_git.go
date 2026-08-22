@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"path"
 	"strings"
@@ -35,6 +36,71 @@ func repoSignature(name, email string) *object.Signature {
 		Email: email,
 		When:  time.Now().UTC(),
 	}
+}
+
+// syncRepoHeadToDefaultBranch points the repository's stored git HEAD at the
+// default branch its row now records. Every handler that moves default_branch
+// calls it, so the ref advertisement — and therefore the branch a clone checks
+// out — follows the change.
+func (s *Server) syncRepoHeadToDefaultBranch(owner, name string) {
+	repo := s.store.GetRepo(owner, name)
+	if repo == nil {
+		return
+	}
+	if err := store.SetGitHeadBranch(s.store.GetGitStorage(owner, name), repo.DefaultBranch); err != nil {
+		s.logger.Error().Err(err).Str("repo", repo.FullName).Str("branch", repo.DefaultBranch).
+			Msg("could not point git HEAD at the default branch")
+	}
+}
+
+// worktreeHeadStorer keeps go-git's worktree machinery out of the
+// repository's HEAD.
+//
+// Worktree.Checkout(&CheckoutOptions{Hash: …}) replaces HEAD with a DETACHED
+// hash reference naming the commit it checked out, and Worktree.Commit then
+// advances whatever HEAD names. On a bare server-side repository that is pure
+// corruption: HEAD is the symbolic reference the clone protocol advertises the
+// default branch from, and a detached HEAD makes go-git advertise no
+// symref=HEAD:… capability at all — which is what left clients guessing the
+// checkout branch by matching HEAD's object id against the ref list. The
+// commit helpers set the branch reference themselves, so the worktree's HEAD
+// bookkeeping is scratch state; hold it in memory and let every other
+// reference through to the real storage.
+type worktreeHeadStorer struct {
+	gitStorage.Storer
+	head *plumbing.Reference
+}
+
+func newWorktreeHeadStorer(stor gitStorage.Storer) *worktreeHeadStorer {
+	return &worktreeHeadStorer{
+		Storer: stor,
+		// git.Open rejects a storer with no HEAD; a detached zero hash is the
+		// placeholder the first Checkout immediately replaces.
+		head: plumbing.NewHashReference(plumbing.HEAD, plumbing.ZeroHash),
+	}
+}
+
+func (s *worktreeHeadStorer) Reference(name plumbing.ReferenceName) (*plumbing.Reference, error) {
+	if name == plumbing.HEAD {
+		return s.head, nil
+	}
+	return s.Storer.Reference(name)
+}
+
+func (s *worktreeHeadStorer) SetReference(ref *plumbing.Reference) error {
+	if ref.Name() == plumbing.HEAD {
+		s.head = ref
+		return nil
+	}
+	return s.Storer.SetReference(ref)
+}
+
+func (s *worktreeHeadStorer) CheckAndSetReference(next, old *plumbing.Reference) error {
+	if next.Name() == plumbing.HEAD {
+		s.head = next
+		return nil
+	}
+	return s.Storer.CheckAndSetReference(next, old)
 }
 
 // initRepoWithFiles creates the first commit on a freshly created repo,
@@ -110,7 +176,7 @@ func createFileCommitExpected(stor gitStorage.Storer, branch, path, content, mes
 
 func createFileCommitExpectedGuarded(stor gitStorage.Storer, branch, path, content, message string, sig *object.Signature, expectedParent plumbing.Hash, guard func(plumbing.Hash) error) (plumbing.Hash, error) {
 	fs := memfs.New()
-	repo, err := git.Open(stor, fs)
+	repo, err := git.Open(newWorktreeHeadStorer(stor), fs)
 	if err != nil {
 		return plumbing.ZeroHash, fmt.Errorf("git open: %w", err)
 	}
@@ -160,7 +226,7 @@ func createFileCommitExpectedGuarded(stor gitStorage.Storer, branch, path, conte
 // new commit hash. It returns an error if the file does not exist.
 func deleteFileCommit(stor gitStorage.Storer, branch, path, message string, sig *object.Signature, expectedParent plumbing.Hash, guard func(plumbing.Hash) error) (plumbing.Hash, error) {
 	fs := memfs.New()
-	repo, err := git.Open(stor, fs)
+	repo, err := git.Open(newWorktreeHeadStorer(stor), fs)
 	if err != nil {
 		return plumbing.ZeroHash, fmt.Errorf("git open: %w", err)
 	}
@@ -438,6 +504,12 @@ func (s *Server) gitDataContext(w http.ResponseWriter, r *http.Request) (owner, 
 	return
 }
 
+// refuseOversizedBlob writes the refusal POST /git/blobs documents for content
+// past its size ceiling.
+func refuseOversizedBlob(w http.ResponseWriter) {
+	store.WriteGHValidationError(w, "Blob", "content", "too_large")
+}
+
 func (s *Server) handleCreateBlob(w http.ResponseWriter, r *http.Request) {
 	_, _, repo, stor := s.gitDataContext(w, r)
 	if repo == nil {
@@ -447,7 +519,11 @@ func (s *Server) handleCreateBlob(w http.ResponseWriter, r *http.Request) {
 		Content  *string `json:"content"`
 		Encoding string  `json:"encoding"`
 	}
-	if !decodeJSONBody(w, r, &req) {
+	// The blob body is a whole file, so it gets its own cap, and an over-cap
+	// body is refused the way this operation documents a refusal — 422
+	// Validation Failed with Blob/content/too_large. The generic 413 is not one
+	// of the statuses the description lists (403, 404, 409, 422).
+	if !decodeJSONBodyOversizeAware(w, r, maxBlobJSONBodyBytes, &req, refuseOversizedBlob) {
 		return
 	}
 	if req.Content == nil {
@@ -469,6 +545,13 @@ func (s *Server) handleCreateBlob(w http.ResponseWriter, r *http.Request) {
 			store.WriteGHValidationError(w, "Blob", "content", "invalid")
 			return
 		}
+	}
+
+	// GitHub refuses to create a blob past the same 100 MB ceiling its read
+	// side serves, whatever the transport allowed.
+	if int64(len(data)) > gitBlobMaxFileBytes {
+		refuseOversizedBlob(w)
+		return
 	}
 
 	hash, err := encodeBlob(stor, data)
@@ -763,6 +846,11 @@ func (s *Server) handleCreateCommit(w http.ResponseWriter, r *http.Request) {
 		Parents   []string   `json:"parents"`
 		Author    *gitPerson `json:"author"`
 		Committer *gitPerson `json:"committer"`
+		// The documented request body carries the caller's detached PGP
+		// signature; GitHub writes it into the created commit's gpgsig header.
+		// Accepting the field and dropping it wrote an object that no longer
+		// matched what the caller signed, silently.
+		Signature string `json:"signature"`
 	}
 	if !decodeJSONBody(w, r, &req) {
 		return
@@ -817,6 +905,11 @@ func (s *Server) handleCreateCommit(w http.ResponseWriter, r *http.Request) {
 		Message:      req.Message,
 		TreeHash:     treeHash,
 		ParentHashes: parentHashes,
+		// git's gpgsig header is newline-terminated, and that is the form
+		// GitHub echoes back in verification.signature. Normalizing on the way
+		// in keeps the create response byte-identical to a later read of the
+		// stored object.
+		PGPSignature: terminatedSignature(req.Signature),
 	}
 	hash, err := encodeCommit(stor, commit)
 	if err != nil {
@@ -1165,15 +1258,100 @@ func gitCommitToJSON(baseURL, fullName, sha string, c *object.Commit) map[string
 			"sha": c.TreeHash.String(),
 			"url": baseURL + "/api/v3/repos/" + fullName + "/git/trees/" + c.TreeHash.String(),
 		},
-		"parents": parents,
-		"verification": map[string]interface{}{
-			"verified":    false,
-			"reason":      "unsigned",
-			"signature":   nil,
-			"payload":     nil,
-			"verified_at": nil,
-		},
+		"parents":      parents,
+		"verification": gitCommitVerificationJSON(c),
 	}
+}
+
+// --- signature verification ---------------------------------------------
+//
+// GitHub reports four things about a commit or tag signature: whether it
+// verified, why, and — when one is present — the armored signature and the
+// payload it covers. bleephub keeps no GPG/SSH keyring, so it can echo a
+// signature but cannot check one against a registered key. That is precisely
+// the state GitHub calls "unknown_key": the object carries a well-formed
+// signature and no key on file matches it. Reporting "unsigned" for a signed
+// object (what these renderers did unconditionally) is a false statement about
+// the object; reporting "valid" without checking anything would be a worse
+// one. Verifying for real needs a key store — GPG keys per user, the
+// /user/gpg_keys surface behind it — which is a feature, not a rendering fix,
+// so "unknown_key" stays until that exists.
+
+// gitCommitVerificationJSON renders the `verification` member of a commit.
+func gitCommitVerificationJSON(c *object.Commit) map[string]interface{} {
+	if c == nil || c.PGPSignature == "" {
+		return unsignedVerificationJSON()
+	}
+	payload, err := gitObjectSigningPayload(func(o plumbing.EncodedObject) error {
+		return c.EncodeWithoutSignature(o)
+	})
+	if err != nil {
+		return unsignedVerificationJSON()
+	}
+	return signedVerificationJSON(c.PGPSignature, payload)
+}
+
+// gitTagVerificationJSON renders the `verification` member of an annotated tag.
+func gitTagVerificationJSON(t *object.Tag) map[string]interface{} {
+	if t == nil || t.PGPSignature == "" {
+		return unsignedVerificationJSON()
+	}
+	payload, err := gitObjectSigningPayload(func(o plumbing.EncodedObject) error {
+		return t.EncodeWithoutSignature(o)
+	})
+	if err != nil {
+		return unsignedVerificationJSON()
+	}
+	return signedVerificationJSON(t.PGPSignature, payload)
+}
+
+// terminatedSignature returns sig in git's canonical newline-terminated form
+// (empty stays empty).
+func terminatedSignature(sig string) string {
+	if sig == "" || strings.HasSuffix(sig, "\n") {
+		return sig
+	}
+	return sig + "\n"
+}
+
+func unsignedVerificationJSON() map[string]interface{} {
+	return map[string]interface{}{
+		"verified":    false,
+		"reason":      "unsigned",
+		"signature":   nil,
+		"payload":     nil,
+		"verified_at": nil,
+	}
+}
+
+func signedVerificationJSON(signature, payload string) map[string]interface{} {
+	return map[string]interface{}{
+		"verified":    false,
+		"reason":      "unknown_key",
+		"signature":   signature,
+		"payload":     payload,
+		"verified_at": nil,
+	}
+}
+
+// gitObjectSigningPayload returns the object's canonical text with the
+// signature header removed — the bytes the signature is taken over, which is
+// what GitHub echoes in verification.payload.
+func gitObjectSigningPayload(encode func(plumbing.EncodedObject) error) (string, error) {
+	obj := &plumbing.MemoryObject{}
+	if err := encode(obj); err != nil {
+		return "", err
+	}
+	reader, err := obj.Reader()
+	if err != nil {
+		return "", err
+	}
+	defer reader.Close()
+	raw, err := io.ReadAll(reader)
+	if err != nil {
+		return "", err
+	}
+	return string(raw), nil
 }
 
 func gitTagToJSON(baseURL, fullName, sha string, t *object.Tag) map[string]interface{} {
@@ -1193,13 +1371,7 @@ func gitTagToJSON(baseURL, fullName, sha string, t *object.Tag) map[string]inter
 			"type": objectTypeName(t.TargetType),
 			"url":  baseURL + "/api/v3/repos/" + fullName + "/git/" + objectTypeName(t.TargetType) + "s/" + t.Target.String(),
 		},
-		"verification": map[string]interface{}{
-			"verified":    false,
-			"reason":      "unsigned",
-			"signature":   nil,
-			"payload":     nil,
-			"verified_at": nil,
-		},
+		"verification": gitTagVerificationJSON(t),
 	}
 }
 

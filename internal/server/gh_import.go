@@ -599,7 +599,7 @@ func pointHEADAtImportedBranch(stor gitStorage.Storer, defaultBranch string) {
 	if pick == "" {
 		pick = names[0]
 	}
-	_ = stor.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.NewBranchReferenceName(pick)))
+	_ = store.SetGitHeadBranch(stor, pick)
 }
 
 // importedCommitStats counts commits and collects the distinct authors in

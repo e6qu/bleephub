@@ -75,6 +75,15 @@ func commitFilesToStorage(t *testing.T, s *Server, repoFullName string, files ma
 	if err := storer.SetReference(plumbing.NewHashReference(mainRef, commitHash)); err != nil {
 		t.Fatalf("set main ref: %v", err)
 	}
+	// Action fixtures are pinned by callers at @master as well as @main. That
+	// ref used to appear implicitly: git.Init succeeded on a fresh storer and
+	// left HEAD on go-git's default "master", so the commit above landed there
+	// too. Repository creation now points HEAD at the repository's default
+	// branch, so Init no longer runs and the alias has to be written here.
+	masterRef := plumbing.NewBranchReferenceName("master")
+	if err := storer.SetReference(plumbing.NewHashReference(masterRef, commitHash)); err != nil {
+		t.Fatalf("set master ref: %v", err)
+	}
 	if err := storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, mainRef)); err != nil {
 		t.Fatalf("set HEAD: %v", err)
 	}

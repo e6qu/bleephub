@@ -208,6 +208,21 @@ func PackageRegistryBlobDataKey(digest string) string {
 	return path.Join("packages/registry/blobs", algo, hexPart)
 }
 
+// LFSObjectDataKey names the bytes of one Git LFS object. An LFS oid is a bare
+// SHA-256 hex digest, so the key is content-addressed and every repository
+// holding the same object shares the one stored copy (which repository holds
+// which oid is tracked in the store, not here). The two-level fan-out mirrors
+// git-lfs's own on-disk layout (.git/lfs/objects/ab/cd/abcd…) and, like
+// PackageRegistryBlobDataKey's digest split, keeps any single listing prefix
+// small enough to page through.
+func LFSObjectDataKey(oid string) string {
+	oid = strings.ToLower(oid)
+	if len(oid) < 4 {
+		return path.Join("lfs/objects", oid)
+	}
+	return path.Join("lfs/objects", oid[:2], oid[2:4], oid)
+}
+
 func CodeQLDatabaseDataKey(id int, content []byte) string {
 	digest := sha256.Sum256(content)
 	return fmt.Sprintf("code-scanning/codeql/databases/%d/%x.zip", id, digest)

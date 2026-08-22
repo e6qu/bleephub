@@ -32,15 +32,33 @@ func ResolveGitRef(stor gitStorage.Storer, ref string) (plumbing.Hash, error) {
 		}
 	}
 
-	// 2. Branch or tag shorthand.
-	for _, name := range []plumbing.ReferenceName{
+	// 2. The literal HEAD, then branch or tag shorthand.
+	//
+	// HEAD is a real ref name on github.com: GET /contents/{p}?ref=HEAD,
+	// /git/trees/HEAD, /commits/HEAD and /tarball/HEAD all answer 200 from the
+	// repository's default branch. SetGitHeadBranch (git_head.go) keeps the
+	// symref pointed at that branch, so resolving it here is a symref hop, not
+	// a second source of truth. An unborn HEAD — the empty repository, whose
+	// symref names a branch no commit has landed on yet — resolves to nothing
+	// and must fall through to the not-found result below rather than
+	// masquerading as a ref that exists.
+	names := []plumbing.ReferenceName{
 		plumbing.NewBranchReferenceName(ref),
 		plumbing.NewTagReferenceName(ref),
-	} {
+	}
+	if ref == string(plumbing.HEAD) {
+		names = append([]plumbing.ReferenceName{plumbing.HEAD}, names...)
+	}
+	for _, name := range names {
 		r, err := stor.Reference(name)
-		if err == nil {
-			return RefHash(r, stor)
+		if err != nil {
+			continue
 		}
+		hash, err := RefHash(r, stor)
+		if err != nil {
+			continue
+		}
+		return hash, nil
 	}
 
 	// 3. Short or full SHA. plumbing.NewHash accepts hex and returns ZeroHash

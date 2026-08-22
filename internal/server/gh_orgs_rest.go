@@ -402,6 +402,7 @@ func (s *Server) handleCreateOrgRepo(w http.ResponseWriter, r *http.Request) {
 		s.store.UpdateRepo(org.Login, req.Name, func(r *store.Repo) {
 			r.DefaultBranch = defaultBranch
 		})
+		s.syncRepoHeadToDefaultBranch(org.Login, req.Name)
 	}
 
 	if bool(req.AutoInit) || req.GitignoreTemplate != "" || req.LicenseTemplate != "" {
