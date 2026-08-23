@@ -159,18 +159,6 @@ func (f *fakeS3) setOnRequest(hook func(method, key string)) {
 	f.onRequest = hook
 }
 
-func (f *fakeS3) objectCount(prefix string) int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	n := 0
-	for key := range f.objects {
-		if strings.HasPrefix(key, prefix) {
-			n++
-		}
-	}
-	return n
-}
-
 func (f *fakeS3) keysWithPrefix(prefix string) []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()

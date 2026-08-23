@@ -359,30 +359,43 @@ func (c *packDiskCache) initLocked() error {
 	if err := os.MkdirAll(c.root, 0o750); err != nil {
 		return fmt.Errorf("pack cache %s: %w", c.root, err)
 	}
-	err := filepath.WalkDir(c.root, func(path string, entry fs.DirEntry, err error) error {
-		if err != nil {
+	// The walk runs inside an os.Root on the cache directory rather than over
+	// absolute paths, so the names it hands back are relative to that root and
+	// the removal below resolves under it. A symlink that appeared in the cache
+	// directory between the walk reading a name and this deleting it therefore
+	// has nothing outside the cache it could name.
+	root, err := os.OpenRoot(c.root)
+	if err == nil {
+		defer func() { _ = root.Close() }()
+		err = fs.WalkDir(root.FS(), ".", func(walked string, entry fs.DirEntry, err error) error {
+			if err != nil {
+				return nil
+			}
+			if entry.IsDir() {
+				return nil
+			}
+			name := entry.Name()
+			if strings.HasPrefix(name, "tmp-") {
+				// A temporary file is a write that did not finish, from this
+				// run or a previous one. It is not a cache entry and never
+				// becomes one, because admission renames rather than links.
+				_ = root.Remove(walked)
+				return nil
+			}
+			info, err := entry.Info()
+			if err != nil {
+				return nil
+			}
+			c.clock++
+			c.entries[name] = &packCacheEntry{
+				path: filepath.Join(c.root, filepath.FromSlash(walked)),
+				size: info.Size(),
+				used: c.clock,
+			}
+			c.bytes += info.Size()
 			return nil
-		}
-		if entry.IsDir() {
-			return nil
-		}
-		name := entry.Name()
-		if strings.HasPrefix(name, "tmp-") {
-			// A temporary file is a write that did not finish, from this run
-			// or a previous one. It is not a cache entry and never becomes
-			// one, because admission renames rather than links.
-			_ = os.Remove(path)
-			return nil
-		}
-		info, err := entry.Info()
-		if err != nil {
-			return nil
-		}
-		c.clock++
-		c.entries[name] = &packCacheEntry{path: path, size: info.Size(), used: c.clock}
-		c.bytes += info.Size()
-		return nil
-	})
+		})
+	}
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("pack cache %s: %w", c.root, err)
 	}

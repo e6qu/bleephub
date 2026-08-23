@@ -174,10 +174,6 @@ const compactionTriggerEnv = "BLEEPHUB_GITSTORE_COMPACT_AFTER"
 // accumulated a few thousand amortizes it over a batch worth packing.
 const defaultCompactionTrigger = 4096
 
-// compactionRunTimeout bounds a background compaction. A monorepo's compaction
-// reads every loose object it packs, so the bound is generous.
-const compactionRunTimeout = 30 * time.Minute
-
 // noteObjectWritten counts an object into the loose tier and starts a
 // compaction once enough have accumulated.
 //
@@ -536,19 +532,51 @@ func (s *atomicRefStorer) readPackIndex(pack string) (*idxfile.MemoryIndex, erro
 
 // builtPack is a finished pack sitting on local disk, waiting to be published.
 type builtPack struct {
-	name       string
-	packPath   string
+	name string
+	// stagingDir is the directory the pack was staged in and packFile its bare
+	// name inside that directory — a name, never a path. The two are kept apart
+	// so that every use of the staged file goes through an os.Root opened on the
+	// directory: the name is then resolved by the kernel underneath that root,
+	// and neither the name nor a symlink appearing in the directory can reach a
+	// file outside it.
+	stagingDir string
+	packFile   string
 	packSize   int64
 	index      []byte
 	filter     []byte
 	filterBits int
 }
 
+// openRoot scopes access to the directory the pack was staged in.
+func (b *builtPack) openRoot() (*os.Root, error) {
+	root, err := os.OpenRoot(b.stagingDir)
+	if err != nil {
+		return nil, fmt.Errorf("open compaction staging directory: %w", err)
+	}
+	return root, nil
+}
+
+// open opens the staged pack for reading. The file stays usable after the root
+// it was opened through is closed.
+func (b *builtPack) open() (*os.File, error) {
+	root, err := b.openRoot()
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = root.Close() }()
+	return root.Open(b.packFile)
+}
+
 func (b *builtPack) cleanup() {
-	if b == nil || b.packPath == "" {
+	if b == nil || b.packFile == "" {
 		return
 	}
-	_ = os.Remove(b.packPath)
+	root, err := b.openRoot()
+	if err != nil {
+		return
+	}
+	defer func() { _ = root.Close() }()
+	_ = root.Remove(b.packFile)
 }
 
 // buildPack encodes the objects into a packfile on local disk and derives the
@@ -564,7 +592,7 @@ func (s *atomicRefStorer) buildPack(hashes []plumbing.Hash) (*builtPack, error) 
 	if err != nil {
 		return nil, fmt.Errorf("stage pack: %w", err)
 	}
-	built := &builtPack{packPath: temp.Name()}
+	built := &builtPack{stagingDir: dir, packFile: filepath.Base(temp.Name())}
 
 	encoder := packfile.NewEncoder(temp, s, false)
 	checksum, err := encoder.Encode(hashes, compactionPackWindow)
@@ -668,13 +696,13 @@ func (s *atomicRefStorer) publishPack(ctx context.Context, built *builtPack) err
 	if err := s.putObject(ctx, base+".bfilter", built.filter); err != nil {
 		return err
 	}
-	if err := s.uploadPackFile(ctx, base+".pack", built.packPath, built.packSize); err != nil {
+	if err := s.uploadPackFile(ctx, base+".pack", built); err != nil {
 		return err
 	}
 	// The replica that built the pack already holds its bytes, so seeding the
 	// shared disk cache from the staged file saves it downloading back what it
 	// just uploaded.
-	s.seedPackCache(base+".pack", built.packPath, built.packSize)
+	s.seedPackCache(base+".pack", built)
 	s.fs.rememberObjectSize(s.fs.key(base+".pack"), built.packSize)
 	return nil
 }
@@ -697,9 +725,10 @@ func (s *atomicRefStorer) putObject(ctx context.Context, name string, body []byt
 // keeps a monorepo's multi-gigabyte pack from having to be held in memory —
 // and which is still atomic, because the object appears only when the
 // completion request succeeds.
-func (s *atomicRefStorer) uploadPackFile(ctx context.Context, name, sourcePath string, size int64) error {
+func (s *atomicRefStorer) uploadPackFile(ctx context.Context, name string, built *builtPack) error {
 	key := s.fs.key(name)
-	file, err := os.Open(sourcePath)
+	size := built.packSize
+	file, err := built.open()
 	if err != nil {
 		return fmt.Errorf("open staged pack: %w", err)
 	}
@@ -782,12 +811,13 @@ func (s *atomicRefStorer) abortMultipart(ctx context.Context, key, uploadID stri
 	})
 }
 
-func (s *atomicRefStorer) seedPackCache(name, sourcePath string, size int64) {
+func (s *atomicRefStorer) seedPackCache(name string, built *builtPack) {
 	cache := sharedPackDiskCache()
 	if cache == nil {
 		return
 	}
-	file, err := os.Open(sourcePath)
+	size := built.packSize
+	file, err := built.open()
 	if err != nil {
 		return
 	}

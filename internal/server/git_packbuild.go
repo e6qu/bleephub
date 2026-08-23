@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/url"
 	"strconv"
 	"strings"
@@ -740,7 +741,7 @@ const (
 // object is omitted when any of them omits it.
 type gitFilterRule struct {
 	kind      gitFilterKind
-	blobLimit uint64
+	blobLimit int64
 	treeDepth int
 	// patterns are the sparse-checkout patterns a sparse:oid rule selects
 	// paths with.
@@ -831,7 +832,7 @@ func (f gitObjectFilter) omitsBlob(stor storer.EncodedObjectStorer, blob plumbin
 		return false, err
 	}
 	for _, rule := range f.rules {
-		if rule.kind == gitFilterBlobLimit && encoded.Size() >= int64(rule.blobLimit) {
+		if rule.kind == gitFilterBlobLimit && encoded.Size() >= rule.blobLimit {
 			return true, nil
 		}
 	}
@@ -996,8 +997,13 @@ func gitTreeOfCommitObject(stor storer.Storer, hash plumbing.Hash) (*object.Tree
 
 // parseGitBlobLimit reads the size a blob:limit filter cuts at, in the plain,
 // kibibyte, mebibyte and gibibyte spellings git accepts.
-func parseGitBlobLimit(text string) (uint64, error) {
-	multiplier := uint64(1)
+// parseGitBlobLimit reads the size a "blob:limit=" spec names. The limit is an
+// int64 because that is what it is compared against — an object's size — so the
+// suffix is applied in the same width the comparison happens in and a spec whose
+// product would not fit is refused instead of wrapping to a negative limit that
+// would omit every blob.
+func parseGitBlobLimit(text string) (int64, error) {
+	multiplier := int64(1)
 	if len(text) > 0 {
 		switch text[len(text)-1] {
 		case 'k', 'K':
@@ -1011,11 +1017,14 @@ func parseGitBlobLimit(text string) (uint64, error) {
 			text = text[:len(text)-1]
 		}
 	}
-	value, err := strconv.ParseUint(text, 10, 64)
+	value, err := strconv.ParseInt(text, 10, 64)
 	if err != nil {
 		return 0, err
 	}
-	if value > (1<<63)/multiplier {
+	if value < 0 {
+		return 0, errors.New("blob size limit is negative")
+	}
+	if value > math.MaxInt64/multiplier {
 		return 0, errors.New("blob size limit out of range")
 	}
 	return value * multiplier, nil
@@ -1140,9 +1149,21 @@ func gitThinDelta(stor storer.EncodedObjectStorer, plan *gitPackPlan, id plumbin
 	return delta, baseHash, nil
 }
 
+// gitPackMaxEntries is the largest object count a packfile can state. The count
+// is a four-byte field, so a pack holding more objects than this has no header
+// that describes it.
+const gitPackMaxEntries = 1<<32 - 1
+
 // writeGitPackHeader writes the twelve bytes that open a packfile: the
 // signature, the format version and the number of entries that follow.
+//
+// A count the field cannot hold is an error rather than a truncation, because a
+// wrapped count produces a pack whose header disagrees with its body, and the
+// client would index it as a shorter pack and silently lose objects.
 func writeGitPackHeader(w io.Writer, entries int) error {
+	if entries < 0 || int64(entries) > gitPackMaxEntries {
+		return fmt.Errorf("pack header cannot state %d entries", entries)
+	}
 	header := make([]byte, 12)
 	copy(header, "PACK")
 	binary.BigEndian.PutUint32(header[4:], gitPackVersion)
@@ -1193,16 +1214,26 @@ func writeGitPackDelta(w io.Writer, compressor *zlib.Writer, base plumbing.Hash,
 // writeGitPackEntryHeader writes a packfile entry header: the object type in
 // three bits and the uncompressed size in a little-endian base-128 run, four
 // bits of it in the first byte and seven in each byte after.
+//
+// The run ends when the size has been shifted down to zero, which a negative
+// size never reaches, so a negative size is refused before the loop rather than
+// spinning in it.
 func writeGitPackEntryHeader(w io.Writer, objectType plumbing.ObjectType, size int64) error {
+	if size < 0 {
+		return fmt.Errorf("pack entry header cannot state a size of %d", size)
+	}
 	header := make([]byte, 0, 10)
-	current := (int64(objectType) << 4) | (size & 0x0f)
+	// Each byte of the run carries seven bits of size, and the first carries the
+	// type above the four bits of size it has room for; the masks are what make
+	// each one a byte.
+	current := byte((int64(objectType)<<4 | size&0x0f) & 0xff)
 	size >>= 4
 	for size != 0 {
-		header = append(header, byte(current|0x80))
-		current = size & 0x7f
+		header = append(header, current|0x80)
+		current = byte(size & 0x7f)
 		size >>= 7
 	}
-	header = append(header, byte(current))
+	header = append(header, current)
 	_, err := w.Write(header)
 	return err
 }

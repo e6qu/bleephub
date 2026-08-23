@@ -93,9 +93,23 @@ const binaryFuseMaxAttempts = 100
 
 var errBinaryFuseConstruction = errors.New("binary fuse filter: construction did not converge")
 
-func mulhi(a, b uint64) uint64 {
-	high, _ := bits.Mul64(a, b)
-	return high
+// binaryFuseMaxKeys bounds the key set a filter may be built for. Every slot is
+// addressed by a uint32 and the table is sized above the key count, so a set
+// this large has no table that can hold it. A pack that big is refused outright
+// rather than sized from a wrapped count, because a table sized from a wrapped
+// count would place keys at positions its own probe never visits, and a key that
+// probes as absent is the one answer the filter invariant forbids.
+const binaryFuseMaxKeys = math.MaxUint32 / 2
+
+var errBinaryFuseTooManyKeys = errors.New("binary fuse filter: more keys than the table can address")
+
+// mulhiBounded maps a hash uniformly onto [0, bound) by taking the high half of
+// the 128-bit product, which is the multiply-shift alternative to a modulo. The
+// product's high half is strictly below bound, and bound is a uint32, so the low
+// thirty-two bits named here are the whole of the result.
+func mulhiBounded(hash uint64, bound uint32) uint32 {
+	high, _ := bits.Mul64(hash, uint64(bound))
+	return uint32(high & math.MaxUint32)
 }
 
 // mixSeed remixes a key for a construction retry. The first attempt uses seed
@@ -116,17 +130,22 @@ func mixSeed(key, seed uint64) uint64 {
 }
 
 func (f *binaryFuseFilter) positions(hash uint64) (uint32, uint32, uint32) {
-	hi := mulhi(hash, uint64(f.segmentCountLength))
-	h0 := uint32(hi)
+	h0 := mulhiBounded(hash, f.segmentCountLength)
 	h1 := h0 + f.segmentLength
 	h2 := h1 + f.segmentLength
-	h1 ^= uint32(hash>>18) & f.segmentLengthMask
-	h2 ^= uint32(hash) & f.segmentLengthMask
+	// Each of the two offsets is drawn from a different thirty-two bit window of
+	// the same hash; the segment mask then narrows it to a position inside one
+	// segment.
+	h1 ^= uint32(hash>>18&math.MaxUint32) & f.segmentLengthMask
+	h2 ^= uint32(hash&math.MaxUint32) & f.segmentLengthMask
 	return h0, h1, h2
 }
 
+// fuseFingerprint folds the hash down to the eight bits a slot holds. The fold
+// is the point: the filter stores a truncated hash, and its false positive rate
+// is exactly the 2^-8 that discarding the rest buys.
 func fuseFingerprint(hash uint64) uint8 {
-	return uint8(hash ^ (hash >> 32))
+	return uint8((hash ^ (hash >> 32)) & math.MaxUint8)
 }
 
 // contains reports whether the key may be in the set. A false answer is a
@@ -167,7 +186,11 @@ func binaryFuseSizeFactor(size uint32) float64 {
 }
 
 func newBinaryFuseFilter(keys []oidKey) (*binaryFuseFilter, error) {
-	size := uint32(len(keys))
+	count := len(keys)
+	if count > binaryFuseMaxKeys {
+		return nil, fmt.Errorf("%w: %d keys", errBinaryFuseTooManyKeys, count)
+	}
+	size := uint32(count)
 	filter := &binaryFuseFilter{}
 	filter.segmentLength = binaryFuseSegmentLength(size)
 	filter.segmentLengthMask = filter.segmentLength - 1
@@ -186,7 +209,7 @@ func newBinaryFuseFilter(keys []oidKey) (*binaryFuseFilter, error) {
 		segmentCount -= 2
 	}
 	filter.segmentCount = segmentCount
-	arrayLength = (filter.segmentCount + 2) * filter.segmentLength
+	arrayLength = filter.arrayLength()
 	filter.segmentCountLength = filter.segmentCount * filter.segmentLength
 	filter.fingerprints = make([]uint8, arrayLength)
 
@@ -292,6 +315,14 @@ func newBinaryFuseFilter(keys []oidKey) (*binaryFuseFilter, error) {
 	return nil, fmt.Errorf("%w after %d attempts for %d keys", errBinaryFuseConstruction, binaryFuseMaxAttempts, size)
 }
 
+// arrayLength is the number of fingerprint slots the filter's geometry calls
+// for, and so the length of the fingerprint slice: the constructor allocates it
+// at exactly this size and decodeBinaryFuseFilter refuses an encoding whose
+// stated length disagrees with it.
+func (f *binaryFuseFilter) arrayLength() uint32 {
+	return (f.segmentCount + 2) * f.segmentLength
+}
+
 // encode serializes the filter so a replica can fetch it beside the pack
 // instead of rebuilding it from the index.
 func (f *binaryFuseFilter) encode() []byte {
@@ -300,7 +331,7 @@ func (f *binaryFuseFilter) encode() []byte {
 	out = binary.LittleEndian.AppendUint64(out, f.seed)
 	out = binary.LittleEndian.AppendUint32(out, f.segmentLength)
 	out = binary.LittleEndian.AppendUint32(out, f.segmentCount)
-	out = binary.LittleEndian.AppendUint32(out, uint32(len(f.fingerprints)))
+	out = binary.LittleEndian.AppendUint32(out, f.arrayLength())
 	return append(out, f.fingerprints...)
 }
 
@@ -385,10 +416,16 @@ type cuckooFilter struct {
 // that were counted.
 const cuckooLoadHeadroom = 2
 
+// cuckooMaxBuckets is the largest table the index can address. A bucket index is
+// a uint32 masked with buckets-1, so the count has to be a power of two that
+// still fits a uint32, and 2^31 is the last one. A capacity asking for more
+// stops here and the filter saturates, which costs lookups and never an answer.
+const cuckooMaxBuckets = 1 << 31
+
 func newCuckooFilter(capacity int) *cuckooFilter {
-	needed := uint32(max(capacity, 1)*cuckooLoadHeadroom/cuckooSlotsPerBucket + 1)
+	needed := max(capacity, 1)*cuckooLoadHeadroom/cuckooSlotsPerBucket + 1
 	buckets := uint32(1)
-	for buckets < needed {
+	for buckets < cuckooMaxBuckets && int(buckets) < needed {
 		buckets <<= 1
 	}
 	return &cuckooFilter{buckets: make([][cuckooSlotsPerBucket]uint16, buckets), mask: buckets - 1}
@@ -399,15 +436,18 @@ func newCuckooFilter(capacity int) *cuckooFilter {
 // merges it with the keys whose fingerprint is genuinely one, which costs a
 // negligible amount of false positive rate and never a false negative.
 func cuckooFingerprint(key oidKey) uint16 {
-	fingerprint := uint16(key.fingerprintWord()) & cuckooFingerprintMask
+	fingerprint := uint16(key.fingerprintWord() & cuckooFingerprintMask)
 	if fingerprint == 0 {
 		fingerprint = 1
 	}
 	return fingerprint
 }
 
+// index1 is the first of a key's two candidate buckets. Only the low
+// thirty-two bits of the position word reach the table, and the mask narrows
+// them again to the table's own size.
 func (c *cuckooFilter) index1(key oidKey) uint32 {
-	return uint32(key.positionWord()) & c.mask
+	return uint32(key.positionWord()&math.MaxUint32) & c.mask
 }
 
 // altIndex is derived from the fingerprint alone, which is what makes the pair

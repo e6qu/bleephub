@@ -97,9 +97,10 @@ type atomicRefStorer struct {
 	// prefix. Storage that is not object-backed has neither.
 	fs *S3FS
 	// looseWrites counts objects written into the loose tier since the last
-	// compaction was started, and compacting admits one at a time.
+	// compaction was requested. Admitting one compaction at a time is the
+	// scheduler's job, not this counter's: the handler that owns the goroutine
+	// is the only place that knows whether one is already running.
 	looseWrites atomic.Int64
-	compacting  atomic.Bool
 	triggerOnce sync.Once
 	trigger     int64
 }

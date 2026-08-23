@@ -115,20 +115,6 @@ func clonePack(tb testing.TB, stor gitStorage.Storer, hashes []plumbing.Hash) {
 	}
 }
 
-// benchResult is one measured row of the report.
-type benchResult struct {
-	label    string
-	objects  int
-	counts   s3Counts
-	duration time.Duration
-}
-
-func (r benchResult) String() string {
-	perObject := float64(r.counts.total()) / float64(r.objects)
-	return fmt.Sprintf("%-34s objects=%-7d %s  wall=%-12s requests/object=%.4f",
-		r.label, r.objects, r.counts, r.duration.Round(time.Millisecond), perObject)
-}
-
 // treeBuilder accumulates the entries of the single tree the seeded objects
 // hang from.
 type treeBuilder struct {
