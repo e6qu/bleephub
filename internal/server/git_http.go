@@ -263,6 +263,7 @@ func (s *Server) handleGitUploadPack(w http.ResponseWriter, r *http.Request, own
 	// pkt-line, no wants, a capability never advertised — is still answerable
 	// with a 400.
 	w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
+	stor = gitStorerWithPackReuse(r.Context(), repo.FullName, stor)
 	var result gitUploadPackResult
 	if gitRequestUsesProtocolV2(r, requestReader) {
 		// Each POST of a smart-HTTP conversation is one whole request, so the

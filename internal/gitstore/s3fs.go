@@ -28,6 +28,63 @@ type S3FS struct {
 	activeMu sync.Mutex
 	active   *s3ActiveFiles
 	locks    *s3KeyLocks
+	sharedV  *s3Shared
+}
+
+// s3Shared is the state one filesystem and every chroot derived from it hold in
+// common, alongside the staging namespace and the key locks.
+type s3Shared struct {
+	mu sync.Mutex
+	// sizes memoizes the byte length of content-addressed pack artefacts. The
+	// name of such a key contains the hash of its own contents, so a remembered
+	// size can never go stale, and remembering it turns the HEAD that opens a
+	// packfile into a one-off rather than a per-handle cost.
+	sizes map[string]int64
+	// objects holds the per-repository object membership index consulted before
+	// any loose-object read.
+	objects map[string]*repoObjectIndex
+	// chunkSize is the extent size the pack read path uses, resolved once so
+	// that opening a packfile does not consult the environment.
+	chunkSize int64
+}
+
+func newS3Shared() *s3Shared {
+	return &s3Shared{
+		sizes:     map[string]int64{},
+		objects:   map[string]*repoObjectIndex{},
+		chunkSize: packChunkSize(),
+	}
+}
+
+func (f *S3FS) shared() *s3Shared {
+	f.activeMu.Lock()
+	defer f.activeMu.Unlock()
+	if f.sharedV == nil {
+		f.sharedV = newS3Shared()
+	}
+	return f.sharedV
+}
+
+func (f *S3FS) cachedObjectSize(key string) (int64, bool) {
+	shared := f.shared()
+	shared.mu.Lock()
+	defer shared.mu.Unlock()
+	size, ok := shared.sizes[key]
+	return size, ok
+}
+
+func (f *S3FS) rememberObjectSize(key string, size int64) {
+	shared := f.shared()
+	shared.mu.Lock()
+	defer shared.mu.Unlock()
+	shared.sizes[key] = size
+}
+
+func (f *S3FS) forgetObjectSize(key string) {
+	shared := f.shared()
+	shared.mu.Lock()
+	defer shared.mu.Unlock()
+	delete(shared.sizes, key)
 }
 
 // Client exposes the underlying S3 client for object-byte stores that share
@@ -199,6 +256,20 @@ func (f *S3FS) Open(filename string) (billy.File, error) {
 	if state := f.activeFile(filename); state != nil {
 		return &s3File{fs: f, name: filename, state: state}, nil
 	}
+	// A pack or index is opened, seeked and closed once per object decoded, so
+	// reading it whole would transfer the entire pack for every object in it.
+	// These keys are read through ranges instead, which is only sound because
+	// their names are content addresses: see isImmutablePackKey.
+	if isImmutablePackKey(filename) {
+		file := newS3RangeFile(f, filename)
+		if err := file.open(); err != nil {
+			return nil, err
+		}
+		return file, nil
+	}
+	if absent, ok := f.looseObjectAbsent(filename); ok && absent {
+		return nil, os.ErrNotExist
+	}
 	key := f.key(filename)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -314,6 +385,11 @@ func (f *S3FS) Stat(filename string) (os.FileInfo, error) {
 	}
 
 	key := f.key(filename)
+	if isImmutablePackKey(filename) {
+		if size, ok := f.cachedObjectSize(key); ok {
+			return &s3FileInfo{name: path.Base(filename), size: size, mode: 0o644}, nil
+		}
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
@@ -333,9 +409,13 @@ func (f *S3FS) Stat(filename string) (os.FileInfo, error) {
 		return nil, fmt.Errorf("s3 head %s: %w", key, err)
 	}
 
+	size := aws.ToInt64(resp.ContentLength)
+	if isImmutablePackKey(filename) {
+		f.rememberObjectSize(key, size)
+	}
 	return &s3FileInfo{
 		name:    path.Base(filename),
-		size:    aws.ToInt64(resp.ContentLength),
+		size:    size,
 		mode:    0o644,
 		modTime: aws.ToTime(resp.LastModified),
 		isDir:   false,
@@ -361,6 +441,13 @@ func (f *S3FS) Rename(oldpath, newpath string) error {
 		Bucket: aws.String(f.bucket),
 		Key:    aws.String(srcKey),
 	})
+	if err == nil {
+		// dotgit lands a loose object by renaming a temporary file onto its
+		// final name, so this is where the object index learns that this
+		// process created it.
+		f.noteLooseRemoved(oldpath)
+		f.noteLooseWrite(newpath)
+	}
 	if err != nil {
 		// A rename that returns an error must leave the destination absent.
 		// Otherwise a caller retry observes two names and may treat the copy as
@@ -390,6 +477,8 @@ func (f *S3FS) Remove(filename string) error {
 	if err != nil {
 		return fmt.Errorf("s3 delete %s: %w", key, err)
 	}
+	f.noteLooseRemoved(filename)
+	f.forgetObjectSize(key)
 	return nil
 }
 
@@ -530,11 +619,12 @@ func (f *S3FS) Readlink(link string) (string, error) {
 
 func (f *S3FS) Chroot(path string) (billy.Filesystem, error) {
 	return &S3FS{
-		client: f.client,
-		bucket: f.bucket,
-		prefix: f.key(path),
-		active: f.activeFiles(),
-		locks:  f.keyLocks(),
+		client:  f.client,
+		bucket:  f.bucket,
+		prefix:  f.key(path),
+		active:  f.activeFiles(),
+		locks:   f.keyLocks(),
+		sharedV: f.shared(),
 	}, nil
 }
 
@@ -807,6 +897,7 @@ func (sf *s3File) flush() error {
 	if err != nil {
 		return fmt.Errorf("s3 put %s: %w", key, err)
 	}
+	sf.fs.noteLooseWrite(sf.name)
 	return nil
 }
 

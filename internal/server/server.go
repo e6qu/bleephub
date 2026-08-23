@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	gitStorage "github.com/go-git/go-git/v5/storage"
 	"github.com/rs/zerolog"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/codes"
@@ -86,6 +87,14 @@ type Server struct {
 	// that outlives the process it belongs to keeps writing to a store nobody
 	// is reading and holds the listener it was told to release.
 	background sync.WaitGroup
+	// lifetime is cancelled when the server stops serving. Work a request
+	// starts but does not wait for — the compaction that follows a push —
+	// derives its context from this one rather than from the request, whose
+	// context ends with the response, so shutdown can tell it to stop instead
+	// of waiting out its own timeout.
+	lifetime      context.Context
+	stopServing   context.CancelFunc
+	gitCompaction *gitCompactionScheduler
 }
 
 func (s *Server) currentTime() time.Time {
@@ -150,7 +159,11 @@ func newServerState(addr string, logger zerolog.Logger, construction serverConst
 	if _, err := rand.Read(identityStateKey); err != nil {
 		panic(fmt.Sprintf("generate identity state HMAC key: %v", err))
 	}
+	lifetime, stopServing := context.WithCancel(context.Background())
 	s := &Server{
+		lifetime:               lifetime,
+		stopServing:            stopServing,
+		gitCompaction:          newGitCompactionScheduler(),
 		addr:                   addr,
 		mux:                    http.NewServeMux(),
 		logger:                 logger,
@@ -808,6 +821,16 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	if err := s.startGitSSH(ctx); err != nil {
 		return err
 	}
+	// Adopt the storage layer's "loose tier is full" signal. It is installed
+	// here rather than at construction because it is process-global while a
+	// Server is not: a test process stands up many servers, and a handler
+	// belonging to one of them could otherwise run a compaction on behalf of
+	// another that has already shut down. Only a server that actually serves
+	// takes ownership, and it gives it back below.
+	gitstore.SetCompactionRequestHandler(func(repo string, stor gitStorage.Storer) {
+		s.scheduleGitCompaction(repo, stor)
+	})
+	defer gitstore.SetCompactionRequestHandler(nil)
 	s.actions.Start(ctx)
 	handler := s.requestHandler()
 
@@ -866,6 +889,10 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	}
 
 	s.logger.Info().Msg("shutting down")
+	// Owned work that a request started but did not wait for is told to stop
+	// before the wait below, so shutdown is bounded by the grace period rather
+	// than by whatever timeout that work set for itself.
+	s.stopServing()
 	drain, cancel := context.WithTimeout(context.Background(), shutdownGrace)
 	defer cancel()
 	err := srv.Shutdown(drain)

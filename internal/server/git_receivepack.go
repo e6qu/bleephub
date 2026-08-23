@@ -494,6 +494,14 @@ func (s *Server) applyGitReceivePack(ctx context.Context, repo *store.Repo, stor
 	if !request.quiet {
 		outcome.messagef("Updated %d of %d ref(s), done.", len(outcome.applied), len(outcome.report.statuses))
 	}
+	// The objects this push wrote are loose, and loose is the tier a fetch
+	// cannot be answered from by copying. Pack them. A push that carried no
+	// packfile — a reference deletion, or an update to objects the server
+	// already held — wrote nothing to pack. See git_compaction.go for why this
+	// does not delay the report the caller is about to write.
+	if request.packfile != nil {
+		s.scheduleGitCompaction(repo.FullName, stor)
+	}
 	return outcome, nil
 }
 

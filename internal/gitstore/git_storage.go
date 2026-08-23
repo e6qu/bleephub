@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-git/go-billy/v5/helper/polyfill"
@@ -89,12 +90,31 @@ type atomicRefStorer struct {
 	repo    string
 	mu      sync.RWMutex
 	modules map[string]gitStorage.Storer
+	// fs is the object store this repository's git data lives in, or nil when
+	// the repository is backed by a local directory or by memory. It is the
+	// handle the pack tier needs: compaction publishes through it, and the
+	// membership index that answers "no" without a round trip is keyed by its
+	// prefix. Storage that is not object-backed has neither.
+	fs *S3FS
+	// looseWrites counts objects written into the loose tier since the last
+	// compaction was started, and compacting admits one at a time.
+	looseWrites atomic.Int64
+	compacting  atomic.Bool
+	triggerOnce sync.Once
+	trigger     int64
 }
 
 var _ gitStorage.Storer = (*atomicRefStorer)(nil)
+var _ Compactor = (*atomicRefStorer)(nil)
 
 func WrapAtomicRefStorage(repo string, stor gitStorage.Storer) gitStorage.Storer {
 	return &atomicRefStorer{storer: stor, repo: repo}
+}
+
+// wrapObjectStoreStorage is the object-store form of WrapAtomicRefStorage. It
+// carries the filesystem alongside the storer so the pack tier can reach it.
+func wrapObjectStoreStorage(repo string, stor gitStorage.Storer, fs *S3FS) *atomicRefStorer {
+	return &atomicRefStorer{storer: stor, repo: repo, fs: fs}
 }
 
 func (s *atomicRefStorer) lockName(ref plumbing.ReferenceName) string {
@@ -340,8 +360,13 @@ func (s *atomicRefStorer) NewEncodedObject() plumbing.EncodedObject { //nolint:i
 
 func (s *atomicRefStorer) SetEncodedObject(obj plumbing.EncodedObject) (plumbing.Hash, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.storer.SetEncodedObject(obj)
+	hash, err := s.storer.SetEncodedObject(obj)
+	s.mu.Unlock()
+	if err != nil {
+		return hash, err
+	}
+	s.noteObjectWritten()
+	return hash, nil
 }
 
 func (s *atomicRefStorer) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error) { //nolint:ireturn
@@ -350,7 +375,20 @@ func (s *atomicRefStorer) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) 
 	return s.storer.EncodedObject(t, h)
 }
 
+// HasEncodedObject answers the question a fetch negotiation asks once per
+// object it is considering. On object-backed storage that answer used to cost
+// an S3 GET that returned a 404, because go-git looks for a loose object first
+// and every object of a packed repository is absent from the loose tier.
+//
+// The membership index answers it without a round trip when it can prove the
+// object is absent from every pack and from the loose directory that could hold
+// it. That is a negative-only use: a filter that says "maybe" delegates to the
+// real lookup below, which is exactly what would have happened anyway. See the
+// filter invariant in filter.go.
 func (s *atomicRefStorer) HasEncodedObject(h plumbing.Hash) error {
+	if s.fs != nil && !s.fs.repoIndexFor().maybePresent(s.fs, oidKeyFrom(h[:])) {
+		return plumbing.ErrObjectNotFound
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.storer.HasEncodedObject(h)
@@ -639,7 +677,12 @@ func newGitStorage(ctx context.Context, fullName string) (gitStorage.Storer, err
 		if err != nil {
 			return nil, fmt.Errorf("s3 chroot %s: %w", fullName, err)
 		}
-		return WrapAtomicRefStorage(fullName, gitFilesystem.NewStorage(polyfill.New(chrooted), cache.NewObjectLRUDefault())), nil
+		s3Chroot, ok := chrooted.(*S3FS)
+		if !ok {
+			return nil, fmt.Errorf("s3 chroot %s: unexpected filesystem type %T", fullName, chrooted)
+		}
+		storage := gitFilesystem.NewStorage(polyfill.New(chrooted), cache.NewObjectLRUDefault())
+		return wrapObjectStoreStorage(fullName, storage, s3Chroot), nil
 	}
 
 	gitDir := GitDataDir()

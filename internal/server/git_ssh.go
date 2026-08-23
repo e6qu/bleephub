@@ -254,6 +254,7 @@ func (s *Server) runGitSSHService(channel ssh.Channel, service, owner, repoName 
 		return errors.New("repository write access denied")
 	}
 	if service == "git-upload-pack" {
+		stor = gitStorerWithPackReuse(ctx, repo.FullName, stor)
 		if protocolV2 {
 			// The channel stays open across commands, so the v2 loop keeps
 			// serving them until the client stops: one connection carries both

@@ -1033,12 +1033,23 @@ const gitPackVersion = 2
 // writeGitPackfile writes the packfile a finished plan describes.
 //
 // A client that asked for a thin pack and proved it holds objects this pack can
-// delta against gets the thin encoder; anything else goes through go-git's
-// encoder, which searches a delta window across the objects in the pack and
-// emits offset deltas.
+// delta against gets the thin encoder. Otherwise the answer is built from the
+// packfiles storage already holds when they cover it — see git_packreuse.go for
+// what makes that a correct answer — and from go-git's encoder when they do
+// not, which searches a delta window across the objects in the pack and emits
+// offset deltas.
 func writeGitPackfile(band *gitBandWriter, stor storer.EncodedObjectStorer, plan *gitPackPlan, thin bool) error {
 	if thin && len(plan.clientAt) > 0 {
 		return writeGitThinPack(band, stor, plan)
+	}
+	if packDir := gitPackDirOf(stor); packDir != nil && len(plan.objects) > 0 {
+		reusable, err := gitReusablePacks(packDir, plan)
+		if err != nil {
+			return err
+		}
+		if len(reusable) > 0 {
+			return writeGitReusedPackfile(band, stor, packDir, reusable, plan)
+		}
 	}
 	encoder := packfile.NewEncoder(band.pack(), stor, false)
 	if _, err := encoder.Encode(plan.objects, gitPackWindow); err != nil {
