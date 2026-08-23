@@ -12,16 +12,20 @@ const config: KnipConfig = {
       // e2e/start-server.sh, the SSO driver by scripts/test-shauth-sso.sh.
       entry: ["e2e/webhook-receiver.ts", "e2e/shauth-sso.mjs"],
     },
-    // The `core` workspace (@bleephub/ui-core) is a deliberately general-purpose
-    // component library: alongside the primitives Bleephub's own SPA consumes it
-    // ships a reusable operator shell (AppShell/BackendApp/SimulatorApp, the
-    // Overview/Containers/Resources/Metrics pages, and the API client) that this
-    // repo intentionally does NOT mount — see the header of core/e2e/
-    // backend-app.spec.ts. Those exports are its public contract, unit-tested in
-    // core/src/__tests__ and type-checked here, so knip is left to treat the
-    // package `exports` map as the public surface (no includeEntryExports). We do
-    // NOT prune ui-core to the SPA's current usage; that is an owner product
-    // decision (WEB-016/WEB-017), resolved "keep as library / by design".
+    // @bleephub/ui-core is a component library: the package `exports` map (the
+    // src/*/index.ts barrels) IS its public contract, so knip is left to treat
+    // it as the surface rather than as call sites to be justified.
+    //
+    // includeEntryExports was tried here and is wrong for this workspace. It
+    // reports every barrel re-export the SPA does not happen to import — 60
+    // findings, all of them index.ts lines rather than implementations, and all
+    // false: BackendApp, SimulatorApp, ResourceListPage, DataTable, Modal,
+    // LogViewer and the rest are exercised by core/src/__tests__, which import
+    // the modules directly and so never touch the barrel line knip flags. A
+    // gate that fires on a library's own public API teaches people to silence
+    // it. Dead code *within* the workspace — a module no barrel and no test
+    // reaches — is still reported under the default setting, which is the
+    // check that has value here.
   },
 };
 

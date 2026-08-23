@@ -83,8 +83,9 @@ func TestRefLifecycleMutationsKeepAtomicStorageBoundaries(t *testing.T) {
 		"gh_repos_refs.go": {
 			"handleDeleteRef": "RemoveReferenceCAS",
 		},
-		"git_http.go": {
-			"applyPushCommandAtomic": "CheckAndSetReference",
+		"git_receivepack.go": {
+			"applyPushCommandAtomic":  "CheckAndSetReference",
+			"revertPushCommandAtomic": "CheckAndSetReference",
 		},
 	}
 	for name, functions := range expectations {

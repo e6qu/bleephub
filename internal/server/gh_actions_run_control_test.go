@@ -139,6 +139,7 @@ func TestForkPRApprovalGate_EngineHoldsForkRuns(t *testing.T) {
 	repo := "gate-org/gate-repo"
 	perms := s.store.GetRepoActionsPermissions(repo)
 	perms.ForkPRContributorApproval = "all_external_contributors"
+	perms.ForkPRWorkflowsPrivateRepos = &store.ForkPRWorkflowsPrivateRepos{RequireApprovalForForkPRWorkflows: true}
 	s.store.SetRepoActionsPermissions(repo, perms)
 
 	forkPayload := map[string]interface{}{

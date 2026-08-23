@@ -2,6 +2,7 @@ package gitstore
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 
@@ -172,5 +173,170 @@ func TestAtomicRefStorage_RejectsUnsafeRefNames(t *testing.T) {
 		if err := stor.SetReference(plumbing.NewHashReference(name, hash)); err != nil {
 			t.Errorf("SetReference(%q): unexpected error %v", name, err)
 		}
+	}
+}
+
+// storeTestBlob writes a blob whose contents are derived from body and returns
+// its hash, exercising the object-write path of the wrapped storer.
+func storeTestBlob(t *testing.T, stor gitStorage.Storer, body string) plumbing.Hash {
+	t.Helper()
+	obj := stor.NewEncodedObject()
+	obj.SetType(plumbing.BlobObject)
+	obj.SetSize(int64(len(body)))
+	w, err := obj.Writer()
+	if err != nil {
+		t.Fatalf("blob writer: %v", err)
+	}
+	if _, err := w.Write([]byte(body)); err != nil {
+		t.Fatalf("write blob: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("close blob: %v", err)
+	}
+	hash, err := stor.SetEncodedObject(obj)
+	if err != nil {
+		t.Fatalf("store blob: %v", err)
+	}
+	return hash
+}
+
+// TestAtomicRefStorage_ConcurrentReadsAndWritesAreSerialized reproduces the
+// production shape of a `git clone` (reference iteration plus object reads on a
+// connection goroutine) overlapping a `git push` or a REST git-data write
+// (reference and object writes on a request goroutine) against the one storer
+// instance the store keeps per repository. Before the storage lock the go-git
+// reference and object maps were read and written with no happens-before edge,
+// which the race detector flags and which can corrupt a Go map outright.
+func TestAtomicRefStorage_ConcurrentReadsAndWritesAreSerialized(t *testing.T) {
+	stor := WrapAtomicRefStorage("owner/repo", memory.NewStorage())
+	seed := storeTestBlob(t, stor, "seed")
+	if err := stor.SetReference(plumbing.NewHashReference(plumbing.NewBranchReferenceName("main"), seed)); err != nil {
+		t.Fatalf("seed ref: %v", err)
+	}
+
+	const iterations = 60
+	start := make(chan struct{})
+	errs := make(chan error, 4)
+	var wg sync.WaitGroup
+
+	writer := func(prefix string) {
+		defer wg.Done()
+		<-start
+		for i := range iterations {
+			hash := storeTestBlob(t, stor, fmt.Sprintf("%s-%d", prefix, i))
+			name := plumbing.NewBranchReferenceName(fmt.Sprintf("%s-%d", prefix, i))
+			if err := stor.SetReference(plumbing.NewHashReference(name, hash)); err != nil {
+				errs <- err
+				return
+			}
+			if err := stor.RemoveReference(name); err != nil {
+				errs <- err
+				return
+			}
+		}
+	}
+	reader := func() {
+		defer wg.Done()
+		<-start
+		for range iterations {
+			refs, err := stor.IterReferences()
+			if err != nil {
+				errs <- err
+				return
+			}
+			// Reading the storer from inside the walk is what gh_import's
+			// commit decoding does; it must not deadlock against a queued
+			// writer, so the iterator may not hold the lock across this
+			// callback.
+			if err := refs.ForEach(func(ref *plumbing.Reference) error {
+				if ref.Type() != plumbing.HashReference {
+					return nil
+				}
+				if _, err := stor.EncodedObject(plumbing.AnyObject, ref.Hash()); err != nil &&
+					!errors.Is(err, plumbing.ErrObjectNotFound) {
+					return err
+				}
+				return nil
+			}); err != nil {
+				errs <- err
+				return
+			}
+			objects, err := stor.IterEncodedObjects(plumbing.BlobObject)
+			if err != nil {
+				errs <- err
+				return
+			}
+			if err := objects.ForEach(func(obj plumbing.EncodedObject) error {
+				r, err := obj.Reader()
+				if err != nil {
+					return err
+				}
+				return r.Close()
+			}); err != nil {
+				errs <- err
+				return
+			}
+		}
+	}
+
+	wg.Add(4)
+	go writer("alpha")
+	go writer("beta")
+	go reader()
+	go reader()
+	close(start)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatalf("concurrent storer access: %v", err)
+	}
+}
+
+// TestAtomicRefStorage_WriteDuringIterationDoesNotDeadlock pins the choice not
+// to hold the storage lock across an iterator's callback: callers such as
+// copyGitStorage and the ref-pruning paths write to a storer from inside its
+// own ForEach, and a held write- or read-lock would self-deadlock there.
+func TestAtomicRefStorage_WriteDuringIterationDoesNotDeadlock(t *testing.T) {
+	stor := WrapAtomicRefStorage("owner/repo", memory.NewStorage())
+	hash := storeTestBlob(t, stor, "tip")
+	for _, name := range []string{"main", "topic", "release"} {
+		if err := stor.SetReference(plumbing.NewHashReference(plumbing.NewBranchReferenceName(name), hash)); err != nil {
+			t.Fatalf("seed %s: %v", name, err)
+		}
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		refs, err := stor.IterReferences()
+		if err != nil {
+			done <- err
+			return
+		}
+		done <- refs.ForEach(func(ref *plumbing.Reference) error {
+			if !ref.Name().IsBranch() {
+				return nil
+			}
+			return stor.RemoveReference(ref.Name())
+		})
+	}()
+
+	if err := <-done; err != nil {
+		t.Fatalf("write during iteration: %v", err)
+	}
+	remaining, err := stor.IterReferences()
+	if err != nil {
+		t.Fatal(err)
+	}
+	branches := 0
+	if err := remaining.ForEach(func(ref *plumbing.Reference) error {
+		if ref.Name().IsBranch() {
+			branches++
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if branches != 0 {
+		t.Fatalf("branches remaining = %d, want 0", branches)
 	}
 }

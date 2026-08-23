@@ -28,7 +28,7 @@ test("go to file: opens, filters, navigates, and axe-clean", async ({ page }) =>
   const created = await api(page, "POST", "/api/v3/user/repos", { name: repo, auto_init: true });
   expect([201, 422]).toContain(created.status);
 
-  await page.goto(`/ui/repos/admin/${repo}`);
+  await page.goto(`/ui/admin/${repo}`);
   await page.getByRole("button", { name: "Go to file" }).click();
 
   const dialog = page.getByRole("dialog", { name: /go to file/i });

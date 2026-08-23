@@ -122,7 +122,7 @@ describe("RepoListPage search across pages", () => {
     expect(screen.getByText("Go")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "42 stars" })).toHaveAttribute(
       "href",
-      "/ui/repos/admin/test/stargazers",
+      "/ui/admin/test/stargazers",
     );
     expect(screen.getByLabelText("7 forks")).toBeInTheDocument();
   });

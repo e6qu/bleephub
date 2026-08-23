@@ -286,7 +286,7 @@ function RepoPreviewCard({ repo }: { repo: BleephubRepo }) {
     <Box style={{ padding: "0.85rem 1rem" }}>
       <div className="flex items-center gap-2">
         <Link
-          to={`/ui/repos/${owner}/${name}`}
+          to={`/ui/${owner}/${name}`}
           style={{ color: "var(--color-accent)", fontWeight: 600, fontSize: "0.95rem", textDecoration: "none" }}
         >
           {repo.name}

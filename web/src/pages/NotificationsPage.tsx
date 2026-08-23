@@ -563,7 +563,7 @@ function subjectUrlToUI(url: string): string | null {
   if (!m) return null;
   const [, owner, repo, kind, number] = m;
   const path = kind === "pulls" ? "pulls" : "issues";
-  return `/ui/repos/${owner}/${repo}/${path}/${number}`;
+  return `/ui/${owner}/${repo}/${path}/${number}`;
 }
 
 function SubscriptionDialog({

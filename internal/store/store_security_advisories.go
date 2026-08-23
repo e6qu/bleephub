@@ -435,6 +435,11 @@ func (st *Store) CreateTemporaryFork(repoID int, ghsaID string) *Repo {
 	st.ReposByName[fullName] = fork
 	st.IndexRepoNameLocked(fullName)
 	st.GitStorages[fullName] = stor
+	// The copied storage carries the source repository's HEAD; the private
+	// fork's own default branch is what its clones must check out.
+	if err := SetGitHeadBranch(stor, fork.DefaultBranch); err != nil {
+		st.Logger.Error().Str("repo", fullName).Err(err).Msg("security advisory fork: could not point git HEAD at the default branch")
+	}
 
 	// One transaction: the advisory's PrivateForkID, the fork repo row, and its
 	// default discussion categories commit together, so a crash cannot record a

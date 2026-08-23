@@ -335,7 +335,7 @@ function RenameRepoCard({ owner, repo }: { owner: string; repo: string }) {
       void queryClient.invalidateQueries({ queryKey: ["repos"] });
       // The PATCH response carries the new full_name — navigate to the renamed repo.
       const [newOwner, newName] = (updated.full_name ?? `${owner}/${name.trim()}`).split("/");
-      navigate(`/ui/repos/${newOwner}/${newName}/settings`);
+      navigate(`/ui/${newOwner}/${newName}/settings`);
     },
     onError: (err: Error) => setError(err.message),
   });
@@ -572,7 +572,7 @@ function BranchesSettingsTab({ owner, repo }: { owner: string; repo: string }) {
     <Box header={<span style={{ fontWeight: 600 }}>Branch protection</span>}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", padding: "1rem" }}>
         <span style={{ fontSize: "0.9rem" }}>Define merge constraints and required status checks per branch.</span>
-        <ButtonLink to={`/ui/repos/${owner}/${repo}/settings/branch-protection`} variant="secondary" size="sm">
+        <ButtonLink to={`/ui/${owner}/${repo}/settings/branch-protection`} variant="secondary" size="sm">
           Manage branch protection
         </ButtonLink>
       </div>
@@ -585,7 +585,7 @@ function SecretsAndVariablesCard({ owner, repo }: { owner: string; repo: string 
     <Box header={<span style={{ fontWeight: 600 }}>Secrets and variables</span>}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", padding: "1rem" }}>
         <span style={{ fontSize: "0.9rem" }}>Manage Actions secrets and variables across repository, environment, and organization scopes.</span>
-        <ButtonLink to={`/ui/repos/${owner}/${repo}/settings/secrets`} variant="secondary" size="sm">
+        <ButtonLink to={`/ui/${owner}/${repo}/settings/secrets`} variant="secondary" size="sm">
           Manage secrets and variables
         </ButtonLink>
       </div>
@@ -603,7 +603,7 @@ function TagsSettingsTab({ owner, repo }: { owner: string; repo: string }) {
           Rulesets instead — it supports tag name patterns and bypass lists.
         </p>
         <div className="flex gap-2">
-          <ButtonLink to={`/ui/repos/${owner}/${repo}/tags`} variant="secondary" size="sm">
+          <ButtonLink to={`/ui/${owner}/${repo}/tags`} variant="secondary" size="sm">
             View tags
           </ButtonLink>
         </div>
@@ -1555,7 +1555,7 @@ function WebhooksTab({ owner, repo }: { owner: string; repo: string }) {
                   {h.config.url || "no url"} · events: {h.events.join(", ") || "none"}
                 </div>
               </div>
-              <Link to={`/ui/repos/${owner}/${repo}/hooks/${h.id}/deliveries`} style={{ fontSize: "0.8rem", color: "var(--color-accent)", textDecoration: "none" }}>
+              <Link to={`/ui/${owner}/${repo}/hooks/${h.id}/deliveries`} style={{ fontSize: "0.8rem", color: "var(--color-accent)", textDecoration: "none" }}>
                 Deliveries
               </Link>
               <Button size="sm" aria-label={`Edit webhook ${h.id}`} disabled={busy} onClick={() => setEditing(h)}>

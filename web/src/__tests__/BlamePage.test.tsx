@@ -22,7 +22,7 @@ function renderAt(path: string) {
     <QueryClientProvider client={qc}>
       <MemoryRouter initialEntries={[path]}>
         <Routes>
-          <Route path="/ui/repos/:owner/:repo/blame/:ref/*" element={<BlamePage />} />
+          <Route path="/ui/:owner/:repo/blame/:ref/*" element={<BlamePage />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -64,13 +64,13 @@ describe("BlamePage", () => {
       }
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/demo/blame/main/src/app.ts");
+    renderAt("/ui/admin/demo/blame/main/src/app.ts");
 
     // Commit gutters link to each commit; both summaries render.
     await waitFor(() =>
       expect(screen.getByRole("link", { name: "aaaaaaa" })).toHaveAttribute(
         "href",
-        `/ui/repos/admin/demo/commits/${"a".repeat(40)}`,
+        `/ui/admin/demo/commits/${"a".repeat(40)}`,
       ),
     );
     expect(screen.getByText("Initial import")).toBeInTheDocument();
@@ -81,7 +81,7 @@ describe("BlamePage", () => {
     // The "View file" link points back at the blob.
     expect(screen.getByRole("link", { name: "View file" })).toHaveAttribute(
       "href",
-      "/ui/repos/admin/demo/blob/main/src/app.ts",
+      "/ui/admin/demo/blob/main/src/app.ts",
     );
   });
 
@@ -134,11 +134,11 @@ describe("BlamePage", () => {
       }
       return Promise.resolve(jsonResponse([]));
     });
-    const { container } = renderAt("/ui/repos/admin/demo2/blame/main/src/app.ts");
+    const { container } = renderAt("/ui/admin/demo2/blame/main/src/app.ts");
 
     // The hunk with a parent gets the prior-blame hop at the parent sha.
     const prior = await screen.findByRole("link", { name: "View blame prior to bbbbbbb" });
-    expect(prior).toHaveAttribute("href", `/ui/repos/admin/demo2/blame/${"9".repeat(40)}/src/app.ts`);
+    expect(prior).toHaveAttribute("href", `/ui/admin/demo2/blame/${"9".repeat(40)}/src/app.ts`);
     // The root commit's hunk offers no prior-blame link.
     expect(screen.queryByRole("link", { name: "View blame prior to aaaaaaa" })).not.toBeInTheDocument();
     // Age heat strip: one banded cell per hunk, newest hotter than oldest.

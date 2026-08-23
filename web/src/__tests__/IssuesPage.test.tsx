@@ -29,13 +29,13 @@ function renderAt(path: string) {
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[path]}>
         <Routes>
-          <Route path="/ui/repos/:owner/:repo/issues" element={<IssuesPage />} />
-          <Route path="/ui/repos/:owner/:repo/issues/:number" element={<IssuesPage />} />
-          <Route path="/ui/repos/:owner/:repo/labels" element={<IssuesPage view="labels" />} />
-          <Route path="/ui/repos/:owner/:repo/milestones" element={<IssuesPage view="milestones" />} />
+          <Route path="/ui/:owner/:repo/issues" element={<IssuesPage />} />
+          <Route path="/ui/:owner/:repo/issues/:number" element={<IssuesPage />} />
+          <Route path="/ui/:owner/:repo/labels" element={<IssuesPage view="labels" />} />
+          <Route path="/ui/:owner/:repo/milestones" element={<IssuesPage view="milestones" />} />
           {/* Marker for navigations out of the issues page (convert-to-discussion). */}
           <Route
-            path="/ui/repos/:owner/:repo/discussions/:number"
+            path="/ui/:owner/:repo/discussions/:number"
             element={<div>discussion detail route</div>}
           />
         </Routes>
@@ -77,7 +77,7 @@ describe("IssuesPage detail", () => {
       }
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/issues/999");
+    renderAt("/ui/admin/test/issues/999");
     await waitFor(() => {
       expect(screen.getByText(/issue #999 not found/i)).toBeInTheDocument();
     });
@@ -92,7 +92,7 @@ describe("IssuesPage detail", () => {
       }
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/issues/7");
+    renderAt("/ui/admin/test/issues/7");
     await waitFor(() => {
       expect(screen.getByText(/failed to load issue #7/i)).toBeInTheDocument();
     });
@@ -107,7 +107,7 @@ describe("IssuesPage detail", () => {
       if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/issues/7");
+    renderAt("/ui/admin/test/issues/7");
     await waitFor(() => {
       expect(screen.getByText("A real issue")).toBeInTheDocument();
     });
@@ -131,9 +131,9 @@ describe("IssuesPage detail", () => {
       if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/issues/7");
+    renderAt("/ui/admin/test/issues/7");
     const link = await screen.findByRole("link", { name: /#42 Fix it/ });
-    expect(link).toHaveAttribute("href", "/ui/repos/admin/test/pulls/42");
+    expect(link).toHaveAttribute("href", "/ui/admin/test/pulls/42");
   });
 
   it("interleaves timeline events with comments in the conversation", async () => {
@@ -152,7 +152,7 @@ describe("IssuesPage detail", () => {
       if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/issues/7");
+    renderAt("/ui/admin/test/issues/7");
     // A labeled event, the comment, a cross-reference, and a closed event all render.
     expect(await screen.findByText(/added the/)).toBeInTheDocument();
     expect(screen.getByText("bug")).toBeInTheDocument();
@@ -185,7 +185,7 @@ describe("IssuesPage detail", () => {
       if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/issues/7");
+    renderAt("/ui/admin/test/issues/7");
 
     fireEvent.click(await screen.findByRole("button", { name: "Hide comment" }));
     fireEvent.change(screen.getByLabelText("Reason for hiding"), { target: { value: "SPAM" } });
@@ -216,7 +216,7 @@ describe("IssuesPage detail", () => {
       if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/issues/7");
+    renderAt("/ui/admin/test/issues/7");
 
     fireEvent.change(await screen.findByLabelText("sub-issue number"), { target: { value: "9" } });
     fireEvent.click(screen.getByRole("button", { name: "Add sub-issue" }));
@@ -247,7 +247,7 @@ describe("IssuesPage detail", () => {
       if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/issues/7");
+    renderAt("/ui/admin/test/issues/7");
     const box = await screen.findByPlaceholderText(/leave a comment/i);
     fireEvent.change(box, { target: { value: "looks good" } });
     fireEvent.click(screen.getByRole("button", { name: /^comment$/i }));
@@ -278,7 +278,7 @@ describe("IssuesPage detail", () => {
       return Promise.resolve(jsonResponse([]));
     };
     mockFetch.mockImplementation(impl);
-    const first = renderAt("/ui/repos/admin/test/issues/7");
+    const first = renderAt("/ui/admin/test/issues/7");
     const box = await screen.findByPlaceholderText(/leave a comment/i);
     fireEvent.change(box, { target: { value: "half-typed thought" } });
     // Navigating away unmounts the page; the draft stays in sessionStorage.
@@ -289,7 +289,7 @@ describe("IssuesPage detail", () => {
 
     // Returning restores the text into the composer.
     mockFetch.mockImplementation(impl);
-    renderAt("/ui/repos/admin/test/issues/7");
+    renderAt("/ui/admin/test/issues/7");
     const restored = await screen.findByPlaceholderText(/leave a comment/i);
     await waitFor(() => {
       expect((restored as HTMLTextAreaElement).value).toBe("half-typed thought");
@@ -318,7 +318,7 @@ describe("IssuesPage detail", () => {
       if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/issues/7");
+    renderAt("/ui/admin/test/issues/7");
     const closeBtn = await screen.findByRole("button", { name: /close issue/i });
     fireEvent.click(closeBtn);
     await waitFor(() => {
@@ -347,7 +347,7 @@ describe("IssuesPage detail", () => {
       if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/issues/7");
+    renderAt("/ui/admin/test/issues/7");
     fireEvent.change(await screen.findByLabelText("Reason for closing"), { target: { value: "not_planned" } });
     fireEvent.click(screen.getByRole("button", { name: /close issue/i }));
     await waitFor(() => {
@@ -374,7 +374,7 @@ describe("IssuesPage detail", () => {
       if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/issues/7");
+    renderAt("/ui/admin/test/issues/7");
     fireEvent.click(await screen.findByRole("button", { name: /^edit$/i }));
     const title = await screen.findByLabelText(/title/i);
     fireEvent.change(title, { target: { value: "Renamed" } });
@@ -411,7 +411,7 @@ describe("IssuesPage detail", () => {
       if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/issues/7");
+    renderAt("/ui/admin/test/issues/7");
     fireEvent.click(await screen.findByRole("button", { name: /edit comment/i }));
     const box = await screen.findByLabelText(/edit comment/i);
     fireEvent.change(box, { target: { value: "edited" } });
@@ -437,7 +437,7 @@ describe("IssuesPage detail", () => {
       if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/issues/7");
+    renderAt("/ui/admin/test/issues/7");
     fireEvent.click(await screen.findByRole("button", { name: /delete comment/i }));
     // confirmAction modal renders a "Delete" confirm button
     fireEvent.click(await screen.findByRole("button", { name: /^delete$/i }));
@@ -465,7 +465,7 @@ describe("IssuesPage detail", () => {
       if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/issues/7");
+    renderAt("/ui/admin/test/issues/7");
     const select = await screen.findByLabelText(/add assignee/i);
     fireEvent.change(select, { target: { value: "bob" } });
     await waitFor(() => {
@@ -490,7 +490,7 @@ describe("IssuesPage detail", () => {
       if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/issues/7");
+    renderAt("/ui/admin/test/issues/7");
     fireEvent.click(await screen.findByRole("button", { name: /lock conversation/i }));
     await waitFor(() => {
       const locked = mockFetch.mock.calls.find(
@@ -519,7 +519,7 @@ describe("IssuesPage list pagination", () => {
       }
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/issues");
+    renderAt("/ui/admin/test/issues");
 
     await waitFor(() => {
       expect(screen.getByText("first issue")).toBeInTheDocument();
@@ -547,7 +547,7 @@ describe("IssuesPage list pagination", () => {
       }
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/issues");
+    renderAt("/ui/admin/test/issues");
     await waitFor(() => {
       expect(screen.getByText("2+")).toBeInTheDocument();
     });
@@ -574,7 +574,7 @@ describe("IssuesPage list filter bar", () => {
       }
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/issues");
+    renderAt("/ui/admin/test/issues");
 
     await waitFor(() => expect(screen.getByText("bug issue")).toBeInTheDocument());
     // Count header renders Open and Closed toggles.
@@ -605,7 +605,7 @@ describe("IssuesPage list filter bar", () => {
       if (u.includes("/issues?")) return Promise.resolve(jsonResponse([issue(1, "open issue")]));
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/issues");
+    renderAt("/ui/admin/test/issues");
     await waitFor(() => expect(screen.getByText("open issue")).toBeInTheDocument());
 
     fireEvent.click(screen.getByText(/Closed$/));
@@ -623,7 +623,7 @@ describe("IssuesPage list filter bar", () => {
       if (u.includes("/issues?")) return Promise.resolve(jsonResponse([issueWith(1, "bug issue", { labels: [{ name: "bug", color: "d73a4a" }], user: { login: "octo" } })]));
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/issues");
+    renderAt("/ui/admin/test/issues");
     await waitFor(() => expect(screen.getByText("bug issue")).toBeInTheDocument());
 
     fireEvent.change(screen.getByLabelText("Label"), { target: { value: "bug" } });
@@ -645,7 +645,7 @@ describe("IssuesPage list filter bar", () => {
       if (u.includes("/issues?")) return Promise.resolve(jsonResponse([issue(1, "open issue")]));
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/issues");
+    renderAt("/ui/admin/test/issues");
     await waitFor(() => expect(screen.getByText("open issue")).toBeInTheDocument());
 
     fireEvent.click(screen.getByText(/All$/));
@@ -669,7 +669,7 @@ describe("IssuesPage detail sidebar", () => {
       }
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/issues/7");
+    renderAt("/ui/admin/test/issues/7");
     await waitFor(() => expect(screen.getByText("Sidebar issue")).toBeInTheDocument());
     // Sidebar sections present (Assignees + Development are sidebar-only labels;
     // Projects/Labels also name repo tabs, so assert the distinctive ones).
@@ -706,7 +706,7 @@ describe("IssuesPage labels view", () => {
       if (u.includes("/labels")) return Promise.resolve(jsonResponse([bugLabel]));
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/labels");
+    renderAt("/ui/admin/test/labels");
     await waitFor(() => {
       expect(screen.getByText("bug")).toBeInTheDocument();
     });
@@ -715,7 +715,7 @@ describe("IssuesPage labels view", () => {
 
   it("shows an empty state when the repo has no labels", async () => {
     mockFetch.mockImplementation(() => Promise.resolve(jsonResponse([])));
-    renderAt("/ui/repos/admin/test/labels");
+    renderAt("/ui/admin/test/labels");
     await waitFor(() => {
       expect(screen.getByText(/no labels yet/i)).toBeInTheDocument();
     });
@@ -731,7 +731,7 @@ describe("IssuesPage labels view", () => {
       if (u.includes("/labels")) return Promise.resolve(jsonResponse([]));
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/labels");
+    renderAt("/ui/admin/test/labels");
     await waitFor(() => {
       expect(screen.getByRole("button", { name: /new label/i })).toBeInTheDocument();
     });
@@ -759,7 +759,7 @@ describe("IssuesPage milestones view", () => {
       if (u.includes("/milestones?")) return Promise.resolve(jsonResponse([milestone(1, "v1.0")]));
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/milestones");
+    renderAt("/ui/admin/test/milestones");
     await waitFor(() => {
       expect(screen.getByText("v1.0")).toBeInTheDocument();
     });
@@ -823,7 +823,7 @@ describe("IssuesPage detail triage", () => {
 
   it("adds a label from the repo label list", async () => {
     mockDetailEndpoints();
-    renderAt("/ui/repos/admin/test/issues/7");
+    renderAt("/ui/admin/test/issues/7");
     await waitFor(() => {
       expect(screen.getByLabelText("Add label")).toBeInTheDocument();
     });
@@ -839,7 +839,7 @@ describe("IssuesPage detail triage", () => {
 
   it("sets the milestone via PATCH", async () => {
     mockDetailEndpoints();
-    renderAt("/ui/repos/admin/test/issues/7");
+    renderAt("/ui/admin/test/issues/7");
     await waitFor(() => {
       expect(screen.getByRole("option", { name: "v2.0" })).toBeInTheDocument();
     });
@@ -855,7 +855,7 @@ describe("IssuesPage detail triage", () => {
 
   it("sets the organization issue type via PATCH", async () => {
     mockDetailEndpoints();
-    renderAt("/ui/repos/admin/test/issues/7");
+    renderAt("/ui/admin/test/issues/7");
     await waitFor(() => {
       expect(screen.getByRole("option", { name: "Epic" })).toBeInTheDocument();
     });
@@ -883,7 +883,7 @@ describe("IssuesPage detail triage", () => {
       if (u.includes("/api/v3/repos/admin/test/labels")) return Promise.resolve(jsonResponse([]));
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/issues/7");
+    renderAt("/ui/admin/test/issues/7");
     await waitFor(() => expect(screen.getByText("Triaged")).toBeInTheDocument());
     expect(screen.queryByLabelText("Set issue type")).not.toBeInTheDocument();
     expect(
@@ -911,7 +911,7 @@ describe("IssuesPage PR filtering", () => {
       }
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/issues");
+    renderAt("/ui/admin/test/issues");
     await waitFor(() => expect(screen.getByText("a real issue")).toBeInTheDocument());
     // The PR row is filtered out of the list…
     expect(screen.queryByText("actually a pull request")).not.toBeInTheDocument();
@@ -941,7 +941,7 @@ describe("IssuesPage exact counts", () => {
       }
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/issues");
+    renderAt("/ui/admin/test/issues");
     await waitFor(() => expect(screen.getByText(/120 Open/)).toBeInTheDocument());
     expect(screen.getByText(/45 Closed/)).toBeInTheDocument();
     // All = exact open + exact closed.
@@ -980,7 +980,7 @@ describe("IssuesPage list rows", () => {
       }
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/issues");
+    renderAt("/ui/admin/test/issues");
     await waitFor(() => expect(screen.getByText("discussed issue")).toBeInTheDocument());
     // Comment count badge with an accessible name.
     expect(screen.getByLabelText("4 comments")).toBeInTheDocument();
@@ -1015,7 +1015,7 @@ describe("IssuesPage free-text search", () => {
       }
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/issues");
+    renderAt("/ui/admin/test/issues");
     await waitFor(() => expect(screen.getByText("unrelated issue")).toBeInTheDocument());
 
     const box = screen.getByLabelText("Search issues and pull requests");
@@ -1046,7 +1046,7 @@ describe("IssuesPage free-text search", () => {
       }
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/issues");
+    renderAt("/ui/admin/test/issues");
     await waitFor(() => expect(screen.getByText("labeled issue")).toBeInTheDocument());
 
     const box = screen.getByLabelText("Search issues and pull requests");
@@ -1124,7 +1124,7 @@ describe("IssuesPage new-issue templates", () => {
       if (u.includes("/issues?")) return Promise.resolve(jsonResponse([]));
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/issues");
+    renderAt("/ui/admin/test/issues");
     await waitFor(() => expect(screen.getByRole("button", { name: "New issue" })).toBeInTheDocument());
     fireEvent.click(screen.getByRole("button", { name: "New issue" }));
 
@@ -1183,7 +1183,7 @@ describe("IssuesPage new-issue templates", () => {
       if (u.includes("/issues?")) return Promise.resolve(jsonResponse([]));
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/issues");
+    renderAt("/ui/admin/test/issues");
     await waitFor(() => expect(screen.getByRole("button", { name: "New issue" })).toBeInTheDocument());
     fireEvent.click(screen.getByRole("button", { name: "New issue" }));
     fireEvent.click(await screen.findByRole("button", { name: "Open a blank issue" }));
@@ -1220,13 +1220,13 @@ describe("IssuesPage pinned issues", () => {
       if (u.includes("/issues?")) return Promise.resolve(jsonResponse([issue(1, "ordinary issue")]));
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/issues");
+    renderAt("/ui/admin/test/issues");
     await waitFor(() => expect(screen.getByText("read me first")).toBeInTheDocument());
     const section = screen.getByRole("region", { name: "Pinned issues" });
     expect(section).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /read me first/ })).toHaveAttribute(
       "href",
-      "/ui/repos/admin/test/issues/5",
+      "/ui/admin/test/issues/5",
     );
   });
 });
@@ -1289,7 +1289,7 @@ describe("IssuesPage overflow menu", () => {
       }
       return undefined;
     });
-    renderAt("/ui/repos/admin/test/issues/7");
+    renderAt("/ui/admin/test/issues/7");
     fireEvent.click(await screen.findByRole("button", { name: "Issue actions" }));
     fireEvent.click(await screen.findByRole("menuitem", { name: /Pin issue/ }));
     await waitFor(() => {
@@ -1312,7 +1312,7 @@ describe("IssuesPage overflow menu", () => {
       }
       return undefined;
     });
-    renderAt("/ui/repos/admin/test/issues/7");
+    renderAt("/ui/admin/test/issues/7");
     fireEvent.click(await screen.findByRole("button", { name: "Issue actions" }));
     const pinItem = await screen.findByRole("menuitem", { name: /Pin issue/ });
     expect(pinItem).toBeDisabled();
@@ -1335,7 +1335,7 @@ describe("IssuesPage overflow menu", () => {
       }
       return undefined;
     });
-    renderAt("/ui/repos/admin/test/issues/7");
+    renderAt("/ui/admin/test/issues/7");
     fireEvent.click(await screen.findByRole("button", { name: "Issue actions" }));
     fireEvent.click(await screen.findByRole("menuitem", { name: "Transfer issue" }));
 
@@ -1368,7 +1368,7 @@ describe("IssuesPage overflow menu", () => {
       }
       return undefined;
     });
-    renderAt("/ui/repos/admin/test/issues/7");
+    renderAt("/ui/admin/test/issues/7");
     fireEvent.click(await screen.findByRole("button", { name: "Issue actions" }));
     fireEvent.click(await screen.findByRole("menuitem", { name: "Delete issue" }));
 
@@ -1408,7 +1408,7 @@ describe("IssuesPage close with comment", () => {
       if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/issues/7");
+    renderAt("/ui/admin/test/issues/7");
     const box = await screen.findByPlaceholderText(/leave a comment/i);
     fireEvent.change(box, { target: { value: "wrapping up" } });
     // With a draft present the close button reads "Close with comment".
@@ -1440,7 +1440,7 @@ describe("IssuesPage lock reason", () => {
       if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/issues/7");
+    renderAt("/ui/admin/test/issues/7");
     fireEvent.change(await screen.findByLabelText("Lock reason"), { target: { value: "spam" } });
     fireEvent.click(screen.getByRole("button", { name: /lock conversation/i }));
     await waitFor(() => {
@@ -1479,7 +1479,7 @@ describe("IssuesPage notifications section", () => {
       if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/issues/7");
+    renderAt("/ui/admin/test/issues/7");
     // A thread exists, so the viewer is receiving notifications: the initial
     // action is Unsubscribe (no state probe — a GET would 404 without an
     // explicit subscription record and fail the console-error e2e gate).
@@ -1512,7 +1512,7 @@ describe("IssuesPage notifications section", () => {
       if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/issues/7");
+    renderAt("/ui/admin/test/issues/7");
     await waitFor(() =>
       expect(screen.getByText(/No notification thread for this conversation yet/)).toBeInTheDocument(),
     );
@@ -1536,7 +1536,7 @@ describe("IssueSidebar gear buttons", () => {
       if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "A real issue")));
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/issues/7");
+    renderAt("/ui/admin/test/issues/7");
     const gear = await screen.findByRole("button", { name: "Edit assignees" });
     fireEvent.click(gear);
     await waitFor(() => {
@@ -1554,9 +1554,9 @@ describe("IssuesPage milestones links", () => {
       if (u.includes("/milestones?")) return Promise.resolve(jsonResponse([milestone(1, "v1.0")]));
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/milestones");
+    renderAt("/ui/admin/test/milestones");
     const link = await screen.findByRole("link", { name: "v1.0" });
-    expect(link).toHaveAttribute("href", "/ui/repos/admin/test/issues?milestone=v1.0");
+    expect(link).toHaveAttribute("href", "/ui/admin/test/issues?milestone=v1.0");
     const bar = screen.getByRole("progressbar", { name: "v1.0 progress" });
     expect(bar).toHaveAttribute("aria-valuenow", "75");
   });
@@ -1577,7 +1577,7 @@ describe("IssuesPage milestones links", () => {
       }
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/issues?milestone=v1.0");
+    renderAt("/ui/admin/test/issues?milestone=v1.0");
     await waitFor(() => expect(screen.getByText("in milestone")).toBeInTheDocument());
     expect(screen.queryByText("not in milestone")).not.toBeInTheDocument();
   });
@@ -1618,7 +1618,7 @@ describe("IssuesPage detail bootstrap", () => {
       if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "admin" }));
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/issues/7");
+    renderAt("/ui/admin/test/issues/7");
     expect(await screen.findByText("Bootstrapped issue")).toBeInTheDocument();
     expect(await screen.findByText("seeded comment")).toBeInTheDocument();
 
@@ -1654,7 +1654,7 @@ describe("IssuesPage detail bootstrap", () => {
       if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "admin" }));
       return Promise.resolve(jsonResponse([]));
     });
-    const { queryClient } = renderAt("/ui/repos/admin/test/issues/7");
+    const { queryClient } = renderAt("/ui/admin/test/issues/7");
     expect(await screen.findByText("Bootstrapped issue")).toBeInTheDocument();
 
     // The key IssueSidebar reads gets the full state=ALL list…
@@ -1675,7 +1675,7 @@ describe("IssuesPage detail bootstrap", () => {
       if (u.includes("/issues/7")) return Promise.resolve(jsonResponse(issue(7, "Fallback issue")));
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/issues/7");
+    renderAt("/ui/admin/test/issues/7");
     expect(await screen.findByText("Fallback issue")).toBeInTheDocument();
     const gets = mockFetch.mock.calls
       .filter((c) => (c[1] as RequestInit | undefined)?.method === undefined)
@@ -1743,7 +1743,7 @@ describe("IssuesPage convert to discussion", () => {
 
   it("converts via the actions menu, POSTing the chosen category and navigating to the discussion", async () => {
     mockConvertEndpoints({ hasDiscussions: true });
-    renderAt("/ui/repos/admin/test/issues/7");
+    renderAt("/ui/admin/test/issues/7");
     fireEvent.click(await screen.findByRole("button", { name: "Issue actions" }));
     fireEvent.click(await screen.findByRole("menuitem", { name: "Convert to discussion" }));
 
@@ -1768,7 +1768,7 @@ describe("IssuesPage convert to discussion", () => {
 
   it("does not offer Convert to discussion when the repo has discussions disabled", async () => {
     mockConvertEndpoints({ hasDiscussions: false });
-    renderAt("/ui/repos/admin/test/issues/7");
+    renderAt("/ui/admin/test/issues/7");
     fireEvent.click(await screen.findByRole("button", { name: "Issue actions" }));
     // The menu is open (Transfer is always offered) but Convert is absent.
     expect(await screen.findByRole("menuitem", { name: "Transfer issue" })).toBeInTheDocument();
@@ -1784,7 +1784,7 @@ describe("IssuesPage convert to discussion", () => {
           422,
         ),
     });
-    renderAt("/ui/repos/admin/test/issues/7");
+    renderAt("/ui/admin/test/issues/7");
     fireEvent.click(await screen.findByRole("button", { name: "Issue actions" }));
     fireEvent.click(await screen.findByRole("menuitem", { name: "Convert to discussion" }));
 
@@ -1834,7 +1834,7 @@ describe("IssuesPage viewer-role gating", () => {
 
   it("hides every 403-able control from a pull-only outsider", async () => {
     mockReadOnlyDetail("reader");
-    renderAt("/ui/repos/admin/test/issues/7");
+    renderAt("/ui/admin/test/issues/7");
 
     // The conversation, composer and reactions stay for everyone.
     expect(await screen.findByText("someone else's comment")).toBeInTheDocument();
@@ -1865,7 +1865,7 @@ describe("IssuesPage viewer-role gating", () => {
 
   it("lets the issue author close, edit and manage their own comment without push", async () => {
     mockReadOnlyDetail("admin"); // issue #7 and comment 100 are authored by admin
-    renderAt("/ui/repos/admin/test/issues/7");
+    renderAt("/ui/admin/test/issues/7");
 
     expect(await screen.findByRole("button", { name: /close issue/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^edit$/i })).toBeInTheDocument();
@@ -1884,7 +1884,7 @@ describe("IssuesPage viewer-role gating", () => {
       if (u.includes("/labels")) return Promise.resolve(jsonResponse([bugLabel]));
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/labels");
+    renderAt("/ui/admin/test/labels");
     expect(await screen.findByText("bug")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /new label/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "edit" })).not.toBeInTheDocument();
@@ -1898,7 +1898,7 @@ describe("IssuesPage viewer-role gating", () => {
       if (u.includes("/milestones?")) return Promise.resolve(jsonResponse([milestone(1, "v1.0")]));
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/milestones");
+    renderAt("/ui/admin/test/milestones");
     expect(await screen.findByText("v1.0")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /new milestone/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "close" })).not.toBeInTheDocument();

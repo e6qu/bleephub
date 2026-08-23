@@ -192,7 +192,7 @@ function ForksList({ owner, repo }: { owner: string; repo: string }) {
           >
             <RepoIcon size={14} style={{ color: "var(--color-fg-muted)" }} />
             <Link
-              to={`/ui/repos/${f.full_name}`}
+              to={`/ui/${f.full_name}`}
               style={{ color: "var(--color-accent)", fontWeight: 500, textDecoration: "none", flex: 1 }}
             >
               {f.full_name}

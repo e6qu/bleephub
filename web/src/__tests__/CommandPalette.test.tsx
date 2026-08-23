@@ -75,7 +75,7 @@ describe("CommandPalette", () => {
 
     fireEvent.click(repoOption);
     await waitFor(() => {
-      expect(screen.getByTestId("loc").textContent).toBe("/ui/repos/octocat/hello");
+      expect(screen.getByTestId("loc").textContent).toBe("/ui/octocat/hello");
     });
   });
 

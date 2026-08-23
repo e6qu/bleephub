@@ -74,10 +74,10 @@ function renderPage() {
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={["/ui/repos/octo/widgets/security/advisories"]}>
+      <MemoryRouter initialEntries={["/ui/octo/widgets/security/advisories"]}>
         <Routes>
           <Route
-            path="/ui/repos/:owner/:repo/security/advisories"
+            path="/ui/:owner/:repo/security/advisories"
             element={<SecurityAdvisoriesPage />}
           />
         </Routes>

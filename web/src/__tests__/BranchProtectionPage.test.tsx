@@ -23,9 +23,9 @@ function renderPage() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={["/ui/repos/admin/bp-repo/settings/branch-protection"]}>
+      <MemoryRouter initialEntries={["/ui/admin/bp-repo/settings/branch-protection"]}>
         <Routes>
-          <Route path="/ui/repos/:owner/:repo/settings/branch-protection" element={<BranchProtectionPage />} />
+          <Route path="/ui/:owner/:repo/settings/branch-protection" element={<BranchProtectionPage />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,

@@ -295,19 +295,55 @@ func (s *Server) handleCreateSecretScanningPushProtectionBypass(w http.ResponseW
 	})
 }
 
+const secretScanningPushProtectionDocs = "https://docs.github.com/code-security/secret-scanning/working-with-secret-scanning-and-push-protection"
+
+// writeSecretScanningRuleViolation emits the repository-rule-violation-error
+// body: the shape GitHub documents for a push-protection block, carrying the
+// bypass placeholders under metadata.secret_scanning.bypass_placeholders. The
+// description declares it on PUT /repos/{owner}/{repo}/contents/{path} (409)
+// and POST /repos/{owner}/{repo}/git/blobs (422).
+func writeSecretScanningRuleViolation(w http.ResponseWriter, status int, ph *store.SecretScanningPushProtectionPlaceholder) {
+	writeJSON(w, status, map[string]interface{}{
+		"message":           "Push cannot contain secrets.",
+		"documentation_url": secretScanningPushProtectionDocs,
+		"status":            strconv.Itoa(status),
+		"metadata": map[string]interface{}{
+			"secret_scanning": map[string]interface{}{
+				"bypass_placeholders": []map[string]interface{}{
+					{
+						"placeholder_id": ph.ID,
+						"token_type":     ph.TokenType,
+					},
+				},
+			},
+		},
+	})
+}
+
+// writeSecretScanningPushProtectionBlocked emits the validation-error body
+// for the write routes whose 422 GitHub documents as a plain validation
+// error. The bypass placeholder a secret-scanning client needs for POST
+// /repos/{owner}/{repo}/secret-scanning/push-protection-bypasses rides in the
+// documented errors[] members — field names the value, value carries it —
+// rather than on members the response schema does not declare.
 func writeSecretScanningPushProtectionBlocked(w http.ResponseWriter, ph *store.SecretScanningPushProtectionPlaceholder) {
 	writeJSON(w, http.StatusUnprocessableEntity, map[string]interface{}{
 		"message":           "Push cannot contain secrets.",
-		"documentation_url": "https://docs.github.com/code-security/secret-scanning/working-with-secret-scanning-and-push-protection",
-		"placeholder_id":    ph.ID,
-		"token_type":        ph.TokenType,
+		"documentation_url": secretScanningPushProtectionDocs,
 		"errors": []map[string]interface{}{
 			{
-				"resource":       "SecretScanningPushProtectionBypass",
-				"field":          "placeholder_id",
-				"code":           "custom",
-				"placeholder_id": ph.ID,
-				"token_type":     ph.TokenType,
+				"resource": "SecretScanningPushProtectionBypass",
+				"field":    "placeholder_id",
+				"code":     "custom",
+				"value":    ph.ID,
+				"message":  "Bypass this block with POST /repos/{owner}/{repo}/secret-scanning/push-protection-bypasses.",
+			},
+			{
+				"resource": "SecretScanningPushProtectionBypass",
+				"field":    "token_type",
+				"code":     "custom",
+				"value":    ph.TokenType,
+				"message":  "The token type the blocked secret matched.",
 			},
 		},
 	})

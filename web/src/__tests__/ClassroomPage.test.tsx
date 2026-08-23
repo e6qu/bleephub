@@ -19,7 +19,7 @@ function renderAt(path: string) {
     <Route path="/ui/classrooms" element={<ClassroomPage />} />
     <Route path="/ui/classrooms/:classroomId" element={<ClassroomPage />} />
     <Route path="/ui/classrooms/accept/:inviteCode" element={<ClassroomPage />} />
-    <Route path="/ui/repos/:owner/:repo" element={<div>Repository opened</div>} />
+    <Route path="/ui/:owner/:repo" element={<div>Repository opened</div>} />
   </Routes></MemoryRouter></QueryClientProvider>);
 }
 

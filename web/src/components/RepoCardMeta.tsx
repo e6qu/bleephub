@@ -59,7 +59,7 @@ export function RepoStatsLine({
     >
       {repo.language && <LanguageDot language={repo.language} />}
       <Link
-        to={`/ui/repos/${owner}/${name}/stargazers`}
+        to={`/ui/${owner}/${name}/stargazers`}
         aria-label={`${stars} star${stars === 1 ? "" : "s"}`}
         style={smallLink}
       >
@@ -104,7 +104,7 @@ export function ForkedFromLine({ repo }: { repo: BleephubRepo }) {
   return (
     <div style={{ fontSize: "0.76rem", color: "var(--color-fg-muted)" }}>
       Forked from{" "}
-      <Link to={`/ui/repos/${po}/${pn}`} style={smallLink}>
+      <Link to={`/ui/${po}/${pn}`} style={smallLink}>
         {parent.full_name}
       </Link>
     </div>

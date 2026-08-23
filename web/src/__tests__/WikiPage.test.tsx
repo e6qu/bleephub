@@ -35,8 +35,8 @@ function renderAt(path: string) {
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[path]}>
         <Routes>
-          <Route path="/ui/repos/:owner/:repo/wiki" element={<WikiPage />} />
-          <Route path="/ui/repos/:owner/:repo/wiki/:slug" element={<WikiPage />} />
+          <Route path="/ui/:owner/:repo/wiki" element={<WikiPage />} />
+          <Route path="/ui/:owner/:repo/wiki/:slug" element={<WikiPage />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -71,7 +71,7 @@ describe("WikiPage", () => {
       if (u.endsWith("/wiki/pages/home")) return Promise.resolve(jsonResponse(home));
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/hello/wiki");
+    renderAt("/ui/admin/hello/wiki");
 
     // sidebar link + rendered markdown heading
     expect(await screen.findByRole("link", { name: "Home" })).toBeInTheDocument();
@@ -86,7 +86,7 @@ describe("WikiPage", () => {
       if (u.endsWith("/wiki/pages")) return Promise.resolve(jsonResponse([]));
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/hello/wiki");
+    renderAt("/ui/admin/hello/wiki");
     expect(
       await screen.findByRole("button", { name: /create the first page/i }),
     ).toBeInTheDocument();
@@ -104,7 +104,7 @@ describe("WikiPage", () => {
       if (u.endsWith("/wiki/pages")) return Promise.resolve(jsonResponse([]));
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/hello/wiki");
+    renderAt("/ui/admin/hello/wiki");
 
     fireEvent.click(await screen.findByRole("button", { name: /create the first page/i }));
     fireEvent.change(await screen.findByLabelText(/wiki page title/i), {
@@ -135,7 +135,7 @@ describe("WikiPage", () => {
       if (u.endsWith("/wiki/pages/home")) return Promise.resolve(jsonResponse(home));
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/hello/wiki/home");
+    renderAt("/ui/admin/hello/wiki/home");
 
     fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
     fireEvent.change(await screen.findByLabelText(/wiki edit message/i), {
@@ -175,7 +175,7 @@ describe("WikiPage", () => {
       if (u.endsWith("/wiki/pages/home")) return Promise.resolve(jsonResponse(home));
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/hello/wiki/home");
+    renderAt("/ui/admin/hello/wiki/home");
 
     fireEvent.click(await screen.findByRole("button", { name: "History" }));
     // Newest-first rows with message, editor and a relative <time>.
@@ -210,7 +210,7 @@ describe("WikiPage read-only viewer gating", () => {
       if (u.endsWith("/wiki/pages/home")) return Promise.resolve(jsonResponse(home));
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/hello/wiki/home");
+    renderAt("/ui/admin/hello/wiki/home");
 
     expect(await screen.findByRole("heading", { name: "Welcome" })).toBeInTheDocument();
     // History stays readable; every write control is hidden.
@@ -227,7 +227,7 @@ describe("WikiPage read-only viewer gating", () => {
       if (u.endsWith("/wiki/pages")) return Promise.resolve(jsonResponse([]));
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/hello/wiki");
+    renderAt("/ui/admin/hello/wiki");
 
     // The explanatory read-only state: the blankslate text without the CTA.
     expect(await screen.findByText(/wiki has no pages yet/i)).toBeInTheDocument();
@@ -246,7 +246,7 @@ describe("WikiPage read-only viewer gating", () => {
       if (u.endsWith("/wiki/pages/home")) return Promise.resolve(jsonResponse(home));
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/hello/wiki/home");
+    renderAt("/ui/admin/hello/wiki/home");
 
     fireEvent.click(await screen.findByRole("button", { name: "History" }));
     expect(await screen.findByText("old")).toBeInTheDocument();

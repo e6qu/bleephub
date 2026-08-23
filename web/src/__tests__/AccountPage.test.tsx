@@ -77,8 +77,85 @@ function installFetchRoutes(overrides: Record<string, () => Response> = {}) {
       return Promise.resolve(jsonResponse({ login: "admin", name: "Admin", bio: "", company: "", location: "", blog: "", twitter_username: "", created_at: "2026-01-01T00:00:00Z", followers: 0, following: 0, public_repos: 0 }));
     if (key === "PATCH /api/v3/user")
       return Promise.resolve(jsonResponse({ login: "admin", name: "Admin" }));
-    if (url === "/ui-data/user/account-settings" || key.startsWith("PUT /ui-data/user/"))
-      return Promise.resolve(jsonResponse({ two_factor_enabled: false, notification_settings: { email: true, web: true, participating: true, watching: true } }));
+    if (url === "/ui-data/user/authentication")
+      return Promise.resolve(
+        jsonResponse({
+          authentication: { kind: "local", password_set: true },
+          two_factor: {
+            enabled: false,
+            pending_enrollment: false,
+            recovery_codes_total: 0,
+            recovery_codes_remaining: 0,
+          },
+        }),
+      );
+    if (url === "/ui-data/user/sessions")
+      return Promise.resolve(
+        jsonResponse({
+          sessions: [
+            {
+              handle: "handle-1",
+              created_at: "2026-05-01T00:00:00Z",
+              expires_at: "2026-05-02T00:00:00Z",
+              user_agent: "Mozilla/5.0 (Test)",
+              ip: "192.0.2.7",
+              provider: "",
+              current: true,
+            },
+          ],
+        }),
+      );
+    if (url === "/ui-data/user/two-factor/enrollment" && method === "POST")
+      return Promise.resolve(
+        jsonResponse(
+          {
+            secret: "JBSWY3DPEHPK3PXP",
+            otpauth_uri: "otpauth://totp/bleephub:admin?secret=JBSWY3DPEHPK3PXP",
+            issuer: "bleephub",
+            account: "admin",
+            digits: 6,
+            period: 30,
+            qr: { size: 3, modules: ["101", "010", "101"] },
+          },
+          201,
+        ),
+      );
+    if (url === "/ui-data/user/two-factor/enrollment/confirm")
+      return Promise.resolve(
+        jsonResponse({
+          authentication: { kind: "local", password_set: true },
+          two_factor: {
+            enabled: true,
+            pending_enrollment: false,
+            enrolled_at: "2026-05-01T00:00:00Z",
+            recovery_codes_total: 2,
+            recovery_codes_remaining: 2,
+          },
+          recovery_codes: ["abcde-fghjk", "mnpqr-stuvw"],
+        }),
+      );
+    if (url === "/ui-data/user/notification-settings")
+      return Promise.resolve(
+        jsonResponse({
+          participating: { email: true, web: true },
+          watching: { email: true, web: true },
+          automatically_watch_repositories: true,
+          automatically_watch_teams: false,
+          include_own_updates: false,
+          actions_failed_workflows_only: true,
+          dependabot_weekly_digest: true,
+          events: {
+            issue: { email: true, web: true },
+            pull_request: { email: true, web: true },
+            release: { email: true, web: true },
+            discussion: { email: true, web: true },
+            commit: { email: true, web: true },
+            actions: { email: true, web: true },
+            dependabot: { email: true, web: true },
+          },
+        }),
+      );
+    if (key.startsWith("PUT /ui-data/user/")) return Promise.resolve(jsonResponse({}));
     return Promise.resolve(jsonResponse({ message: `unexpected ${key}` }, 500));
   });
 }
@@ -97,30 +174,119 @@ function renderPage(initialEntry = "/ui/account") {
 }
 
 describe("AccountPage", () => {
-  it("enables two-factor via PUT /ui-data/user/two-factor", async () => {
+  it("enrolls in two-factor by scanning a code and proving it, never by a toggle", async () => {
     installFetchRoutes();
     renderPage();
     fireEvent.click(screen.getByRole("button", { name: "Password and authentication" }));
     await waitFor(() => expect(screen.getByText(/Two-factor authentication is/)).toBeInTheDocument());
+
+    // Starting enrolment must not claim the account is protected — it hands
+    // over a QR code and a setup key and then asks for proof.
     fireEvent.click(screen.getByRole("button", { name: /Enable two-factor/ }));
+    await waitFor(() => expect(screen.getByText("Setup key")).toBeInTheDocument());
+    expect(screen.getByRole("img", { name: /QR code enrolling admin/ })).toBeInTheDocument();
+    expect(screen.getByText("JBSWY3DPEHPK3PXP")).toBeInTheDocument();
+    expect(
+      mockFetch.mock.calls.some(
+        ([u, i]) =>
+          String(u) === "/ui-data/user/two-factor/enrollment" &&
+          (i as RequestInit | undefined)?.method === "POST",
+      ),
+    ).toBe(true);
+
+    // The code is what actually enables it, and the recovery codes are shown
+    // exactly once afterwards.
+    fireEvent.change(screen.getByLabelText("Verification code"), { target: { value: "123456" } });
+    fireEvent.click(screen.getByRole("button", { name: /Verify and enable/ }));
+    await waitFor(() => expect(screen.getByText("Save your recovery codes")).toBeInTheDocument());
+    expect(screen.getByText("abcde-fghjk")).toBeInTheDocument();
+    const confirmCall = mockFetch.mock.calls.find(
+      ([u]) => String(u) === "/ui-data/user/two-factor/enrollment/confirm",
+    );
+    expect(JSON.parse(String((confirmCall?.[1] as RequestInit).body))).toEqual({ code: "123456" });
+  });
+
+  it("changes the password through PUT /ui-data/user/password", async () => {
+    installFetchRoutes();
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Password and authentication" }));
+    await waitFor(() => expect(screen.getByLabelText("Old password")).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText("Old password"), { target: { value: "old-password-1" } });
+    fireEvent.change(screen.getByLabelText("New password"), { target: { value: "new-password-12" } });
+    fireEvent.change(screen.getByLabelText("Confirm new password"), { target: { value: "new-password-12" } });
+    fireEvent.click(screen.getByRole("button", { name: "Change password" }));
+    await waitFor(() => {
+      const call = mockFetch.mock.calls.find(([u]) => String(u) === "/ui-data/user/password");
+      expect(call).toBeDefined();
+      expect(JSON.parse(String((call?.[1] as RequestInit).body))).toEqual({
+        current_password: "old-password-1",
+        new_password: "new-password-12",
+      });
+    });
+  });
+
+  it("lists active sessions and revokes one by handle", async () => {
+    installFetchRoutes();
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Password and authentication" }));
+    await waitFor(() => expect(screen.getByText(/Mozilla\/5.0 \(Test\)/)).toBeInTheDocument());
+    expect(screen.getByText(/192.0.2.7/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    fireEvent.click(await screen.findByRole("button", { name: "End session" }));
     await waitFor(() =>
       expect(
-        mockFetch.mock.calls.some(([u, i]) => String(u) === "/ui-data/user/two-factor" && (i as RequestInit | undefined)?.method === "PUT"),
+        mockFetch.mock.calls.some(
+          ([u, i]) =>
+            String(u) === "/ui-data/user/sessions/handle-1" &&
+            (i as RequestInit | undefined)?.method === "DELETE",
+        ),
       ).toBe(true),
     );
   });
 
-  it("saves a notification toggle via PUT /ui-data/user/notification-settings", async () => {
+  it("tells a federated account its credentials live with the identity provider", async () => {
+    installFetchRoutes({
+      "GET /ui-data/user/authentication": () =>
+        jsonResponse({
+          authentication: { kind: "external", providers: ["https://idp.example"], password_set: false },
+          two_factor: {
+            enabled: false,
+            pending_enrollment: false,
+            recovery_codes_total: 0,
+            recovery_codes_remaining: 0,
+          },
+        }),
+    });
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Password and authentication" }));
+    await waitFor(() =>
+      expect(screen.getByText(/signs in through an identity provider/)).toBeInTheDocument(),
+    );
+    expect(screen.getByText("https://idp.example")).toBeInTheDocument();
+    // No control that could not possibly work is offered.
+    expect(screen.queryByRole("button", { name: /Enable two-factor/ })).toBeNull();
+    expect(screen.queryByLabelText("New password")).toBeNull();
+  });
+
+  it("saves a per-event-type notification channel via PUT /ui-data/user/notification-settings", async () => {
     installFetchRoutes();
     renderPage();
     fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
-    await waitFor(() => expect(screen.getByText("Email")).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("checkbox", { name: /Email/ }));
-    await waitFor(() =>
-      expect(
-        mockFetch.mock.calls.some(([u, i]) => String(u) === "/ui-data/user/notification-settings" && (i as RequestInit | undefined)?.method === "PUT"),
-      ).toBe(true),
-    );
+    await waitFor(() => expect(screen.getByText("Notification types")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("checkbox", { name: "Web notifications for Pull requests" }));
+    await waitFor(() => {
+      const call = mockFetch.mock.calls.find(
+        ([u, i]) =>
+          String(u) === "/ui-data/user/notification-settings" &&
+          (i as RequestInit | undefined)?.method === "PUT",
+      );
+      expect(call).toBeDefined();
+      const body = JSON.parse(String((call?.[1] as RequestInit).body)) as {
+        events: Record<string, { email: boolean; web: boolean }>;
+      };
+      expect(body.events.pull_request).toEqual({ email: true, web: false });
+      expect(body.events.issue).toEqual({ email: true, web: true });
+    });
   });
 
   it("lists SSH keys from GET /user/keys", async () => {

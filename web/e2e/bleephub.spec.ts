@@ -246,7 +246,7 @@ test.describe("Repository code and collaboration", () => {
       branch: "feature",
     });
 
-    await page.goto(`/ui/repos/admin/${name}`);
+    await page.goto(`/ui/admin/${name}`);
     await page.getByRole("button", { name: /Code/ }).click();
     await expect(page.getByRole("link", { name: "Download ZIP" })).toHaveAttribute(
       "href",
@@ -257,7 +257,7 @@ test.describe("Repository code and collaboration", () => {
       `/api/v3/repos/admin/${name}/tarball/main`,
     );
 
-    await page.goto(`/ui/repos/admin/${name}/commits`);
+    await page.goto(`/ui/admin/${name}/commits`);
     await page.getByLabel("Branch or ref").fill("feature");
     await page.getByLabel("Path").fill("guide.md");
     const filtered = page.waitForResponse((response) => {
@@ -270,9 +270,9 @@ test.describe("Repository code and collaboration", () => {
     expect((await filtered).status()).toBe(200);
     await expect(page.getByRole("link", { name: "add guide" })).toBeVisible();
 
-    await page.goto(`/ui/repos/admin/${name}/branches`);
+    await page.goto(`/ui/admin/${name}/branches`);
     await page.getByRole("link", { name: "Compare" }).click();
-    await expect(page).toHaveURL(new RegExp(`/ui/repos/admin/${name}/compare/main\\.\\.\\.feature`));
+    await expect(page).toHaveURL(new RegExp(`/ui/admin/${name}/compare/main\\.\\.\\.feature`));
     await expect(page.getByText("guide.md")).toBeVisible();
     await expect(page.getByText("ahead", { exact: true })).toBeVisible();
   });
@@ -328,18 +328,27 @@ test.describe("Theme toggle", () => {
   test("saturated GitHub chrome resolves in both light and dark themes", async ({ page }) => {
     await page.goto("/ui/");
     await page.waitForLoadState("networkidle");
-    const light = await page.evaluate(() => {
+    const readChrome = () => {
       const css = getComputedStyle(document.documentElement);
-      const header = document.querySelector(".app-header");
+      const header = document.querySelector(".app-header")!;
+      const headerStyle = getComputedStyle(header);
       return {
         accent: css.getPropertyValue("--color-accent").trim(),
         blue: css.getPropertyValue("--color-brand-blue").trim(),
         purple: css.getPropertyValue("--color-brand-purple").trim(),
-        headerBackground: header ? getComputedStyle(header).backgroundImage : "",
+        cyan: css.getPropertyValue("--color-brand-cyan").trim(),
+        pink: css.getPropertyValue("--color-brand-pink").trim(),
+        headerImage: headerStyle.backgroundImage,
+        headerColor: headerStyle.backgroundColor,
       };
-    });
+    };
+    const light = await page.evaluate(readChrome);
     expect(light).toMatchObject({ accent: "#0969da", blue: "#006eff", purple: "#8250df" });
-    expect(light.headerBackground).toContain("gradient");
+    // G10: github.com's chrome is a FLAT neutral fill in both themes — no
+    // gradient layer at all, light or dark. Asserting "none" (rather than
+    // "not a gradient") also catches a re-introduced radial wash.
+    expect(light.headerImage).toBe("none");
+    expect(light.headerColor).toBe("rgb(246, 248, 250)");
 
     // The theme toggle is an item in the avatar dropdown menu.
     await page.getByRole("button", { name: "Open user menu" }).click();
@@ -348,15 +357,10 @@ test.describe("Theme toggle", () => {
     await shot(page, "11-theme-toggle");
     await toggle.click();
     await expect(page.locator("html")).toHaveClass(/dark/);
-    const dark = await page.evaluate(() => {
-      const css = getComputedStyle(document.documentElement);
-      return {
-        accent: css.getPropertyValue("--color-accent").trim(),
-        cyan: css.getPropertyValue("--color-brand-cyan").trim(),
-        pink: css.getPropertyValue("--color-brand-pink").trim(),
-      };
-    });
-    expect(dark).toEqual({ accent: "#58a6ff", cyan: "#39d0e8", pink: "#ff7bda" });
+    const dark = await page.evaluate(readChrome);
+    expect(dark).toMatchObject({ accent: "#58a6ff", cyan: "#39d0e8", pink: "#ff7bda" });
+    expect(dark.headerImage).toBe("none");
+    expect(dark.headerColor).toBe("rgb(22, 27, 34)");
     await shot(page, "11b-theme-toggle-dark");
   });
 });
@@ -382,6 +386,80 @@ test.describe("Fine-grained personal access token settings", () => {
     expect(await hero.evaluate((node) => getComputedStyle(node).backgroundImage)).toContain("gradient");
     await expect(page.getByText("Your new token")).toBeVisible();
     await shot(page, "11f-fine-grained-token-dark");
+  });
+});
+
+test.describe("Password and authentication settings", () => {
+  // Enrolment is walked up to — but not through — the point where it would
+  // switch two-factor authentication on for the shared admin account: every
+  // journey in this suite mints its session through /auth/token, which a live
+  // second factor would gate. Cancelling discards the pending secret, so this
+  // proves the whole pairing surface is real without leaving state behind. The
+  // complete enrol → verify → recover → disable cycle is covered by the Go
+  // suite, which owns its own account.
+  test("provisions a scannable authenticator pairing and lists active sessions", async ({ page }) => {
+    await page.goto("/ui/account?tab=authentication");
+
+    // The seeded admin signs in with the bootstrap token and has no password
+    // yet, so the card offers to set one rather than to change one.
+    await expect(page.getByRole("heading", { name: "Set a password" })).toBeVisible();
+    await expect(page.getByLabel("New password", { exact: true })).toBeVisible();
+    await expect(page.getByText(/Two-factor authentication is/)).toBeVisible();
+
+    // The active-session list shows this browser's own session and offers to
+    // end it, without ever printing the session cookie.
+    await expect(page.getByRole("heading", { name: "Sessions" })).toBeVisible();
+    await expect(page.getByText("· this session")).toBeVisible();
+
+    await page.getByRole("button", { name: "Enable two-factor authentication" }).click();
+
+    // A real QR code and a real setup key, not a switch.
+    const qr = page.getByRole("img", { name: /QR code enrolling admin/ });
+    await expect(qr).toBeVisible();
+    expect(await qr.locator("path").getAttribute("d")).toMatch(/^M\d/);
+    await expect(page.getByText("Setup key")).toBeVisible();
+    await expect(page.getByLabel("Verification code")).toBeVisible();
+    await shot(page, "11g-two-factor-enrollment");
+
+    // Nothing is protected until a code is proved, so the account is still
+    // unenrolled while the pairing is on screen.
+    const settings = await page.request.get("/ui-data/user/authentication");
+    const body = (await settings.json()) as { two_factor: { enabled: boolean; pending_enrollment: boolean } };
+    expect(body.two_factor).toMatchObject({ enabled: false, pending_enrollment: true });
+
+    await page.getByRole("button", { name: "Cancel" }).click();
+    await expect(page.getByRole("button", { name: "Enable two-factor authentication" })).toBeVisible();
+  });
+
+  test("stores per-type notification preferences", async ({ page }) => {
+    await page.goto("/ui/account?tab=notifications");
+    await expect(page.getByRole("heading", { name: "Notification types" })).toBeVisible();
+
+    const savePut = () =>
+      page.waitForResponse(
+        (response) =>
+          response.url().includes("/ui-data/user/notification-settings") &&
+          response.request().method() === "PUT",
+      );
+
+    const releasesWeb = page.getByRole("checkbox", { name: "Web notifications for Releases" });
+    await expect(releasesWeb).toBeChecked();
+    const saved = savePut();
+    await releasesWeb.click();
+    await saved;
+    await expect(releasesWeb).not.toBeChecked();
+
+    // The choice is stored per user, not held in the page.
+    await page.reload();
+    const reloaded = page.getByRole("checkbox", { name: "Web notifications for Releases" });
+    await expect(reloaded).not.toBeChecked();
+    await expect(page.getByRole("checkbox", { name: "Web notifications for Issues" })).toBeChecked();
+
+    // Leave the account as it was found: this suite shares one admin.
+    const restored = savePut();
+    await reloaded.click();
+    await restored;
+    await expect(reloaded).toBeChecked();
   });
 });
 
@@ -448,8 +526,9 @@ test.describe("Repos page", () => {
 
     // Click through to detail page
     await link.click();
-    await expect(page.url()).toContain("/ui/repos/");
-    await expect(page.url()).toContain("test-repo-playwright");
+    // Repositories are served at /ui/{owner}/{repo}, mirroring github.com's
+    // /{owner}/{repo} — the list page's cards must land on that shape.
+    await expect(page).toHaveURL(/\/ui\/[^/]+\/test-repo-playwright$/);
     await shot(page, "14-repo-detail");
 
     await page.getByLabel("Repository actions").getByRole("button", { name: /Fork/ }).click();
@@ -491,7 +570,7 @@ test.describe("Repo detail page", () => {
       private: false,
     }).catch(ignoreAlreadyExists);
 
-    await page.goto(`/ui/repos/${owner}/detail-test`);
+    await page.goto(`/ui/${owner}/detail-test`);
     await page.waitForLoadState("networkidle");
 
     // Repo header renders owner / repo as separate links; the empty Code
@@ -516,7 +595,7 @@ test.describe("Repo detail page", () => {
       auto_init: true,
     }).catch(ignoreAlreadyExists);
 
-    await page.goto(`/ui/repos/${owner}/readme-test`);
+    await page.goto(`/ui/${owner}/readme-test`);
     await page.waitForLoadState("networkidle");
 
     await expect(page.getByText("README.md").first()).toBeVisible();
@@ -541,12 +620,15 @@ test.describe("Repo detail page", () => {
       restrictions: null,
     });
 
-    await page.goto(`/ui/repos/admin/${repo}`);
-    await page.getByRole("link", { name: "Branches" }).click();
+    await page.goto(`/ui/admin/${repo}`);
+    // G9: the branch listing is reached from the branch/tag switcher, exactly
+    // as on github.com — there is no second repository tab row.
+    await page.getByRole("button", { name: "Switch branches or tags" }).click();
+    await page.getByRole("link", { name: "View all branches" }).click();
     const protectedLink = page.getByRole("link", { name: "protected", exact: true });
     await expect(protectedLink).toBeVisible();
     await protectedLink.click();
-    await expect(page).toHaveURL(new RegExp(`/ui/repos/admin/${repo}/settings/branch-protection`));
+    await expect(page).toHaveURL(new RegExp(`/ui/admin/${repo}/settings/branch-protection`));
     await expect(page.getByRole("combobox", { name: "Branch" })).toContainText("main (protected)");
   });
 
@@ -565,7 +647,7 @@ test.describe("Repo detail page", () => {
       body: "Created by Playwright test",
     });
 
-    await page.goto(`/ui/repos/${owner}/issues-test`);
+    await page.goto(`/ui/${owner}/issues-test`);
     await page.waitForLoadState("networkidle");
     // Issues is a repo tab (link) in the repo header. Scope to the repo nav so
     // it doesn't collide with the global header's "Issues" quick-link.
@@ -595,7 +677,7 @@ test.describe("Issues page", () => {
       title: "Direct issues page test",
     });
 
-    await page.goto(`/ui/repos/${owner}/issues-direct/issues`);
+    await page.goto(`/ui/${owner}/issues-direct/issues`);
     await page.waitForLoadState("networkidle");
     await expect(page.getByText("Direct issues page test")).toBeVisible();
     await shot(page, "17-issues-page");
@@ -608,7 +690,7 @@ test.describe("Issues page", () => {
     // Fill and submit
     await page.getByPlaceholder("Issue title").fill("Created from UI");
     await page.getByRole("button", { name: "Create issue" }).click();
-    await page.waitForURL(/\/ui\/repos\/.*\/issues\/\d+/);
+    await page.waitForURL(/\/ui\/[^/]+\/[^/]+\/issues\/\d+/);
     await shot(page, "19-issue-detail-after-create");
   });
 });
@@ -627,7 +709,7 @@ test.describe("Pull Requests page", () => {
       private: false,
     }).catch(ignoreAlreadyExists);
 
-    await page.goto(`/ui/repos/${owner}/pulls-direct/pulls`);
+    await page.goto(`/ui/${owner}/pulls-direct/pulls`);
     await page.waitForLoadState("networkidle");
     await expect(page.getByText(/no open pull requests/i)).toBeVisible();
     await shot(page, "20-pulls-empty");
@@ -659,7 +741,7 @@ test.describe("Pull Requests page", () => {
       base: "main",
     })) as { number: number };
 
-    await page.goto(`/ui/repos/admin/${repo}/pulls/${pull.number}/files`);
+    await page.goto(`/ui/admin/${repo}/pulls/${pull.number}/files`);
     await expect(page).toHaveURL(new RegExp(`/pulls/${pull.number}/files$`));
     await expect(page.getByText("review.txt")).toBeVisible();
     await page.getByRole("button", { name: "Comment on review.txt line 1" }).click();
@@ -795,14 +877,14 @@ test.describe("Release provider", () => {
     const repo = "release-ui-playwright";
     await apiPost(page, "/api/v3/user/repos", { name: repo, auto_init: true });
 
-    await page.goto(`/ui/repos/${owner}/${repo}/releases`);
+    await page.goto(`/ui/${owner}/${repo}/releases`);
     await page.getByRole("link", { name: "New release" }).click();
-    await expect(page).toHaveURL(new RegExp(`/ui/repos/${owner}/${repo}/releases/new$`));
+    await expect(page).toHaveURL(new RegExp(`/ui/${owner}/${repo}/releases/new$`));
     await page.getByLabel("Tag").fill("v1.0.0");
     await page.getByLabel("Release title").fill("First real release");
     await page.getByLabel("Release notes").fill("Published through the GitHub-compatible UI.");
     await page.getByRole("button", { name: "Create release" }).click();
-    await expect(page).toHaveURL(new RegExp(`/ui/repos/${owner}/${repo}/releases/\\d+$`));
+    await expect(page).toHaveURL(new RegExp(`/ui/${owner}/${repo}/releases/\\d+$`));
     await expect(page.getByRole("heading", { level: 1, name: "First real release" })).toBeVisible();
 
     const assetBytes = Buffer.from("real release asset bytes", "utf8");
@@ -830,7 +912,7 @@ test.describe("Release provider", () => {
     await page.getByRole("button", { name: "Delete" }).click();
     await expect(page.getByRole("dialog", { name: "Confirm action" })).toBeVisible();
     await page.getByRole("button", { name: "Confirm" }).click();
-    await expect(page).toHaveURL(new RegExp(`/ui/repos/${owner}/${repo}/releases$`));
+    await expect(page).toHaveURL(new RegExp(`/ui/${owner}/${repo}/releases$`));
     await expect(page.getByText("No releases published")).toBeVisible();
   });
 });
@@ -846,7 +928,7 @@ test.describe("Code security", () => {
     await apiPost(page, "/api/v3/user/repos", { name: repo, auto_init: true });
     const branch = await apiGet(page, `/api/v3/repos/${owner}/${repo}/branches/main`) as { commit: { sha: string } };
 
-    await page.goto(`/ui/repos/${owner}/${repo}/security/code-scanning`);
+    await page.goto(`/ui/${owner}/${repo}/security/code-scanning`);
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("heading", { level: 1, name: "Code scanning" })).toBeVisible();
     await expect(page.getByText(branch.commit.sha.slice(0, 7), { exact: true })).toBeVisible();
@@ -870,10 +952,18 @@ test.describe("Code security", () => {
     const light = await page.locator(".security-hero").evaluate((element) => {
       const hero = getComputedStyle(element);
       const icon = getComputedStyle(document.querySelector(".security-hero-icon")!);
-      return { surface: getComputedStyle(document.documentElement).getPropertyValue("--color-surface").trim(), hero: hero.backgroundImage, icon: icon.backgroundImage };
+      return {
+        surface: getComputedStyle(document.documentElement).getPropertyValue("--color-surface").trim(),
+        hero: hero.backgroundImage,
+        heroColor: hero.backgroundColor,
+        icon: icon.backgroundImage,
+      };
     });
-    expect(light.hero).not.toBe("none");
-    expect(light.icon).toContain("linear-gradient");
+    // G10: the hero is flat neutral chrome — no blue→pink wash on the panel
+    // and no brand gradient on its icon, in either theme.
+    expect(light.hero).toBe("none");
+    expect(light.icon).toBe("none");
+    expect(light.heroColor).toBe("rgb(255, 255, 255)");
     await shot(page, "31-code-security-light");
 
     await page.getByRole("button", { name: "Open user menu" }).click();
@@ -882,9 +972,11 @@ test.describe("Code security", () => {
     const dark = await page.locator(".security-hero").evaluate((element) => ({
       surface: getComputedStyle(document.documentElement).getPropertyValue("--color-surface").trim(),
       hero: getComputedStyle(element).backgroundImage,
+      heroColor: getComputedStyle(element).backgroundColor,
     }));
     expect(dark.surface).not.toBe(light.surface);
-    expect(dark.hero).not.toBe("none");
+    expect(dark.hero).toBe("none");
+    expect(dark.heroColor).toBe("rgb(13, 17, 23)");
     await expect(page.getByRole("heading", { name: "Databases" })).toBeVisible();
     await shot(page, "32-code-security-dark");
   });
@@ -995,7 +1087,7 @@ test.describe("Dark theme", () => {
       private: false,
       auto_init: true,
     });
-    await page.goto(`/ui/repos/${owner}/dark-theme-repo`);
+    await page.goto(`/ui/${owner}/dark-theme-repo`);
     await page.waitForLoadState("networkidle");
     await expect(page.getByLabel("Repository actions")).toBeVisible();
     await expect(page.getByRole("button", { name: /Watch/ })).toBeVisible();

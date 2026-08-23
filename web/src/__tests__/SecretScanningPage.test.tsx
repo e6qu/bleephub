@@ -25,10 +25,10 @@ function renderPage() {
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={["/ui/repos/admin/secret-repo/security/secret-scanning"]}>
+      <MemoryRouter initialEntries={["/ui/admin/secret-repo/security/secret-scanning"]}>
         <Routes>
           <Route
-            path="/ui/repos/:owner/:repo/security/secret-scanning"
+            path="/ui/:owner/:repo/security/secret-scanning"
             element={<SecretScanningPage />}
           />
         </Routes>

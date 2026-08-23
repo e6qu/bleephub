@@ -766,7 +766,7 @@ function AssignmentReportingDialog({
               <div className="flex flex-wrap items-center justify-between gap-3" style={{ padding: ".85rem 1rem" }}>
                 <div>
                   <Link
-                    to={`/ui/repos/${submission.repository.full_name}`}
+                    to={`/ui/${submission.repository.full_name}`}
                     style={{ color: "var(--color-accent)", fontWeight: 650, textDecoration: "none" }}
                   >
                     {submission.repository.full_name}
@@ -856,7 +856,7 @@ function AcceptAssignment({ code }: { code: string }) {
         query.data?.type === "group" ? group : undefined,
         rosterIdentifier,
       ),
-    onSuccess: (result) => navigate(`/ui/repos/${result.repository.full_name}`),
+    onSuccess: (result) => navigate(`/ui/${result.repository.full_name}`),
   });
   if (query.isLoading) return <Spinner />;
   if (query.isError) return <InlineError title="Assignment invitation unavailable" detail={String(query.error)} />;

@@ -126,9 +126,8 @@ func (s *Server) handleGetUserByAccountID(w http.ResponseWriter, r *http.Request
 }
 
 // privateUserJSON renders GitHub's `private-user` schema — the
-// authenticated user's own account view. The private counters are
-// derived live from store state; two_factor_authentication is false
-// because bleephub does not model two-factor authentication.
+// authenticated user's own account view. The private counters and
+// two_factor_authentication are derived live from store state.
 func (s *Server) privateUserJSON(u *store.User) map[string]interface{} {
 	out := s.fullUserJSON(u)
 	out["user_view_type"] = "private"
@@ -138,7 +137,7 @@ func (s *Server) privateUserJSON(u *store.User) map[string]interface{} {
 	out["private_gists"] = s.store.CountSecretGists(u.ID)
 	out["collaborators"] = s.store.CountRepoCollaboratorsForOwner(u.Login)
 	out["disk_usage"] = s.store.DiskUsageKBForOwner(u.Login)
-	out["two_factor_authentication"] = false
+	out["two_factor_authentication"] = s.store.TwoFactorEnabled(u.ID)
 	return out
 }
 

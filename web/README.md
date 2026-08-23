@@ -23,7 +23,10 @@ When not logged in, every route redirects to `/ui/login`. Once authenticated (ro
 GitHub surfaces:
 - `/ui/` — dashboard (top repositories + activity feed)
 - `/ui/:login` and `/ui/users/:login` — user profile
-- `/ui/repos` — repositories; `/ui/repos/:owner/:repo` — repo Code (About sidebar, file
+- `/ui/repos` — repositories; `/ui/:owner/:repo` — repo Code (github.com's
+  `/{owner}/{repo}`, one segment below this app's `/ui/` site root; the literal
+  first segments above are reserved names, listed in `src/routes.ts`) with the
+  About sidebar, file
   tree, README); plus `.../issues[/:number]`, `.../pulls[/:number]`, `.../discussions[/:number]`,
   `.../actions` and `.../actions/runs/:runId`, `.../insights`, `.../projects-classic`,
   `.../security/{secret-scanning,code-scanning,dependabot,advisories}`,

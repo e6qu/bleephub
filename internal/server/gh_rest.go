@@ -16,6 +16,19 @@ import (
 // this only stops an unbounded body from exhausting memory during decode.
 const maxJSONBodyBytes = 25 << 20 // 25 MiB
 
+// maxBlobJSONBodyBytes caps POST /git/blobs, whose body is not a small
+// document but a whole file: GitHub accepts blobs up to 100 MB there, which
+// base64-inflates to ~133 MB of JSON (verified: api.github.com accepts a 40 MB
+// body on this route without a 413). maxJSONBodyBytes would refuse anything
+// past ~18.7 MB of binary, so the route gets its own cap.
+//
+// The effective ceiling is still maxStructuredRequestBody: requestBodyLimitMiddleware
+// wraps every application/json body in that reader before the handler runs, so
+// this cap can only raise the route to the shared pipeline's limit (~24 MB of
+// binary after base64), not to GitHub's 100 MB. Reaching parity needs the
+// shared cap raised, which is a whole-server decision rather than a route one.
+const maxBlobJSONBodyBytes = maxStructuredRequestBody
+
 // maxUploadBytes caps a binary upload body (release assets, container blobs,
 // CodeQL databases) that a handler buffers in memory. Generous but bounded, so
 // no single request can exhaust the process.
@@ -39,6 +52,7 @@ type requestBodyLimit struct {
 var requestBodyLimits = []requestBodyLimit{
 	{"structured (shared pipeline)", maxStructuredRequestBody, "every application/json, form and GraphQL request"},
 	{"json decode helpers", maxJSONBodyBytes, "decodeJSONBody / readLimitedBody JSON handlers, container manifests"},
+	{"git blob create", maxBlobJSONBodyBytes, "POST /repos/{owner}/{repo}/git/blobs (a whole file, base64-inflated)"},
 	{"binary upload", maxUploadBytes, "release assets, container blobs, CodeQL databases + variant packs, SARIF, attestations, package files"},
 	{"artifact chunk", maxArtifactChunkBytes, "Actions artifact chunk upload"},
 	{"git upload-pack", uploadPackRequestCap, "smart-HTTP fetch negotiation"},
@@ -52,6 +66,24 @@ var requestBodyLimits = []requestBodyLimit{
 func decodeJSONBody(w http.ResponseWriter, r *http.Request, v interface{}) bool {
 	r.Body = http.MaxBytesReader(w, r.Body, maxJSONBodyBytes)
 	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+		return jsonDecodeFailed(w, err)
+	}
+	return true
+}
+
+// decodeJSONBodyOversizeAware is decodeJSONBody with a route-specific cap,
+// for the JSON routes whose documented payload is a whole file rather than a
+// document (POST /git/blobs). An over-limit body is reported through
+// onOversize instead of the generic 413, because those operations do not
+// document 413 at all.
+func decodeJSONBodyOversizeAware(w http.ResponseWriter, r *http.Request, limit int64, v interface{}, onOversize func(http.ResponseWriter)) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
+	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			onOversize(w)
+			return false
+		}
 		return jsonDecodeFailed(w, err)
 	}
 	return true

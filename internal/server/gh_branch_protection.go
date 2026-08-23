@@ -1506,6 +1506,16 @@ func (s *Server) canMergePullRequest(ctx context.Context, repo *store.Repo, pr *
 		}
 	}
 
+	// require_code_owner_reviews: every code owner of a file this pull request
+	// changes must have approved it. Enforced here, at the one gate the REST
+	// merge, the GraphQL mergePullRequest mutation and auto-merge all pass
+	// through, so no merge path can skip it.
+	if bp.RequiredPullRequestReviews != nil && bp.RequiredPullRequestReviews.RequireCodeOwnerReviews {
+		if !s.codeOwnerApprovalsSatisfied(repo, pr) {
+			return false, "Review by a code owner of the changed files is required by the branch protection rules."
+		}
+	}
+
 	// require_last_push_approval: the most recent reviewable push must be
 	// approved by someone other than the person who pushed it.
 	if bp.RequiredPullRequestReviews != nil && bp.RequiredPullRequestReviews.RequireLastPushApproval {

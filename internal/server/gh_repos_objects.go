@@ -2,6 +2,7 @@ package bleephub
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -283,6 +284,40 @@ func (s *Server) handleGetTree(w http.ResponseWriter, r *http.Request) {
 // response; beyond it the response is truncated.
 const gitTreeEntryLimit = 100000
 
+const (
+	// contentsAPIInlineFileBytes is the size above which the contents API
+	// stops inlining a file: "1 MB or smaller: all features of this endpoint
+	// are supported", "between 1-100 MB: … the content field will be an empty
+	// string and the encoding field will be "none"".
+	contentsAPIInlineFileBytes = 1 << 20
+	// contentsAPIMaxFileBytes is where the contents API stops answering at
+	// all: "greater than 100 MB: this endpoint is not supported".
+	contentsAPIMaxFileBytes = 100 << 20
+	// gitBlobMaxFileBytes is the Git Data blob endpoint's ceiling — the
+	// "blobs up to 100 MB in size" the contents-API refusal points callers at.
+	gitBlobMaxFileBytes = 100 << 20
+	// contentsAPIDirectoryEntryLimit is GitHub's documented "upper limit of
+	// 1,000 files for a directory" on a contents-API listing. github.com
+	// truncates silently at exactly 1000 entries and still answers 200
+	// (nodejs/node's test/parallel, ~4,000 files, returns 1,000); clients that
+	// need more are told to use the Git trees API.
+	contentsAPIDirectoryEntryLimit = 1000
+)
+
+// writeGHBlobTooLargeError writes GitHub's refusal for a blob past an API's
+// size ceiling: a 403 carrying the Blob/data/too_large error item.
+func writeGHBlobTooLargeError(w http.ResponseWriter, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusForbidden)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"message":           message,
+		"documentation_url": "https://docs.github.com/rest",
+		"errors": []map[string]string{
+			{"resource": "Blob", "field": "data", "code": "too_large"},
+		},
+	})
+}
+
 // resolveGitTreeish implements GitHub's deliberately broader tree_sha
 // contract. A caller may supply a tree object SHA, a commit SHA, or a branch
 // or tag name. References are dereferenced (including annotated tags), while a
@@ -350,6 +385,13 @@ func resolveGitObjectReference(stor gitStorage.Storer, value string) (plumbing.H
 	if strings.HasPrefix(value, "refs/") {
 		add(plumbing.ReferenceName(value))
 	} else {
+		// The literal HEAD is a ref github.com resolves: GET /git/trees/HEAD
+		// answers 200 from the default branch. It is tried first, the way git
+		// itself resolves the name, so a stray refs/heads/HEAD branch cannot
+		// shadow the symref.
+		if value == string(plumbing.HEAD) {
+			add(plumbing.HEAD)
+		}
 		if strings.HasPrefix(value, "heads/") || strings.HasPrefix(value, "tags/") {
 			add(plumbing.ReferenceName("refs/" + value))
 		}
@@ -423,8 +465,16 @@ func gitTreeEntryJSON(stor gitStorage.Storer, baseURL, fullName, name string, en
 		"mode": fmt.Sprintf("%06o", uint32(entry.Mode)),
 		"type": entryType,
 		"sha":  entry.Hash.String(),
-		"url":  baseURL + "/api/v3/repos/" + fullName + "/git/" + entryType + "s/" + entry.Hash.String(),
 	}
+	if entryType == "commit" {
+		// A gitlink names a commit in the *submodule's* repository, which this
+		// repository does not contain, so there is no object URL to hand out.
+		// github.com omits url (and size) for commit entries — rust-lang/rust's
+		// src tree answers {path, mode, type, sha} for src/llvm-project — and
+		// advertising /git/commits/{sha} here promised a guaranteed 404.
+		return out
+	}
+	out["url"] = baseURL + "/api/v3/repos/" + fullName + "/git/" + entryType + "s/" + entry.Hash.String()
 	if entryType == "blob" {
 		if blob, err := object.GetBlob(stor, entry.Hash); err == nil {
 			out["size"] = blob.Size
@@ -452,6 +502,15 @@ func (s *Server) handleGetBlob(w http.ResponseWriter, r *http.Request) {
 	blob, err := object.GetBlob(stor, plumbing.NewHash(sha))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+
+	// The Git Data blob endpoint is the one that reaches past the contents
+	// API's 1 MB inline ceiling — it base64-encodes up to 100 MB (verified
+	// against github.com with a 12.9 MB blob) and refuses beyond that. Decided
+	// from blob.Size so a refused blob is never read into memory.
+	if blob.Size > gitBlobMaxFileBytes {
+		writeGHBlobTooLargeError(w, "This API returns blobs up to 100 MB in size. The requested blob is too large to fetch via the API.")
 		return
 	}
 
@@ -722,7 +781,7 @@ func (s *Server) handlePutContents(w http.ResponseWriter, r *http.Request) {
 	if isInitial {
 		files := map[string]string{path: string(decoded)}
 		if ph := s.createSecretScanningPushProtectionPlaceholder(repo, secretScanningContentMatches(string(decoded))); ph != nil {
-			writeSecretScanningPushProtectionBlocked(w, ph)
+			writeSecretScanningRuleViolation(w, http.StatusConflict, ph)
 			return
 		}
 		commitHash, err = commitRootBranchWithFiles(
@@ -731,7 +790,7 @@ func (s *Server) handlePutContents(w http.ResponseWriter, r *http.Request) {
 		)
 	} else {
 		if ph := s.createSecretScanningPushProtectionPlaceholder(repo, secretScanningContentMatches(string(decoded))); ph != nil {
-			writeSecretScanningPushProtectionBlocked(w, ph)
+			writeSecretScanningRuleViolation(w, http.StatusConflict, ph)
 			return
 		}
 		commitHash, err = createFileCommitExpectedGuarded(
@@ -1082,6 +1141,26 @@ func (s *Server) writeContentsFile(
 		writeGHError(w, http.StatusInternalServerError, "Git object unavailable")
 		return
 	}
+	accept := r.Header.Get("Accept")
+	// GitHub's blob-size contract, decided from blob.Size so an oversized file
+	// is never read into memory to learn how big it is:
+	//   <= 1 MB    every feature of the endpoint, content base64-encoded;
+	//   1-100 MB   only the raw (and object) media types work — a JSON reply
+	//              carries content:"" and encoding:"none", which is the signal
+	//              a client branches on to fall back to raw or /git/blobs;
+	//   > 100 MB   the endpoint is not supported at all.
+	if blob.Size > contentsAPIMaxFileBytes {
+		writeGHBlobTooLargeError(w, "This API does not support blobs larger than 100 MB in size.")
+		return
+	}
+	if blob.Size > contentsAPIInlineFileBytes && !strings.Contains(accept, "application/vnd.github.raw") {
+		out := contentFileJSON(s.baseURL(r), repo, refName, requestedPath, hash.String(), blob.Size)
+		out["encoding"] = "none"
+		out["content"] = ""
+		writeJSON(w, http.StatusOK, out)
+		return
+	}
+
 	reader, err := blob.Reader()
 	if err != nil {
 		writeGHError(w, http.StatusInternalServerError, "Git object unavailable")
@@ -1094,7 +1173,6 @@ func (s *Server) writeContentsFile(
 		return
 	}
 
-	accept := r.Header.Get("Accept")
 	if strings.Contains(accept, "application/vnd.github.raw") {
 		w.Header().Set("Content-Type", "application/octet-stream")
 		w.WriteHeader(http.StatusOK)
@@ -1130,6 +1208,16 @@ func (s *Server) writeTreeListing(
 ) {
 	items := make([]map[string]interface{}, 0, len(tree.Entries))
 	for _, e := range tree.Entries {
+		// GitHub caps a contents-API directory listing at 1,000 entries and
+		// answers 200 with the truncated list rather than an error; a client
+		// needing the rest is pointed at the git trees API. Entries keep git's
+		// own tree order, which is what github.com serves — it is not a plain
+		// name sort (rust-lang/rust's rustc_middle/src answers "thir.rs"
+		// before the "thir" directory, i.e. "thir/" compared with the trailing
+		// slash git stores).
+		if len(items) >= contentsAPIDirectoryEntryLimit {
+			break
+		}
 		itemPath := e.Name
 		if prefix != "" {
 			itemPath = prefix + "/" + e.Name

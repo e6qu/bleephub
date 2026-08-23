@@ -1387,13 +1387,32 @@ func TestActionsPermissions_Repo_WorkflowPermissions(t *testing.T) {
 func TestActionsPermissions_Repo_ForkPRSettings(t *testing.T) {
 	repo := createTestRepo(t)
 
+	// The default is a documented enum member. approval_policy names which
+	// contributors approval is demanded of; it has no member meaning "never",
+	// so "approval is not required" lives on the separate
+	// require_approval_for_fork_pr_workflows switch asserted below.
+	data := decodeJSONWithStatus(t, ghGet(t, "/api/v3/repos/"+repo+"/actions/permissions/fork-pr-contributor-approval", defaultToken), 200)
+	if data["approval_policy"] != "first_time_contributors" {
+		t.Errorf("default approval_policy = %v, want first_time_contributors", data["approval_policy"])
+	}
+
 	putResp := ghPut(t, "/api/v3/repos/"+repo+"/actions/permissions/fork-pr-contributor-approval", defaultToken, map[string]interface{}{
-		"approval_policy": "all",
+		"approval_policy": "all_external_contributors",
 	})
 	requireNoContent(t, putResp)
-	data := decodeJSONWithStatus(t, ghGet(t, "/api/v3/repos/"+repo+"/actions/permissions/fork-pr-contributor-approval", defaultToken), 200)
-	if data["approval_policy"] != "all" {
+	data = decodeJSONWithStatus(t, ghGet(t, "/api/v3/repos/"+repo+"/actions/permissions/fork-pr-contributor-approval", defaultToken), 200)
+	if data["approval_policy"] != "all_external_contributors" {
 		t.Errorf("approval_policy = %v", data["approval_policy"])
+	}
+
+	// A value outside the documented enum is refused rather than stored and
+	// echoed back.
+	rejected := ghPut(t, "/api/v3/repos/"+repo+"/actions/permissions/fork-pr-contributor-approval", defaultToken, map[string]interface{}{
+		"approval_policy": "none",
+	})
+	rejected.Body.Close()
+	if rejected.StatusCode != 422 {
+		t.Errorf("undocumented approval_policy = %d, want 422", rejected.StatusCode)
 	}
 
 	putResp = ghPut(t, "/api/v3/repos/"+repo+"/actions/permissions/fork-pr-workflows-private-repos", defaultToken, map[string]interface{}{

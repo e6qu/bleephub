@@ -93,7 +93,7 @@ function PriorBlameLink({
   if (!parent) return null;
   return (
     <Link
-      to={`/ui/repos/${owner}/${repo}/blame/${parent}/${path}`}
+      to={`/ui/${owner}/${repo}/blame/${parent}/${path}`}
       aria-label={`View blame prior to ${shortSha}`}
       title="View blame prior to this change"
       style={{
@@ -144,7 +144,7 @@ export function BlamePage() {
           repo={repo}
           current={ref}
           branches={branchList.map((b) => b.name)}
-          onSelect={(nextRef) => navigate(`/ui/repos/${owner}/${repo}/blame/${nextRef}/${path}`)}
+          onSelect={(nextRef) => navigate(`/ui/${owner}/${repo}/blame/${nextRef}/${path}`)}
         />
         <PathBreadcrumbs
           owner={owner}
@@ -205,7 +205,7 @@ export function BlamePage() {
                             <Avatar login={hunk.author} size={18} />
                             <div className="min-w-0">
                               <Link
-                                to={`/ui/repos/${owner}/${repo}/commits/${hunk.sha}`}
+                                to={`/ui/${owner}/${repo}/commits/${hunk.sha}`}
                                 className="font-mono"
                                 style={{ display: "inline-block", color: "var(--color-accent)", lineHeight: "1.625rem" }}
                               >

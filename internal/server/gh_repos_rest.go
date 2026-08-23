@@ -729,6 +729,7 @@ func (s *Server) handleCreateRepo(w http.ResponseWriter, r *http.Request) {
 		s.store.UpdateRepo(user.Login, req.Name, func(r *store.Repo) {
 			r.DefaultBranch = defaultBranch
 		})
+		s.syncRepoHeadToDefaultBranch(user.Login, req.Name)
 	}
 
 	if bool(req.AutoInit) || req.GitignoreTemplate != "" || req.LicenseTemplate != "" {
@@ -924,6 +925,10 @@ func (s *Server) handleUpdateRepo(w http.ResponseWriter, r *http.Request) {
 			applyStatus("secret_scanning_non_provider_patterns", &r.SecretScanningNonProviderPatternsEnabled)
 		}
 	})
+
+	if v, ok := req["default_branch"].(string); ok && v != "" {
+		s.syncRepoHeadToDefaultBranch(owner, name)
+	}
 
 	updated := s.store.GetRepo(owner, name)
 	// GitHub's `public` event fires when a repository is switched from private to

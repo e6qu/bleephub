@@ -40,7 +40,7 @@ function renderFinder(onClose = vi.fn()) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={["/ui/repos/o/r"]}>
+      <MemoryRouter initialEntries={["/ui/o/r"]}>
         <GoToFile owner="o" repo="r" gitRef="main" onClose={onClose} />
         <Routes>
           <Route path="*" element={<LocationProbe />} />
@@ -73,7 +73,7 @@ describe("GoToFile", () => {
     await screen.findByRole("option", { name: "src/index.ts" });
     fireEvent.keyDown(screen.getByRole("combobox"), { key: "Enter" });
     await waitFor(() => {
-      expect(screen.getByTestId("loc").textContent).toBe("/ui/repos/o/r/blob/main/src/index.ts");
+      expect(screen.getByTestId("loc").textContent).toBe("/ui/o/r/blob/main/src/index.ts");
     });
   });
 

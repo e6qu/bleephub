@@ -165,8 +165,12 @@ type User struct {
 	// Account security + notification preferences. GitHub's 2FA and notification
 	// settings are web-only (no REST), so the simulator serves them from a
 	// browser-only /ui-data endpoint rather than an invented /api/v3 path.
-	TwoFactorEnabled     bool                  `json:"two_factor_enabled,omitempty"`
-	NotificationSettings *NotificationSettings `json:"notification_settings,omitempty"`
+	//
+	// TwoFactor holds the TOTP secret and recovery-code digests. It is store
+	// state only: no read endpoint returns it, and the account-security helpers
+	// in account_security.go are the only way to reach it.
+	TwoFactor               *TwoFactorConfig         `json:"two_factor,omitempty"`
+	NotificationPreferences *NotificationPreferences `json:"notification_preferences,omitempty"`
 	// user-surface profile fields (PATCH /user), email addresses, and
 	// account-level interaction limits.
 	Blog                   string      `json:"blog,omitempty"`
@@ -338,6 +342,15 @@ type LoginSession struct {
 	OIDCSubject  string
 	OIDCSID      string
 	OIDCIDToken  string
+	// Handle is a public, non-secret name for the session, so the account's
+	// "active sessions" list can identify and revoke one without ever exposing
+	// the cookie value or the storage key derived from it.
+	Handle string
+	// CreatedAt, UserAgent and SignedInIP are what the sessions list shows: when
+	// and from where each session was established.
+	CreatedAt  time.Time
+	UserAgent  string
+	SignedInIP string
 }
 
 // GistFile is a single file inside a gist.
@@ -459,6 +472,8 @@ type Store struct {
 	RepoAutolinks                map[string]map[int]*RepoAutolink          // "owner/repo" → id → autolink
 	RepoWikiPages                map[string]map[string]*WikiPage           // "owner/repo" → slug → wiki page
 	RepoWikiRevisions            map[string]map[string][]*WikiPageRevision // "owner/repo" → slug → revisions (oldest first)
+	LFSObjects                   map[string]map[string]int64               // "owner/repo" → Git LFS oid (sha256 hex) → size in bytes (bytes live in the object store)
+	LFSLocks                     map[string]map[int]*LFSLock               // "owner/repo" → lock id → Git LFS file lock
 	RepoInvitations              map[string]map[int]*RepoInvitation        // "owner/repo" → id → invitation
 	RepoDeployKeys               map[string]map[int]*RepoDeployKey         // "owner/repo" → id → deploy key
 	RepoSubscriptions            map[string]*RepoSubscription              // "userID:repoID" → subscription
@@ -580,6 +595,7 @@ type Store struct {
 	NextUserMigrationID          int
 	NextOrgMigrationID           int
 	NextAutolinkID               int
+	NextLFSLockID                int
 	NextInvitationID             int
 	NextDeployKeyID              int
 	NextSecurityAdvisoryID       int
@@ -973,6 +989,8 @@ func NewStore() *Store {
 		RepoAutolinks:                make(map[string]map[int]*RepoAutolink),
 		RepoWikiPages:                make(map[string]map[string]*WikiPage),
 		RepoWikiRevisions:            make(map[string]map[string][]*WikiPageRevision),
+		LFSObjects:                   make(map[string]map[string]int64),
+		LFSLocks:                     make(map[string]map[int]*LFSLock),
 		RepoInvitations:              make(map[string]map[int]*RepoInvitation),
 		RepoDeployKeys:               make(map[string]map[int]*RepoDeployKey),
 		RepoSubscriptions:            map[string]*RepoSubscription{},
@@ -1102,6 +1120,7 @@ func NewStore() *Store {
 		NextCodespaceID:              1,
 		NextCodespaceSecretID:        1,
 		NextAutolinkID:               1,
+		NextLFSLockID:                1,
 		NextInvitationID:             1,
 		NextIssueEventID:             1,
 		NextDeployKeyID:              1,
@@ -1927,6 +1946,28 @@ func (st *Store) loadFromPersistence() error {
 				}
 			}
 			st.RepoAutolinks[key] = autolinks
+			return nil
+		}},
+		{"lfs_objects", func(key string, raw []byte) error {
+			var objects map[string]int64
+			if err := LoadJSON(raw, &objects); err != nil {
+				return err
+			}
+			st.LFSObjects[key] = objects
+			return nil
+		}},
+		{"lfs_locks", func(key string, raw []byte) error {
+			var locks map[int]*LFSLock
+			if err := LoadJSON(raw, &locks); err != nil {
+				return err
+			}
+			for _, lock := range locks {
+				lock.RepoKey = key
+				if lock.ID >= st.NextLFSLockID {
+					st.NextLFSLockID = lock.ID + 1
+				}
+			}
+			st.LFSLocks[key] = locks
 			return nil
 		}},
 		{"repo_wiki_pages", func(key string, raw []byte) error {

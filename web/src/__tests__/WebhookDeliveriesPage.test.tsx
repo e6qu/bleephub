@@ -25,10 +25,10 @@ function renderRepoScoped() {
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={["/ui/repos/admin/hook-repo/hooks/5/deliveries"]}>
+      <MemoryRouter initialEntries={["/ui/admin/hook-repo/hooks/5/deliveries"]}>
         <Routes>
           <Route
-            path="/ui/repos/:owner/:repo/hooks/:hookId/deliveries"
+            path="/ui/:owner/:repo/hooks/:hookId/deliveries"
             element={<WebhookDeliveriesPage />}
           />
         </Routes>

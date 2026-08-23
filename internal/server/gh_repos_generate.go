@@ -192,7 +192,7 @@ func generateFromTemplateStorage(src, dst gitStorage.Storer, defaultBranch strin
 			break
 		}
 	}
-	return dst.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.NewBranchReferenceName(headBranch)))
+	return store.SetGitHeadBranch(dst, headBranch)
 }
 
 // copyEncodedObject writes one encoded git object into dst through dst's own

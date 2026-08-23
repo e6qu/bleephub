@@ -2,23 +2,20 @@ package bleephub
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"strings"
 
 	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/format/packfile"
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/plumbing/storer"
-	"github.com/go-git/go-git/v5/plumbing/transport"
-	gitserver "github.com/go-git/go-git/v5/plumbing/transport/server"
 )
 
 // uploadPackRequestCap bounds the pkt-line want/have negotiation body an
@@ -34,22 +31,6 @@ const uploadPackRequestCap = 50 << 20 // 50 MiB
 func (s *Server) authenticateGitRequest(r *http.Request) (context.Context, *store.User) {
 	ctx := s.authenticateRequest(r)
 	return ctx, ghUserFromContext(ctx)
-}
-
-// fixedGitLoader serves exactly one already-authorized storer, ignoring the
-// endpoint path. The transport must never re-resolve storage from a string:
-// authorization ran against a specific (owner, repo), and a second string
-// normalization (e.g. trimming a trailing ".git" again) could hand the session
-// a different repository than the one the caller was cleared for.
-type fixedGitLoader struct {
-	storer storer.Storer
-}
-
-func (l fixedGitLoader) Load(*transport.Endpoint) (storer.Storer, error) { //nolint:ireturn
-	if l.storer == nil {
-		return nil, transport.ErrRepositoryNotFound
-	}
-	return l.storer, nil
 }
 
 // tryHandleGitRequest checks if the request is a git smart HTTP request and handles it.
@@ -157,16 +138,8 @@ func (s *Server) handleGitInfoRefs(w http.ResponseWriter, r *http.Request, owner
 		return
 	}
 
-	_, _, _, stor, ok := s.authorizeGitHTTP(w, r, owner, repoName, service == "git-receive-pack")
+	_, _, repo, stor, ok := s.authorizeGitHTTP(w, r, owner, repoName, service == "git-receive-pack")
 	if !ok {
-		return
-	}
-
-	server := gitserver.NewServer(fixedGitLoader{storer: stor})
-
-	ep, err := transport.NewEndpoint(fmt.Sprintf("/%s/%s", owner, repoName))
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -188,66 +161,81 @@ func (s *Server) handleGitInfoRefs(w http.ResponseWriter, r *http.Request, owner
 
 	switch service {
 	case "git-upload-pack":
-		sess, err := server.NewUploadPackSession(ep, nil)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		info, err := sess.AdvertisedReferencesContext(r.Context())
-		if err != nil {
-			if err == transport.ErrEmptyRemoteRepository {
-				if flushErr := enc.Flush(); flushErr != nil {
-					s.logger.Debug().Err(flushErr).Str("service", service).Msg("git-http: empty-repo flush failed")
-				}
-				return
+		if gitProtocolV2Requested(r.Header.Get(gitProtocolHeader)) {
+			// Protocol v2 answers info/refs with the commands the client may
+			// call rather than with references; the references themselves come
+			// from the ls-refs command on the POST that follows.
+			if err := writeGitV2CapabilityAdvertisement(w); err != nil {
+				s.logger.Debug().Err(err).Msg("git-http: protocol v2 capability advertisement failed (client disconnected?)")
 			}
+			return
+		}
+		// Built here rather than by go-git's server transport, which cannot
+		// advertise the shallow capabilities — see git_uploadpack.go.
+		info, err := gitUploadPackAdvertisement(stor)
+		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		advertiseDefaultBranchSymref(info, repo)
 		if err := info.Encode(w); err != nil {
 			s.logger.Error().Err(err).Msg("failed to encode advertised refs")
 		}
 
 	case "git-receive-pack":
-		sess, err := server.NewReceivePackSession(ep, nil)
+		// Built here rather than by go-git's server transport, which advertises
+		// neither atomic, push options, a side band nor report-status-v2 — see
+		// git_receivepack.go.
+		info, err := gitReceivePackAdvertisement(stor)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		info, err := sess.AdvertisedReferencesContext(r.Context())
-		if err != nil {
-			if err == transport.ErrEmptyRemoteRepository {
-				if flushErr := enc.Flush(); flushErr != nil {
-					s.logger.Debug().Err(flushErr).Str("service", service).Msg("git-http: empty-repo flush failed")
-				}
-				return
-			}
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
+		advertiseDefaultBranchSymref(info, repo)
 		if err := info.Encode(w); err != nil {
 			s.logger.Error().Err(err).Msg("failed to encode advertised refs")
 		}
 	}
 }
 
+// advertiseDefaultBranchSymref names the repository's default branch in the ref
+// advertisement, the way github does.
+//
+// Without the symref=HEAD:refs/heads/<default> capability a client cannot be
+// told which branch to check out: it falls back to matching the advertised HEAD
+// object id against the ref list and takes the first branch that matches, so
+// two branches sharing a tip — or a HEAD that drifted off the default branch —
+// silently produce a clone on the wrong branch. Deriving both the capability
+// and the advertised HEAD id from the repository's recorded default branch
+// makes the answer deterministic rather than a property of ref ordering.
+//
+// Set (not Add) replaces whatever HEAD symref go-git derived from storage, so
+// exactly one is advertised. A repository with no refs at all still advertises
+// the capability — that is how `git clone` of an empty repository learns the
+// branch name its first commit should land on — but one whose default branch
+// simply carries no commits yet does not, because pointing a client at a ref
+// that is missing from an otherwise populated advertisement only draws a
+// warning.
+func advertiseDefaultBranchSymref(info *packp.AdvRefs, repo *store.Repo) {
+	if info == nil || repo == nil || repo.DefaultBranch == "" {
+		return
+	}
+	target := plumbing.NewBranchReferenceName(repo.DefaultBranch)
+	tip, exists := info.References[target.String()]
+	if !exists && len(info.References) > 0 {
+		return
+	}
+	if err := info.Capabilities.Set(capability.SymRef, plumbing.HEAD.String()+":"+target.String()); err != nil {
+		return
+	}
+	if exists {
+		info.Head = &tip
+	}
+}
+
 func (s *Server) handleGitUploadPack(w http.ResponseWriter, r *http.Request, owner, repoName string) {
 	_, user, repo, stor, ok := s.authorizeGitHTTP(w, r, owner, repoName, false)
 	if !ok {
-		return
-	}
-
-	server := gitserver.NewServer(fixedGitLoader{storer: stor})
-
-	ep, err := transport.NewEndpoint(fmt.Sprintf("/%s/%s", owner, repoName))
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	sess, err := server.NewUploadPackSession(ep, nil)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -268,22 +256,45 @@ func (s *Server) handleGitUploadPack(w http.ResponseWriter, r *http.Request, own
 		return
 	}
 
-	upreq := packp.NewUploadPackRequest()
-	if err := upreq.Decode(requestReader); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+	// A smart-HTTP upload-pack answer is a 200 whose body is the pkt-line
+	// exchange, so the header is set up front; once the first shallow or NAK
+	// line is out there is no status code left to fail with, and the refusal
+	// has to travel in the stream. A request rejected before that — a malformed
+	// pkt-line, no wants, a capability never advertised — is still answerable
+	// with a 400.
+	w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
+	stor = gitStorerWithPackReuse(r.Context(), repo.FullName, stor)
+	var result gitUploadPackResult
+	if gitRequestUsesProtocolV2(r, requestReader) {
+		// Each POST of a smart-HTTP conversation is one whole request, so the
+		// v2 command loop serves a single command and returns.
+		result, err = serveGitProtocolV2(r.Context(), stor, repo.DefaultBranch, requestReader, w, true)
+	} else {
+		result, err = serveGitUploadPack(r.Context(), stor, requestReader, w)
 	}
-
-	resp, err := sess.UploadPack(r.Context(), upreq)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		if !result.responded {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		s.logger.Error().Err(err).Str("repo", owner+"/"+repoName).Msg("git HTTP upload-pack failed")
 		return
 	}
+	if result.sessionID != "" {
+		s.logger.Debug().
+			Str("repo", owner+"/"+repoName).
+			Str("client_session_id", result.sessionID).
+			Str("server_session_id", gitServerSessionID()).
+			Msg("git HTTP upload-pack session")
+	}
 
-	// A fetch with no haves is a full clone; count it for the traffic API.
-	// The actor identity is the authenticated login, or the remote host for
-	// anonymous clones of public repos.
-	if len(upreq.Haves) == 0 {
+	// A fetch that carried no haves is a full clone; count it for the traffic
+	// API, but only once the client actually asked for a pack — the first
+	// request of a stateless deepening fetch asks for the shallow boundary
+	// alone and is the same clone as the request that follows it. The actor
+	// identity is the authenticated login, or the remote host for anonymous
+	// clones of public repos.
+	if result.packed && result.clone {
 		actor := r.RemoteAddr
 		if host, _, splitErr := net.SplitHostPort(r.RemoteAddr); splitErr == nil {
 			actor = host
@@ -293,11 +304,18 @@ func (s *Server) handleGitUploadPack(w http.ResponseWriter, r *http.Request, own
 		}
 		s.store.RecordRepoClone(repo.ID, actor)
 	}
+}
 
-	w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
-	if err := resp.Encode(w); err != nil {
-		s.logger.Error().Err(err).Msg("failed to encode upload-pack response")
+// gitRequestUsesProtocolV2 reports whether an upload-pack POST carries a
+// protocol v2 command request. git states the version in a request header, and
+// the body states it too: a v2 request opens with a "command=" pkt-line where a
+// v0 one opens with a want line.
+func gitRequestUsesProtocolV2(r *http.Request, body *bufio.Reader) bool {
+	if gitProtocolV2Requested(r.Header.Get(gitProtocolHeader)) {
+		return true
 	}
+	head, err := body.Peek(len("0000") + len("command="))
+	return err == nil && bytes.HasSuffix(head, []byte("command="))
 }
 
 func (s *Server) handleGitReceivePack(w http.ResponseWriter, r *http.Request, owner, repoName string) {
@@ -306,27 +324,16 @@ func (s *Server) handleGitReceivePack(w http.ResponseWriter, r *http.Request, ow
 		return
 	}
 
-	server := gitserver.NewServer(fixedGitLoader{storer: stor})
-
-	ep, err := transport.NewEndpoint(fmt.Sprintf("/%s/%s", owner, repoName))
+	// A malformed request is still answerable with a status code, because
+	// nothing of the reply has been written yet. Once the report is under way
+	// the only channel left is the stream itself.
+	request, err := decodeGitReceiveRequest(bufio.NewReader(r.Body))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	sess, err := server.NewReceivePackSession(ep, nil)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	req := packp.NewReferenceUpdateRequest()
-	if err := req.Decode(r.Body); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	result, err := s.applyReceivePack(ctx, repo, stor, sess, req)
+	outcome, err := s.applyGitReceivePack(ctx, repo, stor, request)
 	if err != nil {
 		var refused *refusedPushError
 		if errors.As(err, &refused) {
@@ -338,234 +345,10 @@ func (s *Server) handleGitReceivePack(w http.ResponseWriter, r *http.Request, ow
 		return
 	}
 
-	s.afterGitReceivePack(repo, user, appliedPushCommands(req, result), s.baseURL(r))
+	s.afterGitReceivePack(repo, user, outcome.applied, s.baseURL(r))
 
 	w.Header().Set("Content-Type", "application/x-git-receive-pack-result")
-	if result != nil {
-		if err := result.Encode(w); err != nil {
-			s.logger.Error().Err(err).Msg("failed to encode receive-pack response")
-		}
-	}
-}
-
-// refusedPushError is a push branch protection refused on a connection with no
-// report-status channel to carry the per-ref refusal. The whole push fails
-// rather than reporting a success for a ref that did not move.
-type refusedPushError struct{ reason string }
-
-func (e *refusedPushError) Error() string { return e.reason }
-
-// applyReceivePack is the write half of both git transports: it ingests the
-// pushed objects, decides every command against branch protection before any of
-// them is applied, applies the ones the rule allows, and returns the report the
-// client reads each ref's verdict from.
-//
-// The objects are ingested first because whether an update discards commits —
-// the question force-push protection turns on — is only answerable once the
-// commits the push carries are readable.
-func (s *Server) applyReceivePack(ctx context.Context, repo *store.Repo, stor storer.Storer, session transport.ReceivePackSession, request *packp.ReferenceUpdateRequest) (*packp.ReportStatus, error) {
-	if err := ingestPushedObjects(stor, request); err != nil {
-		return nil, err
-	}
-	refusals, err := s.refusedPushCommands(ctx, repo, stor, request.Commands)
-	if err != nil {
-		return nil, err
-	}
-	requested := request.Commands
-	if len(refusals) > 0 {
-		if !request.Capabilities.Supports(capability.ReportStatus) {
-			for _, command := range requested {
-				if refusal, refused := refusals[command.Name]; refused {
-					return nil, &refusedPushError{reason: refusal}
-				}
-			}
-		}
-		allowed := make([]*packp.Command, 0, len(requested))
-		for _, command := range requested {
-			if _, refused := refusals[command.Name]; !refused {
-				allowed = append(allowed, command)
-			}
-		}
-		request.Commands = allowed
-	}
-	// go-git's receive-pack implementation applies every command with
-	// unconditional SetReference/RemoveReference calls even though the wire
-	// command carries the exact old object ID. Let it validate capabilities
-	// and finish pack ingestion, but apply refs here through the same atomic
-	// boundaries as REST so a concurrent API write cannot be overwritten.
-	allowedCommands := request.Commands
-	request.Commands = nil
-	report, err := session.ReceivePack(ctx, request)
-	request.Commands = allowedCommands
-	if err != nil && report == nil {
-		return nil, err
-	}
-	if err != nil {
-		s.logger.Debug().Err(err).Str("repo", repo.FullName).Msg("git receive-pack reported a per-ref failure")
-	}
-	if report == nil {
-		report = packp.NewReportStatus()
-		report.UnpackStatus = "ok"
-	}
-	var firstRefErr error
-	for _, command := range allowedCommands {
-		status := "ok"
-		if updateErr := applyPushCommandAtomic(stor, command); updateErr != nil {
-			status = "failed to update ref"
-			if firstRefErr == nil {
-				firstRefErr = updateErr
-			}
-		}
-		report.CommandStatuses = append(report.CommandStatuses, &packp.CommandStatus{
-			ReferenceName: command.Name,
-			Status:        status,
-		})
-	}
-	for _, command := range requested {
-		if refusal, refused := refusals[command.Name]; refused {
-			report.CommandStatuses = append(report.CommandStatuses, &packp.CommandStatus{ReferenceName: command.Name, Status: refusal})
-		}
-	}
-	return report, firstRefErr
-}
-
-func applyPushCommandAtomic(stor storer.Storer, command *packp.Command) error {
-	atomic, ok := stor.(interface {
-		CreateReference(*plumbing.Reference) error
-		RemoveReferenceCAS(*plumbing.Reference) error
-	})
-	if !ok {
-		return fmt.Errorf("git storer for %s has no atomic ref lifecycle support", command.Name)
-	}
-	switch command.Action() {
-	case packp.Create:
-		return atomic.CreateReference(plumbing.NewHashReference(command.Name, command.New))
-	case packp.Update:
-		old := plumbing.NewHashReference(command.Name, command.Old)
-		next := plumbing.NewHashReference(command.Name, command.New)
-		return stor.CheckAndSetReference(next, old)
-	case packp.Delete:
-		old := plumbing.NewHashReference(command.Name, command.Old)
-		return atomic.RemoveReferenceCAS(old)
-	default:
-		return fmt.Errorf("invalid ref update for %s", command.Name)
-	}
-}
-
-// refusedPushCommands maps each command branch protection refuses to its
-// reason. The commands it does not name are the ones the rule allows.
-func (s *Server) refusedPushCommands(ctx context.Context, repo *store.Repo, stor storer.Storer, commands []*packp.Command) (map[plumbing.ReferenceName]string, error) {
-	refusals := map[plumbing.ReferenceName]string{}
-	for _, command := range commands {
-		kind, err := classifyPushedRefWrite(stor, command)
-		if err != nil {
-			return nil, err
-		}
-		if refusal := s.protectedRefWriteRefusal(ctx, repo, stor, command.Name, kind, command.New); refusal != "" {
-			refusals[command.Name] = refusal
-		}
-	}
-	return refusals, nil
-}
-
-// classifyPushedRefWrite names the allowance one pushed command needs. The
-// comparison is against the ref as the server holds it, not against the old
-// value the client asserted.
-func classifyPushedRefWrite(stor storer.Storer, command *packp.Command) (refWriteKind, error) {
-	if command.New.IsZero() {
-		return refDeletion, nil
-	}
-	current, err := stor.Reference(command.Name)
-	if errors.Is(err, plumbing.ErrReferenceNotFound) {
-		return refCreation, nil
-	}
-	if err != nil {
-		return refForcePush, fmt.Errorf("read ref %s: %w", command.Name, err)
-	}
-	fastForward, err := refUpdateIsFastForward(stor, current.Hash(), command.New)
-	if err != nil {
-		return refForcePush, err
-	}
-	if fastForward {
-		return refFastForward, nil
-	}
-	return refForcePush, nil
-}
-
-// ingestPushedObjects stores the objects a receive-pack request carries and
-// leaves the request without a packfile, so the session that applies the
-// surviving commands does not read the stream a second time. A push that only
-// deletes refs carries no objects at all.
-func ingestPushedObjects(stor storer.Storer, request *packp.ReferenceUpdateRequest) error {
-	pack := request.Packfile
-	request.Packfile = nil
-	if pack == nil {
-		return nil
-	}
-	defer func() { _ = pack.Close() }()
-	buffered := bufio.NewReader(pack)
-	if _, err := buffered.Peek(1); err != nil {
-		if errors.Is(err, io.EOF) {
-			return nil
-		}
-		return fmt.Errorf("read pushed packfile: %w", err)
-	}
-	if err := packfile.UpdateObjectStorage(stor, buffered); err != nil {
-		return fmt.Errorf("store pushed objects: %w", err)
-	}
-	return nil
-}
-
-// appliedPushCommands are the commands whose ref update the session actually
-// performed. A command the report marks failed moved nothing, so it must not
-// raise a push event.
-func appliedPushCommands(request *packp.ReferenceUpdateRequest, report *packp.ReportStatus) []*packp.Command {
-	if report == nil {
-		return request.Commands
-	}
-	applied := make([]*packp.Command, 0, len(request.Commands))
-	for _, command := range request.Commands {
-		ok := true
-		for _, status := range report.CommandStatuses {
-			if status.ReferenceName == command.Name && status.Status != "ok" {
-				ok = false
-				break
-			}
-		}
-		if ok {
-			applied = append(applied, command)
-		}
-	}
-	return applied
-}
-
-func (s *Server) afterGitReceivePack(repo *store.Repo, user *store.User, applied []*packp.Command, baseURL string) {
-	owner, _ := splitRepoPath("/" + repo.FullName)
-	stor := s.resolveGitRepo(owner, repo.Name)
-	s.store.UpdateRepo(owner, repo.Name, func(updated *store.Repo) {
-		updated.PushedAt = updated.UpdatedAt
-	})
-	if stor != nil {
-		needsUpdate := false
-		headRef, headErr := stor.Reference(plumbing.HEAD)
-		if headErr != nil {
-			needsUpdate = true
-		} else if headRef.Type() == plumbing.SymbolicReference {
-			_, targetErr := stor.Reference(headRef.Target())
-			needsUpdate = targetErr != nil
-		}
-		if needsUpdate {
-			for _, branch := range []string{"main", "master"} {
-				ref := plumbing.NewBranchReferenceName(branch)
-				if _, err := stor.Reference(ref); err == nil {
-					_ = stor.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, ref))
-					s.store.UpdateRepo(owner, repo.Name, func(updated *store.Repo) { updated.DefaultBranch = branch })
-					break
-				}
-			}
-		}
-	}
-	for _, command := range applied {
-		s.afterCommittedRefUpdate(repo, user, command.Name.String(), command.Old.String(), command.New.String(), baseURL)
+	if err := writeGitReceivePackResponse(w, request, outcome); err != nil {
+		s.logger.Error().Err(err).Msg("failed to encode receive-pack response")
 	}
 }

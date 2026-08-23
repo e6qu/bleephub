@@ -200,6 +200,20 @@ export function App() {
  * anonymously (discussions and projects-classic are GraphQL/auth-only,
  * packages / marketplace / org teams & projects / security alerts all 401
  * without a session) — an anonymous page must fire zero 401ing requests.
+ *
+ * Repositories live at `/ui/{owner}/{repo}`, mirroring github.com's
+ * `/{owner}/{repo}`: the SPA is mounted at `/ui/` (Vite `base`), so `/ui/` is
+ * this app's site root and a repository sits one segment below it, exactly as
+ * the `/ui/:login` profile route already mirrors github.com's `/{login}`.
+ *
+ * Disambiguation from the app's own top-level pages is the router's ranking
+ * rule, not declaration order: React Router scores a static segment above a
+ * dynamic one, so `/ui/gists/:id`, `/ui/orgs/:org` and `/ui/settings/…` all
+ * beat `/ui/:owner/:repo` no matter where they appear below. Consumers that
+ * parse the pathname WITHOUT the router (the global header's repo scope and
+ * breadcrumb) cannot use that ranking, so they filter through the explicit
+ * reserved-word list in routes.ts — github.com's own mechanism for keeping
+ * `settings` and `notifications` from being claimed as account names.
  */
 function AppRoutes({ signedIn }: { signedIn: boolean }) {
   const location = useLocation();
@@ -233,44 +247,44 @@ function AppRoutes({ signedIn }: { signedIn: boolean }) {
               <Route path="/ui/orgs/:org/settings" element={gate(<OrgSettingsPage />)} />
               <Route path="/ui/orgs/:org/insights" element={gate(<OrgInsightsPage />)} />
               <Route path="/ui/orgs/:org/copilot" element={gate(<CopilotPage />)} />
-              <Route path="/ui/repos/:owner/:repo" element={<RepoDetailPage />} />
-              <Route path="/ui/repos/:owner/:repo/commits" element={<RepoDetailPage initialTab="commits" />} />
-              <Route path="/ui/repos/:owner/:repo/branches" element={<RepoDetailPage initialTab="branches" />} />
-              <Route path="/ui/repos/:owner/:repo/tags" element={<RepoDetailPage initialTab="tags" />} />
-              <Route path="/ui/repos/:owner/:repo/activity" element={<RepoDetailPage initialTab="activity" />} />
-              <Route path="/ui/repos/:owner/:repo/tree/:ref/*" element={<RepoDetailPage />} />
-              <Route path="/ui/repos/:owner/:repo/commits/:sha" element={<RepoCommitPage />} />
-              <Route path="/ui/repos/:owner/:repo/compare/:range" element={<RepoComparePage />} />
-              <Route path="/ui/repos/:owner/:repo/blob/:ref/*" element={<RepoFilePage />} />
-              <Route path="/ui/repos/:owner/:repo/blame/:ref/*" element={<BlamePage />} />
-              <Route path="/ui/repos/:owner/:repo/releases" element={<ReleasesPage />} />
-              <Route path="/ui/repos/:owner/:repo/releases/new" element={<ReleasesPage />} />
-              <Route path="/ui/repos/:owner/:repo/releases/:releaseId" element={<ReleasesPage />} />
-              <Route path="/ui/repos/:owner/:repo/issues" element={<IssuesPage />} />
-              <Route path="/ui/repos/:owner/:repo/issues/:number" element={<IssuesPage />} />
-              <Route path="/ui/repos/:owner/:repo/labels" element={<IssuesPage view="labels" />} />
-              <Route path="/ui/repos/:owner/:repo/milestones" element={<IssuesPage view="milestones" />} />
-              <Route path="/ui/repos/:owner/:repo/insights" element={<InsightsPage />} />
-              <Route path="/ui/repos/:owner/:repo/pulls" element={<PullsPage />} />
-              <Route path="/ui/repos/:owner/:repo/pulls/:number" element={<PullsPage />} />
-              <Route path="/ui/repos/:owner/:repo/pulls/:number/commits" element={<PullsPage />} />
-              <Route path="/ui/repos/:owner/:repo/pulls/:number/files" element={<PullsPage />} />
-              <Route path="/ui/repos/:owner/:repo/pulls/:number/checks" element={<PullsPage />} />
-              <Route path="/ui/repos/:owner/:repo/discussions" element={gate(<DiscussionsPage />)} />
-              <Route path="/ui/repos/:owner/:repo/discussions/:number" element={gate(<DiscussionsPage />)} />
-              <Route path="/ui/repos/:owner/:repo/actions" element={<ActionsPage />} />
-              <Route path="/ui/repos/:owner/:repo/actions/runs/:runId" element={<RunDetailPage />} />
-              <Route path="/ui/repos/:owner/:repo/settings" element={gate(<RepoSettingsPage />)} />
-              <Route path="/ui/repos/:owner/:repo/settings/branch-protection" element={gate(<BranchProtectionPage />)} />
-              <Route path="/ui/repos/:owner/:repo/security" element={gate(<RepoSecurityOverviewPage />)} />
-              <Route path="/ui/repos/:owner/:repo/security/secret-scanning" element={gate(<SecretScanningPage />)} />
-              <Route path="/ui/repos/:owner/:repo/security/code-scanning" element={gate(<CodeScanningPage />)} />
-              <Route path="/ui/repos/:owner/:repo/security/dependabot" element={gate(<DependabotPage />)} />
-              <Route path="/ui/repos/:owner/:repo/security/advisories" element={gate(<SecurityAdvisoriesPage />)} />
-              <Route path="/ui/repos/:owner/:repo/projects-classic" element={gate(<ProjectsClassicPage />)} />
-              <Route path="/ui/repos/:owner/:repo/wiki" element={<WikiPage />} />
-              <Route path="/ui/repos/:owner/:repo/wiki/:slug" element={<WikiPage />} />
-              <Route path="/ui/repos/:owner/:repo/settings/secrets" element={gate(<RepoSecretsPage />)} />
+              <Route path="/ui/:owner/:repo" element={<RepoDetailPage />} />
+              <Route path="/ui/:owner/:repo/commits" element={<RepoDetailPage initialTab="commits" />} />
+              <Route path="/ui/:owner/:repo/branches" element={<RepoDetailPage initialTab="branches" />} />
+              <Route path="/ui/:owner/:repo/tags" element={<RepoDetailPage initialTab="tags" />} />
+              <Route path="/ui/:owner/:repo/activity" element={<RepoDetailPage initialTab="activity" />} />
+              <Route path="/ui/:owner/:repo/tree/:ref/*" element={<RepoDetailPage />} />
+              <Route path="/ui/:owner/:repo/commits/:sha" element={<RepoCommitPage />} />
+              <Route path="/ui/:owner/:repo/compare/:range" element={<RepoComparePage />} />
+              <Route path="/ui/:owner/:repo/blob/:ref/*" element={<RepoFilePage />} />
+              <Route path="/ui/:owner/:repo/blame/:ref/*" element={<BlamePage />} />
+              <Route path="/ui/:owner/:repo/releases" element={<ReleasesPage />} />
+              <Route path="/ui/:owner/:repo/releases/new" element={<ReleasesPage />} />
+              <Route path="/ui/:owner/:repo/releases/:releaseId" element={<ReleasesPage />} />
+              <Route path="/ui/:owner/:repo/issues" element={<IssuesPage />} />
+              <Route path="/ui/:owner/:repo/issues/:number" element={<IssuesPage />} />
+              <Route path="/ui/:owner/:repo/labels" element={<IssuesPage view="labels" />} />
+              <Route path="/ui/:owner/:repo/milestones" element={<IssuesPage view="milestones" />} />
+              <Route path="/ui/:owner/:repo/insights" element={<InsightsPage />} />
+              <Route path="/ui/:owner/:repo/pulls" element={<PullsPage />} />
+              <Route path="/ui/:owner/:repo/pulls/:number" element={<PullsPage />} />
+              <Route path="/ui/:owner/:repo/pulls/:number/commits" element={<PullsPage />} />
+              <Route path="/ui/:owner/:repo/pulls/:number/files" element={<PullsPage />} />
+              <Route path="/ui/:owner/:repo/pulls/:number/checks" element={<PullsPage />} />
+              <Route path="/ui/:owner/:repo/discussions" element={gate(<DiscussionsPage />)} />
+              <Route path="/ui/:owner/:repo/discussions/:number" element={gate(<DiscussionsPage />)} />
+              <Route path="/ui/:owner/:repo/actions" element={<ActionsPage />} />
+              <Route path="/ui/:owner/:repo/actions/runs/:runId" element={<RunDetailPage />} />
+              <Route path="/ui/:owner/:repo/settings" element={gate(<RepoSettingsPage />)} />
+              <Route path="/ui/:owner/:repo/settings/branch-protection" element={gate(<BranchProtectionPage />)} />
+              <Route path="/ui/:owner/:repo/security" element={gate(<RepoSecurityOverviewPage />)} />
+              <Route path="/ui/:owner/:repo/security/secret-scanning" element={gate(<SecretScanningPage />)} />
+              <Route path="/ui/:owner/:repo/security/code-scanning" element={gate(<CodeScanningPage />)} />
+              <Route path="/ui/:owner/:repo/security/dependabot" element={gate(<DependabotPage />)} />
+              <Route path="/ui/:owner/:repo/security/advisories" element={gate(<SecurityAdvisoriesPage />)} />
+              <Route path="/ui/:owner/:repo/projects-classic" element={gate(<ProjectsClassicPage />)} />
+              <Route path="/ui/:owner/:repo/wiki" element={<WikiPage />} />
+              <Route path="/ui/:owner/:repo/wiki/:slug" element={<WikiPage />} />
+              <Route path="/ui/:owner/:repo/settings/secrets" element={gate(<RepoSecretsPage />)} />
               <Route path="/ui/apps" element={gate(<AppsPage />)} />
               <Route path="/ui/apps/:publisher/marketplace" element={gate(<MarketplacePublisherPage />)} />
               <Route path="/ui/oauth" element={gate(<OAuthPage />)} />
@@ -280,11 +294,11 @@ function AppRoutes({ signedIn }: { signedIn: boolean }) {
               <Route path="/ui/notifications" element={gate(<NotificationsPage />)} />
               <Route path="/ui/packages" element={gate(<PackagesPage />)} />
               <Route path="/ui/orgs/:org/packages" element={gate(<PackagesPage />)} />
-              <Route path="/ui/repos/:owner/:repo/packages" element={gate(<PackagesPage />)} />
+              <Route path="/ui/:owner/:repo/packages" element={gate(<PackagesPage />)} />
               <Route path="/ui/migrations" element={gate(<MigrationsPage />)} />
               <Route path="/ui/codespaces" element={gate(<CodespacesPage />)} />
               <Route path="/ui/codespaces/:codespaceName" element={gate(<CodespacesPage />)} />
-              <Route path="/ui/repos/:owner/:repo/codespaces" element={gate(<CodespacesPage />)} />
+              <Route path="/ui/:owner/:repo/codespaces" element={gate(<CodespacesPage />)} />
               <Route path="/ui/copilot/spaces" element={gate(<PersonalCopilotSpacesPage />)} />
               <Route path="/ui/classrooms" element={gate(<ClassroomPage />)} />
               <Route path="/ui/classrooms/:classroomId" element={gate(<ClassroomPage />)} />
@@ -298,17 +312,17 @@ function AppRoutes({ signedIn }: { signedIn: boolean }) {
               <Route path="/ui/operations/enterprise" element={gate(<EnterprisePage />)} />
               <Route path="/ui/operations/audit-log" element={gate(<AuditLogPage />)} />
               {/* Deployments + webhook deliveries + Pages */}
-              <Route path="/ui/repos/:owner/:repo/deployments" element={<DeploymentsPage />} />
-              <Route path="/ui/repos/:owner/:repo/hooks/:hookId/deliveries" element={gate(<WebhookDeliveriesPage />)} />
+              <Route path="/ui/:owner/:repo/deployments" element={<DeploymentsPage />} />
+              <Route path="/ui/:owner/:repo/hooks/:hookId/deliveries" element={gate(<WebhookDeliveriesPage />)} />
               <Route path="/ui/orgs/:org/hooks" element={gate(<OrgHooksPage />)} />
               <Route path="/ui/orgs/:org/hooks/:hookId/deliveries" element={gate(<WebhookDeliveriesPage />)} />
               {/* Search + repo social + account */}
               <Route path="/ui/search" element={<SearchPage />} />
               <Route path="/ui/account" element={gate(<AccountPage />)} />
               <Route path="/ui/settings/organizations" element={gate(<MyOrganizationsPage />)} />
-              <Route path="/ui/repos/:owner/:repo/stargazers" element={<RepoSocialPage kind="stargazers" />} />
-              <Route path="/ui/repos/:owner/:repo/watchers" element={<RepoSocialPage kind="watchers" />} />
-              <Route path="/ui/repos/:owner/:repo/forks" element={<RepoSocialPage kind="forks" />} />
+              <Route path="/ui/:owner/:repo/stargazers" element={<RepoSocialPage kind="stargazers" />} />
+              <Route path="/ui/:owner/:repo/watchers" element={<RepoSocialPage kind="watchers" />} />
+              <Route path="/ui/:owner/:repo/forks" element={<RepoSocialPage kind="forks" />} />
               {/* Bleephub organization overview, people, teams, and user profile pages.
                   Org sub-pages share the OrgHeader tab bar. The bare
                   top-level /ui/:login profile route is registered LAST so

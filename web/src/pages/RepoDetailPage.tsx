@@ -25,9 +25,6 @@ import {
   fetchRepoSocialCounts,
   fetchRepoTags,
   fetchRepoTopics,
-  fetchWebhooks,
-  fetchSecrets,
-  fetchEnvironments,
   fetchReleases,
   fetchPackages,
   fetchRepoContributors,
@@ -71,9 +68,6 @@ import type {
   GithubContentFile,
   GithubContentItem,
   GithubTag,
-  GithubWebhook,
-  GithubSecret,
-  GithubEnvironment,
   GithubRelease,
   GithubRepoSocialCounts,
 } from "../types.js";
@@ -86,19 +80,19 @@ import { ReactionBar } from "../components/ReactionBar.js";
 import {
   BranchIcon,
   TagIcon,
-  LockIcon,
   CommentIcon,
   FileIcon,
   DirectoryIcon,
   StarIcon,
   EyeIcon,
   RepoForkedIcon,
+  GraphIcon,
+  ServerIcon,
   GlobeIcon,
   CodeIcon,
   CopyIcon,
   CheckIcon,
   ChevronDownIcon,
-  GearIcon,
   LawIcon,
 } from "../components/octicons.js";
 
@@ -187,22 +181,15 @@ const aheadBehind = (owner: string, repo: string, base: string, head: string) =>
     return { ahead: cmp.ahead_by, behind: cmp.behind_by };
   });
 
-type SubTab = "code" | "commits" | "branches" | "tags" | "activity" | "releases" | "webhooks" | "secrets" | "environments";
-
-const SUB_TABS: { key: SubTab; label: string }[] = [
-  { key: "code", label: "Code" },
-  { key: "commits", label: "Commits" },
-  { key: "branches", label: "Branches" },
-  { key: "tags", label: "Tags" },
-  { key: "activity", label: "Activity" },
-  { key: "releases", label: "Releases" },
-  { key: "webhooks", label: "Webhooks" },
-  { key: "secrets", label: "Secrets" },
-  { key: "environments", label: "Environments" },
-];
-
-const CONTENT_TABS = SUB_TABS.slice(0, 6);
-const ADMIN_TABS = SUB_TABS.slice(6);
+/**
+ * G9: github.com has no second tab row under the repository tabs. Every
+ * destination this page can render is reached the way github.com reaches it —
+ * Code from the repository tab row, Commits from the "N commits" link on the
+ * tree header, Branches and Tags from the branch/tag switcher's own tabs,
+ * Activity and Releases from the About sidebar — so the sub-tab is a pure
+ * function of the URL and never a control.
+ */
+type SubTab = "code" | "commits" | "branches" | "tags" | "activity";
 
 /** A recorded repository ref-update, as served by GET /repos/{o}/{r}/activity. */
 interface RepoActivityItem {
@@ -251,7 +238,7 @@ function UseThisTemplateBanner({ owner, repo }: { owner: string; repo: string })
       }),
     onSuccess: (created) => {
       setOpen(false);
-      navigate(`/ui/repos/${created.full_name}`);
+      navigate(`/ui/${created.full_name}`);
     },
   });
 
@@ -409,7 +396,6 @@ export function RepoDetailPage({ initialTab = "code" }: { initialTab?: SubTab })
   // mounting it here would race the bootstrap seed with a standalone
   // /repos/{owner}/{repo} fetch. Child components mount after the seed, so
   // they use the hook as a pure cache hit.
-  const isAdmin = repoData?.permissions?.admin === true;
   const canPush = repoData?.permissions?.push === true;
   const syncForkMut = useMutation({
     mutationFn: () => syncFork(owner, repo, repoData?.default_branch ?? ""),
@@ -417,26 +403,6 @@ export function RepoDetailPage({ initialTab = "code" }: { initialTab?: SubTab })
       void mainQc.invalidateQueries({ queryKey: ["commits", owner, repo] });
       void mainQc.invalidateQueries({ queryKey: ["repo", owner, repo] });
     },
-  });
-  const { data: webhooks = [], isError: webhooksError, error: webhooksErr } = useQuery({
-    queryKey: ["webhooks", owner, repo],
-    queryFn: () => fetchWebhooks(owner, repo),
-    enabled: tab === "webhooks" && !!owner && !!repo,
-  });
-  const { data: secrets = [], isError: secretsError, error: secretsErr } = useQuery({
-    queryKey: ["secrets", owner, repo],
-    queryFn: () => fetchSecrets(owner, repo),
-    enabled: tab === "secrets" && !!owner && !!repo,
-  });
-  const { data: environments = [], isError: environmentsError, error: environmentsErr } = useQuery({
-    queryKey: ["environments", owner, repo],
-    queryFn: () => fetchEnvironments(owner, repo),
-    enabled: tab === "environments" && !!owner && !!repo,
-  });
-  const { data: releases = [], isError: releasesError, error: releasesErr } = useQuery({
-    queryKey: ["releases", owner, repo],
-    queryFn: () => fetchReleases(owner, repo),
-    enabled: tab === "releases" && !!owner && !!repo,
   });
   const { data: tags = [], isError: tagsError, error: tagsErr } = useQuery({
     queryKey: ["repo-tags", owner, repo],
@@ -474,84 +440,6 @@ export function RepoDetailPage({ initialTab = "code" }: { initialTab?: SubTab })
       <RepoHeader owner={owner} repo={repo} active="code" {...counts} />
 
       {repoData?.is_template && <UseThisTemplateBanner owner={owner} repo={repo} />}
-
-      {/* GitHub keeps content destinations close to the Code view and puts
-          administrative resources behind Settings/overflow navigation. */}
-      <nav className="repo-utility-bar mb-4" aria-label="Repository content">
-        <div className="flex min-w-0 flex-wrap gap-1">
-        {CONTENT_TABS.map((t) => {
-          if (t.key === "releases") {
-            return (
-              <button
-                key={t.key}
-                type="button"
-                onClick={() => setTab(t.key)}
-                className="repo-utility-tab"
-                aria-current={tab === t.key ? "page" : undefined}
-                style={{
-                  fontWeight: tab === t.key ? 600 : 500,
-                  color: tab === t.key ? "var(--color-fg)" : "var(--color-fg-muted)",
-                  background: tab === t.key ? "var(--color-accent-soft)" : "transparent",
-                  borderColor: tab === t.key ? "color-mix(in srgb, var(--color-accent) 30%, var(--color-border))" : "transparent",
-                }}
-              >
-                {t.label}
-              </button>
-            );
-          }
-          const destination =
-            t.key === "commits" || t.key === "branches" || t.key === "tags"
-              ? t.key
-              : "root";
-          const to =
-            t.key === "activity"
-              ? `/ui/repos/${owner}/${repo}/activity`
-              : repoCodeRoute(owner, repo, { kind: destination });
-          return (
-          <Link
-            key={t.key}
-            to={to}
-            className="repo-utility-tab"
-            aria-current={tab === t.key ? "page" : undefined}
-            style={{
-              fontWeight: tab === t.key ? 600 : 500,
-              color: tab === t.key ? "var(--color-fg)" : "var(--color-fg-muted)",
-              background: tab === t.key ? "var(--color-accent-soft)" : "transparent",
-              borderColor: tab === t.key ? "color-mix(in srgb, var(--color-accent) 30%, var(--color-border))" : "transparent",
-            }}
-          >
-            {t.label}
-          </Link>
-          );
-        })}
-        </div>
-        {isAdmin && (
-        <details className="repo-more-menu">
-          <summary className="repo-more-trigger">
-            <GearIcon size={14} />
-            {ADMIN_TABS.find((item) => item.key === tab)?.label ?? "More"}
-            <ChevronDownIcon size={13} />
-          </summary>
-          <div className="repo-more-popover">
-            <div className="repo-more-heading">Repository administration</div>
-            {ADMIN_TABS.map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                onClick={(event) => {
-                  setTab(item.key);
-                  event.currentTarget.closest("details")?.removeAttribute("open");
-                }}
-                aria-current={tab === item.key ? "page" : undefined}
-              >
-                {item.label}
-              </button>
-            ))}
-            <Link to={`/ui/repos/${owner}/${repo}/settings`}>All repository settings</Link>
-          </div>
-        </details>
-        )}
-      </nav>
 
       {/* GitHub's two-column Code page: file browser + README on the left,
           the About sidebar (description, topics, releases, packages,
@@ -636,40 +524,6 @@ export function RepoDetailPage({ initialTab = "code" }: { initialTab?: SubTab })
           <InlineError title="Failed to load activity" detail={String(activityErr)} />
         ) : (
           <ActivityFeed items={activity} loading={activityLoading} />
-        ))}
-      {tab === "releases" &&
-        (releasesError ? (
-          <InlineError title="Failed to load releases" detail={String(releasesErr)} />
-        ) : (
-          <ReleasesList owner={owner} repo={repo} releases={releases} />
-        ))}
-      {tab === "webhooks" &&
-        (webhooksError ? (
-          <InlineError title="Failed to load webhooks" detail={String(webhooksErr)} />
-        ) : (
-          <WebhooksList owner={owner} repo={repo} hooks={webhooks} />
-        ))}
-      {tab === "secrets" &&
-        (secretsError ? (
-          <InlineError title="Failed to load secrets" detail={String(secretsErr)} />
-        ) : (
-          <SecretsList secrets={secrets} />
-        ))}
-      {tab === "environments" &&
-        (environmentsError ? (
-          <InlineError title="Failed to load environments" detail={String(environmentsErr)} />
-        ) : (
-          <>
-            <div className="mb-3" style={{ fontSize: "0.85rem" }}>
-              <Link
-                to={`/ui/repos/${owner}/${repo}/deployments`}
-                style={{ color: "var(--color-accent)", textDecoration: "none" }}
-              >
-                View deployments, protection rules, and pending approvals →
-              </Link>
-            </div>
-            <EnvironmentsList environments={environments} />
-          </>
         ))}
     </div>
   );
@@ -1063,7 +917,7 @@ function LatestCommitBanner({
     <div className="flex w-full min-w-0 items-center gap-2">
       <Avatar login={commit.author?.login ?? commit.commit.author?.name ?? "?"} src={commit.author?.avatar_url} size={20} />
       <Link
-        to={`/ui/repos/${owner}/${repo}/commits/${commit.sha}`}
+        to={`/ui/${owner}/${repo}/commits/${commit.sha}`}
         className="min-w-0 flex-1 truncate"
         style={{ color: "var(--color-fg)", textDecoration: "none" }}
         title={commit.commit.message}
@@ -1072,7 +926,7 @@ function LatestCommitBanner({
         {commit.commit.message.split("\n")[0]}
       </Link>
       <Link
-        to={`/ui/repos/${owner}/${repo}/commits/${commit.sha}`}
+        to={`/ui/${owner}/${repo}/commits/${commit.sha}`}
         className="font-mono"
         style={{ color: "var(--color-fg-muted)", textDecoration: "none" }}
       >
@@ -1083,7 +937,7 @@ function LatestCommitBanner({
       </span>
       {total !== undefined ? (
         <Link
-          to={`/ui/repos/${owner}/${repo}/commits`}
+          to={`/ui/${owner}/${repo}/commits`}
           className="inline-flex items-center gap-1"
           style={{ color: "var(--color-fg-muted)", textDecoration: "none", whiteSpace: "nowrap" }}
         >
@@ -1092,7 +946,7 @@ function LatestCommitBanner({
         </Link>
       ) : (
         <Link
-          to={`/ui/repos/${owner}/${repo}/commits?path=${encodeURIComponent(historyPath ?? "")}`}
+          to={`/ui/${owner}/${repo}/commits?path=${encodeURIComponent(historyPath ?? "")}`}
           className="inline-flex items-center gap-1"
           style={{ color: "var(--color-fg-muted)", textDecoration: "none", whiteSpace: "nowrap" }}
         >
@@ -1299,7 +1153,7 @@ function AboutSidebar({
     enabled: !!owner && !!repo,
   });
 
-  const base = `/ui/repos/${owner}/${repo}`;
+  const base = `/ui/${owner}/${repo}`;
   const topicNames = topics?.names ?? [];
   const divider = { border: "none", borderTop: "1px solid var(--color-border)", margin: 0 } as const;
   const mutedLink = { color: "var(--color-fg-muted)", textDecoration: "none" } as const;
@@ -1366,6 +1220,26 @@ function AboutSidebar({
             </Link>
           </div>
         )}
+        {/* G9: the ref-update feed and the deployments/environments view, in
+            github.com's About rail beside the social counters, now that the
+            extra sub-tab row is gone. Deployments was previously reachable
+            ONLY from that row's admin overflow. */}
+        <div className="mt-1.5 flex flex-col gap-1.5">
+          <Link
+            to={`${base}/activity`}
+            className="inline-flex items-center gap-1.5"
+            style={{ ...mutedLink, lineHeight: "1.625rem" }}
+          >
+            <GraphIcon size={15} /> Activity
+          </Link>
+          <Link
+            to={`${base}/deployments`}
+            className="inline-flex items-center gap-1.5"
+            style={{ ...mutedLink, lineHeight: "1.625rem" }}
+          >
+            <ServerIcon size={15} /> Deployments
+          </Link>
+        </div>
         {repoData.license && (
           <div className="mt-2 inline-flex items-center gap-1.5" style={mutedLink}>
             <LawIcon size={15} /> {repoData.license.name}
@@ -1376,7 +1250,13 @@ function AboutSidebar({
       <hr style={divider} />
 
       <section>
-        <SectionLabel>Releases</SectionLabel>
+        {/* G9: with the extra sub-tab row gone, this heading is the repo's
+            route to the releases page — github.com's own entry point. */}
+        <SectionLabel>
+          <Link to={`${base}/releases`} style={{ color: "inherit", textDecoration: "none" }}>
+            Releases
+          </Link>
+        </SectionLabel>
         {releasesError ? (
           <InlineError title="Failed to load releases" />
         ) : releases && releases.length > 0 ? (
@@ -1420,7 +1300,7 @@ function AboutSidebar({
           <InlineError title="Failed to load packages" />
         ) : packages && packages.length > 0 ? (
           <Link
-            to={`/ui/repos/${owner}/${repo}/packages`}
+            to={`/ui/${owner}/${repo}/packages`}
             style={{ color: "var(--color-accent)", textDecoration: "none" }}
           >
             {packages.length} {packages.length === 1 ? "package" : "packages"}
@@ -1436,7 +1316,7 @@ function AboutSidebar({
           <section>
             <SectionLabel>
               <Link
-                to={`/ui/repos/${owner}/${repo}/insights`}
+                to={`/ui/${owner}/${repo}/insights`}
                 style={{ color: "inherit", textDecoration: "none" }}
               >
                 Contributors {contributors!.length}
@@ -1566,7 +1446,7 @@ function FileRow({
       <span className="min-w-0 flex-1 truncate" style={{ color: "var(--color-fg-muted)" }}>
         {latest ? (
           <Link
-            to={`/ui/repos/${owner}/${repo}/commits/${latest.sha}`}
+            to={`/ui/${owner}/${repo}/commits/${latest.sha}`}
             title={latest.title}
             style={{ color: "var(--color-fg-muted)", textDecoration: "none", display: "inline-block", lineHeight: "1.625rem" }}
           >
@@ -1879,7 +1759,7 @@ function CommitsList({
                 >
                   <div className="min-w-0 flex-1">
                     <Link
-                      to={`/ui/repos/${owner}/${repo}/commits/${c.sha}`}
+                      to={`/ui/${owner}/${repo}/commits/${c.sha}`}
                       style={{
                         fontSize: "0.88rem",
                         color: "var(--color-fg)",
@@ -1900,7 +1780,7 @@ function CommitsList({
                     </div>
                   </div>
                   <Link
-                    to={`/ui/repos/${owner}/${repo}/commits/${c.sha}`}
+                    to={`/ui/${owner}/${repo}/commits/${c.sha}`}
                     className="font-mono"
                     style={{
                       fontSize: "0.74rem",
@@ -1977,155 +1857,6 @@ function ActivityFeed({ items, loading }: { items: RepoActivityItem[]; loading: 
   );
 }
 
-function WebhooksList({
-  owner,
-  repo,
-  hooks,
-}: {
-  owner: string;
-  repo: string;
-  hooks: GithubWebhook[];
-}) {
-  if (hooks.length === 0) return <Blankslate icon={<CommentIcon size={26} />} title="No webhooks configured" />;
-  return (
-    <Box>
-      {hooks.map((h, i) => (
-        <div
-          key={h.id}
-          className="flex items-center gap-3"
-          style={{
-            padding: "0.7rem 1rem",
-            borderBottom: i < hooks.length - 1 ? "1px solid var(--color-border)" : "none",
-          }}
-        >
-          <span
-            aria-hidden
-            style={{
-              width: 8,
-              height: 8,
-              borderRadius: "999px",
-              background: h.active ? "var(--gh-open)" : "var(--color-fg-subtle)",
-              flexShrink: 0,
-            }}
-          />
-          <div className="min-w-0 flex-1">
-            <div style={{ fontSize: "0.88rem", fontWeight: 500, color: "var(--color-fg)" }}>
-              {h.name}{" "}
-              <span style={{ color: "var(--color-fg-subtle)", fontWeight: 400 }}>#{h.id}</span>
-            </div>
-            <div className="font-mono" style={{ fontSize: "0.74rem", color: "var(--color-fg-muted)" }}>
-              {h.config?.url || "no url"} · events: {h.events?.join(", ") || "none"}
-            </div>
-          </div>
-          <Link
-            to={`/ui/repos/${owner}/${repo}/hooks/${h.id}/deliveries`}
-            style={{ color: "var(--color-accent)", fontSize: "0.8rem", textDecoration: "none", flexShrink: 0 }}
-          >
-            Deliveries
-          </Link>
-        </div>
-      ))}
-    </Box>
-  );
-}
-
-function SecretsList({ secrets }: { secrets: GithubSecret[] }) {
-  if (secrets.length === 0) return <Blankslate icon={<LockIcon size={26} />} title="No secrets configured" />;
-  return (
-    <Box>
-      {secrets.map((s, i) => (
-        <div
-          key={s.name}
-          className="flex items-center gap-2 font-mono"
-          style={{
-            padding: "0.65rem 1rem",
-            fontSize: "0.85rem",
-            color: "var(--color-fg)",
-            borderBottom: i < secrets.length - 1 ? "1px solid var(--color-border)" : "none",
-          }}
-        >
-          <LockIcon size={14} style={{ color: "var(--color-fg-muted)" }} /> {s.name}
-        </div>
-      ))}
-    </Box>
-  );
-}
-
-function EnvironmentsList({ environments }: { environments: GithubEnvironment[] }) {
-  if (environments.length === 0) return <Blankslate title="No environments" />;
-  return (
-    <Box>
-      {environments.map((e, i) => (
-        <div
-          key={e.name}
-          style={{
-            padding: "0.65rem 1rem",
-            fontSize: "0.85rem",
-            color: "var(--color-fg)",
-            borderBottom: i < environments.length - 1 ? "1px solid var(--color-border)" : "none",
-          }}
-        >
-          {e.name}
-        </div>
-      ))}
-    </Box>
-  );
-}
-
-function ReleasesList({ owner, repo, releases }: { owner: string; repo: string; releases: GithubRelease[] }) {
-  // Creating releases needs push access; the feed stays readable for everyone.
-  const { canPush } = useRepoPermissions(owner, repo);
-  if (releases.length === 0) return (
-    <Blankslate icon={<TagIcon size={26} />} title="No releases">
-      {canPush
-        ? <Link to={`/ui/repos/${owner}/${repo}/releases/new`}>Create the first release</Link>
-        : <p>There aren’t any releases here.</p>}
-    </Blankslate>
-  );
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="flex justify-end">
-        <Link to={`/ui/repos/${owner}/${repo}/releases`} style={{ color: "var(--color-accent)", fontSize: "0.82rem" }}>
-          Manage releases and assets
-        </Link>
-      </div>
-      <Box>{releases.map((r, i) => (
-        <div
-          key={r.id}
-          className="flex items-center gap-3"
-          style={{
-            padding: "0.7rem 1rem",
-            borderBottom: i < releases.length - 1 ? "1px solid var(--color-border)" : "none",
-          }}
-        >
-          <span
-            className="inline-flex items-center gap-1 font-mono"
-            style={{
-              fontSize: "0.74rem",
-              color: "var(--color-accent)",
-              background: "var(--color-accent-soft)",
-              padding: "0.1rem 0.45rem",
-              borderRadius: "var(--radius-sm)",
-            }}
-          >
-            <TagIcon size={12} /> {r.tag_name}
-          </span>
-          <Link className="min-w-0 flex-1" to={`/ui/repos/${owner}/${repo}/releases/${r.id}`} style={{ color: "inherit", textDecoration: "none" }}>
-            <div style={{ fontSize: "0.88rem", fontWeight: 500, color: "var(--color-fg)" }}>
-              {r.name || r.tag_name}
-            </div>
-            <div style={{ fontSize: "0.76rem", color: "var(--color-fg-muted)" }}>
-              {r.published_at === null
-                ? "draft"
-                : <>published <RelativeTime iso={r.published_at} /></>}
-            </div>
-          </Link>
-        </div>
-      ))}</Box>
-    </div>
-  );
-}
-
 export function RepoCommitPage() {
   const { owner = "", repo = "", sha = "" } = useParams<{
     owner: string;
@@ -2150,7 +1881,7 @@ export function RepoCommitPage() {
       <RepoHeader owner={owner} repo={repo} active="code" {...counts} />
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <Link
-          to={`/ui/repos/${owner}/${repo}/commits`}
+          to={`/ui/${owner}/${repo}/commits`}
           style={{ color: "var(--color-accent)", textDecoration: "none" }}
         >
           ← Commit history
@@ -2199,7 +1930,7 @@ export function RepoCommitPage() {
                 <Link
                   key={parent.sha}
                   className="font-mono"
-                  to={`/ui/repos/${owner}/${repo}/commits/${parent.sha}`}
+                  to={`/ui/${owner}/${repo}/commits/${parent.sha}`}
                   style={{ color: "var(--color-accent)", textDecoration: "none" }}
                 >
                   {parent.sha.slice(0, 7)}
@@ -2303,7 +2034,7 @@ function CommitPullsSection({ owner, repo, sha }: { owner: string; repo: string;
                 style={{ width: ".55rem", height: ".55rem", borderRadius: "50%", background: color, flexShrink: 0 }}
               />
               <Link
-                to={`/ui/repos/${owner}/${repo}/pulls/${pr.number}`}
+                to={`/ui/${owner}/${repo}/pulls/${pr.number}`}
                 className="min-w-0 flex-1 truncate"
                 style={{ color: "var(--color-accent)", textDecoration: "none" }}
               >
@@ -2541,7 +2272,7 @@ export function RepoComparePage() {
               <ButtonLink
                 variant="primary"
                 size="sm"
-                to={`/ui/repos/${owner}/${repo}/pulls?compare=${encodeURIComponent(base)}...${encodeURIComponent(head)}`}
+                to={`/ui/${owner}/${repo}/pulls?compare=${encodeURIComponent(base)}...${encodeURIComponent(head)}`}
               >
                 Create pull request
               </ButtonLink>
@@ -2615,7 +2346,7 @@ export function RepoFilePage() {
       const sha = commits[0]?.sha ?? ref;
       const hash = parseLineHash(location.hash) ? location.hash : "";
       await navigator.clipboard.writeText(
-        `${window.location.origin}/ui/repos/${owner}/${repo}/blob/${sha}/${path}${hash}`,
+        `${window.location.origin}/ui/${owner}/${repo}/blob/${sha}/${path}${hash}`,
       );
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1500);
@@ -2643,7 +2374,7 @@ export function RepoFilePage() {
         sha: query.data?.sha ?? "",
         branch: ref,
       }),
-    onSuccess: () => navigate(`/ui/repos/${owner}/${repo}`),
+    onSuccess: () => navigate(`/ui/${owner}/${repo}`),
   });
 
   if (query.isLoading) return <Spinner label={`loading ${path}`} />;
@@ -2706,10 +2437,10 @@ export function RepoFilePage() {
                   Raw
                 </Button>
                 )}
-                <ButtonLink size="sm" to={`/ui/repos/${owner}/${repo}/commits?path=${encodeURIComponent(path)}&sha=${encodeURIComponent(ref)}`}>
+                <ButtonLink size="sm" to={`/ui/${owner}/${repo}/commits?path=${encodeURIComponent(path)}&sha=${encodeURIComponent(ref)}`}>
                   History
                 </ButtonLink>
-                <ButtonLink size="sm" to={`/ui/repos/${owner}/${repo}/blame/${ref}/${path}`}>
+                <ButtonLink size="sm" to={`/ui/${owner}/${repo}/blame/${ref}/${path}`}>
                   Blame
                 </ButtonLink>
                 <Button size="sm" onClick={copyPermalink}>
@@ -3064,7 +2795,7 @@ function BranchRow({
           // viewers get the informational badge without the link affordance.
           canPush ? (
             <Link
-              to={`/ui/repos/${owner}/${repo}/settings/branch-protection`}
+              to={`/ui/${owner}/${repo}/settings/branch-protection`}
               style={{
                 marginLeft: "0.45rem",
                 fontSize: "0.72rem",
@@ -3309,14 +3040,14 @@ function TagRow({
         {commitQ.data ? <RelativeTime iso={commitQ.data.commit.author?.date} /> : <span aria-hidden>—</span>}
       </span>
       <Link
-        to={`/ui/repos/${owner}/${repo}/commits/${t.commit.sha}`}
+        to={`/ui/${owner}/${repo}/commits/${t.commit.sha}`}
         className="font-mono"
         style={{ ...smallLink, fontSize: "0.74rem", color: "var(--color-fg-muted)" }}
       >
         {t.commit.sha.slice(0, 7)}
       </Link>
       {release && (
-        <Link to={`/ui/repos/${owner}/${repo}/releases/${release.id}`} style={smallLink}>
+        <Link to={`/ui/${owner}/${repo}/releases/${release.id}`} style={smallLink}>
           Release
         </Link>
       )}

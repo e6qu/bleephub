@@ -92,7 +92,7 @@ function ReleaseList({ owner, repo }: { owner: string; repo: string }) {
         meta={`${releases.data?.length ?? 0} releases`}
         actions={
           canPush ? (
-            <ButtonLink variant="primary" to={`/ui/repos/${owner}/${repo}/releases/new`}>
+            <ButtonLink variant="primary" to={`/ui/${owner}/${repo}/releases/new`}>
               <PlusIcon size={14} /> New release
             </ButtonLink>
           ) : undefined
@@ -150,7 +150,7 @@ function ReleaseFeedItem({ owner, repo, release, isLatest }: {
       header={
         <div className="flex w-full min-w-0 flex-wrap items-center gap-2">
           <Link
-            to={`/ui/repos/${owner}/${repo}/releases/${release.id}`}
+            to={`/ui/${owner}/${repo}/releases/${release.id}`}
             className="min-w-0 truncate"
             style={{ fontSize: "1.05rem", fontWeight: 600, color: "var(--color-fg)", textDecoration: "none" }}
           >
@@ -195,7 +195,7 @@ function ReleaseFeedItem({ owner, repo, release, isLatest }: {
           <ul style={{ listStyle: "none", margin: 0, padding: 0, fontSize: "0.82rem" }}>
             {release.assets.map((asset) => (
               <li key={asset.id} className="flex flex-wrap items-center gap-2" style={{ padding: "0.15rem 0" }}>
-                <Link to={`/ui/repos/${owner}/${repo}/releases/${release.id}`} style={assetLink}>
+                <Link to={`/ui/${owner}/${repo}/releases/${release.id}`} style={assetLink}>
                   {asset.label || asset.name}
                 </Link>
                 <span style={{ color: "var(--color-fg-muted)", fontSize: "0.74rem" }}>
@@ -273,7 +273,7 @@ function ReleaseEditor({ owner, repo, release, onSaved }: { owner: string; repo:
 	  queryClient.setQueryData(["release", owner, repo, saved.id], saved);
       await queryClient.invalidateQueries({ queryKey: ["releases", owner, repo] });
       if (onSaved) onSaved(saved);
-      else navigate(`/ui/repos/${owner}/${repo}/releases/${saved.id}`);
+      else navigate(`/ui/${owner}/${repo}/releases/${saved.id}`);
     },
   });
 
@@ -323,7 +323,7 @@ function ReleaseEditor({ owner, repo, release, onSaved }: { owner: string; repo:
         </div>
         <div className="flex gap-2">
           <Button type="submit" variant="primary" disabled={!tagName.trim() || save.isPending}>{release ? "Save changes" : "Create release"}</Button>
-          <Button type="button" onClick={() => navigate(release ? `/ui/repos/${owner}/${repo}/releases/${release.id}` : `/ui/repos/${owner}/${repo}/releases`)}>Cancel</Button>
+          <Button type="button" onClick={() => navigate(release ? `/ui/${owner}/${repo}/releases/${release.id}` : `/ui/${owner}/${repo}/releases`)}>Cancel</Button>
         </div>
       </form>
     </>
@@ -345,7 +345,7 @@ function ReleaseDetail({ owner, repo, releaseId }: { owner: string; repo: string
     mutationFn: () => deleteRelease(owner, repo, releaseId),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["releases", owner, repo] });
-      navigate(`/ui/repos/${owner}/${repo}/releases`);
+      navigate(`/ui/${owner}/${repo}/releases`);
     },
   });
   if (release.isLoading) return <Spinner label="loading release" />;
@@ -385,7 +385,7 @@ function ReleaseDetail({ owner, repo, releaseId }: { owner: string; repo: string
       {release.data.discussion_url && (
         <div className="mb-4" style={{ fontSize: "0.85rem" }}>
           <Link
-            to={`/ui/repos/${owner}/${repo}/discussions/${release.data.discussion_url.split("/").pop()}`}
+            to={`/ui/${owner}/${repo}/discussions/${release.data.discussion_url.split("/").pop()}`}
             style={{ color: "var(--color-accent)", textDecoration: "none" }}
           >
             Join the release discussion

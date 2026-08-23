@@ -30,11 +30,11 @@ function renderAt(path: string) {
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[path]}>
         <Routes>
-          <Route path="/ui/repos/:owner/:repo/pulls" element={<PullsPage />} />
-          <Route path="/ui/repos/:owner/:repo/pulls/:number" element={<PullsPage />} />
-          <Route path="/ui/repos/:owner/:repo/pulls/:number/commits" element={<PullsPage />} />
-          <Route path="/ui/repos/:owner/:repo/pulls/:number/files" element={<PullsPage />} />
-          <Route path="/ui/repos/:owner/:repo/pulls/:number/checks" element={<PullsPage />} />
+          <Route path="/ui/:owner/:repo/pulls" element={<PullsPage />} />
+          <Route path="/ui/:owner/:repo/pulls/:number" element={<PullsPage />} />
+          <Route path="/ui/:owner/:repo/pulls/:number/commits" element={<PullsPage />} />
+          <Route path="/ui/:owner/:repo/pulls/:number/files" element={<PullsPage />} />
+          <Route path="/ui/:owner/:repo/pulls/:number/checks" element={<PullsPage />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -143,7 +143,7 @@ describe("PullsPage detail", () => {
       if (u.endsWith("/pulls/77")) return Promise.resolve(jsonResponse(pr(77, "Single fetch PR")));
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/pulls/77");
+    renderAt("/ui/admin/test/pulls/77");
     await waitFor(() => {
       expect(screen.getByText("Single fetch PR")).toBeInTheDocument();
     });
@@ -159,7 +159,7 @@ describe("PullsPage detail", () => {
       }
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/pulls/999");
+    renderAt("/ui/admin/test/pulls/999");
     await waitFor(() => {
       expect(screen.getByText(/pull request #999 not found/i)).toBeInTheDocument();
     });
@@ -174,7 +174,7 @@ describe("PullsPage detail", () => {
       }
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/pulls/5");
+    renderAt("/ui/admin/test/pulls/5");
     await waitFor(() => {
       expect(screen.getByText(/failed to load pr #5/i)).toBeInTheDocument();
     });
@@ -197,7 +197,7 @@ describe("PullsPage list pagination", () => {
       }
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/pulls");
+    renderAt("/ui/admin/test/pulls");
     await waitFor(() => {
       expect(screen.getByText("first pr")).toBeInTheDocument();
     });
@@ -216,7 +216,7 @@ describe("PullsPage list pagination", () => {
       if (u.includes("/pulls?")) return Promise.resolve(jsonResponse([pr(1, "first pr")]));
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/pulls");
+    renderAt("/ui/admin/test/pulls");
     await waitFor(() => expect(screen.getByText("first pr")).toBeInTheDocument());
     fireEvent.change(screen.getByLabelText("Filter by base branch"), { target: { value: "main" } });
     await waitFor(() => {
@@ -244,7 +244,7 @@ describe("PullsPage checks section", () => {
       total_count: 2,
       check_runs: [checkRun(1, "build"), checkRun(2, "lint")],
     });
-    renderAt("/ui/repos/admin/test/pulls/9");
+    renderAt("/ui/admin/test/pulls/9");
     // The Conversation merge box shows the aggregate summary…
     expect(await screen.findByText(/all checks have passed/i)).toBeInTheDocument();
     // …and the Checks tab (labeled with the reported-check count) lists the
@@ -264,7 +264,7 @@ describe("PullsPage checks section", () => {
         checkRun(2, "e2e", { status: "in_progress", conclusion: null, completed_at: null }),
       ],
     });
-    renderAt("/ui/repos/admin/test/pulls/9");
+    renderAt("/ui/admin/test/pulls/9");
     expect(await screen.findByText(/some checks haven't completed yet/i)).toBeInTheDocument();
   });
 
@@ -273,13 +273,13 @@ describe("PullsPage checks section", () => {
       total_count: 2,
       check_runs: [checkRun(1, "build"), checkRun(2, "test", { conclusion: "failure" })],
     });
-    renderAt("/ui/repos/admin/test/pulls/9");
+    renderAt("/ui/admin/test/pulls/9");
     expect(await screen.findByText(/some checks were not successful/i)).toBeInTheDocument();
   });
 
   it("hides the checks box when the commit has no check runs", async () => {
     mockDetail(pr(9, "Checked PR"), noChecks);
-    renderAt("/ui/repos/admin/test/pulls/9");
+    renderAt("/ui/admin/test/pulls/9");
     await screen.findByText("Checked PR");
     expect(screen.queryByText(/all checks have passed/i)).not.toBeInTheDocument();
   });
@@ -293,10 +293,10 @@ describe("PullsPage checks section", () => {
         }),
       ],
     });
-    renderAt("/ui/repos/admin/test/pulls/9");
+    renderAt("/ui/admin/test/pulls/9");
     fireEvent.click(await screen.findByRole("tab", { name: /^Checks/ }));
     const link = await screen.findByRole("link", { name: /build/i });
-    expect(link).toHaveAttribute("href", "/ui/repos/admin/test/actions/runs/42");
+    expect(link).toHaveAttribute("href", "/ui/admin/test/actions/runs/42");
   });
 
   it("disables merging and explains when mergeable_state is blocked", async () => {
@@ -304,7 +304,7 @@ describe("PullsPage checks section", () => {
       total_count: 1,
       check_runs: [checkRun(1, "required-check", { status: "queued", conclusion: null })],
     });
-    renderAt("/ui/repos/admin/test/pulls/9");
+    renderAt("/ui/admin/test/pulls/9");
     expect(await screen.findByText(/merging is blocked — required checks must pass/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /merge pull request/i })).toBeDisabled();
   });
@@ -337,7 +337,7 @@ describe("PullsPage reviews", () => {
       }
       return undefined;
     });
-    renderAt("/ui/repos/admin/test/pulls/9");
+    renderAt("/ui/admin/test/pulls/9");
 
     expect(await screen.findByText("Approved")).toBeInTheDocument();
     expect(screen.getByText("Changes requested")).toBeInTheDocument();
@@ -381,7 +381,7 @@ describe("PullsPage reviews", () => {
       }
       return undefined;
     });
-    renderAt("/ui/repos/admin/test/pulls/9/files");
+    renderAt("/ui/admin/test/pulls/9/files");
     await screen.findByText("main.go");
 
     // The review popover lives behind the "Review changes" button.
@@ -473,7 +473,7 @@ describe("PullsPage review comment threads", () => {
 
   it("groups comments by file/line, renders the diff hunk, and resolves the thread", async () => {
     mockThreads();
-    renderAt("/ui/repos/admin/test/pulls/9");
+    renderAt("/ui/admin/test/pulls/9");
 
     expect(await screen.findByText("main.go:3")).toBeInTheDocument();
     expect(screen.getByText(/@@ -1,2 \+1,2 @@/)).toBeInTheDocument();
@@ -502,7 +502,7 @@ describe("PullsPage review comment threads", () => {
 
   it("replies to a thread with in_reply_to", async () => {
     mockThreads();
-    renderAt("/ui/repos/admin/test/pulls/9");
+    renderAt("/ui/admin/test/pulls/9");
 
     const input = await screen.findByLabelText("reply to thread on main.go");
     fireEvent.change(input, { target: { value: "done in latest push" } });
@@ -534,7 +534,7 @@ describe("PullsPage review comment threads", () => {
       }
       return undefined;
     });
-    renderAt("/ui/repos/admin/test/pulls/9");
+    renderAt("/ui/admin/test/pulls/9");
 
     // The page has several ReactionBars (PR body + each review comment); the
     // review comment's is the last to render.
@@ -579,7 +579,7 @@ describe("PullsPage requested reviewers", () => {
       }
       return undefined;
     });
-    renderAt("/ui/repos/admin/test/pulls/9");
+    renderAt("/ui/admin/test/pulls/9");
 
     // The requested-reviewer chip (carol also appears as an assignable option,
     // so target the chip's remove control to disambiguate).
@@ -633,7 +633,7 @@ describe("PullsPage requested reviewers", () => {
       }
       return undefined;
     });
-    renderAt("/ui/repos/admin/test/pulls/9");
+    renderAt("/ui/admin/test/pulls/9");
 
     // The requested team chip is removable, and only the not-yet-requested team
     // is offered in the picker.
@@ -673,7 +673,7 @@ describe("PullsPage combined status merge box", () => {
       }
       return undefined;
     });
-    renderAt("/ui/repos/admin/test/pulls/9");
+    renderAt("/ui/admin/test/pulls/9");
 
     // The merge box shows the shared failure summary on Conversation…
     expect(await screen.findByText(/some checks were not successful/i)).toBeInTheDocument();
@@ -691,7 +691,7 @@ describe("PullsPage combined status merge box", () => {
       }
       return undefined;
     });
-    renderAt("/ui/repos/admin/test/pulls/9");
+    renderAt("/ui/admin/test/pulls/9");
 
     fireEvent.click(await screen.findByRole("button", { name: "Update branch" }));
     await waitFor(() => {
@@ -712,7 +712,7 @@ describe("PullsPage combined status merge box", () => {
       }
       return undefined;
     });
-    renderAt("/ui/repos/admin/test/pulls/9");
+    renderAt("/ui/admin/test/pulls/9");
 
     fireEvent.click(await screen.findByRole("button", { name: "Ready for review" }));
     await waitFor(() => {
@@ -744,7 +744,7 @@ describe("PullsPage reactions", () => {
       }
       return undefined;
     });
-    renderAt("/ui/repos/admin/test/pulls/9");
+    renderAt("/ui/admin/test/pulls/9");
 
     const pill = await screen.findByRole("button", { name: "toggle +1 reaction" });
     expect(pill.textContent).toContain("2");
@@ -764,7 +764,7 @@ describe("PullsPage reactions", () => {
       }
       return undefined;
     });
-    renderAt("/ui/repos/admin/test/pulls/9");
+    renderAt("/ui/admin/test/pulls/9");
 
     fireEvent.click(await screen.findByRole("button", { name: "add reaction" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "react with heart" }));
@@ -779,7 +779,7 @@ describe("PullsPage reactions", () => {
 describe("PullsPage detail sub-tabs", () => {
   it("renders the Conversation/Commits/Files changed/Checks tabs and a Reviewers sidebar", async () => {
     mockPRApis();
-    renderAt("/ui/repos/admin/test/pulls/9");
+    renderAt("/ui/admin/test/pulls/9");
     await screen.findByText("Feature PR");
     expect(screen.getByRole("tab", { name: "Conversation" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Commits" })).toBeInTheDocument();
@@ -806,7 +806,7 @@ describe("PullsPage detail sub-tabs", () => {
       }
       return undefined;
     });
-    renderAt("/ui/repos/admin/test/pulls/9");
+    renderAt("/ui/admin/test/pulls/9");
     await screen.findByText("Feature PR");
     fireEvent.click(screen.getByRole("tab", { name: "Files changed" }));
     expect(await screen.findByText("main.go")).toBeInTheDocument();
@@ -834,7 +834,7 @@ describe("PullsPage detail sub-tabs", () => {
       return undefined;
     });
 
-    renderAt("/ui/repos/admin/test/pulls/9/files");
+    renderAt("/ui/admin/test/pulls/9/files");
     await screen.findByText("main.go");
     expect(screen.getByRole("tab", { name: "Files changed" })).toBeInTheDocument();
 
@@ -864,7 +864,7 @@ describe("PullsPage merge box", () => {
       }
       return undefined;
     });
-    renderAt("/ui/repos/admin/test/pulls/9");
+    renderAt("/ui/admin/test/pulls/9");
     await screen.findByRole("heading", { name: /Feature PR/ });
 
     // GitHub's two-step flow: the merge button opens a confirmation panel
@@ -901,7 +901,7 @@ describe("PullsPage merge box", () => {
       }
       return undefined;
     });
-    renderAt("/ui/repos/admin/test/pulls/9");
+    renderAt("/ui/admin/test/pulls/9");
     await screen.findByRole("heading", { name: /Feature PR/ });
 
     fireEvent.click(screen.getByRole("button", { name: /^merge pull request$/i }));
@@ -931,7 +931,7 @@ describe("PullsPage merge box", () => {
       }
       return undefined;
     });
-    renderAt("/ui/repos/admin/test/pulls/9");
+    renderAt("/ui/admin/test/pulls/9");
 
     fireEvent.click(await screen.findByRole("button", { name: /^restore branch$/i }));
     await waitFor(() => {
@@ -982,7 +982,7 @@ describe("PullsPage conversation timeline", () => {
       }
       return undefined;
     });
-    renderAt("/ui/repos/admin/test/pulls/9");
+    renderAt("/ui/admin/test/pulls/9");
 
     expect(await screen.findByText("conversation comment")).toBeInTheDocument();
     expect(screen.getByText(/added the/)).toBeInTheDocument();
@@ -1008,7 +1008,7 @@ describe("PullsPage create", () => {
       }
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/pulls");
+    renderAt("/ui/admin/test/pulls");
     fireEvent.click(await screen.findByRole("button", { name: /new pull request/i }));
     // Wait for the branch options to load before selecting them (a controlled
     // <select> in jsdom drops a value with no matching option).
@@ -1043,7 +1043,7 @@ describe("PullsPage create", () => {
       }
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/pulls");
+    renderAt("/ui/admin/test/pulls");
     fireEvent.click(await screen.findByRole("button", { name: /new pull request/i }));
     await screen.findAllByRole("option", { name: "feature" });
     fireEvent.change(screen.getByLabelText(/^base$/i), { target: { value: "main" } });
@@ -1069,7 +1069,7 @@ describe("PullsPage write actions", () => {
       }
       return undefined;
     });
-    renderAt("/ui/repos/admin/test/pulls/9");
+    renderAt("/ui/admin/test/pulls/9");
     fireEvent.click(await screen.findByRole("button", { name: /close pull request/i }));
     await waitFor(() => expect(findCall("/pulls/9", "PATCH")).toBeDefined());
     expect(JSON.parse(String(findCall("/pulls/9", "PATCH")?.body))).toEqual({ state: "closed" });
@@ -1082,7 +1082,7 @@ describe("PullsPage write actions", () => {
       }
       return undefined;
     });
-    renderAt("/ui/repos/admin/test/pulls/9");
+    renderAt("/ui/admin/test/pulls/9");
     fireEvent.click(await screen.findByRole("button", { name: /^edit$/i }));
     fireEvent.change(await screen.findByLabelText(/title/i), { target: { value: "Renamed" } });
     fireEvent.change(screen.getByLabelText(/description/i), { target: { value: "new" } });
@@ -1101,7 +1101,7 @@ describe("PullsPage write actions", () => {
       }
       return undefined;
     });
-    renderAt("/ui/repos/admin/test/pulls/9");
+    renderAt("/ui/admin/test/pulls/9");
     const box = await screen.findByPlaceholderText(/leave a comment/i);
     fireEvent.change(box, { target: { value: "nice" } });
     // The composer is now a MarkdownComposer (Write/Preview + toolbar), so the
@@ -1130,7 +1130,7 @@ describe("PullsPage detail field completeness", () => {
       }
       return undefined;
     });
-    renderAt("/ui/repos/admin/test/pulls/9");
+    renderAt("/ui/admin/test/pulls/9");
 
     // Assignee login surfaces in the sidebar.
     expect(await screen.findByText("octocat")).toBeInTheDocument();
@@ -1176,10 +1176,10 @@ describe("PullsPage development / closing issues", () => {
       return undefined;
     });
 
-    renderAt("/ui/repos/admin/test/pulls/9");
+    renderAt("/ui/admin/test/pulls/9");
 
     const link = await screen.findByRole("link", { name: /#5\s+Fix the bug/ });
-    expect(link).toHaveAttribute("href", "/ui/repos/admin/test/issues/5");
+    expect(link).toHaveAttribute("href", "/ui/admin/test/issues/5");
   });
 });
 
@@ -1200,11 +1200,11 @@ describe("PullsPage commits tab", () => {
       }
       return undefined;
     });
-    renderAt("/ui/repos/admin/test/pulls/9/commits");
+    renderAt("/ui/admin/test/pulls/9/commits");
 
     expect(await screen.findByText("Add feature")).toBeInTheDocument();
     const link = screen.getByRole("link", { name: "abcdef1" });
-    expect(link).toHaveAttribute("href", "/ui/repos/admin/test/commits/abcdef1234567890");
+    expect(link).toHaveAttribute("href", "/ui/admin/test/commits/abcdef1234567890");
     expect(screen.getByText(/ada committed/)).toBeInTheDocument();
   });
 });
@@ -1254,7 +1254,7 @@ describe("PullsPage unified conversation stream", () => {
       }
       return undefined;
     });
-    renderAt("/ui/repos/admin/test/pulls/9");
+    renderAt("/ui/admin/test/pulls/9");
 
     expect(await screen.findByText("ship it")).toBeInTheDocument();
     // The timeline "reviewed" row and the reviews-endpoint copy dedupe into
@@ -1291,7 +1291,7 @@ describe("PullsPage list filters", () => {
       }),
       pr(2, "other pr"),
     ]);
-    renderAt("/ui/repos/admin/test/pulls");
+    renderAt("/ui/admin/test/pulls");
     await screen.findByText("assigned pr");
 
     fireEvent.change(screen.getByLabelText("Assignee"), { target: { value: "carol" } });
@@ -1306,7 +1306,7 @@ describe("PullsPage list filters", () => {
 
   it('maps the "Most commented" sort to the pulls endpoint\'s popularity sort', async () => {
     listMock([pr(1, "first pr")]);
-    renderAt("/ui/repos/admin/test/pulls");
+    renderAt("/ui/admin/test/pulls");
     await screen.findByText("first pr");
 
     fireEvent.change(screen.getByLabelText("Sort"), { target: { value: "comments" } });
@@ -1334,7 +1334,7 @@ describe("PullsPage compare deep-link", () => {
       if (u.includes("/issues")) return Promise.resolve(jsonResponse([]));
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/pulls?compare=main...feature");
+    renderAt("/ui/admin/test/pulls?compare=main...feature");
 
     // The modal opens on its own with base/head prefilled once the branch
     // options load.
@@ -1388,7 +1388,7 @@ describe("PullsPage detail bootstrap", () => {
       if (u.endsWith("/api/v3/repos/admin/test")) return Promise.resolve(jsonResponse(adminRepo));
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/pulls/9");
+    renderAt("/ui/admin/test/pulls/9");
     expect(await screen.findByText("Bootstrapped PR")).toBeInTheDocument();
 
     // Every sub-payload the bootstrap carried must be a cache hit — none of
@@ -1435,7 +1435,7 @@ describe("PullsPage detail bootstrap", () => {
       if (u.endsWith("/api/v3/repos/admin/test")) return Promise.resolve(jsonResponse(adminRepo));
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/pulls/9");
+    renderAt("/ui/admin/test/pulls/9");
     expect(await screen.findByText("Bootstrapped PR")).toBeInTheDocument();
 
     // The sidebar consumes the seeded entries: the assignee picker offers the
@@ -1460,7 +1460,7 @@ describe("PullsPage detail bootstrap", () => {
       if (u.includes("/ui-data/bootstrap/")) return jsonResponse({ message: "boom" }, 500);
       return undefined;
     });
-    renderAt("/ui/repos/admin/test/pulls/9");
+    renderAt("/ui/admin/test/pulls/9");
     expect(await screen.findByText("Feature PR")).toBeInTheDocument();
     const gets = mockFetch.mock.calls
       .filter((c) => (c[1] as RequestInit | undefined)?.method === undefined)
@@ -1502,7 +1502,7 @@ describe("PullsPage merge-box live polling", () => {
         }
         return undefined;
       });
-      renderAt("/ui/repos/admin/test/pulls/9");
+      renderAt("/ui/admin/test/pulls/9");
       expect(await screen.findByText("Feature PR")).toBeInTheDocument();
       // The bootstrap seeded every key (SEED_STALE_TIME): nothing standalone yet.
       expect(detailGets()).toBe(0);
@@ -1538,7 +1538,7 @@ describe("PullsPage merge-box live polling", () => {
         if (u === "/api/v3/repos/admin/test/pulls/9") return jsonResponse(merged);
         return undefined;
       });
-      renderAt("/ui/repos/admin/test/pulls/9");
+      renderAt("/ui/admin/test/pulls/9");
       expect(await screen.findByText("Feature PR")).toBeInTheDocument();
 
       // First tick: PR + check/status polls fire; the PR now reports merged.
@@ -1574,7 +1574,7 @@ describe("PullsPage merge-box live polling", () => {
         }
         return undefined;
       });
-      renderAt("/ui/repos/admin/test/pulls/9");
+      renderAt("/ui/admin/test/pulls/9");
       expect(await screen.findByText("Merged PR")).toBeInTheDocument();
 
       await vi.advanceTimersByTimeAsync(31_000);
@@ -1633,7 +1633,7 @@ describe("PullsPage auto-merge", () => {
         ? jsonResponse({ data: { enablePullRequestAutoMerge: { clientMutationId: null } } })
         : undefined,
     );
-    renderAt("/ui/repos/admin/test/pulls/9");
+    renderAt("/ui/admin/test/pulls/9");
 
     fireEvent.change(await screen.findByLabelText("Merge method"), {
       target: { value: "squash" },
@@ -1661,7 +1661,7 @@ describe("PullsPage auto-merge", () => {
         ? jsonResponse({ errors: [{ message: "Pull request is in clean status" }] })
         : undefined,
     );
-    renderAt("/ui/repos/admin/test/pulls/9");
+    renderAt("/ui/admin/test/pulls/9");
 
     fireEvent.click(await screen.findByRole("button", { name: /^enable auto-merge$/i }));
     fireEvent.click(screen.getByRole("button", { name: /^confirm auto-merge$/i }));
@@ -1693,7 +1693,7 @@ describe("PullsPage auto-merge", () => {
       }
       return undefined;
     });
-    renderAt("/ui/repos/admin/test/pulls/9");
+    renderAt("/ui/admin/test/pulls/9");
 
     expect(
       await screen.findByText(/auto-merge enabled by alice \(squash\)/i),
@@ -1719,7 +1719,7 @@ describe("PullsPage auto-merge", () => {
       }
       return undefined;
     });
-    renderAt("/ui/repos/admin/test/pulls/9");
+    renderAt("/ui/admin/test/pulls/9");
     expect(
       await screen.findByText(/merging is blocked — required checks must pass/i),
     ).toBeInTheDocument();
@@ -1748,7 +1748,7 @@ describe("PullsPage viewer-role gating", () => {
       if (u.endsWith("/assignees")) return jsonResponse([{ login: "bob" }]);
       return undefined;
     });
-    renderAt("/ui/repos/admin/test/pulls/9");
+    renderAt("/ui/admin/test/pulls/9");
 
     // github.com's exact read-only merge-box notice…
     expect(
@@ -1788,7 +1788,7 @@ describe("PullsPage viewer-role gating", () => {
       }
       return undefined;
     });
-    renderAt("/ui/repos/admin/test/pulls/9");
+    renderAt("/ui/admin/test/pulls/9");
 
     expect(await screen.findByRole("button", { name: "Ready for review" })).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: /close pull request/i })).toBeInTheDocument();

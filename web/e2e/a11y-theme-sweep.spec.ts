@@ -151,33 +151,33 @@ function buildRoutes(): { route: string; label: string }[] {
     { route: "/ui/apps", label: "apps" },
     { route: "/ui/oauth", label: "oauth" },
     // repo tabs
-    { route: `/ui/repos/${o}/${r}`, label: "repo-code" },
-    { route: `/ui/repos/${o}/${r}/issues`, label: "repo-issues" },
-    { route: `/ui/repos/${o}/${r}/issues/${iss}`, label: "repo-issue-detail" },
-    { route: `/ui/repos/${o}/${r}/pulls`, label: "repo-pulls" },
-    { route: `/ui/repos/${o}/${r}/pulls/${pr}`, label: "repo-pull-detail" },
-    { route: `/ui/repos/${o}/${r}/pulls/${pr}/files`, label: "repo-pull-files" },
-    { route: `/ui/repos/${o}/${r}/pulls/${pr}/commits`, label: "repo-pull-commits" },
-    { route: `/ui/repos/${o}/${r}/pulls/${pr}/checks`, label: "repo-pull-checks" },
-    { route: `/ui/repos/${o}/${r}/actions`, label: "repo-actions" },
-    { route: `/ui/repos/${o}/${r}/commits`, label: "repo-commits" },
-    { route: `/ui/repos/${o}/${r}/blob/main/PARITY.md`, label: "repo-file" },
-    { route: `/ui/repos/${o}/${r}/blame/main/README.md`, label: "repo-blame" },
-    { route: `/ui/repos/${o}/${r}/branches`, label: "repo-branches" },
-    { route: `/ui/repos/${o}/${r}/tags`, label: "repo-tags" },
-    { route: `/ui/repos/${o}/${r}/releases`, label: "repo-releases" },
-    { route: `/ui/repos/${o}/${r}/releases/new`, label: "repo-release-new" },
-    { route: `/ui/repos/${o}/${r}/labels`, label: "repo-labels" },
-    { route: `/ui/repos/${o}/${r}/milestones`, label: "repo-milestones" },
-    { route: `/ui/repos/${o}/${r}/settings`, label: "repo-settings" },
-    { route: `/ui/repos/${o}/${r}/settings/branch-protection`, label: "repo-branch-protection" },
-    { route: `/ui/repos/${o}/${r}/security`, label: "repo-security-overview" },
-    { route: `/ui/repos/${o}/${r}/security/code-scanning`, label: "repo-code-scanning" },
-    { route: `/ui/repos/${o}/${r}/security/secret-scanning`, label: "repo-secret-scanning" },
-    { route: `/ui/repos/${o}/${r}/activity`, label: "repo-activity" },
-    { route: `/ui/repos/${o}/${r}/insights`, label: "repo-insights" },
-    { route: `/ui/repos/${o}/${r}/discussions`, label: "repo-discussions" },
-    { route: `/ui/repos/${o}/${r}/wiki`, label: "repo-wiki" },
+    { route: `/ui/${o}/${r}`, label: "repo-code" },
+    { route: `/ui/${o}/${r}/issues`, label: "repo-issues" },
+    { route: `/ui/${o}/${r}/issues/${iss}`, label: "repo-issue-detail" },
+    { route: `/ui/${o}/${r}/pulls`, label: "repo-pulls" },
+    { route: `/ui/${o}/${r}/pulls/${pr}`, label: "repo-pull-detail" },
+    { route: `/ui/${o}/${r}/pulls/${pr}/files`, label: "repo-pull-files" },
+    { route: `/ui/${o}/${r}/pulls/${pr}/commits`, label: "repo-pull-commits" },
+    { route: `/ui/${o}/${r}/pulls/${pr}/checks`, label: "repo-pull-checks" },
+    { route: `/ui/${o}/${r}/actions`, label: "repo-actions" },
+    { route: `/ui/${o}/${r}/commits`, label: "repo-commits" },
+    { route: `/ui/${o}/${r}/blob/main/PARITY.md`, label: "repo-file" },
+    { route: `/ui/${o}/${r}/blame/main/README.md`, label: "repo-blame" },
+    { route: `/ui/${o}/${r}/branches`, label: "repo-branches" },
+    { route: `/ui/${o}/${r}/tags`, label: "repo-tags" },
+    { route: `/ui/${o}/${r}/releases`, label: "repo-releases" },
+    { route: `/ui/${o}/${r}/releases/new`, label: "repo-release-new" },
+    { route: `/ui/${o}/${r}/labels`, label: "repo-labels" },
+    { route: `/ui/${o}/${r}/milestones`, label: "repo-milestones" },
+    { route: `/ui/${o}/${r}/settings`, label: "repo-settings" },
+    { route: `/ui/${o}/${r}/settings/branch-protection`, label: "repo-branch-protection" },
+    { route: `/ui/${o}/${r}/security`, label: "repo-security-overview" },
+    { route: `/ui/${o}/${r}/security/code-scanning`, label: "repo-code-scanning" },
+    { route: `/ui/${o}/${r}/security/secret-scanning`, label: "repo-secret-scanning" },
+    { route: `/ui/${o}/${r}/activity`, label: "repo-activity" },
+    { route: `/ui/${o}/${r}/insights`, label: "repo-insights" },
+    { route: `/ui/${o}/${r}/discussions`, label: "repo-discussions" },
+    { route: `/ui/${o}/${r}/wiki`, label: "repo-wiki" },
     // org
     { route: `/ui/orgs/${org}`, label: "org-overview" },
     { route: `/ui/orgs/${org}/people`, label: "org-people" },
@@ -502,17 +502,17 @@ for (const theme of THEMES) {
     // create/approve-PRs) are gated behind client state, so the base /settings
     // route only ever renders the General tab.
     {
-      const route = `/ui/repos/${seeded.owner}/${seeded.repo}/settings (Actions tab)`;
+      const route = `/ui/${seeded.owner}/${seeded.repo}/settings (Actions tab)`;
       const record: RouteResult = {
         route,
         theme,
-        url: BASE + `/ui/repos/${seeded.owner}/${seeded.repo}/settings`,
+        url: BASE + `/ui/${seeded.owner}/${seeded.repo}/settings`,
         themeApplied: false,
         loadFailure: false,
         violations: [],
       };
       try {
-        await page.goto(`/ui/repos/${seeded.owner}/${seeded.repo}/settings`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+        await page.goto(`/ui/${seeded.owner}/${seeded.repo}/settings`, { waitUntil: "domcontentloaded", timeout: 30_000 });
         await page.waitForSelector("main, [role=main], .app-header", { timeout: 8_000 }).catch(() => {});
         await page.getByRole("button", { name: "Actions", exact: true }).click();
         await page.getByLabel("Fork pull request approval policy").waitFor({ state: "visible", timeout: 8_000 });
@@ -537,17 +537,17 @@ for (const theme of THEMES) {
     // ruleset authoring editor (targeting conditions, per-rule parameter
     // sub-forms, bypass-actor list) — none of it reachable from a base route.
     {
-      const route = `/ui/repos/${seeded.owner}/${seeded.repo}/settings (Rulesets tab)`;
+      const route = `/ui/${seeded.owner}/${seeded.repo}/settings (Rulesets tab)`;
       const record: RouteResult = {
         route,
         theme,
-        url: BASE + `/ui/repos/${seeded.owner}/${seeded.repo}/settings`,
+        url: BASE + `/ui/${seeded.owner}/${seeded.repo}/settings`,
         themeApplied: false,
         loadFailure: false,
         violations: [],
       };
       try {
-        await page.goto(`/ui/repos/${seeded.owner}/${seeded.repo}/settings`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+        await page.goto(`/ui/${seeded.owner}/${seeded.repo}/settings`, { waitUntil: "domcontentloaded", timeout: 30_000 });
         await page.waitForSelector("main, [role=main], .app-header", { timeout: 8_000 }).catch(() => {});
         await page.getByRole("button", { name: "Rulesets", exact: true }).click();
         // Expand every parameterised rule so its sub-form is scanned too.
@@ -577,15 +577,15 @@ for (const theme of THEMES) {
     // state-gated tab invisible to the base settings scan.
     {
       const record: RouteResult = {
-        route: `/ui/repos/${seeded.org}/org-parity/settings (Custom properties tab)`,
+        route: `/ui/${seeded.org}/org-parity/settings (Custom properties tab)`,
         theme,
-        url: BASE + `/ui/repos/${seeded.org}/org-parity/settings`,
+        url: BASE + `/ui/${seeded.org}/org-parity/settings`,
         themeApplied: false,
         loadFailure: false,
         violations: [],
       };
       try {
-        await page.goto(`/ui/repos/${seeded.org}/org-parity/settings`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+        await page.goto(`/ui/${seeded.org}/org-parity/settings`, { waitUntil: "domcontentloaded", timeout: 30_000 });
         await page.waitForSelector("main, [role=main], .app-header", { timeout: 8_000 }).catch(() => {});
         await page.getByRole("button", { name: "Custom properties", exact: true }).click();
         await page.getByLabel("environment").waitFor({ state: "visible", timeout: 8_000 });

@@ -322,7 +322,7 @@ function RunHeader({
     mutationFn: () => deleteWorkflowRun(owner, repo, run.id),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["runs", owner, repo] });
-      navigate(`/ui/repos/${owner}/${repo}/actions`);
+      navigate(`/ui/${owner}/${repo}/actions`);
     },
   });
 

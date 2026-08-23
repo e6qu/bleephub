@@ -127,6 +127,13 @@ func (s *Server) handleCreatePullRequest(w http.ResponseWriter, r *http.Request)
 	s.refreshPullRequestPotentialMerge(repo, pr)
 	openedPayload := buildPullRequestPayload(s.store, repo, pr, user, "opened")
 	s.emitWebhookEvent(repoKey, "pull_request", "opened", openedPayload)
+	// The code owners of the changed files are requested as reviewers once the
+	// pull request exists, and deliver their own review_requested events after
+	// the opened one, as GitHub orders them.
+	s.autoRequestCodeOwners(repo, pr, user)
+	if updated := s.store.GetPullRequestByNumber(repo.ID, pr.Number); updated != nil {
+		pr = updated
+	}
 
 	s.recordAuditEvent("pull_request.create", user.Login, "", map[string]interface{}{"repo": repoKey, "pr_id": pr.ID})
 	prJSON := pullRequestToJSON(pr, s.store, s.baseURL(r), repo.FullName)
@@ -342,6 +349,13 @@ func (s *Server) handleGetPullRequest(w http.ResponseWriter, r *http.Request) {
 // failing or still-running non-required checks mark it unstable.
 func (s *Server) applyChecksToMergeability(out map[string]interface{}, repo *store.Repo, pr *store.PullRequest) {
 	if pr.State != "OPEN" || out["mergeable_state"] != "clean" {
+		return
+	}
+	// A base branch that requires code owner review and has not got it is
+	// blocked by branch protection exactly as an unmet required status check
+	// is, and reports the same state rather than a field of its own.
+	if s.codeOwnerReviewMissing(repo, pr) {
+		out["mergeable_state"] = "blocked"
 		return
 	}
 	headSha := s.prHeadSha(repo, pr)
@@ -1867,6 +1881,24 @@ func repoOwnerLogin(repo *store.Repo) string {
 // called with st.mu held.
 func pullRequestToJSON(pr *store.PullRequest, st *store.Store, baseURL, repoFullName string) map[string]interface{} {
 	out := pullRequestSimpleJSON(pr, st, baseURL, repoFullName)
+	// The `pull-request` shape carries requested_teams as team-simple, which
+	// has no `parent` member; only the pull-request-simple shape the base
+	// builder renders does. Drop it here so a team code owner requested on a
+	// pull request cannot put a key on the wire that the detail schema has not
+	// got.
+	if teams, ok := out["requested_teams"].([]map[string]interface{}); ok {
+		simple := make([]map[string]interface{}, 0, len(teams))
+		for _, team := range teams {
+			trimmed := make(map[string]interface{}, len(team))
+			for key, value := range team {
+				if key != "parent" {
+					trimmed[key] = value
+				}
+			}
+			simple = append(simple, trimmed)
+		}
+		out["requested_teams"] = simple
+	}
 
 	// Snapshot before reading the mutable merge/diff fields off the pointer.
 	pr = st.SnapPR(pr)

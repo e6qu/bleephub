@@ -14,9 +14,7 @@ import (
 
 	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
-	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v5/plumbing/transport"
-	gitserver "github.com/go-git/go-git/v5/plumbing/transport/server"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -171,7 +169,24 @@ func parseGitSSHUserID(value string) (int, error) {
 
 func (s *Server) serveGitSSHSession(channel ssh.Channel, requests <-chan *ssh.Request, user *store.User) {
 	defer func() { _ = channel.Close() }()
+	// A client that wants protocol v2 states so in GIT_PROTOCOL, which OpenSSH
+	// forwards as an env request before the exec request that names the
+	// service. Collecting it here is what lets SSH negotiate the same protocol
+	// version smart HTTP negotiates through a header.
+	protocol := ""
 	for request := range requests {
+		if request.Type == "env" {
+			var variable struct{ Name, Value string }
+			if err := ssh.Unmarshal(request.Payload, &variable); err != nil {
+				_ = request.Reply(false, nil)
+				return
+			}
+			if variable.Name == "GIT_PROTOCOL" {
+				protocol = variable.Value
+			}
+			_ = request.Reply(true, nil)
+			continue
+		}
 		if request.Type != "exec" {
 			_ = request.Reply(false, nil)
 			continue
@@ -189,7 +204,7 @@ func (s *Server) serveGitSSHSession(channel ssh.Channel, requests <-chan *ssh.Re
 		}
 		_ = request.Reply(true, nil)
 		exitStatus := uint32(0)
-		if err := s.runGitSSHService(channel, service, owner, repoName, user); err != nil {
+		if err := s.runGitSSHService(channel, service, owner, repoName, user, gitProtocolV2Requested(protocol)); err != nil {
 			s.logger.Debug().Err(err).Str("service", service).Str("repo", owner+"/"+repoName).Msg("SSH Git request failed")
 			_, _ = io.WriteString(channel.Stderr(), "Bleephub: "+err.Error()+"\n")
 			exitStatus = 1
@@ -214,13 +229,7 @@ func parseGitSSHCommand(command string) (service, owner, repo string, ok bool) {
 	return fields[0], owner, repo, true
 }
 
-// sshChannelReader deliberately does not implement io.Closer. go-git's
-// receive-pack decoder retains the supplied reader as its packfile and closes
-// it after ingestion; closing an SSH channel there would also close its output
-// side before the required report-status response can be written.
-type sshChannelReader struct{ io.Reader }
-
-func (s *Server) runGitSSHService(channel ssh.Channel, service, owner, repoName string, user *store.User) error {
+func (s *Server) runGitSSHService(channel ssh.Channel, service, owner, repoName string, user *store.User, protocolV2 bool) error {
 	repo := s.store.GetRepo(owner, repoName)
 	stor := s.resolveGitRepo(owner, repoName)
 	if repo == nil || stor == nil {
@@ -244,25 +253,34 @@ func (s *Server) runGitSSHService(channel ssh.Channel, service, owner, repoName 
 	if service == "git-receive-pack" && !s.viewerCanPushRepo(ctx, repo) {
 		return errors.New("repository write access denied")
 	}
-	ep, err := transport.NewEndpoint(fmt.Sprintf("/%s/%s", owner, repoName))
-	if err != nil {
-		return err
-	}
-	server := gitserver.NewServer(fixedGitLoader{storer: stor})
 	if service == "git-upload-pack" {
-		session, err := server.NewUploadPackSession(ep, nil)
+		stor = gitStorerWithPackReuse(ctx, repo.FullName, stor)
+		if protocolV2 {
+			// The channel stays open across commands, so the v2 loop keeps
+			// serving them until the client stops: one connection carries both
+			// the ls-refs that replaces the advertisement and the fetch.
+			if err := writeGitV2CapabilityAdvertisement(channel); err != nil {
+				return err
+			}
+			result, err := serveGitProtocolV2(context.Background(), stor, repo.DefaultBranch, bufio.NewReader(channel), channel, false)
+			if result.sessionID != "" {
+				s.logger.Debug().
+					Str("repo", owner+"/"+repoName).
+					Str("client_session_id", result.sessionID).
+					Str("server_session_id", gitServerSessionID()).
+					Msg("git SSH upload-pack session")
+			}
+			return err
+		}
+		// The advertisement and the negotiation are the shared ones in
+		// git_uploadpack.go, so SSH and smart HTTP cannot drift apart on which
+		// capabilities they promise or how they answer a deepening request.
+		info, err := gitUploadPackAdvertisement(stor)
 		if err != nil {
 			return err
 		}
-		info, err := session.AdvertisedReferencesContext(context.Background())
-		if err != nil && !errors.Is(err, transport.ErrEmptyRemoteRepository) {
-			return err
-		}
-		if info != nil {
-			if err := info.Encode(channel); err != nil {
-				return err
-			}
-		} else if err := pktline.NewEncoder(channel).Flush(); err != nil {
+		advertiseDefaultBranchSymref(info, repo)
+		if err := info.Encode(channel); err != nil {
 			return err
 		}
 		requestReader := bufio.NewReader(channel)
@@ -273,44 +291,34 @@ func (s *Server) runGitSSHService(channel ssh.Channel, service, owner, repoName 
 		if empty {
 			return pktline.NewEncoder(channel).Flush()
 		}
-		request := packp.NewUploadPackRequest()
-		if err := request.Decode(requestReader); err != nil {
-			return err
-		}
-		response, err := session.UploadPack(context.Background(), request)
-		if err != nil {
-			return err
-		}
-		return response.Encode(channel)
+		_, err = serveGitUploadPack(context.Background(), stor, requestReader, channel)
+		return err
 	}
-	session, err := server.NewReceivePackSession(ep, nil)
+	// The advertisement, the request decoder and the reply are the shared ones
+	// in git_receivepack.go, so SSH and smart HTTP cannot drift apart on which
+	// capabilities they promise or how they answer a push.
+	info, err := gitReceivePackAdvertisement(stor)
 	if err != nil {
 		return err
 	}
-	info, err := session.AdvertisedReferencesContext(context.Background())
-	if err != nil && !errors.Is(err, transport.ErrEmptyRemoteRepository) {
+	advertiseDefaultBranchSymref(info, repo)
+	if err := info.Encode(channel); err != nil {
 		return err
 	}
-	if info != nil {
-		if err := info.Encode(channel); err != nil {
-			return err
-		}
-	} else if err := pktline.NewEncoder(channel).Flush(); err != nil {
-		return err
-	}
-	request := packp.NewReferenceUpdateRequest()
-	if err := request.Decode(sshChannelReader{Reader: channel}); err != nil {
-		return err
-	}
-	result, err := s.applyReceivePack(ctx, repo, stor, session, request)
+	// The request is read straight off the channel rather than through a
+	// wrapper: the decoder hands the packfile position on as a plain io.Reader
+	// and never closes it, so the channel's output side stays open for the
+	// report the client is waiting on.
+	request, err := decodeGitReceiveRequest(bufio.NewReader(channel))
 	if err != nil {
 		return err
 	}
-	s.afterGitReceivePack(repo, user, appliedPushCommands(request, result), s.externalURL)
-	if result != nil {
-		return result.Encode(channel)
+	outcome, err := s.applyGitReceivePack(ctx, repo, stor, request)
+	if err != nil {
+		return err
 	}
-	return nil
+	s.afterGitReceivePack(repo, user, outcome.applied, s.externalURL)
+	return writeGitReceivePackResponse(channel, request, outcome)
 }
 
 // flushOnlyGitRequest recognizes the valid upload-pack request a Git client

@@ -34,7 +34,7 @@ export function projectCardContentHref(contentUrl: string | null): string {
   const match = contentUrl.match(/\/api\/v3\/repos\/([^/]+)\/([^/]+)\/(issues|pulls)\/(\d+)(?:$|[?#])/);
   if (!match) return contentUrl;
   const [, owner = "", repo = "", kind = "", number = ""] = match;
-  return `/ui/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${kind}/${number}`;
+  return `/ui/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${kind}/${number}`;
 }
 
 export function ProjectsClassicPage() {

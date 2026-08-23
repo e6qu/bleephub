@@ -25,9 +25,9 @@ function renderPage(kind: RepoSocialKind) {
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[`/ui/repos/admin/social-repo/${kind}`]}>
+      <MemoryRouter initialEntries={[`/ui/admin/social-repo/${kind}`]}>
         <Routes>
-          <Route path={`/ui/repos/:owner/:repo/${kind}`} element={<RepoSocialPage kind={kind} />} />
+          <Route path={`/ui/:owner/:repo/${kind}`} element={<RepoSocialPage kind={kind} />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -101,7 +101,7 @@ describe("RepoSocialPage", () => {
     });
     expect(screen.getByText("carol/social-repo").closest("a")).toHaveAttribute(
       "href",
-      "/ui/repos/carol/social-repo",
+      "/ui/carol/social-repo",
     );
   });
 

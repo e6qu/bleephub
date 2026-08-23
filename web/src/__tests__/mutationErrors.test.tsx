@@ -96,8 +96,8 @@ describe("failing mutations surface on the page", () => {
     });
 
     renderAt(
-      "/ui/repos/:owner/:repo/security/secret-scanning",
-      "/ui/repos/admin/r/security/secret-scanning",
+      "/ui/:owner/:repo/security/secret-scanning",
+      "/ui/admin/r/security/secret-scanning",
       <SecretScanningPage />,
     );
 

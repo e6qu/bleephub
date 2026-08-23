@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -895,6 +896,9 @@ func (s *Server) handleLocalLogin(w http.ResponseWriter, r *http.Request) {
 	var request struct {
 		Login    string `json:"login"`
 		Password string `json:"password"`
+		// OTP carries the second factor when the account has one enrolled. The
+		// page asks for it only after the server says it is required.
+		OTP string `json:"otp"`
 	}
 	if !decodeJSONBody(w, r, &request) {
 		return
@@ -913,6 +917,9 @@ func (s *Server) handleLocalLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "invalid local credentials")
+		return
+	}
+	if s.requireSecondFactor(w, user, secondFactorFromRequest(r, strings.TrimSpace(request.OTP))) {
 		return
 	}
 	if err := s.createBrowserSession(w, r, user); err != nil {
@@ -955,6 +962,12 @@ func (s *Server) handleTokenLogin(w http.ResponseWriter, r *http.Request) {
 	// refuse it — the classic-PAT SPA flow is unaffected.
 	if pat != nil && pat.FineGrained {
 		writeGHError(w, http.StatusForbidden, "A fine-grained token cannot be exchanged for a browser session")
+		return
+	}
+	// A token exchange mints a full browser session, so it clears the same bar
+	// as a password sign-in: otherwise anyone holding a PAT walks past the
+	// second factor the account owner just enrolled.
+	if s.requireSecondFactor(w, user, secondFactorFromRequest(r, "")) {
 		return
 	}
 	if err := s.createBrowserSession(w, r, user); err != nil {
@@ -1084,8 +1097,19 @@ func (s *Server) createOIDCBrowserSession(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		return err
 	}
+	handle, err := randomIdentityState()
+	if err != nil {
+		return err
+	}
 	session.UserID = user.ID
 	session.CSRFToken = csrf
+	// The handle names the session in the account's "active sessions" list. It
+	// is drawn independently of the cookie value and of the storage key derived
+	// from it, so listing sessions never discloses a credential.
+	session.Handle = handle
+	session.CreatedAt = s.currentTime()
+	session.UserAgent = truncateSessionUserAgent(r.UserAgent())
+	session.SignedInIP = sessionClientIP(r)
 	if session.ExpiresAt.IsZero() {
 		session.ExpiresAt = time.Now().Add(12 * time.Hour)
 	}
@@ -1097,6 +1121,82 @@ func (s *Server) createOIDCBrowserSession(w http.ResponseWriter, r *http.Request
 	// prefixed name is used only for https origins.
 	http.SetCookie(w, &http.Cookie{Name: sessionCookieNameFor(secure), Value: id, Path: "/", HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode, Expires: session.ExpiresAt})
 	return nil
+}
+
+// sessionUserAgentLimit bounds what the sessions list stores: a User-Agent is
+// attacker-controlled, and the list is not a place to accumulate unbounded
+// caller-supplied text.
+const sessionUserAgentLimit = 200
+
+// truncateSessionUserAgent keeps the User-Agent short and free of control
+// characters, so it renders as a device description rather than smuggling
+// markup or newlines into the sessions list.
+func truncateSessionUserAgent(agent string) string {
+	cleaned := strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, agent)
+	runes := []rune(cleaned)
+	if len(runes) > sessionUserAgentLimit {
+		return string(runes[:sessionUserAgentLimit]) + "…"
+	}
+	return string(runes)
+}
+
+// sessionClientIP records where a session was established. It trusts a
+// forwarded client address only when the direct peer is loopback or private —
+// i.e. the request can only have come through our own reverse proxy — matching
+// the rate limiter's rule for the same header.
+func sessionClientIP(r *http.Request) string {
+	host := r.RemoteAddr
+	if parsed, _, err := net.SplitHostPort(host); err == nil {
+		host = parsed
+	}
+	if ip := net.ParseIP(host); ip != nil && (ip.IsLoopback() || ip.IsPrivate()) {
+		if forwarded := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0]); forwarded != "" {
+			if parsed := net.ParseIP(forwarded); parsed != nil {
+				host = parsed.String()
+			}
+		}
+	}
+	return host
+}
+
+// secondFactorFromRequest reads the one-time code a sign-in presented. GitHub's
+// own API carried it in X-GitHub-OTP, which is the only channel a token
+// exchange has; the JSON and form logins may also supply it in the body.
+func secondFactorFromRequest(r *http.Request, bodyCode string) string {
+	if bodyCode != "" {
+		return bodyCode
+	}
+	return strings.TrimSpace(r.Header.Get("X-GitHub-OTP"))
+}
+
+// requireSecondFactor enforces the account's second factor at sign-in. It
+// reports true when it has already written the response, meaning the caller
+// must not issue a session.
+//
+// Without this, enrolling would protect nothing: a second factor that never
+// gates authentication is decoration. The 401 carries GitHub's own
+// `X-GitHub-OTP: required; app` header so a client can tell "wrong password"
+// from "needs a code".
+func (s *Server) requireSecondFactor(w http.ResponseWriter, user *store.User, code string) bool {
+	if user == nil || !s.store.TwoFactorEnabled(user.ID) {
+		return false
+	}
+	if code == "" {
+		w.Header().Set("X-GitHub-OTP", "required; app")
+		writeGHError(w, http.StatusUnauthorized, "Must specify two-factor authentication OTP code.")
+		return true
+	}
+	if result := s.store.VerifySecondFactor(user.ID, code, s.currentTime()); result != store.SecurityOK {
+		w.Header().Set("X-GitHub-OTP", "required; app")
+		writeGHError(w, http.StatusUnauthorized, "Two-factor authentication code is invalid.")
+		return true
+	}
+	return false
 }
 
 func (s *Server) externalAuthCallback(provider string) string {

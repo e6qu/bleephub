@@ -453,7 +453,7 @@ function PackageDetailDialog({
           <div className="mt-2" style={{ fontSize: "0.82rem" }}>
             Source repository:{" "}
             <Link
-              to={`/ui/repos/${pkg.repository.full_name}`}
+              to={`/ui/${pkg.repository.full_name}`}
               style={{ color: "var(--color-accent)", textDecoration: "none" }}
             >
               {pkg.repository.full_name}

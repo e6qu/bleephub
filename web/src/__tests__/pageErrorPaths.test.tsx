@@ -65,32 +65,32 @@ function renderAt(routePath: string, entry: string, element: ReactElement) {
 const PAGES: Array<{ name: string; routePath: string; entry: string; element: ReactElement }> = [
   {
     name: "InsightsPage",
-    routePath: "/ui/repos/:owner/:repo/insights",
-    entry: "/ui/repos/admin/r/insights",
+    routePath: "/ui/:owner/:repo/insights",
+    entry: "/ui/admin/r/insights",
     element: <InsightsPage />,
   },
   {
     name: "PullsPage (PR detail / reviews)",
-    routePath: "/ui/repos/:owner/:repo/pulls/:number",
-    entry: "/ui/repos/admin/r/pulls/1",
+    routePath: "/ui/:owner/:repo/pulls/:number",
+    entry: "/ui/admin/r/pulls/1",
     element: <PullsPage />,
   },
   {
     name: "PullsPage (list)",
-    routePath: "/ui/repos/:owner/:repo/pulls",
-    entry: "/ui/repos/admin/r/pulls",
+    routePath: "/ui/:owner/:repo/pulls",
+    entry: "/ui/admin/r/pulls",
     element: <PullsPage />,
   },
   {
     name: "DeploymentsPage",
-    routePath: "/ui/repos/:owner/:repo/deployments",
-    entry: "/ui/repos/admin/r/deployments",
+    routePath: "/ui/:owner/:repo/deployments",
+    entry: "/ui/admin/r/deployments",
     element: <DeploymentsPage />,
   },
   {
     name: "WebhookDeliveriesPage",
-    routePath: "/ui/repos/:owner/:repo/hooks/:hookId/deliveries",
-    entry: "/ui/repos/admin/r/hooks/3/deliveries",
+    routePath: "/ui/:owner/:repo/hooks/:hookId/deliveries",
+    entry: "/ui/admin/r/hooks/3/deliveries",
     element: <WebhookDeliveriesPage />,
   },
   {
@@ -125,8 +125,8 @@ const PAGES: Array<{ name: string; routePath: string; entry: string; element: Re
   },
   {
     name: "RepoSocialPage (stargazers)",
-    routePath: "/ui/repos/:owner/:repo/stargazers",
-    entry: "/ui/repos/admin/r/stargazers",
+    routePath: "/ui/:owner/:repo/stargazers",
+    entry: "/ui/admin/r/stargazers",
     element: <RepoSocialPage kind="stargazers" />,
   },
   {
@@ -137,14 +137,14 @@ const PAGES: Array<{ name: string; routePath: string; entry: string; element: Re
   },
   {
     name: "BranchProtectionPage",
-    routePath: "/ui/repos/:owner/:repo/settings/branches",
-    entry: "/ui/repos/admin/r/settings/branches",
+    routePath: "/ui/:owner/:repo/settings/branches",
+    entry: "/ui/admin/r/settings/branches",
     element: <BranchProtectionPage />,
   },
   {
     name: "DependabotPage",
-    routePath: "/ui/repos/:owner/:repo/security/dependabot",
-    entry: "/ui/repos/admin/r/security/dependabot",
+    routePath: "/ui/:owner/:repo/security/dependabot",
+    entry: "/ui/admin/r/security/dependabot",
     element: <DependabotPage />,
   },
   {
@@ -155,8 +155,8 @@ const PAGES: Array<{ name: string; routePath: string; entry: string; element: Re
   },
   {
     name: "ProjectsClassicPage",
-    routePath: "/ui/repos/:owner/:repo/projects-classic",
-    entry: "/ui/repos/admin/r/projects-classic",
+    routePath: "/ui/:owner/:repo/projects-classic",
+    entry: "/ui/admin/r/projects-classic",
     element: <ProjectsClassicPage />,
   },
   {
@@ -167,14 +167,14 @@ const PAGES: Array<{ name: string; routePath: string; entry: string; element: Re
   },
   {
     name: "SecretScanningPage",
-    routePath: "/ui/repos/:owner/:repo/security/secret-scanning",
-    entry: "/ui/repos/admin/r/security/secret-scanning",
+    routePath: "/ui/:owner/:repo/security/secret-scanning",
+    entry: "/ui/admin/r/security/secret-scanning",
     element: <SecretScanningPage />,
   },
   {
     name: "SecurityAdvisoriesPage",
-    routePath: "/ui/repos/:owner/:repo/security/advisories",
-    entry: "/ui/repos/admin/r/security/advisories",
+    routePath: "/ui/:owner/:repo/security/advisories",
+    entry: "/ui/admin/r/security/advisories",
     element: <SecurityAdvisoriesPage />,
   },
   {
@@ -237,8 +237,8 @@ describe("page error paths — malformed 200 shapes surface as an error, not fab
       return Promise.resolve(jsonResponse({ message: "Not Found" }, 404));
     });
     renderAt(
-      "/ui/repos/:owner/:repo/deployments",
-      "/ui/repos/admin/r/deployments",
+      "/ui/:owner/:repo/deployments",
+      "/ui/admin/r/deployments",
       <DeploymentsPage />,
     );
     expect(

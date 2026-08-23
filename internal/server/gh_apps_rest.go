@@ -634,6 +634,37 @@ func appOwnerJSON(st *store.Store, app *store.App) map[string]interface{} {
 	return store.UserToJSON(owner)
 }
 
+// appPermissionScopesWithAdminLevel are the app-permissions members whose
+// documented enum admits "admin": components/schemas/app-permissions in the
+// vendored description declares ["read","write","admin"] for exactly these
+// four and stops at ["read","write"] for the rest.
+var appPermissionScopesWithAdminLevel = map[string]bool{
+	"repository_projects":                            true,
+	"organization_projects":                          true,
+	"organization_custom_properties":                 true,
+	"enterprise_custom_properties_for_organizations": true,
+}
+
+// appPermissionsJSON renders a stored permission map in the app-permissions
+// wire vocabulary. bleephub's authorization model has a level above write
+// (store.PermAdmin) that GitHub's enum does not carry for most scopes; on the
+// wire that level serializes as "write", the highest level GitHub models
+// there. The stored map is untouched, so every authorization decision keeps
+// reading the internal level; only the representation is narrowed.
+func appPermissionsJSON(perms map[string]string) map[string]string {
+	if perms == nil {
+		return nil
+	}
+	out := make(map[string]string, len(perms))
+	for scope, level := range perms {
+		if level == "admin" && !appPermissionScopesWithAdminLevel[scope] {
+			level = "write"
+		}
+		out[scope] = level
+	}
+	return out
+}
+
 func installationToJSON(inst *store.Installation) map[string]interface{} {
 	if inst == nil {
 		return nil
@@ -670,7 +701,7 @@ func installationToJSON(inst *store.Installation) map[string]interface{} {
 		"app_slug":                  inst.AppSlug,
 		"target_type":               inst.TargetType,
 		"target_id":                 inst.TargetID,
-		"permissions":               inst.Permissions,
+		"permissions":               appPermissionsJSON(inst.Permissions),
 		"events":                    jsonArray(inst.Events),
 		"repository_selection":      inst.RepositorySelection,
 		"single_file_name":          inst.SingleFileName,
@@ -707,7 +738,7 @@ func installationTokenToJSON(token *store.InstallationToken, inst *store.Install
 	out := map[string]interface{}{
 		"token":                token.Token,
 		"expires_at":           token.ExpiresAt.UTC().Format(time.RFC3339),
-		"permissions":          token.Permissions,
+		"permissions":          appPermissionsJSON(token.Permissions),
 		"repository_selection": selection,
 	}
 	if len(token.RepositoryIDs) > 0 {

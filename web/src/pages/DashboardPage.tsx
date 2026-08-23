@@ -224,7 +224,7 @@ function TopRepoRow({ repo, last }: { repo: BleephubRepo; last: boolean }) {
     >
       <RepoIcon size={14} style={{ color: "var(--color-fg-muted)" }} />
       <Link
-        to={`/ui/repos/${owner}/${name}`}
+        to={`/ui/${owner}/${name}`}
         className="truncate"
         // inline-block + ≥24px line-height: a standalone list link (not inline
         // text) must clear WCAG 2.5.8 target-size.
@@ -259,7 +259,7 @@ function FeedIssueRow({ issue, last }: { issue: GithubFeedIssue; last: boolean }
       </span>
       <div className="min-w-0 flex-1">
         <Link
-          to={`/ui/repos/${owner}/${name}/issues/${issue.number}`}
+          to={`/ui/${owner}/${name}/issues/${issue.number}`}
           // inline-block + ≥24px line-height so the title's own hit box clears
           // WCAG 2.5.8 target-size (it sits alone on its line, so the inline-text
           // exemption doesn't apply).
@@ -280,7 +280,7 @@ function FeedIssueRow({ issue, last }: { issue: GithubFeedIssue; last: boolean }
         </Link>
         <div style={{ fontSize: "0.78rem", color: "var(--color-fg-muted)" }}>
           <Link
-            to={`/ui/repos/${owner}/${name}`}
+            to={`/ui/${owner}/${name}`}
             style={{ color: "var(--color-fg-muted)", textDecoration: "none" }}
           >
             {repo.full_name}
@@ -335,7 +335,7 @@ function FollowFeedRow({ event, last }: { event: GithubUserEvent; last: boolean 
           </Link>{" "}
           <span style={{ color: "var(--color-fg-muted)" }}>{followEventPhrase(event)}</span>{" "}
           {repo && (
-            <Link to={`/ui/repos/${repo}`} style={{ color: "var(--color-accent)", textDecoration: "none" }}>
+            <Link to={`/ui/${repo}`} style={{ color: "var(--color-accent)", textDecoration: "none" }}>
               {repo}
             </Link>
           )}

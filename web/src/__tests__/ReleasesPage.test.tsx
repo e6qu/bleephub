@@ -36,7 +36,7 @@ describe("ReleasesPage", () => {
       return Promise.resolve(response([]));
     });
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/ui/repos/admin/release/releases/new"]}><Routes><Route path="/ui/repos/:owner/:repo/releases/new" element={<ReleasesPage />} /></Routes></MemoryRouter></QueryClientProvider>);
+    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/ui/admin/release/releases/new"]}><Routes><Route path="/ui/:owner/:repo/releases/new" element={<ReleasesPage />} /></Routes></MemoryRouter></QueryClientProvider>);
 
     fireEvent.change(await screen.findByLabelText("Tag"), { target: { value: "v2.0.0" } });
     fireEvent.click(screen.getByRole("button", { name: "Generate release notes" }));
@@ -62,7 +62,7 @@ describe("ReleasesPage", () => {
       return Promise.resolve(response([]));
     });
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/ui/repos/admin/release/releases/new"]}><Routes><Route path="/ui/repos/:owner/:repo/releases/new" element={<ReleasesPage />} /></Routes></MemoryRouter></QueryClientProvider>);
+    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/ui/admin/release/releases/new"]}><Routes><Route path="/ui/:owner/:repo/releases/new" element={<ReleasesPage />} /></Routes></MemoryRouter></QueryClientProvider>);
 
     fireEvent.change(await screen.findByLabelText("Tag"), { target: { value: "v3.0.0" } });
     // Checked by default (GitHub's on-by-default); uncheck to exclude from latest.
@@ -88,7 +88,7 @@ describe("ReleasesPage", () => {
       return Promise.resolve(response([]));
     });
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/ui/repos/admin/release/releases/1"]}><Routes><Route path="/ui/repos/:owner/:repo/releases/:releaseId" element={<ReleasesPage />} /></Routes></MemoryRouter></QueryClientProvider>);
+    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/ui/admin/release/releases/1"]}><Routes><Route path="/ui/:owner/:repo/releases/:releaseId" element={<ReleasesPage />} /></Routes></MemoryRouter></QueryClientProvider>);
 
     expect(await screen.findByRole("button", { name: "Delete artifact.txt" })).toBeVisible();
     // The "author released this on date" line surfaces the release's author + published date.
@@ -115,7 +115,7 @@ describe("ReleasesPage", () => {
       return Promise.resolve(response([]));
     });
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/ui/repos/admin/release/releases/1"]}><Routes><Route path="/ui/repos/:owner/:repo/releases/:releaseId" element={<ReleasesPage />} /></Routes></MemoryRouter></QueryClientProvider>);
+    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/ui/admin/release/releases/1"]}><Routes><Route path="/ui/:owner/:repo/releases/:releaseId" element={<ReleasesPage />} /></Routes></MemoryRouter></QueryClientProvider>);
 
     fireEvent.click(await screen.findByRole("button", { name: "add reaction" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "react with heart" }));
@@ -143,14 +143,14 @@ describe("ReleasesPage", () => {
       return Promise.resolve(response([]));
     });
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/ui/repos/admin/release/releases/1"]}><Routes><Route path="/ui/repos/:owner/:repo/releases/:releaseId" element={<ReleasesPage />} /></Routes></MemoryRouter></QueryClientProvider>);
+    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/ui/admin/release/releases/1"]}><Routes><Route path="/ui/:owner/:repo/releases/:releaseId" element={<ReleasesPage />} /></Routes></MemoryRouter></QueryClientProvider>);
 
     // Markdown heading is rendered as a real <h2>, not literal "## Highlights".
     const heading = await screen.findByRole("heading", { name: "Highlights" });
     expect(heading.tagName).toBe("H2");
     // The linked discussion resolves to the in-app discussion route by number.
     const link = screen.getByRole("link", { name: "Join the release discussion" });
-    expect(link.getAttribute("href")).toBe("/ui/repos/admin/release/discussions/7");
+    expect(link.getAttribute("href")).toBe("/ui/admin/release/discussions/7");
   });
 
   it("renders the index as a feed: notes markdown, chips, and source-code assets", async () => {
@@ -165,7 +165,7 @@ describe("ReleasesPage", () => {
       return Promise.resolve(response([]));
     });
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/ui/repos/admin/release/releases"]}><Routes><Route path="/ui/repos/:owner/:repo/releases" element={<ReleasesPage />} /></Routes></MemoryRouter></QueryClientProvider>);
+    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/ui/admin/release/releases"]}><Routes><Route path="/ui/:owner/:repo/releases" element={<ReleasesPage />} /></Routes></MemoryRouter></QueryClientProvider>);
 
     // Notes render as markdown, not literal "## Changelog".
     const heading = await screen.findByRole("heading", { name: "Changelog" });
@@ -187,6 +187,41 @@ describe("ReleasesPage", () => {
   });
 });
 
+// Moved here from RepoDetailPage.test.tsx when G9 removed the in-page Releases
+// sub-tab and its list: the routed page is now the only releases surface, so
+// the "a draft must not render as a 1970 epoch date" regression is pinned here.
+describe("ReleasesPage drafts", () => {
+  it("renders a draft as 'Draft'/'drafted', never a 1970 date", async () => {
+    const feed = [
+      { ...release, id: 2, tag_name: "v2.0.0", name: "Draft release", draft: true, published_at: null,
+        created_at: "2026-08-01T00:00:00Z", assets: [] },
+      { ...release, published_at: "2026-02-01T00:00:00Z", assets: [] },
+    ];
+    mockFetch.mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.split("?")[0] === "/api/v3/repos/admin/release/releases") return Promise.resolve(response(feed));
+      if (url === "/api/v3/repos/admin/release") return Promise.resolve(response(repo));
+      return Promise.resolve(response([]));
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/ui/admin/release/releases"]}><Routes><Route path="/ui/:owner/:repo/releases" element={<ReleasesPage />} /></Routes></MemoryRouter></QueryClientProvider>);
+
+    await screen.findByText("Draft release");
+    expect(screen.getByText("Draft")).toBeInTheDocument();
+    // The draft is dated by its creation, and the published release keeps its
+    // real published date — neither falls back to the epoch.
+    expect(screen.getByText(/drafted/).querySelector("time")).toHaveAttribute(
+      "dateTime",
+      "2026-08-01T00:00:00Z",
+    );
+    expect(screen.getByText(/released/).querySelector("time")).toHaveAttribute(
+      "dateTime",
+      "2026-02-01T00:00:00Z",
+    );
+    expect(screen.queryByText(/1970/)).not.toBeInTheDocument();
+  });
+});
+
 describe("ReleasesPage read-only viewer gating", () => {
   const viewerRepo = { ...repo, permissions: { admin: false, push: false, pull: true } };
 
@@ -198,7 +233,7 @@ describe("ReleasesPage read-only viewer gating", () => {
       return Promise.resolve(response([]));
     });
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/ui/repos/admin/release/releases"]}><Routes><Route path="/ui/repos/:owner/:repo/releases" element={<ReleasesPage />} /></Routes></MemoryRouter></QueryClientProvider>);
+    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/ui/admin/release/releases"]}><Routes><Route path="/ui/:owner/:repo/releases" element={<ReleasesPage />} /></Routes></MemoryRouter></QueryClientProvider>);
 
     expect(await screen.findByRole("heading", { name: "Releases" })).toBeInTheDocument();
     expect(screen.getByText("First release", { exact: false })).toBeInTheDocument();
@@ -215,7 +250,7 @@ describe("ReleasesPage read-only viewer gating", () => {
       return Promise.resolve(response([]));
     });
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/ui/repos/admin/release/releases/1"]}><Routes><Route path="/ui/repos/:owner/:repo/releases/:releaseId" element={<ReleasesPage />} /></Routes></MemoryRouter></QueryClientProvider>);
+    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/ui/admin/release/releases/1"]}><Routes><Route path="/ui/:owner/:repo/releases/:releaseId" element={<ReleasesPage />} /></Routes></MemoryRouter></QueryClientProvider>);
 
     // Assets remain downloadable; every write control is gone.
     expect(await screen.findByRole("button", { name: "Download artifact.txt" })).toBeInTheDocument();
@@ -232,7 +267,7 @@ describe("ReleasesPage read-only viewer gating", () => {
       return Promise.resolve(response([]));
     });
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/ui/repos/admin/release/releases/new"]}><Routes><Route path="/ui/repos/:owner/:repo/releases/new" element={<ReleasesPage />} /></Routes></MemoryRouter></QueryClientProvider>);
+    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/ui/admin/release/releases/new"]}><Routes><Route path="/ui/:owner/:repo/releases/new" element={<ReleasesPage />} /></Routes></MemoryRouter></QueryClientProvider>);
 
     expect(await screen.findByText("This page does not exist")).toBeInTheDocument();
     expect(screen.queryByLabelText("Tag")).not.toBeInTheDocument();

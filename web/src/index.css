@@ -36,7 +36,6 @@
 
   /* Chrome/elevation tokens keep the shared hierarchy consistent. */
   --color-header: #f6f8fa;
-  --color-header-highlight: #ffffff;
   --color-accent-emphasis: #0550ae;
   --color-brand-blue: #006eff;
   --color-brand-cyan: #00b8d9;
@@ -121,7 +120,6 @@
   --color-accent-fg: #0d1117;
   --color-accent-soft: #0b2a52;
   --color-header: #161b22;
-  --color-header-highlight: #1c2128;
   --color-accent-emphasis: #79c0ff;
   --color-brand-blue: #58a6ff;
   --color-brand-cyan: #39d0e8;
@@ -217,13 +215,14 @@ select {
   background: var(--color-border-strong);
 }
 
-/* Shared GitHub chrome. The soft highlight adds polish without changing the
- * familiar neutral header and white content hierarchy. */
+/* Shared GitHub chrome (G10). github.com's global header is a FLAT neutral
+ * fill separated from the canvas by a single hairline border, in both themes —
+ * no tint, no vertical ramp, no brand wash. The blue→pink radial gradients
+ * that used to sit here were the most visible non-GitHub thing in the app.
+ * The fill is the `--color-header` token, which the `.dark` block redefines,
+ * so light and dark stay flat from one declaration. */
 .app-header {
-  background:
-    radial-gradient(circle at 8% -180%, color-mix(in srgb, var(--color-brand-blue) 24%, transparent) 0 42%, transparent 43%),
-    radial-gradient(circle at 92% -220%, color-mix(in srgb, var(--color-brand-pink) 18%, transparent) 0 45%, transparent 46%),
-    linear-gradient(180deg, var(--color-header-highlight) 0%, var(--color-header) 100%);
+  background: var(--color-header);
   border-bottom: 1px solid var(--color-border);
   box-shadow: var(--shadow-resting);
 }
@@ -373,10 +372,9 @@ select {
   width: 100vw;
   margin-top: -1.5rem;
   margin-left: calc(50% - 50vw);
-  background:
-    radial-gradient(circle at 15% -220%, color-mix(in srgb, var(--color-brand-cyan) 16%, transparent) 0 48%, transparent 49%),
-    radial-gradient(circle at 86% -250%, color-mix(in srgb, var(--color-brand-purple) 15%, transparent) 0 48%, transparent 49%),
-    linear-gradient(180deg, var(--color-header-highlight) 0%, var(--color-bg-subtle) 100%);
+  /* G10: flat neutral, like github.com's repository chrome — the canvas fill
+   * with a hairline rule under the tab row, not a cyan/purple wash. */
+  background: var(--color-bg);
   border-bottom: 1px solid var(--color-border);
   box-shadow: var(--shadow-resting);
 }
@@ -387,10 +385,13 @@ select {
   padding: 1rem 1rem 0;
 }
 
+/* Only the Watch/Fork/Star actions live here now — the owner/repo breadcrumb
+ * moved into the global header row (G57) — so the row right-aligns them the
+ * way github.com does. */
 .repo-title-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 1rem;
   min-height: 2rem;
   margin-bottom: 0.75rem;
@@ -414,7 +415,8 @@ select {
   font-family: var(--font-sans);
   font-size: 0.78rem;
   font-weight: 600;
-  background: linear-gradient(180deg, var(--color-header-highlight), var(--color-bg-subtle));
+  /* G10: Primer's default button is a flat neutral fill, not a ramp. */
+  background: var(--color-bg-subtle);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-resting);
@@ -553,73 +555,6 @@ select {
   scrollbar-width: thin;
 }
 
-.repo-utility-bar {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  min-height: 2.5rem;
-  padding: 0.35rem;
-  background: color-mix(in srgb, var(--color-bg-subtle) 74%, var(--color-bg));
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-resting);
-}
-
-.repo-utility-tab {
-  padding: 0.35rem 0.65rem;
-  font-family: var(--font-sans);
-  font-size: 0.8rem;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  transition: color 120ms ease, background-color 120ms ease;
-}
-
-.repo-utility-tab:hover {
-  color: var(--color-fg) !important;
-  background: color-mix(in srgb, var(--color-accent) 7%, var(--color-bg)) !important;
-}
-
-.repo-more-menu {
-  position: relative;
-  flex: 0 0 auto;
-}
-
-.repo-more-trigger {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.35rem 0.65rem;
-  color: var(--color-fg-muted);
-  font-size: 0.8rem;
-  font-weight: 600;
-  cursor: pointer;
-  list-style: none;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: linear-gradient(180deg, var(--color-header-highlight), var(--color-bg-subtle));
-}
-
-.repo-more-trigger::-webkit-details-marker {
-  display: none;
-}
-
-.repo-more-popover {
-  position: absolute;
-  top: calc(100% + 0.4rem);
-  right: 0;
-  z-index: 30;
-  display: flex;
-  width: 230px;
-  flex-direction: column;
-  padding: 0.4rem;
-  background: var(--color-surface-raised);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-floating);
-}
-
 /* Repository Security / code scanning. Saturated brand color is reserved for
  * hierarchy, state, and action affordances while the content canvas keeps
  * GitHub's neutral Primer organization in both themes. */
@@ -632,13 +567,16 @@ select {
   margin-bottom: 1rem;
   padding: 1.2rem 1.35rem;
   overflow: hidden;
-  background:
-    radial-gradient(circle at 0 0, color-mix(in srgb, var(--color-brand-blue) 22%, transparent), transparent 42%),
-    radial-gradient(circle at 100% 100%, color-mix(in srgb, var(--color-brand-pink) 16%, transparent), transparent 40%),
-    linear-gradient(135deg, color-mix(in srgb, var(--color-brand-purple) 8%, var(--color-surface)), var(--color-surface));
-  border: 1px solid color-mix(in srgb, var(--color-brand-purple) 34%, var(--color-border));
+  /* G10: flat neutral panel. The blue→pink wash and the purple-tinted border
+     were the same non-GitHub chrome as the old app header; Primer's security
+     overview is a plain bordered surface in both themes. `--color-surface` (not
+     `--color-bg-subtle`) keeps the panel at the same lightness the tinted
+     gradient resolved to, so the eyebrow's contrast ratio is unchanged — the
+     a11y ratchet catches the bg-subtle variant. */
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: 12px;
-  box-shadow: var(--shadow-floating);
+  box-shadow: var(--shadow-resting);
 }
 
 .security-hero-icon {
@@ -646,18 +584,22 @@ select {
   width: 3.25rem;
   height: 3.25rem;
   place-items: center;
-  color: #fff;
+  color: var(--color-accent-fg);
   font-size: 1.65rem;
-  background: linear-gradient(145deg, var(--color-brand-blue), var(--color-brand-purple) 58%, var(--color-brand-pink));
-  border: 1px solid color-mix(in srgb, #fff 30%, transparent);
+  background: var(--color-accent);
+  border: 1px solid var(--color-accent);
   border-radius: 12px;
-  box-shadow: 0 8px 22px color-mix(in srgb, var(--color-brand-purple) 32%, transparent);
 }
 
 .security-eyebrow,
 .security-kicker {
   margin: 0;
-  color: var(--color-brand-blue);
+  /* `--color-brand-blue` (#006eff) is 4.49:1 on white — a hair under AA, which
+     the old gradient hero hid from axe (a background-image makes the contrast
+     rule indeterminate, so it never ran). With the hero flattened (G10) the
+     rule evaluates, so this uses the token that is AA-safe on the flat surface
+     in both themes. */
+  color: var(--color-accent-emphasis);
   font-size: 0.68rem;
   font-weight: 750;
   letter-spacing: 0.08em;
@@ -706,7 +648,7 @@ select {
   gap: 0.7rem;
   margin-bottom: 1rem;
   padding: 0.55rem 0.7rem;
-  background: linear-gradient(180deg, var(--color-header-highlight), var(--color-bg-subtle));
+  background: var(--color-bg-subtle);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-resting);
@@ -915,7 +857,7 @@ select {
   color: var(--color-fg);
   font-size: 0.74rem;
   font-weight: 650;
-  background: linear-gradient(180deg, var(--color-header-highlight), var(--color-bg-subtle));
+  background: var(--color-bg-subtle);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-resting);
@@ -964,34 +906,6 @@ select {
   .security-hero-icon { width: 2.7rem; height: 2.7rem; }
   .security-database-row { grid-template-columns: auto minmax(0, 1fr); }
   .security-row-actions { grid-column: 1 / -1; justify-content: flex-end; }
-}
-
-.repo-more-heading {
-  padding: 0.35rem 0.5rem;
-  color: var(--color-fg-muted);
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.repo-more-popover button,
-.repo-more-popover a {
-  padding: 0.42rem 0.5rem;
-  color: var(--color-fg);
-  font-family: var(--font-sans);
-  font-size: 0.8rem;
-  text-align: left;
-  text-decoration: none;
-  background: transparent;
-  border: 0;
-  border-radius: var(--radius-sm);
-}
-
-.repo-more-popover button:hover,
-.repo-more-popover a:hover {
-  color: var(--color-accent);
-  background: var(--color-accent-soft);
 }
 
 @media (max-width: 720px) {

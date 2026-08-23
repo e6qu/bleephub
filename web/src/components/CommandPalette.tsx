@@ -112,7 +112,7 @@ export function CommandPalette({
           label: r.full_name,
           sublabel: r.description || undefined,
           icon: <RepoIcon size={16} />,
-          to: `/ui/repos/${r.full_name}`,
+          to: `/ui/${r.full_name}`,
           group: "Repositories",
         }))
       : [];

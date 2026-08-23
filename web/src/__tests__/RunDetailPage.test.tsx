@@ -32,9 +32,9 @@ function renderPage(runId = 5) {
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[`/ui/repos/admin/test/actions/runs/${runId}`]}>
+      <MemoryRouter initialEntries={[`/ui/admin/test/actions/runs/${runId}`]}>
         <Routes>
-          <Route path="/ui/repos/:owner/:repo/actions/runs/:runId" element={<RunDetailPage />} />
+          <Route path="/ui/:owner/:repo/actions/runs/:runId" element={<RunDetailPage />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,

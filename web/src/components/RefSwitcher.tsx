@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { fetchRepoTags } from "../api.js";
 import { useDismiss } from "../hooks/useDismiss.js";
+import { repoCodeRoute } from "../routes.js";
 import { BranchIcon, TagIcon, ChevronDownIcon, CheckIcon } from "./octicons.js";
 
 /**
@@ -9,6 +11,10 @@ import { BranchIcon, TagIcon, ChevronDownIcon, CheckIcon } from "./octicons.js";
  * filterable popover with Branches/Tags tabs (combobox + listbox keyboard
  * pattern, same as GoToFile). Tags load lazily on first open; branches come
  * from the caller (every code view already has them).
+ *
+ * The popover also carries the "View all branches" / "View all tags" footer —
+ * github.com's only route to the full branch and tag listings, and (since G9
+ * removed the extra repo sub-tab row) this app's as well.
  */
 export function RefSwitcher({
   owner,
@@ -226,6 +232,23 @@ export function RefSwitcher({
               })
             )}
           </div>
+          <Link
+            to={repoCodeRoute(owner, repo, { kind: tab === "branches" ? "branches" : "tags" })}
+            onClick={close}
+            className="flex items-center justify-center gap-1.5"
+            style={{
+              borderTop: "1px solid var(--color-border)",
+              padding: "0.5rem 0.7rem",
+              fontSize: "0.8rem",
+              fontWeight: 600,
+              color: "var(--color-accent)",
+              textDecoration: "none",
+              lineHeight: "1.625rem",
+            }}
+          >
+            {tab === "branches" ? <BranchIcon size={13} /> : <TagIcon size={13} />}
+            {tab === "branches" ? "View all branches" : "View all tags"}
+          </Link>
         </div>
       )}
     </div>

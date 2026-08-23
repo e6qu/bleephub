@@ -193,7 +193,7 @@ function PRList({ owner, repo }: { owner: string; repo: string }) {
     onSuccess: (pr: GithubPR) => {
       qc.invalidateQueries({ queryKey: ["prs", owner, repo] });
       setCreating(false);
-      navigate(`/ui/repos/${owner}/${repo}/pulls/${pr.number}`);
+      navigate(`/ui/${owner}/${repo}/pulls/${pr.number}`);
     },
   });
 
@@ -351,7 +351,7 @@ function PRList({ owner, repo }: { owner: string; repo: string }) {
           {prs.map((pr, i) => (
             <Link
               key={pr.id}
-              to={`/ui/repos/${owner}/${repo}/pulls/${pr.number}`}
+              to={`/ui/${owner}/${repo}/pulls/${pr.number}`}
               className="flex items-start gap-2.5"
               style={{
                 padding: "0.7rem 1rem",
@@ -667,7 +667,7 @@ function PRDetail({ owner, repo, number }: { owner: string; repo: string; number
       <Tabs
         active={tab}
         onChange={(next) => {
-          const base = `/ui/repos/${owner}/${repo}/pulls/${number}`;
+          const base = `/ui/${owner}/${repo}/pulls/${number}`;
           navigate(next === "conversation" ? base : `${base}/${next}`);
         }}
         items={[
@@ -942,7 +942,7 @@ function DevelopmentSection({
             return (
               <li key={issue.number}>
                 <Link
-                  to={`/ui/repos/${owner}/${repo}/issues/${issue.number}`}
+                  to={`/ui/${owner}/${repo}/issues/${issue.number}`}
                   className="inline-flex items-start gap-1.5"
                   style={{ textDecoration: "none", color: "var(--color-fg)" }}
                 >
@@ -1520,7 +1520,7 @@ function PRCommitsTab({ owner, repo, number }: { owner: string; repo: string; nu
             </div>
             <CommitChecksIcon owner={owner} repo={repo} sha={c.sha} />
             <Link
-              to={`/ui/repos/${owner}/${repo}/commits/${c.sha}`}
+              to={`/ui/${owner}/${repo}/commits/${c.sha}`}
               className="font-mono tabular-nums inline-block"
               style={{
                 fontSize: "0.76rem",
@@ -1566,7 +1566,7 @@ function mergeBoxSummary(
 function runLinkFor(owner: string, repo: string, detailsUrl: string): string | null {
   const m = detailsUrl.match(/\/actions\/runs\/(\d+)/);
   if (!m) return null;
-  return `/ui/repos/${owner}/${repo}/actions/runs/${m[1]}`;
+  return `/ui/${owner}/${repo}/actions/runs/${m[1]}`;
 }
 
 function CommitStatusIcon({ state }: { state: GithubCommitStatusState }) {

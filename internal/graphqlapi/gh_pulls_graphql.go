@@ -1340,6 +1340,12 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			if pr == nil {
 				return nil, fmt.Errorf("pull request creation failed")
 			}
+			// A pull request opened here collects its CODEOWNERS reviewers
+			// exactly as one opened through REST does.
+			s.autoRequestCodeOwners(repo, pr, user)
+			if updated := s.store.GetPullRequest(pr.ID); updated != nil {
+				pr = updated
+			}
 
 			return map[string]interface{}{
 				"pullRequest": pullRequestToGQL(pr, s.store),

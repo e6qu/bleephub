@@ -168,6 +168,24 @@ func collectArchiveEntries(stor gitStorage.Storer, tree *object.Tree) ([]archive
 	entries := make([]archiveEntry, 0, len(paths))
 	for _, p := range paths {
 		te := flat[p]
+		// A gitlink (mode 160000) names a commit in the *submodule's*
+		// repository, which this repository does not contain — reading it as a
+		// blob fails with ErrObjectNotFound and turned every archive of a
+		// repository with a submodule into a 500. `git archive` (and therefore
+		// github.com's archives) emits an empty directory at the submodule's
+		// path instead, verified against `git archive --format=tar` on a
+		// repository with a submodule: the entry is "vendor/sub/", a directory
+		// with no content.
+		//
+		// The filter lives here rather than in the shared flattenTree because
+		// its other caller, threeWayMergedTree, *needs* the gitlink: it carries
+		// the entry through buildTreeFromPaths mode-and-hash intact, so a merge
+		// preserves the submodule. Dropping gitlinks from flattenTree would
+		// silently delete every submodule from a merge commit.
+		if te.Mode == filemode.Submodule {
+			entries = append(entries, archiveEntry{path: p, mode: filemode.Dir})
+			continue
+		}
 		content, err := readBlob(stor, te.Hash)
 		if err != nil {
 			return nil, fmt.Errorf("read %s: %w", p, err)
@@ -190,6 +208,17 @@ func writeTarGz(w io.Writer, prefix string, entries []archiveEntry, when time.Ti
 	}
 	for _, e := range entries {
 		switch e.mode {
+		case filemode.Dir:
+			// An empty directory, which in a git tree can only be a submodule's
+			// mount point; git archive writes it with a trailing slash.
+			if err := tw.WriteHeader(&tar.Header{
+				Name:     prefix + e.path + "/",
+				Typeflag: tar.TypeDir,
+				Mode:     0o755,
+				ModTime:  when,
+			}); err != nil {
+				return err
+			}
 		case filemode.Symlink:
 			if err := tw.WriteHeader(&tar.Header{
 				Name:     prefix + e.path,
@@ -235,6 +264,12 @@ func writeZip(w io.Writer, prefix string, entries []archiveEntry, when time.Time
 	for _, e := range entries {
 		hdr := &zip.FileHeader{Name: prefix + e.path, Method: zip.Deflate, Modified: when}
 		switch e.mode {
+		case filemode.Dir:
+			// Submodule mount point: an empty directory entry, named with the
+			// trailing slash zip readers require to treat it as one.
+			hdr.Name += "/"
+			hdr.Method = zip.Store
+			hdr.SetMode(0o755 | os.ModeDir)
 		case filemode.Executable:
 			hdr.SetMode(0o755)
 		case filemode.Symlink:

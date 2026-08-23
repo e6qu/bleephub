@@ -510,7 +510,7 @@ function ForksSection({ owner, repo }: { owner: string; repo: string }) {
                   style={{ borderBottom: i < forks.length - 1 ? "1px solid var(--color-border)" : "none" }}
                 >
                   <Link
-                    to={`/ui/repos/${fork.full_name}`}
+                    to={`/ui/${fork.full_name}`}
                     style={{ display: "inline-block", padding: "0.6rem 1rem", color: "var(--color-accent)", fontSize: "0.9rem", lineHeight: "1.625rem", textDecoration: "none" }}
                   >
                     {fork.full_name}
@@ -817,7 +817,7 @@ function NetworkSection({ owner, repo }: { owner: string; repo: string }) {
             >
               {graph.nodes.map((node) => (
                 <li key={node.sha}>
-                  <Link to={`/ui/repos/${owner}/${repo}/commits/${node.sha}`}>
+                  <Link to={`/ui/${owner}/${repo}/commits/${node.sha}`}>
                     {node.sha.slice(0, 7)} — {node.message} — {node.author}
                     {node.date ? ` — ${new Date(node.date).toLocaleDateString()}` : ""}
                   </Link>

@@ -55,16 +55,16 @@ describe("Markdown autolinks", () => {
     );
     expect(screen.getByRole("link", { name: "#123" })).toHaveAttribute(
       "href",
-      "/ui/repos/octo/hello/issues/123",
+      "/ui/octo/hello/issues/123",
     );
     expect(screen.getByRole("link", { name: "@octocat" })).toHaveAttribute("href", "/ui/octocat");
     expect(screen.getByRole("link", { name: "other/repo#9" })).toHaveAttribute(
       "href",
-      "/ui/repos/other/repo/issues/9",
+      "/ui/other/repo/issues/9",
     );
     expect(screen.getByRole("link", { name: sha })).toHaveAttribute(
       "href",
-      `/ui/repos/octo/hello/commits/${sha}`,
+      `/ui/octo/hello/commits/${sha}`,
     );
   });
 

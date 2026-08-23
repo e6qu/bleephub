@@ -513,7 +513,7 @@ function AdvisoryDetail({
           <div style={{ marginTop: "0.5rem" }}>
             <strong>Temporary private fork:</strong>{" "}
             <Link
-              to={`/ui/repos/${advisory.private_fork.full_name}`}
+              to={`/ui/${advisory.private_fork.full_name}`}
               style={{ color: "var(--color-accent)" }}
             >
               {advisory.private_fork.full_name}

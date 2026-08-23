@@ -15,7 +15,7 @@ import { ChevronDownIcon, ChevronRightIcon } from "../components/octicons.js";
 
 /**
  * Webhook delivery drill-down for a repository or organization hook —
- * the route decides the scope: /ui/repos/{o}/{r}/hooks/{id}/deliveries
+ * the route decides the scope: /ui/{o}/{r}/hooks/{id}/deliveries
  * vs /ui/orgs/{org}/hooks/{id}/deliveries.
  */
 export function WebhookDeliveriesPage() {
