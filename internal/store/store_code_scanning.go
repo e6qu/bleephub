@@ -766,7 +766,7 @@ func (st *Store) SetCodeScanningDefaultSetup(setup *CodeScanningDefaultSetup) {
 }
 
 // linguistToCodeQLLanguage maps a Linguist language (as detected by
-// languageForFilename) to the CodeQL default-setup language it is
+// LanguageForFilename) to the CodeQL default-setup language it is
 // analyzed as. Languages CodeQL default setup does not support are absent.
 var linguistToCodeQLLanguage = map[string]string{
 	"Go":         "go",

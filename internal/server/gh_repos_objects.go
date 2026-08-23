@@ -23,8 +23,6 @@ var (
 	errRepoGitRepositoryEmpty    = errors.New("repository git repository empty")
 	errRepoGitRefUnavailable     = errors.New("repository git ref unavailable")
 	errRepoGitObjectUnavailable  = errors.New("repository git object unavailable")
-	errGitTreeishNotFound        = errors.New("git treeish not found")
-	errGitTreeishInvalidObject   = errors.New("git treeish must identify a commit or tree")
 )
 
 func (s *Server) registerGHRepoObjectRoutes() {
@@ -138,7 +136,7 @@ func (s *Server) listRepoCommits(repo *store.Repo, owner, repoName string, optio
 			return nil
 		}
 		if options.Path != "" {
-			touches, err := commitTouchesPath(commit, options.Path)
+			touches, err := store.CommitTouchesPath(commit, options.Path)
 			if err != nil {
 				return err
 			}
@@ -163,51 +161,6 @@ func (s *Server) commitMatchesAuthor(commit *object.Commit, author string) bool 
 	return user != nil && strings.EqualFold(user.Login, author)
 }
 
-func commitTouchesPath(commit *object.Commit, requested string) (bool, error) {
-	matches := func(candidate string) bool {
-		return candidate == requested || strings.HasPrefix(candidate, requested+"/")
-	}
-	tree, err := commit.Tree()
-	if err != nil {
-		return false, err
-	}
-	if commit.NumParents() == 0 {
-		found := false
-		walker := object.NewTreeWalker(tree, true, nil)
-		defer walker.Close()
-		for {
-			name, _, err := walker.Next()
-			if errors.Is(err, io.EOF) {
-				return found, nil
-			}
-			if err != nil {
-				return false, err
-			}
-			if matches(name) {
-				found = true
-			}
-		}
-	}
-	parent, err := commit.Parent(0)
-	if err != nil {
-		return false, err
-	}
-	parentTree, err := parent.Tree()
-	if err != nil {
-		return false, err
-	}
-	changes, err := object.DiffTree(parentTree, tree)
-	if err != nil {
-		return false, err
-	}
-	for _, change := range changes {
-		if matches(change.From.Name) || matches(change.To.Name) {
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
 func (s *Server) handleGetTree(w http.ResponseWriter, r *http.Request) {
 	owner := r.PathValue("owner")
 	repoName := r.PathValue("repo")
@@ -224,8 +177,8 @@ func (s *Server) handleGetTree(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resolvedSHA, tree, err := resolveGitTreeish(stor, sha)
-	if errors.Is(err, errGitTreeishInvalidObject) {
+	resolvedSHA, tree, err := store.ResolveGitTreeish(stor, sha)
+	if errors.Is(err, store.ErrGitTreeishInvalidObject) {
 		writeGHError(w, http.StatusUnprocessableEntity, "Invalid object requested. SHA must identify a commit or a tree.")
 		return
 	}
@@ -316,137 +269,6 @@ func writeGHBlobTooLargeError(w http.ResponseWriter, message string) {
 			{"resource": "Blob", "field": "data", "code": "too_large"},
 		},
 	})
-}
-
-// resolveGitTreeish implements GitHub's deliberately broader tree_sha
-// contract. A caller may supply a tree object SHA, a commit SHA, or a branch
-// or tag name. References are dereferenced (including annotated tags), while a
-// raw tag-object SHA is rejected just like github.com.
-func resolveGitTreeish(stor gitStorage.Storer, value string) (plumbing.Hash, *object.Tree, error) {
-	value = strings.Trim(value, "/")
-	if value == "" {
-		return plumbing.ZeroHash, nil, errGitTreeishNotFound
-	}
-
-	hash, found, err := resolveGitObjectReference(stor, value)
-	if err != nil {
-		return plumbing.ZeroHash, nil, err
-	}
-	if found {
-		hash, err = peelGitTagObjects(stor, hash)
-		if err != nil {
-			return plumbing.ZeroHash, nil, errGitTreeishNotFound
-		}
-	} else {
-		if !validGitObjectID(value) {
-			return plumbing.ZeroHash, nil, errGitTreeishNotFound
-		}
-		hash = plumbing.NewHash(value)
-	}
-
-	encoded, err := stor.EncodedObject(plumbing.AnyObject, hash)
-	if err != nil {
-		return plumbing.ZeroHash, nil, errGitTreeishNotFound
-	}
-	switch encoded.Type() {
-	case plumbing.TreeObject:
-		tree, err := object.GetTree(stor, hash)
-		if err != nil {
-			return plumbing.ZeroHash, nil, errGitTreeishNotFound
-		}
-		return hash, tree, nil
-	case plumbing.CommitObject:
-		commit, err := object.GetCommit(stor, hash)
-		if err != nil {
-			return plumbing.ZeroHash, nil, errGitTreeishNotFound
-		}
-		tree, err := commit.Tree()
-		if err != nil {
-			return plumbing.ZeroHash, nil, errGitTreeishNotFound
-		}
-		// GitHub identifies the response by the resolved commit SHA even
-		// though the entries come from that commit's root tree.
-		return hash, tree, nil
-	default:
-		return plumbing.ZeroHash, nil, errGitTreeishInvalidObject
-	}
-}
-
-func resolveGitObjectReference(stor gitStorage.Storer, value string) (plumbing.Hash, bool, error) {
-	names := make([]plumbing.ReferenceName, 0, 4)
-	add := func(name plumbing.ReferenceName) {
-		for _, existing := range names {
-			if existing == name {
-				return
-			}
-		}
-		names = append(names, name)
-	}
-	if strings.HasPrefix(value, "refs/") {
-		add(plumbing.ReferenceName(value))
-	} else {
-		// The literal HEAD is a ref github.com resolves: GET /git/trees/HEAD
-		// answers 200 from the default branch. It is tried first, the way git
-		// itself resolves the name, so a stray refs/heads/HEAD branch cannot
-		// shadow the symref.
-		if value == string(plumbing.HEAD) {
-			add(plumbing.HEAD)
-		}
-		if strings.HasPrefix(value, "heads/") || strings.HasPrefix(value, "tags/") {
-			add(plumbing.ReferenceName("refs/" + value))
-		}
-		add(plumbing.NewBranchReferenceName(value))
-		add(plumbing.NewTagReferenceName(value))
-	}
-	for _, name := range names {
-		ref, err := stor.Reference(name)
-		if err != nil {
-			continue
-		}
-		hash, err := resolvedReferenceHash(stor, ref, map[plumbing.ReferenceName]bool{})
-		return hash, true, err
-	}
-	return plumbing.ZeroHash, false, nil
-}
-
-func resolvedReferenceHash(stor gitStorage.Storer, ref *plumbing.Reference, seen map[plumbing.ReferenceName]bool) (plumbing.Hash, error) {
-	if ref == nil || seen[ref.Name()] {
-		return plumbing.ZeroHash, errGitTreeishNotFound
-	}
-	seen[ref.Name()] = true
-	if ref.Type() == plumbing.HashReference {
-		return ref.Hash(), nil
-	}
-	if ref.Type() != plumbing.SymbolicReference {
-		return plumbing.ZeroHash, errGitTreeishNotFound
-	}
-	target, err := stor.Reference(ref.Target())
-	if err != nil {
-		return plumbing.ZeroHash, err
-	}
-	return resolvedReferenceHash(stor, target, seen)
-}
-
-func peelGitTagObjects(stor gitStorage.Storer, hash plumbing.Hash) (plumbing.Hash, error) {
-	seen := map[plumbing.Hash]bool{}
-	for {
-		if hash.IsZero() || seen[hash] {
-			return plumbing.ZeroHash, errGitTreeishNotFound
-		}
-		seen[hash] = true
-		encoded, err := stor.EncodedObject(plumbing.AnyObject, hash)
-		if err != nil {
-			return plumbing.ZeroHash, err
-		}
-		if encoded.Type() != plumbing.TagObject {
-			return hash, nil
-		}
-		tag, err := object.GetTag(stor, hash)
-		if err != nil {
-			return plumbing.ZeroHash, err
-		}
-		hash = tag.Target
-	}
 }
 
 func gitTreeEntryJSON(stor gitStorage.Storer, baseURL, fullName, name string, entry object.TreeEntry) map[string]interface{} {
@@ -1089,7 +911,7 @@ func (s *Server) handleGetContents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if entry.Mode == filemode.Symlink {
-		target, err := readBlob(stor, entry.Hash)
+		target, err := store.ReadGitBlob(stor, entry.Hash)
 		if err != nil {
 			writeGHError(w, http.StatusInternalServerError, "Git object unavailable")
 			return
@@ -1234,7 +1056,7 @@ func (s *Server) writeTreeListing(
 		item := contentDirectoryEntryJSON(s.baseURL(r), repo, ref, itemPath, e, size)
 		switch e.Mode {
 		case filemode.Symlink:
-			target, err := readBlob(stor, e.Hash)
+			target, err := store.ReadGitBlob(stor, e.Hash)
 			if err != nil {
 				writeGHError(w, http.StatusInternalServerError, "Git object unavailable")
 				return
@@ -1257,7 +1079,7 @@ func submoduleGitURL(stor gitStorage.Storer, root *object.Tree, requestedPath st
 	if err != nil || !entry.Mode.IsFile() {
 		return ""
 	}
-	raw, err := readBlob(stor, entry.Hash)
+	raw, err := store.ReadGitBlob(stor, entry.Hash)
 	if err != nil {
 		return ""
 	}

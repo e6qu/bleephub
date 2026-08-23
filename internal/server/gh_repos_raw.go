@@ -2,7 +2,10 @@ package bleephub
 
 import (
 	"bytes"
+	"errors"
+	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/e6qu/bleephub/internal/store"
@@ -68,26 +71,50 @@ func (s *Server) serveRawFile(w http.ResponseWriter, r *http.Request, owner, nam
 		http.NotFound(w, r)
 		return
 	}
-	content, err := readBlob(stor, entry.Hash)
+	// The blob is streamed rather than read into memory: a raw request names
+	// one file, and that file may be far larger than the memory a server can
+	// afford to spend on one response.
+	blob, size, err := store.OpenGitBlob(stor, entry.Hash)
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
+	defer blob.Close()
+
+	// git decides text-versus-binary from the start of the content, so the
+	// content type only needs the leading bytes and the rest can go straight
+	// out without ever being held.
+	sniff := make([]byte, gitRawSniffBytes)
+	read, err := io.ReadFull(blob, sniff)
+	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
+		http.NotFound(w, r)
+		return
+	}
+	sniff = sniff[:read]
 
 	// raw.githubusercontent.com serves everything as an opaque download rather
 	// than letting the browser interpret it: a raw .html or .svg rendered
 	// in-origin would be stored XSS against any viewer of an untrusted
 	// repository. text/plain plus nosniff is what github.com sends.
-	w.Header().Set("Content-Type", rawContentType(content))
+	w.Header().Set("Content-Type", rawContentType(sniff))
 	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
 	w.WriteHeader(http.StatusOK)
 	if r.Method == http.MethodHead {
 		return
 	}
-	if _, err := w.Write(content); err != nil {
+	if _, err := w.Write(sniff); err != nil {
+		s.logger.Debug().Err(err).Msg("raw file write failed")
+		return
+	}
+	if _, err := io.Copy(w, blob); err != nil {
 		s.logger.Debug().Err(err).Msg("raw file write failed")
 	}
 }
+
+// gitRawSniffBytes is how much of a blob decides its content type. git's own
+// binary heuristic reads the start of the content and no further.
+const gitRawSniffBytes = 8000
 
 // resolveRawTreeAndPath splits "{ref}/{path}" at every boundary a ref could
 // end at and returns the tree for the first ref that resolves. Both halves can

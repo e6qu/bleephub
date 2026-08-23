@@ -284,6 +284,10 @@ type gitUploadRequest struct {
 	// sidebandAll multiplexes the whole reply rather than only the packfile
 	// section, so an error in any section reaches the client as a message.
 	sidebandAll bool
+	// packURIProtocols are the transfer protocols the client said it can fetch
+	// a packfile over itself. A request that named none never sees a
+	// packfile-uris section, which is what makes the offload opt-in.
+	packURIProtocols []string
 	// serverOptions are the "-o" options the client passed through. The
 	// protocol requires a server to accept options it does not act on.
 	serverOptions []string
@@ -891,18 +895,33 @@ func (b *gitBandWriter) finish() error {
 // sendGitPackfile enumerates the objects the answer owes and writes them, with
 // the counting and compressing progress the client prints on the way.
 func sendGitPackfile(stor storer.Storer, out io.Writer, request *gitUploadRequest, boundary *gitFetchBoundary, mode gitSidebandMode) error {
+	return sendGitPlannedPackfile(stor, out, request, boundary, nil, mode)
+}
+
+// sendGitPlannedPackfile writes the packfile for an answer whose object list
+// may already have been enumerated.
+//
+// A protocol v2 reply that offers packfile URIs has to know the plan before the
+// packfile section begins, because the section that names the URIs comes first
+// and is derived from it — so that reply hands the plan in rather than having
+// it walked twice. Every other reply passes nil and the walk happens here,
+// where its position can be reported on the progress band as it goes.
+func sendGitPlannedPackfile(stor storer.Storer, out io.Writer, request *gitUploadRequest, boundary *gitFetchBoundary, plan *gitPackPlan, mode gitSidebandMode) error {
 	band := newGitBandWriter(out, mode, !request.noProgress)
-	counted := 0
-	plan, err := gitObjectsToSend(stor, boundary, request, func(total int) {
-		// Real progress: the count is the walk's own position, reported often
-		// enough to move and rarely enough not to flood the band.
-		if total-counted >= gitProgressInterval {
-			counted = total
-			band.progressf("Counting objects: %d\r", total)
+	if plan == nil {
+		counted := 0
+		enumerated, err := gitObjectsToSend(stor, boundary, request, func(total int) {
+			// Real progress: the count is the walk's own position, reported
+			// often enough to move and rarely enough not to flood the band.
+			if total-counted >= gitProgressInterval {
+				counted = total
+				band.progressf("Counting objects: %d\r", total)
+			}
+		})
+		if err != nil {
+			return band.fatal(err)
 		}
-	})
-	if err != nil {
-		return band.fatal(err)
+		plan = enumerated
 	}
 	band.progressf("Enumerating objects: %d, done.\n", len(plan.objects))
 	band.progressf("Counting objects: 100%% (%d/%d), done.\n", len(plan.objects), len(plan.objects))

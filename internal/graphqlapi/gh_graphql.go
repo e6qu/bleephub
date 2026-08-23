@@ -158,11 +158,28 @@ func (s *Resolver) initGraphQLSchema() {
 				return nodeTypes["Issue"]
 			case strings.HasPrefix(nodeID, "PR_"):
 				return nodeTypes["PullRequest"]
-			default:
-				return nil
+			case strings.HasPrefix(nodeID, "REF_"):
+				return nodeTypes["Ref"]
 			}
+			// A git object's global id carries its type prefix before the
+			// shared infix, so Commit/Tree/Blob/Tag dispatch off the same
+			// codec the store encodes them with.
+			if prefix, _, _, ok := store.ParseGitObjectNodeID(nodeID); ok {
+				switch prefix {
+				case store.GitCommitNodeIDPrefix:
+					return nodeTypes["Commit"]
+				case store.GitTreeNodeIDPrefix:
+					return nodeTypes["Tree"]
+				case store.GitBlobNodeIDPrefix:
+					return nodeTypes["Blob"]
+				case store.GitTagNodeIDPrefix:
+					return nodeTypes["Tag"]
+				}
+			}
+			return nil
 		},
 	})
+	s.graphqlTypes.node = nodeInterface
 	userType := graphql.NewObject(graphql.ObjectConfig{
 		Name:       "User",
 		Interfaces: []*graphql.Interface{nodeInterface, actorInterface, repositoryOwnerInterface},
@@ -195,6 +212,7 @@ func (s *Resolver) initGraphQLSchema() {
 	nodeTypes["User"] = userType
 	actorTypes["User"] = userType
 	repositoryOwnerTypes["User"] = userType
+	s.graphqlTypes.user = userType
 
 	queryType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "Query",
@@ -240,6 +258,13 @@ func (s *Resolver) initGraphQLSchema() {
 	// Add repository types, queries, and mutations
 	repoType, mutationType, ownerRepositoriesField, ownerRepositoryField := s.addRepoFieldsToSchema(userType, queryType, nodeInterface)
 	nodeTypes["Repository"] = repoType
+	// The git object graph is assembled while the repository fields are, so
+	// its types are registered for Node dispatch here.
+	nodeTypes["Commit"] = s.graphqlTypes.commit
+	nodeTypes["Tree"] = s.graphqlTypes.tree
+	nodeTypes["Blob"] = s.graphqlTypes.blob
+	nodeTypes["Tag"] = s.graphqlTypes.tag
+	nodeTypes["Ref"] = s.graphqlTypes.ref
 
 	// Add organization types and queries
 	orgType := s.addOrgFieldsToSchema(userType, queryType, nodeInterface)
@@ -278,8 +303,17 @@ func (s *Resolver) initGraphQLSchema() {
 		Mutation: mutationType,
 		// CommitComment is a Reactable subject not reachable from any root
 		// field, so register it explicitly to include it (and its Reactable
-		// possibleType membership) in the schema.
-		Types: []graphql.Type{s.graphqlTypes.commitComment},
+		// possibleType membership) in the schema. Blob, Tree and Tag are
+		// reachable only through the GitObject interface, whose implementors
+		// graphql-go cannot discover on its own; without them a client's
+		// `... on Blob` fragment fails validation as an unknown type.
+		Types: []graphql.Type{
+			s.graphqlTypes.commitComment,
+			s.graphqlTypes.blob,
+			s.graphqlTypes.tree,
+			s.graphqlTypes.tag,
+			s.graphqlTypes.commit,
+		},
 	})
 	if err != nil {
 		panic(fmt.Sprintf("failed to create graphql schema: %v", err))
@@ -351,6 +385,9 @@ func (s *Resolver) graphQLNodeByID(ctx context.Context, nodeID string) interface
 			return nil
 		}
 		return pullRequestToGQL(pullRequest, s.store)
+	}
+	if gitObject := s.gitObjectNodeByID(ctx, nodeID); gitObject != nil {
+		return gitObject
 	}
 	return nil
 }

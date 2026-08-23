@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -601,7 +600,7 @@ func (s *Server) handleCreateTree(w http.ResponseWriter, r *http.Request) {
 
 	var baseTree *object.Tree
 	if req.BaseTree != "" {
-		if !validGitObjectID(req.BaseTree) {
+		if !store.ValidGitObjectID(req.BaseTree) {
 			store.WriteGHValidationError(w, "Tree", "base_tree", "invalid")
 			return
 		}
@@ -691,7 +690,7 @@ func (s *Server) handleCreateTree(w http.ResponseWriter, r *http.Request) {
 		var hash plumbing.Hash
 		if hasSHA {
 			var sha string
-			if err := json.Unmarshal(ent.SHA, &sha); err != nil || !validGitObjectID(sha) {
+			if err := json.Unmarshal(ent.SHA, &sha); err != nil || !store.ValidGitObjectID(sha) {
 				store.WriteGHValidationError(w, "Tree", "sha", "invalid")
 				return
 			}
@@ -771,14 +770,6 @@ func (s *Server) handleCreateTree(w http.ResponseWriter, r *http.Request) {
 		"tree":      entries,
 		"truncated": false,
 	})
-}
-
-func validGitObjectID(value string) bool {
-	if len(value) != len(plumbing.ZeroHash.String()) {
-		return false
-	}
-	_, err := hex.DecodeString(value)
-	return err == nil
 }
 
 // flattenTreeForCreate keeps empty directory entries while reducing populated
@@ -868,7 +859,7 @@ func (s *Server) handleCreateCommit(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnprocessableEntity, "message and tree are required")
 		return
 	}
-	if !validGitObjectID(req.Tree) {
+	if !store.ValidGitObjectID(req.Tree) {
 		store.WriteGHValidationError(w, "Commit", "tree", "invalid")
 		return
 	}
@@ -881,7 +872,7 @@ func (s *Server) handleCreateCommit(w http.ResponseWriter, r *http.Request) {
 
 	var parentHashes []plumbing.Hash
 	for _, p := range req.Parents {
-		if !validGitObjectID(p) {
+		if !store.ValidGitObjectID(p) {
 			store.WriteGHValidationError(w, "Commit", "parents", "invalid")
 			return
 		}
@@ -962,7 +953,7 @@ func (s *Server) handleCreateTag(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnprocessableEntity, "tag, message, object, and type are required")
 		return
 	}
-	if !validGitObjectID(req.Object) {
+	if !store.ValidGitObjectID(req.Object) {
 		store.WriteGHValidationError(w, "Tag", "object", "invalid")
 		return
 	}
@@ -1059,7 +1050,7 @@ func (s *Server) handleCreateRef(w http.ResponseWriter, r *http.Request) {
 		store.WriteGHValidationError(w, "Reference", "ref", "invalid")
 		return
 	}
-	if !validGitObjectID(req.SHA) {
+	if !store.ValidGitObjectID(req.SHA) {
 		store.WriteGHValidationError(w, "Reference", "sha", "invalid")
 		return
 	}
@@ -1124,7 +1115,7 @@ func (s *Server) handleUpdateRef(w http.ResponseWriter, r *http.Request) {
 		store.WriteGHValidationError(w, "Reference", "sha", "missing_field")
 		return
 	}
-	if !validFullyQualifiedGitRef(fullRef.String()) || !validGitObjectID(req.SHA) {
+	if !validFullyQualifiedGitRef(fullRef.String()) || !store.ValidGitObjectID(req.SHA) {
 		store.WriteGHValidationError(w, "Reference", "sha", "invalid")
 		return
 	}

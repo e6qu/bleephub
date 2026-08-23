@@ -501,11 +501,11 @@ func TestGraphQLSchemaMatchesIntrospectionAndOfficialRatchets(t *testing.T) {
 	// able to bless less coverage or more incompatibility. These monotonic
 	// floors make "update the generated files" incapable of hiding a schema
 	// regression.
-	if report.ImplementedFields < 911 {
-		t.Fatalf("GraphQL implemented fields regressed to %d; floor is 911", report.ImplementedFields)
+	if report.ImplementedFields < 1150 {
+		t.Fatalf("GraphQL implemented fields regressed to %d; floor is 1150", report.ImplementedFields)
 	}
-	if report.SignatureExactFields < 910 {
-		t.Fatalf("GraphQL exact-signature fields regressed to %d; floor is 910", report.SignatureExactFields)
+	if report.SignatureExactFields < 1149 {
+		t.Fatalf("GraphQL exact-signature fields regressed to %d; floor is 1149", report.SignatureExactFields)
 	}
 	if report.CompatibilityGapCount > 9 {
 		t.Fatalf("GraphQL compatibility gaps grew to %d; ceiling is 9", report.CompatibilityGapCount)

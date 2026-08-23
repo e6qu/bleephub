@@ -3,7 +3,6 @@ package bleephub
 import (
 	"encoding/base64"
 	"fmt"
-	"io"
 	"net/http"
 	"sort"
 	"strings"
@@ -611,35 +610,11 @@ func findFirstFile(stor gitStorage.Storer, tree *object.Tree, prefix string, can
 		if err != nil || !entry.Mode.IsFile() {
 			continue
 		}
-		content, err := readBlob(stor, entry.Hash)
+		content, err := store.ReadGitBlob(stor, entry.Hash)
 		if err != nil {
 			continue
 		}
 		return name, entry, content, true
 	}
 	return "", nil, nil, false
-}
-
-// readBlob returns a blob's full content.
-func readBlob(stor gitStorage.Storer, hash plumbing.Hash) ([]byte, error) {
-	blob, err := object.GetBlob(stor, hash)
-	if err != nil {
-		return nil, err
-	}
-	reader, err := blob.Reader()
-	if err != nil {
-		return nil, err
-	}
-	defer reader.Close()
-	return io.ReadAll(reader)
-}
-
-// shortSHA returns the 7-character abbreviation GitHub uses in archive
-// directory names.
-func shortSHA(h plumbing.Hash) string {
-	full := h.String()
-	if len(full) < 7 {
-		return full
-	}
-	return full[:7]
 }

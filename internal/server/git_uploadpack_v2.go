@@ -20,14 +20,14 @@ import (
 )
 
 // Protocol v2 replaces the ref advertisement every connection used to begin
-// with by a list of commands the client may call. The three it needs are
-// implemented here: ls-refs, which answers the questions the v0 advertisement
-// used to answer whether or not the client cared; fetch, which is the same
-// exchange serveGitUploadPack runs re-spelled as one request with named
-// sections; and object-info, which answers questions about objects without
-// sending them. All three hand the real work to the shared boundary, filter and
-// packing code, so a client cannot get a different answer by choosing a
-// protocol version.
+// with by a list of commands the client may call. Three of them are implemented
+// here: ls-refs, which answers the questions the v0 advertisement used to answer
+// whether or not the client cared; fetch, which is the same exchange
+// serveGitUploadPack runs re-spelled as one request with named sections; and
+// object-info, which answers questions about objects without sending them. All
+// three hand the real work to the shared boundary, filter and packing code, so a
+// client cannot get a different answer by choosing a protocol version. The
+// fourth, bundle-uri, is served from git_bundleuri.go.
 
 // gitProtocolHeader is the HTTP header, and the SSH environment variable, a
 // client states its protocol version in.
@@ -63,6 +63,20 @@ func gitProtocolV2Requested(statement string) bool {
 //     prints instead of a stream that stops.
 const gitFetchCapabilityValue = "shallow wait-for-done filter ref-in-want sideband-all"
 
+// gitFetchCapabilityLine renders the fetch capability for one deployment.
+//
+// One argument beyond the fixed set is only named where it works:
+// packfile-uris, by which the client fetches a packfile itself from a URI this
+// server hands it. That URI is a presigned GET against the object store, so a
+// deployment whose repositories are not in object storage has none to hand out
+// and does not claim otherwise — see git_packuris.go.
+func gitFetchCapabilityLine(offload bool) string {
+	if !offload {
+		return gitFetchCapabilityValue
+	}
+	return gitFetchCapabilityValue + " " + gitPackURIFetchArgument
+}
+
 // writeGitV2CapabilityAdvertisement is what a v2 connection opens with, in
 // place of the v0 ref advertisement.
 //
@@ -70,20 +84,25 @@ const gitFetchCapabilityValue = "shallow wait-for-done filter ref-in-want sideba
 // serve.c advertises them: ls-refs reports unborn branches, fetch understands
 // the arguments named above, server-option carries the client's `-o` options,
 // every object id in this conversation is a SHA-1, session-id lets the two
-// sides correlate their logs, and object-info answers object sizes without
-// sending the objects.
+// sides correlate their logs, object-info answers object sizes without sending
+// the objects, and bundle-uri offers a bundle to bootstrap from.
 func writeGitV2CapabilityAdvertisement(out io.Writer) error {
-	encoder := pktline.NewEncoder(out)
-	for _, line := range []string{
+	offload := gitPackOffloadSupported()
+	lines := []string{
 		"version 2\n",
 		"agent=" + capability.DefaultAgent() + "\n",
 		"ls-refs=unborn\n",
-		"fetch=" + gitFetchCapabilityValue + "\n",
+		"fetch=" + gitFetchCapabilityLine(offload) + "\n",
 		"server-option\n",
 		"object-format=" + gitObjectFormat + "\n",
 		"session-id=" + gitServerSessionID() + "\n",
 		"object-info=size\n",
-	} {
+	}
+	if offload {
+		lines = append(lines, gitBundleURICommand+"\n")
+	}
+	encoder := pktline.NewEncoder(out)
+	for _, line := range lines {
 		if err := encoder.EncodeString(line); err != nil {
 			return err
 		}
@@ -233,6 +252,10 @@ func serveGitProtocolV2(ctx context.Context, stor storer.Storer, defaultBranch s
 			}
 		case "object-info":
 			if err := serveGitObjectInfoV2(stor, command.arguments, out); err != nil {
+				return result, err
+			}
+		case gitBundleURICommand:
+			if err := serveGitBundleURIV2(ctx, stor, command.arguments, out); err != nil {
 				return result, err
 			}
 		default:
@@ -517,12 +540,45 @@ func serveGitFetchV2(ctx context.Context, stor storer.Storer, session gitV2Sessi
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return result, ctxErr
 	}
+
+	// A client that offered to fetch packfiles itself makes the object list part
+	// of the reply's structure rather than only of its payload: the
+	// packfile-uris section is derived from the plan and is written before the
+	// packfile section begins. So the walk happens here for such a client, and
+	// its plan is handed to the packfile writer rather than walked again.
+	//
+	// A walk that fails is still reported the way every other failure of a reply
+	// already under way is — on band 3 inside the packfile section — because
+	// that is the only channel left once the sections above have been written.
+	var plan *gitPackPlan
+	var offer *gitPackURIOffer
+	var planErr error
+	if len(request.packURIProtocols) > 0 {
+		if plan, planErr = gitObjectsToSend(stor, boundary, request, nil); planErr == nil {
+			offer, err = gitPackURIOffload(ctx, stor, request, plan)
+			if err != nil {
+				return result, err
+			}
+			if offer != nil {
+				if err := writeGitPackURIsSection(writer, offer); err != nil {
+					return result, err
+				}
+			}
+		}
+	}
+
 	if err := writer.line("packfile\n"); err != nil {
 		return result, err
 	}
 	result.packed = true
 	result.clone = len(request.haves) == 0
-	return result, sendGitPackfile(stor, out, request, boundary, gitSideband64k)
+	switch {
+	case planErr != nil:
+		return result, newGitBandWriter(out, gitSideband64k, !request.noProgress).fatal(planErr)
+	case offer != nil:
+		return result, sendGitOffloadedPackfile(stor, out, request, offer, gitSideband64k)
+	}
+	return result, sendGitPlannedPackfile(stor, out, request, boundary, plan, gitSideband64k)
 }
 
 // applyGitFetchV2Argument records one argument of a protocol v2 fetch command.
@@ -541,6 +597,9 @@ func applyGitFetchV2Argument(stor storer.Storer, request *gitUploadRequest, argu
 		return nil
 	case strings.HasPrefix(argument, "want-ref "):
 		return applyGitWantRef(stor, request, strings.TrimPrefix(argument, "want-ref "))
+	case strings.HasPrefix(argument, gitPackURIFetchArgument+" "):
+		request.packURIProtocols = gitParsePackURIProtocols(strings.TrimPrefix(argument, gitPackURIFetchArgument+" "))
+		return nil
 	}
 	return applyGitUploadRequestLine(stor, request, argument)
 }

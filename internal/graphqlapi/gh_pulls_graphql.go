@@ -263,60 +263,58 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 	gitActorConnectionType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "GitActorConnection",
 		Fields: graphql.Fields{
-			"nodes": &graphql.Field{Type: graphql.NewList(graphql.NewObject(graphql.ObjectConfig{
-				Name: "GitActor",
-				Fields: graphql.Fields{
-					"name":  &graphql.Field{Type: graphql.String},
-					"email": &graphql.Field{Type: graphql.String},
-					"user": &graphql.Field{
-						Type: userType,
-						Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-							a, ok := p.Source.(map[string]interface{})
-							if !ok {
-								return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
-							}
-							return a["user"], nil
-						},
-					},
-				},
-			}))},
+			"nodes":      &graphql.Field{Type: graphql.NewList(s.gqlGitActorType())},
 			"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
 		},
 	})
 
-	commitType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "Commit",
-		Fields: graphql.Fields{
-			"oid":             &graphql.Field{Type: graphql.NewNonNull(gitObjectID)},
-			"messageHeadline": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"messageBody":     &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"committedDate":   &graphql.Field{Type: graphql.NewNonNull(dateTime)},
-			"authoredDate":    &graphql.Field{Type: graphql.NewNonNull(dateTime)},
-			"authors": &graphql.Field{
-				Type: graphql.NewNonNull(gitActorConnectionType),
-				Args: graphql.FieldConfigArgument{
-					"first": &graphql.ArgumentConfig{Type: graphql.Int},
-				},
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					c, ok := p.Source.(map[string]interface{})
-					if !ok {
-						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
-					}
-					return c["authors"], nil
-				},
-			},
-			"statusCheckRollup": &graphql.Field{
-				// Null when no checks exist for the commit — matches real
-				// GitHub for a commit with no statuses or check runs.
-				Type: statusCheckRollupType,
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					c, ok := p.Source.(map[string]interface{})
-					if !ok {
-						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
-					}
-					return c["statusCheckRollup"], nil
-				},
-			},
+	// One Commit type serves the pull-request commit lists and the git object
+	// graph, exactly as GitHub has a single Commit. The git-graph members
+	// (tree, parents, history, author, …) live with the object graph; the two
+	// fields below are the check-rollup surface the pull-request queries add.
+	commitType := s.gqlCommitType()
+	commitType.AddFieldConfig("authors", &graphql.Field{
+		Type: graphql.NewNonNull(gitActorConnectionType),
+		Args: graphql.FieldConfigArgument{
+			"first": &graphql.ArgumentConfig{Type: graphql.Int},
+		},
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			c, ok := p.Source.(map[string]interface{})
+			if !ok {
+				return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
+			}
+			if authors, ok := c["authors"]; ok && authors != nil {
+				return authors, nil
+			}
+			// A commit reached through the object graph carries its git author
+			// rather than a pre-rendered connection.
+			nodes := []interface{}{}
+			if author, ok := c["author"].(map[string]interface{}); ok {
+				nodes = append(nodes, author)
+			}
+			return map[string]interface{}{"nodes": nodes, "totalCount": len(nodes)}, nil
+		},
+	})
+	commitType.AddFieldConfig("statusCheckRollup", &graphql.Field{
+		// Null when no checks exist for the commit — matches real
+		// GitHub for a commit with no statuses or check runs.
+		Type: statusCheckRollupType,
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			c, ok := p.Source.(map[string]interface{})
+			if !ok {
+				return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
+			}
+			if rollup, ok := c["statusCheckRollup"]; ok && rollup != nil {
+				return rollup, nil
+			}
+			repoFullName, _ := c["repoFullName"].(string)
+			oid, _ := c["oid"].(string)
+			if repoFullName == "" || oid == "" {
+				return nil, nil
+			}
+			s.store.Mu.RLock()
+			defer s.store.Mu.RUnlock()
+			return statusCheckRollupSourceLocked(s.store, repoFullName, oid), nil
 		},
 	})
 
@@ -981,12 +979,14 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 					}
 					base, _ := pr["baseRefName"].(string)
 					ref := map[string]interface{}{
-						"name":   base,
-						"prefix": "refs/heads/",
+						"name":          base,
+						"prefix":        "refs/heads/",
+						"qualifiedName": "refs/heads/" + base,
 					}
 					prID, _ := pr["databaseId"].(int)
 					if prObj := s.store.GetPullRequest(prID); prObj != nil {
 						if repo := s.store.GetRepoByID(prObj.RepoID); repo != nil {
+							ref["repoFullName"] = repo.FullName
 							if rule := s.branchProtectionRuleForPR(repo, prObj.BaseRefName); rule != nil {
 								ref["branchProtectionRule"] = rule
 							}
@@ -2529,7 +2529,10 @@ func pullRequestToGQL(pr *store.PullRequest, st *store.Store) map[string]interfa
 	}
 	if len(commitNodes) == 0 && sha != "" {
 		headCommit := map[string]interface{}{
+			"__typename":        "Commit",
 			"oid":               sha,
+			"repoFullName":      repoFullName,
+			"message":           pr.Title,
 			"messageHeadline":   pr.Title,
 			"messageBody":       "",
 			"committedDate":     pr.CreatedAt.Format(time.RFC3339),
@@ -2931,13 +2934,29 @@ func gitCommitToGQLLocked(c *object.Commit, st *store.Store, repoFullName string
 		},
 	}
 	return map[string]interface{}{
+		"__typename":        "Commit",
 		"oid":               c.Hash.String(),
+		"repoFullName":      repoFullName,
+		"message":           c.Message,
 		"messageHeadline":   strings.SplitN(c.Message, "\n", 2)[0],
 		"messageBody":       commitMessageBody(c.Message),
 		"committedDate":     c.Committer.When.UTC().Format(time.RFC3339),
 		"authoredDate":      c.Author.When.UTC().Format(time.RFC3339),
+		"author":            gitActorSourceLocked(st, c.Author),
+		"committer":         gitActorSourceLocked(st, c.Committer),
 		"authors":           map[string]interface{}{"nodes": authors, "totalCount": len(authors)},
 		"statusCheckRollup": statusCheckRollupSourceLocked(st, repoFullName, c.Hash.String()),
+	}
+}
+
+// gitActorSourceLocked renders a git signature as GitActor for a caller that
+// already holds st.Mu (the pull-request renderers do).
+func gitActorSourceLocked(st *store.Store, signature object.Signature) map[string]interface{} {
+	return map[string]interface{}{
+		"name":  signature.Name,
+		"email": signature.Email,
+		"date":  signature.When.UTC().Format(time.RFC3339),
+		"user":  userGraphQLByEmailLocked(st, signature.Email),
 	}
 }
 
