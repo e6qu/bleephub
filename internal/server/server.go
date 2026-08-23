@@ -433,7 +433,7 @@ func validatePersistentServerStorage(serviceByteStoreReady bool) error {
 	}
 	if !serviceByteStoreReady {
 		return errors.New("persistence is enabled (BLEEPHUB_PERSIST=true) but service byte storage is not object-backed: " +
-			"GitHub Actions artifacts, dependency caches, runner logs, release assets, package files, container-registry blobs, CodeQL database archives, CodeQL variant-analysis query packs, and artifact attestation bundles require BLEEPHUB_OBJECT_S3_BUCKET")
+			"GitHub Actions artifacts, dependency caches, runner logs, release assets, package files, container-registry blobs, CodeQL database archives, CodeQL variant-analysis query packs, artifact attestation bundles, and Git LFS objects require BLEEPHUB_OBJECT_S3_BUCKET")
 	}
 	return nil
 }

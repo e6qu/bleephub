@@ -177,10 +177,21 @@ binary on a filesystem.
   parents now arrive emits `unshallow`, so deepening fetches and `--unshallow` work, not just the
   initial clone. Smart-HTTP and SSH both call the one `serveGitUploadPack`, so a client cannot
   observe a different protocol depending on the URL scheme it dialed.
-  Advertised capabilities are exactly the implemented ones (`shallow`, `deepen-since`, `deepen-not`,
-  `ofs-delta`, `agent`); `side-band-64k`, `multi_ack*`, `thin-pack`, `include-tag`, `no-progress`
-  and `deepen-relative` are deliberately absent, each with its consequence documented at the
-  declaration — advertising a capability that is not honoured is worse than omitting it.
+  The advertisement is now the complete v0 set, every entry genuinely honoured and pinned
+  exhaustively by a test: `multi_ack`, `multi_ack_detailed`, `no-done`, `thin-pack`, `side-band`,
+  `side-band-64k`, `ofs-delta`, `shallow`, `deepen-since`, `deepen-not`, `deepen-relative`,
+  `no-progress`, `include-tag`, `allow-tip-sha1-in-want`, `allow-reachable-sha1-in-want`, `filter`,
+  `object-format=sha1`, plus `symref=HEAD:…` and `agent=…`. **Protocol v2** is implemented on both
+  transports (`ls-refs` with `unborn`/`peel`/`symrefs`/`ref-prefix`, `fetch` with
+  `acknowledgments`/`ready`/`shallow-info`/`packfile`), negotiated over HTTP via the `Git-Protocol`
+  header and over SSH via the `GIT_PROTOCOL` env request. **Partial clone** honours `blob:none`,
+  `blob:limit=<n>`, `tree:<n>` and `combine:`, and refuses a spec it cannot serve with git's own
+  `invalid filter-spec` error rather than silently returning a full clone. Thin packs are real:
+  go-git's `packfile.Encoder` cannot express an externally-based delta (`ObjectsToPack` only
+  searches within the object set it is given, and `SetDelta` is unreachable from outside the
+  package), so the thin entries are written directly — header, `packfile.GetDelta`, zlib, SHA-1
+  trailer — with bases chosen by git's own same-path heuristic against what the client proved it
+  holds.
 - **Git LFS, absent entirely → implemented.** There was no `info/lfs` route at all, so `git lfs`
   clones left 130-byte pointer files in the working tree (the smudge filter's batch call 404'd with
   a non-LFS body) and pushes aborted in the pre-push hook. Now: the v1 batch API, object
@@ -217,20 +228,45 @@ _Verified: full `go test ./...` green (exit 0), gofmt/vet clean, bugs ledger OK 
 inventory regenerated (line-number drift only). Real `git` and `git lfs` binaries drive the shallow,
 SSH and LFS tests end-to-end rather than a mocked client._
 
-**Deliberately still not implemented (git):** protocol **v2** (`ls-refs`/`fetch`, which would also
-give empty repositories a proper `unborn` HEAD advertisement) and **partial clone**
-(`filter=blob:none` / `tree:0`), which is currently ignored rather than refused, so a `--filter`
-client silently falls back to a full clone. Both are additive on top of the new upload-pack rather
-than rework of it.
+## Deviation policy
 
-**Still not implemented, with reasons:**
-- package download counts: absent from GitHub's package-version payload shape.
-- tag protection: GitHub retired tag protection rules in favor of rulesets, which bleephub
-  already implements with tag targeting — N/A rather than a gap.
-- Accepted deviations, documented: the repo sub-tab row (G9), the gradient header (G10),
-  breadcrumb placement (G57), 4-toggle notification settings (G102), `/ui/repos/:owner/:repo`
-  URL namespace. 2FA is relabeled as a simulated flag rather than growing a fake TOTP flow (G91)
-  because production auth is delegated to the SSO IdP.
+bleephub implements **the GitHub API**. A difference between bleephub's behaviour and GitHub's is
+therefore a bug in bleephub, not a design choice to be documented — there is no "accepted
+deviation" category and no deferral list. **GitHub Classroom is the single deliberate exception**:
+it is a bleephub feature that dotcom's API does not model, and it stays.
+
+Two distinctions this policy does *not* collapse:
+
+- **A gap is not a deviation.** A GitHub feature bleephub has not built yet is unfinished work. It
+  gets fixed, not documented.
+- **A vendored-schema imprecision is not a deviation.** Where the pinned dotcom description is
+  narrower than GitHub's own observable behaviour, matching the description would make bleephub
+  *less* faithful. Those cases are the schema's bug and are recorded as such, with a citation to
+  the GitHub description or documentation that carries the member. Removing them would be a
+  regression, so they are the one thing the shape-validator allowlist legitimately holds.
+
+Applying that policy retired the previous "still not implemented / accepted deviations" list:
+
+- **repo sub-tab row (G9), gradient header (G10), breadcrumb placement (G57),
+  `/ui/repos/:owner/:repo` URL namespace, 4-toggle notification settings (G102), 2FA (G91)** —
+  all were structural deviations from github.com, so all are fixed rather than accepted. G91 in
+  particular was worse than a cosmetic gap: a boolean labelled "2FA" that provisioned nothing told
+  the user they were protected when they were not, and is replaced by real TOTP enrolment,
+  single-use recovery codes, password change and a revocable sessions list. Accounts whose
+  authentication is genuinely delegated to the SSO IdP say so, rather than showing a control that
+  cannot work.
+- **tag protection** and **package download counts** were never deviations or gaps. GitHub retired
+  tag-protection rules (zero tag-protection paths remain in the pinned description) and neither
+  `package` nor `package-version` carries a `download_count`. Building either would invent API
+  surface GitHub does not have — the opposite of parity, and a route-citation gate failure.
+
+**The deviation ledger** (`internal/server/openapi-violation-allowlist.txt`) is the enforceable
+record, capped by a ceiling that may only shrink. Entries that encode a bleephub *choice* — the
+richer secret-scanning push-protection 422 on `git/refs`, the `admin` value on the three
+app-permission fields, `approval_policy: none` — are deviations under this policy and are being
+removed by conforming the emitters. Entries that record a schema imprecision bleephub is right to
+contradict (`installed_version`, `submodule_git_url`, nullable `pushed_at` and enterprise-team
+`description`) stay, each with its citation.
 
 _The sections below are the original audit, kept for reference; the Section-3 numbers are the
 **pre-fix** baseline._
@@ -393,10 +429,15 @@ change needed first — per the server-backing rule, do not ship dead controls.
 | G102 | m | Notification settings are 4 global toggles (accepted simplification; extend only if server stores per-type prefs). | — |
 | G103 | m | Security-advisory form lacks affected-products/CVSS/credits (verify store first); org migrations page requires hand-typing the org login. | Fields if backed; org select from user's orgs. |
 
-**Accepted deviations (document, don't fix):** `/ui/repos/:owner/:repo` URL namespace (deliberate,
-vs github.com's root-level `/:owner/:repo`); operator surfaces with no github.com analogue
-(`/ui/operations/*`, MetricsPage, WorkflowsPage simulator, webhook-delivery stacked sections);
-team discussions absent (GitHub retired them); billing/Copilot-billing parity.
+**Resolved (there is no "accepted deviation" category — see the deviation policy above):**
+`/ui/repos/:owner/:repo` is **fixed**: repositories now sit one segment below the SPA's `/ui/` site
+root at `/ui/:owner/:repo`, the same shape as github.com's `/{owner}/{repo}`, with a reserved
+first-segment list (github.com's own mechanism) guarding the non-router consumers and a drift test
+that fails if a top-level route is added without reserving it. Team discussions are not a gap —
+GitHub retired them. Billing/Copilot-billing parity is unbuilt work, tracked as a gap rather than
+a deviation. The operator surfaces (`/ui/operations/*`, MetricsPage, the WorkflowsPage simulator,
+webhook-delivery stacked sections) have no github.com analogue and are bleephub's own, like
+Classroom.
 
 ## 3. Performance — measurements
 

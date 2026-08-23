@@ -90,3 +90,15 @@ func canPushRepo(st *store.Store, user *store.User, repo *store.Repo) bool {
 func canReadRepoAsUser(st *store.Store, user *store.User, repo *store.Repo) bool {
 	return store.CanReadRepoAsUser(st, user, repo)
 }
+
+// namedUserCanReadRepo asks the read question about somebody other than the
+// caller: a CODEOWNERS owner being considered for an automatic review request.
+// As with namedUserIsActiveOrgMember there is no credential to intersect for a
+// third party — the question is what that person can see, not what the
+// request's bearer may do — which is why this is not (*Server).viewerCanReadRepo.
+func namedUserCanReadRepo(st *store.Store, subject *store.User, repo *store.Repo) bool {
+	if subject == nil || repo == nil {
+		return false
+	}
+	return canReadRepoAsUser(st, subject, repo)
+}

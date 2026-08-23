@@ -71,6 +71,10 @@ type Pulls interface {
 	// after a review lands or is dismissed through GraphQL — the merge
 	// itself runs through the server's REST-shared merge gate.
 	MaybeAutoMerge(prID int)
+	// AutoRequestCodeOwners requests the CODEOWNERS owners of a newly opened
+	// pull request's changed files as reviewers. A pull request opened through
+	// GraphQL collects the same reviewers one opened through REST does.
+	AutoRequestCodeOwners(repo *store.Repo, pr *store.PullRequest, sender *store.User)
 }
 
 // RateSnapshot is the API rate-limit accounting the rateLimit root field
@@ -283,6 +287,10 @@ func (s *Resolver) pullRequestChangedFiles(repo *store.Repo, pr *store.PullReque
 
 func (s *Resolver) maybeAutoMerge(prID int) {
 	s.pulls.MaybeAutoMerge(prID)
+}
+
+func (s *Resolver) autoRequestCodeOwners(repo *store.Repo, pr *store.PullRequest, sender *store.User) {
+	s.pulls.AutoRequestCodeOwners(repo, pr, sender)
 }
 
 func (s *Resolver) ghUserFromContext(ctx context.Context) *store.User {

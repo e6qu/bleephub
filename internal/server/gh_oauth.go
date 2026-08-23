@@ -91,6 +91,7 @@ func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
   <input type="hidden" name="return_to" value="%s"/>
   <label>Username<br><input type="text" name="login" autofocus style="width:100%%"/></label><br><br>
   <label>Personal access token<br><input type="password" name="password" style="width:100%%"/></label><br><br>
+  <label>Two-factor code <small>(if enrolled)</small><br><input type="text" name="otp" inputmode="numeric" autocomplete="one-time-code" style="width:100%%"/></label><br><br>
   <button type="submit" style="padding:8px 16px;background:#2da44e;color:white;border:0;border-radius:6px;font-size:14px;cursor:pointer">Sign in</button>
 </form>
 </body></html>`,
@@ -129,6 +130,10 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if s.requireSecondFactor(w, user, secondFactorFromRequest(r, strings.TrimSpace(r.FormValue("otp")))) {
+		return
+	}
+
 	// Rotate: revoke any session the browser already held before issuing a new
 	// one, so a fixation cookie planted before authentication cannot outlive it.
 	if cookie := s.sessionCookieFromRequest(r); cookie != nil {
@@ -139,9 +144,13 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 	sessionID := uuid.New().String()
 	csrf := uuid.New().String()
 	sess := &store.LoginSession{
-		UserID:    user.ID,
-		CSRFToken: csrf,
-		ExpiresAt: time.Now().Add(time.Hour),
+		UserID:     user.ID,
+		CSRFToken:  csrf,
+		ExpiresAt:  time.Now().Add(time.Hour),
+		Handle:     uuid.New().String(),
+		CreatedAt:  s.currentTime(),
+		UserAgent:  truncateSessionUserAgent(r.UserAgent()),
+		SignedInIP: sessionClientIP(r),
 	}
 	if err := s.store.PutLoginSession(sessionID, sess); err != nil {
 		s.logger.Error().Err(err).Msg("persist browser session")

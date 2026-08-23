@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, useLocation } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -18,7 +18,7 @@ function LocationProbe() {
   return <div data-testid="loc">{loc.pathname + loc.search}</div>;
 }
 
-function renderHeader(initialEntry = "/") {
+function renderHeader(initialEntry = "/", seed?: (client: QueryClient) => void) {
   Object.defineProperty(window, "matchMedia", {
     configurable: true,
     value: vi.fn(() => ({
@@ -35,6 +35,7 @@ function renderHeader(initialEntry = "/") {
     return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  seed?.(client);
   render(
     <QueryClientProvider client={client}>
       <ToastProvider>
@@ -131,7 +132,7 @@ describe("AppHeader menus", () => {
   });
 
   it("scopes header search to the current repository", async () => {
-    renderHeader("/ui/repos/acme/api");
+    renderHeader("/ui/acme/api");
     expect(screen.getByText("In this repository")).toBeInTheDocument();
     const input = screen.getByLabelText("Search in acme/api");
     const user = userEvent.setup();
@@ -143,5 +144,43 @@ describe("AppHeader menus", () => {
     expect(decodeURIComponent(screen.getByTestId("loc").textContent!)).toContain(
       "repo:acme/api flaky test",
     );
+  });
+
+  // ─── G57: owner/repo breadcrumb in the global header row ──────────────────
+  //
+  // github.com's 2023+ chrome carries owner/repo in the header itself, next to
+  // the logo, instead of a page-level bar above the repository tabs. It is
+  // derived from the pathname, so these also pin the reserved-word
+  // disambiguation that keeps /ui/<app page> from parsing as a repository.
+
+  it("shows the owner/repo breadcrumb next to the logo on a repository route", async () => {
+    renderHeader("/ui/acme/api/pulls/7/files");
+    const crumb = screen.getByRole("navigation", { name: "Repository breadcrumb" });
+    expect(within(crumb).getByRole("link", { name: "acme" })).toHaveAttribute("href", "/ui/acme");
+    expect(within(crumb).getByRole("link", { name: "api" })).toHaveAttribute("href", "/ui/acme/api");
+  });
+
+  it("routes an organization owner in the breadcrumb to the organization page", async () => {
+    renderHeader("/ui/acme/api", (client) => {
+      // The repo pages fill this key; the header only reads it (skipToken), so
+      // a cached organization payload is what redirects the owner link.
+      client.setQueryData(["repo", "acme", "api"], {
+        full_name: "acme/api",
+        owner: { login: "acme", type: "Organization" },
+      });
+    });
+    const crumb = screen.getByRole("navigation", { name: "Repository breadcrumb" });
+    expect(within(crumb).getByRole("link", { name: "acme" })).toHaveAttribute("href", "/ui/orgs/acme");
+  });
+
+  it("never reads a reserved top-level page as a repository", async () => {
+    renderHeader("/ui/settings/organizations");
+    expect(screen.queryByRole("navigation", { name: "Repository breadcrumb" })).not.toBeInTheDocument();
+    expect(screen.queryByText("In this repository")).not.toBeInTheDocument();
+  });
+
+  it("shows no breadcrumb outside a repository", async () => {
+    renderHeader("/ui/");
+    expect(screen.queryByRole("navigation", { name: "Repository breadcrumb" })).not.toBeInTheDocument();
   });
 });

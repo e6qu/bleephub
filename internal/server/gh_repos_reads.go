@@ -422,23 +422,10 @@ func (s *Server) handleListCodeownersErrors(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	errorsOut := []map[string]interface{}{}
-	tree, _, err := s.repoTreeAtRef(repo, r.URL.Query().Get("ref"))
-	if err != nil {
-		writeJSON(w, http.StatusOK, map[string]interface{}{"errors": errorsOut})
-		return
-	}
-	stor := s.gitStorageForRepo(repo)
-	for _, path := range codeownersLocations {
-		entry, err := tree.FindEntry(path)
-		if err != nil || !entry.Mode.IsFile() {
-			continue
-		}
-		content, err := readBlob(stor, entry.Hash)
-		if err != nil {
-			continue
-		}
-		errorsOut = s.validateCodeowners(string(content), path)
-		break
+	// The same file lookup the review-request and merge rules read ownership
+	// from, so what this endpoint validates is what those enforce.
+	if content, path, ok := s.codeownersFileAtRef(repo, r.URL.Query().Get("ref")); ok {
+		errorsOut = s.validateCodeowners(content, path)
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"errors": errorsOut})
 }

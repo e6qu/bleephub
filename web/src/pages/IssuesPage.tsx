@@ -339,10 +339,10 @@ function IssueList({ owner, repo }: { owner: string; repo: string }) {
         resultCount={issues.length}
         actions={
           <div className="flex items-center gap-2">
-            <Button size="sm" onClick={() => navigate(`/ui/repos/${owner}/${repo}/labels`)}>
+            <Button size="sm" onClick={() => navigate(`/ui/${owner}/${repo}/labels`)}>
               <TagIcon size={14} /> Labels
             </Button>
-            <Button size="sm" onClick={() => navigate(`/ui/repos/${owner}/${repo}/milestones`)}>
+            <Button size="sm" onClick={() => navigate(`/ui/${owner}/${repo}/milestones`)}>
               Milestones
             </Button>
             {signedIn ? (
@@ -370,7 +370,7 @@ function IssueList({ owner, repo }: { owner: string; repo: string }) {
           {issues.map((issue, i) => (
             <Link
               key={issue.id}
-              to={`/ui/repos/${owner}/${repo}/issues/${issue.number}`}
+              to={`/ui/${owner}/${repo}/issues/${issue.number}`}
               className="flex items-start gap-2.5"
               style={{
                 padding: "0.7rem 1rem",
@@ -510,7 +510,7 @@ function PinnedIssuesSection({ owner, repo }: { owner: string; repo: string }) {
           return (
             <Link
               key={iss.number}
-              to={`/ui/repos/${owner}/${repo}/issues/${iss.number}`}
+              to={`/ui/${owner}/${repo}/issues/${iss.number}`}
               className="flex items-start gap-2"
               style={{
                 border: "1px solid var(--color-border)",
@@ -667,7 +667,7 @@ function NewIssueDialog({ owner, repo, onClose }: { owner: string; repo: string;
       qc.invalidateQueries({ queryKey: ["issues", owner, repo] });
       qc.invalidateQueries({ queryKey: ["issue-count-exact", owner, repo] });
       onClose();
-      navigate(`/ui/repos/${owner}/${repo}/issues/${issue.number}`);
+      navigate(`/ui/${owner}/${repo}/issues/${issue.number}`);
     },
     onError: (err: Error) => setCreateError(err.message),
   });
@@ -880,7 +880,7 @@ function SubIssuesSection({ owner, repo, number }: { owner: string; repo: string
             >
               {s.state === "open" ? <IssueOpenedIcon size={14} /> : <IssueClosedIcon size={14} />}
               <Link
-                to={`/ui/repos/${owner}/${repo}/issues/${s.number}`}
+                to={`/ui/${owner}/${repo}/issues/${s.number}`}
                 className="min-w-0 flex-1 truncate"
                 style={{ color: "var(--color-fg)", textDecoration: "none" }}
               >
@@ -1519,7 +1519,7 @@ function ConvertToDiscussionDialog({
       void qc.invalidateQueries({ queryKey: ["issue-count-exact", owner, repo] });
       void qc.invalidateQueries({ queryKey: ["discussions", owner, repo] });
       onClose();
-      navigate(`/ui/repos/${owner}/${repo}/discussions/${d.number}`);
+      navigate(`/ui/${owner}/${repo}/discussions/${d.number}`);
     },
   });
 
@@ -1622,7 +1622,7 @@ function TransferIssueDialog({
       const newRepo = moved?.repository?.name;
       onClose();
       if (moved && newRepo) {
-        navigate(`/ui/repos/${newOwner}/${newRepo}/issues/${moved.number}`);
+        navigate(`/ui/${newOwner}/${newRepo}/issues/${moved.number}`);
       }
     },
   });
@@ -1693,7 +1693,7 @@ function DeleteIssueDialog({
       void qc.invalidateQueries({ queryKey: ["issues", owner, repo] });
       void qc.invalidateQueries({ queryKey: ["issue-count-exact", owner, repo] });
       onClose();
-      navigate(`/ui/repos/${owner}/${repo}/issues`);
+      navigate(`/ui/${owner}/${repo}/issues`);
     },
   });
 
@@ -1764,7 +1764,7 @@ function IssueDevelopmentSection({ owner, repo, number }: { owner: string; repo:
         return (
           <li key={pr.number} style={{ fontSize: "0.82rem" }}>
             <Link
-              to={`/ui/repos/${owner}/${repo}/pulls/${pr.number}`}
+              to={`/ui/${owner}/${repo}/pulls/${pr.number}`}
               className="inline-flex items-center gap-1.5"
               style={{ color: "var(--color-accent)", textDecoration: "none" }}
             >
@@ -2063,7 +2063,7 @@ function MilestoneRow({
     >
       <div className="min-w-0 flex-1">
         <Link
-          to={`/ui/repos/${owner}/${repo}/issues?milestone=${encodeURIComponent(ms.title)}`}
+          to={`/ui/${owner}/${repo}/issues?milestone=${encodeURIComponent(ms.title)}`}
           className="inline-block"
           style={{
             fontWeight: 600,

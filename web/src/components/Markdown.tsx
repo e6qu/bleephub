@@ -124,10 +124,10 @@ function tokenizeRefs(value: string, ctx: LinkContext | undefined): MdNode[] {
     const full = m[0];
     if (m.index > last) out.push({ type: "text", value: value.slice(last, m.index) });
     let url: string | null = null;
-    if (m[1] !== undefined && m[2] !== undefined) url = `/ui/repos/${m[1]}/issues/${m[2]}`;
-    else if (m[3] !== undefined && ctx) url = `/ui/repos/${ctx.owner}/${ctx.repo}/issues/${m[3]}`;
+    if (m[1] !== undefined && m[2] !== undefined) url = `/ui/${m[1]}/issues/${m[2]}`;
+    else if (m[3] !== undefined && ctx) url = `/ui/${ctx.owner}/${ctx.repo}/issues/${m[3]}`;
     else if (m[4] !== undefined) url = `/ui/${m[4]}`;
-    else if (m[5] !== undefined && ctx) url = `/ui/repos/${ctx.owner}/${ctx.repo}/commits/${m[5]}`;
+    else if (m[5] !== undefined && ctx) url = `/ui/${ctx.owner}/${ctx.repo}/commits/${m[5]}`;
     out.push(url ? { type: "link", url, children: [{ type: "text", value: full }] } : { type: "text", value: full });
     last = m.index + full.length;
   }

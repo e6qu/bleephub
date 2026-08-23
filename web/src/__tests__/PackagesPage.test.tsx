@@ -99,7 +99,7 @@ describe("PackagesPage detail", () => {
     // Owning repository is linked.
     expect(screen.getByRole("link", { name: "acme/web" })).toHaveAttribute(
       "href",
-      "/ui/repos/acme/web",
+      "/ui/acme/web",
     );
   });
 

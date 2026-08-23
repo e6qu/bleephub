@@ -14,8 +14,11 @@ type OrgActionsPermissions struct {
 	// ArtifactAndLogRetentionDays is the org-wide artifact/log retention
 	// setting (GET/PUT /orgs/{org}/actions/permissions/artifact-and-log-retention).
 	ArtifactAndLogRetentionDays int
-	// ForkPRApprovalPolicy controls when fork PR workflows require
-	// maintainer approval (actions-fork-pr-contributor-approval enum).
+	// ForkPRApprovalPolicy names which fork-PR contributors a maintainer's
+	// approval is demanded of (actions-fork-pr-contributor-approval enum:
+	// first_time_contributors_new_to_github, first_time_contributors,
+	// all_external_contributors). Whether approval is demanded at all is
+	// ForkPRWorkflowsPrivateRepos.RequireApprovalForForkPRWorkflows.
 	ForkPRApprovalPolicy string
 	// ForkPRWorkflowsPrivateRepos holds the org's fork-PR-workflow policy
 	// for private repositories (four booleans).
@@ -141,6 +144,11 @@ func (st *Store) getRepoActionsPermissionsLocked(repoKey string) *RepoActionsPer
 		st.RepoActionsPermissions = map[string]*RepoActionsPermissions{}
 	}
 	if p, ok := st.RepoActionsPermissions[repoKey]; ok && p != nil {
+		// Materialize the settings whose zero value is not a valid
+		// configuration, the same way the org materializer does.
+		if p.ForkPRContributorApproval == "" {
+			p.ForkPRContributorApproval = "first_time_contributors"
+		}
 		return p
 	}
 	p := DefaultRepoActionsPermissions()
@@ -260,7 +268,7 @@ func DefaultRepoActionsPermissions() *RepoActionsPermissions {
 		Enabled:                     true,
 		AllowedActions:              "all",
 		AccessLevel:                 "none",
-		ForkPRContributorApproval:   "none",
+		ForkPRContributorApproval:   "first_time_contributors",
 		ForkPRWorkflowsPrivateRepos: &ForkPRWorkflowsPrivateRepos{},
 		ArtifactAndLogRetentionDays: 90,
 		CacheRetentionLimitDays:     0,

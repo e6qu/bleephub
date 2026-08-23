@@ -548,7 +548,7 @@ function SearchResults({
           render={(r: BleephubRepo) => (
             <div>
               <Link
-                to={`/ui/repos/${r.full_name}`}
+                to={`/ui/${r.full_name}`}
                 style={{ color: "var(--color-accent)", fontWeight: 600, textDecoration: "none" }}
               >
                 {r.full_name}
@@ -617,7 +617,7 @@ function SearchResults({
               <StateLabel state={item.state === "open" ? "open" : "closed"}>{item.state}</StateLabel>
               <div className="min-w-0 flex-1">
                 <Link
-                  to={`/ui/repos/${item.repository.full_name}/${item.pull_request ? "pulls" : "issues"}/${item.number}`}
+                  to={`/ui/${item.repository.full_name}/${item.pull_request ? "pulls" : "issues"}/${item.number}`}
                   style={{ color: "var(--color-fg)", fontWeight: 600, textDecoration: "none" }}
                 >
                   {item.title}
@@ -682,7 +682,7 @@ function SearchResults({
           render={(c: GithubSearchCommitItem) => (
             <div>
               <Link
-                to={`/ui/repos/${c.repository.full_name}/commits/${c.sha}`}
+                to={`/ui/${c.repository.full_name}/commits/${c.sha}`}
                 style={{
                   display: "inline-block",
                   color: "var(--color-fg)",

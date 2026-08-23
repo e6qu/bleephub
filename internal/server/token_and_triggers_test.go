@@ -280,10 +280,20 @@ func TestForkPullRequestTriggersWithTheBaseWorkflowDefinition(t *testing.T) {
 		t.Fatalf("run ref = %q, want refs/pull/1/merge", runs[0].Ref)
 	}
 
+	// The approval policy is a documented enum member throughout: it names
+	// which contributors approval is demanded of and has no member meaning
+	// "never". Whether approval is demanded at all is the separate
+	// require_approval_for_fork_pr_workflows switch, which is off here — so
+	// the run above was not held even though a policy is set.
+	if got := s.store.GetRepoActionsPermissions(baseKey).ForkPRContributorApproval; got != "first_time_contributors" {
+		t.Fatalf("default approval_policy = %q, want first_time_contributors", got)
+	}
+
 	// And the approval machinery below the trigger, which was unreachable
 	// while no fork pull request ever produced a run, now engages.
 	perms := s.store.GetRepoActionsPermissions(baseKey)
 	perms.ForkPRContributorApproval = "all_external_contributors"
+	perms.ForkPRWorkflowsPrivateRepos = &store.ForkPRWorkflowsPrivateRepos{RequireApprovalForForkPRWorkflows: true}
 	s.store.SetRepoActionsPermissions(baseKey, perms)
 	s.triggerWorkflowsForEvent(baseKey, "pull_request", "synchronize", "refs/heads/contrib-branch", payload)
 

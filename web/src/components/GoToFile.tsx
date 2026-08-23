@@ -76,7 +76,7 @@ export function GoToFile({
 
   const go = (path?: string) => {
     if (!path) return;
-    navigate(`/ui/repos/${owner}/${repo}/blob/${encodeURIComponent(gitRef)}/${path}`);
+    navigate(`/ui/${owner}/${repo}/blob/${encodeURIComponent(gitRef)}/${path}`);
     onClose();
   };
 

@@ -27,7 +27,7 @@ function renderAt(path: string) {
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[path]}>
         <Routes>
-          <Route path="/ui/repos/:owner/:repo/insights" element={<InsightsPage />} />
+          <Route path="/ui/:owner/:repo/insights" element={<InsightsPage />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -117,7 +117,7 @@ const networkCommits = [
 describe("InsightsPage", () => {
   it("renders the sectioned sidebar with Pulse as the default pane", async () => {
     mockInsightsEndpoints();
-    renderAt("/ui/repos/admin/test/insights");
+    renderAt("/ui/admin/test/insights");
 
     // Sidebar nav with every section entry.
     const nav = await screen.findByRole("navigation", { name: "Insights" });
@@ -156,7 +156,7 @@ describe("InsightsPage", () => {
           languages: { Go: 100 },
         }),
     });
-    renderAt("/ui/repos/admin/test/insights");
+    renderAt("/ui/admin/test/insights");
     await waitFor(() => {
       expect(screen.getByText("Merged pull requests")).toBeInTheDocument();
     });
@@ -185,7 +185,7 @@ describe("InsightsPage", () => {
     // falls through to the [] fallback and errors — Pulse must degrade to the
     // four standalone search-count queries.
     mockInsightsEndpoints();
-    renderAt("/ui/repos/admin/test/insights");
+    renderAt("/ui/admin/test/insights");
     await waitFor(() => {
       const searchCalls = mockFetch.mock.calls
         .map((c) => decodeURIComponent(c[0]!.toString()).replace(/\+/g, " "))
@@ -204,7 +204,7 @@ describe("InsightsPage", () => {
 
   it("renders contributors in the contributors section", async () => {
     mockInsightsEndpoints();
-    renderAt("/ui/repos/admin/test/insights?section=contributors");
+    renderAt("/ui/admin/test/insights?section=contributors");
 
     await waitFor(() => {
       expect(screen.getByText("@admin")).toBeInTheDocument();
@@ -216,20 +216,20 @@ describe("InsightsPage", () => {
 
   it("renders community health, commit activity, code frequency, and traffic panes", async () => {
     mockInsightsEndpoints();
-    const { unmount } = renderAt("/ui/repos/admin/test/insights?section=community");
+    const { unmount } = renderAt("/ui/admin/test/insights?section=community");
     // community health score
     await waitFor(() => expect(screen.getByText("43%")).toBeInTheDocument());
     unmount();
 
     mockInsightsEndpoints();
-    const { unmount: unmount2 } = renderAt("/ui/repos/admin/test/insights?section=commits");
+    const { unmount: unmount2 } = renderAt("/ui/admin/test/insights?section=commits");
     await waitFor(() =>
       expect(screen.getByText(/4 commits on the default branch/)).toBeInTheDocument(),
     );
     unmount2();
 
     mockInsightsEndpoints();
-    const { unmount: unmount3 } = renderAt("/ui/repos/admin/test/insights?section=code-frequency");
+    const { unmount: unmount3 } = renderAt("/ui/admin/test/insights?section=code-frequency");
     // code frequency: 40+7 additions and 12+3 deletions across 2 weeks
     await waitFor(() => expect(screen.getByText("+47")).toBeInTheDocument());
     expect(screen.getByText("−15")).toBeInTheDocument();
@@ -237,7 +237,7 @@ describe("InsightsPage", () => {
     unmount3();
 
     mockInsightsEndpoints();
-    renderAt("/ui/repos/admin/test/insights?section=traffic");
+    renderAt("/ui/admin/test/insights?section=traffic");
     // clone traffic bucket list rendered, view traffic honestly empty
     await waitFor(() => expect(screen.getByText(/5 \(2 unique\)/)).toBeInTheDocument());
     expect(screen.getByText(/No views in the last 14 days/)).toBeInTheDocument();
@@ -255,7 +255,7 @@ describe("InsightsPage", () => {
           { name: "feature", commit: { sha: "ffffffff" } },
         ]),
     });
-    renderAt("/ui/repos/admin/test/insights?section=network");
+    renderAt("/ui/admin/test/insights?section=network");
 
     // The header reports the commit count and >1 lane (feature branch forks one).
     await waitFor(() => {
@@ -267,7 +267,7 @@ describe("InsightsPage", () => {
     ).toBeInTheDocument();
     // The off-screen commit list links each commit to its detail page.
     const merge = screen.getByRole("link", { name: /Merge feature/i });
-    expect(merge).toHaveAttribute("href", "/ui/repos/admin/test/commits/cccccccc");
+    expect(merge).toHaveAttribute("href", "/ui/admin/test/commits/cccccccc");
     expect(screen.getByRole("link", { name: /Root commit/i })).toBeInTheDocument();
     // Branch tips are labelled on the graph.
     expect(screen.getByText("feature")).toBeInTheDocument();
@@ -277,7 +277,7 @@ describe("InsightsPage", () => {
     mockInsightsEndpoints({
       "/contributors": () => new Response(null, { status: 204 }),
     });
-    renderAt("/ui/repos/admin/test/insights?section=contributors");
+    renderAt("/ui/admin/test/insights?section=contributors");
 
     await waitFor(() => {
       expect(screen.getByText(/no contributors yet/i)).toBeInTheDocument();
@@ -288,7 +288,7 @@ describe("InsightsPage", () => {
     mockInsightsEndpoints({
       "/community/profile": () => jsonResponse({ message: "boom" }, 500),
     });
-    renderAt("/ui/repos/admin/test/insights?section=community");
+    renderAt("/ui/admin/test/insights?section=community");
 
     await waitFor(() => {
       expect(screen.getByText(/failed to load community profile/i)).toBeInTheDocument();

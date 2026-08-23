@@ -10,7 +10,7 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
-	gitStorage "github.com/go-git/go-git/v5/storage"
+	"github.com/go-git/go-git/v5/plumbing/storer"
 )
 
 // secretScanningMaxFileBytes bounds how much of a single git blob is read into
@@ -38,7 +38,7 @@ type secretScanningContentMatch struct {
 	secretType string
 }
 
-func (s *Server) scanCommitForSecretScanning(repo *store.Repo, stor gitStorage.Storer, commitHash plumbing.Hash, baseURL string) error {
+func (s *Server) scanCommitForSecretScanning(repo *store.Repo, stor storer.Storer, commitHash plumbing.Hash, baseURL string) error {
 	commit, err := object.GetCommit(stor, commitHash)
 	if err != nil {
 		return fmt.Errorf("load secret scanning commit %s: %w", commitHash, err)
@@ -115,7 +115,7 @@ func secretScanningContentMatches(body string) []secretScanningContentMatch {
 	return out
 }
 
-func (s *Server) secretScanningPushProtectionMatchesForCommit(stor gitStorage.Storer, commitHash plumbing.Hash) ([]secretScanningContentMatch, error) {
+func (s *Server) secretScanningPushProtectionMatchesForCommit(stor storer.Storer, commitHash plumbing.Hash) ([]secretScanningContentMatch, error) {
 	commit, err := object.GetCommit(stor, commitHash)
 	if err != nil {
 		return nil, fmt.Errorf("load secret scanning push-protection commit %s: %w", commitHash, err)
@@ -173,7 +173,7 @@ func (s *Server) createSecretScanningPushProtectionPlaceholder(repo *store.Repo,
 	return nil
 }
 
-func (s *Server) secretScanningPushProtectionPlaceholderForRef(repo *store.Repo, stor gitStorage.Storer, ref plumbing.ReferenceName, target plumbing.Hash) (*store.SecretScanningPushProtectionPlaceholder, error) {
+func (s *Server) secretScanningPushProtectionPlaceholderForRef(repo *store.Repo, stor storer.Storer, ref plumbing.ReferenceName, target plumbing.Hash) (*store.SecretScanningPushProtectionPlaceholder, error) {
 	if !strings.HasPrefix(string(ref), "refs/heads/") {
 		return nil, nil
 	}

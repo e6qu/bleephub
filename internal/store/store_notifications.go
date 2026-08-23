@@ -85,6 +85,7 @@ func (st *Store) NotificationRowsFor(user *User, opts NotificationListOptions, c
 	st.Mu.RLock()
 
 	state := st.notificationsStateViewLocked(user.ID)
+	preferences := notificationPreferencesLocked(st.Users[user.ID])
 	var rows []NotificationThreadRow
 
 	// Precompute the set of (parentType, parentID) the viewer commented on in
@@ -163,6 +164,12 @@ func (st *Store) NotificationRowsFor(user *User, opts NotificationListOptions, c
 			}
 		}
 		if opts.Participating && reason == "subscribed" {
+			return
+		}
+		// The account's notification preferences decide whether this class of
+		// thread reaches the web inbox at all (Settings → Notifications). A
+		// preference that nothing reads would be a lie on the settings page.
+		if !preferences.NotificationDeliversWeb(src.Type, reason) {
 			return
 		}
 

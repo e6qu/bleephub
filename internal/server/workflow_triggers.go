@@ -29,5 +29,8 @@ func (s *Server) firePullRequestSynchronize(repo *store.Repo, repoKey, branch st
 		s.refreshPullRequestDiffStats(baseRepo, pr)
 		payload := buildPullRequestPayload(s.store, baseRepo, pr, nil, "synchronize")
 		s.emitWebhookEvent(baseRepo.FullName, "pull_request", "synchronize", payload)
+		// The push may have brought files with code owners of their own into
+		// the diff; GitHub requests those owners as it does on open.
+		s.autoRequestCodeOwners(baseRepo, pr, nil)
 	}
 }

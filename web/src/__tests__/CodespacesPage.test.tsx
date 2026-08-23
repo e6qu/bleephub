@@ -30,7 +30,7 @@ function renderPage(path = "/ui/codespaces") {
         <Routes>
           <Route path="/ui/codespaces" element={<CodespacesPage />} />
           <Route path="/ui/codespaces/:codespaceName" element={<CodespacesPage />} />
-          <Route path="/ui/repos/:owner/:repo/codespaces" element={<CodespacesPage />} />
+          <Route path="/ui/:owner/:repo/codespaces" element={<CodespacesPage />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -164,7 +164,7 @@ describe("CodespacesPage", () => {
 
   it("renders repo-scoped codespaces", async () => {
     mockRepoEndpoints();
-    renderPage("/ui/repos/admin/test/codespaces");
+    renderPage("/ui/admin/test/codespaces");
     await waitFor(() => {
       expect(screen.getByText(/Codespaces for admin\/test/)).toBeInTheDocument();
       expect(screen.getByText("my codespace")).toBeInTheDocument();

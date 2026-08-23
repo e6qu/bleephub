@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
 import { confirmAction } from "../components/confirmAction.js";
-import { fetchAccountSettings, setTwoFactor, setNotificationSettings, ghFetch, ghPostJSON, ghSend, type NotificationSettings } from "../api.js";
+import { ghFetch, ghPostJSON, ghSend } from "../api.js";
 import { sealSecret } from "../utils/sealedBox.js";
 import {
   addUserEmails,
@@ -1504,51 +1504,732 @@ function AppearanceTab() {
   );
 }
 
-function AuthenticationTab() {
-  const client = useQueryClient();
-  const query = useQuery({ queryKey: ["account-settings"], queryFn: () => fetchAccountSettings() });
-  const [error, setError] = useState<string | null>(null);
-  const mutation = useMutation({
-    mutationFn: (enabled: boolean) => setTwoFactor(enabled),
-    onSuccess: () => { setError(null); void client.invalidateQueries({ queryKey: ["account-settings"] }); },
-    onError: (e: Error) => setError(e.message),
+/**
+ * Section headers inside the account settings cards are real headings, so the
+ * page has a navigable outline for screen readers rather than bold text.
+ */
+const sectionHeading: React.CSSProperties = { fontWeight: 600, fontSize: "inherit", margin: 0 };
+
+// ─── Password and authentication ───────────────────────────────────────────
+//
+// github.com's Settings → "Password and authentication" page. Every control
+// here is real: enrolling walks an authenticator pairing (secret → QR → a code
+// the user has to produce), recovery codes are single-use, and disabling costs
+// a code. An account whose credentials live in an identity provider is told
+// exactly that instead of being shown switches that cannot work.
+//
+// The fetch wrappers are defined in this lazily loaded page rather than in the
+// shared API module, which is at its bundle budget.
+
+interface AccountAuthentication {
+  kind: "local" | "external";
+  providers?: string[];
+  password_set: boolean;
+}
+
+interface TwoFactorStatus {
+  enabled: boolean;
+  pending_enrollment: boolean;
+  enrolled_at?: string;
+  recovery_codes_total: number;
+  recovery_codes_remaining: number;
+  recovery_codes_generated_at?: string;
+}
+
+interface AuthenticationSettings {
+  authentication: AccountAuthentication;
+  two_factor: TwoFactorStatus;
+}
+
+interface TwoFactorEnrollment {
+  secret: string;
+  otpauth_uri: string;
+  issuer: string;
+  account: string;
+  digits: number;
+  period: number;
+  qr?: { size: number; modules: string[] };
+}
+
+interface BrowserSession {
+  handle: string;
+  created_at: string | null;
+  expires_at: string;
+  user_agent: string;
+  ip: string;
+  provider: string;
+  current: boolean;
+}
+
+const fetchAuthenticationSettings = (signal?: AbortSignal) =>
+  ghFetch<AuthenticationSettings>("/ui-data/user/authentication", signal);
+const fetchBrowserSessions = (signal?: AbortSignal) =>
+  ghFetch<{ sessions: BrowserSession[] }>("/ui-data/user/sessions", signal);
+const beginTwoFactorEnrollment = () =>
+  ghPostJSON<TwoFactorEnrollment>("/ui-data/user/two-factor/enrollment", {});
+const cancelTwoFactorEnrollment = () =>
+  ghSend("DELETE", "/ui-data/user/two-factor/enrollment");
+const confirmTwoFactorEnrollment = (code: string) =>
+  ghPostJSON<AuthenticationSettings & { recovery_codes: string[] }>(
+    "/ui-data/user/two-factor/enrollment/confirm",
+    { code },
+  );
+const disableTwoFactor = (code: string) =>
+  ghPostJSON<AuthenticationSettings>("/ui-data/user/two-factor/disable", { code });
+const regenerateRecoveryCodes = (code: string) =>
+  ghPostJSON<{ two_factor: TwoFactorStatus; recovery_codes: string[] }>(
+    "/ui-data/user/two-factor/recovery-codes",
+    { code },
+  );
+const changePassword = (currentPassword: string, newPassword: string) =>
+  ghSend("PUT", "/ui-data/user/password", {
+    current_password: currentPassword,
+    new_password: newPassword,
   });
-  if (query.isLoading) return <Spinner label="loading authentication settings" />;
-  if (query.isError) return <InlineError title="Failed to load authentication settings" detail={String(query.error)} />;
-  const on = query.data?.two_factor_enabled ?? false;
+const revokeBrowserSession = (handle: string) =>
+  ghSend("DELETE", `/ui-data/user/sessions/${enc(handle)}`);
+
+/**
+ * The API layer prefixes its errors with the method and status and appends the
+ * raw body. The server sends a plain `{"message": …}` written for a person, so
+ * pull that out rather than showing the envelope.
+ */
+function describeAccountError(error: unknown): string {
+  const text = error instanceof Error ? error.message : String(error);
+  const brace = text.indexOf("{");
+  if (brace >= 0) {
+    try {
+      const parsed = JSON.parse(text.slice(brace)) as { message?: string };
+      if (parsed.message) return parsed.message;
+    } catch {
+      // Not a JSON body; fall through to the raw text.
+    }
+  }
+  return text;
+}
+
+/**
+ * Draws the provisioning QR code as a single SVG path — one subpath per dark
+ * module, which is far lighter than a few thousand <rect> elements.
+ *
+ * The colours are fixed black-on-white in both themes, with the four-module
+ * quiet zone the standard requires: camera scanners expect dark-on-light and
+ * commonly fail on an inverted or low-contrast code, so this is one of the very
+ * few places where following the page's theme would make the feature worse.
+ */
+function ProvisioningQRCode({ modules, label }: { modules: string[]; label: string }) {
+  const size = modules.length;
+  const quiet = 4;
+  const path = modules
+    .flatMap((row, y) =>
+      row.split("").flatMap((module, x) => (module === "1" ? [`M${x + quiet} ${y + quiet}h1v1h-1z`] : [])),
+    )
+    .join("");
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-      {error && <ErrorBanner>{error}</ErrorBanner>}
-      <Box header={<span style={{ fontWeight: 600 }}>Authentication</span>}>
-        <div style={{ padding: "1rem" }}>
-          <p style={{ fontSize: "0.9rem", margin: 0 }}>
-            Authentication for this deployment is handled by your identity provider.
-          </p>
-          <p style={{ fontSize: "0.8rem", color: "var(--color-fg-muted)", margin: "0.25rem 0 0" }}>
-            On single sign-on deployments, passwords, passkeys, and real two-factor enrollment are
-            managed by the identity provider — there is nothing to configure here.
-          </p>
-        </div>
-      </Box>
-      <Box header={<span style={{ fontWeight: 600 }}>Simulated two-factor flag</span>}>
-        <div style={{ padding: "1rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem" }}>
-          <div>
-            <p style={{ fontSize: "0.9rem", margin: 0 }}>
-              Two-factor authentication is <strong>{on ? "enabled" : "not enabled"}</strong> for your account.
-            </p>
-            <p style={{ fontSize: "0.8rem", color: "var(--color-fg-muted)", margin: "0.25rem 0 0" }}>
-              This is a simulated flag: it only affects the API&apos;s{" "}
-              <code>two_factor_authentication</code> field. It does not add a second
-              authentication step at sign-in — no authenticator app or QR code is involved.
-            </p>
-          </div>
-          <Button variant={on ? "secondary" : "primary"} size="sm" disabled={mutation.isPending}
-            onClick={() => mutation.mutate(!on)}>
-            {mutation.isPending ? "Saving…" : on ? "Disable" : "Enable two-factor flag"}
+    <svg
+      role="img"
+      aria-label={label}
+      viewBox={`0 0 ${size + quiet * 2} ${size + quiet * 2}`}
+      width="180"
+      height="180"
+      style={{ display: "block", borderRadius: "6px", border: "1px solid var(--color-border)" }}
+      shapeRendering="crispEdges"
+    >
+      <rect width="100%" height="100%" fill="#ffffff" />
+      <path d={path} fill="#000000" />
+    </svg>
+  );
+}
+
+/** The one-and-only showing of a freshly issued recovery-code set. */
+function RecoveryCodesPanel({ codes, onDone }: { codes: string[]; onDone: () => void }) {
+  const asText = codes.join("\n");
+  const download = () => {
+    const blob = new Blob([`${asText}\n`], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "bleephub-recovery-codes.txt";
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+  return (
+    <Box header={<h2 style={sectionHeading}>Save your recovery codes</h2>}>
+      <div style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+        <p style={{ fontSize: "0.9rem", margin: 0 }}>
+          Keep these somewhere safe. Each code can be used once, in place of your authenticator
+          app, if you lose access to it. <strong>They are shown only now</strong> — you can
+          generate a new set later, but you cannot see these again.
+        </p>
+        <ul
+          style={{
+            margin: 0,
+            padding: "0.75rem",
+            listStyle: "none",
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(9rem, 1fr))",
+            gap: "0.35rem",
+            fontFamily: "var(--font-mono, ui-monospace, monospace)",
+            fontSize: "0.9rem",
+            background: "var(--color-bg-subtle)",
+            borderRadius: "6px",
+          }}
+        >
+          {codes.map((code) => (
+            <li key={code}>{code}</li>
+          ))}
+        </ul>
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" onClick={download}>
+            Download codes
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => void navigator.clipboard?.writeText(asText)}
+          >
+            Copy codes
+          </Button>
+          <Button size="sm" variant="primary" onClick={onDone}>
+            I have saved my codes
           </Button>
         </div>
-      </Box>
+      </div>
+    </Box>
+  );
+}
+
+function AuthenticationTab() {
+  const client = useQueryClient();
+  const settings = useQuery({
+    queryKey: ["account-authentication"],
+    queryFn: ({ signal }) => fetchAuthenticationSettings(signal),
+  });
+  const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null);
+
+  if (settings.isLoading) return <Spinner label="loading authentication settings" />;
+  if (settings.isError)
+    return (
+      <InlineError
+        title="Failed to load authentication settings"
+        detail={describeAccountError(settings.error)}
+      />
+    );
+
+  const data = settings.data!;
+  const refresh = () => void client.invalidateQueries({ queryKey: ["account-authentication"] });
+  const external = data.authentication.kind === "external";
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+      {external ? (
+        <IdentityProviderNotice providers={data.authentication.providers ?? []} />
+      ) : (
+        <>
+          <PasswordCard passwordSet={data.authentication.password_set} onChanged={refresh} />
+          {recoveryCodes ? (
+            <RecoveryCodesPanel codes={recoveryCodes} onDone={() => setRecoveryCodes(null)} />
+          ) : (
+            <TwoFactorCard
+              status={data.two_factor}
+              onChanged={refresh}
+              onNewRecoveryCodes={(codes) => {
+                setRecoveryCodes(codes);
+                refresh();
+              }}
+            />
+          )}
+        </>
+      )}
+      <BrowserSessionsCard />
     </div>
+  );
+}
+
+/**
+ * The honest answer for a federated account. There is no local password and no
+ * local second factor to enrol, so the page says who does hold them instead of
+ * rendering controls that would fail.
+ */
+function IdentityProviderNotice({ providers }: { providers: string[] }) {
+  return (
+    <Box header={<h2 style={sectionHeading}>Password and authentication</h2>}>
+      <div style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+        <p style={{ fontSize: "0.9rem", margin: 0 }}>
+          This account signs in through an identity provider, so your password, passkeys and
+          two-factor authentication are managed there — not here.
+        </p>
+        {providers.length > 0 && (
+          <p style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)", margin: 0 }}>
+            Signed in via{" "}
+            {providers.map((provider, index) => (
+              <span key={provider}>
+                {index > 0 && ", "}
+                <code>{provider}</code>
+              </span>
+            ))}
+            . Change your password or manage two-factor authentication in your provider&apos;s
+            account settings.
+          </p>
+        )}
+        <p style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)", margin: 0 }}>
+          Your active sessions on this instance are listed below, and you can end any of them
+          from here.
+        </p>
+      </div>
+    </Box>
+  );
+}
+
+function PasswordCard({ passwordSet, onChanged }: { passwordSet: boolean; onChanged: () => void }) {
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [done, setDone] = useState(false);
+  const mutation = useMutation({
+    mutationFn: () => changePassword(current, next),
+    onSuccess: () => {
+      setCurrent("");
+      setNext("");
+      setConfirm("");
+      setDone(true);
+      onChanged();
+    },
+  });
+  const mismatch = confirm !== "" && confirm !== next;
+  const title = passwordSet ? "Change password" : "Set a password";
+  return (
+    <Box header={<h2 style={sectionHeading}>{title}</h2>}>
+      <form
+        style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "0.75rem", maxWidth: "26rem" }}
+        onSubmit={(event) => {
+          event.preventDefault();
+          setDone(false);
+          mutation.mutate();
+        }}
+      >
+        {mutation.error && <ErrorBanner>{describeAccountError(mutation.error)}</ErrorBanner>}
+        {done && (
+          <p style={{ fontSize: "0.85rem", margin: 0, color: "var(--color-fg-muted)" }} role="status">
+            Password updated. Every other signed-in session was ended.
+          </p>
+        )}
+        {passwordSet && (
+          <div>
+            <FormLabel id="password-current">Old password</FormLabel>
+            <input
+              id="password-current"
+              type="password"
+              className="w-full"
+              autoComplete="current-password"
+              value={current}
+              onChange={(event) => setCurrent(event.target.value)}
+            />
+          </div>
+        )}
+        <div>
+          <FormLabel id="password-new">New password</FormLabel>
+          <input
+            id="password-new"
+            type="password"
+            className="w-full"
+            autoComplete="new-password"
+            value={next}
+            onChange={(event) => setNext(event.target.value)}
+            aria-describedby="password-rule"
+          />
+          <p id="password-rule" style={{ fontSize: "0.8rem", color: "var(--color-fg-muted)", margin: "0.25rem 0 0" }}>
+            Make sure it is at least 15 characters, or at least 8 characters including a number
+            and a lowercase letter.
+          </p>
+        </div>
+        <div>
+          <FormLabel id="password-confirm">Confirm new password</FormLabel>
+          <input
+            id="password-confirm"
+            type="password"
+            className="w-full"
+            autoComplete="new-password"
+            value={confirm}
+            onChange={(event) => setConfirm(event.target.value)}
+            aria-invalid={mismatch}
+          />
+          {mismatch && (
+            <p style={{ fontSize: "0.8rem", color: "var(--color-status-error, var(--color-fg))", margin: "0.25rem 0 0" }}>
+              The two passwords do not match.
+            </p>
+          )}
+        </div>
+        <div>
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={!next || mismatch || mutation.isPending || (passwordSet && !current)}
+          >
+            {mutation.isPending ? "Saving…" : title}
+          </Button>
+        </div>
+      </form>
+    </Box>
+  );
+}
+
+function TwoFactorCard({
+  status,
+  onChanged,
+  onNewRecoveryCodes,
+}: {
+  status: TwoFactorStatus;
+  onChanged: () => void;
+  onNewRecoveryCodes: (codes: string[]) => void;
+}) {
+  const [enrollment, setEnrollment] = useState<TwoFactorEnrollment | null>(null);
+
+  const begin = useMutation({
+    mutationFn: beginTwoFactorEnrollment,
+    onSuccess: (data) => {
+      setEnrollment(data);
+      onChanged();
+    },
+  });
+  const cancel = useMutation({
+    mutationFn: cancelTwoFactorEnrollment,
+    onSuccess: () => {
+      setEnrollment(null);
+      onChanged();
+    },
+  });
+
+  if (enrollment) {
+    return (
+      <TwoFactorEnrollmentCard
+        enrollment={enrollment}
+        onCancel={() => cancel.mutate()}
+        cancelling={cancel.isPending}
+        onEnrolled={(codes) => {
+          setEnrollment(null);
+          onNewRecoveryCodes(codes);
+        }}
+      />
+    );
+  }
+
+  if (!status.enabled) {
+    return (
+      <Box header={<h2 style={sectionHeading}>Two-factor authentication</h2>}>
+        <div style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+          {begin.error && <ErrorBanner>{describeAccountError(begin.error)}</ErrorBanner>}
+          <p style={{ fontSize: "0.9rem", margin: 0 }}>
+            Two-factor authentication is <strong>not enabled</strong> for your account.
+          </p>
+          <p style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)", margin: 0 }}>
+            Adding a time-based one-time password (TOTP) app means signing in needs a code from
+            your phone as well as your password. You will be asked to enter a code before it is
+            switched on, and you will get single-use recovery codes in case you lose the app.
+          </p>
+          <div>
+            <Button variant="primary" disabled={begin.isPending} onClick={() => begin.mutate()}>
+              {begin.isPending ? "Preparing…" : "Enable two-factor authentication"}
+            </Button>
+          </div>
+        </div>
+      </Box>
+    );
+  }
+
+  return (
+    <TwoFactorEnabledCard
+      status={status}
+      onChanged={onChanged}
+      onNewRecoveryCodes={onNewRecoveryCodes}
+    />
+  );
+}
+
+function TwoFactorEnrollmentCard({
+  enrollment,
+  onCancel,
+  cancelling,
+  onEnrolled,
+}: {
+  enrollment: TwoFactorEnrollment;
+  onCancel: () => void;
+  cancelling: boolean;
+  onEnrolled: (codes: string[]) => void;
+}) {
+  const [code, setCode] = useState("");
+  const confirm = useMutation({
+    mutationFn: () => confirmTwoFactorEnrollment(code),
+    onSuccess: (data) => onEnrolled(data.recovery_codes),
+  });
+  return (
+    <Box header={<h2 style={sectionHeading}>Set up your authenticator app</h2>}>
+      <div style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
+        <p style={{ fontSize: "0.9rem", margin: 0 }}>
+          Scan this code with your authenticator app, then enter the six-digit code it shows.
+          Two-factor authentication is switched on only once that code checks out.
+        </p>
+        <div className="flex flex-wrap items-start gap-4">
+          {enrollment.qr ? (
+            <ProvisioningQRCode
+              modules={enrollment.qr.modules}
+              label={`QR code enrolling ${enrollment.account} in two-factor authentication`}
+            />
+          ) : (
+            <p style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)", margin: 0 }}>
+              The QR code could not be rendered — use the setup key below instead.
+            </p>
+          )}
+          <div style={{ flex: 1, minWidth: "14rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            <div>
+              <span style={{ fontSize: "0.8rem", fontWeight: 600 }}>Setup key</span>
+              <p style={{ fontSize: "0.8rem", color: "var(--color-fg-muted)", margin: "0.15rem 0" }}>
+                If you cannot scan, enter this into your app by hand.
+              </p>
+              <code style={{ wordBreak: "break-all", fontSize: "0.85rem" }}>{enrollment.secret}</code>
+            </div>
+            <p style={{ fontSize: "0.8rem", color: "var(--color-fg-muted)", margin: 0 }}>
+              {enrollment.digits} digits · refreshes every {enrollment.period} seconds ·{" "}
+              {enrollment.issuer}
+            </p>
+          </div>
+        </div>
+        <form
+          className="flex flex-wrap items-end gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            confirm.mutate();
+          }}
+        >
+          <div style={{ minWidth: "10rem" }}>
+            <FormLabel id="two-factor-code">Verification code</FormLabel>
+            <input
+              id="two-factor-code"
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={7}
+              className="w-full"
+              value={code}
+              onChange={(event) => setCode(event.target.value)}
+            />
+          </div>
+          <Button type="submit" variant="primary" disabled={code.trim().length < 6 || confirm.isPending}>
+            {confirm.isPending ? "Verifying…" : "Verify and enable"}
+          </Button>
+          <Button type="button" variant="ghost" disabled={cancelling} onClick={onCancel}>
+            Cancel
+          </Button>
+        </form>
+        {confirm.error && <ErrorBanner>{describeAccountError(confirm.error)}</ErrorBanner>}
+      </div>
+    </Box>
+  );
+}
+
+function TwoFactorEnabledCard({
+  status,
+  onChanged,
+  onNewRecoveryCodes,
+}: {
+  status: TwoFactorStatus;
+  onChanged: () => void;
+  onNewRecoveryCodes: (codes: string[]) => void;
+}) {
+  const [action, setAction] = useState<"disable" | "regenerate" | null>(null);
+  const [code, setCode] = useState("");
+  const disable = useMutation({
+    mutationFn: () => disableTwoFactor(code),
+    onSuccess: () => {
+      setAction(null);
+      setCode("");
+      onChanged();
+    },
+  });
+  const regenerate = useMutation({
+    mutationFn: () => regenerateRecoveryCodes(code),
+    onSuccess: (data) => {
+      setAction(null);
+      setCode("");
+      onNewRecoveryCodes(data.recovery_codes);
+    },
+  });
+  const pending = disable.isPending || regenerate.isPending;
+  const error = disable.error ?? regenerate.error;
+  const lowOnCodes = status.recovery_codes_remaining <= 3;
+
+  return (
+    <Box header={<h2 style={sectionHeading}>Two-factor authentication</h2>}>
+      <div style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+        <p style={{ fontSize: "0.9rem", margin: 0 }}>
+          Two-factor authentication is <strong>enabled</strong>
+          {status.enrolled_at && (
+            <>
+              {" "}
+              since <RelativeTime iso={status.enrolled_at} />
+            </>
+          )}
+          .
+        </p>
+        <p
+          style={{
+            fontSize: "0.85rem",
+            margin: 0,
+            color: lowOnCodes ? "var(--color-status-error, var(--color-fg))" : "var(--color-fg-muted)",
+          }}
+        >
+          {status.recovery_codes_remaining} of {status.recovery_codes_total} recovery codes remain
+          {status.recovery_codes_generated_at && (
+            <>
+              {" "}
+              (generated <RelativeTime iso={status.recovery_codes_generated_at} />)
+            </>
+          )}
+          {lowOnCodes && " — generate a new set before you run out."}
+        </p>
+        {error && <ErrorBanner>{describeAccountError(error)}</ErrorBanner>}
+        {action === null ? (
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" onClick={() => setAction("regenerate")}>
+              Generate new recovery codes
+            </Button>
+            <Button size="sm" variant="danger" onClick={() => setAction("disable")}>
+              Disable two-factor authentication
+            </Button>
+          </div>
+        ) : (
+          <form
+            className="flex flex-wrap items-end gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (action === "disable") disable.mutate();
+              else regenerate.mutate();
+            }}
+          >
+            <div style={{ minWidth: "12rem" }}>
+              <FormLabel id="two-factor-confirm-code">
+                {action === "disable"
+                  ? "Enter a code to turn two-factor authentication off"
+                  : "Enter a code to replace your recovery codes"}
+              </FormLabel>
+              <input
+                id="two-factor-confirm-code"
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                className="w-full"
+                value={code}
+                onChange={(event) => setCode(event.target.value)}
+                aria-describedby="two-factor-confirm-hint"
+              />
+              <p
+                id="two-factor-confirm-hint"
+                style={{ fontSize: "0.8rem", color: "var(--color-fg-muted)", margin: "0.25rem 0 0" }}
+              >
+                A code from your authenticator app, or one of your recovery codes.
+              </p>
+            </div>
+            <Button
+              type="submit"
+              variant={action === "disable" ? "danger" : "primary"}
+              disabled={!code.trim() || pending}
+            >
+              {pending ? "Checking…" : action === "disable" ? "Disable" : "Generate"}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={pending}
+              onClick={() => {
+                setAction(null);
+                setCode("");
+              }}
+            >
+              Cancel
+            </Button>
+          </form>
+        )}
+      </div>
+    </Box>
+  );
+}
+
+function BrowserSessionsCard() {
+  const client = useQueryClient();
+  const query = useQuery({
+    queryKey: ["account-sessions"],
+    queryFn: ({ signal }) => fetchBrowserSessions(signal),
+  });
+  const revoke = useMutation({
+    mutationFn: (handle: string) => revokeBrowserSession(handle),
+    onSuccess: () => void client.invalidateQueries({ queryKey: ["account-sessions"] }),
+  });
+  return (
+    <Box header={<h2 style={sectionHeading}>Sessions</h2>}>
+      <div style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+        <p style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)", margin: 0 }}>
+          Browsers currently signed in to your account. Ending a session signs that browser out
+          immediately.
+        </p>
+        {revoke.error && <ErrorBanner>{describeAccountError(revoke.error)}</ErrorBanner>}
+        {query.isLoading && <Spinner label="loading sessions" />}
+        {query.isError && (
+          <InlineError title="Failed to load sessions" detail={describeAccountError(query.error)} />
+        )}
+        {query.data && query.data.sessions.length === 0 && (
+          <Blankslate title="No active sessions">
+            You are signed in with a token rather than a browser session.
+          </Blankslate>
+        )}
+        {query.data && query.data.sessions.length > 0 && (
+          <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            {query.data.sessions.map((session) => (
+              <li
+                key={session.handle}
+                className="flex flex-wrap items-center justify-between gap-2"
+                style={{ borderTop: "1px solid var(--color-border)", paddingTop: "0.5rem" }}
+              >
+                <div>
+                  <p style={{ fontSize: "0.9rem", margin: 0, fontWeight: 600 }}>
+                    {session.user_agent || "Unknown browser"}
+                    {session.current && (
+                      <span style={{ fontWeight: 400, color: "var(--color-fg-muted)" }}> · this session</span>
+                    )}
+                  </p>
+                  <p style={{ fontSize: "0.8rem", color: "var(--color-fg-muted)", margin: 0 }}>
+                    {session.ip || "unknown address"}
+                    {session.provider && ` · via ${session.provider}`}
+                    {session.created_at && (
+                      <>
+                        {" · signed in "}
+                        <RelativeTime iso={session.created_at} />
+                      </>
+                    )}
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant={session.current ? "secondary" : "danger"}
+                  disabled={revoke.isPending}
+                  onClick={() => {
+                    void confirmAction(
+                      session.current
+                        ? "This signs you out of this browser."
+                        : `This signs out ${session.user_agent || "that browser"}.`,
+                      { title: "End this session?", confirmLabel: "End session" },
+                    ).then((confirmed) => {
+                      if (confirmed) revoke.mutate(session.handle);
+                    });
+                  }}
+                >
+                  {session.current ? "Sign out" : "End session"}
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </Box>
   );
 }
 
@@ -1685,65 +2366,252 @@ function DeleteAccountDialog({ login, onClose }: { login: string; onClose: () =>
   );
 }
 
-// GitHub groups notification settings into "Subscriptions" (what you get
-// notified about) and "System" delivery channels; mirror that structure.
-const NOTIFICATION_GROUPS: {
-  title: string;
-  legend: string;
-  toggles: { key: keyof NotificationSettings; label: string; hint: string }[];
+// ─── Notifications ─────────────────────────────────────────────────────────
+//
+// github.com's Settings → Notifications page: a subscription class
+// (participating vs watching) with its own delivery channels, automatic
+// watching, per-event-type delivery, and the digest options. Every control is
+// stored per user and the web channels actually gate what reaches the inbox,
+// so switching one off has a visible effect rather than only being remembered.
+
+interface NotificationChannels {
+  email: boolean;
+  web: boolean;
+}
+
+interface NotificationPreferences {
+  participating: NotificationChannels;
+  watching: NotificationChannels;
+  automatically_watch_repositories: boolean;
+  automatically_watch_teams: boolean;
+  events: Record<string, NotificationChannels>;
+  include_own_updates: boolean;
+  actions_failed_workflows_only: boolean;
+  dependabot_weekly_digest: boolean;
+}
+
+const fetchNotificationPreferences = (signal?: AbortSignal) =>
+  ghFetch<NotificationPreferences>("/ui-data/user/notification-settings", signal);
+const saveNotificationPreferences = (preferences: NotificationPreferences) =>
+  ghSend("PUT", "/ui-data/user/notification-settings", preferences);
+
+/** The subscription classes, in github.com's order. */
+const SUBSCRIPTION_CLASSES: {
+  key: "participating" | "watching";
+  label: string;
+  hint: string;
 }[] = [
   {
-    title: "Subscriptions",
-    legend: "Choose the activity you want to be notified about.",
-    toggles: [
-      { key: "participating", label: "Participating and @mentions", hint: "Notifications for the issues, pull requests, and discussions you're participating in, and when someone cites you with an @mention." },
-      { key: "watching", label: "Watching", hint: "Notifications for all repositories, teams, and conversations you're watching." },
-    ],
+    key: "participating",
+    label: "Participating and @mentions",
+    hint: "Issues, pull requests and discussions you are taking part in, and anything that @mentions you.",
   },
   {
-    title: "Notification delivery",
-    legend: "Choose where notifications from your subscriptions are delivered.",
-    toggles: [
-      { key: "email", label: "Email", hint: "Deliver notifications to your primary email address." },
-      { key: "web", label: "Web and mobile", hint: "Deliver notifications to the notifications inbox in the web UI." },
-    ],
+    key: "watching",
+    label: "Watching",
+    hint: "Everything else from the repositories, teams and conversations you watch.",
   },
 ];
 
+/** The per-event-type rows, keyed by the server's event constants. */
+const NOTIFICATION_EVENTS: { key: string; label: string; hint: string }[] = [
+  { key: "issue", label: "Issues", hint: "Opened, closed, commented on, or reassigned." },
+  { key: "pull_request", label: "Pull requests", hint: "Reviews, review comments, merges and pushes." },
+  { key: "release", label: "Releases", hint: "New releases in repositories you watch." },
+  { key: "discussion", label: "Discussions", hint: "New discussions, answers and replies." },
+  { key: "commit", label: "Commits", hint: "Comments left directly on a commit." },
+  { key: "actions", label: "Actions", hint: "Workflow runs in your repositories." },
+  { key: "dependabot", label: "Dependabot alerts", hint: "New and reintroduced vulnerability alerts." },
+];
+
+const DEFAULT_CHANNELS: NotificationChannels = { email: true, web: true };
+
+/** A labelled email/web checkbox pair for one row. */
+function ChannelChecks({
+  name,
+  channels,
+  onChange,
+}: {
+  name: string;
+  channels: NotificationChannels;
+  onChange: (next: NotificationChannels) => void;
+}) {
+  return (
+    <div className="flex items-center gap-4">
+      {(["email", "web"] as const).map((channel) => (
+        <label key={channel} className="flex items-center gap-1" style={{ fontSize: "0.85rem", cursor: "pointer" }}>
+          <input
+            type="checkbox"
+            checked={channels[channel]}
+            aria-label={`${channel === "email" ? "Email" : "Web"} notifications for ${name}`}
+            onChange={(event) => onChange({ ...channels, [channel]: event.target.checked })}
+          />
+          <span>{channel === "email" ? "Email" : "Web"}</span>
+        </label>
+      ))}
+    </div>
+  );
+}
+
 function NotificationsSettingsTab() {
   const client = useQueryClient();
-  const query = useQuery({ queryKey: ["account-settings"], queryFn: () => fetchAccountSettings() });
-  const [error, setError] = useState<string | null>(null);
-  const mutation = useMutation({
-    mutationFn: (next: NotificationSettings) => setNotificationSettings(next),
-    onSuccess: () => { setError(null); void client.invalidateQueries({ queryKey: ["account-settings"] }); },
-    onError: (e: Error) => setError(e.message),
+  const query = useQuery({
+    queryKey: ["notification-preferences"],
+    queryFn: ({ signal }) => fetchNotificationPreferences(signal),
   });
+  // Each control saves as you toggle it, so the checkbox has to move on the
+  // click rather than a round trip later — a controlled input that waits for
+  // the server reads as a broken checkbox. The draft is re-seeded from every
+  // fetch, so the server stays the authority and a rejected save snaps back.
+  const [draft, setDraft] = useState<NotificationPreferences | null>(null);
+  useEffect(() => {
+    if (query.data) setDraft(query.data);
+  }, [query.data]);
+  const mutation = useMutation({
+    mutationFn: (next: NotificationPreferences) => saveNotificationPreferences(next),
+    onSettled: () => void client.invalidateQueries({ queryKey: ["notification-preferences"] }),
+  });
+
   if (query.isLoading) return <Spinner label="loading notification settings" />;
-  if (query.isError) return <InlineError title="Failed to load notification settings" detail={String(query.error)} />;
-  const settings = query.data!.notification_settings;
+  if (query.isError)
+    return (
+      <InlineError
+        title="Failed to load notification settings"
+        detail={describeAccountError(query.error)}
+      />
+    );
+
+  const preferences = draft ?? query.data!;
+  const save = (patch: Partial<NotificationPreferences>) => {
+    const next = { ...preferences, ...patch };
+    setDraft(next);
+    mutation.mutate(next);
+  };
+  const saveEvent = (key: string, channels: NotificationChannels) =>
+    save({ events: { ...preferences.events, [key]: channels } });
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-      {error && <ErrorBanner>{error}</ErrorBanner>}
-      {NOTIFICATION_GROUPS.map((group) => (
-        <Box key={group.title} header={<span style={{ fontWeight: 600 }}>{group.title}</span>}>
-          <fieldset style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "0.7rem", border: "none", margin: 0 }}>
-            <legend style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)", marginBottom: "0.3rem" }}>
-              {group.legend}
-            </legend>
-            {group.toggles.map((t) => (
-              <label key={t.key} className="flex items-start gap-2" style={{ fontSize: "0.9rem", cursor: "pointer" }}>
-                <input type="checkbox" checked={settings[t.key]} disabled={mutation.isPending}
-                  onChange={(e) => mutation.mutate({ ...settings, [t.key]: e.target.checked })} />
-                <span>
-                  <span style={{ fontWeight: 600 }}>{t.label}</span>
-                  <span style={{ display: "block", fontSize: "0.8rem", color: "var(--color-fg-muted)" }}>{t.hint}</span>
+      {mutation.error && <ErrorBanner>{describeAccountError(mutation.error)}</ErrorBanner>}
+
+      <Box header={<h2 style={sectionHeading}>Subscriptions</h2>}>
+        <fieldset style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "0.9rem", border: "none", margin: 0 }}>
+          <legend style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)", marginBottom: "0.3rem" }}>
+            Choose where notifications are delivered for each kind of subscription.
+          </legend>
+          {SUBSCRIPTION_CLASSES.map((subscription) => (
+            <div key={subscription.key} className="flex flex-wrap items-start justify-between gap-3">
+              <div style={{ maxWidth: "34rem" }}>
+                <span style={{ fontSize: "0.9rem", fontWeight: 600 }}>{subscription.label}</span>
+                <span style={{ display: "block", fontSize: "0.8rem", color: "var(--color-fg-muted)" }}>
+                  {subscription.hint}
                 </span>
-              </label>
-            ))}
-          </fieldset>
-        </Box>
-      ))}
+              </div>
+              <ChannelChecks
+                name={subscription.label}
+                channels={preferences[subscription.key]}
+                onChange={(next) => save({ [subscription.key]: next } as Partial<NotificationPreferences>)}
+              />
+            </div>
+          ))}
+        </fieldset>
+      </Box>
+
+      <Box header={<h2 style={sectionHeading}>Notification types</h2>}>
+        <fieldset style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "0.9rem", border: "none", margin: 0 }}>
+          <legend style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)", marginBottom: "0.3rem" }}>
+            Choose delivery separately for each kind of activity.
+          </legend>
+          {NOTIFICATION_EVENTS.map((event) => (
+            <div key={event.key} className="flex flex-wrap items-start justify-between gap-3">
+              <div style={{ maxWidth: "34rem" }}>
+                <span style={{ fontSize: "0.9rem", fontWeight: 600 }}>{event.label}</span>
+                <span style={{ display: "block", fontSize: "0.8rem", color: "var(--color-fg-muted)" }}>
+                  {event.hint}
+                </span>
+              </div>
+              <ChannelChecks
+                name={event.label}
+                channels={preferences.events[event.key] ?? DEFAULT_CHANNELS}
+                onChange={(next) => saveEvent(event.key, next)}
+              />
+            </div>
+          ))}
+        </fieldset>
+      </Box>
+
+      <Box header={<h2 style={sectionHeading}>Automatic watching</h2>}>
+        <fieldset style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "0.7rem", border: "none", margin: 0 }}>
+          <legend style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)", marginBottom: "0.3rem" }}>
+            Decide what you start watching without asking.
+          </legend>
+          {[
+            {
+              key: "automatically_watch_repositories" as const,
+              label: "Automatically watch repositories",
+              hint: "Watch a repository when you gain push access to it.",
+            },
+            {
+              key: "automatically_watch_teams" as const,
+              label: "Automatically watch teams",
+              hint: "Watch a team when you join it.",
+            },
+            {
+              key: "include_own_updates" as const,
+              label: "Include your own updates",
+              hint: "Receive notifications about your own activity as well as other people's.",
+            },
+          ].map((option) => (
+            <label key={option.key} className="flex items-start gap-2" style={{ fontSize: "0.9rem", cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={preferences[option.key]}
+                onChange={(event) => save({ [option.key]: event.target.checked } as Partial<NotificationPreferences>)}
+              />
+              <span>
+                <span style={{ fontWeight: 600 }}>{option.label}</span>
+                <span style={{ display: "block", fontSize: "0.8rem", color: "var(--color-fg-muted)" }}>
+                  {option.hint}
+                </span>
+              </span>
+            </label>
+          ))}
+        </fieldset>
+      </Box>
+
+      <Box header={<h2 style={sectionHeading}>Digests</h2>}>
+        <fieldset style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "0.7rem", border: "none", margin: 0 }}>
+          <legend style={{ fontSize: "0.85rem", color: "var(--color-fg-muted)", marginBottom: "0.3rem" }}>
+            Reduce the volume of the noisiest sources.
+          </legend>
+          {[
+            {
+              key: "actions_failed_workflows_only" as const,
+              label: "Only notify for failed workflows",
+              hint: "Skip notifications for workflow runs that succeed.",
+            },
+            {
+              key: "dependabot_weekly_digest" as const,
+              label: "Weekly Dependabot digest",
+              hint: "Roll new alerts into one weekly email instead of one per alert.",
+            },
+          ].map((option) => (
+            <label key={option.key} className="flex items-start gap-2" style={{ fontSize: "0.9rem", cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={preferences[option.key]}
+                onChange={(event) => save({ [option.key]: event.target.checked } as Partial<NotificationPreferences>)}
+              />
+              <span>
+                <span style={{ fontWeight: 600 }}>{option.label}</span>
+                <span style={{ display: "block", fontSize: "0.8rem", color: "var(--color-fg-muted)" }}>
+                  {option.hint}
+                </span>
+              </span>
+            </label>
+          ))}
+        </fieldset>
+      </Box>
     </div>
   );
 }

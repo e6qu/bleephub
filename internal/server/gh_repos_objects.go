@@ -781,7 +781,7 @@ func (s *Server) handlePutContents(w http.ResponseWriter, r *http.Request) {
 	if isInitial {
 		files := map[string]string{path: string(decoded)}
 		if ph := s.createSecretScanningPushProtectionPlaceholder(repo, secretScanningContentMatches(string(decoded))); ph != nil {
-			writeSecretScanningPushProtectionBlocked(w, ph)
+			writeSecretScanningRuleViolation(w, http.StatusConflict, ph)
 			return
 		}
 		commitHash, err = commitRootBranchWithFiles(
@@ -790,7 +790,7 @@ func (s *Server) handlePutContents(w http.ResponseWriter, r *http.Request) {
 		)
 	} else {
 		if ph := s.createSecretScanningPushProtectionPlaceholder(repo, secretScanningContentMatches(string(decoded))); ph != nil {
-			writeSecretScanningPushProtectionBlocked(w, ph)
+			writeSecretScanningRuleViolation(w, http.StatusConflict, ph)
 			return
 		}
 		commitHash, err = createFileCommitExpectedGuarded(

@@ -797,6 +797,10 @@ func (s *Server) handleSetRepoForkPRContributorApproval(w http.ResponseWriter, r
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
+	if !forkPRApprovalPolicies[req.ApprovalPolicy] {
+		store.WriteGHValidationError(w, "ActionsForkPRContributorApproval", "approval_policy", "invalid")
+		return
+	}
 	repo := repoFullName(r)
 	p := s.store.GetRepoActionsPermissions(repo)
 	p.ForkPRContributorApproval = req.ApprovalPolicy

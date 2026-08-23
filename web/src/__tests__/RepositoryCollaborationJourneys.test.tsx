@@ -71,9 +71,9 @@ function renderAt(entry: string) {
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[entry]}>
         <Routes>
-          <Route path="/ui/repos/:owner/:repo" element={<RepoDetailPage />} />
-          <Route path="/ui/repos/:owner/:repo/commits" element={<RepoDetailPage initialTab="commits" />} />
-          <Route path="/ui/repos/:owner/:repo/compare/:range" element={<RepoComparePage />} />
+          <Route path="/ui/:owner/:repo" element={<RepoDetailPage />} />
+          <Route path="/ui/:owner/:repo/commits" element={<RepoDetailPage initialTab="commits" />} />
+          <Route path="/ui/:owner/:repo/compare/:range" element={<RepoComparePage />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -94,7 +94,7 @@ describe("repository collaboration journeys", () => {
       return Promise.resolve(jsonResponse({ names: [] }));
     });
 
-    renderAt("/ui/repos/admin/repo/commits");
+    renderAt("/ui/admin/repo/commits");
     expect(await screen.findByText("Fix repository reads")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Path"), { target: { value: "internal/server" } });
@@ -130,7 +130,7 @@ describe("repository collaboration journeys", () => {
       return Promise.resolve(jsonResponse({}));
     });
 
-    renderAt("/ui/repos/admin/repo");
+    renderAt("/ui/admin/repo");
     fireEvent.click(await screen.findByRole("button", { name: /Code/ }));
     expect(screen.getByRole("link", { name: "Download ZIP" })).toHaveAttribute(
       "href",
@@ -167,7 +167,7 @@ describe("repository collaboration journeys", () => {
       return Promise.resolve(jsonResponse({}));
     });
 
-    renderAt("/ui/repos/admin/repo/compare/main...feature");
+    renderAt("/ui/admin/repo/compare/main...feature");
     expect(await screen.findByText("Fix repository reads")).toBeInTheDocument();
     expect(screen.getByText("README.md")).toBeInTheDocument();
     expect(screen.getByText("@@ -1 +1 @@")).toBeInTheDocument();

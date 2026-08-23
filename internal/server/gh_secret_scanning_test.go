@@ -117,6 +117,61 @@ func (s *isolatedServer) enableSecretScanningPushProtectionPattern(t *testing.T,
 	resp.Body.Close()
 }
 
+// secretScanningRuleViolationPlaceholder reads the bypass placeholder out of
+// the repository-rule-violation-error body GitHub documents for a
+// push-protection block on PUT /repos/{owner}/{repo}/contents/{path} (409):
+// metadata.secret_scanning.bypass_placeholders[].
+func secretScanningRuleViolationPlaceholder(t *testing.T, resp *http.Response) string {
+	t.Helper()
+	return secretScanningRuleViolationPlaceholderAt(t, resp, http.StatusConflict)
+}
+
+// secretScanningRuleViolationPlaceholderAt is the same read for whichever
+// status the operation documents the rule-violation body on: 409 for the
+// contents PUT, 422 for POST /repos/{owner}/{repo}/git/blobs.
+func secretScanningRuleViolationPlaceholderAt(t *testing.T, resp *http.Response, want int) string {
+	t.Helper()
+	if resp.StatusCode != want {
+		b, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		t.Fatalf("protected write: %d body=%s, want %d", resp.StatusCode, b, want)
+	}
+	body := decodeJSON(t, resp)
+	for _, undocumented := range []string{"placeholder_id", "token_type"} {
+		if _, ok := body[undocumented]; ok {
+			t.Fatalf("rule-violation body carries undocumented top-level %q: %v", undocumented, body)
+		}
+	}
+	ruleViolationErrors, _ := body["errors"].([]interface{})
+	for _, raw := range ruleViolationErrors {
+		entry, _ := raw.(map[string]interface{})
+		for _, undocumented := range []string{"placeholder_id", "token_type"} {
+			if _, ok := entry[undocumented]; ok {
+				t.Fatalf("rule-violation errors[] entry carries undocumented %q: %v", undocumented, entry)
+			}
+		}
+	}
+	metadata, _ := body["metadata"].(map[string]interface{})
+	scanning, _ := metadata["secret_scanning"].(map[string]interface{})
+	placeholders, _ := scanning["bypass_placeholders"].([]interface{})
+	if len(placeholders) != 1 {
+		t.Fatalf("protected write returned %d bypass placeholders: %v", len(placeholders), body)
+	}
+	placeholder, _ := placeholders[0].(map[string]interface{})
+	placeholderID, _ := placeholder["placeholder_id"].(string)
+	if placeholderID == "" {
+		t.Fatalf("protected write did not return placeholder_id: %v", body)
+	}
+	if placeholder["token_type"] != "aws_access_key_id" {
+		t.Fatalf("protected write token_type = %v, want aws_access_key_id", placeholder["token_type"])
+	}
+	return placeholderID
+}
+
+// secretScanningBlockedPlaceholder reads the bypass placeholder out of the
+// validation-error body used where GitHub documents the 422 as a plain
+// validation error (the git/refs routes): the placeholder rides in the
+// documented errors[] members, never on members the schema does not declare.
 func secretScanningBlockedPlaceholder(t *testing.T, resp *http.Response) string {
 	t.Helper()
 	if resp.StatusCode != http.StatusUnprocessableEntity {
@@ -125,14 +180,31 @@ func secretScanningBlockedPlaceholder(t *testing.T, resp *http.Response) string 
 		t.Fatalf("protected write: %d body=%s, want 422", resp.StatusCode, b)
 	}
 	body := decodeJSON(t, resp)
-	placeholderID, _ := body["placeholder_id"].(string)
-	if placeholderID == "" {
-		t.Fatalf("protected write did not return placeholder_id: %v", body)
+	for _, undocumented := range []string{"placeholder_id", "token_type", "metadata"} {
+		if _, ok := body[undocumented]; ok {
+			t.Fatalf("validation-error body carries undocumented top-level %q: %v", undocumented, body)
+		}
 	}
-	if body["token_type"] != "aws_access_key_id" {
-		t.Fatalf("protected write token_type = %v, want aws_access_key_id", body["token_type"])
+	errs, _ := body["errors"].([]interface{})
+	values := map[string]string{}
+	for _, raw := range errs {
+		entry, _ := raw.(map[string]interface{})
+		field, _ := entry["field"].(string)
+		value, _ := entry["value"].(string)
+		for _, undocumented := range []string{"placeholder_id", "token_type"} {
+			if _, ok := entry[undocumented]; ok {
+				t.Fatalf("errors[] entry carries undocumented %q: %v", undocumented, entry)
+			}
+		}
+		values[field] = value
 	}
-	return placeholderID
+	if values["placeholder_id"] == "" {
+		t.Fatalf("protected write did not return a placeholder_id error entry: %v", body)
+	}
+	if values["token_type"] != "aws_access_key_id" {
+		t.Fatalf("protected write token_type = %v, want aws_access_key_id", values["token_type"])
+	}
+	return values["placeholder_id"]
 }
 
 func TestSecretScanning_ListAndFilter(t *testing.T) {
@@ -711,7 +783,7 @@ func TestSecretScanning_PushProtectionBypasses(t *testing.T) {
 		"message": "add protected credential",
 		"content": base64.StdEncoding.EncodeToString([]byte("token=" + secretScanningSeedValue("aws_access_key_id") + "\n")),
 	})
-	placeholderID := secretScanningBlockedPlaceholder(t, resp)
+	placeholderID := secretScanningRuleViolationPlaceholder(t, resp)
 
 	resp = s.post(t, "/api/v3/repos/"+org+"/"+repo+"/secret-scanning/push-protection-bypasses", defaultToken, map[string]any{
 		"reason":         "used_in_tests",
@@ -766,6 +838,78 @@ func TestSecretScanning_PushProtectionBypasses(t *testing.T) {
 	}
 }
 
+// TestSecretScanning_PushProtectionBlocksBlobCreate covers POST
+// /repos/{owner}/{repo}/git/blobs, the second of the two operations GitHub
+// declares repository-rule-violation-error on (422 here, 409 on the contents
+// PUT).
+func TestSecretScanning_PushProtectionBlocksBlobCreate(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	org := "ss-blob-org"
+	repo := "ss-blob-repo"
+	s.createSecretScanningOrgRepoViaPublicAPI(t, org, repo)
+	s.enableSecretScanningPushProtectionPattern(t, org, "aws")
+
+	blobPath := "/api/v3/repos/" + org + "/" + repo + "/git/blobs"
+	secret := "token=" + secretScanningSeedValue("aws_access_key_id") + "\n"
+
+	// An ordinary blob is unaffected.
+	resp := s.post(t, blobPath, defaultToken, map[string]any{"content": "just some prose\n"})
+	if resp.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		t.Fatalf("unprotected blob: %d body=%s", resp.StatusCode, b)
+	}
+	resp.Body.Close()
+
+	// utf-8 content carrying a blockable secret is refused with the
+	// documented rule-violation body at 422.
+	resp = s.post(t, blobPath, defaultToken, map[string]any{"content": secret})
+	if ph := secretScanningRuleViolationPlaceholderAt(t, resp, http.StatusUnprocessableEntity); ph == "" {
+		t.Fatal("utf-8 blob block returned no placeholder")
+	}
+
+	// The same content base64-encoded is refused too: the scan reads the
+	// decoded bytes, never the base64 text.
+	resp = s.post(t, blobPath, defaultToken, map[string]any{
+		"content":  base64.StdEncoding.EncodeToString([]byte(secret)),
+		"encoding": "base64",
+	})
+	placeholderID := secretScanningRuleViolationPlaceholderAt(t, resp, http.StatusUnprocessableEntity)
+
+	// The placeholder drives the documented bypass endpoint.
+	resp = s.post(t, "/api/v3/repos/"+org+"/"+repo+"/secret-scanning/push-protection-bypasses", defaultToken, map[string]any{
+		"reason":         "used_in_tests",
+		"placeholder_id": placeholderID,
+	})
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		t.Fatalf("create bypass: %d body=%s", resp.StatusCode, b)
+	}
+	bypass := decodeJSON(t, resp)
+	if bypass["token_type"] != "aws_access_key_id" {
+		t.Fatalf("bypass token_type = %v, want aws_access_key_id", bypass["token_type"])
+	}
+
+	// The retry after the granted bypass succeeds, in both encodings.
+	for _, body := range []map[string]any{
+		{"content": secret},
+		{"content": base64.StdEncoding.EncodeToString([]byte(secret)), "encoding": "base64"},
+	} {
+		resp = s.post(t, blobPath, defaultToken, body)
+		if resp.StatusCode != http.StatusCreated {
+			b, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			t.Fatalf("bypassed blob create %v: %d body=%s", body["encoding"], resp.StatusCode, b)
+		}
+		created := decodeJSON(t, resp)
+		if sha, _ := created["sha"].(string); sha == "" {
+			t.Fatalf("bypassed blob create returned no sha: %v", created)
+		}
+	}
+}
+
 func TestSecretScanning_PushProtectionBlocksGitDatabaseRefBeforeMutation(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
@@ -774,16 +918,12 @@ func TestSecretScanning_PushProtectionBlocksGitDatabaseRefBeforeMutation(t *test
 	s.createSecretScanningOrgRepoViaPublicAPI(t, org, repo)
 	s.enableSecretScanningPushProtectionPattern(t, org, "aws")
 
-	resp := s.post(t, "/api/v3/repos/"+org+"/"+repo+"/git/blobs", defaultToken, map[string]any{
-		"content": "token=" + secretScanningSeedValue("aws_access_key_id") + "\n",
-	})
-	if resp.StatusCode != http.StatusCreated {
-		t.Fatalf("create blob: %d", resp.StatusCode)
-	}
-	blob := decodeJSON(t, resp)
-	resp = s.post(t, "/api/v3/repos/"+org+"/"+repo+"/git/trees", defaultToken, map[string]any{
+	// The tree carries the credential inline: POST /git/blobs is itself
+	// push-protected, so a bypass minted there would also unblock the ref
+	// create this test is about.
+	resp := s.post(t, "/api/v3/repos/"+org+"/"+repo+"/git/trees", defaultToken, map[string]any{
 		"tree": []map[string]any{
-			{"path": "credentials.txt", "mode": "100644", "type": "blob", "sha": blob["sha"]},
+			{"path": "credentials.txt", "mode": "100644", "type": "blob", "content": "token=" + secretScanningSeedValue("aws_access_key_id") + "\n"},
 		},
 	})
 	if resp.StatusCode != http.StatusCreated {

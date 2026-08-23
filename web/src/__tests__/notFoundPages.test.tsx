@@ -93,7 +93,7 @@ describe("RepoDetailPage not-found", () => {
       if (u.endsWith("/repos/admin/nope")) return notFound();
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt([{ path: "/ui/repos/:owner/:repo", element: <RepoDetailPage /> }], "/ui/repos/admin/nope");
+    renderAt([{ path: "/ui/:owner/:repo", element: <RepoDetailPage /> }], "/ui/admin/nope");
     expect(await screen.findByText("This page does not exist")).toBeInTheDocument();
     expect(screen.queryByText(/Failed to load/i)).not.toBeInTheDocument();
   });
@@ -104,7 +104,7 @@ describe("RepoDetailPage not-found", () => {
       if (u.endsWith("/repos/admin/test")) return serverError();
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt([{ path: "/ui/repos/:owner/:repo", element: <RepoDetailPage /> }], "/ui/repos/admin/test");
+    renderAt([{ path: "/ui/:owner/:repo", element: <RepoDetailPage /> }], "/ui/admin/test");
     expect(await screen.findByText(/Failed to load admin\/test/i)).toBeInTheDocument();
     expect(screen.queryByText("This page does not exist")).not.toBeInTheDocument();
   });
@@ -117,8 +117,8 @@ describe("RepoDetailPage not-found", () => {
       return Promise.resolve(jsonResponse([]));
     });
     renderAt(
-      [{ path: "/ui/repos/:owner/:repo/tree/:ref/*", element: <RepoDetailPage /> }],
-      "/ui/repos/admin/test/tree/ghost",
+      [{ path: "/ui/:owner/:repo/tree/:ref/*", element: <RepoDetailPage /> }],
+      "/ui/admin/test/tree/ghost",
     );
     expect(await screen.findByText("This branch could not be found")).toBeInTheDocument();
     // The repo shell stays: the header nav still shows the repo tabs.
@@ -135,8 +135,8 @@ describe("RepoDetailPage not-found", () => {
       return Promise.resolve(jsonResponse([]));
     });
     renderAt(
-      [{ path: "/ui/repos/:owner/:repo/tree/:ref/*", element: <RepoDetailPage /> }],
-      "/ui/repos/admin/test/tree/main/no-such-dir",
+      [{ path: "/ui/:owner/:repo/tree/:ref/*", element: <RepoDetailPage /> }],
+      "/ui/admin/test/tree/main/no-such-dir",
     );
     expect(await screen.findByText("This branch or path could not be found")).toBeInTheDocument();
     expect(screen.getByText(/does not contain the path "no-such-dir"/)).toBeInTheDocument();
@@ -153,8 +153,8 @@ describe("RepoFilePage (blob) not-found", () => {
       return Promise.resolve(jsonResponse([]));
     });
     renderAt(
-      [{ path: "/ui/repos/:owner/:repo/blob/:ref/*", element: <RepoFilePage /> }],
-      "/ui/repos/admin/test/blob/main/nope.txt",
+      [{ path: "/ui/:owner/:repo/blob/:ref/*", element: <RepoFilePage /> }],
+      "/ui/admin/test/blob/main/nope.txt",
     );
     expect(await screen.findByText("This branch or path could not be found")).toBeInTheDocument();
     expect(screen.getByText(/does not contain the path "nope\.txt"/)).toBeInTheDocument();
@@ -169,8 +169,8 @@ describe("RepoFilePage (blob) not-found", () => {
       return Promise.resolve(jsonResponse([]));
     });
     renderAt(
-      [{ path: "/ui/repos/:owner/:repo/blob/:ref/*", element: <RepoFilePage /> }],
-      "/ui/repos/admin/test/blob/main/nope.txt",
+      [{ path: "/ui/:owner/:repo/blob/:ref/*", element: <RepoFilePage /> }],
+      "/ui/admin/test/blob/main/nope.txt",
     );
     expect(await screen.findByText(/Failed to load nope\.txt/i)).toBeInTheDocument();
     expect(screen.queryByText("This branch or path could not be found")).not.toBeInTheDocument();
@@ -224,8 +224,8 @@ describe("ReleasesPage detail not-found", () => {
       return Promise.resolve(jsonResponse([]));
     });
     renderAt(
-      [{ path: "/ui/repos/:owner/:repo/releases/:releaseId", element: <ReleasesPage /> }],
-      "/ui/repos/admin/test/releases/99",
+      [{ path: "/ui/:owner/:repo/releases/:releaseId", element: <ReleasesPage /> }],
+      "/ui/admin/test/releases/99",
     );
     expect(await screen.findByText("Release not found")).toBeInTheDocument();
     expect(screen.queryByText(/Failed to load release/i)).not.toBeInTheDocument();
@@ -239,8 +239,8 @@ describe("ReleasesPage detail not-found", () => {
       return Promise.resolve(jsonResponse([]));
     });
     renderAt(
-      [{ path: "/ui/repos/:owner/:repo/releases/:releaseId", element: <ReleasesPage /> }],
-      "/ui/repos/admin/test/releases/99",
+      [{ path: "/ui/:owner/:repo/releases/:releaseId", element: <ReleasesPage /> }],
+      "/ui/admin/test/releases/99",
     );
     expect(await screen.findByText(/Failed to load release/i)).toBeInTheDocument();
     expect(screen.queryByText("Release not found")).not.toBeInTheDocument();
@@ -260,8 +260,8 @@ describe("DiscussionsPage detail not-found", () => {
       return Promise.resolve(jsonResponse([]));
     });
     renderAt(
-      [{ path: "/ui/repos/:owner/:repo/discussions/:number", element: <DiscussionsPage /> }],
-      "/ui/repos/admin/test/discussions/7",
+      [{ path: "/ui/:owner/:repo/discussions/:number", element: <DiscussionsPage /> }],
+      "/ui/admin/test/discussions/7",
     );
     expect(await screen.findByText("Discussion #7 not found")).toBeInTheDocument();
     expect(screen.queryByText(/Failed to load discussion/i)).not.toBeInTheDocument();
@@ -275,8 +275,8 @@ describe("DiscussionsPage detail not-found", () => {
       return Promise.resolve(jsonResponse([]));
     });
     renderAt(
-      [{ path: "/ui/repos/:owner/:repo/discussions/:number", element: <DiscussionsPage /> }],
-      "/ui/repos/admin/test/discussions/7",
+      [{ path: "/ui/:owner/:repo/discussions/:number", element: <DiscussionsPage /> }],
+      "/ui/admin/test/discussions/7",
     );
     expect(await screen.findByText(/Failed to load discussion #7/i)).toBeInTheDocument();
     expect(screen.queryByText("Discussion #7 not found")).not.toBeInTheDocument();
@@ -292,8 +292,8 @@ describe("RunDetailPage not-found", () => {
       return Promise.resolve(jsonResponse([]));
     });
     renderAt(
-      [{ path: "/ui/repos/:owner/:repo/actions/runs/:runId", element: <RunDetailPage /> }],
-      "/ui/repos/admin/test/actions/runs/999",
+      [{ path: "/ui/:owner/:repo/actions/runs/:runId", element: <RunDetailPage /> }],
+      "/ui/admin/test/actions/runs/999",
     );
     expect(await screen.findByText("Run #999 not found")).toBeInTheDocument();
     expect(screen.queryByText(/Failed to load run/i)).not.toBeInTheDocument();
@@ -326,11 +326,11 @@ function mockWiki(push: boolean, pageStatus: 404 | 500) {
 }
 
 describe("WikiPage missing page", () => {
-  const wikiRoutes = [{ path: "/ui/repos/:owner/:repo/wiki/:slug", element: <WikiPage /> }];
+  const wikiRoutes = [{ path: "/ui/:owner/:repo/wiki/:slug", element: <WikiPage /> }];
 
   it("offers writers a title-prefilled create affordance", async () => {
     mockWiki(true, 404);
-    renderAt(wikiRoutes, "/ui/repos/admin/test/wiki/getting-started");
+    renderAt(wikiRoutes, "/ui/admin/test/wiki/getting-started");
     expect(await screen.findByText("New page?")).toBeInTheDocument();
     expect(screen.getByText(/does not exist yet/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Create “getting started”/ })).toBeInTheDocument();
@@ -341,7 +341,7 @@ describe("WikiPage missing page", () => {
 
   it("shows readers the plain 404 text with no create affordance", async () => {
     mockWiki(false, 404);
-    renderAt(wikiRoutes, "/ui/repos/admin/test/wiki/getting-started");
+    renderAt(wikiRoutes, "/ui/admin/test/wiki/getting-started");
     expect(await screen.findByText("This page does not exist")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Create/ })).not.toBeInTheDocument();
     expect(screen.queryByText(/Failed to load page/i)).not.toBeInTheDocument();
@@ -349,7 +349,7 @@ describe("WikiPage missing page", () => {
 
   it("keeps the raw error banner when the page read answers 500", async () => {
     mockWiki(true, 500);
-    renderAt(wikiRoutes, "/ui/repos/admin/test/wiki/getting-started");
+    renderAt(wikiRoutes, "/ui/admin/test/wiki/getting-started");
     expect(await screen.findByText(/Failed to load page/i)).toBeInTheDocument();
     expect(screen.queryByText("New page?")).not.toBeInTheDocument();
   });

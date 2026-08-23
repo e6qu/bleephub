@@ -165,8 +165,12 @@ type User struct {
 	// Account security + notification preferences. GitHub's 2FA and notification
 	// settings are web-only (no REST), so the simulator serves them from a
 	// browser-only /ui-data endpoint rather than an invented /api/v3 path.
-	TwoFactorEnabled     bool                  `json:"two_factor_enabled,omitempty"`
-	NotificationSettings *NotificationSettings `json:"notification_settings,omitempty"`
+	//
+	// TwoFactor holds the TOTP secret and recovery-code digests. It is store
+	// state only: no read endpoint returns it, and the account-security helpers
+	// in account_security.go are the only way to reach it.
+	TwoFactor               *TwoFactorConfig         `json:"two_factor,omitempty"`
+	NotificationPreferences *NotificationPreferences `json:"notification_preferences,omitempty"`
 	// user-surface profile fields (PATCH /user), email addresses, and
 	// account-level interaction limits.
 	Blog                   string      `json:"blog,omitempty"`
@@ -338,6 +342,15 @@ type LoginSession struct {
 	OIDCSubject  string
 	OIDCSID      string
 	OIDCIDToken  string
+	// Handle is a public, non-secret name for the session, so the account's
+	// "active sessions" list can identify and revoke one without ever exposing
+	// the cookie value or the storage key derived from it.
+	Handle string
+	// CreatedAt, UserAgent and SignedInIP are what the sessions list shows: when
+	// and from where each session was established.
+	CreatedAt  time.Time
+	UserAgent  string
+	SignedInIP string
 }
 
 // GistFile is a single file inside a gist.

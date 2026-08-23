@@ -157,11 +157,11 @@ describe("NotificationsPage", () => {
     // Thread links still resolve under their repo group.
     expect(screen.getByRole("link", { name: "Issue title" })).toHaveAttribute(
       "href",
-      "/ui/repos/admin/repo/issues/1",
+      "/ui/admin/repo/issues/1",
     );
     expect(screen.getByRole("link", { name: "Other issue" })).toHaveAttribute(
       "href",
-      "/ui/repos/octo/other/issues/2",
+      "/ui/octo/other/issues/2",
     );
   });
 

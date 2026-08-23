@@ -110,16 +110,15 @@ export function LoginPage() {
     return (
       <div
         className="flex min-h-screen flex-col px-4"
-        style={{
-          background:
-            "radial-gradient(circle at 8% 0, color-mix(in srgb, var(--color-brand-blue) 22%, transparent), transparent 35%), radial-gradient(circle at 92% 0, color-mix(in srgb, var(--color-brand-pink) 18%, transparent), transparent 34%), var(--color-bg-subtle)",
-        }}
+        // G10: flat neutral canvas in both themes, like github.com's sign-in
+        // page — no blue/pink radial wash.
+        style={{ background: "var(--color-bg-subtle)" }}
       >
         <div className="flex w-full flex-1 items-center justify-center">
           <main
             className="w-full max-w-sm"
             style={{
-              border: "1px solid color-mix(in srgb, var(--color-brand-purple) 45%, var(--color-border))",
+              border: "1px solid var(--color-border)",
               borderRadius: "1rem",
               background: "var(--color-surface)",
               padding: "1.5rem",
@@ -142,9 +141,9 @@ export function LoginPage() {
                   href={shauthHref}
                   className="inline-flex min-h-11 w-full items-center justify-center"
                   style={{
-                    border: "1px solid color-mix(in srgb, var(--color-brand-purple) 48%, var(--color-brand-blue))",
+                    border: "1px solid var(--color-accent)",
                     borderRadius: "var(--radius-md)",
-                    background: "linear-gradient(110deg, var(--color-brand-blue), var(--color-brand-purple) 58%, var(--color-brand-pink))",
+                    background: "var(--color-accent)",
                     color: "var(--color-accent-fg)",
                     fontWeight: 700,
                     textDecoration: "none",

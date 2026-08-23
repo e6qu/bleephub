@@ -32,7 +32,7 @@ async function findSecurityPolicy(owner: string, repo: string): Promise<GithubCo
 export function RepoSecurityOverviewPage() {
   const { owner = "", repo = "" } = useParams<{ owner: string; repo: string }>();
   const counts = useOpenCounts(owner, repo);
-  const base = `/ui/repos/${owner}/${repo}`;
+  const base = `/ui/${owner}/${repo}`;
 
   const policy = useQuery({
     queryKey: ["security-policy", owner, repo],

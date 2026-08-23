@@ -29,7 +29,7 @@ test("repo settings Webhooks tab: list, create, and axe-clean", async ({ page })
   const created = await api(page, "POST", "/api/v3/user/repos", { name: repo, auto_init: true });
   expect([201, 422]).toContain(created.status);
 
-  await page.goto(`/ui/repos/admin/${repo}/settings`);
+  await page.goto(`/ui/admin/${repo}/settings`);
   await page.getByRole("button", { name: "Webhooks" }).click();
 
   // The create form is present (this surface previously did not exist).

@@ -384,7 +384,7 @@ export function BranchProtectionPage() {
         title="Branch protection"
         meta={
           <Link
-            to={`/ui/repos/${owner}/${repo}/settings`}
+            to={`/ui/${owner}/${repo}/settings`}
             style={{ color: "var(--color-accent)", textDecoration: "none" }}
           >
             ← Back to settings

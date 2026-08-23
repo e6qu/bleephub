@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, cleanup, screen, waitFor, fireEvent } from "@testing-library/react";
+import { render, cleanup, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Routes, Route } from "react-router";
 import { RepoDetailPage } from "../pages/RepoDetailPage.js";
@@ -66,21 +66,21 @@ function installFetchRoutes() {
   });
 }
 
-function renderPage() {
+function renderPage(initialEntry = "/ui/admin/social-repo") {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={["/ui/repos/admin/social-repo"]}>
+      <MemoryRouter initialEntries={[initialEntry]}>
         <Routes>
-          <Route path="/ui/repos/:owner/:repo" element={<RepoDetailPage />} />
+          <Route path="/ui/:owner/:repo" element={<RepoDetailPage />} />
           <Route
-            path="/ui/repos/:owner/:repo/branches"
+            path="/ui/:owner/:repo/branches"
             element={<RepoDetailPage initialTab="branches" />}
           />
           <Route
-            path="/ui/repos/:owner/:repo/tags"
+            path="/ui/:owner/:repo/tags"
             element={<RepoDetailPage initialTab="tags" />}
           />
         </Routes>
@@ -98,11 +98,11 @@ describe("RepoDetailPage social reads", () => {
     });
     expect(screen.getByText(/2 watchers/).closest("a")).toHaveAttribute(
       "href",
-      "/ui/repos/admin/social-repo/watchers",
+      "/ui/admin/social-repo/watchers",
     );
     expect(screen.getByText(/1 fork/).closest("a")).toHaveAttribute(
       "href",
-      "/ui/repos/admin/social-repo/forks",
+      "/ui/admin/social-repo/forks",
     );
   });
 
@@ -117,26 +117,26 @@ describe("RepoDetailPage social reads", () => {
     expect(screen.getByText("25.0%")).toBeInTheDocument();
   });
 
+  // G9 removed the repo sub-tab row, so these listings are reached by URL (the
+  // branch/tag switcher's "View all …" footer links there) rather than by a
+  // second row of tabs; the switcher footer itself is covered in
+  // RepoDetailPage.test.tsx, where the fixture repository has commits.
   it("lists branches with default and protection state", async () => {
     installFetchRoutes();
-    renderPage();
-    await waitFor(() => screen.getByRole("link", { name: "Branches" }));
-    fireEvent.click(screen.getByRole("link", { name: "Branches" }));
+    renderPage("/ui/admin/social-repo/branches");
     await waitFor(() => {
       expect(screen.getByText("feature")).toBeInTheDocument();
     });
     expect(screen.getByText("default")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "protected" })).toHaveAttribute(
       "href",
-      "/ui/repos/admin/social-repo/settings/branch-protection",
+      "/ui/admin/social-repo/settings/branch-protection",
     );
   });
 
   it("lists tags with tarball and zipball download links", async () => {
     installFetchRoutes();
-    renderPage();
-    await waitFor(() => screen.getByRole("link", { name: "Tags" }));
-    fireEvent.click(screen.getByRole("link", { name: "Tags" }));
+    renderPage("/ui/admin/social-repo/tags");
     await waitFor(() => {
       expect(screen.getByText("v1.0.0")).toBeInTheDocument();
     });

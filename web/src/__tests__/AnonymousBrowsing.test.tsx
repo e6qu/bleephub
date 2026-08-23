@@ -110,7 +110,7 @@ function mockAnonymousRepoServer() {
 describe("anonymous browsing (App-level)", () => {
   it("renders a public repo page signed-out with a Sign in header and no viewer-scoped fetches", async () => {
     mockAnonymousRepoServer();
-    window.history.pushState({}, "", "/ui/repos/admin/test");
+    window.history.pushState({}, "", "/ui/admin/test");
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
       <QueryClientProvider client={client}>
@@ -121,7 +121,7 @@ describe("anonymous browsing (App-level)", () => {
     // The shell renders with the anonymous header…
     const signIn = await screen.findByRole("link", { name: "Sign in" });
     expect(signIn.getAttribute("href")).toBe(
-      `/ui/login?return_to=${encodeURIComponent("/ui/repos/admin/test")}`,
+      `/ui/login?return_to=${encodeURIComponent("/ui/admin/test")}`,
     );
     // …and none of the signed-in chrome.
     expect(screen.queryByLabelText(/notifications/i)).not.toBeInTheDocument();
@@ -170,7 +170,7 @@ describe("anonymous AppHeader", () => {
       <QueryClientProvider client={client}>
         <ToastProvider>
           <SessionContext.Provider value={signedIn}>
-            <MemoryRouter initialEntries={["/ui/repos/admin/test"]}>
+            <MemoryRouter initialEntries={["/ui/admin/test"]}>
               <AppHeader />
             </MemoryRouter>
           </SessionContext.Provider>
@@ -209,10 +209,10 @@ describe("anonymous RepoHeader", () => {
     render(
       <QueryClientProvider client={client}>
         <SessionContext.Provider value={false}>
-          <MemoryRouter initialEntries={["/ui/repos/admin/test"]}>
+          <MemoryRouter initialEntries={["/ui/admin/test"]}>
             <Routes>
               <Route
-                path="/ui/repos/:owner/:repo"
+                path="/ui/:owner/:repo"
                 element={<RepoHeader owner="admin" repo="test" active="code" />}
               />
             </Routes>
@@ -273,9 +273,9 @@ describe("anonymous issue detail", () => {
     render(
       <QueryClientProvider client={client}>
         <SessionContext.Provider value={false}>
-          <MemoryRouter initialEntries={["/ui/repos/admin/test/issues/7"]}>
+          <MemoryRouter initialEntries={["/ui/admin/test/issues/7"]}>
             <Routes>
-              <Route path="/ui/repos/:owner/:repo/issues/:number" element={<IssuesPage />} />
+              <Route path="/ui/:owner/:repo/issues/:number" element={<IssuesPage />} />
             </Routes>
           </MemoryRouter>
         </SessionContext.Provider>

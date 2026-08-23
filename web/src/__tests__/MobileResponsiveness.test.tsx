@@ -18,7 +18,7 @@ afterEach(() => {
   mockFetch.mockReset();
 });
 
-function renderHeader(initialEntry = "/ui/repos/admin/parity") {
+function renderHeader(initialEntry = "/ui/admin/parity") {
   Object.defineProperty(window, "matchMedia", {
     configurable: true,
     value: vi.fn(() => ({
@@ -65,7 +65,7 @@ describe("AppHeader phone-width collapse", () => {
   });
 
   it("collapses the repo-scope hint below md", () => {
-    renderHeader("/ui/repos/admin/parity");
+    renderHeader("/ui/admin/parity");
     const hint = screen.getByText("In this repository");
     expect(hint.className).toContain("hidden");
     expect(hint.className).toContain("md:inline");

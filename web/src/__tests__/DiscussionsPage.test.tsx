@@ -29,8 +29,8 @@ function renderAt(path: string) {
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[path]}>
         <Routes>
-          <Route path="/ui/repos/:owner/:repo/discussions" element={<DiscussionsPage />} />
-          <Route path="/ui/repos/:owner/:repo/discussions/:number" element={<DiscussionsPage />} />
+          <Route path="/ui/:owner/:repo/discussions" element={<DiscussionsPage />} />
+          <Route path="/ui/:owner/:repo/discussions/:number" element={<DiscussionsPage />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -84,7 +84,7 @@ describe("DiscussionsPage list", () => {
       }
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/discussions");
+    renderAt("/ui/admin/test/discussions");
     await waitFor(() => {
       expect(screen.getByText("First discussion")).toBeInTheDocument();
     });
@@ -110,7 +110,7 @@ describe("DiscussionsPage list", () => {
       }
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/discussions");
+    renderAt("/ui/admin/test/discussions");
     await waitFor(() => {
       expect(screen.getByText(/General/i)).toBeInTheDocument();
     });
@@ -143,7 +143,7 @@ describe("DiscussionsPage detail", () => {
       }
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/discussions/7");
+    renderAt("/ui/admin/test/discussions/7");
     await waitFor(() => {
       expect(screen.getByText("A real discussion")).toBeInTheDocument();
     });
@@ -168,7 +168,7 @@ describe("DiscussionsPage detail", () => {
       }
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/discussions/7");
+    renderAt("/ui/admin/test/discussions/7");
     fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
     fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Edited title" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -200,7 +200,7 @@ describe("DiscussionsPage detail", () => {
       }
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/discussions/7");
+    renderAt("/ui/admin/test/discussions/7");
     fireEvent.click(await screen.findByRole("button", { name: "Lock conversation" }));
     await waitFor(() => {
       const mut = mockFetch.mock.calls.find(
@@ -230,7 +230,7 @@ describe("DiscussionsPage detail", () => {
       }
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/discussions/7");
+    renderAt("/ui/admin/test/discussions/7");
     fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
     fireEvent.change(screen.getByLabelText("Category"), { target: { value: other.id } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -260,7 +260,7 @@ describe("DiscussionsPage detail", () => {
       }
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/discussions/999");
+    renderAt("/ui/admin/test/discussions/999");
     // A GraphQL NOT_FOUND on the primary read renders the in-shell 404 state,
     // not the raw error banner (the banner stays for non-404 failures —
     // covered in notFoundPages.test.tsx).
@@ -337,7 +337,7 @@ describe("DiscussionsPage pinned discussions", () => {
       }
       return Promise.resolve(jsonResponse([]));
     });
-    renderAt("/ui/repos/admin/test/discussions");
+    renderAt("/ui/admin/test/discussions");
     await waitFor(() => {
       expect(screen.getByText("Pinned one")).toBeInTheDocument();
     });
@@ -345,7 +345,7 @@ describe("DiscussionsPage pinned discussions", () => {
     expect(screen.getByText("Pinned two")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Pinned one/ })).toHaveAttribute(
       "href",
-      "/ui/repos/admin/test/discussions/2",
+      "/ui/admin/test/discussions/2",
     );
   });
 
@@ -354,7 +354,7 @@ describe("DiscussionsPage pinned discussions", () => {
       pinned: [pinnedDiscussion(2, "Other pinned")],
       permissions: { admin: false, push: true, pull: true },
     });
-    renderAt("/ui/repos/admin/test/discussions/7");
+    renderAt("/ui/admin/test/discussions/7");
     fireEvent.click(await screen.findByRole("button", { name: "Pin discussion" }));
     await waitFor(() => {
       const put = mockFetch.mock.calls.find(
@@ -370,7 +370,7 @@ describe("DiscussionsPage pinned discussions", () => {
       pinned: [pinnedDiscussion(7, "A real discussion"), pinnedDiscussion(2, "Other pinned")],
       permissions: { admin: false, push: true, pull: true },
     });
-    renderAt("/ui/repos/admin/test/discussions/7");
+    renderAt("/ui/admin/test/discussions/7");
     fireEvent.click(await screen.findByRole("button", { name: "Unpin discussion" }));
     await waitFor(() => {
       const put = mockFetch.mock.calls.find(
@@ -386,7 +386,7 @@ describe("DiscussionsPage pinned discussions", () => {
       pinned: [pinnedDiscussion(2, "Other pinned")],
       permissions: { admin: false, push: false, pull: true },
     });
-    renderAt("/ui/repos/admin/test/discussions/7");
+    renderAt("/ui/admin/test/discussions/7");
     await screen.findByRole("button", { name: "Lock conversation" });
     await waitFor(() => {
       const repoCall = mockFetch.mock.calls.some(([u2]) => u2.toString().includes("/repos/admin/test") && !u2.toString().includes("pinned"));
@@ -401,7 +401,7 @@ describe("DiscussionsPage pinned discussions", () => {
       pinned: [1, 2, 3, 4].map((n) => pinnedDiscussion(n, `Pinned ${n}`)),
       permissions: { admin: false, push: true, pull: true },
     });
-    renderAt("/ui/repos/admin/test/discussions/7");
+    renderAt("/ui/admin/test/discussions/7");
     const btn = await screen.findByRole("button", { name: "Pin discussion" });
     expect(btn).toBeDisabled();
     expect(btn).toHaveAttribute("title", "A repository can have at most 4 pinned discussions");
@@ -467,7 +467,7 @@ describe("DiscussionsPage mark-as-answer gating", () => {
 
   it("hides Mark as answer from a pull-only outsider (Reply stays)", async () => {
     mockAnswerableDetail({ permissions: { admin: false, push: false, pull: true }, viewerLogin: "reader" });
-    renderAt("/ui/repos/admin/test/discussions/7");
+    renderAt("/ui/admin/test/discussions/7");
     expect(await screen.findByText("an answer")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Reply" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Mark as answer" })).not.toBeInTheDocument();
@@ -476,13 +476,13 @@ describe("DiscussionsPage mark-as-answer gating", () => {
   it("shows Mark as answer to the discussion author without push", async () => {
     // discussion() is authored by admin.
     mockAnswerableDetail({ permissions: { admin: false, push: false, pull: true }, viewerLogin: "admin" });
-    renderAt("/ui/repos/admin/test/discussions/7");
+    renderAt("/ui/admin/test/discussions/7");
     expect(await screen.findByRole("button", { name: "Mark as answer" })).toBeInTheDocument();
   });
 
   it("shows Mark as answer to a writer who is not the author", async () => {
     mockAnswerableDetail({ permissions: { admin: false, push: true, pull: true }, viewerLogin: "maintainer" });
-    renderAt("/ui/repos/admin/test/discussions/7");
+    renderAt("/ui/admin/test/discussions/7");
     expect(await screen.findByRole("button", { name: "Mark as answer" })).toBeInTheDocument();
   });
 });

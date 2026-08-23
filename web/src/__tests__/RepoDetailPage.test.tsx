@@ -19,7 +19,7 @@ afterEach(() => {
   mockFetch.mockReset();
 });
 
-function renderPage(path = "/ui/repos/admin/test") {
+function renderPage(path = "/ui/admin/test") {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -27,15 +27,15 @@ function renderPage(path = "/ui/repos/admin/test") {
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[path]}>
         <Routes>
-          <Route path="/ui/repos/:owner/:repo" element={<RepoDetailPage />} />
-          <Route path="/ui/repos/:owner/:repo/commits" element={<RepoDetailPage initialTab="commits" />} />
-          <Route path="/ui/repos/:owner/:repo/branches" element={<RepoDetailPage initialTab="branches" />} />
-          <Route path="/ui/repos/:owner/:repo/tags" element={<RepoDetailPage initialTab="tags" />} />
-          <Route path="/ui/repos/:owner/:repo/activity" element={<RepoDetailPage initialTab="activity" />} />
-          <Route path="/ui/repos/:owner/:repo/commits/:sha" element={<RepoCommitPage />} />
-          <Route path="/ui/repos/:owner/:repo/tree/:ref/*" element={<RepoDetailPage />} />
-          <Route path="/ui/repos/:owner/:repo/blob/:ref/*" element={<RepoFilePage />} />
-          <Route path="/ui/repos/:owner/:repo/compare/:range" element={<RepoComparePage />} />
+          <Route path="/ui/:owner/:repo" element={<RepoDetailPage />} />
+          <Route path="/ui/:owner/:repo/commits" element={<RepoDetailPage initialTab="commits" />} />
+          <Route path="/ui/:owner/:repo/branches" element={<RepoDetailPage initialTab="branches" />} />
+          <Route path="/ui/:owner/:repo/tags" element={<RepoDetailPage initialTab="tags" />} />
+          <Route path="/ui/:owner/:repo/activity" element={<RepoDetailPage initialTab="activity" />} />
+          <Route path="/ui/:owner/:repo/commits/:sha" element={<RepoCommitPage />} />
+          <Route path="/ui/:owner/:repo/tree/:ref/*" element={<RepoDetailPage />} />
+          <Route path="/ui/:owner/:repo/blob/:ref/*" element={<RepoFilePage />} />
+          <Route path="/ui/:owner/:repo/compare/:range" element={<RepoComparePage />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -141,21 +141,20 @@ function routedFetch(url: RequestInfo | URL): Promise<Response> {
   return Promise.resolve(jsonResponse([]));
 }
 
-describe("RepoDetailPage releases", () => {
-  it("renders a draft release as 'draft', not a 1970 date", async () => {
+// G9 removed the in-page Releases sub-tab (and its list); the routed
+// ReleasesPage is the single releases surface, and RepoDetailPage's job is
+// only to lead there the way github.com does — from the About sidebar. The
+// draft-vs-1970 rendering this file used to assert now lives in
+// ReleasesPage.test.tsx.
+describe("RepoDetailPage releases entry point", () => {
+  it("links the About sidebar's Releases heading at the routed releases page", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL) => routedFetch(url));
     renderPage();
-    await screen.findByText("a repo");
-    fireEvent.click(screen.getByRole("button", { name: "Releases" }));
-    await waitFor(() => {
-      expect(screen.getByText("Draft release")).toBeInTheDocument();
-    });
-    expect(screen.getByText("draft")).toBeInTheDocument();
-    // the published release still shows a real (relative) date
-    const published = screen.getByText(/published/);
-    expect(published.querySelector("time")).toHaveAttribute("dateTime", "2026-02-01T00:00:00Z");
-    // no zero-time rendering anywhere
-    expect(screen.queryByText(/1970/)).not.toBeInTheDocument();
+    const about = await screen.findByRole("complementary", { name: "About" });
+    expect(within(about).getByRole("link", { name: "Releases" })).toHaveAttribute(
+      "href",
+      "/ui/admin/test/releases",
+    );
   });
 });
 
@@ -223,11 +222,11 @@ describe("RepoDetailPage code", () => {
     expect(screen.getByText("abc123".slice(0, 7))).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /1 commit\b/ })).toHaveAttribute(
       "href",
-      "/ui/repos/admin/test/commits",
+      "/ui/admin/test/commits",
     );
     expect(screen.getByRole("link", { name: "abc123" })).toHaveAttribute(
       "href",
-      "/ui/repos/admin/test/commits/abc123",
+      "/ui/admin/test/commits/abc123",
     );
   });
 
@@ -258,12 +257,14 @@ describe("RepoDetailPage code", () => {
 
     expect(screen.getAllByRole("link", { name: "README.md" })[0]).toHaveAttribute(
       "href",
-      "/ui/repos/admin/test/blob/main/README.md",
+      "/ui/admin/test/blob/main/README.md",
     );
-    fireEvent.click(screen.getByRole("link", { name: "Commits" }));
+    // G9: the commit history is reached from the "N commits" link on the tree
+    // header's right, exactly as on github.com — there is no sub-tab row.
+    fireEvent.click(screen.getByRole("link", { name: /\d+\+? commits?$/ }));
     expect(await screen.findByRole("link", { name: "Initial commit" })).toHaveAttribute(
       "href",
-      "/ui/repos/admin/test/commits/abc123",
+      "/ui/admin/test/commits/abc123",
     );
   });
 
@@ -273,7 +274,7 @@ describe("RepoDetailPage code", () => {
       calls.push(url.toString());
       return routedFetch(url);
     });
-    renderPage("/ui/repos/admin/test/tree/abc123/src");
+    renderPage("/ui/admin/test/tree/abc123/src");
 
     await screen.findAllByText("src");
     expect(calls).toContain(
@@ -281,25 +282,6 @@ describe("RepoDetailPage code", () => {
     );
     expect(calls).toContain(
       "/api/v3/repos/admin/test/commits?per_page=100&sha=abc123",
-    );
-  });
-
-  it("routes an organization repository owner to the organization profile", async () => {
-    mockFetch.mockImplementation((url: RequestInfo | URL) => {
-      if (url.toString().endsWith("/repos/acme/test")) {
-        return Promise.resolve(jsonResponse({
-          ...repoData,
-          full_name: "acme/test",
-          owner: { login: "acme", type: "Organization" },
-        }));
-      }
-      return routedFetch(url);
-    });
-    renderPage("/ui/repos/acme/test");
-
-    expect(await screen.findByRole("link", { name: "acme" })).toHaveAttribute(
-      "href",
-      "/ui/orgs/acme",
     );
   });
 
@@ -362,16 +344,66 @@ describe("RepoDetailPage code", () => {
     expect(calls.some(({ url }) => url.startsWith("/internal/"))).toBe(false);
   });
 
-  it("groups administrative resources under the repository More menu", async () => {
+  // G9: github.com has exactly ONE repository tab row. The old second row
+  // (Code / Commits / Branches / Tags / Activity / Releases plus an admin
+  // "More" gear) is gone; this pins both halves of that — the row's absence
+  // and the github.com-shaped entry point that replaced each of its items.
+  it("has no second repository tab row, and reaches every destination the way github.com does", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL) => routedFetch(url));
     renderPage();
     await screen.findAllByText("README.md");
 
-    expect(screen.getByRole("navigation", { name: "Repository content" })).toBeInTheDocument();
-    expect(screen.getByText("Repository administration")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "All repository settings" })).toHaveAttribute(
+    // The extra row and its admin overflow are gone.
+    expect(screen.queryByRole("navigation", { name: "Repository content" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Repository administration")).not.toBeInTheDocument();
+    expect(screen.queryByText("All repository settings")).not.toBeInTheDocument();
+
+    // Code: the one remaining repository tab row.
+    const repoTabs = screen.getByRole("navigation", { name: "Repository" });
+    expect(within(repoTabs).getByRole("link", { name: "Code" })).toHaveAttribute(
       "href",
-      "/ui/repos/admin/test/settings",
+      "/ui/admin/test",
+    );
+    // Settings: still on that row for an admin (webhooks, secrets and
+    // environments all live behind it now).
+    expect(within(repoTabs).getByRole("link", { name: "Settings" })).toHaveAttribute(
+      "href",
+      "/ui/admin/test/settings",
+    );
+
+    // Commits: the tree header's "N commits" link.
+    expect(screen.getByRole("link", { name: /\d+\+? commits?$/ })).toHaveAttribute(
+      "href",
+      "/ui/admin/test/commits",
+    );
+
+    // Branches and Tags: the branch/tag switcher's own footer.
+    fireEvent.click(screen.getByRole("button", { name: "Switch branches or tags" }));
+    expect(screen.getByRole("link", { name: "View all branches" })).toHaveAttribute(
+      "href",
+      "/ui/admin/test/branches",
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "Tags" }));
+    expect(screen.getByRole("link", { name: "View all tags" })).toHaveAttribute(
+      "href",
+      "/ui/admin/test/tags",
+    );
+
+    // Activity and Releases: the About sidebar.
+    const about = screen.getByRole("complementary", { name: "About" });
+    expect(within(about).getByRole("link", { name: "Activity" })).toHaveAttribute(
+      "href",
+      "/ui/admin/test/activity",
+    );
+    expect(within(about).getByRole("link", { name: "Releases" })).toHaveAttribute(
+      "href",
+      "/ui/admin/test/releases",
+    );
+    // Deployments hung off the removed row's admin overflow and would
+    // otherwise have no entry point at all.
+    expect(within(about).getByRole("link", { name: "Deployments" })).toHaveAttribute(
+      "href",
+      "/ui/admin/test/deployments",
     );
   });
 });
@@ -429,7 +461,7 @@ describe("RepoDetailPage About sidebar", () => {
 describe("repository detail journeys", () => {
   it("renders a commit with its summary and patch", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL) => routedFetch(url));
-    renderPage("/ui/repos/admin/test/commits/abc123");
+    renderPage("/ui/admin/test/commits/abc123");
 
     expect(await screen.findByRole("heading", { name: "Initial commit" })).toBeInTheDocument();
     expect(screen.getByText("2 changes")).toBeInTheDocument();
@@ -449,7 +481,7 @@ describe("repository detail journeys", () => {
       }
       return routedFetch(url);
     });
-    renderPage("/ui/repos/admin/test/commits/abc123");
+    renderPage("/ui/admin/test/commits/abc123");
     expect(await screen.findByText("1 parent")).toBeInTheDocument();
     expect(screen.getByText("9999999")).toBeInTheDocument();
   });
@@ -464,7 +496,7 @@ describe("repository detail journeys", () => {
       }
       return routedFetch(url);
     });
-    renderPage("/ui/repos/admin/test/commits/abc123");
+    renderPage("/ui/admin/test/commits/abc123");
 
     fireEvent.change(await screen.findByLabelText("commit comment"), { target: { value: "nice" } });
     fireEvent.click(screen.getByRole("button", { name: "Comment" }));
@@ -491,7 +523,7 @@ describe("repository detail journeys", () => {
       }
       return routedFetch(url);
     });
-    renderPage("/ui/repos/admin/test/commits/abc123");
+    renderPage("/ui/admin/test/commits/abc123");
 
     fireEvent.change(await screen.findByLabelText("status context"), { target: { value: "ci/build" } });
     fireEvent.click(screen.getByRole("button", { name: "Create status" }));
@@ -522,7 +554,7 @@ describe("repository detail journeys", () => {
       if (u.endsWith("/api/v3/user")) return Promise.resolve(jsonResponse({ login: "admin" }));
       return routedFetch(url);
     });
-    renderPage("/ui/repos/admin/test/commits/abc123");
+    renderPage("/ui/admin/test/commits/abc123");
 
     fireEvent.click(await screen.findByRole("button", { name: "add reaction" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "react with heart" }));
@@ -555,21 +587,21 @@ describe("repository detail journeys", () => {
       }
       return routedFetch(url);
     });
-    renderPage("/ui/repos/admin/test/commits/abc123");
+    renderPage("/ui/admin/test/commits/abc123");
 
     const link = await screen.findByRole("link", { name: /#7 Add feature/ });
-    expect(link).toHaveAttribute("href", "/ui/repos/admin/test/pulls/7");
+    expect(link).toHaveAttribute("href", "/ui/admin/test/pulls/7");
   });
 
   it("renders a repository file at its durable URL with Raw + History controls", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL) => routedFetch(url));
-    renderPage("/ui/repos/admin/test/blob/main/README.md");
+    renderPage("/ui/admin/test/blob/main/README.md");
 
     // Per-segment breadcrumbs: repo root link + the current file plain.
     const crumbs = await screen.findByRole("navigation", { name: "Breadcrumb" });
     expect(within(crumbs).getByRole("link", { name: "test" })).toHaveAttribute(
       "href",
-      "/ui/repos/admin/test/tree/main",
+      "/ui/admin/test/tree/main",
     );
     expect(within(crumbs).getByText("README.md")).toHaveAttribute("aria-current", "page");
     expect(await screen.findByText(/extra detail/)).toBeInTheDocument();
@@ -577,7 +609,7 @@ describe("repository detail journeys", () => {
     expect(screen.getByRole("button", { name: "View raw file" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "History" })).toHaveAttribute(
       "href",
-      "/ui/repos/admin/test/commits?path=README.md&sha=main",
+      "/ui/admin/test/commits?path=README.md&sha=main",
     );
   });
 
@@ -592,7 +624,7 @@ describe("repository detail journeys", () => {
       if (u.endsWith("/repos/admin/test")) return Promise.resolve(jsonResponse({ ...repoData, fork: true }));
       return routedFetch(url);
     });
-    renderPage("/ui/repos/admin/test");
+    renderPage("/ui/admin/test");
 
     fireEvent.click(await screen.findByRole("button", { name: "Sync fork" }));
     await waitFor(() => {
@@ -626,7 +658,7 @@ describe("RepoDetailPage activity", () => {
       }
       return routedFetch(url);
     });
-    renderPage("/ui/repos/admin/test/activity");
+    renderPage("/ui/admin/test/activity");
 
     // the activity row: actor login, "pushed to" label, and short ref
     expect(await screen.findByText("octocat")).toBeInTheDocument();
@@ -639,7 +671,7 @@ describe("RepoDetailPage activity", () => {
 describe("RepoDetailPage file editing", () => {
   it("edits a file through the contents API", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL) => routedFetch(url));
-    renderPage("/ui/repos/admin/test/blob/main/README.md");
+    renderPage("/ui/admin/test/blob/main/README.md");
     fireEvent.click(await screen.findByRole("button", { name: /^edit$/i }));
     const editor = await screen.findByLabelText(/edit README\.md/i);
     fireEvent.change(editor, { target: { value: "# changed" } });
@@ -658,7 +690,7 @@ describe("RepoDetailPage file editing", () => {
 
   it("deletes a file after confirmation", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL) => routedFetch(url));
-    renderPage("/ui/repos/admin/test/blob/main/README.md");
+    renderPage("/ui/admin/test/blob/main/README.md");
     fireEvent.click(await screen.findByRole("button", { name: /delete file/i }));
     fireEvent.click(await screen.findByRole("button", { name: /^delete$/i }));
     await waitFor(() => {
@@ -671,7 +703,7 @@ describe("RepoDetailPage file editing", () => {
 
   it("creates a new file from the code view", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL) => routedFetch(url));
-    renderPage("/ui/repos/admin/test");
+    renderPage("/ui/admin/test");
     fireEvent.click(await screen.findByRole("button", { name: /add file/i }));
     fireEvent.change(await screen.findByLabelText(/file path/i), { target: { value: "NEW.md" } });
     fireEvent.change(screen.getByLabelText(/contents/i), { target: { value: "hello" } });
@@ -691,7 +723,7 @@ describe("RepoDetailPage file editing", () => {
 describe("RepoDetailPage refs", () => {
   it("creates a branch from the branches tab", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL) => routedFetch(url));
-    renderPage("/ui/repos/admin/test/branches");
+    renderPage("/ui/admin/test/branches");
     fireEvent.click(await screen.findByRole("button", { name: /new branch/i }));
     fireEvent.change(await screen.findByLabelText(/branch name/i), { target: { value: "feature/x" } });
     fireEvent.click(screen.getByRole("button", { name: /create branch/i }));
@@ -721,7 +753,7 @@ describe("RepoDetailPage refs", () => {
       }
       return routedFetch(url);
     });
-    renderPage("/ui/repos/admin/test/branches");
+    renderPage("/ui/admin/test/branches");
     fireEvent.click(await screen.findByRole("button", { name: "Delete branch feature/y" }));
     fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
     await waitFor(() => {
@@ -734,7 +766,7 @@ describe("RepoDetailPage refs", () => {
 
   it("creates a tag from the tags tab", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL) => routedFetch(url));
-    renderPage("/ui/repos/admin/test/tags");
+    renderPage("/ui/admin/test/tags");
     fireEvent.click(await screen.findByRole("button", { name: /new tag/i }));
     fireEvent.change(await screen.findByLabelText(/tag name/i), { target: { value: "v1.0.0" } });
     fireEvent.click(screen.getByRole("button", { name: /create tag/i }));
@@ -769,13 +801,13 @@ describe("RepoDetailPage refs", () => {
       if (u.split("?")[0]!.endsWith("/repos/admin/tagrepo/releases")) return Promise.resolve(jsonResponse(releasesData));
       return Promise.resolve(jsonResponse([]));
     });
-    renderPage("/ui/repos/admin/tagrepo/tags");
+    renderPage("/ui/admin/tagrepo/tags");
 
     expect(await screen.findByText("v1.0.0")).toBeInTheDocument();
     // sha column links to the commit page
     expect(await screen.findByRole("link", { name: "tagsha1" })).toHaveAttribute(
       "href",
-      "/ui/repos/admin/tagrepo/commits/tagsha1234567",
+      "/ui/admin/tagrepo/commits/tagsha1234567",
     );
     // creation date resolved from the tagged commit
     await waitFor(() => {
@@ -784,7 +816,7 @@ describe("RepoDetailPage refs", () => {
     // a release whose tag_name matches links through
     expect(screen.getByRole("link", { name: "Release" })).toHaveAttribute(
       "href",
-      "/ui/repos/admin/tagrepo/releases/1",
+      "/ui/admin/tagrepo/releases/1",
     );
     expect(screen.getByRole("link", { name: "zip" })).toHaveAttribute("href", "/z");
   });
@@ -842,14 +874,14 @@ describe("RepoDetailPage file table metadata", () => {
       if (u.includes("/contents/")) return Promise.resolve(jsonResponse(contentsData));
       return Promise.resolve(jsonResponse([]));
     });
-    renderPage("/ui/repos/admin/filetab");
+    renderPage("/ui/admin/filetab");
 
     // Each row carries the message of the last commit touching that path.
     const readmeMsg = await screen.findByRole("link", { name: "touch readme" });
-    expect(readmeMsg).toHaveAttribute("href", "/ui/repos/admin/filetab/commits/aaa1111");
+    expect(readmeMsg).toHaveAttribute("href", "/ui/admin/filetab/commits/aaa1111");
     expect(await screen.findByRole("link", { name: "add src" })).toHaveAttribute(
       "href",
-      "/ui/repos/admin/filetab/commits/bbb2222",
+      "/ui/admin/filetab/commits/bbb2222",
     );
     // and a relative age cell (a <time> element next to the message).
     await waitFor(() => {
@@ -871,13 +903,13 @@ describe("RepoDetailPage file table metadata", () => {
       if (u.includes("/contents/")) return Promise.resolve(jsonResponse(contentsData));
       return Promise.resolve(jsonResponse([]));
     });
-    renderPage("/ui/repos/admin/subdir/tree/main/src");
+    renderPage("/ui/admin/subdir/tree/main/src");
 
     // The banner surfaces the directory's own latest commit, not the repo's.
     expect(await screen.findByText(/src only change/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /History/ })).toHaveAttribute(
       "href",
-      "/ui/repos/admin/subdir/commits?path=src",
+      "/ui/admin/subdir/commits?path=src",
     );
   });
 });
@@ -900,7 +932,7 @@ describe("RepoDetailPage ref switcher", () => {
       if (u.includes("/contents/")) return Promise.resolve(jsonResponse(contentsData));
       return Promise.resolve(jsonResponse([]));
     });
-    renderPage("/ui/repos/admin/refsw");
+    renderPage("/ui/admin/refsw");
 
     const trigger = await screen.findByRole("button", { name: "Switch branches or tags" });
     expect(trigger).toHaveTextContent("main");
@@ -938,7 +970,7 @@ describe("RepoDetailPage commits grouping", () => {
       }
       return Promise.resolve(jsonResponse([]));
     });
-    renderPage("/ui/repos/admin/grouped/commits");
+    renderPage("/ui/admin/grouped/commits");
 
     await screen.findByRole("link", { name: "second" });
     // Two distinct day groups.
@@ -947,7 +979,7 @@ describe("RepoDetailPage commits grouping", () => {
     expect(screen.getByRole("button", { name: "Copy full SHA for sha1111" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Browse repository at sha1111" })).toHaveAttribute(
       "href",
-      "/ui/repos/admin/grouped/tree/sha1111111",
+      "/ui/admin/grouped/tree/sha1111111",
     );
     // relative dates via <time>
     expect(screen.getByRole("link", { name: "second" }).closest("div")!.parentElement!.querySelector("time")).not.toBeNull();
@@ -996,7 +1028,7 @@ describe("RepoDetailPage branches sections", () => {
       if (u.includes("/commits?")) return Promise.resolve(jsonResponse(commitsData));
       return Promise.resolve(jsonResponse([]));
     });
-    renderPage("/ui/repos/admin/brepo/branches");
+    renderPage("/ui/admin/brepo/branches");
 
     // stale = no commit in 3 months
     await screen.findByText("Stale branches");
@@ -1011,7 +1043,7 @@ describe("RepoDetailPage branches sections", () => {
     // per-row New pull request → compare route
     expect(screen.getAllByRole("link", { name: "New pull request" })[0]).toHaveAttribute(
       "href",
-      "/ui/repos/admin/brepo/compare/main...fresh",
+      "/ui/admin/brepo/compare/main...fresh",
     );
     // author + relative time from the head commit
     expect(within(stale).getByText("bob")).toBeInTheDocument();
@@ -1036,11 +1068,11 @@ describe("RepoComparePage", () => {
       }
       return Promise.resolve(jsonResponse([]));
     });
-    renderPage("/ui/repos/admin/ctest/compare/main...feature");
+    renderPage("/ui/admin/ctest/compare/main...feature");
 
     const createPr = await screen.findByRole("link", { name: "Create pull request" });
     // Contract for the pulls page create flow: ?compare={base}...{head}.
-    expect(createPr).toHaveAttribute("href", "/ui/repos/admin/ctest/pulls?compare=main...feature");
+    expect(createPr).toHaveAttribute("href", "/ui/admin/ctest/pulls?compare=main...feature");
     // colored diff rows instead of a monochrome <pre>
     const hunkRow = screen.getByText("@@ -1 +1,2 @@").parentElement!;
     expect(hunkRow.getAttribute("style")).toMatch(/color-mix/);
@@ -1064,7 +1096,7 @@ describe("RepoFilePage content types", () => {
       }
       return Promise.resolve(jsonResponse([]));
     });
-    const { container } = renderPage("/ui/repos/admin/blobber/blob/main/src/app.ts");
+    const { container } = renderPage("/ui/admin/blobber/blob/main/src/app.ts");
 
     const line2 = await screen.findByRole("link", { name: "Line 2" });
     expect(line2).toHaveAttribute("href", "#L2");
@@ -1079,13 +1111,13 @@ describe("RepoFilePage content types", () => {
     const crumbs = screen.getByRole("navigation", { name: "Breadcrumb" });
     expect(within(crumbs).getByRole("link", { name: "src" })).toHaveAttribute(
       "href",
-      "/ui/repos/admin/blobber/tree/main/src",
+      "/ui/admin/blobber/tree/main/src",
     );
   });
 
   it("renders markdown blobs with a Preview default and a Code tab", async () => {
     mockFetch.mockImplementation((url: RequestInfo | URL) => routedFetch(url));
-    renderPage("/ui/repos/admin/test/blob/main/README.md");
+    renderPage("/ui/admin/test/blob/main/README.md");
 
     // Preview is the default: markdown renders as HTML.
     expect(await screen.findByRole("heading", { name: "test" })).toBeInTheDocument();
@@ -1107,7 +1139,7 @@ describe("RepoFilePage content types", () => {
       }
       return Promise.resolve(jsonResponse([]));
     });
-    renderPage("/ui/repos/admin/imager/blob/main/logo.png");
+    renderPage("/ui/admin/imager/blob/main/logo.png");
 
     const img = await screen.findByRole("img", { name: "logo.png" });
     expect(img.getAttribute("src")).toBe("data:image/png;base64,iVBORw0KGgo=");
@@ -1128,7 +1160,7 @@ describe("RepoFilePage content types", () => {
       }
       return Promise.resolve(jsonResponse([]));
     });
-    renderPage("/ui/repos/admin/binrepo/blob/main/data.bin");
+    renderPage("/ui/admin/binrepo/blob/main/data.bin");
 
     expect(await screen.findByText(/Binary file not shown/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "View raw" })).toHaveAttribute("download", "data.bin");
@@ -1156,7 +1188,7 @@ describe("RepoDetailPage contributors sidebar", () => {
     expect(await within(about).findByRole("link", { name: "alice" })).toHaveAttribute("href", "/ui/alice");
     expect(within(about).getByRole("link", { name: "Contributors 2" })).toHaveAttribute(
       "href",
-      "/ui/repos/admin/test/insights",
+      "/ui/admin/test/insights",
     );
   });
 });
@@ -1284,7 +1316,7 @@ describe("RepoDetailPage read-only viewer gating", () => {
       }
       return viewerFetch(url);
     });
-    renderPage("/ui/repos/admin/test/branches");
+    renderPage("/ui/admin/test/branches");
     await screen.findByText("feature/y");
 
     expect(screen.queryByRole("button", { name: /new branch/i })).not.toBeInTheDocument();
@@ -1306,7 +1338,7 @@ describe("RepoDetailPage read-only viewer gating", () => {
       }
       return viewerFetch(url);
     });
-    renderPage("/ui/repos/admin/test/tags");
+    renderPage("/ui/admin/test/tags");
     await screen.findByText("v1.0.0");
 
     expect(screen.queryByRole("button", { name: /new tag/i })).not.toBeInTheDocument();
@@ -1317,7 +1349,7 @@ describe("RepoDetailPage read-only viewer gating", () => {
 
   it("hides blob Edit/Delete from a viewer but keeps Raw/History/Blame/permalink", async () => {
     mockFetch.mockImplementation(viewerFetch);
-    renderPage("/ui/repos/admin/test/blob/main/README.md");
+    renderPage("/ui/admin/test/blob/main/README.md");
     await screen.findByRole("button", { name: "Copy permalink" });
 
     expect(screen.getByRole("button", { name: "View raw file" })).toBeInTheDocument();

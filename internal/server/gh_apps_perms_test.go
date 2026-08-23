@@ -172,3 +172,82 @@ func TestValidateRequestedPermissions(t *testing.T) {
 		})
 	}
 }
+
+// TestInstallationPermissionsSerializeInGitHubsVocabulary: bleephub's
+// authorization model has a level above write, and app-permissions declares
+// ["read","write","admin"] for only four of its members. The serialization
+// narrows the level for the members whose enum stops at write; the stored
+// level, which is what every authorization decision reads, is untouched.
+func TestInstallationPermissionsSerializeInGitHubsVocabulary(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	st := s.store
+
+	user := st.LookupUserByLogin("admin")
+	if user == nil {
+		t.Fatal("no admin user")
+	}
+	granted := map[string]string{
+		"metadata":                    "read",
+		"contents":                    "write",
+		"administration":              "admin",
+		"organization_administration": "admin",
+		"organization_hooks":          "admin",
+		"organization_projects":       "admin",
+	}
+	app := st.CreateApp(user.ID, "Admin Level App", "", granted, nil)
+	if app == nil {
+		t.Fatal("could not create the app")
+	}
+	inst := st.CreateInstallation(app.ID, "User", user.ID, user.Login, granted, nil)
+	if inst == nil {
+		t.Fatal("could not install the app")
+	}
+
+	body := decodeJSONWithStatus(t, s.get(t, "/api/v3/user/installations", defaultToken), 200)
+	listed, _ := body["installations"].([]interface{})
+	var served map[string]interface{}
+	for _, raw := range listed {
+		entry, _ := raw.(map[string]interface{})
+		if id, _ := entry["id"].(float64); int(id) == inst.ID {
+			served, _ = entry["permissions"].(map[string]interface{})
+		}
+	}
+	if served == nil {
+		t.Fatalf("installation %d is not listed: %v", inst.ID, body)
+	}
+	// The three members whose documented enum stops at read/write.
+	for _, scope := range []string{"administration", "organization_administration", "organization_hooks"} {
+		if served[scope] != "write" {
+			t.Errorf("%s serialized as %v, want write (app-permissions declares only read/write)", scope, served[scope])
+		}
+	}
+	// organization_projects is one of the four whose enum does carry admin,
+	// so narrowing it would lose information GitHub models.
+	if served["organization_projects"] != "admin" {
+		t.Errorf("organization_projects serialized as %v, want admin", served["organization_projects"])
+	}
+	if served["contents"] != "write" || served["metadata"] != "read" {
+		t.Errorf("unrelated levels changed: %v", served)
+	}
+
+	// The authorization side is unchanged: the stored grant is still admin,
+	// and the downscoping gate — the thing that separates a write grant from
+	// an admin one — still lets an admin-level request through, which a write
+	// grant would refuse.
+	stored := st.GetInstallation(inst.ID)
+	if stored == nil {
+		t.Fatal("installation vanished")
+	}
+	for _, scope := range []string{"administration", "organization_administration", "organization_hooks"} {
+		if stored.Permissions[scope] != "admin" {
+			t.Errorf("stored %s = %q, want admin; the wire narrowing must not reach the store", scope, stored.Permissions[scope])
+		}
+		if _, ok := validateRequestedPermissions(map[string]string{scope: "admin"}, stored.Permissions); !ok {
+			t.Errorf("an admin-level request for %s was refused; the authorization level was weakened", scope)
+		}
+	}
+	if _, ok := validateRequestedPermissions(map[string]string{"contents": "admin"}, stored.Permissions); ok {
+		t.Error("a write grant satisfied an admin-level request; the levels are no longer distinct")
+	}
+}

@@ -25,10 +25,10 @@ function renderPage() {
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={["/ui/repos/admin/csrepo/security/code-scanning"]}>
+      <MemoryRouter initialEntries={["/ui/admin/csrepo/security/code-scanning"]}>
         <Routes>
           <Route
-            path="/ui/repos/:owner/:repo/security/code-scanning"
+            path="/ui/:owner/:repo/security/code-scanning"
             element={<CodeScanningPage />}
           />
         </Routes>

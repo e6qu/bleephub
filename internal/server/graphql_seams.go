@@ -144,3 +144,7 @@ func (a graphqlSeams) ChangedFiles(repo *store.Repo, pr *store.PullRequest, base
 func (a graphqlSeams) MaybeAutoMerge(prID int) {
 	a.s.maybeAutoMergePR(prID)
 }
+
+func (a graphqlSeams) AutoRequestCodeOwners(repo *store.Repo, pr *store.PullRequest, sender *store.User) {
+	a.s.autoRequestCodeOwners(repo, pr, sender)
+}

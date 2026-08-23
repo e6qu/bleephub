@@ -259,7 +259,7 @@ function RepoRow({ repo }: { repo: BleephubRepo }) {
     >
       <div className="flex items-baseline gap-2">
         <Link
-          to={`/ui/repos/${owner}/${name}`}
+          to={`/ui/${owner}/${name}`}
           style={{
             color: "var(--color-accent)",
             fontWeight: 600,

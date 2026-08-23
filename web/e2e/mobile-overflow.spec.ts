@@ -122,26 +122,26 @@ test.beforeAll(async ({ browser }) => {
 const ROUTES: { label: string; route: () => string }[] = [
   { label: "dashboard", route: () => "/ui/" },
   { label: "profile", route: () => `/ui/${seeded.owner}` },
-  { label: "repo-home", route: () => `/ui/repos/${seeded.owner}/${seeded.repo}` },
-  { label: "issues-list", route: () => `/ui/repos/${seeded.owner}/${seeded.repo}/issues` },
+  { label: "repo-home", route: () => `/ui/${seeded.owner}/${seeded.repo}` },
+  { label: "issues-list", route: () => `/ui/${seeded.owner}/${seeded.repo}/issues` },
   {
     label: "issue-detail",
-    route: () => `/ui/repos/${seeded.owner}/${seeded.repo}/issues/${seeded.issueNumber}`,
+    route: () => `/ui/${seeded.owner}/${seeded.repo}/issues/${seeded.issueNumber}`,
   },
   {
     label: "issue-detail-hostile-content",
-    route: () => `/ui/repos/${seeded.owner}/${seeded.repo}/issues/${seeded.stressIssueNumber}`,
+    route: () => `/ui/${seeded.owner}/${seeded.repo}/issues/${seeded.stressIssueNumber}`,
   },
   {
     label: "pull-files",
-    route: () => `/ui/repos/${seeded.owner}/${seeded.repo}/pulls/${seeded.pullNumber}/files`,
+    route: () => `/ui/${seeded.owner}/${seeded.repo}/pulls/${seeded.pullNumber}/files`,
   },
   {
     label: "blob",
-    route: () => `/ui/repos/${seeded.owner}/${seeded.repo}/blob/mobile-feature/WIDE.md`,
+    route: () => `/ui/${seeded.owner}/${seeded.repo}/blob/mobile-feature/WIDE.md`,
   },
-  { label: "discussions", route: () => `/ui/repos/${seeded.owner}/${seeded.repo}/discussions` },
-  { label: "repo-settings", route: () => `/ui/repos/${seeded.owner}/${seeded.repo}/settings` },
+  { label: "discussions", route: () => `/ui/${seeded.owner}/${seeded.repo}/discussions` },
+  { label: "repo-settings", route: () => `/ui/${seeded.owner}/${seeded.repo}/settings` },
   { label: "account-settings", route: () => "/ui/account" },
 ];
 

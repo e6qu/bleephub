@@ -963,17 +963,17 @@ func TestViolationAllowlistIsSingleCopy(t *testing.T) {
 // the thing to fix), and (3) the list only ever shrinks.
 func TestViolationAllowlistInvariants(t *testing.T) {
 	// Ratchet: lower this whenever an entry is removed; a change that raises it
-	// must fail review. The gate ledger may only shrink — the one sanctioned
-	// exception is an owner-signed deliberate deviation. Raised 11→22 by owner
-	// decision 2026-08-11 (ledger PAR-010 + PAR-013) when the gate learned two
-	// new checks: 4xx-body validation surfaced the four git/refs
-	// push-protection members (the feature's bypass contract, kept over
-	// degrading it to the documented plain validation-error), and enum
-	// checking surfaced the seven deliberate model deviations (the
-	// load-bearing `admin` app-permission level on six installation fields,
-	// and fork-PR approval_policy `none` encoding a disabled state GitHub's
-	// enum does not model).
-	const maxAllowlistEntries = 22
+	// must fail review. The gate ledger may only shrink. Lowered 22→11: the
+	// eleven entries that recorded deliberate deviations were conformed in the
+	// emitter instead — the git/refs push-protection 422 now carries the bypass
+	// placeholder in the documented validation-error members, installation
+	// permissions serialize bleephub's internal admin level as the highest
+	// level app-permissions models for those scopes, and fork-PR approval is
+	// switched by require_approval_for_fork_pr_workflows rather than by an
+	// approval_policy member GitHub does not have. What remains is only the
+	// four cases where the vendored description is narrower than GitHub's own
+	// observable behaviour.
+	const maxAllowlistEntries = 11
 
 	data, err := os.ReadFile(allowlistFile)
 	if err != nil {

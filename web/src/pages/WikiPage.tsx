@@ -91,7 +91,7 @@ export function WikiPage() {
       qc.invalidateQueries({ queryKey: ["wiki-page", owner, repo] });
       qc.invalidateQueries({ queryKey: ["wiki-revisions", owner, repo] });
       setEditing(null);
-      navigate(`/ui/repos/${owner}/${repo}/wiki/${encodeURIComponent(saved.slug)}`);
+      navigate(`/ui/${owner}/${repo}/wiki/${encodeURIComponent(saved.slug)}`);
     },
   });
 
@@ -99,7 +99,7 @@ export function WikiPage() {
     mutationFn: (slug: string) => deleteWikiPage(owner, repo, slug),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["wiki-pages", owner, repo] });
-      navigate(`/ui/repos/${owner}/${repo}/wiki`);
+      navigate(`/ui/${owner}/${repo}/wiki`);
     },
   });
 
@@ -199,7 +199,7 @@ function WikiSidebar({
             {pages.map((p) => (
               <li key={p.slug}>
                 <Link
-                  to={`/ui/repos/${owner}/${repo}/wiki/${encodeURIComponent(p.slug)}`}
+                  to={`/ui/${owner}/${repo}/wiki/${encodeURIComponent(p.slug)}`}
                   aria-current={p.slug === activeSlug ? "page" : undefined}
                   style={{
                     display: "block",

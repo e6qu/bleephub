@@ -27,7 +27,7 @@ const GlobalShortcuts = lazy(() =>
 const GlobalNavDrawer = lazy(() =>
   import("./GlobalNavDrawer.js").then((m) => ({ default: m.GlobalNavDrawer })),
 );
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTheme } from "@bleephub/ui-core/hooks";
 import { useDismiss } from "../hooks/useDismiss.js";
 import { useReportError, useToastQueryErrors } from "@bleephub/ui-core/components";
@@ -56,6 +56,7 @@ import {
   StarIcon,
 } from "./octicons.js";
 import { abortPendingRequests, clearToken, fetchCurrentUser, fetchNotifications, isRateLimited } from "../api.js";
+import { accountRoute, matchRepoPath, repoRoute } from "../routes.js";
 import { loginPath, useSignedIn } from "../session.js";
 
 /**
@@ -267,14 +268,63 @@ function Avatar({ login, url, size = 24 }: { login: string; url?: string | undef
   );
 }
 
+/**
+ * github.com's 2023+ global header carries the owner/repo breadcrumb in the
+ * header row itself, immediately after the logo, instead of repeating it as a
+ * page-level bar above the repository tabs.
+ *
+ * The owner's destination depends on whether it is a user or an organization,
+ * which only the repository payload knows. Rather than issue a header-owned
+ * request for it, this subscribes to the very query key the repo pages fill
+ * (`["repo", owner, repo]`) with `skipToken`, so it never fetches: it reads
+ * whatever is cached and re-renders when the page's own fetch lands. Before
+ * that (and for a cold deep link) the owner falls back to the user route,
+ * which is also the correct answer for the overwhelming majority of repos.
+ *
+ * Hidden below `sm`: a phone-width header has no room for it beside the
+ * search box, exactly as github.com drops it at narrow viewports.
+ */
+function RepoBreadcrumb({ owner, repo }: { owner: string; repo: string }) {
+  const { data } = useQuery({ queryKey: ["repo", owner, repo], queryFn: skipToken });
+  const ownerType = (data as { owner?: { type?: string } } | undefined)?.owner?.type ?? "User";
+  const link = {
+    color: "var(--color-fg)",
+    textDecoration: "none",
+    minHeight: "1.625rem",
+    display: "inline-flex",
+    alignItems: "center",
+  } as const;
+  return (
+    <nav
+      aria-label="Repository breadcrumb"
+      className="hidden min-w-0 shrink items-center gap-1.5 sm:flex"
+      style={{ fontSize: "0.9rem" }}
+    >
+      <span aria-hidden style={{ color: "var(--color-fg-subtle)" }}>
+        /
+      </span>
+      <Link to={accountRoute(owner, ownerType)} className="truncate" style={link}>
+        {owner}
+      </Link>
+      <span aria-hidden style={{ color: "var(--color-fg-subtle)" }}>
+        /
+      </span>
+      <Link to={repoRoute(owner, repo)} className="truncate" style={{ ...link, fontWeight: 600 }}>
+        {repo}
+      </Link>
+    </nav>
+  );
+}
+
 export function AppHeader() {
   const navigate = useNavigate();
   const location = useLocation();
-  // Inside a repo route the search box scopes to that repository, like
-  // github.com's header search. Lightweight pathname parse — the header has no
-  // route params of its own.
-  const repoScope = location.pathname.match(/^\/ui\/repos\/([^/]+)\/([^/]+)/);
-  const scopedRepo = repoScope ? `${decodeURIComponent(repoScope[1]!)}/${decodeURIComponent(repoScope[2]!)}` : null;
+  // Inside a repo route the header both scopes its search box to that
+  // repository and shows the owner/repo breadcrumb (github.com's 2023+ global
+  // header). The header has no route params of its own, so the repository is
+  // recovered from the pathname through the shared reserved-word matcher.
+  const repoScope = matchRepoPath(location.pathname);
+  const scopedRepo = repoScope ? `${repoScope.owner}/${repoScope.repo}` : null;
   const queryClient = useQueryClient();
   const reportError = useReportError();
   const { resolvedTheme, toggle } = useTheme("light");
@@ -377,6 +427,8 @@ export function AppHeader() {
               bleephub
             </span>
           </Link>
+
+          {repoScope && <RepoBreadcrumb owner={repoScope.owner} repo={repoScope.repo} />}
 
           <form onSubmit={submitSearch} className="flex min-w-0 flex-1 items-center" style={{ maxWidth: 480 }}>
             <div

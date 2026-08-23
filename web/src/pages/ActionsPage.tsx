@@ -634,7 +634,7 @@ function RunRow({
       </span>
       <div className="min-w-0 flex-1">
         <Link
-          to={`/ui/repos/${owner}/${repo}/actions/runs/${run.id}`}
+          to={`/ui/${owner}/${repo}/actions/runs/${run.id}`}
           className="inline-block"
           style={{
             fontSize: "0.92rem",
@@ -723,7 +723,7 @@ function RunRowMenu({
         >
           <Link
             role="menuitem"
-            to={`/ui/repos/${owner}/${repo}/blob/${encodeURIComponent(run.head_branch || "HEAD")}/${run.path}`}
+            to={`/ui/${owner}/${repo}/blob/${encodeURIComponent(run.head_branch || "HEAD")}/${run.path}`}
             className="block"
             style={{
               padding: "0.4rem 0.6rem",

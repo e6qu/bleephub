@@ -33,7 +33,6 @@ import {
   starRepo,
   unstarRepo,
 } from "../api.js";
-import { accountRoute } from "../routes.js";
 import { useRepoPermissions } from "../hooks/useRepoPermissions.js";
 import { loginPath, useSignedIn } from "../session.js";
 
@@ -42,9 +41,12 @@ import { loginPath, useSignedIn } from "../session.js";
 export type RepoTab = "code" | "issues" | "pulls" | "actions" | "projects-classic" | "wiki" | "discussions" | "insights" | "security" | "settings";
 
 /**
- * Repo context bar: "owner / repo" breadcrumb above the GitHub-style tab
+ * Repo context bar: the Watch / Fork / Star actions above the GitHub-style tab
  * row (Code / Issues / Pull requests). Rendered by the repo pages, which
  * already hold the open-issue / open-PR counts shown on the tab badges.
+ *
+ * The owner/repo breadcrumb deliberately lives in the global header
+ * (AppHeader) rather than here — see G57.
  */
 export function RepoHeader({
   owner,
@@ -60,7 +62,7 @@ export function RepoHeader({
   issueCount?: number | string | undefined;
   prCount?: number | string | undefined;
 }) {
-  const base = `/ui/repos/${owner}/${repo}`;
+  const base = `/ui/${owner}/${repo}`;
   const location = useLocation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -118,7 +120,7 @@ export function RepoHeader({
     mutationFn: () => forkRepo(owner, repo, forkOwner && forkOwner !== currentUser.data?.login ? forkOwner : undefined),
     onSuccess: (created) => {
       setForkOpen(false);
-      navigate(`/ui/repos/${created.full_name}`);
+      navigate(`/ui/${created.full_name}`);
     },
   });
   const actionError = starMutation.error ?? watchMutation.error ?? forkMutation.error;
@@ -126,20 +128,11 @@ export function RepoHeader({
   return (
     <div className="repo-context mb-6">
       <div className="repo-context-inner">
+        {/* G57: the owner/repo breadcrumb is NOT repeated here. github.com's
+            2023+ chrome carries it in the global header row next to the logo,
+            so it lives in AppHeader (route-matched) and this bar keeps only
+            the repository actions above the tab row. */}
         <div className="repo-title-row">
-          <div className="flex min-w-0 items-center gap-1.5" style={{ fontSize: "1.15rem" }}>
-            <RepoIcon size={18} style={{ color: "var(--color-fg-muted)" }} />
-            <Link
-              to={accountRoute(owner, repository.data?.owner?.type ?? "User")}
-              style={{ color: "var(--color-accent)", textDecoration: "none" }}
-            >
-              {owner}
-            </Link>
-            <span style={{ color: "var(--color-fg-muted)" }}>/</span>
-            <Link to={base} style={{ color: "var(--color-accent)", fontWeight: 600, textDecoration: "none" }}>
-              {repo}
-            </Link>
-          </div>
           <div className="repo-actions" aria-label="Repository actions">
             {signedIn ? (
               <>

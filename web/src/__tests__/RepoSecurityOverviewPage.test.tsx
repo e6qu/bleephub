@@ -17,9 +17,9 @@ function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={["/ui/repos/admin/r/security"]}>
+      <MemoryRouter initialEntries={["/ui/admin/r/security"]}>
         <Routes>
-          <Route path="/ui/repos/:owner/:repo/security" element={<RepoSecurityOverviewPage />} />
+          <Route path="/ui/:owner/:repo/security" element={<RepoSecurityOverviewPage />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,

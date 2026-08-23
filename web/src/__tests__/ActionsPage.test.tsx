@@ -27,9 +27,9 @@ function renderPage() {
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={["/ui/repos/admin/test/actions"]}>
+      <MemoryRouter initialEntries={["/ui/admin/test/actions"]}>
         <Routes>
-          <Route path="/ui/repos/:owner/:repo/actions" element={<ActionsPage />} />
+          <Route path="/ui/:owner/:repo/actions" element={<ActionsPage />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -244,7 +244,7 @@ describe("ActionsPage run rows", () => {
     renderPage();
     expect(await screen.findByRole("link", { name: "Fix the flaky test" })).toHaveAttribute(
       "href",
-      "/ui/repos/admin/test/actions/runs/4",
+      "/ui/admin/test/actions/runs/4",
     );
     expect(screen.getByText(/CI #4: push by admin on/)).toBeInTheDocument();
   });
@@ -289,7 +289,7 @@ describe("ActionsPage run rows", () => {
     fireEvent.click(screen.getByRole("button", { name: "Options for run #2" }));
     expect(screen.getByRole("menuitem", { name: "View workflow file" })).toHaveAttribute(
       "href",
-      "/ui/repos/admin/test/blob/main/.github/workflows/ci.yml",
+      "/ui/admin/test/blob/main/.github/workflows/ci.yml",
     );
     mockFetch.mockImplementation((_url: RequestInfo | URL, init?: RequestInit) => {
       if (init?.method === "DELETE") return Promise.resolve(new Response(null, { status: 204 }));

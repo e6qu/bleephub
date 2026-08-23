@@ -18,7 +18,7 @@ test.describe("Error handling / fault injection", () => {
   test("a nonexistent repo's Insights renders a visible error, not a blank page", async ({
     page,
   }) => {
-    await page.goto("/ui/repos/admin/this-repo-does-not-exist-xyz/insights");
+    await page.goto("/ui/admin/this-repo-does-not-exist-xyz/insights");
     await page.waitForLoadState("networkidle");
 
     // The repo breadcrumb (param-driven, no fetch) still renders — the shell

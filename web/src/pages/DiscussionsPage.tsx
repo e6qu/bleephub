@@ -127,7 +127,7 @@ function DiscussionList({ owner, repo }: { owner: string; repo: string }) {
       setNewTitle("");
       setNewBody("");
       setCreateError(null);
-      navigate(`/ui/repos/${owner}/${repo}/discussions/${discussion.number}`);
+      navigate(`/ui/${owner}/${repo}/discussions/${discussion.number}`);
     },
     onError: (err: Error) => setCreateError(err.message),
   });
@@ -170,7 +170,7 @@ function DiscussionList({ owner, repo }: { owner: string; repo: string }) {
             {pinned.map((p) => (
               <Link
                 key={p.number}
-                to={`/ui/repos/${owner}/${repo}/discussions/${p.number}`}
+                to={`/ui/${owner}/${repo}/discussions/${p.number}`}
                 style={{
                   display: "block",
                   border: "1px solid var(--color-border)",
@@ -295,7 +295,7 @@ function DiscussionList({ owner, repo }: { owner: string; repo: string }) {
             {allDiscussions.map((d, i) => (
               <Link
                 key={d.id}
-                to={`/ui/repos/${owner}/${repo}/discussions/${d.number}`}
+                to={`/ui/${owner}/${repo}/discussions/${d.number}`}
                 className="flex items-start gap-2.5"
                 style={{
                   padding: "0.7rem 1rem",
@@ -482,7 +482,7 @@ function DiscussionDetail({
     mutationFn: () => deleteDiscussion(discussion!.id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["discussions", owner, repo] });
-      navigate(`/ui/repos/${owner}/${repo}/discussions`);
+      navigate(`/ui/${owner}/${repo}/discussions`);
     },
   });
 

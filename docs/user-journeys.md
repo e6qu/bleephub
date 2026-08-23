@@ -10,11 +10,11 @@ GitHub-compatible REST contract.
 | Journey | Browser surface | Backing API |
 | --- | --- | --- |
 | Discover, create, filter, and open repositories | `/ui/`, `/ui/repos`, `/ui/orgs/:org/repos` | repositories REST API |
-| Browse branches and directories, including live protection state and a direct settings path | `/ui/repos/:owner/:repo` | contents, branches, branch-protection, ruleset, and Git data APIs |
-| Open a file at a ref | `/ui/repos/:owner/:repo/blob/:ref/*` | contents API |
+| Browse branches and directories, including live protection state and a direct settings path | `/ui/:owner/:repo` | contents, branches, branch-protection, ruleset, and Git data APIs |
+| Open a file at a ref | `/ui/:owner/:repo/blob/:ref/*` | contents API |
 | Read raw Git trees by tree SHA, commit SHA, branch, full ref, or tag | repository clients and SDKs | Git trees API with recursive walking, tag peeling, canonical object URLs, sizes, and response shapes |
 | Create and inspect blobs, trees, commits, tags, and references | repository clients and SDKs | Git database APIs with GitHub-compatible validation and typed object links |
-| Browse commits and inspect a patch | `/ui/repos/:owner/:repo/commits`, `/commits/:sha` | commits API |
+| Browse commits and inspect a patch | `/ui/:owner/:repo/commits`, `/commits/:sha` | commits API |
 | Clone over HTTPS or SSH | repository **Code** menu | smart HTTP and configured SSH Git transports |
 | Create and inspect releases | `/releases`, `/releases/new`, `/releases/:releaseId` | releases API |
 | Star, watch, fork, and inspect each audience | repository header and `/stargazers`, `/watchers`, `/forks` | starring, watching, and forks APIs |
@@ -25,9 +25,9 @@ GitHub-compatible REST contract.
 
 | Journey | Browser surface |
 | --- | --- |
-| List, create, filter, and inspect issues; manage labels and milestones | `/ui/repos/:owner/:repo/issues`, `/labels`, `/milestones` |
-| List, create, review, and merge pull requests | `/ui/repos/:owner/:repo/pulls` and `/pulls/:number` |
-| List, create, and participate in discussions | `/ui/repos/:owner/:repo/discussions` |
+| List, create, filter, and inspect issues; manage labels and milestones | `/ui/:owner/:repo/issues`, `/labels`, `/milestones` |
+| List, create, review, and merge pull requests | `/ui/:owner/:repo/pulls` and `/pulls/:number` |
+| List, create, and participate in discussions | `/ui/:owner/:repo/discussions` |
 | Inspect workflows, dispatch them, and inspect/cancel/rerun runs | `/ui/workflows`, repository `/actions`, and `/actions/runs/:runId` |
 | Read live/completed job logs and rendered step summaries | repository `/actions/runs/:runId` |
 | Download or delete run artifacts | run detail and repository `/actions?view=artifacts` |

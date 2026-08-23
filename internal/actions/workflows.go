@@ -1195,8 +1195,11 @@ func (s *Engine) startPendingConcurrencyWorkflow(group string) {
 // workflowNeedsForkPRApproval reports whether the run must hold in
 // action_required for a maintainer's approval: it was triggered by a
 // pull_request event whose head repository is a fork of (differs from)
-// the base repository, and the base repository's fork-PR
-// contributor-approval policy requires approval.
+// the base repository, and the base repository demands approval before a
+// fork pull request's workflows run. That switch is
+// require_approval_for_fork_pr_workflows on the repository's fork-PR
+// workflow settings; the separate approval_policy names which contributors
+// approval is demanded of, and has no "approval is never required" member.
 func workflowNeedsForkPRApproval(wf *store.Workflow, st *store.Store) bool {
 	if wf.EventName != "pull_request" || wf.RepoFullName == "" || wf.EventPayload == nil {
 		return false
@@ -1204,8 +1207,8 @@ func workflowNeedsForkPRApproval(wf *store.Workflow, st *store.Store) bool {
 	if !pullRequestIsFromFork(wf.EventPayload, wf.RepoFullName) {
 		return false
 	}
-	policy := st.GetRepoActionsPermissions(wf.RepoFullName).ForkPRContributorApproval
-	return policy != "" && policy != "none"
+	settings := st.GetRepoActionsPermissions(wf.RepoFullName).ForkPRWorkflowsPrivateRepos
+	return settings != nil && settings.RequireApprovalForForkPRWorkflows
 }
 
 // NormalizeResult converts runner result strings to consistent format.

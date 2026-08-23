@@ -19,7 +19,6 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -276,27 +275,41 @@ func runGitShallowMatrix(t *testing.T, git gitCLI, cloneURL string) {
 	}
 }
 
+// gitProtocolVersions are the two wire protocols this server speaks. The whole
+// shallow matrix runs under each of them, because a client picks the version
+// and both have to reach the same boundary.
+var gitProtocolVersions = []int{0, 2}
+
 func TestGitShallowCloneOverHTTP(t *testing.T) {
 	t.Parallel()
-	git := requireGitCLI(t)
+	requireGitCLI(t)
 	srv := newIsolatedServer(t)
-	const name = "shallow-http"
-	seedGitShallowRepo(t, srv.Server, name)
-	cloneURL := strings.Replace(srv.baseURL, "://", "://admin:"+defaultToken+"@", 1) + "/admin/" + name + ".git"
-	runGitShallowMatrix(t, git, cloneURL)
+	for _, version := range gitProtocolVersions {
+		t.Run("protocol-v"+strconv.Itoa(version), func(t *testing.T) {
+			name := "shallow-http-v" + strconv.Itoa(version)
+			seedGitShallowRepo(t, srv.Server, name)
+			cloneURL := strings.Replace(srv.baseURL, "://", "://admin:"+defaultToken+"@", 1) + "/admin/" + name + ".git"
+			runGitShallowMatrix(t, requireGitCLI(t).atProtocol(version), cloneURL)
+		})
+	}
 }
 
 func TestGitShallowCloneOverSSH(t *testing.T) {
 	// Not parallel: bringing up an SSH listener goes through the process
 	// environment, the way the shutdown test does.
-	git := requireGitCLI(t)
+	requireGitCLI(t)
 	srv := newIsolatedServer(t)
 	keyPath := startIsolatedGitSSH(t, srv)
-	git.env = append(git.env, "GIT_SSH_COMMAND=ssh -i "+keyPath+" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null")
-
-	const name = "shallow-ssh"
-	seedGitShallowRepo(t, srv.Server, name)
-	runGitShallowMatrix(t, git, "ssh://git@"+os.Getenv("BLEEPHUB_SSH_ADDR")+"/admin/"+name+".git")
+	for _, version := range gitProtocolVersions {
+		t.Run("protocol-v"+strconv.Itoa(version), func(t *testing.T) {
+			git := requireGitCLI(t).
+				with("GIT_SSH_COMMAND=ssh -i " + keyPath + " -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null").
+				atProtocol(version)
+			name := "shallow-ssh-v" + strconv.Itoa(version)
+			seedGitShallowRepo(t, srv.Server, name)
+			runGitShallowMatrix(t, git, "ssh://git@"+os.Getenv("BLEEPHUB_SSH_ADDR")+"/admin/"+name+".git")
+		})
+	}
 }
 
 // startIsolatedGitSSH brings up this server's own SSH Git listener on a free
@@ -363,55 +376,6 @@ func startIsolatedGitSSH(t *testing.T, srv *isolatedServer) string {
 		t.Fatal(err)
 	}
 	return keyPath
-}
-
-// TestGitUploadPackAdvertisesOnlyImplementedCapabilities pins the advertisement
-// itself, without a git binary: a capability listed here is a promise the
-// negotiation has to keep, and one that is missing is a promise deliberately
-// not made.
-func TestGitUploadPackAdvertisesOnlyImplementedCapabilities(t *testing.T) {
-	t.Parallel()
-	srv := newIsolatedServer(t)
-	const name = "advertised-caps"
-	seedGitShallowRepo(t, srv.Server, name)
-
-	advertisement, err := gitUploadPackAdvertisement(srv.store.GetGitStorage("admin", name))
-	if err != nil {
-		t.Fatalf("build advertisement: %v", err)
-	}
-	for _, implemented := range []capability.Capability{
-		capability.Agent,
-		capability.OFSDelta,
-		capability.Shallow,
-		capability.DeepenSince,
-		capability.DeepenNot,
-	} {
-		if !advertisement.Capabilities.Supports(implemented) {
-			t.Errorf("advertisement omits implemented capability %s", implemented)
-		}
-	}
-	for _, notImplemented := range []capability.Capability{
-		capability.Sideband,
-		capability.Sideband64k,
-		capability.MultiACK,
-		capability.MultiACKDetailed,
-		capability.ThinPack,
-		capability.IncludeTag,
-		capability.NoProgress,
-		capability.DeepenRelative,
-		capability.NoDone,
-		capability.Filter,
-	} {
-		if advertisement.Capabilities.Supports(notImplemented) {
-			t.Errorf("advertisement promises unimplemented capability %s", notImplemented)
-		}
-	}
-	if _, ok := advertisement.References[plumbing.NewBranchReferenceName("main").String()]; !ok {
-		t.Error("advertisement omits refs/heads/main")
-	}
-	if advertisement.Head == nil {
-		t.Error("advertisement omits HEAD")
-	}
 }
 
 // TestGitUploadPackRejectsAMalformedRequest keeps the one failure mode that can

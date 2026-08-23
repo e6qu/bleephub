@@ -119,7 +119,7 @@ describe("project-card routing fidelity", () => {
       projectCardContentHref(
         "https://bleephub.test/api/v3/repos/oak/repo/issues/27",
       ),
-    ).toBe("/ui/repos/oak/repo/issues/27");
+    ).toBe("/ui/oak/repo/issues/27");
   });
 });
 
@@ -150,8 +150,8 @@ describe("security journey fidelity", () => {
     });
 
     renderAt(
-      "/ui/repos/:owner/:repo/settings/branches",
-      "/ui/repos/admin/repo/settings/branches",
+      "/ui/:owner/:repo/settings/branches",
+      "/ui/admin/repo/settings/branches",
       <BranchProtectionPage />,
     );
 
@@ -210,8 +210,8 @@ describe("security journey fidelity", () => {
     });
 
     renderAt(
-      "/ui/repos/:owner/:repo/settings/branches",
-      "/ui/repos/admin/repo/settings/branches",
+      "/ui/:owner/:repo/settings/branches",
+      "/ui/admin/repo/settings/branches",
       <BranchProtectionPage />,
     );
 
@@ -276,8 +276,8 @@ describe("security journey fidelity", () => {
     });
 
     renderAt(
-      "/ui/repos/:owner/:repo/security/dependabot",
-      "/ui/repos/admin/repo/security/dependabot",
+      "/ui/:owner/:repo/security/dependabot",
+      "/ui/admin/repo/security/dependabot",
       <DependabotPage />,
     );
 
@@ -316,8 +316,8 @@ describe("security journey fidelity", () => {
     });
 
     renderAt(
-      "/ui/repos/:owner/:repo/security/secret-scanning",
-      "/ui/repos/admin/repo/security/secret-scanning",
+      "/ui/:owner/:repo/security/secret-scanning",
+      "/ui/admin/repo/security/secret-scanning",
       <SecretScanningPage />,
     );
 
@@ -377,8 +377,8 @@ describe("security journey fidelity", () => {
     });
 
     renderAt(
-      "/ui/repos/:owner/:repo/security/advisories",
-      "/ui/repos/admin/repo/security/advisories",
+      "/ui/:owner/:repo/security/advisories",
+      "/ui/admin/repo/security/advisories",
       <SecurityAdvisoriesPage />,
     );
 

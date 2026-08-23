@@ -73,7 +73,8 @@ func (stubPulls) BranchProtectionRuleForPR(*store.Repo, string) map[string]inter
 func (stubPulls) ChangedFiles(*store.Repo, *store.PullRequest, string) ([]map[string]interface{}, error) {
 	return nil, nil
 }
-func (stubPulls) MaybeAutoMerge(int) {}
+func (stubPulls) MaybeAutoMerge(int)                                                 {}
+func (stubPulls) AutoRequestCodeOwners(*store.Repo, *store.PullRequest, *store.User) {}
 
 // newStubbedResolver is the test-package analogue of the server's
 // newGraphQLResolver: a resolver over a seeded store with the no-op seams.

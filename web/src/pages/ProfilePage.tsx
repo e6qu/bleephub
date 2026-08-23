@@ -488,7 +488,7 @@ function PinnedCard({ repo }: { repo: BleephubRepo }) {
   return (
     <div style={{ border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)", padding: "0.85rem 1rem" }}>
       <Link
-        to={`/ui/repos/${owner}/${name}`}
+        to={`/ui/${owner}/${name}`}
         className="inline-flex items-center gap-1"
         style={{ color: "var(--color-accent)", fontWeight: 600, fontSize: "0.9rem", textDecoration: "none" }}
       >
@@ -606,7 +606,7 @@ function ActivityRow({ event }: { event: GithubUserEvent }) {
       <span style={{ color: "var(--color-fg)" }}>{describeEvent(event)}</span>
       {repo && (
         <Link
-          to={`/ui/repos/${repo}`}
+          to={`/ui/${repo}`}
           style={{ color: "var(--color-accent)", textDecoration: "none", marginLeft: "auto" }}
         >
           {repo}
@@ -812,7 +812,7 @@ function ProfileRepoRow({ repo }: { repo: BleephubRepo }) {
     <li style={{ padding: "0.9rem 0", borderBottom: "1px solid var(--color-border)" }}>
       <div className="flex items-center gap-2">
         <Link
-          to={`/ui/repos/${owner}/${name}`}
+          to={`/ui/${owner}/${name}`}
           style={{ color: "var(--color-accent)", fontWeight: 600, fontSize: "1rem", textDecoration: "none" }}
         >
           {repo.name}

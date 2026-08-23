@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -334,6 +335,146 @@ func (st *Store) DeleteLoginSessionsForUser(userID int) error {
 	}
 	st.Mu.Unlock()
 	return nil
+}
+
+// LoginSessionSummary is one row of the account's "active sessions" list. It
+// carries no credential: the storage key, the CSRF token and the OpenID
+// Connect ID token all stay inside the store, and Handle — a value drawn
+// independently of the cookie — is what the UI revokes by.
+type LoginSessionSummary struct {
+	Handle     string    `json:"handle"`
+	CreatedAt  time.Time `json:"created_at,omitzero"`
+	ExpiresAt  time.Time `json:"expires_at"`
+	UserAgent  string    `json:"user_agent,omitempty"`
+	SignedInIP string    `json:"signed_in_ip,omitempty"`
+	// Provider names the identity provider that established the session, empty
+	// for a local sign-in.
+	Provider string `json:"provider,omitempty"`
+}
+
+func loginSessionSummary(session *LoginSession) LoginSessionSummary {
+	return LoginSessionSummary{
+		Handle:     session.Handle,
+		CreatedAt:  session.CreatedAt,
+		ExpiresAt:  session.ExpiresAt,
+		UserAgent:  session.UserAgent,
+		SignedInIP: session.SignedInIP,
+		Provider:   session.OIDCProvider,
+	}
+}
+
+// forEachLoginSessionOfUser visits every live session the user holds, newest
+// first is left to the caller. With persistence it reads through the durable
+// per-user index (a bounded prefix scan, STORE-025), so sessions established on
+// another replica are visited too; without it, the in-memory map is the whole
+// truth. Expired rows are skipped rather than reported as active.
+func (st *Store) forEachLoginSessionOfUser(userID int, now time.Time, visit func(storageKey string, session *LoginSession)) error {
+	st.Mu.RLock()
+	persist := st.Persist
+	st.Mu.RUnlock()
+	if persist == nil {
+		st.Mu.RLock()
+		defer st.Mu.RUnlock()
+		for storageKey, session := range st.LoginSessions {
+			if session.UserID != userID || !session.ExpiresAt.After(now) {
+				continue
+			}
+			// Never hand the caller the pointer living in the map.
+			detached := *session
+			visit(storageKey, &detached)
+		}
+		return nil
+	}
+	rows, err := persist.ListPrefix(LoginSessionsByUserBucket, LoginSessionUserIndexPrefix(userID))
+	if err != nil {
+		return fmt.Errorf("list login-session index for user %d: %w", userID, err)
+	}
+	for indexKey := range rows {
+		storageKey := sessionStorageKeyFromIndexKey(indexKey)
+		if storageKey == "" {
+			continue
+		}
+		raw, err := persist.Get(LoginSessionsBucket, storageKey)
+		if err != nil {
+			return fmt.Errorf("read login session: %w", err)
+		}
+		if raw == nil {
+			// A stale index row left by a session dropped elsewhere.
+			continue
+		}
+		var session LoginSession
+		if err := json.Unmarshal(raw, &session); err != nil {
+			return fmt.Errorf("decode login session: %w", err)
+		}
+		if session.UserID != userID || !session.ExpiresAt.After(now) {
+			continue
+		}
+		visit(storageKey, &session)
+	}
+	return nil
+}
+
+// ListLoginSessionsForUser returns the user's live browser sessions, newest
+// first. Sessions predating the handle (there are none in a fresh deployment,
+// but a running process may hold one) are reported with an empty handle and are
+// simply not revocable by name.
+func (st *Store) ListLoginSessionsForUser(userID int, now time.Time) ([]LoginSessionSummary, error) {
+	var summaries []LoginSessionSummary
+	err := st.forEachLoginSessionOfUser(userID, now, func(_ string, session *LoginSession) {
+		summaries = append(summaries, loginSessionSummary(session))
+	})
+	if err != nil {
+		return nil, err
+	}
+	sort.SliceStable(summaries, func(i, j int) bool {
+		if !summaries[i].CreatedAt.Equal(summaries[j].CreatedAt) {
+			return summaries[i].CreatedAt.After(summaries[j].CreatedAt)
+		}
+		return summaries[i].Handle < summaries[j].Handle
+	})
+	return summaries, nil
+}
+
+// DeleteLoginSessionByHandle revokes one of the user's sessions by its public
+// handle. The handle is scoped to the user, so one account cannot revoke
+// another's session by guessing a handle. Reports whether a session matched.
+func (st *Store) DeleteLoginSessionByHandle(userID int, handle string, now time.Time) (bool, error) {
+	if handle == "" {
+		return false, nil
+	}
+	var targets []struct {
+		storageKey string
+	}
+	err := st.forEachLoginSessionOfUser(userID, now, func(storageKey string, session *LoginSession) {
+		if session.Handle == handle {
+			targets = append(targets, struct{ storageKey string }{storageKey})
+		}
+	})
+	if err != nil {
+		return false, err
+	}
+	if len(targets) == 0 {
+		return false, nil
+	}
+	st.Mu.RLock()
+	persist := st.Persist
+	st.Mu.RUnlock()
+	if persist != nil {
+		batch := NewPersistBatch(persist)
+		for _, target := range targets {
+			batch.Delete(LoginSessionsBucket, target.storageKey)
+			batch.Delete(LoginSessionsByUserBucket, loginSessionUserIndexKey(userID, target.storageKey))
+		}
+		if err := batch.Commit(); err != nil {
+			return false, fmt.Errorf("delete login session: %w", err)
+		}
+	}
+	st.Mu.Lock()
+	for _, target := range targets {
+		delete(st.LoginSessions, target.storageKey)
+	}
+	st.Mu.Unlock()
+	return true, nil
 }
 
 // DeleteLoginSessionsForOIDC revokes the browser sessions selected by an

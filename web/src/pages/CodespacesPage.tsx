@@ -331,7 +331,7 @@ function CodespaceDetail({ name }: { name: string }) {
           <CodespaceFact label="Repository">
             {cs.repository ? (
               <Link
-                to={`/ui/repos/${cs.repository.full_name}`}
+                to={`/ui/${cs.repository.full_name}`}
                 style={{ color: "var(--color-accent)", textDecoration: "none" }}
               >
                 {cs.repository.full_name}

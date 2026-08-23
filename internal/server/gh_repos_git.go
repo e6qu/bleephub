@@ -554,6 +554,15 @@ func (s *Server) handleCreateBlob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Push protection scans the DECODED bytes — a base64 upload must not slip
+	// a blocked secret past the same scanner the contents and git/refs writes
+	// use. This operation is one of exactly two GitHub documents the
+	// repository-rule-violation-error on, at 422.
+	if ph := s.createSecretScanningPushProtectionPlaceholder(repo, secretScanningContentMatches(string(data))); ph != nil {
+		writeSecretScanningRuleViolation(w, http.StatusUnprocessableEntity, ph)
+		return
+	}
+
 	hash, err := encodeBlob(stor, data)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -1174,7 +1183,7 @@ func (s *Server) handleUpdateRef(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, refToJSON(stor, s.baseURL(r), repo.FullName, ref))
 }
 
-func (s *Server) scanRefForSecretScanning(repo *store.Repo, stor gitStorage.Storer, ref plumbing.ReferenceName, target plumbing.Hash, baseURL string) error {
+func (s *Server) scanRefForSecretScanning(repo *store.Repo, stor storer.Storer, ref plumbing.ReferenceName, target plumbing.Hash, baseURL string) error {
 	if !strings.HasPrefix(string(ref), "refs/heads/") {
 		return nil
 	}

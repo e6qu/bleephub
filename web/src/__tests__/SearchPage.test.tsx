@@ -195,7 +195,7 @@ describe("SearchPage", () => {
     );
     renderPage("/ui/search?q=retry&type=code");
     const link = await screen.findByRole("link", { name: /admin\/tool/ });
-    expect(link).toHaveAttribute("href", "/ui/repos/admin/tool/blob/trunk/cmd/main.go");
+    expect(link).toHaveAttribute("href", "/ui/admin/tool/blob/trunk/cmd/main.go");
     // The matched span renders as <mark> inside the fragment.
     const mark = screen.getByText("retry", { selector: "mark" });
     expect(mark).toBeInTheDocument();
@@ -240,7 +240,7 @@ describe("SearchPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Commits/ }));
     const commitLink = await screen.findByRole("link", { name: "Fix the flake" });
-    expect(commitLink).toHaveAttribute("href", "/ui/repos/acme/api/commits/deadbeefcafe");
+    expect(commitLink).toHaveAttribute("href", "/ui/acme/api/commits/deadbeefcafe");
   });
 
   it("shows a friendly countdown and auto-retries once when search is throttled", async () => {
