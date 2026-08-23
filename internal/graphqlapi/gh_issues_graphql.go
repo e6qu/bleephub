@@ -2700,6 +2700,24 @@ type graphQLTypeRegistry struct {
 	projectV2DateValueMemo           *graphql.Object
 	projectV2IterationValueMemo      *graphql.Object
 	projectV2ItemFieldValueUnionMemo *graphql.Union
+	// The git object graph: the Node interface and the Repository object both
+	// git objects and refs point back at, the GitObject interface with its
+	// four implementations, and the connections over them.
+	node              *graphql.Interface
+	user              *graphql.Object
+	repository        *graphql.Object
+	gitObject         *graphql.Interface
+	gitObjectTypes    map[string]*graphql.Object
+	gitActor          *graphql.Object
+	language          *graphql.Object
+	commit            *graphql.Object
+	commitEdge        *graphql.Object
+	commitConnections map[string]*graphql.Object
+	tree              *graphql.Object
+	treeEntry         *graphql.Object
+	blob              *graphql.Object
+	tag               *graphql.Object
+	refConnection     *graphql.Object
 }
 
 func (s *Resolver) projectV2GraphQLTypes() *graphql.Object {

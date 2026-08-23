@@ -32,8 +32,6 @@ func (s *Resolver) addRepoFieldsToSchema(
 			"INTERNAL": &graphql.EnumValueConfig{Value: "INTERNAL"},
 		},
 	})
-	refType := s.gqlRefType()
-
 	repoType := graphql.NewObject(graphql.ObjectConfig{
 		Name:       "Repository",
 		Interfaces: []*graphql.Interface{nodeInterface},
@@ -72,23 +70,29 @@ func (s *Resolver) addRepoFieldsToSchema(
 					return r["owner"], nil
 				},
 			},
-			"defaultBranchRef": &graphql.Field{
-				Type: refType,
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					r, ok := p.Source.(map[string]interface{})
-					if !ok {
-						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
-					}
-					branch, _ := r["defaultBranch"].(string)
-					if branch == "" {
-						return nil, nil
-					}
-					return map[string]interface{}{
-						"name":   branch,
-						"prefix": "refs/heads/",
-					}, nil
-				},
-			},
+		},
+	})
+
+	// The Ref and GitObject types point back at Repository, so the repository
+	// type is registered — and the fields that reference them installed —
+	// after it exists.
+	s.graphqlTypes.repository = repoType
+	refType := s.gqlRefType()
+	s.addGitObjectFieldsToRepository(repoType)
+
+	repoType.AddFieldConfig("defaultBranchRef", &graphql.Field{
+		Type: refType,
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			r, ok := p.Source.(map[string]interface{})
+			if !ok {
+				return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
+			}
+			branch, _ := r["defaultBranch"].(string)
+			if branch == "" {
+				return nil, nil
+			}
+			fullName, _ := r["nameWithOwner"].(string)
+			return gitRefSource(fullName, "refs/heads/"+branch, ""), nil
 		},
 	})
 
@@ -290,12 +294,7 @@ func (s *Resolver) addRepoFieldsToSchema(
 			}, nil
 		},
 	})
-	languageType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "Language",
-		Fields: graphql.Fields{
-			"name": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-		},
-	})
+	languageType := s.gqlLanguageType()
 	repoType.AddFieldConfig("primaryLanguage", &graphql.Field{
 		// Backed by Repo.Language (settable via the REST repo surface);
 		// null when unset, exactly like a language-less repo on GitHub.
@@ -1899,11 +1898,11 @@ func decodeCursorStrict(s string) (int, error) {
 }
 
 // gqlRefType returns the shared Ref object type (memoized). Used by
-// Repository.defaultBranchRef and PullRequest.baseRef — matching GitHub, where
-// both fields are the one Ref type. branchProtectionRule resolves from the
-// "branchProtectionRule" key of the source map when the producer embeds one
-// (the PR baseRef path does); sources without the key resolve null, the value
-// real GitHub returns for an unprotected ref.
+// Repository.defaultBranchRef, Repository.ref/refs and PullRequest.baseRef —
+// matching GitHub, where all of them are the one Ref type.
+// branchProtectionRule resolves from the "branchProtectionRule" key of the
+// source map when the producer embeds one; sources without the key resolve
+// null, the value real GitHub returns for an unprotected ref.
 func (s *Resolver) gqlRefType() *graphql.Object {
 	if s.graphqlTypes.ref != nil {
 		return s.graphqlTypes.ref
@@ -1916,7 +1915,8 @@ func (s *Resolver) gqlRefType() *graphql.Object {
 		},
 	})
 	s.graphqlTypes.ref = graphql.NewObject(graphql.ObjectConfig{
-		Name: "Ref",
+		Name:       "Ref",
+		Interfaces: []*graphql.Interface{s.graphqlTypes.node},
 		Fields: graphql.Fields{
 			"name":   &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
 			"prefix": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
@@ -1936,6 +1936,7 @@ func (s *Resolver) gqlRefType() *graphql.Object {
 			},
 		},
 	})
+	s.addGitRefFields(s.graphqlTypes.ref)
 	return s.graphqlTypes.ref
 }
 

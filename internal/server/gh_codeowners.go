@@ -181,7 +181,7 @@ func (s *Server) codeownersFileAtRef(repo *store.Repo, ref string) (content, pat
 		if err != nil || !entry.Mode.IsFile() {
 			continue
 		}
-		blob, err := readBlob(stor, entry.Hash)
+		blob, err := store.ReadGitBlob(stor, entry.Hash)
 		if err != nil {
 			continue
 		}

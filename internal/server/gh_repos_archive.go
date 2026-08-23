@@ -125,7 +125,7 @@ func (s *Server) serveArchive(w http.ResponseWriter, r *http.Request, format, ow
 		return
 	}
 
-	prefix := fmt.Sprintf("%s-%s-%s/", owner, name, shortSHA(hash))
+	prefix := fmt.Sprintf("%s-%s-%s/", owner, name, store.AbbreviatedGitOID(hash.String()))
 	filename := strings.TrimSuffix(prefix, "/") + "." + format
 	when := commit.Committer.When.UTC()
 
@@ -186,7 +186,7 @@ func collectArchiveEntries(stor gitStorage.Storer, tree *object.Tree) ([]archive
 			entries = append(entries, archiveEntry{path: p, mode: filemode.Dir})
 			continue
 		}
-		content, err := readBlob(stor, te.Hash)
+		content, err := store.ReadGitBlob(stor, te.Hash)
 		if err != nil {
 			return nil, fmt.Errorf("read %s: %w", p, err)
 		}

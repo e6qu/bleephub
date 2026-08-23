@@ -173,8 +173,50 @@
         }
       }
     },
+    "Base64String": {
+      "kind": "SCALAR"
+    },
     "BigInt": {
       "kind": "SCALAR"
+    },
+    "Blob": {
+      "kind": "OBJECT",
+      "fields": {
+        "abbreviatedOid": {
+          "type": "String!"
+        },
+        "byteSize": {
+          "type": "Int!"
+        },
+        "commitResourcePath": {
+          "type": "URI!"
+        },
+        "commitUrl": {
+          "type": "URI!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "isBinary": {
+          "type": "Boolean"
+        },
+        "isTruncated": {
+          "type": "Boolean!"
+        },
+        "oid": {
+          "type": "GitObjectID!"
+        },
+        "repository": {
+          "type": "Repository!"
+        },
+        "text": {
+          "type": "String"
+        }
+      },
+      "interfaces": [
+        "GitObject",
+        "Node"
+      ]
     },
     "Boolean": {
       "kind": "SCALAR"
@@ -366,6 +408,18 @@
     "Commit": {
       "kind": "OBJECT",
       "fields": {
+        "abbreviatedOid": {
+          "type": "String!"
+        },
+        "additions": {
+          "type": "Int!"
+        },
+        "author": {
+          "type": "GitActor"
+        },
+        "authoredByCommitter": {
+          "type": "Boolean!"
+        },
         "authoredDate": {
           "type": "DateTime!"
         },
@@ -375,8 +429,51 @@
             "first": "Int"
           }
         },
+        "changedFiles": {
+          "type": "Int!"
+        },
+        "changedFilesIfAvailable": {
+          "type": "Int"
+        },
+        "commitResourcePath": {
+          "type": "URI!"
+        },
+        "commitUrl": {
+          "type": "URI!"
+        },
         "committedDate": {
           "type": "DateTime!"
+        },
+        "committer": {
+          "type": "GitActor"
+        },
+        "deletions": {
+          "type": "Int!"
+        },
+        "file": {
+          "type": "TreeEntry",
+          "args": {
+            "path": "String!"
+          }
+        },
+        "history": {
+          "type": "CommitHistoryConnection!",
+          "args": {
+            "after": "String",
+            "author": "CommitAuthor",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "path": "String",
+            "since": "GitTimestamp",
+            "until": "GitTimestamp"
+          }
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "message": {
+          "type": "String!"
         },
         "messageBody": {
           "type": "String!"
@@ -387,9 +484,53 @@
         "oid": {
           "type": "GitObjectID!"
         },
+        "parents": {
+          "type": "CommitConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "repository": {
+          "type": "Repository!"
+        },
+        "resourcePath": {
+          "type": "URI!"
+        },
         "statusCheckRollup": {
           "type": "StatusCheckRollup"
+        },
+        "tarballUrl": {
+          "type": "URI!"
+        },
+        "tree": {
+          "type": "Tree!"
+        },
+        "treeResourcePath": {
+          "type": "URI!"
+        },
+        "treeUrl": {
+          "type": "URI!"
+        },
+        "url": {
+          "type": "URI!"
+        },
+        "zipballUrl": {
+          "type": "URI!"
         }
+      },
+      "interfaces": [
+        "GitObject",
+        "Node"
+      ]
+    },
+    "CommitAuthor": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "emails": "[String!]",
+        "id": "ID"
       }
     },
     "CommitComment": {
@@ -432,6 +573,51 @@
       "interfaces": [
         "Reactable"
       ]
+    },
+    "CommitConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[CommitEdge]"
+        },
+        "nodes": {
+          "type": "[Commit]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "CommitEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "Commit"
+        }
+      }
+    },
+    "CommitHistoryConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[CommitEdge]"
+        },
+        "nodes": {
+          "type": "[Commit]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
     },
     "ConvertPullRequestToDraftInput": {
       "kind": "INPUT_OBJECT",
@@ -1055,6 +1241,15 @@
     "GitActor": {
       "kind": "OBJECT",
       "fields": {
+        "avatarUrl": {
+          "type": "URI!",
+          "args": {
+            "size": "Int"
+          }
+        },
+        "date": {
+          "type": "GitTimestamp"
+        },
         "email": {
           "type": "String"
         },
@@ -1103,10 +1298,42 @@
         }
       }
     },
+    "GitObject": {
+      "kind": "INTERFACE",
+      "fields": {
+        "abbreviatedOid": {
+          "type": "String!"
+        },
+        "commitResourcePath": {
+          "type": "URI!"
+        },
+        "commitUrl": {
+          "type": "URI!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "oid": {
+          "type": "GitObjectID!"
+        },
+        "repository": {
+          "type": "Repository!"
+        }
+      },
+      "possible_types": [
+        "Blob",
+        "Commit",
+        "Tag",
+        "Tree"
+      ]
+    },
     "GitObjectID": {
       "kind": "SCALAR"
     },
     "GitSSHRemote": {
+      "kind": "SCALAR"
+    },
+    "GitTimestamp": {
       "kind": "SCALAR"
     },
     "HTML": {
@@ -2422,10 +2649,15 @@
         }
       },
       "possible_types": [
+        "Blob",
+        "Commit",
         "Issue",
         "Organization",
         "PullRequest",
+        "Ref",
         "Repository",
+        "Tag",
+        "Tree",
         "User"
       ]
     },
@@ -3895,13 +4127,67 @@
         "branchProtectionRule": {
           "type": "BranchProtectionRule"
         },
+        "id": {
+          "type": "ID!"
+        },
         "name": {
           "type": "String!"
         },
         "prefix": {
           "type": "String!"
+        },
+        "repository": {
+          "type": "Repository!"
+        },
+        "target": {
+          "type": "GitObject"
+        }
+      },
+      "interfaces": [
+        "Node"
+      ]
+    },
+    "RefConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[RefEdge]"
+        },
+        "nodes": {
+          "type": "[Ref]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
         }
       }
+    },
+    "RefEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "Ref"
+        }
+      }
+    },
+    "RefOrder": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "direction": "OrderDirection!",
+        "field": "RefOrderField!"
+      }
+    },
+    "RefOrderField": {
+      "kind": "ENUM",
+      "enum_values": [
+        "ALPHABETICAL",
+        "TAG_COMMIT_DATE"
+      ]
     },
     "Release": {
       "kind": "OBJECT",
@@ -4235,6 +4521,13 @@
         "nameWithOwner": {
           "type": "String!"
         },
+        "object": {
+          "type": "GitObject",
+          "args": {
+            "expression": "String",
+            "oid": "GitObjectID"
+          }
+        },
         "owner": {
           "type": "RepositoryOwner!"
         },
@@ -4278,6 +4571,25 @@
         },
         "rebaseMergeAllowed": {
           "type": "Boolean!"
+        },
+        "ref": {
+          "type": "Ref",
+          "args": {
+            "qualifiedName": "String!"
+          }
+        },
+        "refs": {
+          "type": "RefConnection",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "direction": "OrderDirection",
+            "first": "Int",
+            "last": "Int",
+            "orderBy": "RefOrder",
+            "query": "String",
+            "refPrefix": "String!"
+          }
         },
         "release": {
           "type": "Release",
@@ -4696,6 +5008,45 @@
         }
       }
     },
+    "Tag": {
+      "kind": "OBJECT",
+      "fields": {
+        "abbreviatedOid": {
+          "type": "String!"
+        },
+        "commitResourcePath": {
+          "type": "URI!"
+        },
+        "commitUrl": {
+          "type": "URI!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "message": {
+          "type": "String"
+        },
+        "name": {
+          "type": "String!"
+        },
+        "oid": {
+          "type": "GitObjectID!"
+        },
+        "repository": {
+          "type": "Repository!"
+        },
+        "tagger": {
+          "type": "GitActor"
+        },
+        "target": {
+          "type": "GitObject!"
+        }
+      },
+      "interfaces": [
+        "GitObject",
+        "Node"
+      ]
+    },
     "Team": {
       "kind": "OBJECT",
       "fields": {
@@ -4738,6 +5089,80 @@
         },
         "issue": {
           "type": "Issue"
+        }
+      }
+    },
+    "Tree": {
+      "kind": "OBJECT",
+      "fields": {
+        "abbreviatedOid": {
+          "type": "String!"
+        },
+        "commitResourcePath": {
+          "type": "URI!"
+        },
+        "commitUrl": {
+          "type": "URI!"
+        },
+        "entries": {
+          "type": "[TreeEntry!]"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "oid": {
+          "type": "GitObjectID!"
+        },
+        "repository": {
+          "type": "Repository!"
+        }
+      },
+      "interfaces": [
+        "GitObject",
+        "Node"
+      ]
+    },
+    "TreeEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "extension": {
+          "type": "String"
+        },
+        "language": {
+          "type": "Language"
+        },
+        "lineCount": {
+          "type": "Int"
+        },
+        "mode": {
+          "type": "Int!"
+        },
+        "name": {
+          "type": "String!"
+        },
+        "nameRaw": {
+          "type": "Base64String!"
+        },
+        "object": {
+          "type": "GitObject"
+        },
+        "oid": {
+          "type": "GitObjectID!"
+        },
+        "path": {
+          "type": "String"
+        },
+        "pathRaw": {
+          "type": "Base64String"
+        },
+        "repository": {
+          "type": "Repository!"
+        },
+        "size": {
+          "type": "Int!"
+        },
+        "type": {
+          "type": "String!"
         }
       }
     },

@@ -39,7 +39,7 @@ func (st *Store) ComputeRepoLanguages(repo *Repo) map[string]int64 {
 		if isVendoredPath(f.Name) {
 			return nil
 		}
-		if lang, ok := languageForFilename(f.Name); ok {
+		if lang, ok := LanguageForFilename(f.Name); ok {
 			counts[lang] += f.Size
 		}
 		return nil
@@ -60,11 +60,11 @@ func isVendoredPath(p string) bool {
 	return false
 }
 
-// languageForFilename maps a file name to its Linguist-style language. The
+// LanguageForFilename maps a file name to its Linguist-style language. The
 // mapping is intentionally small but covers the common cases; GitHub's API
 // returns byte totals only, so an approximate mapping is acceptable for tests
 // and UI color labels.
-func languageForFilename(name string) (string, bool) {
+func LanguageForFilename(name string) (string, bool) {
 	ext := strings.ToLower(path.Ext(name))
 	if ext == "" {
 		base := path.Base(name)

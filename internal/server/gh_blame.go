@@ -51,7 +51,7 @@ func (s *Server) handleUIDataBlame(w http.ResponseWriter, r *http.Request) {
 	if ref == "" {
 		ref = repo.DefaultBranch
 	}
-	hash, ok, err := resolveGitObjectReference(stor, ref)
+	hash, ok, err := store.ResolveGitObjectReference(stor, ref)
 	if err != nil || !ok {
 		writeGHError(w, http.StatusNotFound, "No commit found for ref: "+ref)
 		return

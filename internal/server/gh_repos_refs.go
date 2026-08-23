@@ -280,7 +280,7 @@ func (s *Server) listRefs(w http.ResponseWriter, r *http.Request, baseURL, fullN
 }
 
 func refToJSON(stor gitStorage.Storer, baseURL, fullName string, ref *plumbing.Reference) map[string]interface{} {
-	hash, err := resolvedReferenceHash(stor, ref, map[plumbing.ReferenceName]bool{})
+	hash, err := store.ResolvedReferenceHash(stor, ref, map[plumbing.ReferenceName]bool{})
 	if err != nil {
 		hash = ref.Hash()
 	}
