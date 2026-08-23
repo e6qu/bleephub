@@ -558,7 +558,11 @@ func skipPushedShallowLines(body *bufio.Reader) error {
 		if err != nil {
 			return nil
 		}
-		length, err := strconv.ParseUint(string(header), 16, 32)
+		// A pkt-line length prefix is exactly four hex digits, so it cannot
+		// exceed 0xFFFF. Parsing at that width rather than 32 bits makes the
+		// bound the format already guarantees explicit, and keeps the
+		// conversion to int provably lossless on every platform.
+		length, err := strconv.ParseUint(string(header), 16, 16)
 		if err != nil || !gitPushShallowLineLengths[int(length)] {
 			return nil
 		}
