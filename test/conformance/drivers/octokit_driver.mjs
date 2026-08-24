@@ -96,11 +96,6 @@ async function check(domain, operation, request, fn) {
   }
 }
 
-function skip(domain, operation, request, why) {
-  skipped += 1;
-  emit({ domain, operation, status: "skip", request, message: why });
-}
-
 function want(condition, expected, actual, message) {
   if (!condition) throw new Deviation(expected, actual, message);
 }
