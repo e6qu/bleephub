@@ -25,16 +25,20 @@ func (s *Resolver) gqlUserContentEditType() *graphql.Object {
 	dateTime := s.graphQLStringScalar("DateTime")
 	s.graphqlTypes.userContentEdit = graphql.NewObject(graphql.ObjectConfig{
 		Name: "UserContentEdit",
+		// Signatures match GitHub's UserContentEdit exactly (it implements Node
+		// only, carries no databaseId, and its editor/deletedBy are Actor, not
+		// User). These become schema-visible the moment a comment type's
+		// userContentEdits field references the connection, so the ratchet
+		// enforces the exact shape here.
 		Fields: graphql.Fields{
-			"id":         &graphql.Field{Type: graphql.NewNonNull(graphql.ID)},
-			"databaseId": &graphql.Field{Type: graphql.Int},
-			"createdAt":  &graphql.Field{Type: graphql.NewNonNull(dateTime)},
-			"updatedAt":  &graphql.Field{Type: graphql.NewNonNull(dateTime)},
-			"editedAt":   &graphql.Field{Type: graphql.NewNonNull(dateTime)},
-			"deletedAt":  &graphql.Field{Type: dateTime},
-			"diff":       &graphql.Field{Type: graphql.String},
-			"editor":     &graphql.Field{Type: s.graphqlTypes.user},
-			"deletedBy":  &graphql.Field{Type: s.graphqlTypes.user},
+			"id":        &graphql.Field{Type: graphql.NewNonNull(graphql.ID)},
+			"createdAt": &graphql.Field{Type: graphql.NewNonNull(dateTime)},
+			"updatedAt": &graphql.Field{Type: graphql.NewNonNull(dateTime)},
+			"editedAt":  &graphql.Field{Type: graphql.NewNonNull(dateTime)},
+			"deletedAt": &graphql.Field{Type: dateTime},
+			"diff":      &graphql.Field{Type: graphql.String},
+			"editor":    &graphql.Field{Type: s.graphqlTypes.actor},
+			"deletedBy": &graphql.Field{Type: s.graphqlTypes.actor},
 		},
 	})
 	return s.graphqlTypes.userContentEdit

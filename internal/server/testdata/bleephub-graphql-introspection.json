@@ -845,6 +845,34 @@
         "User"
       ]
     },
+    "AssigneeConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[AssigneeEdge]"
+        },
+        "nodes": {
+          "type": "[Assignee]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "AssigneeEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "Assignee"
+        }
+      }
+    },
     "AssigneeUpdateInput": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
@@ -1936,6 +1964,18 @@
         "OWNER"
       ]
     },
+    "CommentCannotUpdateReason": {
+      "kind": "ENUM",
+      "enum_values": [
+        "ARCHIVED",
+        "DENIED",
+        "INSUFFICIENT_ACCESS",
+        "LOCKED",
+        "LOGIN_REQUIRED",
+        "MAINTENANCE",
+        "VERIFIED_EMAIL_REQUIRED"
+      ]
+    },
     "CommentDeletedEvent": {
       "kind": "OBJECT",
       "fields": {
@@ -1998,6 +2038,9 @@
         "committedDate": {
           "type": "DateTime!"
         },
+        "committedViaWeb": {
+          "type": "Boolean!"
+        },
         "committer": {
           "type": "GitActor"
         },
@@ -2032,11 +2075,20 @@
         "messageBody": {
           "type": "String!"
         },
+        "messageBodyHTML": {
+          "type": "HTML!"
+        },
         "messageHeadline": {
           "type": "String!"
         },
+        "messageHeadlineHTML": {
+          "type": "HTML!"
+        },
         "oid": {
           "type": "GitObjectID!"
+        },
+        "onBehalfOf": {
+          "type": "Organization"
         },
         "parents": {
           "type": "CommitConnection!",
@@ -2046,6 +2098,9 @@
             "first": "Int",
             "last": "Int"
           }
+        },
+        "pushedDate": {
+          "type": "DateTime"
         },
         "repository": {
           "type": "Repository!"
@@ -2102,20 +2157,56 @@
         "author": {
           "type": "Actor"
         },
+        "authorAssociation": {
+          "type": "CommentAuthorAssociation!"
+        },
         "body": {
           "type": "String!"
+        },
+        "bodyHTML": {
+          "type": "HTML!"
+        },
+        "bodyText": {
+          "type": "String!"
+        },
+        "commit": {
+          "type": "Commit"
         },
         "createdAt": {
           "type": "DateTime!"
         },
+        "createdViaEmail": {
+          "type": "Boolean!"
+        },
         "databaseId": {
           "type": "Int"
+        },
+        "editor": {
+          "type": "Actor"
         },
         "id": {
           "type": "ID!"
         },
+        "includesCreatedEdit": {
+          "type": "Boolean!"
+        },
+        "isMinimized": {
+          "type": "Boolean!"
+        },
+        "lastEditedAt": {
+          "type": "DateTime"
+        },
+        "minimizedReason": {
+          "type": "String"
+        },
         "path": {
           "type": "String"
+        },
+        "position": {
+          "type": "Int"
+        },
+        "publishedAt": {
+          "type": "DateTime"
         },
         "reactionGroups": {
           "type": "[ReactionGroup!]"
@@ -2129,7 +2220,46 @@
             "last": "Int"
           }
         },
+        "repository": {
+          "type": "Repository!"
+        },
+        "resourcePath": {
+          "type": "URI!"
+        },
+        "updatedAt": {
+          "type": "DateTime!"
+        },
+        "url": {
+          "type": "URI!"
+        },
+        "userContentEdits": {
+          "type": "UserContentEditConnection",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "viewerCanDelete": {
+          "type": "Boolean!"
+        },
+        "viewerCanMinimize": {
+          "type": "Boolean!"
+        },
         "viewerCanReact": {
+          "type": "Boolean!"
+        },
+        "viewerCanUnminimize": {
+          "type": "Boolean!"
+        },
+        "viewerCanUpdate": {
+          "type": "Boolean!"
+        },
+        "viewerCannotUpdateReasons": {
+          "type": "[CommentCannotUpdateReason!]!"
+        },
+        "viewerDidAuthor": {
           "type": "Boolean!"
         }
       },
@@ -4488,8 +4618,20 @@
         "activeLockReason": {
           "type": "LockReason"
         },
+        "answer": {
+          "type": "DiscussionComment"
+        },
+        "answerChosenAt": {
+          "type": "DateTime"
+        },
+        "answerChosenBy": {
+          "type": "Actor"
+        },
         "author": {
           "type": "Actor"
+        },
+        "authorAssociation": {
+          "type": "CommentAuthorAssociation!"
         },
         "body": {
           "type": "String!"
@@ -4521,11 +4663,32 @@
         "createdAt": {
           "type": "DateTime!"
         },
+        "createdViaEmail": {
+          "type": "Boolean!"
+        },
         "databaseId": {
           "type": "Int"
         },
+        "editor": {
+          "type": "Actor"
+        },
         "id": {
           "type": "ID!"
+        },
+        "includesCreatedEdit": {
+          "type": "Boolean!"
+        },
+        "isAnswered": {
+          "type": "Boolean"
+        },
+        "labels": {
+          "type": "LabelConnection",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
         },
         "lastEditedAt": {
           "type": "DateTime"
@@ -4554,6 +4717,12 @@
             "last": "Int"
           }
         },
+        "repository": {
+          "type": "Repository!"
+        },
+        "resourcePath": {
+          "type": "URI!"
+        },
         "stateReason": {
           "type": "DiscussionStateReason"
         },
@@ -4569,10 +4738,31 @@
         "url": {
           "type": "URI!"
         },
+        "userContentEdits": {
+          "type": "UserContentEditConnection",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "viewerCanClose": {
+          "type": "Boolean!"
+        },
         "viewerCanDelete": {
           "type": "Boolean!"
         },
+        "viewerCanLabel": {
+          "type": "Boolean!"
+        },
         "viewerCanReact": {
+          "type": "Boolean!"
+        },
+        "viewerCanReopen": {
+          "type": "Boolean!"
+        },
+        "viewerCanSubscribe": {
           "type": "Boolean!"
         },
         "viewerCanUpdate": {
@@ -4581,8 +4771,14 @@
         "viewerCanUpvote": {
           "type": "Boolean!"
         },
+        "viewerDidAuthor": {
+          "type": "Boolean!"
+        },
         "viewerHasUpvoted": {
           "type": "Boolean!"
+        },
+        "viewerSubscription": {
+          "type": "SubscriptionState"
         }
       },
       "interfaces": [
@@ -4659,6 +4855,9 @@
         "author": {
           "type": "Actor"
         },
+        "authorAssociation": {
+          "type": "CommentAuthorAssociation!"
+        },
         "body": {
           "type": "String!"
         },
@@ -4671,14 +4870,26 @@
         "createdAt": {
           "type": "DateTime!"
         },
+        "createdViaEmail": {
+          "type": "Boolean!"
+        },
         "databaseId": {
           "type": "Int"
+        },
+        "deletedAt": {
+          "type": "DateTime"
         },
         "discussion": {
           "type": "Discussion"
         },
+        "editor": {
+          "type": "Actor"
+        },
         "id": {
           "type": "ID!"
+        },
+        "includesCreatedEdit": {
+          "type": "Boolean!"
         },
         "isAnswer": {
           "type": "Boolean!"
@@ -4691,6 +4902,9 @@
         },
         "minimizedReason": {
           "type": "String"
+        },
+        "publishedAt": {
+          "type": "DateTime"
         },
         "reactionGroups": {
           "type": "[ReactionGroup!]"
@@ -4713,16 +4927,58 @@
             "last": "Int"
           }
         },
+        "replyTo": {
+          "type": "DiscussionComment"
+        },
+        "resourcePath": {
+          "type": "URI!"
+        },
         "updatedAt": {
           "type": "DateTime!"
         },
         "upvoteCount": {
           "type": "Int!"
         },
+        "url": {
+          "type": "URI!"
+        },
+        "userContentEdits": {
+          "type": "UserContentEditConnection",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "viewerCanDelete": {
+          "type": "Boolean!"
+        },
+        "viewerCanMarkAsAnswer": {
+          "type": "Boolean!"
+        },
+        "viewerCanMinimize": {
+          "type": "Boolean!"
+        },
         "viewerCanReact": {
           "type": "Boolean!"
         },
+        "viewerCanUnmarkAsAnswer": {
+          "type": "Boolean!"
+        },
+        "viewerCanUnminimize": {
+          "type": "Boolean!"
+        },
+        "viewerCanUpdate": {
+          "type": "Boolean!"
+        },
         "viewerCanUpvote": {
+          "type": "Boolean!"
+        },
+        "viewerCannotUpdateReasons": {
+          "type": "[CommentCannotUpdateReason!]!"
+        },
+        "viewerDidAuthor": {
           "type": "Boolean!"
         },
         "viewerHasUpvoted": {
@@ -6197,17 +6453,80 @@
         "author": {
           "type": "Actor"
         },
+        "authorAssociation": {
+          "type": "CommentAuthorAssociation!"
+        },
         "body": {
+          "type": "String!"
+        },
+        "bodyHTML": {
+          "type": "HTML!"
+        },
+        "bodyText": {
           "type": "String!"
         },
         "createdAt": {
           "type": "DateTime!"
         },
+        "createdViaEmail": {
+          "type": "Boolean!"
+        },
+        "databaseId": {
+          "type": "Int"
+        },
+        "editor": {
+          "type": "Actor"
+        },
+        "gist": {
+          "type": "Gist!"
+        },
         "id": {
           "type": "ID!"
         },
+        "includesCreatedEdit": {
+          "type": "Boolean!"
+        },
+        "isMinimized": {
+          "type": "Boolean!"
+        },
+        "lastEditedAt": {
+          "type": "DateTime"
+        },
+        "minimizedReason": {
+          "type": "String"
+        },
+        "publishedAt": {
+          "type": "DateTime"
+        },
         "updatedAt": {
           "type": "DateTime!"
+        },
+        "userContentEdits": {
+          "type": "UserContentEditConnection",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "viewerCanDelete": {
+          "type": "Boolean!"
+        },
+        "viewerCanMinimize": {
+          "type": "Boolean!"
+        },
+        "viewerCanUnminimize": {
+          "type": "Boolean!"
+        },
+        "viewerCanUpdate": {
+          "type": "Boolean!"
+        },
+        "viewerCannotUpdateReasons": {
+          "type": "[CommentCannotUpdateReason!]!"
+        },
+        "viewerDidAuthor": {
+          "type": "Boolean!"
         }
       }
     },
@@ -6517,6 +6836,25 @@
         "Node"
       ]
     },
+    "Hovercard": {
+      "kind": "OBJECT",
+      "fields": {
+        "contexts": {
+          "type": "[HovercardContext!]!"
+        }
+      }
+    },
+    "HovercardContext": {
+      "kind": "INTERFACE",
+      "fields": {
+        "message": {
+          "type": "String!"
+        },
+        "octicon": {
+          "type": "String!"
+        }
+      }
+    },
     "ID": {
       "kind": "SCALAR"
     },
@@ -6699,6 +7037,15 @@
         "activeLockReason": {
           "type": "LockReason"
         },
+        "assignedActors": {
+          "type": "AssigneeConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
         "assignees": {
           "type": "UserConnection!",
           "args": {
@@ -6711,8 +7058,41 @@
         "author": {
           "type": "Actor"
         },
+        "authorAssociation": {
+          "type": "CommentAuthorAssociation!"
+        },
+        "blockedBy": {
+          "type": "IssueConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "blocking": {
+          "type": "IssueConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
         "body": {
           "type": "String!"
+        },
+        "bodyHTML": {
+          "type": "HTML!"
+        },
+        "bodyResourcePath": {
+          "type": "URI!"
+        },
+        "bodyText": {
+          "type": "String!"
+        },
+        "bodyUrl": {
+          "type": "URI!"
         },
         "closed": {
           "type": "Boolean!"
@@ -6740,14 +7120,44 @@
         "createdAt": {
           "type": "DateTime!"
         },
+        "createdViaEmail": {
+          "type": "Boolean!"
+        },
         "databaseId": {
           "type": "Int"
+        },
+        "duplicateOf": {
+          "type": "Issue"
+        },
+        "editor": {
+          "type": "Actor"
+        },
+        "eventRationales": {
+          "type": "[IssueEventRationale!]!"
+        },
+        "fullDatabaseId": {
+          "type": "BigInt"
+        },
+        "hovercard": {
+          "type": "Hovercard!",
+          "args": {
+            "includeNotificationContexts": "Boolean"
+          }
         },
         "id": {
           "type": "ID!"
         },
+        "includesCreatedEdit": {
+          "type": "Boolean!"
+        },
         "isPinned": {
           "type": "Boolean"
+        },
+        "isReadByViewer": {
+          "type": "Boolean"
+        },
+        "issueDependenciesSummary": {
+          "type": "IssueDependenciesSummary!"
         },
         "issueFieldValues": {
           "type": "IssueFieldValueConnection",
@@ -6767,6 +7177,9 @@
             "after": "String",
             "first": "Int"
           }
+        },
+        "lastEditedAt": {
+          "type": "DateTime"
         },
         "linkedBranches": {
           "type": "LinkedBranchConnection!",
@@ -6789,6 +7202,31 @@
         "parent": {
           "type": "Issue"
         },
+        "participants": {
+          "type": "UserConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "pendingSuggestions": {
+          "type": "[PendingIssueSuggestion!]"
+        },
+        "pinnedIssueComment": {
+          "type": "PinnedIssueComment"
+        },
+        "projectCards": {
+          "type": "ProjectCardConnection!",
+          "args": {
+            "after": "String",
+            "archivedStates": "[ProjectCardArchivedState]",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
         "projectItems": {
           "type": "ProjectV2ItemConnection",
           "args": {
@@ -6797,6 +7235,26 @@
             "first": "Int",
             "last": "Int"
           }
+        },
+        "projectV2": {
+          "type": "ProjectV2",
+          "args": {
+            "number": "Int!"
+          }
+        },
+        "projectsV2": {
+          "type": "ProjectV2Connection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "orderBy": "ProjectV2Order",
+            "query": "String"
+          }
+        },
+        "publishedAt": {
+          "type": "DateTime"
         },
         "reactionGroups": {
           "type": "[ReactionGroup!]"
@@ -6834,6 +7292,26 @@
         "subIssuesSummary": {
           "type": "SubIssuesSummary!"
         },
+        "suggestedActors": {
+          "type": "AssigneeConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "query": "String"
+          }
+        },
+        "timeline": {
+          "type": "IssueTimelineConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "since": "DateTime"
+          }
+        },
         "timelineItems": {
           "type": "IssueTimelineItemsConnection!",
           "args": {
@@ -6849,14 +7327,98 @@
         "title": {
           "type": "String!"
         },
+        "titleHTML": {
+          "type": "String!"
+        },
+        "trackedInIssues": {
+          "type": "IssueConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "trackedIssues": {
+          "type": "IssueConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "trackedIssuesCount": {
+          "type": "Int!",
+          "args": {
+            "states": "[TrackedIssueStates]"
+          }
+        },
         "updatedAt": {
           "type": "DateTime!"
         },
         "url": {
           "type": "URI!"
         },
+        "userContentEdits": {
+          "type": "UserContentEditConnection",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "viewerCanAssign": {
+          "type": "Boolean!"
+        },
+        "viewerCanClose": {
+          "type": "Boolean!"
+        },
+        "viewerCanDelete": {
+          "type": "Boolean!"
+        },
+        "viewerCanLabel": {
+          "type": "Boolean!"
+        },
         "viewerCanReact": {
           "type": "Boolean!"
+        },
+        "viewerCanReopen": {
+          "type": "Boolean!"
+        },
+        "viewerCanSetFields": {
+          "type": "Boolean"
+        },
+        "viewerCanSetMilestone": {
+          "type": "Boolean!"
+        },
+        "viewerCanSubscribe": {
+          "type": "Boolean!"
+        },
+        "viewerCanType": {
+          "type": "Boolean"
+        },
+        "viewerCanUpdate": {
+          "type": "Boolean!"
+        },
+        "viewerCanUpdateMetadata": {
+          "type": "Boolean"
+        },
+        "viewerCannotUpdateReasons": {
+          "type": "[CommentCannotUpdateReason!]!"
+        },
+        "viewerDidAuthor": {
+          "type": "Boolean!"
+        },
+        "viewerSubscription": {
+          "type": "SubscriptionState"
+        },
+        "viewerThreadSubscriptionFormAction": {
+          "type": "ThreadSubscriptionFormAction"
+        },
+        "viewerThreadSubscriptionStatus": {
+          "type": "ThreadSubscriptionState"
         }
       },
       "interfaces": [
@@ -6888,14 +7450,26 @@
         "body": {
           "type": "String!"
         },
+        "bodyHTML": {
+          "type": "HTML!"
+        },
+        "bodyText": {
+          "type": "String!"
+        },
         "createdAt": {
           "type": "DateTime!"
+        },
+        "createdViaEmail": {
+          "type": "Boolean!"
         },
         "databaseId": {
           "type": "Int"
         },
         "editor": {
           "type": "Actor"
+        },
+        "fullDatabaseId": {
+          "type": "BigInt"
         },
         "id": {
           "type": "ID!"
@@ -6909,11 +7483,26 @@
         "isPinned": {
           "type": "Boolean"
         },
+        "issue": {
+          "type": "Issue!"
+        },
         "lastEditedAt": {
           "type": "DateTime"
         },
         "minimizedReason": {
           "type": "String"
+        },
+        "pinnedAt": {
+          "type": "DateTime"
+        },
+        "pinnedBy": {
+          "type": "User"
+        },
+        "publishedAt": {
+          "type": "DateTime"
+        },
+        "pullRequest": {
+          "type": "PullRequest"
         },
         "reactionGroups": {
           "type": "[ReactionGroup!]"
@@ -6927,14 +7516,50 @@
             "last": "Int"
           }
         },
+        "repository": {
+          "type": "Repository!"
+        },
+        "resourcePath": {
+          "type": "URI!"
+        },
         "updatedAt": {
           "type": "DateTime!"
         },
         "url": {
           "type": "URI!"
         },
+        "userContentEdits": {
+          "type": "UserContentEditConnection",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "viewerCanDelete": {
+          "type": "Boolean!"
+        },
+        "viewerCanMinimize": {
+          "type": "Boolean!"
+        },
+        "viewerCanPin": {
+          "type": "Boolean!"
+        },
         "viewerCanReact": {
           "type": "Boolean!"
+        },
+        "viewerCanUnminimize": {
+          "type": "Boolean!"
+        },
+        "viewerCanUnpin": {
+          "type": "Boolean!"
+        },
+        "viewerCanUpdate": {
+          "type": "Boolean!"
+        },
+        "viewerCannotUpdateReasons": {
+          "type": "[CommentCannotUpdateReason!]!"
         },
         "viewerDidAuthor": {
           "type": "Boolean!"
@@ -7003,6 +7628,23 @@
         "ALL",
         "COLLABORATORS_ONLY"
       ]
+    },
+    "IssueDependenciesSummary": {
+      "kind": "OBJECT",
+      "fields": {
+        "blockedBy": {
+          "type": "Int!"
+        },
+        "blocking": {
+          "type": "Int!"
+        },
+        "totalBlockedBy": {
+          "type": "Int!"
+        },
+        "totalBlocking": {
+          "type": "Int!"
+        }
+      }
     },
     "IssueEdge": {
       "kind": "OBJECT",
@@ -7471,6 +8113,40 @@
         }
       }
     },
+    "IssueTimelineConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[IssueTimelineItemEdge]"
+        },
+        "nodes": {
+          "type": "[IssueTimelineItem]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "IssueTimelineItem": {
+      "kind": "UNION",
+      "possible_types": [
+        "IssueComment"
+      ]
+    },
+    "IssueTimelineItemEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "IssueTimelineItem"
+        }
+      }
+    },
     "IssueTimelineItems": {
       "kind": "UNION",
       "possible_types": [
@@ -7613,20 +8289,59 @@
         "color": {
           "type": "String!"
         },
+        "createdAt": {
+          "type": "DateTime"
+        },
         "description": {
           "type": "String"
         },
         "id": {
           "type": "ID!"
         },
+        "isDefault": {
+          "type": "Boolean!"
+        },
+        "issues": {
+          "type": "IssueConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
         "name": {
           "type": "String!"
+        },
+        "pullRequests": {
+          "type": "PullRequestConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "repository": {
+          "type": "Repository!"
+        },
+        "resourcePath": {
+          "type": "URI!"
+        },
+        "updatedAt": {
+          "type": "DateTime"
+        },
+        "url": {
+          "type": "URI!"
         }
       }
     },
     "LabelConnection": {
       "kind": "OBJECT",
       "fields": {
+        "edges": {
+          "type": "[LabelEdge]"
+        },
         "nodes": {
           "type": "[Label]"
         },
@@ -7635,6 +8350,17 @@
         },
         "totalCount": {
           "type": "Int!"
+        }
+      }
+    },
+    "LabelEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "Label"
         }
       }
     },
@@ -7700,6 +8426,12 @@
     "Language": {
       "kind": "OBJECT",
       "fields": {
+        "color": {
+          "type": "String"
+        },
+        "id": {
+          "type": "ID!"
+        },
         "name": {
           "type": "String!"
         }
@@ -7711,7 +8443,16 @@
         "edges": {
           "type": "[LanguageEdge]"
         },
+        "nodes": {
+          "type": "[Language]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
         "totalCount": {
+          "type": "Int!"
+        },
+        "totalSize": {
           "type": "Int!"
         }
       }
@@ -7719,6 +8460,9 @@
     "LanguageEdge": {
       "kind": "OBJECT",
       "fields": {
+        "cursor": {
+          "type": "String!"
+        },
         "node": {
           "type": "Language!"
         },
@@ -8682,7 +9426,25 @@
     "Milestone": {
       "kind": "OBJECT",
       "fields": {
+        "closed": {
+          "type": "Boolean!"
+        },
+        "closedAt": {
+          "type": "DateTime"
+        },
+        "closedIssueCount": {
+          "type": "Int!"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "creator": {
+          "type": "Actor"
+        },
         "description": {
+          "type": "String"
+        },
+        "descriptionHTML": {
           "type": "String"
         },
         "dueOn": {
@@ -8691,20 +9453,65 @@
         "id": {
           "type": "ID!"
         },
+        "issues": {
+          "type": "IssueConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
         "number": {
           "type": "Int!"
+        },
+        "openIssueCount": {
+          "type": "Int!"
+        },
+        "progressPercentage": {
+          "type": "Float!"
+        },
+        "pullRequests": {
+          "type": "PullRequestConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "repository": {
+          "type": "Repository!"
+        },
+        "resourcePath": {
+          "type": "URI!"
         },
         "state": {
           "type": "MilestoneState!"
         },
         "title": {
           "type": "String!"
+        },
+        "updatedAt": {
+          "type": "DateTime!"
+        },
+        "url": {
+          "type": "URI!"
+        },
+        "viewerCanClose": {
+          "type": "Boolean!"
+        },
+        "viewerCanReopen": {
+          "type": "Boolean!"
         }
       }
     },
     "MilestoneConnection": {
       "kind": "OBJECT",
       "fields": {
+        "edges": {
+          "type": "[MilestoneEdge]"
+        },
         "nodes": {
           "type": "[Milestone]"
         },
@@ -8713,6 +9520,17 @@
         },
         "totalCount": {
           "type": "Int!"
+        }
+      }
+    },
+    "MilestoneEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "Milestone"
         }
       }
     },
@@ -11181,6 +11999,12 @@
         "RENAMED"
       ]
     },
+    "PendingIssueSuggestion": {
+      "kind": "UNION",
+      "possible_types": [
+        "PendingLabelSuggestion"
+      ]
+    },
     "PendingIssueSuggestionKind": {
       "kind": "ENUM",
       "enum_values": [
@@ -11199,6 +12023,26 @@
         "issueTypeId": "ID",
         "kind": "PendingIssueSuggestionKind!",
         "labelId": "ID"
+      }
+    },
+    "PendingLabelSuggestion": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "label": {
+          "type": "Label"
+        },
+        "rationale": {
+          "type": "String"
+        },
+        "updatedAt": {
+          "type": "DateTime"
+        }
       }
     },
     "PinEnvironmentInput": {
@@ -11367,6 +12211,32 @@
         },
         "repository": {
           "type": "Repository!"
+        }
+      }
+    },
+    "PinnedIssueComment": {
+      "kind": "OBJECT",
+      "fields": {
+        "databaseId": {
+          "type": "Int"
+        },
+        "fullDatabaseId": {
+          "type": "BigInt"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "issue": {
+          "type": "Issue!"
+        },
+        "issueComment": {
+          "type": "IssueComment!"
+        },
+        "pinnedAt": {
+          "type": "DateTime!"
+        },
+        "pinnedBy": {
+          "type": "Actor!"
         }
       }
     },
@@ -13494,6 +14364,15 @@
         "additions": {
           "type": "Int!"
         },
+        "assignedActors": {
+          "type": "AssigneeConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
         "assignees": {
           "type": "UserConnection!",
           "args": {
@@ -13505,6 +14384,9 @@
         },
         "author": {
           "type": "Actor"
+        },
+        "authorAssociation": {
+          "type": "CommentAuthorAssociation!"
         },
         "autoMergeRequest": {
           "type": "AutoMergeRequest"
@@ -13518,11 +14400,29 @@
         "baseRefOid": {
           "type": "GitObjectID!"
         },
+        "baseRepository": {
+          "type": "Repository"
+        },
         "body": {
           "type": "String!"
         },
+        "bodyHTML": {
+          "type": "HTML!"
+        },
+        "bodyText": {
+          "type": "String!"
+        },
+        "canBeRebased": {
+          "type": "Boolean!"
+        },
         "changedFiles": {
           "type": "Int!"
+        },
+        "checksResourcePath": {
+          "type": "URI!"
+        },
+        "checksUrl": {
+          "type": "URI!"
         },
         "closed": {
           "type": "Boolean!"
@@ -13558,11 +14458,17 @@
         "createdAt": {
           "type": "DateTime!"
         },
+        "createdViaEmail": {
+          "type": "Boolean!"
+        },
         "databaseId": {
           "type": "Int"
         },
         "deletions": {
           "type": "Int!"
+        },
+        "editor": {
+          "type": "Actor"
         },
         "files": {
           "type": "PullRequestChangedFileConnection",
@@ -13573,6 +14479,9 @@
         },
         "fullDatabaseId": {
           "type": "BigInt"
+        },
+        "headRef": {
+          "type": "Ref"
         },
         "headRefName": {
           "type": "String!"
@@ -13586,8 +14495,17 @@
         "headRepositoryOwner": {
           "type": "RepositoryOwner"
         },
+        "hovercard": {
+          "type": "Hovercard!",
+          "args": {
+            "includeNotificationContexts": "Boolean"
+          }
+        },
         "id": {
           "type": "ID!"
+        },
+        "includesCreatedEdit": {
+          "type": "Boolean!"
         },
         "isCrossRepository": {
           "type": "Boolean!"
@@ -13595,8 +14513,29 @@
         "isDraft": {
           "type": "Boolean!"
         },
+        "isInMergeQueue": {
+          "type": "Boolean!"
+        },
+        "isMergeQueueEnabled": {
+          "type": "Boolean!"
+        },
+        "isReadByViewer": {
+          "type": "Boolean"
+        },
         "labels": {
           "type": "LabelConnection",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "lastEditedAt": {
+          "type": "DateTime"
+        },
+        "latestOpinionatedReviews": {
+          "type": "PullRequestReviewConnection",
           "args": {
             "after": "String",
             "before": "String",
@@ -13622,6 +14561,12 @@
         "mergeCommit": {
           "type": "Commit"
         },
+        "mergeQueue": {
+          "type": "MergeQueue"
+        },
+        "mergeQueueEntry": {
+          "type": "MergeQueueEntry"
+        },
         "mergeStateStatus": {
           "type": "MergeStateStatus!"
         },
@@ -13643,8 +14588,29 @@
         "number": {
           "type": "Int!"
         },
+        "participants": {
+          "type": "UserConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "permalink": {
+          "type": "URI!"
+        },
         "potentialMergeCommit": {
           "type": "Commit"
+        },
+        "projectCards": {
+          "type": "ProjectCardConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
         },
         "projectItems": {
           "type": "ProjectV2ItemConnection",
@@ -13654,6 +14620,24 @@
             "first": "Int",
             "last": "Int"
           }
+        },
+        "projectV2": {
+          "type": "ProjectV2",
+          "args": {
+            "number": "Int!"
+          }
+        },
+        "projectsV2": {
+          "type": "ProjectV2Connection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "publishedAt": {
+          "type": "DateTime"
         },
         "reactionGroups": {
           "type": "[ReactionGroup!]"
@@ -13671,6 +14655,12 @@
           "type": "Repository!"
         },
         "resourcePath": {
+          "type": "URI!"
+        },
+        "revertResourcePath": {
+          "type": "URI!"
+        },
+        "revertUrl": {
           "type": "URI!"
         },
         "reviewDecision": {
@@ -13703,8 +14693,48 @@
             "last": "Int"
           }
         },
+        "stack": {
+          "type": "PullRequestStack"
+        },
+        "stackEntry": {
+          "type": "PullRequestStackEntry"
+        },
         "state": {
           "type": "PullRequestState!"
+        },
+        "statusCheckRollup": {
+          "type": "StatusCheckRollup"
+        },
+        "suggestedActors": {
+          "type": "AssigneeConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "suggestedReviewerActors": {
+          "type": "SuggestedReviewerActorConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "suggestedReviewers": {
+          "type": "[SuggestedReviewer]!"
+        },
+        "timeline": {
+          "type": "PullRequestTimelineConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "since": "DateTime"
+          }
         },
         "timelineItems": {
           "type": "PullRequestTimelineItemsConnection!",
@@ -13721,14 +14751,95 @@
         "title": {
           "type": "String!"
         },
+        "titleHTML": {
+          "type": "HTML!"
+        },
+        "totalCommentsCount": {
+          "type": "Int"
+        },
         "updatedAt": {
           "type": "DateTime!"
         },
         "url": {
           "type": "URI!"
         },
+        "userContentEdits": {
+          "type": "UserContentEditConnection",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "viewerCanApplySuggestion": {
+          "type": "Boolean!"
+        },
+        "viewerCanAssign": {
+          "type": "Boolean!"
+        },
+        "viewerCanClose": {
+          "type": "Boolean!"
+        },
+        "viewerCanDeleteHeadRef": {
+          "type": "Boolean!"
+        },
+        "viewerCanDisableAutoMerge": {
+          "type": "Boolean!"
+        },
+        "viewerCanEditFiles": {
+          "type": "Boolean!"
+        },
+        "viewerCanEnableAutoMerge": {
+          "type": "Boolean!"
+        },
+        "viewerCanLabel": {
+          "type": "Boolean!"
+        },
+        "viewerCanMergeAsAdmin": {
+          "type": "Boolean!"
+        },
         "viewerCanReact": {
           "type": "Boolean!"
+        },
+        "viewerCanReopen": {
+          "type": "Boolean!"
+        },
+        "viewerCanSubscribe": {
+          "type": "Boolean!"
+        },
+        "viewerCanUpdate": {
+          "type": "Boolean!"
+        },
+        "viewerCanUpdateBranch": {
+          "type": "Boolean!"
+        },
+        "viewerCannotUpdateReasons": {
+          "type": "[CommentCannotUpdateReason!]!"
+        },
+        "viewerDidAuthor": {
+          "type": "Boolean!"
+        },
+        "viewerLatestReview": {
+          "type": "PullRequestReview"
+        },
+        "viewerLatestReviewRequest": {
+          "type": "ReviewRequest"
+        },
+        "viewerMergeBodyText": {
+          "type": "String!",
+          "args": {
+            "mergeType": "PullRequestMergeMethod"
+          }
+        },
+        "viewerMergeHeadlineText": {
+          "type": "String!",
+          "args": {
+            "mergeType": "PullRequestMergeMethod"
+          }
+        },
+        "viewerSubscription": {
+          "type": "SubscriptionState"
         }
       },
       "interfaces": [
@@ -13860,8 +14971,26 @@
         "authorAssociation": {
           "type": "CommentAuthorAssociation!"
         },
+        "authorCanPushToRepository": {
+          "type": "Boolean!"
+        },
         "body": {
           "type": "String!"
+        },
+        "bodyHTML": {
+          "type": "HTML!"
+        },
+        "bodyText": {
+          "type": "String!"
+        },
+        "comments": {
+          "type": "PullRequestReviewCommentConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
         },
         "commit": {
           "type": "Commit"
@@ -13869,11 +14998,47 @@
         "createdAt": {
           "type": "DateTime!"
         },
+        "createdViaEmail": {
+          "type": "Boolean!"
+        },
         "databaseId": {
           "type": "Int"
         },
+        "editor": {
+          "type": "Actor"
+        },
+        "fullDatabaseId": {
+          "type": "BigInt"
+        },
         "id": {
           "type": "ID!"
+        },
+        "includesCreatedEdit": {
+          "type": "Boolean!"
+        },
+        "isMinimized": {
+          "type": "Boolean!"
+        },
+        "lastEditedAt": {
+          "type": "DateTime"
+        },
+        "minimizedReason": {
+          "type": "String"
+        },
+        "onBehalfOf": {
+          "type": "TeamConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "publishedAt": {
+          "type": "DateTime"
+        },
+        "pullRequest": {
+          "type": "PullRequest!"
         },
         "reactionGroups": {
           "type": "[ReactionGroup!]"
@@ -13887,6 +15052,12 @@
             "last": "Int"
           }
         },
+        "repository": {
+          "type": "Repository!"
+        },
+        "resourcePath": {
+          "type": "URI!"
+        },
         "state": {
           "type": "PullRequestReviewState!"
         },
@@ -13896,7 +15067,37 @@
         "updatedAt": {
           "type": "DateTime!"
         },
+        "url": {
+          "type": "URI!"
+        },
+        "userContentEdits": {
+          "type": "UserContentEditConnection",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "viewerCanDelete": {
+          "type": "Boolean!"
+        },
+        "viewerCanMinimize": {
+          "type": "Boolean!"
+        },
         "viewerCanReact": {
+          "type": "Boolean!"
+        },
+        "viewerCanUnminimize": {
+          "type": "Boolean!"
+        },
+        "viewerCanUpdate": {
+          "type": "Boolean!"
+        },
+        "viewerCannotUpdateReasons": {
+          "type": "[CommentCannotUpdateReason!]!"
+        },
+        "viewerDidAuthor": {
           "type": "Boolean!"
         }
       },
@@ -13910,11 +15111,26 @@
         "author": {
           "type": "Actor"
         },
+        "authorAssociation": {
+          "type": "CommentAuthorAssociation!"
+        },
         "body": {
           "type": "String!"
         },
+        "bodyHTML": {
+          "type": "HTML!"
+        },
+        "bodyText": {
+          "type": "String!"
+        },
+        "commit": {
+          "type": "Commit"
+        },
         "createdAt": {
           "type": "DateTime!"
+        },
+        "createdViaEmail": {
+          "type": "Boolean!"
         },
         "databaseId": {
           "type": "Int"
@@ -13922,17 +15138,62 @@
         "diffHunk": {
           "type": "String!"
         },
+        "draftedAt": {
+          "type": "DateTime!"
+        },
+        "editor": {
+          "type": "Actor"
+        },
+        "fullDatabaseId": {
+          "type": "BigInt"
+        },
         "id": {
           "type": "ID!"
         },
+        "includesCreatedEdit": {
+          "type": "Boolean!"
+        },
+        "isMinimized": {
+          "type": "Boolean!"
+        },
+        "lastEditedAt": {
+          "type": "DateTime"
+        },
         "line": {
           "type": "Int"
+        },
+        "minimizedReason": {
+          "type": "String"
+        },
+        "originalCommit": {
+          "type": "Commit"
+        },
+        "originalLine": {
+          "type": "Int"
+        },
+        "originalPosition": {
+          "type": "Int!"
+        },
+        "originalStartLine": {
+          "type": "Int"
+        },
+        "outdated": {
+          "type": "Boolean!"
         },
         "path": {
           "type": "String!"
         },
         "position": {
           "type": "Int"
+        },
+        "publishedAt": {
+          "type": "DateTime"
+        },
+        "pullRequest": {
+          "type": "PullRequest!"
+        },
+        "pullRequestReview": {
+          "type": "PullRequestReview"
         },
         "reactionGroups": {
           "type": "[ReactionGroup!]"
@@ -13946,13 +15207,58 @@
             "last": "Int"
           }
         },
+        "replyTo": {
+          "type": "PullRequestReviewComment"
+        },
+        "repository": {
+          "type": "Repository!"
+        },
+        "resourcePath": {
+          "type": "URI!"
+        },
+        "startLine": {
+          "type": "Int"
+        },
         "state": {
           "type": "PullRequestReviewCommentState!"
+        },
+        "subjectType": {
+          "type": "PullRequestReviewThreadSubjectType!"
         },
         "updatedAt": {
           "type": "DateTime!"
         },
+        "url": {
+          "type": "URI!"
+        },
+        "userContentEdits": {
+          "type": "UserContentEditConnection",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "viewerCanDelete": {
+          "type": "Boolean!"
+        },
+        "viewerCanMinimize": {
+          "type": "Boolean!"
+        },
         "viewerCanReact": {
+          "type": "Boolean!"
+        },
+        "viewerCanUnminimize": {
+          "type": "Boolean!"
+        },
+        "viewerCanUpdate": {
+          "type": "Boolean!"
+        },
+        "viewerCannotUpdateReasons": {
+          "type": "[CommentCannotUpdateReason!]!"
+        },
+        "viewerDidAuthor": {
           "type": "Boolean!"
         }
       },
@@ -14045,8 +15351,14 @@
             "last": "Int"
           }
         },
+        "diffSide": {
+          "type": "DiffSide!"
+        },
         "id": {
           "type": "ID!"
+        },
+        "isCollapsed": {
+          "type": "Boolean!"
         },
         "isOutdated": {
           "type": "Boolean!"
@@ -14057,11 +15369,41 @@
         "line": {
           "type": "Int"
         },
+        "originalLine": {
+          "type": "Int"
+        },
+        "originalStartLine": {
+          "type": "Int"
+        },
         "path": {
           "type": "String!"
         },
+        "pullRequest": {
+          "type": "PullRequest!"
+        },
+        "repository": {
+          "type": "Repository!"
+        },
         "resolvedBy": {
           "type": "User"
+        },
+        "startDiffSide": {
+          "type": "DiffSide"
+        },
+        "startLine": {
+          "type": "Int"
+        },
+        "subjectType": {
+          "type": "PullRequestReviewThreadSubjectType!"
+        },
+        "viewerCanReply": {
+          "type": "Boolean!"
+        },
+        "viewerCanResolve": {
+          "type": "Boolean!"
+        },
+        "viewerCanUnresolve": {
+          "type": "Boolean!"
         }
       }
     },
@@ -14086,6 +15428,34 @@
         "LINE"
       ]
     },
+    "PullRequestStack": {
+      "kind": "OBJECT",
+      "fields": {
+        "baseRefName": {
+          "type": "String!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "number": {
+          "type": "Int!"
+        },
+        "size": {
+          "type": "Int!"
+        }
+      }
+    },
+    "PullRequestStackEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "id": {
+          "type": "ID!"
+        },
+        "position": {
+          "type": "Int!"
+        }
+      }
+    },
     "PullRequestState": {
       "kind": "ENUM",
       "enum_values": [
@@ -14105,6 +15475,42 @@
         },
         "repository": {
           "type": "Repository!"
+        }
+      }
+    },
+    "PullRequestTimelineConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[PullRequestTimelineItemEdge]"
+        },
+        "nodes": {
+          "type": "[PullRequestTimelineItem]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "PullRequestTimelineItem": {
+      "kind": "UNION",
+      "possible_types": [
+        "IssueComment",
+        "PullRequestReview",
+        "PullRequestReviewThread"
+      ]
+    },
+    "PullRequestTimelineItemEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "PullRequestTimelineItem"
         }
       }
     },
@@ -14544,8 +15950,31 @@
     "ReactingUserConnection": {
       "kind": "OBJECT",
       "fields": {
+        "edges": {
+          "type": "[ReactingUserEdge]"
+        },
+        "nodes": {
+          "type": "[User]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
         "totalCount": {
           "type": "Int!"
+        }
+      }
+    },
+    "ReactingUserEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "User!"
+        },
+        "reactedAt": {
+          "type": "DateTime!"
         }
       }
     },
@@ -14555,8 +15984,17 @@
         "content": {
           "type": "ReactionContent!"
         },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "databaseId": {
+          "type": "Int"
+        },
         "id": {
           "type": "ID!"
+        },
+        "reactable": {
+          "type": "Reactable!"
         },
         "user": {
           "type": "User"
@@ -14577,6 +16015,9 @@
         },
         "totalCount": {
           "type": "Int!"
+        },
+        "viewerHasReacted": {
+          "type": "Boolean!"
         }
       }
     },
@@ -14610,11 +16051,69 @@
         "content": {
           "type": "ReactionContent!"
         },
+        "createdAt": {
+          "type": "DateTime"
+        },
+        "reactors": {
+          "type": "ReactorConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "subject": {
+          "type": "Reactable!"
+        },
         "users": {
-          "type": "ReactingUserConnection!"
+          "type": "ReactingUserConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
         },
         "viewerHasReacted": {
           "type": "Boolean!"
+        }
+      }
+    },
+    "Reactor": {
+      "kind": "UNION",
+      "possible_types": [
+        "User"
+      ]
+    },
+    "ReactorConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[ReactorEdge]"
+        },
+        "nodes": {
+          "type": "[Reactor]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "ReactorEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "Reactor!"
+        },
+        "reactedAt": {
+          "type": "DateTime!"
         }
       }
     },
@@ -14847,6 +16346,9 @@
     "Release": {
       "kind": "OBJECT",
       "fields": {
+        "author": {
+          "type": "User"
+        },
         "createdAt": {
           "type": "DateTime!"
         },
@@ -14855,6 +16357,9 @@
         },
         "description": {
           "type": "String"
+        },
+        "descriptionHTML": {
+          "type": "HTML"
         },
         "id": {
           "type": "ID!"
@@ -14870,6 +16375,15 @@
         },
         "isPrerelease": {
           "type": "Boolean!"
+        },
+        "mentions": {
+          "type": "UserConnection",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
         },
         "name": {
           "type": "String"
@@ -14889,8 +16403,39 @@
             "last": "Int"
           }
         },
+        "releaseAssets": {
+          "type": "ReleaseAssetConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "name": "String"
+          }
+        },
+        "repository": {
+          "type": "Repository!"
+        },
+        "resourcePath": {
+          "type": "URI!"
+        },
+        "shortDescriptionHTML": {
+          "type": "HTML",
+          "args": {
+            "limit": "Int"
+          }
+        },
+        "tag": {
+          "type": "Ref"
+        },
+        "tagCommit": {
+          "type": "Commit"
+        },
         "tagName": {
           "type": "String!"
+        },
+        "updatedAt": {
+          "type": "DateTime!"
         },
         "url": {
           "type": "URI!"
@@ -14902,6 +16447,75 @@
       "interfaces": [
         "Reactable"
       ]
+    },
+    "ReleaseAsset": {
+      "kind": "OBJECT",
+      "fields": {
+        "contentType": {
+          "type": "String!"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "digest": {
+          "type": "String"
+        },
+        "downloadCount": {
+          "type": "Int!"
+        },
+        "downloadUrl": {
+          "type": "URI!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "name": {
+          "type": "String!"
+        },
+        "release": {
+          "type": "Release"
+        },
+        "size": {
+          "type": "Int!"
+        },
+        "updatedAt": {
+          "type": "DateTime!"
+        },
+        "uploadedBy": {
+          "type": "User!"
+        },
+        "url": {
+          "type": "URI!"
+        }
+      }
+    },
+    "ReleaseAssetConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[ReleaseAssetEdge]"
+        },
+        "nodes": {
+          "type": "[ReleaseAsset]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "ReleaseAssetEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "ReleaseAsset"
+        }
+      }
     },
     "ReleaseConnection": {
       "kind": "OBJECT",
@@ -16623,14 +18237,26 @@
     "RepositoryTopic": {
       "kind": "OBJECT",
       "fields": {
+        "id": {
+          "type": "ID!"
+        },
+        "resourcePath": {
+          "type": "URI!"
+        },
         "topic": {
           "type": "Topic!"
+        },
+        "url": {
+          "type": "URI!"
         }
       }
     },
     "RepositoryTopicConnection": {
       "kind": "OBJECT",
       "fields": {
+        "edges": {
+          "type": "[RepositoryTopicEdge]"
+        },
         "nodes": {
           "type": "[RepositoryTopic]"
         },
@@ -16639,6 +18265,17 @@
         },
         "totalCount": {
           "type": "Int!"
+        }
+      }
+    },
+    "RepositoryTopicEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "RepositoryTopic"
         }
       }
     },
@@ -18776,12 +20413,18 @@
     "StatusCheckRollup": {
       "kind": "OBJECT",
       "fields": {
+        "commit": {
+          "type": "Commit"
+        },
         "contexts": {
           "type": "StatusCheckRollupContextConnection!",
           "args": {
             "after": "String",
             "first": "Int"
           }
+        },
+        "id": {
+          "type": "ID!"
         },
         "state": {
           "type": "StatusState!"
@@ -18824,14 +20467,29 @@
     "StatusContext": {
       "kind": "OBJECT",
       "fields": {
+        "avatarUrl": {
+          "type": "URI",
+          "args": {
+            "size": "Int"
+          }
+        },
+        "commit": {
+          "type": "Commit"
+        },
         "context": {
           "type": "String!"
         },
         "createdAt": {
           "type": "DateTime!"
         },
+        "creator": {
+          "type": "Actor"
+        },
         "description": {
           "type": "String"
+        },
+        "id": {
+          "type": "ID!"
         },
         "isRequired": {
           "type": "Boolean!",
@@ -18845,6 +20503,9 @@
         },
         "targetUrl": {
           "type": "URI"
+        },
+        "updatedAt": {
+          "type": "DateTime!"
         }
       },
       "interfaces": [
@@ -18988,6 +20649,62 @@
         "SUBSCRIBED",
         "UNSUBSCRIBED"
       ]
+    },
+    "SuggestedReviewer": {
+      "kind": "OBJECT",
+      "fields": {
+        "isAuthor": {
+          "type": "Boolean!"
+        },
+        "isCommenter": {
+          "type": "Boolean!"
+        },
+        "reviewer": {
+          "type": "User!"
+        }
+      }
+    },
+    "SuggestedReviewerActor": {
+      "kind": "OBJECT",
+      "fields": {
+        "isAuthor": {
+          "type": "Boolean!"
+        },
+        "isCommenter": {
+          "type": "Boolean!"
+        },
+        "reviewer": {
+          "type": "Actor!"
+        }
+      }
+    },
+    "SuggestedReviewerActorConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[SuggestedReviewerActorEdge]"
+        },
+        "nodes": {
+          "type": "[SuggestedReviewerActor]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "SuggestedReviewerActorEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "SuggestedReviewerActor"
+        }
+      }
     },
     "Tag": {
       "kind": "OBJECT",
@@ -19337,6 +21054,28 @@
         "MEMBER"
       ]
     },
+    "ThreadSubscriptionFormAction": {
+      "kind": "ENUM",
+      "enum_values": [
+        "NONE",
+        "SUBSCRIBE",
+        "UNSUBSCRIBE"
+      ]
+    },
+    "ThreadSubscriptionState": {
+      "kind": "ENUM",
+      "enum_values": [
+        "DISABLED",
+        "IGNORING_LIST",
+        "IGNORING_THREAD",
+        "NONE",
+        "SUBSCRIBED_TO_LIST",
+        "SUBSCRIBED_TO_THREAD",
+        "SUBSCRIBED_TO_THREAD_EVENTS",
+        "SUBSCRIBED_TO_THREAD_TYPE",
+        "UNAVAILABLE"
+      ]
+    },
     "Topic": {
       "kind": "OBJECT",
       "fields": {
@@ -19352,6 +21091,13 @@
         "PERSONAL_PREFERENCE",
         "TOO_GENERAL",
         "TOO_SPECIFIC"
+      ]
+    },
+    "TrackedIssueStates": {
+      "kind": "ENUM",
+      "enum_values": [
+        "CLOSED",
+        "OPEN"
       ]
     },
     "TransferEnterpriseOrganizationInput": {
@@ -21961,6 +23707,63 @@
         },
         "totalCount": {
           "type": "Int!"
+        }
+      }
+    },
+    "UserContentEdit": {
+      "kind": "OBJECT",
+      "fields": {
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "deletedAt": {
+          "type": "DateTime"
+        },
+        "deletedBy": {
+          "type": "Actor"
+        },
+        "diff": {
+          "type": "String"
+        },
+        "editedAt": {
+          "type": "DateTime!"
+        },
+        "editor": {
+          "type": "Actor"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "updatedAt": {
+          "type": "DateTime!"
+        }
+      }
+    },
+    "UserContentEditConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[UserContentEditEdge]"
+        },
+        "nodes": {
+          "type": "[UserContentEdit]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "UserContentEditEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "UserContentEdit"
         }
       }
     },

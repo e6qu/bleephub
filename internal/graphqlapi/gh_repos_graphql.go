@@ -346,10 +346,27 @@ func (s *Resolver) addRepoFieldsToSchema(
 				"edges": &graphql.Field{Type: graphql.NewList(graphql.NewObject(graphql.ObjectConfig{
 					Name: "LanguageEdge",
 					Fields: graphql.Fields{
-						"size": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
-						"node": &graphql.Field{Type: graphql.NewNonNull(languageType)},
+						"size":   &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
+						"node":   &graphql.Field{Type: graphql.NewNonNull(languageType)},
+						"cursor": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
 					},
 				}))},
+				"nodes": &graphql.Field{
+					Type: graphql.NewList(languageType),
+					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+						return languageConnectionNodes(p.Source), nil
+					},
+				},
+				"pageInfo": &graphql.Field{
+					Type:    graphql.NewNonNull(s.gqlPageInfoType()),
+					Resolve: fullPageInfoResolver,
+				},
+				"totalSize": &graphql.Field{
+					Type: graphql.NewNonNull(graphql.Int),
+					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+						return languageConnectionTotalSize(p.Source), nil
+					},
+				},
 				"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
 			},
 		}),
@@ -393,8 +410,9 @@ func (s *Resolver) addRepoFieldsToSchema(
 					break
 				}
 				edges = append(edges, map[string]interface{}{
-					"size": p.size,
-					"node": map[string]interface{}{"name": p.lang},
+					"size":   p.size,
+					"node":   map[string]interface{}{"name": p.lang},
+					"cursor": encodeCursor(i),
 				})
 			}
 			return map[string]interface{}{"edges": edges, "totalCount": len(pairs)}, nil
@@ -402,19 +420,7 @@ func (s *Resolver) addRepoFieldsToSchema(
 	})
 	repoType.AddFieldConfig("repositoryTopics", &graphql.Field{
 		// Backed by Repo.Topics (REST PUT /repos/{o}/{r}/topics).
-		Type: graphql.NewNonNull(graphql.NewObject(graphql.ObjectConfig{
-			Name: "RepositoryTopicConnection",
-			Fields: graphql.Fields{
-				"nodes": &graphql.Field{Type: graphql.NewList(graphql.NewObject(graphql.ObjectConfig{
-					Name: "RepositoryTopic",
-					Fields: graphql.Fields{
-						"topic": &graphql.Field{Type: graphql.NewNonNull(s.gqlTopicType())},
-					},
-				}))},
-				"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
-				"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
-			},
-		})),
+		Type: graphql.NewNonNull(s.gqlRepositoryTopicConnectionType()),
 		Args: graphql.FieldConfigArgument{
 			"first": &graphql.ArgumentConfig{Type: graphql.Int},
 		},
@@ -424,14 +430,15 @@ func (s *Resolver) addRepoFieldsToSchema(
 				return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
 			}
 			topics, _ := r["topics"].([]string)
-			nodes := make([]interface{}, 0, len(topics))
-			for _, tp := range topics {
-				nodes = append(nodes, map[string]interface{}{
-					"topic": map[string]interface{}{"name": tp},
-				})
+			nodes := make([]map[string]interface{}, 0, len(topics))
+			edges := make([]map[string]interface{}, 0, len(topics))
+			for i, tp := range topics {
+				node := map[string]interface{}{"topic": map[string]interface{}{"name": tp}, "name": tp}
+				nodes = append(nodes, node)
+				edges = append(edges, map[string]interface{}{"node": node, "cursor": encodeCursor(i)})
 			}
 			return map[string]interface{}{
-				"nodes": nodes, "totalCount": len(nodes),
+				"nodes": nodes, "edges": edges, "totalCount": len(nodes),
 				"pageInfo": map[string]interface{}{
 					"hasNextPage": false, "hasPreviousPage": false,
 					"startCursor": nil, "endCursor": nil,
@@ -1897,6 +1904,13 @@ func releaseToGQL(rel *store.Release, latestID int, repoFullName string, immutab
 	if rel.Name != "" {
 		name = rel.Name
 	}
+	// updatedAt: the store does not track release edit times, so the honest
+	// value is the publish time when published, else the creation time — the
+	// most recent moment the record is known to reflect.
+	updatedAt := rel.CreatedAt.Format(time.RFC3339)
+	if rel.PublishedAt != nil {
+		updatedAt = rel.PublishedAt.Format(time.RFC3339)
+	}
 	return map[string]interface{}{
 		"nodeID":       rel.NodeID,
 		"databaseId":   rel.ID,
@@ -1910,6 +1924,15 @@ func releaseToGQL(rel *store.Release, latestID int, repoFullName string, immutab
 		"publishedAt":  publishedAt,
 		"url":          externalURL("/" + repoFullName + "/releases/tag/" + rel.TagName),
 		"description":  nilStr(rel.Body),
+		// Raw fields the account-surface Release members resolve from
+		// (author, descriptionHTML, repository, resourcePath, tag, tagCommit,
+		// mentions, releaseAssets, updatedAt) — see addAccountActionsFields.
+		"authorID":        rel.AuthorID,
+		"repoID":          rel.RepoID,
+		"repoFullName":    repoFullName,
+		"body":            rel.Body,
+		"targetCommitish": rel.TargetCommitish,
+		"updatedAt":       updatedAt,
 	}
 }
 

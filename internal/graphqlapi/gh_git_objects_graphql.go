@@ -253,6 +253,17 @@ func (s *Resolver) gqlLanguageType() *graphql.Object {
 		Name: "Language",
 		Fields: graphql.Fields{
 			"name": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"id": &graphql.Field{
+				Type: graphql.NewNonNull(graphql.ID),
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					src, _ := p.Source.(map[string]interface{})
+					name, _ := src["name"].(string)
+					return languageNodeID(name), nil
+				},
+			},
+			// bleephub does not carry Linguist's per-language colors, so color is
+			// a truthful null rather than an invented hex value.
+			"color": &graphql.Field{Type: graphql.String, Resolve: nilResolver},
 		},
 	})
 	return s.graphqlTypes.language

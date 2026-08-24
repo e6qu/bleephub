@@ -440,6 +440,10 @@ func (s *Resolver) addUserConnectionFields(types *accountSurfaceTypes) {
 					render: func() map[string]interface{} {
 						return map[string]interface{}{
 							"id":        row.NodeID,
+							"nodeID":    row.NodeID,
+							"_dbID":     row.ID,
+							"authorID":  row.UserID,
+							"gistID":    row.GistID,
 							"body":      row.Body,
 							"createdAt": row.CreatedAt.UTC().Format(rfc3339),
 							"updatedAt": row.UpdatedAt.UTC().Format(rfc3339),
@@ -584,6 +588,10 @@ func (s *Resolver) gqlGistCommentType(types *accountSurfaceTypes) *graphql.Objec
 			"author":    &graphql.Field{Type: s.graphqlTypes.actor},
 		},
 	})
+	// Install the shared Comment-trait, gist back-reference and viewer-permission
+	// fields. The gist and repository families exist by the time the account
+	// surface builds this type.
+	s.addGistCommentFields(types.gistComment)
 	return types.gistComment
 }
 

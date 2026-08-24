@@ -342,6 +342,12 @@ func (s *Resolver) initGraphQLSchema() {
 	// families, all of which are now fully assembled.
 	s.addTimelineFieldsToSchema(nodeInterface, nodeTypes)
 
+	// Complete GitHub's field surface on the conversation and metadata types
+	// (Issue, Discussion, DiscussionComment, Milestone, Label). It runs last so
+	// every type these fields name — ProjectV2, the timeline family,
+	// IssueComment, Repository — is already assembled.
+	s.enrichConversationTypes(userType, repoType)
+
 	// Security advisories, Dependabot vulnerability alerts and the dependency
 	// graph. This runs after the pull-request family because DependabotUpdate
 	// names PullRequest, and after the repository family because four of its
@@ -426,6 +432,19 @@ func (s *Resolver) initGraphQLSchema() {
 	// account surface assembles.
 	s.addChecksMutationsToSchema(mutationType)
 	s.addDeploymentsMutationsToSchema(mutationType)
+
+	// The residual account/git/actions members GitHub's Commit, Release and
+	// status-rollup types declare. This runs last so every type it hangs a
+	// field off (Commit, Release, StatusContext, StatusCheckRollup, User,
+	// Organization, Repository, Ref) is already assembled.
+	s.addAccountActionsFields()
+
+	// The shared Comment-trait, back-reference and viewer-permission fields on
+	// CommitComment, IssueComment and PullRequestReviewComment. They are added
+	// last because they name the repository, issue, pull-request, review and
+	// commit types, all of which are now fully assembled. (GistComment is
+	// enriched in place by gqlGistCommentType, which runs after those families.)
+	s.enrichCommentTypes()
 
 	// Every mutation is now registered. Authorization coverage is asserted over
 	// the assembled type rather than trusted to each family above, so a

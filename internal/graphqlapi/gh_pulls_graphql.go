@@ -271,6 +271,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			},
 		},
 	})
+	s.graphqlTypes.statusCheckRollup = statusCheckRollupType
 
 	gitActorConnectionType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "GitActorConnection",
@@ -1047,6 +1048,28 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 	s.addReactableFields(pullRequestType, "pull_request")
 	s.addReactableFields(prReviewType, "pull_request_review")
 	s.addReactableFields(prReviewCommentType, "pull_request_review_comment")
+
+	// Complete the GitHub GraphQL surface of the three pull-request types
+	// (see gh_pulls_fields_graphql.go): every remaining field, each backed by
+	// the real store/git data or answering the truthful zero.
+	s.addPullRequestSurfaceFields(prSurfaceDeps{
+		pullRequest:          pullRequestType,
+		review:               prReviewType,
+		thread:               prReviewThreadType,
+		reviewConnection:     prReviewConnectionType,
+		reviewCommentConn:    prReviewCommentConnectionType,
+		statusCheckRollup:    statusCheckRollupType,
+		reviewRequest:        reviewRequestType,
+		userType:             userType,
+		repoType:             repoType,
+		uri:                  uri,
+		dateTime:             dateTime,
+		bigInt:               s.graphQLStringScalar("BigInt"),
+		htmlScalar:           s.graphQLStringScalar("HTML"),
+		commentAuthorAssoc:   commentAuthorAssociationEnum,
+		subscriptionState:    s.sharedEnum("SubscriptionState", "IGNORED", "SUBSCRIBED", "UNSUBSCRIBED"),
+		pullRequestMergeEnum: pullRequestMergeMethodEnum,
+	})
 
 	// --- PR Connection ---
 	prEdgeType := graphql.NewObject(graphql.ObjectConfig{
@@ -2646,6 +2669,8 @@ func pullRequestToGQL(pr *store.PullRequest, st *store.Store) map[string]interfa
 		mergeCommit = gitCommitToGQLLocked(realMergeCommit, st, repoFullName)
 	}
 
+	participantNodes := prParticipantsLocked(pr, st)
+
 	return map[string]interface{}{
 		"__typename":       "PullRequest",
 		"nodeID":           pr.NodeID,
@@ -2741,6 +2766,21 @@ func pullRequestToGQL(pr *store.PullRequest, st *store.Store) map[string]interfa
 			"nodes":      reviewThreadNodes,
 			"totalCount": len(reviewThreadNodes),
 		},
+		// Surface-completion keys (gh_pulls_fields_graphql.go). authorID drives
+		// the viewer* permission fields; the rest carry real data the renderer
+		// already has under the lock.
+		"authorID":           pr.AuthorID,
+		"authorAssociation":  authorAssociationForRepoLocked(st, pr.RepoID, pr.AuthorID),
+		"statusCheckRollup":  statusCheckRollupSourceLocked(st, repoFullName, sha),
+		"totalCommentsCount": len(prCommentNodes) + prReviewThreadCommentCount(reviewThreadNodes),
+		"participants": map[string]interface{}{
+			"nodes":      participantNodes,
+			"totalCount": len(participantNodes),
+		},
+		"assignedActors": map[string]interface{}{
+			"nodes":      assigneeNodes,
+			"totalCount": len(assigneeNodes),
+		},
 	}
 }
 
@@ -2809,14 +2849,41 @@ func reviewThreadsForGraphQL(threads []*store.ReviewThread, st *store.Store) []m
 				"state":      "SUBMITTED",
 			})
 		}
-		// The thread's path/line tracks the root comment.
+		// The thread's path/line and diff-position metadata track the root
+		// comment; the parent/repo linkage and the viewer-facing flags let the
+		// PullRequestReviewThread surface resolve from the real record.
 		var threadPath string
-		var threadLine interface{}
+		var threadLine, originalLine, originalStartLine, startLine, startDiffSide interface{}
+		diffSide := "RIGHT"
+		subjectType := "FILE"
+		prID, repoID, rootAuthorID := 0, 0, 0
 		if len(t.Comments) > 0 {
 			root := t.Comments[0]
 			threadPath = root.Path
+			prID = root.PullRequestID
+			rootAuthorID = root.AuthorID
+			if pr := st.PullRequests[root.PullRequestID]; pr != nil {
+				repoID = pr.RepoID
+			}
+			if root.Side != "" {
+				diffSide = root.Side
+			}
+			if root.StartSide != "" {
+				startDiffSide = root.StartSide
+			}
 			if root.Line != nil {
 				threadLine = *root.Line
+				originalLine = *root.Line
+				subjectType = "LINE"
+			}
+			if root.OriginalLine != nil {
+				originalLine = *root.OriginalLine
+			}
+			if root.StartLine != nil {
+				startLine = *root.StartLine
+			}
+			if root.OriginalStartLine != nil {
+				originalStartLine = *root.OriginalStartLine
 			}
 		}
 		var resolvedBy interface{}
@@ -2826,12 +2893,22 @@ func reviewThreadsForGraphQL(threads []*store.ReviewThread, st *store.Store) []m
 			}
 		}
 		out = append(out, map[string]interface{}{
-			"id":         store.PRReviewThreadNodeID(t.ID),
-			"isResolved": t.IsResolved,
-			"isOutdated": false,
-			"resolvedBy": resolvedBy,
-			"path":       threadPath,
-			"line":       threadLine,
+			"id":                store.PRReviewThreadNodeID(t.ID),
+			"isResolved":        t.IsResolved,
+			"isOutdated":        false,
+			"isCollapsed":       t.IsResolved,
+			"resolvedBy":        resolvedBy,
+			"path":              threadPath,
+			"line":              threadLine,
+			"originalLine":      originalLine,
+			"startLine":         startLine,
+			"originalStartLine": originalStartLine,
+			"diffSide":          diffSide,
+			"startDiffSide":     startDiffSide,
+			"subjectType":       subjectType,
+			"prID":              prID,
+			"repoID":            repoID,
+			"authorID":          rootAuthorID,
 			"comments": map[string]interface{}{
 				"nodes":      commentNodes,
 				"totalCount": len(commentNodes),
@@ -2973,12 +3050,21 @@ func prReviewSourceLocked(r *store.PullRequestReview, st *store.Store) map[strin
 	}
 	commitSHA := ""
 	repoID := 0
+	prNumber := 0
 	if pr := st.PullRequests[r.PRID]; pr != nil {
 		commitSHA = store.PullRequestHeadSHALocked(pr, st)
 		repoID = pr.RepoID
+		prNumber = pr.Number
+	}
+	resourcePath := ""
+	if repo := st.Repos[repoID]; repo != nil {
+		resourcePath = fmt.Sprintf("/%s/pull/%d#pullrequestreview-%d", repo.FullName, prNumber, r.ID)
 	}
 	return map[string]interface{}{
 		"_dbID":             r.ID,
+		"_prID":             r.PRID,
+		"repoID":            repoID,
+		"authorID":          r.AuthorID,
 		"nodeID":            r.NodeID,
 		"body":              r.Body,
 		"state":             r.State,
@@ -2987,6 +3073,7 @@ func prReviewSourceLocked(r *store.PullRequestReview, st *store.Store) map[strin
 		"createdAt":         r.CreatedAt.Format(time.RFC3339),
 		"updatedAt":         r.UpdatedAt.Format(time.RFC3339),
 		"submittedAt":       r.CreatedAt.Format(time.RFC3339),
+		"resourcePath":      resourcePath,
 		"commit":            map[string]interface{}{"oid": commitSHA},
 		"reactionGroups":    reactionGroupsForGraphQL(st.Reactions, "pull_request_review", r.ID, 0),
 	}
@@ -3137,6 +3224,13 @@ func statusCheckRollupSourceLocked(st *store.Store, repoKey, sha string) interfa
 			"targetUrl":   nilStr(status.TargetURL),
 			"createdAt":   status.CreatedAt.Format(time.RFC3339),
 			"description": nilStr(status.Description),
+			// Identity, authorship and the commit sha travel with the node so
+			// StatusContext.{id,creator,avatarUrl,commit,updatedAt} resolve from
+			// the same real commit-status record the REST surface serves.
+			"nodeID":    status.NodeID,
+			"creatorID": status.CreatorID,
+			"updatedAt": status.UpdatedAt.Format(time.RFC3339),
+			"sha":       sha,
 		})
 	}
 	checkRunCounts := map[string]int{}
@@ -3174,6 +3268,10 @@ func statusCheckRollupSourceLocked(st *store.Store, repoKey, sha string) interfa
 
 	return map[string]interface{}{
 		"state": state,
+		// repoKey/sha travel with the rollup so StatusCheckRollup.{id,commit}
+		// resolve against the real commit they summarise.
+		"repoKey": repoKey,
+		"sha":     sha,
 		"contexts": map[string]interface{}{
 			"nodes":                      nodes,
 			"totalCount":                 len(nodes),

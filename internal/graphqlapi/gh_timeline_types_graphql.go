@@ -145,17 +145,9 @@ func (s *Resolver) addTimelineFieldsToSchema(nodeInterface *graphql.Interface, n
 	reg.milestoneItem = s.timelineSubjectUnion("MilestoneItem", issueType, pullType)
 	reg.renamedSubject = s.timelineSubjectUnion("RenamedTitleSubject", issueType, pullType)
 	reg.referencedSubj = s.timelineSubjectUnion("ReferencedSubject", issueType, pullType)
-	reg.assignee = graphql.NewUnion(graphql.UnionConfig{
-		Name:  "Assignee",
-		Types: []*graphql.Object{s.graphqlTypes.user, s.graphqlTypes.organization},
-		ResolveType: func(p graphql.ResolveTypeParams) *graphql.Object {
-			source, _ := p.Value.(map[string]interface{})
-			if name, _ := source["__typename"].(string); name == "Organization" {
-				return s.graphqlTypes.organization
-			}
-			return s.graphqlTypes.user
-		},
-	})
+	// Assignee is shared with the Assignable connection (AssigneeConnection) that
+	// Issue/PullRequest expose; the memoized builder owns the one instance.
+	reg.assignee = s.sharedAssigneeUnion()
 
 	reg.updateIntent = graphql.NewObject(graphql.ObjectConfig{
 		Name: "IssueUpdateIntent",
@@ -174,6 +166,10 @@ func (s *Resolver) addTimelineFieldsToSchema(nodeInterface *graphql.Interface, n
 			"rationale": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
 		},
 	})
+	// Issue.eventRationales (gh_issue_fields_graphql.go) names this same object;
+	// memoize it so that field references the one instance rather than minting a
+	// second type of the same name.
+	s.graphqlTypes.issueEventRationale = reg.eventRationale
 
 	// The Assignable/Closable interfaces are claimed by Issue and PullRequest
 	// at construction (graphql-go memoizes an object's interface list), so they

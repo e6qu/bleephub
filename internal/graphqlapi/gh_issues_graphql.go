@@ -58,10 +58,18 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 	})
 	s.graphqlTypes.milestone = issueMilestoneType
 
+	milestoneEdgeType := graphql.NewObject(graphql.ObjectConfig{
+		Name: "MilestoneEdge",
+		Fields: graphql.Fields{
+			"cursor": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"node":   &graphql.Field{Type: issueMilestoneType},
+		},
+	})
 	milestoneConnectionType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "MilestoneConnection",
 		Fields: graphql.Fields{
 			"nodes":      &graphql.Field{Type: graphql.NewList(issueMilestoneType)},
+			"edges":      &graphql.Field{Type: graphql.NewList(milestoneEdgeType)},
 			"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
 			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
 		},
@@ -1827,6 +1835,9 @@ func issueToGQL(issue *store.Issue, st *store.Store) map[string]interface{} {
 	return map[string]interface{}{
 		"nodeID":           issue.NodeID,
 		"databaseId":       issue.ID,
+		"authorID":         issue.AuthorID,
+		"repoID":           issue.RepoID,
+		"duplicateOfID":    issue.DuplicateOfID,
 		"number":           issue.Number,
 		"title":            issue.Title,
 		"body":             issue.Body,
@@ -1939,10 +1950,18 @@ func (s *Resolver) gqlLabelConnectionType() *graphql.Object {
 	if s.graphqlTypes.labelConnection != nil {
 		return s.graphqlTypes.labelConnection
 	}
+	labelEdge := graphql.NewObject(graphql.ObjectConfig{
+		Name: "LabelEdge",
+		Fields: graphql.Fields{
+			"cursor": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"node":   &graphql.Field{Type: s.gqlLabelType()},
+		},
+	})
 	s.graphqlTypes.labelConnection = graphql.NewObject(graphql.ObjectConfig{
 		Name: "LabelConnection",
 		Fields: graphql.Fields{
 			"nodes":      &graphql.Field{Type: graphql.NewList(s.gqlLabelType())},
+			"edges":      &graphql.Field{Type: graphql.NewList(labelEdge)},
 			"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
 			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
 		},
@@ -1982,27 +2001,92 @@ func (s *Resolver) gqlReactionGroupType() *graphql.Object {
 		"ReactionContent",
 		"CONFUSED", "EYES", "HEART", "HOORAY", "LAUGH", "ROCKET", "THUMBS_DOWN", "THUMBS_UP",
 	)
+	dateTime := s.graphQLStringScalar("DateTime")
+	// The field types name Reactable (subject), the shared User type (reactors /
+	// users) and the connections below. A FieldsThunk defers their resolution
+	// until schema assembly, so this can be built while the Reactable interface
+	// that references it is still under construction.
 	s.graphqlTypes.reactionGroup = graphql.NewObject(graphql.ObjectConfig{
 		Name: "ReactionGroup",
-		Fields: graphql.Fields{
-			"content": &graphql.Field{Type: graphql.NewNonNull(reactionContentEnum)},
-			"viewerHasReacted": &graphql.Field{
-				Type: graphql.NewNonNull(graphql.Boolean),
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					m, _ := p.Source.(map[string]interface{})
-					v, _ := m["viewerHasReacted"].(bool)
-					return v, nil
+		Fields: graphql.FieldsThunk(func() graphql.Fields {
+			userType := s.graphqlTypes.user
+			reactorUnion := graphql.NewUnion(graphql.UnionConfig{
+				Name:  "Reactor",
+				Types: []*graphql.Object{userType},
+				ResolveType: func(graphql.ResolveTypeParams) *graphql.Object {
+					return userType
 				},
-			},
-			"users": &graphql.Field{
-				Type: graphql.NewNonNull(graphql.NewObject(graphql.ObjectConfig{
-					Name: "ReactingUserConnection",
-					Fields: graphql.Fields{
-						"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
+			})
+			reactorEdge := graphql.NewObject(graphql.ObjectConfig{
+				Name: "ReactorEdge",
+				Fields: graphql.Fields{
+					"cursor":    &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+					"node":      &graphql.Field{Type: graphql.NewNonNull(reactorUnion)},
+					"reactedAt": &graphql.Field{Type: graphql.NewNonNull(dateTime)},
+				},
+			})
+			reactorConn := graphql.NewObject(graphql.ObjectConfig{
+				Name: "ReactorConnection",
+				Fields: graphql.Fields{
+					"edges":      &graphql.Field{Type: graphql.NewList(reactorEdge)},
+					"nodes":      &graphql.Field{Type: graphql.NewList(reactorUnion)},
+					"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
+					"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
+				},
+			})
+			reactingUserEdge := graphql.NewObject(graphql.ObjectConfig{
+				Name: "ReactingUserEdge",
+				Fields: graphql.Fields{
+					"cursor":    &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+					"node":      &graphql.Field{Type: graphql.NewNonNull(userType)},
+					"reactedAt": &graphql.Field{Type: graphql.NewNonNull(dateTime)},
+				},
+			})
+			reactingUserConn := graphql.NewObject(graphql.ObjectConfig{
+				Name: "ReactingUserConnection",
+				Fields: graphql.Fields{
+					"edges":      &graphql.Field{Type: graphql.NewList(reactingUserEdge)},
+					"nodes":      &graphql.Field{Type: graphql.NewList(userType)},
+					"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
+					"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
+				},
+			})
+			return graphql.Fields{
+				"content":   &graphql.Field{Type: graphql.NewNonNull(reactionContentEnum)},
+				"createdAt": &graphql.Field{Type: dateTime, Resolve: nilResolver},
+				"viewerHasReacted": &graphql.Field{
+					Type: graphql.NewNonNull(graphql.Boolean),
+					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+						m, _ := p.Source.(map[string]interface{})
+						v, _ := m["viewerHasReacted"].(bool)
+						return v, nil
 					},
-				})),
-			},
-		},
+				},
+				"subject": &graphql.Field{
+					Type: graphql.NewNonNull(s.graphqlTypes.reactable),
+					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+						m, _ := p.Source.(map[string]interface{})
+						return s.reactableSubjectSource(srcStr(m, "parentType"), srcInt(m, "parentID")), nil
+					},
+				},
+				"reactors": &graphql.Field{
+					Type: graphql.NewNonNull(reactorConn),
+					Args: reactionConnectionArgs(),
+					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+						m, _ := p.Source.(map[string]interface{})
+						return s.reactorConnectionFor(srcStr(m, "parentType"), srcInt(m, "parentID"), srcStr(m, "restContent"), p.Args), nil
+					},
+				},
+				"users": &graphql.Field{
+					Type: graphql.NewNonNull(reactingUserConn),
+					Args: reactionConnectionArgs(),
+					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+						m, _ := p.Source.(map[string]interface{})
+						return s.reactorConnectionFor(srcStr(m, "parentType"), srcInt(m, "parentID"), srcStr(m, "restContent"), p.Args), nil
+					},
+				},
+			}
+		}),
 	})
 	return s.graphqlTypes.reactionGroup
 }
@@ -2396,9 +2480,13 @@ func issueFieldVisibilityEnum(visibility string) string {
 func labelToGQL(l *store.IssueLabel) map[string]interface{} {
 	return map[string]interface{}{
 		"nodeID":      l.NodeID,
+		"_dbID":       l.ID,
+		"repoID":      l.RepoID,
 		"name":        l.Name,
 		"description": l.Description,
 		"color":       l.Color,
+		"isDefault":   l.Default,
+		"createdAt":   l.CreatedAt.Format(time.RFC3339),
 	}
 }
 
@@ -2407,13 +2495,23 @@ func milestoneToGQL(ms *store.Milestone) map[string]interface{} {
 	if ms.DueOn != nil {
 		dueOn = ms.DueOn.Format(time.RFC3339)
 	}
+	var closedAt interface{}
+	if ms.ClosedAt != nil {
+		closedAt = ms.ClosedAt.Format(time.RFC3339)
+	}
 	return map[string]interface{}{
 		"nodeID":      ms.NodeID,
+		"_dbID":       ms.ID,
+		"repoID":      ms.RepoID,
+		"creatorID":   ms.CreatorID,
 		"number":      ms.Number,
 		"title":       ms.Title,
 		"description": ms.Description,
 		"state":       strings.ToUpper(string(ms.State)),
 		"dueOn":       dueOn,
+		"closedAt":    closedAt,
+		"createdAt":   ms.CreatedAt.Format(time.RFC3339),
+		"updatedAt":   ms.UpdatedAt.Format(time.RFC3339),
 	}
 }
 
@@ -2555,6 +2653,9 @@ func reactionGroupsForGraphQL(rs *store.ReactionStore, parentType string, parent
 	for _, m := range mapping {
 		out = append(out, map[string]interface{}{
 			"content":          m.gql,
+			"restContent":      m.rest,
+			"parentType":       parentType,
+			"parentID":         parentID,
 			"users":            map[string]interface{}{"totalCount": counts[m.rest]},
 			"viewerHasReacted": viewerReacted[m.rest],
 		})
@@ -2683,6 +2784,11 @@ type graphQLTypeRegistry struct {
 	reactable                        *graphql.Interface
 	userContentEdit                  *graphql.Object
 	userContentEditConnection        *graphql.Object
+	issueEventRationale              *graphql.Object
+	repositoryTopicConnection        *graphql.Object
+	assigneeConnection               *graphql.Object
+	assignee                         *graphql.Union
+	hovercard                        *graphql.Object
 	pullRequestReview                *graphql.Object
 	pullRequestReviewComment         *graphql.Object
 	commitComment                    *graphql.Object
@@ -2803,6 +2909,7 @@ type graphQLTypeRegistry struct {
 	statusContext           *graphql.Object
 	checkRun                *graphql.Object
 	checkSuite              *graphql.Object
+	statusCheckRollup       *graphql.Object
 	requirableByPullRequest *graphql.Interface
 	// The deployment graph built with the account surface
 	// (gh_repos_deployments_graphql.go); the deployments/environments

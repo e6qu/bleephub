@@ -76,7 +76,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 		Name:       "DiscussionComment",
 		Interfaces: []*graphql.Interface{s.gqlMinimizableInterface(), s.graphqlTypes.reactable, s.gqlVotableInterface()},
 		Fields: graphql.FieldsThunk(func() graphql.Fields {
-			return graphql.Fields{
+			base := graphql.Fields{
 				// Votable contract.
 				"upvoteCount": &graphql.Field{
 					Type: graphql.NewNonNull(graphql.Int),
@@ -226,6 +226,14 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 					},
 				},
 			}
+			// Merge the remaining GitHub fields (authorAssociation, replyTo,
+			// url/resourcePath, viewerCan*, …). DiscussionComment is built from a
+			// FieldsThunk, which AddFieldConfig cannot extend, so the extra fields
+			// join here.
+			for k, v := range s.discussionCommentExtraFields() {
+				base[k] = v
+			}
+			return base
 		}),
 	})
 
@@ -1292,6 +1300,8 @@ func discussionCommentToGQL(c *store.DiscussionComment, st *store.Store) map[str
 		"nodeID":       c.NodeID,
 		"databaseId":   c.ID,
 		"discussionID": c.DiscussionID,
+		"authorID":     c.AuthorID,
+		"parentID":     c.ParentID,
 		"author":       optionalObject(author),
 		"body":         c.Body,
 		"bodyHTML":     discussionBodyToHTML(c.Body),
@@ -1353,9 +1363,13 @@ func reactionNodeToGraphQL(st *store.Store, r *store.Reaction) map[string]interf
 		userMap = userToGraphQL(u)
 	}
 	return map[string]interface{}{
-		"id":      fmt.Sprintf("REA_kgDO%08d", r.ID),
-		"content": r.Content,
-		"user":    optionalObject(userMap),
+		"id":         fmt.Sprintf("REA_kgDO%08d", r.ID),
+		"databaseId": r.ID,
+		"content":    r.Content,
+		"createdAt":  r.CreatedAt.Format(time.RFC3339),
+		"user":       optionalObject(userMap),
+		"parentType": r.ParentType,
+		"parentID":   r.ParentID,
 	}
 }
 
