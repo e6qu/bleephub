@@ -22872,6 +22872,12 @@
         "source": "internal/server/gh_repos_rest.go"
       },
       {
+        "line": 84,
+        "method": "DELETE",
+        "path": "/api/v3/repositories/{repository_id}/environments/{env_name}/secrets/{secret_name}",
+        "source": "internal/server/secrets.go"
+      },
+      {
         "line": 36,
         "method": "DELETE",
         "path": "/api/v3/scim/v2/enterprises/{enterprise}/Groups/{scim_group_id}",
@@ -27102,6 +27108,24 @@
         "source": "internal/server/gh_repos_reads.go"
       },
       {
+        "line": 81,
+        "method": "GET",
+        "path": "/api/v3/repositories/{repository_id}/environments/{env_name}/secrets",
+        "source": "internal/server/secrets.go"
+      },
+      {
+        "line": 0,
+        "method": "GET",
+        "path": "/api/v3/repositories/{repository_id}/environments/{env_name}/secrets/public-key",
+        "source": "runtime route table (programmatic registration)"
+      },
+      {
+        "line": 0,
+        "method": "GET",
+        "path": "/api/v3/repositories/{repository_id}/environments/{env_name}/secrets/{secret_name}",
+        "source": "runtime route table (programmatic registration)"
+      },
+      {
         "line": 31,
         "method": "GET",
         "path": "/api/v3/scim/v2/enterprises/{enterprise}/Groups",
@@ -30826,6 +30850,12 @@
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/vulnerability-alerts",
         "source": "internal/server/gh_repos_rest.go"
+      },
+      {
+        "line": 83,
+        "method": "PUT",
+        "path": "/api/v3/repositories/{repository_id}/environments/{env_name}/secrets/{secret_name}",
+        "source": "internal/server/secrets.go"
       },
       {
         "line": 34,

@@ -290,7 +290,7 @@ jobs:
       - name: Build and vet every nested module
         run: |
           set -euo pipefail
-          for module in sdk-tests terraform/wake test/terraform-sockerless; do
+          for module in sdk-tests terraform/wake test/terraform-sockerless test/conformance/drivers/gogithub; do
             echo "::group::$module"
             (cd "$module" && go build ./... && go vet ./...)
             echo "::endgroup::"
@@ -305,7 +305,7 @@ jobs:
       - name: Assert every module is covered
         run: |
           set -euo pipefail
-          expected=$'./go.mod\n./sdk-tests/go.mod\n./terraform/wake/go.mod\n./test/terraform-sockerless/go.mod'
+          expected=$'./go.mod\n./sdk-tests/go.mod\n./terraform/wake/go.mod\n./test/conformance/drivers/gogithub/go.mod\n./test/terraform-sockerless/go.mod'
           found=$(find . -name go.mod -not -path './web/*' | sort)
           if [ "$found" != "$(printf '%s' "$expected" | sort)" ]; then
             echo "Go modules changed. Found:"; echo "$found"
