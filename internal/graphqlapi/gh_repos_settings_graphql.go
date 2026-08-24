@@ -222,8 +222,14 @@ func (s *Resolver) repositoryForkingAllowed(repo *store.Repo) bool {
 }
 
 // repositoryHasSponsorships reports whether the repository presents a sponsor
-// button: its owner has a Sponsors listing, or it carries a FUNDING file.
+// button. An administrator who set the switch through updateRepository has
+// answered the question outright; otherwise it is derived, as GitHub derives
+// it until the setting is touched: its owner has a Sponsors listing, or it
+// carries a FUNDING file.
 func (s *Resolver) repositoryHasSponsorships(repo *store.Repo) bool {
+	if repo.HasSponsorships != nil {
+		return *repo.HasSponsorships
+	}
 	owner, _, ok := store.SplitRepoFullName(repo.FullName)
 	if ok && s.store.Sponsors.GetSponsorsListingForAccount(owner) != nil {
 		return true

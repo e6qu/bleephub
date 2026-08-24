@@ -29,8 +29,13 @@ func (s *Resolver) addRepoFieldsToSchema(
 	// this one type instead of minting a second with the same name.
 	repositoryVisibilityEnum := s.sharedEnum("RepositoryVisibility", "PUBLIC", "PRIVATE", "INTERNAL")
 	repoType := graphql.NewObject(graphql.ObjectConfig{
-		Name:       "Repository",
-		Interfaces: []*graphql.Interface{nodeInterface, s.uniformResourceLocatableInterface()},
+		Name: "Repository",
+		Interfaces: []*graphql.Interface{
+			nodeInterface,
+			s.uniformResourceLocatableInterface(),
+			s.starrableInterface(),
+			s.subscribableInterface(),
+		},
 		Fields: graphql.Fields{
 			"id": &graphql.Field{
 				Type: graphql.NewNonNull(graphql.ID),
@@ -258,6 +263,27 @@ func (s *Resolver) addRepoFieldsToSchema(
 			}, nil
 		},
 	})
+	repoType.AddFieldConfig("stargazers", &graphql.Field{
+		// Real GitHub: stargazers: StargazerConnection! — the Starrable
+		// member, backed by the same star store PUT /user/starred writes.
+		Type: graphql.NewNonNull(s.gqlStargazerConnectionType()),
+		Args: s.stargazerConnectionArgs(),
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			r, ok := p.Source.(map[string]interface{})
+			if !ok {
+				return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
+			}
+			repoID, ok := r["databaseId"].(int)
+			if !ok || repoID == 0 {
+				return nil, fmt.Errorf("repository stargazer source missing databaseId")
+			}
+			repo := s.store.GetRepoByID(repoID)
+			if repo == nil {
+				return gqlConnectionSource(nil), nil
+			}
+			return repaginateConnection(s.stargazerConnectionSource(repo), p.Args), nil
+		},
+	})
 	repoType.AddFieldConfig("licenseInfo", &graphql.Field{
 		// Real GitHub: licenseInfo: License — the same full License type
 		// Query.license serves, resolved from the vendored license catalog.
@@ -378,12 +404,7 @@ func (s *Resolver) addRepoFieldsToSchema(
 				"nodes": &graphql.Field{Type: graphql.NewList(graphql.NewObject(graphql.ObjectConfig{
 					Name: "RepositoryTopic",
 					Fields: graphql.Fields{
-						"topic": &graphql.Field{Type: graphql.NewNonNull(graphql.NewObject(graphql.ObjectConfig{
-							Name: "Topic",
-							Fields: graphql.Fields{
-								"name": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-							},
-						}))},
+						"topic": &graphql.Field{Type: graphql.NewNonNull(s.gqlTopicType())},
 					},
 				}))},
 				"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
@@ -1251,11 +1272,21 @@ var graphqlMutationAuthz = map[string]mutationRule{
 	"deleteIssue":   repoRule{scope: store.ScopeIssues, level: mutationAdminRepo, target: mutationTargetIssue("issueId")},
 	"transferIssue": issueTransferRule{},
 
+	// Linking a branch to an issue writes a reference into the repository, so
+	// the grant it needs is contents rather than issues; unlinking only removes
+	// the association and leaves the branch, so it is an issues write. Neither
+	// admits the issue's author on standing alone: an author with no write
+	// access cannot create a branch in the repository.
+	"createLinkedBranch": repoRule{scope: store.ScopeContents, level: mutationPushRepo, target: mutationTargetIssue("issueId")},
+	"deleteLinkedBranch": repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: mutationTargetLinkedBranch("linkedBranchId")},
+
 	"createDiscussion":                repoRule{scope: store.ScopeDiscussions, level: mutationReadRepo, target: mutationTargetRepo("repositoryId")},
 	"addDiscussionComment":            repoRule{scope: store.ScopeDiscussions, level: mutationReadRepo, target: mutationTargetDiscussion("discussionId")},
 	"addReaction":                     repoRule{scopeFor: reactableScope("subjectId"), level: mutationReadRepo, target: mutationTargetReactable("subjectId")},
 	"removeReaction":                  repoRule{scopeFor: reactableScope("subjectId"), level: mutationReadRepo, target: mutationTargetReactable("subjectId")},
 	"updateDiscussion":                repoRule{scope: store.ScopeDiscussions, level: mutationAdminRepo, authorMayAct: true, target: mutationTargetDiscussion("discussionId")},
+	"closeDiscussion":                 repoRule{scope: store.ScopeDiscussions, level: mutationAdminRepo, authorMayAct: true, target: mutationTargetDiscussion("discussionId")},
+	"reopenDiscussion":                repoRule{scope: store.ScopeDiscussions, level: mutationAdminRepo, authorMayAct: true, target: mutationTargetDiscussion("discussionId")},
 	"deleteDiscussion":                repoRule{scope: store.ScopeDiscussions, level: mutationAdminRepo, authorMayAct: true, target: mutationTargetDiscussion("id")},
 	"updateDiscussionComment":         repoRule{scope: store.ScopeDiscussions, level: mutationAdminRepo, authorMayAct: true, target: mutationTargetDiscussionComment("commentId")},
 	"deleteDiscussionComment":         repoRule{scope: store.ScopeDiscussions, level: mutationAdminRepo, authorMayAct: true, target: mutationTargetDiscussionComment("id")},
@@ -1537,6 +1568,21 @@ func mutationTargetIssue(key string) func(*Resolver, map[string]interface{}) mut
 		nodeID, _ := input[key].(string)
 		target := mutationTarget{missing: gqlMissingNode("Issue", nodeID)}
 		if issue := store.FindIssueByNodeID(s.store, nodeID); issue != nil {
+			target.repo = s.store.GetRepoByID(issue.RepoID)
+			target.authorID = issue.AuthorID
+		}
+		return target
+	}
+}
+
+// mutationTargetLinkedBranch resolves a linked branch's global id to the
+// repository of the issue that carries the link, which is the repository the
+// caller has to have standing on to unlink it.
+func mutationTargetLinkedBranch(key string) func(*Resolver, map[string]interface{}) mutationTarget {
+	return func(s *Resolver, input map[string]interface{}) mutationTarget {
+		nodeID, _ := input[key].(string)
+		target := mutationTarget{missing: gqlMissingNode("LinkedBranch", nodeID)}
+		if issue, _, ok := store.FindIssueByLinkedBranchNodeID(s.store, nodeID); ok {
 			target.repo = s.store.GetRepoByID(issue.RepoID)
 			target.authorID = issue.AuthorID
 		}

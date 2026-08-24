@@ -2,13 +2,11 @@ package bleephub
 
 import (
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"net/http"
 	"sort"
 	"strings"
 
-	"github.com/e6qu/bleephub/internal/gitstore"
 	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -443,47 +441,21 @@ func (s *Server) handleGetBranch(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteRef(w http.ResponseWriter, r *http.Request) {
-	owner := r.PathValue("owner")
-	repoName := r.PathValue("repo")
-	refPath := r.PathValue("ref")
-
 	repo := s.lookupReadableRepoFromPath(w, r)
 	if repo == nil {
 		return
 	}
-
-	stor := s.store.GetGitStorage(owner, repoName)
+	stor := s.store.GetGitStorage(r.PathValue("owner"), r.PathValue("repo"))
 	if stor == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-
-	// refPath is like "heads/branch-name" or "tags/v1.0"
-	fullRef := plumbing.ReferenceName("refs/" + refPath)
-	if !validFullyQualifiedGitRef(fullRef.String()) {
-		store.WriteGHValidationError(w, "Reference", "ref", "invalid")
+	// refPath is like "heads/branch-name" or "tags/v1.0".
+	fullRef := plumbing.ReferenceName("refs/" + r.PathValue("ref"))
+	if failure := s.deleteGitRef(r.Context(), repo, stor, ghUserFromContext(r.Context()), fullRef, s.baseURL(r)); failure != nil {
+		failure.write(w)
 		return
 	}
-	oldRef, err := stor.Reference(fullRef)
-	if err != nil {
-		writeGHError(w, http.StatusUnprocessableEntity, "Reference does not exist")
-		return
-	}
-
-	if err := gitstore.RemoveReferenceCAS(stor, oldRef); err != nil {
-		if errors.Is(err, gitStorage.ErrReferenceHasChanged) {
-			writeGHError(w, http.StatusConflict, "Reference changed while it was being deleted")
-			return
-		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if fullRef.IsBranch() {
-		s.afterCommittedRefUpdate(repo, ghUserFromContext(r.Context()), fullRef.String(), oldRef.Hash().String(), plumbing.ZeroHash.String(), s.baseURL(r))
-	}
-	// The `delete` event fires for a removed branch or tag.
-	s.emitWebhookEvent(repo.FullName, "delete", "", buildRefLifecyclePayload(repo, fullRef, ghUserFromContext(r.Context()), s.baseURL(r)))
-
 	w.WriteHeader(http.StatusNoContent)
 }
 

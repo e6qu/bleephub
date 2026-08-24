@@ -174,6 +174,8 @@ func (s *Resolver) initGraphQLSchema() {
 					return nodeTypes["Blob"]
 				case store.GitTagNodeIDPrefix:
 					return nodeTypes["Tag"]
+				case store.LinkedBranchNodeIDPrefix:
+					return nodeTypes["LinkedBranch"]
 				}
 			}
 			return nil
@@ -291,6 +293,11 @@ func (s *Resolver) initGraphQLSchema() {
 	issueType, milestoneType := s.addIssueFieldsToSchema(userType, repoType, mutationType, queryType, nodeInterface)
 	nodeTypes["Issue"] = issueType
 
+	// Linked branches hang off the issue type and need the shared Ref type the
+	// repository family already built, so they go here rather than with the
+	// git objects.
+	s.addLinkedBranchFieldsToSchema(issueType, mutationType, nodeInterface, nodeTypes)
+
 	// Add pull request types, queries, and mutations
 	pullRequestType := s.addPullRequestFieldsToSchema(userType, issueType, milestoneType, repoType, mutationType, queryType, nodeInterface)
 	nodeTypes["PullRequest"] = pullRequestType
@@ -306,6 +313,7 @@ func (s *Resolver) initGraphQLSchema() {
 	// issue and pull-request families because their payloads render whichever
 	// of those two the subject turns out to be.
 	s.addLabelMutationsToSchema(mutationType)
+	s.addGitWriteMutationsToSchema(mutationType)
 
 	// Add Projects v2. The read surface goes first: the mutations' payload
 	// types are the same ProjectV2/ProjectV2Item objects, so they have to be
@@ -381,6 +389,11 @@ func (s *Resolver) initGraphQLSchema() {
 	// requests and their connections. The account surface is therefore
 	// installed last, once all of them are assembled.
 	s.addAccountSurfaceFieldsToSchema(userType, orgType, repoType)
+
+	// The remainder of GitHub's mutation surface
+	// (gh_mutations_*_graphql.go). It goes last because every payload it
+	// registers returns an object one of the families above defines.
+	s.addGitHubMutationSurface(mutationType)
 
 	// Every mutation is now registered. Authorization coverage is asserted over
 	// the assembled type rather than trusted to each family above, so a
@@ -481,6 +494,13 @@ func (s *Resolver) graphQLNodeByID(ctx context.Context, nodeID string) interface
 			return nil
 		}
 		return pullRequestToGQL(pullRequest, s.store)
+	}
+	if issue, link, ok := store.FindIssueByLinkedBranchNodeID(s.store, nodeID); ok {
+		repo := s.store.GetRepoByID(issue.RepoID)
+		if repo == nil || (repo.Private && !s.viewerCanReadRepo(ctx, repo)) {
+			return nil
+		}
+		return s.linkedBranchSource(issue.ID, link)
 	}
 	if gitObject := s.gitObjectNodeByID(ctx, nodeID); gitObject != nil {
 		return gitObject

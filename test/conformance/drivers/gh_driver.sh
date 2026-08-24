@@ -473,11 +473,52 @@ run_gh projects "gh project list" "graphql organization/user projectsV2" "" \
 # ============================================================================
 # attestation
 # ============================================================================
-# The pinned gh release exposes attestation download/trusted-root/verify only,
-# all of which need a signed artifact and a Sigstore trust root to be meaningful;
-# the API surface behind them is covered by go-github instead.
-skip_op attestation "gh attestation verify" "GET /repos/{owner}/{repo}/attestations/{digest}" \
-    "gh $(gh --version | head -1 | awk '{print $3}') has no attestation subcommand that can run without a signed artifact"
+# The attestation surface is exercised end to end: a real Sigstore trust chain
+# is minted (a certificate authority, a short-lived signing certificate carrying
+# the Actions claims, a signed in-toto statement, and a transparency-log record
+# with its signed entry timestamp, inclusion proof and signed checkpoint), the
+# bundle is stored through Bleephub's attestation route, read back out of it by
+# digest, and then handed to `gh attestation verify` — which fails on any byte
+# Bleephub did not return intact.
+#
+# The bundle is fetched with `gh api` rather than by `gh attestation verify`
+# itself for a client-side reason, not a server-side one: gh refuses the whole
+# `attestation` command group on any host it considers Enterprise
+# (pkg/cmd/attestation/auth.IsHostSupported, "gh attestation does not currently
+# support GHES"), so its own fetcher never reaches a deployment like this one no
+# matter what the deployment answers. What it verifies is still exactly the
+# bytes this server returned.
+ATTEST="$WORK/attestation"
+if attestation-fixture -out "$ATTEST" -host "$HOST" -owner "$OWNER" -repo "$REPO" 2>"$ATTEST.err"; then
+    ATTEST_DIGEST="$(cat "$ATTEST/digest.txt")"
+    jq -c '{bundle: .}' "$ATTEST/bundle.json" >"$ATTEST/upload.json"
+    if gh api --method POST "repos/$OWNER/$REPO/attestations" --input "$ATTEST/upload.json" \
+        >"$ATTEST/created.json" 2>&1 &&
+        gh api "repos/$OWNER/$REPO/attestations/$ATTEST_DIGEST" >"$ATTEST/listed.json" 2>&1 &&
+        jq -e '.attestations | length == 1' "$ATTEST/listed.json" >/dev/null &&
+        jq -c '.attestations[0].bundle' "$ATTEST/listed.json" >"$ATTEST/fetched.json"; then
+        # --hostname is github.com for this one command because gh resolves the
+        # host and refuses an Enterprise one before it looks at --bundle; with a
+        # bundle and a trusted root on disk the verification reads only the
+        # three files named here and makes no request at all.
+        run_gh attestation "gh attestation verify (bundle served by the deployment)" \
+            "POST + GET /repos/{owner}/{repo}/attestations/{subject_digest}" "" \
+            attestation verify "$ATTEST/artifact.bin" \
+            --bundle "$ATTEST/fetched.json" \
+            --custom-trusted-root "$ATTEST/trusted_root.json" \
+            --repo "$OWNER/$REPO" --hostname github.com >/dev/null
+    else
+        fail_op attestation "gh attestation verify (bundle served by the deployment)" \
+            "POST + GET /repos/{owner}/{repo}/attestations/{subject_digest}" \
+            "the stored bundle is served back at its subject digest" \
+            "$(tail -c 400 "$ATTEST/listed.json" 2>/dev/null | tr '\n' ' ')"
+    fi
+else
+    fail_op attestation "gh attestation verify (bundle served by the deployment)" \
+        "POST + GET /repos/{owner}/{repo}/attestations/{subject_digest}" \
+        "a Sigstore trust chain the harness can mint" \
+        "$(tail -c 400 "$ATTEST.err" 2>/dev/null | tr '\n' ' ')"
+fi
 
 # ============================================================================
 # api: REST and GraphQL, including pagination and templates
@@ -668,10 +709,14 @@ fi
 run_gh_json issues "gh issue list --search" "GET /search/issues from gh issue list" \
     'type == "array"' \
     issue list --repo "$OWNER/$REPO" --search "conformance" --json number,title --limit 5
-# `gh issue develop` refuses to run against any host other than github.com, so
-# there is no request for this harness to make.
-skip_op issues "gh issue develop --list" "GET .../issues/{n} linked branches (graphql)" \
-    "gh restricts the develop subcommand to github.com, so it never reaches an Enterprise host"
+# `gh issue develop` is absent from this matrix on purpose. The subcommand is
+# restricted client-side to github.com — it never sends a request to any other
+# host — so there is no behaviour of this server it could reveal, and recording
+# it would measure the client rather than the deployment. The capability behind
+# it, linked branches, is exercised in full by the octokit driver's
+# "graphql linked branches (createLinkedBranch / linkedBranches /
+# deleteLinkedBranch)" operation, which creates the branch, reads the
+# connection, refetches the node and unlinks it.
 run_gh_json issues "gh issue view --json comments" "GET .../issues/{n}/comments" \
     'has("comments")' issue view 1 --repo "$OWNER/$REPO" --json number,comments,labels,assignees,milestone
 

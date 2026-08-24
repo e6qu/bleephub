@@ -1022,6 +1022,9 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 	s.graphqlTypes.pullRequest = pullRequestType
 	s.graphqlTypes.pullRequestReview = prReviewType
 	s.graphqlTypes.pullRequestReviewComment = prReviewCommentType
+	// The thread object is memoized for the same reason: the pull-request
+	// mutation surface's addPullRequestReviewThread payload returns it.
+	s.graphqlTypes.pullRequestReviewThread = prReviewThreadType
 	// Both are members of PullRequestTimelineItems, which is assembled later.
 	s.graphqlTypes.pullRequestCommit = pullRequestCommitType
 	s.graphqlTypes.pullRequestReviewThread = prReviewThreadType

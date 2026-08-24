@@ -2,6 +2,7 @@ package graphqlapi
 
 import (
 	"context"
+	"errors"
 
 	"github.com/e6qu/bleephub/internal/store"
 )
@@ -79,6 +80,9 @@ func (stubPulls) BranchProtectionRuleForPR(*store.Repo, string) map[string]inter
 func (stubPulls) ChangedFiles(*store.Repo, *store.PullRequest, string) ([]map[string]interface{}, error) {
 	return nil, nil
 }
+func (stubPulls) UpdatePullRequestBranch(*store.Repo, *store.PullRequest, *store.User, string, string) error {
+	return errors.New("stubPulls updates no branch")
+}
 func (stubPulls) MaybeAutoMerge(int)                                                 {}
 func (stubPulls) AutoRequestCodeOwners(*store.Repo, *store.PullRequest, *store.User) {}
 
@@ -92,6 +96,39 @@ func (stubMigrations) StartRepositoryMigration(int)                             
 func (stubMigrations) StartOrganizationMigration(int)                              {}
 func (stubMigrations) RepositoryMigrationLogURL(*store.RepositoryMigration) string { return "" }
 
+// stubRepos refuses every repository move: the resolver-package tests never
+// rename or instantiate a repository, which the server package drives end to
+// end against the real artifact store.
+type stubRepos struct{}
+
+func (stubRepos) RenameRepository(*store.Repo, string) error {
+	return errors.New("stubRepos renames nothing")
+}
+
+func (stubRepos) CreateGitRef(context.Context, *store.Repo, *store.User, string, string) error {
+	return errors.New("stubRepos writes no refs")
+}
+
+func (stubRepos) UpdateGitRef(context.Context, *store.Repo, *store.User, string, string, bool) error {
+	return errors.New("stubRepos writes no refs")
+}
+
+func (stubRepos) DeleteGitRef(context.Context, *store.Repo, *store.User, string) error {
+	return errors.New("stubRepos writes no refs")
+}
+
+func (stubRepos) MergeBranch(context.Context, *store.Repo, *store.User, string, string, string, string) (string, error) {
+	return "", errors.New("stubRepos merges nothing")
+}
+
+func (stubRepos) CreateCommitOnBranch(context.Context, *store.Repo, *store.User, string, string, map[string][]byte, []string, string, string) (string, error) {
+	return "", errors.New("stubRepos commits nothing")
+}
+
+func (stubRepos) RevertPullRequest(context.Context, *store.Repo, *store.PullRequest, *store.User, string, string, bool) (int, error) {
+	return 0, errors.New("stubRepos reverts nothing")
+}
+
 func newStubbedResolver() *Resolver {
 	return NewResolver(Config{
 		Store:           newSeededTestStore(),
@@ -99,6 +136,7 @@ func newStubbedResolver() *Resolver {
 		Events:          stubEvents{},
 		Pulls:           stubPulls{},
 		Migrations:      stubMigrations{},
+		Repos:           stubRepos{},
 		UserFromContext: func(context.Context) *store.User { return nil },
 		APIRate:         func(context.Context) RateSnapshot { return RateSnapshot{} },
 	})

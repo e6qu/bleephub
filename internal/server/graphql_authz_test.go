@@ -45,12 +45,22 @@ type gqlAuthzFixture struct {
 	threadNodeID  string
 	reviewNodeID  string
 	headSHA       string
+	// linkedBranchNodeID is seeded by the deleteLinkedBranch case's setup, for
+	// the same reason the Dependabot alert below is: an issue carries no linked
+	// branch until something links one.
+	linkedBranchNodeID string
 	// dependabotAlert is minted by the dismissRepositoryVulnerabilityAlert
 	// case's setup rather than by the fixture: every other row addresses a
 	// record the fixture seeds, but an alert is derived state, and seeding one
 	// unconditionally would put a vulnerability on a fixture repository that
 	// the rest of the table has no reason to carry.
 	dependabotAlert *store.DependabotAlert
+	// subIssue is seeded by the cases that need a second issue in the same
+	// repository (the sub-issue, dependency and duplicate rows).
+	subIssue *store.Issue
+	// reviewCommentNodeID is the seeded review thread's root comment, which
+	// the pull-request comment mutations address.
+	reviewCommentNodeID string
 }
 
 func newGQLAuthzFixture(t *testing.T, srv *Server, tag string, private bool) *gqlAuthzFixture {
@@ -110,6 +120,7 @@ func newGQLAuthzFixture(t *testing.T, srv *Server, tag string, private bool) *gq
 		t.Fatalf("fixture %s: could not seed a review thread", tag)
 	}
 	f.threadNodeID = store.PRReviewThreadNodeID(root.ID)
+	f.reviewCommentNodeID = root.NodeID
 
 	// A pending review owned by the repo owner, for the submit/dismiss cases.
 	pendingReview := st.CreatePRReview(f.pr.ID, f.owner.ID, "PENDING", "pending body")
@@ -151,6 +162,106 @@ type gqlMutationCase struct {
 // resolver is what decides which owner the caller may create under.
 var gqlMutationCases = []gqlMutationCase{
 	{
+		name: "closeDiscussion",
+		doc:  `mutation($input:CloseDiscussionInput!){closeDiscussion(input:$input){discussion{closed stateReason}}}`,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"discussionId": f.discussion.NodeID, "reason": "OUTDATED"}
+		},
+	},
+	{
+		name: "reopenDiscussion",
+		doc:  `mutation($input:ReopenDiscussionInput!){reopenDiscussion(input:$input){discussion{closed stateReason}}}`,
+		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+			// Only a closed discussion can be reopened; the fixture's is
+			// closed by the store here so the mutation under test is the
+			// reopen, not the close.
+			if !s.store.UpdateDiscussion(f.discussion.ID, func(d *store.Discussion) {
+				d.Closed = true
+				d.StateReason = "RESOLVED"
+			}) {
+				t.Fatal("fixture discussion could not be closed")
+			}
+		},
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"discussionId": f.discussion.NodeID}
+		},
+	},
+	{
+		name: "createRef",
+		doc:  `mutation($input:CreateRefInput!){createRef(input:$input){ref{name}}}`,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{
+				"repositoryId": f.repo.NodeID, "name": "refs/heads/authz-created-ref", "oid": f.headSHA,
+			}
+		},
+	},
+	{
+		name: "updateRef",
+		doc:  `mutation($input:UpdateRefInput!){updateRef(input:$input){ref{name}}}`,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{
+				"refId": store.GitObjectNodeID(store.GitRefNodeIDPrefix, f.repo.ID, "refs/heads/spare"),
+				"oid":   f.headSHA,
+				// The fixture's branches share no ancestry ordering, so the
+				// move under test is the forced one; an unforced non-fast-
+				// forward refusal would make the entitled case read as an
+				// authorization failure.
+				"force": true,
+			}
+		},
+	},
+	{
+		name: "mergeBranch",
+		doc:  `mutation($input:MergeBranchInput!){mergeBranch(input:$input){clientMutationId}}`,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{
+				"repositoryId": f.repo.NodeID, "base": "spare", "head": "feature",
+				"commitMessage": "authz merge",
+			}
+		},
+	},
+	{
+		name: "createCommitOnBranch",
+		doc:  `mutation($input:CreateCommitOnBranchInput!){createCommitOnBranch(input:$input){commit{oid}}}`,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{
+				"branch":          map[string]interface{}{"repositoryNameWithOwner": f.repo.FullName, "branchName": "feature"},
+				"expectedHeadOid": f.headSHA,
+				"message":         map[string]interface{}{"headline": "authz commit"},
+				"fileChanges": map[string]interface{}{
+					"additions": []interface{}{map[string]interface{}{"path": "authz-commit.txt", "contents": "YXV0aHo="}},
+				},
+			}
+		},
+	},
+	{
+		name: "deleteRef",
+		doc:  `mutation($input:DeleteRefInput!){deleteRef(input:$input){clientMutationId}}`,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{
+				"refId": store.GitObjectNodeID(store.GitRefNodeIDPrefix, f.repo.ID, "refs/heads/spare"),
+			}
+		},
+	},
+	{
+		name: "revertPullRequest",
+		doc:  `mutation($input:RevertPullRequestInput!){revertPullRequest(input:$input){revertPullRequest{number}}}`,
+		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+			// Only a merged pull request can be reverted, so the fixture's is
+			// merged here by its owner before either caller attempts the
+			// mutation: the stranger must be refused against the very state
+			// the owner succeeds against.
+			resp := s.put(t, "/api/v3/repos/"+f.repo.FullName+"/pulls/"+itoa(f.pr.Number)+"/merge", f.ownerToken, map[string]interface{}{})
+			defer resp.Body.Close()
+			if resp.StatusCode != 200 {
+				t.Fatalf("fixture pull request did not merge: %d", resp.StatusCode)
+			}
+		},
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"pullRequestId": f.pr.NodeID}
+		},
+	},
+	{
 		name: "dismissRepositoryVulnerabilityAlert",
 		doc:  `mutation($input:DismissRepositoryVulnerabilityAlertInput!){dismissRepositoryVulnerabilityAlert(input:$input){repositoryVulnerabilityAlert{state}}}`,
 		setup: func(_ *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
@@ -177,6 +288,29 @@ var gqlMutationCases = []gqlMutationCase{
 		doc:  `mutation($input:CreateIssueInput!){createIssue(input:$input){issue{number}}}`,
 		input: func(f *gqlAuthzFixture) map[string]interface{} {
 			return map[string]interface{}{"repositoryId": f.repo.NodeID, "title": "from the table"}
+		},
+	},
+	{
+		name: "createLinkedBranch",
+		doc:  `mutation($input:CreateLinkedBranchInput!){createLinkedBranch(input:$input){linkedBranch{id ref{name}}}}`,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{
+				"issueId": f.issue.NodeID, "oid": f.headSHA, "name": "authz-linked-branch",
+			}
+		},
+	},
+	{
+		name: "deleteLinkedBranch",
+		doc:  `mutation($input:DeleteLinkedBranchInput!){deleteLinkedBranch(input:$input){issue{number}}}`,
+		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+			const ref = "refs/heads/authz-seeded-linked-branch"
+			if found, _ := s.store.LinkIssueBranch(f.issue.ID, f.repo.ID, ref); !found {
+				t.Fatalf("could not seed a linked branch on the fixture issue")
+			}
+			f.linkedBranchNodeID = store.LinkedBranchNodeID(f.issue.ID, ref)
+		},
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"linkedBranchId": f.linkedBranchNodeID}
 		},
 	},
 	{
@@ -552,6 +686,15 @@ func (s *isolatedServer) assertGQLFixtureUntouched(t *testing.T, what string, f 
 	if issue := st.GetIssue(f.issue.ID); issue != nil && len(issue.LabelIDs) != 0 {
 		t.Errorf("%s: the issue was labeled by a stranger: %v", what, issue.LabelIDs)
 	}
+	// Only the deleteLinkedBranch row seeds a link, and its refusal has to
+	// leave that link in place; every other row must not have gained one.
+	wantLinks := 0
+	if what == "deleteLinkedBranch" {
+		wantLinks = 1
+	}
+	if issue := st.GetIssue(f.issue.ID); issue != nil && len(issue.LinkedBranches) != wantLinks {
+		t.Errorf("%s: linked branches = %v, want %d", what, issue.LinkedBranches, wantLinks)
+	}
 	if c := st.GetComment(f.comment.ID); c == nil || c.MinimizedReason != "" {
 		t.Errorf("%s: the comment was moderated by a stranger: %+v", what, c)
 	}
@@ -561,14 +704,28 @@ func (s *isolatedServer) assertGQLFixtureUntouched(t *testing.T, what string, f 
 	if dc := st.GetDiscussionComment(f.discComment.ID); dc == nil || dc.IsAnswer || dc.Body != "fixture answer" {
 		t.Errorf("%s: the discussion comment was changed by a stranger: %+v", what, dc)
 	}
+	// The revertPullRequest row's own setup merges the fixture pull request —
+	// by its owner, before either caller attempts the mutation — because only
+	// a merged pull request can be reverted. MERGED is that row's seeded
+	// state, not a stranger's write; the stranger's refusal is instead proved
+	// by no revert pull request having been opened.
+	wantPRState := "OPEN"
+	if what == "revertPullRequest" {
+		wantPRState = "MERGED"
+	}
 	pr := st.GetPullRequest(f.pr.ID)
 	switch {
 	case pr == nil:
 		t.Errorf("%s: the pull request disappeared", what)
-	case pr.State != "OPEN":
-		t.Errorf("%s: pull request state = %q, want OPEN", what, pr.State)
+	case pr.State != wantPRState:
+		t.Errorf("%s: pull request state = %q, want %s", what, pr.State, wantPRState)
 	case pr.Title != "fixture pr":
 		t.Errorf("%s: pull request title = %q, want the seeded title", what, pr.Title)
+	}
+	if what == "revertPullRequest" {
+		if prs := st.ListPullRequests(f.repo.ID, "all"); len(prs) != 1 {
+			t.Errorf("%s: a stranger's refusal still opened a pull request: %d exist, want the fixture's 1", what, len(prs))
+		}
 	}
 	if thread := st.PRReviewComments.GetThread(parsedThreadID(t, f.threadNodeID)); thread == nil || thread.IsResolved {
 		t.Errorf("%s: the review thread was resolved by a stranger: %+v", what, thread)
@@ -877,6 +1034,41 @@ func TestGraphQLEveryMutationIsCoveredByThePolicyTable(t *testing.T) {
 		inCases[tc.name] = true
 	}
 	for _, tc := range gqlProjectMutationCases {
+		inCases[tc.name] = true
+	}
+	// The rest of GitHub's mutation surface (gh_mutations_*_graphql.go) is
+	// exercised by its own refusal and entitled tables, which are driven over
+	// the same fixture by the same two halves.
+	for _, tc := range gqlSurfaceMutationCases {
+		inCases[tc.name] = true
+	}
+	// Its account-scoped half names an account rather than a repository, so
+	// its refusal table drives a credential without a grant over that account
+	// and a stranger against another account's records.
+	for _, tc := range gqlAccountMutationCases {
+		inCases[tc.name] = true
+	}
+	// The issue family's repository-scoped and organization-scoped halves.
+	for _, tc := range gqlIssueMutationCases {
+		inCases[tc.name] = true
+	}
+	for _, tc := range gqlIssueOrgMutationCases {
+		inCases[tc.name] = true
+	}
+	// The pull-request family. updateTeamReviewAssignment names a team rather
+	// than a repository, so its refusal is the organization-scoped one in
+	// TestGraphQLUpdateTeamReviewAssignment.
+	for _, tc := range gqlPullMutationCases {
+		inCases[tc.name] = true
+	}
+	inCases["updateTeamReviewAssignment"] = true
+	// The activity and account-policy family: a repository-scoped half over the
+	// private-repository fixture, and an organization-scoped half whose
+	// refusing caller owns a different organization.
+	for _, tc := range gqlActivityMutationCases {
+		inCases[tc.name] = true
+	}
+	for _, tc := range gqlActivityOrgMutationCases {
 		inCases[tc.name] = true
 	}
 	// The enterprise mutations name an enterprise rather than a repository or

@@ -851,10 +851,7 @@ func (s *Server) handleMergeRefs(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
 	}
-
-	owner := r.PathValue("owner")
-	name := r.PathValue("repo")
-	repo := s.store.GetRepo(owner, name)
+	repo := s.store.GetRepo(r.PathValue("owner"), r.PathValue("repo"))
 	if repo == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -863,7 +860,6 @@ func (s *Server) handleMergeRefs(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusForbidden, "Must have push access to Repository.")
 		return
 	}
-
 	var req struct {
 		Base          string `json:"base"`
 		Head          string `json:"head"`
@@ -876,65 +872,21 @@ func (s *Server) handleMergeRefs(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnprocessableEntity, "base and head are required")
 		return
 	}
-
-	stor := s.store.GetGitStorage(owner, name)
-	if stor == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
+	commitHash, failure := s.mergeBranchRefs(repo, user, req.Base, req.Head, req.CommitMessage, "")
+	if failure != nil {
+		failure.write(w)
 		return
 	}
-
-	headHash, err := store.ResolveGitRef(stor, req.Head)
-	if err != nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
-		return
-	}
-
-	baseRef := plumbing.NewBranchReferenceName(req.Base)
-	baseRefObj, err := stor.Reference(baseRef)
-	if err != nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
-		return
-	}
-	baseHash := baseRefObj.Hash()
-
-	// Already merged: head is an ancestor of base.
-	mergeBase, err := store.FindMergeBase(stor, baseHash, headHash)
-	if err != nil {
-		writeGHError(w, http.StatusInternalServerError, "merge base lookup failed")
-		return
-	}
-	if mergeBase == headHash {
+	if commitHash.IsZero() {
+		// Already merged: head was an ancestor of base.
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-
-	email := user.Email
-	if email == "" {
-		email = user.Login + "@users.noreply.bleephub.local"
-	}
-	sig := repoSignature(store.CoalesceStr(user.Name, user.Login), email)
-	commitHash, _, err := performMerge(stor, baseRef, headHash, req.Head, req.CommitMessage, sig)
-	if err != nil {
-		if errors.Is(err, gitStorage.ErrReferenceHasChanged) {
-			writeGHError(w, http.StatusConflict, "Base branch changed while the merge was being prepared")
-			return
-		}
-		if strings.Contains(err.Error(), "merge conflict") {
-			writeGHError(w, http.StatusConflict, "Merge conflict")
-			return
-		}
-		writeGHError(w, http.StatusInternalServerError, "Merge failed")
-		return
-	}
-
+	stor := s.store.GetGitStorage(r.PathValue("owner"), r.PathValue("repo"))
 	mergeCommit, err := object.GetCommit(stor, commitHash)
 	if err != nil {
 		writeGHError(w, http.StatusInternalServerError, "Merge failed")
 		return
 	}
-
-	s.store.UpdateRepo(owner, name, func(r *store.Repo) {
-		r.PushedAt = time.Now().UTC()
-	})
 	writeJSON(w, http.StatusCreated, commitToJSON(mergeCommit, repo, s.store, s.baseURL(r)))
 }

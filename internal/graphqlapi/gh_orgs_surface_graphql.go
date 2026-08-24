@@ -374,11 +374,19 @@ func (s *Resolver) addOrganizationGovernanceFields(types *accountSurfaceTypes) {
 	})
 	orgType.AddFieldConfig("notificationDeliveryRestrictionEnabledSetting", &graphql.Field{
 		Type: graphql.NewNonNull(s.sharedEnum("NotificationRestrictionSettingValue", "DISABLED", "ENABLED")),
-		Resolve: func(graphql.ResolveParams) (interface{}, error) {
-			// The restriction is the enterprise's, and it governs every
-			// organization under it — the same value the notification
-			// delivery gate enforces per address.
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			// The enterprise's restriction governs every organization under
+			// it — the same value the notification delivery gate enforces per
+			// address — and an organization may switch its own on
+			// independently, so either being on restricts delivery.
 			if enabled, _ := s.store.NotificationDeliveryRestriction(); enabled {
+				return "ENABLED", nil
+			}
+			org, err := s.orgFromSource(p.Source)
+			if err != nil {
+				return nil, err
+			}
+			if org.NotificationDeliveryRestrictionEnabled {
 				return "ENABLED", nil
 			}
 			return "DISABLED", nil

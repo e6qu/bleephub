@@ -104,6 +104,11 @@ type Pulls interface {
 	// after a review lands or is dismissed through GraphQL — the merge
 	// itself runs through the server's REST-shared merge gate.
 	MaybeAutoMerge(prID int)
+	// UpdatePullRequestBranch brings a pull request's head branch up to date
+	// with its base, by the named PullRequestBranchUpdateMethod. It is a git
+	// write — it moves the head ref and fires the push machinery — so it lives
+	// behind the seam, and PUT /pulls/{n}/update-branch performs the same one.
+	UpdatePullRequestBranch(repo *store.Repo, pr *store.PullRequest, user *store.User, expectedHeadOid, method string) error
 	// AutoRequestCodeOwners requests the CODEOWNERS owners of a newly opened
 	// pull request's changed files as reviewers. A pull request opened through
 	// GraphQL collects the same reviewers one opened through REST does.
@@ -128,6 +133,46 @@ type Migrations interface {
 	RepositoryMigrationLogURL(m *store.RepositoryMigration) string
 }
 
+// Repos is the repository machinery that lives in the HTTP layer because it
+// reaches state the resolver layer may not (ARCH-003): the artifact metadata
+// that embeds a repository's full name, the git HEAD a default-branch change
+// repoints, and the template instantiation that copies one repository's tree
+// into another. The mutations that need those effects ask here rather than
+// reimplementing them, so GraphQL and REST cannot drift on what a rename or a
+// template instantiation carries with it.
+type Repos interface {
+	// RenameRepository renames the repository, carrying every record that
+	// embeds its full name across with it. It answers an error when the new
+	// name is taken or the carry failed; in either case nothing moved.
+	RenameRepository(repo *store.Repo, newName string) error
+	// CreateGitRef, UpdateGitRef and DeleteGitRef are the three reference
+	// writes the git-refs REST routes perform, and they carry everything
+	// those routes carry: the branch-protection refusal, the secret-scanning
+	// push-protection block, the fast-forward test, the compare-and-set
+	// against the reference the caller saw, the push machinery and the
+	// create/delete webhooks. A resolver reaching for the storer itself would
+	// be a way around branch protection, so the ref mutations ask here.
+	CreateGitRef(ctx context.Context, repo *store.Repo, sender *store.User, qualifiedName, oid string) error
+	UpdateGitRef(ctx context.Context, repo *store.Repo, sender *store.User, qualifiedName, oid string, force bool) error
+	DeleteGitRef(ctx context.Context, repo *store.Repo, sender *store.User, qualifiedName string) error
+	// MergeBranch merges head into base and answers the merge commit's oid,
+	// or "" when head was already an ancestor of base. It is what POST
+	// /repos/{owner}/{repo}/merges performs.
+	MergeBranch(ctx context.Context, repo *store.Repo, sender *store.User, base, head, commitMessage, authorEmail string) (string, error)
+	// CreateCommitOnBranch writes one commit containing the named file
+	// additions and deletions onto a branch whose head must currently be
+	// expectedHeadOid, and answers the new commit's oid. It is the multi-file
+	// form of the contents API's single-file commit, and goes through the
+	// same tree-building and ref-advancing machinery.
+	CreateCommitOnBranch(ctx context.Context, repo *store.Repo, sender *store.User, qualifiedName, expectedHeadOid string,
+		additions map[string][]byte, deletions []string, headline, body string) (string, error)
+	// RevertPullRequest opens a pull request that undoes a merged one: it
+	// creates the revert branch off the base, commits the inverse of the
+	// merged change onto it, and opens the pull request. It answers the new
+	// pull request's database id.
+	RevertPullRequest(ctx context.Context, repo *store.Repo, pr *store.PullRequest, sender *store.User, title, body string, draft bool) (int, error)
+}
+
 // RateSnapshot is the API rate-limit accounting the rateLimit root field
 // reports (the server's per-request snapshot, narrowed to what the
 // resolver renders).
@@ -150,6 +195,8 @@ type Config struct {
 	Pulls Pulls
 	// Migrations starts the GitHub Enterprise Importer's workers.
 	Migrations Migrations
+	// Repos is the repository machinery the mutation surface reaches for.
+	Repos Repos
 	// UserFromContext extracts the already-authenticated user from the
 	// request context. Authentication itself stays in the HTTP layer; the
 	// resolver layer only reads the principal middleware attached.
@@ -171,6 +218,7 @@ type Resolver struct {
 	events          Events
 	pulls           Pulls
 	migrations      Migrations
+	repos           Repos
 	userFromContext func(ctx context.Context) *store.User
 	apiRateFn       func(ctx context.Context) RateSnapshot
 	buildCommit     func() string
@@ -183,6 +231,18 @@ type Resolver struct {
 	// inputs, keyed by GitHub's input-object name.
 	enterpriseOrgMembershipConnMemo *graphql.Object
 	enterpriseOrderInputs           map[string]*graphql.InputObject
+
+	// The remaining GitHub mutation surface (gh_mutations_*_graphql.go) mints
+	// several hundred input, payload and supporting types, many of which more
+	// than one family names — CheckRunOutput is written by createCheckRun and
+	// updateCheckRun, ProjectColumn is returned by six classic-project
+	// mutations. graphql-go rejects a schema carrying two objects of one name,
+	// so every such type is minted once through the memos below and looked up
+	// by GitHub's own spelling thereafter.
+	mutationObjects    map[string]*graphql.Object
+	mutationInputs     map[string]*graphql.InputObject
+	mutationInterfaces map[string]*graphql.Interface
+	mutationUnions     map[string]*graphql.Union
 }
 
 // NewResolver builds a resolver and assembles the schema. It panics when
@@ -206,6 +266,9 @@ func NewResolver(cfg Config) *Resolver {
 	if cfg.Migrations == nil {
 		panic("graphqlapi.NewResolver: Config.Migrations is nil — the migration mutations dereference it to run the work they queue; wire the server's migration seam or a stub")
 	}
+	if cfg.Repos == nil {
+		panic("graphqlapi.NewResolver: Config.Repos is nil — the repository mutation surface dereferences it to rename and instantiate repositories; wire the server's repository seam or a stub")
+	}
 	if cfg.UserFromContext == nil {
 		panic("graphqlapi.NewResolver: Config.UserFromContext is nil — viewer resolution dereferences it on every request; wire the server's context extractor or a stub")
 	}
@@ -219,6 +282,7 @@ func NewResolver(cfg Config) *Resolver {
 		events:          cfg.Events,
 		pulls:           cfg.Pulls,
 		migrations:      cfg.Migrations,
+		repos:           cfg.Repos,
 		userFromContext: cfg.UserFromContext,
 		apiRateFn:       cfg.APIRate,
 		buildCommit:     cfg.BuildCommit,

@@ -1561,62 +1561,14 @@ func (s *Server) handleUpdateBranch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	headRepo := store.PullRequestHeadRepo(s.store, pr)
-	if headRepo == nil {
-		writeGHError(w, http.StatusUnprocessableEntity, "Pull request head repository is unavailable")
-		return
-	}
-	headOwner, headName, _ := store.SplitRepoFullName(headRepo.FullName)
-	headStor := s.store.GetGitStorage(headOwner, headName)
-	baseOwner, baseName, _ := store.SplitRepoFullName(repo.FullName)
-	baseStor := s.store.GetGitStorage(baseOwner, baseName)
-	if headStor == nil || baseStor == nil {
-		writeGHError(w, http.StatusUnprocessableEntity, "Pull request branch cannot be updated")
-		return
-	}
-	headRef := plumbing.NewBranchReferenceName(pr.HeadRefName)
-	headReference, err := headStor.Reference(headRef)
-	if err != nil {
-		writeGHError(w, http.StatusUnprocessableEntity, "Pull request head branch does not exist")
-		return
-	}
-	before := headReference.Hash()
-	if body.ExpectedHeadSHA != "" && body.ExpectedHeadSHA != before.String() {
-		store.WriteGHValidationError(w, "PullRequest", "expected_head_sha", "invalid")
-		return
-	}
-	baseHash, err := store.ResolveGitRef(baseStor, pr.BaseRefName)
-	if err != nil {
-		writeGHError(w, http.StatusUnprocessableEntity, "Pull request base branch does not exist")
-		return
-	}
-	if headRepo.FullName != repo.FullName {
-		if err := store.CopyGitObjects(baseStor, headStor); err != nil {
-			writeGHError(w, http.StatusUnprocessableEntity, "Pull request branch cannot be updated")
+	if err := s.updatePullRequestBranch(repo, pr, user, body.ExpectedHeadSHA, "MERGE", s.baseURL(r)); err != nil {
+		var mismatch *branchUpdateExpectationError
+		if errors.As(err, &mismatch) {
+			store.WriteGHValidationError(w, "PullRequest", "expected_head_sha", "invalid")
 			return
 		}
-	}
-	email := user.Email
-	if email == "" {
-		email = user.Login + "@users.noreply.bleephub.local"
-	}
-	after, _, err := performMerge(
-		headStor, headRef, baseHash, pr.BaseRefName,
-		fmt.Sprintf("Merge branch '%s' into %s", pr.BaseRefName, pr.HeadRefName),
-		repoSignature(user.Login, email),
-	)
-	if err != nil {
-		writeGHError(w, http.StatusUnprocessableEntity, "Pull request branch cannot be updated due to conflicts")
+		writeGHError(w, http.StatusUnprocessableEntity, err.Error())
 		return
-	}
-	s.store.UpdatePullRequest(pr.ID, func(current *store.PullRequest) {
-		current.BaseSHA = baseHash.String()
-		current.Mergeable = "UNKNOWN"
-	})
-	if after != before {
-		s.afterCommittedRefUpdate(
-			headRepo, user, headRef.String(), before.String(), after.String(), s.baseURL(r),
-		)
 	}
 	writeJSON(w, http.StatusAccepted, map[string]interface{}{
 		"message": "Updating pull request branch.",

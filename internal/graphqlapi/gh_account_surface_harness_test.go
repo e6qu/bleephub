@@ -161,6 +161,7 @@ func newAccountHarness(t *testing.T) *accountHarness {
 		Events:     stubEvents{},
 		Pulls:      stubPulls{},
 		Migrations: stubMigrations{},
+		Repos:      stubRepos{},
 		UserFromContext: func(ctx context.Context) *store.User {
 			user, _ := ctx.Value(accountViewerKey{}).(*store.User)
 			return user

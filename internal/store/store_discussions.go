@@ -38,6 +38,13 @@ type Discussion struct {
 	PublishedAt  *time.Time `json:"published_at"`
 	Deleted      bool       `json:"deleted"`
 	UpvoterIDs   []int      `json:"upvoter_ids"` // users who upvoted (addUpvote/removeUpvote)
+	// Closed, ClosedAt and StateReason carry github's discussion close state:
+	// a discussion closes as RESOLVED, OUTDATED or DUPLICATE, and reopening
+	// records REOPENED — how both the timeline and the discussion header
+	// explain the state.
+	Closed      bool       `json:"closed"`
+	ClosedAt    *time.Time `json:"closed_at"`
+	StateReason string     `json:"state_reason"`
 }
 
 // DiscussionComment is a comment on a discussion (top-level or reply).

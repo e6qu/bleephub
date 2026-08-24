@@ -82,6 +82,12 @@ type Issue struct {
 	ClosedAt         *time.Time
 	PinnedAt         *time.Time // non-nil while pinned to the repo issues list; doubles as the pin order
 	PinnedByID       int        // user who pinned the issue; 0 when not pinned
+	// LinkedBranches are the branches recorded as the work on this issue; see
+	// linked_branches.go for why the association lives here.
+	LinkedBranches []LinkedBranch
+	// DuplicateOfID is the issue this one was closed as a duplicate of, set by
+	// closing with a duplicate named and cleared by unmarkIssueAsDuplicate.
+	DuplicateOfID int
 }
 
 // Comment represents a conversation comment on an issue or PR. Real
@@ -803,6 +809,9 @@ func cloneIssue(i *Issue) *Issue {
 	}
 	if i.LabelIDs != nil {
 		clone.LabelIDs = append([]int(nil), i.LabelIDs...)
+	}
+	if i.LinkedBranches != nil {
+		clone.LinkedBranches = append([]LinkedBranch(nil), i.LinkedBranches...)
 	}
 	if i.ClosedAt != nil {
 		closed := *i.ClosedAt

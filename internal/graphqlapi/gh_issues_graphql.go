@@ -83,6 +83,9 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 	// fields. Issue types resolve from the organization definitions assigned
 	// to the issue row. Sub-issues are backed by the same ordered store links
 	// used by the REST API.
+	// Memoized: the issue-type and issue-field mutations
+	// (gh_mutations_issues_graphql.go) return these same objects, and
+	// graphql-go refuses a schema holding two types of one name.
 	issueTypeMetaType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "IssueType",
 		Fields: graphql.Fields{
@@ -95,6 +98,8 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 			))},
 		},
 	})
+
+	s.graphqlTypes.issueType = issueTypeMetaType
 
 	subIssuesSummaryType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "SubIssuesSummary",
@@ -1603,36 +1608,14 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 // --- GraphQL converter helpers ---
 
 func (s *Resolver) issueFieldValueGraphQLConnectionType() *graphql.Object {
-	dataTypeEnum := graphql.NewEnum(graphql.EnumConfig{
-		Name: "IssueFieldDataType",
-		Values: graphql.EnumValueConfigMap{
-			"TEXT":          &graphql.EnumValueConfig{Value: "TEXT"},
-			"SINGLE_SELECT": &graphql.EnumValueConfig{Value: "SINGLE_SELECT"},
-			"DATE":          &graphql.EnumValueConfig{Value: "DATE"},
-			"NUMBER":        &graphql.EnumValueConfig{Value: "NUMBER"},
-			"MULTI_SELECT":  &graphql.EnumValueConfig{Value: "MULTI_SELECT"},
-		},
-	})
-	visibilityEnum := graphql.NewEnum(graphql.EnumConfig{
-		Name: "IssueFieldVisibility",
-		Values: graphql.EnumValueConfigMap{
-			"ORG_ONLY": &graphql.EnumValueConfig{Value: "ORG_ONLY"},
-			"ALL":      &graphql.EnumValueConfig{Value: "ALL"},
-		},
-	})
-	colorEnum := graphql.NewEnum(graphql.EnumConfig{
-		Name: "IssueFieldSingleSelectOptionColor",
-		Values: graphql.EnumValueConfigMap{
-			"GRAY":   &graphql.EnumValueConfig{Value: "GRAY"},
-			"BLUE":   &graphql.EnumValueConfig{Value: "BLUE"},
-			"GREEN":  &graphql.EnumValueConfig{Value: "GREEN"},
-			"YELLOW": &graphql.EnumValueConfig{Value: "YELLOW"},
-			"ORANGE": &graphql.EnumValueConfig{Value: "ORANGE"},
-			"RED":    &graphql.EnumValueConfig{Value: "RED"},
-			"PINK":   &graphql.EnumValueConfig{Value: "PINK"},
-			"PURPLE": &graphql.EnumValueConfig{Value: "PURPLE"},
-		},
-	})
+	// Minted through the shared enum table so the issue-field mutations, which
+	// name the same three enums on their inputs, reuse these rather than
+	// minting a second of each name.
+	dataTypeEnum := s.sharedEnum("IssueFieldDataType",
+		"DATE", "MULTI_SELECT", "NUMBER", "SINGLE_SELECT", "TEXT")
+	visibilityEnum := s.sharedEnum("IssueFieldVisibility", "ALL", "ORG_ONLY")
+	colorEnum := s.sharedEnum("IssueFieldSingleSelectOptionColor",
+		"BLUE", "GRAY", "GREEN", "ORANGE", "PINK", "PURPLE", "RED", "YELLOW")
 
 	optionType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "IssueFieldSingleSelectOption",
@@ -1668,6 +1651,9 @@ func (s *Resolver) issueFieldValueGraphQLConnectionType() *graphql.Object {
 	singleSelectFieldType := graphql.NewObject(graphql.ObjectConfig{Name: "IssueFieldSingleSelect", Fields: commonFieldFields(true)})
 	multiSelectFieldType := graphql.NewObject(graphql.ObjectConfig{Name: "IssueFieldMultiSelect", Fields: commonFieldFields(true)})
 
+	// fieldUnion and valueUnion are memoized on the registry: the issue-field
+	// mutations return them, and graphql-go refuses a schema holding two
+	// unions of one name.
 	fieldUnion := graphql.NewUnion(graphql.UnionConfig{
 		Name:  "IssueFields",
 		Types: []*graphql.Object{textFieldType, dateFieldType, numberFieldType, singleSelectFieldType, multiSelectFieldType},
@@ -1687,6 +1673,8 @@ func (s *Resolver) issueFieldValueGraphQLConnectionType() *graphql.Object {
 			}
 		},
 	})
+
+	s.graphqlTypes.issueFieldsUnion = fieldUnion
 
 	commonValueFields := func(valueType graphql.Output) graphql.Fields {
 		return graphql.Fields{
@@ -1727,6 +1715,8 @@ func (s *Resolver) issueFieldValueGraphQLConnectionType() *graphql.Object {
 			}
 		},
 	})
+	s.graphqlTypes.issueFieldValueUnion = valueUnion
+
 	edgeType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "IssueFieldValueEdge",
 		Fields: graphql.Fields{
@@ -2668,6 +2658,13 @@ func paginateIssuesGQL(issues []*store.Issue, st *store.Store, first int, after 
 // the ProjectV2Store; resolvers read from the source map populated by
 // projectItemsForGraphQL.
 type graphQLTypeRegistry struct {
+	// The issue-type object and the two issue-field unions. The mutation
+	// surface's payloads name all three, so they are memoized where they are
+	// built rather than re-minted (graphql-go refuses two types of one name).
+	issueType            *graphql.Object
+	issueFieldsUnion     *graphql.Union
+	issueFieldValueUnion *graphql.Union
+
 	pageInfo                         *graphql.Object
 	scalars                          map[string]*graphql.Scalar
 	enums                            map[string]*graphql.Enum

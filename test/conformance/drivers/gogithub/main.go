@@ -237,6 +237,7 @@ func main() {
 	runChecks(client, rec, fixtures)
 	runActionsWorkflows(client, rec, fixtures)
 	runActionsConfiguration(client, rec, fixtures)
+	runActionsArtifacts(client, rec, fixtures)
 	runActionsOrgScope(client, rec, fixtures)
 	runBranches(client, rec, fixtures)
 	runOrgRulesets(client, rec, fixtures)

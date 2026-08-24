@@ -159,9 +159,13 @@ type User struct {
 	// PinnedRepos is the user's ordered list of pinned repository full names
 	// (max 6), shown on the profile Overview. GitHub exposes pins only over
 	// GraphQL, so the simulator serves them from a /ui-data endpoint.
-	PinnedRepos []string  `json:"pinned_repos,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	PinnedRepos []string `json:"pinned_repos,omitempty"`
+	// Status is the profile status message, emoji and availability flag the
+	// changeUserStatus mutation sets. GitHub keeps one per account, so it
+	// travels with the account rather than in a table of its own.
+	Status    *UserStatus `json:"status,omitempty"`
+	CreatedAt time.Time   `json:"created_at"`
+	UpdatedAt time.Time   `json:"updated_at"`
 	// Account security + notification preferences. GitHub's 2FA and notification
 	// settings are web-only (no REST), so the simulator serves them from a
 	// browser-only /ui-data endpoint rather than an invented /api/v3 path.
@@ -466,6 +470,7 @@ type Store struct {
 	IssuesByRepo                 map[int]map[int]*Issue                 // repoID → number → issue (secondary index)
 	IssueOrderByRepo             map[int][]*Issue                       // repoID → issues ordered by (CreatedAt, Number) asc (secondary index; maintained by indexIssueLocked/unindexIssueLocked)
 	Labels                       map[int]*IssueLabel                    // id → label
+	UserLists                    map[int]*UserList                      // id → user list (the profile "lists" a user sorts starred repositories into)
 	Milestones                   map[int]*Milestone                     // id → milestone
 	Comments                     map[int]*Comment                       // id → comment
 	CommentCounts                map[string]int                         // "parentType\x1fparentID" → comment count (index)
@@ -592,6 +597,7 @@ type Store struct {
 	NextTeam                     int
 	NextIssue                    int
 	NextLabel                    int
+	NextUserListID               int
 	NextMilestone                int
 	NextComment                  int
 	NextIssueEventID             int
@@ -1025,6 +1031,7 @@ func NewStore() *Store {
 		IssuesByRepo:                 make(map[int]map[int]*Issue),
 		IssueOrderByRepo:             make(map[int][]*Issue),
 		Labels:                       make(map[int]*IssueLabel),
+		UserLists:                    make(map[int]*UserList),
 		Milestones:                   make(map[int]*Milestone),
 		Comments:                     make(map[int]*Comment),
 		CommentCounts:                make(map[string]int),
@@ -1806,6 +1813,19 @@ func (st *Store) loadFromPersistence() error {
 		st.Labels[l.ID] = &l
 		if l.ID >= st.NextLabel {
 			st.NextLabel = l.ID + 1
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	if err := st.loadBucket("user_lists", func(raw []byte) error {
+		var l UserList
+		if err := LoadJSON(raw, &l); err != nil {
+			return err
+		}
+		st.UserLists[l.ID] = &l
+		if l.ID >= st.NextUserListID {
+			st.NextUserListID = l.ID + 1
 		}
 		return nil
 	}); err != nil {
@@ -4344,6 +4364,7 @@ func (st *Store) idCounterBuckets() map[string]*int {
 		"issue_events":                     &st.NextIssueEventID,
 		"issues":                           &st.NextIssue,
 		"labels":                           &st.NextLabel,
+		"user_lists":                       &st.NextUserListID,
 		"milestones":                       &st.NextMilestone,
 		"org_invitations":                  &st.NextOrgInvitationID,
 		"migration_sources":                &st.NextMigrationSourceID,

@@ -583,11 +583,11 @@ func (s *Server) handleSetInteractionLimits(w http.ResponseWriter, r *http.Reque
 		store.WriteGHValidationError(w, "InteractionLimit", "limit", "missing_field")
 		return
 	}
-	if !isInteractionGroup(req.Limit) {
+	if !store.IsInteractionGroup(req.Limit) {
 		store.WriteGHValidationError(w, "InteractionLimit", "limit", "invalid")
 		return
 	}
-	expiresAt, ok := interactionLimitExpiry(req.Expiry, s.currentTime())
+	expiresAt, ok := store.InteractionLimitExpiry(req.Expiry, s.currentTime())
 	if !ok {
 		store.WriteGHValidationError(w, "InteractionLimit", "expiry", "invalid")
 		return
@@ -832,22 +832,14 @@ func (s *Server) handleUpdateRepo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if newName, ok := req["name"].(string); ok && newName != "" && newName != repo.Name {
-		if !s.store.RenameRepo(owner, name, newName) {
-			writeGHError(w, http.StatusUnprocessableEntity, "Repository rename failed.")
-			return
-		}
-		// Update artifacts that embed the repo full name.
-		oldFull := owner + "/" + name
-		newFull := owner + "/" + newName
-		if err := s.artifactStore.RenameRepository(oldFull, newFull); err != nil {
-			if !s.store.RenameRepo(owner, newName, name) {
-				writeGHError(w, http.StatusInternalServerError, "repository artifact metadata rename failed and repository rename rollback failed: "+err.Error())
+		if err := s.renameRepository(owner, name, newName); err != nil {
+			if strings.HasPrefix(err.Error(), "Repository rename failed") {
+				writeGHError(w, http.StatusUnprocessableEntity, "Repository rename failed.")
 				return
 			}
-			writeGHError(w, http.StatusInternalServerError, "repository artifact metadata rename failed; repository rename rolled back: "+err.Error())
+			writeGHError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-
 		name = newName
 	}
 

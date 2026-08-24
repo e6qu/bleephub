@@ -342,6 +342,9 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 			"updatedAt":        &graphql.Field{Type: graphql.NewNonNull(dateTime)},
 			"lastEditedAt":     &graphql.Field{Type: dateTime},
 			"locked":           &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
+			"closed":           &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
+			"closedAt":         &graphql.Field{Type: dateTime},
+			"stateReason":      &graphql.Field{Type: s.graphQLEnum("DiscussionStateReason", "DUPLICATE", "OUTDATED", "REOPENED", "RESOLVED")},
 			"activeLockReason": &graphql.Field{Type: s.graphQLEnum("LockReason", "OFF_TOPIC", "RESOLVED", "SPAM", "TOO_HEATED")},
 			"publishedAt":      &graphql.Field{Type: dateTime},
 			"url":              &graphql.Field{Type: graphql.NewNonNull(uri)},
@@ -829,6 +832,117 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 		},
 	})
 
+	closeDiscussionInputType := graphql.NewInputObject(graphql.InputObjectConfig{
+		Name: "CloseDiscussionInput",
+		Fields: graphql.InputObjectConfigFieldMap{
+			"clientMutationId": &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"discussionId":     &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
+			"reason":           &graphql.InputObjectFieldConfig{Type: s.graphQLEnum("DiscussionCloseReason", "DUPLICATE", "OUTDATED", "RESOLVED"), DefaultValue: "RESOLVED"},
+		},
+	})
+	closeDiscussionPayloadType := graphql.NewObject(graphql.ObjectConfig{
+		Name: "CloseDiscussionPayload",
+		Fields: graphql.Fields{
+			"clientMutationId": &graphql.Field{Type: graphql.String},
+			"discussion":       &graphql.Field{Type: discussionType},
+		},
+	})
+	s.registerMutation(mutationType, "closeDiscussion", &graphql.Field{
+		Type: closeDiscussionPayloadType,
+		Args: graphql.FieldConfigArgument{
+			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(closeDiscussionInputType)},
+		},
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			user := s.ghUserFromContext(p.Context)
+			input, _ := p.Args["input"].(map[string]interface{})
+			discussionNodeID, _ := input["discussionId"].(string)
+			d := store.FindDiscussionByNodeID(s.store, discussionNodeID)
+			if d == nil {
+				return nil, gqlMissingNodeType("Discussion")
+			}
+			if d.Closed {
+				return nil, fmt.Errorf("the discussion is already closed")
+			}
+			reason, _ := input["reason"].(string)
+			if reason == "" {
+				reason = "RESOLVED"
+			}
+			now := s.store.CurrentTime()
+			s.store.UpdateDiscussion(d.ID, func(disc *store.Discussion) {
+				disc.Closed = true
+				disc.ClosedAt = &now
+				disc.StateReason = reason
+			})
+			repo := s.store.GetRepoByID(d.RepoID)
+			if repo != nil {
+				s.emitWebhookEvent(repo.FullName, "discussion", "closed", map[string]interface{}{
+					"action":     "closed",
+					"discussion": map[string]interface{}{"number": d.Number, "title": d.Title, "state_reason": reason},
+					"repository": s.repoPayload(repo),
+					"sender":     s.senderPayload(user),
+				})
+			}
+			return map[string]interface{}{
+				"discussion":       optionalObject(discussionToGQL(s.store.GetDiscussion(d.ID), s.store)),
+				"clientMutationId": input["clientMutationId"],
+			}, nil
+		},
+	})
+
+	reopenDiscussionInputType := graphql.NewInputObject(graphql.InputObjectConfig{
+		Name: "ReopenDiscussionInput",
+		Fields: graphql.InputObjectConfigFieldMap{
+			"clientMutationId": &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"discussionId":     &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
+		},
+	})
+	reopenDiscussionPayloadType := graphql.NewObject(graphql.ObjectConfig{
+		Name: "ReopenDiscussionPayload",
+		Fields: graphql.Fields{
+			"clientMutationId": &graphql.Field{Type: graphql.String},
+			"discussion":       &graphql.Field{Type: discussionType},
+		},
+	})
+	s.registerMutation(mutationType, "reopenDiscussion", &graphql.Field{
+		Type: reopenDiscussionPayloadType,
+		Args: graphql.FieldConfigArgument{
+			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(reopenDiscussionInputType)},
+		},
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			user := s.ghUserFromContext(p.Context)
+			input, _ := p.Args["input"].(map[string]interface{})
+			discussionNodeID, _ := input["discussionId"].(string)
+			d := store.FindDiscussionByNodeID(s.store, discussionNodeID)
+			if d == nil {
+				return nil, gqlMissingNodeType("Discussion")
+			}
+			if !d.Closed {
+				return nil, fmt.Errorf("the discussion is not closed")
+			}
+			s.store.UpdateDiscussion(d.ID, func(disc *store.Discussion) {
+				disc.Closed = false
+				disc.ClosedAt = nil
+				// REOPENED is the state github reports after a reopen: the
+				// close reason no longer describes the discussion, but the
+				// header still explains why it is in the state it is in.
+				disc.StateReason = "REOPENED"
+			})
+			repo := s.store.GetRepoByID(d.RepoID)
+			if repo != nil {
+				s.emitWebhookEvent(repo.FullName, "discussion", "reopened", map[string]interface{}{
+					"action":     "reopened",
+					"discussion": map[string]interface{}{"number": d.Number, "title": d.Title},
+					"repository": s.repoPayload(repo),
+					"sender":     s.senderPayload(user),
+				})
+			}
+			return map[string]interface{}{
+				"discussion":       optionalObject(discussionToGQL(s.store.GetDiscussion(d.ID), s.store)),
+				"clientMutationId": input["clientMutationId"],
+			}, nil
+		},
+	})
+
 	s.registerMutation(mutationType, "addDiscussionComment", &graphql.Field{
 		Type: addDiscussionCommentPayloadType,
 		Args: graphql.FieldConfigArgument{
@@ -1123,6 +1237,15 @@ func discussionToGQL(d *store.Discussion, st *store.Store) map[string]interface{
 		publishedAt = d.PublishedAt.Format(time.RFC3339)
 	}
 
+	var closedAt interface{}
+	if d.ClosedAt != nil {
+		closedAt = d.ClosedAt.Format(time.RFC3339)
+	}
+	var stateReason interface{}
+	if d.StateReason != "" {
+		stateReason = d.StateReason
+	}
+
 	return map[string]interface{}{
 		"nodeID":           d.NodeID,
 		"databaseId":       d.ID,
@@ -1139,6 +1262,9 @@ func discussionToGQL(d *store.Discussion, st *store.Store) map[string]interface{
 		"updatedAt":        d.UpdatedAt.Format(time.RFC3339),
 		"lastEditedAt":     lastEditedAt,
 		"locked":           d.Locked,
+		"closed":           d.Closed,
+		"closedAt":         closedAt,
+		"stateReason":      stateReason,
 		"activeLockReason": graphQLLockReason(d.LockedReason),
 		"publishedAt":      publishedAt,
 		"url":              url,

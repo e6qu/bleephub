@@ -542,16 +542,7 @@ func (s *Server) handleFollowUser(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
 	}
-	target := r.PathValue("username")
-	s.store.Misc.Mu.Lock()
-	if s.store.Misc.Follows[user.Login] == nil {
-		s.store.Misc.Follows[user.Login] = map[string]bool{}
-	}
-	s.store.Misc.Follows[user.Login][target] = true
-	if s.store.Misc.Persist != nil {
-		s.store.Misc.Persist.MustPut("misc", "follows", s.store.Misc.Follows)
-	}
-	s.store.Misc.Mu.Unlock()
+	s.store.SetFollow(user.Login, r.PathValue("username"), true)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -561,15 +552,7 @@ func (s *Server) handleUnfollowUser(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
 	}
-	target := r.PathValue("username")
-	s.store.Misc.Mu.Lock()
-	if s.store.Misc.Follows[user.Login] != nil {
-		delete(s.store.Misc.Follows[user.Login], target)
-	}
-	if s.store.Misc.Persist != nil {
-		s.store.Misc.Persist.MustPut("misc", "follows", s.store.Misc.Follows)
-	}
-	s.store.Misc.Mu.Unlock()
+	s.store.SetFollow(user.Login, r.PathValue("username"), false)
 	w.WriteHeader(http.StatusNoContent)
 }
 

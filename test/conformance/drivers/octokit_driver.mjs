@@ -385,6 +385,113 @@ await check("graphql", "graphql mutation (addComment)", "POST /api/graphql", asy
     "the comment body echoed back", JSON.stringify(result?.addComment), "the mutation did not return the created comment");
 });
 
+// Linked branches: the association behind GitHub's "create a branch" control
+// on an issue, and the capability `gh issue develop` drives on github.com. The
+// gh subcommand refuses any host but github.com, so this is where the
+// capability is exercised — the whole lifecycle in one operation, because a
+// link that cannot be listed or removed is not a link.
+await check("graphql", "graphql linked branches (createLinkedBranch / linkedBranches / deleteLinkedBranch)",
+  "POST /api/graphql", async () => {
+    const seed = await octokit.graphql(
+      `query ($owner: String!, $name: String!, $number: Int!) {
+         repository(owner: $owner, name: $name) {
+           issue(number: $number) { id number linkedBranches(first: 10) { totalCount nodes { id } } }
+           defaultBranchRef { target { oid } }
+         }
+       }`,
+      { owner, name: repo, number: issueNumber },
+    );
+    const issueId = seed?.repository?.issue?.id;
+    const oid = seed?.repository?.defaultBranchRef?.target?.oid;
+    want(Boolean(issueId), "an issue node id", "empty", "the issue node has no id to link a branch to");
+    want(Boolean(oid), "the default branch head oid", "empty",
+      "the default branch has no target commit to base a linked branch on");
+    want(seed?.repository?.issue?.linkedBranches?.totalCount === 0, "an empty linkedBranches connection",
+      JSON.stringify(seed?.repository?.issue?.linkedBranches),
+      "an issue nothing has linked a branch to already reports linked branches");
+
+    const branch = `${issueNumber}-octokit-linked-branch`;
+    const created = await octokit.graphql(
+      `mutation ($issueId: ID!, $oid: GitObjectID!, $name: String!) {
+         createLinkedBranch(input: {issueId: $issueId, oid: $oid, name: $name}) {
+           linkedBranch { id ref { name prefix target { oid } repository { nameWithOwner } } }
+           issue { number }
+         }
+       }`,
+      { issueId, oid, name: branch },
+    );
+    const linked = created?.createLinkedBranch?.linkedBranch;
+    want(Boolean(linked?.id), "a linked branch node id", JSON.stringify(created?.createLinkedBranch),
+      "createLinkedBranch returned no linked branch");
+    want(linked?.ref?.name === branch, branch, String(linked?.ref?.name),
+      "the linked branch does not name the branch that was asked for");
+    want(linked?.ref?.target?.oid === oid, oid, String(linked?.ref?.target?.oid),
+      "the linked branch does not point at the commit it was based on");
+    want(linked?.ref?.repository?.nameWithOwner === `${owner}/${repo}`,
+      `${owner}/${repo}`, String(linked?.ref?.repository?.nameWithOwner),
+      "the linked branch is attributed to the wrong repository");
+
+    // The branch is a real reference, not merely a record: a client that reads
+    // it over the git data API has to see it.
+    const ref = await octokit.rest.git.getRef({ owner, repo, ref: `heads/${branch}` });
+    want(ref.data.object?.sha === oid, oid, String(ref.data.object?.sha),
+      "createLinkedBranch did not create the branch it linked");
+
+    const listed = await octokit.graphql(
+      `query ($owner: String!, $name: String!, $number: Int!) {
+         repository(owner: $owner, name: $name) {
+           issue(number: $number) {
+             linkedBranches(first: 10) {
+               totalCount
+               nodes { id ref { name } }
+               edges { cursor node { id } }
+               pageInfo { hasNextPage endCursor }
+             }
+           }
+         }
+       }`,
+      { owner, name: repo, number: issueNumber },
+    );
+    const connection = listed?.repository?.issue?.linkedBranches;
+    want(connection?.totalCount === 1, "totalCount 1", String(connection?.totalCount),
+      "the linked branch is absent from the issue's linkedBranches connection");
+    want(connection?.nodes?.[0]?.id === linked.id, linked.id, String(connection?.nodes?.[0]?.id),
+      "the listed linked branch is not the one that was created");
+    want(connection?.nodes?.[0]?.ref?.name === branch, branch, String(connection?.nodes?.[0]?.ref?.name),
+      "the listed linked branch names a different ref");
+    want(Boolean(connection?.edges?.[0]?.cursor), "an edge cursor", "empty",
+      "the connection has no cursor, so a client cannot paginate it");
+
+    const refetched = await octokit.graphql(
+      `query ($id: ID!) { node(id: $id) { __typename ... on LinkedBranch { ref { name } } } }`,
+      { id: linked.id },
+    );
+    want(refetched?.node?.__typename === "LinkedBranch", "LinkedBranch",
+      String(refetched?.node?.__typename), "a linked branch id does not refetch through node()");
+    want(refetched?.node?.ref?.name === branch, branch, String(refetched?.node?.ref?.name),
+      "the refetched linked branch names a different ref");
+
+    await octokit.graphql(
+      `mutation ($id: ID!) { deleteLinkedBranch(input: {linkedBranchId: $id}) { issue { number } } }`,
+      { id: linked.id },
+    );
+    const after = await octokit.graphql(
+      `query ($owner: String!, $name: String!, $number: Int!) {
+         repository(owner: $owner, name: $name) {
+           issue(number: $number) { linkedBranches(first: 10) { totalCount } }
+         }
+       }`,
+      { owner, name: repo, number: issueNumber },
+    );
+    want(after?.repository?.issue?.linkedBranches?.totalCount === 0, "totalCount 0",
+      String(after?.repository?.issue?.linkedBranches?.totalCount),
+      "unlinking left the branch linked to the issue");
+    // Unlinking removes the association only; GitHub leaves the branch alone.
+    const survivor = await octokit.rest.git.getRef({ owner, repo, ref: `heads/${branch}` });
+    want(survivor.data.object?.sha === oid, oid, String(survivor.data.object?.sha),
+      "unlinking a branch deleted the branch itself");
+  });
+
 await check("graphql", "graphql error envelope", "POST /api/graphql with an invalid field", async () => {
   try {
     await octokit.graphql(`query { viewer { thisFieldDoesNotExist } }`);

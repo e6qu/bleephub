@@ -95,6 +95,12 @@ type Org struct {
 	MembersCanForkPrivateRepositories   *bool `json:"members_can_fork_private_repositories"`
 	MembersCanCreateTeams               *bool `json:"members_can_create_teams"`
 	WebCommitSignoffRequired            bool  `json:"web_commit_signoff_required"`
+	// NotificationDeliveryRestrictionEnabled restricts this organization's
+	// email notifications to addresses inside a verified domain. It layers
+	// under the enterprise policy of the same name rather than replacing it:
+	// either being on restricts delivery, which is how GitHub composes the
+	// enterprise-wide setting with the per-organization one.
+	NotificationDeliveryRestrictionEnabled bool `json:"notification_delivery_restriction_enabled"`
 	// PinnedRepos is the org profile's ordered pinned-repository full names
 	// (max MaxPinnedRepos, all owned by the org); a GraphQL/web-only feature,
 	// served under /ui-data like user pins.
@@ -128,8 +134,26 @@ type Team struct {
 	MaintainerIDs       []int                     `json:"maintainer_ids"`   // subset of MemberIDs with the maintainer role
 	RepoNames           []string                  `json:"repo_names"`       // "owner/name" entries
 	RepoPermissions     map[string]TeamPermission `json:"repo_permissions"` // per-repo override; nil/missing entry uses Permission
-	CreatedAt           time.Time                 `json:"created_at"`
-	UpdatedAt           time.Time                 `json:"updated_at"`
+	// ReviewAssignment is the team's code-review assignment configuration:
+	// when enabled, a review requested from the team is narrowed to a subset
+	// of its members chosen by the algorithm. Nil while the team has never
+	// configured it, which is GitHub's "not enabled".
+	ReviewAssignment *TeamReviewAssignment `json:"review_assignment,omitempty"`
+	CreatedAt        time.Time             `json:"created_at"`
+	UpdatedAt        time.Time             `json:"updated_at"`
+}
+
+// TeamReviewAssignment is a team's code-review assignment settings.
+type TeamReviewAssignment struct {
+	Enabled bool `json:"enabled"`
+	// Algorithm is ROUND_ROBIN or LOAD_BALANCE.
+	Algorithm                    string `json:"algorithm"`
+	TeamMemberCount              int    `json:"team_member_count"`
+	NotifyTeam                   bool   `json:"notify_team"`
+	IncludeChildTeamMembers      bool   `json:"include_child_team_members"`
+	RemoveTeamRequest            bool   `json:"remove_team_request"`
+	CountMembersAlreadyRequested bool   `json:"count_members_already_requested"`
+	ExcludedTeamMemberIDs        []int  `json:"excluded_team_member_ids,omitempty"`
 }
 
 // MembershipKey returns the map key for org/user membership lookups.
@@ -851,6 +875,11 @@ func cloneTeam(t *Team) *Team {
 		for k, v := range t.RepoPermissions {
 			clone.RepoPermissions[k] = v
 		}
+	}
+	if t.ReviewAssignment != nil {
+		assignment := *t.ReviewAssignment
+		assignment.ExcludedTeamMemberIDs = append([]int(nil), t.ReviewAssignment.ExcludedTeamMemberIDs...)
+		clone.ReviewAssignment = &assignment
 	}
 	return &clone
 }

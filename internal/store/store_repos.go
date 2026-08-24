@@ -17,42 +17,52 @@ import (
 )
 
 type Repo struct {
-	ID                                       int          `json:"id"`
-	NodeID                                   string       `json:"node_id"`
-	Name                                     string       `json:"name"`
-	FullName                                 string       `json:"full_name"`
-	Description                              string       `json:"description"`
-	Homepage                                 string       `json:"homepage"`
-	DefaultBranch                            string       `json:"default_branch"`
-	Visibility                               string       `json:"visibility"`
-	Language                                 string       `json:"language"`
-	Owner                                    *User        `json:"-"`
-	OwnerID                                  int          `json:"owner_id"`   // serialized so Owner can be relinked on reload
-	OwnerType                                string       `json:"owner_type"` // "User" or "Organization"
-	Private                                  bool         `json:"private"`
-	Fork                                     bool         `json:"fork"`
-	Archived                                 bool         `json:"archived"`
-	ArchivedAt                               *time.Time   `json:"archived_at,omitempty"`
-	IsTemplate                               bool         `json:"is_template"`
-	WebCommitSignoffRequired                 bool         `json:"web_commit_signoff_required"`
-	HasIssues                                bool         `json:"has_issues"`
-	HasProjects                              bool         `json:"has_projects"`
-	HasWiki                                  bool         `json:"has_wiki"`
-	WikiEditsUnrestricted                    bool         `json:"wiki_edits_unrestricted"` // github's "restrict editing to collaborators only", inverted so the zero value is the checked default (see viewerMayEditWiki)
-	HasDiscussions                           *bool        `json:"has_discussions"`
-	HasPullRequests                          bool         `json:"has_pull_requests"`
-	AllowSquashMerge                         bool         `json:"allow_squash_merge"`
-	AllowMergeCommit                         bool         `json:"allow_merge_commit"`
-	AllowRebaseMerge                         bool         `json:"allow_rebase_merge"`
-	AllowAutoMerge                           bool         `json:"allow_auto_merge"`
-	AllowUpdateBranch                        bool         `json:"allow_update_branch"`
-	DeleteBranchOnMerge                      bool         `json:"delete_branch_on_merge"`
-	UseSquashPRTitleAsDefault                bool         `json:"use_squash_pr_title_as_default"`
-	SquashMergeCommitTitle                   string       `json:"squash_merge_commit_title"`
-	SquashMergeCommitMessage                 string       `json:"squash_merge_commit_message"`
-	MergeCommitTitle                         string       `json:"merge_commit_title"`
-	MergeCommitMessage                       string       `json:"merge_commit_message"`
-	PullRequestCreationPolicy                string       `json:"pull_request_creation_policy"`
+	ID                        int        `json:"id"`
+	NodeID                    string     `json:"node_id"`
+	Name                      string     `json:"name"`
+	FullName                  string     `json:"full_name"`
+	Description               string     `json:"description"`
+	Homepage                  string     `json:"homepage"`
+	DefaultBranch             string     `json:"default_branch"`
+	Visibility                string     `json:"visibility"`
+	Language                  string     `json:"language"`
+	Owner                     *User      `json:"-"`
+	OwnerID                   int        `json:"owner_id"`   // serialized so Owner can be relinked on reload
+	OwnerType                 string     `json:"owner_type"` // "User" or "Organization"
+	Private                   bool       `json:"private"`
+	Fork                      bool       `json:"fork"`
+	Archived                  bool       `json:"archived"`
+	ArchivedAt                *time.Time `json:"archived_at,omitempty"`
+	IsTemplate                bool       `json:"is_template"`
+	WebCommitSignoffRequired  bool       `json:"web_commit_signoff_required"`
+	HasIssues                 bool       `json:"has_issues"`
+	HasProjects               bool       `json:"has_projects"`
+	HasWiki                   bool       `json:"has_wiki"`
+	WikiEditsUnrestricted     bool       `json:"wiki_edits_unrestricted"` // github's "restrict editing to collaborators only", inverted so the zero value is the checked default (see viewerMayEditWiki)
+	HasDiscussions            *bool      `json:"has_discussions"`
+	HasPullRequests           bool       `json:"has_pull_requests"`
+	AllowSquashMerge          bool       `json:"allow_squash_merge"`
+	AllowMergeCommit          bool       `json:"allow_merge_commit"`
+	AllowRebaseMerge          bool       `json:"allow_rebase_merge"`
+	AllowAutoMerge            bool       `json:"allow_auto_merge"`
+	AllowUpdateBranch         bool       `json:"allow_update_branch"`
+	DeleteBranchOnMerge       bool       `json:"delete_branch_on_merge"`
+	UseSquashPRTitleAsDefault bool       `json:"use_squash_pr_title_as_default"`
+	SquashMergeCommitTitle    string     `json:"squash_merge_commit_title"`
+	SquashMergeCommitMessage  string     `json:"squash_merge_commit_message"`
+	MergeCommitTitle          string     `json:"merge_commit_title"`
+	MergeCommitMessage        string     `json:"merge_commit_message"`
+	PullRequestCreationPolicy string     `json:"pull_request_creation_policy"`
+	IssueCreationPolicy       string     `json:"issue_creation_policy"`
+	// HasSponsorships records an explicit answer to "does this repository show
+	// a sponsor button". Nil means the repository never said, and the answer is
+	// derived from the owner's Sponsors listing and the FUNDING file, which is
+	// what GitHub does until the setting is touched.
+	HasSponsorships *bool `json:"has_sponsorships,omitempty"`
+	// DeclinedTopics are the topic names an administrator declined for this
+	// repository. A declined topic is never applied by a suggestion accept and
+	// is not offered again.
+	DeclinedTopics                           []string     `json:"declined_topics,omitempty"`
 	LicenseKey                               string       `json:"license_key"`
 	LicenseName                              string       `json:"license_name"`
 	LicenseSPDX                              string       `json:"license_spdx"`
@@ -168,6 +178,7 @@ func (st *Store) createRepoLocked(batch *PersistBatch, fullName, name, descripti
 		AllowMergeCommit:          true,
 		AllowRebaseMerge:          true,
 		PullRequestCreationPolicy: "all",
+		IssueCreationPolicy:       "all",
 		Topics:                    []string{},
 		Stargazers:                map[int]bool{},
 		NextIssueNumber:           1,
@@ -367,6 +378,7 @@ func (st *Store) ForkRepo(owner *User, sourceRepo *Repo, name string) *Repo {
 		MergeCommitTitle:          source.MergeCommitTitle,
 		MergeCommitMessage:        source.MergeCommitMessage,
 		PullRequestCreationPolicy: source.PullRequestCreationPolicy,
+		IssueCreationPolicy:       source.IssueCreationPolicy,
 		LicenseKey:                source.LicenseKey,
 		LicenseName:               source.LicenseName,
 		LicenseSPDX:               source.LicenseSPDX,
@@ -443,7 +455,12 @@ func cloneRepo(repo *Repo) *Repo {
 		v := *repo.HasDiscussions
 		clone.HasDiscussions = &v
 	}
+	if repo.HasSponsorships != nil {
+		v := *repo.HasSponsorships
+		clone.HasSponsorships = &v
+	}
 	clone.Topics = append([]string(nil), repo.Topics...)
+	clone.DeclinedTopics = append([]string(nil), repo.DeclinedTopics...)
 	clone.Stargazers = make(map[int]bool, len(repo.Stargazers))
 	for userID, starred := range repo.Stargazers {
 		clone.Stargazers[userID] = starred

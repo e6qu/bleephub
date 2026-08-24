@@ -383,15 +383,11 @@ func runActionsWorkflows(client *github.Client, rec *recorder, set *fixtureSet) 
 		return nil
 	})
 
-	// The public Representational State Transfer surface has no artifact
-	// upload: an artifact is uploaded by the runner over the Actions results
-	// protocol with a job runtime token, which no software development kit or
-	// command-line client in this matrix can mint. Recording it as a skip
-	// keeps the scoreboard honest instead of claiming coverage.
-	rec.skip1(domain, "actions.uploadArtifact", "PUT /_apis/v1/artifacts/{artifact_id}/upload",
-		"artifact upload is the runner's protocol and needs a job runtime token; no SDK or CLI can mint one")
-	rec.skip1(domain, "actions.downloadArtifact", "GET /repos/{owner}/{repo}/actions/artifacts/{id}/{archive_format}",
-		"no artifact exists to download: producing one requires a runner executing a job")
+	// Artifact upload and download are exercised by runActionsArtifacts, which
+	// registers a runner, leases this workflow's job and uploads over the
+	// Actions results protocol with the runtime token that lease produced.
+	// They are not recorded here because a run this group cancels and re-runs
+	// is the wrong fixture for an artifact's lifetime.
 }
 
 // runActionsConfiguration covers the configuration surface — secrets,

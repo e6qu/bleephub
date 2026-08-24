@@ -153,7 +153,7 @@
       },
       {
         "event": "page_build",
-        "line": 1205,
+        "line": 1188,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_misc_endpoints.go"
       },
@@ -183,7 +183,7 @@
       },
       {
         "event": "public",
-        "line": 972,
+        "line": 964,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_repos_rest.go"
       },
@@ -321,7 +321,7 @@
       },
       {
         "event": "watch",
-        "line": 1395,
+        "line": 1387,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_repos_rest.go"
       },
@@ -346,15 +346,15 @@
   "graphql": {
     "compatibility_gap_count": 9,
     "coverage": {
-      "bleephub_types": 876,
+      "bleephub_types": 990,
       "compatibility_gap_count": 9,
-      "implemented_fields": 3375,
+      "implemented_fields": 3772,
       "official_fields": 8362,
       "official_types": 1807,
-      "shared_types": 869,
-      "signature_exact_fields": 3374
+      "shared_types": 983,
+      "signature_exact_fields": 3771
     },
-    "introspection_snapshot_sha256": "a8d1470a3382f5fc1cf62e532d36cd271386149ca083b56e4aaf8f2bce96fbea",
+    "introspection_snapshot_sha256": "e94a0e775d1175bd162f21fb9bf2060cf9aabb88eb802e630621fabb2764162a",
     "official_schema": {
       "content_sha256": "30347e4f3bb975195f982351e55636ca03c76969c279980ca515a96ea7b40c3d",
       "source": "https://docs.github.com/public/fpt/schema.docs.graphql"
@@ -372,10 +372,17 @@
       "internal/graphqlapi/gh_git_objects_graphql.go",
       "internal/graphqlapi/gh_issues_graphql.go",
       "internal/graphqlapi/gh_labels_graphql.go",
+      "internal/graphqlapi/gh_linked_branches_graphql.go",
       "internal/graphqlapi/gh_marketplace_graphql.go",
       "internal/graphqlapi/gh_meta_graphql.go",
       "internal/graphqlapi/gh_migrations_graphql.go",
       "internal/graphqlapi/gh_moderation_graphql.go",
+      "internal/graphqlapi/gh_mutations_accounts_graphql.go",
+      "internal/graphqlapi/gh_mutations_authz_graphql.go",
+      "internal/graphqlapi/gh_mutations_issues_graphql.go",
+      "internal/graphqlapi/gh_mutations_repos_graphql.go",
+      "internal/graphqlapi/gh_mutations_surface_graphql.go",
+      "internal/graphqlapi/gh_mutations_types_graphql.go",
       "internal/graphqlapi/gh_orgs_graphql.go",
       "internal/graphqlapi/gh_orgs_surface_graphql.go",
       "internal/graphqlapi/gh_pinned_items_graphql.go",
@@ -416,6 +423,9 @@
       "internal/server/gh_graphql_node_test.go",
       "internal/server/gh_issue_pin_transfer_upvote_graphql_test.go",
       "internal/server/gh_issues_graphql_test.go",
+      "internal/server/gh_mutations_accounts_graphql_test.go",
+      "internal/server/gh_mutations_issues_graphql_test.go",
+      "internal/server/gh_mutations_surface_graphql_test.go",
       "internal/server/gh_projects_v2_graphql_test.go",
       "internal/server/gh_search_repositories_graphql_test.go",
       "internal/server/gh_sweep_graphql_test.go",
@@ -22716,7 +22726,7 @@
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 25,
+        "line": 26,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/interaction-limits/pulls/bypass-list",
         "source": "internal/server/gh_pull_extensions.go"
@@ -25020,7 +25030,7 @@
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 17,
+        "line": 18,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/interaction-limits/pulls/creation-cap",
         "source": "internal/server/gh_pull_extensions.go"
@@ -26574,13 +26584,13 @@
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 21,
+        "line": 22,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/interaction-limits/pulls/bypass-list",
         "source": "internal/server/gh_pull_extensions.go"
       },
       {
-        "line": 13,
+        "line": 14,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/interaction-limits/pulls/creation-cap",
         "source": "internal/server/gh_pull_extensions.go"
@@ -26616,7 +26626,7 @@
         "source": "internal/server/gh_labels_rest.go"
       },
       {
-        "line": 39,
+        "line": 40,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/issues/{issue_number}/suggestions",
         "source": "internal/server/gh_pull_extensions.go"
@@ -26976,13 +26986,13 @@
         "source": "internal/server/gh_security_advisories.go"
       },
       {
-        "line": 28,
+        "line": 29,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/stacks",
         "source": "internal/server/gh_pull_extensions.go"
       },
       {
-        "line": 32,
+        "line": 33,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/stacks/{stack_number}",
         "source": "internal/server/gh_pull_extensions.go"
@@ -28104,7 +28114,7 @@
         "source": "internal/server/gh_org_hooks_rest.go"
       },
       {
-        "line": 19,
+        "line": 20,
         "method": "PATCH",
         "path": "/api/v3/orgs/{org}/interaction-limits/pulls/creation-cap",
         "source": "internal/server/gh_pull_extensions.go"
@@ -28350,7 +28360,7 @@
         "source": "internal/server/gh_import.go"
       },
       {
-        "line": 15,
+        "line": 16,
         "method": "PATCH",
         "path": "/api/v3/repos/{owner}/{repo}/interaction-limits/pulls/creation-cap",
         "source": "internal/server/gh_pull_extensions.go"
@@ -29532,13 +29542,13 @@
         "source": "internal/server/gh_reactions.go"
       },
       {
-        "line": 41,
+        "line": 42,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/issues/{issue_number}/suggestions/{suggestion_id}/approve",
         "source": "internal/server/gh_pull_extensions.go"
       },
       {
-        "line": 43,
+        "line": 44,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/issues/{issue_number}/suggestions/{suggestion_id}/dismiss",
         "source": "internal/server/gh_pull_extensions.go"
@@ -29760,19 +29770,19 @@
         "source": "internal/server/gh_security_advisories.go"
       },
       {
-        "line": 30,
+        "line": 31,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/stacks",
         "source": "internal/server/gh_pull_extensions.go"
       },
       {
-        "line": 34,
+        "line": 35,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/stacks/{stack_number}/add",
         "source": "internal/server/gh_pull_extensions.go"
       },
       {
-        "line": 36,
+        "line": 37,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/stacks/{stack_number}/unstack",
         "source": "internal/server/gh_pull_extensions.go"
@@ -30744,7 +30754,7 @@
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 23,
+        "line": 24,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/interaction-limits/pulls/bypass-list",
         "source": "internal/server/gh_pull_extensions.go"

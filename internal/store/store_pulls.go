@@ -47,6 +47,25 @@ type PullRequest struct {
 	// auto-merge is off. Cleared whenever the PR leaves the OPEN state —
 	// merging or closing retires the request, exactly as on GitHub.
 	AutoMerge *PullRequestAutoMerge
+	// Archived records a pull request taken out of the active list by
+	// archivePullRequest. An archived pull request keeps its state; it is
+	// hidden from the default views, which is what GitHub's archive does.
+	Archived bool
+	// ViewedFiles is the per-reviewer set of file paths marked as viewed in
+	// the diff, keyed by the reviewer's account id. It is per reviewer because
+	// "viewed" is a fact about one person's review pass.
+	ViewedFiles map[int][]string
+	// MergeQueuePosition is the pull request's place in its base branch's
+	// merge queue, 1-based; zero means it is not queued.
+	MergeQueuePosition int
+	// MergeQueueEnqueuedAt is when it joined the queue.
+	MergeQueueEnqueuedAt *time.Time
+	// RevertedByID is the pull request opened to revert this one, once one has
+	// been; zero until then.
+	RevertedByID int
+	// RevertsID is the pull request this one reverts, zero when it reverts
+	// nothing.
+	RevertsID int
 }
 
 // PullRequestAutoMerge captures who armed auto-merge on a pull request and
@@ -240,6 +259,16 @@ func clonePullRequest(pr *PullRequest) *PullRequest {
 	if pr.AutoMerge != nil {
 		autoMerge := *pr.AutoMerge
 		clone.AutoMerge = &autoMerge
+	}
+	if pr.MergeQueueEnqueuedAt != nil {
+		enqueued := *pr.MergeQueueEnqueuedAt
+		clone.MergeQueueEnqueuedAt = &enqueued
+	}
+	if pr.ViewedFiles != nil {
+		clone.ViewedFiles = make(map[int][]string, len(pr.ViewedFiles))
+		for reviewerID, paths := range pr.ViewedFiles {
+			clone.ViewedFiles[reviewerID] = append([]string(nil), paths...)
+		}
 	}
 	return &clone
 }

@@ -3,6 +3,10 @@ package bleephub
 import (
 	"context"
 	"fmt"
+	"strings"
+
+	"github.com/go-git/go-git/v5/plumbing"
+	gitStorage "github.com/go-git/go-git/v5/storage"
 
 	"github.com/e6qu/bleephub/internal/graphqlapi"
 	"github.com/e6qu/bleephub/internal/store"
@@ -27,6 +31,7 @@ func (s *Server) newGraphQLResolver() *graphqlapi.Resolver {
 		Events:          seams,
 		Pulls:           seams,
 		Migrations:      seams,
+		Repos:           seams,
 		UserFromContext: ghUserFromContext,
 		APIRate: func(ctx context.Context) graphqlapi.RateSnapshot {
 			rate, _ := ctx.Value(ctxAPIRateLimit).(apiRateSnapshot)
@@ -169,6 +174,12 @@ func (a graphqlSeams) ChangedFiles(repo *store.Repo, pr *store.PullRequest, base
 	return pullRequestChangedFiles(a.s.store, repo, pr, baseURL)
 }
 
+// UpdatePullRequestBranch brings a pull request's head branch up to date with
+// its base through the same helper PUT /pulls/{n}/update-branch uses.
+func (a graphqlSeams) UpdatePullRequestBranch(repo *store.Repo, pr *store.PullRequest, user *store.User, expectedHeadOid, method string) error {
+	return a.s.updatePullRequestBranch(repo, pr, user, expectedHeadOid, method, a.s.externalURL)
+}
+
 func (a graphqlSeams) MaybeAutoMerge(prID int) {
 	a.s.maybeAutoMergePR(prID)
 }
@@ -207,4 +218,130 @@ func (a graphqlSeams) RepositoryMigrationLogURL(m *store.RepositoryMigration) st
 		return ""
 	}
 	return a.s.externalURL + fmt.Sprintf("/ui-data/orgs/%s/migrations/repositories/%d/log", org.Login, m.ID)
+}
+
+// --- graphqlapi.Repos -------------------------------------------------------
+
+// RenameRepository renames a repository on behalf of a GraphQL mutation
+// through the same helper PATCH /repos/{owner}/{repo} uses, so the artifact
+// metadata that embeds the full name moves with it either way.
+func (a graphqlSeams) RenameRepository(repo *store.Repo, newName string) error {
+	owner, name, ok := store.SplitRepoFullName(repo.FullName)
+	if !ok {
+		return fmt.Errorf("Repository name is invalid")
+	}
+	return a.s.renameRepository(owner, name, newName)
+}
+
+// CreateGitRef writes a new reference on behalf of the createRef mutation,
+// through the same helper POST /repos/{owner}/{repo}/git/refs uses, so branch
+// protection, secret scanning and the push machinery cannot diverge between
+// the two surfaces.
+func (a graphqlSeams) CreateGitRef(ctx context.Context, repo *store.Repo, sender *store.User, qualifiedName, oid string) error {
+	stor := a.storageFor(repo)
+	if stor == nil {
+		return fmt.Errorf("the repository has no git storage")
+	}
+	if failure := a.s.createGitRef(ctx, repo, stor, sender,
+		plumbing.ReferenceName(qualifiedName), plumbing.NewHash(oid), a.s.externalURL); failure != nil {
+		return fmt.Errorf("%s", failure.message)
+	}
+	return nil
+}
+
+// UpdateGitRef moves a reference for the updateRef mutation; force carries
+// GitHub's non-fast-forward override exactly as PATCH git/refs/{ref} does.
+func (a graphqlSeams) UpdateGitRef(ctx context.Context, repo *store.Repo, sender *store.User, qualifiedName, oid string, force bool) error {
+	stor := a.storageFor(repo)
+	if stor == nil {
+		return fmt.Errorf("the repository has no git storage")
+	}
+	if failure := a.s.updateGitRef(ctx, repo, stor, sender,
+		plumbing.ReferenceName(qualifiedName), plumbing.NewHash(oid), force, a.s.externalURL); failure != nil {
+		return fmt.Errorf("%s", failure.message)
+	}
+	return nil
+}
+
+// DeleteGitRef removes a reference for the deleteRef mutation.
+func (a graphqlSeams) DeleteGitRef(ctx context.Context, repo *store.Repo, sender *store.User, qualifiedName string) error {
+	stor := a.storageFor(repo)
+	if stor == nil {
+		return fmt.Errorf("the repository has no git storage")
+	}
+	if failure := a.s.deleteGitRef(ctx, repo, stor, sender,
+		plumbing.ReferenceName(qualifiedName), a.s.externalURL); failure != nil {
+		return fmt.Errorf("%s", failure.message)
+	}
+	return nil
+}
+
+// MergeBranch merges head into base for the mergeBranch mutation, answering
+// the merge commit's oid or "" when head was already an ancestor of base —
+// the same already-merged answer POST /repos/{owner}/{repo}/merges encodes as
+// its 204.
+func (a graphqlSeams) MergeBranch(ctx context.Context, repo *store.Repo, sender *store.User, base, head, commitMessage, authorEmail string) (string, error) {
+	hash, failure := a.s.mergeBranchRefs(repo, sender, base, head, commitMessage, authorEmail)
+	if failure != nil {
+		return "", fmt.Errorf("%s", failure.message)
+	}
+	if hash.IsZero() {
+		return "", nil
+	}
+	return hash.String(), nil
+}
+
+// CreateCommitOnBranch writes the multi-file commit for the
+// createCommitOnBranch mutation. GitHub's message input is a headline and an
+// optional body; git's convention joins them with a blank line, which is also
+// how the web UI's own commits are assembled.
+func (a graphqlSeams) CreateCommitOnBranch(ctx context.Context, repo *store.Repo, sender *store.User, qualifiedName, expectedHeadOid string,
+	additions map[string][]byte, deletions []string, headline, body string) (string, error) {
+	stor := a.storageFor(repo)
+	if stor == nil {
+		return "", fmt.Errorf("the repository has no git storage")
+	}
+	branch := strings.TrimPrefix(qualifiedName, "refs/heads/")
+	message := headline
+	if body != "" {
+		message += "\n\n" + body
+	}
+	hash, failure := a.s.createCommitOnBranch(ctx, repo, stor, sender, branch, expectedHeadOid, additions, deletions, message, a.s.externalURL)
+	if failure != nil {
+		return "", fmt.Errorf("%s", failure.message)
+	}
+	return hash.String(), nil
+}
+
+// RevertPullRequest creates the revert branch and opens the pull request that
+// undoes a merged one, answering the new pull request's database id. The
+// branch and commit come from the same helper either surface would use; the
+// pull request goes through the checked store constructor and then collects
+// its CODEOWNERS reviewers exactly as a pull request opened any other way.
+func (a graphqlSeams) RevertPullRequest(ctx context.Context, repo *store.Repo, pr *store.PullRequest, sender *store.User, title, body string, draft bool) (int, error) {
+	branch, err := a.s.createRevertBranch(ctx, repo, pr, sender, a.s.externalURL)
+	if err != nil {
+		return 0, err
+	}
+	revert, err := a.s.store.CreatePullRequestChecked(repo.ID, sender.ID, title, body, branch, pr.BaseRefName, draft, nil, nil, 0, store.PullRequestOptions{
+		HeadRepoID: repo.ID,
+	})
+	if err != nil {
+		return 0, err
+	}
+	if revert == nil {
+		return 0, fmt.Errorf("pull request creation failed")
+	}
+	a.s.autoRequestCodeOwners(repo, revert, sender)
+	return revert.ID, nil
+}
+
+// storageFor resolves a repository's git storage from its full name, the same
+// lookup every REST git handler performs.
+func (a graphqlSeams) storageFor(repo *store.Repo) gitStorage.Storer {
+	owner, name, ok := store.SplitRepoFullName(repo.FullName)
+	if !ok {
+		return nil
+	}
+	return a.s.store.GetGitStorage(owner, name)
 }
