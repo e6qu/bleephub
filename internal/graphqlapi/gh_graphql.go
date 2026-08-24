@@ -439,6 +439,12 @@ func (s *Resolver) initGraphQLSchema() {
 	// Organization, Repository, Ref) is already assembled.
 	s.addAccountActionsFields()
 
+	// The Actions run graph (WorkflowRun, Workflow) and the residual Checks
+	// members (CheckSuite/CheckRun). Runs after the account surface so every
+	// type it names — Repository, Commit, Ref, App, Deployment, Environment,
+	// User, Team, PullRequestConnection — is already assembled.
+	s.addActionsFamilyFields()
+
 	// The shared Comment-trait, back-reference and viewer-permission fields on
 	// CommitComment, IssueComment and PullRequestReviewComment. They are added
 	// last because they name the repository, issue, pull-request, review and

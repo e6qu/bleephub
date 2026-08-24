@@ -386,14 +386,34 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 	issueConnectionType := s.gqlIssueConnectionType(issueType)
 
 	// --- Issue filters input ---
+	// IssueFieldValueFilter matches issues by a custom issue-field value; it is
+	// all optional scalars/ids, so it declares as GitHub spells it and needs no
+	// resolver (input types carry no resolvers).
+	issueFieldValueFilterInput := s.mutationInput("IssueFieldValueFilter", graphql.InputObjectConfigFieldMap{
+		"dateValue":               gqlString(),
+		"fieldId":                 gqlID(),
+		"fieldName":               gqlString(),
+		"multiSelectOptionIds":    gqlListOf(graphql.ID),
+		"multiSelectOptionValues": gqlListOf(graphql.String),
+		"numberValue":             gqlInputOf(graphql.Float),
+		"singleSelectOptionId":    gqlID(),
+		"singleSelectOptionValue": gqlString(),
+		"textValue":               gqlString(),
+	})
 	issueFiltersInput := graphql.NewInputObject(graphql.InputObjectConfig{
 		Name: "IssueFilters",
 		Fields: graphql.InputObjectConfigFieldMap{
-			"assignee":  &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"createdBy": &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"mentioned": &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"labels":    &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(graphql.String))},
-			"states":    &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(issueStateEnum))},
+			"assignee":         &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"createdBy":        &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"mentioned":        &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"labels":           &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(graphql.String))},
+			"states":           &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(issueStateEnum))},
+			"issueFieldValues": gqlListOf(issueFieldValueFilterInput),
+			"milestone":        gqlString(),
+			"milestoneNumber":  gqlString(),
+			"since":            gqlInputOf(dateTime),
+			"type":             gqlString(),
+			"viewerSubscribed": gqlBool(),
 		},
 	})
 
@@ -1444,6 +1464,43 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 		},
 	})
 
+	// The agent-triage input family GitHub added to updateIssue: each of these
+	// mirrors GitHub's SDL exactly. AgentAssignmentInput and AssigneeUpdateInput
+	// are memoized (the assignment mutations name the same two), so building
+	// them here reuses whichever installer ran first.
+	confidenceEnum := s.sharedEnum("IssueEventConfidenceLevel", "HIGH", "LOW", "MEDIUM")
+	agentAssignmentInput := s.mutationInput("AgentAssignmentInput", graphql.InputObjectConfigFieldMap{
+		"baseRef":            gqlString(),
+		"customAgent":        gqlString(),
+		"customInstructions": gqlString(),
+		"targetRepositoryId": gqlID(),
+	})
+	assigneeUpdateInput := s.mutationInput("AssigneeUpdateInput", graphql.InputObjectConfigFieldMap{
+		"actorId":    gqlNonNullID(),
+		"confidence": gqlInputOf(confidenceEnum),
+		"rationale":  gqlString(),
+		"suggest":    gqlBool(),
+	})
+	issueTypeUpdateInput := s.mutationInput("IssueTypeUpdateInput", graphql.InputObjectConfigFieldMap{
+		"confidence":  gqlInputOf(confidenceEnum),
+		"issueTypeId": gqlID(),
+		"rationale":   gqlString(),
+		"suggest":     gqlBool(),
+	})
+	labelUpdateInput := s.mutationInput("LabelUpdateInput", graphql.InputObjectConfigFieldMap{
+		"confidence": gqlInputOf(confidenceEnum),
+		"labelId":    gqlNonNullID(),
+		"rationale":  gqlString(),
+		"suggest":    gqlBool(),
+	})
+	issueStateUpdateInput := s.mutationInput("IssueStateUpdateInput", graphql.InputObjectConfigFieldMap{
+		"confidence":       gqlInputOf(confidenceEnum),
+		"duplicateIssueId": gqlID(),
+		"rationale":        gqlString(),
+		"stateReason":      gqlInputOf(issueClosedStateReasonEnum),
+		"suggest":          gqlBool(),
+		"value":            gqlNonNullInputOf(issueStateEnum),
+	})
 	updateIssueInputType := graphql.NewInputObject(graphql.InputObjectConfig{
 		Name: "UpdateIssueInput",
 		Fields: graphql.InputObjectConfigFieldMap{
@@ -1453,11 +1510,17 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 			// IssueState, not String: real GitHub types this field with the
 			// enum, and a free-form string was being written into the store
 			// verbatim, so `state: "banana"` became the issue's state.
-			"state":       &graphql.InputObjectFieldConfig{Type: issueStateEnum},
-			"milestoneId": &graphql.InputObjectFieldConfig{Type: graphql.ID},
-			"labelIds":    &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(graphql.ID))},
-			"assigneeIds": &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(graphql.ID))},
-			"issueTypeId": &graphql.InputObjectFieldConfig{Type: graphql.ID},
+			"state":           &graphql.InputObjectFieldConfig{Type: issueStateEnum},
+			"milestoneId":     &graphql.InputObjectFieldConfig{Type: graphql.ID},
+			"labelIds":        &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(graphql.ID))},
+			"assigneeIds":     &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(graphql.ID))},
+			"issueTypeId":     &graphql.InputObjectFieldConfig{Type: graphql.ID},
+			"agentAssignment": gqlInputOf(agentAssignmentInput),
+			"assignees":       gqlListOf(assigneeUpdateInput),
+			"issueType":       gqlInputOf(issueTypeUpdateInput),
+			"labels":          gqlListOf(labelUpdateInput),
+			"projectIds":      gqlListOf(graphql.ID),
+			"stateInput":      gqlInputOf(issueStateUpdateInput),
 		},
 	})
 
@@ -2911,6 +2974,13 @@ type graphQLTypeRegistry struct {
 	checkSuite              *graphql.Object
 	statusCheckRollup       *graphql.Object
 	requirableByPullRequest *graphql.Interface
+	// The Actions run graph: WorkflowRun (a single run) and Workflow (the YAML
+	// file it was produced from). They are minted as minimal stubs where the
+	// CheckSuite rollup references them (gh_pulls_graphql.go) and finished by
+	// addActionsFamilyFields (gh_actions_fields_graphql.go), which hangs the
+	// rest of GitHub's fields off the same registered objects.
+	workflowRun *graphql.Object
+	workflow    *graphql.Object
 	// The deployment graph built with the account surface
 	// (gh_repos_deployments_graphql.go); the deployments/environments
 	// mutation payloads name the same objects.
@@ -2918,6 +2988,11 @@ type graphQLTypeRegistry struct {
 	deploymentStatus  *graphql.Object
 	environment       *graphql.Object
 	pinnedEnvironment *graphql.Object
+	// The EnvironmentConnection and DeploymentReviewerConnection the account
+	// deployment surface mints; the Actions run graph's DeploymentReview and
+	// DeploymentRequest reuse the same two objects rather than re-minting them.
+	environmentConnection        *graphql.Object
+	deploymentReviewerConnection *graphql.Object
 	// Labelable, the interface the three label mutations return their
 	// subject behind.
 	labelable *graphql.Interface

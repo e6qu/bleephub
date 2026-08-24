@@ -106,6 +106,9 @@ func (s *Resolver) addRepositoryDeploymentFields(types *accountSurfaceTypes) {
 			return types.user
 		},
 	})
+	// Expose the reviewer connection for the Actions run graph
+	// (DeploymentRequest.reviewers reuses this exact object).
+	s.graphqlTypes.deploymentReviewerConnection = s.accountConnectionType(types, "DeploymentReviewer", deploymentReviewer, false, nil)
 	protectionRuleType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "DeploymentProtectionRule",
 		Fields: graphql.Fields{
@@ -184,6 +187,9 @@ func (s *Resolver) addRepositoryDeploymentFields(types *accountSurfaceTypes) {
 	s.graphqlTypes.deployment = deploymentType
 	s.graphqlTypes.deploymentStatus = deploymentStatusType
 	s.graphqlTypes.environment = environmentType
+	// Expose the environment connection for the Actions run graph
+	// (DeploymentReview.environments reuses this exact object).
+	s.graphqlTypes.environmentConnection = s.accountConnectionType(types, "Environment", environmentType, false, nil)
 
 	// --- Repository fields -------------------------------------------------
 	repoType.AddFieldConfig("deployments", &graphql.Field{

@@ -263,6 +263,10 @@ type Resolver struct {
 	graphqlTypes  graphQLTypeRegistry
 	graphqlSchema graphql.Schema
 
+	// The Actions/Checks leaf types and connections built once by
+	// buildActionsSupportTypes (gh_actions_fields_graphql.go).
+	actionsTypes *actionsFamilyTypes
+
 	// The enterprise family's two memoized types: the organization-membership
 	// connection two enterprise types both name, and the invitation ordering
 	// inputs, keyed by GitHub's input-object name.

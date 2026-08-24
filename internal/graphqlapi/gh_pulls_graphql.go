@@ -127,6 +127,35 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 	// select. statusCheckRollupSourceLocked always embeds a checkSuite
 	// source map (with a null workflowRun when the run has no recorded
 	// suite), satisfying the non-null contract.
+	// WorkflowRun and Workflow are minted here as the minimal shells the
+	// CheckSuite rollup references, then registered so addActionsFamilyFields
+	// (gh_actions_fields_graphql.go) can finish them with GitHub's full field
+	// set on the same objects. The `workflow`/`name` members below are the two
+	// the rollup source (checkSuiteWorkflowRunSourceLocked) already populates.
+	workflowFileType := graphql.NewObject(graphql.ObjectConfig{
+		Name: "Workflow",
+		Fields: graphql.Fields{
+			"name": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+		},
+	})
+	workflowRunType := graphql.NewObject(graphql.ObjectConfig{
+		Name: "WorkflowRun",
+		Fields: graphql.Fields{
+			"workflow": &graphql.Field{
+				Type: graphql.NewNonNull(workflowFileType),
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					run, ok := p.Source.(map[string]interface{})
+					if !ok {
+						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
+					}
+					return run["workflow"], nil
+				},
+			},
+		},
+	})
+	s.graphqlTypes.workflow = workflowFileType
+	s.graphqlTypes.workflowRun = workflowRunType
+
 	checkSuiteType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "CheckSuite",
 		Fields: graphql.Fields{
@@ -137,26 +166,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			"createdAt":  &graphql.Field{Type: graphql.NewNonNull(dateTime)},
 			"updatedAt":  &graphql.Field{Type: graphql.NewNonNull(dateTime)},
 			"workflowRun": &graphql.Field{
-				Type: graphql.NewObject(graphql.ObjectConfig{
-					Name: "WorkflowRun",
-					Fields: graphql.Fields{
-						"workflow": &graphql.Field{
-							Type: graphql.NewNonNull(graphql.NewObject(graphql.ObjectConfig{
-								Name: "Workflow",
-								Fields: graphql.Fields{
-									"name": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-								},
-							})),
-							Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-								run, ok := p.Source.(map[string]interface{})
-								if !ok {
-									return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
-								}
-								return run["workflow"], nil
-							},
-						},
-					},
-				}),
+				Type: workflowRunType,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					suite, ok := p.Source.(map[string]interface{})
 					if !ok {
@@ -3355,6 +3365,13 @@ func checkRunGraphQLSource(cr *store.CheckRun, repoKey string, conclusion, compl
 		"summary":     nil,
 		"text":        nil,
 		"checkSuite":  suiteSource,
+		// Identity the residual CheckRun fields (annotations, permalink,
+		// repository, resourcePath, url) in gh_actions_fields_graphql.go
+		"checkRunID": cr.ID,
+		"headSHA":    cr.HeadSHA,
+	}
+	if cr.Output != nil {
+		source["annotations"] = cr.Output.Annotations
 	}
 	if cr.Output != nil {
 		source["title"] = nilStr(cr.Output.Title)
@@ -3379,6 +3396,15 @@ func checkSuiteGraphQLSourceLocked(st *store.Store, suite *store.CheckSuite) map
 		"conclusion": nil,
 		"createdAt":  time.Time{}.Format(time.RFC3339),
 		"updatedAt":  time.Time{}.Format(time.RFC3339),
+		// Identity the residual CheckSuite fields (app, branch, commit,
+		// repository, checkRuns, matchingPullRequests, resourcePath, url) in
+		// gh_actions_fields_graphql.go resolve their real records from.
+		"suiteID":       int64(0),
+		"repoKey":       "",
+		"headSHA":       "",
+		"headBranch":    "",
+		"appID":         0,
+		"workflowRunID": 0,
 	}
 	if suite != nil {
 		source["id"] = suite.NodeID
@@ -3389,6 +3415,12 @@ func checkSuiteGraphQLSourceLocked(st *store.Store, suite *store.CheckSuite) map
 		}
 		source["createdAt"] = suite.CreatedAt.UTC().Format(time.RFC3339)
 		source["updatedAt"] = suite.UpdatedAt.UTC().Format(time.RFC3339)
+		source["suiteID"] = suite.ID
+		source["repoKey"] = suite.RepoKey
+		source["headSHA"] = suite.HeadSHA
+		source["headBranch"] = suite.HeadBranch
+		source["appID"] = suite.AppID
+		source["workflowRunID"] = suite.WorkflowRunID
 	}
 	if run := checkSuiteWorkflowRunSourceLocked(st, suite); run != nil {
 		source["workflowRun"] = run
@@ -3400,18 +3432,42 @@ func checkSuiteWorkflowRunSourceLocked(st *store.Store, suite *store.CheckSuite)
 	if suite == nil || suite.WorkflowRunID == 0 {
 		return nil
 	}
-	workflowName := suite.WorkflowName
 	for _, wf := range st.Workflows {
 		if wf.RunID == suite.WorkflowRunID && wf.RepoFullName == suite.RepoKey {
-			workflowName = wf.Name
-			break
+			return workflowRunGQLSourceLocked(st, wf)
 		}
 	}
-	if workflowName == "" {
+	// The suite records a run id but the run record is gone (pruned/restarted).
+	// Answer the minimal run shell the CheckSuite.workflowRun contract needs:
+	// its non-null members resolve, its lazy ones (file, checkSuite) fall to
+	// truthful nulls/empties.
+	if suite.WorkflowName == "" {
 		return nil
 	}
+	ts := suite.CreatedAt.UTC().Format(time.RFC3339)
 	return map[string]interface{}{
-		"workflow": map[string]interface{}{"name": workflowName},
+		"id":             "WFR_" + strconv.Itoa(suite.WorkflowRunID),
+		"databaseId":     suite.WorkflowRunID,
+		"runNumber":      0,
+		"runAttempt":     1,
+		"event":          "",
+		"displayTitle":   suite.WorkflowName,
+		"createdAt":      ts,
+		"updatedAt":      ts,
+		"repoFullName":   suite.RepoKey,
+		"runID":          suite.WorkflowRunID,
+		"checkSuiteID":   suite.ID,
+		"workflowFileID": suite.WorkflowFileID,
+		"workflow": map[string]interface{}{
+			"name":         suite.WorkflowName,
+			"id":           "WF_" + suite.WorkflowName,
+			"databaseId":   nil,
+			"repoFullName": suite.RepoKey,
+			"path":         suite.WorkflowFilePath,
+			"state":        "ACTIVE",
+			"createdAt":    ts,
+			"updatedAt":    ts,
+		},
 	}
 }
 

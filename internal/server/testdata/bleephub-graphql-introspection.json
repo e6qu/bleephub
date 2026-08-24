@@ -1512,6 +1512,55 @@
         }
       }
     },
+    "CheckAnnotation": {
+      "kind": "OBJECT",
+      "fields": {
+        "annotationLevel": {
+          "type": "CheckAnnotationLevel"
+        },
+        "blobUrl": {
+          "type": "URI!"
+        },
+        "databaseId": {
+          "type": "Int"
+        },
+        "fullDatabaseId": {
+          "type": "BigInt"
+        },
+        "location": {
+          "type": "CheckAnnotationSpan!"
+        },
+        "message": {
+          "type": "String!"
+        },
+        "path": {
+          "type": "String!"
+        },
+        "rawDetails": {
+          "type": "String"
+        },
+        "title": {
+          "type": "String"
+        }
+      }
+    },
+    "CheckAnnotationConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[CheckAnnotationEdge]"
+        },
+        "nodes": {
+          "type": "[CheckAnnotation]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
     "CheckAnnotationData": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
@@ -1523,6 +1572,17 @@
         "title": "String"
       }
     },
+    "CheckAnnotationEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "CheckAnnotation"
+        }
+      }
+    },
     "CheckAnnotationLevel": {
       "kind": "ENUM",
       "enum_values": [
@@ -1531,6 +1591,17 @@
         "WARNING"
       ]
     },
+    "CheckAnnotationPosition": {
+      "kind": "OBJECT",
+      "fields": {
+        "column": {
+          "type": "Int"
+        },
+        "line": {
+          "type": "Int!"
+        }
+      }
+    },
     "CheckAnnotationRange": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
@@ -1538,6 +1609,17 @@
         "endLine": "Int!",
         "startColumn": "Int",
         "startLine": "Int!"
+      }
+    },
+    "CheckAnnotationSpan": {
+      "kind": "OBJECT",
+      "fields": {
+        "end": {
+          "type": "CheckAnnotationPosition!"
+        },
+        "start": {
+          "type": "CheckAnnotationPosition!"
+        }
       }
     },
     "CheckConclusionState": {
@@ -1557,6 +1639,15 @@
     "CheckRun": {
       "kind": "OBJECT",
       "fields": {
+        "annotations": {
+          "type": "CheckAnnotationConnection",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
         "checkSuite": {
           "type": "CheckSuite!"
         },
@@ -1568,6 +1659,9 @@
         },
         "databaseId": {
           "type": "Int"
+        },
+        "deployment": {
+          "type": "Deployment"
         },
         "detailsUrl": {
           "type": "URI"
@@ -1588,11 +1682,32 @@
         "name": {
           "type": "String!"
         },
+        "pendingDeploymentRequest": {
+          "type": "DeploymentRequest"
+        },
+        "permalink": {
+          "type": "URI!"
+        },
+        "repository": {
+          "type": "Repository!"
+        },
+        "resourcePath": {
+          "type": "URI!"
+        },
         "startedAt": {
           "type": "DateTime"
         },
         "status": {
           "type": "CheckStatusState!"
+        },
+        "steps": {
+          "type": "CheckStepConnection",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
         },
         "summary": {
           "type": "String"
@@ -1602,6 +1717,9 @@
         },
         "title": {
           "type": "String"
+        },
+        "url": {
+          "type": "URI!"
         }
       },
       "interfaces": [
@@ -1614,6 +1732,34 @@
         "description": "String!",
         "identifier": "String!",
         "label": "String!"
+      }
+    },
+    "CheckRunConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[CheckRunEdge]"
+        },
+        "nodes": {
+          "type": "[CheckRun]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "CheckRunEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "CheckRun"
+        }
       }
     },
     "CheckRunOutput": {
@@ -1675,14 +1821,92 @@
         "WAITING"
       ]
     },
+    "CheckStep": {
+      "kind": "OBJECT",
+      "fields": {
+        "completedAt": {
+          "type": "DateTime"
+        },
+        "conclusion": {
+          "type": "CheckConclusionState"
+        },
+        "externalId": {
+          "type": "String"
+        },
+        "name": {
+          "type": "String!"
+        },
+        "number": {
+          "type": "Int!"
+        },
+        "secondsToCompletion": {
+          "type": "Int"
+        },
+        "startedAt": {
+          "type": "DateTime"
+        },
+        "status": {
+          "type": "CheckStatusState!"
+        }
+      }
+    },
+    "CheckStepConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[CheckStepEdge]"
+        },
+        "nodes": {
+          "type": "[CheckStep]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "CheckStepEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "CheckStep"
+        }
+      }
+    },
     "CheckSuite": {
       "kind": "OBJECT",
       "fields": {
+        "app": {
+          "type": "App"
+        },
+        "branch": {
+          "type": "Ref"
+        },
+        "checkRuns": {
+          "type": "CheckRunConnection",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "commit": {
+          "type": "Commit!"
+        },
         "conclusion": {
           "type": "CheckConclusionState"
         },
         "createdAt": {
           "type": "DateTime!"
+        },
+        "creator": {
+          "type": "User"
         },
         "databaseId": {
           "type": "Int"
@@ -1690,11 +1914,32 @@
         "id": {
           "type": "ID!"
         },
+        "matchingPullRequests": {
+          "type": "PullRequestConnection",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "push": {
+          "type": "Push"
+        },
+        "repository": {
+          "type": "Repository!"
+        },
+        "resourcePath": {
+          "type": "URI!"
+        },
         "status": {
           "type": "CheckStatusState!"
         },
         "updatedAt": {
           "type": "DateTime!"
+        },
+        "url": {
+          "type": "URI!"
         },
         "workflowRun": {
           "type": "WorkflowRun"
@@ -4437,6 +4682,124 @@
         "BRANCH_POLICY",
         "REQUIRED_REVIEWERS",
         "WAIT_TIMER"
+      ]
+    },
+    "DeploymentRequest": {
+      "kind": "OBJECT",
+      "fields": {
+        "currentUserCanApprove": {
+          "type": "Boolean!"
+        },
+        "environment": {
+          "type": "Environment!"
+        },
+        "reviewers": {
+          "type": "DeploymentReviewerConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "waitTimer": {
+          "type": "Int!"
+        },
+        "waitTimerStartedAt": {
+          "type": "DateTime"
+        }
+      }
+    },
+    "DeploymentRequestConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[DeploymentRequestEdge]"
+        },
+        "nodes": {
+          "type": "[DeploymentRequest]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "DeploymentRequestEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "DeploymentRequest"
+        }
+      }
+    },
+    "DeploymentReview": {
+      "kind": "OBJECT",
+      "fields": {
+        "comment": {
+          "type": "String!"
+        },
+        "databaseId": {
+          "type": "Int"
+        },
+        "environments": {
+          "type": "EnvironmentConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "state": {
+          "type": "DeploymentReviewState!"
+        },
+        "user": {
+          "type": "User!"
+        }
+      }
+    },
+    "DeploymentReviewConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[DeploymentReviewEdge]"
+        },
+        "nodes": {
+          "type": "[DeploymentReview]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "DeploymentReviewEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "DeploymentReview"
+        }
+      }
+    },
+    "DeploymentReviewState": {
+      "kind": "ENUM",
+      "enum_values": [
+        "APPROVED",
+        "REJECTED"
       ]
     },
     "DeploymentReviewer": {
@@ -8011,6 +8374,20 @@
         }
       }
     },
+    "IssueFieldValueFilter": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "dateValue": "String",
+        "fieldId": "ID",
+        "fieldName": "String",
+        "multiSelectOptionIds": "[ID!]",
+        "multiSelectOptionValues": "[String!]",
+        "numberValue": "Float",
+        "singleSelectOptionId": "ID",
+        "singleSelectOptionValue": "String",
+        "textValue": "String"
+      }
+    },
     "IssueFieldVisibility": {
       "kind": "ENUM",
       "enum_values": [
@@ -8033,9 +8410,15 @@
       "input_fields": {
         "assignee": "String",
         "createdBy": "String",
+        "issueFieldValues": "[IssueFieldValueFilter!]",
         "labels": "[String!]",
         "mentioned": "String",
-        "states": "[IssueState!]"
+        "milestone": "String",
+        "milestoneNumber": "String",
+        "since": "DateTime",
+        "states": "[IssueState!]",
+        "type": "String",
+        "viewerSubscribed": "Boolean"
       }
     },
     "IssueOrPullRequest": {
@@ -8074,6 +8457,17 @@
         "NOT_PLANNED",
         "REOPENED"
       ]
+    },
+    "IssueStateUpdateInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "confidence": "IssueEventConfidenceLevel",
+        "duplicateIssueId": "ID",
+        "rationale": "String",
+        "stateReason": "IssueClosedStateReason",
+        "suggest": "Boolean",
+        "value": "IssueState!"
+      }
     },
     "IssueTemplate": {
       "kind": "OBJECT",
@@ -8266,6 +8660,15 @@
         "YELLOW"
       ]
     },
+    "IssueTypeUpdateInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "confidence": "IssueEventConfidenceLevel",
+        "issueTypeId": "ID",
+        "rationale": "String",
+        "suggest": "Boolean"
+      }
+    },
     "IssueUpdateIntent": {
       "kind": "OBJECT",
       "fields": {
@@ -8377,6 +8780,15 @@
         "CREATED_AT",
         "NAME"
       ]
+    },
+    "LabelUpdateInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "confidence": "IssueEventConfidenceLevel",
+        "labelId": "ID!",
+        "rationale": "String",
+        "suggest": "Boolean"
+      }
     },
     "Labelable": {
       "kind": "INTERFACE",
@@ -15631,6 +16043,29 @@
         "UNPINNED_EVENT"
       ]
     },
+    "Push": {
+      "kind": "OBJECT",
+      "fields": {
+        "id": {
+          "type": "ID!"
+        },
+        "nextSha": {
+          "type": "GitObjectID"
+        },
+        "permalink": {
+          "type": "URI!"
+        },
+        "previousSha": {
+          "type": "GitObjectID"
+        },
+        "pusher": {
+          "type": "Actor!"
+        },
+        "repository": {
+          "type": "Repository!"
+        }
+      }
+    },
     "PushAllowance": {
       "kind": "OBJECT",
       "fields": {
@@ -22399,14 +22834,20 @@
     "UpdateIssueInput": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
+        "agentAssignment": "AgentAssignmentInput",
         "assigneeIds": "[ID!]",
+        "assignees": "[AssigneeUpdateInput!]",
         "body": "String",
         "clientMutationId": "String",
         "id": "ID!",
+        "issueType": "IssueTypeUpdateInput",
         "issueTypeId": "ID",
         "labelIds": "[ID!]",
+        "labels": "[LabelUpdateInput!]",
         "milestoneId": "ID",
+        "projectIds": "[ID!]",
         "state": "IssueState",
+        "stateInput": "IssueStateUpdateInput",
         "title": "String"
       }
     },
@@ -23994,8 +24435,38 @@
     "Workflow": {
       "kind": "OBJECT",
       "fields": {
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "databaseId": {
+          "type": "Int"
+        },
+        "id": {
+          "type": "ID!"
+        },
         "name": {
           "type": "String!"
+        },
+        "resourcePath": {
+          "type": "URI!"
+        },
+        "runs": {
+          "type": "WorkflowRunConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "state": {
+          "type": "WorkflowState!"
+        },
+        "updatedAt": {
+          "type": "DateTime!"
+        },
+        "url": {
+          "type": "URI!"
         }
       }
     },
@@ -24011,10 +24482,134 @@
     "WorkflowRun": {
       "kind": "OBJECT",
       "fields": {
+        "checkSuite": {
+          "type": "CheckSuite!"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "databaseId": {
+          "type": "Int"
+        },
+        "deploymentReviews": {
+          "type": "DeploymentReviewConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "displayTitle": {
+          "type": "String"
+        },
+        "event": {
+          "type": "String!"
+        },
+        "file": {
+          "type": "WorkflowRunFile"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "pendingDeploymentRequests": {
+          "type": "DeploymentRequestConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "resourcePath": {
+          "type": "URI!"
+        },
+        "runAttempt": {
+          "type": "Int!"
+        },
+        "runNumber": {
+          "type": "Int!"
+        },
+        "updatedAt": {
+          "type": "DateTime!"
+        },
+        "url": {
+          "type": "URI!"
+        },
         "workflow": {
           "type": "Workflow!"
         }
       }
+    },
+    "WorkflowRunConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[WorkflowRunEdge]"
+        },
+        "nodes": {
+          "type": "[WorkflowRun]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "WorkflowRunEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "WorkflowRun"
+        }
+      }
+    },
+    "WorkflowRunFile": {
+      "kind": "OBJECT",
+      "fields": {
+        "id": {
+          "type": "ID!"
+        },
+        "path": {
+          "type": "String!"
+        },
+        "repositoryFileUrl": {
+          "type": "URI!"
+        },
+        "repositoryName": {
+          "type": "URI!"
+        },
+        "resourcePath": {
+          "type": "URI!"
+        },
+        "run": {
+          "type": "WorkflowRun!"
+        },
+        "url": {
+          "type": "URI!"
+        },
+        "viewerCanPushRepository": {
+          "type": "Boolean!"
+        },
+        "viewerCanReadRepository": {
+          "type": "Boolean!"
+        }
+      }
+    },
+    "WorkflowState": {
+      "kind": "ENUM",
+      "enum_values": [
+        "ACTIVE",
+        "DELETED",
+        "DISABLED_FORK",
+        "DISABLED_INACTIVITY",
+        "DISABLED_MANUALLY"
+      ]
     },
     "WorkflowsParametersInput": {
       "kind": "INPUT_OBJECT",

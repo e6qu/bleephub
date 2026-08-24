@@ -1,10 +1,10 @@
 {
   "official_types": 1807,
-  "bleephub_types": 1318,
-  "shared_types": 1311,
+  "bleephub_types": 1344,
+  "shared_types": 1337,
   "official_fields": 8362,
-  "implemented_fields": 5323,
-  "signature_exact_fields": 5322,
+  "implemented_fields": 5481,
+  "signature_exact_fields": 5480,
   "compatibility_gap_count": 9,
   "missing_types": [
     "ActorConnection",
@@ -32,18 +32,8 @@
     "BlockingRemovedEvent",
     "BranchNamePatternParameters",
     "BypassActor",
-    "CheckAnnotation",
-    "CheckAnnotationConnection",
-    "CheckAnnotationEdge",
-    "CheckAnnotationPosition",
-    "CheckAnnotationSpan",
-    "CheckRunConnection",
-    "CheckRunEdge",
     "CheckRunFilter",
     "CheckRunType",
-    "CheckStep",
-    "CheckStepConnection",
-    "CheckStepEdge",
     "CheckSuiteConnection",
     "CheckSuiteEdge",
     "CheckSuiteFilter",
@@ -96,13 +86,6 @@
     "Deletable",
     "DeployedEvent",
     "DeploymentEnvironmentChangedEvent",
-    "DeploymentRequest",
-    "DeploymentRequestConnection",
-    "DeploymentRequestEdge",
-    "DeploymentReview",
-    "DeploymentReviewConnection",
-    "DeploymentReviewEdge",
-    "DeploymentReviewState",
     "DisconnectedEvent",
     "DiscussionState",
     "DismissalRestriction",
@@ -188,11 +171,9 @@
     "IssueFieldRemovedEvent",
     "IssueFieldTimelineOption",
     "IssueFieldValueCommon",
-    "IssueFieldValueFilter",
     "IssueFieldsConnection",
     "IssueFieldsEdge",
     "IssueSearchType",
-    "IssueStateUpdateInput",
     "IssueTypeAddedEvent",
     "IssueTypeChangedEvent",
     "IssueTypeConnection",
@@ -200,9 +181,7 @@
     "IssueTypeOrder",
     "IssueTypeOrderField",
     "IssueTypeRemovedEvent",
-    "IssueTypeUpdateInput",
     "JoinedGitHubContribution",
-    "LabelUpdateInput",
     "LanguageOrder",
     "LanguageOrderField",
     "LexicalFallbackReason",
@@ -368,7 +347,6 @@
     "PullRequestStackEntryEdge",
     "PullRequestThread",
     "PullRequestUpdateState",
-    "Push",
     "ReactionOrder",
     "ReactionOrderField",
     "RefNameConditionTarget",
@@ -496,12 +474,8 @@
     "VerifiableDomainOrderField",
     "ViewerHovercardContext",
     "WorkflowFileReference",
-    "WorkflowRunConnection",
-    "WorkflowRunEdge",
-    "WorkflowRunFile",
     "WorkflowRunOrder",
     "WorkflowRunOrderField",
-    "WorkflowState",
     "WorkflowsParameters"
   ],
   "missing_fields": {
@@ -538,28 +512,6 @@
       "databaseId",
       "resourcePath",
       "updatedAt",
-      "url"
-    ],
-    "CheckRun": [
-      "annotations",
-      "deployment",
-      "pendingDeploymentRequest",
-      "permalink",
-      "repository",
-      "resourcePath",
-      "steps",
-      "url"
-    ],
-    "CheckSuite": [
-      "app",
-      "branch",
-      "checkRuns",
-      "commit",
-      "creator",
-      "matchingPullRequests",
-      "push",
-      "repository",
-      "resourcePath",
       "url"
     ],
     "Closable": [
@@ -674,14 +626,6 @@
     ],
     "IssueEventRationale": [
       "issueEvent"
-    ],
-    "IssueFilters": [
-      "issueFieldValues",
-      "milestone",
-      "milestoneNumber",
-      "since",
-      "type",
-      "viewerSubscribed"
     ],
     "IssueTemplate": [
       "type"
@@ -939,14 +883,6 @@
     "UnlockLockablePayload": [
       "actor"
     ],
-    "UpdateIssueInput": [
-      "agentAssignment",
-      "assignees",
-      "issueType",
-      "labels",
-      "projectIds",
-      "stateInput"
-    ],
     "UpdateIssuePayload": [
       "actor"
     ],
@@ -984,32 +920,6 @@
       "viewerCopilotAgentLogUpdatesChannel",
       "viewerCopilotAgentTaskUpdatesChannel",
       "viewerCopilotAgentUpdatesChannel"
-    ],
-    "Workflow": [
-      "createdAt",
-      "databaseId",
-      "id",
-      "resourcePath",
-      "runs",
-      "state",
-      "updatedAt",
-      "url"
-    ],
-    "WorkflowRun": [
-      "checkSuite",
-      "createdAt",
-      "databaseId",
-      "deploymentReviews",
-      "displayTitle",
-      "event",
-      "file",
-      "id",
-      "pendingDeploymentRequests",
-      "resourcePath",
-      "runAttempt",
-      "runNumber",
-      "updatedAt",
-      "url"
     ]
   }
 }
