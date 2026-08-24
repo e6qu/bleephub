@@ -28,7 +28,7 @@ type CheckRun struct {
 	// without a member in checkRunToJSON.
 	Actions []*CheckRunAction `json:"actions,omitempty"`
 	AppID   int               `json:"app_id"`
-	SuiteID     int64           `json:"check_suite_id"`
+	SuiteID int64             `json:"check_suite_id"`
 	// RepoKey carries a real json name so persistence round-trips it
 	// (post-reload commit lookups match on it). Client responses never
 	// marshal this struct — checkRunToJSON emits an explicit map.
@@ -364,10 +364,3 @@ func (st *Store) GetCheckSuitePreferences(repoKey string) []*CheckSuitePref {
 // node id could not tell them apart).
 func checkSuiteNodeID(id int64) string { return fmt.Sprintf("CS_kwDO%08d", id) }
 func checkRunNodeID(id int64) string   { return fmt.Sprintf("CR_kwDO%08d", id) }
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}

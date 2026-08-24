@@ -15,9 +15,10 @@ import (
 // work be claimed by a real account.
 
 func init() {
+	// accessUserNamespaceRepository's row lives in the enterprise family's
+	// registry, whose sweep pins every enterprise-scoped rule in one place.
 	for name, rule := range map[string]mutationRule{
-		"accessUserNamespaceRepository": enterpriseOwnerRule{idKey: "enterpriseId"},
-		"createAttributionInvitation":   attributionInvitationRule{},
+		"createAttributionInvitation": attributionInvitationRule{},
 	} {
 		if _, exists := graphqlMutationAuthz[name]; exists {
 			panic(fmt.Sprintf("graphql mutation %q already has a policy row", name))

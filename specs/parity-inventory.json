@@ -358,15 +358,15 @@
   "graphql": {
     "compatibility_gap_count": 9,
     "coverage": {
-      "bleephub_types": 1267,
+      "bleephub_types": 1281,
       "compatibility_gap_count": 9,
-      "implemented_fields": 4830,
+      "implemented_fields": 4880,
       "official_fields": 8362,
       "official_types": 1807,
-      "shared_types": 1260,
-      "signature_exact_fields": 4829
+      "shared_types": 1274,
+      "signature_exact_fields": 4879
     },
-    "introspection_snapshot_sha256": "145b594b3ac4c2b8a2253e05d25119dfb74ffe3ea95383e193ee0cfbd7d0de7f",
+    "introspection_snapshot_sha256": "6c6fec8ac44b3a3d0f3d52a991dc5acc0c907151d28be1843b253ad36a680e3c",
     "official_schema": {
       "content_sha256": "30347e4f3bb975195f982351e55636ca03c76969c279980ca515a96ea7b40c3d",
       "source": "https://docs.github.com/public/fpt/schema.docs.graphql"
@@ -377,6 +377,7 @@
       "internal/graphqlapi/gh_branch_protection_graphql.go",
       "internal/graphqlapi/gh_checks_required_graphql.go",
       "internal/graphqlapi/gh_copilot_graphql.go",
+      "internal/graphqlapi/gh_discussion_polls_graphql.go",
       "internal/graphqlapi/gh_discussions_graphql.go",
       "internal/graphqlapi/gh_enterprise_graphql.go",
       "internal/graphqlapi/gh_enterprise_mutations_graphql.go",
@@ -399,6 +400,7 @@
       "internal/graphqlapi/gh_mutations_custom_properties_graphql.go",
       "internal/graphqlapi/gh_mutations_deployments_graphql.go",
       "internal/graphqlapi/gh_mutations_domains_graphql.go",
+      "internal/graphqlapi/gh_mutations_emu_graphql.go",
       "internal/graphqlapi/gh_mutations_issues_graphql.go",
       "internal/graphqlapi/gh_mutations_projects_classic_graphql.go",
       "internal/graphqlapi/gh_mutations_pulls_graphql.go",

@@ -77,15 +77,15 @@ func (s *Server) handleCreateCheckRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Name        string                `json:"name"`
-		HeadSHA     string                `json:"head_sha"`
-		Status      string                `json:"status"`
-		Conclusion  string                `json:"conclusion"`
-		ExternalID  string                `json:"external_id"`
-		DetailsURL  string                `json:"details_url"`
-		StartedAt   *time.Time             `json:"started_at"`
-		CompletedAt *time.Time             `json:"completed_at"`
-		Output      *store.CheckRunOutput  `json:"output"`
+		Name        string                  `json:"name"`
+		HeadSHA     string                  `json:"head_sha"`
+		Status      string                  `json:"status"`
+		Conclusion  string                  `json:"conclusion"`
+		ExternalID  string                  `json:"external_id"`
+		DetailsURL  string                  `json:"details_url"`
+		StartedAt   *time.Time              `json:"started_at"`
+		CompletedAt *time.Time              `json:"completed_at"`
+		Output      *store.CheckRunOutput   `json:"output"`
 		Actions     []*store.CheckRunAction `json:"actions"`
 	}
 	if !decodeJSONBody(w, r, &req) {
@@ -188,14 +188,14 @@ func (s *Server) handleUpdateCheckRun(w http.ResponseWriter, r *http.Request) {
 	}
 	id := existing.ID
 	var req struct {
-		Name        *string               `json:"name"`
-		Status      *string               `json:"status"`
-		Conclusion  *string               `json:"conclusion"`
-		DetailsURL  *string               `json:"details_url"`
-		ExternalID  *string               `json:"external_id"`
-		StartedAt   *time.Time             `json:"started_at"`
-		CompletedAt *time.Time             `json:"completed_at"`
-		Output      *store.CheckRunOutput  `json:"output"`
+		Name        *string                 `json:"name"`
+		Status      *string                 `json:"status"`
+		Conclusion  *string                 `json:"conclusion"`
+		DetailsURL  *string                 `json:"details_url"`
+		ExternalID  *string                 `json:"external_id"`
+		StartedAt   *time.Time              `json:"started_at"`
+		CompletedAt *time.Time              `json:"completed_at"`
+		Output      *store.CheckRunOutput   `json:"output"`
 		Actions     []*store.CheckRunAction `json:"actions"`
 	}
 	if !decodeJSONBody(w, r, &req) {

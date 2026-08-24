@@ -231,6 +231,7 @@ func enterpriseMutationAuthzRows() map[string]mutationRule {
 		"cancelEnterpriseAdminInvitation":                     enterpriseInvitationRule{kind: "admin"},
 		"cancelEnterpriseMemberInvitation":                    enterpriseInvitationRule{kind: "member"},
 		"transferEnterpriseOrganization":                      enterpriseTransferRule{},
+		"accessUserNamespaceRepository":                       ownerRule("enterpriseId"),
 		"createIpAllowListEntry":                              ipAllowListOwnerRule{ownerKey: "ownerId"},
 		"updateIpAllowListEntry":                              ipAllowListOwnerRule{entryKey: "ipAllowListEntryId"},
 		"deleteIpAllowListEntry":                              ipAllowListOwnerRule{entryKey: "ipAllowListEntryId"},
