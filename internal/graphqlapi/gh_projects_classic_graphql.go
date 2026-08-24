@@ -277,6 +277,21 @@ func (s *Resolver) projectClassicType() *graphql.Object {
 		Interfaces: []*graphql.Interface{s.graphqlTypes.node},
 		Fields: graphql.FieldsThunk(func() graphql.Fields {
 			columnConnection, _ := s.projectClassicConnectionPair("ProjectColumn", s.projectClassicColumnType())
+			cardConnection, _ := s.projectClassicConnectionPair("ProjectCard", s.projectClassicCardType())
+			pendingCardsArgs := relayConnectionArgs()
+			pendingCardsArgs["archivedStates"] = &graphql.ArgumentConfig{
+				Type:         graphql.NewList(s.projectCardArchivedStateEnum()),
+				DefaultValue: []interface{}{"ARCHIVED", "NOT_ARCHIVED"},
+			}
+			progressType := s.mutationObject("ProjectProgress", graphql.Fields{
+				"doneCount":            gqlNonNull(graphql.Int),
+				"donePercentage":       gqlNonNull(graphql.Float),
+				"inProgressCount":      gqlNonNull(graphql.Int),
+				"inProgressPercentage": gqlNonNull(graphql.Float),
+				"todoCount":            gqlNonNull(graphql.Int),
+				"todoPercentage":       gqlNonNull(graphql.Float),
+				"enabled":              gqlNonNull(graphql.Boolean),
+			})
 			return graphql.Fields{
 				"id":         &graphql.Field{Type: graphql.NewNonNull(graphql.ID), Resolve: sourceKeyResolver("nodeID")},
 				"databaseId": gqlField(graphql.Int),
@@ -326,6 +341,33 @@ func (s *Resolver) projectClassicType() *graphql.Object {
 							nodes = append(nodes, projectClassicColumnToGQL(c))
 						}
 						return paginateGQLMaps(nodes, p.Args), nil
+					},
+				},
+				// pendingCards lists a classic project's triage cards — cards not
+				// yet placed in a column. bleephub only models cards inside a
+				// column, so this is a truthful empty connection.
+				"pendingCards": &graphql.Field{
+					Type: graphql.NewNonNull(cardConnection),
+					Args: pendingCardsArgs,
+					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+						return paginateGQLMaps(nil, p.Args), nil
+					},
+				},
+				// progress reports card-purpose counts. bleephub's classic
+				// columns carry no purpose, so progress tracking is genuinely
+				// disabled: enabled is false and every count/percentage is zero.
+				"progress": &graphql.Field{
+					Type: graphql.NewNonNull(progressType),
+					Resolve: func(graphql.ResolveParams) (interface{}, error) {
+						return map[string]interface{}{
+							"doneCount":            0,
+							"donePercentage":       0.0,
+							"inProgressCount":      0,
+							"inProgressPercentage": 0.0,
+							"todoCount":            0,
+							"todoPercentage":       0.0,
+							"enabled":              false,
+						}, nil
 					},
 				},
 			}

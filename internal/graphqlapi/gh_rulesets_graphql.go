@@ -82,6 +82,13 @@ func (s *Resolver) addRulesetFieldsToSchema(repoType, orgType *graphql.Object) {
 		},
 	})
 
+	// Wire the rule/ruleset detail surface: RepositoryRule.parameters and
+	// .repositoryRuleset, RepositoryRuleConnection.edges,
+	// RepositoryRuleset.conditions and .bypassActors. It closes the
+	// rule↔ruleset cycle with AddFieldConfig, so it runs once all three
+	// objects exist.
+	s.installRuleDetailTypes(ruleType, ruleConnection, rulesetType)
+
 	rulesetEdge := graphql.NewObject(graphql.ObjectConfig{
 		Name: "RepositoryRulesetEdge",
 		Fields: graphql.Fields{
@@ -213,6 +220,10 @@ func (s *Resolver) rulesetToGraphQL(ruleset *store.Ruleset, repo *store.Repo) ma
 		rules = append(rules, map[string]interface{}{
 			"id":   fmt.Sprintf("RR_%d_%d", ruleset.ID, i),
 			"type": strings.ToUpper(rule.Type),
+			// Private keys backing RepositoryRule.parameters: the stored REST
+			// spelling of the rule type and its snake_case parameter map.
+			"_type":       rule.Type,
+			"_parameters": rule.Parameters,
 		})
 	}
 	source := repoToGraphQL(s.store, repo)
@@ -223,7 +234,7 @@ func (s *Resolver) rulesetToGraphQL(ruleset *store.Ruleset, repo *store.Repo) ma
 			source["__typename"] = "Organization"
 		}
 	}
-	return map[string]interface{}{
+	result := map[string]interface{}{
 		"nodeID":      ruleset.NodeID,
 		"id":          ruleset.NodeID,
 		"databaseId":  ruleset.ID,
@@ -240,6 +251,37 @@ func (s *Resolver) rulesetToGraphQL(ruleset *store.Ruleset, repo *store.Repo) ma
 				"hasNextPage": false, "hasPreviousPage": false,
 				"startCursor": nil, "endCursor": nil,
 			},
+		},
+		// Private keys backing RepositoryRuleset.conditions and .bypassActors.
+		"_conditions":   rulesetConditionsSource(ruleset),
+		"_bypassActors": append([]store.RulesetBypassActor(nil), ruleset.BypassActors...),
+	}
+	// Back-reference each rule to its ruleset for RepositoryRule.repositoryRuleset.
+	// The self-reference is bounded by query depth at execution time and by the
+	// visited-pointer set of the typed-nil source audit.
+	for _, rule := range rules {
+		rule["_ruleset"] = result
+	}
+	return result
+}
+
+// rulesetConditionsSource renders a ruleset's conditions as the source map
+// backing RepositoryRuleConditions. Only the ref_name condition is modeled;
+// include/exclude are always non-nil arrays so the non-null RefNameConditionTarget
+// list fields never resolve to null.
+func rulesetConditionsSource(ruleset *store.Ruleset) map[string]interface{} {
+	include := ruleset.Conditions.RefName.Include
+	if include == nil {
+		include = []string{}
+	}
+	exclude := ruleset.Conditions.RefName.Exclude
+	if exclude == nil {
+		exclude = []string{}
+	}
+	return map[string]interface{}{
+		"refName": map[string]interface{}{
+			"include": include,
+			"exclude": exclude,
 		},
 	}
 }

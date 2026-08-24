@@ -112,8 +112,9 @@ func (s *Resolver) addRepositoryDeploymentFields(types *accountSurfaceTypes) {
 	protectionRuleType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "DeploymentProtectionRule",
 		Fields: graphql.Fields{
-			"databaseId": &graphql.Field{Type: graphql.Int},
-			"timeout":    &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
+			"databaseId":        &graphql.Field{Type: graphql.Int},
+			"preventSelfReview": &graphql.Field{Type: graphql.Boolean},
+			"timeout":           &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
 			"type": &graphql.Field{Type: graphql.NewNonNull(s.sharedEnum("DeploymentProtectionRuleType",
 				"BRANCH_POLICY", "REQUIRED_REVIEWERS", "WAIT_TIMER"))},
 			"reviewers": &graphql.Field{
@@ -414,11 +415,12 @@ func (s *Resolver) environmentProtectionRules(env *store.Environment) []map[stri
 	}
 	if len(env.Reviewers) > 0 {
 		rules = append(rules, map[string]interface{}{
-			"_identity":  env.NodeID + ":required_reviewers",
-			"databaseId": env.ID,
-			"timeout":    0,
-			"type":       "REQUIRED_REVIEWERS",
-			"_reviewers": s.environmentReviewerSources(env),
+			"_identity":         env.NodeID + ":required_reviewers",
+			"databaseId":        env.ID,
+			"preventSelfReview": env.PreventSelfReview,
+			"timeout":           0,
+			"type":              "REQUIRED_REVIEWERS",
+			"_reviewers":        s.environmentReviewerSources(env),
 		})
 	}
 	if env.DeploymentBranchPolicy != nil {

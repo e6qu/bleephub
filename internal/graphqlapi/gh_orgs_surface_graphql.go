@@ -212,6 +212,12 @@ func (s *Resolver) addOrganizationProfileFields(types *accountSurfaceTypes) {
 		viewer := s.ghUserFromContext(p.Context)
 		return viewer != nil && s.store.LoginFollows(viewer.Login, org.Login)
 	}))
+
+	// The account-completion members (packages, memberStatuses, issueTypes,
+	// domains, enterpriseOwners, recentProjects and the null-answering
+	// announcementBanner / samlIdentityProvider) live in
+	// gh_users_org_fields_graphql.go.
+	s.addOrganizationCompletionFields(types)
 }
 
 // addOrganizationPeopleFields installs Organization's membership and team

@@ -994,6 +994,9 @@ func (s *ProjectV2Store) LookupViewByNodeID(nodeID string) *ProjectV2View {
 type ProjectV2FieldUpdate struct {
 	Name    *string
 	Options []*ProjectV2SingleSelectOption
+	// Iteration replaces the schedule of an ITERATION field wholesale when
+	// non-nil, the shape updateProjectV2Field's iterationConfiguration takes.
+	Iteration *ProjectV2IterationConfiguration
 }
 
 // UpdateFieldDetails patches a field's name and, for the option-bearing data
@@ -1034,6 +1037,37 @@ func (s *ProjectV2Store) UpdateFieldDetails(id int, patch ProjectV2FieldUpdate) 
 				Description: opt.Description,
 			})
 		}
+	}
+	if patch.Iteration != nil && f.DataType == ProjectV2FieldIteration {
+		// Iterations carry no natural key in the input, so an existing
+		// iteration's ID survives by title match; the item values that point at
+		// it stay valid across a rename-free edit.
+		existingIDByTitle := map[string]string{}
+		if f.Iteration != nil {
+			for _, old := range f.Iteration.Iterations {
+				existingIDByTitle[old.Title] = old.ID
+			}
+		}
+		cfg := &ProjectV2IterationConfiguration{
+			StartDate: patch.Iteration.StartDate,
+			Duration:  patch.Iteration.Duration,
+		}
+		for _, it := range patch.Iteration.Iterations {
+			iterationID := it.ID
+			if iterationID == "" {
+				iterationID = existingIDByTitle[it.Title]
+			}
+			if iterationID == "" {
+				iterationID = s.nextOptionIDLocked()
+			}
+			cfg.Iterations = append(cfg.Iterations, &ProjectV2Iteration{
+				ID:        iterationID,
+				Title:     it.Title,
+				StartDate: it.StartDate,
+				Duration:  it.Duration,
+			})
+		}
+		f.Iteration = cfg
 	}
 	f.UpdatedAt = s.CurrentTime()
 	if s.Persist != nil {

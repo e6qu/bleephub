@@ -1,10 +1,10 @@
 {
   "official_types": 1807,
-  "bleephub_types": 1344,
-  "shared_types": 1337,
+  "bleephub_types": 1448,
+  "shared_types": 1441,
   "official_fields": 8362,
-  "implemented_fields": 5481,
-  "signature_exact_fields": 5480,
+  "implemented_fields": 5874,
+  "signature_exact_fields": 5873,
   "compatibility_gap_count": 9,
   "missing_types": [
     "ActorConnection",
@@ -13,7 +13,6 @@
     "AddedToMergeQueueEvent",
     "AddedToProjectEvent",
     "Agentic",
-    "AnnouncementBanner",
     "AuditEntry",
     "AuditEntryActor",
     "AuditLogOrder",
@@ -30,25 +29,17 @@
     "BlockedByRemovedEvent",
     "BlockingAddedEvent",
     "BlockingRemovedEvent",
-    "BranchNamePatternParameters",
     "BypassActor",
     "CheckRunFilter",
     "CheckRunType",
     "CheckSuiteConnection",
     "CheckSuiteEdge",
     "CheckSuiteFilter",
-    "CodeScanningParameters",
-    "CodeScanningParametersInput",
-    "CodeScanningTool",
-    "CodeScanningToolInput",
     "Comment",
-    "CommitAuthorEmailPatternParameters",
     "CommitCommentThread",
     "CommitContributionOrder",
     "CommitContributionOrderField",
     "CommitContributionsByRepository",
-    "CommitMessagePatternParameters",
-    "CommitterEmailPatternParameters",
     "Comparison",
     "ComparisonCommitConnection",
     "ComparisonStatus",
@@ -63,8 +54,6 @@
     "ContributionsCollection",
     "ConvertedFromDraftEvent",
     "ConvertedNoteToIssueEvent",
-    "CopilotCodeReviewParameters",
-    "CopilotCodeReviewParametersInput",
     "CreatedCommitContribution",
     "CreatedCommitContributionConnection",
     "CreatedCommitContributionEdge",
@@ -88,29 +77,13 @@
     "DeploymentEnvironmentChangedEvent",
     "DisconnectedEvent",
     "DiscussionState",
-    "DismissalRestriction",
-    "DismissalRestrictionInput",
     "DraftPullRequestReviewComment",
     "DraftPullRequestReviewThread",
     "EnterpriseAuditEntryData",
-    "EnterpriseFailedInvitationConnection",
-    "EnterpriseFailedInvitationEdge",
     "EnterpriseMemberOrder",
     "EnterpriseMemberOrderField",
     "EnterpriseOrder",
     "EnterpriseOrderField",
-    "EnterprisePendingMemberInvitationConnection",
-    "EnterprisePendingMemberInvitationEdge",
-    "EnterpriseRepositoryInfo",
-    "EnterpriseRepositoryInfoConnection",
-    "EnterpriseRepositoryInfoEdge",
-    "EnterpriseServerInstallation",
-    "EnterpriseServerInstallationConnection",
-    "EnterpriseServerInstallationEdge",
-    "EnterpriseServerInstallationMembershipConnection",
-    "EnterpriseServerInstallationMembershipEdge",
-    "EnterpriseServerInstallationOrder",
-    "EnterpriseServerInstallationOrderField",
     "EnterpriseServerUserAccount",
     "EnterpriseServerUserAccountConnection",
     "EnterpriseServerUserAccountEdge",
@@ -127,29 +100,18 @@
     "EnterpriseServerUserAccountsUploadOrder",
     "EnterpriseServerUserAccountsUploadOrderField",
     "EnterpriseServerUserAccountsUploadSyncState",
-    "EnterpriseTeam",
     "EnterpriseTeamAssignedOrganizationConnection",
     "EnterpriseTeamAssignedOrganizationEdge",
-    "EnterpriseTeamConnection",
-    "EnterpriseTeamEdge",
     "EnterpriseTeamMemberConnection",
     "EnterpriseTeamMemberEdge",
     "EnterpriseTeamMemberOrder",
     "EnterpriseTeamMemberOrderField",
-    "EnterpriseTeamOrder",
-    "EnterpriseTeamOrderField",
     "EnterpriseTeamOrganizationOrder",
     "EnterpriseTeamOrganizationOrderField",
-    "EnterpriseTeamOrganizationSelectionType",
     "EnvironmentPinnedFilterField",
-    "ExternalIdentity",
     "ExternalIdentityAttribute",
-    "ExternalIdentityConnection",
-    "ExternalIdentityEdge",
     "ExternalIdentitySamlAttributes",
     "ExternalIdentityScimAttributes",
-    "FileExtensionRestrictionParameters",
-    "FilePathRestrictionParameters",
     "FileViewedState",
     "GenericHovercardContext",
     "GitActorEdge",
@@ -176,8 +138,6 @@
     "IssueSearchType",
     "IssueTypeAddedEvent",
     "IssueTypeChangedEvent",
-    "IssueTypeConnection",
-    "IssueTypeEdge",
     "IssueTypeOrder",
     "IssueTypeOrderField",
     "IssueTypeRemovedEvent",
@@ -190,22 +150,14 @@
     "MannequinOrder",
     "MannequinOrderField",
     "MarkedAsDuplicateEvent",
-    "MaxFilePathLengthParameters",
-    "MaxFileSizeParameters",
     "MemberFeatureRequestNotification",
     "MemberStatusable",
     "MembersCanDeleteReposClearAuditEntry",
     "MembersCanDeleteReposDisableAuditEntry",
     "MembersCanDeleteReposEnableAuditEntry",
-    "MergeQueueGroupingStrategy",
-    "MergeQueueMergeMethod",
-    "MergeQueueParameters",
-    "MergeQueueParametersInput",
     "MilestoneOrder",
     "MilestoneOrderField",
     "MovedColumnsInProjectEvent",
-    "OIDCProvider",
-    "OIDCProviderType",
     "OauthApplicationAuditEntryData",
     "OauthApplicationCreateAuditEntry",
     "OauthApplicationCreateAuditEntryState",
@@ -258,27 +210,17 @@
     "OrganizationAuditEntryConnection",
     "OrganizationAuditEntryData",
     "OrganizationAuditEntryEdge",
-    "OrganizationEnterpriseOwnerConnection",
-    "OrganizationEnterpriseOwnerEdge",
-    "OrganizationIdentityProvider",
-    "OrganizationInvitation",
     "OrganizationInvitationConnection",
     "OrganizationInvitationEdge",
     "OrganizationInvitationRole",
-    "OrganizationInvitationSource",
     "OrganizationInvitationType",
     "OrganizationOrUser",
     "OrganizationOrder",
     "OrganizationOrderField",
     "OrganizationPropertyConditionTarget",
-    "OrganizationPropertyConditionTargetInput",
     "OrganizationPropertyTargetDefinition",
-    "OrganizationPropertyTargetDefinitionInput",
     "OrganizationTeamsHovercardContext",
     "OrganizationsHovercardContext",
-    "Package",
-    "PackageConnection",
-    "PackageEdge",
     "PackageFile",
     "PackageFileConnection",
     "PackageFileEdge",
@@ -289,7 +231,6 @@
     "PackageOwner",
     "PackageStatistics",
     "PackageTag",
-    "PackageType",
     "PackageVersion",
     "PackageVersionConnection",
     "PackageVersionEdge",
@@ -320,7 +261,6 @@
     "ProfileOwner",
     "ProjectOrder",
     "ProjectOrderField",
-    "ProjectProgress",
     "ProjectV2Filters",
     "ProjectV2IssueFieldValues",
     "ProjectV2ItemIssueFieldValue",
@@ -329,8 +269,6 @@
     "ProjectV2Recent",
     "ProjectV2State",
     "PropertyTargetDefinition",
-    "PropertyTargetDefinitionInput",
-    "PullRequestAllowedMergeMethods",
     "PullRequestChangedFileEdge",
     "PullRequestCommitCommentThread",
     "PullRequestCommitEdge",
@@ -338,7 +276,6 @@
     "PullRequestCreationCapConfig",
     "PullRequestOrder",
     "PullRequestOrderField",
-    "PullRequestParameters",
     "PullRequestReviewContributionsByRepository",
     "PullRequestReviewEdge",
     "PullRequestReviewThreadEdge",
@@ -349,7 +286,6 @@
     "PullRequestUpdateState",
     "ReactionOrder",
     "ReactionOrderField",
-    "RefNameConditionTarget",
     "RefUpdateRule",
     "ReleaseEdge",
     "RemovedFromMergeQueueEvent",
@@ -388,55 +324,30 @@
     "RepositoryDiscussionAuthor",
     "RepositoryDiscussionCommentAuthor",
     "RepositoryIdConditionTarget",
-    "RepositoryIdConditionTargetInput",
     "RepositoryInfo",
-    "RepositoryInvitation",
-    "RepositoryInvitationConnection",
-    "RepositoryInvitationEdge",
-    "RepositoryInvitationOrder",
-    "RepositoryInvitationOrderField",
     "RepositoryNameConditionTarget",
-    "RepositoryNameConditionTargetInput",
     "RepositoryPlanFeatures",
     "RepositoryPropertyConditionTarget",
-    "RepositoryPropertyConditionTargetInput",
-    "RepositoryRuleConditions",
-    "RepositoryRuleEdge",
     "RepositoryRuleOrder",
     "RepositoryRuleOrderField",
-    "RepositoryRulesetBypassActor",
-    "RepositoryRulesetBypassActorConnection",
-    "RepositoryRulesetBypassActorEdge",
     "RepositorySuggestedActorFilter",
     "RepositoryVisibilityChangeDisableAuditEntry",
     "RepositoryVisibilityChangeEnableAuditEntry",
-    "RequiredDeploymentsParameters",
-    "RequiredReviewerConfiguration",
-    "RequiredReviewerConfigurationInput",
-    "RequiredStatusChecksParameters",
     "RestrictedContribution",
     "ReviewRequestEdge",
     "ReviewStatusHovercardContext",
-    "RuleParameters",
-    "SavedReply",
-    "SavedReplyConnection",
-    "SavedReplyEdge",
     "SavedReplyOrder",
     "SavedReplyOrderField",
     "SmimeSignature",
     "SponsorsCountryOrRegionCode",
     "SshSignature",
-    "StarredRepositoryConnection",
-    "StarredRepositoryEdge",
     "Status",
-    "StatusCheckConfiguration",
     "StatusCheckRollupContextEdge",
     "StripeConnectAccount",
     "SubIssueAddedEvent",
     "SubIssueRemovedEvent",
     "SubscribableThread",
     "SubscribedEvent",
-    "TagNamePatternParameters",
     "TeamAddMemberAuditEntry",
     "TeamAddRepositoryAuditEntry",
     "TeamAuditEntryData",
@@ -454,29 +365,14 @@
     "UnsubscribedEvent",
     "Updatable",
     "UpdatableComment",
-    "UpdateParameters",
     "UserBlockDuration",
     "UserBlockedEvent",
     "UserEmailMetadata",
-    "UserListConnection",
-    "UserListEdge",
-    "UserListSuggestion",
-    "UserNamespaceRepository",
-    "UserNamespaceRepositoryConnection",
-    "UserNamespaceRepositoryEdge",
-    "UserStatusConnection",
-    "UserStatusEdge",
     "UserStatusOrder",
     "UserStatusOrderField",
-    "VerifiableDomainConnection",
-    "VerifiableDomainEdge",
-    "VerifiableDomainOrder",
-    "VerifiableDomainOrderField",
     "ViewerHovercardContext",
-    "WorkflowFileReference",
     "WorkflowRunOrder",
-    "WorkflowRunOrderField",
-    "WorkflowsParameters"
+    "WorkflowRunOrderField"
   ],
   "missing_fields": {
     "AddCommentPayload": [
@@ -542,10 +438,6 @@
       "parentIssueId",
       "projectV2Ids"
     ],
-    "CreateProjectV2Input": [
-      "repositoryId",
-      "teamId"
-    ],
     "CreatePullRequestInput": [
       "headRepositoryId"
     ],
@@ -558,9 +450,6 @@
       "billingCountryOrRegionCode",
       "residenceCountryOrRegionCode"
     ],
-    "DeploymentProtectionRule": [
-      "preventSelfReview"
-    ],
     "DiscussionCategory": [
       "emojiHTML",
       "repository",
@@ -572,38 +461,22 @@
     "DiscussionPollOption": [
       "poll"
     ],
-    "DraftIssue": [
-      "assignees",
-      "projectV2Items",
-      "projectsV2"
-    ],
     "Enterprise": [
-      "announcementBanner",
-      "enterpriseTeam",
-      "enterpriseTeams",
-      "innersourceVulnerabilities",
-      "repositoryCustomProperties",
-      "repositoryCustomProperty",
-      "ruleset",
-      "rulesets",
-      "userNamespaceRepositories"
+      "innersourceVulnerabilities"
     ],
-    "EnterpriseIdentityProvider": [
-      "externalIdentities"
+    "EnterpriseServerInstallation": [
+      "userAccounts",
+      "userAccountsUploads"
     ],
-    "EnterpriseOutsideCollaboratorEdge": [
-      "repositories"
+    "EnterpriseTeam": [
+      "assignedOrganizations",
+      "enterpriseTeamMembers",
+      "privacy"
     ],
-    "EnterpriseOwnerInfo": [
-      "domains",
-      "enterpriseServerInstallations",
-      "failedInvitations",
-      "oidcProvider",
-      "pendingCollaboratorInvitations",
-      "pendingMemberInvitations"
-    ],
-    "EnterpriseUserAccount": [
-      "enterpriseInstallations"
+    "ExternalIdentity": [
+      "organizationInvitation",
+      "samlIdentity",
+      "scimIdentity"
     ],
     "Gist": [
       "comments",
@@ -659,66 +532,39 @@
       "viewerCanMinimize",
       "viewerCanUnminimize"
     ],
+    "OIDCProvider": [
+      "externalIdentities"
+    ],
     "Organization": [
-      "announcementBanner",
       "auditLog",
-      "domains",
-      "enterpriseOwners",
       "innersourceVulnerabilities",
       "issueFields",
-      "issueTypes",
       "mannequins",
-      "memberStatuses",
-      "packages",
       "pinnedIssueFields",
-      "recentProjects",
       "repositoryDiscussionComments",
-      "repositoryDiscussions",
-      "samlIdentityProvider"
+      "repositoryDiscussions"
+    ],
+    "OrganizationIdentityProvider": [
+      "externalIdentities",
+      "idpCertificate"
+    ],
+    "OrganizationInvitation": [
+      "invitationSource",
+      "invitationType",
+      "invitee",
+      "inviter",
+      "inviterActor",
+      "organization",
+      "role"
+    ],
+    "Package": [
+      "latestVersion",
+      "repository",
+      "statistics",
+      "version",
+      "versions"
     ],
     "PinnedIssue": [
-      "fullDatabaseId"
-    ],
-    "Project": [
-      "pendingCards",
-      "progress"
-    ],
-    "ProjectV2Field": [
-      "databaseId",
-      "isIssueField",
-      "issueField",
-      "project"
-    ],
-    "ProjectV2FieldCommon": [
-      "databaseId",
-      "isIssueField",
-      "project"
-    ],
-    "ProjectV2IterationField": [
-      "databaseId",
-      "isIssueField",
-      "project"
-    ],
-    "ProjectV2IterationFieldIteration": [
-      "titleHTML"
-    ],
-    "ProjectV2MultiSelectField": [
-      "databaseId",
-      "isIssueField",
-      "issueField",
-      "project"
-    ],
-    "ProjectV2SingleSelectField": [
-      "databaseId",
-      "isIssueField",
-      "issueField",
-      "project"
-    ],
-    "ProjectV2SingleSelectFieldOption": [
-      "descriptionHTML",
-      "nameHTML"
-    ],
-    "ProjectV2View": [
       "fullDatabaseId"
     ],
     "PullRequestChangedFile": [
@@ -737,11 +583,6 @@
     "PullRequestCommitConnection": [
       "edges"
     ],
-    "PullRequestParametersInput": [
-      "allowedMergeMethods",
-      "dismissalRestriction",
-      "requiredReviewers"
-    ],
     "PullRequestReviewCommentConnection": [
       "edges"
     ],
@@ -759,8 +600,6 @@
       "stack"
     ],
     "Query": [
-      "enterpriseAdministratorInvitationByToken",
-      "enterpriseMemberInvitationByToken",
       "topic"
     ],
     "Ref": [
@@ -798,28 +637,18 @@
     "RepositoryConnection": [
       "totalDiskUsage"
     ],
-    "RepositoryRule": [
-      "parameters",
-      "repositoryRuleset"
+    "RepositoryInvitation": [
+      "repository"
     ],
-    "RepositoryRuleConditionsInput": [
+    "RepositoryRuleConditions": [
       "organizationProperty",
       "repositoryId",
       "repositoryName",
       "repositoryProperty"
     ],
-    "RepositoryRuleConnection": [
-      "edges"
-    ],
-    "RepositoryRuleInput": [
-      "id"
-    ],
-    "RepositoryRuleset": [
-      "bypassActors",
-      "conditions"
-    ],
-    "RepositoryRulesetBypassActorInput": [
-      "enterpriseRole"
+    "RepositoryRulesetBypassActor": [
+      "actor",
+      "repositoryRuleset"
     ],
     "ReviewDismissedEvent": [
       "pullRequestCommit"
@@ -834,11 +663,6 @@
       "edges",
       "pageInfo"
     ],
-    "RuleParametersInput": [
-      "codeScanning",
-      "copilotCodeReview",
-      "mergeQueue"
-    ],
     "SearchResultItemConnection": [
       "codeCount",
       "discussionCount",
@@ -852,6 +676,9 @@
     ],
     "SponsorsListing": [
       "activeStripeConnectAccount"
+    ],
+    "StarredRepositoryEdge": [
+      "starredAt"
     ],
     "StatusCheckRollupContextConnection": [
       "edges"
@@ -886,9 +713,6 @@
     "UpdateIssuePayload": [
       "actor"
     ],
-    "UpdateProjectV2FieldInput": [
-      "iterationConfiguration"
-    ],
     "UpdatePullRequestInput": [
       "maintainerCanModify",
       "projectIds",
@@ -898,28 +722,9 @@
       "actor"
     ],
     "User": [
-      "canReceiveOrganizationEmailsWhenNotificationsRestricted",
       "contributionsCollection",
-      "hovercard",
-      "isBountyHunter",
-      "isCampusExpert",
-      "isDeveloperProgramMember",
-      "isGitHubStar",
-      "lists",
-      "organizationVerifiedDomainEmails",
-      "packages",
-      "pronouns",
-      "recentProjects",
       "repositoryDiscussionComments",
-      "repositoryDiscussions",
-      "savedReplies",
-      "starredRepositories",
-      "status",
-      "suggestedListNames",
-      "viewerCopilotAgentCreatesChannel",
-      "viewerCopilotAgentLogUpdatesChannel",
-      "viewerCopilotAgentTaskUpdatesChannel",
-      "viewerCopilotAgentUpdatesChannel"
+      "repositoryDiscussions"
     ]
   }
 }

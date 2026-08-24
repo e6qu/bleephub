@@ -266,6 +266,11 @@ func (s *Resolver) addEnterpriseFieldsToSchema(userType, orgType, queryType *gra
 	})
 	s.graphqlTypes.enterprise = enterpriseType
 
+	// The extra connection surface (gh_enterprise_fields_graphql.go). It is
+	// built here, before the outside-collaborator edge, because that edge's
+	// repositories field names EnterpriseRepositoryInfoConnection.
+	extras := s.buildEnterpriseExtraTypes(enterpriseType, userType, nodeInterface)
+
 	enterpriseUserAccountType := s.addEnterpriseUserAccountType(enterpriseType, userType, orgType, nodeInterface, actorInterface, dateTime, uri)
 	memberUnion := graphql.NewUnion(graphql.UnionConfig{
 		Name:  "EnterpriseMember",
@@ -290,7 +295,18 @@ func (s *Resolver) addEnterpriseFieldsToSchema(userType, orgType, queryType *gra
 		}}, nil)
 
 	outsideCollaboratorConnectionType := s.enterpriseEdgeAndConnectionTypes(
-		"EnterpriseOutsideCollaboratorConnection", "EnterpriseOutsideCollaboratorEdge", userType, nil, nil)
+		"EnterpriseOutsideCollaboratorConnection", "EnterpriseOutsideCollaboratorEdge", userType,
+		graphql.Fields{"repositories": &graphql.Field{
+			Type: graphql.NewNonNull(extras.enterpriseRepositoryInfoConnection),
+			Args: mergeArgs(relayConnectionArgs(), graphql.FieldConfigArgument{
+				"orderBy": &graphql.ArgumentConfig{Type: s.gqlRepositoryOrderInput()},
+			}),
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				// The enterprise-org repositories a specific outside collaborator
+				// can reach are not aggregated on this instance.
+				return enterpriseConnection(nil, p.Args), nil
+			},
+		}}, nil)
 
 	adminInvitationType, adminInvitationConnectionType := s.addEnterpriseAdminInvitationTypes(enterpriseType, userType, nodeInterface, dateTime)
 	memberInvitationType, memberInvitationConnectionType := s.addEnterpriseMemberInvitationTypes(enterpriseType, userType, nodeInterface, dateTime)
@@ -433,6 +449,30 @@ func (s *Resolver) addEnterpriseFieldsToSchema(userType, orgType, queryType *gra
 			return s.lookupEnterpriseInvitation(p, slug, login, "member", ""), nil
 		},
 	})
+
+	// The by-token invitation lookups. bleephub does not model an emailed
+	// invitation token (invitations are addressed by invitee, not by an opaque
+	// token), so no invitation is resolvable this way and the field is null.
+	queryType.AddFieldConfig("enterpriseAdministratorInvitationByToken", &graphql.Field{
+		Type: adminInvitationType,
+		Args: graphql.FieldConfigArgument{
+			"invitationToken": &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.String)},
+		},
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			return nil, nil
+		},
+	})
+	queryType.AddFieldConfig("enterpriseMemberInvitationByToken", &graphql.Field{
+		Type: memberInvitationType,
+		Args: graphql.FieldConfigArgument{
+			"invitationToken": &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.String)},
+		},
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			return nil, nil
+		},
+	})
+
+	s.addEnterpriseExtraFields(enterpriseType, ownerInfoType, identityProviderType, enterpriseUserAccountType, extras)
 
 	s.graphqlTypes.enterpriseUserAccount = enterpriseUserAccountType
 	s.graphqlTypes.enterpriseAdminInvitation = adminInvitationType

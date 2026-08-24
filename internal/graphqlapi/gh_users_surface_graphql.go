@@ -258,6 +258,11 @@ func (s *Resolver) addUserProfileFields(types *accountSurfaceTypes) {
 			return orgToGraphQL(org), nil
 		},
 	})
+
+	// The account-completion members (status, lists, packages, starred
+	// repositories, recent projects and the truthful program-membership
+	// constants) live in gh_users_org_fields_graphql.go.
+	s.addUserCompletionFields(types)
 }
 
 // addUserConnectionFields installs the connections over what an account

@@ -219,8 +219,10 @@ func (s *Resolver) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 	createProjectInputType := graphql.NewInputObject(graphql.InputObjectConfig{
 		Name: "CreateProjectV2Input",
 		Fields: graphql.InputObjectConfigFieldMap{
-			"ownerId": &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
-			"title":   &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
+			"ownerId":      &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
+			"title":        &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
+			"repositoryId": &graphql.InputObjectFieldConfig{Type: graphql.ID},
+			"teamId":       &graphql.InputObjectFieldConfig{Type: graphql.ID},
 		},
 	})
 	createProjectPayloadType := graphql.NewObject(graphql.ObjectConfig{
@@ -249,6 +251,29 @@ func (s *Resolver) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 				return nil, err
 			}
 			proj := s.store.ProjectsV2.CreateProject(ownerID, ownerType, title, user.ID)
+
+			// An optional repositoryId links the new project to a repository the
+			// caller can read; a repository that does not resolve is ignored the
+			// way GitHub ignores a link it cannot make rather than failing the
+			// create.
+			if repoNodeID, _ := input["repositoryId"].(string); repoNodeID != "" {
+				if repo := store.FindRepoByNodeID(s.store, repoNodeID); repo != nil && s.viewerCanReadRepo(p.Context, repo) {
+					if linked := s.store.ProjectsV2.LinkRepository(proj.ID, repo.ID); linked != nil {
+						proj = linked
+					}
+				}
+			}
+			// An optional teamId grants a team in the project's owning
+			// organization read access.
+			if teamNodeID, _ := input["teamId"].(string); teamNodeID != "" {
+				if team := s.projectV2TeamByNodeID(teamNodeID); team != nil &&
+					proj.OwnerType == "Organization" && team.OrgID == proj.OwnerID {
+					if linked := s.store.ProjectsV2.LinkTeam(proj.ID, team.ID); linked != nil {
+						proj = linked
+					}
+				}
+			}
+
 			s.emitProjectV2Event(s.projectV2Event(p, store.ProjectV2EventProject, "created", proj))
 			return map[string]interface{}{
 				"projectV2": projectV2ToGQL(s.store, proj),
@@ -381,22 +406,7 @@ func (s *Resolver) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 	// (the object flavor is ProjectV2IterationFieldIteration), and the
 	// configuration input is ProjectV2IterationFieldConfigurationInput.
 	dateScalar := s.graphQLStringScalar("Date")
-	iterationInputType := graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "ProjectV2Iteration",
-		Fields: graphql.InputObjectConfigFieldMap{
-			"title":     &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
-			"startDate": &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(dateScalar)},
-			"duration":  &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.Int)},
-		},
-	})
-	iterationConfigInputType := graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "ProjectV2IterationFieldConfigurationInput",
-		Fields: graphql.InputObjectConfigFieldMap{
-			"startDate":  &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(dateScalar)},
-			"duration":   &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.Int)},
-			"iterations": &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.NewList(graphql.NewNonNull(iterationInputType)))},
-		},
-	})
+	iterationConfigInputType := s.projectV2IterationConfigurationInput()
 
 	createFieldInputType := graphql.NewInputObject(graphql.InputObjectConfig{
 		Name: "CreateProjectV2FieldInput",
@@ -437,29 +447,9 @@ func (s *Resolver) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 			// The option input carries a colour and a description as well as a
 			// name; reading only the name silently discarded both.
 			options := projectV2OptionsFromInput(rawOptions)
-			var iteration *store.ProjectV2IterationConfiguration
-			if rawIteration != nil {
-				startDate, _ := rawIteration["startDate"].(string)
-				duration, _ := rawIteration["duration"].(int)
-				iteration = &store.ProjectV2IterationConfiguration{StartDate: startDate, Duration: duration}
-				rawIterations, _ := rawIteration["iterations"].([]interface{})
-				for _, raw := range rawIterations {
-					m, ok := raw.(map[string]interface{})
-					if !ok {
-						return nil, fmt.Errorf("iterationConfiguration.iterations contains an invalid item")
-					}
-					title, _ := m["title"].(string)
-					start, _ := m["startDate"].(string)
-					iterDuration := duration
-					if d, ok := m["duration"].(int); ok && d > 0 {
-						iterDuration = d
-					}
-					iteration.Iterations = append(iteration.Iterations, &store.ProjectV2Iteration{
-						Title:     title,
-						StartDate: start,
-						Duration:  iterDuration,
-					})
-				}
+			iteration, err := projectV2IterationFromInput(rawIteration)
+			if err != nil {
+				return nil, err
 			}
 
 			proj := s.store.ProjectsV2.LookupProjectByNodeID(projectNodeID)

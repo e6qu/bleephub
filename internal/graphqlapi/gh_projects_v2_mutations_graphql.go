@@ -587,10 +587,11 @@ func (s *Resolver) addProjectV2FieldMutations(mutationType *graphql.Object, fiel
 		Args: graphql.FieldConfigArgument{"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.NewInputObject(graphql.InputObjectConfig{
 			Name: "UpdateProjectV2FieldInput",
 			Fields: graphql.InputObjectConfigFieldMap{
-				"fieldId":             &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
-				"name":                &graphql.InputObjectFieldConfig{Type: graphql.String},
-				"singleSelectOptions": &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(singleSelectOptionInput))},
-				"multiSelectOptions":  &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(multiSelectOptionInput))},
+				"fieldId":                &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
+				"name":                   &graphql.InputObjectFieldConfig{Type: graphql.String},
+				"singleSelectOptions":    &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(singleSelectOptionInput))},
+				"multiSelectOptions":     &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(multiSelectOptionInput))},
+				"iterationConfiguration": &graphql.InputObjectFieldConfig{Type: s.projectV2IterationConfigurationInput()},
 			},
 		}))}},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -604,6 +605,13 @@ func (s *Resolver) addProjectV2FieldMutations(mutationType *graphql.Object, fiel
 				if raw, ok := input[key].([]interface{}); ok && raw != nil {
 					patch.Options = projectV2OptionsFromInput(raw)
 				}
+			}
+			if rawIteration, ok := input["iterationConfiguration"].(map[string]interface{}); ok {
+				iteration, err := projectV2IterationFromInput(rawIteration)
+				if err != nil {
+					return nil, err
+				}
+				patch.Iteration = iteration
 			}
 			updated := s.store.ProjectsV2.UpdateFieldDetails(field.ID, patch)
 			if updated == nil {
@@ -770,6 +778,55 @@ func projectV2OptionsFromInput(raw []interface{}) []*store.ProjectV2SingleSelect
 		})
 	}
 	return options
+}
+
+// projectV2IterationConfigurationInput is GitHub's
+// ProjectV2IterationFieldConfigurationInput, memoized (together with its nested
+// ProjectV2Iteration input) because createProjectV2Field and
+// updateProjectV2Field both declare it and a schema may name a type once.
+func (s *Resolver) projectV2IterationConfigurationInput() *graphql.InputObject {
+	dateScalar := s.graphQLStringScalar("Date")
+	iterationInput := s.mutationInput("ProjectV2Iteration", graphql.InputObjectConfigFieldMap{
+		"title":     &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
+		"startDate": &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(dateScalar)},
+		"duration":  &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.Int)},
+	})
+	return s.mutationInput("ProjectV2IterationFieldConfigurationInput", graphql.InputObjectConfigFieldMap{
+		"startDate":  &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(dateScalar)},
+		"duration":   &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.Int)},
+		"iterations": &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.NewList(graphql.NewNonNull(iterationInput)))},
+	})
+}
+
+// projectV2IterationFromInput reads an iterationConfiguration input into a store
+// iteration schedule. Iteration IDs are minted by the store, so none are set
+// here; existing IDs survive an update by title match.
+func projectV2IterationFromInput(rawIteration map[string]interface{}) (*store.ProjectV2IterationConfiguration, error) {
+	if rawIteration == nil {
+		return nil, nil
+	}
+	startDate, _ := rawIteration["startDate"].(string)
+	duration, _ := rawIteration["duration"].(int)
+	iteration := &store.ProjectV2IterationConfiguration{StartDate: startDate, Duration: duration}
+	rawIterations, _ := rawIteration["iterations"].([]interface{})
+	for _, raw := range rawIterations {
+		m, ok := raw.(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("iterationConfiguration.iterations contains an invalid item")
+		}
+		title, _ := m["title"].(string)
+		start, _ := m["startDate"].(string)
+		iterDuration := duration
+		if d, ok := m["duration"].(int); ok && d > 0 {
+			iterDuration = d
+		}
+		iteration.Iterations = append(iteration.Iterations, &store.ProjectV2Iteration{
+			Title:     title,
+			StartDate: start,
+			Duration:  iterDuration,
+		})
+	}
+	return iteration, nil
 }
 
 // projectV2DataTypeForIssueField maps an organization issue field's type onto

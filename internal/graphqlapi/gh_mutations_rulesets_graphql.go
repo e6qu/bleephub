@@ -131,18 +131,45 @@ func (s *Resolver) addRulesetMutationsToSchema(mutationType *graphql.Object) {
 		"bypassMode":               gqlNonNullInputOf(s.sharedEnum("RepositoryRulesetBypassActorBypassMode", "ALWAYS", "EXEMPT", "PULL_REQUEST")),
 		"deployKey":                gqlBool(),
 		"enterpriseOwner":          gqlBool(),
+		"enterpriseRole":           gqlBool(),
 		"organizationAdmin":        gqlBool(),
 		"repositoryRoleDatabaseId": gqlInt(),
 	})
 
+	orgPropertyDefinition := s.mutationInput("OrganizationPropertyTargetDefinitionInput", graphql.InputObjectConfigFieldMap{
+		"name":           gqlNonNullString(),
+		"propertyValues": gqlNonNullListOf(graphql.String),
+	})
+	repoPropertyDefinition := s.mutationInput("PropertyTargetDefinitionInput", graphql.InputObjectConfigFieldMap{
+		"name":           gqlNonNullString(),
+		"propertyValues": gqlNonNullListOf(graphql.String),
+		"source":         gqlString(),
+	})
 	conditionsInput := s.mutationInput("RepositoryRuleConditionsInput", graphql.InputObjectConfigFieldMap{
+		"organizationProperty": gqlInputOf(s.mutationInput("OrganizationPropertyConditionTargetInput", graphql.InputObjectConfigFieldMap{
+			"exclude": gqlNonNullListOf(orgPropertyDefinition),
+			"include": gqlNonNullListOf(orgPropertyDefinition),
+		})),
 		"refName": gqlInputOf(s.mutationInput("RefNameConditionTargetInput", graphql.InputObjectConfigFieldMap{
 			"exclude": gqlNonNullListOf(graphql.String),
 			"include": gqlNonNullListOf(graphql.String),
 		})),
+		"repositoryId": gqlInputOf(s.mutationInput("RepositoryIdConditionTargetInput", graphql.InputObjectConfigFieldMap{
+			"repositoryIds": gqlNonNullListOf(graphql.ID),
+		})),
+		"repositoryName": gqlInputOf(s.mutationInput("RepositoryNameConditionTargetInput", graphql.InputObjectConfigFieldMap{
+			"exclude":   gqlNonNullListOf(graphql.String),
+			"include":   gqlNonNullListOf(graphql.String),
+			"protected": gqlBool(),
+		})),
+		"repositoryProperty": gqlInputOf(s.mutationInput("RepositoryPropertyConditionTargetInput", graphql.InputObjectConfigFieldMap{
+			"exclude": gqlNonNullListOf(repoPropertyDefinition),
+			"include": gqlNonNullListOf(repoPropertyDefinition),
+		})),
 	})
 
 	ruleInput := s.mutationInput("RepositoryRuleInput", graphql.InputObjectConfigFieldMap{
+		"id":         gqlID(),
 		"parameters": gqlInputOf(s.gqlRuleParametersInput()),
 		"type":       gqlNonNullInputOf(s.sharedRepositoryRuleTypeEnum()),
 	})
@@ -219,9 +246,29 @@ func (s *Resolver) gqlRuleParametersInput() *graphql.InputObject {
 	})
 	return s.mutationInput("RuleParametersInput", graphql.InputObjectConfigFieldMap{
 		"branchNamePattern":        gqlInputOf(pattern("BranchNamePatternParametersInput")),
+		"codeScanning": gqlInputOf(s.mutationInput("CodeScanningParametersInput", graphql.InputObjectConfigFieldMap{
+			"codeScanningTools": gqlNonNullListOf(s.mutationInput("CodeScanningToolInput", graphql.InputObjectConfigFieldMap{
+				"alertsThreshold":         gqlNonNullString(),
+				"securityAlertsThreshold": gqlNonNullString(),
+				"tool":                    gqlNonNullString(),
+			})),
+		})),
 		"commitAuthorEmailPattern": gqlInputOf(pattern("CommitAuthorEmailPatternParametersInput")),
 		"commitMessagePattern":     gqlInputOf(pattern("CommitMessagePatternParametersInput")),
 		"committerEmailPattern":    gqlInputOf(pattern("CommitterEmailPatternParametersInput")),
+		"copilotCodeReview": gqlInputOf(s.mutationInput("CopilotCodeReviewParametersInput", graphql.InputObjectConfigFieldMap{
+			"reviewDraftPullRequests": gqlBool(),
+			"reviewOnPush":            gqlBool(),
+		})),
+		"mergeQueue": gqlInputOf(s.mutationInput("MergeQueueParametersInput", graphql.InputObjectConfigFieldMap{
+			"checkResponseTimeoutMinutes":  gqlNonNullInt(),
+			"groupingStrategy":             gqlNonNullInputOf(s.sharedEnum("MergeQueueGroupingStrategy", "ALLGREEN", "HEADGREEN")),
+			"maxEntriesToBuild":            gqlNonNullInt(),
+			"maxEntriesToMerge":            gqlNonNullInt(),
+			"mergeMethod":                  gqlNonNullInputOf(s.sharedEnum("MergeQueueMergeMethod", "MERGE", "REBASE", "SQUASH")),
+			"minEntriesToMerge":            gqlNonNullInt(),
+			"minEntriesToMergeWaitMinutes": gqlNonNullInt(),
+		})),
 		"tagNamePattern":           gqlInputOf(pattern("TagNamePatternParametersInput")),
 		"fileExtensionRestriction": gqlInputOf(s.mutationInput("FileExtensionRestrictionParametersInput", graphql.InputObjectConfigFieldMap{
 			"restrictedFileExtensions": gqlNonNullListOf(graphql.String),
@@ -236,11 +283,21 @@ func (s *Resolver) gqlRuleParametersInput() *graphql.InputObject {
 			"maxFileSize": gqlNonNullInt(),
 		})),
 		"pullRequest": gqlInputOf(s.mutationInput("PullRequestParametersInput", graphql.InputObjectConfigFieldMap{
+			"allowedMergeMethods":            gqlListOf(s.sharedEnum("PullRequestAllowedMergeMethods", "MERGE", "REBASE", "SQUASH")),
 			"dismissStaleReviewsOnPush":      gqlNonNullBool(),
+			"dismissalRestriction": gqlInputOf(s.mutationInput("DismissalRestrictionInput", graphql.InputObjectConfigFieldMap{
+				"allowedActors": gqlListOf(graphql.ID),
+				"enabled":       gqlNonNullBool(),
+			})),
 			"requireCodeOwnerReview":         gqlNonNullBool(),
 			"requireLastPushApproval":        gqlNonNullBool(),
 			"requiredApprovingReviewCount":   gqlNonNullInt(),
 			"requiredReviewThreadResolution": gqlNonNullBool(),
+			"requiredReviewers": gqlListOf(s.mutationInput("RequiredReviewerConfigurationInput", graphql.InputObjectConfigFieldMap{
+				"filePatterns":     gqlNonNullListOf(graphql.String),
+				"minimumApprovals": gqlNonNullInt(),
+				"reviewerId":       gqlNonNullID(),
+			})),
 		})),
 		"requiredDeployments": gqlInputOf(s.mutationInput("RequiredDeploymentsParametersInput", graphql.InputObjectConfigFieldMap{
 			"requiredDeploymentEnvironments": gqlNonNullListOf(graphql.String),

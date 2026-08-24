@@ -130,6 +130,12 @@ func (s *Resolver) enrichProjectV2Types(repoType *graphql.Object, nodeTypes map[
 	s.addProjectV2ViewerPermissions(projectType)
 	s.enrichProjectV2ItemType(dateTime, bigInt, nodeTypes)
 	s.enrichProjectV2ViewType()
+	// The residual members of the ProjectV2 field-configuration family, the
+	// option/iteration objects, ProjectV2View and DraftIssue. It runs last so
+	// every type it hangs a field off — the four field configurations and their
+	// common interface, the ProjectV2 object, the ProjectV2Item connection and
+	// the IssueFields union — is already assembled.
+	s.addProjectV2FieldFamilyResidualFields()
 }
 
 func (s *Resolver) addProjectV2ScalarFields(projectType *graphql.Object, dateTime, uri, bigInt *graphql.Scalar) {
