@@ -345,3 +345,55 @@ func (a graphqlSeams) storageFor(repo *store.Repo) gitStorage.Storer {
 	}
 	return a.s.store.GetGitStorage(owner, name)
 }
+
+// GenerateFromTemplate creates a repository from a template for the
+// cloneTemplateRepository mutation. The storage copy is the same
+// generateFromTemplateStorage the REST generate route runs; the orchestration
+// around it — owner resolution, default-branch sync, rollback on a failed
+// copy, the audit event — mirrors that handler so the two surfaces produce
+// identical repositories.
+func (a graphqlSeams) GenerateFromTemplate(ctx context.Context, template *store.Repo, sender *store.User, ownerLogin, name, description string, includeAllBranches, private bool) (*store.Repo, error) {
+	templateOwner, templateName, ok := store.SplitRepoFullName(template.FullName)
+	if !ok {
+		return nil, fmt.Errorf("Repository name is invalid")
+	}
+	var repo *store.Repo
+	switch {
+	case ownerLogin == "" || strings.EqualFold(ownerLogin, sender.Login):
+		repo = a.s.store.CreateRepo(sender, name, description, private)
+	default:
+		org := a.s.store.GetOrg(ownerLogin)
+		if org == nil || !a.s.viewerIsOrgMember(ctx, org.Login) {
+			return nil, fmt.Errorf("you may only generate repositories for your own account or an organization you are a member of")
+		}
+		repo = a.s.store.CreateOrgRepo(org, sender, name, description, private)
+	}
+	if repo == nil {
+		return nil, fmt.Errorf("a repository named %q already exists", name)
+	}
+	newOwner, _, _ := store.SplitRepoFullName(repo.FullName)
+	if template.DefaultBranch != repo.DefaultBranch {
+		a.s.store.UpdateRepo(newOwner, repo.Name, func(rp *store.Repo) {
+			rp.DefaultBranch = template.DefaultBranch
+		})
+	}
+	sig := repoSignature(store.CoalesceStr(sender.Name, sender.Login), store.CoalesceStr(sender.Email, sender.Login+"@bleephub.local"))
+	if err := generateFromTemplateStorage(
+		a.s.store.GetGitStorage(templateOwner, templateName),
+		a.s.store.GetGitStorage(newOwner, repo.Name),
+		template.DefaultBranch, includeAllBranches, sig); err != nil {
+		if _, deleteErr := a.s.store.DeleteRepo(newOwner, repo.Name); deleteErr != nil {
+			return nil, fmt.Errorf("repository rollback failed: %w", deleteErr)
+		}
+		return nil, fmt.Errorf("could not generate repository from template: %w", err)
+	}
+	a.s.store.UpdateRepo(newOwner, repo.Name, func(rp *store.Repo) {
+		rp.TemplateRepoID = template.ID
+		rp.PushedAt = a.s.currentTime()
+	})
+	repo = a.s.store.GetRepoByFullName(repo.FullName)
+	a.s.recordAuditEvent("repo.generate", sender.Login, "", map[string]interface{}{
+		"repo": repo.FullName, "repo_id": repo.ID, "template": template.FullName,
+	})
+	return repo, nil
+}

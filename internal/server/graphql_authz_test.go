@@ -169,6 +169,26 @@ type gqlMutationCase struct {
 // resolver is what decides which owner the caller may create under.
 var gqlMutationCases = []gqlMutationCase{
 	{
+		name: "cloneTemplateRepository",
+		doc:  `mutation($input:CloneTemplateRepositoryInput!){cloneTemplateRepository(input:$input){repository{name}}}`,
+		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+			// The template needs a commit to copy and the template bit set;
+			// the second fixture repo becomes it so the primary keeps its
+			// pristine invariants for the untouched-assertion.
+			seedPullRequestBranches(t, s.Server, f.repo2, "seed")
+			owner, _, _ := store.SplitRepoFullName(f.repo2.FullName)
+			s.store.UpdateRepo(owner, f.repo2.Name, func(rp *store.Repo) { rp.IsTemplate = true })
+		},
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{
+				"repositoryId": f.repo2.NodeID,
+				"ownerId":      f.owner.NodeID,
+				"name":         "authz-generated",
+				"visibility":   "PRIVATE",
+			}
+		},
+	},
+	{
 		name: "updateRefs",
 		doc:  `mutation($input:UpdateRefsInput!){updateRefs(input:$input){clientMutationId}}`,
 		input: func(f *gqlAuthzFixture) map[string]interface{} {

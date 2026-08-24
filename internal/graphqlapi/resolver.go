@@ -166,6 +166,13 @@ type Repos interface {
 	// same tree-building and ref-advancing machinery.
 	CreateCommitOnBranch(ctx context.Context, repo *store.Repo, sender *store.User, qualifiedName, expectedHeadOid string,
 		additions map[string][]byte, deletions []string, headline, body string) (string, error)
+	// GenerateFromTemplate creates a repository under ownerLogin from a
+	// template repository, copying its default branch (or every branch) the
+	// same way POST /repos/{template_owner}/{template_repo}/generate does,
+	// and answers the new repository. The seam enforces the owner-side rule:
+	// the caller may generate under their own account or an organization
+	// they are an active member of.
+	GenerateFromTemplate(ctx context.Context, template *store.Repo, sender *store.User, ownerLogin, name, description string, includeAllBranches, private bool) (*store.Repo, error)
 	// RevertPullRequest opens a pull request that undoes a merged one: it
 	// creates the revert branch off the base, commits the inverse of the
 	// merged change onto it, and opens the pull request. It answers the new

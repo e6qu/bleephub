@@ -1146,6 +1146,29 @@
         }
       }
     },
+    "CloneTemplateRepositoryInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "description": "String",
+        "includeAllBranches": "Boolean",
+        "name": "String!",
+        "ownerId": "ID!",
+        "repositoryId": "ID!",
+        "visibility": "RepositoryVisibility!"
+      }
+    },
+    "CloneTemplateRepositoryPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "repository": {
+          "type": "Repository"
+        }
+      }
+    },
     "Closable": {
       "kind": "INTERFACE",
       "fields": {
@@ -7674,6 +7697,12 @@
           "type": "ClearProjectV2ItemFieldValuePayload",
           "args": {
             "input": "ClearProjectV2ItemFieldValueInput!"
+          }
+        },
+        "cloneTemplateRepository": {
+          "type": "CloneTemplateRepositoryPayload",
+          "args": {
+            "input": "CloneTemplateRepositoryInput!"
           }
         },
         "closeDiscussion": {

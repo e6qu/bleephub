@@ -15,8 +15,9 @@ import (
 
 func init() {
 	for name, rule := range map[string]mutationRule{
-		"updateTeamsRepository": repoRule{scope: store.ScopeAdministration, level: mutationAdminRepo, target: mutationTargetRepo("repositoryId")},
-		"deletePackageVersion":  packageOwnerRule{key: "packageVersionId"},
+		"updateTeamsRepository":   repoRule{scope: store.ScopeAdministration, level: mutationAdminRepo, target: mutationTargetRepo("repositoryId")},
+		"deletePackageVersion":    packageOwnerRule{key: "packageVersionId"},
+		"cloneTemplateRepository": repoRule{scope: store.ScopeContents, level: mutationReadRepo, target: mutationTargetRepo("repositoryId")},
 	} {
 		if _, exists := graphqlMutationAuthz[name]; exists {
 			panic(fmt.Sprintf("graphql mutation %q already has a policy row", name))
@@ -142,6 +143,75 @@ func (s *Resolver) addAdminMutationsToSchema(mutationType *graphql.Object) {
 			"success":          &graphql.Field{Type: graphql.Boolean},
 		},
 	})
+	cloneTemplateInput := graphql.NewInputObject(graphql.InputObjectConfig{
+		Name: "CloneTemplateRepositoryInput",
+		Fields: graphql.InputObjectConfigFieldMap{
+			"clientMutationId":   &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"description":        &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"includeAllBranches": &graphql.InputObjectFieldConfig{Type: graphql.Boolean, DefaultValue: false},
+			"name":               &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
+			"ownerId":            &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
+			"repositoryId":       &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
+			"visibility":         &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(s.sharedEnum("RepositoryVisibility", "INTERNAL", "PRIVATE", "PUBLIC"))},
+		},
+	})
+	cloneTemplatePayload := graphql.NewObject(graphql.ObjectConfig{
+		Name: "CloneTemplateRepositoryPayload",
+		Fields: graphql.Fields{
+			"clientMutationId": &graphql.Field{Type: graphql.String},
+			"repository":       &graphql.Field{Type: s.graphqlTypes.repository},
+		},
+	})
+	s.registerMutation(mutationType, "cloneTemplateRepository", &graphql.Field{
+		Type: cloneTemplatePayload,
+		Args: graphql.FieldConfigArgument{
+			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(cloneTemplateInput)},
+		},
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			user := s.ghUserFromContext(p.Context)
+			input, _ := p.Args["input"].(map[string]interface{})
+			template := store.FindRepoByNodeID(s.store, str(input["repositoryId"]))
+			if template == nil {
+				return nil, gqlMissingNode("Repository", str(input["repositoryId"]))
+			}
+			if !template.IsTemplate {
+				return nil, fmt.Errorf("repository is not a template")
+			}
+			ownerID, ownerType, ok := resolveProjectOwner(s.store, str(input["ownerId"]))
+			if !ok {
+				return nil, gqlMissingNode("RepositoryOwner", str(input["ownerId"]))
+			}
+			ownerLogin := ""
+			if ownerType == "Organization" {
+				if org := s.store.GetOrgByID(ownerID); org != nil {
+					ownerLogin = org.Login
+				}
+			} else if owner := s.store.GetUserByID(ownerID); owner != nil {
+				ownerLogin = owner.Login
+				// Generating under a different user's personal account is not
+				// a thing github permits; only the caller's own account or an
+				// organization qualifies.
+				if user == nil || owner.ID != user.ID {
+					return nil, fmt.Errorf("you may only generate repositories for your own account or an organization you are a member of")
+				}
+			}
+			if ownerLogin == "" {
+				return nil, gqlMissingNode("RepositoryOwner", str(input["ownerId"]))
+			}
+			includeAll, _ := input["includeAllBranches"].(bool)
+			private := str(input["visibility"]) != "PUBLIC"
+			repo, err := s.repos.GenerateFromTemplate(p.Context, template, user, ownerLogin,
+				str(input["name"]), str(input["description"]), includeAll, private)
+			if err != nil {
+				return nil, err
+			}
+			return map[string]interface{}{
+				"clientMutationId": input["clientMutationId"],
+				"repository":       optionalObject(repoToGraphQL(s.store, repo)),
+			}, nil
+		},
+	})
+
 	s.registerMutation(mutationType, "deletePackageVersion", &graphql.Field{
 		Type: deleteVersionPayload,
 		Args: graphql.FieldConfigArgument{

@@ -125,6 +125,10 @@ func (stubRepos) CreateCommitOnBranch(context.Context, *store.Repo, *store.User,
 	return "", errors.New("stubRepos commits nothing")
 }
 
+func (stubRepos) GenerateFromTemplate(context.Context, *store.Repo, *store.User, string, string, string, bool, bool) (*store.Repo, error) {
+	return nil, errors.New("stubRepos generates nothing")
+}
+
 func (stubRepos) RevertPullRequest(context.Context, *store.Repo, *store.PullRequest, *store.User, string, string, bool) (int, error) {
 	return 0, errors.New("stubRepos reverts nothing")
 }
