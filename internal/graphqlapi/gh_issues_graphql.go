@@ -2681,6 +2681,8 @@ type graphQLTypeRegistry struct {
 	reaction                         *graphql.Object
 	reactionConnection               *graphql.Object
 	reactable                        *graphql.Interface
+	userContentEdit                  *graphql.Object
+	userContentEditConnection        *graphql.Object
 	pullRequestReview                *graphql.Object
 	pullRequestReviewComment         *graphql.Object
 	commitComment                    *graphql.Object
