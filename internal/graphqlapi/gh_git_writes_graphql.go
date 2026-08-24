@@ -23,6 +23,7 @@ func init() {
 		"updateRef":            repoRule{scope: store.ScopeContents, level: mutationPushRepo, target: mutationTargetRef("refId")},
 		"deleteRef":            repoRule{scope: store.ScopeContents, level: mutationPushRepo, target: mutationTargetRef("refId")},
 		"mergeBranch":          repoRule{scope: store.ScopeContents, level: mutationPushRepo, target: mutationTargetRepo("repositoryId")},
+		"updateRefs":           repoRule{scope: store.ScopeContents, level: mutationPushRepo, target: mutationTargetRepo("repositoryId")},
 		"createCommitOnBranch": repoRule{scope: store.ScopeContents, level: mutationPushRepo, target: mutationTargetCommittableBranch("branch")},
 		"revertPullRequest":    repoRule{scope: store.ScopeContents, level: mutationPushRepo, target: mutationTargetPullRequest("pullRequestId")},
 	} {
@@ -396,6 +397,92 @@ func (s *Resolver) addGitWriteMutationsToSchema(mutationType *graphql.Object) {
 				"clientMutationId": input["clientMutationId"],
 				"commit":           s.commitPayloadSource(repo, oid),
 				"ref":              s.refPayloadSource(repo, qualified, oid),
+			}, nil
+		},
+	})
+
+	refUpdateInput := graphql.NewInputObject(graphql.InputObjectConfig{
+		Name: "RefUpdate",
+		Fields: graphql.InputObjectConfigFieldMap{
+			"afterOid":  &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(gitObjectID)},
+			"beforeOid": &graphql.InputObjectFieldConfig{Type: gitObjectID},
+			"force":     &graphql.InputObjectFieldConfig{Type: graphql.Boolean, DefaultValue: false},
+			"name":      &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(s.graphQLStringScalar("GitRefname"))},
+		},
+	})
+	updateRefsInput := graphql.NewInputObject(graphql.InputObjectConfig{
+		Name: "UpdateRefsInput",
+		Fields: graphql.InputObjectConfigFieldMap{
+			"clientMutationId": &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"refUpdates":       &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.NewList(graphql.NewNonNull(refUpdateInput)))},
+			"repositoryId":     &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
+		},
+	})
+	updateRefsPayload := graphql.NewObject(graphql.ObjectConfig{
+		Name: "UpdateRefsPayload",
+		Fields: graphql.Fields{
+			"clientMutationId": &graphql.Field{Type: graphql.String},
+		},
+	})
+	s.registerMutation(mutationType, "updateRefs", &graphql.Field{
+		Type: updateRefsPayload,
+		Args: graphql.FieldConfigArgument{
+			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(updateRefsInput)},
+		},
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			user := s.ghUserFromContext(p.Context)
+			input, _ := p.Args["input"].(map[string]interface{})
+			repo := store.FindRepoByNodeID(s.store, str(input["repositoryId"]))
+			if repo == nil {
+				return nil, gqlMissingNode("Repository", str(input["repositoryId"]))
+			}
+			owner, name, ok := store.SplitRepoFullName(repo.FullName)
+			if !ok {
+				return nil, gqlMissingNode("Repository", str(input["repositoryId"]))
+			}
+			stor := s.store.GetGitStorage(owner, name)
+			if stor == nil {
+				return nil, fmt.Errorf("the repository has no git storage")
+			}
+			updates, _ := input["refUpdates"].([]interface{})
+			for _, raw := range updates {
+				update, _ := raw.(map[string]interface{})
+				refName := str(update["name"])
+				if !strings.HasPrefix(refName, "refs/") {
+					refName = "refs/heads/" + refName
+				}
+				afterOid := str(update["afterOid"])
+				force, _ := update["force"].(bool)
+
+				current, currentErr := stor.Reference(plumbing.ReferenceName(refName))
+				// beforeOid, when the client supplies it, is the head it saw:
+				// a reference that has moved since is refused rather than
+				// silently overwritten, which is the whole reason the field
+				// exists.
+				if beforeOid := str(update["beforeOid"]); beforeOid != "" {
+					if currentErr != nil {
+						return nil, fmt.Errorf("%s does not exist but beforeOid was supplied", refName)
+					}
+					if current.Hash().String() != beforeOid {
+						return nil, fmt.Errorf("expected %s to point to %q but it did not", refName, beforeOid)
+					}
+				}
+
+				var err error
+				switch {
+				case afterOid == plumbing.ZeroHash.String():
+					err = s.repos.DeleteGitRef(p.Context, repo, user, refName)
+				case currentErr != nil:
+					err = s.repos.CreateGitRef(p.Context, repo, user, refName, afterOid)
+				default:
+					err = s.repos.UpdateGitRef(p.Context, repo, user, refName, afterOid, force)
+				}
+				if err != nil {
+					return nil, err
+				}
+			}
+			return map[string]interface{}{
+				"clientMutationId": input["clientMutationId"],
 			}, nil
 		},
 	})

@@ -45,6 +45,13 @@ type gqlAuthzFixture struct {
 	threadNodeID  string
 	reviewNodeID  string
 	headSHA       string
+	// orgRepo, teamNodeID and packageVersionNodeID are seeded by the
+	// updateTeamsRepository and deletePackageVersion rows' setups: a team
+	// grant needs an organization-owned repository, and a version needs a
+	// package, neither of which the base fixture carries.
+	orgRepo              *store.Repo
+	teamNodeID           string
+	packageVersionNodeID string
 	// linkedBranchNodeID is seeded by the deleteLinkedBranch case's setup, for
 	// the same reason the Dependabot alert below is: an issue carries no linked
 	// branch until something links one.
@@ -161,6 +168,64 @@ type gqlMutationCase struct {
 // createRepository is deliberately absent: it names no repository, and its own
 // resolver is what decides which owner the caller may create under.
 var gqlMutationCases = []gqlMutationCase{
+	{
+		name: "updateRefs",
+		doc:  `mutation($input:UpdateRefsInput!){updateRefs(input:$input){clientMutationId}}`,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{
+				"repositoryId": f.repo.NodeID,
+				"refUpdates": []interface{}{map[string]interface{}{
+					"name": "refs/heads/authz-bulk-ref", "afterOid": f.headSHA,
+				}},
+			}
+		},
+	},
+	{
+		name: "updateTeamsRepository",
+		doc:  `mutation($input:UpdateTeamsRepositoryInput!){updateTeamsRepository(input:$input){teams{slug}}}`,
+		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+			// The grant under test needs an organization-owned repository and a
+			// team in that organization; the fixture's user-owned repo cannot
+			// carry a team grant.
+			org := s.store.CreateOrg(f.owner, "authz-teams-org-"+f.owner.Login, "", "")
+			if org == nil {
+				t.Fatal("fixture org could not be created")
+			}
+			f.orgRepo = s.store.CreateOrgRepo(org, f.owner, "authz-teams-repo", "", true)
+			if f.orgRepo == nil {
+				t.Fatal("fixture org repo could not be created")
+			}
+			team := s.store.CreateTeam(org.Login, "authz-grant-team", store.TeamOptions{})
+			if team == nil {
+				t.Fatal("fixture team could not be created")
+			}
+			f.teamNodeID = team.NodeID
+		},
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{
+				"repositoryId": f.orgRepo.NodeID,
+				"teamIds":      []interface{}{f.teamNodeID},
+				"permission":   "WRITE",
+			}
+		},
+	},
+	{
+		name: "deletePackageVersion",
+		doc:  `mutation($input:DeletePackageVersionInput!){deletePackageVersion(input:$input){success}}`,
+		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+			if pkg, _ := s.store.CreatePackage("user", f.owner.Login, "npm", "authz-package", "private"); pkg == nil {
+				t.Fatal("fixture package could not be created")
+			}
+			version, err := s.store.CreatePackageVersion("user", f.owner.Login, "npm", "authz-package", "1.0.0", "", nil, nil)
+			if err != nil || version == nil {
+				t.Fatalf("fixture package version could not be created: %v", err)
+			}
+			f.packageVersionNodeID = version.NodeID
+		},
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"packageVersionId": f.packageVersionNodeID}
+		},
+	},
 	{
 		name: "closeDiscussion",
 		doc:  `mutation($input:CloseDiscussionInput!){closeDiscussion(input:$input){discussion{closed stateReason}}}`,

@@ -2569,6 +2569,24 @@
         }
       }
     },
+    "DeletePackageVersionInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "packageVersionId": "ID!"
+      }
+    },
+    "DeletePackageVersionPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "success": {
+          "type": "Boolean"
+        }
+      }
+    },
     "DeleteProjectV2FieldInput": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
@@ -5176,6 +5194,9 @@
       ]
     },
     "GitObjectID": {
+      "kind": "SCALAR"
+    },
+    "GitRefname": {
       "kind": "SCALAR"
     },
     "GitSSHRemote": {
@@ -7901,6 +7922,12 @@
             "input": "DeleteLinkedBranchInput!"
           }
         },
+        "deletePackageVersion": {
+          "type": "DeletePackageVersionPayload",
+          "args": {
+            "input": "DeletePackageVersionInput!"
+          }
+        },
         "deleteProjectV2": {
           "type": "DeleteProjectV2Payload",
           "args": {
@@ -8735,6 +8762,12 @@
             "input": "UpdateRefInput!"
           }
         },
+        "updateRefs": {
+          "type": "UpdateRefsPayload",
+          "args": {
+            "input": "UpdateRefsInput!"
+          }
+        },
         "updateRepository": {
           "type": "UpdateRepositoryPayload",
           "args": {
@@ -8763,6 +8796,12 @@
           "type": "UpdateTeamReviewAssignmentPayload",
           "args": {
             "input": "UpdateTeamReviewAssignmentInput!"
+          }
+        },
+        "updateTeamsRepository": {
+          "type": "UpdateTeamsRepositoryPayload",
+          "args": {
+            "input": "UpdateTeamsRepositoryInput!"
           }
         },
         "updateTopics": {
@@ -12519,6 +12558,15 @@
         "ALPHABETICAL",
         "TAG_COMMIT_DATE"
       ]
+    },
+    "RefUpdate": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "afterOid": "GitObjectID!",
+        "beforeOid": "GitObjectID",
+        "force": "Boolean",
+        "name": "GitRefname!"
+      }
     },
     "ReferencedEvent": {
       "kind": "OBJECT",
@@ -18463,6 +18511,22 @@
         }
       }
     },
+    "UpdateRefsInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "refUpdates": "[RefUpdate!]!",
+        "repositoryId": "ID!"
+      }
+    },
+    "UpdateRefsPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        }
+      }
+    },
     "UpdateRepositoryInput": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
@@ -18580,6 +18644,29 @@
         },
         "team": {
           "type": "Team"
+        }
+      }
+    },
+    "UpdateTeamsRepositoryInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "permission": "RepositoryPermission!",
+        "repositoryId": "ID!",
+        "teamIds": "[ID!]!"
+      }
+    },
+    "UpdateTeamsRepositoryPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "repository": {
+          "type": "Repository"
+        },
+        "teams": {
+          "type": "[Team!]"
         }
       }
     },

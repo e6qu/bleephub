@@ -314,6 +314,7 @@ func (s *Resolver) initGraphQLSchema() {
 	// of those two the subject turns out to be.
 	s.addLabelMutationsToSchema(mutationType)
 	s.addGitWriteMutationsToSchema(mutationType)
+	s.addAdminMutationsToSchema(mutationType)
 
 	// Add Projects v2. The read surface goes first: the mutations' payload
 	// types are the same ProjectV2/ProjectV2Item objects, so they have to be
