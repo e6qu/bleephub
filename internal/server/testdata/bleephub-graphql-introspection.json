@@ -99,6 +99,28 @@
         }
       }
     },
+    "AccessUserNamespaceRepositoryInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "enterpriseId": "ID!",
+        "repositoryId": "ID!"
+      }
+    },
+    "AccessUserNamespaceRepositoryPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "expiresAt": {
+          "type": "DateTime"
+        },
+        "repository": {
+          "type": "Repository"
+        }
+      }
+    },
     "Actor": {
       "kind": "INTERFACE",
       "fields": {
@@ -215,6 +237,24 @@
         }
       }
     },
+    "AddDiscussionPollVoteInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "pollOptionId": "ID!"
+      }
+    },
+    "AddDiscussionPollVotePayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "pollOption": {
+          "type": "DiscussionPollOption"
+        }
+      }
+    },
     "AddEnterpriseOrganizationMemberInput": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
@@ -271,6 +311,51 @@
         },
         "labelable": {
           "type": "Labelable"
+        }
+      }
+    },
+    "AddProjectCardInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "contentId": "ID",
+        "note": "String",
+        "projectColumnId": "ID!"
+      }
+    },
+    "AddProjectCardPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "cardEdge": {
+          "type": "ProjectCardEdge"
+        },
+        "clientMutationId": {
+          "type": "String"
+        },
+        "projectColumn": {
+          "type": "ProjectColumn"
+        }
+      }
+    },
+    "AddProjectColumnInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "name": "String!",
+        "projectId": "ID!"
+      }
+    },
+    "AddProjectColumnPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "columnEdge": {
+          "type": "ProjectColumnEdge"
+        },
+        "project": {
+          "type": "Project"
         }
       }
     },
@@ -512,6 +597,25 @@
         }
       }
     },
+    "AddVerifiableDomainInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "domain": "URI!",
+        "ownerId": "ID!"
+      }
+    },
+    "AddVerifiableDomainPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "domain": {
+          "type": "VerifiableDomain"
+        }
+      }
+    },
     "AddedToProjectV2Event": {
       "kind": "OBJECT",
       "fields": {
@@ -545,6 +649,35 @@
         "targetRepositoryId": "ID"
       }
     },
+    "App": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientId": {
+          "type": "String"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "databaseId": {
+          "type": "Int"
+        },
+        "description": {
+          "type": "String"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "name": {
+          "type": "String!"
+        },
+        "slug": {
+          "type": "String!"
+        },
+        "updatedAt": {
+          "type": "DateTime!"
+        }
+      }
+    },
     "ApplyPendingIssueSuggestionsInput": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
@@ -562,6 +695,44 @@
         },
         "issue": {
           "type": "Issue"
+        }
+      }
+    },
+    "ApproveDeploymentsInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "comment": "String",
+        "environmentIds": "[ID!]!",
+        "workflowRunId": "ID!"
+      }
+    },
+    "ApproveDeploymentsPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "deployments": {
+          "type": "[Deployment!]"
+        }
+      }
+    },
+    "ApproveVerifiableDomainInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "id": "ID!"
+      }
+    },
+    "ApproveVerifiableDomainPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "domain": {
+          "type": "VerifiableDomain"
         }
       }
     },
@@ -846,14 +1017,234 @@
         }
       }
     },
+    "BranchActorAllowanceActor": {
+      "kind": "UNION",
+      "possible_types": [
+        "App",
+        "Team",
+        "User"
+      ]
+    },
+    "BranchNamePatternParametersInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "name": "String",
+        "negate": "Boolean",
+        "operator": "String!",
+        "pattern": "String!"
+      }
+    },
     "BranchProtectionRule": {
       "kind": "OBJECT",
       "fields": {
+        "allowsDeletions": {
+          "type": "Boolean!"
+        },
+        "allowsForcePushes": {
+          "type": "Boolean!"
+        },
+        "blocksCreations": {
+          "type": "Boolean!"
+        },
+        "branchProtectionRuleConflicts": {
+          "type": "BranchProtectionRuleConflictConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "bypassForcePushAllowances": {
+          "type": "BypassForcePushAllowanceConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "bypassPullRequestAllowances": {
+          "type": "BypassPullRequestAllowanceConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "creator": {
+          "type": "Actor"
+        },
+        "databaseId": {
+          "type": "Int"
+        },
+        "dismissesStaleReviews": {
+          "type": "Boolean!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "isAdminEnforced": {
+          "type": "Boolean!"
+        },
+        "lockAllowsFetchAndMerge": {
+          "type": "Boolean!"
+        },
+        "lockBranch": {
+          "type": "Boolean!"
+        },
+        "matchingRefs": {
+          "type": "RefConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "query": "String"
+          }
+        },
+        "pattern": {
+          "type": "String!"
+        },
+        "pushAllowances": {
+          "type": "PushAllowanceConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "repository": {
+          "type": "Repository"
+        },
+        "requireLastPushApproval": {
+          "type": "Boolean!"
+        },
         "requiredApprovingReviewCount": {
           "type": "Int"
         },
+        "requiredDeploymentEnvironments": {
+          "type": "[String]"
+        },
+        "requiredStatusCheckContexts": {
+          "type": "[String]"
+        },
+        "requiredStatusChecks": {
+          "type": "[RequiredStatusCheckDescription!]"
+        },
+        "requiresApprovingReviews": {
+          "type": "Boolean!"
+        },
+        "requiresCodeOwnerReviews": {
+          "type": "Boolean!"
+        },
+        "requiresCommitSignatures": {
+          "type": "Boolean!"
+        },
+        "requiresConversationResolution": {
+          "type": "Boolean!"
+        },
+        "requiresDeployments": {
+          "type": "Boolean!"
+        },
+        "requiresLinearHistory": {
+          "type": "Boolean!"
+        },
+        "requiresStatusChecks": {
+          "type": "Boolean!"
+        },
         "requiresStrictStatusChecks": {
           "type": "Boolean!"
+        },
+        "restrictsPushes": {
+          "type": "Boolean!"
+        },
+        "restrictsReviewDismissals": {
+          "type": "Boolean!"
+        },
+        "reviewDismissalAllowances": {
+          "type": "ReviewDismissalAllowanceConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        }
+      },
+      "interfaces": [
+        "Node"
+      ]
+    },
+    "BranchProtectionRuleConflict": {
+      "kind": "OBJECT",
+      "fields": {
+        "branchProtectionRule": {
+          "type": "BranchProtectionRule"
+        },
+        "conflictingBranchProtectionRule": {
+          "type": "BranchProtectionRule"
+        },
+        "ref": {
+          "type": "Ref"
+        }
+      }
+    },
+    "BranchProtectionRuleConflictConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[BranchProtectionRuleConflictEdge]"
+        },
+        "nodes": {
+          "type": "[BranchProtectionRuleConflict]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "BranchProtectionRuleConflictEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "BranchProtectionRuleConflict"
+        }
+      }
+    },
+    "BranchProtectionRuleConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[BranchProtectionRuleEdge]"
+        },
+        "nodes": {
+          "type": "[BranchProtectionRule]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "BranchProtectionRuleEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "BranchProtectionRule"
         }
       }
     },
@@ -863,6 +1254,90 @@
         "amount": "Int!",
         "sponsorableId": "ID",
         "sponsorableLogin": "String"
+      }
+    },
+    "BypassForcePushAllowance": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "BranchActorAllowanceActor"
+        },
+        "branchProtectionRule": {
+          "type": "BranchProtectionRule"
+        },
+        "id": {
+          "type": "ID!"
+        }
+      }
+    },
+    "BypassForcePushAllowanceConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[BypassForcePushAllowanceEdge]"
+        },
+        "nodes": {
+          "type": "[BypassForcePushAllowance]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "BypassForcePushAllowanceEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "BypassForcePushAllowance"
+        }
+      }
+    },
+    "BypassPullRequestAllowance": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "BranchActorAllowanceActor"
+        },
+        "branchProtectionRule": {
+          "type": "BranchProtectionRule"
+        },
+        "id": {
+          "type": "ID!"
+        }
+      }
+    },
+    "BypassPullRequestAllowanceConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[BypassPullRequestAllowanceEdge]"
+        },
+        "nodes": {
+          "type": "[BypassPullRequestAllowance]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "BypassPullRequestAllowanceEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "BypassPullRequestAllowance"
+        }
       }
     },
     "CVSS": {
@@ -1009,6 +1484,34 @@
         }
       }
     },
+    "CheckAnnotationData": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "annotationLevel": "CheckAnnotationLevel!",
+        "location": "CheckAnnotationRange!",
+        "message": "String!",
+        "path": "String!",
+        "rawDetails": "String",
+        "title": "String"
+      }
+    },
+    "CheckAnnotationLevel": {
+      "kind": "ENUM",
+      "enum_values": [
+        "FAILURE",
+        "NOTICE",
+        "WARNING"
+      ]
+    },
+    "CheckAnnotationRange": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "endColumn": "Int",
+        "endLine": "Int!",
+        "startColumn": "Int",
+        "startLine": "Int!"
+      }
+    },
     "CheckConclusionState": {
       "kind": "ENUM",
       "enum_values": [
@@ -1035,8 +1538,17 @@
         "conclusion": {
           "type": "CheckConclusionState"
         },
+        "databaseId": {
+          "type": "Int"
+        },
         "detailsUrl": {
           "type": "URI"
+        },
+        "externalId": {
+          "type": "String"
+        },
+        "id": {
+          "type": "ID!"
         },
         "isRequired": {
           "type": "Boolean!",
@@ -1053,11 +1565,46 @@
         },
         "status": {
           "type": "CheckStatusState!"
+        },
+        "summary": {
+          "type": "String"
+        },
+        "text": {
+          "type": "String"
+        },
+        "title": {
+          "type": "String"
         }
       },
       "interfaces": [
         "RequirableByPullRequest"
       ]
+    },
+    "CheckRunAction": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "description": "String!",
+        "identifier": "String!",
+        "label": "String!"
+      }
+    },
+    "CheckRunOutput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "annotations": "[CheckAnnotationData!]",
+        "images": "[CheckRunOutputImage!]",
+        "summary": "String!",
+        "text": "String",
+        "title": "String!"
+      }
+    },
+    "CheckRunOutputImage": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "alt": "String!",
+        "caption": "String",
+        "imageUrl": "URI!"
+      }
     },
     "CheckRunState": {
       "kind": "ENUM",
@@ -1103,10 +1650,42 @@
     "CheckSuite": {
       "kind": "OBJECT",
       "fields": {
+        "conclusion": {
+          "type": "CheckConclusionState"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "databaseId": {
+          "type": "Int"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "status": {
+          "type": "CheckStatusState!"
+        },
+        "updatedAt": {
+          "type": "DateTime!"
+        },
         "workflowRun": {
           "type": "WorkflowRun"
         }
       }
+    },
+    "CheckSuiteAutoTriggerPreference": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "appId": "ID!",
+        "setting": "Boolean!"
+      }
+    },
+    "Claimable": {
+      "kind": "UNION",
+      "possible_types": [
+        "Mannequin",
+        "User"
+      ]
     },
     "ClearLabelsFromLabelableInput": {
       "kind": "INPUT_OBJECT",
@@ -1143,6 +1722,32 @@
         },
         "projectV2Item": {
           "type": "ProjectV2Item"
+        }
+      }
+    },
+    "CloneProjectInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "body": "String",
+        "clientMutationId": "String",
+        "includeWorkflows": "Boolean!",
+        "name": "String!",
+        "public": "Boolean",
+        "sourceId": "ID!",
+        "targetOwnerId": "ID!"
+      }
+    },
+    "CloneProjectPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "jobStatusId": {
+          "type": "String"
+        },
+        "project": {
+          "type": "Project"
         }
       }
     },
@@ -1482,6 +2087,15 @@
         "id": "ID"
       }
     },
+    "CommitAuthorEmailPatternParametersInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "name": "String",
+        "negate": "Boolean",
+        "operator": "String!",
+        "pattern": "String!"
+      }
+    },
     "CommitComment": {
       "kind": "OBJECT",
       "fields": {
@@ -1603,12 +2217,30 @@
         "headline": "String!"
       }
     },
+    "CommitMessagePatternParametersInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "name": "String",
+        "negate": "Boolean",
+        "operator": "String!",
+        "pattern": "String!"
+      }
+    },
     "CommittableBranch": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
         "branchName": "String",
         "id": "ID",
         "repositoryNameWithOwner": "String"
+      }
+    },
+    "CommitterEmailPatternParametersInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "name": "String",
+        "negate": "Boolean",
+        "operator": "String!",
+        "pattern": "String!"
       }
     },
     "ContentWarning": {
@@ -1645,6 +2277,27 @@
         },
         "url": {
           "type": "URI"
+        }
+      }
+    },
+    "ConvertProjectCardNoteToIssueInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "body": "String",
+        "clientMutationId": "String",
+        "projectCardId": "ID!",
+        "repositoryId": "ID!",
+        "title": "String"
+      }
+    },
+    "ConvertProjectCardNoteToIssuePayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "projectCard": {
+          "type": "ProjectCard"
         }
       }
     },
@@ -1773,6 +2426,124 @@
         }
       }
     },
+    "CreateAttributionInvitationInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "ownerId": "ID!",
+        "sourceId": "ID!",
+        "targetId": "ID!"
+      }
+    },
+    "CreateAttributionInvitationPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "owner": {
+          "type": "Organization"
+        },
+        "source": {
+          "type": "Claimable"
+        },
+        "target": {
+          "type": "Claimable"
+        }
+      }
+    },
+    "CreateBranchProtectionRuleInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "allowsDeletions": "Boolean",
+        "allowsForcePushes": "Boolean",
+        "blocksCreations": "Boolean",
+        "bypassForcePushActorIds": "[ID!]",
+        "bypassPullRequestActorIds": "[ID!]",
+        "clientMutationId": "String",
+        "dismissesStaleReviews": "Boolean",
+        "isAdminEnforced": "Boolean",
+        "lockAllowsFetchAndMerge": "Boolean",
+        "lockBranch": "Boolean",
+        "pattern": "String!",
+        "pushActorIds": "[ID!]",
+        "repositoryId": "ID!",
+        "requireLastPushApproval": "Boolean",
+        "requiredApprovingReviewCount": "Int",
+        "requiredDeploymentEnvironments": "[String!]",
+        "requiredStatusCheckContexts": "[String!]",
+        "requiredStatusChecks": "[RequiredStatusCheckInput!]",
+        "requiresApprovingReviews": "Boolean",
+        "requiresCodeOwnerReviews": "Boolean",
+        "requiresCommitSignatures": "Boolean",
+        "requiresConversationResolution": "Boolean",
+        "requiresDeployments": "Boolean",
+        "requiresLinearHistory": "Boolean",
+        "requiresStatusChecks": "Boolean",
+        "requiresStrictStatusChecks": "Boolean",
+        "restrictsPushes": "Boolean",
+        "restrictsReviewDismissals": "Boolean",
+        "reviewDismissalActorIds": "[ID!]"
+      }
+    },
+    "CreateBranchProtectionRulePayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "branchProtectionRule": {
+          "type": "BranchProtectionRule"
+        },
+        "clientMutationId": {
+          "type": "String"
+        }
+      }
+    },
+    "CreateCheckRunInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "actions": "[CheckRunAction!]",
+        "clientMutationId": "String",
+        "completedAt": "DateTime",
+        "conclusion": "CheckConclusionState",
+        "detailsUrl": "URI",
+        "externalId": "String",
+        "headSha": "GitObjectID!",
+        "name": "String!",
+        "output": "CheckRunOutput",
+        "repositoryId": "ID!",
+        "startedAt": "DateTime",
+        "status": "RequestableCheckStatusState"
+      }
+    },
+    "CreateCheckRunPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "checkRun": {
+          "type": "CheckRun"
+        },
+        "clientMutationId": {
+          "type": "String"
+        }
+      }
+    },
+    "CreateCheckSuiteInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "headSha": "GitObjectID!",
+        "repositoryId": "ID!"
+      }
+    },
+    "CreateCheckSuitePayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "checkSuite": {
+          "type": "CheckSuite"
+        },
+        "clientMutationId": {
+          "type": "String"
+        }
+      }
+    },
     "CreateCommitOnBranchInput": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
@@ -1794,6 +2565,58 @@
         },
         "ref": {
           "type": "Ref"
+        }
+      }
+    },
+    "CreateDeploymentInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "autoMerge": "Boolean",
+        "clientMutationId": "String",
+        "description": "String",
+        "environment": "String",
+        "payload": "String",
+        "refId": "ID!",
+        "repositoryId": "ID!",
+        "requiredContexts": "[String!]",
+        "task": "String"
+      }
+    },
+    "CreateDeploymentPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "autoMerged": {
+          "type": "Boolean"
+        },
+        "clientMutationId": {
+          "type": "String"
+        },
+        "deployment": {
+          "type": "Deployment"
+        }
+      }
+    },
+    "CreateDeploymentStatusInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "autoInactive": "Boolean",
+        "clientMutationId": "String",
+        "deploymentId": "ID!",
+        "description": "String",
+        "environment": "String",
+        "environmentUrl": "String",
+        "logUrl": "String",
+        "state": "DeploymentStatusState!"
+      }
+    },
+    "CreateDeploymentStatusPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "deploymentStatus": {
+          "type": "DeploymentStatus"
         }
       }
     },
@@ -1840,6 +2663,25 @@
         },
         "organization": {
           "type": "Organization"
+        }
+      }
+    },
+    "CreateEnvironmentInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "name": "String!",
+        "repositoryId": "ID!"
+      }
+    },
+    "CreateEnvironmentPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "environment": {
+          "type": "Environment"
         }
       }
     },
@@ -2025,6 +2867,28 @@
         }
       }
     },
+    "CreateProjectInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "body": "String",
+        "clientMutationId": "String",
+        "name": "String!",
+        "ownerId": "ID!",
+        "repositoryIds": "[ID!]",
+        "template": "ProjectTemplate"
+      }
+    },
+    "CreateProjectPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "project": {
+          "type": "Project"
+        }
+      }
+    },
     "CreateProjectV2FieldInput": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
@@ -2173,6 +3037,33 @@
         }
       }
     },
+    "CreateRepositoryCustomPropertyInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "allowedValues": "[String!]",
+        "clientMutationId": "String",
+        "defaultValue": "String",
+        "description": "String",
+        "propertyName": "String!",
+        "regex": "String",
+        "requireExplicitValues": "Boolean",
+        "required": "Boolean",
+        "sourceId": "ID!",
+        "valueType": "CustomPropertyValueType!",
+        "valuesEditableBy": "RepositoryCustomPropertyValuesEditableBy"
+      }
+    },
+    "CreateRepositoryCustomPropertyPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "repositoryCustomProperty": {
+          "type": "RepositoryCustomProperty"
+        }
+      }
+    },
     "CreateRepositoryInput": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
@@ -2193,6 +3084,30 @@
         },
         "repository": {
           "type": "Repository"
+        }
+      }
+    },
+    "CreateRepositoryRulesetInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "bypassActors": "[RepositoryRulesetBypassActorInput!]",
+        "clientMutationId": "String",
+        "conditions": "RepositoryRuleConditionsInput!",
+        "enforcement": "RuleEnforcement!",
+        "name": "String!",
+        "rules": "[RepositoryRuleInput!]",
+        "sourceId": "ID!",
+        "target": "RepositoryRulesetTarget"
+      }
+    },
+    "CreateRepositoryRulesetPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "ruleset": {
+          "type": "RepositoryRuleset"
         }
       }
     },
@@ -2355,8 +3270,22 @@
         "UniformResourceLocatable"
       ]
     },
+    "CustomPropertySource": {
+      "kind": "UNION",
+      "possible_types": [
+        "Enterprise",
+        "Organization"
+      ]
+    },
     "CustomPropertyValue": {
       "kind": "SCALAR"
+    },
+    "CustomPropertyValueInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "propertyName": "String!",
+        "value": "CustomPropertyValue"
+      }
     },
     "CustomPropertyValueType": {
       "kind": "ENUM",
@@ -2414,6 +3343,36 @@
         "WRITE"
       ]
     },
+    "DeleteBranchProtectionRuleInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "branchProtectionRuleId": "ID!",
+        "clientMutationId": "String"
+      }
+    },
+    "DeleteBranchProtectionRulePayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        }
+      }
+    },
+    "DeleteDeploymentInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "id": "ID!"
+      }
+    },
+    "DeleteDeploymentPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        }
+      }
+    },
     "DeleteDiscussionCommentInput": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
@@ -2447,6 +3406,21 @@
         },
         "discussion": {
           "type": "Discussion"
+        }
+      }
+    },
+    "DeleteEnvironmentInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "id": "ID!"
+      }
+    },
+    "DeleteEnvironmentPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
         }
       }
     },
@@ -2607,6 +3581,66 @@
         },
         "success": {
           "type": "Boolean"
+        }
+      }
+    },
+    "DeleteProjectCardInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "cardId": "ID!",
+        "clientMutationId": "String"
+      }
+    },
+    "DeleteProjectCardPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "column": {
+          "type": "ProjectColumn"
+        },
+        "deletedCardId": {
+          "type": "ID"
+        }
+      }
+    },
+    "DeleteProjectColumnInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "columnId": "ID!"
+      }
+    },
+    "DeleteProjectColumnPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "deletedColumnId": {
+          "type": "ID"
+        },
+        "project": {
+          "type": "Project"
+        }
+      }
+    },
+    "DeleteProjectInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "projectId": "ID!"
+      }
+    },
+    "DeleteProjectPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "owner": {
+          "type": "ProjectOwner"
         }
       }
     },
@@ -2779,6 +3813,24 @@
         }
       }
     },
+    "DeleteRepositoryCustomPropertyInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "id": "ID!"
+      }
+    },
+    "DeleteRepositoryCustomPropertyPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "repositoryCustomProperty": {
+          "type": "RepositoryCustomProperty"
+        }
+      }
+    },
     "DeleteRepositoryInput": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
@@ -2787,6 +3839,21 @@
       }
     },
     "DeleteRepositoryPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        }
+      }
+    },
+    "DeleteRepositoryRulesetInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "repositoryRulesetId": "ID!"
+      }
+    },
+    "DeleteRepositoryRulesetPayload": {
       "kind": "OBJECT",
       "fields": {
         "clientMutationId": {
@@ -2809,6 +3876,24 @@
         },
         "user": {
           "type": "User"
+        }
+      }
+    },
+    "DeleteVerifiableDomainInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "id": "ID!"
+      }
+    },
+    "DeleteVerifiableDomainPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "owner": {
+          "type": "VerifiableDomainOwner"
         }
       }
     },
@@ -3451,6 +4536,9 @@
         "number": {
           "type": "Int!"
         },
+        "poll": {
+          "type": "DiscussionPoll"
+        },
         "publishedAt": {
           "type": "DateTime"
         },
@@ -3715,6 +4803,95 @@
       "enum_values": [
         "CREATED_AT",
         "UPDATED_AT"
+      ]
+    },
+    "DiscussionPoll": {
+      "kind": "OBJECT",
+      "fields": {
+        "id": {
+          "type": "ID!"
+        },
+        "options": {
+          "type": "DiscussionPollOptionConnection",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "orderBy": "DiscussionPollOptionOrder"
+          }
+        },
+        "question": {
+          "type": "String!"
+        },
+        "totalVoteCount": {
+          "type": "Int!"
+        },
+        "viewerCanVote": {
+          "type": "Boolean!"
+        },
+        "viewerHasVoted": {
+          "type": "Boolean!"
+        }
+      }
+    },
+    "DiscussionPollOption": {
+      "kind": "OBJECT",
+      "fields": {
+        "id": {
+          "type": "ID!"
+        },
+        "option": {
+          "type": "String!"
+        },
+        "totalVoteCount": {
+          "type": "Int!"
+        },
+        "viewerHasVoted": {
+          "type": "Boolean!"
+        }
+      }
+    },
+    "DiscussionPollOptionConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[DiscussionPollOptionEdge]"
+        },
+        "nodes": {
+          "type": "[DiscussionPollOption]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "DiscussionPollOptionEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "DiscussionPollOption"
+        }
+      }
+    },
+    "DiscussionPollOptionOrder": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "direction": "OrderDirection!",
+        "field": "DiscussionPollOptionOrderField!"
+      }
+    },
+    "DiscussionPollOptionOrderField": {
+      "kind": "ENUM",
+      "enum_values": [
+        "AUTHORED_ORDER",
+        "VOTE_COUNT"
       ]
     },
     "DiscussionStateReason": {
@@ -4769,11 +5946,17 @@
         "id": {
           "type": "ID!"
         },
+        "isPinned": {
+          "type": "Boolean"
+        },
         "latestCompletedDeployment": {
           "type": "Deployment"
         },
         "name": {
           "type": "String!"
+        },
+        "pinnedPosition": {
+          "type": "Int"
         },
         "protectionRules": {
           "type": "DeploymentProtectionRuleConnection!",
@@ -4845,6 +6028,18 @@
       "kind": "INPUT_OBJECT",
       "input_fields": {
         "path": "String!"
+      }
+    },
+    "FileExtensionRestrictionParametersInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "restrictedFileExtensions": "[String!]!"
+      }
+    },
+    "FilePathRestrictionParametersInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "restrictedFilePaths": "[String!]!"
       }
     },
     "Float": {
@@ -5332,6 +6527,28 @@
         "ENFORCED",
         "UNCONFIGURED"
       ]
+    },
+    "ImportProjectInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "body": "String",
+        "clientMutationId": "String",
+        "columnImports": "[ProjectColumnImport!]!",
+        "name": "String!",
+        "ownerName": "String!",
+        "public": "Boolean"
+      }
+    },
+    "ImportProjectPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "project": {
+          "type": "Project"
+        }
+      }
     },
     "Int": {
       "kind": "SCALAR"
@@ -6612,6 +7829,28 @@
         }
       }
     },
+    "LinkRepositoryToProjectInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "projectId": "ID!",
+        "repositoryId": "ID!"
+      }
+    },
+    "LinkRepositoryToProjectPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "project": {
+          "type": "Project"
+        },
+        "repository": {
+          "type": "Repository"
+        }
+      }
+    },
     "LinkedBranch": {
       "kind": "OBJECT",
       "fields": {
@@ -6720,6 +7959,44 @@
       "interfaces": [
         "Node"
       ]
+    },
+    "Mannequin": {
+      "kind": "OBJECT",
+      "fields": {
+        "avatarUrl": {
+          "type": "URI!",
+          "args": {
+            "size": "Int"
+          }
+        },
+        "claimant": {
+          "type": "User"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "databaseId": {
+          "type": "Int"
+        },
+        "email": {
+          "type": "String"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "login": {
+          "type": "String!"
+        },
+        "resourcePath": {
+          "type": "URI!"
+        },
+        "updatedAt": {
+          "type": "DateTime!"
+        },
+        "url": {
+          "type": "URI!"
+        }
+      }
     },
     "MarkDiscussionCommentAsAnswerInput": {
       "kind": "INPUT_OBJECT",
@@ -7031,6 +8308,18 @@
         "node": {
           "type": "MarketplaceListing"
         }
+      }
+    },
+    "MaxFilePathLengthParametersInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "maxFilePathLength": "Int!"
+      }
+    },
+    "MaxFileSizeParametersInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "maxFileSize": "Int!"
       }
     },
     "MentionedEvent": {
@@ -7498,6 +8787,45 @@
         }
       }
     },
+    "MoveProjectCardInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "afterCardId": "ID",
+        "cardId": "ID!",
+        "clientMutationId": "String",
+        "columnId": "ID!"
+      }
+    },
+    "MoveProjectCardPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "cardEdge": {
+          "type": "ProjectCardEdge"
+        },
+        "clientMutationId": {
+          "type": "String"
+        }
+      }
+    },
+    "MoveProjectColumnInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "afterColumnId": "ID",
+        "clientMutationId": "String",
+        "columnId": "ID!"
+      }
+    },
+    "MoveProjectColumnPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "columnEdge": {
+          "type": "ProjectColumnEdge"
+        }
+      }
+    },
     "Mutation": {
       "kind": "OBJECT",
       "fields": {
@@ -7531,6 +8859,12 @@
             "input": "AcceptTopicSuggestionInput!"
           }
         },
+        "accessUserNamespaceRepository": {
+          "type": "AccessUserNamespaceRepositoryPayload",
+          "args": {
+            "input": "AccessUserNamespaceRepositoryInput!"
+          }
+        },
         "addAssigneesToAssignable": {
           "type": "AddAssigneesToAssignablePayload",
           "args": {
@@ -7555,6 +8889,12 @@
             "input": "AddDiscussionCommentInput!"
           }
         },
+        "addDiscussionPollVote": {
+          "type": "AddDiscussionPollVotePayload",
+          "args": {
+            "input": "AddDiscussionPollVoteInput!"
+          }
+        },
         "addEnterpriseOrganizationMember": {
           "type": "AddEnterpriseOrganizationMemberPayload",
           "args": {
@@ -7571,6 +8911,18 @@
           "type": "AddLabelsToLabelablePayload",
           "args": {
             "input": "AddLabelsToLabelableInput!"
+          }
+        },
+        "addProjectCard": {
+          "type": "AddProjectCardPayload",
+          "args": {
+            "input": "AddProjectCardInput!"
+          }
+        },
+        "addProjectColumn": {
+          "type": "AddProjectColumnPayload",
+          "args": {
+            "input": "AddProjectColumnInput!"
           }
         },
         "addProjectV2DraftIssue": {
@@ -7639,10 +8991,28 @@
             "input": "AddUpvoteInput!"
           }
         },
+        "addVerifiableDomain": {
+          "type": "AddVerifiableDomainPayload",
+          "args": {
+            "input": "AddVerifiableDomainInput!"
+          }
+        },
         "applyPendingIssueSuggestions": {
           "type": "ApplyPendingIssueSuggestionsPayload",
           "args": {
             "input": "ApplyPendingIssueSuggestionsInput!"
+          }
+        },
+        "approveDeployments": {
+          "type": "ApproveDeploymentsPayload",
+          "args": {
+            "input": "ApproveDeploymentsInput!"
+          }
+        },
+        "approveVerifiableDomain": {
+          "type": "ApproveVerifiableDomainPayload",
+          "args": {
+            "input": "ApproveVerifiableDomainInput!"
           }
         },
         "archiveProjectV2Item": {
@@ -7699,6 +9069,12 @@
             "input": "ClearProjectV2ItemFieldValueInput!"
           }
         },
+        "cloneProject": {
+          "type": "CloneProjectPayload",
+          "args": {
+            "input": "CloneProjectInput!"
+          }
+        },
         "cloneTemplateRepository": {
           "type": "CloneTemplateRepositoryPayload",
           "args": {
@@ -7723,6 +9099,12 @@
             "input": "ClosePullRequestInput!"
           }
         },
+        "convertProjectCardNoteToIssue": {
+          "type": "ConvertProjectCardNoteToIssuePayload",
+          "args": {
+            "input": "ConvertProjectCardNoteToIssueInput!"
+          }
+        },
         "convertProjectV2DraftIssueItemToIssue": {
           "type": "ConvertProjectV2DraftIssueItemToIssuePayload",
           "args": {
@@ -7741,10 +9123,46 @@
             "input": "CopyProjectV2Input!"
           }
         },
+        "createAttributionInvitation": {
+          "type": "CreateAttributionInvitationPayload",
+          "args": {
+            "input": "CreateAttributionInvitationInput!"
+          }
+        },
+        "createBranchProtectionRule": {
+          "type": "CreateBranchProtectionRulePayload",
+          "args": {
+            "input": "CreateBranchProtectionRuleInput!"
+          }
+        },
+        "createCheckRun": {
+          "type": "CreateCheckRunPayload",
+          "args": {
+            "input": "CreateCheckRunInput!"
+          }
+        },
+        "createCheckSuite": {
+          "type": "CreateCheckSuitePayload",
+          "args": {
+            "input": "CreateCheckSuiteInput!"
+          }
+        },
         "createCommitOnBranch": {
           "type": "CreateCommitOnBranchPayload",
           "args": {
             "input": "CreateCommitOnBranchInput!"
+          }
+        },
+        "createDeployment": {
+          "type": "CreateDeploymentPayload",
+          "args": {
+            "input": "CreateDeploymentInput!"
+          }
+        },
+        "createDeploymentStatus": {
+          "type": "CreateDeploymentStatusPayload",
+          "args": {
+            "input": "CreateDeploymentStatusInput!"
           }
         },
         "createDiscussion": {
@@ -7757,6 +9175,12 @@
           "type": "CreateEnterpriseOrganizationPayload",
           "args": {
             "input": "CreateEnterpriseOrganizationInput!"
+          }
+        },
+        "createEnvironment": {
+          "type": "CreateEnvironmentPayload",
+          "args": {
+            "input": "CreateEnvironmentInput!"
           }
         },
         "createIpAllowListEntry": {
@@ -7807,6 +9231,12 @@
             "input": "CreateMigrationSourceInput!"
           }
         },
+        "createProject": {
+          "type": "CreateProjectPayload",
+          "args": {
+            "input": "CreateProjectInput!"
+          }
+        },
         "createProjectV2": {
           "type": "CreateProjectV2Payload",
           "args": {
@@ -7855,6 +9285,18 @@
             "input": "CreateRepositoryInput!"
           }
         },
+        "createRepositoryCustomProperty": {
+          "type": "CreateRepositoryCustomPropertyPayload",
+          "args": {
+            "input": "CreateRepositoryCustomPropertyInput!"
+          }
+        },
+        "createRepositoryRuleset": {
+          "type": "CreateRepositoryRulesetPayload",
+          "args": {
+            "input": "CreateRepositoryRulesetInput!"
+          }
+        },
         "createSponsorsListing": {
           "type": "CreateSponsorsListingPayload",
           "args": {
@@ -7891,6 +9333,18 @@
             "input": "DeclineTopicSuggestionInput!"
           }
         },
+        "deleteBranchProtectionRule": {
+          "type": "DeleteBranchProtectionRulePayload",
+          "args": {
+            "input": "DeleteBranchProtectionRuleInput!"
+          }
+        },
+        "deleteDeployment": {
+          "type": "DeleteDeploymentPayload",
+          "args": {
+            "input": "DeleteDeploymentInput!"
+          }
+        },
         "deleteDiscussion": {
           "type": "DeleteDiscussionPayload",
           "args": {
@@ -7901,6 +9355,12 @@
           "type": "DeleteDiscussionCommentPayload",
           "args": {
             "input": "DeleteDiscussionCommentInput!"
+          }
+        },
+        "deleteEnvironment": {
+          "type": "DeleteEnvironmentPayload",
+          "args": {
+            "input": "DeleteEnvironmentInput!"
           }
         },
         "deleteIpAllowListEntry": {
@@ -7955,6 +9415,24 @@
           "type": "DeletePackageVersionPayload",
           "args": {
             "input": "DeletePackageVersionInput!"
+          }
+        },
+        "deleteProject": {
+          "type": "DeleteProjectPayload",
+          "args": {
+            "input": "DeleteProjectInput!"
+          }
+        },
+        "deleteProjectCard": {
+          "type": "DeleteProjectCardPayload",
+          "args": {
+            "input": "DeleteProjectCardInput!"
+          }
+        },
+        "deleteProjectColumn": {
+          "type": "DeleteProjectColumnPayload",
+          "args": {
+            "input": "DeleteProjectColumnInput!"
           }
         },
         "deleteProjectV2": {
@@ -8017,10 +9495,28 @@
             "input": "DeleteRepositoryInput!"
           }
         },
+        "deleteRepositoryCustomProperty": {
+          "type": "DeleteRepositoryCustomPropertyPayload",
+          "args": {
+            "input": "DeleteRepositoryCustomPropertyInput!"
+          }
+        },
+        "deleteRepositoryRuleset": {
+          "type": "DeleteRepositoryRulesetPayload",
+          "args": {
+            "input": "DeleteRepositoryRulesetInput!"
+          }
+        },
         "deleteUserList": {
           "type": "DeleteUserListPayload",
           "args": {
             "input": "DeleteUserListInput!"
+          }
+        },
+        "deleteVerifiableDomain": {
+          "type": "DeleteVerifiableDomainPayload",
+          "args": {
+            "input": "DeleteVerifiableDomainInput!"
           }
         },
         "dequeuePullRequest": {
@@ -8083,6 +9579,12 @@
             "input": "GrantMigratorRoleInput!"
           }
         },
+        "importProject": {
+          "type": "ImportProjectPayload",
+          "args": {
+            "input": "ImportProjectInput!"
+          }
+        },
         "inviteEnterpriseAdmin": {
           "type": "InviteEnterpriseAdminPayload",
           "args": {
@@ -8105,6 +9607,12 @@
           "type": "LinkProjectV2ToTeamPayload",
           "args": {
             "input": "LinkProjectV2ToTeamInput!"
+          }
+        },
+        "linkRepositoryToProject": {
+          "type": "LinkRepositoryToProjectPayload",
+          "args": {
+            "input": "LinkRepositoryToProjectInput!"
           }
         },
         "lockLockable": {
@@ -8155,6 +9663,24 @@
             "input": "MinimizeCommentInput!"
           }
         },
+        "moveProjectCard": {
+          "type": "MoveProjectCardPayload",
+          "args": {
+            "input": "MoveProjectCardInput!"
+          }
+        },
+        "moveProjectColumn": {
+          "type": "MoveProjectColumnPayload",
+          "args": {
+            "input": "MoveProjectColumnInput!"
+          }
+        },
+        "pinEnvironment": {
+          "type": "PinEnvironmentPayload",
+          "args": {
+            "input": "PinEnvironmentInput!"
+          }
+        },
         "pinIssue": {
           "type": "PinIssuePayload",
           "args": {
@@ -8167,6 +9693,12 @@
             "input": "PinIssueCommentInput!"
           }
         },
+        "promoteRepositoryCustomProperty": {
+          "type": "PromoteRepositoryCustomPropertyPayload",
+          "args": {
+            "input": "PromoteRepositoryCustomPropertyInput!"
+          }
+        },
         "publishSponsorsTier": {
           "type": "PublishSponsorsTierPayload",
           "args": {
@@ -8177,6 +9709,18 @@
           "type": "RegenerateEnterpriseIdentityProviderRecoveryCodesPayload",
           "args": {
             "input": "RegenerateEnterpriseIdentityProviderRecoveryCodesInput!"
+          }
+        },
+        "regenerateVerifiableDomainToken": {
+          "type": "RegenerateVerifiableDomainTokenPayload",
+          "args": {
+            "input": "RegenerateVerifiableDomainTokenInput!"
+          }
+        },
+        "rejectDeployments": {
+          "type": "RejectDeploymentsPayload",
+          "args": {
+            "input": "RejectDeploymentsInput!"
           }
         },
         "rejectPendingIssueSuggestions": {
@@ -8287,6 +9831,12 @@
             "input": "ReopenPullRequestInput!"
           }
         },
+        "reorderEnvironment": {
+          "type": "ReorderEnvironmentPayload",
+          "args": {
+            "input": "ReorderEnvironmentInput!"
+          }
+        },
         "replaceActorsForAssignable": {
           "type": "ReplaceActorsForAssignablePayload",
           "args": {
@@ -8309,6 +9859,12 @@
           "type": "RequestReviewsByLoginPayload",
           "args": {
             "input": "RequestReviewsByLoginInput!"
+          }
+        },
+        "rerequestCheckSuite": {
+          "type": "RerequestCheckSuitePayload",
+          "args": {
+            "input": "RerequestCheckSuiteInput!"
           }
         },
         "resolveReviewThread": {
@@ -8357,6 +9913,12 @@
           "type": "SetOrganizationInteractionLimitPayload",
           "args": {
             "input": "SetOrganizationInteractionLimitInput!"
+          }
+        },
+        "setRepositoryCustomPropertyValues": {
+          "type": "SetRepositoryCustomPropertyValuesPayload",
+          "args": {
+            "input": "SetRepositoryCustomPropertyValuesInput!"
           }
         },
         "setRepositoryInteractionLimit": {
@@ -8443,6 +10005,12 @@
             "input": "UnlinkProjectV2FromTeamInput!"
           }
         },
+        "unlinkRepositoryFromProject": {
+          "type": "UnlinkRepositoryFromProjectPayload",
+          "args": {
+            "input": "UnlinkRepositoryFromProjectInput!"
+          }
+        },
         "unlockLockable": {
           "type": "UnlockLockablePayload",
           "args": {
@@ -8495,6 +10063,24 @@
           "type": "UnresolveReviewThreadPayload",
           "args": {
             "input": "UnresolveReviewThreadInput!"
+          }
+        },
+        "updateBranchProtectionRule": {
+          "type": "UpdateBranchProtectionRulePayload",
+          "args": {
+            "input": "UpdateBranchProtectionRuleInput!"
+          }
+        },
+        "updateCheckRun": {
+          "type": "UpdateCheckRunPayload",
+          "args": {
+            "input": "UpdateCheckRunInput!"
+          }
+        },
+        "updateCheckSuitePreferences": {
+          "type": "UpdateCheckSuitePreferencesPayload",
+          "args": {
+            "input": "UpdateCheckSuitePreferencesInput!"
           }
         },
         "updateDiscussion": {
@@ -8623,6 +10209,12 @@
             "input": "UpdateEnterpriseTwoFactorAuthenticationRequiredSettingInput!"
           }
         },
+        "updateEnvironment": {
+          "type": "UpdateEnvironmentPayload",
+          "args": {
+            "input": "UpdateEnvironmentInput!"
+          }
+        },
         "updateIpAllowListEnabledSetting": {
           "type": "UpdateIpAllowListEnabledSettingPayload",
           "args": {
@@ -8711,6 +10303,24 @@
           "type": "UpdatePatreonSponsorabilityPayload",
           "args": {
             "input": "UpdatePatreonSponsorabilityInput!"
+          }
+        },
+        "updateProject": {
+          "type": "UpdateProjectPayload",
+          "args": {
+            "input": "UpdateProjectInput!"
+          }
+        },
+        "updateProjectCard": {
+          "type": "UpdateProjectCardPayload",
+          "args": {
+            "input": "UpdateProjectCardInput!"
+          }
+        },
+        "updateProjectColumn": {
+          "type": "UpdateProjectColumnPayload",
+          "args": {
+            "input": "UpdateProjectColumnInput!"
           }
         },
         "updateProjectV2": {
@@ -8803,6 +10413,18 @@
             "input": "UpdateRepositoryInput!"
           }
         },
+        "updateRepositoryCustomProperty": {
+          "type": "UpdateRepositoryCustomPropertyPayload",
+          "args": {
+            "input": "UpdateRepositoryCustomPropertyInput!"
+          }
+        },
+        "updateRepositoryRuleset": {
+          "type": "UpdateRepositoryRulesetPayload",
+          "args": {
+            "input": "UpdateRepositoryRulesetInput!"
+          }
+        },
         "updateRepositoryWebCommitSignoffSetting": {
           "type": "UpdateRepositoryWebCommitSignoffSettingPayload",
           "args": {
@@ -8850,6 +10472,12 @@
           "args": {
             "input": "UpdateUserListsForItemInput!"
           }
+        },
+        "verifyVerifiableDomain": {
+          "type": "VerifyVerifiableDomainPayload",
+          "args": {
+            "input": "VerifyVerifiableDomainInput!"
+          }
         }
       }
     },
@@ -8867,6 +10495,7 @@
         "AutoMergeEnabledEvent",
         "BaseRefChangedEvent",
         "Blob",
+        "BranchProtectionRule",
         "CWE",
         "ClosedEvent",
         "CommentDeletedEvent",
@@ -8897,6 +10526,9 @@
         "Organization",
         "OrganizationMigration",
         "PinnedEvent",
+        "Project",
+        "ProjectCard",
+        "ProjectColumn",
         "ProjectV2ItemFieldDateValue",
         "ProjectV2ItemFieldIterationValue",
         "ProjectV2ItemFieldMultiSelectValue",
@@ -8930,7 +10562,8 @@
         "UnlabeledEvent",
         "UnlockedEvent",
         "UnpinnedEvent",
-        "User"
+        "User",
+        "VerifiableDomain"
       ]
     },
     "NotificationRestrictionSettingValue": {
@@ -9101,11 +10734,33 @@
         "pinnedItemsRemaining": {
           "type": "Int!"
         },
+        "project": {
+          "type": "Project",
+          "args": {
+            "number": "Int!"
+          }
+        },
         "projectV2": {
           "type": "ProjectV2",
           "args": {
             "number": "Int!"
           }
+        },
+        "projects": {
+          "type": "ProjectConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "states": "[ProjectState!]"
+          }
+        },
+        "projectsResourcePath": {
+          "type": "URI!"
+        },
+        "projectsUrl": {
+          "type": "URI!"
         },
         "projectsV2": {
           "type": "ProjectV2Connection!",
@@ -9361,6 +11016,7 @@
       },
       "interfaces": [
         "Node",
+        "ProjectOwner",
         "ProjectV2Owner",
         "RepositoryOwner",
         "Sponsorable"
@@ -9545,6 +11201,28 @@
         "labelId": "ID"
       }
     },
+    "PinEnvironmentInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "environmentId": "ID!",
+        "pinned": "Boolean!"
+      }
+    },
+    "PinEnvironmentPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "environment": {
+          "type": "Environment"
+        },
+        "pinnedEnvironment": {
+          "type": "PinnedEnvironment"
+        }
+      }
+    },
     "PinIssueCommentInput": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
@@ -9628,6 +11306,29 @@
         "TEAM",
         "USER"
       ]
+    },
+    "PinnedEnvironment": {
+      "kind": "OBJECT",
+      "fields": {
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "databaseId": {
+          "type": "Int"
+        },
+        "environment": {
+          "type": "Environment!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "position": {
+          "type": "Int!"
+        },
+        "repository": {
+          "type": "Repository!"
+        }
+      }
     },
     "PinnedEvent": {
       "kind": "OBJECT",
@@ -9713,6 +11414,352 @@
           }
         }
       }
+    },
+    "Project": {
+      "kind": "OBJECT",
+      "fields": {
+        "body": {
+          "type": "String"
+        },
+        "bodyHTML": {
+          "type": "HTML!"
+        },
+        "closed": {
+          "type": "Boolean!"
+        },
+        "closedAt": {
+          "type": "DateTime"
+        },
+        "columns": {
+          "type": "ProjectColumnConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "creator": {
+          "type": "Actor"
+        },
+        "databaseId": {
+          "type": "Int"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "name": {
+          "type": "String!"
+        },
+        "number": {
+          "type": "Int!"
+        },
+        "owner": {
+          "type": "ProjectOwner!"
+        },
+        "resourcePath": {
+          "type": "URI!"
+        },
+        "state": {
+          "type": "ProjectState!"
+        },
+        "updatedAt": {
+          "type": "DateTime!"
+        },
+        "url": {
+          "type": "URI!"
+        },
+        "viewerCanClose": {
+          "type": "Boolean!"
+        },
+        "viewerCanReopen": {
+          "type": "Boolean!"
+        },
+        "viewerCanUpdate": {
+          "type": "Boolean!"
+        }
+      },
+      "interfaces": [
+        "Node"
+      ]
+    },
+    "ProjectCard": {
+      "kind": "OBJECT",
+      "fields": {
+        "column": {
+          "type": "ProjectColumn"
+        },
+        "content": {
+          "type": "ProjectCardItem"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "creator": {
+          "type": "Actor"
+        },
+        "databaseId": {
+          "type": "Int"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "isArchived": {
+          "type": "Boolean!"
+        },
+        "note": {
+          "type": "String"
+        },
+        "project": {
+          "type": "Project!"
+        },
+        "resourcePath": {
+          "type": "URI!"
+        },
+        "state": {
+          "type": "ProjectCardState"
+        },
+        "updatedAt": {
+          "type": "DateTime!"
+        },
+        "url": {
+          "type": "URI!"
+        }
+      },
+      "interfaces": [
+        "Node"
+      ]
+    },
+    "ProjectCardArchivedState": {
+      "kind": "ENUM",
+      "enum_values": [
+        "ARCHIVED",
+        "NOT_ARCHIVED"
+      ]
+    },
+    "ProjectCardConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[ProjectCardEdge]"
+        },
+        "nodes": {
+          "type": "[ProjectCard]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "ProjectCardEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "ProjectCard"
+        }
+      }
+    },
+    "ProjectCardImport": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "number": "Int!",
+        "repository": "String!"
+      }
+    },
+    "ProjectCardItem": {
+      "kind": "UNION",
+      "possible_types": [
+        "Issue",
+        "PullRequest"
+      ]
+    },
+    "ProjectCardState": {
+      "kind": "ENUM",
+      "enum_values": [
+        "CONTENT_ONLY",
+        "NOTE_ONLY",
+        "REDACTED"
+      ]
+    },
+    "ProjectColumn": {
+      "kind": "OBJECT",
+      "fields": {
+        "cards": {
+          "type": "ProjectCardConnection!",
+          "args": {
+            "after": "String",
+            "archivedStates": "[ProjectCardArchivedState]",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "databaseId": {
+          "type": "Int"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "name": {
+          "type": "String!"
+        },
+        "project": {
+          "type": "Project!"
+        },
+        "purpose": {
+          "type": "ProjectColumnPurpose"
+        },
+        "resourcePath": {
+          "type": "URI!"
+        },
+        "updatedAt": {
+          "type": "DateTime!"
+        },
+        "url": {
+          "type": "URI!"
+        }
+      },
+      "interfaces": [
+        "Node"
+      ]
+    },
+    "ProjectColumnConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[ProjectColumnEdge]"
+        },
+        "nodes": {
+          "type": "[ProjectColumn]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "ProjectColumnEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "ProjectColumn"
+        }
+      }
+    },
+    "ProjectColumnImport": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "columnName": "String!",
+        "issues": "[ProjectCardImport!]",
+        "position": "Int!"
+      }
+    },
+    "ProjectColumnPurpose": {
+      "kind": "ENUM",
+      "enum_values": [
+        "DONE",
+        "IN_PROGRESS",
+        "TODO"
+      ]
+    },
+    "ProjectConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[ProjectEdge]"
+        },
+        "nodes": {
+          "type": "[Project]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "ProjectEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "Project"
+        }
+      }
+    },
+    "ProjectOwner": {
+      "kind": "INTERFACE",
+      "fields": {
+        "id": {
+          "type": "ID!"
+        },
+        "project": {
+          "type": "Project",
+          "args": {
+            "number": "Int!"
+          }
+        },
+        "projects": {
+          "type": "ProjectConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "states": "[ProjectState!]"
+          }
+        },
+        "projectsResourcePath": {
+          "type": "URI!"
+        },
+        "projectsUrl": {
+          "type": "URI!"
+        },
+        "viewerCanCreateProjects": {
+          "type": "Boolean!"
+        }
+      },
+      "possible_types": [
+        "Organization",
+        "Repository",
+        "User"
+      ]
+    },
+    "ProjectState": {
+      "kind": "ENUM",
+      "enum_values": [
+        "CLOSED",
+        "OPEN"
+      ]
+    },
+    "ProjectTemplate": {
+      "kind": "ENUM",
+      "enum_values": [
+        "AUTOMATED_KANBAN_V2",
+        "AUTOMATED_REVIEWS_KANBAN",
+        "BASIC_KANBAN",
+        "BUG_TRIAGE"
+      ]
     },
     "ProjectV2": {
       "kind": "OBJECT",
@@ -11340,6 +13387,24 @@
         "UPDATED_AT"
       ]
     },
+    "PromoteRepositoryCustomPropertyInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "repositoryCustomPropertyId": "ID!"
+      }
+    },
+    "PromoteRepositoryCustomPropertyPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "repositoryCustomProperty": {
+          "type": "RepositoryCustomProperty"
+        }
+      }
+    },
     "ProofOfPresenceRequirement": {
       "kind": "ENUM",
       "enum_values": [
@@ -11776,6 +13841,16 @@
         "SQUASH"
       ]
     },
+    "PullRequestParametersInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "dismissStaleReviewsOnPush": "Boolean!",
+        "requireCodeOwnerReview": "Boolean!",
+        "requireLastPushApproval": "Boolean!",
+        "requiredApprovingReviewCount": "Int!",
+        "requiredReviewThreadResolution": "Boolean!"
+      }
+    },
     "PullRequestReview": {
       "kind": "OBJECT",
       "fields": {
@@ -12149,6 +14224,56 @@
         "UNLOCKED_EVENT",
         "UNPINNED_EVENT"
       ]
+    },
+    "PushAllowance": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "PushAllowanceActor"
+        },
+        "branchProtectionRule": {
+          "type": "BranchProtectionRule"
+        },
+        "id": {
+          "type": "ID!"
+        }
+      }
+    },
+    "PushAllowanceActor": {
+      "kind": "UNION",
+      "possible_types": [
+        "App",
+        "Team",
+        "User"
+      ]
+    },
+    "PushAllowanceConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[PushAllowanceEdge]"
+        },
+        "nodes": {
+          "type": "[PushAllowance]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "PushAllowanceEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "PushAllowance"
+        }
+      }
     },
     "Query": {
       "kind": "OBJECT",
@@ -12574,6 +14699,13 @@
         }
       }
     },
+    "RefNameConditionTargetInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "exclude": "[String!]!",
+        "include": "[String!]!"
+      }
+    },
     "RefOrder": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
@@ -12651,6 +14783,44 @@
         },
         "identityProvider": {
           "type": "EnterpriseIdentityProvider"
+        }
+      }
+    },
+    "RegenerateVerifiableDomainTokenInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "id": "ID!"
+      }
+    },
+    "RegenerateVerifiableDomainTokenPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "verificationToken": {
+          "type": "String"
+        }
+      }
+    },
+    "RejectDeploymentsInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "comment": "String",
+        "environmentIds": "[ID!]!",
+        "workflowRunId": "ID!"
+      }
+    },
+    "RejectDeploymentsPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "deployments": {
+          "type": "[Deployment!]"
         }
       }
     },
@@ -13167,6 +15337,25 @@
         "Node"
       ]
     },
+    "ReorderEnvironmentInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "environmentId": "ID!",
+        "position": "Int!"
+      }
+    },
+    "ReorderEnvironmentPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "environment": {
+          "type": "Environment"
+        }
+      }
+    },
     "ReplaceActorsForAssignableInput": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
@@ -13219,6 +15408,15 @@
         },
         "autoMergeAllowed": {
           "type": "Boolean!"
+        },
+        "branchProtectionRules": {
+          "type": "BranchProtectionRuleConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
         },
         "codeOfConduct": {
           "type": "CodeOfConduct"
@@ -13569,11 +15767,33 @@
         "primaryLanguage": {
           "type": "Language"
         },
+        "project": {
+          "type": "Project",
+          "args": {
+            "number": "Int!"
+          }
+        },
         "projectV2": {
           "type": "ProjectV2",
           "args": {
             "number": "Int!"
           }
+        },
+        "projects": {
+          "type": "ProjectConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "states": "[ProjectState!]"
+          }
+        },
+        "projectsResourcePath": {
+          "type": "URI!"
+        },
+        "projectsUrl": {
+          "type": "URI!"
         },
         "projectsV2": {
           "type": "ProjectV2Connection!",
@@ -13796,6 +16016,7 @@
       },
       "interfaces": [
         "Node",
+        "ProjectOwner",
         "Starrable",
         "Subscribable",
         "UniformResourceLocatable"
@@ -13941,6 +16162,9 @@
         },
         "required": {
           "type": "Boolean"
+        },
+        "source": {
+          "type": "CustomPropertySource!"
         },
         "valueType": {
           "type": "CustomPropertyValueType!"
@@ -14247,6 +16471,12 @@
         }
       }
     },
+    "RepositoryRuleConditionsInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "refName": "RefNameConditionTargetInput"
+      }
+    },
     "RepositoryRuleConnection": {
       "kind": "OBJECT",
       "fields": {
@@ -14261,6 +16491,13 @@
         }
       }
     },
+    "RepositoryRuleInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "parameters": "RuleParametersInput",
+        "type": "RepositoryRuleType!"
+      }
+    },
     "RepositoryRuleType": {
       "kind": "ENUM",
       "enum_values": [
@@ -14270,6 +16507,11 @@
         "COMMIT_MESSAGE_PATTERN",
         "CREATION",
         "DELETION",
+        "FILE_EXTENSION_RESTRICTION",
+        "FILE_PATH_RESTRICTION",
+        "LOCK_BRANCH",
+        "MAX_FILE_PATH_LENGTH",
+        "MAX_FILE_SIZE",
         "NON_FAST_FORWARD",
         "PULL_REQUEST",
         "REQUIRED_DEPLOYMENTS",
@@ -14277,7 +16519,8 @@
         "REQUIRED_SIGNATURES",
         "REQUIRED_STATUS_CHECKS",
         "TAG_NAME_PATTERN",
-        "UPDATE"
+        "UPDATE",
+        "WORKFLOWS"
       ]
     },
     "RepositoryRuleset": {
@@ -14320,6 +16563,25 @@
       "interfaces": [
         "Node"
       ]
+    },
+    "RepositoryRulesetBypassActorBypassMode": {
+      "kind": "ENUM",
+      "enum_values": [
+        "ALWAYS",
+        "EXEMPT",
+        "PULL_REQUEST"
+      ]
+    },
+    "RepositoryRulesetBypassActorInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "actorId": "ID",
+        "bypassMode": "RepositoryRulesetBypassActorBypassMode!",
+        "deployKey": "Boolean",
+        "enterpriseOwner": "Boolean",
+        "organizationAdmin": "Boolean",
+        "repositoryRoleDatabaseId": "Int"
+      }
     },
     "RepositoryRulesetConnection": {
       "kind": "OBJECT",
@@ -14584,6 +16846,16 @@
         }
       }
     },
+    "RequestableCheckStatusState": {
+      "kind": "ENUM",
+      "enum_values": [
+        "COMPLETED",
+        "IN_PROGRESS",
+        "PENDING",
+        "QUEUED",
+        "WAITING"
+      ]
+    },
     "RequestedReviewer": {
       "kind": "UNION",
       "possible_types": [
@@ -14635,6 +16907,57 @@
         "CheckRun",
         "StatusContext"
       ]
+    },
+    "RequiredDeploymentsParametersInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "requiredDeploymentEnvironments": "[String!]!"
+      }
+    },
+    "RequiredStatusCheckDescription": {
+      "kind": "OBJECT",
+      "fields": {
+        "app": {
+          "type": "App"
+        },
+        "context": {
+          "type": "String!"
+        }
+      }
+    },
+    "RequiredStatusCheckInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "appId": "ID",
+        "context": "String!"
+      }
+    },
+    "RequiredStatusChecksParametersInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "doNotEnforceOnCreate": "Boolean",
+        "requiredStatusChecks": "[StatusCheckConfigurationInput!]!",
+        "strictRequiredStatusChecksPolicy": "Boolean!"
+      }
+    },
+    "RerequestCheckSuiteInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "checkSuiteId": "ID!",
+        "clientMutationId": "String",
+        "repositoryId": "ID!"
+      }
+    },
+    "RerequestCheckSuitePayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "checkSuite": {
+          "type": "CheckSuite"
+        },
+        "clientMutationId": {
+          "type": "String"
+        }
+      }
     },
     "ResolveReviewThreadInput": {
       "kind": "INPUT_OBJECT",
@@ -14693,6 +17016,56 @@
         },
         "revertPullRequest": {
           "type": "PullRequest"
+        }
+      }
+    },
+    "ReviewDismissalAllowance": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "ReviewDismissalAllowanceActor"
+        },
+        "branchProtectionRule": {
+          "type": "BranchProtectionRule"
+        },
+        "id": {
+          "type": "ID!"
+        }
+      }
+    },
+    "ReviewDismissalAllowanceActor": {
+      "kind": "UNION",
+      "possible_types": [
+        "App",
+        "Team",
+        "User"
+      ]
+    },
+    "ReviewDismissalAllowanceConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[ReviewDismissalAllowanceEdge]"
+        },
+        "nodes": {
+          "type": "[ReviewDismissalAllowance]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "ReviewDismissalAllowanceEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "ReviewDismissalAllowance"
         }
       }
     },
@@ -14863,6 +17236,25 @@
         "DISABLED",
         "EVALUATE"
       ]
+    },
+    "RuleParametersInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "branchNamePattern": "BranchNamePatternParametersInput",
+        "commitAuthorEmailPattern": "CommitAuthorEmailPatternParametersInput",
+        "commitMessagePattern": "CommitMessagePatternParametersInput",
+        "committerEmailPattern": "CommitterEmailPatternParametersInput",
+        "fileExtensionRestriction": "FileExtensionRestrictionParametersInput",
+        "filePathRestriction": "FilePathRestrictionParametersInput",
+        "maxFilePathLength": "MaxFilePathLengthParametersInput",
+        "maxFileSize": "MaxFileSizeParametersInput",
+        "pullRequest": "PullRequestParametersInput",
+        "requiredDeployments": "RequiredDeploymentsParametersInput",
+        "requiredStatusChecks": "RequiredStatusChecksParametersInput",
+        "tagNamePattern": "TagNamePatternParametersInput",
+        "update": "UpdateParametersInput",
+        "workflows": "WorkflowsParametersInput"
+      }
     },
     "RuleSource": {
       "kind": "UNION",
@@ -15276,6 +17668,25 @@
         },
         "organization": {
           "type": "Organization"
+        }
+      }
+    },
+    "SetRepositoryCustomPropertyValuesInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "properties": "[CustomPropertyValueInput!]!",
+        "repositoryId": "ID!"
+      }
+    },
+    "SetRepositoryCustomPropertyValuesPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "repository": {
+          "type": "Repository"
         }
       }
     },
@@ -16355,6 +18766,13 @@
         }
       }
     },
+    "StatusCheckConfigurationInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "context": "String!",
+        "integrationId": "Int"
+      }
+    },
     "StatusCheckRollup": {
       "kind": "OBJECT",
       "fields": {
@@ -16609,6 +19027,15 @@
         "GitObject",
         "Node"
       ]
+    },
+    "TagNamePatternParametersInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "name": "String",
+        "negate": "Boolean",
+        "operator": "String!",
+        "pattern": "String!"
+      }
     },
     "Team": {
       "kind": "OBJECT",
@@ -17280,6 +19707,28 @@
         }
       }
     },
+    "UnlinkRepositoryFromProjectInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "projectId": "ID!",
+        "repositoryId": "ID!"
+      }
+    },
+    "UnlinkRepositoryFromProjectPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "project": {
+          "type": "Project"
+        },
+        "repository": {
+          "type": "Repository"
+        }
+      }
+    },
     "UnlockLockableInput": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
@@ -17484,6 +19933,98 @@
         },
         "thread": {
           "type": "PullRequestReviewThread"
+        }
+      }
+    },
+    "UpdateBranchProtectionRuleInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "allowsDeletions": "Boolean",
+        "allowsForcePushes": "Boolean",
+        "blocksCreations": "Boolean",
+        "branchProtectionRuleId": "ID!",
+        "bypassForcePushActorIds": "[ID!]",
+        "bypassPullRequestActorIds": "[ID!]",
+        "clientMutationId": "String",
+        "dismissesStaleReviews": "Boolean",
+        "isAdminEnforced": "Boolean",
+        "lockAllowsFetchAndMerge": "Boolean",
+        "lockBranch": "Boolean",
+        "pattern": "String",
+        "pushActorIds": "[ID!]",
+        "requireLastPushApproval": "Boolean",
+        "requiredApprovingReviewCount": "Int",
+        "requiredDeploymentEnvironments": "[String!]",
+        "requiredStatusCheckContexts": "[String!]",
+        "requiredStatusChecks": "[RequiredStatusCheckInput!]",
+        "requiresApprovingReviews": "Boolean",
+        "requiresCodeOwnerReviews": "Boolean",
+        "requiresCommitSignatures": "Boolean",
+        "requiresConversationResolution": "Boolean",
+        "requiresDeployments": "Boolean",
+        "requiresLinearHistory": "Boolean",
+        "requiresStatusChecks": "Boolean",
+        "requiresStrictStatusChecks": "Boolean",
+        "restrictsPushes": "Boolean",
+        "restrictsReviewDismissals": "Boolean",
+        "reviewDismissalActorIds": "[ID!]"
+      }
+    },
+    "UpdateBranchProtectionRulePayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "branchProtectionRule": {
+          "type": "BranchProtectionRule"
+        },
+        "clientMutationId": {
+          "type": "String"
+        }
+      }
+    },
+    "UpdateCheckRunInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "actions": "[CheckRunAction!]",
+        "checkRunId": "ID!",
+        "clientMutationId": "String",
+        "completedAt": "DateTime",
+        "conclusion": "CheckConclusionState",
+        "detailsUrl": "URI",
+        "externalId": "String",
+        "name": "String",
+        "output": "CheckRunOutput",
+        "repositoryId": "ID!",
+        "startedAt": "DateTime",
+        "status": "RequestableCheckStatusState"
+      }
+    },
+    "UpdateCheckRunPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "checkRun": {
+          "type": "CheckRun"
+        },
+        "clientMutationId": {
+          "type": "String"
+        }
+      }
+    },
+    "UpdateCheckSuitePreferencesInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "autoTriggerPreferences": "[CheckSuiteAutoTriggerPreference!]!",
+        "clientMutationId": "String",
+        "repositoryId": "ID!"
+      }
+    },
+    "UpdateCheckSuitePreferencesPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "repository": {
+          "type": "Repository"
         }
       }
     },
@@ -17947,6 +20488,27 @@
         }
       }
     },
+    "UpdateEnvironmentInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "environmentId": "ID!",
+        "preventSelfReview": "Boolean",
+        "reviewers": "[ID!]",
+        "waitTimer": "Int"
+      }
+    },
+    "UpdateEnvironmentPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "environment": {
+          "type": "Environment"
+        }
+      }
+    },
     "UpdateIpAllowListEnabledSettingInput": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
@@ -18238,6 +20800,12 @@
         }
       }
     },
+    "UpdateParametersInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "updateAllowsFetchAndMerge": "Boolean!"
+      }
+    },
     "UpdatePatreonSponsorabilityInput": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
@@ -18254,6 +20822,67 @@
         },
         "sponsorsListing": {
           "type": "SponsorsListing"
+        }
+      }
+    },
+    "UpdateProjectCardInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "isArchived": "Boolean",
+        "note": "String",
+        "projectCardId": "ID!"
+      }
+    },
+    "UpdateProjectCardPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "projectCard": {
+          "type": "ProjectCard"
+        }
+      }
+    },
+    "UpdateProjectColumnInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "name": "String!",
+        "projectColumnId": "ID!"
+      }
+    },
+    "UpdateProjectColumnPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "projectColumn": {
+          "type": "ProjectColumn"
+        }
+      }
+    },
+    "UpdateProjectInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "body": "String",
+        "clientMutationId": "String",
+        "name": "String",
+        "projectId": "ID!",
+        "public": "Boolean",
+        "state": "ProjectState"
+      }
+    },
+    "UpdateProjectPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "project": {
+          "type": "Project"
         }
       }
     },
@@ -18556,6 +21185,31 @@
         }
       }
     },
+    "UpdateRepositoryCustomPropertyInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "allowedValues": "[String!]",
+        "clientMutationId": "String",
+        "defaultValue": "String",
+        "description": "String",
+        "regex": "String",
+        "repositoryCustomPropertyId": "ID!",
+        "requireExplicitValues": "Boolean",
+        "required": "Boolean",
+        "valuesEditableBy": "RepositoryCustomPropertyValuesEditableBy"
+      }
+    },
+    "UpdateRepositoryCustomPropertyPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "repositoryCustomProperty": {
+          "type": "RepositoryCustomProperty"
+        }
+      }
+    },
     "UpdateRepositoryInput": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
@@ -18583,6 +21237,30 @@
         },
         "repository": {
           "type": "Repository"
+        }
+      }
+    },
+    "UpdateRepositoryRulesetInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "bypassActors": "[RepositoryRulesetBypassActorInput!]",
+        "clientMutationId": "String",
+        "conditions": "RepositoryRuleConditionsInput",
+        "enforcement": "RuleEnforcement",
+        "name": "String",
+        "repositoryRulesetId": "ID!",
+        "rules": "[RepositoryRuleInput!]",
+        "target": "RepositoryRulesetTarget"
+      }
+    },
+    "UpdateRepositoryRulesetPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "ruleset": {
+          "type": "RepositoryRuleset"
         }
       }
     },
@@ -18991,11 +21669,33 @@
         "pinnedItemsRemaining": {
           "type": "Int!"
         },
+        "project": {
+          "type": "Project",
+          "args": {
+            "number": "Int!"
+          }
+        },
         "projectV2": {
           "type": "ProjectV2",
           "args": {
             "number": "Int!"
           }
+        },
+        "projects": {
+          "type": "ProjectConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "states": "[ProjectState!]"
+          }
+        },
+        "projectsResourcePath": {
+          "type": "URI!"
+        },
+        "projectsUrl": {
+          "type": "URI!"
         },
         "projectsV2": {
           "type": "ProjectV2Connection!",
@@ -19203,6 +21903,9 @@
         "viewerCanChangePinnedItems": {
           "type": "Boolean!"
         },
+        "viewerCanCreateProjects": {
+          "type": "Boolean!"
+        },
         "viewerCanFollow": {
           "type": "Boolean!"
         },
@@ -19238,6 +21941,7 @@
       "interfaces": [
         "Actor",
         "Node",
+        "ProjectOwner",
         "ProjectV2Owner",
         "RepositoryOwner",
         "Sponsorable"
@@ -19388,12 +22092,83 @@
         "PUBLIC"
       ]
     },
+    "VerifiableDomain": {
+      "kind": "OBJECT",
+      "fields": {
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "databaseId": {
+          "type": "Int"
+        },
+        "dnsHostName": {
+          "type": "URI"
+        },
+        "domain": {
+          "type": "URI!"
+        },
+        "hasFoundHostName": {
+          "type": "Boolean!"
+        },
+        "hasFoundVerificationToken": {
+          "type": "Boolean!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "isApproved": {
+          "type": "Boolean!"
+        },
+        "isRequiredForPolicyEnforcement": {
+          "type": "Boolean!"
+        },
+        "isVerified": {
+          "type": "Boolean!"
+        },
+        "owner": {
+          "type": "VerifiableDomainOwner!"
+        },
+        "punycodeEncodedDomain": {
+          "type": "URI!"
+        },
+        "tokenExpirationTime": {
+          "type": "DateTime"
+        },
+        "updatedAt": {
+          "type": "DateTime!"
+        },
+        "verificationToken": {
+          "type": "String"
+        }
+      },
+      "interfaces": [
+        "Node"
+      ]
+    },
     "VerifiableDomainOwner": {
       "kind": "UNION",
       "possible_types": [
         "Enterprise",
         "Organization"
       ]
+    },
+    "VerifyVerifiableDomainInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "clientMutationId": "String",
+        "id": "ID!"
+      }
+    },
+    "VerifyVerifiableDomainPayload": {
+      "kind": "OBJECT",
+      "fields": {
+        "clientMutationId": {
+          "type": "String"
+        },
+        "domain": {
+          "type": "VerifiableDomain"
+        }
+      }
     },
     "Votable": {
       "kind": "INTERFACE",
@@ -19421,12 +22196,28 @@
         }
       }
     },
+    "WorkflowFileReferenceInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "path": "String!",
+        "ref": "String",
+        "repositoryId": "Int!",
+        "sha": "String"
+      }
+    },
     "WorkflowRun": {
       "kind": "OBJECT",
       "fields": {
         "workflow": {
           "type": "Workflow!"
         }
+      }
+    },
+    "WorkflowsParametersInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "doNotEnforceOnCreate": "Boolean",
+        "workflows": "[WorkflowFileReferenceInput!]!"
       }
     },
     "X509Certificate": {

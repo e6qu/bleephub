@@ -332,6 +332,7 @@ func (s *Server) handleUpsertEnvironment(w http.ResponseWriter, r *http.Request)
 			Type string `json:"type"`
 			ID   int    `json:"id"`
 		} `json:"reviewers"`
+		PreventSelfReview      *bool                         `json:"prevent_self_review"`
 		DeploymentBranchPolicy *store.DeploymentBranchPolicy `json:"deployment_branch_policy"`
 	}
 	// An absent body is valid (environment with no protection config), but
@@ -352,6 +353,9 @@ func (s *Server) handleUpsertEnvironment(w http.ResponseWriter, r *http.Request)
 			reviewers = append(reviewers, map[string]interface{}{"type": revType, "id": rev.ID})
 		}
 		s.store.Deployments.SetEnvironmentProtection(repo.ID, env.Name, body.WaitTimer, reviewers)
+	}
+	if body.PreventSelfReview != nil {
+		s.store.Deployments.SetEnvironmentPreventSelfReview(repo.ID, env.Name, *body.PreventSelfReview)
 	}
 	s.store.Deployments.SetEnvironmentBranchPolicyConfig(repo.ID, env.Name, body.DeploymentBranchPolicy)
 	writeJSON(w, http.StatusOK, environmentToJSON(env, s.store, s.baseURL(r), repo))

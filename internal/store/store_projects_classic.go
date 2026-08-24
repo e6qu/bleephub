@@ -8,19 +8,47 @@ import (
 	"time"
 )
 
-// ProjectClassic is a GitHub Projects classic (v1) project, scoped to a
-// repository. It contains columns, which in turn contain cards.
+// ProjectClassic is a GitHub Projects classic (v1) project. It is owned by
+// exactly one of a repository (RepoKey set) or an account (OwnerType and
+// OwnerLogin set — a user or an organization, which is how the GraphQL
+// createProject surface scopes boards). It contains columns, which in turn
+// contain cards.
 type ProjectClassic struct {
-	ID        int       `json:"id"`
-	NodeID    string    `json:"node_id"`
-	RepoKey   string    `json:"repo_key"`
-	Name      string    `json:"name"`
-	Body      string    `json:"body"`
-	State     string    `json:"state"` // "open" or "closed"
-	Number    int       `json:"number"`
-	CreatorID int       `json:"creator_id"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID      int    `json:"id"`
+	NodeID  string `json:"node_id"`
+	RepoKey string `json:"repo_key"`
+	// OwnerType is "User" or "Organization" for an account-owned project,
+	// empty for a repo-scoped one.
+	OwnerType  string     `json:"owner_type,omitempty"`
+	OwnerLogin string     `json:"owner_login,omitempty"`
+	Name       string     `json:"name"`
+	Body       string     `json:"body"`
+	State      string     `json:"state"` // "open" or "closed"
+	Number     int        `json:"number"`
+	CreatorID  int        `json:"creator_id"`
+	Public     bool       `json:"public,omitempty"`
+	ClosedAt   *time.Time `json:"closed_at,omitempty"`
+	CreatedAt  time.Time  `json:"created_at"`
+	UpdatedAt  time.Time  `json:"updated_at"`
+	// LinkedRepoIDs are the repositories linked to an account-owned project
+	// (linkRepositoryToProject); a repo-scoped project links nothing.
+	LinkedRepoIDs []int `json:"linked_repo_ids,omitempty"`
+}
+
+// snapshot returns a detached deep copy (STORE-021). The plain struct copy
+// the other classic-project getters use is not enough here because
+// LinkedRepoIDs and ClosedAt would share backing storage with the live row.
+func (p *ProjectClassic) snapshot() *ProjectClassic {
+	if p == nil {
+		return nil
+	}
+	clone := *p
+	if p.ClosedAt != nil {
+		at := *p.ClosedAt
+		clone.ClosedAt = &at
+	}
+	clone.LinkedRepoIDs = append([]int(nil), p.LinkedRepoIDs...)
+	return &clone
 }
 
 // ProjectColumn is a column inside a ProjectClassic.
@@ -35,17 +63,20 @@ type ProjectColumn struct {
 }
 
 // ProjectCard is a card inside a ProjectColumn. It is either a note card
-// (Note non-empty, IssueID 0) or an issue card (IssueID set, Note empty).
+// (Note non-empty, no content) or a content card (exactly one of IssueID or
+// PullRequestID set, Note empty).
 type ProjectCard struct {
-	ID        int       `json:"id"`
-	NodeID    string    `json:"node_id"`
-	ColumnID  int       `json:"column_id"`
-	Note      string    `json:"note"`
-	IssueID   int       `json:"issue_id"`
-	CreatorID int       `json:"creator_id"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	Position  int64     `json:"position"` // ordering within the column; persisted, not surfaced by the API mapper
+	ID            int       `json:"id"`
+	NodeID        string    `json:"node_id"`
+	ColumnID      int       `json:"column_id"`
+	Note          string    `json:"note"`
+	IssueID       int       `json:"issue_id"`
+	PullRequestID int       `json:"pull_request_id,omitempty"`
+	CreatorID     int       `json:"creator_id"`
+	Archived      bool      `json:"archived,omitempty"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+	Position      int64     `json:"position"` // ordering within the column; persisted, not surfaced by the API mapper
 }
 
 const (
@@ -91,19 +122,42 @@ func (st *Store) CreateProjectClassic(repo *Repo, creatorID int, name, body, sta
 	return proj
 }
 
+// CreateProjectClassicForOwner creates a new account-owned project under a
+// user or an organization (ownerType "User" or "Organization"), which is the
+// owner shape the GraphQL createProject/importProject mutations take.
+func (st *Store) CreateProjectClassicForOwner(ownerType, ownerLogin string, creatorID int, name, body string, public bool) *ProjectClassic {
+	st.Mu.Lock()
+	defer st.Mu.Unlock()
+
+	now := st.CurrentTime()
+	proj := &ProjectClassic{
+		ID:         st.NextProjectClassicID,
+		NodeID:     projectClassicNodeID(st.NextProjectClassicID),
+		OwnerType:  ownerType,
+		OwnerLogin: ownerLogin,
+		Name:       name,
+		Body:       body,
+		State:      "open",
+		Number:     st.NextProjectClassicID,
+		CreatorID:  creatorID,
+		Public:     public,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}
+	st.ProjectClassic[proj.ID] = proj
+	st.NextProjectClassicID++
+	st.persistProjectClassic(proj)
+	return proj
+}
+
 // GetProjectClassic returns a project by ID.
 func (st *Store) GetProjectClassic(id int) *ProjectClassic {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
-	// A copy so a reader can't mutate the stored project through the getter
-	// (STORE-021); ProjectClassic is all-value. Edits go through
-	// UpdateProjectClassic, which re-fetches the live row by id.
-	proj := st.ProjectClassic[id]
-	if proj == nil {
-		return nil
-	}
-	clone := *proj
-	return &clone
+	// A detached snapshot so a reader can't mutate the stored project through
+	// the getter (STORE-021). Edits go through UpdateProjectClassic, which
+	// re-fetches the live row by id.
+	return st.ProjectClassic[id].snapshot()
 }
 
 // ListProjectClassicsForRepo returns all projects in a repo, newest first.
@@ -113,19 +167,71 @@ func (st *Store) ListProjectClassicsForRepo(repoKey string) []*ProjectClassic {
 	var out []*ProjectClassic
 	for _, p := range st.ProjectClassic {
 		if p.RepoKey == repoKey {
-			out = append(out, p)
+			out = append(out, p.snapshot())
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID > out[j].ID })
-	return snapshotSlice(out)
+	return out
 }
 
-// UpdateProjectClassic applies updates to a project.
-// UpdateProjectClassic applies the given field updates. `proj` now comes from
+// ListProjectClassicsForOwner returns all account-owned projects under a user
+// or organization login, newest first.
+func (st *Store) ListProjectClassicsForOwner(ownerType, ownerLogin string) []*ProjectClassic {
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
+	var out []*ProjectClassic
+	for _, p := range st.ProjectClassic {
+		if p.OwnerType == ownerType && p.OwnerLogin == ownerLogin {
+			out = append(out, p.snapshot())
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID > out[j].ID })
+	return out
+}
+
+// FindProjectClassicByNodeID returns the LIVE project row whose node id
+// matches (the Find* convention — callers must not mutate it; use the Get*
+// snapshot for rendering).
+func FindProjectClassicByNodeID(st *Store, nodeID string) *ProjectClassic {
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
+	for _, p := range st.ProjectClassic {
+		if p.NodeID == nodeID {
+			return p
+		}
+	}
+	return nil
+}
+
+// FindProjectColumnByNodeID returns the LIVE column row whose node id matches.
+func FindProjectColumnByNodeID(st *Store, nodeID string) *ProjectColumn {
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
+	for _, c := range st.ProjectColumns {
+		if c.NodeID == nodeID {
+			return c
+		}
+	}
+	return nil
+}
+
+// FindProjectCardByNodeID returns the LIVE card row whose node id matches.
+func FindProjectCardByNodeID(st *Store, nodeID string) *ProjectCard {
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
+	for _, c := range st.ProjectCards {
+		if c.NodeID == nodeID {
+			return c
+		}
+	}
+	return nil
+}
+
+// UpdateProjectClassic applies the given field updates. `proj` comes from
 // GetProjectClassic, which returns a detached clone, so the mutation is applied
 // to the LIVE row (re-fetched by id) and a fresh snapshot is returned for the
 // caller to render — never the live pointer (STORE-021).
-func (st *Store) UpdateProjectClassic(proj *ProjectClassic, name, body, state *string) *ProjectClassic {
+func (st *Store) UpdateProjectClassic(proj *ProjectClassic, name, body, state *string, public *bool) *ProjectClassic {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 	live := st.ProjectClassic[proj.ID]
@@ -138,13 +244,64 @@ func (st *Store) UpdateProjectClassic(proj *ProjectClassic, name, body, state *s
 	if body != nil {
 		live.Body = *body
 	}
-	if state != nil {
+	if state != nil && *state != live.State {
 		live.State = *state
+		if *state == "closed" {
+			at := st.CurrentTime()
+			live.ClosedAt = &at
+		} else {
+			live.ClosedAt = nil
+		}
+	}
+	if public != nil {
+		live.Public = *public
 	}
 	live.UpdatedAt = st.CurrentTime()
 	st.persistProjectClassic(live)
-	clone := *live
-	return &clone
+	return live.snapshot()
+}
+
+// LinkRepoToProjectClassic records a repository link on an account-owned
+// project. It reports false when the project does not exist and true both for
+// a fresh link and an already-linked repository (the write is idempotent).
+func (st *Store) LinkRepoToProjectClassic(projectID, repoID int) bool {
+	st.Mu.Lock()
+	defer st.Mu.Unlock()
+	live := st.ProjectClassic[projectID]
+	if live == nil {
+		return false
+	}
+	for _, id := range live.LinkedRepoIDs {
+		if id == repoID {
+			return true
+		}
+	}
+	live.LinkedRepoIDs = append(live.LinkedRepoIDs, repoID)
+	live.UpdatedAt = st.CurrentTime()
+	st.persistProjectClassic(live)
+	return true
+}
+
+// UnlinkRepoFromProjectClassic removes a repository link. It reports false
+// when the project does not exist; removing a repository that was never
+// linked is a no-op success, mirroring the link write's idempotence.
+func (st *Store) UnlinkRepoFromProjectClassic(projectID, repoID int) bool {
+	st.Mu.Lock()
+	defer st.Mu.Unlock()
+	live := st.ProjectClassic[projectID]
+	if live == nil {
+		return false
+	}
+	kept := live.LinkedRepoIDs[:0]
+	for _, id := range live.LinkedRepoIDs {
+		if id != repoID {
+			kept = append(kept, id)
+		}
+	}
+	live.LinkedRepoIDs = kept
+	live.UpdatedAt = st.CurrentTime()
+	st.persistProjectClassic(live)
+	return true
 }
 
 // DeleteProjectClassic deletes a project and all its columns and cards.
@@ -350,9 +507,9 @@ func (st *Store) MoveProjectColumn(col *ProjectColumn, position string) error {
 	return nil
 }
 
-// CreateProjectCard creates a card in a column. Exactly one of note or
-// issueID must be provided.
-func (st *Store) CreateProjectCard(columnID, creatorID int, note string, issueID int) *ProjectCard {
+// CreateProjectCard creates a card in a column. Exactly one of note, issueID
+// or pullRequestID must be provided.
+func (st *Store) CreateProjectCard(columnID, creatorID int, note string, issueID, pullRequestID int) *ProjectCard {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 
@@ -365,15 +522,16 @@ func (st *Store) CreateProjectCard(columnID, creatorID int, note string, issueID
 
 	now := st.CurrentTime()
 	card := &ProjectCard{
-		ID:        st.NextProjectCardID,
-		NodeID:    projectCardNodeID(st.NextProjectCardID),
-		ColumnID:  columnID,
-		Note:      note,
-		IssueID:   issueID,
-		CreatorID: creatorID,
-		CreatedAt: now,
-		UpdatedAt: now,
-		Position:  pos,
+		ID:            st.NextProjectCardID,
+		NodeID:        projectCardNodeID(st.NextProjectCardID),
+		ColumnID:      columnID,
+		Note:          note,
+		IssueID:       issueID,
+		PullRequestID: pullRequestID,
+		CreatorID:     creatorID,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+		Position:      pos,
 	}
 	st.ProjectCards[card.ID] = card
 	st.NextProjectCardID++
@@ -410,9 +568,10 @@ func (st *Store) ListProjectCards(columnID int) []*ProjectCard {
 	return snapshotSlice(out)
 }
 
-// UpdateProjectCard updates a card's note. Converting a note card to an
-// issue card is not supported by PATCH; real GitHub uses a separate flow.
-func (st *Store) UpdateProjectCard(card *ProjectCard, note string) *ProjectCard {
+// UpdateProjectCard updates a card's note and/or archived flag. Converting a
+// note card to an issue card is not supported here; real GitHub uses a
+// separate flow (ConvertProjectCardToIssue).
+func (st *Store) UpdateProjectCard(card *ProjectCard, note *string, archived *bool) *ProjectCard {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
 	// `card` is a detached clone from GetProjectCard; mutate the live row and
@@ -421,7 +580,12 @@ func (st *Store) UpdateProjectCard(card *ProjectCard, note string) *ProjectCard 
 	if live == nil {
 		return nil
 	}
-	live.Note = note
+	if note != nil {
+		live.Note = *note
+	}
+	if archived != nil {
+		live.Archived = *archived
+	}
 	live.UpdatedAt = st.CurrentTime()
 	st.persistProjectCard(live)
 	clone := *live

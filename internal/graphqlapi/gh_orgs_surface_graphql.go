@@ -510,24 +510,7 @@ func (s *Resolver) addOrganizationGovernanceFields(types *accountSurfaceTypes) {
 	}
 
 	// --- repository custom properties -------------------------------------
-	customPropertyValue := s.graphQLStringScalar("CustomPropertyValue")
-	customProperty := graphql.NewObject(graphql.ObjectConfig{
-		Name: "RepositoryCustomProperty",
-		Fields: graphql.Fields{
-			"allowedValues":         &graphql.Field{Type: graphql.NewList(graphql.NewNonNull(graphql.String))},
-			"defaultValue":          &graphql.Field{Type: customPropertyValue},
-			"description":           &graphql.Field{Type: graphql.String},
-			"id":                    &graphql.Field{Type: graphql.NewNonNull(graphql.ID)},
-			"propertyName":          &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"regex":                 &graphql.Field{Type: graphql.String},
-			"requireExplicitValues": &graphql.Field{Type: graphql.Boolean},
-			"required":              &graphql.Field{Type: graphql.Boolean},
-			"valueType": &graphql.Field{Type: graphql.NewNonNull(s.sharedEnum("CustomPropertyValueType",
-				"MULTI_SELECT", "SINGLE_SELECT", "STRING", "TRUE_FALSE", "URL"))},
-			"valuesEditableBy": &graphql.Field{Type: graphql.NewNonNull(s.sharedEnum(
-				"RepositoryCustomPropertyValuesEditableBy", "ORG_ACTORS", "ORG_AND_REPO_ACTORS"))},
-		},
-	})
+	customProperty := s.gqlRepositoryCustomPropertyType()
 	orgType.AddFieldConfig("repositoryCustomProperties", &graphql.Field{
 		Type: s.accountConnectionType(types, "RepositoryCustomProperty", customProperty, false, nil),
 		Args: connectionArgs(nil),
@@ -546,7 +529,7 @@ func (s *Resolver) addOrganizationGovernanceFields(types *accountSurfaceTypes) {
 				property := properties[i]
 				items = append(items, gqlConnItem{
 					identity: customPropertyIdentity(org, property),
-					render:   func() map[string]interface{} { return customPropertySource(org, property) },
+					render:   func() map[string]interface{} { return s.repositoryCustomPropertySource(org, property) },
 				})
 			}
 			return paginateGQLItems(items, p.Args), nil
@@ -570,9 +553,54 @@ func (s *Resolver) addOrganizationGovernanceFields(types *accountSurfaceTypes) {
 			if property == nil {
 				return nil, nil
 			}
-			return customPropertySource(org, property), nil
+			return s.repositoryCustomPropertySource(org, property), nil
 		},
 	})
+}
+
+// gqlRepositoryCustomPropertyType returns the shared RepositoryCustomProperty
+// object (memoized): the org read surface lists it and the custom-property
+// mutation payloads return it. Its `source` union member is added by the
+// mutation family, once the Enterprise type it names exists.
+func (s *Resolver) gqlRepositoryCustomPropertyType() *graphql.Object {
+	return s.mutationObject("RepositoryCustomProperty", graphql.Fields{
+		"allowedValues":         &graphql.Field{Type: graphql.NewList(graphql.NewNonNull(graphql.String))},
+		"defaultValue":          &graphql.Field{Type: s.graphQLStringScalar("CustomPropertyValue")},
+		"description":           &graphql.Field{Type: graphql.String},
+		"id":                    &graphql.Field{Type: graphql.NewNonNull(graphql.ID)},
+		"propertyName":          &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+		"regex":                 &graphql.Field{Type: graphql.String},
+		"requireExplicitValues": &graphql.Field{Type: graphql.Boolean},
+		"required":              &graphql.Field{Type: graphql.Boolean},
+		"valueType": &graphql.Field{Type: graphql.NewNonNull(s.sharedEnum("CustomPropertyValueType",
+			"MULTI_SELECT", "SINGLE_SELECT", "STRING", "TRUE_FALSE", "URL"))},
+		"valuesEditableBy": &graphql.Field{Type: graphql.NewNonNull(s.sharedEnum(
+			"RepositoryCustomPropertyValuesEditableBy", "ORG_ACTORS", "ORG_AND_REPO_ACTORS"))},
+	})
+}
+
+// repositoryCustomPropertySource renders a definition reached through an
+// organization, naming the enterprise as its source when the organization
+// merely inherits it.
+func (s *Resolver) repositoryCustomPropertySource(org *store.Org, property *store.CustomProperty) map[string]interface{} {
+	source := customPropertySource(org, property)
+	if !s.store.OrgOwnsCustomProperty(org.Login, property.PropertyName) {
+		if e := s.store.GetEnterprise(s.store.PrimaryEnterpriseSlug()); e != nil {
+			source["source"] = enterpriseToGraphQL(e)
+			return source
+		}
+	}
+	source["source"] = orgOwnerSource(org)
+	return source
+}
+
+// enterpriseCustomPropertySource renders a definition created directly at
+// enterprise scope.
+func (s *Resolver) enterpriseCustomPropertySource(e *store.Enterprise, property *store.CustomProperty) map[string]interface{} {
+	source := customPropertySource(nil, property)
+	source["id"] = "RCP_" + e.Slug + "/" + property.PropertyName
+	source["source"] = enterpriseToGraphQL(e)
+	return source
 }
 
 // orgOwnerSource renders the organization as the IpAllowListOwner union
@@ -614,15 +642,19 @@ func customPropertySource(org *store.Org, property *store.CustomProperty) map[st
 	if property.AllowedValues != nil {
 		allowed = append([]string(nil), property.AllowedValues...)
 	}
+	identity := ""
+	if org != nil {
+		identity = customPropertyIdentity(org, property)
+	}
 	return map[string]interface{}{
-		"id":                    customPropertyIdentity(org, property),
+		"id":                    identity,
 		"propertyName":          property.PropertyName,
 		"description":           nilStrPtr(property.Description),
 		"valueType":             strings.ToUpper(property.ValueType),
 		"required":              property.Required,
 		"defaultValue":          customPropertyDefaultValue(property),
 		"allowedValues":         allowed,
-		"regex":                 nil,
+		"regex":                 nilStrPtr(property.Regex),
 		"requireExplicitValues": property.RequireExplicitValues,
 		"valuesEditableBy":      customPropertyEditableBy(property.ValuesEditableBy),
 	}

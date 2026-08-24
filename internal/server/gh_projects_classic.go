@@ -212,7 +212,7 @@ func (s *Server) handleUpdateProjectClassic(w http.ResponseWriter, r *http.Reque
 	if !decodeJSONBody(w, r, &body) {
 		return
 	}
-	updated := s.store.UpdateProjectClassic(proj, body.Name, body.Body, body.State)
+	updated := s.store.UpdateProjectClassic(proj, body.Name, body.Body, body.State, nil)
 	writeJSON(w, http.StatusOK, projectClassicToJSON(updated, s.store, s.baseURL(r), repo.FullName))
 }
 
@@ -459,7 +459,7 @@ func (s *Server) handleCreateProjectCard(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	card := s.store.CreateProjectCard(col.ID, user.ID, body.Note, issueID)
+	card := s.store.CreateProjectCard(col.ID, user.ID, body.Note, issueID, 0)
 	item, ok := projectCardToJSON(card, s.store, s.baseURL(r))
 	if !ok {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -517,7 +517,7 @@ func (s *Server) handleUpdateProjectCard(w http.ResponseWriter, r *http.Request)
 	if !decodeJSONBody(w, r, &body) {
 		return
 	}
-	updated := s.store.UpdateProjectCard(card, body.Note)
+	updated := s.store.UpdateProjectCard(card, &body.Note, nil)
 	item, ok := projectCardToJSON(updated, s.store, s.baseURL(r))
 	if !ok {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -736,7 +736,7 @@ func projectCardToJSON(c *store.ProjectCard, st *store.Store, baseURL string) (m
 		"id":          c.ID,
 		"node_id":     c.NodeID,
 		"note":        nullIfEmpty(c.Note),
-		"archived":    false,
+		"archived":    c.Archived,
 		"creator":     creator,
 		"created_at":  c.CreatedAt.UTC().Format(time.RFC3339),
 		"updated_at":  c.UpdatedAt.UTC().Format(time.RFC3339),

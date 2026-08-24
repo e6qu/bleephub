@@ -191,6 +191,8 @@ func (s *Resolver) initGraphQLSchema() {
 		Interfaces: []*graphql.Interface{
 			nodeInterface, actorInterface, repositoryOwnerInterface,
 			s.projectV2OwnerInterfaceType(),
+			// ProjectOwner (classic projects), for the same memoization reason.
+			s.projectOwnerInterfaceType(),
 			// Sponsorable, for the same memoization reason.
 			s.sponsorableInterfaceType(),
 		},
@@ -315,6 +317,7 @@ func (s *Resolver) initGraphQLSchema() {
 	s.addLabelMutationsToSchema(mutationType)
 	s.addGitWriteMutationsToSchema(mutationType)
 	s.addAdminMutationsToSchema(mutationType)
+	s.addEMUMutationsToSchema(mutationType)
 
 	// Add Projects v2. The read surface goes first: the mutations' payload
 	// types are the same ProjectV2/ProjectV2Item objects, so they have to be
@@ -391,10 +394,38 @@ func (s *Resolver) initGraphQLSchema() {
 	// installed last, once all of them are assembled.
 	s.addAccountSurfaceFieldsToSchema(userType, orgType, repoType)
 
+	// Projects classic (v1): the Project/ProjectColumn/ProjectCard family, the
+	// ProjectOwner members on User/Organization/Repository, and the sixteen
+	// classic-project mutations. It goes after the account surface because a
+	// card's content names the fully-assembled Issue and PullRequest types.
+	s.addProjectsClassicToSchema(userType, orgType, repoType, mutationType, nodeTypes)
+
+	// Branch protection: the complete BranchProtectionRule object (whose
+	// shell the Ref type already referenced), Repository.branchProtectionRules
+	// and the three protection-rule mutations. It goes after the account
+	// surface so the rule's repository/creator members name the finished
+	// types.
+	s.addBranchProtectionFieldsToSchema(repoType, mutationType)
+
+	// Ruleset, custom-property and verifiable-domain writes. They go after
+	// the enterprise family because a ruleset's source, a custom property's
+	// schema and a domain's owner may each be enterprise-scoped.
+	s.addRulesetMutationsToSchema(mutationType)
+	s.addCustomPropertyMutationsToSchema(mutationType)
+	s.addVerifiableDomainMutationsToSchema(mutationType)
+
 	// The remainder of GitHub's mutation surface
 	// (gh_mutations_*_graphql.go). It goes last because every payload it
 	// registers returns an object one of the families above defines.
 	s.addGitHubMutationSurface(mutationType)
+
+	// The checks and deployments/environments mutation families. They follow
+	// the account surface (beside the git-write and admin registrations
+	// above they would be too early): their payloads name the CheckRun/
+	// CheckSuite rollup types and the Deployment/Environment objects the
+	// account surface assembles.
+	s.addChecksMutationsToSchema(mutationType)
+	s.addDeploymentsMutationsToSchema(mutationType)
 
 	// Every mutation is now registered. Authorization coverage is asserted over
 	// the assembled type rather than trusted to each family above, so a
@@ -505,6 +536,9 @@ func (s *Resolver) graphQLNodeByID(ctx context.Context, nodeID string) interface
 	}
 	if gitObject := s.gitObjectNodeByID(ctx, nodeID); gitObject != nil {
 		return gitObject
+	}
+	if classicNode := s.projectClassicNodeByID(ctx, nodeID); classicNode != nil {
+		return classicNode
 	}
 	if advisoryNode := s.advisoryNodeByID(ctx, nodeID); advisoryNode != nil {
 		return advisoryNode

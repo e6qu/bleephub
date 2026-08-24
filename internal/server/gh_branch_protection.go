@@ -255,21 +255,10 @@ func (s *Server) getBranchProtection(r *http.Request) (*store.Repo, string, *sto
 // so that whatever the caller does with its own rule afterwards — render it,
 // hydrate URLs into it, edit it again — cannot reach the stored table.
 func (s *Server) setBranchProtection(repo *store.Repo, branch string, bp *store.BranchProtection) {
-	key := store.BpKey(repo.ID, branch)
-	stored := cloneBranchProtection(bp)
-	s.store.Misc.Mu.Lock()
-	if stored == nil || !stored.IsProtected() {
-		delete(s.store.Misc.BranchProtection, key)
-		if s.store.Misc.Persist != nil {
-			s.store.Misc.Persist.MustDelete("branch_protection", key)
-		}
-	} else {
-		s.store.Misc.BranchProtection[key] = stored
-		if s.store.Misc.Persist != nil {
-			s.store.Misc.Persist.MustPut("branch_protection", key, stored)
-		}
-	}
-	s.store.Misc.Mu.Unlock()
+	// The store method is the same one the GraphQL branch-protection
+	// mutations drive, so the two surfaces cannot drift on what a write
+	// stores or when it deletes.
+	s.store.SetBranchProtection(repo.ID, branch, cloneBranchProtection(bp))
 	// A protection state change can clear the condition an armed auto-merge
 	// was waiting for (every protection sub-resource handler funnels here).
 	s.maybeAutoMergeBranch(repo, branch)
@@ -1717,24 +1706,4 @@ func (s *Server) requiredCheckContexts(repoID int, baseBranch string) []string {
 		add(c.Context)
 	}
 	return out
-}
-
-// branchProtectionRuleForPR returns a GraphQL-shaped map for baseRef.branchProtectionRule.
-func (s *Server) branchProtectionRuleForPR(repo *store.Repo, baseBranch string) map[string]interface{} {
-	bp := s.branchProtectionFor(repo.ID, baseBranch)
-	if bp == nil {
-		return nil
-	}
-	strict := false
-	count := 0
-	if bp.RequiredStatusChecks != nil {
-		strict = bp.RequiredStatusChecks.Strict
-	}
-	if bp.RequiredPullRequestReviews != nil {
-		count = bp.RequiredPullRequestReviews.RequiredApprovingReviewCount
-	}
-	return map[string]interface{}{
-		"requiresStrictStatusChecks":   strict,
-		"requiredApprovingReviewCount": count,
-	}
 }

@@ -627,10 +627,19 @@ type Store struct {
 	NextSecurityAdvisoryID       int
 	NextSecurityAdvisoryReportID int
 	Discussions                  map[int]*Discussion
+	DiscussionPolls              map[int]*DiscussionPoll
+	UserNamespaceGrants          map[int]*UserNamespaceAccessGrant
+	Mannequins                   map[int]*Mannequin
+	AttributionInvitations       map[int]*AttributionInvitation
 	DiscussionCategories         map[int]*DiscussionCategory
 	DiscussionComments           map[int]*DiscussionComment
 	PinnedDiscussions            map[int][]int // repoID → ordered pinned discussion IDs (≤ MaxPinnedDiscussions)
 	NextDiscussionID             int
+	NextDiscussionPollID         int
+	NextUserNamespaceGrantID     int
+	NextMannequinID              int
+	NextAttributionInvitationID  int
+	NextDiscussionPollOptionID   int
 	NextDiscussionNumber         map[int]int // repoID → next per-repo discussion number (high-water; monotonic across tombstones)
 	NextDiscussionCategoryID     int
 	NextDiscussionCommentID      int
@@ -700,6 +709,7 @@ type Store struct {
 	EnterpriseOrgs        map[int]*EnterpriseOrganization  // org id → owning enterprise link
 	EnterpriseInvitations map[int]*EnterpriseInvitation
 	IPAllowListEntries    map[int]*IPAllowListEntry
+	VerifiableDomains     map[int]*VerifiableDomain
 	// primaryEnterpriseSlug is the instance's own enterprise (configuration,
 	// set at boot); see PrimaryEnterpriseSlug.
 	primaryEnterpriseSlug      string
@@ -707,6 +717,7 @@ type Store struct {
 	NextEnterpriseMembershipID int
 	NextEnterpriseInvitationID int
 	NextIPAllowListEntryID     int
+	NextVerifiableDomainID     int
 
 	// attestations + org artifact metadata
 	Attestations                   map[int]*Attestation // id → attestation
@@ -1134,6 +1145,10 @@ func NewStore() *Store {
 		PackageVersionsByPackage:     map[int]map[int]*PackageVersion{},
 		PackageFilesByVersion:        map[int]map[int]*PackageFile{},
 		Discussions:                  map[int]*Discussion{},
+		DiscussionPolls:              map[int]*DiscussionPoll{},
+		UserNamespaceGrants:          map[int]*UserNamespaceAccessGrant{},
+		Mannequins:                   map[int]*Mannequin{},
+		AttributionInvitations:       map[int]*AttributionInvitation{},
 		DiscussionCategories:         map[int]*DiscussionCategory{},
 		DiscussionComments:           map[int]*DiscussionComment{},
 		PinnedDiscussions:            map[int][]int{},
@@ -1194,6 +1209,11 @@ func NewStore() *Store {
 		NextSecurityAdvisoryID:       1,
 		NextSecurityAdvisoryReportID: 1,
 		NextDiscussionID:             1,
+		NextDiscussionPollID:         1,
+		NextUserNamespaceGrantID:     1,
+		NextMannequinID:              1,
+		NextAttributionInvitationID:  1,
+		NextDiscussionPollOptionID:   1,
 		NextDiscussionNumber:         make(map[int]int),
 		NextDiscussionCategoryID:     1,
 		NextDiscussionCommentID:      1,
@@ -1211,10 +1231,12 @@ func NewStore() *Store {
 		EnterpriseOrgs:                     map[int]*EnterpriseOrganization{},
 		EnterpriseInvitations:              map[int]*EnterpriseInvitation{},
 		IPAllowListEntries:                 map[int]*IPAllowListEntry{},
+		VerifiableDomains:                  map[int]*VerifiableDomain{},
 		NextEnterpriseID:                   1,
 		NextEnterpriseMembershipID:         1,
 		NextEnterpriseInvitationID:         1,
 		NextIPAllowListEntryID:             1,
+		NextVerifiableDomainID:             1,
 
 		// attestations + org artifact metadata
 		Attestations:                   map[int]*Attestation{},
@@ -2332,6 +2354,18 @@ func (st *Store) loadFromPersistence() error {
 			}
 			return nil
 		}},
+		{"pinned_environments", func(_ string, raw []byte) error {
+			var pin PinnedEnvironment
+			if err := LoadJSON(raw, &pin); err != nil {
+				return err
+			}
+			st.Deployments.pinnedEnvs[pin.ID] = &pin
+			st.Deployments.pinsByRepo[pin.RepoID] = append(st.Deployments.pinsByRepo[pin.RepoID], &pin)
+			if pin.ID >= st.Deployments.nextPinID {
+				st.Deployments.nextPinID = pin.ID + 1
+			}
+			return nil
+		}},
 		{"pr_review_comments", func(_ string, raw []byte) error {
 			rec := prReviewCommentRecord{PRReviewComment: &PRReviewComment{}}
 			if err := LoadJSON(raw, &rec); err != nil {
@@ -2433,6 +2467,11 @@ func (st *Store) loadFromPersistence() error {
 	for _, d := range st.Deployments.deployments {
 		sort.Slice(d.Statuses, func(i, j int) bool { return d.Statuses[i].ID < d.Statuses[j].ID })
 	}
+	// Pinned environments likewise reloaded in map-iteration order; the pin
+	// slices must hold position order (unpin and reorder renumber from it).
+	for _, pins := range st.Deployments.pinsByRepo {
+		sort.Slice(pins, func(i, j int) bool { return pins[i].Position < pins[j].Position })
+	}
 
 	for _, loadFn := range []struct {
 		Name string `json:"-"`
@@ -2506,6 +2545,14 @@ func (st *Store) loadFromPersistence() error {
 				return err
 			}
 			st.Misc.BranchProtection[key] = &bp
+			return nil
+		}},
+		{"branch_protection_extras", func(key string, raw []byte) error {
+			var extras BranchProtectionRuleExtras
+			if err := LoadJSON(raw, &extras); err != nil {
+				return err
+			}
+			st.Misc.BranchProtectionExtras[key] = &extras
 			return nil
 		}},
 		{"branch_protection_patterns", func(key string, raw []byte) error {
@@ -2844,6 +2891,58 @@ func (st *Store) loadFromPersistence() error {
 			}
 			if d.Number >= st.NextDiscussionNumber[d.RepoID] {
 				st.NextDiscussionNumber[d.RepoID] = d.Number + 1
+			}
+			return nil
+		}},
+		{"mannequins", func(_ string, raw []byte) error {
+			var m Mannequin
+			if err := LoadJSON(raw, &m); err != nil {
+				return err
+			}
+			st.Mannequins[m.ID] = &m
+			if m.ID >= st.NextMannequinID {
+				st.NextMannequinID = m.ID + 1
+			}
+			return nil
+		}},
+		{"attribution_invitations", func(_ string, raw []byte) error {
+			var inv AttributionInvitation
+			if err := LoadJSON(raw, &inv); err != nil {
+				return err
+			}
+			st.AttributionInvitations[inv.ID] = &inv
+			if inv.ID >= st.NextAttributionInvitationID {
+				st.NextAttributionInvitationID = inv.ID + 1
+			}
+			return nil
+		}},
+		{"user_namespace_grants", func(_ string, raw []byte) error {
+			var grant UserNamespaceAccessGrant
+			if err := LoadJSON(raw, &grant); err != nil {
+				return err
+			}
+			st.UserNamespaceGrants[grant.ID] = &grant
+			if grant.ID >= st.NextUserNamespaceGrantID {
+				st.NextUserNamespaceGrantID = grant.ID + 1
+			}
+			return nil
+		}},
+		{"discussion_polls", func(_ string, raw []byte) error {
+			var poll DiscussionPoll
+			if err := LoadJSON(raw, &poll); err != nil {
+				return err
+			}
+			if poll.VotesByUser == nil {
+				poll.VotesByUser = map[int]int{}
+			}
+			st.DiscussionPolls[poll.ID] = &poll
+			if poll.ID >= st.NextDiscussionPollID {
+				st.NextDiscussionPollID = poll.ID + 1
+			}
+			for _, option := range poll.Options {
+				if option.ID >= st.NextDiscussionPollOptionID {
+					st.NextDiscussionPollOptionID = option.ID + 1
+				}
 			}
 			return nil
 		}},
@@ -4358,6 +4457,7 @@ func (st *Store) idCounterBuckets() map[string]*int {
 		"enterprise_teams":                 &st.NextEnterpriseTeamID,
 		"enterprises":                      &st.NextEnterpriseID,
 		"ip_allow_list_entries":            &st.NextIPAllowListEntryID,
+		"verifiable_domains":               &st.NextVerifiableDomainID,
 		"gist_comments":                    &st.NextGistCommentID,
 		"hosted_runner_custom_images":      &st.NextHostedRunnerImageID,
 		"hosted_runners":                   &st.NextHostedRunnerID,

@@ -185,7 +185,13 @@ type MiscStore struct {
 	// BranchProtectionPatterns holds the web-only fnmatch pattern rules per
 	// repository ID, consulted by the enforcement chokepoint when no
 	// exact-name rule matches (served under /ui-data).
-	BranchProtectionPatterns  map[int][]*BranchProtectionPatternRule `json:"-"`
+	BranchProtectionPatterns map[int][]*BranchProtectionPatternRule `json:"-"`
+	// BranchProtectionExtras holds the GraphQL-only members of a branch
+	// protection rule (deployment requirements, force-push bypass actors,
+	// the creator), keyed by the same BpKey as the rule they extend. They
+	// live beside rather than inside BranchProtection because that struct's
+	// JSON is GitHub's REST protection shape, which has no such members.
+	BranchProtectionExtras    map[string]*BranchProtectionRuleExtras `json:"-"`
 	AuditLog                  []*AuditEntry                          `json:"-"`
 	AuditLogEvents            []*AuditLogEvent                       `json:"-"`
 	marketplaceListings       map[string]*MarketplaceListing
@@ -223,6 +229,7 @@ func newMiscStore() *MiscStore {
 		PagesBuilds:               map[string][]*PagesBuild{},
 		BranchProtection:          map[string]*BranchProtection{},
 		BranchProtectionPatterns:  map[int][]*BranchProtectionPatternRule{},
+		BranchProtectionExtras:    map[string]*BranchProtectionRuleExtras{},
 		marketplaceListings:       map[string]*MarketplaceListing{},
 		marketplacePlans:          map[int]*MarketplacePlan{},
 		MarketplacePurchases:      map[string]*MarketplacePurchase{},

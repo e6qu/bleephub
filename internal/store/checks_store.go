@@ -1,6 +1,7 @@
 package store
 
 import (
+	"fmt"
 	"sort"
 	"strconv"
 	"time"
@@ -21,7 +22,12 @@ type CheckRun struct {
 	CompletedAt *time.Time      `json:"completed_at,omitempty"`
 	Output      *CheckRunOutput `json:"output,omitempty"`
 	DetailsURL  string          `json:"details_url"`
-	AppID       int             `json:"app_id"`
+	// Actions are the integrator-defined requested-action buttons attached to
+	// the run. GitHub's REST responses do not render them (they surface only
+	// as requested_action webhook triggers), so they persist on the record
+	// without a member in checkRunToJSON.
+	Actions []*CheckRunAction `json:"actions,omitempty"`
+	AppID   int               `json:"app_id"`
 	SuiteID     int64           `json:"check_suite_id"`
 	// RepoKey carries a real json name so persistence round-trips it
 	// (post-reload commit lookups match on it). Client responses never
@@ -57,6 +63,14 @@ type CheckImage struct {
 	Alt      string `json:"alt"`
 	ImageURL string `json:"image_url"`
 	Caption  string `json:"caption,omitempty"`
+}
+
+// CheckRunAction is one requested-action button an integrator attaches to a
+// check run (the `actions` member of the create/update requests).
+type CheckRunAction struct {
+	Label       string `json:"label"`
+	Description string `json:"description"`
+	Identifier  string `json:"identifier"`
 }
 
 // CheckSuite groups CheckRuns by (repo, head_sha, app).
@@ -100,7 +114,7 @@ func (st *Store) CreateCheckSuite(repoKey, headBranch, headSHA string, appID int
 	now := time.Now().UTC()
 	s := &CheckSuite{
 		ID:         id,
-		NodeID:     "CS_" + headSHA[:min(8, len(headSHA))],
+		NodeID:     checkSuiteNodeID(id),
 		HeadBranch: headBranch,
 		HeadSHA:    headSHA,
 		Status:     "queued",
@@ -176,7 +190,7 @@ func (st *Store) CreateCheckRun(repoKey, headSHA, name string, appID int, suiteI
 			now := time.Now().UTC()
 			st.CheckSuites[suiteID] = &CheckSuite{
 				ID:        suiteID,
-				NodeID:    "CS_" + headSHA[:min(8, len(headSHA))],
+				NodeID:    checkSuiteNodeID(suiteID),
 				HeadSHA:   headSHA,
 				Status:    "queued",
 				AppID:     appID,
@@ -193,7 +207,7 @@ func (st *Store) CreateCheckRun(repoKey, headSHA, name string, appID int, suiteI
 	now := time.Now().UTC()
 	cr := &CheckRun{
 		ID:        id,
-		NodeID:    "CR_" + headSHA[:min(8, len(headSHA))],
+		NodeID:    checkRunNodeID(id),
 		HeadSHA:   headSHA,
 		Name:      name,
 		Status:    "queued",
@@ -221,6 +235,35 @@ func (st *Store) GetCheckRun(id int64) *CheckRun {
 	// Snapshot, not the live pointer — see GetCheckSuite.
 	cp := *cr
 	return &cp
+}
+
+// FindCheckRunByNodeID resolves a check run's global id within one
+// repository, or nil. The repository is required: run ids are global, so the
+// caller's repository is what ties the id to a tenant, exactly as the REST
+// {owner}/{repo}/check-runs/{id} path does.
+func (st *Store) FindCheckRunByNodeID(repoKey, nodeID string) *CheckRun {
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
+	for _, cr := range st.CheckRuns {
+		if cr.NodeID == nodeID && cr.RepoKey == repoKey {
+			cp := *cr
+			return &cp
+		}
+	}
+	return nil
+}
+
+// FindCheckSuiteByNodeID is FindCheckRunByNodeID for check suites.
+func (st *Store) FindCheckSuiteByNodeID(repoKey, nodeID string) *CheckSuite {
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
+	for _, suite := range st.CheckSuites {
+		if suite.NodeID == nodeID && suite.RepoKey == repoKey {
+			cp := *suite
+			return &cp
+		}
+	}
+	return nil
 }
 
 // UpdateCheckSuite mutates a check suite via callback. Returns false if not found.
@@ -313,6 +356,14 @@ func (st *Store) GetCheckSuitePreferences(repoKey string) []*CheckSuitePref {
 	defer st.Mu.RUnlock()
 	return st.CheckSuitePrefs[repoKey]
 }
+
+// checkSuiteNodeID and checkRunNodeID mint the global ids the Checks surface
+// serves. They are minted from the row's own id — a node id must name exactly
+// one node, which a head-SHA-derived spelling cannot (every suite on a commit
+// would share one id, and the GraphQL mutations that address a suite or run by
+// node id could not tell them apart).
+func checkSuiteNodeID(id int64) string { return fmt.Sprintf("CS_kwDO%08d", id) }
+func checkRunNodeID(id int64) string   { return fmt.Sprintf("CR_kwDO%08d", id) }
 
 func min(a, b int) int {
 	if a < b {

@@ -61,8 +61,13 @@ func (stubEvents) SenderPayload(*store.User) map[string]interface{}             
 func (stubEvents) EmitIssueChanges(*store.Repo, *store.Issue, *store.User, store.SubjectChange) {}
 func (stubEvents) EmitPullRequestChanges(*store.Repo, *store.PullRequest, *store.User, store.SubjectChange) {
 }
-func (stubEvents) EmitProjectV2Event(store.ProjectV2Event)                             {}
-func (stubEvents) EmitSponsorshipEvent(string, *store.SponsorsTransition, *store.User) {}
+func (stubEvents) EmitProjectV2Event(store.ProjectV2Event)                                 {}
+func (stubEvents) EmitSponsorshipEvent(string, *store.SponsorsTransition, *store.User)     {}
+func (stubEvents) EmitCheckRunEvent(string, int64, string)                                 {}
+func (stubEvents) EmitCheckSuiteEvent(string, int64, string)                               {}
+func (stubEvents) EmitDeploymentEvent(*store.Repo, *store.Deployment, *store.User, string) {}
+func (stubEvents) EmitDeploymentStatusEvent(*store.Repo, *store.Deployment, *store.DeploymentStatus, *store.User) {
+}
 
 // stubPulls refuses every merge.
 type stubPulls struct{}
@@ -76,7 +81,6 @@ func (stubPulls) CanMergePullRequest(context.Context, *store.Repo, *store.PullRe
 func (stubPulls) CompletePullRequestMerge(*store.Repo, *store.PullRequest, *store.User, string, string, string, string) (string, string) {
 	return "", ""
 }
-func (stubPulls) BranchProtectionRuleForPR(*store.Repo, string) map[string]interface{} { return nil }
 func (stubPulls) ChangedFiles(*store.Repo, *store.PullRequest, string) ([]map[string]interface{}, error) {
 	return nil, nil
 }
@@ -84,7 +88,9 @@ func (stubPulls) UpdatePullRequestBranch(*store.Repo, *store.PullRequest, *store
 	return errors.New("stubPulls updates no branch")
 }
 func (stubPulls) MaybeAutoMerge(int)                                                 {}
+func (stubPulls) MaybeAutoMergeRepo(*store.Repo)                                     {}
 func (stubPulls) AutoRequestCodeOwners(*store.Repo, *store.PullRequest, *store.User) {}
+func (stubPulls) MaybeAutoMergeHeadSHA(*store.Repo, string)                          {}
 
 // newStubbedResolver is the test-package analogue of the server's
 // newGraphQLResolver: a resolver over a seeded store with the no-op seams.
@@ -131,6 +137,10 @@ func (stubRepos) GenerateFromTemplate(context.Context, *store.Repo, *store.User,
 
 func (stubRepos) RevertPullRequest(context.Context, *store.Repo, *store.PullRequest, *store.User, string, string, bool) (int, error) {
 	return 0, errors.New("stubRepos reverts nothing")
+}
+
+func (stubRepos) ReviewPendingDeployments(context.Context, *store.Workflow, []int, string, string, *store.User) ([]string, error) {
+	return nil, errors.New("stubRepos reviews nothing")
 }
 
 func newStubbedResolver() *Resolver {

@@ -121,10 +121,59 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 		},
 	})
 
+	// Bearing GitHub's real type names: CheckRun.checkSuite is a non-null
+	// CheckSuite whose workflowRun/workflow expose the subset gh CLI
+	// selects, plus the identity members the checks mutation payloads
+	// select. statusCheckRollupSourceLocked always embeds a checkSuite
+	// source map (with a null workflowRun when the run has no recorded
+	// suite), satisfying the non-null contract.
+	checkSuiteType := graphql.NewObject(graphql.ObjectConfig{
+		Name: "CheckSuite",
+		Fields: graphql.Fields{
+			"id":         &graphql.Field{Type: graphql.NewNonNull(graphql.ID)},
+			"databaseId": &graphql.Field{Type: graphql.Int},
+			"status":     &graphql.Field{Type: graphql.NewNonNull(checkStatusStateEnum)},
+			"conclusion": &graphql.Field{Type: checkConclusionStateEnum},
+			"createdAt":  &graphql.Field{Type: graphql.NewNonNull(dateTime)},
+			"updatedAt":  &graphql.Field{Type: graphql.NewNonNull(dateTime)},
+			"workflowRun": &graphql.Field{
+				Type: graphql.NewObject(graphql.ObjectConfig{
+					Name: "WorkflowRun",
+					Fields: graphql.Fields{
+						"workflow": &graphql.Field{
+							Type: graphql.NewNonNull(graphql.NewObject(graphql.ObjectConfig{
+								Name: "Workflow",
+								Fields: graphql.Fields{
+									"name": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+								},
+							})),
+							Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+								run, ok := p.Source.(map[string]interface{})
+								if !ok {
+									return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
+								}
+								return run["workflow"], nil
+							},
+						},
+					},
+				}),
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					suite, ok := p.Source.(map[string]interface{})
+					if !ok {
+						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
+					}
+					return suite["workflowRun"], nil
+				},
+			},
+		},
+	})
+
 	checkRunType := graphql.NewObject(graphql.ObjectConfig{
 		Name:       "CheckRun",
 		Interfaces: []*graphql.Interface{s.gqlRequirableByPullRequestInterface()},
 		Fields: graphql.Fields{
+			"id":         &graphql.Field{Type: graphql.NewNonNull(graphql.ID)},
+			"databaseId": &graphql.Field{Type: graphql.Int},
 			"name":       &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
 			"isRequired": s.gqlIsRequiredField("name"),
 			"status":     &graphql.Field{Type: graphql.NewNonNull(checkStatusStateEnum)},
@@ -141,46 +190,12 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 				},
 			},
 			"detailsUrl": &graphql.Field{Type: uri},
-			// Bearing GitHub's real type names: CheckRun.checkSuite is a
-			// non-null CheckSuite whose workflowRun/workflow expose the subset
-			// gh CLI selects. statusCheckRollupSourceLocked always embeds a
-			// checkSuite source map (with a null workflowRun when the run has
-			// no recorded suite), satisfying the non-null contract.
+			"externalId": &graphql.Field{Type: graphql.String},
+			"title":      &graphql.Field{Type: graphql.String},
+			"summary":    &graphql.Field{Type: graphql.String},
+			"text":       &graphql.Field{Type: graphql.String},
 			"checkSuite": &graphql.Field{
-				Type: graphql.NewNonNull(graphql.NewObject(graphql.ObjectConfig{
-					Name: "CheckSuite",
-					Fields: graphql.Fields{
-						"workflowRun": &graphql.Field{
-							Type: graphql.NewObject(graphql.ObjectConfig{
-								Name: "WorkflowRun",
-								Fields: graphql.Fields{
-									"workflow": &graphql.Field{
-										Type: graphql.NewNonNull(graphql.NewObject(graphql.ObjectConfig{
-											Name: "Workflow",
-											Fields: graphql.Fields{
-												"name": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-											},
-										})),
-										Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-											run, ok := p.Source.(map[string]interface{})
-											if !ok {
-												return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
-											}
-											return run["workflow"], nil
-										},
-									},
-								},
-							}),
-							Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-								suite, ok := p.Source.(map[string]interface{})
-								if !ok {
-									return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
-								}
-								return suite["workflowRun"], nil
-							},
-						},
-					},
-				})),
+				Type: graphql.NewNonNull(checkSuiteType),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					cr, ok := p.Source.(map[string]interface{})
 					if !ok {
@@ -194,6 +209,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 
 	s.graphqlTypes.statusContext = statusContextType
 	s.graphqlTypes.checkRun = checkRunType
+	s.graphqlTypes.checkSuite = checkSuiteType
 
 	statusCheckRollupContextUnion := graphql.NewUnion(graphql.UnionConfig{
 		Name:  "StatusCheckRollupContext",
@@ -3145,17 +3161,7 @@ func statusCheckRollupSourceLocked(st *store.Store, repoKey, sha string) interfa
 		// recorded suite carries a null workflowRun, like GitHub's stand-alone
 		// check runs.
 		suiteSource := checkSuiteGraphQLSourceLocked(st, st.CheckSuites[cr.SuiteID])
-		nodes = append(nodes, map[string]interface{}{
-			"__typename":  "CheckRun",
-			"repoKey":     repoKey,
-			"name":        cr.Name,
-			"status":      strings.ToUpper(cr.Status),
-			"conclusion":  conclusion,
-			"startedAt":   cr.StartedAt.Format(time.RFC3339),
-			"completedAt": completedAt,
-			"detailsUrl":  nilStr(cr.DetailsURL),
-			"checkSuite":  suiteSource,
-		})
+		nodes = append(nodes, checkRunGraphQLSource(cr, repoKey, conclusion, completedAt, suiteSource))
 	}
 
 	state := "SUCCESS"
@@ -3232,11 +3238,60 @@ func stateCountNodes(states []string, counts map[string]int) []interface{} {
 	return out
 }
 
+// checkRunGraphQLSource renders one check run as the CheckRun source shape
+// the rollup connection and the checks mutation payloads share.
+func checkRunGraphQLSource(cr *store.CheckRun, repoKey string, conclusion, completedAt interface{}, suiteSource map[string]interface{}) map[string]interface{} {
+	source := map[string]interface{}{
+		"__typename":  "CheckRun",
+		"repoKey":     repoKey,
+		"id":          cr.NodeID,
+		"databaseId":  int(cr.ID),
+		"name":        cr.Name,
+		"status":      strings.ToUpper(cr.Status),
+		"conclusion":  conclusion,
+		"startedAt":   cr.StartedAt.Format(time.RFC3339),
+		"completedAt": completedAt,
+		"detailsUrl":  nilStr(cr.DetailsURL),
+		"externalId":  nilStr(cr.ExternalID),
+		"title":       nil,
+		"summary":     nil,
+		"text":        nil,
+		"checkSuite":  suiteSource,
+	}
+	if cr.Output != nil {
+		source["title"] = nilStr(cr.Output.Title)
+		source["summary"] = nilStr(cr.Output.Summary)
+		source["text"] = nilStr(cr.Output.Text)
+	}
+	return source
+}
+
 func checkSuiteGraphQLSourceLocked(st *store.Store, suite *store.CheckSuite) map[string]interface{} {
 	// workflowRun defaults to an untyped nil: a typed-nil map would pass
 	// graphql-go's isNullish check and then fail WorkflowRun.workflow's
 	// non-null contract on a nil source map.
-	source := map[string]interface{}{"workflowRun": nil}
+	source := map[string]interface{}{
+		"workflowRun": nil,
+		// CheckRun.checkSuite is non-null, so a run whose recorded suite is
+		// gone still answers a shell that satisfies the payload's own
+		// non-null members rather than discarding the whole subtree.
+		"id":         "",
+		"databaseId": nil,
+		"status":     "QUEUED",
+		"conclusion": nil,
+		"createdAt":  time.Time{}.Format(time.RFC3339),
+		"updatedAt":  time.Time{}.Format(time.RFC3339),
+	}
+	if suite != nil {
+		source["id"] = suite.NodeID
+		source["databaseId"] = int(suite.ID)
+		source["status"] = strings.ToUpper(suite.Status)
+		if suite.Conclusion != "" {
+			source["conclusion"] = strings.ToUpper(suite.Conclusion)
+		}
+		source["createdAt"] = suite.CreatedAt.UTC().Format(time.RFC3339)
+		source["updatedAt"] = suite.UpdatedAt.UTC().Format(time.RFC3339)
+	}
 	if run := checkSuiteWorkflowRunSourceLocked(st, suite); run != nil {
 		source["workflowRun"] = run
 	}

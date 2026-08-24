@@ -74,6 +74,13 @@ func canAccessRepoLocked(st *Store, user *User, repo *Repo, required string) boo
 	if user == nil || repo == nil {
 		return false
 	}
+	// A user-namespace access grant admits an enterprise owner temporarily,
+	// with the full capability set: the grant exists so an administrator can
+	// intervene in a managed account's repository, which read-only standing
+	// could not do.
+	if userNamespaceGrantAdmitsLocked(st, user, repo) {
+		return true
+	}
 	if user.SiteAdmin || (repo.Owner != nil && repo.Owner.ID == user.ID) {
 		return true
 	}

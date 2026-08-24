@@ -1368,6 +1368,12 @@ func (st *Store) deleteRepoLocked(owner, name string) (bool, PendingDeletion, er
 			batch.Delete("branch_protection", key)
 		}
 	}
+	for key := range st.Misc.BranchProtectionExtras {
+		if strings.HasPrefix(key, bpPrefix) {
+			delete(st.Misc.BranchProtectionExtras, key)
+			batch.Delete("branch_protection_extras", key)
+		}
+	}
 	delete(st.Misc.PagesBuilds, fullName)
 	batch.Delete("pages_builds", fullName)
 	st.Misc.Mu.Unlock()
@@ -3472,6 +3478,12 @@ func (st *Store) RenameBranch(repoID int, branch, newName string) bool {
 		delete(st.Misc.BranchProtection, oldProtectionKey)
 		batch.Put("branch_protection", newProtectionKey, protection)
 		batch.Delete("branch_protection", oldProtectionKey)
+	}
+	if extras, ok := st.Misc.BranchProtectionExtras[oldProtectionKey]; ok {
+		st.Misc.BranchProtectionExtras[newProtectionKey] = extras
+		delete(st.Misc.BranchProtectionExtras, oldProtectionKey)
+		batch.Put("branch_protection_extras", newProtectionKey, extras)
+		batch.Delete("branch_protection_extras", oldProtectionKey)
 	}
 	st.Misc.Mu.Unlock()
 	repo.UpdatedAt = st.CurrentTime()

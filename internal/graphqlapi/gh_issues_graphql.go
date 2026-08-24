@@ -2790,11 +2790,25 @@ type graphQLTypeRegistry struct {
 	blob              *graphql.Object
 	tag               *graphql.Object
 	refConnection     *graphql.Object
+	// The complete BranchProtectionRule object (gh_branch_protection_graphql.go),
+	// memoized because Ref.branchProtectionRule, the pull-request base ref and
+	// the branch-protection mutation payloads all name the one type.
+	branchProtectionRule *graphql.Object
 	// The check-rollup members `gh pr checks` asks isRequired of, and the
-	// interface GitHub declares that field on.
+	// interface GitHub declares that field on. checkSuite is memoized beside
+	// them because the checks mutation payloads name the same CheckSuite the
+	// rollup embeds.
 	statusContext           *graphql.Object
 	checkRun                *graphql.Object
+	checkSuite              *graphql.Object
 	requirableByPullRequest *graphql.Interface
+	// The deployment graph built with the account surface
+	// (gh_repos_deployments_graphql.go); the deployments/environments
+	// mutation payloads name the same objects.
+	deployment        *graphql.Object
+	deploymentStatus  *graphql.Object
+	environment       *graphql.Object
+	pinnedEnvironment *graphql.Object
 	// Labelable, the interface the three label mutations return their
 	// subject behind.
 	labelable *graphql.Interface

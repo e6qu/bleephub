@@ -487,6 +487,14 @@ type geiIssueRecord struct {
 	Number int    `json:"number"`
 	Title  string `json:"title"`
 	State  string `json:"state"`
+	// User is the record's author in the export archive's own shape. An
+	// author with no matching account here becomes a mannequin: github's
+	// placeholder for "someone wrote this, but nobody on this instance is
+	// them yet", claimable later through an attribution invitation.
+	User struct {
+		Login string `json:"login"`
+		Email string `json:"email"`
+	} `json:"user"`
 }
 
 type geiReleaseRecord struct {
@@ -529,6 +537,13 @@ func (s *Server) applyGEIRepositoryContent(target *store.Repo, migration *store.
 	for _, record := range append(append([]geiIssueRecord(nil), content.Issues...), content.PullRequests...) {
 		if record.Title == "" || existing[record.Title] {
 			continue
+		}
+		if login := record.User.Login; login != "" && s.store.LookupUserByLogin(login) == nil {
+			if owner, _, ok := store.SplitRepoFullName(target.FullName); ok {
+				if org := s.store.GetOrg(owner); org != nil {
+					s.store.EnsureMannequin(org.ID, login, record.User.Email)
+				}
+			}
 		}
 		created := s.store.CreateIssue(target.ID, actor.ID, record.Title, "", nil, nil, 0)
 		if created == nil {

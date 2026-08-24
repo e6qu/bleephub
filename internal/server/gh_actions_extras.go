@@ -668,7 +668,11 @@ func (s *Server) handleReviewPendingDeployments(w http.ResponseWriter, r *http.R
 	}
 
 	reviewer := ghUserFromContext(r.Context())
-	names := s.actions.ApplyDeploymentReview(r.Context(), wf, body.EnvironmentIDs, body.State, body.Comment, reviewer)
+	names, err := s.reviewPendingDeployments(r.Context(), wf, body.EnvironmentIDs, body.State, body.Comment, reviewer)
+	if err != nil {
+		writeGHError(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
 
 	deployments := []map[string]interface{}{}
 	if body.State == "approved" {
@@ -683,6 +687,26 @@ func (s *Server) handleReviewPendingDeployments(w http.ResponseWriter, r *http.R
 		}
 	}
 	writeJSON(w, http.StatusOK, deployments)
+}
+
+// reviewPendingDeployments is the one deployment-review path both surfaces
+// run: the REST pending_deployments route and the GraphQL
+// approveDeployments/rejectDeployments mutations. It refuses a self-review on
+// an environment configured with prevent_self_review — the reviewer may not
+// be the user who triggered the run — then hands the review to the actions
+// engine, which releases or fails the waiting jobs.
+func (s *Server) reviewPendingDeployments(ctx context.Context, wf *store.Workflow, envIDs []int, state, comment string, reviewer *store.User) ([]string, error) {
+	if reviewer != nil {
+		if sender := s.workflowSender(wf); sender != nil && sender.ID == reviewer.ID {
+			for _, id := range envIDs {
+				env := s.store.Deployments.GetEnvironmentByID(id)
+				if env != nil && env.PreventSelfReview {
+					return nil, fmt.Errorf("environment %q does not allow deployments to be reviewed by the user who triggered them", env.Name)
+				}
+			}
+		}
+	}
+	return s.actions.ApplyDeploymentReview(ctx, wf, envIDs, state, comment, reviewer), nil
 }
 
 // lookupRunFromPath resolves the {owner}/{repo} + {run_id} path params to

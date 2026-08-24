@@ -1,7 +1,6 @@
 package bleephub
 
 import (
-	"fmt"
 	"net/http"
 	"strings"
 	"unicode"
@@ -332,58 +331,10 @@ func (s *Server) applyCustomPropertyValues(w http.ResponseWriter, org string, re
 }
 
 // validateCustomPropertyValue checks a non-null value against the property's
-// value type (and allowed values for the select types).
+// value type (and allowed values for the select types). It lives in the
+// store so the GraphQL custom-property mutations enforce the same rules.
 func validateCustomPropertyValue(def *store.CustomProperty, value interface{}) error {
-	allowed := func(str string) bool {
-		for _, v := range def.AllowedValues {
-			if v == str {
-				return true
-			}
-		}
-		return false
-	}
-	switch def.ValueType {
-	case "string", "url":
-		if _, ok := value.(string); !ok {
-			return fmt.Errorf("property %q expects a string value", def.PropertyName)
-		}
-	case "true_false":
-		str, ok := value.(string)
-		if !ok || (str != "true" && str != "false") {
-			return fmt.Errorf("property %q expects \"true\" or \"false\"", def.PropertyName)
-		}
-	case "single_select":
-		str, ok := value.(string)
-		if !ok || !allowed(str) {
-			return fmt.Errorf("property %q expects one of its allowed values", def.PropertyName)
-		}
-	case "multi_select":
-		switch v := value.(type) {
-		case string:
-			// A bare string is accepted as a one-element selection.
-			if !allowed(v) {
-				return fmt.Errorf("property %q expects a subset of its allowed values", def.PropertyName)
-			}
-		case []interface{}:
-			for _, item := range v {
-				str, ok := item.(string)
-				if !ok || !allowed(str) {
-					return fmt.Errorf("property %q expects a subset of its allowed values", def.PropertyName)
-				}
-			}
-		case []string:
-			for _, item := range v {
-				if !allowed(item) {
-					return fmt.Errorf("property %q expects a subset of its allowed values", def.PropertyName)
-				}
-			}
-		default:
-			return fmt.Errorf("property %q expects an array of allowed values", def.PropertyName)
-		}
-	default:
-		return fmt.Errorf("property %q has unsupported value type %q", def.PropertyName, def.ValueType)
-	}
-	return nil
+	return store.ValidateCustomPropertyValue(def, value)
 }
 
 func customPropertyJSON(p *store.CustomProperty, org, baseURL string) map[string]interface{} {

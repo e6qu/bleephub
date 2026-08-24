@@ -144,6 +144,29 @@ func (a graphqlSeams) EmitPullRequestChanges(repo *store.Repo, pr *store.PullReq
 	a.s.pullRequestEmitter(repo, pr, sender).emitChanges(change)
 }
 
+// EmitCheckRunEvent / EmitCheckSuiteEvent are the same emitters the REST
+// checks routes fire, so a rerequest through GraphQL asks the owning app to
+// run again with the identical payload.
+func (a graphqlSeams) EmitCheckRunEvent(repoKey string, checkRunID int64, action string) {
+	a.s.CheckRunEvent(repoKey, checkRunID, action)
+}
+
+func (a graphqlSeams) EmitCheckSuiteEvent(repoKey string, suiteID int64, action string) {
+	a.s.CheckSuiteEvent(repoKey, suiteID, action)
+}
+
+// EmitDeploymentEvent / EmitDeploymentStatusEvent render the same payloads
+// POST /deployments and POST /deployments/{id}/statuses emit.
+func (a graphqlSeams) EmitDeploymentEvent(repo *store.Repo, d *store.Deployment, sender *store.User, action string) {
+	a.s.emitWebhookEvent(repo.FullName, "deployment", action,
+		buildDeploymentEventPayload(repo, d, sender, action, a.s.publicOrigin()))
+}
+
+func (a graphqlSeams) EmitDeploymentStatusEvent(repo *store.Repo, d *store.Deployment, status *store.DeploymentStatus, sender *store.User) {
+	a.s.emitWebhookEvent(repo.FullName, "deployment_status", string(status.State),
+		buildDeploymentStatusEventPayload(repo, d, status, sender, a.s.publicOrigin()))
+}
+
 // --- graphqlapi.Pulls ------------------------------------------------------
 
 func (a graphqlSeams) PRHeadSha(repo *store.Repo, pr *store.PullRequest) string {
@@ -166,8 +189,11 @@ func (a graphqlSeams) CompletePullRequestMerge(repo *store.Repo, pr *store.PullR
 	return a.s.completePullRequestMerge(repo, pr, user, method, commitTitle, commitMessage, expectedHead)
 }
 
-func (a graphqlSeams) BranchProtectionRuleForPR(repo *store.Repo, baseBranch string) map[string]interface{} {
-	return a.s.branchProtectionRuleForPR(repo, baseBranch)
+// MaybeAutoMergeRepo re-evaluates every armed auto-merge in the repository
+// after a branch-protection change lands through GraphQL — the same
+// re-evaluation the REST protection handlers trigger.
+func (a graphqlSeams) MaybeAutoMergeRepo(repo *store.Repo) {
+	a.s.maybeAutoMergeRepo(repo)
 }
 
 func (a graphqlSeams) ChangedFiles(repo *store.Repo, pr *store.PullRequest, baseURL string) ([]map[string]interface{}, error) {
@@ -182,6 +208,12 @@ func (a graphqlSeams) UpdatePullRequestBranch(repo *store.Repo, pr *store.PullRe
 
 func (a graphqlSeams) MaybeAutoMerge(prID int) {
 	a.s.maybeAutoMergePR(prID)
+}
+
+// MaybeAutoMergeHeadSHA releases any armed auto-merge waiting on this commit,
+// through the same helper the REST checks routes call when a run completes.
+func (a graphqlSeams) MaybeAutoMergeHeadSHA(repo *store.Repo, headSha string) {
+	a.s.maybeAutoMergeHeadSHA(repo, headSha)
 }
 
 func (a graphqlSeams) AutoRequestCodeOwners(repo *store.Repo, pr *store.PullRequest, sender *store.User) {
@@ -334,6 +366,14 @@ func (a graphqlSeams) RevertPullRequest(ctx context.Context, repo *store.Repo, p
 	}
 	a.s.autoRequestCodeOwners(repo, revert, sender)
 	return revert.ID, nil
+}
+
+// ReviewPendingDeployments applies a deployment review through the same
+// actions-engine path POST /actions/runs/{id}/pending_deployments runs, so a
+// review submitted over GraphQL releases or fails exactly the jobs a REST one
+// would.
+func (a graphqlSeams) ReviewPendingDeployments(ctx context.Context, wf *store.Workflow, envIDs []int, state, comment string, reviewer *store.User) ([]string, error) {
+	return a.s.reviewPendingDeployments(ctx, wf, envIDs, state, comment, reviewer)
 }
 
 // storageFor resolves a repository's git storage from its full name, the same

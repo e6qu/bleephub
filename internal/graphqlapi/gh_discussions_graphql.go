@@ -943,6 +943,8 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 		},
 	})
 
+	s.addDiscussionPollTypes(mutationType, discussionType)
+
 	s.registerMutation(mutationType, "addDiscussionComment", &graphql.Field{
 		Type: addDiscussionCommentPayloadType,
 		Args: graphql.FieldConfigArgument{

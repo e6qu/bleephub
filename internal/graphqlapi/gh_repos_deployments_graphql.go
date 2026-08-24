@@ -140,9 +140,11 @@ func (s *Resolver) addRepositoryDeploymentFields(types *accountSurfaceTypes) {
 	environmentType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "Environment",
 		Fields: graphql.Fields{
-			"databaseId": &graphql.Field{Type: graphql.Int},
-			"id":         &graphql.Field{Type: graphql.NewNonNull(graphql.ID)},
-			"name":       &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"databaseId":     &graphql.Field{Type: graphql.Int},
+			"id":             &graphql.Field{Type: graphql.NewNonNull(graphql.ID)},
+			"name":           &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"isPinned":       &graphql.Field{Type: graphql.Boolean},
+			"pinnedPosition": &graphql.Field{Type: graphql.Int},
 			"latestCompletedDeployment": &graphql.Field{
 				Type: deploymentType,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -176,6 +178,12 @@ func (s *Resolver) addRepositoryDeploymentFields(types *accountSurfaceTypes) {
 			},
 		},
 	})
+
+	// The mutation surface's payloads name the same objects, so they are
+	// memoized here where they are built.
+	s.graphqlTypes.deployment = deploymentType
+	s.graphqlTypes.deploymentStatus = deploymentStatusType
+	s.graphqlTypes.environment = environmentType
 
 	// --- Repository fields -------------------------------------------------
 	repoType.AddFieldConfig("deployments", &graphql.Field{
@@ -367,14 +375,21 @@ func (s *Resolver) deploymentStatusSource(status *store.DeploymentStatus, deploy
 // environmentSource renders one environment with the protection rules the
 // REST environment routes persist and its last completed deployment.
 func (s *Resolver) environmentSource(repo *store.Repo, env *store.Environment, repoSource map[string]interface{}) map[string]interface{} {
-	return map[string]interface{}{
+	source := map[string]interface{}{
 		"nodeID":                    env.NodeID,
 		"id":                        env.NodeID,
 		"databaseId":                env.ID,
 		"name":                      env.Name,
+		"isPinned":                  false,
+		"pinnedPosition":            nil,
 		"_protectionRules":          s.environmentProtectionRules(env),
 		"latestCompletedDeployment": optionalObject(s.latestCompletedDeployment(repo, env, repoSource)),
 	}
+	if pin := s.store.Deployments.GetPinnedEnvironment(repo.ID, env.ID); pin != nil {
+		source["isPinned"] = true
+		source["pinnedPosition"] = pin.Position
+	}
+	return source
 }
 
 // environmentProtectionRules renders the environment's wait timer, required

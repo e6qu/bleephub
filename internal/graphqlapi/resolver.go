@@ -80,6 +80,18 @@ type Events interface {
 	// rather than a repository, so like the projects_v2 events it cannot go
 	// through EmitWebhookEvent's repo-keyed path.
 	EmitSponsorshipEvent(action string, transition *store.SponsorsTransition, sender *store.User)
+	// EmitCheckRunEvent / EmitCheckSuiteEvent fire the check_run and
+	// check_suite webhook events with the same payloads the REST checks
+	// routes emit (the builders render the run and suite through the HTTP
+	// layer's own JSON shapes, which the resolver layer may not reach).
+	EmitCheckRunEvent(repoKey string, checkRunID int64, action string)
+	EmitCheckSuiteEvent(repoKey string, suiteID int64, action string)
+	// EmitDeploymentEvent / EmitDeploymentStatusEvent fire the deployment
+	// and deployment_status webhook events exactly as POST /deployments and
+	// POST /deployments/{id}/statuses do (the status event's action is the
+	// status's own state, per GitHub's contract).
+	EmitDeploymentEvent(repo *store.Repo, d *store.Deployment, sender *store.User, action string)
+	EmitDeploymentStatusEvent(repo *store.Repo, d *store.Deployment, status *store.DeploymentStatus, sender *store.User)
 }
 
 // Pulls is the merge gate plus the PR file-diff renderer, shared with the
@@ -98,12 +110,17 @@ type Pulls interface {
 	RequiredStatusCheckContexts(repo *store.Repo, baseBranch string) []string
 	CanMergePullRequest(ctx context.Context, repo *store.Repo, pr *store.PullRequest) (bool, string)
 	CompletePullRequestMerge(repo *store.Repo, pr *store.PullRequest, user *store.User, method, commitTitle, commitMessage, expectedHead string) (string, string)
-	BranchProtectionRuleForPR(repo *store.Repo, baseBranch string) map[string]interface{}
 	ChangedFiles(repo *store.Repo, pr *store.PullRequest, baseURL string) ([]map[string]interface{}, error)
 	// MaybeAutoMerge re-evaluates a pull request's armed auto-merge request
 	// after a review lands or is dismissed through GraphQL — the merge
 	// itself runs through the server's REST-shared merge gate.
 	MaybeAutoMerge(prID int)
+	// MaybeAutoMergeRepo re-evaluates every armed auto-merge in the
+	// repository after a branch-protection change lands through GraphQL —
+	// the protection handlers on the REST side trigger the same
+	// re-evaluation, because a rule change can be the event an armed
+	// auto-merge was waiting for.
+	MaybeAutoMergeRepo(repo *store.Repo)
 	// UpdatePullRequestBranch brings a pull request's head branch up to date
 	// with its base, by the named PullRequestBranchUpdateMethod. It is a git
 	// write — it moves the head ref and fires the push machinery — so it lives
@@ -113,6 +130,11 @@ type Pulls interface {
 	// pull request's changed files as reviewers. A pull request opened through
 	// GraphQL collects the same reviewers one opened through REST does.
 	AutoRequestCodeOwners(repo *store.Repo, pr *store.PullRequest, sender *store.User)
+	// MaybeAutoMergeHeadSHA re-evaluates every armed auto-merge whose pull
+	// request's head is this commit, which is what the REST checks routes do
+	// when a check run lands completed — a check reported through GraphQL
+	// must release the same waiting merges.
+	MaybeAutoMergeHeadSHA(repo *store.Repo, headSha string)
 }
 
 // Migrations starts the GitHub Enterprise Importer's workers. The mutations
@@ -178,6 +200,14 @@ type Repos interface {
 	// merged change onto it, and opens the pull request. It answers the new
 	// pull request's database id.
 	RevertPullRequest(ctx context.Context, repo *store.Repo, pr *store.PullRequest, sender *store.User, title, body string, draft bool) (int, error)
+	// ReviewPendingDeployments applies an approve/reject review to a
+	// workflow run's pending reviewer-protected deployments and answers the
+	// environment names the review covered. It is the actions-engine work
+	// POST /actions/runs/{id}/pending_deployments performs — releasing or
+	// failing the waiting jobs — which the resolver layer may not reach
+	// (ARCH-003). It refuses a self-review on an environment configured
+	// with preventSelfReview.
+	ReviewPendingDeployments(ctx context.Context, wf *store.Workflow, envIDs []int, state, comment string, reviewer *store.User) ([]string, error)
 }
 
 // RateSnapshot is the API rate-limit accounting the rateLimit root field
@@ -436,8 +466,8 @@ func (s *Resolver) completePullRequestMerge(repo *store.Repo, pr *store.PullRequ
 	return s.pulls.CompletePullRequestMerge(repo, pr, user, method, commitTitle, commitMessage, expectedHead)
 }
 
-func (s *Resolver) branchProtectionRuleForPR(repo *store.Repo, baseBranch string) map[string]interface{} {
-	return s.pulls.BranchProtectionRuleForPR(repo, baseBranch)
+func (s *Resolver) maybeAutoMergeRepo(repo *store.Repo) {
+	s.pulls.MaybeAutoMergeRepo(repo)
 }
 
 func (s *Resolver) pullRequestChangedFiles(repo *store.Repo, pr *store.PullRequest, baseURL string) ([]map[string]interface{}, error) {

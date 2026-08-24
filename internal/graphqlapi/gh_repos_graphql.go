@@ -35,6 +35,10 @@ func (s *Resolver) addRepoFieldsToSchema(
 			s.uniformResourceLocatableInterface(),
 			s.starrableInterface(),
 			s.subscribableInterface(),
+			// ProjectOwner (classic projects) is declared at construction for
+			// the reason the User type declares it: graphql-go memoizes an
+			// object's interface list on first read.
+			s.projectOwnerInterfaceType(),
 		},
 		Fields: graphql.Fields{
 			"id": &graphql.Field{
@@ -2010,13 +2014,7 @@ func (s *Resolver) gqlRefType() *graphql.Object {
 	if s.graphqlTypes.ref != nil {
 		return s.graphqlTypes.ref
 	}
-	branchProtectionRuleType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "BranchProtectionRule",
-		Fields: graphql.Fields{
-			"requiresStrictStatusChecks":   &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
-			"requiredApprovingReviewCount": &graphql.Field{Type: graphql.Int},
-		},
-	})
+	branchProtectionRuleType := s.gqlBranchProtectionRuleType()
 	s.graphqlTypes.ref = graphql.NewObject(graphql.ObjectConfig{
 		Name:       "Ref",
 		Interfaces: []*graphql.Interface{s.graphqlTypes.node},

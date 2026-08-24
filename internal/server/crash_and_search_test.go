@@ -157,7 +157,7 @@ func seedProjectCard(t *testing.T, s *Server) (*store.ProjectCard, *store.Projec
 		t.Fatal("CreateProjectClassic returned nil")
 	}
 	col := s.store.CreateProjectColumn(proj.ID, "todo")
-	card := s.store.CreateProjectCard(col.ID, admin.ID, "a note", 0)
+	card := s.store.CreateProjectCard(col.ID, admin.ID, "a note", 0, 0)
 	if card == nil {
 		t.Fatal("CreateProjectCard returned nil")
 	}

@@ -37,9 +37,9 @@ func TestPersistenceReload_ProjectBoardOrder(t *testing.T) {
 		}
 		wantColOrder = []int{colC.ID, colA.ID, colB.ID}
 
-		card1 := st.CreateProjectCard(colB.ID, user.ID, "one", 0)
-		card2 := st.CreateProjectCard(colB.ID, user.ID, "two", 0)
-		card3 := st.CreateProjectCard(colB.ID, user.ID, "three", 0)
+		card1 := st.CreateProjectCard(colB.ID, user.ID, "one", 0, 0)
+		card2 := st.CreateProjectCard(colB.ID, user.ID, "two", 0, 0)
+		card3 := st.CreateProjectCard(colB.ID, user.ID, "three", 0, 0)
 		// Reorder so Position order (three, one, two) differs from ID order.
 		if err := st.MoveProjectCard(card3, colB.ID, "first"); err != nil {
 			t.Fatalf("move card: %v", err)

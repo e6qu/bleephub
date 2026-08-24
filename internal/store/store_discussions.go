@@ -572,3 +572,148 @@ func (st *Store) persistDiscussionComment(c *DiscussionComment) {
 		st.Persist.MustPut("discussion_comments", strconv.Itoa(c.ID), c)
 	}
 }
+
+// DiscussionPoll is the poll a discussion may carry: one question, ordered
+// options, one vote per user across the whole poll — github's rule, which is
+// why the vote records the option per user rather than a count per option.
+type DiscussionPoll struct {
+	ID           int    `json:"id"`
+	NodeID       string `json:"node_id"`
+	DiscussionID int    `json:"discussion_id"`
+	Question     string `json:"question"`
+	// Options in authored order; vote-count order is derived at read time.
+	Options []*DiscussionPollOption `json:"options"`
+	// VotesByUser maps a user id to the option id they voted for. One entry
+	// per user is what makes "one vote per poll" structural rather than a
+	// rule every writer must remember.
+	VotesByUser map[int]int `json:"votes_by_user"`
+}
+
+// DiscussionPollOption is one answer in a discussion poll.
+type DiscussionPollOption struct {
+	ID     int    `json:"id"`
+	NodeID string `json:"node_id"`
+	PollID int    `json:"poll_id"`
+	Option string `json:"option"`
+}
+
+// CreateDiscussionPoll attaches a poll to a discussion. A discussion carries
+// at most one; a second creation is refused rather than replacing votes that
+// were already cast.
+func (st *Store) CreateDiscussionPoll(discussionID int, question string, options []string) *DiscussionPoll {
+	st.Mu.Lock()
+	defer st.Mu.Unlock()
+	discussion := st.Discussions[discussionID]
+	if discussion == nil || question == "" || len(options) == 0 {
+		return nil
+	}
+	for _, poll := range st.DiscussionPolls {
+		if poll.DiscussionID == discussionID {
+			return nil
+		}
+	}
+	poll := &DiscussionPoll{
+		ID:           st.NextDiscussionPollID,
+		NodeID:       fmt.Sprintf("DP_kwDO%08d", st.NextDiscussionPollID),
+		DiscussionID: discussionID,
+		Question:     question,
+		VotesByUser:  map[int]int{},
+	}
+	st.NextDiscussionPollID++
+	for _, option := range options {
+		poll.Options = append(poll.Options, &DiscussionPollOption{
+			ID:     st.NextDiscussionPollOptionID,
+			NodeID: fmt.Sprintf("DPO_kwDO%08d", st.NextDiscussionPollOptionID),
+			PollID: poll.ID,
+			Option: option,
+		})
+		st.NextDiscussionPollOptionID++
+	}
+	st.DiscussionPolls[poll.ID] = poll
+	st.persistDiscussionPollLocked(poll)
+	return cloneDiscussionPoll(poll)
+}
+
+// GetDiscussionPoll answers the poll on a discussion as a detached snapshot,
+// or nil when the discussion carries none.
+func (st *Store) GetDiscussionPoll(discussionID int) *DiscussionPoll {
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
+	for _, poll := range st.DiscussionPolls {
+		if poll.DiscussionID == discussionID {
+			return cloneDiscussionPoll(poll)
+		}
+	}
+	return nil
+}
+
+// FindDiscussionPollOptionByNodeID resolves an option's global id to live
+// rows: the option and its poll, in the Find* live-row convention.
+func FindDiscussionPollOptionByNodeID(st *Store, nodeID string) (*DiscussionPollOption, *DiscussionPoll) {
+	if nodeID == "" {
+		return nil, nil
+	}
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
+	for _, poll := range st.DiscussionPolls {
+		for _, option := range poll.Options {
+			if option.NodeID == nodeID {
+				return option, poll
+			}
+		}
+	}
+	return nil, nil
+}
+
+// CastDiscussionPollVote records userID's vote for the named option,
+// replacing any earlier vote in the same poll — github lets a voter change
+// their mind, not vote twice.
+func (st *Store) CastDiscussionPollVote(pollID, optionID, userID int) bool {
+	st.Mu.Lock()
+	defer st.Mu.Unlock()
+	poll := st.DiscussionPolls[pollID]
+	if poll == nil {
+		return false
+	}
+	valid := false
+	for _, option := range poll.Options {
+		if option.ID == optionID {
+			valid = true
+			break
+		}
+	}
+	if !valid {
+		return false
+	}
+	poll.VotesByUser[userID] = optionID
+	st.persistDiscussionPollLocked(poll)
+	return true
+}
+
+func clone_int_map(m map[int]int) map[int]int {
+	out := make(map[int]int, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
+}
+
+func cloneDiscussionPoll(poll *DiscussionPoll) *DiscussionPoll {
+	if poll == nil {
+		return nil
+	}
+	out := *poll
+	out.Options = make([]*DiscussionPollOption, len(poll.Options))
+	for i, option := range poll.Options {
+		copied := *option
+		out.Options[i] = &copied
+	}
+	out.VotesByUser = clone_int_map(poll.VotesByUser)
+	return &out
+}
+
+func (st *Store) persistDiscussionPollLocked(poll *DiscussionPoll) {
+	if st.Persist != nil {
+		st.Persist.MustPut("discussion_polls", strconv.Itoa(poll.ID), poll)
+	}
+}

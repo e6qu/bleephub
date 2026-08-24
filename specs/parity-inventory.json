@@ -3,7 +3,7 @@
     "literal_event_producers": [
       {
         "event": "branch_protection_rule",
-        "line": 384,
+        "line": 373,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_branch_protection.go"
       },
@@ -27,15 +27,15 @@
       },
       {
         "event": "create",
-        "line": 1094,
+        "line": 95,
         "producer": "emitWebhookEvent",
-        "source": "internal/server/gh_repos_git.go"
+        "source": "internal/server/gh_git_ref_writes.go"
       },
       {
         "event": "delete",
-        "line": 485,
+        "line": 174,
         "producer": "emitWebhookEvent",
-        "source": "internal/server/gh_repos_refs.go"
+        "source": "internal/server/gh_git_ref_writes.go"
       },
       {
         "event": "dependabot_alert",
@@ -50,6 +50,12 @@
         "source": "internal/server/gh_deployments.go"
       },
       {
+        "event": "deployment",
+        "line": 161,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/graphql_seams.go"
+      },
+      {
         "event": "deployment_status",
         "line": 222,
         "producer": "emitWebhookEvent",
@@ -60,6 +66,12 @@
         "line": 232,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_deployments.go"
+      },
+      {
+        "event": "deployment_status",
+        "line": 166,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/graphql_seams.go"
       },
       {
         "event": "fork",
@@ -346,15 +358,15 @@
   "graphql": {
     "compatibility_gap_count": 9,
     "coverage": {
-      "bleephub_types": 990,
+      "bleephub_types": 1267,
       "compatibility_gap_count": 9,
-      "implemented_fields": 3772,
+      "implemented_fields": 4830,
       "official_fields": 8362,
       "official_types": 1807,
-      "shared_types": 983,
-      "signature_exact_fields": 3771
+      "shared_types": 1260,
+      "signature_exact_fields": 4829
     },
-    "introspection_snapshot_sha256": "e94a0e775d1175bd162f21fb9bf2060cf9aabb88eb802e630621fabb2764162a",
+    "introspection_snapshot_sha256": "145b594b3ac4c2b8a2253e05d25119dfb74ffe3ea95383e193ee0cfbd7d0de7f",
     "official_schema": {
       "content_sha256": "30347e4f3bb975195f982351e55636ca03c76969c279980ca515a96ea7b40c3d",
       "source": "https://docs.github.com/public/fpt/schema.docs.graphql"
@@ -362,6 +374,7 @@
     "resolver_files": [
       "internal/graphqlapi/gh_account_surface_graphql.go",
       "internal/graphqlapi/gh_advisories_graphql.go",
+      "internal/graphqlapi/gh_branch_protection_graphql.go",
       "internal/graphqlapi/gh_checks_required_graphql.go",
       "internal/graphqlapi/gh_copilot_graphql.go",
       "internal/graphqlapi/gh_discussions_graphql.go",
@@ -370,6 +383,7 @@
       "internal/graphqlapi/gh_enterprise_types_graphql.go",
       "internal/graphqlapi/gh_gists_graphql.go",
       "internal/graphqlapi/gh_git_objects_graphql.go",
+      "internal/graphqlapi/gh_git_writes_graphql.go",
       "internal/graphqlapi/gh_issues_graphql.go",
       "internal/graphqlapi/gh_labels_graphql.go",
       "internal/graphqlapi/gh_linked_branches_graphql.go",
@@ -378,14 +392,24 @@
       "internal/graphqlapi/gh_migrations_graphql.go",
       "internal/graphqlapi/gh_moderation_graphql.go",
       "internal/graphqlapi/gh_mutations_accounts_graphql.go",
+      "internal/graphqlapi/gh_mutations_activity_graphql.go",
+      "internal/graphqlapi/gh_mutations_admin_graphql.go",
       "internal/graphqlapi/gh_mutations_authz_graphql.go",
+      "internal/graphqlapi/gh_mutations_checks_graphql.go",
+      "internal/graphqlapi/gh_mutations_custom_properties_graphql.go",
+      "internal/graphqlapi/gh_mutations_deployments_graphql.go",
+      "internal/graphqlapi/gh_mutations_domains_graphql.go",
       "internal/graphqlapi/gh_mutations_issues_graphql.go",
+      "internal/graphqlapi/gh_mutations_projects_classic_graphql.go",
+      "internal/graphqlapi/gh_mutations_pulls_graphql.go",
       "internal/graphqlapi/gh_mutations_repos_graphql.go",
+      "internal/graphqlapi/gh_mutations_rulesets_graphql.go",
       "internal/graphqlapi/gh_mutations_surface_graphql.go",
       "internal/graphqlapi/gh_mutations_types_graphql.go",
       "internal/graphqlapi/gh_orgs_graphql.go",
       "internal/graphqlapi/gh_orgs_surface_graphql.go",
       "internal/graphqlapi/gh_pinned_items_graphql.go",
+      "internal/graphqlapi/gh_projects_classic_graphql.go",
       "internal/graphqlapi/gh_projects_v2_graphql.go",
       "internal/graphqlapi/gh_projects_v2_mutations_graphql.go",
       "internal/graphqlapi/gh_projects_v2_ordering_graphql.go",
@@ -419,12 +443,15 @@
       "internal/server/gh_advisories_graphql_test.go",
       "internal/server/gh_discussions_graphql_test.go",
       "internal/server/gh_enterprise_graphql_test.go",
+      "internal/server/gh_governance_mutations_graphql_test.go",
       "internal/server/gh_graphql_connection_pagination_test.go",
       "internal/server/gh_graphql_node_test.go",
       "internal/server/gh_issue_pin_transfer_upvote_graphql_test.go",
       "internal/server/gh_issues_graphql_test.go",
       "internal/server/gh_mutations_accounts_graphql_test.go",
+      "internal/server/gh_mutations_activity_graphql_test.go",
       "internal/server/gh_mutations_issues_graphql_test.go",
+      "internal/server/gh_mutations_pulls_graphql_test.go",
       "internal/server/gh_mutations_surface_graphql_test.go",
       "internal/server/gh_projects_v2_graphql_test.go",
       "internal/server/gh_search_repositories_graphql_test.go",
@@ -9234,8 +9261,44 @@
         "id": "GQL-097",
         "location": "gh_repos_settings_graphql.go",
         "severity": "m",
-        "status": "open",
+        "status": "open \u2014 the branch-protection half is fixed: `BranchProtectionRule` is now the complete 31-field object (memoized, `gh_branch_protection_graphql.go`) backed by the same store the REST protection routes drive, `Repository.branchProtectionRules` is implemented, and the create/update/delete mutations exist with authz rows and refusal/entitled cases; the `vulnerabilityAlert(number:)` half (non-memoized alert registry, no per-repository alert number) remains",
         "status_kind": "open"
+      },
+      {
+        "category": "GQL",
+        "finding": "the git-write mutations were absent: createRef, updateRef, deleteRef, mergeBranch, createCommitOnBranch, updateRefs and revertPullRequest had no GraphQL surface, and the Repos seam declared six methods nothing implemented \u2014 a dangling interface that broke the build when it landed",
+        "id": "GQL-098",
+        "location": "gh_git_writes_graphql.go, graphql_seams.go",
+        "severity": "M",
+        "status": "fixed \u2014 all seven mutations, each driving the same branch-protection, secret-scanning and push machinery the REST git-database routes run through six new seam implementations; updateRefs honours beforeOid as a lost-update refusal, a zero afterOid deletes, an absent reference is created; revertPullRequest builds the inverse commit on a revert branch and opens the pull request through the checked constructor with CODEOWNERS collection",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "GQL",
+        "finding": "discussions could not be closed: the store had no closed state, so closeDiscussion and reopenDiscussion could not exist and the Discussion type served neither closed, closedAt nor stateReason",
+        "id": "GQL-099",
+        "location": "gh_discussions_graphql.go, store_discussions.go",
+        "severity": "m",
+        "status": "fixed \u2014 close state on the store row, both mutations with the documented DiscussionCloseReason vocabulary and REOPENED on reopen, the closed and reopened webhook actions, and the three fields on the type",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "GQL",
+        "finding": "updateTeamsRepository, deletePackageVersion and cloneTemplateRepository were absent; teams and package versions had no node-id finders at all",
+        "id": "GQL-100",
+        "location": "gh_mutations_admin_graphql.go, node_finders.go",
+        "severity": "m",
+        "status": "fixed \u2014 the three mutations with exact signatures; team grants map github's five-value permission vocabulary onto the stored grant levels and refuse a team from another organization; deleting a package version answers not-yours identically to does-not-exist so the mutation is no existence oracle; template generation runs the same storage copy and owner rule as the REST generate route",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "TEST",
+        "finding": "the conformance matrix carried four skips, and a skip counted as neither pass nor failure \u2014 'no SDK can produce this' was asserted where the deployment could in fact produce it",
+        "id": "TEST-096",
+        "location": "test/conformance",
+        "severity": "M",
+        "status": "fixed \u2014 zero skips: artifacts are produced by a genuinely dispatched workflow run and read back through each SDK's typed methods, gh attestation verify runs against a bundle the deployment serves with a custom trusted root, and the one subcommand gh refuses to send to a non-github.com host was replaced by a covering octokit operation that exercises linked branches for real; 698 of 698 operations pass",
+        "status_kind": "fixed"
       },
       {
         "category": "STORE",
@@ -9371,10 +9434,10 @@
         },
         "GQL": {
           "status": {
-            "fixed": 92,
+            "fixed": 95,
             "open": 5
           },
-          "total": 97
+          "total": 100
         },
         "PAR": {
           "status": {
@@ -9398,9 +9461,9 @@
         "TEST": {
           "status": {
             "deferred": 1,
-            "fixed": 43
+            "fixed": 44
           },
-          "total": 44
+          "total": 45
         },
         "WEB": {
           "status": {
@@ -9412,15 +9475,15 @@
       },
       "severity": {
         "blocker": 183,
-        "major": 486,
-        "minor": 319
+        "major": 488,
+        "minor": 321
       },
       "status": {
         "deferred": 3,
-        "fixed": 979,
+        "fixed": 983,
         "open": 6
       },
-      "total": 988
+      "total": 992
     }
   },
   "rest": {
@@ -22366,7 +22429,7 @@
         "source": "internal/server/gh_projects_v2_rest.go"
       },
       {
-        "line": 43,
+        "line": 42,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/properties/schema/{custom_property_name}",
         "source": "internal/server/gh_custom_properties.go"
@@ -25276,19 +25339,19 @@
         "source": "internal/server/gh_projects_v2_rest.go"
       },
       {
-        "line": 35,
+        "line": 34,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/properties/schema",
         "source": "internal/server/gh_custom_properties.go"
       },
       {
-        "line": 39,
+        "line": 38,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/properties/schema/{custom_property_name}",
         "source": "internal/server/gh_custom_properties.go"
       },
       {
-        "line": 45,
+        "line": 44,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/properties/values",
         "source": "internal/server/gh_custom_properties.go"
@@ -25882,13 +25945,13 @@
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 20,
+        "line": 18,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/branches",
         "source": "internal/server/gh_repos_refs.go"
       },
       {
-        "line": 21,
+        "line": 19,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}",
         "source": "internal/server/gh_repos_refs.go"
@@ -26770,7 +26833,7 @@
         "source": "internal/server/gh_projects_classic.go"
       },
       {
-        "line": 49,
+        "line": 48,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/properties/values",
         "source": "internal/server/gh_custom_properties.go"
@@ -27052,7 +27115,7 @@
         "source": "internal/server/gh_repos_reads.go"
       },
       {
-        "line": 22,
+        "line": 20,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/tags",
         "source": "internal/server/gh_repos_refs.go"
@@ -28150,13 +28213,13 @@
         "source": "internal/server/gh_projects_v2_rest.go"
       },
       {
-        "line": 37,
+        "line": 36,
         "method": "PATCH",
         "path": "/api/v3/orgs/{org}/properties/schema",
         "source": "internal/server/gh_custom_properties.go"
       },
       {
-        "line": 47,
+        "line": 46,
         "method": "PATCH",
         "path": "/api/v3/orgs/{org}/properties/values",
         "source": "internal/server/gh_custom_properties.go"
@@ -28408,7 +28471,7 @@
         "source": "internal/server/gh_ghes_pre_receive.go"
       },
       {
-        "line": 50,
+        "line": 49,
         "method": "PATCH",
         "path": "/api/v3/repos/{owner}/{repo}/properties/values",
         "source": "internal/server/gh_custom_properties.go"
@@ -30514,7 +30577,7 @@
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 41,
+        "line": 40,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/properties/schema/{custom_property_name}",
         "source": "internal/server/gh_custom_properties.go"

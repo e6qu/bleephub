@@ -1181,7 +1181,7 @@ func (st *Store) loadEnterpriseAccountBuckets() error {
 	}); err != nil {
 		return err
 	}
-	return st.loadBucket("ip_allow_list_entries", func(raw []byte) error {
+	if err := st.loadBucket("ip_allow_list_entries", func(raw []byte) error {
 		var entry IPAllowListEntry
 		if err := LoadJSON(raw, &entry); err != nil {
 			return err
@@ -1189,6 +1189,19 @@ func (st *Store) loadEnterpriseAccountBuckets() error {
 		st.IPAllowListEntries[entry.ID] = &entry
 		if entry.ID >= st.NextIPAllowListEntryID {
 			st.NextIPAllowListEntryID = entry.ID + 1
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	return st.loadBucket("verifiable_domains", func(raw []byte) error {
+		var row VerifiableDomain
+		if err := LoadJSON(raw, &row); err != nil {
+			return err
+		}
+		st.VerifiableDomains[row.ID] = &row
+		if row.ID >= st.NextVerifiableDomainID {
+			st.NextVerifiableDomainID = row.ID + 1
 		}
 		return nil
 	})
@@ -1644,6 +1657,10 @@ func (st *Store) SetEnterpriseVerifiedDomains(enterpriseID int, domains []string
 	e.VerifiedDomains = normalized
 	e.UpdatedAt = st.CurrentTime()
 	st.persistEnterpriseLocked(e)
+	// The flat list and the VerifiableDomain rows the GraphQL surface serves
+	// are two views of one fact; a list write must not leave rows describing
+	// domains the enterprise no longer claims (or vice versa).
+	st.reconcileEnterpriseDomainRowsLocked(e.ID, normalized)
 	return cloneEnterprise(e)
 }
 
@@ -1688,4 +1705,54 @@ func (st *Store) ListIPAllowListEntryByID(id int) *IPAllowListEntry {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 	return snapshotIPAllowListEntry(st.IPAllowListEntries[id])
+}
+
+// UserNamespaceAccessGrant is an enterprise owner's temporary access to a
+// user-namespace repository of an enterprise-managed account — the record
+// accessUserNamespaceRepository creates. It is honored inside the one
+// repository-capability lattice, so the grant admits its holder everywhere a
+// collaborator grant would, and nowhere else.
+type UserNamespaceAccessGrant struct {
+	ID           int       `json:"id"`
+	EnterpriseID int       `json:"enterprise_id"`
+	RepoID       int       `json:"repo_id"`
+	GranteeID    int       `json:"grantee_id"`
+	ExpiresAt    time.Time `json:"expires_at"`
+}
+
+// GrantUserNamespaceAccess records the grant and answers its expiry. The
+// window is github's two hours: long enough to investigate, short enough that
+// the elevated access does not quietly become permanent.
+func (st *Store) GrantUserNamespaceAccess(enterpriseID, repoID, granteeID int) time.Time {
+	st.Mu.Lock()
+	defer st.Mu.Unlock()
+	expires := st.CurrentTime().Add(2 * time.Hour)
+	grant := &UserNamespaceAccessGrant{
+		ID:           st.NextUserNamespaceGrantID,
+		EnterpriseID: enterpriseID,
+		RepoID:       repoID,
+		GranteeID:    granteeID,
+		ExpiresAt:    expires,
+	}
+	st.NextUserNamespaceGrantID++
+	st.UserNamespaceGrants[grant.ID] = grant
+	if st.Persist != nil {
+		st.Persist.MustPut("user_namespace_grants", strconv.Itoa(grant.ID), grant)
+	}
+	return expires
+}
+
+// userNamespaceGrantAdmitsLocked reports whether an unexpired grant admits
+// user to repo. Callers hold st.Mu.
+func userNamespaceGrantAdmitsLocked(st *Store, user *User, repo *Repo) bool {
+	if user == nil || repo == nil {
+		return false
+	}
+	now := st.CurrentTime()
+	for _, grant := range st.UserNamespaceGrants {
+		if grant.RepoID == repo.ID && grant.GranteeID == user.ID && now.Before(grant.ExpiresAt) {
+			return true
+		}
+	}
+	return false
 }

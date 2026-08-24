@@ -21,6 +21,8 @@ func (s *Resolver) addOrgFieldsToSchema(userType, queryType *graphql.Object, nod
 		Interfaces: []*graphql.Interface{
 			nodeInterface, s.graphqlTypes.repositoryOwner,
 			s.projectV2OwnerInterfaceType(),
+			// ProjectOwner (classic projects), for the same memoization reason.
+			s.projectOwnerInterfaceType(),
 			// Sponsorable is declared here for the same reason
 			// ProjectV2Owner is: graphql-go memoizes the interface list.
 			s.sponsorableInterfaceType(),
