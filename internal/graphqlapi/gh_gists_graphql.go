@@ -35,15 +35,14 @@ func (s *Resolver) gqlGistPrivacyEnum() *graphql.Enum {
 // gqlGistOrderInput returns GitHub's GistOrder input object (memoized through
 // the enum registry it is built from).
 func (s *Resolver) gqlGistOrderInput() *graphql.InputObject {
-	return graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "GistOrder",
-		Fields: graphql.InputObjectConfigFieldMap{
-			"direction": &graphql.InputObjectFieldConfig{
-				Type: graphql.NewNonNull(s.graphQLEnum("OrderDirection", "ASC", "DESC")),
-			},
-			"field": &graphql.InputObjectFieldConfig{
-				Type: graphql.NewNonNull(s.graphQLEnum("GistOrderField", "CREATED_AT", "PUSHED_AT", "UPDATED_AT")),
-			},
+	// Memoized by name: both User.gists and Gist.forks name this input, and a
+	// schema may contain only one type called "GistOrder".
+	return s.mutationInput("GistOrder", graphql.InputObjectConfigFieldMap{
+		"direction": &graphql.InputObjectFieldConfig{
+			Type: graphql.NewNonNull(s.graphQLEnum("OrderDirection", "ASC", "DESC")),
+		},
+		"field": &graphql.InputObjectFieldConfig{
+			Type: graphql.NewNonNull(s.graphQLEnum("GistOrderField", "CREATED_AT", "PUSHED_AT", "UPDATED_AT")),
 		},
 	})
 }
@@ -306,6 +305,141 @@ func sortGists(gists []*store.Gist, orderBy interface{}) {
 
 func emptyGistConnection() map[string]interface{} {
 	return paginateGQLItems(nil, nil)
+}
+
+// addGistResidueFields completes the Starrable and comment/fork members of the
+// Gist and GistFile objects. It runs late (from the misc installer, after the
+// account surface has built GistCommentConnection and the star/stargazer
+// connection types), so it reaches those cross-family types read-only rather
+// than re-minting them.
+func (s *Resolver) addGistResidueFields() {
+	gistType := s.gqlGistType()
+
+	// GistCommentConnection is the type User.gistComments already serves; it is
+	// built by the account surface, which runs before this installer.
+	types := s.accountSurfaceRegistry()
+	commentConnection := s.accountConnectionType(types, "GistComment", s.gqlGistCommentType(types), false, nil)
+	gistType.AddFieldConfig("comments", &graphql.Field{
+		Type: graphql.NewNonNull(commentConnection),
+		Args: connectionPagingArgs(),
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			gistID := gistSourceString(p.Source, "gistID")
+			comments := s.store.ListGistComments(gistID)
+			items := make([]gqlConnItem, 0, len(comments))
+			for i := range comments {
+				c := comments[i]
+				items = append(items, gqlConnItem{
+					identity: c.NodeID,
+					render: func() map[string]interface{} {
+						return map[string]interface{}{
+							"id":        c.NodeID,
+							"nodeID":    c.NodeID,
+							"_dbID":     c.ID,
+							"authorID":  c.UserID,
+							"gistID":    c.GistID,
+							"body":      c.Body,
+							"createdAt": c.CreatedAt.UTC().Format(time.RFC3339),
+							"updatedAt": c.UpdatedAt.UTC().Format(time.RFC3339),
+							"author":    optionalRendered(s.store.GetUserByID(c.UserID), userToGraphQL),
+						}
+					},
+				})
+			}
+			return paginateGQLItems(items, p.Args), nil
+		},
+	})
+
+	gistType.AddFieldConfig("forks", &graphql.Field{
+		Type: graphql.NewNonNull(s.gqlGistConnectionType()),
+		Args: graphql.FieldConfigArgument{
+			"first":   &graphql.ArgumentConfig{Type: graphql.Int},
+			"last":    &graphql.ArgumentConfig{Type: graphql.Int},
+			"after":   &graphql.ArgumentConfig{Type: graphql.String},
+			"before":  &graphql.ArgumentConfig{Type: graphql.String},
+			"orderBy": &graphql.ArgumentConfig{Type: s.gqlGistOrderInput()},
+		},
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			gistID := gistSourceString(p.Source, "gistID")
+			forks := s.store.ListGistForks(gistID)
+			sortGists(forks, p.Args["orderBy"])
+			items := make([]gqlConnItem, 0, len(forks))
+			for i := range forks {
+				fork := forks[i]
+				items = append(items, gqlConnItem{
+					identity: fork.NodeID,
+					render: func() map[string]interface{} {
+						owner := optionalRendered(s.store.GetUserByID(fork.OwnerID), userToGraphQL)
+						ownerMap, _ := owner.(map[string]interface{})
+						return gistToGQL(fork, ownerMap)
+					},
+				})
+			}
+			return paginateGQLItems(items, p.Args), nil
+		},
+	})
+
+	gistType.AddFieldConfig("stargazerCount", &graphql.Field{
+		Type: graphql.NewNonNull(graphql.Int),
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			return len(s.store.GistStargazerIDs(gistSourceString(p.Source, "gistID"))), nil
+		},
+	})
+
+	gistType.AddFieldConfig("stargazers", &graphql.Field{
+		Type: graphql.NewNonNull(s.gqlStargazerConnectionType()),
+		Args: s.stargazerConnectionArgs(),
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			gistID := gistSourceString(p.Source, "gistID")
+			// The gist star store records no per-star timestamp; the gist's own
+			// creation instant stands in for starredAt, mirroring how the
+			// repository stargazer connection uses the repository's.
+			starredAt := gistSourceString(p.Source, "createdAt")
+			ids := s.store.GistStargazerIDs(gistID)
+			items := make([]gqlConnItem, 0, len(ids))
+			for _, id := range ids {
+				id := id
+				user := s.store.GetUserByID(id)
+				if user == nil {
+					continue
+				}
+				items = append(items, gqlConnItem{
+					identity: user.NodeID,
+					render: func() map[string]interface{} {
+						node := userToGraphQL(user)
+						node["starredAt"] = starredAt
+						return node
+					},
+				})
+			}
+			return paginateGQLItems(items, p.Args), nil
+		},
+	})
+
+	// GistFile.language is inferred from the file name's extension; bleephub
+	// carries the same small Linguist-style map the repository language fields
+	// use, and returns null for an extension it does not recognise.
+	s.gqlGistFileType().AddFieldConfig("language", &graphql.Field{
+		Type: s.gqlLanguageType(),
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			file, ok := p.Source.(map[string]interface{})
+			if !ok {
+				return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
+			}
+			name, _ := file["name"].(string)
+			lang, ok := store.LanguageForFilename(name)
+			if !ok {
+				return nil, nil
+			}
+			return map[string]interface{}{"name": lang}, nil
+		},
+	})
+}
+
+// gistSourceString reads a string key off a Gist source map.
+func gistSourceString(source interface{}, key string) string {
+	m, _ := source.(map[string]interface{})
+	v, _ := m[key].(string)
+	return v
 }
 
 // gistToGQL renders one gist as the Gist type's source map.

@@ -11,6 +11,7 @@ package graphqlapi
 // being the only way to make a change.
 
 import (
+	"encoding/base64"
 	"fmt"
 	"strings"
 
@@ -18,6 +19,96 @@ import (
 
 	"github.com/e6qu/bleephub/internal/store"
 )
+
+// topicNodeID is the global id GitHub gives a Topic node. The topic's name is
+// its identity (there is no numeric key), so the id is a base64 of the type
+// name and the topic name, matching the RepositoryTopic scheme in the
+// conversation-fields family.
+func topicNodeID(name string) string {
+	return "TO_" + base64.RawURLEncoding.EncodeToString([]byte("Topic"+name))
+}
+
+// addTopicResidueFields completes the Topic object's Starrable and repository
+// members. bleephub models neither topic stars nor a related-topics graph, so
+// stargazerCount/viewerHasStarred/relatedTopics answer truthful zero/false/empty;
+// repositories is backed by the repositories that actually carry the topic.
+func (s *Resolver) addTopicResidueFields() {
+	topicType := s.gqlTopicType()
+
+	topicType.AddFieldConfig("id", &graphql.Field{
+		Type: graphql.NewNonNull(graphql.ID),
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			return topicNodeID(topicSourceName(p.Source)), nil
+		},
+	})
+	topicType.AddFieldConfig("stargazerCount", &graphql.Field{
+		Type:    graphql.NewNonNull(graphql.Int),
+		Resolve: func(graphql.ResolveParams) (interface{}, error) { return 0, nil },
+	})
+	topicType.AddFieldConfig("viewerHasStarred", &graphql.Field{
+		Type:    graphql.NewNonNull(graphql.Boolean),
+		Resolve: func(graphql.ResolveParams) (interface{}, error) { return false, nil },
+	})
+	topicType.AddFieldConfig("stargazers", &graphql.Field{
+		Type: graphql.NewNonNull(s.gqlStargazerConnectionType()),
+		Args: s.stargazerConnectionArgs(),
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			return repaginateConnection(gqlConnectionSource(nil), p.Args), nil
+		},
+	})
+	topicType.AddFieldConfig("relatedTopics", &graphql.Field{
+		Type: graphql.NewNonNull(graphql.NewList(graphql.NewNonNull(topicType))),
+		Args: graphql.FieldConfigArgument{
+			"first": &graphql.ArgumentConfig{Type: graphql.Int, DefaultValue: 3},
+		},
+		Resolve: func(graphql.ResolveParams) (interface{}, error) {
+			// No related-topics graph is modeled; the list is empty rather than
+			// invented, and non-nil so the non-null list resolves.
+			return []interface{}{}, nil
+		},
+	})
+
+	affiliation := s.sharedEnum("RepositoryAffiliation", "OWNER", "COLLABORATOR", "ORGANIZATION_MEMBER")
+	topicType.AddFieldConfig("repositories", &graphql.Field{
+		Type: graphql.NewNonNull(s.graphqlTypes.repositoryConnection),
+		Args: graphql.FieldConfigArgument{
+			"affiliations":      &graphql.ArgumentConfig{Type: graphql.NewList(affiliation)},
+			"after":             &graphql.ArgumentConfig{Type: graphql.String},
+			"before":            &graphql.ArgumentConfig{Type: graphql.String},
+			"first":             &graphql.ArgumentConfig{Type: graphql.Int},
+			"hasIssuesEnabled":  &graphql.ArgumentConfig{Type: graphql.Boolean},
+			"isLocked":          &graphql.ArgumentConfig{Type: graphql.Boolean},
+			"last":              &graphql.ArgumentConfig{Type: graphql.Int},
+			"orderBy":           &graphql.ArgumentConfig{Type: s.gqlRepositoryOrderInput()},
+			"ownerAffiliations": &graphql.ArgumentConfig{Type: graphql.NewList(affiliation), DefaultValue: []interface{}{"OWNER", "COLLABORATOR"}},
+			"privacy":           &graphql.ArgumentConfig{Type: s.sharedEnum("RepositoryPrivacy", "PUBLIC", "PRIVATE")},
+			"sponsorableOnly":   &graphql.ArgumentConfig{Type: graphql.Boolean, DefaultValue: false},
+			"visibility":        &graphql.ArgumentConfig{Type: s.sharedEnum("RepositoryVisibility", "INTERNAL", "PRIVATE", "PUBLIC")},
+		},
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			name := topicSourceName(p.Source)
+			items := make([]gqlConnItem, 0)
+			for _, repo := range s.readableRepos(p) {
+				if !containsFold(repo.Topics, name) {
+					continue
+				}
+				repo := repo
+				items = append(items, gqlConnItem{
+					identity: repo.NodeID,
+					render:   func() map[string]interface{} { return repoToGraphQL(s.store, repo) },
+				})
+			}
+			return paginateGQLItems(items, p.Args), nil
+		},
+	})
+}
+
+// topicSourceName reads the topic name off a Topic source map.
+func topicSourceName(source interface{}) string {
+	m, _ := source.(map[string]interface{})
+	name, _ := m["name"].(string)
+	return name
+}
 
 // maxRepositoryTopics is github.com's cap on the topics one repository may
 // carry; the REST topics route enforces the same number.

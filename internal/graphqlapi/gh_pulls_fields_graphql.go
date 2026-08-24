@@ -856,6 +856,34 @@ func (s *Resolver) prStackTypes() (*graphql.Object, *graphql.Object) {
 		Fields: graphql.Fields{
 			"id":       &graphql.Field{Type: graphql.NewNonNull(graphql.ID)},
 			"position": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
+			// No stacked-PR graph is modelled, so an entry never occupies a real
+			// pull request or stack; both are nullable and answer null.
+			"pullRequest": &graphql.Field{
+				Type:    s.graphqlTypes.pullRequest,
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) { return srcMap(p)["pullRequest"], nil },
+			},
+			"stack": &graphql.Field{
+				Type:    stack,
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) { return srcMap(p)["stack"], nil },
+			},
+		},
+	})
+	stackEntryConnection := graphql.NewObject(graphql.ObjectConfig{
+		Name: "PullRequestStackEntryConnection",
+		Fields: graphql.Fields{
+			"nodes":      &graphql.Field{Type: graphql.NewList(entry)},
+			"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
+			"edges":      gqlEdgesField(s.simpleEdgeType("PullRequestStackEntryEdge", entry)),
+			"pageInfo":   s.gqlPageInfoField(),
+		},
+	})
+	// The stack's entries. bleephub models no stacked-PR graph, so the
+	// connection is a truthful empty one.
+	stack.AddFieldConfig("entries", &graphql.Field{
+		Type: graphql.NewNonNull(stackEntryConnection),
+		Args: relayConnectionArgs(),
+		Resolve: func(graphql.ResolveParams) (interface{}, error) {
+			return prEmptyConnection(), nil
 		},
 	})
 	return stack, entry

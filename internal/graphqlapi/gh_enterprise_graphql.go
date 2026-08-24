@@ -474,6 +474,12 @@ func (s *Resolver) addEnterpriseFieldsToSchema(userType, orgType, queryType *gra
 
 	s.addEnterpriseExtraFields(enterpriseType, ownerInfoType, identityProviderType, enterpriseUserAccountType, extras)
 
+	// Second pass: the identity/team/invitation completion fields that name
+	// types built above (the invitation, external-identity and server
+	// installation nodes) and cross-family types (Organization, User, the
+	// OrganizationIdentityProvider the account surface later memoizes).
+	s.addEnterpriseIdentityCompletionFields(orgType, userType, nodeInterface, certificate, extras)
+
 	s.graphqlTypes.enterpriseUserAccount = enterpriseUserAccountType
 	s.graphqlTypes.enterpriseAdminInvitation = adminInvitationType
 	s.graphqlTypes.enterpriseMemberInvite = memberInvitationType

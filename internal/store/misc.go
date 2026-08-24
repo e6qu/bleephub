@@ -109,6 +109,43 @@ type AuditEntry struct {
 	Version   string                 `json:"version"`
 }
 
+// ListOrgAuditEntries returns a newest-first, detached snapshot of the
+// audit-log entries an organization's audit log surfaces: entries scoped to
+// the organization, plus the instance-wide entries recorded with no org that
+// GitHub's org audit log also lists. It mirrors the filter the REST handler
+// (handleOrgAuditLog) applies, so the GraphQL Organization.auditLog connection
+// and GET /orgs/{org}/audit-log answer from the same rows.
+//
+// The returned slice and every entry (including its Data map) are copies, so a
+// caller may read them without holding the store lock (STORE-021).
+func (st *Store) ListOrgAuditEntries(org string) []*AuditEntry {
+	st.Misc.Mu.RLock()
+	defer st.Misc.Mu.RUnlock()
+	out := make([]*AuditEntry, 0, len(st.Misc.AuditLog))
+	for _, e := range st.Misc.AuditLog {
+		if e.Org != "" && e.Org != org {
+			continue
+		}
+		out = append(out, cloneAuditEntry(e))
+	}
+	return out
+}
+
+func cloneAuditEntry(e *AuditEntry) *AuditEntry {
+	if e == nil {
+		return nil
+	}
+	clone := *e
+	if e.Data != nil {
+		data := make(map[string]interface{}, len(e.Data))
+		for k, v := range e.Data {
+			data[k] = v
+		}
+		clone.Data = data
+	}
+	return &clone
+}
+
 type AuditLogEvent struct {
 	ID         int64                  `json:"id"`
 	Timestamp  string                 `json:"timestamp"`

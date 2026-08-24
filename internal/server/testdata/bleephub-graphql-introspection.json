@@ -145,6 +145,34 @@
         "User"
       ]
     },
+    "ActorConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[ActorEdge]"
+        },
+        "nodes": {
+          "type": "[Actor]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "ActorEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "Actor"
+        }
+      }
+    },
     "ActorType": {
       "kind": "ENUM",
       "enum_values": [
@@ -450,9 +478,11 @@
       "input_fields": {
         "body": "String",
         "clientMutationId": "String",
+        "comments": "[DraftPullRequestReviewComment]",
         "commitOID": "GitObjectID",
         "event": "PullRequestReviewEvent",
-        "pullRequestId": "ID!"
+        "pullRequestId": "ID!",
+        "threads": "[DraftPullRequestReviewThread]"
       }
     },
     "AddPullRequestReviewPayload": {
@@ -684,6 +714,25 @@
         "id": {
           "type": "ID!"
         },
+        "ipAllowListEntries": {
+          "type": "IpAllowListEntryConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "orderBy": "IpAllowListEntryOrder"
+          }
+        },
+        "logoBackgroundColor": {
+          "type": "String!"
+        },
+        "logoUrl": {
+          "type": "URI!",
+          "args": {
+            "size": "Int"
+          }
+        },
         "name": {
           "type": "String!"
         },
@@ -692,6 +741,9 @@
         },
         "updatedAt": {
           "type": "DateTime!"
+        },
+        "url": {
+          "type": "URI!"
         }
       }
     },
@@ -971,6 +1023,9 @@
         },
         "mergeMethod": {
           "type": "PullRequestMergeMethod!"
+        },
+        "pullRequest": {
+          "type": "PullRequest!"
         }
       }
     },
@@ -1008,6 +1063,31 @@
     },
     "BigInt": {
       "kind": "SCALAR"
+    },
+    "Blame": {
+      "kind": "OBJECT",
+      "fields": {
+        "ranges": {
+          "type": "[BlameRange!]!"
+        }
+      }
+    },
+    "BlameRange": {
+      "kind": "OBJECT",
+      "fields": {
+        "age": {
+          "type": "Int!"
+        },
+        "commit": {
+          "type": "Commit!"
+        },
+        "endingLine": {
+          "type": "Int!"
+        },
+        "startingLine": {
+          "type": "Int!"
+        }
+      }
     },
     "Blob": {
       "kind": "OBJECT",
@@ -1054,11 +1134,32 @@
     "Bot": {
       "kind": "OBJECT",
       "fields": {
+        "avatarUrl": {
+          "type": "URI!",
+          "args": {
+            "size": "Int"
+          }
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "databaseId": {
+          "type": "Int"
+        },
         "id": {
           "type": "ID!"
         },
         "login": {
           "type": "String!"
+        },
+        "resourcePath": {
+          "type": "URI!"
+        },
+        "updatedAt": {
+          "type": "DateTime!"
+        },
+        "url": {
+          "type": "URI!"
         }
       }
     },
@@ -1987,6 +2088,41 @@
         "setting": "Boolean!"
       }
     },
+    "CheckSuiteConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[CheckSuiteEdge]"
+        },
+        "nodes": {
+          "type": "[CheckSuite]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "CheckSuiteEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "CheckSuite"
+        }
+      }
+    },
+    "CheckSuiteFilter": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "appId": "Int",
+        "checkName": "String"
+      }
+    },
     "Claimable": {
       "kind": "UNION",
       "possible_types": [
@@ -2323,6 +2459,16 @@
         "additions": {
           "type": "Int!"
         },
+        "associatedPullRequests": {
+          "type": "PullRequestConnection",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "orderBy": "PullRequestOrder"
+          }
+        },
         "author": {
           "type": "GitActor"
         },
@@ -2338,11 +2484,36 @@
             "first": "Int"
           }
         },
+        "blame": {
+          "type": "Blame!",
+          "args": {
+            "path": "String!"
+          }
+        },
         "changedFiles": {
           "type": "Int!"
         },
         "changedFilesIfAvailable": {
           "type": "Int"
+        },
+        "checkSuites": {
+          "type": "CheckSuiteConnection",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "filterBy": "CheckSuiteFilter",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "comments": {
+          "type": "CommitCommentConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
         },
         "commitResourcePath": {
           "type": "URI!"
@@ -2423,8 +2594,20 @@
         "resourcePath": {
           "type": "URI!"
         },
+        "status": {
+          "type": "Status"
+        },
         "statusCheckRollup": {
           "type": "StatusCheckRollup"
+        },
+        "submodules": {
+          "type": "SubmoduleConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
         },
         "tarballUrl": {
           "type": "URI!"
@@ -2440,6 +2623,12 @@
         },
         "url": {
           "type": "URI!"
+        },
+        "viewerCanSubscribe": {
+          "type": "Boolean!"
+        },
+        "viewerSubscription": {
+          "type": "SubscriptionState"
         },
         "zipballUrl": {
           "type": "URI!"
@@ -2738,6 +2927,70 @@
         "operator": "String!",
         "pattern": "String!"
       }
+    },
+    "Comparison": {
+      "kind": "OBJECT",
+      "fields": {
+        "aheadBy": {
+          "type": "Int!"
+        },
+        "baseTarget": {
+          "type": "GitObject!"
+        },
+        "behindBy": {
+          "type": "Int!"
+        },
+        "commits": {
+          "type": "ComparisonCommitConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "headTarget": {
+          "type": "GitObject!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "status": {
+          "type": "ComparisonStatus!"
+        }
+      },
+      "interfaces": [
+        "Node"
+      ]
+    },
+    "ComparisonCommitConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "authorCount": {
+          "type": "Int!"
+        },
+        "edges": {
+          "type": "[CommitEdge]"
+        },
+        "nodes": {
+          "type": "[Commit]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "ComparisonStatus": {
+      "kind": "ENUM",
+      "enum_values": [
+        "AHEAD",
+        "BEHIND",
+        "DIVERGED",
+        "IDENTICAL"
+      ]
     },
     "ContentWarning": {
       "kind": "OBJECT",
@@ -3517,6 +3770,7 @@
         "clientMutationId": "String",
         "draft": "Boolean",
         "headRefName": "String!",
+        "headRepositoryId": "ID",
         "maintainerCanModify": "Boolean",
         "repositoryId": "ID!",
         "title": "String!"
@@ -3630,11 +3884,13 @@
     "CreateSponsorsListingInput": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
+        "billingCountryOrRegionCode": "SponsorsCountryOrRegionCode",
         "clientMutationId": "String",
         "contactEmail": "String",
         "fiscalHostLogin": "String",
         "fiscallyHostedProjectProfileUrl": "String",
         "fullDescription": "String",
+        "residenceCountryOrRegionCode": "SponsorsCountryOrRegionCode",
         "sponsorableLogin": "String"
       }
     },
@@ -5788,6 +6044,25 @@
         }
       }
     },
+    "DraftPullRequestReviewComment": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "body": "String!",
+        "path": "String!",
+        "position": "Int!"
+      }
+    },
+    "DraftPullRequestReviewThread": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "body": "String!",
+        "line": "Int",
+        "path": "String",
+        "side": "DiffSide",
+        "startLine": "Int",
+        "startSide": "DiffSide"
+      }
+    },
     "EPSS": {
       "kind": "OBJECT",
       "fields": {
@@ -6949,6 +7224,26 @@
         },
         "updatedAt": {
           "type": "DateTime!"
+        },
+        "userAccounts": {
+          "type": "EnterpriseServerUserAccountConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "orderBy": "EnterpriseServerUserAccountOrder"
+          }
+        },
+        "userAccountsUploads": {
+          "type": "EnterpriseServerUserAccountsUploadConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "orderBy": "EnterpriseServerUserAccountsUploadOrder"
+          }
         }
       },
       "interfaces": [
@@ -7029,9 +7324,165 @@
         "HOST_NAME"
       ]
     },
+    "EnterpriseServerUserAccount": {
+      "kind": "OBJECT",
+      "fields": {
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "isSiteAdmin": {
+          "type": "Boolean!"
+        },
+        "login": {
+          "type": "String!"
+        },
+        "profileName": {
+          "type": "String"
+        },
+        "remoteCreatedAt": {
+          "type": "DateTime!"
+        },
+        "remoteUserId": {
+          "type": "Int!"
+        },
+        "updatedAt": {
+          "type": "DateTime!"
+        }
+      },
+      "interfaces": [
+        "Node"
+      ]
+    },
+    "EnterpriseServerUserAccountConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[EnterpriseServerUserAccountEdge]"
+        },
+        "nodes": {
+          "type": "[EnterpriseServerUserAccount]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "EnterpriseServerUserAccountEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "EnterpriseServerUserAccount"
+        }
+      }
+    },
+    "EnterpriseServerUserAccountOrder": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "direction": "OrderDirection!",
+        "field": "EnterpriseServerUserAccountOrderField!"
+      }
+    },
+    "EnterpriseServerUserAccountOrderField": {
+      "kind": "ENUM",
+      "enum_values": [
+        "LOGIN",
+        "REMOTE_CREATED_AT"
+      ]
+    },
+    "EnterpriseServerUserAccountsUpload": {
+      "kind": "OBJECT",
+      "fields": {
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "name": {
+          "type": "String!"
+        },
+        "syncState": {
+          "type": "EnterpriseServerUserAccountsUploadSyncState!"
+        },
+        "updatedAt": {
+          "type": "DateTime!"
+        }
+      },
+      "interfaces": [
+        "Node"
+      ]
+    },
+    "EnterpriseServerUserAccountsUploadConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[EnterpriseServerUserAccountsUploadEdge]"
+        },
+        "nodes": {
+          "type": "[EnterpriseServerUserAccountsUpload]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "EnterpriseServerUserAccountsUploadEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "EnterpriseServerUserAccountsUpload"
+        }
+      }
+    },
+    "EnterpriseServerUserAccountsUploadOrder": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "direction": "OrderDirection!",
+        "field": "EnterpriseServerUserAccountsUploadOrderField!"
+      }
+    },
+    "EnterpriseServerUserAccountsUploadOrderField": {
+      "kind": "ENUM",
+      "enum_values": [
+        "CREATED_AT"
+      ]
+    },
+    "EnterpriseServerUserAccountsUploadSyncState": {
+      "kind": "ENUM",
+      "enum_values": [
+        "FAILURE",
+        "PENDING",
+        "SUCCESS"
+      ]
+    },
     "EnterpriseTeam": {
       "kind": "OBJECT",
       "fields": {
+        "assignedOrganizations": {
+          "type": "EnterpriseTeamAssignedOrganizationConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "orderBy": "EnterpriseTeamOrganizationOrder"
+          }
+        },
         "combinedSlug": {
           "type": "String!"
         },
@@ -7043,6 +7494,17 @@
         },
         "enterprise": {
           "type": "Enterprise"
+        },
+        "enterpriseTeamMembers": {
+          "type": "EnterpriseTeamMemberConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "orderBy": "EnterpriseTeamMemberOrder",
+            "query": "String"
+          }
         },
         "fullDatabaseId": {
           "type": "BigInt"
@@ -7062,6 +7524,9 @@
         "organizationSelectionType": {
           "type": "EnterpriseTeamOrganizationSelectionType!"
         },
+        "privacy": {
+          "type": "TeamPrivacy!"
+        },
         "slug": {
           "type": "String!"
         },
@@ -7075,6 +7540,34 @@
       "interfaces": [
         "Node"
       ]
+    },
+    "EnterpriseTeamAssignedOrganizationConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[EnterpriseTeamAssignedOrganizationEdge]"
+        },
+        "nodes": {
+          "type": "[Organization]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "EnterpriseTeamAssignedOrganizationEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "Organization"
+        }
+      }
     },
     "EnterpriseTeamConnection": {
       "kind": "OBJECT",
@@ -7104,6 +7597,49 @@
         }
       }
     },
+    "EnterpriseTeamMemberConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[EnterpriseTeamMemberEdge]"
+        },
+        "nodes": {
+          "type": "[User]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "EnterpriseTeamMemberEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "User"
+        }
+      }
+    },
+    "EnterpriseTeamMemberOrder": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "direction": "OrderDirection!",
+        "field": "EnterpriseTeamMemberOrderField!"
+      }
+    },
+    "EnterpriseTeamMemberOrderField": {
+      "kind": "ENUM",
+      "enum_values": [
+        "CREATED_AT",
+        "ID",
+        "LOGIN"
+      ]
+    },
     "EnterpriseTeamOrder": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
@@ -7117,6 +7653,21 @@
         "CREATED_AT",
         "ID",
         "NAME"
+      ]
+    },
+    "EnterpriseTeamOrganizationOrder": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "direction": "OrderDirection!",
+        "field": "EnterpriseTeamOrganizationOrderField!"
+      }
+    },
+    "EnterpriseTeamOrganizationOrderField": {
+      "kind": "ENUM",
+      "enum_values": [
+        "CREATED_AT",
+        "ID",
+        "LOGIN"
       ]
     },
     "EnterpriseTeamOrganizationSelectionType": {
@@ -7289,6 +7840,15 @@
         "id": {
           "type": "ID!"
         },
+        "organizationInvitation": {
+          "type": "OrganizationInvitation"
+        },
+        "samlIdentity": {
+          "type": "ExternalIdentitySamlAttributes"
+        },
+        "scimIdentity": {
+          "type": "ExternalIdentityScimAttributes"
+        },
         "user": {
           "type": "User"
         }
@@ -7296,6 +7856,20 @@
       "interfaces": [
         "Node"
       ]
+    },
+    "ExternalIdentityAttribute": {
+      "kind": "OBJECT",
+      "fields": {
+        "metadata": {
+          "type": "String"
+        },
+        "name": {
+          "type": "String!"
+        },
+        "value": {
+          "type": "String!"
+        }
+      }
     },
     "ExternalIdentityConnection": {
       "kind": "OBJECT",
@@ -7322,6 +7896,52 @@
         },
         "node": {
           "type": "ExternalIdentity"
+        }
+      }
+    },
+    "ExternalIdentitySamlAttributes": {
+      "kind": "OBJECT",
+      "fields": {
+        "attributes": {
+          "type": "[ExternalIdentityAttribute!]!"
+        },
+        "emails": {
+          "type": "[UserEmailMetadata!]"
+        },
+        "familyName": {
+          "type": "String"
+        },
+        "givenName": {
+          "type": "String"
+        },
+        "groups": {
+          "type": "[String!]"
+        },
+        "nameId": {
+          "type": "String"
+        },
+        "username": {
+          "type": "String"
+        }
+      }
+    },
+    "ExternalIdentityScimAttributes": {
+      "kind": "OBJECT",
+      "fields": {
+        "emails": {
+          "type": "[UserEmailMetadata!]"
+        },
+        "familyName": {
+          "type": "String"
+        },
+        "givenName": {
+          "type": "String"
+        },
+        "groups": {
+          "type": "[String!]"
+        },
+        "username": {
+          "type": "String"
         }
       }
     },
@@ -7372,6 +7992,14 @@
       "input_fields": {
         "restrictedFilePaths": "[String!]!"
       }
+    },
+    "FileViewedState": {
+      "kind": "ENUM",
+      "enum_values": [
+        "DISMISSED",
+        "UNVIEWED",
+        "VIEWED"
+      ]
     },
     "Float": {
       "kind": "SCALAR"
@@ -7478,6 +8106,15 @@
     "Gist": {
       "kind": "OBJECT",
       "fields": {
+        "comments": {
+          "type": "GistCommentConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
         "createdAt": {
           "type": "DateTime!"
         },
@@ -7488,6 +8125,16 @@
           "type": "[GistFile]",
           "args": {
             "limit": "Int"
+          }
+        },
+        "forks": {
+          "type": "GistConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "orderBy": "GistOrder"
           }
         },
         "id": {
@@ -7510,6 +8157,19 @@
         },
         "resourcePath": {
           "type": "URI!"
+        },
+        "stargazerCount": {
+          "type": "Int!"
+        },
+        "stargazers": {
+          "type": "StargazerConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "orderBy": "StarOrder"
+          }
         },
         "updatedAt": {
           "type": "DateTime!"
@@ -7679,6 +8339,9 @@
         "isTruncated": {
           "type": "Boolean!"
         },
+        "language": {
+          "type": "Language"
+        },
         "name": {
           "type": "String"
         },
@@ -7742,11 +8405,28 @@
     "GitActorConnection": {
       "kind": "OBJECT",
       "fields": {
+        "edges": {
+          "type": "[GitActorEdge]"
+        },
         "nodes": {
           "type": "[GitActor]"
         },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
         "totalCount": {
           "type": "Int!"
+        }
+      }
+    },
+    "GitActorEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "GitActor"
         }
       }
     },
@@ -8905,6 +9585,19 @@
         }
       }
     },
+    "IssueFieldOrder": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "direction": "OrderDirection!",
+        "field": "IssueFieldOrderField!"
+      }
+    },
+    "IssueFieldOrderField": {
+      "kind": "ENUM",
+      "enum_values": [
+        "CREATED_AT"
+      ]
+    },
     "IssueFieldSingleSelect": {
       "kind": "OBJECT",
       "fields": {
@@ -9117,6 +9810,34 @@
         "IssueFieldText"
       ]
     },
+    "IssueFieldsConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[IssueFieldsEdge]"
+        },
+        "nodes": {
+          "type": "[IssueFields]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "IssueFieldsEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "IssueFields"
+        }
+      }
+    },
     "IssueFilters": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
@@ -9153,6 +9874,14 @@
         "COMMENTS",
         "CREATED_AT",
         "UPDATED_AT"
+      ]
+    },
+    "IssueSearchType": {
+      "kind": "ENUM",
+      "enum_values": [
+        "HYBRID",
+        "LEXICAL",
+        "SEMANTIC"
       ]
     },
     "IssueState": {
@@ -9400,6 +10129,19 @@
         }
       }
     },
+    "IssueTypeOrder": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "direction": "OrderDirection!",
+        "field": "IssueTypeOrderField!"
+      }
+    },
+    "IssueTypeOrderField": {
+      "kind": "ENUM",
+      "enum_values": [
+        "CREATED_AT"
+      ]
+    },
     "IssueTypeUpdateInput": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
@@ -9622,6 +10364,18 @@
           "type": "Int!"
         }
       }
+    },
+    "LexicalFallbackReason": {
+      "kind": "ENUM",
+      "enum_values": [
+        "NON_ISSUE_TARGET",
+        "NO_ACCESSIBLE_REPOS",
+        "NO_TEXT_TERMS",
+        "ONLY_NON_SEMANTIC_FIELDS_REQUESTED",
+        "OR_BOOLEAN_NOT_SUPPORTED",
+        "QUOTED_TEXT",
+        "SERVER_ERROR"
+      ]
     },
     "License": {
       "kind": "OBJECT",
@@ -10005,6 +10759,9 @@
     "MarketplaceListing": {
       "kind": "OBJECT",
       "fields": {
+        "app": {
+          "type": "App"
+        },
         "companyUrl": {
           "type": "URI"
         },
@@ -10306,6 +11063,9 @@
     "MergePullRequestPayload": {
       "kind": "OBJECT",
       "fields": {
+        "actor": {
+          "type": "Actor"
+        },
         "clientMutationId": {
           "type": "String"
         },
@@ -10375,6 +11135,9 @@
     "MergeQueueEntry": {
       "kind": "OBJECT",
       "fields": {
+        "baseCommit": {
+          "type": "Commit"
+        },
         "enqueuedAt": {
           "type": "DateTime!"
         },
@@ -10383,6 +11146,9 @@
         },
         "estimatedTimeToMerge": {
           "type": "Int"
+        },
+        "headCommit": {
+          "type": "Commit"
         },
         "id": {
           "type": "ID!"
@@ -12539,6 +13305,7 @@
         "ClosedEvent",
         "CommentDeletedEvent",
         "Commit",
+        "Comparison",
         "ConvertToDraftEvent",
         "ConvertedToDiscussionEvent",
         "CrossReferencedEvent",
@@ -12550,6 +13317,8 @@
         "EnterpriseMemberInvitation",
         "EnterpriseRepositoryInfo",
         "EnterpriseServerInstallation",
+        "EnterpriseServerUserAccount",
+        "EnterpriseServerUserAccountsUpload",
         "EnterpriseTeam",
         "EnterpriseUserAccount",
         "ExternalIdentity",
@@ -12625,6 +13394,18 @@
       "fields": {
         "enterprise": {
           "type": "Enterprise"
+        },
+        "externalIdentities": {
+          "type": "ExternalIdentityConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "login": "String",
+            "membersOnly": "Boolean",
+            "userName": "String"
+          }
         },
         "id": {
           "type": "ID!"
@@ -13220,8 +14001,23 @@
         "digestMethod": {
           "type": "URI"
         },
+        "externalIdentities": {
+          "type": "ExternalIdentityConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "login": "String",
+            "membersOnly": "Boolean",
+            "userName": "String"
+          }
+        },
         "id": {
           "type": "ID!"
+        },
+        "idpCertificate": {
+          "type": "X509Certificate"
         },
         "issuer": {
           "type": "String"
@@ -13248,10 +14044,40 @@
         },
         "id": {
           "type": "ID!"
+        },
+        "invitationSource": {
+          "type": "OrganizationInvitationSource!"
+        },
+        "invitationType": {
+          "type": "OrganizationInvitationType!"
+        },
+        "invitee": {
+          "type": "User"
+        },
+        "inviter": {
+          "type": "User!"
+        },
+        "inviterActor": {
+          "type": "User"
+        },
+        "organization": {
+          "type": "Organization!"
+        },
+        "role": {
+          "type": "OrganizationInvitationRole!"
         }
       },
       "interfaces": [
         "Node"
+      ]
+    },
+    "OrganizationInvitationRole": {
+      "kind": "ENUM",
+      "enum_values": [
+        "ADMIN",
+        "BILLING_MANAGER",
+        "DIRECT_MEMBER",
+        "REINSTATE"
       ]
     },
     "OrganizationInvitationSource": {
@@ -13260,6 +14086,13 @@
         "MEMBER",
         "SCIM",
         "UNKNOWN"
+      ]
+    },
+    "OrganizationInvitationType": {
+      "kind": "ENUM",
+      "enum_values": [
+        "EMAIL",
+        "USER"
       ]
     },
     "OrganizationMemberConnection": {
@@ -16456,17 +17289,37 @@
         },
         "path": {
           "type": "String!"
+        },
+        "viewerViewedState": {
+          "type": "FileViewedState!"
         }
       }
     },
     "PullRequestChangedFileConnection": {
       "kind": "OBJECT",
       "fields": {
+        "edges": {
+          "type": "[PullRequestChangedFileEdge]"
+        },
         "nodes": {
           "type": "[PullRequestChangedFile]"
         },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
         "totalCount": {
           "type": "Int!"
+        }
+      }
+    },
+    "PullRequestChangedFileEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "PullRequestChangedFile"
         }
       }
     },
@@ -16475,12 +17328,27 @@
       "fields": {
         "commit": {
           "type": "Commit!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "pullRequest": {
+          "type": "PullRequest!"
+        },
+        "resourcePath": {
+          "type": "URI!"
+        },
+        "url": {
+          "type": "URI!"
         }
       }
     },
     "PullRequestCommitConnection": {
       "kind": "OBJECT",
       "fields": {
+        "edges": {
+          "type": "[PullRequestCommitEdge]"
+        },
         "nodes": {
           "type": "[PullRequestCommit]"
         },
@@ -16489,6 +17357,17 @@
         },
         "totalCount": {
           "type": "Int!"
+        }
+      }
+    },
+    "PullRequestCommitEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "PullRequestCommit"
         }
       }
     },
@@ -16506,6 +17385,20 @@
         },
         "totalCount": {
           "type": "Int!"
+        }
+      }
+    },
+    "PullRequestCreationCapConfig": {
+      "kind": "OBJECT",
+      "fields": {
+        "bypassedUsers": {
+          "type": "UserConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
         }
       }
     },
@@ -16533,6 +17426,19 @@
         "MERGE",
         "REBASE",
         "SQUASH"
+      ]
+    },
+    "PullRequestOrder": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "direction": "OrderDirection!",
+        "field": "PullRequestOrderField!"
+      }
+    },
+    "PullRequestOrderField": {
+      "kind": "ENUM",
+      "enum_values": [
+        "CREATED_AT"
       ]
     },
     "PullRequestParameters": {
@@ -16884,6 +17790,9 @@
     "PullRequestReviewCommentConnection": {
       "kind": "OBJECT",
       "fields": {
+        "edges": {
+          "type": "[PullRequestReviewCommentEdge]"
+        },
         "nodes": {
           "type": "[PullRequestReviewComment]"
         },
@@ -16916,6 +17825,9 @@
     "PullRequestReviewConnection": {
       "kind": "OBJECT",
       "fields": {
+        "edges": {
+          "type": "[PullRequestReviewEdge]"
+        },
         "nodes": {
           "type": "[PullRequestReview]"
         },
@@ -16934,6 +17846,17 @@
         "CHANGES_REQUESTED",
         "REVIEW_REQUIRED"
       ]
+    },
+    "PullRequestReviewEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "PullRequestReview"
+        }
+      }
     },
     "PullRequestReviewEvent": {
       "kind": "ENUM",
@@ -17025,6 +17948,9 @@
     "PullRequestReviewThreadConnection": {
       "kind": "OBJECT",
       "fields": {
+        "edges": {
+          "type": "[PullRequestReviewThreadEdge]"
+        },
         "nodes": {
           "type": "[PullRequestReviewThread]"
         },
@@ -17033,6 +17959,17 @@
         },
         "totalCount": {
           "type": "Int!"
+        }
+      }
+    },
+    "PullRequestReviewThreadEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "PullRequestReviewThread"
         }
       }
     },
@@ -17048,6 +17985,15 @@
       "fields": {
         "baseRefName": {
           "type": "String!"
+        },
+        "entries": {
+          "type": "PullRequestStackEntryConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
         },
         "id": {
           "type": "ID!"
@@ -17068,6 +18014,40 @@
         },
         "position": {
           "type": "Int!"
+        },
+        "pullRequest": {
+          "type": "PullRequest"
+        },
+        "stack": {
+          "type": "PullRequestStack"
+        }
+      }
+    },
+    "PullRequestStackEntryConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[PullRequestStackEntryEdge]"
+        },
+        "nodes": {
+          "type": "[PullRequestStackEntry]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "PullRequestStackEntryEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "PullRequestStackEntry"
         }
       }
     },
@@ -17244,6 +18224,13 @@
         "UNLABELED_EVENT",
         "UNLOCKED_EVENT",
         "UNPINNED_EVENT"
+      ]
+    },
+    "PullRequestUpdateState": {
+      "kind": "ENUM",
+      "enum_values": [
+        "CLOSED",
+        "OPEN"
       ]
     },
     "Push": {
@@ -17797,8 +18784,28 @@
     "Ref": {
       "kind": "OBJECT",
       "fields": {
+        "associatedPullRequests": {
+          "type": "PullRequestConnection!",
+          "args": {
+            "after": "String",
+            "baseRefName": "String",
+            "before": "String",
+            "first": "Int",
+            "headRefName": "String",
+            "labels": "[String!]",
+            "last": "Int",
+            "orderBy": "IssueOrder",
+            "states": "[PullRequestState!]"
+          }
+        },
         "branchProtectionRule": {
           "type": "BranchProtectionRule"
+        },
+        "compare": {
+          "type": "Comparison",
+          "args": {
+            "headRef": "String!"
+          }
         },
         "id": {
           "type": "ID!"
@@ -17808,6 +18815,9 @@
         },
         "prefix": {
           "type": "String!"
+        },
+        "refUpdateRule": {
+          "type": "RefUpdateRule"
         },
         "repository": {
           "type": "Repository!"
@@ -17887,6 +18897,47 @@
         "beforeOid": "GitObjectID",
         "force": "Boolean",
         "name": "GitRefname!"
+      }
+    },
+    "RefUpdateRule": {
+      "kind": "OBJECT",
+      "fields": {
+        "allowsDeletions": {
+          "type": "Boolean!"
+        },
+        "allowsForcePushes": {
+          "type": "Boolean!"
+        },
+        "blocksCreations": {
+          "type": "Boolean!"
+        },
+        "pattern": {
+          "type": "String!"
+        },
+        "requiredApprovingReviewCount": {
+          "type": "Int"
+        },
+        "requiredStatusCheckContexts": {
+          "type": "[String]"
+        },
+        "requiresCodeOwnerReviews": {
+          "type": "Boolean!"
+        },
+        "requiresConversationResolution": {
+          "type": "Boolean!"
+        },
+        "requiresLinearHistory": {
+          "type": "Boolean!"
+        },
+        "requiresSignatures": {
+          "type": "Boolean!"
+        },
+        "viewerAllowedToDismissReviews": {
+          "type": "Boolean!"
+        },
+        "viewerCanPush": {
+          "type": "Boolean!"
+        }
       }
     },
     "ReferencedEvent": {
@@ -18794,6 +19845,12 @@
             "last": "Int"
           }
         },
+        "discussionCategory": {
+          "type": "DiscussionCategory",
+          "args": {
+            "slug": "String!"
+          }
+        },
         "discussions": {
           "type": "DiscussionConnection!",
           "args": {
@@ -18919,6 +19976,19 @@
             "number": "Int!"
           }
         },
+        "issueCreationPolicy": {
+          "type": "IssueCreationPolicy"
+        },
+        "issueFields": {
+          "type": "IssueFieldsConnection",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "orderBy": "IssueFieldOrder"
+          }
+        },
         "issueOrPullRequest": {
           "type": "IssueOrPullRequest",
           "args": {
@@ -18927,6 +19997,22 @@
         },
         "issueTemplates": {
           "type": "[IssueTemplate!]"
+        },
+        "issueType": {
+          "type": "IssueType",
+          "args": {
+            "name": "String!"
+          }
+        },
+        "issueTypes": {
+          "type": "IssueTypeConnection",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "orderBy": "IssueTypeOrder"
+          }
         },
         "issues": {
           "type": "IssueConnection!",
@@ -18990,6 +20076,12 @@
         "mergeCommitTitle": {
           "type": "MergeCommitTitle!"
         },
+        "mergeQueue": {
+          "type": "MergeQueue",
+          "args": {
+            "branch": "String"
+          }
+        },
         "milestone": {
           "type": "Milestone",
           "args": {
@@ -19039,6 +20131,9 @@
             "last": "Int"
           }
         },
+        "planFeatures": {
+          "type": "RepositoryPlanFeatures!"
+        },
         "primaryLanguage": {
           "type": "Language"
         },
@@ -19087,6 +20182,12 @@
             "number": "Int!"
           }
         },
+        "pullRequestCreationCapConfig": {
+          "type": "PullRequestCreationCapConfig"
+        },
+        "pullRequestCreationPolicy": {
+          "type": "PullRequestCreationPolicy"
+        },
         "pullRequestTemplates": {
           "type": "[PullRequestTemplate!]"
         },
@@ -19109,6 +20210,15 @@
         },
         "rebaseMergeAllowed": {
           "type": "Boolean!"
+        },
+        "recentProjects": {
+          "type": "ProjectV2Connection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
         },
         "ref": {
           "type": "Ref",
@@ -19141,6 +20251,21 @@
             "after": "String",
             "first": "Int",
             "orderBy": "ReleaseOrder"
+          }
+        },
+        "repositoryCustomPropertyValue": {
+          "type": "RepositoryCustomPropertyValue",
+          "args": {
+            "propertyName": "String!"
+          }
+        },
+        "repositoryCustomPropertyValues": {
+          "type": "RepositoryCustomPropertyValueConnection",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
           }
         },
         "repositoryTopics": {
@@ -19216,6 +20341,21 @@
             "last": "Int"
           }
         },
+        "suggestedActors": {
+          "type": "ActorConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "capabilities": "[RepositorySuggestedActorFilter!]!",
+            "first": "Int",
+            "last": "Int",
+            "loginNames": "String",
+            "query": "String"
+          }
+        },
+        "tempCloneToken": {
+          "type": "String"
+        },
         "templateRepository": {
           "type": "Repository"
         },
@@ -19269,6 +20409,12 @@
         },
         "visibility": {
           "type": "RepositoryVisibility!"
+        },
+        "vulnerabilityAlert": {
+          "type": "RepositoryVulnerabilityAlert",
+          "args": {
+            "number": "Int!"
+          }
         },
         "vulnerabilityAlerts": {
           "type": "RepositoryVulnerabilityAlertConnection",
@@ -19384,6 +20530,9 @@
         },
         "totalCount": {
           "type": "Int!"
+        },
+        "totalDiskUsage": {
+          "type": "Int!"
         }
       }
     },
@@ -19474,6 +20623,45 @@
         },
         "node": {
           "type": "RepositoryCustomProperty"
+        }
+      }
+    },
+    "RepositoryCustomPropertyValue": {
+      "kind": "OBJECT",
+      "fields": {
+        "propertyName": {
+          "type": "String!"
+        },
+        "value": {
+          "type": "CustomPropertyValue!"
+        }
+      }
+    },
+    "RepositoryCustomPropertyValueConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[RepositoryCustomPropertyValueEdge]"
+        },
+        "nodes": {
+          "type": "[RepositoryCustomPropertyValue]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "RepositoryCustomPropertyValueEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "RepositoryCustomPropertyValue"
         }
       }
     },
@@ -19809,6 +20997,26 @@
         "WRITE"
       ]
     },
+    "RepositoryPlanFeatures": {
+      "kind": "OBJECT",
+      "fields": {
+        "codeowners": {
+          "type": "Boolean!"
+        },
+        "draftPullRequests": {
+          "type": "Boolean!"
+        },
+        "maximumAssignees": {
+          "type": "Int!"
+        },
+        "maximumManualReviewRequests": {
+          "type": "Int!"
+        },
+        "teamReviewRequests": {
+          "type": "Boolean!"
+        }
+      }
+    },
     "RepositoryPrivacy": {
       "kind": "ENUM",
       "enum_values": [
@@ -20084,6 +21292,13 @@
         "PUSH",
         "REPOSITORY",
         "TAG"
+      ]
+    },
+    "RepositorySuggestedActorFilter": {
+      "kind": "ENUM",
+      "enum_values": [
+        "CAN_BE_ASSIGNED",
+        "CAN_BE_AUTHOR"
       ]
     },
     "RepositoryTopic": {
@@ -20629,6 +21844,9 @@
         "pullRequest": {
           "type": "PullRequest!"
         },
+        "pullRequestCommit": {
+          "type": "PullRequestCommit"
+        },
         "resourcePath": {
           "type": "URI!"
         },
@@ -20647,6 +21865,18 @@
     "ReviewRequest": {
       "kind": "OBJECT",
       "fields": {
+        "asCodeOwner": {
+          "type": "Boolean!"
+        },
+        "databaseId": {
+          "type": "Int"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "pullRequest": {
+          "type": "PullRequest!"
+        },
         "requestedReviewer": {
           "type": "RequestedReviewer"
         }
@@ -20655,11 +21885,28 @@
     "ReviewRequestConnection": {
       "kind": "OBJECT",
       "fields": {
+        "edges": {
+          "type": "[ReviewRequestEdge]"
+        },
         "nodes": {
           "type": "[ReviewRequest]"
         },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
         "totalCount": {
           "type": "Int!"
+        }
+      }
+    },
+    "ReviewRequestEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "ReviewRequest"
         }
       }
     },
@@ -20901,11 +22148,23 @@
     "SearchResultItemConnection": {
       "kind": "OBJECT",
       "fields": {
+        "codeCount": {
+          "type": "Int!"
+        },
+        "discussionCount": {
+          "type": "Int!"
+        },
         "edges": {
           "type": "[SearchResultItemEdge]"
         },
         "issueCount": {
           "type": "Int!"
+        },
+        "issueSearchType": {
+          "type": "IssueSearchType"
+        },
+        "lexicalFallbackReason": {
+          "type": "[LexicalFallbackReason!]"
         },
         "nodes": {
           "type": "[SearchResultItem]"
@@ -20914,6 +22173,12 @@
           "type": "PageInfo!"
         },
         "repositoryCount": {
+          "type": "Int!"
+        },
+        "userCount": {
+          "type": "Int!"
+        },
+        "wikiCount": {
           "type": "Int!"
         }
       }
@@ -20926,6 +22191,9 @@
         },
         "node": {
           "type": "SearchResultItem"
+        },
+        "textMatches": {
+          "type": "[TextMatch]"
         }
       }
     },
@@ -21792,6 +23060,258 @@
         "WEEK"
       ]
     },
+    "SponsorsCountryOrRegionCode": {
+      "kind": "ENUM",
+      "enum_values": [
+        "AD",
+        "AE",
+        "AF",
+        "AG",
+        "AI",
+        "AL",
+        "AM",
+        "AO",
+        "AQ",
+        "AR",
+        "AS",
+        "AT",
+        "AU",
+        "AW",
+        "AX",
+        "AZ",
+        "BA",
+        "BB",
+        "BD",
+        "BE",
+        "BF",
+        "BG",
+        "BH",
+        "BI",
+        "BJ",
+        "BL",
+        "BM",
+        "BN",
+        "BO",
+        "BQ",
+        "BR",
+        "BS",
+        "BT",
+        "BV",
+        "BW",
+        "BY",
+        "BZ",
+        "CA",
+        "CC",
+        "CD",
+        "CF",
+        "CG",
+        "CH",
+        "CI",
+        "CK",
+        "CL",
+        "CM",
+        "CN",
+        "CO",
+        "CR",
+        "CV",
+        "CW",
+        "CX",
+        "CY",
+        "CZ",
+        "DE",
+        "DJ",
+        "DK",
+        "DM",
+        "DO",
+        "DZ",
+        "EC",
+        "EE",
+        "EG",
+        "EH",
+        "ER",
+        "ES",
+        "ET",
+        "FI",
+        "FJ",
+        "FK",
+        "FM",
+        "FO",
+        "FR",
+        "GA",
+        "GB",
+        "GD",
+        "GE",
+        "GF",
+        "GG",
+        "GH",
+        "GI",
+        "GL",
+        "GM",
+        "GN",
+        "GP",
+        "GQ",
+        "GR",
+        "GS",
+        "GT",
+        "GU",
+        "GW",
+        "GY",
+        "HK",
+        "HM",
+        "HN",
+        "HR",
+        "HT",
+        "HU",
+        "ID",
+        "IE",
+        "IL",
+        "IM",
+        "IN",
+        "IO",
+        "IQ",
+        "IR",
+        "IS",
+        "IT",
+        "JE",
+        "JM",
+        "JO",
+        "JP",
+        "KE",
+        "KG",
+        "KH",
+        "KI",
+        "KM",
+        "KN",
+        "KR",
+        "KW",
+        "KY",
+        "KZ",
+        "LA",
+        "LB",
+        "LC",
+        "LI",
+        "LK",
+        "LR",
+        "LS",
+        "LT",
+        "LU",
+        "LV",
+        "LY",
+        "MA",
+        "MC",
+        "MD",
+        "ME",
+        "MF",
+        "MG",
+        "MH",
+        "MK",
+        "ML",
+        "MM",
+        "MN",
+        "MO",
+        "MP",
+        "MQ",
+        "MR",
+        "MS",
+        "MT",
+        "MU",
+        "MV",
+        "MW",
+        "MX",
+        "MY",
+        "MZ",
+        "NA",
+        "NC",
+        "NE",
+        "NF",
+        "NG",
+        "NI",
+        "NL",
+        "NO",
+        "NP",
+        "NR",
+        "NU",
+        "NZ",
+        "OM",
+        "PA",
+        "PE",
+        "PF",
+        "PG",
+        "PH",
+        "PK",
+        "PL",
+        "PM",
+        "PN",
+        "PR",
+        "PS",
+        "PT",
+        "PW",
+        "PY",
+        "QA",
+        "RE",
+        "RO",
+        "RS",
+        "RU",
+        "RW",
+        "SA",
+        "SB",
+        "SC",
+        "SD",
+        "SE",
+        "SG",
+        "SH",
+        "SI",
+        "SJ",
+        "SK",
+        "SL",
+        "SM",
+        "SN",
+        "SO",
+        "SR",
+        "SS",
+        "ST",
+        "SV",
+        "SX",
+        "SY",
+        "SZ",
+        "TC",
+        "TD",
+        "TF",
+        "TG",
+        "TH",
+        "TJ",
+        "TK",
+        "TL",
+        "TM",
+        "TN",
+        "TO",
+        "TR",
+        "TT",
+        "TV",
+        "TW",
+        "TZ",
+        "UA",
+        "UG",
+        "UM",
+        "US",
+        "UY",
+        "UZ",
+        "VA",
+        "VC",
+        "VE",
+        "VG",
+        "VI",
+        "VN",
+        "VU",
+        "WF",
+        "WS",
+        "YE",
+        "YT",
+        "ZA",
+        "ZM",
+        "ZW"
+      ]
+    },
     "SponsorsGoal": {
       "kind": "OBJECT",
       "fields": {
@@ -21824,6 +23344,9 @@
       "fields": {
         "activeGoal": {
           "type": "SponsorsGoal"
+        },
+        "activeStripeConnectAccount": {
+          "type": "StripeConnectAccount"
         },
         "billingCountryOrRegion": {
           "type": "String"
@@ -22406,6 +23929,38 @@
         }
       }
     },
+    "Status": {
+      "kind": "OBJECT",
+      "fields": {
+        "combinedContexts": {
+          "type": "StatusCheckRollupContextConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "commit": {
+          "type": "Commit"
+        },
+        "context": {
+          "type": "StatusContext",
+          "args": {
+            "name": "String!"
+          }
+        },
+        "contexts": {
+          "type": "[StatusContext!]!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "state": {
+          "type": "StatusState!"
+        }
+      }
+    },
     "StatusCheckConfiguration": {
       "kind": "OBJECT",
       "fields": {
@@ -22461,6 +24016,9 @@
         "checkRunCountsByState": {
           "type": "[CheckRunStateCount!]"
         },
+        "edges": {
+          "type": "[StatusCheckRollupContextEdge]"
+        },
         "nodes": {
           "type": "[StatusCheckRollupContext]"
         },
@@ -22475,6 +24033,17 @@
         },
         "totalCount": {
           "type": "Int!"
+        }
+      }
+    },
+    "StatusCheckRollupContextEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "StatusCheckRollupContext"
         }
       }
     },
@@ -22549,6 +24118,29 @@
     },
     "String": {
       "kind": "SCALAR"
+    },
+    "StripeConnectAccount": {
+      "kind": "OBJECT",
+      "fields": {
+        "accountId": {
+          "type": "String!"
+        },
+        "billingCountryOrRegion": {
+          "type": "String"
+        },
+        "countryOrRegion": {
+          "type": "String"
+        },
+        "isActive": {
+          "type": "Boolean!"
+        },
+        "sponsorsListing": {
+          "type": "SponsorsListing!"
+        },
+        "stripeDashboardUrl": {
+          "type": "URI!"
+        }
+      }
     },
     "SubIssuesSummary": {
       "kind": "OBJECT",
@@ -23085,6 +24677,34 @@
         "MEMBER"
       ]
     },
+    "TextMatch": {
+      "kind": "OBJECT",
+      "fields": {
+        "fragment": {
+          "type": "String!"
+        },
+        "highlights": {
+          "type": "[TextMatchHighlight!]!"
+        },
+        "property": {
+          "type": "String!"
+        }
+      }
+    },
+    "TextMatchHighlight": {
+      "kind": "OBJECT",
+      "fields": {
+        "beginIndice": {
+          "type": "Int!"
+        },
+        "endIndice": {
+          "type": "Int!"
+        },
+        "text": {
+          "type": "String!"
+        }
+      }
+    },
     "ThreadSubscriptionFormAction": {
       "kind": "ENUM",
       "enum_values": [
@@ -23110,8 +24730,50 @@
     "Topic": {
       "kind": "OBJECT",
       "fields": {
+        "id": {
+          "type": "ID!"
+        },
         "name": {
           "type": "String!"
+        },
+        "relatedTopics": {
+          "type": "[Topic!]!",
+          "args": {
+            "first": "Int"
+          }
+        },
+        "repositories": {
+          "type": "RepositoryConnection!",
+          "args": {
+            "affiliations": "[RepositoryAffiliation]",
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "hasIssuesEnabled": "Boolean",
+            "isLocked": "Boolean",
+            "last": "Int",
+            "orderBy": "RepositoryOrder",
+            "ownerAffiliations": "[RepositoryAffiliation]",
+            "privacy": "RepositoryPrivacy",
+            "sponsorableOnly": "Boolean",
+            "visibility": "RepositoryVisibility"
+          }
+        },
+        "stargazerCount": {
+          "type": "Int!"
+        },
+        "stargazers": {
+          "type": "StargazerConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "orderBy": "StarOrder"
+          }
+        },
+        "viewerHasStarred": {
+          "type": "Boolean!"
         }
       }
     },
@@ -23229,6 +24891,9 @@
         "extension": {
           "type": "String"
         },
+        "isGenerated": {
+          "type": "Boolean!"
+        },
         "language": {
           "type": "Language"
         },
@@ -23261,6 +24926,9 @@
         },
         "size": {
           "type": "Int!"
+        },
+        "submodule": {
+          "type": "Submodule"
         },
         "type": {
           "type": "String!"
@@ -24887,14 +26555,20 @@
         "body": "String",
         "clientMutationId": "String",
         "labelIds": "[ID!]",
+        "maintainerCanModify": "Boolean",
         "milestoneId": "ID",
+        "projectIds": "[ID!]",
         "pullRequestId": "ID!",
+        "state": "PullRequestUpdateState",
         "title": "String"
       }
     },
     "UpdatePullRequestPayload": {
       "kind": "OBJECT",
       "fields": {
+        "actor": {
+          "type": "Actor"
+        },
         "clientMutationId": {
           "type": "String"
         },
@@ -25917,6 +27591,20 @@
         },
         "node": {
           "type": "User"
+        }
+      }
+    },
+    "UserEmailMetadata": {
+      "kind": "OBJECT",
+      "fields": {
+        "primary": {
+          "type": "Boolean"
+        },
+        "type": {
+          "type": "String"
+        },
+        "value": {
+          "type": "String!"
         }
       }
     },

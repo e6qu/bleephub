@@ -1,14 +1,12 @@
 {
   "official_types": 1807,
-  "bleephub_types": 1448,
-  "shared_types": 1441,
+  "bleephub_types": 1518,
+  "shared_types": 1511,
   "official_fields": 8362,
-  "implemented_fields": 5874,
-  "signature_exact_fields": 5873,
+  "implemented_fields": 6167,
+  "signature_exact_fields": 6166,
   "compatibility_gap_count": 9,
   "missing_types": [
-    "ActorConnection",
-    "ActorEdge",
     "ActorLocation",
     "AddedToMergeQueueEvent",
     "AddedToProjectEvent",
@@ -23,8 +21,6 @@
     "AutomaticBaseChangeSucceededEvent",
     "BaseRefDeletedEvent",
     "BaseRefForcePushedEvent",
-    "Blame",
-    "BlameRange",
     "BlockedByAddedEvent",
     "BlockedByRemovedEvent",
     "BlockingAddedEvent",
@@ -32,17 +28,11 @@
     "BypassActor",
     "CheckRunFilter",
     "CheckRunType",
-    "CheckSuiteConnection",
-    "CheckSuiteEdge",
-    "CheckSuiteFilter",
     "Comment",
     "CommitCommentThread",
     "CommitContributionOrder",
     "CommitContributionOrderField",
     "CommitContributionsByRepository",
-    "Comparison",
-    "ComparisonCommitConnection",
-    "ComparisonStatus",
     "ConnectedEvent",
     "Contribution",
     "ContributionCalendar",
@@ -77,44 +67,18 @@
     "DeploymentEnvironmentChangedEvent",
     "DisconnectedEvent",
     "DiscussionState",
-    "DraftPullRequestReviewComment",
-    "DraftPullRequestReviewThread",
     "EnterpriseAuditEntryData",
     "EnterpriseMemberOrder",
     "EnterpriseMemberOrderField",
     "EnterpriseOrder",
     "EnterpriseOrderField",
-    "EnterpriseServerUserAccount",
-    "EnterpriseServerUserAccountConnection",
-    "EnterpriseServerUserAccountEdge",
     "EnterpriseServerUserAccountEmail",
     "EnterpriseServerUserAccountEmailConnection",
     "EnterpriseServerUserAccountEmailEdge",
     "EnterpriseServerUserAccountEmailOrder",
     "EnterpriseServerUserAccountEmailOrderField",
-    "EnterpriseServerUserAccountOrder",
-    "EnterpriseServerUserAccountOrderField",
-    "EnterpriseServerUserAccountsUpload",
-    "EnterpriseServerUserAccountsUploadConnection",
-    "EnterpriseServerUserAccountsUploadEdge",
-    "EnterpriseServerUserAccountsUploadOrder",
-    "EnterpriseServerUserAccountsUploadOrderField",
-    "EnterpriseServerUserAccountsUploadSyncState",
-    "EnterpriseTeamAssignedOrganizationConnection",
-    "EnterpriseTeamAssignedOrganizationEdge",
-    "EnterpriseTeamMemberConnection",
-    "EnterpriseTeamMemberEdge",
-    "EnterpriseTeamMemberOrder",
-    "EnterpriseTeamMemberOrderField",
-    "EnterpriseTeamOrganizationOrder",
-    "EnterpriseTeamOrganizationOrderField",
     "EnvironmentPinnedFilterField",
-    "ExternalIdentityAttribute",
-    "ExternalIdentitySamlAttributes",
-    "ExternalIdentityScimAttributes",
-    "FileViewedState",
     "GenericHovercardContext",
-    "GitActorEdge",
     "GitSignature",
     "GitSignatureState",
     "GpgSignature",
@@ -128,23 +92,15 @@
     "IssueFieldAddedEvent",
     "IssueFieldChangedEvent",
     "IssueFieldCommon",
-    "IssueFieldOrder",
-    "IssueFieldOrderField",
     "IssueFieldRemovedEvent",
     "IssueFieldTimelineOption",
     "IssueFieldValueCommon",
-    "IssueFieldsConnection",
-    "IssueFieldsEdge",
-    "IssueSearchType",
     "IssueTypeAddedEvent",
     "IssueTypeChangedEvent",
-    "IssueTypeOrder",
-    "IssueTypeOrderField",
     "IssueTypeRemovedEvent",
     "JoinedGitHubContribution",
     "LanguageOrder",
     "LanguageOrderField",
-    "LexicalFallbackReason",
     "MannequinConnection",
     "MannequinEdge",
     "MannequinOrder",
@@ -212,8 +168,6 @@
     "OrganizationAuditEntryEdge",
     "OrganizationInvitationConnection",
     "OrganizationInvitationEdge",
-    "OrganizationInvitationRole",
-    "OrganizationInvitationType",
     "OrganizationOrUser",
     "OrganizationOrder",
     "OrganizationOrderField",
@@ -269,24 +223,13 @@
     "ProjectV2Recent",
     "ProjectV2State",
     "PropertyTargetDefinition",
-    "PullRequestChangedFileEdge",
     "PullRequestCommitCommentThread",
-    "PullRequestCommitEdge",
     "PullRequestContributionsByRepository",
-    "PullRequestCreationCapConfig",
-    "PullRequestOrder",
-    "PullRequestOrderField",
     "PullRequestReviewContributionsByRepository",
-    "PullRequestReviewEdge",
-    "PullRequestReviewThreadEdge",
     "PullRequestRevisionMarker",
-    "PullRequestStackEntryConnection",
-    "PullRequestStackEntryEdge",
     "PullRequestThread",
-    "PullRequestUpdateState",
     "ReactionOrder",
     "ReactionOrderField",
-    "RefUpdateRule",
     "ReleaseEdge",
     "RemovedFromMergeQueueEvent",
     "RemovedFromProjectEvent",
@@ -318,32 +261,22 @@
     "RepoRemoveMemberAuditEntryVisibility",
     "RepoRemoveTopicAuditEntry",
     "RepositoryAuditEntryData",
-    "RepositoryCustomPropertyValue",
-    "RepositoryCustomPropertyValueConnection",
-    "RepositoryCustomPropertyValueEdge",
     "RepositoryDiscussionAuthor",
     "RepositoryDiscussionCommentAuthor",
     "RepositoryIdConditionTarget",
     "RepositoryInfo",
     "RepositoryNameConditionTarget",
-    "RepositoryPlanFeatures",
     "RepositoryPropertyConditionTarget",
     "RepositoryRuleOrder",
     "RepositoryRuleOrderField",
-    "RepositorySuggestedActorFilter",
     "RepositoryVisibilityChangeDisableAuditEntry",
     "RepositoryVisibilityChangeEnableAuditEntry",
     "RestrictedContribution",
-    "ReviewRequestEdge",
     "ReviewStatusHovercardContext",
     "SavedReplyOrder",
     "SavedReplyOrderField",
     "SmimeSignature",
-    "SponsorsCountryOrRegionCode",
     "SshSignature",
-    "Status",
-    "StatusCheckRollupContextEdge",
-    "StripeConnectAccount",
     "SubIssueAddedEvent",
     "SubIssueRemovedEvent",
     "SubscribableThread",
@@ -357,8 +290,6 @@
     "TeamRemoveMemberAuditEntry",
     "TeamRemoveRepositoryAuditEntry",
     "TeamReviewRequestable",
-    "TextMatch",
-    "TextMatchHighlight",
     "TopicAuditEntryData",
     "UnknownSignature",
     "UnmarkedAsDuplicateEvent",
@@ -367,7 +298,6 @@
     "UpdatableComment",
     "UserBlockDuration",
     "UserBlockedEvent",
-    "UserEmailMetadata",
     "UserStatusOrder",
     "UserStatusOrderField",
     "ViewerHovercardContext",
@@ -381,34 +311,13 @@
     "AddLabelsToLabelableInput": [
       "labels"
     ],
-    "AddPullRequestReviewInput": [
-      "comments",
-      "threads"
-    ],
     "AddPullRequestReviewPayload": [
       "reviewEdge"
-    ],
-    "App": [
-      "ipAllowListEntries",
-      "logoBackgroundColor",
-      "logoUrl",
-      "url"
     ],
     "Assignable": [
       "assignedActors",
       "suggestedActors",
       "viewerCanAssign"
-    ],
-    "AutoMergeRequest": [
-      "pullRequest"
-    ],
-    "Bot": [
-      "avatarUrl",
-      "createdAt",
-      "databaseId",
-      "resourcePath",
-      "updatedAt",
-      "url"
     ],
     "Closable": [
       "viewerCanClose",
@@ -421,16 +330,8 @@
       "rationale"
     ],
     "Commit": [
-      "associatedPullRequests",
-      "blame",
-      "checkSuites",
-      "comments",
       "deployments",
-      "signature",
-      "status",
-      "submodules",
-      "viewerCanSubscribe",
-      "viewerSubscription"
+      "signature"
     ],
     "CreateIssueInput": [
       "agentAssignment",
@@ -438,17 +339,10 @@
       "parentIssueId",
       "projectV2Ids"
     ],
-    "CreatePullRequestInput": [
-      "headRepositoryId"
-    ],
     "CreateRepositoryInput": [
       "homepageUrl",
       "teamId",
       "template"
-    ],
-    "CreateSponsorsListingInput": [
-      "billingCountryOrRegionCode",
-      "residenceCountryOrRegionCode"
     ],
     "DiscussionCategory": [
       "emojiHTML",
@@ -464,32 +358,13 @@
     "Enterprise": [
       "innersourceVulnerabilities"
     ],
-    "EnterpriseServerInstallation": [
-      "userAccounts",
-      "userAccountsUploads"
+    "EnterpriseServerUserAccount": [
+      "emails",
+      "enterpriseServerInstallation"
     ],
-    "EnterpriseTeam": [
-      "assignedOrganizations",
-      "enterpriseTeamMembers",
-      "privacy"
-    ],
-    "ExternalIdentity": [
-      "organizationInvitation",
-      "samlIdentity",
-      "scimIdentity"
-    ],
-    "Gist": [
-      "comments",
-      "forks",
-      "stargazerCount",
-      "stargazers"
-    ],
-    "GistFile": [
-      "language"
-    ],
-    "GitActorConnection": [
-      "edges",
-      "pageInfo"
+    "EnterpriseServerUserAccountsUpload": [
+      "enterprise",
+      "enterpriseServerInstallation"
     ],
     "IssueCommentConnection": [
       "edges"
@@ -518,22 +393,9 @@
     "Mannequin": [
       "name"
     ],
-    "MarketplaceListing": [
-      "app"
-    ],
-    "MergePullRequestPayload": [
-      "actor"
-    ],
-    "MergeQueueEntry": [
-      "baseCommit",
-      "headCommit"
-    ],
     "Minimizable": [
       "viewerCanMinimize",
       "viewerCanUnminimize"
-    ],
-    "OIDCProvider": [
-      "externalIdentities"
     ],
     "Organization": [
       "auditLog",
@@ -543,19 +405,6 @@
       "pinnedIssueFields",
       "repositoryDiscussionComments",
       "repositoryDiscussions"
-    ],
-    "OrganizationIdentityProvider": [
-      "externalIdentities",
-      "idpCertificate"
-    ],
-    "OrganizationInvitation": [
-      "invitationSource",
-      "invitationType",
-      "invitee",
-      "inviter",
-      "inviterActor",
-      "organization",
-      "role"
     ],
     "Package": [
       "latestVersion",
@@ -567,75 +416,22 @@
     "PinnedIssue": [
       "fullDatabaseId"
     ],
-    "PullRequestChangedFile": [
-      "viewerViewedState"
-    ],
-    "PullRequestChangedFileConnection": [
-      "edges",
-      "pageInfo"
-    ],
-    "PullRequestCommit": [
-      "id",
-      "pullRequest",
-      "resourcePath",
-      "url"
-    ],
-    "PullRequestCommitConnection": [
-      "edges"
-    ],
-    "PullRequestReviewCommentConnection": [
-      "edges"
-    ],
-    "PullRequestReviewConnection": [
-      "edges"
-    ],
-    "PullRequestReviewThreadConnection": [
-      "edges"
-    ],
-    "PullRequestStack": [
-      "entries"
-    ],
-    "PullRequestStackEntry": [
-      "pullRequest",
-      "stack"
-    ],
     "Query": [
       "topic"
     ],
     "Ref": [
-      "associatedPullRequests",
-      "compare",
-      "refUpdateRule",
       "rules"
     ],
     "ReleaseConnection": [
       "edges"
     ],
     "Repository": [
-      "discussionCategory",
-      "issueCreationPolicy",
-      "issueFields",
-      "issueType",
-      "issueTypes",
-      "mergeQueue",
       "packages",
       "pinnedDiscussions",
-      "pinnedEnvironments",
-      "planFeatures",
-      "pullRequestCreationCapConfig",
-      "pullRequestCreationPolicy",
-      "recentProjects",
-      "repositoryCustomPropertyValue",
-      "repositoryCustomPropertyValues",
-      "suggestedActors",
-      "tempCloneToken",
-      "vulnerabilityAlert"
+      "pinnedEnvironments"
     ],
     "RepositoryCollaboratorEdge": [
       "permissionSources"
-    ],
-    "RepositoryConnection": [
-      "totalDiskUsage"
     ],
     "RepositoryInvitation": [
       "repository"
@@ -650,38 +446,8 @@
       "actor",
       "repositoryRuleset"
     ],
-    "ReviewDismissedEvent": [
-      "pullRequestCommit"
-    ],
-    "ReviewRequest": [
-      "asCodeOwner",
-      "databaseId",
-      "id",
-      "pullRequest"
-    ],
-    "ReviewRequestConnection": [
-      "edges",
-      "pageInfo"
-    ],
-    "SearchResultItemConnection": [
-      "codeCount",
-      "discussionCount",
-      "issueSearchType",
-      "lexicalFallbackReason",
-      "userCount",
-      "wikiCount"
-    ],
-    "SearchResultItemEdge": [
-      "textMatches"
-    ],
-    "SponsorsListing": [
-      "activeStripeConnectAccount"
-    ],
     "StarredRepositoryEdge": [
       "starredAt"
-    ],
-    "StatusCheckRollupContextConnection": [
-      "edges"
     ],
     "Team": [
       "invitations",
@@ -695,30 +461,10 @@
       "viewerCanSubscribe",
       "viewerSubscription"
     ],
-    "Topic": [
-      "id",
-      "relatedTopics",
-      "repositories",
-      "stargazerCount",
-      "stargazers",
-      "viewerHasStarred"
-    ],
-    "TreeEntry": [
-      "isGenerated",
-      "submodule"
-    ],
     "UnlockLockablePayload": [
       "actor"
     ],
     "UpdateIssuePayload": [
-      "actor"
-    ],
-    "UpdatePullRequestInput": [
-      "maintainerCanModify",
-      "projectIds",
-      "state"
-    ],
-    "UpdatePullRequestPayload": [
       "actor"
     ],
     "User": [

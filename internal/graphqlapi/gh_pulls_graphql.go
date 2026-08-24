@@ -258,6 +258,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			"statusContextCount":         &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
 			"statusContextCountsByState": &graphql.Field{Type: graphql.NewList(graphql.NewNonNull(statusCheckStateCountType("StatusContextStateCount")))},
 			"pageInfo":                   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
+			"edges":                      gqlEdgesField(s.simpleEdgeType("StatusCheckRollupContextEdge", statusCheckRollupContextUnion)),
 		},
 	})
 
@@ -288,6 +289,8 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 		Fields: graphql.Fields{
 			"nodes":      &graphql.Field{Type: graphql.NewList(s.gqlGitActorType())},
 			"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
+			"edges":      gqlEdgesField(s.simpleEdgeType("GitActorEdge", s.gqlGitActorType())),
+			"pageInfo":   s.gqlPageInfoField(),
 		},
 	})
 
@@ -352,6 +355,43 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
 					}
 					return n["commit"], nil
+				},
+			},
+			// Identity and hypermedia. The renderer carries nodeID ("PRC_"+sha)
+			// and, on the pull-request path, prID/resourcePath/url; fall back to
+			// deriving from the embedded commit's oid so a timeline-sourced node
+			// (which carries only nodeID + commit) still answers non-null.
+			"id": &graphql.Field{
+				Type: graphql.NewNonNull(graphql.ID),
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					n, _ := p.Source.(map[string]interface{})
+					if v, ok := n["nodeID"].(string); ok && v != "" {
+						return v, nil
+					}
+					if v, ok := n["id"].(string); ok && v != "" {
+						return v, nil
+					}
+					return "PRC_" + prCommitOID(n), nil
+				},
+			},
+			"resourcePath": &graphql.Field{
+				Type: graphql.NewNonNull(uri),
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					n, _ := p.Source.(map[string]interface{})
+					if v, ok := n["resourcePath"].(string); ok && v != "" {
+						return v, nil
+					}
+					return prCommitFallbackPath(n), nil
+				},
+			},
+			"url": &graphql.Field{
+				Type: graphql.NewNonNull(uri),
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					n, _ := p.Source.(map[string]interface{})
+					if v, ok := n["url"].(string); ok && v != "" {
+						return v, nil
+					}
+					return externalURL(prCommitFallbackPath(n)), nil
 				},
 			},
 		},
@@ -430,6 +470,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			"nodes":      &graphql.Field{Type: graphql.NewList(prReviewType)},
 			"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
 			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
+			"edges":      gqlEdgesField(s.simpleEdgeType("PullRequestReviewEdge", prReviewType)),
 		},
 	})
 
@@ -442,6 +483,54 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 		Fields: graphql.Fields{
 			"id":    &graphql.Field{Type: graphql.NewNonNull(graphql.ID)},
 			"login": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			// A Bot is an app account; its avatar/hypermedia derive from its
+			// login, its databaseId from its numeric id. bleephub stores user
+			// review requests rather than Copilot/app reviewers, so a Bot source
+			// does not currently arise; these read the source where a renderer
+			// would supply it and otherwise derive from the login so the
+			// non-null fields never abort.
+			"databaseId": &graphql.Field{
+				Type: graphql.Int,
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					return srcMap(p)["databaseId"], nil
+				},
+			},
+			"avatarUrl": &graphql.Field{
+				Type: graphql.NewNonNull(uri),
+				Args: graphql.FieldConfigArgument{
+					"size": &graphql.ArgumentConfig{Type: graphql.Int},
+				},
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					if v, ok := srcMap(p)["avatarUrl"].(string); ok && v != "" {
+						return v, nil
+					}
+					return externalURL("/" + botLoginFromSource(srcMap(p)) + ".png"), nil
+				},
+			},
+			"resourcePath": &graphql.Field{
+				Type: graphql.NewNonNull(uri),
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					return "/apps/" + botLoginFromSource(srcMap(p)), nil
+				},
+			},
+			"url": &graphql.Field{
+				Type: graphql.NewNonNull(uri),
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					return externalURL("/apps/" + botLoginFromSource(srcMap(p))), nil
+				},
+			},
+			"createdAt": &graphql.Field{
+				Type: graphql.NewNonNull(dateTime),
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					return botTimestampFromSource(srcMap(p), "createdAt"), nil
+				},
+			},
+			"updatedAt": &graphql.Field{
+				Type: graphql.NewNonNull(dateTime),
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					return botTimestampFromSource(srcMap(p), "updatedAt"), nil
+				},
+			},
 		},
 	})
 	teamType := graphql.NewObject(graphql.ObjectConfig{
@@ -491,6 +580,25 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 					return r["requestedReviewer"], nil
 				},
 			},
+			"id": &graphql.Field{
+				Type: graphql.NewNonNull(graphql.ID),
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					return srcMap(p)["nodeID"], nil
+				},
+			},
+			"databaseId": &graphql.Field{
+				Type: graphql.Int,
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					return srcMap(p)["databaseId"], nil
+				},
+			},
+			"asCodeOwner": &graphql.Field{
+				Type: graphql.NewNonNull(graphql.Boolean),
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					v, _ := srcMap(p)["asCodeOwner"].(bool)
+					return v, nil
+				},
+			},
 		},
 	})
 
@@ -499,6 +607,8 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 		Fields: graphql.Fields{
 			"nodes":      &graphql.Field{Type: graphql.NewList(reviewRequestType)},
 			"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
+			"edges":      gqlEdgesField(s.simpleEdgeType("ReviewRequestEdge", reviewRequestType)),
+			"pageInfo":   s.gqlPageInfoField(),
 		},
 	})
 
@@ -551,6 +661,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			"nodes":      &graphql.Field{Type: graphql.NewList(prReviewCommentType)},
 			"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
 			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
+			"edges":      gqlEdgesField(s.simpleEdgeType("PullRequestReviewCommentEdge", prReviewCommentType)),
 		},
 	})
 	prReviewThreadType := graphql.NewObject(graphql.ObjectConfig{
@@ -583,6 +694,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			"nodes":      &graphql.Field{Type: graphql.NewList(prReviewThreadType)},
 			"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
 			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
+			"edges":      gqlEdgesField(s.simpleEdgeType("PullRequestReviewThreadEdge", prReviewThreadType)),
 		},
 	})
 
@@ -593,6 +705,65 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
 			"nodes":      &graphql.Field{Type: graphql.NewList(pullRequestCommitType)},
 			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
+			"edges":      gqlEdgesField(s.simpleEdgeType("PullRequestCommitEdge", pullRequestCommitType)),
+		},
+	})
+
+	// --- Auto-merge request type ---
+	// Named local (rather than inline) so its back-reference to PullRequest can
+	// be attached once pullRequestType exists.
+	autoMergeRequestType := graphql.NewObject(graphql.ObjectConfig{
+		Name: "AutoMergeRequest",
+		Fields: graphql.Fields{
+			"authorEmail":    &graphql.Field{Type: graphql.String},
+			"commitBody":     &graphql.Field{Type: graphql.String},
+			"commitHeadline": &graphql.Field{Type: graphql.String},
+			"mergeMethod":    &graphql.Field{Type: graphql.NewNonNull(pullRequestMergeMethodEnum)},
+			"enabledAt":      &graphql.Field{Type: dateTime},
+			"enabledBy":      &graphql.Field{Type: s.graphqlTypes.actor},
+		},
+	})
+
+	// --- Changed-file types ---
+	// The per-reviewer viewed-file marks are a real store model
+	// (Store.PullRequestViewedFiles), so viewerViewedState answers VIEWED for a
+	// file the viewer has marked and UNVIEWED otherwise; DISMISSED (a file
+	// changed since last viewed) is not tracked.
+	fileViewedStateEnum := s.sharedEnum("FileViewedState", "DISMISSED", "UNVIEWED", "VIEWED")
+	changedFileType := graphql.NewObject(graphql.ObjectConfig{
+		Name: "PullRequestChangedFile",
+		Fields: graphql.Fields{
+			"additions":  &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
+			"deletions":  &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
+			"path":       &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"changeType": &graphql.Field{Type: graphql.NewNonNull(patchStatusEnum)},
+			"viewerViewedState": &graphql.Field{
+				Type: graphql.NewNonNull(fileViewedStateEnum),
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					src := srcMap(p)
+					path, _ := src["path"].(string)
+					prID, _ := src["prID"].(int)
+					viewer := s.ghUserFromContext(p.Context)
+					if viewer == nil || prID == 0 || path == "" {
+						return "UNVIEWED", nil
+					}
+					for _, seen := range s.store.PullRequestViewedFiles(prID, viewer.ID) {
+						if seen == path {
+							return "VIEWED", nil
+						}
+					}
+					return "UNVIEWED", nil
+				},
+			},
+		},
+	})
+	changedFileConnType := graphql.NewObject(graphql.ObjectConfig{
+		Name: "PullRequestChangedFileConnection",
+		Fields: graphql.Fields{
+			"nodes":      &graphql.Field{Type: graphql.NewList(changedFileType)},
+			"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
+			"edges":      gqlEdgesField(s.simpleEdgeType("PullRequestChangedFileEdge", changedFileType)),
+			"pageInfo":   s.gqlPageInfoField(),
 		},
 	})
 
@@ -878,17 +1049,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			"autoMergeRequest": &graphql.Field{
 				// The armed auto-merge request, or null — the value real
 				// GitHub returns when auto-merge isn't enabled on the PR.
-				Type: graphql.NewObject(graphql.ObjectConfig{
-					Name: "AutoMergeRequest",
-					Fields: graphql.Fields{
-						"authorEmail":    &graphql.Field{Type: graphql.String},
-						"commitBody":     &graphql.Field{Type: graphql.String},
-						"commitHeadline": &graphql.Field{Type: graphql.String},
-						"mergeMethod":    &graphql.Field{Type: graphql.NewNonNull(pullRequestMergeMethodEnum)},
-						"enabledAt":      &graphql.Field{Type: dateTime},
-						"enabledBy":      &graphql.Field{Type: s.graphqlTypes.actor},
-					},
-				}),
+				Type: autoMergeRequestType,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					pr, _, err := pullRequestAndRepoFromGQLSource(p.Source, s.store)
 					if err != nil {
@@ -916,21 +1077,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 				},
 			},
 			"files": &graphql.Field{
-				Type: graphql.NewObject(graphql.ObjectConfig{
-					Name: "PullRequestChangedFileConnection",
-					Fields: graphql.Fields{
-						"nodes": &graphql.Field{Type: graphql.NewList(graphql.NewObject(graphql.ObjectConfig{
-							Name: "PullRequestChangedFile",
-							Fields: graphql.Fields{
-								"additions":  &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
-								"deletions":  &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
-								"path":       &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-								"changeType": &graphql.Field{Type: graphql.NewNonNull(patchStatusEnum)},
-							},
-						}))},
-						"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
-					},
-				}),
+				Type: changedFileConnType,
 				Args: graphql.FieldConfigArgument{
 					"first": &graphql.ArgumentConfig{Type: graphql.Int},
 					"after": &graphql.ArgumentConfig{Type: graphql.String},
@@ -946,7 +1093,11 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 					}
 					nodes := make([]map[string]interface{}, 0, len(files))
 					for _, file := range files {
-						nodes = append(nodes, pullRequestChangedFileToGQL(file))
+						node := pullRequestChangedFileToGQL(file)
+						// The pull request id travels with each node so
+						// viewerViewedState can consult the viewed-files store.
+						node["prID"] = pr.ID
+						nodes = append(nodes, node)
 					}
 					return repaginateConnection(map[string]interface{}{"nodes": nodes}, p.Args), nil
 				},
@@ -1044,6 +1195,26 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			},
 		},
 	})
+
+	// The PullRequest back-references on types minted before pullRequestType
+	// existed. Each resolves the enclosing pull request from the "prID" its
+	// source carries.
+	prBackRef := func() *graphql.Field {
+		return &graphql.Field{
+			Type: graphql.NewNonNull(pullRequestType),
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				if prID, ok := srcMap(p)["prID"].(int); ok && prID > 0 {
+					if pr := s.store.GetPullRequest(prID); pr != nil {
+						return pullRequestToGQL(pr, s.store), nil
+					}
+				}
+				return nil, nil
+			},
+		}
+	}
+	pullRequestCommitType.AddFieldConfig("pullRequest", prBackRef())
+	reviewRequestType.AddFieldConfig("pullRequest", prBackRef())
+	autoMergeRequestType.AddFieldConfig("pullRequest", prBackRef())
 
 	// Registered for interface ResolveType dispatch (Lockable).
 	s.graphqlTypes.pullRequest = pullRequestType
@@ -1318,13 +1489,60 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			return issueType
 		},
 	})
+	// TextMatch highlighting is not modelled, so SearchResultItemEdge.textMatches
+	// is always empty; the types exist so the (real GitHub) field type-checks.
+	textMatchHighlightType := graphql.NewObject(graphql.ObjectConfig{
+		Name: "TextMatchHighlight",
+		Fields: graphql.Fields{
+			"beginIndice": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
+			"endIndice":   &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
+			"text":        &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+		},
+	})
+	textMatchType := graphql.NewObject(graphql.ObjectConfig{
+		Name: "TextMatch",
+		Fields: graphql.Fields{
+			"fragment":   &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"property":   &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"highlights": &graphql.Field{Type: graphql.NewNonNull(graphql.NewList(graphql.NewNonNull(textMatchHighlightType)))},
+		},
+	})
 	searchResultEdgeType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "SearchResultItemEdge",
 		Fields: graphql.Fields{
 			"node":   &graphql.Field{Type: searchResultItemUnion},
 			"cursor": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"textMatches": &graphql.Field{
+				Type: graphql.NewList(textMatchType),
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					return []interface{}{}, nil
+				},
+			},
 		},
 	})
+	// Per-kind result counts. bleephub's search resolves ISSUE and REPOSITORY
+	// kinds only, so a search never returns code/discussion/user/wiki matches
+	// and those counts are a truthful zero. issueSearchType (bleephub does one
+	// lexical pass, not a typed lexical/semantic/hybrid engine) and
+	// lexicalFallbackReason are the truthful null.
+	searchCountField := func(sourceKey string) *graphql.Field {
+		return &graphql.Field{
+			Type: graphql.NewNonNull(graphql.Int),
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				if c, ok := p.Source.(map[string]interface{}); ok {
+					if v, ok := c[sourceKey]; ok && v != nil {
+						return v, nil
+					}
+				}
+				return 0, nil
+			},
+		}
+	}
+	issueSearchTypeEnum := s.sharedEnum("IssueSearchType", "HYBRID", "LEXICAL", "SEMANTIC")
+	lexicalFallbackReasonEnum := s.sharedEnum("LexicalFallbackReason",
+		"NON_ISSUE_TARGET", "NO_ACCESSIBLE_REPOS", "NO_TEXT_TERMS",
+		"ONLY_NON_SEMANTIC_FIELDS_REQUESTED", "OR_BOOLEAN_NOT_SUPPORTED",
+		"QUOTED_TEXT", "SERVER_ERROR")
 	searchResultConnectionType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "SearchResultItemConnection",
 		Fields: graphql.Fields{
@@ -1347,6 +1565,18 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 					}
 					return c["repositoryCount"], nil
 				},
+			},
+			"codeCount":       searchCountField("codeCount"),
+			"discussionCount": searchCountField("discussionCount"),
+			"userCount":       searchCountField("userCount"),
+			"wikiCount":       searchCountField("wikiCount"),
+			"issueSearchType": &graphql.Field{
+				Type:    issueSearchTypeEnum,
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) { return nil, nil },
+			},
+			"lexicalFallbackReason": &graphql.Field{
+				Type:    graphql.NewList(graphql.NewNonNull(lexicalFallbackReasonEnum)),
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) { return nil, nil },
 			},
 			"nodes":    &graphql.Field{Type: graphql.NewList(searchResultItemUnion)},
 			"edges":    &graphql.Field{Type: graphql.NewList(searchResultEdgeType)},
@@ -1397,6 +1627,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			"title":               &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
 			"body":                &graphql.InputObjectFieldConfig{Type: graphql.String},
 			"headRefName":         &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
+			"headRepositoryId":    &graphql.InputObjectFieldConfig{Type: graphql.ID},
 			"baseRefName":         &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
 			"draft":               &graphql.InputObjectFieldConfig{Type: graphql.Boolean},
 			"maintainerCanModify": &graphql.InputObjectFieldConfig{Type: graphql.Boolean},
@@ -1659,6 +1890,8 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 		Name: "MergePullRequestPayload",
 		Fields: graphql.Fields{
 			"pullRequest": &graphql.Field{Type: pullRequestType},
+			// The Actor who performed the merge — the viewer this mutation ran as.
+			"actor": &graphql.Field{Type: s.graphqlTypes.actor},
 			// gh's PullRequestMerge mutation selects only clientMutationId.
 			"clientMutationId": &graphql.Field{
 				Type: graphql.String,
@@ -1756,6 +1989,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			}
 			return map[string]interface{}{
 				"pullRequest":      pullRequestToGQL(updated, s.store),
+				"actor":            optionalRendered(user, userToGraphQL),
 				"clientMutationId": clientMutationID,
 			}, nil
 		},
@@ -1936,6 +2170,31 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 		},
 	})
 
+	// The draft line-comment / thread inputs GitHub's AddPullRequestReviewInput
+	// declares (the bulk form of leaving review comments). Declared for schema
+	// completeness; the resolver reads pullRequestId/event/body, so a draft
+	// comment array is accepted and currently ignored, as the SDL's deprecation
+	// note anticipates.
+	diffSideForReview := s.sharedEnum("DiffSide", "LEFT", "RIGHT")
+	draftReviewCommentInput := graphql.NewInputObject(graphql.InputObjectConfig{
+		Name: "DraftPullRequestReviewComment",
+		Fields: graphql.InputObjectConfigFieldMap{
+			"body":     &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
+			"path":     &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
+			"position": &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.Int)},
+		},
+	})
+	draftReviewThreadInput := graphql.NewInputObject(graphql.InputObjectConfig{
+		Name: "DraftPullRequestReviewThread",
+		Fields: graphql.InputObjectConfigFieldMap{
+			"body":      &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
+			"path":      &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"line":      &graphql.InputObjectFieldConfig{Type: graphql.Int},
+			"side":      &graphql.InputObjectFieldConfig{Type: diffSideForReview, DefaultValue: "RIGHT"},
+			"startLine": &graphql.InputObjectFieldConfig{Type: graphql.Int},
+			"startSide": &graphql.InputObjectFieldConfig{Type: diffSideForReview, DefaultValue: "RIGHT"},
+		},
+	})
 	addPRReviewInputType := graphql.NewInputObject(graphql.InputObjectConfig{
 		Name: "AddPullRequestReviewInput",
 		Fields: graphql.InputObjectConfigFieldMap{
@@ -1943,6 +2202,8 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			"event":            &graphql.InputObjectFieldConfig{Type: pullRequestReviewEventEnum},
 			"body":             &graphql.InputObjectFieldConfig{Type: graphql.String},
 			"commitOID":        &graphql.InputObjectFieldConfig{Type: gitObjectID},
+			"comments":         &graphql.InputObjectFieldConfig{Type: graphql.NewList(draftReviewCommentInput)},
+			"threads":          &graphql.InputObjectFieldConfig{Type: graphql.NewList(draftReviewThreadInput)},
 			"clientMutationId": &graphql.InputObjectFieldConfig{Type: graphql.String},
 		},
 	})
@@ -2168,13 +2429,16 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 	updatePRInputType := graphql.NewInputObject(graphql.InputObjectConfig{
 		Name: "UpdatePullRequestInput",
 		Fields: graphql.InputObjectConfigFieldMap{
-			"pullRequestId": &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
-			"title":         &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"body":          &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"baseRefName":   &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"labelIds":      &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(graphql.ID))},
-			"assigneeIds":   &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(graphql.ID))},
-			"milestoneId":   &graphql.InputObjectFieldConfig{Type: graphql.ID},
+			"pullRequestId":       &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
+			"title":               &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"body":                &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"baseRefName":         &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"labelIds":            &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(graphql.ID))},
+			"assigneeIds":         &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(graphql.ID))},
+			"milestoneId":         &graphql.InputObjectFieldConfig{Type: graphql.ID},
+			"maintainerCanModify": &graphql.InputObjectFieldConfig{Type: graphql.Boolean},
+			"projectIds":          &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(graphql.ID))},
+			"state":               &graphql.InputObjectFieldConfig{Type: s.sharedEnum("PullRequestUpdateState", "CLOSED", "OPEN")},
 		},
 	})
 
@@ -2182,6 +2446,8 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 		Name: "UpdatePullRequestPayload",
 		Fields: graphql.Fields{
 			"pullRequest": &graphql.Field{Type: pullRequestType},
+			// The Actor who performed the update — the viewer this mutation ran as.
+			"actor": &graphql.Field{Type: s.graphqlTypes.actor},
 		},
 	})
 
@@ -2286,6 +2552,7 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 			s.emitPullRequestChanges(repo, updated, user, change)
 			return map[string]interface{}{
 				"pullRequest": pullRequestToGQL(updated, s.store),
+				"actor":       optionalRendered(user, userToGraphQL),
 			}, nil
 		},
 	})
@@ -2414,6 +2681,7 @@ func autoMergeRequestToGQL(pr *store.PullRequest, st *store.Store) map[string]in
 		"mergeMethod":    pr.AutoMerge.MergeMethod,
 		"enabledAt":      pr.AutoMerge.EnabledAt.UTC().Format(time.RFC3339),
 		"enabledBy":      optionalObject(enabledBy),
+		"prID":           pr.ID,
 	}
 }
 
@@ -2657,7 +2925,7 @@ func pullRequestToGQL(pr *store.PullRequest, st *store.Store) map[string]interfa
 		repoFullName = repoFullNameForCommits
 	}
 	for _, c := range realCommits {
-		commitNodes = append(commitNodes, map[string]interface{}{"commit": gitCommitToGQLLocked(c, st, repoFullName)})
+		commitNodes = append(commitNodes, prCommitNode(gitCommitToGQLLocked(c, st, repoFullName), pr.ID, repoFullName, pr.Number, c.Hash.String()))
 	}
 	if len(commitNodes) == 0 && sha != "" {
 		headCommit := map[string]interface{}{
@@ -2672,7 +2940,7 @@ func pullRequestToGQL(pr *store.PullRequest, st *store.Store) map[string]interfa
 			"authors":           map[string]interface{}{"nodes": commitAuthors, "totalCount": len(commitAuthors)},
 			"statusCheckRollup": statusCheckRollupSourceLocked(st, repoFullName, sha),
 		}
-		commitNodes = append(commitNodes, map[string]interface{}{"commit": headCommit})
+		commitNodes = append(commitNodes, prCommitNode(headCommit, pr.ID, repoFullName, pr.Number, sha))
 	}
 	var mergeCommit interface{}
 	if realMergeCommit != nil {
@@ -3117,6 +3385,15 @@ func pullRequestReviewRequestNodesLocked(pr *store.PullRequest, st *store.Store)
 			reviewer["__typename"] = "User"
 			nodes = append(nodes, map[string]interface{}{
 				"requestedReviewer": reviewer,
+				// Identity + back-reference. bleephub stores a review request as
+				// a reviewer id on the pull request, not a first-class row with
+				// its own numeric key, so databaseId is genuinely null and the
+				// node id is synthesised from the pull request and reviewer.
+				"nodeID": fmt.Sprintf("RR_%s_%d", pr.NodeID, id),
+				"prID":   pr.ID,
+				// bleephub does not derive review requests from a CODEOWNERS
+				// file, so none is a code-owner request.
+				"asCodeOwner": false,
 			})
 		}
 	}
@@ -3138,6 +3415,86 @@ func gitCommitToGQLLocked(c *object.Commit, st *store.Store, repoFullName string
 		"committer":         gitActorSourceLocked(st, c.Committer),
 		"authors":           map[string]interface{}{"nodes": authors, "totalCount": len(authors)},
 		"statusCheckRollup": statusCheckRollupSourceLocked(st, repoFullName, c.Hash.String()),
+	}
+}
+
+// botLoginFromSource reads a Bot source's login (its username), or "" when a
+// source did not supply one.
+func botLoginFromSource(n map[string]interface{}) string {
+	login, _ := n["login"].(string)
+	return login
+}
+
+// botTimestampFromSource returns a Bot source's stored timestamp for the named
+// key, or the epoch when a source (which does not currently arise) carries
+// none — a serialisable value for the non-null DateTime field.
+func botTimestampFromSource(n map[string]interface{}, key string) string {
+	if v, ok := n[key].(string); ok && v != "" {
+		return v
+	}
+	return time.Unix(0, 0).UTC().Format(time.RFC3339)
+}
+
+// prCommitSourceByOID renders the Commit at the given sha of a pull request's
+// git storage as a GraphQL Commit source map, or nil when the sha is empty or
+// the commit object cannot be loaded (a truthful null rather than a fabricated
+// Commit). Used by the merge-queue entry's base/head commit fields.
+func (s *Resolver) prCommitSourceByOID(repo *store.Repo, pr *store.PullRequest, oid string) map[string]interface{} {
+	if oid == "" {
+		return nil
+	}
+	stor, repoFullName := store.PullRequestGitStorage(s.store, repo, pr)
+	if stor == nil {
+		return nil
+	}
+	repository, err := git.Open(stor, nil)
+	if err != nil {
+		return nil
+	}
+	commit, err := repository.CommitObject(plumbing.NewHash(oid))
+	if err != nil {
+		return nil
+	}
+	s.store.Mu.RLock()
+	defer s.store.Mu.RUnlock()
+	return gitCommitToGQLLocked(commit, s.store, repoFullName)
+}
+
+// prCommitOID returns the head commit sha carried on a PullRequestCommit source
+// map (under its embedded "commit"), or "" when absent.
+func prCommitOID(n map[string]interface{}) string {
+	commit, _ := n["commit"].(map[string]interface{})
+	oid, _ := commit["oid"].(string)
+	return oid
+}
+
+// prCommitFallbackPath derives a PullRequestCommit resourcePath from the
+// embedded commit when the renderer did not supply one (the timeline path
+// carries no pull-request number).
+func prCommitFallbackPath(n map[string]interface{}) string {
+	commit, _ := n["commit"].(map[string]interface{})
+	repoFullName, _ := commit["repoFullName"].(string)
+	oid, _ := commit["oid"].(string)
+	if repoFullName == "" || oid == "" {
+		return ""
+	}
+	return "/" + repoFullName + "/commit/" + oid
+}
+
+// prCommitNode wraps a rendered commit source as a PullRequestCommit source,
+// carrying the identity and hypermedia the PullRequestCommit type resolves
+// (nodeID, prID for the back-reference, and the pull/N/commits/SHA path).
+func prCommitNode(commit map[string]interface{}, prID int, repoFullName string, prNumber int, sha string) map[string]interface{} {
+	resourcePath := ""
+	if repoFullName != "" && sha != "" {
+		resourcePath = "/" + repoFullName + "/pull/" + strconv.Itoa(prNumber) + "/commits/" + sha
+	}
+	return map[string]interface{}{
+		"commit":       commit,
+		"nodeID":       "PRC_" + sha,
+		"prID":         prID,
+		"resourcePath": resourcePath,
+		"url":          externalURL(resourcePath),
 	}
 }
 

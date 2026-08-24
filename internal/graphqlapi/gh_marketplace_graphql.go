@@ -356,6 +356,16 @@ func (s *Resolver) marketplaceListingType() *graphql.Object {
 						return logo, nil
 					},
 				},
+				"app": &graphql.Field{
+					Type: s.gqlAppType(),
+					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+						listing := s.store.GetMarketplaceListing(sponsorsSourceString(p.Source, "_slug"))
+						if listing == nil || listing.GitHubAppID == 0 {
+							return nil, nil
+						}
+						return optionalRendered(s.store.GetApp(listing.GitHubAppID), appGQLSource), nil
+					},
+				},
 				"primaryCategory": &graphql.Field{
 					Type: graphql.NewNonNull(s.marketplaceCategoryType()),
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {

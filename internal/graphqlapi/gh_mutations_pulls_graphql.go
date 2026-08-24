@@ -20,6 +20,11 @@ import (
 )
 
 func (s *Resolver) addPullRequestSurfaceMutations(mutationType *graphql.Object) {
+	// Completes ReviewDismissedEvent.pullRequestCommit. The owning object is
+	// minted by the timeline family, which runs after the pull-request family;
+	// this mutation installer runs later still, so the object now exists.
+	s.addReviewDismissedEventPullRequestCommit()
+
 	pullRequestType := s.graphqlTypes.pullRequest
 	repositoryType := s.graphqlTypes.repository
 	reviewType := s.graphqlTypes.pullRequestReview
@@ -381,6 +386,10 @@ func (s *Resolver) gqlMergeQueueEntryType() *graphql.Object {
 				"AWAITING_CHECKS", "LOCKED", "MERGEABLE", "QUEUED", "UNMERGEABLE")),
 			"pullRequest": gqlField(s.graphqlTypes.pullRequest),
 			"mergeQueue":  gqlField(s.gqlMergeQueueType()),
+			// The base/head commits of the queued pull request, resolved from
+			// the entry's stored SHAs (nullable when the git object is absent).
+			"baseCommit": gqlField(s.graphqlTypes.commit),
+			"headCommit": gqlField(s.graphqlTypes.commit),
 		}
 	})
 }
@@ -486,6 +495,8 @@ func (s *Resolver) mergeQueueEntryToGQL(repo *store.Repo, pr *store.PullRequest,
 		"estimatedTimeToMerge": nil,
 		"state":                state,
 		"pullRequest":          optionalObject(pullRequestToGQL(pr, s.store)),
+		"baseCommit":           optionalObject(s.prCommitSourceByOID(repo, pr, pr.BaseSHA)),
+		"headCommit":           optionalObject(s.prCommitSourceByOID(repo, pr, s.prHeadSha(repo, pr))),
 	}
 	if withQueue {
 		entry["mergeQueue"] = optionalObject(s.mergeQueueToGQL(repo, pr.BaseRefName))

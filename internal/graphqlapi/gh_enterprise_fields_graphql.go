@@ -45,6 +45,13 @@ type enterpriseExtraTypes struct {
 	enterpriseRepositoryInfoConnection *graphql.Object
 	oidcProviderType                   *graphql.Object
 	announcementBannerType             *graphql.Object
+	// Node types the second-pass installer (gh_enterprise_fields2_graphql.go)
+	// hangs cross-referencing fields on: the invitation node both enterprise
+	// invitation connections carry, the SCIM/SAML external-identity node and the
+	// Enterprise Server installation node.
+	orgInvitationType      *graphql.Object
+	externalIdentityType   *graphql.Object
+	serverInstallationType *graphql.Object
 }
 
 // buildEnterpriseExtraTypes mints the node and connection types the extra
@@ -127,6 +134,7 @@ func (s *Resolver) buildEnterpriseExtraTypes(enterpriseType, userType *graphql.O
 			"isConnected":  &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
 		},
 	})
+	extras.serverInstallationType = serverInstallationType
 	extras.serverInstallationConnection = advisoryConnectionType("EnterpriseServerInstallation", serverInstallationType, pageInfo)
 
 	// EnterpriseServerInstallationMembershipConnection: standard nodes over the
@@ -159,6 +167,7 @@ func (s *Resolver) buildEnterpriseExtraTypes(enterpriseType, userType *graphql.O
 			"createdAt": &graphql.Field{Type: graphql.NewNonNull(dateTime)},
 		},
 	})
+	extras.orgInvitationType = orgInvitationType
 	extras.failedInvitationConnection = uniqueUserInvitationConnection(
 		"EnterpriseFailedInvitation", orgInvitationType, pageInfo)
 	extras.pendingMemberInvitationConnection = uniqueUserInvitationConnection(
@@ -190,6 +199,7 @@ func (s *Resolver) buildEnterpriseExtraTypes(enterpriseType, userType *graphql.O
 			"user": &graphql.Field{Type: userType},
 		},
 	})
+	extras.externalIdentityType = externalIdentityType
 	extras.externalIdentityConnection = advisoryConnectionType("ExternalIdentity", externalIdentityType, pageInfo)
 
 	// --- EnterpriseRepositoryInfo (outside-collaborator edge) ---------------
@@ -534,7 +544,11 @@ func (s *Resolver) enterpriseTeamToGraphQL(p graphql.ResolveParams, e *store.Ent
 		"name":                      t.Name,
 		"notificationSetting":       strings.ToUpper(t.NotificationSetting),
 		"organizationSelectionType": strings.ToUpper(t.OrganizationSelectionType),
-		"slug":                      t.Slug,
-		"viewerCanAdminister":       s.viewerIsEnterpriseOwner(p, e),
+		// Enterprise teams carry no per-team privacy in the store; GitHub's
+		// enterprise teams are visible within the enterprise, so the non-null
+		// TeamPrivacy is the constant VISIBLE (reported as constant-not-stored).
+		"privacy":             "VISIBLE",
+		"slug":                t.Slug,
+		"viewerCanAdminister": s.viewerIsEnterpriseOwner(p, e),
 	}
 }

@@ -18,6 +18,7 @@ package graphqlapi
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/go-git/go-git/v5/plumbing"
@@ -25,6 +26,11 @@ import (
 
 	"github.com/e6qu/bleephub/internal/store"
 )
+
+// appLogoBackgroundColor is the hex (without the leading '#') the App.logoBackgroundColor
+// field reports. bleephub stores no per-app logo color, so it answers GitHub's
+// neutral default rather than an invented per-app value.
+const appLogoBackgroundColor = "FFFFFF"
 
 func init() {
 	for name, rule := range map[string]mutationRule{
@@ -520,6 +526,76 @@ func (s *Resolver) addBranchProtectionFieldsToSchema(repoType *graphql.Object, m
 	})
 
 	s.addBranchProtectionMutations(mutationType)
+
+	// The residue fields on the Gist, App and Topic objects. They are wired
+	// from here because this family installer runs after the account, gist,
+	// sponsors, marketplace and enterprise families, so every cross-family
+	// type they reach read-only — GistCommentConnection, IpAllowListEntryConnection,
+	// StargazerConnection, RepositoryConnection — is already assembled.
+	s.addMiscGraphQLFields()
+}
+
+// addAppResidueFields completes the App object with the four members the
+// two-field shell omitted: the homepage url, the logo url/background color and
+// the (always-empty) ipAllowListEntries connection. Every App source carries
+// databaseId and slug (appGQLSource), which is all these resolvers need.
+func (s *Resolver) addAppResidueFields() {
+	appType := s.gqlAppType()
+	uri := s.graphQLStringScalar("URI")
+
+	appType.AddFieldConfig("url", &graphql.Field{
+		Type: graphql.NewNonNull(uri),
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			slug := sourceString(p.Source, "slug")
+			if app := s.store.GetApp(sourceInt(p.Source, "databaseId")); app != nil && app.ExternalURL != "" {
+				return app.ExternalURL, nil
+			}
+			return externalURL("/apps/" + slug), nil
+		},
+	})
+
+	appType.AddFieldConfig("logoUrl", &graphql.Field{
+		Type: graphql.NewNonNull(uri),
+		Args: graphql.FieldConfigArgument{
+			"size": &graphql.ArgumentConfig{Type: graphql.Int},
+		},
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			// GitHub serves an app's logo from the integration-avatar namespace
+			// (/in/<app_id>); the instance-hosted mirror is the truthful,
+			// deterministic address for it.
+			logo := externalURL("/avatars/in/" + strconv.Itoa(sourceInt(p.Source, "databaseId")) + "?v=4")
+			if size, ok := intArg(p.Args, "size"); ok && size > 0 {
+				logo += "&s=" + strconv.Itoa(size)
+			}
+			return logo, nil
+		},
+	})
+
+	appType.AddFieldConfig("logoBackgroundColor", &graphql.Field{
+		Type: graphql.NewNonNull(graphql.String),
+		Resolve: func(graphql.ResolveParams) (interface{}, error) {
+			return appLogoBackgroundColor, nil
+		},
+	})
+
+	// The IP allow list is an enterprise/organization feature; an app carries
+	// no entries in bleephub, so this is a truthful-empty connection rather
+	// than a missing field. The connection type is the one the enterprise
+	// family already built.
+	if types := s.accountSurfaceRegistry(); types.ipAllowListEntryConnection != nil {
+		appType.AddFieldConfig("ipAllowListEntries", &graphql.Field{
+			Type: graphql.NewNonNull(types.ipAllowListEntryConnection),
+			Args: connectionArgs(graphql.FieldConfigArgument{
+				"orderBy": &graphql.ArgumentConfig{
+					Type: s.gqlOrderInput(types, "IpAllowListEntryOrder", "IpAllowListEntryOrderField",
+						"ALLOW_LIST_VALUE", "CREATED_AT"),
+				},
+			}),
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				return repaginateConnection(gqlConnectionSource(nil), p.Args), nil
+			},
+		})
+	}
 }
 
 // --- mutations ---------------------------------------------------------------

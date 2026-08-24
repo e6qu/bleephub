@@ -219,6 +219,13 @@ func (s *Resolver) addRepositoryPeopleFields(types *accountSurfaceTypes) {
 			return paginateGQLItems(s.commitCommentItems(s.store.CommitComments.ListForRepo(repo.ID)), p.Args), nil
 		},
 	})
+
+	// The residual repos-family / git-object members GitHub declares on
+	// Repository, Commit, Ref, TreeEntry and the shared RepositoryConnection.
+	// It is wired here, at the tail of the people surface, so every type it
+	// reaches read-only (the pull-request, check, status-rollup, discussion,
+	// project, submodule and advisory families) is already assembled.
+	s.addRepoGitResidualFields(types)
 }
 
 // rfc3339 is the DateTime layout every timestamp in this family renders with.

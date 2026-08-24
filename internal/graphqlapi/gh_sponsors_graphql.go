@@ -670,6 +670,13 @@ func (s *Resolver) sponsorsListingType() *graphql.Object {
 				"id":                    &graphql.Field{Type: graphql.NewNonNull(graphql.ID)},
 				"slug":                  &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
 				"name":                  &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+				// bleephub runs no Stripe integration, so a listing has no active
+				// Stripe Connect account; the field is present (its type exists)
+				// and answers a truthful null rather than being missing.
+				"activeStripeConnectAccount": &graphql.Field{
+					Type:    s.gqlStripeConnectAccountType(),
+					Resolve: func(graphql.ResolveParams) (interface{}, error) { return nil, nil },
+				},
 				"shortDescription":      &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
 				"fullDescription":       &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
 				"fullDescriptionHTML":   &graphql.Field{Type: graphql.NewNonNull(s.graphQLStringScalar("HTML"))},
@@ -769,6 +776,24 @@ func (s *Resolver) sponsorsListingType() *graphql.Object {
 		}),
 	})
 	return types.listing
+}
+
+// gqlStripeConnectAccountType is GitHub's StripeConnectAccount object
+// (memoized). bleephub never populates one — SponsorsListing.activeStripeConnectAccount
+// is always null — but the type has to exist with GitHub's signature for that
+// field to name it. Its members are declared through a thunk because
+// sponsorsListing points back at SponsorsListing, which points here.
+func (s *Resolver) gqlStripeConnectAccountType() *graphql.Object {
+	return s.mutationObjectLazy("StripeConnectAccount", func() graphql.Fields {
+		return graphql.Fields{
+			"accountId":              &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"billingCountryOrRegion": &graphql.Field{Type: graphql.String},
+			"countryOrRegion":        &graphql.Field{Type: graphql.String},
+			"isActive":               &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
+			"sponsorsListing":        &graphql.Field{Type: graphql.NewNonNull(s.sponsorsListingType())},
+			"stripeDashboardUrl":     &graphql.Field{Type: graphql.NewNonNull(s.graphQLStringScalar("URI"))},
+		}
+	})
 }
 
 // sponsorsMaintainerOnlyField builds a listing field that answers only for
@@ -1484,6 +1509,64 @@ func (s *Resolver) addSponsorsFieldsToSchema(userType, orgType, queryType, mutat
 	})
 
 	s.addSponsorsMutations(mutationType)
+
+	// The two SponsorsCountryOrRegionCode members of CreateSponsorsListingInput.
+	// The input is minted anonymously inside the create mutation, so the two
+	// fields are added to the assembled type here rather than at the mutation's
+	// declaration site.
+	s.addCreateSponsorsListingInputResidueFields(mutationType)
+}
+
+// addCreateSponsorsListingInputResidueFields declares the billing and residence
+// country-or-region members on CreateSponsorsListingInput. They are input
+// declarations only: the create resolver does not read them, matching a
+// bleephub that records no bank-account geography.
+func (s *Resolver) addCreateSponsorsListingInputResidueFields(mutationType *graphql.Object) {
+	field, ok := mutationType.Fields()["createSponsorsListing"]
+	if !ok {
+		return
+	}
+	var input *graphql.InputObject
+	for _, arg := range field.Args {
+		if arg.PrivateName == "input" {
+			input, _ = graphql.GetNamed(arg.Type).(*graphql.InputObject)
+		}
+	}
+	if input == nil {
+		return
+	}
+	code := s.gqlSponsorsCountryOrRegionCodeEnum()
+	input.AddFieldConfig("billingCountryOrRegionCode", &graphql.InputObjectFieldConfig{Type: code})
+	input.AddFieldConfig("residenceCountryOrRegionCode", &graphql.InputObjectFieldConfig{Type: code})
+}
+
+// gqlSponsorsCountryOrRegionCodeEnum is GitHub's SponsorsCountryOrRegionCode —
+// the ISO 3166-1 alpha-2 codes a sponsorable's bank account or residence may
+// name (memoized through the shared enum registry).
+func (s *Resolver) gqlSponsorsCountryOrRegionCodeEnum() *graphql.Enum {
+	return s.graphQLEnum("SponsorsCountryOrRegionCode",
+		"AD", "AE", "AF", "AG", "AI", "AL", "AM", "AO", "AQ", "AR", "AS", "AT",
+		"AU", "AW", "AX", "AZ", "BA", "BB", "BD", "BE", "BF", "BG", "BH", "BI",
+		"BJ", "BL", "BM", "BN", "BO", "BQ", "BR", "BS", "BT", "BV", "BW", "BY",
+		"BZ", "CA", "CC", "CD", "CF", "CG", "CH", "CI", "CK", "CL", "CM", "CN",
+		"CO", "CR", "CV", "CW", "CX", "CY", "CZ", "DE", "DJ", "DK", "DM", "DO",
+		"DZ", "EC", "EE", "EG", "EH", "ER", "ES", "ET", "FI", "FJ", "FK", "FM",
+		"FO", "FR", "GA", "GB", "GD", "GE", "GF", "GG", "GH", "GI", "GL", "GM",
+		"GN", "GP", "GQ", "GR", "GS", "GT", "GU", "GW", "GY", "HK", "HM", "HN",
+		"HR", "HT", "HU", "ID", "IE", "IL", "IM", "IN", "IO", "IQ", "IR", "IS",
+		"IT", "JE", "JM", "JO", "JP", "KE", "KG", "KH", "KI", "KM", "KN", "KR",
+		"KW", "KY", "KZ", "LA", "LB", "LC", "LI", "LK", "LR", "LS", "LT", "LU",
+		"LV", "LY", "MA", "MC", "MD", "ME", "MF", "MG", "MH", "MK", "ML", "MM",
+		"MN", "MO", "MP", "MQ", "MR", "MS", "MT", "MU", "MV", "MW", "MX", "MY",
+		"MZ", "NA", "NC", "NE", "NF", "NG", "NI", "NL", "NO", "NP", "NR", "NU",
+		"NZ", "OM", "PA", "PE", "PF", "PG", "PH", "PK", "PL", "PM", "PN", "PR",
+		"PS", "PT", "PW", "PY", "QA", "RE", "RO", "RS", "RU", "RW", "SA", "SB",
+		"SC", "SD", "SE", "SG", "SH", "SI", "SJ", "SK", "SL", "SM", "SN", "SO",
+		"SR", "SS", "ST", "SV", "SX", "SY", "SZ", "TC", "TD", "TF", "TG", "TH",
+		"TJ", "TK", "TL", "TM", "TN", "TO", "TR", "TT", "TV", "TW", "TZ", "UA",
+		"UG", "UM", "US", "UY", "UZ", "VA", "VC", "VE", "VG", "VI", "VN", "VU",
+		"WF", "WS", "YE", "YT", "ZA", "ZM", "ZW",
+	)
 }
 
 // ---------------------------------------------------------------------------
