@@ -126,10 +126,41 @@ func (rs *ReleaseStore) Create(repoID, authorID int, tagName, target, name, body
 	return r
 }
 
+// cloneRelease detaches a release from the store (STORE-021): Assets and
+// PublishedAt are the only reference fields, and a reader that walked either
+// one could rewrite stored state through a getter.
+func cloneRelease(r *Release) *Release {
+	if r == nil {
+		return nil
+	}
+	clone := *r
+	if r.PublishedAt != nil {
+		published := *r.PublishedAt
+		clone.PublishedAt = &published
+	}
+	if r.Assets != nil {
+		clone.Assets = make([]*ReleaseAsset, len(r.Assets))
+		for i, asset := range r.Assets {
+			clone.Assets[i] = cloneReleaseAsset(asset)
+		}
+	}
+	return &clone
+}
+
+// cloneReleaseAsset detaches one asset; ReleaseAsset is all-value, so a
+// shallow copy is the whole job.
+func cloneReleaseAsset(a *ReleaseAsset) *ReleaseAsset {
+	if a == nil {
+		return nil
+	}
+	clone := *a
+	return &clone
+}
+
 func (rs *ReleaseStore) Get(id int) *Release {
 	rs.Mu.RLock()
 	defer rs.Mu.RUnlock()
-	return rs.ByID[id]
+	return cloneRelease(rs.ByID[id])
 }
 
 func (rs *ReleaseStore) GetByTag(repoID int, tag string) *Release {
@@ -137,7 +168,7 @@ func (rs *ReleaseStore) GetByTag(repoID int, tag string) *Release {
 	defer rs.Mu.RUnlock()
 	for _, r := range rs.ByRepo[repoID] {
 		if r.TagName == tag {
-			return r
+			return cloneRelease(r)
 		}
 	}
 	return nil
@@ -156,14 +187,16 @@ func (rs *ReleaseStore) Latest(repoID int) *Release {
 			latest = r
 		}
 	}
-	return latest
+	return cloneRelease(latest)
 }
 
 func (rs *ReleaseStore) List(repoID int) []*Release {
 	rs.Mu.RLock()
 	defer rs.Mu.RUnlock()
 	out := make([]*Release, len(rs.ByRepo[repoID]))
-	copy(out, rs.ByRepo[repoID])
+	for i, r := range rs.ByRepo[repoID] {
+		out[i] = cloneRelease(r)
+	}
 	// Real GitHub lists releases newest-first; IDs are monotonic at
 	// creation, so id-desc is stable across restarts even though the
 	// persistence loader rebuilds byRepo in map-iteration order.
@@ -450,7 +483,7 @@ func (rs *ReleaseStore) CreateReleaseAsset(releaseID, uploaderID int, name, labe
 func (rs *ReleaseStore) GetReleaseAsset(id int) *ReleaseAsset {
 	rs.Mu.RLock()
 	defer rs.Mu.RUnlock()
-	return rs.assetByID[id]
+	return cloneReleaseAsset(rs.assetByID[id])
 }
 
 func (rs *ReleaseStore) GetAssetData(id int) ([]byte, bool) {
@@ -498,7 +531,9 @@ func (rs *ReleaseStore) ListReleaseAssets(releaseID int) []*ReleaseAsset {
 		return nil
 	}
 	out := make([]*ReleaseAsset, len(rel.Assets))
-	copy(out, rel.Assets)
+	for i, asset := range rel.Assets {
+		out[i] = cloneReleaseAsset(asset)
+	}
 	return out
 }
 

@@ -135,7 +135,7 @@ func (s *Server) handleGetPRCreationBypass(w http.ResponseWriter, r *http.Reques
 	users := s.store.PRCreationBypassUsers(repo.FullName)
 	out := make([]map[string]interface{}, 0, len(users))
 	for _, user := range paginateAndLink(w, r, users) {
-		out = append(out, store.UserToJSON(user))
+		out = append(out, store.UserToJSON(user, s.baseURL(r)))
 	}
 	writeJSON(w, http.StatusOK, out)
 }

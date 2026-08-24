@@ -37,28 +37,28 @@ func installationNodeID(id int) string {
 // The app argument is retained for call-site symmetry with the other event
 // builders; the app's identity is carried inside the installation object
 // (app_id/app_slug), not as a top-level key, matching GitHub's wire shape.
-func buildInstallationEventPayload(_ *store.App, action string, inst *store.Installation, sender *store.User) map[string]interface{} {
+func buildInstallationEventPayload(_ *store.App, action string, inst *store.Installation, sender *store.User, baseURL string) map[string]interface{} {
 	repos := []map[string]interface{}{}
 	return map[string]interface{}{
 		"action":       action,
-		"installation": installationToJSON(inst),
+		"installation": installationToJSON(inst, baseURL),
 		"repositories": repos,
-		"sender":       senderPayload(sender),
+		"sender":       senderPayload(sender, baseURL),
 	}
 }
 
 // buildInstallationRepositoriesEventPayload builds installation_repositories
 // (action: added | removed).
-func buildInstallationRepositoriesEventPayload(app *store.App, action string, inst *store.Installation, repoIDsChanged []int, sender *store.User) map[string]interface{} {
+func buildInstallationRepositoriesEventPayload(app *store.App, action string, inst *store.Installation, repoIDsChanged []int, sender *store.User, baseURL string) map[string]interface{} {
 	changes := []map[string]interface{}{}
 	for _, id := range repoIDsChanged {
 		changes = append(changes, map[string]interface{}{"id": id})
 	}
 	out := map[string]interface{}{
 		"action":               action,
-		"installation":         installationToJSON(inst),
+		"installation":         installationToJSON(inst, baseURL),
 		"repository_selection": inst.RepositorySelection,
-		"sender":               senderPayload(sender),
+		"sender":               senderPayload(sender, baseURL),
 	}
 	switch action {
 	case "added":
@@ -71,16 +71,16 @@ func buildInstallationRepositoriesEventPayload(app *store.App, action string, in
 	return out
 }
 
-func buildPushPayload(st *store.Store, repo *store.Repo, sender *store.User, ref, before, after string) map[string]interface{} {
+func buildPushPayload(st *store.Store, repo *store.Repo, sender *store.User, ref, before, after, baseURL string) map[string]interface{} {
 	repo = st.SnapRepo(repo)
 	sender = st.SnapUser(sender)
-	payload := buildPushPayloadWithInstallation(repo, sender, ref, before, after, nil)
+	payload := buildPushPayloadWithInstallation(repo, sender, ref, before, after, nil, baseURL)
 	stor, _ := st.GitStorageForRepoID(repo.ID)
 	oldHash := plumbing.NewHash(before)
 	newHash := plumbing.NewHash(after)
 	payload["forced"] = classifyRefUpdate(stor, oldHash, newHash) == "force_push"
 	if !oldHash.IsZero() && !newHash.IsZero() {
-		payload["compare"] = "/" + repo.FullName + "/compare/" + before + "..." + after
+		payload["compare"] = baseURL + "/" + repo.FullName + "/compare/" + before + "..." + after
 	}
 	commits := pushCommitPayloads(stor, oldHash, newHash, repo.FullName)
 	payload["commits"] = commits
@@ -94,7 +94,7 @@ func buildPushPayload(st *store.Store, repo *store.Repo, sender *store.User, ref
 	return payload
 }
 
-func buildPushPayloadWithInstallation(repo *store.Repo, sender *store.User, ref, before, after string, inst *store.Installation) map[string]interface{} {
+func buildPushPayloadWithInstallation(repo *store.Repo, sender *store.User, ref, before, after string, inst *store.Installation, baseURL string) map[string]interface{} {
 	return attachInstallationBlock(map[string]interface{}{
 		"ref":         ref,
 		"before":      before,
@@ -105,8 +105,8 @@ func buildPushPayloadWithInstallation(repo *store.Repo, sender *store.User, ref,
 		"compare":     "",
 		"commits":     []interface{}{},
 		"head_commit": nil,
-		"repository":  repoPayload(repo),
-		"sender":      senderPayload(sender),
+		"repository":  repoPayload(repo, baseURL),
+		"sender":      senderPayload(sender, baseURL),
 	}, inst)
 }
 
@@ -215,7 +215,7 @@ func coalesceUserEmail(user *store.User) string {
 	return user.Email
 }
 
-func buildPullRequestPayload(st *store.Store, repo *store.Repo, pr *store.PullRequest, sender *store.User, action string) map[string]interface{} {
+func buildPullRequestPayload(st *store.Store, repo *store.Repo, pr *store.PullRequest, sender *store.User, action, baseURL string) map[string]interface{} {
 	// Snapshot the shared entities before reading their mutable fields.
 	headRepo := store.PullRequestHeadRepo(st, pr)
 	repo = st.SnapRepo(repo)
@@ -235,7 +235,7 @@ func buildPullRequestPayload(st *store.Store, repo *store.Repo, pr *store.PullRe
 		"body":    pr.Body,
 		"state":   state,
 		"locked":  pr.Locked,
-		"user":    senderPayload(st.GetUserByID(pr.AuthorID)),
+		"user":    senderPayload(st.GetUserByID(pr.AuthorID), baseURL),
 		"draft":   pr.IsDraft,
 		"merged":  pr.State == "MERGED",
 		// A merged PR reports its real merge commit; an open one reports its
@@ -246,12 +246,12 @@ func buildPullRequestPayload(st *store.Store, repo *store.Repo, pr *store.PullRe
 		"head": map[string]interface{}{
 			"ref":  pr.HeadRefName,
 			"sha":  pullRequestHeadSHA(pr, st),
-			"repo": repoPayload(headRepo),
+			"repo": repoPayload(headRepo, baseURL),
 		},
 		"base": map[string]interface{}{
 			"ref":  pr.BaseRefName,
 			"sha":  pr.BaseSHA,
-			"repo": repoPayload(repo),
+			"repo": repoPayload(repo, baseURL),
 		},
 		"created_at": pr.CreatedAt.UTC().Format(time.RFC3339),
 		"updated_at": pr.UpdatedAt.UTC().Format(time.RFC3339),
@@ -264,20 +264,20 @@ func buildPullRequestPayload(st *store.Store, repo *store.Repo, pr *store.PullRe
 		prJSON["closed_at"] = pr.ClosedAt.UTC().Format(time.RFC3339)
 	}
 
-	return buildPullRequestPayloadInner(action, pr, prJSON, repo, sender, nil)
+	return buildPullRequestPayloadInner(action, pr, prJSON, repo, sender, nil, baseURL)
 }
 
-func buildPullRequestPayloadInner(action string, pr *store.PullRequest, prJSON map[string]interface{}, repo *store.Repo, sender *store.User, inst *store.Installation) map[string]interface{} {
+func buildPullRequestPayloadInner(action string, pr *store.PullRequest, prJSON map[string]interface{}, repo *store.Repo, sender *store.User, inst *store.Installation, baseURL string) map[string]interface{} {
 	return attachInstallationBlock(map[string]interface{}{
 		"action":       action,
 		"number":       pr.Number,
 		"pull_request": prJSON,
-		"repository":   repoPayload(repo),
-		"sender":       senderPayload(sender),
+		"repository":   repoPayload(repo, baseURL),
+		"sender":       senderPayload(sender, baseURL),
 	}, inst)
 }
 
-func buildIssuesPayload(st *store.Store, repo *store.Repo, issue *store.Issue, sender *store.User, action string) map[string]interface{} {
+func buildIssuesPayload(st *store.Store, repo *store.Repo, issue *store.Issue, sender *store.User, action, baseURL string) map[string]interface{} {
 	// Snapshot the shared entities before reading their mutable fields.
 	repo = st.SnapRepo(repo)
 	issue = st.SnapIssue(issue)
@@ -295,7 +295,7 @@ func buildIssuesPayload(st *store.Store, repo *store.Repo, issue *store.Issue, s
 		"body":       issue.Body,
 		"state":      state,
 		"locked":     issue.Locked,
-		"user":       senderPayload(st.GetUserByID(issue.AuthorID)),
+		"user":       senderPayload(st.GetUserByID(issue.AuthorID), baseURL),
 		"created_at": issue.CreatedAt.UTC().Format(time.RFC3339),
 		"updated_at": issue.UpdatedAt.UTC().Format(time.RFC3339),
 	}
@@ -307,8 +307,8 @@ func buildIssuesPayload(st *store.Store, repo *store.Repo, issue *store.Issue, s
 	return attachInstallationBlock(map[string]interface{}{
 		"action":     action,
 		"issue":      issueJSON,
-		"repository": repoPayload(repo),
-		"sender":     senderPayload(sender),
+		"repository": repoPayload(repo, baseURL),
+		"sender":     senderPayload(sender, baseURL),
 	}, nil)
 }
 
@@ -338,8 +338,8 @@ func buildIssueCommentPayload(
 		"action":     action,
 		"issue":      issueJSON,
 		"comment":    store.CommentToJSON(comment, st, baseURL, repo.FullName, parentNumber),
-		"repository": repoPayload(repo),
-		"sender":     senderPayload(sender),
+		"repository": repoPayload(repo, baseURL),
+		"sender":     senderPayload(sender, baseURL),
 	}, nil)
 }
 
@@ -355,12 +355,12 @@ func buildPullRequestReviewPayload(
 	pr = st.SnapPR(pr)
 	review = st.SnapPullRequestReview(review)
 	sender = st.SnapUser(sender)
-	payload := buildPullRequestPayload(st, repo, pr, sender, action)
+	payload := buildPullRequestPayload(st, repo, pr, sender, action, baseURL)
 	payload["review"] = reviewToJSON(review, st, baseURL, repo.FullName, pr.Number)
 	return payload
 }
 
-func buildPingPayload(repo *store.Repo, hook *store.Webhook, sender *store.User) map[string]interface{} {
+func buildPingPayload(repo *store.Repo, hook *store.Webhook, sender *store.User, baseURL string) map[string]interface{} {
 	payload := map[string]interface{}{
 		"zen":     "Keep it logically awesome.",
 		"hook_id": hook.ID,
@@ -376,28 +376,30 @@ func buildPingPayload(repo *store.Repo, hook *store.Webhook, sender *store.User)
 			},
 		},
 		// GitHub's ping event carries the acting user like every other event.
-		"sender": senderPayload(sender),
+		"sender": senderPayload(sender, baseURL),
 	}
 	if repo != nil {
-		payload["repository"] = repoPayload(repo)
+		payload["repository"] = repoPayload(repo, baseURL)
 	}
 	return payload
 }
 
-func repoPayload(repo *store.Repo) map[string]interface{} {
+func repoPayload(repo *store.Repo, baseURL string) map[string]interface{} {
 	if repo == nil {
 		return nil
 	}
-	// Hypermedia is relative, matching the sender object (store.UserToJSON) that
+	// Hypermedia is absolute, matching the sender object (store.UserToJSON) that
 	// already ships on every payload; the whole webhook body uses one convention.
+	// It has to be absolute: a webhook body is read on another host, which has
+	// nothing to resolve a relative reference against.
 	result := map[string]interface{}{
 		"id":             repo.ID,
 		"node_id":        repo.NodeID,
 		"name":           repo.Name,
 		"full_name":      repo.FullName,
 		"private":        repo.Private,
-		"url":            "/api/v3/repos/" + repo.FullName,
-		"html_url":       "/" + repo.FullName,
+		"url":            baseURL + "/api/v3/repos/" + repo.FullName,
+		"html_url":       baseURL + "/" + repo.FullName,
 		"description":    repo.Description,
 		"fork":           repo.Fork,
 		"default_branch": repo.DefaultBranch,
@@ -406,40 +408,40 @@ func repoPayload(repo *store.Repo) map[string]interface{} {
 		"pushed_at":      repo.PushedAt.UTC().Format(time.RFC3339),
 	}
 	if repo.Owner != nil {
-		result["owner"] = senderPayload(repo.Owner)
+		result["owner"] = senderPayload(repo.Owner, baseURL)
 	}
 	return result
 }
 
 // orgWebhookPayload is the `organization` block on event payloads for
 // org-owned repos.
-func orgWebhookPayload(org *store.Org) map[string]interface{} {
+func orgWebhookPayload(org *store.Org, baseURL string) map[string]interface{} {
 	return map[string]interface{}{
 		"login":       org.Login,
 		"id":          org.ID,
 		"node_id":     org.NodeID,
-		"url":         "/api/v3/orgs/" + org.Login,
-		"avatar_url":  org.AvatarURL,
+		"url":         baseURL + "/api/v3/orgs/" + org.Login,
+		"avatar_url":  store.AvatarURLFor(org.AvatarURL, org.ID, baseURL),
 		"description": org.Description,
 	}
 }
 
-func senderPayload(user *store.User) map[string]interface{} {
+func senderPayload(user *store.User, baseURL string) map[string]interface{} {
 	if user == nil {
 		// GitHub guarantees `sender` is always a populated user object. Events
 		// with no originating user (e.g. system-driven pushes) fall back to the
 		// deterministic "ghost" actor GitHub uses for absent accounts.
-		return ghostSenderPayload()
+		return ghostSenderPayload(baseURL)
 	}
 	copy := *user
 	if copy.Type == "" {
 		copy.Type = "User"
 	}
-	return store.UserToJSON(&copy)
+	return store.UserToJSON(&copy, baseURL)
 }
 
 // ghostSenderPayload returns GitHub's "ghost" deleted-user actor, used as the
 // sender for events that have no originating user account.
-func ghostSenderPayload() map[string]interface{} {
-	return store.UserToJSON(nil)
+func ghostSenderPayload(baseURL string) map[string]interface{} {
+	return store.UserToJSON(nil, baseURL)
 }

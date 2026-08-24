@@ -3,6 +3,8 @@ package store
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
+	"strings"
 )
 
 // UserToJSON converts a User to the GitHub `simple-user` shape — the
@@ -12,19 +14,25 @@ import (
 // GET /users/{username}; see fullUserJSON.
 // A nil user is GitHub's deleted account: it renders as the `ghost` user
 // rather than JSON null, so no caller has to resolve absence itself.
-func UserToJSON(u *User) map[string]interface{} {
+//
+// baseURL is the instance's external origin. Every hypermedia member of
+// `simple-user` is declared required with format: uri, so they are absolute
+// here exactly as repository hypermedia is: clients such as PyGithub build
+// their next request by resolving an object's own `url`, and a relative
+// value makes them request <base>/api/v3/api/v3/users/{login}/repos.
+func UserToJSON(u *User, baseURL string) map[string]interface{} {
 	if u == nil {
 		u = GhostUser()
 	}
-	api := "/api/v3/users/" + u.Login
+	api := baseURL + "/api/v3/users/" + u.Login
 	return map[string]interface{}{
 		"login":               u.Login,
 		"id":                  u.ID,
 		"node_id":             u.NodeID,
-		"avatar_url":          u.AvatarURL,
+		"avatar_url":          AvatarURLFor(u.AvatarURL, u.ID, baseURL),
 		"gravatar_id":         "",
 		"url":                 api,
-		"html_url":            "/" + u.Login,
+		"html_url":            baseURL + "/" + u.Login,
 		"followers_url":       api + "/followers",
 		"following_url":       api + "/following{/other_user}",
 		"gists_url":           api + "/gists{/gist_id}",
@@ -40,6 +48,25 @@ func UserToJSON(u *User) map[string]interface{} {
 		"email":               u.Email,
 		"user_view_type":      "public",
 	}
+}
+
+// AvatarURLFor resolves the `avatar_url` member of an account shape.
+// `simple-user.avatar_url` is required with format: uri, so an account that
+// carries no stored avatar still has to name one; GitHub Enterprise Server
+// serves every account's avatar from the instance itself, at
+// <base>/avatars/u/{id}?v=4, and that is the address rendered here. A stored
+// avatar that is already absolute (a federated identity provider's picture
+// claim) is preserved; a stored relative one is resolved against the base.
+func AvatarURLFor(stored string, id int, baseURL string) string {
+	switch {
+	case strings.HasPrefix(stored, "http://"), strings.HasPrefix(stored, "https://"):
+		return stored
+	case strings.HasPrefix(stored, "/"):
+		return baseURL + stored
+	case stored != "":
+		return baseURL + "/" + stored
+	}
+	return baseURL + "/avatars/u/" + strconv.Itoa(id) + "?v=4"
 }
 
 func GhostUser() *User {

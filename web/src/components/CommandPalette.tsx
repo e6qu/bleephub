@@ -51,6 +51,7 @@ function staticTargets(viewerLogin?: string): CmdItem[] {
     { id: "s-notifications", label: "Notifications", icon: <NotificationBellIcon size={16} />, to: "/ui/notifications", group: "Go to" },
     { id: "s-explore", label: "Explore", icon: <SearchIcon size={16} />, to: "/ui/search", group: "Go to" },
     { id: "s-marketplace", label: "Marketplace", icon: <PackageIcon size={16} />, to: "/ui/marketplace", group: "Go to" },
+    { id: "s-sponsors", label: "Sponsors", icon: <PackageIcon size={16} />, to: "/ui/sponsors", group: "Go to" },
     { id: "s-gists", label: "Your gists", icon: <GistIcon size={16} />, to: "/ui/gists", group: "Go to" },
     { id: "s-settings", label: "Settings", icon: <KeyIcon size={16} />, to: "/ui/account", group: "Go to" },
   );

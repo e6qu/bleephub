@@ -90,7 +90,7 @@ func searchItemIDs(t *testing.T, w *httptest.ResponseRecorder) []float64 {
 // ─── deleted users render as ghost, never a nil dereference ──────────────
 
 func TestUserToJSONNilRendersGhostAccount(t *testing.T) {
-	got := store.UserToJSON(nil)
+	got := store.UserToJSON(nil, "https://bleephub.test")
 	if got["login"] != "ghost" {
 		t.Fatalf("login = %v, want ghost", got["login"])
 	}
@@ -100,7 +100,7 @@ func TestUserToJSONNilRendersGhostAccount(t *testing.T) {
 	if got["node_id"] != "U_bleephub_ghost" {
 		t.Fatalf("node_id = %v", got["node_id"])
 	}
-	if got["url"] != "/api/v3/users/ghost" {
+	if got["url"] != "https://bleephub.test/api/v3/users/ghost" {
 		t.Fatalf("url = %v", got["url"])
 	}
 }

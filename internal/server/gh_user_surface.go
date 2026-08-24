@@ -122,14 +122,14 @@ func (s *Server) handleGetUserByAccountID(w http.ResponseWriter, r *http.Request
 		writeJSON(w, http.StatusOK, s.privateUserJSON(user))
 		return
 	}
-	writeJSON(w, http.StatusOK, s.fullUserJSON(user))
+	writeJSON(w, http.StatusOK, s.fullUserJSON(user, s.baseURL(r)))
 }
 
 // privateUserJSON renders GitHub's `private-user` schema — the
 // authenticated user's own account view. The private counters and
 // two_factor_authentication are derived live from store state.
 func (s *Server) privateUserJSON(u *store.User) map[string]interface{} {
-	out := s.fullUserJSON(u)
+	out := s.fullUserJSON(u, s.publicOrigin())
 	out["user_view_type"] = "private"
 	privateRepos := s.store.CountPrivateRepos(u.Login)
 	out["owned_private_repos"] = privateRepos

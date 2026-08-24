@@ -97,7 +97,7 @@ func (s *Server) ghesLDAPUser(w http.ResponseWriter, r *http.Request) *store.Use
 }
 
 func (s *Server) ghesLDAPUserJSON(user *store.User) map[string]interface{} {
-	out := s.fullUserJSON(user)
+	out := s.fullUserJSON(user, s.publicOrigin())
 	s.store.Mu.RLock()
 	out["ldap_dn"] = s.store.EnterpriseSettings.GHESLDAPUserMappings[user.Login]
 	s.store.Mu.RUnlock()

@@ -36,30 +36,33 @@ func (s *Server) handleGetSingleCommit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	accept := r.Header.Get("Accept")
-	if strings.Contains(accept, "application/vnd.github.sha") {
+	if acceptsGitHubMediaType(accept, "sha") {
+		setGitHubMediaType(w, r, "sha")
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(commit.Hash.String()))
 		return
 	}
-	if strings.Contains(accept, "application/vnd.github.patch") {
+	if acceptsGitHubMediaType(accept, "patch") {
 		// github's .patch is a git-format-patch (mbox headers), not a bare diff.
 		patch, err := commitFormatPatch(commit)
 		if err != nil {
 			writeGHError(w, http.StatusInternalServerError, "diff computation failed")
 			return
 		}
+		setGitHubMediaType(w, r, "patch")
 		w.Header().Set("Content-Type", "application/vnd.github.patch; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(patch))
 		return
 	}
-	if strings.Contains(accept, "application/vnd.github.diff") {
+	if acceptsGitHubMediaType(accept, "diff") {
 		diff, err := commitUnifiedDiff(commit)
 		if err != nil {
 			writeGHError(w, http.StatusInternalServerError, "diff computation failed")
 			return
 		}
+		setGitHubMediaType(w, r, "diff")
 		w.Header().Set("Content-Type", "application/vnd.github.diff; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(diff))
@@ -401,7 +404,7 @@ func (s *Server) handleListRepoContributors(w http.ResponseWriter, r *http.Reque
 	out := make([]map[string]interface{}, 0, len(merged))
 	for _, b := range merged {
 		if b.user != nil {
-			entry := store.UserToJSON(b.user)
+			entry := store.UserToJSON(b.user, s.baseURL(r))
 			entry["contributions"] = b.contributions
 			out = append(out, entry)
 			continue
@@ -533,7 +536,7 @@ func (s *Server) handleStatsContributors(w http.ResponseWriter, r *http.Request)
 			})
 		}
 		out = append(out, map[string]interface{}{
-			"author": store.UserToJSON(agg.user),
+			"author": store.UserToJSON(agg.user, s.baseURL(r)),
 			"total":  agg.total,
 			"weeks":  weeks,
 		})

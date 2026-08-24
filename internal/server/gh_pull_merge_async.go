@@ -151,7 +151,7 @@ func (s *Server) handleMergePullRequestAsync(w http.ResponseWriter, r *http.Requ
 
 	merged := s.store.GetPullRequest(pr.ID)
 	repoKey := owner + "/" + repoName
-	mergedPayload := buildPullRequestPayload(s.store, repo, merged, user, "closed")
+	mergedPayload := buildPullRequestPayload(s.store, repo, merged, user, "closed", s.baseURL(r))
 	s.emitWebhookEvent(repoKey, "pull_request", "closed", mergedPayload)
 
 	rec := &store.PullRequestMergeAsync{

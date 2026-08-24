@@ -291,7 +291,7 @@ func (s *Server) handleListGHESPersonalAccessTokens(w http.ResponseWriter, r *ht
 	})
 	out := make([]map[string]interface{}, 0, len(rows))
 	for i := range rows {
-		out = append(out, classicAuthorizationJSON(rows[i].key, &rows[i].token, rows[i].user, false))
+		out = append(out, classicAuthorizationJSON(rows[i].key, &rows[i].token, rows[i].user, false, s.baseURL(r)))
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
@@ -330,7 +330,7 @@ func (s *Server) handleCreateGHESImpersonationToken(w http.ResponseWriter, r *ht
 	s.store.Mu.Lock()
 	for key, token := range s.store.Tokens {
 		if token.UserID == user.ID && token.Impersonation {
-			out := classicAuthorizationJSON(key, token, user, false)
+			out := classicAuthorizationJSON(key, token, user, false, s.baseURL(r))
 			s.store.Mu.Unlock()
 			writeJSON(w, http.StatusOK, out)
 			return
@@ -339,7 +339,7 @@ func (s *Server) handleCreateGHESImpersonationToken(w http.ResponseWriter, r *ht
 	token := s.store.CreateTokenLocked(user.ID, strings.Join(req.Scopes, ", "))
 	token.Impersonation = true
 	s.store.PersistTokenLocked(token)
-	out := classicAuthorizationJSON(token.Value, token, user, true)
+	out := classicAuthorizationJSON(token.Value, token, user, true, s.baseURL(r))
 	s.store.Mu.Unlock()
 	writeJSON(w, http.StatusCreated, out)
 }
@@ -373,7 +373,7 @@ func tokenIdentity(key string, token *store.Token) string {
 	return key
 }
 
-func classicAuthorizationJSON(key string, token *store.Token, user *store.User, revealToken bool) map[string]interface{} {
+func classicAuthorizationJSON(key string, token *store.Token, user *store.User, revealToken bool, baseURL string) map[string]interface{} {
 	identity := tokenIdentity(key, token)
 	value := ""
 	if revealToken {
@@ -391,6 +391,6 @@ func classicAuthorizationJSON(key string, token *store.Token, user *store.User, 
 		"note":         nullableString(token.Note), "note_url": nullableString(token.NoteURL),
 		"updated_at":  token.CreatedAt.UTC().Format(time.RFC3339),
 		"created_at":  token.CreatedAt.UTC().Format(time.RFC3339),
-		"fingerprint": nullableString(token.Fingerprint), "user": store.UserToJSON(user), "installation": nil, "expires_at": expires,
+		"fingerprint": nullableString(token.Fingerprint), "user": store.UserToJSON(user, baseURL), "installation": nil, "expires_at": expires,
 	}
 }

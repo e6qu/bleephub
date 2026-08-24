@@ -18,6 +18,12 @@ type BranchProtection struct {
 	LockBranch                     *BPEnabled            `json:"lock_branch,omitempty"`
 	AllowForkSyncing               *BPEnabled            `json:"allow_fork_syncing,omitempty"`
 	URL                            string                `json:"url,omitempty"`
+	// Enabled is the documented `enabled` member of branch-protection, and the
+	// record that the branch is protected at all. Protection is established by
+	// PUT .../protection and removed by DELETE .../protection — never as a side
+	// effect of turning one rule off. Without it, disabling the last remaining
+	// rule (say, admin enforcement) silently dropped every other rule with it.
+	Enabled bool `json:"enabled,omitempty"`
 }
 
 // IsProtected reports whether the branch has any protection rule enabled.
@@ -25,7 +31,8 @@ func (bp *BranchProtection) IsProtected() bool {
 	if bp == nil {
 		return false
 	}
-	return bp.RequiredStatusChecks != nil ||
+	return bp.Enabled ||
+		bp.RequiredStatusChecks != nil ||
 		bp.RequiredPullRequestReviews != nil ||
 		bp.EnforceAdmins != nil ||
 		bp.Restrictions != nil ||
@@ -92,6 +99,47 @@ type BPStatusChecks struct {
 	Checks           []BPCheck `json:"checks"`
 	Strict           bool      `json:"strict"`
 	ContextsURL      string    `json:"contexts_url,omitempty"`
+}
+
+// contexts and checks are two views of ONE set. The published
+// status-check-policy schema requires both members, and GitHub keeps them in
+// step: `contexts` is the legacy list of names, `checks` the same names paired
+// with the app that may report them. Writing either therefore has to update the
+// other, or the /contexts sub-resource reads back empty on a policy written
+// through `checks` — and a merge gate built from one view disagrees with the
+// policy a client reads from the other.
+
+// SetChecks replaces the required-check set from the richer view, deriving
+// contexts from it.
+func (sc *BPStatusChecks) SetChecks(checks []BPCheck) {
+	if checks == nil {
+		checks = []BPCheck{}
+	}
+	sc.Checks = checks
+	contexts := make([]string, 0, len(checks))
+	for _, check := range checks {
+		contexts = append(contexts, check.Context)
+	}
+	sc.Contexts = contexts
+}
+
+// SetContexts replaces the required-check set from the names view, deriving
+// checks from it. A context that already named an app keeps that app: writing
+// the legacy view must not silently widen which app may report a check.
+func (sc *BPStatusChecks) SetContexts(contexts []string) {
+	if contexts == nil {
+		contexts = []string{}
+	}
+	apps := make(map[string]*int64, len(sc.Checks))
+	for _, check := range sc.Checks {
+		apps[check.Context] = check.AppID
+	}
+	sc.Contexts = contexts
+	checks := make([]BPCheck, 0, len(contexts))
+	for _, context := range contexts {
+		checks = append(checks, BPCheck{Context: context, AppID: ClonePointer(apps[context])})
+	}
+	sc.Checks = checks
 }
 
 // BPActor is a lightweight user/team/app reference used in restrictions.

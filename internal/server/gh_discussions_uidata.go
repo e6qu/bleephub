@@ -41,7 +41,7 @@ func (s *Server) uiDiscussionJSON(d *store.Discussion, repo *store.Repo, baseURL
 	var author map[string]interface{}
 	s.store.Mu.RLock()
 	if u := s.store.Users[d.AuthorID]; u != nil {
-		author = store.UserToJSON(u)
+		author = store.UserToJSON(u, baseURL)
 	}
 	comments := 0
 	for _, c := range s.store.DiscussionComments {
@@ -152,7 +152,7 @@ func (s *Server) handleUIConvertIssueToDiscussion(w http.ResponseWriter, r *http
 	s.store.RecordIssueEvent(repo.ID, issue.ID, user.ID, "converted_to_discussion", nil)
 	if wasOpen {
 		if updated := s.store.GetIssue(issue.ID); updated != nil {
-			s.emitWebhookEvent(repo.FullName, "issues", "closed", buildIssuesPayload(s.store, repo, updated, user, "closed"))
+			s.emitWebhookEvent(repo.FullName, "issues", "closed", buildIssuesPayload(s.store, repo, updated, user, "closed", s.baseURL(r)))
 		}
 	}
 

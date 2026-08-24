@@ -460,7 +460,7 @@ func TestWorkflows_Rerun_ViaCachedYAML(t *testing.T) {
 func TestRepositoryDispatchPayload_IncludesBranch(t *testing.T) {
 	repo := &store.Repo{FullName: "octo/repo", DefaultBranch: "trunk"}
 	user := &store.User{Login: "octocat"}
-	payload := repositoryDispatchPayload(repo, user, "deploy", map[string]interface{}{"v": "1"})
+	payload := repositoryDispatchPayload(repo, user, "deploy", map[string]interface{}{"v": "1"}, "https://bleephub.test")
 	if payload["branch"] != "trunk" {
 		t.Errorf("branch = %v, want trunk (repo default branch)", payload["branch"])
 	}

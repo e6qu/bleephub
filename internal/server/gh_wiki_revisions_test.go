@@ -3,6 +3,7 @@ package bleephub
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"testing"
 
 	"github.com/e6qu/bleephub/internal/store"
@@ -99,8 +100,10 @@ func TestWikiRevisions_HistoryCapDropsOldest(t *testing.T) {
 	repo := s.store.CreateRepo(admin, "wiki-rev-cap", "", false)
 	enableWiki(s, repo)
 
+	// Every save carries a different body: a revision is a commit that changed
+	// the page's file, so re-saving identical text is not a new revision.
 	for i := 0; i < store.MaxWikiPageRevisions+5; i++ {
-		s.store.UpsertWikiPage(repo.FullName, "home", "Home", "body", "admin", "")
+		s.store.UpsertWikiPage(repo.FullName, "home", "Home", "body "+strconv.Itoa(i), "admin", "")
 	}
 	revisions := s.store.ListWikiPageRevisions(repo.FullName, "home")
 	if len(revisions) != store.MaxWikiPageRevisions {

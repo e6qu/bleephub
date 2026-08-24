@@ -105,39 +105,11 @@ func (s *Server) handleUIPullFiles(w http.ResponseWriter, r *http.Request) {
 // files endpoint renders (same storage, same refs, same DiffTree), keyed by
 // the filename pullRequestChangedFiles reports for each change.
 func pullRequestDiffChanges(st *store.Store, repo *store.Repo, pr *store.PullRequest) map[string]*object.Change {
-	stor, _ := store.PullRequestGitStorage(st, repo, pr)
-	if stor == nil {
+	source, err := pullRequestDiffSource(st, repo, pr)
+	if err != nil || source == nil {
 		return nil
 	}
-	headHash, err := store.ResolveGitRef(stor, pr.HeadRefName)
-	if err != nil {
-		return nil
-	}
-	var baseHash plumbing.Hash
-	if pr.BaseSHA != "" {
-		baseHash = plumbing.NewHash(pr.BaseSHA)
-	} else if baseHash, err = store.ResolveGitRef(stor, pr.BaseRefName); err != nil {
-		return nil
-	}
-	mergeBase, err := store.FindMergeBase(stor, baseHash, headHash)
-	if err != nil {
-		return nil
-	}
-	headCommit, err := object.GetCommit(stor, headHash)
-	if err != nil {
-		return nil
-	}
-	headTree, err := headCommit.Tree()
-	if err != nil {
-		return nil
-	}
-	var baseTree *object.Tree
-	if !mergeBase.IsZero() {
-		if baseCommit, err := object.GetCommit(stor, mergeBase); err == nil {
-			baseTree, _ = baseCommit.Tree()
-		}
-	}
-	changes, err := object.DiffTree(baseTree, headTree)
+	changes, err := object.DiffTree(source.baseTree, source.headTree)
 	if err != nil {
 		return nil
 	}

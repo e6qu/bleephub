@@ -59,6 +59,11 @@ func (s *Server) handleCreateDependencySnapshot(w http.ResponseWriter, r *http.R
 		stored := s.store.AddDependencySnapshot(&snap)
 		if result == "SUCCESS" {
 			s.deriveDependabotAlertsForRepository(repo)
+			// The submission replaced the repository's dependency set, so an
+			// alert whose package it no longer declares at a vulnerable
+			// version is now fixed — and one whose vulnerable version came
+			// back is reintroduced. Deriving alone only ever adds.
+			s.reconcileDependabotAlerts(repo)
 		}
 		writeJSON(w, http.StatusCreated, map[string]interface{}{
 			"id":         stored.ID,
@@ -320,6 +325,13 @@ func (s *Server) handleFetchSBOMReport(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDependencyGraphCompare(w http.ResponseWriter, r *http.Request) {
 	repo := s.lookupReadableRepoFromPath(w, r)
 	if repo == nil {
+		return
+	}
+	// The dependency comparison is the dependency-insights read surface an
+	// enterprise can withhold from its members.
+	policy, enterprise := s.enterprisePolicyForRepo(repo)
+	if s.refuseByEnterprisePolicy(w, r, enterprise, policy.MembersCanViewDependencyInsights,
+		"Dependency insights are disabled by an enterprise policy.") {
 		return
 	}
 	basehead := r.PathValue("basehead")

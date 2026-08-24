@@ -106,7 +106,7 @@ func TestRequestedReviewerTypeName(t *testing.T) {
 // source map must not embed a live *Store, and the id is still extractable
 // without one.
 func TestProjectV2SourceNoLongerCarriesStore(t *testing.T) {
-	m := projectV2ToGQL(&store.ProjectV2{ID: 7, NodeID: "PVT_x", Number: 3, Title: "Roadmap"})
+	m := projectV2ToGQL(store.NewStore(), &store.ProjectV2{ID: 7, NodeID: "PVT_x", Number: 3, Title: "Roadmap"})
 	if _, ok := m["store"]; ok {
 		t.Fatal("projectV2ToGQL still embeds a *Store in the source map")
 	}

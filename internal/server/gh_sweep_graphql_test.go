@@ -1161,10 +1161,10 @@ func TestSearchGraphQL_IssueLabelSearch(t *testing.T) {
 	owner, name := sweep.owner, sweep.name
 
 	lResp := s.post(t, "/api/v3/repos/"+owner+"/"+name+"/labels", defaultToken,
-		map[string]interface{}{"name": "bug", "color": "d73a4a"})
+		map[string]interface{}{"name": "regression", "color": "d73a4a"})
 	lResp.Body.Close()
 	iResp := s.post(t, "/api/v3/repos/"+owner+"/"+name+"/issues", defaultToken,
-		map[string]interface{}{"title": "labeled", "labels": []interface{}{"bug"}})
+		map[string]interface{}{"title": "labeled", "labels": []interface{}{"regression"}})
 	labeled := decodeJSON(t, iResp)
 	if labeled["number"] == nil {
 		t.Fatalf("labeled issue create failed: %v", labeled)
@@ -1189,14 +1189,14 @@ func TestSearchGraphQL_IssueLabelSearch(t *testing.T) {
 				}
 			}
 		}`
-	// The advanced-syntax string gh builds for `gh issue list --label bug`
+	// The advanced-syntax string gh builds for `gh issue list --label regression`
 	// groups the repo qualifier in parentheses.
 	d := s.gqlData(t, query, map[string]interface{}{
 		"repo":  name,
 		"owner": owner,
 		"type":  "ISSUE",
 		"limit": 30,
-		"query": fmt.Sprintf("label:bug (repo:%s/%s) state:open type:issue", owner, name),
+		"query": fmt.Sprintf("label:regression (repo:%s/%s) state:open type:issue", owner, name),
 	})
 	search, _ := d["search"].(map[string]interface{})
 	if ic, _ := search["issueCount"].(float64); ic != 1 {
@@ -1227,7 +1227,7 @@ func TestRepoGraphQL_LabelListOrderByEnums(t *testing.T) {
 	sweep := s.sweepRepo(t, "sweep-labellist")
 	owner, name := sweep.owner, sweep.name
 	lResp := s.post(t, "/api/v3/repos/"+owner+"/"+name+"/labels", defaultToken,
-		map[string]interface{}{"name": "enhancement", "color": "a2eeef"})
+		map[string]interface{}{"name": "improvement", "color": "a2eeef"})
 	lResp.Body.Close()
 
 	// Verbatim shurcooL rendering of api.RepoLabels' query.
@@ -1235,8 +1235,17 @@ func TestRepoGraphQL_LabelListOrderByEnums(t *testing.T) {
 	d := s.gqlData(t, query, map[string]interface{}{"owner": owner, "name": name, "endCursor": nil})
 	labels, _ := d["repository"].(map[string]interface{})["labels"].(map[string]interface{})
 	nodes, _ := labels["nodes"].([]interface{})
-	if len(nodes) != 1 || nodes[0].(map[string]interface{})["name"] != "enhancement" {
-		t.Fatalf("labels.nodes = %v, want [enhancement]", labels["nodes"])
+	// The repository was created with GitHub's default label set, so the list
+	// is those nine plus the one this test made, ordered by name ascending —
+	// which is what the orderBy argument under test asks for.
+	names := make([]string, 0, len(nodes))
+	for _, node := range nodes {
+		labelName, _ := node.(map[string]interface{})["name"].(string)
+		names = append(names, labelName)
+	}
+	want := "bug documentation duplicate enhancement good first issue help wanted improvement invalid question wontfix"
+	if strings.Join(names, " ") != want {
+		t.Fatalf("labels.nodes = %v, want %q", names, want)
 	}
 }
 

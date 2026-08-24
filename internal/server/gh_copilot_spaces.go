@@ -184,13 +184,13 @@ func (s *Server) copilotSpaceJSON(space *store.CopilotSpace, baseURL string) map
 		apiURL = fmt.Sprintf("%s/api/v3/orgs/%s/copilot-spaces/%d", baseURL, space.OwnerLogin, space.Number)
 	} else {
 		if u := s.store.LookupUserByLogin(space.OwnerLogin); u != nil {
-			owner = store.UserToJSON(u)
+			owner = store.UserToJSON(u, baseURL)
 		}
 		apiURL = fmt.Sprintf("%s/api/v3/users/%s/copilot-spaces/%d", baseURL, space.OwnerLogin, space.Number)
 	}
 	var creator interface{}
 	if u := s.store.GetUserByID(space.CreatorID); u != nil {
-		creator = store.UserToJSON(u)
+		creator = store.UserToJSON(u, baseURL)
 	}
 	var description interface{}
 	if space.Description != "" {
@@ -240,7 +240,7 @@ func (s *Server) copilotSpaceCollaboratorJSON(c *store.CopilotSpaceCollaborator,
 		if u == nil {
 			return nil
 		}
-		out := store.UserToJSON(u)
+		out := store.UserToJSON(u, baseURL)
 		out["actor_type"] = "User"
 		out["role"] = c.Role
 		return out

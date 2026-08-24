@@ -1399,10 +1399,19 @@ func TestRepoTransfer(t *testing.T) {
 		t.Fatalf("expected full_name=alice/%s, got %v", repoName, data["full_name"])
 	}
 
+	// A transfer leaves the old owner/name redirecting to the new one, the same
+	// as a rename: the repository moved, it was not deleted, so a client
+	// holding the pre-transfer address still reaches it. Followed to the end,
+	// the request lands on the new owner's address — which is both that the
+	// redirect happened and that it pointed somewhere real.
 	getOld := ghGet(t, "/api/v3/repos/admin/"+repoName, defaultToken)
 	defer getOld.Body.Close()
-	if getOld.StatusCode != 404 {
-		t.Fatalf("expected 404 for old owner, got %d", getOld.StatusCode)
+	if getOld.StatusCode != 200 {
+		t.Fatalf("expected the old owner's address to redirect to the repository, got %d", getOld.StatusCode)
+	}
+	wantPath := "/api/v3/repos/alice/" + repoName
+	if got := getOld.Request.URL.Path; got != wantPath {
+		t.Fatalf("old owner's address landed on %q, want %q", got, wantPath)
 	}
 
 	getNew := ghGet(t, "/api/v3/repos/alice/"+repoName, defaultToken)

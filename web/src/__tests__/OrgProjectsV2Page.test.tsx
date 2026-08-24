@@ -234,4 +234,200 @@ describe("OrgProjectsV2Page", () => {
       expect(JSON.parse(String(post![1].body))).toEqual({ type: "Issue", owner: "acme", repo: "web", number: 42 });
     });
   });
+
+  it("renders the project's description, status updates and workflows from GraphQL", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.includes("/api/graphql")) {
+        const body = String(init?.body ?? "");
+        if (body.includes("statusUpdates")) {
+          return Promise.resolve(
+            jsonResponse({
+              data: {
+                organization: {
+                  projectV2: {
+                    id: "PVT_1",
+                    shortDescription: "the plan",
+                    readme: "# Roadmap",
+                    public: true,
+                    closed: false,
+                    template: false,
+                    viewerCanUpdate: true,
+                    statusUpdates: {
+                      nodes: [
+                        {
+                          id: "PVTSU_1",
+                          body: "going well",
+                          status: "ON_TRACK",
+                          startDate: null,
+                          targetDate: null,
+                          createdAt: "2026-01-01T00:00:00Z",
+                          creator: { login: "octocat" },
+                        },
+                      ],
+                    },
+                    workflows: { nodes: [{ id: "PVTW_1", name: "Item added to project", number: 1, enabled: false }] },
+                  },
+                },
+              },
+            }),
+          );
+        }
+        return Promise.resolve(jsonResponse({ data: {} }));
+      }
+      if (u.endsWith("/projectsV2/3")) {
+        return Promise.resolve(jsonResponse({ id: 1, number: 3, title: "Roadmap" }));
+      }
+      return Promise.resolve(jsonResponse([]));
+    });
+
+    renderAt("/ui/orgs/acme/projects/3");
+
+    expect(await screen.findByText("the plan")).toBeInTheDocument();
+    expect(await screen.findByText("# Roadmap")).toBeInTheDocument();
+    expect(await screen.findByText("going well")).toBeInTheDocument();
+    // The status enum is rendered as a label, not as SCREAMING_SNAKE.
+    expect(await screen.findByText(/On track · octocat/)).toBeInTheDocument();
+    expect(await screen.findByText("Item added to project")).toBeInTheDocument();
+    expect(await screen.findByText("Public")).toBeInTheDocument();
+  });
+
+  it("posts a status update through createProjectV2StatusUpdate", async () => {
+    const bodies: string[] = [];
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.includes("/api/graphql")) {
+        const body = String(init?.body ?? "");
+        bodies.push(body);
+        if (body.includes("createProjectV2StatusUpdate")) {
+          return Promise.resolve(jsonResponse({ data: { createProjectV2StatusUpdate: { statusUpdate: { id: "PVTSU_2" } } } }));
+        }
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              organization: {
+                projectV2: {
+                  id: "PVT_1",
+                  shortDescription: null,
+                  readme: null,
+                  public: false,
+                  closed: false,
+                  template: false,
+                  viewerCanUpdate: true,
+                  statusUpdates: { nodes: [] },
+                  workflows: { nodes: [] },
+                },
+              },
+            },
+          }),
+        );
+      }
+      if (u.endsWith("/projectsV2/3")) {
+        return Promise.resolve(jsonResponse({ id: 1, number: 3, title: "Roadmap" }));
+      }
+      return Promise.resolve(jsonResponse([]));
+    });
+
+    renderAt("/ui/orgs/acme/projects/3");
+
+    const input = await screen.findByLabelText("status update body");
+    fireEvent.change(input, { target: { value: "shipping soon" } });
+    fireEvent.change(await screen.findByLabelText("status update status"), { target: { value: "AT_RISK" } });
+    fireEvent.click(screen.getByRole("button", { name: "Post update" }));
+
+    await waitFor(() => {
+      const sent = bodies.find((b) => b.includes("createProjectV2StatusUpdate"));
+      expect(sent).toBeTruthy();
+      expect(sent).toContain("shipping soon");
+      expect(sent).toContain("AT_RISK");
+    });
+  });
+
+  it("saves the project description through updateProjectV2", async () => {
+    const bodies: string[] = [];
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.includes("/api/graphql")) {
+        const body = String(init?.body ?? "");
+        bodies.push(body);
+        if (body.includes("updateProjectV2(")) {
+          return Promise.resolve(jsonResponse({ data: { updateProjectV2: { projectV2: { id: "PVT_1" } } } }));
+        }
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              organization: {
+                projectV2: {
+                  id: "PVT_1",
+                  shortDescription: "old",
+                  readme: null,
+                  public: false,
+                  closed: false,
+                  template: false,
+                  viewerCanUpdate: true,
+                  statusUpdates: { nodes: [] },
+                  workflows: { nodes: [] },
+                },
+              },
+            },
+          }),
+        );
+      }
+      if (u.endsWith("/projectsV2/3")) {
+        return Promise.resolve(jsonResponse({ id: 1, number: 3, title: "Roadmap" }));
+      }
+      return Promise.resolve(jsonResponse([]));
+    });
+
+    renderAt("/ui/orgs/acme/projects/3");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Edit details" }));
+    fireEvent.change(await screen.findByLabelText("project short description"), { target: { value: "new plan" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      const sent = bodies.find((b) => b.includes("updateProjectV2("));
+      expect(sent).toBeTruthy();
+      expect(sent).toContain("new plan");
+    });
+  });
+
+  it("hides the edit controls when the viewer may not update the project", async () => {
+    mockFetch.mockImplementation((url: RequestInfo | URL, init?: RequestInit) => {
+      const u = url.toString();
+      if (u.includes("/api/graphql")) {
+        void init;
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              organization: {
+                projectV2: {
+                  id: "PVT_1",
+                  shortDescription: "read only",
+                  readme: null,
+                  public: false,
+                  closed: false,
+                  template: false,
+                  viewerCanUpdate: false,
+                  statusUpdates: { nodes: [] },
+                  workflows: { nodes: [] },
+                },
+              },
+            },
+          }),
+        );
+      }
+      if (u.endsWith("/projectsV2/3")) {
+        return Promise.resolve(jsonResponse({ id: 1, number: 3, title: "Roadmap" }));
+      }
+      return Promise.resolve(jsonResponse([]));
+    });
+
+    renderAt("/ui/orgs/acme/projects/3");
+
+    expect(await screen.findByText("read only")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit details" })).toBeNull();
+    expect(screen.queryByLabelText("status update body")).toBeNull();
+  });
+
 });

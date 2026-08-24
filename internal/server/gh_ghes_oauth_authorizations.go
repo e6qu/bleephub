@@ -85,9 +85,9 @@ func (s *Server) listLegacyAuthorizationRefs(userID int) []legacyAuthorizationRe
 
 func (s *Server) legacyAuthorizationJSON(ref legacyAuthorizationRef, reveal bool) map[string]interface{} {
 	if ref.kind == "pat" {
-		return classicAuthorizationJSON(ref.mapKey, ref.pat, ref.user, reveal)
+		return classicAuthorizationJSON(ref.mapKey, ref.pat, ref.user, reveal, s.publicOrigin())
 	}
-	out := oauthTokenInspectionJSON(s.store, ref.oauth, ref.user)
+	out := oauthTokenInspectionJSON(s.store, ref.oauth, ref.user, s.publicOrigin())
 	if !reveal {
 		out["token"] = ""
 	}
@@ -140,7 +140,7 @@ func (s *Server) handleCreateLegacyAuthorization(w http.ResponseWriter, r *http.
 	s.store.PersistTokenLocked(token)
 	copy := *token
 	s.store.Mu.Unlock()
-	writeJSON(w, http.StatusCreated, classicAuthorizationJSON(token.Value, &copy, user, true))
+	writeJSON(w, http.StatusCreated, classicAuthorizationJSON(token.Value, &copy, user, true, s.baseURL(r)))
 }
 
 // handleCreateClassicTokenWeb serves POST /ui-data/user/tokens/classic — the
@@ -181,7 +181,7 @@ func (s *Server) handleCreateClassicTokenWeb(w http.ResponseWriter, r *http.Requ
 	s.store.PersistTokenLocked(token)
 	copy := *token
 	s.store.Mu.Unlock()
-	writeJSON(w, http.StatusCreated, classicAuthorizationJSON(token.Value, &copy, user, true))
+	writeJSON(w, http.StatusCreated, classicAuthorizationJSON(token.Value, &copy, user, true, s.baseURL(r)))
 }
 
 func (s *Server) handleGetOrCreateLegacyAuthorization(w http.ResponseWriter, r *http.Request) {
@@ -477,7 +477,7 @@ func (s *Server) legacyGrantJSON(grant legacyGrantRef, r *http.Request) map[stri
 		"app":        map[string]interface{}{"client_id": grant.ClientID, "name": grant.Name, "url": grant.URL},
 		"created_at": grant.CreatedAt.UTC().Format(time.RFC3339),
 		"updated_at": grant.UpdatedAt.UTC().Format(time.RFC3339),
-		"scopes":     grant.Scopes, "user": store.UserToJSON(grant.User),
+		"scopes":     grant.Scopes, "user": store.UserToJSON(grant.User, s.baseURL(r)),
 	}
 }
 

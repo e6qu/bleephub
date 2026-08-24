@@ -275,7 +275,7 @@ func (s *Server) campaignJSON(c *store.Campaign, r *http.Request) map[string]int
 	managers := make([]map[string]interface{}, 0, len(c.ManagerLogins))
 	for _, login := range c.ManagerLogins {
 		if u := s.store.LookupUserByLogin(login); u != nil {
-			managers = append(managers, store.UserToJSON(u))
+			managers = append(managers, store.UserToJSON(u, s.baseURL(r)))
 		}
 	}
 	var contactLink interface{}

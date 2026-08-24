@@ -229,11 +229,8 @@ func TestCodespacesUserSecret_SelectedRepositories(t *testing.T) {
 	repoA := s.seedRepo(t, "cs-secret-repo-a", false)
 	repoB := s.seedRepo(t, "cs-secret-repo-b", false)
 
-	put := s.putSealedSecret(t, "/api/v3/user/codespaces/secrets/CS_SEL_SECRET", "sekrit")
-	put.Body.Close()
-	if put.StatusCode != http.StatusNoContent {
-		t.Fatalf("put secret: %d", put.StatusCode)
-	}
+	requireSecretCreated(t, s.putSealedSecret(t, "/api/v3/user/codespaces/secrets/CS_SEL_SECRET", "sekrit"),
+		"put secret")
 
 	// Set the full selected list.
 	resp := s.put(t, "/api/v3/user/codespaces/secrets/CS_SEL_SECRET/repositories", defaultToken, map[string]any{

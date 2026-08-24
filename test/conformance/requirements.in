@@ -1,0 +1,4 @@
+# Direct dependency of the PyGithub conformance driver. requirements.txt locks
+# and hashes the complete transitive graph generated from this input, exactly as
+# .github/security-requirements.in does for the static-analysis tools.
+PyGithub==2.10.0

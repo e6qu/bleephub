@@ -23,13 +23,17 @@ function renderPage() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  return render(
+  const rendered = render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={["/ui/operations/enterprise"]}>
         <EnterprisePage />
       </MemoryRouter>
     </QueryClientProvider>,
   );
+  // The page opens on the enterprise account; these cases are about the teams
+  // tab, so select it the way a reader would.
+  fireEvent.click(screen.getByRole("tab", { name: "Teams" }));
+  return rendered;
 }
 
 const platformTeam = {

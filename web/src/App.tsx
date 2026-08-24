@@ -44,6 +44,14 @@ const OrgsPage = lazy(() => import("./pages/OrgsPage.js").then(({ OrgsPage }) =>
 const TeamsPage = lazy(() => import("./pages/TeamsPage.js").then(({ TeamsPage }) => ({ default: TeamsPage })));
 const RulesetsPage = lazy(() => import("./pages/RulesetsPage.js").then(({ RulesetsPage }) => ({ default: RulesetsPage })));
 const AuditLogPage = lazy(() => import("./pages/AuditLogPage.js").then(({ AuditLogPage }) => ({ default: AuditLogPage })));
+const GlobalAdvisoriesPage = lazy(() =>
+  import("./pages/GlobalAdvisoriesPage.js").then(({ GlobalAdvisoriesPage }) => ({ default: GlobalAdvisoriesPage })),
+);
+const GlobalAdvisoryDetailPage = lazy(() =>
+  import("./pages/GlobalAdvisoriesPage.js").then(({ GlobalAdvisoryDetailPage }) => ({
+    default: GlobalAdvisoryDetailPage,
+  })),
+);
 const GistsPage = lazy(() => import("./pages/GistsPage.js").then(({ GistsPage }) => ({ default: GistsPage })));
 const GistDetailPage = lazy(() =>
   import("./pages/GistDetailPage.js").then(({ GistDetailPage }) => ({ default: GistDetailPage })),
@@ -76,6 +84,8 @@ const OrgTeamsPage = lazy(() => import("./pages/OrgTeamsPage.js").then(({ OrgTea
 const OrgTeamDetailPage = lazy(() => import("./pages/OrgTeamDetailPage.js").then(({ OrgTeamDetailPage }) => ({ default: OrgTeamDetailPage })));
 const ClassroomPage = lazy(() => import("./pages/ClassroomPage.js").then(({ ClassroomPage }) => ({ default: ClassroomPage })));
 const MarketplacePage = lazy(() => import("./pages/MarketplacePage.js").then(({ MarketplacePage }) => ({ default: MarketplacePage })));
+const SponsorsPage = lazy(() => import("./pages/SponsorsPage.js").then(({ SponsorsPage }) => ({ default: SponsorsPage })));
+const SponsorsDashboardPage = lazy(() => import("./pages/SponsorsPage.js").then(({ SponsorsDashboardPage }) => ({ default: SponsorsDashboardPage })));
 const MarketplacePublisherPage = lazy(() => import("./pages/MarketplacePublisherPage.js").then(({ MarketplacePublisherPage }) => ({ default: MarketplacePublisherPage })));
 
 function LoginRedirect() {
@@ -289,6 +299,11 @@ function AppRoutes({ signedIn }: { signedIn: boolean }) {
               <Route path="/ui/apps/:publisher/marketplace" element={gate(<MarketplacePublisherPage />)} />
               <Route path="/ui/oauth" element={gate(<OAuthPage />)} />
               <Route path="/ui/metrics" element={gate(<MetricsPage />)} />
+              {/* The advisory database is public: no gate(). A published
+                  advisory is a fact about a package, readable by anyone,
+                  which is exactly what the REST /advisories routes serve. */}
+              <Route path="/ui/advisories" element={<GlobalAdvisoriesPage />} />
+              <Route path="/ui/advisories/:ghsaId" element={<GlobalAdvisoryDetailPage />} />
               <Route path="/ui/gists" element={<GistsPage />} />
               <Route path="/ui/gists/:id" element={<GistDetailPage />} />
               <Route path="/ui/notifications" element={gate(<NotificationsPage />)} />
@@ -305,6 +320,9 @@ function AppRoutes({ signedIn }: { signedIn: boolean }) {
               <Route path="/ui/classrooms/accept/:inviteCode" element={gate(<ClassroomPage />)} />
               <Route path="/ui/marketplace" element={gate(<MarketplacePage />)} />
               <Route path="/ui/marketplace/:slug" element={gate(<MarketplacePage />)} />
+              <Route path="/ui/sponsors" element={gate(<SponsorsPage />)} />
+              <Route path="/ui/sponsors/:login" element={gate(<SponsorsPage />)} />
+              <Route path="/ui/sponsors/:login/dashboard" element={gate(<SponsorsDashboardPage />)} />
               <Route path="/ui/operations" element={gate(<OverviewPage />)} />
               <Route path="/ui/operations/users" element={gate(<UsersPage />)} />
               <Route path="/ui/operations/orgs" element={gate(<OrgsPage />)} />

@@ -5,9 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
+	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 
@@ -44,6 +47,77 @@ func writeOAuthTokenResponse(w http.ResponseWriter, r *http.Request, fields map[
 	w.Header().Set("Content-Type", "application/x-www-form-urlencoded; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(form.Encode()))
+}
+
+// parseOAuthRequestParams reads the parameters of an OAuth endpoint from
+// either encoding a client may send them in, and leaves them in r.Form so every
+// handler downstream keeps reading them through r.FormValue.
+//
+// The OAuth endpoints live outside the REST API and its JSON-only convention:
+// the specification writes their requests as form-encoded, and that is what
+// GitHub documents, but GitHub accepts a JSON body just as well — which is what
+// the official octokit device-flow strategy sends. Reading only the form
+// encoding made the whole grant unreachable from that client: a JSON body
+// leaves every form value empty, so the request read as one carrying no
+// client_id at all and was refused as bad client credentials.
+func parseOAuthRequestParams(w http.ResponseWriter, r *http.Request) bool {
+	// ParseForm takes the query string and, for a form-encoded body, the body.
+	// It leaves a JSON body unread, so it is safe to decode below.
+	if err := r.ParseForm(); err != nil {
+		writeGHError(w, http.StatusBadRequest, "Problems parsing form")
+		return false
+	}
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/json" {
+		return true
+	}
+	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxJSONBodyBytes))
+	if err != nil {
+		writeGHError(w, http.StatusBadRequest, "Problems parsing JSON")
+		return false
+	}
+	// A JSON content type on an empty body carries no parameters rather than
+	// being malformed; whatever the query string held still stands.
+	if len(strings.TrimSpace(string(raw))) == 0 {
+		return true
+	}
+	var body map[string]interface{}
+	if err := json.Unmarshal(raw, &body); err != nil {
+		writeGHError(w, http.StatusBadRequest, "Problems parsing JSON")
+		return false
+	}
+	if r.Form == nil {
+		r.Form = url.Values{}
+	}
+	if r.PostForm == nil {
+		r.PostForm = url.Values{}
+	}
+	for key, value := range body {
+		text, ok := oauthParamText(value)
+		if !ok {
+			continue
+		}
+		// A body parameter outranks the same name in the query string, the same
+		// way ParseForm orders a form-encoded body ahead of it.
+		r.PostForm.Set(key, text)
+		r.Form.Set(key, text)
+	}
+	return true
+}
+
+// oauthParamText renders one JSON member as the string an OAuth parameter is,
+// reporting false for a member that is not a scalar and so names no parameter.
+func oauthParamText(value interface{}) (string, bool) {
+	switch v := value.(type) {
+	case string:
+		return v, true
+	case bool:
+		return strconv.FormatBool(v), true
+	case float64:
+		return strconv.FormatFloat(v, 'f', -1, 64), true
+	default:
+		return "", false
+	}
 }
 
 func (s *Server) registerGHOAuthRoutes() {
@@ -151,6 +225,10 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:  s.currentTime(),
 		UserAgent:  truncateSessionUserAgent(r.UserAgent()),
 		SignedInIP: sessionClientIP(r),
+		// The password (and, when enrolled, the second factor) were just
+		// verified above, so the session opens with a live proof of presence.
+		SudoAt:  s.currentTime(),
+		SudoMFA: s.store.TwoFactorEnabled(user.ID),
 	}
 	if err := s.store.PutLoginSession(sessionID, sess); err != nil {
 		s.logger.Error().Err(err).Msg("persist browser session")
@@ -311,8 +389,7 @@ func normalizeDeviceUserCode(code string) string {
 
 // handleDeviceCode initiates the device authorization flow.
 func (s *Server) handleDeviceCode(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		writeGHError(w, http.StatusBadRequest, "Problems parsing form")
+	if !parseOAuthRequestParams(w, r) {
 		return
 	}
 	scope := r.FormValue("scope")
@@ -357,8 +434,7 @@ func (s *Server) handleDeviceCode(w http.ResponseWriter, r *http.Request) {
 // Both return `{access_token, token_type, scope}` on success and
 // `{error: ...}` on failure (200 OK with an error body, matching real GitHub).
 func (s *Server) handleOAuthAccessToken(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		writeGHError(w, http.StatusBadRequest, "Problems parsing form")
+	if !parseOAuthRequestParams(w, r) {
 		return
 	}
 	if r.FormValue("device_code") != "" {
@@ -369,9 +445,9 @@ func (s *Server) handleOAuthAccessToken(w http.ResponseWriter, r *http.Request) 
 		s.handleWebFlowTokenForm(w, r)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(`{"error":"unsupported_grant_type"}`))
+	// Every other body this endpoint answers is negotiated and uncacheable;
+	// this one is no different for being an unrecognised grant.
+	writeOAuthTokenResponse(w, r, map[string]string{"error": "unsupported_grant_type"})
 }
 
 // handleDeviceTokenForm — device-flow polling leg.

@@ -56,13 +56,13 @@ func TestSearchIssueQualifiers(t *testing.T) {
 	repo := s.store.CreateRepo(admin, "iq", "", false)
 	alice := s.createTestUser(t, "alice")
 	bob := s.createTestUser(t, "bob")
-	bug := s.store.CreateLabel(repo.ID, "bug", "", "d73a4a")
+	bug := s.store.CreateLabel(repo.ID, "regression", "", "d73a4a")
 	urgent := s.store.CreateLabel(repo.ID, "urgent", "", "b60205")
 	ms := s.store.CreateMilestone(repo.ID, admin.ID, "v1", "", "open", nil)
 
-	// one: by alice, assigned bob, labels bug+urgent, milestone v1.
+	// one: by alice, assigned bob, labels regression+urgent, milestone v1.
 	s.store.CreateIssue(repo.ID, alice.ID, "one", "hello @carol", []int{bug.ID, urgent.ID}, []int{bob.ID}, ms.ID)
-	// two: by bob, no assignee, label bug only, no milestone.
+	// two: by bob, no assignee, label regression only, no milestone.
 	s.store.CreateIssue(repo.ID, bob.ID, "two", "body", []int{bug.ID}, nil, 0)
 
 	cases := []struct {
@@ -73,8 +73,8 @@ func TestSearchIssueQualifiers(t *testing.T) {
 		{"repo:admin/iq author:bob", []string{"two"}},
 		{"repo:admin/iq assignee:bob", []string{"one"}},
 		{"repo:admin/iq milestone:v1", []string{"one"}},
-		{"repo:admin/iq label:bug label:urgent", []string{"one"}}, // multi-label AND (was a silent-drop bug)
-		{"repo:admin/iq label:bug", []string{"one", "two"}},
+		{"repo:admin/iq label:regression label:urgent", []string{"one"}}, // multi-label AND (was a silent-drop bug)
+		{"repo:admin/iq label:regression", []string{"one", "two"}},
 		{"repo:admin/iq no:assignee", []string{"two"}},
 		{"repo:admin/iq no:milestone", []string{"two"}},
 		{"repo:admin/iq mentions:carol", []string{"one"}},

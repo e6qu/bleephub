@@ -150,6 +150,13 @@ func (s *Server) handleUpdateOrg(w http.ResponseWriter, r *http.Request) {
 			store.WriteGHValidationError(w, "Organization", "default_repository_permission", "invalid")
 			return
 		}
+		// The enterprise's default-repository-permission policy is a ceiling
+		// on what its organizations may grant, so a value above it is refused
+		// rather than silently clamped.
+		if refusal := s.enterpriseClampsBasePermission(r.Context(), org, v); refusal != "" {
+			writeGHError(w, http.StatusForbidden, refusal)
+			return
+		}
 	}
 
 	s.store.UpdateOrg(login, func(o *store.Org) {
@@ -225,6 +232,11 @@ func (s *Server) handleDeleteOrg(w http.ResponseWriter, r *http.Request) {
 
 	if !(user.SiteAdmin || s.viewerCanAdminOrg(r.Context(), org.Login)) {
 		writeGHError(w, http.StatusForbidden, "Must be an organization owner.")
+		return
+	}
+	// Deleting an organization takes its repositories, teams and history with
+	// it; an enterprise demanding proof of presence gets it before that runs.
+	if s.requireProofOfPresence(w, r) {
 		return
 	}
 
@@ -350,6 +362,21 @@ func (s *Server) handleCreateOrgRepo(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// The enterprise ceiling on repository creation is checked against the
+	// visibility actually requested: an enterprise may permit private
+	// repositories while forbidding public ones.
+	visibility := req.Visibility
+	if visibility == "" {
+		visibility = "public"
+		if private {
+			visibility = "private"
+		}
+	}
+	if refusal := s.enterpriseForbidsRepositoryCreation(r.Context(), org, visibility); refusal != "" {
+		writeGHError(w, http.StatusForbidden, refusal)
+		return
+	}
+
 	defaultBranch := req.DefaultBranch
 	if defaultBranch == "" {
 		defaultBranch = "main"
@@ -461,8 +488,11 @@ func orgToJSON(org *store.Org, st *store.Store, baseURL string) map[string]inter
 	out["public_gists"] = 0
 	out["followers"] = 0
 	out["following"] = 0
-	out["has_organization_projects"] = false
-	out["has_repository_projects"] = false
+	// The two project toggles report the enterprise policy governing this
+	// organization: an enterprise that disables projects disables them here.
+	policy, _ := st.EnterprisePolicyForOrg(org.ID)
+	out["has_organization_projects"] = policy.OrganizationProjects != store.EnterprisePolicyDisabled
+	out["has_repository_projects"] = policy.RepositoryProjects != store.EnterprisePolicyDisabled
 	out["company"] = org.Company
 	out["blog"] = org.Blog
 	out["location"] = org.Location
@@ -470,13 +500,16 @@ func orgToJSON(org *store.Org, st *store.Store, baseURL string) map[string]inter
 	out["billing_email"] = org.BillingEmail
 	out["is_verified"] = false
 	out["web_commit_signoff_required"] = org.WebCommitSignoffRequired
-	// two_factor_requirement_enabled: bleephub has no 2FA model, so the
-	// requirement is honestly never enabled.
-	out["two_factor_requirement_enabled"] = false
-	out["default_repository_permission"] = org.DefaultRepositoryPermission
-	if org.DefaultRepositoryPermission == "" {
-		out["default_repository_permission"] = "read" // GitHub's default
+	// two_factor_requirement_enabled reports the enterprise's two-factor
+	// policy, which is where the requirement is decided.
+	out["two_factor_requirement_enabled"] = policy.TwoFactorRequired == store.EnterprisePolicyEnabled
+	// The base permission is what an organization's members actually hold:
+	// the organization's own setting, capped by the enterprise ceiling.
+	basePermission := st.EnterpriseClampedBasePermission(org)
+	if basePermission == "" {
+		basePermission = "read" // GitHub's default
 	}
+	out["default_repository_permission"] = basePermission
 	boolOr := func(p *bool, def bool) bool {
 		if p != nil {
 			return *p

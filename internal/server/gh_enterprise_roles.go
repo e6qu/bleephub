@@ -151,7 +151,7 @@ func (s *Server) handleListEnterpriseRoleUsers(w http.ResponseWriter, r *http.Re
 		if user == nil {
 			continue
 		}
-		item := store.UserToJSON(user)
+		item := store.UserToJSON(user, s.baseURL(r))
 		inherited := assignments[id]
 		if inherited == nil {
 			item["assignment"] = "direct"

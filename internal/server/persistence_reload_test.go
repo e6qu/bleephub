@@ -2064,8 +2064,10 @@ func TestPersistenceReload_ProjectV2OptionSeed(t *testing.T) {
 			seen[opt.ID] = true
 		}
 	}
-	if len(seen) != 3 {
-		t.Fatalf("expected 3 distinct option IDs, got %d", len(seen))
+	// 3 from the seeded Status field every new project gets, plus the 2 + 1
+	// this test creates.
+	if len(seen) != 6 {
+		t.Fatalf("expected 6 distinct option IDs, got %d", len(seen))
 	}
 }
 

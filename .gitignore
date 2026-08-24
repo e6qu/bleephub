@@ -42,6 +42,13 @@ override.tf.json
 id_rsa
 id_ed25519
 
+# Conformance harness scratch space and generated scoreboard. The ratchet floor
+# (test/conformance/floor.json) IS committed; the report it is checked against
+# is a build artifact.
+test/conformance/.work/
+test/conformance/.lock/
+test/conformance/report/
+
 # Test and coverage output.
 coverage.out
 coverage.html

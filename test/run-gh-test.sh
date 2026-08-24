@@ -244,9 +244,12 @@ assert_eq "get repo name" "gh-test-repo" "$REPO_GET_NAME"
 # Test: Create label
 # ============================================================
 log "Test: Create label"
-LABEL=$(api "$BASE/api/v3/repos/admin/gh-test-repo/labels" -f name=bug -f color=d73a4a -f description="Something broken")
+# The name must not collide with GitHub's seeded default label set (bug,
+# documentation, enhancement, …): creating one that already exists is a 422 on
+# github.com too, so a default name would test the collision, not creation.
+LABEL=$(api "$BASE/api/v3/repos/admin/gh-test-repo/labels" -f name=needs-triage -f color=d73a4a -f description="Something broken")
 LABEL_NAME=$(echo "$LABEL" | jq -r '.name')
-assert_eq "label name" "bug" "$LABEL_NAME"
+assert_eq "label name" "needs-triage" "$LABEL_NAME"
 
 # ============================================================
 # Test: List labels
@@ -699,7 +702,7 @@ if [ -n "$ADMIN_NODE_ID" ] && [ "$ADMIN_NODE_ID" != "null" ]; then
     # are reached through the ProjectV2FieldCommon interface fragment — a
     # bare selection is invalid against github.com too.
     CREATE_FIELD=$(curl -sSk -X POST -H "Authorization: bearer $TOKEN" -H "Content-Type: application/json" \
-        -d "{\"query\":\"mutation { createProjectV2Field(input: {projectId: \\\"$PROJ_NODE_ID\\\", dataType: SINGLE_SELECT, name: \\\"Status\\\", singleSelectOptions: [{name: \\\"Todo\\\"}, {name: \\\"Done\\\"}]}) { projectV2Field { ... on ProjectV2FieldCommon { id name dataType } } } }\"}" \
+        -d "{\"query\":\"mutation { createProjectV2Field(input: {projectId: \\\"$PROJ_NODE_ID\\\", dataType: SINGLE_SELECT, name: \\\"Status\\\", singleSelectOptions: [{name: \\\"Todo\\\", color: GRAY, description: \\\"\\\"}, {name: \\\"Done\\\", color: GREEN, description: \\\"\\\"}]}) { projectV2Field { ... on ProjectV2FieldCommon { id name dataType } } } }\"}" \
         "$BASE/api/graphql")
     FIELD_NODE_ID=$(echo "$CREATE_FIELD" | jq -r '.data.createProjectV2Field.projectV2Field.id')
     FIELD_NAME=$(echo "$CREATE_FIELD" | jq -r '.data.createProjectV2Field.projectV2Field.name')
@@ -733,6 +736,198 @@ if [ -n "$ADMIN_NODE_ID" ] && [ "$ADMIN_NODE_ID" != "null" ]; then
         fail "could not resolve issue node id"
     fi
 fi
+
+# ============================================================
+# Native `gh project` verb coverage
+#
+# The block above drives the Projects v2 mutations over raw GraphQL, which
+# proves the resolvers answer but not that the CLI can reach them: gh builds
+# its own queries, starting from the owner rather than from an issue, and
+# type-checks them against the served schema. These are the real subcommands,
+# no `gh api`.
+# ============================================================
+log "Exercising native gh project verbs..."
+
+PROJ_OWNER="admin"
+
+# gh project create → the project number gh will address everything else by.
+PROJ_CREATE_JSON=$(gh project create --owner "$PROJ_OWNER" --title "CLI Board" --format json 2>/tmp/gh-project-create.err || true)
+if [ -n "$PROJ_CREATE_JSON" ]; then
+    CLI_PROJ_NUMBER=$(echo "$PROJ_CREATE_JSON" | jq -r '.number')
+    CLI_PROJ_ID=$(echo "$PROJ_CREATE_JSON" | jq -r '.id')
+    assert_not_empty "gh project create number" "$CLI_PROJ_NUMBER"
+    assert_not_empty "gh project create id" "$CLI_PROJ_ID"
+else
+    fail "gh project create failed: $(head -3 /tmp/gh-project-create.err 2>/dev/null)"
+    CLI_PROJ_NUMBER=""
+fi
+
+if [ -n "$CLI_PROJ_NUMBER" ] && [ "$CLI_PROJ_NUMBER" != "null" ]; then
+    # gh project list — the new project must appear under its owner.
+    PROJ_LIST_JSON=$(gh project list --owner "$PROJ_OWNER" --format json 2>/tmp/gh-project-list.err || true)
+    if [ -n "$PROJ_LIST_JSON" ]; then
+        LISTED=$(echo "$PROJ_LIST_JSON" | jq -r --arg n "$CLI_PROJ_NUMBER" '[.projects[] | select(.number == ($n|tonumber))] | length')
+        assert_eq "gh project list includes the new project" "1" "$LISTED"
+    else
+        fail "gh project list failed: $(head -3 /tmp/gh-project-list.err 2>/dev/null)"
+    fi
+
+    # gh project view — resolves the project by number from its owner.
+    PROJ_VIEW_JSON=$(gh project view "$CLI_PROJ_NUMBER" --owner "$PROJ_OWNER" --format json 2>/tmp/gh-project-view.err || true)
+    if [ -n "$PROJ_VIEW_JSON" ]; then
+        assert_eq "gh project view title" "CLI Board" "$(echo "$PROJ_VIEW_JSON" | jq -r '.title')"
+        assert_eq "gh project view owner" "$PROJ_OWNER" "$(echo "$PROJ_VIEW_JSON" | jq -r '.owner.login')"
+    else
+        fail "gh project view failed: $(head -3 /tmp/gh-project-view.err 2>/dev/null)"
+    fi
+
+    # gh project field-list — a fresh project carries GitHub's built-in fields,
+    # so this is non-empty before anybody configures anything.
+    FIELD_LIST_JSON=$(gh project field-list "$CLI_PROJ_NUMBER" --owner "$PROJ_OWNER" --format json 2>/tmp/gh-project-fields.err || true)
+    if [ -n "$FIELD_LIST_JSON" ]; then
+        FIELD_COUNT=$(echo "$FIELD_LIST_JSON" | jq -r '.fields | length')
+        if [ "$FIELD_COUNT" -ge 1 ] 2>/dev/null; then
+            pass "gh project field-list returns the seeded fields ($FIELD_COUNT)"
+        else
+            fail "gh project field-list returned no fields"
+        fi
+        STATUS_FIELD_ID=$(echo "$FIELD_LIST_JSON" | jq -r '[.fields[] | select(.name == "Status")][0].id // ""')
+        assert_not_empty "gh project field-list has a Status field" "$STATUS_FIELD_ID"
+    else
+        fail "gh project field-list failed: $(head -3 /tmp/gh-project-fields.err 2>/dev/null)"
+    fi
+
+    # gh project field-create — a custom text column.
+    FIELD_CREATE_JSON=$(gh project field-create "$CLI_PROJ_NUMBER" --owner "$PROJ_OWNER" \
+        --name "Notes" --data-type TEXT --format json 2>/tmp/gh-project-field-create.err || true)
+    if [ -n "$FIELD_CREATE_JSON" ]; then
+        NOTES_FIELD_ID=$(echo "$FIELD_CREATE_JSON" | jq -r '.id')
+        assert_not_empty "gh project field-create id" "$NOTES_FIELD_ID"
+    else
+        fail "gh project field-create failed: $(head -3 /tmp/gh-project-field-create.err 2>/dev/null)"
+        NOTES_FIELD_ID=""
+    fi
+
+    # gh project item-create — a draft issue.
+    ITEM_CREATE_JSON=$(gh project item-create "$CLI_PROJ_NUMBER" --owner "$PROJ_OWNER" \
+        --title "A CLI draft" --body "from the harness" --format json 2>/tmp/gh-project-item-create.err || true)
+    if [ -n "$ITEM_CREATE_JSON" ]; then
+        CLI_DRAFT_ID=$(echo "$ITEM_CREATE_JSON" | jq -r '.id')
+        assert_not_empty "gh project item-create id" "$CLI_DRAFT_ID"
+    else
+        fail "gh project item-create failed: $(head -3 /tmp/gh-project-item-create.err 2>/dev/null)"
+        CLI_DRAFT_ID=""
+    fi
+
+    # gh project item-add — the seeded issue, addressed by its web URL the way
+    # a user would paste it.
+    ITEM_ADD_JSON=$(gh project item-add "$CLI_PROJ_NUMBER" --owner "$PROJ_OWNER" \
+        --url "$BASE/$PR_REPO/issues/1" --format json 2>/tmp/gh-project-item-add.err || true)
+    if [ -n "$ITEM_ADD_JSON" ]; then
+        assert_not_empty "gh project item-add id" "$(echo "$ITEM_ADD_JSON" | jq -r '.id')"
+    else
+        fail "gh project item-add failed: $(head -3 /tmp/gh-project-item-add.err 2>/dev/null)"
+    fi
+
+    # gh project item-list — both items, with their content titles.
+    ITEM_LIST_JSON=$(gh project item-list "$CLI_PROJ_NUMBER" --owner "$PROJ_OWNER" --format json 2>/tmp/gh-project-item-list.err || true)
+    if [ -n "$ITEM_LIST_JSON" ]; then
+        ITEM_TOTAL=$(echo "$ITEM_LIST_JSON" | jq -r '.items | length')
+        if [ "$ITEM_TOTAL" -ge 2 ] 2>/dev/null; then
+            pass "gh project item-list returns both items ($ITEM_TOTAL)"
+        else
+            fail "gh project item-list returned $ITEM_TOTAL items, want at least 2"
+        fi
+        # Assert on the rendered output rather than on a particular export key:
+        # gh has moved these between `.items[].title` and `.items[].content.title`
+        # across releases, and what matters is that the draft's title reached the
+        # CLI at all.
+        if echo "$ITEM_LIST_JSON" | grep -qF "A CLI draft"; then
+            pass "gh project item-list renders the draft title"
+        else
+            fail "gh project item-list omitted the draft title: $(echo "$ITEM_LIST_JSON" | head -c 400)"
+        fi
+    else
+        fail "gh project item-list failed: $(head -3 /tmp/gh-project-item-list.err 2>/dev/null)"
+    fi
+
+    # gh project item-edit — set the custom text field on the draft.
+    if [ -n "$CLI_DRAFT_ID" ] && [ -n "$NOTES_FIELD_ID" ] && [ -n "$CLI_PROJ_ID" ]; then
+        if gh project item-edit --id "$CLI_DRAFT_ID" --project-id "$CLI_PROJ_ID" \
+            --field-id "$NOTES_FIELD_ID" --text "needs review" --format json >/tmp/gh-project-item-edit.json 2>/tmp/gh-project-item-edit.err; then
+            pass "gh project item-edit set a text field"
+            EDITED_JSON=$(gh project item-list "$CLI_PROJ_NUMBER" --owner "$PROJ_OWNER" --format json 2>/dev/null)
+            if echo "$EDITED_JSON" | grep -qF "needs review"; then
+                pass "gh project item-list reflects the edited field"
+            else
+                fail "gh project item-list lost the edited field: $(echo "$EDITED_JSON" | head -c 400)"
+            fi
+        else
+            fail "gh project item-edit failed: $(head -3 /tmp/gh-project-item-edit.err 2>/dev/null)"
+        fi
+    fi
+
+    # gh project edit — retitle and describe.
+    if gh project edit "$CLI_PROJ_NUMBER" --owner "$PROJ_OWNER" \
+        --title "CLI Board renamed" --description "driven by the harness" --format json >/tmp/gh-project-edit.json 2>/tmp/gh-project-edit.err; then
+        assert_eq "gh project edit title" "CLI Board renamed" "$(jq -r '.title' /tmp/gh-project-edit.json)"
+    else
+        fail "gh project edit failed: $(head -3 /tmp/gh-project-edit.err 2>/dev/null)"
+    fi
+
+    # gh project copy — a second project from the first.
+    if gh project copy "$CLI_PROJ_NUMBER" --source-owner "$PROJ_OWNER" --target-owner "$PROJ_OWNER" \
+        --title "CLI Board copy" --format json >/tmp/gh-project-copy.json 2>/tmp/gh-project-copy.err; then
+        COPY_NUMBER=$(jq -r '.number' /tmp/gh-project-copy.json)
+        assert_not_empty "gh project copy number" "$COPY_NUMBER"
+        if [ -n "$COPY_NUMBER" ] && [ "$COPY_NUMBER" != "null" ]; then
+            COPY_FIELDS=$(gh project field-list "$COPY_NUMBER" --owner "$PROJ_OWNER" --format json 2>/dev/null | jq -r '.fields | length')
+            if [ "$COPY_FIELDS" -ge 1 ] 2>/dev/null; then
+                pass "the copied project carries its fields ($COPY_FIELDS)"
+            else
+                fail "the copied project has no fields"
+            fi
+            gh project delete "$COPY_NUMBER" --owner "$PROJ_OWNER" >/dev/null 2>&1 || true
+        fi
+    else
+        fail "gh project copy failed: $(head -3 /tmp/gh-project-copy.err 2>/dev/null)"
+    fi
+
+    # gh project close / reopen.
+    if gh project close "$CLI_PROJ_NUMBER" --owner "$PROJ_OWNER" --format json >/tmp/gh-project-close.json 2>/tmp/gh-project-close.err; then
+        assert_eq "gh project close sets closed" "true" "$(jq -r '.closed' /tmp/gh-project-close.json)"
+    else
+        fail "gh project close failed: $(head -3 /tmp/gh-project-close.err 2>/dev/null)"
+    fi
+    if gh project close "$CLI_PROJ_NUMBER" --owner "$PROJ_OWNER" --undo --format json >/tmp/gh-project-reopen.json 2>/tmp/gh-project-reopen.err; then
+        assert_eq "gh project close --undo reopens" "false" "$(jq -r '.closed' /tmp/gh-project-reopen.json)"
+    else
+        fail "gh project close --undo failed: $(head -3 /tmp/gh-project-reopen.err 2>/dev/null)"
+    fi
+
+    # gh project mark-template — organization-owned projects only on github.com,
+    # so a user-owned project is expected to be refused rather than to succeed.
+    gh project mark-template "$CLI_PROJ_NUMBER" --owner "$PROJ_OWNER" >/dev/null 2>&1 || true
+
+    # gh project item-delete then gh project delete — the teardown verbs.
+    if [ -n "$CLI_DRAFT_ID" ] && [ -n "$CLI_PROJ_ID" ]; then
+        if gh project item-delete "$CLI_PROJ_NUMBER" --owner "$PROJ_OWNER" --id "$CLI_DRAFT_ID" --format json >/dev/null 2>/tmp/gh-project-item-delete.err; then
+            pass "gh project item-delete removed the draft"
+        else
+            fail "gh project item-delete failed: $(head -3 /tmp/gh-project-item-delete.err 2>/dev/null)"
+        fi
+    fi
+    if gh project delete "$CLI_PROJ_NUMBER" --owner "$PROJ_OWNER" --format json >/dev/null 2>/tmp/gh-project-delete.err; then
+        pass "gh project delete removed the project"
+        REMAINING=$(gh project list --owner "$PROJ_OWNER" --format json 2>/dev/null |
+            jq -r --arg n "$CLI_PROJ_NUMBER" '[.projects[] | select(.number == ($n|tonumber))] | length')
+        assert_eq "the deleted project is gone from gh project list" "0" "$REMAINING"
+    else
+        fail "gh project delete failed: $(head -3 /tmp/gh-project-delete.err 2>/dev/null)"
+    fi
+fi
+
+log "Native gh project verbs complete"
 
 log "PR-conversation parity probes complete"
 

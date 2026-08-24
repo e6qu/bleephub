@@ -71,8 +71,13 @@ type PullRequestReview struct {
 	SubmittedAt      *time.Time
 	DismissedAt      *time.Time
 	DismissalMessage string
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	// PreviousState is the state the review held before it was dismissed
+	// ("" while it has never been dismissed). Dismissal overwrites State, so
+	// without this the standing the dismissal overturned is unrecoverable —
+	// which is exactly what ReviewDismissedEvent.previousReviewState reports.
+	PreviousState string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 type PullRequestOptions struct {
@@ -679,6 +684,9 @@ func (st *Store) DismissPullRequestReview(id int, message string) bool {
 		return false
 	}
 	now := st.CurrentTime()
+	if r.State != "DISMISSED" {
+		r.PreviousState = r.State
+	}
 	r.State = "DISMISSED"
 	r.DismissalMessage = message
 	r.DismissedAt = &now

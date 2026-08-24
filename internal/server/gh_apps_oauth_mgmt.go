@@ -124,7 +124,7 @@ func (s *Server) handleCheckOAuthToken(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnprocessableEntity, "token does not match client_id")
 		return
 	}
-	writeJSON(w, http.StatusOK, oauthTokenInspectionJSON(s.store, tok, user))
+	writeJSON(w, http.StatusOK, oauthTokenInspectionJSON(s.store, tok, user, s.baseURL(r)))
 }
 
 func (s *Server) handleResetOAuthToken(w http.ResponseWriter, r *http.Request) {
@@ -160,7 +160,7 @@ func (s *Server) handleResetOAuthToken(w http.ResponseWriter, r *http.Request) {
 	// it back to the installation's full authority.
 	s.store.ScopeUserToServerToken(fresh.Token, tok.InstallationIDs, tok.Permissions, tok.RepositoryIDs)
 	s.store.RevokeUserToServerToken(tok.Token)
-	resp := oauthTokenInspectionJSON(s.store, fresh, s.userByID(fresh.UserID))
+	resp := oauthTokenInspectionJSON(s.store, fresh, s.userByID(fresh.UserID), s.baseURL(r))
 	resp["token"] = fresh.Token
 	if refresh != nil {
 		resp["refresh_token"] = refresh.Token
@@ -291,7 +291,7 @@ func (s *Server) handleScopeOAuthToken(w http.ResponseWriter, r *http.Request) {
 	scoped.Permissions = cloneStringMap(effectivePermissions)
 	scoped.RepositoryIDs = appendOptionalInts(repositoryIDs)
 
-	writeJSON(w, http.StatusOK, oauthTokenInspectionJSON(s.store, scoped, s.userByID(scoped.UserID)))
+	writeJSON(w, http.StatusOK, oauthTokenInspectionJSON(s.store, scoped, s.userByID(scoped.UserID), s.baseURL(r)))
 }
 
 func cloneStringMap(values map[string]string) map[string]string {
@@ -506,7 +506,7 @@ func (s *Server) userByID(id int) *store.User {
 	return s.store.Users[id]
 }
 
-func oauthTokenInspectionJSON(st *store.Store, tok *store.UserToServerToken, user *store.User) map[string]interface{} {
+func oauthTokenInspectionJSON(st *store.Store, tok *store.UserToServerToken, user *store.User, baseURL string) map[string]interface{} {
 	// app: the OAuth App / GitHub App the token was issued for, with the real
 	// client_id, name and url.
 	app := map[string]interface{}{
@@ -533,7 +533,7 @@ func oauthTokenInspectionJSON(st *store.Store, tok *store.UserToServerToken, use
 	var installation interface{}
 	if tok.AppID > 0 {
 		if inst := firstInstallationForToken(st, tok); inst != nil {
-			rendered := installationToJSON(inst)
+			rendered := installationToJSON(inst, baseURL)
 			if tok.Permissions != nil {
 				rendered["permissions"] = cloneStringMap(tok.Permissions)
 			}
@@ -564,7 +564,7 @@ func oauthTokenInspectionJSON(st *store.Store, tok *store.UserToServerToken, use
 		"installation":     installation,
 	}
 	if user != nil {
-		out["user"] = store.UserToJSON(user)
+		out["user"] = store.UserToJSON(user, baseURL)
 	}
 	return out
 }

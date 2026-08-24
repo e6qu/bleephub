@@ -1,4 +1,4 @@
-.PHONY: build run test web-build gh-test shauth-sso-test runner-sockerless-test runner-image
+.PHONY: build run test web-build gh-test shauth-sso-test runner-sockerless-test runner-image conformance conformance-floor
 
 build: web-build
 	CGO_ENABLED=0 GOWORK=off go build -o bleephub-server ./cmd/bleephub
@@ -49,3 +49,17 @@ runner-sockerless-test:
 
 runner-image:
 	docker buildx build --load -f Dockerfile.runner -t bleephub-runner:local .
+
+# Software development kit / command-line-interface conformance scoreboard.
+# Boots a throwaway server, drives the real gh, go-github, octokit.js, PyGithub
+# and git clients against it, and writes test/conformance/report/. The `gh`
+# driver needs a certificate authority the client trusts: on Linux that is
+# SSL_CERT_FILE and it runs natively, on macOS it needs the pinned container, so
+# CONFORMANCE_GH=1 opts into Docker locally. Continuous integration runs the
+# whole matrix on every push.
+conformance:
+	CONFORMANCE_GH=$(CONFORMANCE_GH) ./test/conformance/run.sh
+
+# Re-record the ratchet floor after a change that is meant to move the numbers.
+conformance-floor:
+	CONFORMANCE_GH=$(CONFORMANCE_GH) CONFORMANCE_UPDATE_FLOOR=1 ./test/conformance/run.sh

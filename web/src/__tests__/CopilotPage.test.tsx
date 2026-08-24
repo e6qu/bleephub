@@ -104,8 +104,10 @@ describe("CopilotPage", () => {
       expect(screen.getByText("@dev1")).toBeInTheDocument();
     });
     expect(screen.getByText("Total seats")).toBeInTheDocument();
-    expect(screen.getByText("business")).toBeInTheDocument();
-    expect(screen.getByText("assign_selected")).toBeInTheDocument();
+    // The plan is shown in the billing summary and offered in the policy
+    // editor, so it legitimately appears twice.
+    expect(screen.getAllByText("business").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("assign_selected").length).toBeGreaterThan(0);
     expect(screen.getByText(/no copilot spaces/i)).toBeInTheDocument();
   });
 
@@ -500,5 +502,79 @@ describe("PersonalCopilotSpacesPage", () => {
       );
       expect(request).toBeTruthy();
     });
+  });
+});
+
+describe("CopilotPage policy and usage", () => {
+  const policy = {
+    plan_type: "business",
+    seat_management_setting: "assign_selected",
+    public_code_suggestions: "allow",
+    ide_chat: "enabled",
+    platform_chat: "enabled",
+    cli: "enabled",
+  };
+  const metricsDay = {
+    date: "2026-08-01",
+    total_active_users: 2,
+    total_engaged_users: 2,
+    copilot_ide_code_completions: {
+      total_engaged_users: 2,
+      editors: [
+        {
+          name: "vscode",
+          total_engaged_users: 2,
+          models: [
+            {
+              name: "default",
+              languages: [
+                { name: "go", total_code_suggestions: 10, total_code_acceptances: 4 },
+                { name: "typescript", total_code_suggestions: 6, total_code_acceptances: 3 },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+    copilot_ide_chat: { total_engaged_users: 1, editors: [{ models: [{ total_chats: 5 }] }] },
+  };
+
+  it("writes a policy change through the Copilot policy endpoint", async () => {
+    mockCopilotEndpoints({
+      "/copilot/policy": () => jsonResponse(policy),
+      "/copilot/metrics": () => jsonResponse([]),
+    });
+    renderAt("/ui/orgs/acme/copilot");
+    const cli = await screen.findByLabelText("CLI");
+    fireEvent.change(cli, { target: { value: "disabled" } });
+    await waitFor(() => {
+      const write = mockFetch.mock.calls.find(
+        ([url, init]) =>
+          (init as RequestInit | undefined)?.method === "PUT" && String(url).includes("/copilot/policy"),
+      );
+      expect(write).toBeTruthy();
+      expect(JSON.parse(String((write![1] as RequestInit).body))).toEqual({ cli: "disabled" });
+    });
+  });
+
+  it("aggregates recorded usage into the daily table and stays honest when there is none", async () => {
+    mockCopilotEndpoints({
+      "/copilot/policy": () => jsonResponse(policy),
+      "/copilot/metrics": () => jsonResponse([metricsDay]),
+    });
+    renderAt("/ui/orgs/acme/copilot");
+    expect(await screen.findByText("2026-08-01")).toBeInTheDocument();
+    // 10 + 6 suggestions, 4 + 3 acceptances, 5 chats.
+    expect(screen.getByText("16")).toBeInTheDocument();
+    expect(screen.getByText("7")).toBeInTheDocument();
+
+    cleanup();
+    mockFetch.mockReset();
+    mockCopilotEndpoints({
+      "/copilot/policy": () => jsonResponse(policy),
+      "/copilot/metrics": () => jsonResponse([]),
+    });
+    renderAt("/ui/orgs/acme/copilot");
+    expect(await screen.findByText("No Copilot activity recorded")).toBeInTheDocument();
   });
 });

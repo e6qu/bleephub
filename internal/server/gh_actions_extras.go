@@ -76,7 +76,7 @@ func (s *Server) handleRepositoryDispatch(w http.ResponseWriter, r *http.Request
 		store.WriteGHValidationError(w, "RepositoryDispatch", "event_type", "missing_field")
 		return
 	}
-	payload := repositoryDispatchPayload(repo, user, req.EventType, req.ClientPayload)
+	payload := repositoryDispatchPayload(repo, user, req.EventType, req.ClientPayload, s.baseURL(r))
 	s.emitWebhookEvent(repo.FullName, "repository_dispatch", req.EventType, attachInstallationBlock(payload, nil))
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -84,14 +84,14 @@ func (s *Server) handleRepositoryDispatch(w http.ResponseWriter, r *http.Request
 // repositoryDispatchPayload builds the repository_dispatch webhook event
 // body. GitHub includes a top-level `branch` (the repo's default branch)
 // alongside action / client_payload / repository / sender.
-func repositoryDispatchPayload(repo *store.Repo, user *store.User, eventType string, clientPayload map[string]interface{}) map[string]interface{} {
+func repositoryDispatchPayload(repo *store.Repo, user *store.User, eventType string, clientPayload map[string]interface{}, baseURL string) map[string]interface{} {
 	return map[string]interface{}{
 		"action":         eventType,
 		"event_type":     eventType,
 		"branch":         repo.DefaultBranch,
 		"client_payload": clientPayload,
-		"repository":     repoPayload(repo),
-		"sender":         senderPayload(user),
+		"repository":     repoPayload(repo, baseURL),
+		"sender":         senderPayload(user, baseURL),
 	}
 }
 
@@ -263,7 +263,8 @@ func (s *Server) handleRerunFailedJobs(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnprocessableEntity, "rerun submit: "+err.Error())
 		return
 	}
-	w.WriteHeader(http.StatusCreated)
+	// 201 with schema empty-object, not an empty body.
+	writeJSON(w, http.StatusCreated, map[string]interface{}{})
 }
 
 // handleRunTiming returns the per-job billing-style timing summary.
@@ -577,7 +578,7 @@ func (s *Server) handleRunApprovals(w http.ResponseWriter, r *http.Request) {
 		var user map[string]interface{}
 		s.store.Mu.RLock()
 		if u := s.store.Users[a.UserID]; u != nil {
-			user = store.UserToJSON(u)
+			user = store.UserToJSON(u, s.baseURL(r))
 		}
 		s.store.Mu.RUnlock()
 		out = append(out, map[string]interface{}{

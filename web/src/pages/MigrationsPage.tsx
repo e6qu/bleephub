@@ -18,6 +18,7 @@ import {
   isRateLimited,
   ghFetch,
   ghSend,
+  authHeaders,
 } from "../api.js";
 import { RelativeTime } from "../components/RelativeTime.js";
 import type { BleephubRepo, GithubMigration, GithubMigrationState } from "../types.js";
@@ -38,6 +39,52 @@ import { MutationError } from "../components/MutationError.js";
 import { DownloadIcon, MigrationIcon } from "../components/octicons.js";
 
 type Scope = { kind: "user" } | { kind: "org"; org: string };
+
+/**
+ * The page's three surfaces. "user" and "org" are GitHub's export migrations —
+ * data leaving this instance. "importer" is the GitHub Enterprise Importer,
+ * which brings repositories in, and is a separate history because a migration
+ * out of here and a migration into here answer different questions.
+ */
+type MigrationsTab = "user" | "org" | "importer";
+
+/** One GEI repository migration, as the browser surface serves it. */
+interface GeiRepositoryMigration {
+  id: number;
+  node_id: string;
+  repository_name: string;
+  source_url: string;
+  state: string;
+  failure_reason: string;
+  warnings_count: number;
+  warning_log: string[];
+  continue_on_error: boolean;
+  lock_source: boolean;
+  skip_releases: boolean;
+  locked_repository: string;
+  org_migration_id: number;
+  created_at: string;
+  updated_at: string;
+  source: { id: number; name: string; type: string; url: string } | null;
+  log_url: string | null;
+}
+
+/** A place repositories are migrated from. Its credentials are never served. */
+interface GeiMigrationSource {
+  id: number;
+  node_id: string;
+  name: string;
+  type: string;
+  url: string;
+  created_at: string;
+}
+
+/** One grant of the organization migrator role. */
+interface GeiMigratorGrant {
+  actor_type: string;
+  actor: string;
+  created_at: string;
+}
 
 const enc = encodeURIComponent;
 
@@ -120,7 +167,7 @@ function stateLabel(state: GithubMigrationState): { state: "open" | "closed" | "
 }
 
 export function MigrationsPage() {
-  const [tab, setTab] = useState<"user" | "org">("user");
+  const [tab, setTab] = useState<MigrationsTab>("user");
   const [orgInput, setOrgInput] = useState("");
   const [loadedOrg, setLoadedOrg] = useState("");
   const [showCreate, setShowCreate] = useState(false);
@@ -140,21 +187,22 @@ export function MigrationsPage() {
         }
       />
 
-      <Tabs<"user" | "org">
+      <Tabs<MigrationsTab>
         items={[
           { key: "user", label: "User" },
           { key: "org", label: "Organization" },
+          { key: "importer", label: "Importer" },
         ]}
         active={tab}
         onChange={(k) => {
           setTab(k);
-          if (k === "org" && orgInput.trim()) {
+          if (k !== "user" && orgInput.trim()) {
             setLoadedOrg(orgInput.trim());
           }
         }}
       />
 
-      {tab === "org" && (
+      {tab !== "user" && (
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <FormLabel id="migration-org">Organization</FormLabel>
           <OrgSelect
@@ -170,15 +218,20 @@ export function MigrationsPage() {
 
       {tab === "user" ? (
         <MigrationsList scope={{ kind: "user" }} />
-      ) : loadedOrg ? (
-        <MigrationsList scope={{ kind: "org", org: loadedOrg }} />
-      ) : (
-        <Blankslate title="Organization migrations" icon={<MigrationIcon size={32} />}>
+      ) : !loadedOrg ? (
+        <Blankslate
+          title={tab === "org" ? "Organization migrations" : "Importer migrations"}
+          icon={<MigrationIcon size={32} />}
+        >
           Choose one of your organizations to see its migrations.
         </Blankslate>
+      ) : tab === "org" ? (
+        <MigrationsList scope={{ kind: "org", org: loadedOrg }} />
+      ) : (
+        <ImporterPanel org={loadedOrg} />
       )}
 
-      <ImportRepositorySection />
+      {tab !== "importer" && <ImportRepositorySection />}
 
       {showCreate && (
         <CreateMigrationDialog
@@ -606,6 +659,235 @@ function ImportAuthorRow({
         Save
       </Button>
     </div>
+  );
+}
+
+/**
+ * The GitHub Enterprise Importer's status and history for one organization:
+ * every repository migration it has run, the sources they came from, and who
+ * holds the migrator role.
+ *
+ * It polls while anything is still moving and stops once everything is
+ * terminal — a migration's state is a report of work, so there is nothing to
+ * re-read once the work is over.
+ */
+function ImporterPanel({ org }: { org: string }) {
+  const [detail, setDetail] = useState<GeiRepositoryMigration | null>(null);
+  const base = `/ui-data/orgs/${enc(org)}/migrations`;
+
+  const migrationsQ = useQuery({
+    queryKey: ["gei", "migrations", org],
+    queryFn: () => ghFetch<GeiRepositoryMigration[]>(`${base}/repositories`),
+    refetchInterval: (query) => {
+      if (isRateLimited(query.state.error) || isForbidden(query.state.error)) return false;
+      const rows = query.state.data as GeiRepositoryMigration[] | undefined;
+      return rows?.some((m) => !geiTerminalStates.has(m.state)) ? 3000 : false;
+    },
+  });
+  const sourcesQ = useQuery({
+    queryKey: ["gei", "sources", org],
+    queryFn: () => ghFetch<GeiMigrationSource[]>(`${base}/sources`),
+  });
+  const migratorsQ = useQuery({
+    queryKey: ["gei", "migrators", org],
+    queryFn: () => ghFetch<GeiMigratorGrant[]>(`${base}/migrators`),
+  });
+
+  const columns = useMemo(
+    () => [
+      geiCol.accessor("repository_name", {
+        header: "Repository",
+        cell: (info) => <span className="font-semibold">{info.getValue<string>()}</span>,
+      }),
+      geiCol.accessor("state", {
+        header: "State",
+        cell: (info) => {
+          const s = geiStateLabel(info.getValue<string>());
+          return <StateLabel state={s.state}>{s.label}</StateLabel>;
+        },
+      }),
+      geiCol.accessor("source_url", {
+        header: "Source",
+        cell: (info) => (
+          <span className="break-all" style={{ color: "var(--color-fg-muted)" }}>
+            {info.getValue<string>()}
+          </span>
+        ),
+      }),
+      geiCol.accessor("warnings_count", {
+        header: "Warnings",
+        cell: (info) => <span className="tabular-nums">{info.getValue<number>()}</span>,
+      }),
+      geiCol.accessor("created_at", {
+        header: "Started",
+        cell: (info) => <RelativeTime iso={info.getValue<string>()} />,
+      }),
+      geiCol.display({
+        id: "actions",
+        header: "Actions",
+        cell: (info) => (
+          <Button size="sm" variant="ghost" onClick={() => setDetail(info.row.original)}>
+            Details
+          </Button>
+        ),
+      }),
+    ],
+    [],
+  );
+
+  if (migrationsQ.isError) {
+    return (
+      <InlineError
+        title={`Failed to load ${org}'s importer migrations`}
+        detail={String(migrationsQ.error)}
+      />
+    );
+  }
+  if (migrationsQ.isLoading || !migrationsQ.data) {
+    return <Spinner label="loading importer migrations" />;
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+      <DataTable
+        data={migrationsQ.data}
+        columns={columns}
+        filterPlaceholder="Filter repository migrations…"
+        emptyMessage="No repositories have been migrated into this organization yet."
+      />
+
+      <Box header="Migration sources">
+        {sourcesQ.isError ? (
+          <InlineError title="Failed to load migration sources" detail={String(sourcesQ.error)} />
+        ) : sourcesQ.isLoading || !sourcesQ.data ? (
+          <Spinner label="loading migration sources" />
+        ) : sourcesQ.data.length === 0 ? (
+          <p style={{ color: "var(--color-fg-muted)" }}>No migration sources are configured.</p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {sourcesQ.data.map((source) => (
+              <li key={source.id} className="flex flex-wrap items-baseline gap-2">
+                <span className="font-semibold">{source.name}</span>
+                <span style={{ color: "var(--color-fg-muted)" }}>{source.type}</span>
+                <span className="break-all" style={{ color: "var(--color-fg-muted)" }}>
+                  {source.url}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Box>
+
+      <Box header="Migrators">
+        {migratorsQ.isError ? (
+          <InlineError title="Failed to load migrator grants" detail={String(migratorsQ.error)} />
+        ) : migratorsQ.isLoading || !migratorsQ.data ? (
+          <Spinner label="loading migrator grants" />
+        ) : migratorsQ.data.length === 0 ? (
+          <p style={{ color: "var(--color-fg-muted)" }}>
+            Only organization owners may run migrations here.
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {migratorsQ.data.map((grant) => (
+              <li key={`${grant.actor_type}/${grant.actor}`} className="flex items-baseline gap-2">
+                <span className="font-semibold">{grant.actor}</span>
+                <span style={{ color: "var(--color-fg-muted)" }}>{grant.actor_type}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Box>
+
+      {detail && <GeiMigrationDetailDialog migration={detail} onClose={() => setDetail(null)} />}
+    </div>
+  );
+}
+
+const geiCol = createColumnHelper<GeiRepositoryMigration>();
+
+/** The states a repository migration admits no further transitions from. */
+const geiTerminalStates = new Set(["SUCCEEDED", "FAILED", "FAILED_VALIDATION"]);
+
+function geiStateLabel(state: string): { state: "open" | "closed" | "draft"; label: string } {
+  switch (state) {
+    case "SUCCEEDED":
+      return { state: "closed", label: "Succeeded" };
+    case "FAILED":
+      return { state: "draft", label: "Failed" };
+    case "FAILED_VALIDATION":
+      return { state: "draft", label: "Failed validation" };
+    case "IN_PROGRESS":
+      return { state: "open", label: "In progress" };
+    default:
+      return { state: "open", label: state.toLowerCase().replace(/_/g, " ") };
+  }
+}
+
+/**
+ * One repository migration in full: why it failed if it did, what it warned
+ * about, and its log. The log is fetched rather than linked because the link is
+ * not a credential — it is served behind the same migrator standing this page
+ * is, so it only resolves for a caller who already has it.
+ */
+function GeiMigrationDetailDialog({
+  migration,
+  onClose,
+}: {
+  migration: GeiRepositoryMigration;
+  onClose: () => void;
+}) {
+  // The log is text rather than JSON, so it is read with fetch + authHeaders()
+  // here rather than through ghFetch. It is defined in this lazy page rather
+  // than added to api.ts, which every route pays for.
+  const logQ = useQuery({
+    queryKey: ["gei", "log", migration.id],
+    queryFn: async () => {
+      const res = await fetch(migration.log_url ?? "", { headers: authHeaders() });
+      if (!res.ok) {
+        throw new Error(`migration log ${res.status}`);
+      }
+      return res.text();
+    },
+    enabled: Boolean(migration.log_url),
+  });
+
+  return (
+    <Modal title={`Migration of ${migration.repository_name}`} onClose={onClose}>
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap gap-4">
+          <Stat label="State" value={geiStateLabel(migration.state).label} />
+          <Stat label="Warnings" value={String(migration.warnings_count)} />
+          <Stat label="Source" value={migration.source?.name ?? "—"} />
+          <Stat label="Lock source" value={migration.lock_source ? "yes" : "no"} />
+          <Stat label="Skip releases" value={migration.skip_releases ? "yes" : "no"} />
+        </div>
+        {migration.failure_reason && (
+          <ErrorBanner>This migration failed: {migration.failure_reason}</ErrorBanner>
+        )}
+        {migration.warning_log.length > 0 && (
+          <Box header="Warnings">
+            <ul className="flex flex-col gap-1">
+              {migration.warning_log.map((warning, index) => (
+                <li key={index}>{warning}</li>
+              ))}
+            </ul>
+          </Box>
+        )}
+        {migration.log_url && (
+          <Box header="Migration log">
+            {logQ.isLoading ? (
+              <Spinner label="loading migration log" />
+            ) : (
+              <pre className="overflow-x-auto whitespace-pre-wrap text-sm">{logQ.data || "—"}</pre>
+            )}
+          </Box>
+        )}
+        <DialogActions>
+          <Button onClick={onClose}>Close</Button>
+        </DialogActions>
+      </div>
+    </Modal>
   );
 }
 

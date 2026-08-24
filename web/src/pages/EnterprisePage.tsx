@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Spinner, InlineError } from "@bleephub/ui-core/components";
 import { confirmAction } from "../components/confirmAction.js";
 import { MutationError } from "../components/MutationError.js";
-import { ghFetch, ghPostJSON, ghSend } from "../api.js";
+import { ghFetch, ghGraphQL, ghPostJSON, ghSend } from "../api.js";
 import {
   fetchEnterpriseSlug,
   fetchEnterpriseTeams,
@@ -38,11 +38,15 @@ import { Blankslate } from "../components/ui.js";
 
 const enc = encodeURIComponent;
 
-type EnterpriseTab = "teams" | "settings" | "billing";
+type EnterpriseTab = "account" | "policies" | "teams" | "settings" | "billing";
 
 export function EnterprisePage() {
-  const [tab, setTab] = useState<EnterpriseTab>("teams");
-  const { data: enterpriseSlug } = useQuery({
+  const [tab, setTab] = useState<EnterpriseTab>("account");
+  const {
+    data: enterpriseSlug,
+    isError: slugFailed,
+    error: slugError,
+  } = useQuery({
     queryKey: ["enterprise-slug"],
     queryFn: ({ signal }) => fetchEnterpriseSlug(signal),
   });
@@ -60,6 +64,8 @@ export function EnterprisePage() {
       />
       <Tabs
         items={[
+          { key: "account" as const, label: "Account" },
+          { key: "policies" as const, label: "Policies" },
           { key: "teams" as const, label: "Teams" },
           { key: "billing" as const, label: "Billing" },
           { key: "settings" as const, label: "Settings" },
@@ -67,6 +73,11 @@ export function EnterprisePage() {
         active={tab}
         onChange={setTab}
       />
+      {slugFailed && (
+        <InlineError title="Failed to load the enterprise" detail={String(slugError)} />
+      )}
+      {!slugFailed && tab === "account" && <EnterpriseAccountPanel slug={enterpriseSlug} />}
+      {tab === "policies" && <EnterprisePoliciesPanel slug={enterpriseSlug} />}
       {tab === "teams" && <EnterpriseTeamsPanel />}
       {tab === "billing" && <EnterpriseBillingPanel enterpriseSlug={enterpriseSlug} />}
       {tab === "settings" && <EnterpriseSettingsPanel />}
@@ -914,5 +925,507 @@ function DependabotAccessSettings() {
         )}
       </div>
     </Box>
+  );
+}
+
+// ─── Enterprise account ─────────────────────────────────────────────────
+//
+// The account surface is GraphQL: the enterprise profile, its policy set,
+// its members and its organizations all live on the Enterprise type. The
+// queries are declared here rather than in api.ts because this page is a
+// lazy route and its wrappers must not land in the entry chunk.
+
+interface EnterpriseAccount {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  location: string | null;
+  websiteUrl: string | null;
+  billingEmail: string | null;
+  securityContactEmail: string | null;
+  createdAt: string;
+  viewerIsAdmin: boolean;
+  members: { totalCount: number; nodes: Array<{ login: string; name: string | null } | null> };
+  organizations: { totalCount: number; nodes: Array<{ login: string } | null> };
+  billingInfo: {
+    totalLicenses: number;
+    totalAvailableLicenses: number;
+    allLicensableUsersCount: number;
+    storageQuota: number;
+    storageUsage: number;
+    storageUsagePercentage: number;
+    bandwidthQuota: number;
+    bandwidthUsage: number;
+    bandwidthUsagePercentage: number;
+  } | null;
+}
+
+const ENTERPRISE_ACCOUNT_QUERY = `query($slug:String!){
+  enterprise(slug:$slug){
+    id slug name description location websiteUrl billingEmail securityContactEmail createdAt viewerIsAdmin
+    members(first:50){ totalCount nodes{ ... on EnterpriseUserAccount { login name } } }
+    organizations(first:50){ totalCount nodes{ login } }
+    billingInfo{
+      totalLicenses totalAvailableLicenses allLicensableUsersCount
+      storageQuota storageUsage storageUsagePercentage
+      bandwidthQuota bandwidthUsage bandwidthUsagePercentage
+    }
+  }
+}`;
+
+async function fetchEnterpriseAccount(slug: string, signal?: AbortSignal): Promise<EnterpriseAccount> {
+  const data = await ghGraphQL<{ enterprise: EnterpriseAccount | null }>(
+    ENTERPRISE_ACCOUNT_QUERY,
+    { slug },
+    signal,
+  );
+  if (!data.enterprise) throw new Error(`no enterprise named "${slug}"`);
+  return data.enterprise;
+}
+
+async function updateEnterpriseProfile(input: {
+  enterpriseId: string;
+  name?: string;
+  description?: string;
+  location?: string;
+  websiteUrl?: string;
+  securityContactEmail?: string;
+}): Promise<void> {
+  await ghGraphQL(
+    `mutation($input:UpdateEnterpriseProfileInput!){updateEnterpriseProfile(input:$input){enterprise{slug}}}`,
+    { input },
+  );
+}
+
+function EnterpriseAccountPanel({ slug }: { slug: string | undefined }) {
+  const qc = useQueryClient();
+  const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({ name: "", description: "", location: "", websiteUrl: "" });
+
+  const { data, isLoading, isError, error: loadErr } = useQuery({
+    queryKey: ["enterprise-account", slug],
+    queryFn: ({ signal }) => fetchEnterpriseAccount(slug as string, signal),
+    enabled: Boolean(slug),
+  });
+
+  const saveMut = useMutation({
+    mutationFn: () =>
+      updateEnterpriseProfile({
+        enterpriseId: data?.id ?? "",
+        name: form.name,
+        description: form.description,
+        location: form.location,
+        websiteUrl: form.websiteUrl,
+      }),
+    onSuccess: () => {
+      setError(null);
+      setEditing(false);
+      qc.invalidateQueries({ queryKey: ["enterprise-account", slug] });
+    },
+    onError: (err: Error) => setError(err.message),
+  });
+
+  if (isLoading || !slug) return <Spinner label="loading enterprise account" />;
+  if (isError) return <InlineError title="Failed to load the enterprise account" detail={String(loadErr)} />;
+  if (!data) return null;
+
+  return (
+    <div className="flex flex-col gap-4">
+      {error && <ErrorBanner>{error}</ErrorBanner>}
+      <MutationError of={[saveMut]} />
+      <Box header={<span style={{ fontWeight: 600 }}>Profile</span>}>
+        <div style={{ padding: "0.9rem 1rem" }}>
+          {!editing && (
+            <dl className="flex flex-col gap-2" style={{ margin: 0, fontSize: "0.88rem" }}>
+              <EnterpriseField label="Name" value={data.name} />
+              <EnterpriseField label="Slug" value={data.slug} />
+              <EnterpriseField label="Description" value={data.description} />
+              <EnterpriseField label="Location" value={data.location} />
+              <EnterpriseField label="Website" value={data.websiteUrl} />
+              <EnterpriseField label="Billing email" value={data.billingEmail} />
+              <EnterpriseField label="Security contact" value={data.securityContactEmail} />
+              <EnterpriseField label="Created" value={new Date(data.createdAt).toLocaleDateString()} />
+            </dl>
+          )}
+          {editing && (
+            <div className="flex flex-col gap-2">
+              <FormLabel id="ent-name">Name</FormLabel>
+              <input
+                id="ent-name"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+              />
+              <FormLabel id="ent-description">Description</FormLabel>
+              <input
+                id="ent-description"
+                value={form.description}
+                onChange={(e) => setForm({ ...form, description: e.target.value })}
+              />
+              <FormLabel id="ent-location">Location</FormLabel>
+              <input
+                id="ent-location"
+                value={form.location}
+                onChange={(e) => setForm({ ...form, location: e.target.value })}
+              />
+              <FormLabel id="ent-website">Website URL</FormLabel>
+              <input
+                id="ent-website"
+                value={form.websiteUrl}
+                onChange={(e) => setForm({ ...form, websiteUrl: e.target.value })}
+              />
+            </div>
+          )}
+          {data.viewerIsAdmin && (
+            <div className="flex gap-2" style={{ marginTop: "0.8rem" }}>
+              {!editing && (
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setForm({
+                      name: data.name,
+                      description: data.description ?? "",
+                      location: data.location ?? "",
+                      websiteUrl: data.websiteUrl ?? "",
+                    });
+                    setEditing(true);
+                  }}
+                >
+                  Edit profile
+                </Button>
+              )}
+              {editing && (
+                <>
+                  <Button size="sm" variant="primary" disabled={saveMut.isPending} onClick={() => saveMut.mutate()}>
+                    Save
+                  </Button>
+                  <Button size="sm" onClick={() => setEditing(false)}>
+                    Cancel
+                  </Button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      </Box>
+
+      <Box header={<span style={{ fontWeight: 600 }}>Organizations ({data.organizations.totalCount})</span>}>
+        <div style={{ padding: "0.9rem 1rem" }}>
+          {data.organizations.nodes.length === 0 ? (
+            <Blankslate icon={<GlobeIcon size={22} />} title="No organizations">
+              This enterprise owns no organizations yet.
+            </Blankslate>
+          ) : (
+            <ul style={{ margin: 0, paddingLeft: "1.1rem", fontSize: "0.88rem" }}>
+              {data.organizations.nodes.map((org, index) =>
+                org ? <li key={org.login}>{org.login}</li> : <li key={`org-${index}`}>—</li>,
+              )}
+            </ul>
+          )}
+        </div>
+      </Box>
+
+      <Box header={<span style={{ fontWeight: 600 }}>Members ({data.members.totalCount})</span>}>
+        <div style={{ padding: "0.9rem 1rem" }}>
+          {data.members.nodes.length === 0 ? (
+            <Blankslate icon={<TeamIcon size={22} />} title="No members">
+              This enterprise has no members yet.
+            </Blankslate>
+          ) : (
+            <ul style={{ margin: 0, paddingLeft: "1.1rem", fontSize: "0.88rem" }}>
+              {data.members.nodes.map((member, index) =>
+                member ? (
+                  <li key={member.login}>
+                    {member.login}
+                    {member.name ? ` — ${member.name}` : ""}
+                  </li>
+                ) : (
+                  <li key={`member-${index}`}>—</li>
+                ),
+              )}
+            </ul>
+          )}
+        </div>
+      </Box>
+
+      {data.billingInfo && (
+        <Box header={<span style={{ fontWeight: 600 }}>Licences and usage</span>}>
+          <div style={{ padding: "0.9rem 1rem" }}>
+            <dl className="flex flex-col gap-2" style={{ margin: 0, fontSize: "0.88rem" }}>
+              <EnterpriseField
+                label="Licences"
+                value={`${data.billingInfo.allLicensableUsersCount} of ${data.billingInfo.totalLicenses} used`}
+              />
+              <EnterpriseField label="Available licences" value={String(data.billingInfo.totalAvailableLicenses)} />
+              <EnterpriseField
+                label="Storage"
+                value={`${data.billingInfo.storageUsage.toFixed(2)} GB of ${data.billingInfo.storageQuota} GB (${data.billingInfo.storageUsagePercentage}%)`}
+              />
+              <EnterpriseField
+                label="Bandwidth"
+                value={`${data.billingInfo.bandwidthUsage.toFixed(2)} GB of ${data.billingInfo.bandwidthQuota} GB (${data.billingInfo.bandwidthUsagePercentage}%)`}
+              />
+            </dl>
+          </div>
+        </Box>
+      )}
+    </div>
+  );
+}
+
+function EnterpriseField({ label, value }: { label: string; value: string | null }) {
+  return (
+    <div className="flex gap-2">
+      <dt style={{ minWidth: "10rem", color: "var(--color-fg-muted)" }}>{label}</dt>
+      <dd style={{ margin: 0 }}>{value === null || value === "" ? "—" : value}</dd>
+    </div>
+  );
+}
+
+// ─── Enterprise policies ────────────────────────────────────────────────
+
+// enterprisePolicyControls is the whole policy surface, one row per setting:
+// the EnterpriseOwnerInfo field it reads, the mutation that writes it, and the
+// values the mutation admits. Adding a policy is a row here, not a component.
+const enterprisePolicyControls: Array<{
+  field: string;
+  mutation: string;
+  inputType: string;
+  label: string;
+  values: string[];
+}> = [
+  {
+    field: "allowPrivateRepositoryForkingSetting",
+    mutation: "updateEnterpriseAllowPrivateRepositoryForkingSetting",
+    inputType: "UpdateEnterpriseAllowPrivateRepositoryForkingSettingInput",
+    label: "Private repository forking",
+    values: ["NO_POLICY", "ENABLED", "DISABLED"],
+  },
+  {
+    field: "defaultRepositoryPermissionSetting",
+    mutation: "updateEnterpriseDefaultRepositoryPermissionSetting",
+    inputType: "UpdateEnterpriseDefaultRepositoryPermissionSettingInput",
+    label: "Base repository permission",
+    values: ["NO_POLICY", "NONE", "READ", "WRITE", "ADMIN"],
+  },
+  {
+    field: "membersCanChangeRepositoryVisibilitySetting",
+    mutation: "updateEnterpriseMembersCanChangeRepositoryVisibilitySetting",
+    inputType: "UpdateEnterpriseMembersCanChangeRepositoryVisibilitySettingInput",
+    label: "Repository visibility change",
+    values: ["NO_POLICY", "ENABLED", "DISABLED"],
+  },
+  {
+    field: "membersCanDeleteRepositoriesSetting",
+    mutation: "updateEnterpriseMembersCanDeleteRepositoriesSetting",
+    inputType: "UpdateEnterpriseMembersCanDeleteRepositoriesSettingInput",
+    label: "Repository deletion and transfer",
+    values: ["NO_POLICY", "ENABLED", "DISABLED"],
+  },
+  {
+    field: "membersCanDeleteIssuesSetting",
+    mutation: "updateEnterpriseMembersCanDeleteIssuesSetting",
+    inputType: "UpdateEnterpriseMembersCanDeleteIssuesSettingInput",
+    label: "Issue deletion",
+    values: ["NO_POLICY", "ENABLED", "DISABLED"],
+  },
+  {
+    field: "membersCanInviteCollaboratorsSetting",
+    mutation: "updateEnterpriseMembersCanInviteCollaboratorsSetting",
+    inputType: "UpdateEnterpriseMembersCanInviteCollaboratorsSettingInput",
+    label: "Repository invitations",
+    values: ["NO_POLICY", "ENABLED", "DISABLED"],
+  },
+  {
+    field: "membersCanUpdateProtectedBranchesSetting",
+    mutation: "updateEnterpriseMembersCanUpdateProtectedBranchesSetting",
+    inputType: "UpdateEnterpriseMembersCanUpdateProtectedBranchesSettingInput",
+    label: "Protected branch updates",
+    values: ["NO_POLICY", "ENABLED", "DISABLED"],
+  },
+  {
+    field: "membersCanViewDependencyInsightsSetting",
+    mutation: "updateEnterpriseMembersCanViewDependencyInsightsSetting",
+    inputType: "UpdateEnterpriseMembersCanViewDependencyInsightsSettingInput",
+    label: "Dependency insights",
+    values: ["NO_POLICY", "ENABLED", "DISABLED"],
+  },
+  {
+    field: "repositoryDeployKeySetting",
+    mutation: "updateEnterpriseDeployKeySetting",
+    inputType: "UpdateEnterpriseDeployKeySettingInput",
+    label: "Repository deploy keys",
+    values: ["NO_POLICY", "ENABLED", "DISABLED"],
+  },
+  {
+    field: "organizationProjectsSetting",
+    mutation: "updateEnterpriseOrganizationProjectsSetting",
+    inputType: "UpdateEnterpriseOrganizationProjectsSettingInput",
+    label: "Organization projects",
+    values: ["NO_POLICY", "ENABLED", "DISABLED"],
+  },
+  {
+    field: "repositoryProjectsSetting",
+    mutation: "updateEnterpriseRepositoryProjectsSetting",
+    inputType: "UpdateEnterpriseRepositoryProjectsSettingInput",
+    label: "Repository projects",
+    values: ["NO_POLICY", "ENABLED", "DISABLED"],
+  },
+  {
+    field: "membersCanMakePurchasesSetting",
+    mutation: "updateEnterpriseMembersCanMakePurchasesSetting",
+    inputType: "UpdateEnterpriseMembersCanMakePurchasesSettingInput",
+    label: "Marketplace purchases",
+    values: ["ENABLED", "DISABLED"],
+  },
+  {
+    field: "twoFactorRequiredSetting",
+    mutation: "updateEnterpriseTwoFactorAuthenticationRequiredSetting",
+    inputType: "UpdateEnterpriseTwoFactorAuthenticationRequiredSettingInput",
+    label: "Two-factor authentication required",
+    values: ["NO_POLICY", "ENABLED"],
+  },
+  {
+    field: "twoFactorDisallowedMethodsSetting",
+    mutation: "updateEnterpriseTwoFactorAuthenticationDisallowedMethodsSetting",
+    inputType: "UpdateEnterpriseTwoFactorAuthenticationDisallowedMethodsSettingInput",
+    label: "Disallowed second factors",
+    values: ["NO_POLICY", "INSECURE"],
+  },
+  {
+    field: "ipAllowListEnabledSetting",
+    mutation: "updateIpAllowListEnabledSetting",
+    inputType: "UpdateIpAllowListEnabledSettingInput",
+    label: "IP allow list",
+    values: ["DISABLED", "ENABLED"],
+  },
+  {
+    field: "ipAllowListForInstalledAppsEnabledSetting",
+    mutation: "updateIpAllowListForInstalledAppsEnabledSetting",
+    inputType: "UpdateIpAllowListForInstalledAppsEnabledSettingInput",
+    label: "IP allow list for installed apps",
+    values: ["DISABLED", "ENABLED"],
+  },
+  {
+    field: "ipAllowListUserLevelEnforcementEnabledSetting",
+    mutation: "updateIpAllowListUserLevelEnforcementEnabledSetting",
+    inputType: "UpdateIpAllowListUserLevelEnforcementEnabledSettingInput",
+    label: "IP allow list user-level enforcement",
+    values: ["DISABLED", "ENABLED"],
+  },
+];
+
+const ENTERPRISE_POLICIES_QUERY = `query($slug:String!){
+  enterprise(slug:$slug){
+    id
+    ownerInfo{
+      ${enterprisePolicyControls.map((control) => control.field).join("\n      ")}
+      ipAllowListEntries(first:50){ nodes{ id allowListValue name isActive } }
+    }
+  }
+}`;
+
+interface EnterprisePolicies {
+  id: string;
+  ownerInfo:
+    | ({
+        ipAllowListEntries: {
+          nodes: Array<{ id: string; allowListValue: string; name: string | null; isActive: boolean } | null>;
+        };
+      } & Record<string, string>)
+    | null;
+}
+
+function EnterprisePoliciesPanel({ slug }: { slug: string | undefined }) {
+  const qc = useQueryClient();
+  const [error, setError] = useState<string | null>(null);
+
+  const { data, isLoading, isError, error: loadErr } = useQuery({
+    queryKey: ["enterprise-policies", slug],
+    queryFn: ({ signal }) =>
+      ghGraphQL<{ enterprise: EnterprisePolicies | null }>(ENTERPRISE_POLICIES_QUERY, { slug }, signal),
+    enabled: Boolean(slug),
+  });
+
+  const setPolicy = useMutation({
+    mutationFn: async (change: { control: (typeof enterprisePolicyControls)[number]; value: string }) => {
+      const enterpriseId = data?.enterprise?.id ?? "";
+      const idKey = change.control.mutation.startsWith("updateIpAllowList") ? "ownerId" : "enterpriseId";
+      await ghGraphQL(
+        `mutation($input:${change.control.inputType}!){${change.control.mutation}(input:$input){clientMutationId}}`,
+        { input: { [idKey]: enterpriseId, settingValue: change.value } },
+      );
+    },
+    onSuccess: () => {
+      setError(null);
+      qc.invalidateQueries({ queryKey: ["enterprise-policies", slug] });
+    },
+    onError: (err: Error) => setError(err.message),
+  });
+
+  if (isLoading || !slug) return <Spinner label="loading enterprise policies" />;
+  if (isError) return <InlineError title="Failed to load enterprise policies" detail={String(loadErr)} />;
+  const ownerInfo = data?.enterprise?.ownerInfo;
+  if (!ownerInfo) {
+    return (
+      <Blankslate icon={<GraphIcon size={22} />} title="Enterprise policies are owner-only">
+        Only an owner of this enterprise can read or change its policies.
+      </Blankslate>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      {error && <ErrorBanner>{error}</ErrorBanner>}
+      <MutationError of={[setPolicy]} />
+      <Box header={<span style={{ fontWeight: 600 }}>Policies</span>}>
+        <div style={{ padding: "0.9rem 1rem" }} className="flex flex-col gap-3">
+          {enterprisePolicyControls.map((control) => (
+            <div key={control.field} className="flex flex-wrap items-center gap-3">
+              <label htmlFor={`policy-${control.field}`} style={{ minWidth: "18rem", fontSize: "0.88rem" }}>
+                {control.label}
+              </label>
+              <select
+                id={`policy-${control.field}`}
+                value={ownerInfo[control.field] ?? control.values[0]}
+                disabled={setPolicy.isPending}
+                onChange={(e) => setPolicy.mutate({ control, value: e.target.value })}
+              >
+                {control.values.map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ))}
+        </div>
+      </Box>
+
+      <Box header={<span style={{ fontWeight: 600 }}>IP allow list</span>}>
+        <div style={{ padding: "0.9rem 1rem" }}>
+          {ownerInfo.ipAllowListEntries.nodes.length === 0 ? (
+            <Blankslate icon={<GlobeIcon size={22} />} title="No allow list entries">
+              Every source address may reach this enterprise.
+            </Blankslate>
+          ) : (
+            <ul style={{ margin: 0, paddingLeft: "1.1rem", fontSize: "0.88rem" }}>
+              {ownerInfo.ipAllowListEntries.nodes.map((entry, index) =>
+                entry ? (
+                  <li key={entry.id}>
+                    <code>{entry.allowListValue}</code>
+                    {entry.name ? ` — ${entry.name}` : ""}
+                    {entry.isActive ? "" : " (inactive)"}
+                  </li>
+                ) : (
+                  <li key={`entry-${index}`}>—</li>
+                ),
+              )}
+            </ul>
+          )}
+        </div>
+      </Box>
+    </div>
   );
 }

@@ -34,6 +34,8 @@ type SecurityAdvisory struct {
 	URL                    string                          `json:"url"`
 	SubmissionAccepted     bool                            `json:"submission_accepted"`
 	PrivateForkID          int                             `json:"private_fork_id"`
+	CollaboratingUsers     []string                        `json:"collaborating_users,omitempty"`
+	CollaboratingTeams     []string                        `json:"collaborating_teams,omitempty"`
 	VulnerableVersionRange string                          `json:"vulnerable_version_range"`
 	Vulnerabilities        []SecurityAdvisoryVulnerability `json:"vulnerabilities,omitempty"`
 	Credits                []SecurityAdvisoryCredit        `json:"credits,omitempty"`
@@ -60,10 +62,11 @@ func ValidAdvisoryCreditType(t string) bool {
 }
 
 type SecurityAdvisoryVulnerability struct {
-	PackageName            string `json:"package_name"`
-	PackageEcosystem       string `json:"package_ecosystem"`
-	VulnerableVersionRange string `json:"vulnerable_version_range"`
-	FirstPatchedVersion    string `json:"first_patched_version,omitempty"`
+	PackageName            string   `json:"package_name"`
+	PackageEcosystem       string   `json:"package_ecosystem"`
+	VulnerableVersionRange string   `json:"vulnerable_version_range"`
+	FirstPatchedVersion    string   `json:"first_patched_version,omitempty"`
+	VulnerableFunctions    []string `json:"vulnerable_functions,omitempty"`
 }
 
 // SecurityAdvisoryReport records a vulnerability report that spawned an advisory.
@@ -83,24 +86,39 @@ type SecurityAdvisoryReport struct {
 
 // CreateAdvisoryReq is the request body for creating a security advisory.
 type CreateAdvisoryReq struct {
-	Summary                string   `json:"summary"`
-	Description            string   `json:"description"`
-	Severity               string   `json:"severity"`
-	CVSSScore              float64  `json:"cvss_score"`
-	CVSSVector             string   `json:"cvss_vector"`
-	CWEs                   []string `json:"cwe_ids"`
-	State                  string   `json:"state"`
-	VulnerableVersionRange string   `json:"vulnerable_version_range"`
+	Summary     string `json:"summary"`
+	Description string `json:"description"`
+	Severity    string `json:"severity"`
+	// CVEID is the spec's cve_id member: a reporter who already holds a CVE
+	// identifier names it at creation rather than requesting one.
+	CVEID     string  `json:"cve_id"`
+	CVSSScore float64 `json:"cvss_score"`
+	// CVSSVector is spelt cvss_vector_string, which is the member name
+	// repository-advisory-create and -update both use. It was cvss_vector,
+	// which no GitHub client sends, so every SDK's CVSS vector was silently
+	// discarded and the advisory came back with a null one.
+	CVSSVector string   `json:"cvss_vector_string"`
+	CWEs       []string `json:"cwe_ids"`
+	State      string   `json:"state"`
+	// StartPrivateFork asks for the temporary private fork maintainers
+	// collaborate on the fix in.
+	StartPrivateFork       bool   `json:"start_private_fork"`
+	VulnerableVersionRange string `json:"vulnerable_version_range"`
 	Vulnerabilities        []struct {
 		Package struct {
 			Ecosystem string `json:"ecosystem"`
 			Name      string `json:"name"`
 		} `json:"package"`
-		VulnerableVersionRange string `json:"vulnerable_version_range"`
-		FirstPatchedVersion    string `json:"first_patched_version"`
-		PatchedVersions        string `json:"patched_versions"`
+		VulnerableVersionRange string   `json:"vulnerable_version_range"`
+		FirstPatchedVersion    string   `json:"first_patched_version"`
+		PatchedVersions        string   `json:"patched_versions"`
+		VulnerableFunctions    []string `json:"vulnerable_functions"`
 	} `json:"vulnerabilities"`
 	Credits []SecurityAdvisoryCredit `json:"credits"`
+	// CollaboratingUsers and CollaboratingTeams are the accounts granted
+	// access to the advisory's private drafting workspace.
+	CollaboratingUsers []string `json:"collaborating_users"`
+	CollaboratingTeams []string `json:"collaborating_teams"`
 }
 
 func ValidAdvisorySeverity(s string) bool {
@@ -184,8 +202,11 @@ func (st *Store) CreateSecurityAdvisoryE(repoID, authorID int, req CreateAdvisor
 		Summary:                req.Summary,
 		Description:            req.Description,
 		Severity:               req.Severity,
+		CVEID:                  req.CVEID,
 		CVSSScore:              req.CVSSScore,
 		CVSSVector:             req.CVSSVector,
+		CollaboratingUsers:     append([]string(nil), req.CollaboratingUsers...),
+		CollaboratingTeams:     append([]string(nil), req.CollaboratingTeams...),
 		CWEs:                   req.CWEs,
 		State:                  state,
 		CreatedAt:              now,
@@ -208,6 +229,7 @@ func (st *Store) CreateSecurityAdvisoryE(repoID, authorID int, req CreateAdvisor
 			PackageEcosystem:       v.Package.Ecosystem,
 			VulnerableVersionRange: v.VulnerableVersionRange,
 			FirstPatchedVersion:    patched,
+			VulnerableFunctions:    append([]string(nil), v.VulnerableFunctions...),
 		})
 	}
 	if adv.CWEs == nil {
@@ -230,11 +252,13 @@ func (st *Store) CreateSecurityAdvisoryE(repoID, authorID int, req CreateAdvisor
 
 // ListSecurityAdvisories returns all security advisories for a repo, newest first.
 // cloneSecurityAdvisory returns a deep copy safe to hand outside the store
-// lock (STORE-021). CWEs, Vulnerabilities, Credits and PublishedAt are the
-// only reference fields; SecurityAdvisoryVulnerability and
-// SecurityAdvisoryCredit are all-value, so copying the three slices and the
-// time pointer detaches the result. Mutations go through
-// UpdateSecurityAdvisory (keyed by id), never the getter's result.
+// lock (STORE-021). Mutations go through UpdateSecurityAdvisory (keyed by
+// id), never the getter's result.
+//
+// SecurityAdvisoryCredit is all-value, so its slice detaches by copying.
+// SecurityAdvisoryVulnerability is NOT: it carries a VulnerableFunctions
+// slice, so copying the outer slice alone would leave every clone sharing
+// one backing array with the live row.
 func cloneSecurityAdvisory(a *SecurityAdvisory) *SecurityAdvisory {
 	if a == nil {
 		return nil
@@ -243,8 +267,21 @@ func cloneSecurityAdvisory(a *SecurityAdvisory) *SecurityAdvisory {
 	if a.CWEs != nil {
 		clone.CWEs = append([]string(nil), a.CWEs...)
 	}
+	if a.CollaboratingUsers != nil {
+		clone.CollaboratingUsers = append([]string(nil), a.CollaboratingUsers...)
+	}
+	if a.CollaboratingTeams != nil {
+		clone.CollaboratingTeams = append([]string(nil), a.CollaboratingTeams...)
+	}
 	if a.Vulnerabilities != nil {
-		clone.Vulnerabilities = append([]SecurityAdvisoryVulnerability(nil), a.Vulnerabilities...)
+		clone.Vulnerabilities = make([]SecurityAdvisoryVulnerability, len(a.Vulnerabilities))
+		for i, vulnerability := range a.Vulnerabilities {
+			clone.Vulnerabilities[i] = vulnerability
+			if vulnerability.VulnerableFunctions != nil {
+				clone.Vulnerabilities[i].VulnerableFunctions =
+					append([]string(nil), vulnerability.VulnerableFunctions...)
+			}
+		}
 	}
 	if a.Credits != nil {
 		clone.Credits = append([]SecurityAdvisoryCredit(nil), a.Credits...)

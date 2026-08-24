@@ -30,6 +30,7 @@ export function accountRoute(login: string, type: AccountType): string {
  */
 export const RESERVED_ROOT_SEGMENTS: ReadonlySet<string> = new Set([
   "account",
+  "advisories",
   "apps",
   "assets",
   "classrooms",
@@ -49,6 +50,7 @@ export const RESERVED_ROOT_SEGMENTS: ReadonlySet<string> = new Set([
   "runners",
   "search",
   "settings",
+  "sponsors",
   "users",
   "workflows",
 ]);

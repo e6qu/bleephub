@@ -92,18 +92,18 @@ func EvalTemplate(s string, ctx *ExprContext) (string, error) {
 	}
 }
 
-// ExprContainsStatusFunction checks whether the parsed expression calls
-// always() or failure(), which override default dependency-failure skipping.
-// Token inspection avoids mistaking string literals and longer identifiers
-// for status calls.
-func ExprContainsStatusFunction(expr string) (hasAlways, hasFailure bool) {
-	functions := expressionFunctionCalls(expr)
-	return functions["always"], functions["failure"]
-}
-
 func ExprContainsAnyStatusFunction(expr string) bool {
 	functions := expressionFunctionCalls(expr)
 	return functions["always"] || functions["failure"] || functions["success"] || functions["cancelled"]
+}
+
+// ExprGatesOnCancellation reports whether an `if:` still wants its job to run
+// after the run was cancelled — i.e. whether it calls always() or cancelled().
+// Token inspection is what keeps a string literal or a longer identifier
+// (`contains(msg, 'cancelled()')`) from reading as a gate.
+func ExprGatesOnCancellation(expr string) bool {
+	functions := expressionFunctionCalls(expr)
+	return functions["always"] || functions["cancelled"]
 }
 
 func expressionFunctionCalls(expr string) map[string]bool {

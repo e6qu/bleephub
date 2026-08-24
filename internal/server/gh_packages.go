@@ -139,8 +139,8 @@ func (s *Server) handleInternalCreatePackageVersion(w http.ResponseWriter, r *ht
 			s.emitWebhookEvent(repo.FullName, "registry_package", "published", map[string]interface{}{
 				"action":           "published",
 				"registry_package": map[string]interface{}{"name": pkgName, "package_type": pkgType},
-				"repository":       repoPayload(repo),
-				"sender":           store.UserToJSON(repo.Owner),
+				"repository":       repoPayload(repo, s.baseURL(r)),
+				"sender":           store.UserToJSON(repo.Owner, s.baseURL(r)),
 			})
 		}
 	}
@@ -1206,14 +1206,14 @@ func (s *Server) packageToJSON(p *store.Package, baseURL string) map[string]inte
 	switch p.OwnerType {
 	case "User":
 		if u := s.store.LookupUserByLogin(p.OwnerKey); u != nil {
-			out["owner"] = store.UserToJSON(u)
+			out["owner"] = store.UserToJSON(u, baseURL)
 		} else {
 			out["owner"] = nil
 		}
 		out["repository"] = nil
 	case "Organization":
 		if org := s.store.GetOrg(p.OwnerKey); org != nil {
-			out["owner"] = store.OrgAsSimpleUserJSON(org)
+			out["owner"] = store.OrgAsSimpleUserJSON(org, baseURL)
 		} else {
 			out["owner"] = nil
 		}

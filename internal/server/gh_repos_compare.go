@@ -24,12 +24,12 @@ import (
 // commitSignatureUserJSON resolves a git signature to a GitHub account (a
 // `simple-user`) or nil, matching real GitHub — a commit's author/committer is
 // the resolved account or null, never an empty object.
-func commitSignatureUserJSON(st *store.Store, sig object.Signature) interface{} {
+func commitSignatureUserJSON(st *store.Store, sig object.Signature, baseURL string) interface{} {
 	if st == nil {
 		return nil
 	}
 	if u := st.ResolveUserBySignature(sig.Name, sig.Email); u != nil {
-		return store.UserToJSON(u)
+		return store.UserToJSON(u, baseURL)
 	}
 	return nil
 }
@@ -56,8 +56,8 @@ func commitToJSON(c *object.Commit, repo *store.Repo, st *store.Store, baseURL s
 		"url":          commitURL,
 		"html_url":     htmlURL,
 		"comments_url": commitURL + "/comments",
-		"author":       commitSignatureUserJSON(st, c.Author),
-		"committer":    commitSignatureUserJSON(st, c.Committer),
+		"author":       commitSignatureUserJSON(st, c.Author, baseURL),
+		"committer":    commitSignatureUserJSON(st, c.Committer, baseURL),
 		"parents":      parents,
 		"commit": map[string]interface{}{
 			"url":           commitURL,
@@ -291,7 +291,7 @@ func (s *Server) handleCompareRefs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	accept := r.Header.Get("Accept")
-	if strings.Contains(accept, "application/vnd.github.patch") {
+	if acceptsGitHubMediaType(accept, "patch") {
 		// github's compare .patch is a series of per-commit git-format-patches
 		// (oldest first), not a single tree diff.
 		commits, err := store.CommitsBetween(stor, baseHash, headHash)
@@ -311,12 +311,13 @@ func (s *Server) handleCompareRefs(w http.ResponseWriter, r *http.Request) {
 				patch.WriteString("\n")
 			}
 		}
+		setGitHubMediaType(w, r, "patch")
 		w.Header().Set("Content-Type", "application/vnd.github.patch; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
 		_, _ = io.WriteString(w, patch.String())
 		return
 	}
-	if strings.Contains(accept, "application/vnd.github.diff") {
+	if acceptsGitHubMediaType(accept, "diff") {
 		changes, err := object.DiffTree(baseTree, headTree)
 		if err != nil {
 			writeGHError(w, http.StatusInternalServerError, "Diff computation failed")
@@ -331,6 +332,7 @@ func (s *Server) handleCompareRefs(w http.ResponseWriter, r *http.Request) {
 			}
 			diff.WriteString(patch.String())
 		}
+		setGitHubMediaType(w, r, "diff")
 		w.Header().Set("Content-Type", "application/vnd.github.diff; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
 		_, _ = io.WriteString(w, diff.String())

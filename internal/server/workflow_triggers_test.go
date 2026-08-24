@@ -145,7 +145,7 @@ jobs:
 	}
 	payload := map[string]interface{}{
 		"action":     "opened",
-		"repository": repoPayload(repo),
+		"repository": repoPayload(repo, "https://bleephub.test"),
 		"issue":      map[string]interface{}{"number": 1},
 	}
 

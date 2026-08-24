@@ -125,8 +125,8 @@ func (s *Server) browserOwnedOAuthApp(w http.ResponseWriter, r *http.Request) (*
 	return app, true
 }
 
-func appSettingsJSON(st *store.Store, app *store.App) map[string]interface{} {
-	out := appToJSON(st, app, false)
+func appSettingsJSON(st *store.Store, app *store.App, baseURL string) map[string]interface{} {
+	out := appToJSON(st, app, false, baseURL)
 	out["callback_url"] = app.CallbackURL
 	out["webhook_url"] = app.WebhookURL
 	out["webhook_active"] = app.WebhookActive
@@ -139,7 +139,7 @@ func (s *Server) handleGetBrowserGitHubApp(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	writeJSON(w, http.StatusOK, appSettingsJSON(s.store, app))
+	writeJSON(w, http.StatusOK, appSettingsJSON(s.store, app, s.baseURL(r)))
 }
 
 type githubAppSettingsRequest struct {
@@ -210,7 +210,7 @@ func (s *Server) handleUpdateBrowserGitHubApp(w http.ResponseWriter, r *http.Req
 		current.Events = append([]string(nil), req.Events...)
 		current.WebhookEvents = append([]string(nil), req.Events...)
 	})
-	writeJSON(w, http.StatusOK, appSettingsJSON(s.store, s.store.GetApp(app.ID)))
+	writeJSON(w, http.StatusOK, appSettingsJSON(s.store, s.store.GetApp(app.ID), s.baseURL(r)))
 }
 
 func (s *Server) handleRotateBrowserGitHubAppSecret(w http.ResponseWriter, r *http.Request) {

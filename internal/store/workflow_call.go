@@ -18,6 +18,12 @@ type WorkflowCallBinding struct {
 	// SecretsInherit / SecretsMap mirror the caller job's `secrets:`.
 	SecretsMap     map[string]string
 	SecretsInherit bool
+	// Parent is the binding of the call this one is nested inside, or nil
+	// for a call made by the run's own workflow. `secrets: inherit` inherits
+	// the CALLING workflow's secrets, which for a nested call is the parent
+	// binding's already-narrowed set rather than the repository's full set,
+	// so secret resolution walks this chain from the outermost call inwards.
+	Parent *WorkflowCallBinding `json:"-"`
 	// OutputDefs holds the called workflow's output value templates.
 	OutputDefs map[string]string
 	// CalledJobKeys lists the expanded keys of the called workflow's

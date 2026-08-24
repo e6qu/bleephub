@@ -230,11 +230,13 @@ func parseGitSSHCommand(command string) (service, owner, repo string, ok bool) {
 }
 
 func (s *Server) runGitSSHService(channel ssh.Channel, service, owner, repoName string, user *store.User, protocolV2 bool) error {
-	repo := s.store.GetRepo(owner, repoName)
-	stor := s.resolveGitRepo(owner, repoName)
-	if repo == nil || stor == nil {
+	// The same resolution the smart-HTTP lane uses, so `<repo>.wiki.git` names
+	// the same storage over SSH as it does over HTTP.
+	target := s.resolveGitTarget(owner, repoName)
+	if !target.exists() {
 		return transport.ErrRepositoryNotFound
 	}
+	repo := target.repo
 	// SSH authenticates by public key, so the only credential the session can
 	// carry is the user itself — there is no installation or user-to-server
 	// token to intersect. The read decision still goes through the one choke
@@ -250,11 +252,15 @@ func (s *Server) runGitSSHService(channel ssh.Channel, service, owner, repoName 
 	if !s.viewerHasRepoPermission(ctx, repo, store.ScopeContents, store.PermRead) {
 		return transport.ErrRepositoryNotFound
 	}
-	if service == "git-receive-pack" && !s.viewerCanPushRepo(ctx, repo) {
+	if service == "git-receive-pack" && !s.viewerMayWriteGitTarget(ctx, target) {
 		return errors.New("repository write access denied")
 	}
+	if !s.openGitTarget(target) {
+		return transport.ErrRepositoryNotFound
+	}
+	stor := target.stor
 	if service == "git-upload-pack" {
-		stor = gitStorerWithPackReuse(ctx, repo.FullName, stor)
+		stor = gitStorerWithPackReuse(ctx, target.storageName, stor)
 		if protocolV2 {
 			// The channel stays open across commands, so the v2 loop keeps
 			// serving them until the client stops: one connection carries both
@@ -262,7 +268,7 @@ func (s *Server) runGitSSHService(channel ssh.Channel, service, owner, repoName 
 			if err := writeGitV2CapabilityAdvertisement(channel); err != nil {
 				return err
 			}
-			result, err := serveGitProtocolV2(context.Background(), stor, repo.DefaultBranch, bufio.NewReader(channel), channel, false)
+			result, err := serveGitProtocolV2(context.Background(), stor, target.defaultBranch, bufio.NewReader(channel), channel, false)
 			if result.sessionID != "" {
 				s.logger.Debug().
 					Str("repo", owner+"/"+repoName).
@@ -279,7 +285,7 @@ func (s *Server) runGitSSHService(channel ssh.Channel, service, owner, repoName 
 		if err != nil {
 			return err
 		}
-		advertiseDefaultBranchSymref(info, repo)
+		advertiseDefaultBranchSymref(info, target.defaultBranch)
 		if err := info.Encode(channel); err != nil {
 			return err
 		}
@@ -301,7 +307,7 @@ func (s *Server) runGitSSHService(channel ssh.Channel, service, owner, repoName 
 	if err != nil {
 		return err
 	}
-	advertiseDefaultBranchSymref(info, repo)
+	advertiseDefaultBranchSymref(info, target.defaultBranch)
 	if err := info.Encode(channel); err != nil {
 		return err
 	}
@@ -313,11 +319,15 @@ func (s *Server) runGitSSHService(channel ssh.Channel, service, owner, repoName 
 	if err != nil {
 		return err
 	}
-	outcome, err := s.applyGitReceivePack(ctx, repo, stor, request)
+	outcome, err := s.applyGitReceivePack(ctx, target, request)
 	if err != nil {
 		return err
 	}
-	s.afterGitReceivePack(repo, user, outcome.applied, s.externalURL)
+	if target.wiki {
+		s.afterWikiReceivePack(repo, user, outcome.applied, s.externalURL)
+	} else {
+		s.afterGitReceivePack(repo, user, outcome.applied, s.externalURL)
+	}
 	return writeGitReceivePackResponse(channel, request, outcome)
 }
 

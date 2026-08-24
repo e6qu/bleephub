@@ -75,6 +75,13 @@ type NotificationPreferences struct {
 	ActionsFailedWorkflowsOnly bool `json:"actions_failed_workflows_only"`
 	// DependabotWeeklyDigest mirrors the Dependabot alerts weekly email digest.
 	DependabotWeeklyDigest bool `json:"dependabot_weekly_digest"`
+	// EmailDeliveryRestricted reports that the enterprise's
+	// notification-delivery restriction bars this account's address from
+	// receiving email notifications, which is why every email channel above
+	// reads false. It is a property of the enterprise policy and the account's
+	// address, never of the saved document: normalize clears it, so it is
+	// computed on every read and never persisted.
+	EmailDeliveryRestricted bool `json:"email_delivery_restricted,omitempty"`
 }
 
 // DefaultNotificationChannels is the delivery an event type gets when the user
@@ -119,6 +126,7 @@ func (p NotificationPreferences) clone() NotificationPreferences {
 // caller omitted, so what is persisted is always the full, bounded shape.
 func (p NotificationPreferences) normalize() NotificationPreferences {
 	normalized := p
+	normalized.EmailDeliveryRestricted = false
 	events := make(map[string]NotificationChannels, len(NotificationEventTypes))
 	for _, event := range NotificationEventTypes {
 		if channels, ok := p.Events[event]; ok {
@@ -188,6 +196,88 @@ func (p NotificationPreferences) NotificationDeliversWeb(subjectType, reason str
 		return true
 	}
 	return p.channelsFor(event).Web
+}
+
+// withoutEmailDelivery returns the preferences with every email channel off
+// and the restriction flag raised. It is what an account whose address the
+// enterprise will not deliver to actually has: a document that cannot claim a
+// delivery the policy forbids.
+func (p NotificationPreferences) withoutEmailDelivery() NotificationPreferences {
+	cleared := p.clone()
+	cleared.Participating.Email = false
+	cleared.Watching.Email = false
+	cleared.DependabotWeeklyDigest = false
+	for event, channels := range cleared.Events {
+		channels.Email = false
+		cleared.Events[event] = channels
+	}
+	cleared.EmailDeliveryRestricted = true
+	return cleared
+}
+
+// SelectsEmailDelivery reports whether the document asks for email delivery
+// anywhere. The preferences write refuses such a document when the enterprise
+// will not deliver to the account's address, rather than saving a request that
+// can never be honored.
+func (p NotificationPreferences) SelectsEmailDelivery() bool {
+	if p.Participating.Email || p.Watching.Email || p.DependabotWeeklyDigest {
+		return true
+	}
+	for _, channels := range p.Events {
+		if channels.Email {
+			return true
+		}
+	}
+	return false
+}
+
+// primaryEmailLocked is the address notifications would be delivered to: the
+// account's primary address, or the profile address when no address on the
+// account is flagged primary. Callers hold st.Mu.
+func primaryEmailLocked(user *User) string {
+	for _, address := range user.Emails {
+		if address.Primary {
+			return address.Email
+		}
+	}
+	return user.Email
+}
+
+// NotificationEmailDeliveryAllowed reports whether the enterprise's
+// notification-delivery restriction permits email notifications to this
+// account, and whether a restriction is in force at all. With the restriction
+// on, only an address inside a verified domain is a delivery target — which is
+// exactly GitHub's rule, and is a property of the address rather than of the
+// account's authority, so an enterprise owner outside the verified domains is
+// as undeliverable as anyone else.
+func (st *Store) NotificationEmailDeliveryAllowed(userID int) (allowed, restricted bool) {
+	enabled, domains := st.NotificationDeliveryRestriction()
+	if !enabled {
+		return true, false
+	}
+	st.Mu.RLock()
+	user := st.Users[userID]
+	address := ""
+	if user != nil {
+		address = primaryEmailLocked(user)
+	}
+	st.Mu.RUnlock()
+	return EmailInVerifiedDomain(address, domains), true
+}
+
+// EffectiveNotificationPreferences is what the account's preferences actually
+// mean once the enterprise's notification-delivery restriction is applied: the
+// saved document, with every email channel cleared when the account's address
+// is not one the enterprise delivers to.
+func (st *Store) EffectiveNotificationPreferences(userID int) (NotificationPreferences, bool) {
+	preferences, ok := st.GetNotificationPreferences(userID)
+	if !ok {
+		return NotificationPreferences{}, false
+	}
+	if allowed, restricted := st.NotificationEmailDeliveryAllowed(userID); restricted && !allowed {
+		return preferences.withoutEmailDelivery(), true
+	}
+	return preferences, true
 }
 
 // notificationPreferencesLocked resolves the account's preferences, falling

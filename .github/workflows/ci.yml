@@ -130,7 +130,7 @@ jobs:
       - name: Lint the workflows
         run: actionlint .github/workflows/*.yml
       - name: Lint the shell scripts
-        run: shellcheck scripts/*.sh docker/*.sh test/runner/sockerless/*.sh web/e2e/*.sh
+        run: shellcheck scripts/*.sh docker/*.sh test/runner/sockerless/*.sh test/conformance/*.sh test/conformance/drivers/*.sh web/e2e/*.sh
       - name: Test bounded command retries
         run: ./scripts/test-retry-command.sh
       # The findings ledger is edited constantly and by several hands, and a
@@ -147,6 +147,12 @@ jobs:
         run: ./scripts/check-github-openapi-drift.sh
       - name: Require the current official GitHub GraphQL schema
         run: ./scripts/check-github-graphql-schema-drift.sh
+      # The generated GraphQL type universe is a witness of the vendored
+      # schema. The completeness ratchet in internal/server catches a missing
+      # type or a wrong signature; only this catches a stale description or a
+      # dropped deprecation reason after a schema bump.
+      - name: Check the generated GraphQL schema types
+        run: ./scripts/check-graphql-schema-types-drift.sh
 
   security:
     name: Security analysis
@@ -473,6 +479,49 @@ jobs:
       - *checkout
       - name: Exercise the official GitHub CLI against Bleephub
         run: make gh-test
+
+  # The project's definition of done is that every software development kit and
+  # command-line interface targeting github.com works against Bleephub
+  # unmodified. That was an assertion; this job measures it. It boots a real
+  # server and drives real, unmodified clients — the GitHub CLI, go-github,
+  # octokit.js, PyGithub and git itself — recording pass or fail for each
+  # operation, then publishes the scoreboard to the job summary.
+  #
+  # It does not fail on today's known deviations, which are recorded in
+  # test/conformance/floor.json. It fails when the scoreboard REGRESSES: an
+  # operation that used to pass stops passing, stops running, or a client's
+  # total pass count drops. That is the same ratchet shape the GraphQL schema
+  # parity test and the accessibility baseline use, and it is what makes the
+  # number safe to publish — it can only go up.
+  conformance:
+    name: SDK and CLI conformance
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - *checkout
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - *setup-bun
+      - *bun-install-cache
+      - name: Install locked web dependencies (octokit.js lives in web's lockfile)
+        run: cd web && bun install --frozen-lockfile
+      - name: Enforce the transitive dependency quarantine window
+        run: ./scripts/check-dependency-age.py conformance
+      # The `gh` driver runs inside Dockerfile.gh-test's image: it needs the
+      # exact pinned release (a runner's floating `gh` would make the scoreboard
+      # depend on a version nobody here reviewed) and a server on 443 with a
+      # trusted certificate authority, which an unprivileged runner user cannot
+      # provide. Running it the same way here as on a developer's machine is
+      # what lets one recorded floor apply to both.
+      - name: Drive every client against a real server
+        env:
+          CONFORMANCE_REQUIRE_CLIENTS: gh go-github octokit pygithub git
+        run: ./test/conformance/run.sh
+      - name: Publish the conformance scoreboard
+        if: always()
+        run: cat test/conformance/report/conformance-summary.md >> "$GITHUB_STEP_SUMMARY"
 
   browser:
     name: Browser end-to-end

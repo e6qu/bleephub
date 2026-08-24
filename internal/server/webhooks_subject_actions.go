@@ -23,14 +23,14 @@ type subjectEmitter struct {
 // issueEmitter fans out `issues` actions for one issue.
 func (s *Server) issueEmitter(repo *store.Repo, issue *store.Issue, sender *store.User) subjectEmitter {
 	return subjectEmitter{s: s, repo: repo, event: "issues", build: func(action string) map[string]interface{} {
-		return buildIssuesPayload(s.store, repo, issue, sender, action)
+		return buildIssuesPayload(s.store, repo, issue, sender, action, s.publicOrigin())
 	}}
 }
 
 // pullRequestEmitter fans out `pull_request` actions for one pull request.
 func (s *Server) pullRequestEmitter(repo *store.Repo, pr *store.PullRequest, sender *store.User) subjectEmitter {
 	return subjectEmitter{s: s, repo: repo, event: "pull_request", build: func(action string) map[string]interface{} {
-		return buildPullRequestPayload(s.store, repo, pr, sender, action)
+		return buildPullRequestPayload(s.store, repo, pr, sender, action, s.publicOrigin())
 	}}
 }
 
@@ -134,7 +134,7 @@ func (e subjectEmitter) emitAssigneeAction(action string, userID int) {
 	if assignee == nil {
 		return
 	}
-	e.emit(action, map[string]interface{}{"assignee": senderPayload(assignee)})
+	e.emit(action, map[string]interface{}{"assignee": senderPayload(assignee, e.s.publicOrigin())})
 }
 
 // emitMilestoneChange emits milestoned when a milestone is attached and
@@ -177,7 +177,7 @@ func (e subjectEmitter) emitReviewRequestDelta(beforeUsers, afterUsers, beforeTe
 func (e subjectEmitter) emitReviewerActions(action string, userIDs, teamIDs []int) {
 	for _, id := range userIDs {
 		if reviewer := e.s.store.GetUserByID(id); reviewer != nil {
-			e.emit(action, map[string]interface{}{"requested_reviewer": senderPayload(reviewer)})
+			e.emit(action, map[string]interface{}{"requested_reviewer": senderPayload(reviewer, e.s.publicOrigin())})
 		}
 	}
 	if len(teamIDs) == 0 {

@@ -135,17 +135,16 @@ func (s *Resolver) initCommitCommentType() {
 
 // commitCommentToGQL renders a store commit comment as its GraphQL source map.
 func commitCommentToGQL(c *store.CommitComment, st *store.Store) map[string]interface{} {
-	var author map[string]interface{}
-	if u := st.GetUserByID(c.AuthorID); u != nil {
-		author = userToGraphQL(u)
-	}
 	return map[string]interface{}{
 		"nodeID":     c.NodeID,
 		"databaseId": c.ID,
 		"body":       c.Body,
 		"path":       c.Path,
 		"createdAt":  c.CreatedAt.Format(time.RFC3339),
-		"author":     author,
+		// A comment left by an account since removed has no author, and the
+		// absent child has to be an untyped nil rather than a nil map or the
+		// Actor type's non-null fields abort the surrounding subtree.
+		"author": optionalRendered(st.GetUserByID(c.AuthorID), userToGraphQL),
 	}
 }
 

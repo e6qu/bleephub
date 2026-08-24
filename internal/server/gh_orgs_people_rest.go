@@ -131,7 +131,7 @@ func (s *Server) orgInvitationJSON(inv *store.OrgInvitation, org *store.Org, bas
 	}
 	inviter := map[string]interface{}(nil)
 	if u := s.store.GetUserByID(inv.InviterID); u != nil {
-		inviter = store.UserToJSON(u)
+		inviter = store.UserToJSON(u, baseURL)
 	}
 	var failedAt, failedReason interface{}
 	if inv.FailedAt != nil {
@@ -374,7 +374,7 @@ func (s *Server) handleListOutsideCollaborators(w http.ResponseWriter, r *http.R
 	}
 	result := make([]map[string]interface{}, 0, len(collaborators))
 	for _, u := range collaborators {
-		result = append(result, store.UserToJSON(u))
+		result = append(result, store.UserToJSON(u, s.baseURL(r)))
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, result))
 }
@@ -437,7 +437,7 @@ func (s *Server) handleListOrgBlocks(w http.ResponseWriter, r *http.Request) {
 	blocked := s.store.ListOrgBlockedUsers(org.Login)
 	result := make([]map[string]interface{}, 0, len(blocked))
 	for _, u := range blocked {
-		result = append(result, store.UserToJSON(u))
+		result = append(result, store.UserToJSON(u, s.baseURL(r)))
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, result))
 }
@@ -769,7 +769,7 @@ func (s *Server) handleListOrganizationRoleUsers(w http.ResponseWriter, r *http.
 		if u == nil {
 			continue
 		}
-		j := store.UserToJSON(u)
+		j := store.UserToJSON(u, s.baseURL(r))
 		j["assignment"] = assignments[id]
 		result = append(result, j)
 	}

@@ -159,7 +159,7 @@ func (s *Server) handleCreateReaction(parentType, pathParam string) http.Handler
 		if alreadyExisted {
 			status = http.StatusOK
 		}
-		writeJSON(w, status, reactionToJSON(reaction, user))
+		writeJSON(w, status, reactionToJSON(reaction, user, s.publicOrigin()))
 	}
 }
 
@@ -178,7 +178,7 @@ func (s *Server) handleListReactions(parentType, pathParam string) http.HandlerF
 		out := make([]map[string]interface{}, 0, len(page))
 		for _, rx := range page {
 			user := s.store.GetUserByID(rx.UserID)
-			out = append(out, reactionToJSON(rx, user))
+			out = append(out, reactionToJSON(rx, user, s.publicOrigin()))
 		}
 		writeJSON(w, http.StatusOK, out)
 	}
@@ -208,10 +208,10 @@ func (s *Server) handleDeleteReaction(parentType, pathParam string) http.Handler
 	}
 }
 
-func reactionToJSON(r *store.Reaction, user *store.User) map[string]interface{} {
+func reactionToJSON(r *store.Reaction, user *store.User, baseURL string) map[string]interface{} {
 	var userJSON map[string]interface{}
 	if user != nil {
-		userJSON = store.UserToJSON(user)
+		userJSON = store.UserToJSON(user, baseURL)
 	}
 	return map[string]interface{}{
 		"id":         r.ID,

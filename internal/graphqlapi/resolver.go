@@ -34,6 +34,18 @@ type Authz interface {
 	CredentialGrantsAccount(ctx context.Context, kind store.AccountKind, login string, scope store.PermScope, level store.PermLevel) bool
 	PrincipalHoldsRepoCapability(ctx context.Context, repo *store.Repo, need store.PermLevel) bool
 	ViewerIsOrgMember(ctx context.Context, orgLogin string) bool
+	// ViewerCanAdminAccount reports whether the request may administer the
+	// user or organization account named by login — the user themselves, an
+	// owner of the organization, or a site administrator. GitHub Sponsors
+	// gates listing management, tier management, payout figures and the
+	// visibility of private sponsorships on exactly this standing.
+	ViewerCanAdminAccount(ctx context.Context, login string) bool
+	// ViewerMayMigrateOrg reports whether the request may start, read or
+	// download an organization's migrations: an owner of that organization,
+	// or a principal granted the migrator role on it. It is delegated rather
+	// than recomposed here so the REST migration surface and the GraphQL one
+	// cannot drift on who a migration is open to.
+	ViewerMayMigrateOrg(ctx context.Context, org *store.Org) bool
 	VisibleRepos(ctx context.Context, repos []*store.Repo) []*store.Repo
 	CanReadProjectV2(ctx context.Context, user *store.User, owner *store.ProjectV2Owner, p *store.ProjectV2) bool
 	CanWriteProjectV2(ctx context.Context, user *store.User, owner *store.ProjectV2Owner) bool
@@ -47,12 +59,27 @@ type Events interface {
 	BuildIssuesPayload(repo *store.Repo, issue *store.Issue, sender *store.User, action string) map[string]interface{}
 	BuildPullRequestPayload(repo *store.Repo, pr *store.PullRequest, sender *store.User, action string) map[string]interface{}
 	RepoPayload(repo *store.Repo) map[string]interface{}
+	// SenderPayload renders the `sender` account a webhook body carries, in the
+	// same absolute-hypermedia `simple-user` shape the REST surface serves. It
+	// lives behind the seam because only the HTTP layer knows the instance's
+	// public origin.
+	SenderPayload(user *store.User) map[string]interface{}
 	// EmitIssueChanges / EmitPullRequestChanges fan one mutation out into
 	// GitHub's per-change actions (edited, labeled, assigned, milestoned, …).
 	// The derivation lives behind the seam so the REST handlers and these
 	// resolvers cannot drift on which actions a change produces.
 	EmitIssueChanges(repo *store.Repo, issue *store.Issue, sender *store.User, change store.SubjectChange)
 	EmitPullRequestChanges(repo *store.Repo, pr *store.PullRequest, sender *store.User, change store.SubjectChange)
+	// EmitProjectV2Event delivers the projects_v2 event family. A project
+	// belongs to an account rather than a repository, so these are delivered
+	// to the owning organization's hooks and carry no repository — which is
+	// why they cannot go through EmitWebhookEvent's repo-keyed path.
+	EmitProjectV2Event(event store.ProjectV2Event)
+	// EmitSponsorshipEvent delivers the `sponsorship` event family for a
+	// billing-lifecycle transition. A sponsorship belongs to an account
+	// rather than a repository, so like the projects_v2 events it cannot go
+	// through EmitWebhookEvent's repo-keyed path.
+	EmitSponsorshipEvent(action string, transition *store.SponsorsTransition, sender *store.User)
 }
 
 // Pulls is the merge gate plus the PR file-diff renderer, shared with the
@@ -63,6 +90,12 @@ type Pulls interface {
 	// satisfied for merging headSha into baseBranch (the server's
 	// evaluateChecksForMerge, narrowed to what the resolver consumes).
 	MissingRequiredChecks(repo *store.Repo, baseBranch, headSha string) []string
+	// RequiredStatusCheckContexts reports every context branch protection
+	// demands before baseBranch may be merged into, whether satisfied or
+	// not. StatusContext.isRequired / CheckRun.isRequired answer from it, so
+	// what `gh pr checks` marks required is the same set the merge gate
+	// enforces rather than a second opinion about it.
+	RequiredStatusCheckContexts(repo *store.Repo, baseBranch string) []string
 	CanMergePullRequest(ctx context.Context, repo *store.Repo, pr *store.PullRequest) (bool, string)
 	CompletePullRequestMerge(repo *store.Repo, pr *store.PullRequest, user *store.User, method, commitTitle, commitMessage, expectedHead string) (string, string)
 	BranchProtectionRuleForPR(repo *store.Repo, baseBranch string) map[string]interface{}
@@ -75,6 +108,24 @@ type Pulls interface {
 	// pull request's changed files as reviewers. A pull request opened through
 	// GraphQL collects the same reviewers one opened through REST does.
 	AutoRequestCodeOwners(repo *store.Repo, pr *store.PullRequest, sender *store.User)
+}
+
+// Migrations starts the GitHub Enterprise Importer's workers. The mutations
+// that queue a migration live here, but the work itself is the server's: it
+// dials the source, writes git storage and creates repositories, none of which
+// the resolver layer may reach (ARCH-003). The resolver records the migration
+// and asks for it to be run.
+type Migrations interface {
+	// StartRepositoryMigration runs the queued repository migration with this
+	// database id on a supervised background goroutine.
+	StartRepositoryMigration(id int)
+	// StartOrganizationMigration does the same for an organization migration.
+	StartOrganizationMigration(id int)
+	// RepositoryMigrationLogURL is where the migration's log can be read, or
+	// "" when it has not produced one. It is a path on this server behind the
+	// same authorization the migration is behind rather than a signed URL, so
+	// it is not a credential that outlives the caller's access.
+	RepositoryMigrationLogURL(m *store.RepositoryMigration) string
 }
 
 // RateSnapshot is the API rate-limit accounting the rateLimit root field
@@ -97,6 +148,8 @@ type Config struct {
 	Events Events
 	// Pulls is the merge gate and PR diff renderer.
 	Pulls Pulls
+	// Migrations starts the GitHub Enterprise Importer's workers.
+	Migrations Migrations
 	// UserFromContext extracts the already-authenticated user from the
 	// request context. Authentication itself stays in the HTTP layer; the
 	// resolver layer only reads the principal middleware attached.
@@ -117,12 +170,19 @@ type Resolver struct {
 	authz           Authz
 	events          Events
 	pulls           Pulls
+	migrations      Migrations
 	userFromContext func(ctx context.Context) *store.User
 	apiRateFn       func(ctx context.Context) RateSnapshot
 	buildCommit     func() string
 
 	graphqlTypes  graphQLTypeRegistry
 	graphqlSchema graphql.Schema
+
+	// The enterprise family's two memoized types: the organization-membership
+	// connection two enterprise types both name, and the invitation ordering
+	// inputs, keyed by GitHub's input-object name.
+	enterpriseOrgMembershipConnMemo *graphql.Object
+	enterpriseOrderInputs           map[string]*graphql.InputObject
 }
 
 // NewResolver builds a resolver and assembles the schema. It panics when
@@ -143,6 +203,9 @@ func NewResolver(cfg Config) *Resolver {
 	if cfg.Pulls == nil {
 		panic("graphqlapi.NewResolver: Config.Pulls is nil — the merge gate and PR diff renderer delegate to it; wire the server's pulls seam or a stub")
 	}
+	if cfg.Migrations == nil {
+		panic("graphqlapi.NewResolver: Config.Migrations is nil — the migration mutations dereference it to run the work they queue; wire the server's migration seam or a stub")
+	}
 	if cfg.UserFromContext == nil {
 		panic("graphqlapi.NewResolver: Config.UserFromContext is nil — viewer resolution dereferences it on every request; wire the server's context extractor or a stub")
 	}
@@ -155,6 +218,7 @@ func NewResolver(cfg Config) *Resolver {
 		authz:           cfg.Authz,
 		events:          cfg.Events,
 		pulls:           cfg.Pulls,
+		migrations:      cfg.Migrations,
 		userFromContext: cfg.UserFromContext,
 		apiRateFn:       cfg.APIRate,
 		buildCommit:     cfg.BuildCommit,
@@ -225,6 +289,14 @@ func (s *Resolver) viewerIsOrgMember(ctx context.Context, orgLogin string) bool 
 	return s.authz.ViewerIsOrgMember(ctx, orgLogin)
 }
 
+func (s *Resolver) viewerCanAdminAccount(ctx context.Context, login string) bool {
+	return s.authz.ViewerCanAdminAccount(ctx, login)
+}
+
+func (s *Resolver) viewerMayMigrateOrg(ctx context.Context, org *store.Org) bool {
+	return s.authz.ViewerMayMigrateOrg(ctx, org)
+}
+
 func (s *Resolver) visibleRepos(ctx context.Context, repos []*store.Repo) []*store.Repo {
 	return s.authz.VisibleRepos(ctx, repos)
 }
@@ -241,6 +313,14 @@ func (s *Resolver) emitWebhookEvent(repoKey, eventType, action string, payload i
 	s.events.EmitWebhookEvent(repoKey, eventType, action, payload)
 }
 
+func (s *Resolver) emitProjectV2Event(event store.ProjectV2Event) {
+	s.events.EmitProjectV2Event(event)
+}
+
+func (s *Resolver) emitSponsorshipEvent(action string, transition *store.SponsorsTransition, sender *store.User) {
+	s.events.EmitSponsorshipEvent(action, transition, sender)
+}
+
 func (s *Resolver) buildIssuesPayload(repo *store.Repo, issue *store.Issue, sender *store.User, action string) map[string]interface{} {
 	return s.events.BuildIssuesPayload(repo, issue, sender, action)
 }
@@ -251,6 +331,10 @@ func (s *Resolver) buildPullRequestPayload(repo *store.Repo, pr *store.PullReque
 
 func (s *Resolver) repoPayload(repo *store.Repo) map[string]interface{} {
 	return s.events.RepoPayload(repo)
+}
+
+func (s *Resolver) senderPayload(user *store.User) map[string]interface{} {
+	return s.events.SenderPayload(user)
 }
 
 func (s *Resolver) emitIssueChanges(repo *store.Repo, issue *store.Issue, sender *store.User, change store.SubjectChange) {
@@ -267,6 +351,10 @@ func (s *Resolver) prHeadSha(repo *store.Repo, pr *store.PullRequest) string {
 
 func (s *Resolver) missingRequiredChecks(repo *store.Repo, baseBranch, headSha string) []string {
 	return s.pulls.MissingRequiredChecks(repo, baseBranch, headSha)
+}
+
+func (s *Resolver) requiredStatusCheckContexts(repo *store.Repo, baseBranch string) []string {
+	return s.pulls.RequiredStatusCheckContexts(repo, baseBranch)
 }
 
 func (s *Resolver) canMergePullRequest(ctx context.Context, repo *store.Repo, pr *store.PullRequest) (bool, string) {
@@ -291,6 +379,18 @@ func (s *Resolver) maybeAutoMerge(prID int) {
 
 func (s *Resolver) autoRequestCodeOwners(repo *store.Repo, pr *store.PullRequest, sender *store.User) {
 	s.pulls.AutoRequestCodeOwners(repo, pr, sender)
+}
+
+func (s *Resolver) startRepositoryMigration(id int) {
+	s.migrations.StartRepositoryMigration(id)
+}
+
+func (s *Resolver) startOrganizationMigration(id int) {
+	s.migrations.StartOrganizationMigration(id)
+}
+
+func (s *Resolver) repositoryMigrationLogURL(m *store.RepositoryMigration) string {
+	return s.migrations.RepositoryMigrationLogURL(m)
 }
 
 func (s *Resolver) ghUserFromContext(ctx context.Context) *store.User {

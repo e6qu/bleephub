@@ -225,13 +225,26 @@ func TestEvalTemplate(t *testing.T) {
 	}
 }
 
-func TestExprContainsStatusFunction(t *testing.T) {
-	hasAlways, hasFailure := ExprContainsStatusFunction("always() && failure()")
-	if !hasAlways || !hasFailure {
-		t.Error("expected both status functions detected")
+func TestExprGatesOnCancellation(t *testing.T) {
+	cases := []struct {
+		expr string
+		want bool
+	}{
+		{"", false},
+		{"always()", true},
+		{"cancelled()", true},
+		{"${{ !cancelled() }}", true},
+		{"success()", false},
+		{"failure()", false},
+		{"needs.build.result == 'success'", false},
+		// A string literal that merely spells a status call is not a call.
+		{"contains(github.event.head_commit.message, 'cancelled()')", false},
+		// Nor is a longer identifier that starts with one.
+		{"cancelled_by_operator", false},
 	}
-	hasAlways, hasFailure = ExprContainsStatusFunction("success()")
-	if hasAlways || hasFailure {
-		t.Error("expected neither status function detected")
+	for _, tc := range cases {
+		if got := ExprGatesOnCancellation(tc.expr); got != tc.want {
+			t.Errorf("ExprGatesOnCancellation(%q) = %v, want %v", tc.expr, got, tc.want)
+		}
 	}
 }

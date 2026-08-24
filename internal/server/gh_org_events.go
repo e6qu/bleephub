@@ -40,23 +40,23 @@ type activityEvent struct {
 	json      map[string]interface{}
 }
 
-func eventActorToJSON(u *store.User) map[string]interface{} {
+func eventActorToJSON(u *store.User, baseURL string) map[string]interface{} {
 	return map[string]interface{}{
 		"id":          u.ID,
 		"login":       u.Login,
 		"gravatar_id": "",
-		"url":         "/api/v3/users/" + u.Login,
-		"avatar_url":  u.AvatarURL,
+		"url":         baseURL + "/api/v3/users/" + u.Login,
+		"avatar_url":  store.AvatarURLFor(u.AvatarURL, u.ID, baseURL),
 	}
 }
 
-func activityEventOrgJSON(org *store.Org) map[string]interface{} {
+func activityEventOrgJSON(org *store.Org, baseURL string) map[string]interface{} {
 	return map[string]interface{}{
 		"id":          org.ID,
 		"login":       org.Login,
 		"gravatar_id": "",
-		"url":         "/api/v3/orgs/" + org.Login,
-		"avatar_url":  org.AvatarURL,
+		"url":         baseURL + "/api/v3/orgs/" + org.Login,
+		"avatar_url":  store.AvatarURLFor(org.AvatarURL, org.ID, baseURL),
 	}
 }
 
@@ -110,14 +110,14 @@ func (s *Server) deriveActivityEvents(base string, repos map[int]*store.Repo, or
 		j := map[string]interface{}{
 			"id":         activityEventID(kind, rowID),
 			"type":       typ,
-			"actor":      eventActorToJSON(actor),
+			"actor":      eventActorToJSON(actor, base),
 			"repo":       repoJSON(repo),
 			"payload":    payload,
 			"public":     true,
 			"created_at": createdAt.UTC().Format(time.RFC3339),
 		}
 		if org != nil {
-			j["org"] = activityEventOrgJSON(org)
+			j["org"] = activityEventOrgJSON(org, base)
 		}
 		return activityEvent{actorID: actor.ID, createdAt: createdAt, json: j}
 	}

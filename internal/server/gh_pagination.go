@@ -111,6 +111,35 @@ func paginateAndLink[T any](w http.ResponseWriter, r *http.Request, items []T) [
 	return page
 }
 
+// searchResultWindow is the number of search results GitHub lets a client page
+// through. total_count reports the full match count, but the API refuses to
+// serve anything past the first 1,000 results ("Only the first 1000 search
+// results are available"), so the pagination links must stop there too —
+// otherwise a client following rel="next" walks into a 422.
+const searchResultWindow = 1000
+
+// setSearchLinkHeader sets the Link header of a search response.
+//
+// Search answers with an object ({total_count, incomplete_results, items}), not
+// a bare array, so it cannot use paginateAndLink: the handler has already
+// sliced the page into the envelope and only the header is left to emit. The
+// rel targets are otherwise built exactly as every other collection's are, so
+// octokit.paginate, go-github's resp.NextPage and `gh --paginate` walk search
+// results the same way they walk an issue list.
+func setSearchLinkHeader(w http.ResponseWriter, r *http.Request, page, perPage, totalCount int) {
+	reachable := totalCount
+	if reachable > searchResultWindow {
+		reachable = searchResultWindow
+	}
+	lastPage := 1
+	if reachable > 0 && perPage > 0 {
+		lastPage = (reachable + perPage - 1) / perPage
+	}
+	if link := buildLinkHeader(r, page, perPage, lastPage); link != "" {
+		w.Header().Set("Link", link)
+	}
+}
+
 // buildLinkHeader constructs an RFC 5988 Link header.
 func buildLinkHeader(r *http.Request, page, perPage, lastPage int) string {
 	if lastPage <= 1 {

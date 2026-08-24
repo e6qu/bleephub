@@ -551,6 +551,11 @@ func (s *Server) handlePurchaseMarketplaceBrowser(w http.ResponseWriter, r *http
 	if !ok {
 		return
 	}
+	// The enterprise governing the buying account decides whether its people may
+	// spend on the Marketplace at all.
+	if s.refuseMarketplacePurchaseByPolicy(w, r, account) {
+		return
+	}
 	if s.store.GetMarketplacePurchase(listing.Slug, account.AccountType, account.Id) != nil {
 		store.WriteGHValidationError(w, "MarketplacePurchase", "account", "already_exists")
 		return
@@ -675,6 +680,11 @@ func (s *Server) handleChangeMarketplaceSubscriptionBrowser(w http.ResponseWrite
 	if !ok {
 		return
 	}
+	// A plan change is a purchase decision — an upgrade bills immediately — so
+	// it answers to the same enterprise policy as the initial purchase.
+	if s.refuseMarketplacePurchaseByPolicy(w, r, account) {
+		return
+	}
 	purchase := s.store.GetMarketplacePurchase(listing.Slug, account.AccountType, account.Id)
 	newPlan := s.store.GetMarketplacePlanForListing(listing.Slug, req.PlanID)
 	if purchase == nil || newPlan == nil || newPlan.State != "published" || (req.BillingCycle != "monthly" && req.BillingCycle != "yearly") ||
@@ -720,6 +730,10 @@ func (s *Server) handleChangeMarketplaceSubscriptionBrowser(w http.ResponseWrite
 	}
 	if immediate {
 		s.emitMarketplacePurchase(listing, "changed", purchase, previous, user)
+	} else {
+		// A downgrade takes effect at the next billing date, so GitHub
+		// announces it as `pending_change` now and `changed` later.
+		s.emitMarketplacePendingChange(listing, purchase, user)
 	}
 	writeJSON(w, http.StatusOK, s.marketplaceBrowserSubscriptionJSON(purchase, s.store.GetMarketplacePlanForListing(listing.Slug, purchase.PlanID), listing, account.Login, s.baseURL(r)))
 }
@@ -771,6 +785,10 @@ func (s *Server) handleCancelMarketplaceSubscriptionBrowser(w http.ResponseWrite
 		writeGHError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	// A paid subscription runs to the end of the period the account has
+	// already paid for, so the cancellation is announced as pending now and
+	// as `cancelled` when it lands.
+	s.emitMarketplacePendingChange(listing, purchase, user)
 	writeJSON(w, http.StatusAccepted, s.marketplaceBrowserSubscriptionJSON(purchase, plan, listing, account.Login, s.baseURL(r)))
 }
 
@@ -802,7 +820,7 @@ func (s *Server) emitMarketplacePurchase(listing *store.MarketplaceListing, acti
 	payload := map[string]interface{}{
 		"action": action, "effective_date": time.Now().UTC().Format(time.RFC3339),
 		"marketplace_purchase": s.marketplacePurchaseWebhookJSON(listing, purchase, s.baseURLFromConfig()),
-		"sender":               store.UserToJSON(sender),
+		"sender":               store.UserToJSON(sender, s.publicOrigin()),
 	}
 	if previous != nil {
 		payload["previous_marketplace_purchase"] = s.marketplacePurchaseWebhookJSON(listing, previous, s.baseURLFromConfig())
@@ -815,7 +833,7 @@ func (s *Server) emitMarketplacePing(listing *store.MarketplaceListing, sender *
 		"zen": "Keep it logically awesome.", "hook_id": listing.WebhookID,
 		"hook": map[string]interface{}{"type": "Marketplace", "id": listing.WebhookID, "active": listing.WebhookActive,
 			"config": map[string]interface{}{"url": listing.WebhookURL, "content_type": listing.WebhookContentType}},
-		"sender": store.UserToJSON(sender),
+		"sender": store.UserToJSON(sender, s.publicOrigin()),
 	}
 	s.emitMarketplaceWebhook(listing, "ping", "", payload)
 }

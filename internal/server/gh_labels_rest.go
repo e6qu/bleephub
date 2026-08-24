@@ -89,24 +89,24 @@ func (s *Server) registerGHIssueRoutes() {
 
 // buildLabelPayload assembles the GitHub `label` webhook event body so that
 // `on: label` workflows fire for label create/edit/delete.
-func buildLabelPayload(repo *store.Repo, labelJSON map[string]interface{}, sender *store.User, action string) map[string]interface{} {
+func buildLabelPayload(repo *store.Repo, labelJSON map[string]interface{}, sender *store.User, action, baseURL string) map[string]interface{} {
 	return map[string]interface{}{
 		"action":     action,
 		"label":      labelJSON,
-		"repository": repoPayload(repo),
-		"sender":     store.UserToJSON(sender),
+		"repository": repoPayload(repo, baseURL),
+		"sender":     store.UserToJSON(sender, baseURL),
 	}
 }
 
 // buildMilestonePayload assembles the GitHub `milestone` webhook event body so
 // that `on: milestone` workflows fire for milestone create/edit/close/reopen/
 // delete (ACT-026).
-func buildMilestonePayload(repo *store.Repo, milestoneJSON map[string]interface{}, sender *store.User, action string) map[string]interface{} {
+func buildMilestonePayload(repo *store.Repo, milestoneJSON map[string]interface{}, sender *store.User, action, baseURL string) map[string]interface{} {
 	return map[string]interface{}{
 		"action":     action,
 		"milestone":  milestoneJSON,
-		"repository": repoPayload(repo),
-		"sender":     store.UserToJSON(sender),
+		"repository": repoPayload(repo, baseURL),
+		"sender":     store.UserToJSON(sender, baseURL),
 	}
 }
 
@@ -147,7 +147,7 @@ func (s *Server) handleCreateLabel(w http.ResponseWriter, r *http.Request) {
 	repoKey := owner + "/" + name
 	s.recordAuditEvent("label.create", user.Login, "", map[string]interface{}{"repo": repoKey, "label_id": label.ID, "name": label.Name})
 	labelJSON := issueLabelToJSON(label, s.baseURL(r), repo.FullName)
-	s.emitWebhookEvent(repoKey, "label", "created", buildLabelPayload(repo, labelJSON, user, "created"))
+	s.emitWebhookEvent(repoKey, "label", "created", buildLabelPayload(repo, labelJSON, user, "created", s.baseURL(r)))
 	writeJSONCreated(w, jsonStringField(labelJSON, "url"), labelJSON)
 }
 
@@ -231,7 +231,7 @@ func (s *Server) handleUpdateLabel(w http.ResponseWriter, r *http.Request) {
 
 	updated := s.store.GetLabel(label.ID)
 	updatedJSON := issueLabelToJSON(updated, s.baseURL(r), repo.FullName)
-	s.emitWebhookEvent(owner+"/"+repoName, "label", "edited", buildLabelPayload(repo, updatedJSON, user, "edited"))
+	s.emitWebhookEvent(owner+"/"+repoName, "label", "edited", buildLabelPayload(repo, updatedJSON, user, "edited", s.baseURL(r)))
 	writeJSON(w, http.StatusOK, updatedJSON)
 }
 
@@ -261,7 +261,7 @@ func (s *Server) handleDeleteLabel(w http.ResponseWriter, r *http.Request) {
 	labelJSON := issueLabelToJSON(label, s.baseURL(r), repo.FullName)
 	s.store.DeleteLabel(label.ID)
 	s.recordAuditEvent("label.delete", user.Login, "", map[string]interface{}{"repo": repoKey, "label_id": label.ID})
-	s.emitWebhookEvent(repoKey, "label", "deleted", buildLabelPayload(repo, labelJSON, user, "deleted"))
+	s.emitWebhookEvent(repoKey, "label", "deleted", buildLabelPayload(repo, labelJSON, user, "deleted", s.baseURL(r)))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -313,7 +313,7 @@ func (s *Server) handleCreateMilestone(w http.ResponseWriter, r *http.Request) {
 	repoKey := owner + "/" + name
 	s.recordAuditEvent("milestone.create", user.Login, "", map[string]interface{}{"repo": repoKey, "milestone_id": ms.ID, "title": ms.Title})
 	msJSON := milestoneToJSON(ms, s.store, s.baseURL(r), repo.FullName)
-	s.emitWebhookEvent(repoKey, "milestone", "created", buildMilestonePayload(repo, msJSON, user, "created"))
+	s.emitWebhookEvent(repoKey, "milestone", "created", buildMilestonePayload(repo, msJSON, user, "created", s.baseURL(r)))
 	writeJSONCreated(w, jsonStringField(msJSON, "url"), msJSON)
 }
 
@@ -431,7 +431,7 @@ func (s *Server) handleUpdateMilestone(w http.ResponseWriter, r *http.Request) {
 			action = "opened"
 		}
 	}
-	s.emitWebhookEvent(owner+"/"+repoName, "milestone", action, buildMilestonePayload(repo, msJSON, user, action))
+	s.emitWebhookEvent(owner+"/"+repoName, "milestone", action, buildMilestonePayload(repo, msJSON, user, action, s.baseURL(r)))
 	writeJSON(w, http.StatusOK, msJSON)
 }
 
@@ -468,7 +468,7 @@ func (s *Server) handleDeleteMilestone(w http.ResponseWriter, r *http.Request) {
 	msJSON := milestoneToJSON(ms, s.store, s.baseURL(r), repo.FullName)
 	s.store.DeleteMilestone(ms.ID)
 	s.recordAuditEvent("milestone.delete", user.Login, "", map[string]interface{}{"repo": repoKey, "milestone_id": ms.ID})
-	s.emitWebhookEvent(repoKey, "milestone", "deleted", buildMilestonePayload(repo, msJSON, user, "deleted"))
+	s.emitWebhookEvent(repoKey, "milestone", "deleted", buildMilestonePayload(repo, msJSON, user, "deleted", s.baseURL(r)))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -560,7 +560,7 @@ func milestoneToJSON(ms *store.Milestone, st *store.Store, baseURL, repoFullName
 	st.Mu.RLock()
 	var creatorJSON interface{}
 	if u, ok := st.Users[ms.CreatorID]; ok {
-		creatorJSON = store.UserToJSON(u)
+		creatorJSON = store.UserToJSON(u, baseURL)
 	}
 	openIssues, closedIssues := 0, 0
 	for _, issue := range st.Issues {

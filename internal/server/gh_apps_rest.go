@@ -187,7 +187,7 @@ func (s *Server) handleListBrowserGitHubApps(w http.ResponseWriter, r *http.Requ
 	out := make([]map[string]interface{}, 0, len(apps))
 	for _, app := range apps {
 		if app.OwnerID == user.ID {
-			out = append(out, appSettingsJSON(s.store, app))
+			out = append(out, appSettingsJSON(s.store, app, s.baseURL(r)))
 		}
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -251,7 +251,7 @@ func (s *Server) handleBrowserInstallApp(w http.ResponseWriter, r *http.Request)
 		inst = s.store.GetInstallation(inst.ID)
 	}
 	s.emitInstallationEvent(app, "created", inst)
-	writeJSON(w, http.StatusCreated, installationToJSON(inst))
+	writeJSON(w, http.StatusCreated, installationToJSON(inst, s.baseURL(r)))
 }
 
 func (s *Server) handleBrowserSuspendInstallation(w http.ResponseWriter, r *http.Request) {
@@ -384,7 +384,7 @@ func (s *Server) handleManifestConversion(w http.ResponseWriter, r *http.Request
 		writeGHError(w, http.StatusNotFound, "App not found")
 		return
 	}
-	writeJSON(w, http.StatusCreated, appToJSON(s.store, app, true))
+	writeJSON(w, http.StatusCreated, appToJSON(s.store, app, true, s.baseURL(r)))
 }
 
 func (s *Server) handleGetAuthenticatedApp(w http.ResponseWriter, r *http.Request) {
@@ -393,7 +393,7 @@ func (s *Server) handleGetAuthenticatedApp(w http.ResponseWriter, r *http.Reques
 		writeGHError(w, http.StatusUnauthorized, "A JSON web token could not be decoded")
 		return
 	}
-	writeJSON(w, http.StatusOK, appToJSON(s.store, app, false))
+	writeJSON(w, http.StatusOK, appToJSON(s.store, app, false, s.baseURL(r)))
 }
 
 func (s *Server) handleListAppInstallations(w http.ResponseWriter, r *http.Request) {
@@ -405,7 +405,7 @@ func (s *Server) handleListAppInstallations(w http.ResponseWriter, r *http.Reque
 	installations := s.store.ListAppInstallations(app.ID)
 	result := make([]map[string]interface{}, 0, len(installations))
 	for _, inst := range installations {
-		result = append(result, installationToJSON(inst))
+		result = append(result, installationToJSON(inst, s.baseURL(r)))
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, result))
 }
@@ -430,7 +430,7 @@ func (s *Server) handleGetAppInstallation(w http.ResponseWriter, r *http.Request
 		writeGHError(w, http.StatusForbidden, "Installation does not belong to this app")
 		return
 	}
-	writeJSON(w, http.StatusOK, installationToJSON(inst))
+	writeJSON(w, http.StatusOK, installationToJSON(inst, s.baseURL(r)))
 }
 
 func (s *Server) handleCreateInstallationToken(w http.ResponseWriter, r *http.Request) {
@@ -586,7 +586,7 @@ func (s *Server) handleGetRepoInstallation(w http.ResponseWriter, r *http.Reques
 		// A "selected"-mode installation only covers repos on its allow-list;
 		// real GitHub 404s for repos outside the selection.
 		if _, ok := installationAccessibleRepoIDs(s.store, inst)[repo.ID]; ok {
-			writeJSON(w, http.StatusOK, installationToJSON(inst))
+			writeJSON(w, http.StatusOK, installationToJSON(inst, s.baseURL(r)))
 			return
 		}
 	}
@@ -595,7 +595,7 @@ func (s *Server) handleGetRepoInstallation(w http.ResponseWriter, r *http.Reques
 
 // JSON serializers
 
-func appToJSON(st *store.Store, app *store.App, includePEM bool) map[string]interface{} {
+func appToJSON(st *store.Store, app *store.App, includePEM bool, baseURL string) map[string]interface{} {
 	result := map[string]interface{}{
 		"id":                  app.ID,
 		"node_id":             app.NodeID,
@@ -610,7 +610,7 @@ func appToJSON(st *store.Store, app *store.App, includePEM bool) map[string]inte
 		"installations_count": st.CountAppInstallations(app.ID),
 		"created_at":          app.CreatedAt.UTC().Format(time.RFC3339),
 		"updated_at":          app.UpdatedAt.UTC().Format(time.RFC3339),
-		"owner":               appOwnerJSON(st, app),
+		"owner":               appOwnerJSON(st, app, baseURL),
 	}
 	if includePEM {
 		result["pem"] = app.PEMPrivateKey
@@ -624,14 +624,14 @@ func appToJSON(st *store.Store, app *store.App, includePEM bool) map[string]inte
 // matching the `owner` object real GitHub returns on GET /app and
 // GET /apps/{slug}. App loading and creation validate OwnerID, so a missing
 // owner is corrupt state and is exposed as null rather than a fabricated user.
-func appOwnerJSON(st *store.Store, app *store.App) map[string]interface{} {
+func appOwnerJSON(st *store.Store, app *store.App, baseURL string) map[string]interface{} {
 	st.Mu.RLock()
 	owner := st.Users[app.OwnerID]
 	st.Mu.RUnlock()
 	if owner == nil {
 		return nil
 	}
-	return store.UserToJSON(owner)
+	return store.UserToJSON(owner, baseURL)
 }
 
 // appPermissionScopesWithAdminLevel are the app-permissions members whose
@@ -665,7 +665,7 @@ func appPermissionsJSON(perms map[string]string) map[string]string {
 	return out
 }
 
-func installationToJSON(inst *store.Installation) map[string]interface{} {
+func installationToJSON(inst *store.Installation, baseURL string) map[string]interface{} {
 	if inst == nil {
 		return nil
 	}
@@ -673,15 +673,15 @@ func installationToJSON(inst *store.Installation) map[string]interface{} {
 	// real GitHub serializes Organization targets in the same shape with
 	// type "Organization". Node ID and avatar were snapshotted from the
 	// target account at installation time.
-	accountAPI := "/api/v3/users/" + inst.TargetLogin
+	accountAPI := baseURL + "/api/v3/users/" + inst.TargetLogin
 	account := map[string]interface{}{
 		"login":               inst.TargetLogin,
 		"id":                  inst.TargetID,
 		"node_id":             inst.TargetNodeID,
-		"avatar_url":          inst.TargetAvatarURL,
+		"avatar_url":          store.AvatarURLFor(inst.TargetAvatarURL, inst.TargetID, baseURL),
 		"gravatar_id":         "",
 		"url":                 accountAPI,
-		"html_url":            "/" + inst.TargetLogin,
+		"html_url":            baseURL + "/" + inst.TargetLogin,
 		"followers_url":       accountAPI + "/followers",
 		"following_url":       accountAPI + "/following{/other_user}",
 		"gists_url":           accountAPI + "/gists{/gist_id}",
@@ -719,7 +719,7 @@ func installationToJSON(inst *store.Installation) map[string]interface{} {
 	if inst.SuspendedAt != nil {
 		out["suspended_at"] = inst.SuspendedAt.UTC().Format(time.RFC3339)
 		if inst.SuspendedBy != nil {
-			out["suspended_by"] = store.UserToJSON(inst.SuspendedBy)
+			out["suspended_by"] = store.UserToJSON(inst.SuspendedBy, baseURL)
 		}
 	}
 	return out
@@ -775,7 +775,7 @@ func (s *Server) handleListUserInstallations(w http.ResponseWriter, r *http.Requ
 	page := paginateAndLink(w, r, all)
 	installations := make([]map[string]interface{}, 0, len(page))
 	for _, inst := range page {
-		installations = append(installations, installationToJSON(inst))
+		installations = append(installations, installationToJSON(inst, s.baseURL(r)))
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"total_count":   len(all),
@@ -869,7 +869,7 @@ func (s *Server) handleGetAppBySlug(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	writeJSON(w, http.StatusOK, appToJSON(s.store, app, false))
+	writeJSON(w, http.StatusOK, appToJSON(s.store, app, false, s.baseURL(r)))
 }
 
 // handleSuspendInstallation — PUT /api/v3/app/installations/{id}/suspended.
@@ -939,7 +939,7 @@ func (s *Server) findAppInstallationByTarget(w http.ResponseWriter, appID int, t
 		if inst.AppID == appID &&
 			strings.EqualFold(inst.TargetLogin, targetLogin) &&
 			strings.EqualFold(inst.TargetType, targetType) {
-			writeJSON(w, http.StatusOK, installationToJSON(inst))
+			writeJSON(w, http.StatusOK, installationToJSON(inst, s.publicOrigin()))
 			return true
 		}
 	}
@@ -975,7 +975,7 @@ func (s *Server) handleListOrgInstallations(w http.ResponseWriter, r *http.Reque
 	page := paginateAndLink(w, r, all)
 	installations := make([]map[string]interface{}, 0, len(page))
 	for _, inst := range page {
-		installations = append(installations, installationToJSON(inst))
+		installations = append(installations, installationToJSON(inst, s.baseURL(r)))
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"total_count":   len(all),
@@ -1188,7 +1188,7 @@ func (s *Server) emitInstallationEvent(app *store.App, action string, inst *stor
 		return
 	}
 	sender := s.store.LookupUserByLogin(inst.TargetLogin)
-	payload := buildInstallationEventPayload(app, action, inst, sender)
+	payload := buildInstallationEventPayload(app, action, inst, sender, s.publicOrigin())
 	s.enqueueWebhookJob(appWebhookQueueKey(app), func() {
 		s.deliverAppWebhook(app, "installation", action, inst.ID, mustMarshal(payload))
 	})
@@ -1201,7 +1201,7 @@ func (s *Server) emitInstallationRepositoriesEvent(app *store.App, action string
 		return
 	}
 	sender := s.store.LookupUserByLogin(inst.TargetLogin)
-	payload := buildInstallationRepositoriesEventPayload(app, action, inst, repoIDsChanged, sender)
+	payload := buildInstallationRepositoriesEventPayload(app, action, inst, repoIDsChanged, sender, s.publicOrigin())
 	s.enqueueWebhookJob(appWebhookQueueKey(app), func() {
 		s.deliverAppWebhook(app, "installation_repositories", action, inst.ID, mustMarshal(payload))
 	})

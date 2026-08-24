@@ -14,8 +14,17 @@ func (s *Resolver) addOrgFieldsToSchema(userType, queryType *graphql.Object, nod
 	dateTime := s.graphQLStringScalar("DateTime")
 	uri := s.graphQLStringScalar("URI")
 	orgType := graphql.NewObject(graphql.ObjectConfig{
-		Name:       "Organization",
-		Interfaces: []*graphql.Interface{nodeInterface, s.graphqlTypes.repositoryOwner},
+		Name: "Organization",
+		// ProjectV2Owner is declared at construction for the reason the User
+		// type declares it: graphql-go memoizes an object's interface list on
+		// first read, so it cannot be added afterwards.
+		Interfaces: []*graphql.Interface{
+			nodeInterface, s.graphqlTypes.repositoryOwner,
+			s.projectV2OwnerInterfaceType(),
+			// Sponsorable is declared here for the same reason
+			// ProjectV2Owner is: graphql-go memoizes the interface list.
+			s.sponsorableInterfaceType(),
+		},
 		Fields: graphql.Fields{
 			"id": &graphql.Field{
 				Type: graphql.NewNonNull(graphql.ID),
@@ -63,6 +72,10 @@ func (s *Resolver) addOrgFieldsToSchema(userType, queryType *graphql.Object, nod
 			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
 		},
 	})
+
+	// Registered so the enterprise family's policy-override connections
+	// return the one OrganizationConnection the rest of the schema uses.
+	s.graphqlTypes.organizationConnection = orgConnectionType
 
 	// Add organizations field to User type (for viewer.organizations)
 	userType.AddFieldConfig("organizations", &graphql.Field{

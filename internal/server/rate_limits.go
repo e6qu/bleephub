@@ -73,6 +73,25 @@ var apiRateResponseResources = []string{
 	"source_import",
 }
 
+// containsPathSegments reports whether path contains the given "/a/b" run as
+// WHOLE segments. A plain substring test cannot be used against user-controlled
+// path segments: repository names are free text, so `/repos/octo/important/...`
+// contains "/import" and `/repos/octo/scim/...` contains "/scim/" without
+// either being the endpoint whose budget those substrings stand for.
+func containsPathSegments(path, segments string) bool {
+	for offset := 0; ; {
+		index := strings.Index(path[offset:], segments)
+		if index < 0 {
+			return false
+		}
+		end := offset + index + len(segments)
+		if end == len(path) || path[end] == '/' {
+			return true
+		}
+		offset = end
+	}
+}
+
 func apiRateResource(path string) string {
 	switch {
 	case strings.HasPrefix(path, "/api/graphql"):
@@ -81,21 +100,21 @@ func apiRateResource(path string) string {
 		return "code_search"
 	case strings.HasPrefix(path, "/api/v3/search/"):
 		return "search"
-	case strings.Contains(path, "/actions/runners/registration-token"),
-		strings.Contains(path, "/actions/runners/remove-token"),
+	case containsPathSegments(path, "/actions/runners/registration-token"),
+		containsPathSegments(path, "/actions/runners/remove-token"),
 		path == "/api/v3/actions/runner-registration":
 		return "actions_runner_registration"
-	case strings.Contains(path, "/import"):
+	case containsPathSegments(path, "/import"):
 		return "source_import"
-	case strings.Contains(path, "/dependency-graph/snapshots"):
+	case containsPathSegments(path, "/dependency-graph/snapshots"):
 		return "dependency_snapshots"
-	case strings.Contains(path, "/code-scanning/sarifs"):
+	case containsPathSegments(path, "/code-scanning/sarifs"):
 		return "code_scanning_upload"
 	case strings.Contains(path, "/code-scanning/alerts/") && strings.HasSuffix(path, "/autofix"):
 		return "code_scanning_autofix"
-	case strings.Contains(path, "/scim/"):
+	case strings.HasPrefix(path, "/api/v3/scim/"):
 		return "scim"
-	case strings.Contains(path, "/app-manifests/"):
+	case strings.HasPrefix(path, "/api/v3/app-manifests/"):
 		return "integration_manifest"
 	default:
 		return "core"

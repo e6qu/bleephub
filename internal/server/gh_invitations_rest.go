@@ -142,9 +142,9 @@ func (s *Server) handleAcceptRepoInvitation(w http.ResponseWriter, r *http.Reque
 	if repo := s.store.GetRepoByFullName(repoKey); repo != nil {
 		s.emitWebhookEvent(repoKey, "member", "added", map[string]interface{}{
 			"action":     "added",
-			"member":     store.UserToJSON(user),
-			"repository": repoPayload(repo),
-			"sender":     store.UserToJSON(user),
+			"member":     store.UserToJSON(user, s.baseURL(r)),
+			"repository": repoPayload(repo, s.baseURL(r)),
+			"sender":     store.UserToJSON(user, s.baseURL(r)),
 		})
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -173,12 +173,12 @@ func invitationJSON(inv *store.RepoInvitation, repo *store.Repo, st *store.Store
 	invitee := map[string]interface{}(nil)
 	if inv.InviteeLogin != "" {
 		if u := st.LookupUserByLogin(inv.InviteeLogin); u != nil {
-			invitee = store.UserToJSON(u)
+			invitee = store.UserToJSON(u, baseURL)
 		}
 	}
 	inviter := map[string]interface{}(nil)
 	if u := st.GetUserByID(inv.InviterID); u != nil {
-		inviter = store.UserToJSON(u)
+		inviter = store.UserToJSON(u, baseURL)
 	}
 	perm := inv.Permissions
 	if perm == "" {

@@ -30,7 +30,7 @@ func IssueEventForTimelineToJSON(e *IssueEvent, st *Store, baseURL, repoFullName
 		st.Mu.RLock()
 		var assigneeJSON interface{}
 		if u, ok := st.Users[e.AssigneeID]; ok {
-			assigneeJSON = UserToJSON(u)
+			assigneeJSON = UserToJSON(u, baseURL)
 		}
 		st.Mu.RUnlock()
 		out["assignee"] = assigneeJSON
@@ -57,10 +57,10 @@ func IssueEventForTimelineToJSON(e *IssueEvent, st *Store, baseURL, repoFullName
 		st.Mu.RLock()
 		var requesterJSON, reviewerJSON interface{}
 		if u, ok := st.Users[e.ActorID]; ok {
-			requesterJSON = UserToJSON(u)
+			requesterJSON = UserToJSON(u, baseURL)
 		}
 		if u, ok := st.Users[e.RequestedReviewerID]; ok {
-			reviewerJSON = UserToJSON(u)
+			reviewerJSON = UserToJSON(u, baseURL)
 		}
 		st.Mu.RUnlock()
 		// GitHub's actor on review-request events is the requester.

@@ -372,11 +372,7 @@ func (s *Engine) DispatchReadyJobs(ctx context.Context, wf *store.Workflow, serv
 			// A cancel-requested run only dispatches jobs explicitly
 			// gated on always()/cancelled(); everything else cancels.
 			if wf.CancelRequested {
-				gated := false
-				if wfJob.Def != nil {
-					hasAlways, _ := ExprContainsStatusFunction(wfJob.Def.If)
-					gated = hasAlways || strings.Contains(strings.ToLower(wfJob.Def.If), "cancelled()")
-				}
+				gated := wfJob.Def != nil && ExprGatesOnCancellation(wfJob.Def.If)
 				if !gated {
 					wfJob.Status = store.JobStatusCompleted
 					wfJob.Result = store.ResultCancelled
@@ -389,7 +385,16 @@ func (s *Engine) DispatchReadyJobs(ctx context.Context, wf *store.Workflow, serv
 
 			// Evaluate job-level if: condition
 			if wfJob.Def != nil && wfJob.Def.If != "" {
-				hasAlways, hasFailure := ExprContainsStatusFunction(wfJob.Def.If)
+				// A job carries an implicit `success()` — "a default status check
+				// of success() is applied unless you include one of these
+				// functions". Naming ANY of success()/always()/cancelled()/
+				// failure() replaces it, so the dependency roll-up below must not
+				// re-impose it. Checking only always()/failure() left an
+				// `if: cancelled()` job skipped by the very cancellation that made
+				// its condition true, which is the case CancelWorkflow keeps such
+				// a job pending for. The step path already applies this exact rule
+				// (stepCondition).
+				overridesStatusCheck := ExprContainsAnyStatusFunction(wfJob.Def.If)
 				exprCtx, err := s.jobExprContext(wf, wfJob)
 				if err != nil {
 					wfJob.Status = store.JobStatusCompleted
@@ -422,8 +427,7 @@ func (s *Engine) DispatchReadyJobs(ctx context.Context, wf *store.Workflow, serv
 					continue
 				}
 
-				// If expression contains always() or failure(), override dep-failure skip
-				if hasAlways || hasFailure {
+				if overridesStatusCheck {
 					anyDepFailed = false
 				}
 			}
@@ -1060,12 +1064,9 @@ func (s *Engine) CancelWorkflow(wf *store.Workflow) {
 			// Jobs gated on always()/cancelled() still run after a
 			// cancel on real GitHub — leave them pending; dispatch
 			// evaluates their `if:` with cancelled()==true.
-			if wfJob.Def != nil {
-				if hasAlways, _ := ExprContainsStatusFunction(wfJob.Def.If); hasAlways ||
-					strings.Contains(strings.ToLower(wfJob.Def.If), "cancelled()") {
-					wfJob.Status = store.JobStatusPending
-					continue
-				}
+			if wfJob.Def != nil && ExprGatesOnCancellation(wfJob.Def.If) {
+				wfJob.Status = store.JobStatusPending
+				continue
 			}
 			wfJob.Status = store.JobStatusCompleted
 			wfJob.Result = store.ResultCancelled

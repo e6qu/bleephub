@@ -105,7 +105,7 @@ func (s *Server) handleCreateCommitStatus(w http.ResponseWriter, r *http.Request
 		"description": st.Description,
 		"target_url":  st.TargetURL,
 		"repository":  store.RepoToJSON(repo, s.store, s.baseURL(r)),
-		"sender":      store.UserToJSON(user),
+		"sender":      store.UserToJSON(user, s.baseURL(r)),
 	})
 	// A successful commit status for a PR head can clear the condition an
 	// armed auto-merge was waiting for.
@@ -139,7 +139,7 @@ func commitStatusToJSON(st *store.CommitStatus, stStore *store.Store, baseURL, r
 	var creator map[string]interface{}
 	stStore.Mu.RLock()
 	if u := stStore.Users[st.CreatorID]; u != nil {
-		creator = store.UserToJSON(u)
+		creator = store.UserToJSON(u, baseURL)
 	}
 	stStore.Mu.RUnlock()
 	return map[string]interface{}{

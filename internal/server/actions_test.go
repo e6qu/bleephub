@@ -320,5 +320,6 @@ func newTestServer() *Server {
 	})
 	useFixedTestClock(s)
 	s.store.SeedDefaultUser()
+	instrumentGraphQLSourceAudit(s.graphql.Schema())
 	return s
 }

@@ -492,7 +492,7 @@ func (s *Server) emitWebhookEvent(repoKey, eventType, action string, payload int
 			ownerLogin, _, found := strings.Cut(repoKey, "/")
 			if found {
 				if org := s.store.GetOrg(ownerLogin); org != nil {
-					m["organization"] = orgWebhookPayload(org)
+					m["organization"] = orgWebhookPayload(org, s.publicOrigin())
 				}
 			}
 		}
@@ -1017,6 +1017,10 @@ func (s *Server) buildTriggerEvent(stor gitStorage.Storer, eventType, action, re
 		before, _ := payload["before"].(string)
 		after, _ := payload["after"].(string)
 		ev.ChangedFiles, ev.ChangedFilesKnown = actions.ChangedFilesBetween(stor, before, after)
+	case "workflow_run":
+		if run, _ := payload["workflow_run"].(map[string]interface{}); run != nil {
+			ev.WorkflowName, _ = run["name"].(string)
+		}
 	case "pull_request", "pull_request_target":
 		pr, _ := payload["pull_request"].(map[string]interface{})
 		if pr != nil {

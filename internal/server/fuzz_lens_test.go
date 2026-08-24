@@ -17,6 +17,7 @@ func graphQLFuzzServer(t *testing.T) *Server {
 	t.Helper()
 	s := newTestServer()
 	s.graphql = s.newGraphQLResolver()
+	instrumentGraphQLSourceAudit(s.graphql.Schema())
 	return s
 }
 

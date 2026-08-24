@@ -2,6 +2,7 @@ package bleephub
 
 import (
 	"net/http"
+	"net/url"
 	"regexp"
 	"sort"
 	"strconv"
@@ -63,6 +64,24 @@ func (s *Server) registerSecretsRoutes() {
 	s.route("GET /api/v3/repos/{owner}/{repo}/environments/{env_name}/secrets/{secret_name}", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleGetEnvSecret))
 	s.route("PUT /api/v3/repos/{owner}/{repo}/environments/{env_name}/secrets/{secret_name}", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handlePutEnvSecret))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/environments/{env_name}/secrets/{secret_name}", s.requirePerm(store.ScopeSecrets, store.PermWrite, s.handleDeleteEnvSecret))
+
+	// Environment scope, addressed by repository id.
+	//
+	// go-github's only typed environment-secret methods (GetEnvPublicKey,
+	// ListEnvSecrets, GetEnvSecret, CreateOrUpdateEnvSecret, DeleteEnvSecret)
+	// build this path, so without it an unmodified go-github cannot read or
+	// write an environment secret at all — which the SDK conformance matrix
+	// demonstrates rather than assumes.
+	//
+	// It is served by rewriting to the canonical owner/name path and
+	// re-dispatching, so authorization, permission scope and the handlers
+	// themselves are literally the same code: an id-addressed request cannot
+	// acquire access the named form would refuse.
+	for _, suffix := range []string{"", "/public-key", "/{secret_name}"} {
+		s.route("GET /api/v3/repositories/{repository_id}/environments/{env_name}/secrets"+suffix, s.rewriteRepositoryIDPath)
+	}
+	s.route("PUT /api/v3/repositories/{repository_id}/environments/{env_name}/secrets/{secret_name}", s.rewriteRepositoryIDPath)
+	s.route("DELETE /api/v3/repositories/{repository_id}/environments/{env_name}/secrets/{secret_name}", s.rewriteRepositoryIDPath)
 
 	// Organization scope.
 	s.route("GET /api/v3/orgs/{org}/actions/secrets", s.requirePerm(store.ScopeSecrets, store.PermRead, s.handleListOrgSecrets))
@@ -423,11 +442,19 @@ func (s *Server) handlePutEnvSecret(w http.ResponseWriter, r *http.Request) {
 	s.recordAuditEvent("secret.create", auditActor(r), "", map[string]interface{}{
 		"scope": "environment", "repo": repoKey, "environment": envName, "secret_name": name,
 	})
+	writeSecretUpsert(w, created)
+}
+
+// writeSecretUpsert writes the documented response of a secret PUT: 201 with
+// schema empty-object when the secret is new, 204 when it replaced one. Both
+// are declared on every ".../secrets/{secret_name}" PUT, and 201 carries a
+// body — a zero-length one is not an empty object.
+func writeSecretUpsert(w http.ResponseWriter, created bool) {
 	if created {
 		writeJSON(w, http.StatusCreated, map[string]interface{}{})
-	} else {
-		w.WriteHeader(http.StatusNoContent)
+		return
 	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleDeleteEnvSecret(w http.ResponseWriter, r *http.Request) {
@@ -848,4 +875,39 @@ func (s *Server) handleAddOrgSecretRepo(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) handleRemoveOrgSecretRepo(w http.ResponseWriter, r *http.Request) {
 	s.orgSecretSelectionChange(w, r, false)
+}
+
+// rewriteRepositoryIDPath serves a `/repositories/{repository_id}/…` request by
+// rewriting it to the equivalent `/repos/{owner}/{repo}/…` path and
+// re-dispatching through the same mux.
+//
+// Rewriting rather than duplicating the handlers is the point: authorization,
+// permission scope, rate-limit classification and the handler bodies are the
+// identical code, so an id-addressed request can never acquire access the named
+// form would refuse, and a later change to the named route cannot leave this
+// one behind.
+func (s *Server) rewriteRepositoryIDPath(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(r.PathValue("repository_id"))
+	if err != nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	repo := s.store.GetRepoByID(id)
+	if repo == nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	owner, name, ok := strings.Cut(repo.FullName, "/")
+	if !ok {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	// Only the addressing segment is replaced; everything after it is carried
+	// across untouched, so the rewritten request differs from a direct one in
+	// no observable way.
+	rest := strings.TrimPrefix(r.URL.Path, "/api/v3/repositories/"+r.PathValue("repository_id"))
+	rewritten := r.Clone(r.Context())
+	rewritten.URL.Path = "/api/v3/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(name) + rest
+	rewritten.RequestURI = ""
+	s.mux.ServeHTTP(w, rewritten)
 }

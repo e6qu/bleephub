@@ -270,6 +270,7 @@ func (s *Server) handleListCheckRunsForCommit(w http.ResponseWriter, r *http.Req
 		}
 	}
 	runs := s.store.ListCheckRunsForCommit(repoKey, sha, status, "", appID)
+	runs = filterCheckRuns(runs, q.Get("check_name"), "")
 	if filter == "latest" {
 		runs = latestCheckRuns(runs)
 	}
@@ -284,15 +285,46 @@ func (s *Server) handleListCheckRunsForCommit(w http.ResponseWriter, r *http.Req
 	})
 }
 
+// filterCheckRuns applies the documented check_name and status filters, which
+// keep the runs carrying exactly that name and exactly that status. Either sent
+// empty narrows nothing.
+func filterCheckRuns(runs []*store.CheckRun, name, status string) []*store.CheckRun {
+	if name == "" && status == "" {
+		return runs
+	}
+	out := make([]*store.CheckRun, 0, len(runs))
+	for _, run := range runs {
+		if name != "" && run.Name != name {
+			continue
+		}
+		if status != "" && run.Status != status {
+			continue
+		}
+		out = append(out, run)
+	}
+	return out
+}
+
 // latestCheckRuns implements the documented default filter: reruns remain
 // addressable with filter=all, while the normal listing exposes only the most
-// recent run in each check suite.
+// recent run of each named check.
+//
+// A check is identified by its name within its suite — an app re-reporting a
+// name it has already reported supersedes the earlier run rather than adding a
+// second one. So the run kept per (suite, name) is the newest, and a suite that
+// reports several differently-named checks keeps all of them: keying on the
+// suite alone would let one check's rerun hide every sibling check beside it,
+// and would collapse a whole suite's listing to a single run.
 func latestCheckRuns(runs []*store.CheckRun) []*store.CheckRun {
-	latest := make(map[int64]*store.CheckRun, len(runs))
+	type checkKey struct {
+		suiteID int64
+		name    string
+	}
+	latest := make(map[checkKey]*store.CheckRun, len(runs))
 	for _, run := range runs {
-		current := latest[run.SuiteID]
-		if current == nil || run.ID > current.ID {
-			latest[run.SuiteID] = run
+		key := checkKey{suiteID: run.SuiteID, name: run.Name}
+		if current := latest[key]; current == nil || run.ID > current.ID {
+			latest[key] = run
 		}
 	}
 	out := make([]*store.CheckRun, 0, len(latest))
@@ -368,7 +400,22 @@ func (s *Server) handleListCheckRunsForSuite(w http.ResponseWriter, r *http.Requ
 	if suite == nil {
 		return
 	}
+	// The suite listing takes the same documented filters as the commit
+	// listing, minus app_id — a suite already belongs to one app.
+	q := r.URL.Query()
+	filter := q.Get("filter")
+	if filter == "" {
+		filter = "latest"
+	}
+	if filter != "latest" && filter != "all" {
+		store.WriteGHValidationError(w, "CheckRun", "filter", "invalid")
+		return
+	}
 	runs := s.store.ListCheckRunsForSuite(suite.ID)
+	runs = filterCheckRuns(runs, q.Get("check_name"), q.Get("status"))
+	if filter == "latest" {
+		runs = latestCheckRuns(runs)
+	}
 	page := paginateAndLink(w, r, runs)
 	out := make([]map[string]interface{}, 0, len(page))
 	for _, cr := range page {
@@ -409,7 +456,7 @@ func (s *Server) checkAppJSON(appID int) interface{} {
 	if app == nil {
 		return nil
 	}
-	return appToJSON(s.store, app, false)
+	return appToJSON(s.store, app, false, s.publicOrigin())
 }
 
 // checkRunToJSON renders the GitHub check-run shape. base is the external

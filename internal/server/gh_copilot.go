@@ -69,7 +69,7 @@ func (s *Server) copilotOrgAdmin(w http.ResponseWriter, r *http.Request) *store.
 func (s *Server) copilotSeatJSON(seat *store.CopilotSeat, org *store.Org, baseURL string) map[string]interface{} {
 	var assignee interface{}
 	if u := s.store.GetUserByID(seat.UserID); u != nil {
-		assignee = store.UserToJSON(u)
+		assignee = store.UserToJSON(u, baseURL)
 	}
 	var assigningTeam interface{}
 	if seat.AssigningTeamSlug != "" {
@@ -81,18 +81,19 @@ func (s *Server) copilotSeatJSON(seat *store.CopilotSeat, org *store.Org, baseUR
 	if seat.PendingCancellationDate != "" {
 		pendingCancellation = seat.PendingCancellationDate
 	}
+	// A seat that has never been used reads null on both activity members:
+	// the member genuinely has no activity, and no timestamp is invented.
+	lastActivityAt, lastActivityEditor := s.CopilotSeatActivityJSON(org.Login, seat.UserID)
 	return map[string]interface{}{
 		"assignee":                  assignee,
 		"organization":              orgSimpleJSON(org, baseURL),
 		"assigning_team":            assigningTeam,
 		"pending_cancellation_date": pendingCancellation,
-		// bleephub records no Copilot editor telemetry, so the activity
-		// members are honestly null rather than fabricated timestamps.
-		"last_activity_at":     nil,
-		"last_activity_editor": nil,
-		"created_at":           seat.CreatedAt.Format(time.RFC3339),
-		"updated_at":           seat.UpdatedAt.Format(time.RFC3339),
-		"plan_type":            "business",
+		"last_activity_at":          lastActivityAt,
+		"last_activity_editor":      lastActivityEditor,
+		"created_at":                seat.CreatedAt.Format(time.RFC3339),
+		"updated_at":                seat.UpdatedAt.Format(time.RFC3339),
+		"plan_type":                 s.store.CopilotPolicies.GetCopilotOrgPolicy(org.Login).PlanType,
 	}
 }
 
@@ -101,46 +102,14 @@ func (s *Server) handleGetCopilotOrganizationDetails(w http.ResponseWriter, r *h
 	if org == nil {
 		return
 	}
-	seats := s.store.ListCopilotSeats(org.Login)
-	now := s.currentTime()
-	total := len(seats)
-	pendingCancellation := 0
-	addedThisCycle := 0
-	pendingInvitation := 0
-	for _, seat := range seats {
-		if seat.PendingCancellationDate != "" {
-			pendingCancellation++
-		}
-		if seat.CreatedAt.Year() == now.Year() && seat.CreatedAt.Month() == now.Month() {
-			addedThisCycle++
-		}
-		if m := s.store.GetMembership(org.Login, seat.UserID); m != nil && m.State == store.MembershipStatePending {
-			pendingInvitation++
-		}
+	// The seat split and the feature policy both come from durable state
+	// (gh_copilot_policy.go): the split from recorded Copilot activity, the
+	// policy from what an owner configured.
+	body := map[string]interface{}{"seat_breakdown": s.CopilotSeatBreakdown(org, s.currentTime())}
+	for key, value := range copilotPolicyJSON(s.store.CopilotPolicies.GetCopilotOrgPolicy(org.Login)) {
+		body[key] = value
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"seat_breakdown": map[string]interface{}{
-			"total":                total,
-			"added_this_cycle":     addedThisCycle,
-			"pending_cancellation": pendingCancellation,
-			"pending_invitation":   pendingInvitation,
-			// No Copilot usage telemetry is recorded, so no seat has been
-			// "active this cycle"; every billed seat is honestly inactive.
-			"active_this_cycle":   0,
-			"inactive_this_cycle": total,
-		},
-		// Every bleephub organization is provisioned with Copilot Business
-		// and permissive feature policies: real GitHub configures these
-		// through the organization settings UI only (no REST write surface),
-		// and the seat-management endpoints below require a configured
-		// subscription with per-user seat assignment to be usable at all.
-		"public_code_suggestions": "allow",
-		"ide_chat":                "enabled",
-		"platform_chat":           "enabled",
-		"cli":                     "enabled",
-		"seat_management_setting": "assign_selected",
-		"plan_type":               "business",
-	})
+	writeJSON(w, http.StatusOK, body)
 }
 
 func (s *Server) handleListCopilotSeats(w http.ResponseWriter, r *http.Request) {
@@ -388,10 +357,11 @@ func (s *Server) handleCopilotMetricsForOrganization(w http.ResponseWriter, r *h
 	if !copilotMetricsWindow(w, r) {
 		return
 	}
-	// bleephub records no Copilot editor or chat telemetry, so there are
-	// no days with aggregated usage: the documented response with no
-	// activity is an empty array, never fabricated numbers.
-	writeJSON(w, http.StatusOK, []map[string]interface{}{})
+	// The array is an aggregation of the organization's recorded Copilot
+	// usage: with none recorded it is empty, which is the documented
+	// no-activity response rather than fabricated numbers.
+	since, until := copilotMetricsWindowBounds(r)
+	writeJSON(w, http.StatusOK, s.CopilotMetricsForOrg(org.Login, "", since, until))
 }
 
 func (s *Server) handleCopilotMetricsForTeam(w http.ResponseWriter, r *http.Request) {
@@ -403,14 +373,16 @@ func (s *Server) handleCopilotMetricsForTeam(w http.ResponseWriter, r *http.Requ
 	if org == nil {
 		return
 	}
-	if s.store.GetTeam(org.Login, r.PathValue("team_slug")) == nil {
+	teamSlug := r.PathValue("team_slug")
+	if s.store.GetTeam(org.Login, teamSlug) == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
 	if !copilotMetricsWindow(w, r) {
 		return
 	}
-	writeJSON(w, http.StatusOK, []map[string]interface{}{})
+	since, until := copilotMetricsWindowBounds(r)
+	writeJSON(w, http.StatusOK, s.CopilotMetricsForOrg(org.Login, teamSlug, since, until))
 }
 
 // handleCopilotOneDayReport serves the three organization single-day
@@ -431,7 +403,17 @@ func (s *Server) handleCopilotOneDayReport(w http.ResponseWriter, r *http.Reques
 		store.WriteGHValidationError(w, "CopilotMetricsReport", "day", "invalid")
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	// A report exists for a day the organization actually used Copilot on;
+	// any other day has none, which is the documented 204.
+	metrics := s.CopilotMetricsForOrg(org.Login, "", day, day)
+	if len(metrics) == 0 {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"download_links": []string{s.baseURL(r) + "/ui-data/orgs/" + org.Login + "/copilot/usage?since=" + day + "&until=" + day},
+		"report_day":     day,
+	})
 }
 
 // handleCopilotLatest28DayReport serves the two latest-28-day report
@@ -445,10 +427,15 @@ func (s *Server) handleCopilotLatest28DayReport(w http.ResponseWriter, r *http.R
 	}
 	end := s.currentTime().AddDate(0, 0, -1)
 	start := end.AddDate(0, 0, -27)
+	startDay, endDay := start.Format("2006-01-02"), end.Format("2006-01-02")
+	links := []string{}
+	if len(s.CopilotMetricsForOrg(org.Login, "", startDay, endDay)) > 0 {
+		links = append(links, s.baseURL(r)+"/ui-data/orgs/"+org.Login+"/copilot/usage?since="+startDay+"&until="+endDay)
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"download_links":   []string{},
-		"report_start_day": start.Format("2006-01-02"),
-		"report_end_day":   end.Format("2006-01-02"),
+		"download_links":   links,
+		"report_start_day": startDay,
+		"report_end_day":   endDay,
 	})
 }
 

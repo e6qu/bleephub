@@ -35,6 +35,8 @@ func (stubAuthz) PrincipalHoldsRepoCapability(context.Context, *store.Repo, stor
 	return false
 }
 func (stubAuthz) ViewerIsOrgMember(context.Context, string) bool            { return false }
+func (stubAuthz) ViewerCanAdminAccount(context.Context, string) bool        { return false }
+func (stubAuthz) ViewerMayMigrateOrg(context.Context, *store.Org) bool      { return false }
 func (stubAuthz) VisibleRepos(context.Context, []*store.Repo) []*store.Repo { return nil }
 func (stubAuthz) CanReadProjectV2(context.Context, *store.User, *store.ProjectV2Owner, *store.ProjectV2) bool {
 	return false
@@ -54,15 +56,19 @@ func (stubEvents) BuildPullRequestPayload(*store.Repo, *store.PullRequest, *stor
 	return nil
 }
 func (stubEvents) RepoPayload(*store.Repo) map[string]interface{}                               { return nil }
+func (stubEvents) SenderPayload(*store.User) map[string]interface{}                             { return nil }
 func (stubEvents) EmitIssueChanges(*store.Repo, *store.Issue, *store.User, store.SubjectChange) {}
 func (stubEvents) EmitPullRequestChanges(*store.Repo, *store.PullRequest, *store.User, store.SubjectChange) {
 }
+func (stubEvents) EmitProjectV2Event(store.ProjectV2Event)                             {}
+func (stubEvents) EmitSponsorshipEvent(string, *store.SponsorsTransition, *store.User) {}
 
 // stubPulls refuses every merge.
 type stubPulls struct{}
 
 func (stubPulls) PRHeadSha(*store.Repo, *store.PullRequest) string           { return "" }
 func (stubPulls) MissingRequiredChecks(*store.Repo, string, string) []string { return nil }
+func (stubPulls) RequiredStatusCheckContexts(*store.Repo, string) []string   { return nil }
 func (stubPulls) CanMergePullRequest(context.Context, *store.Repo, *store.PullRequest) (bool, string) {
 	return false, "stubPulls refuses every merge"
 }
@@ -78,12 +84,21 @@ func (stubPulls) AutoRequestCodeOwners(*store.Repo, *store.PullRequest, *store.U
 
 // newStubbedResolver is the test-package analogue of the server's
 // newGraphQLResolver: a resolver over a seeded store with the no-op seams.
+// stubMigrations queues nothing: the resolver-package tests exercise schema
+// assembly rather than the workers, which the server package drives end to end.
+type stubMigrations struct{}
+
+func (stubMigrations) StartRepositoryMigration(int)                                {}
+func (stubMigrations) StartOrganizationMigration(int)                              {}
+func (stubMigrations) RepositoryMigrationLogURL(*store.RepositoryMigration) string { return "" }
+
 func newStubbedResolver() *Resolver {
 	return NewResolver(Config{
 		Store:           newSeededTestStore(),
 		Authz:           stubAuthz{},
 		Events:          stubEvents{},
 		Pulls:           stubPulls{},
+		Migrations:      stubMigrations{},
 		UserFromContext: func(context.Context) *store.User { return nil },
 		APIRate:         func(context.Context) RateSnapshot { return RateSnapshot{} },
 	})

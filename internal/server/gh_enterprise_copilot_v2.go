@@ -106,7 +106,7 @@ func (s *Server) addEnterpriseCopilotSeatLocked(userID int, team *store.Enterpri
 func (s *Server) enterpriseCopilotSeatJSON(seat *store.CopilotSeat, baseURL string) map[string]interface{} {
 	var assignee interface{}
 	if user := s.store.GetUserByID(seat.UserID); user != nil {
-		assignee = store.UserToJSON(user)
+		assignee = store.UserToJSON(user, baseURL)
 	}
 	var assigningTeam interface{}
 	if seat.AssigningTeamSlug != "" {

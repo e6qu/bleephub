@@ -2,9 +2,7 @@ package bleephub
 
 import (
 	"archive/tar"
-	"bytes"
-	"compress/gzip"
-	"encoding/json"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -33,6 +31,11 @@ func (s *Server) registerGHMigrationsRoutes() {
 	s.route("GET /api/v3/orgs/{org}/migrations/{migration_id}/archive", s.handleDownloadOrgMigrationArchive)
 	s.route("DELETE /api/v3/orgs/{org}/migrations/{migration_id}/archive", s.handleDeleteOrgMigrationArchive)
 	s.route("DELETE /api/v3/orgs/{org}/migrations/{migration_id}/repos/{repo_name}/lock", s.handleUnlockOrgMigrationRepo)
+
+	// The GitHub Enterprise Importer's browser surface. GitHub serves the GEI
+	// entities through GraphQL alone, so these live under /ui-data rather than
+	// being invented under /api/v3.
+	s.registerGEIMigrationUIRoutes()
 }
 
 type migrationCreateBody struct {
@@ -87,6 +90,7 @@ func (s *Server) handleStartUserMigration(w http.ResponseWriter, r *http.Request
 	}
 	m := s.store.CreateUserMigration(user.ID, repos, body.LockRepositories, body.ExcludeMetadata, body.ExcludeGitData, body.ExcludeAttachments, body.ExcludeReleases, body.ExcludeOwnerProjects, body.OrgMetadataOnly)
 	s.recordAuditEvent("user_migration.start", user.Login, "", map[string]interface{}{"migration_id": m.ID, "repositories": repos})
+	s.startMigrationExport(store.UserMigrationScope, m.ID)
 	writeJSON(w, http.StatusCreated, s.userMigrationToJSON(m, s.baseURL(r), false))
 }
 
@@ -160,7 +164,7 @@ func (s *Server) handleDownloadUserMigrationArchive(w http.ResponseWriter, r *ht
 	if !ok {
 		return
 	}
-	s.serveMigrationArchive(w, r, m.MigrationCommon, "user", "")
+	s.serveMigrationArchive(w, r, m.MigrationCommon, store.UserMigrationScope)
 }
 
 func (s *Server) handleDeleteUserMigrationArchive(w http.ResponseWriter, r *http.Request) {
@@ -173,7 +177,7 @@ func (s *Server) handleDeleteUserMigrationArchive(w http.ResponseWriter, r *http
 	if !ok {
 		return
 	}
-	if !s.store.DeleteUserMigrationArchive(m.ID) {
+	if !s.deleteMigrationArchive(r.Context(), store.UserMigrationScope, m.ID) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -212,7 +216,7 @@ func (s *Server) handleStartOrgMigration(w http.ResponseWriter, r *http.Request)
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !s.viewerCanAdminOrg(r.Context(), org.Login) {
+	if !s.viewerMayMigrateOrg(r.Context(), org) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -227,6 +231,7 @@ func (s *Server) handleStartOrgMigration(w http.ResponseWriter, r *http.Request)
 	}
 	m := s.store.CreateOrgMigration(org.Login, repos, body.LockRepositories, body.ExcludeMetadata, body.ExcludeGitData, body.ExcludeAttachments, body.ExcludeReleases, body.ExcludeOwnerProjects, body.OrgMetadataOnly)
 	s.recordAuditEvent("org_migration.start", user.Login, "", map[string]interface{}{"org": org.Login, "migration_id": m.ID, "repositories": repos})
+	s.startMigrationExport(store.OrgMigrationScope, m.ID)
 	writeJSON(w, http.StatusCreated, s.orgMigrationToJSON(m, s.baseURL(r), false))
 }
 
@@ -241,7 +246,7 @@ func (s *Server) handleListOrgMigrations(w http.ResponseWriter, r *http.Request)
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if !s.viewerCanAdminOrg(r.Context(), org.Login) {
+	if !s.viewerMayMigrateOrg(r.Context(), org) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -309,7 +314,7 @@ func (s *Server) handleDownloadOrgMigrationArchive(w http.ResponseWriter, r *htt
 	if !ok {
 		return
 	}
-	s.serveMigrationArchive(w, r, m.MigrationCommon, "orgs", m.OrgLogin)
+	s.serveMigrationArchive(w, r, m.MigrationCommon, store.OrgMigrationScope)
 }
 
 func (s *Server) handleDeleteOrgMigrationArchive(w http.ResponseWriter, r *http.Request) {
@@ -322,7 +327,7 @@ func (s *Server) handleDeleteOrgMigrationArchive(w http.ResponseWriter, r *http.
 	if !ok {
 		return
 	}
-	if !s.store.DeleteOrgMigrationArchive(m.ID) {
+	if !s.deleteMigrationArchive(r.Context(), store.OrgMigrationScope, m.ID) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -348,6 +353,36 @@ func (s *Server) handleUnlockOrgMigrationRepo(w http.ResponseWriter, r *http.Req
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// Authorization
+//
+// A migration exposes an entire account's data, so the two operations that can
+// see it — reading a migration and downloading its archive — are gated exactly
+// as starting one is.
+//
+// An organization's migrations are open to an owner of that organization and
+// to a principal granted the migrator role on it (directly, through a team, or
+// through the enterprise that owns it). Nobody else, whatever standing they
+// hold on some other organization: viewerMayMigrateOrg resolves both halves
+// from *this* organization, so a migrator on one tenant is nothing on another.
+//
+// A user's migrations are their own. There is no delegated form of the user
+// scope on GitHub and there is none here, so the test is identity.
+func (s *Server) viewerMayMigrateOrg(ctx context.Context, org *store.Org) bool {
+	if org == nil {
+		return false
+	}
+	if s.viewerCanAdminOrg(ctx, org.Login) {
+		return true
+	}
+	// The migrator role is a standing on the organization, not a grant to an
+	// app: an integration still has to have been given organization
+	// administration before its bearer's migrator role means anything.
+	if !s.credentialGrantsAccount(ctx, store.OrganizationAccount, org.Login, store.ScopeAdministration, store.PermWrite) {
+		return false
+	}
+	return s.store.UserHoldsOrgMigratorRole(org.ID, ghUserFromContext(ctx))
+}
+
 // Resolvers
 
 func (s *Server) resolveUserMigration(w http.ResponseWriter, r *http.Request, userID int) (*store.UserMigration, bool) {
@@ -370,7 +405,7 @@ func (s *Server) resolveOrgMigration(w http.ResponseWriter, r *http.Request, use
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil, nil, false
 	}
-	if !s.viewerCanAdminOrg(r.Context(), org.Login) {
+	if !s.viewerMayMigrateOrg(r.Context(), org) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil, nil, false
 	}
@@ -427,7 +462,7 @@ func (s *Server) validateOrgMigrationRepos(org *store.Org, names []string) ([]st
 func (s *Server) userMigrationToJSON(m *store.UserMigration, baseURL string, excludeRepos bool) map[string]interface{} {
 	owner := map[string]interface{}{}
 	if u := s.store.GetUserByID(m.UserID); u != nil {
-		owner = store.UserToJSON(u)
+		owner = store.UserToJSON(u, baseURL)
 	}
 	return s.migrationToJSON(m.MigrationCommon, owner, baseURL, "user", "", excludeRepos)
 }
@@ -435,7 +470,7 @@ func (s *Server) userMigrationToJSON(m *store.UserMigration, baseURL string, exc
 func (s *Server) orgMigrationToJSON(m *store.OrgMigration, baseURL string, excludeRepos bool) map[string]interface{} {
 	owner := map[string]interface{}{}
 	if org := s.store.GetOrg(m.OrgLogin); org != nil {
-		owner = store.OrgAsSimpleUserJSON(org)
+		owner = store.OrgAsSimpleUserJSON(org, baseURL)
 	}
 	return s.migrationToJSON(m.MigrationCommon, owner, baseURL, "orgs", m.OrgLogin, excludeRepos)
 }
@@ -488,11 +523,11 @@ func migrationRepoJSON(repo *store.Repo, st *store.Store, baseURL string) map[st
 		parts := strings.SplitN(repo.FullName, "/", 2)
 		if len(parts) == 2 {
 			if org := st.GetOrg(parts[0]); org != nil {
-				owner = store.OrgAsSimpleUserJSON(org)
+				owner = store.OrgAsSimpleUserJSON(org, baseURL)
 			}
 		}
 	} else if repo.Owner != nil {
-		owner = store.UserToJSON(repo.Owner)
+		owner = store.UserToJSON(repo.Owner, baseURL)
 	}
 
 	api := baseURL + "/api/v3/repos/" + repo.FullName
@@ -590,79 +625,61 @@ func migrationRepoJSON(repo *store.Repo, st *store.Store, baseURL string) map[st
 	}
 }
 
-// Archive generation and download
+// Archive download and deletion
 
-func (s *Server) serveMigrationArchive(w http.ResponseWriter, r *http.Request, m store.MigrationCommon, scope, scopeLogin string) {
-	if m.State != "exported" || m.ArchiveDeleted {
+// serveMigrationArchive streams the stored archive to the caller.
+//
+// The bytes are read out of the object byte store rather than rebuilt, which
+// is what makes the download the archive the migration actually produced: two
+// downloads of the same migration are the same bytes, and the digest recorded
+// when it was written still describes them.
+//
+// The URL is not a credential. GitHub answers this operation with a redirect
+// to a signed location; bleephub serves it in place, behind the same
+// authorization the migration itself is behind, so there is no URL a caller
+// can keep after their access to the migration ends.
+func (s *Server) serveMigrationArchive(w http.ResponseWriter, r *http.Request, m store.MigrationCommon, scope store.MigrationScope) {
+	if m.State != store.MigrationStateExported || m.ArchiveDeleted || m.ArchiveKey == "" {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	data, err := s.generateMigrationArchive(m, scope, scopeLogin)
+	body, err := s.migrationObjectStore().GetStream(r.Context(), m.ArchiveKey)
 	if err != nil {
-		s.logger.Error().Err(err).Int("migration_id", m.ID).Msg("failed to generate migration archive")
+		s.logger.Error().Err(err).Int("migration_id", m.ID).Msg("failed to read migration archive")
 		writeGHError(w, http.StatusInternalServerError, "Internal Server Error")
 		return
 	}
+	defer body.Close()
+
 	w.Header().Set("Content-Type", "application/gzip")
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=migration-%d.tar.gz", m.ID))
-	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s-migration-%d.tar.gz", scope, m.ID))
+	if m.ArchiveSize > 0 {
+		w.Header().Set("Content-Length", strconv.FormatInt(m.ArchiveSize, 10))
+	}
+	if m.ArchiveSHA256 != "" {
+		w.Header().Set("X-Bleephub-Content-Sha256", m.ArchiveSHA256)
+	}
 	w.WriteHeader(http.StatusOK)
-	_, _ = io.Copy(w, bytes.NewReader(data))
+	if _, err := io.Copy(w, body); err != nil {
+		s.logger.Warn().Err(err).Int("migration_id", m.ID).Msg("migration archive download interrupted")
+	}
 }
 
-func (s *Server) generateMigrationArchive(m store.MigrationCommon, scope, scopeLogin string) ([]byte, error) {
-	var buf bytes.Buffer
-	gw := gzip.NewWriter(&buf)
-	tw := tar.NewWriter(gw)
-	now := time.Now().UTC()
-
-	repoData := map[string]interface{}{}
-	for _, name := range m.Repositories {
-		repo := s.store.GetRepoByFullName(name)
-		if repo == nil {
-			continue
-		}
-		repoData[name] = s.store.MigrationRepoExportData(repo.ID)
-
-		readme := fmt.Sprintf("# %s\n\nOwner: %s\nDefault branch: %s\nVisibility: %s\nDescription: %s\n",
-			repo.FullName,
-			repo.FullName,
-			repo.DefaultBranch,
-			repo.Visibility,
-			repo.Description,
-		)
-		path := fmt.Sprintf("repositories/%s/README.md", repo.FullName)
-		if err := addTarFile(tw, path, []byte(readme), now); err != nil {
-			return nil, err
-		}
+// deleteMigrationArchive forgets the archive and removes its bytes. The
+// migration itself survives — GitHub keeps the record and answers 404 for the
+// archive afterwards — so this is a deletion of bytes, not of history.
+func (s *Server) deleteMigrationArchive(ctx context.Context, scope store.MigrationScope, id int) bool {
+	key, ok := s.store.ClearMigrationArchive(scope, id)
+	if !ok {
+		return false
 	}
-
-	meta := map[string]interface{}{
-		"id":           m.ID,
-		"guid":         m.GUID,
-		"state":        m.State,
-		"scope":        scope,
-		"scope_login":  scopeLogin,
-		"exported_at":  m.ExportedAt.Format(time.RFC3339),
-		"generated_at": now.Format(time.RFC3339),
-		"repositories": m.Repositories,
-		"repo_data":    repoData,
+	if key == "" {
+		return true
 	}
-	metaBytes, err := json.MarshalIndent(meta, "", "  ")
-	if err != nil {
-		return nil, err
+	if err := s.migrationObjectStore().Delete(ctx, key); err != nil {
+		s.logger.Warn().Err(err).Str("key", key).Msg("migration archive bytes not deleted")
 	}
-	if err := addTarFile(tw, "metadata.json", metaBytes, now); err != nil {
-		return nil, err
-	}
-
-	if err := tw.Close(); err != nil {
-		return nil, err
-	}
-	if err := gw.Close(); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
+	return true
 }
 
 func addTarFile(tw *tar.Writer, name string, data []byte, modTime time.Time) error {

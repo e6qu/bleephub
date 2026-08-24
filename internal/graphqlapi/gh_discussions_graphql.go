@@ -767,7 +767,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 				"action":     "created",
 				"discussion": map[string]interface{}{"number": d.Number, "title": d.Title, "body": d.Body},
 				"repository": s.repoPayload(repo),
-				"sender":     store.UserToJSON(user),
+				"sender":     s.senderPayload(user),
 			})
 			return map[string]interface{}{
 				"discussion":       discussionToGQL(d, s.store),
@@ -802,7 +802,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 				}
 			})
 			return map[string]interface{}{
-				"discussion":       discussionToGQL(s.store.GetDiscussion(d.ID), s.store),
+				"discussion":       optionalObject(discussionToGQL(s.store.GetDiscussion(d.ID), s.store)),
 				"clientMutationId": input["clientMutationId"],
 			}, nil
 		},
@@ -860,7 +860,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 					"comment":    map[string]interface{}{"id": c.ID, "body": c.Body},
 					"discussion": map[string]interface{}{"number": d.Number, "title": d.Title},
 					"repository": s.repoPayload(repo),
-					"sender":     store.UserToJSON(user),
+					"sender":     s.senderPayload(user),
 				})
 			}
 			return map[string]interface{}{
@@ -935,7 +935,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 			}
 			s.store.MarkDiscussionCommentAsAnswer(c.ID)
 			return map[string]interface{}{
-				"discussion":       discussionToGQL(s.store.GetDiscussion(d.ID), s.store),
+				"discussion":       optionalObject(discussionToGQL(s.store.GetDiscussion(d.ID), s.store)),
 				"clientMutationId": input["clientMutationId"],
 			}, nil
 		},
@@ -959,7 +959,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 			}
 			s.store.UnmarkDiscussionCommentAsAnswer(c.ID)
 			return map[string]interface{}{
-				"discussion":       discussionToGQL(s.store.GetDiscussion(d.ID), s.store),
+				"discussion":       optionalObject(discussionToGQL(s.store.GetDiscussion(d.ID), s.store)),
 				"clientMutationId": input["clientMutationId"],
 			}, nil
 		},
@@ -1011,7 +1011,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 			if d := store.FindDiscussionByNodeID(s.store, subjectNodeID); d != nil {
 				s.store.SetDiscussionUpvote(d.ID, user.ID, up)
 				return map[string]interface{}{
-					"subject":          discussionToGQL(s.store.GetDiscussion(d.ID), s.store),
+					"subject":          optionalObject(discussionToGQL(s.store.GetDiscussion(d.ID), s.store)),
 					"clientMutationId": input["clientMutationId"],
 				}, nil
 			}
@@ -1132,9 +1132,9 @@ func discussionToGQL(d *store.Discussion, st *store.Store) map[string]interface{
 		"body":             d.Body,
 		"bodyHTML":         discussionBodyToHTML(d.Body),
 		"bodyText":         discussionBodyToText(d.Body),
-		"author":           author,
+		"author":           optionalObject(author),
 		"authorID":         d.AuthorID,
-		"category":         category,
+		"category":         optionalObject(category),
 		"createdAt":        d.CreatedAt.Format(time.RFC3339),
 		"updatedAt":        d.UpdatedAt.Format(time.RFC3339),
 		"lastEditedAt":     lastEditedAt,
@@ -1164,7 +1164,7 @@ func discussionCommentToGQL(c *store.DiscussionComment, st *store.Store) map[str
 		"nodeID":       c.NodeID,
 		"databaseId":   c.ID,
 		"discussionID": c.DiscussionID,
-		"author":       author,
+		"author":       optionalObject(author),
 		"body":         c.Body,
 		"bodyHTML":     discussionBodyToHTML(c.Body),
 		"bodyText":     discussionBodyToText(c.Body),
@@ -1227,7 +1227,7 @@ func reactionNodeToGraphQL(st *store.Store, r *store.Reaction) map[string]interf
 	return map[string]interface{}{
 		"id":      fmt.Sprintf("REA_kgDO%08d", r.ID),
 		"content": r.Content,
-		"user":    userMap,
+		"user":    optionalObject(userMap),
 	}
 }
 

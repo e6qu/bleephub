@@ -173,7 +173,7 @@ func (s *Server) handleCreatePRComment(w http.ResponseWriter, r *http.Request) {
 		c = s.store.PRReviewComments.CreateRootComment(pr.ID, user.ID, req.Path, req.Body, req.CommitID, req.Side, int(req.Line), int(req.StartLine))
 	}
 	s.emitWebhookEvent(repo.FullName, "pull_request_review_comment", "created",
-		buildPRReviewCommentEventPayload(repo, pr, c, user, "created"))
+		buildPRReviewCommentEventPayload(repo, pr, c, user, "created", s.baseURL(r)))
 	prCommentJSON := prReviewCommentToJSON(c, s.store, s.baseURL(r), repo, pr)
 	writeJSONCreated(w, jsonStringField(prCommentJSON, "url"), prCommentJSON)
 }
@@ -277,7 +277,7 @@ func (s *Server) handleUpdatePRComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	updated := s.store.PRReviewComments.Get(c.ID)
-	payload := buildPRReviewCommentEventPayload(repo, pr, updated, user, "edited")
+	payload := buildPRReviewCommentEventPayload(repo, pr, updated, user, "edited", s.baseURL(r))
 	payload["changes"] = map[string]interface{}{"body": map[string]interface{}{"from": priorBody}}
 	s.emitWebhookEvent(repo.FullName, "pull_request_review_comment", "edited", payload)
 	writeJSON(w, http.StatusOK, prReviewCommentToJSON(updated, s.store, s.baseURL(r), repo, pr))
@@ -303,7 +303,7 @@ func (s *Server) handleDeletePRComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// The payload has to render before the row disappears.
-	payload := buildPRReviewCommentEventPayload(repo, pr, c, user, "deleted")
+	payload := buildPRReviewCommentEventPayload(repo, pr, c, user, "deleted", s.baseURL(r))
 	if !s.store.PRReviewComments.Delete(c.ID, s.store.Reactions) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -409,7 +409,7 @@ func prReviewCommentToJSON(c *store.PRReviewComment, st *store.Store, baseURL st
 	var author map[string]interface{}
 	st.Mu.RLock()
 	if u := st.Users[c.AuthorID]; u != nil {
-		author = store.UserToJSON(u)
+		author = store.UserToJSON(u, baseURL)
 	}
 	st.Mu.RUnlock()
 	reactions := st.Reactions.SummarizeReactions("pull_request_review_comment", c.ID)
@@ -454,7 +454,7 @@ func prReviewCommentToJSON(c *store.PRReviewComment, st *store.Store, baseURL st
 	return out
 }
 
-func buildPRReviewCommentEventPayload(repo *store.Repo, pr *store.PullRequest, c *store.PRReviewComment, sender *store.User, action string) map[string]interface{} {
+func buildPRReviewCommentEventPayload(repo *store.Repo, pr *store.PullRequest, c *store.PRReviewComment, sender *store.User, action, baseURL string) map[string]interface{} {
 	return attachInstallationBlock(map[string]interface{}{
 		"action":  action,
 		"comment": map[string]interface{}{"id": c.ID, "body": c.Body, "path": c.Path},
@@ -463,7 +463,7 @@ func buildPRReviewCommentEventPayload(repo *store.Repo, pr *store.PullRequest, c
 			"title":  pr.Title,
 			"state":  pr.State,
 		},
-		"repository": repoPayload(repo),
-		"sender":     senderPayload(sender),
+		"repository": repoPayload(repo, baseURL),
+		"sender":     senderPayload(sender, baseURL),
 	}, nil)
 }

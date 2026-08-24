@@ -451,7 +451,8 @@ func gitStatusLine(text string) string {
 // The objects are ingested first because whether an update discards commits —
 // the question force-push protection and "forced update" both turn on — is only
 // answerable once the commits the push carries are readable.
-func (s *Server) applyGitReceivePack(ctx context.Context, repo *store.Repo, stor storer.Storer, request *gitReceiveRequest) (*gitReceivePackOutcome, error) {
+func (s *Server) applyGitReceivePack(ctx context.Context, target *gitTarget, request *gitReceiveRequest) (*gitReceivePackOutcome, error) {
+	stor := target.stor
 	outcome := &gitReceivePackOutcome{report: &gitPushReport{unpackStatus: "ok", v2: request.reportStatusV2}}
 	// The options are reported back the way a server-side hook's output is, so
 	// a pusher can see that the server read exactly what it sent.
@@ -475,7 +476,7 @@ func (s *Server) applyGitReceivePack(ctx context.Context, repo *store.Repo, stor
 		}
 		return outcome, nil
 	}
-	if err := s.decideGitPushCommands(ctx, repo, stor, outcome); err != nil {
+	if err := s.decideGitPushCommands(ctx, target, outcome); err != nil {
 		return nil, err
 	}
 	if !request.reportsStatus() {
@@ -500,7 +501,7 @@ func (s *Server) applyGitReceivePack(ctx context.Context, repo *store.Repo, stor
 	// already held — wrote nothing to pack. See git_compaction.go for why this
 	// does not delay the report the caller is about to write.
 	if request.packfile != nil {
-		s.scheduleGitCompaction(repo.FullName, stor)
+		s.scheduleGitCompaction(target.storageName, stor)
 	}
 	return outcome, nil
 }
@@ -511,7 +512,8 @@ func (s *Server) applyGitReceivePack(ctx context.Context, repo *store.Repo, stor
 // reference moves — and it is what keeps a non-atomic push from applying a
 // command whose neighbour was going to be refused by a rule that had not been
 // evaluated yet.
-func (s *Server) decideGitPushCommands(ctx context.Context, repo *store.Repo, stor storer.Storer, outcome *gitReceivePackOutcome) error {
+func (s *Server) decideGitPushCommands(ctx context.Context, target *gitTarget, outcome *gitReceivePackOutcome) error {
+	repo, stor := target.repo, target.stor
 	for _, status := range outcome.report.statuses {
 		command := status.command
 		kind, err := classifyPushedRefWrite(stor, command)
@@ -521,6 +523,14 @@ func (s *Server) decideGitPushCommands(ctx context.Context, repo *store.Repo, st
 		status.forced = kind == refForcePush
 		if stale := gitPushPreconditionRefusal(stor, command); stale != "" {
 			status.status = stale
+			continue
+		}
+		// A wiki has neither branch protection nor secret scanning on github:
+		// the settings that configure them are repository settings, and the
+		// scanner reads repository content. Deciding a wiki push against the
+		// repository's rules would refuse pushes github accepts and would
+		// attribute a wiki's text to the repository's alerts.
+		if target.wiki {
 			continue
 		}
 		if refusal := s.protectedRefWriteRefusal(ctx, repo, stor, command.Name, kind, command.New); refusal != "" {

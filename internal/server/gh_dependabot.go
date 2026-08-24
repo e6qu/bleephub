@@ -66,7 +66,7 @@ func (s *Server) registerGHDependabotRoutes() {
 // --- alerts ---
 
 func (s *Server) handleListDependabotAlerts(w http.ResponseWriter, r *http.Request) {
-	repo := s.lookupReadableRepoFromPath(w, r)
+	repo := s.lookupSecurityReadableRepo(w, r)
 	if repo == nil {
 		return
 	}
@@ -85,13 +85,13 @@ func (s *Server) handleListDependabotAlerts(w http.ResponseWriter, r *http.Reque
 	baseURL := s.baseURL(r)
 	out := make([]map[string]interface{}, len(page))
 	for i, a := range page {
-		out[i] = dependabotAlertToJSON(a, baseURL, repo)
+		out[i] = dependabotAlertToJSON(a, baseURL, repo, s.store)
 	}
 	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) handleGetDependabotAlert(w http.ResponseWriter, r *http.Request) {
-	repo := s.lookupReadableRepoFromPath(w, r)
+	repo := s.lookupSecurityReadableRepo(w, r)
 	if repo == nil {
 		return
 	}
@@ -100,7 +100,7 @@ func (s *Server) handleGetDependabotAlert(w http.ResponseWriter, r *http.Request
 	if a == nil {
 		return
 	}
-	writeJSON(w, http.StatusOK, dependabotAlertToJSON(a, s.baseURL(r), repo))
+	writeJSON(w, http.StatusOK, dependabotAlertToJSON(a, s.baseURL(r), repo, s.store))
 }
 
 func (s *Server) handleUpdateDependabotAlert(w http.ResponseWriter, r *http.Request) {
@@ -132,11 +132,15 @@ func (s *Server) handleUpdateDependabotAlert(w http.ResponseWriter, r *http.Requ
 		writeGHValidationErrorSimple(w, "state is missing")
 		return
 	}
+	previousState := a.State
 	if err := s.store.UpdateDependabotAlert(a, req.State, req.DismissedReason, req.DismissedComment, user); err != nil {
 		writeGHValidationErrorSimple(w, "state is invalid")
 		return
 	}
-	writeJSON(w, http.StatusOK, dependabotAlertToJSON(a, s.baseURL(r), repo))
+	if action := dependabotAlertActionFor(previousState, a.State); action != "" && previousState != a.State {
+		s.emitDependabotAlertEvent(repo, a, user, action)
+	}
+	writeJSON(w, http.StatusOK, dependabotAlertToJSON(a, s.baseURL(r), repo, s.store))
 }
 
 func (s *Server) lookupDependabotAlert(w http.ResponseWriter, r *http.Request, repo *store.Repo) *store.DependabotAlert {
@@ -153,7 +157,7 @@ func (s *Server) lookupDependabotAlert(w http.ResponseWriter, r *http.Request, r
 	return a
 }
 
-func dependabotAlertToJSON(a *store.DependabotAlert, baseURL string, repo *store.Repo) map[string]interface{} {
+func dependabotAlertToJSON(a *store.DependabotAlert, baseURL string, repo *store.Repo, st *store.Store) map[string]interface{} {
 	apiURL := fmt.Sprintf("%s/api/v3/repos/%s/dependabot/alerts/%d", baseURL, repo.FullName, a.Number)
 	htmlURL := fmt.Sprintf("%s/%s/security/dependabot/%d", baseURL, repo.FullName, a.Number)
 	published := a.CreatedAt.UTC().Format(time.RFC3339)
@@ -230,8 +234,12 @@ func dependabotAlertToJSON(a *store.DependabotAlert, baseURL string, repo *store
 			"vulnerable_version_range": a.VulnerableVersionRange,
 			"first_patched_version":    firstPatched,
 		},
-		"dismissed_at":      dismissedAt,
-		"dismissed_by":      nil,
+		"dismissed_at": dismissedAt,
+		// The account that dismissed the alert, not just the login the store
+		// records: a client rendering "dismissed by" reads the whole user
+		// object, and this member used to be a hardcoded null that made every
+		// dismissal look anonymous.
+		"dismissed_by":      dependabotDismisserJSON(a, st, baseURL),
 		"dismissed_reason":  nullOrString(a.DismissedReason),
 		"dismissed_comment": nullOrString(a.DismissedComment),
 		"fixed_at":          fixedAt,
@@ -645,7 +653,7 @@ func (s *Server) handleListDependabotOrgAlerts(w http.ResponseWriter, r *http.Re
 		if repo == nil {
 			continue
 		}
-		alertJSON := dependabotAlertToJSON(a, baseURL, repo)
+		alertJSON := dependabotAlertToJSON(a, baseURL, repo, s.store)
 		alertJSON["repository"] = simpleRepoJSON(repo, s.store, baseURL)
 		out = append(out, alertJSON)
 	}
@@ -777,4 +785,17 @@ func (s *Server) dependabotAccessibleRepos(r *http.Request, ids []int) []map[str
 		out = append(out, simpleRepoJSON(repo, s.store, base))
 	}
 	return out
+}
+
+// dependabotDismisserJSON renders the account that dismissed an alert, or a
+// JSON null when the alert stands (or the account has since been deleted).
+func dependabotDismisserJSON(a *store.DependabotAlert, st *store.Store, baseURL string) interface{} {
+	if a.DismissedByLogin == "" || st == nil {
+		return nil
+	}
+	user := st.LookupUserByLogin(a.DismissedByLogin)
+	if user == nil {
+		return nil
+	}
+	return store.UserToJSON(user, baseURL)
 }

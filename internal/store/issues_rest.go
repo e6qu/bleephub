@@ -10,7 +10,7 @@ func CommentToJSON(c *Comment, st *Store, baseURL, repoFullName string, issueNum
 	var authorJSON map[string]interface{}
 	st.Mu.RLock()
 	if u, ok := st.Users[c.AuthorID]; ok {
-		authorJSON = UserToJSON(u)
+		authorJSON = UserToJSON(u, baseURL)
 	}
 	st.Mu.RUnlock()
 
@@ -37,7 +37,7 @@ func IssueEventBase(e *IssueEvent, st *Store, baseURL, repoFullName string) map[
 	st.Mu.RLock()
 	var actorJSON map[string]interface{}
 	if u, ok := st.Users[e.ActorID]; ok {
-		actorJSON = UserToJSON(u)
+		actorJSON = UserToJSON(u, baseURL)
 	}
 	st.Mu.RUnlock()
 

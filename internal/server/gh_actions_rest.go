@@ -920,7 +920,9 @@ func (s *Server) handleCancelWorkflowRun(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	s.actions.CancelWorkflow(wf)
-	w.WriteHeader(http.StatusAccepted)
+	// The documented response is 202 with schema empty-object, not an empty
+	// body: `gh run cancel` decodes the body and aborts on a zero-length one.
+	writeJSON(w, http.StatusAccepted, map[string]interface{}{})
 }
 
 // handleRerunWorkflowRun — POST .../actions/runs/{run_id}/rerun.
@@ -966,7 +968,8 @@ func (s *Server) handleRerunWorkflowRun(w http.ResponseWriter, r *http.Request) 
 		writeGHError(w, http.StatusUnprocessableEntity, "rerun submit: "+err.Error())
 		return
 	}
-	w.WriteHeader(http.StatusCreated)
+	// 201 with schema empty-object, for the same reason as cancel above.
+	writeJSON(w, http.StatusCreated, map[string]interface{}{})
 }
 
 func (s *Server) cachedWorkflowFileForRun(repo string, wf *store.Workflow) (*store.WorkflowFile, error) {

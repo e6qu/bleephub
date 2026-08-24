@@ -115,6 +115,25 @@ test.beforeAll(async ({ browser }) => {
       seeded.pullNumber = (pullRes.json as { number: number }).number;
     }
   }
+  // A Sponsors profile with a tier and a live sponsorship, so the dashboard
+  // renders populated money tables rather than empty states.
+  await api(page, "PUT", `/ui-data/sponsors/${seeded.owner}`, {
+    name: seeded.owner,
+    short_description: "Mobile overflow seed",
+    full_description: "Seeded for the mobile-overflow gate.",
+    is_public: true,
+  });
+  const tierRes = await api(page, "POST", `/ui-data/sponsors/${seeded.owner}/tiers`, {
+    amount_in_cents: 500,
+    description: "A coffee a month",
+    publish: true,
+  });
+  if (tierRes.ok && tierRes.json && typeof tierRes.json === "object") {
+    await api(page, "PUT", `/ui-data/sponsors/${seeded.owner}/goal`, {
+      kind: "MONTHLY_SPONSORSHIP_AMOUNT",
+      target_value: 5000,
+    });
+  }
   await context.close();
 });
 
@@ -143,6 +162,13 @@ const ROUTES: { label: string; route: () => string }[] = [
   { label: "discussions", route: () => `/ui/${seeded.owner}/${seeded.repo}/discussions` },
   { label: "repo-settings", route: () => `/ui/${seeded.owner}/${seeded.repo}/settings` },
   { label: "account-settings", route: () => "/ui/account" },
+  // The advisory database carries a filter row and an affected-package table,
+  // both of which are the shapes that overflow a phone if they are not
+  // allowed to wrap and scroll inside themselves.
+  { label: "advisory-database", route: () => "/ui/advisories" },
+  // The Sponsors dashboard carries three wide money tables — the shape that
+  // overflows a phone unless each scrolls inside itself.
+  { label: "sponsors-dashboard", route: () => `/ui/sponsors/${seeded.owner}/dashboard` },
 ];
 
 for (const { label, route } of ROUTES) {

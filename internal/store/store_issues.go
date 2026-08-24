@@ -381,6 +381,59 @@ func (st *Store) GetIssueEvent(id int) *IssueEvent {
 
 // --- Label CRUD ---
 
+// defaultRepoLabel is one entry of the label set GitHub seeds into a new
+// repository. Name, colour and description are GitHub's own values, verified
+// against the `default: true` rows of a live repository's
+// GET /repos/{owner}/{repo}/labels.
+type defaultRepoLabel struct {
+	name        string
+	color       string
+	description string
+}
+
+// defaultRepoLabels is the nine-label set every repository GitHub creates
+// starts with, in the order GitHub creates them (which is the order the labels
+// endpoint returns, since it orders by id). They are reported with
+// `"default": true`, which is what distinguishes them from labels a user made.
+//
+// A fork gets this same set rather than a copy of the parent's labels: a fork
+// of a repository carrying extra custom labels lists exactly these nine.
+// Generating from a template likewise produces a new repository with this set,
+// because only the template's files and branches carry over.
+var defaultRepoLabels = []defaultRepoLabel{
+	{"bug", "d73a4a", "Something isn't working"},
+	{"documentation", "0075ca", "Improvements or additions to documentation"},
+	{"duplicate", "cfd3d7", "This issue or pull request already exists"},
+	{"enhancement", "a2eeef", "New feature or request"},
+	{"good first issue", "7057ff", "Good for newcomers"},
+	{"help wanted", "008672", "Extra attention is needed"},
+	{"invalid", "e4e669", "This doesn't seem right"},
+	{"question", "d876e3", "Further information is requested"},
+	{"wontfix", "ffffff", "This will not be worked on"},
+}
+
+// ensureDefaultLabelsBatchLocked seeds a new repository with GitHub's default
+// labels, staging their persist into the caller's transaction so the repo row
+// and its labels commit together (STORE-001/002). Callers hold st.Mu.
+func (st *Store) ensureDefaultLabelsBatchLocked(batch *PersistBatch, repoID int) {
+	now := st.CurrentTime()
+	for _, d := range defaultRepoLabels {
+		label := &IssueLabel{
+			ID:          st.NextLabel,
+			NodeID:      fmt.Sprintf("LA_kgDO%08d", st.NextLabel),
+			RepoID:      repoID,
+			Name:        d.name,
+			Description: d.description,
+			Color:       d.color,
+			Default:     true,
+			CreatedAt:   now,
+		}
+		st.NextLabel++
+		st.Labels[label.ID] = label
+		batch.Put("labels", strconv.Itoa(label.ID), label)
+	}
+}
+
 // CreateLabel creates a new label in the given repository.
 func (st *Store) CreateLabel(repoID int, name, description, color string) *IssueLabel {
 	st.Mu.Lock()
@@ -448,6 +501,10 @@ func (st *Store) ListLabels(repoID int) []*IssueLabel {
 			labels = append(labels, l)
 		}
 	}
+	// Ascending id is creation order, which is the order GitHub's labels
+	// endpoint returns; map iteration alone would shuffle the list on every
+	// call once a repository holds more than one label.
+	sort.Slice(labels, func(i, j int) bool { return labels[i].ID < labels[j].ID })
 	return snapshotSlice(labels)
 }
 

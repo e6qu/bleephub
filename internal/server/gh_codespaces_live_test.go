@@ -144,24 +144,18 @@ func TestLiveCodespaces_Secrets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("put user secret: %v", err)
 	}
-	if resp.StatusCode != http.StatusNoContent {
-		b, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		t.Fatalf("put user secret: %d %s", resp.StatusCode, b)
-	}
-	resp.Body.Close()
+	// A secret that did not exist is created, which the contract answers 201
+	// with an empty object; 204 is the reply to a PUT that replaced one.
+	requireSecretCreated(t, resp, "put user secret")
 
 	// Repo secret (PUT).
 	resp, err = s.authedPut(fmt.Sprintf("/api/v3/repos/%s/codespaces/secrets/LIVE_REPO_SECRET", repo.FullName), "application/json", bytes.NewReader(body))
 	if err != nil {
 		t.Fatalf("put repo secret: %v", err)
 	}
-	if resp.StatusCode != http.StatusNoContent {
-		b, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		t.Fatalf("put repo secret: %d %s", resp.StatusCode, b)
-	}
-	resp.Body.Close()
+	// A secret that did not exist is created, which the contract answers 201
+	// with an empty object; 204 is the reply to a PUT that replaced one.
+	requireSecretCreated(t, resp, "put repo secret")
 }
 
 func (s *isolatedServer) authedPut(path, contentType string, body io.Reader) (*http.Response, error) {

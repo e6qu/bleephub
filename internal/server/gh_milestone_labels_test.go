@@ -10,7 +10,7 @@ func TestMilestoneLabels_ListFromMilestoneIssues(t *testing.T) {
 	repo := s.createTestRepo(t)
 
 	for _, l := range []map[string]interface{}{
-		{"name": "bug", "color": "d73a4a"},
+		{"name": "regression", "color": "d73a4a"},
 		{"name": "feature", "color": "a2eeef"},
 		{"name": "unused", "color": "cccccc"},
 	} {
@@ -25,14 +25,14 @@ func TestMilestoneLabels_ListFromMilestoneIssues(t *testing.T) {
 		t.Fatalf("milestone number = %d, want 1", msNumber)
 	}
 
-	// Two issues in the milestone sharing the "bug" label; a third issue
+	// Two issues in the milestone sharing the "regression" label; a third issue
 	// outside the milestone carries "unused", which must not appear.
 	resp = s.post(t, repo.path()+"/issues", defaultToken, map[string]interface{}{
-		"title": "one", "labels": []string{"bug"}, "milestone": msNumber,
+		"title": "one", "labels": []string{"regression"}, "milestone": msNumber,
 	})
 	requireStatus(t, resp, 201)
 	resp = s.post(t, repo.path()+"/issues", defaultToken, map[string]interface{}{
-		"title": "two", "labels": []string{"bug", "feature"}, "milestone": msNumber,
+		"title": "two", "labels": []string{"regression", "feature"}, "milestone": msNumber,
 	})
 	requireStatus(t, resp, 201)
 	resp = s.post(t, repo.path()+"/issues", defaultToken, map[string]interface{}{
@@ -46,8 +46,8 @@ func TestMilestoneLabels_ListFromMilestoneIssues(t *testing.T) {
 	for _, l := range labels {
 		names[l["name"].(string)] = true
 	}
-	if len(labels) != 2 || !names["bug"] || !names["feature"] {
-		t.Fatalf("milestone labels = %v, want exactly [bug feature]", labels)
+	if len(labels) != 2 || !names["regression"] || !names["feature"] {
+		t.Fatalf("milestone labels = %v, want exactly [regression feature]", labels)
 	}
 
 	resp = s.get(t, repo.path()+"/milestones/42/labels", defaultToken)

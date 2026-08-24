@@ -188,8 +188,8 @@ func TestIssueLabels_PullRequestNumbers(t *testing.T) {
 	repo := s.store.CreateRepo(admin, "lbl-pr", "", false)
 	seedPullRequestBranches(t, s, repo, "feat")
 	pr := s.store.CreatePullRequest(repo.ID, admin.ID, "a pull request", "", "feat", "main", false, nil, nil, 0)
-	s.store.CreateLabel(repo.ID, "bug", "", "ff0000")
-	s.store.CreateLabel(repo.ID, "enhancement", "", "00ff00")
+	s.store.CreateLabel(repo.ID, "regression", "", "ff0000")
+	s.store.CreateLabel(repo.ID, "improvement", "", "00ff00")
 
 	handler := s.requestHandler()
 	do := func(method, path string, body []byte) *httptest.ResponseRecorder {
@@ -211,28 +211,28 @@ func TestIssueLabels_PullRequestNumbers(t *testing.T) {
 	}
 
 	// POST adds a label → 200 with the label list
-	w := do("POST", base, body("bug"))
+	w := do("POST", base, body("regression"))
 	if w.Code != http.StatusOK {
 		t.Fatalf("POST PR label: status %d body %s", w.Code, w.Body.String())
 	}
 	var labels []map[string]any
 	_ = json.Unmarshal(w.Body.Bytes(), &labels)
-	if len(labels) != 1 || labels[0]["name"] != "bug" {
-		t.Fatalf("PR labels after add = %v, want [bug]", labels)
+	if len(labels) != 1 || labels[0]["name"] != "regression" {
+		t.Fatalf("PR labels after add = %v, want [regression]", labels)
 	}
 
 	// PUT replaces the set → 200 with the new list
-	w = do("PUT", base, body("enhancement"))
+	w = do("PUT", base, body("improvement"))
 	if w.Code != http.StatusOK {
 		t.Fatalf("PUT PR labels: status %d", w.Code)
 	}
 	_ = json.Unmarshal(w.Body.Bytes(), &labels)
-	if len(labels) != 1 || labels[0]["name"] != "enhancement" {
-		t.Fatalf("PR labels after set = %v, want [enhancement]", labels)
+	if len(labels) != 1 || labels[0]["name"] != "improvement" {
+		t.Fatalf("PR labels after set = %v, want [improvement]", labels)
 	}
 
 	// DELETE one label by name → 204
-	if w := do("DELETE", base+"/enhancement", nil); w.Code != http.StatusNoContent {
+	if w := do("DELETE", base+"/improvement", nil); w.Code != http.StatusNoContent {
 		t.Fatalf("DELETE PR label: status %d", w.Code)
 	}
 	if got := s.store.GetPullRequestByNumber(repo.ID, pr.Number); len(got.LabelIDs) != 0 {
@@ -240,7 +240,7 @@ func TestIssueLabels_PullRequestNumbers(t *testing.T) {
 	}
 
 	// Add two then clear all → 204
-	do("PUT", base, body("bug", "enhancement"))
+	do("PUT", base, body("regression", "improvement"))
 	if w := do("DELETE", base, nil); w.Code != http.StatusNoContent {
 		t.Fatalf("DELETE all PR labels: status %d", w.Code)
 	}

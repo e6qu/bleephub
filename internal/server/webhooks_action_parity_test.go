@@ -156,7 +156,7 @@ func TestWebhookIssuesActionSetIsComplete(t *testing.T) {
 		"name": "wh-issue-actions", "auto_init": true,
 	}), http.StatusCreated, "create repo")
 	expectStatus(t, s.post(t, "/api/v3/repos/"+repo+"/labels", defaultToken, map[string]interface{}{
-		"name": "bug", "color": "d73a4a",
+		"name": "regression", "color": "d73a4a",
 	}), http.StatusCreated, "create label")
 	expectStatus(t, s.post(t, "/api/v3/repos/"+repo+"/milestones", defaultToken, map[string]interface{}{
 		"title": "v1",
@@ -172,9 +172,9 @@ func TestWebhookIssuesActionSetIsComplete(t *testing.T) {
 		"title": "edited title",
 	}), http.StatusOK, "edit title")
 	expectStatus(t, s.post(t, issue+"/labels", defaultToken, map[string]interface{}{
-		"labels": []string{"bug"},
+		"labels": []string{"regression"},
 	}), http.StatusOK, "add label")
-	expectStatus(t, s.delete(t, issue+"/labels/bug", defaultToken), http.StatusNoContent, "remove label")
+	expectStatus(t, s.delete(t, issue+"/labels/regression", defaultToken), http.StatusNoContent, "remove label")
 	expectStatus(t, s.post(t, issue+"/assignees", defaultToken, map[string]interface{}{
 		"assignees": []string{"admin"},
 	}), http.StatusCreated, "add assignee")
@@ -210,8 +210,8 @@ func TestWebhookIssuesActionSetIsComplete(t *testing.T) {
 		t.Errorf("issues.edited changes.title.from = %q, want %q", from, "original title")
 	}
 	for _, action := range []string{"labeled", "unlabeled"} {
-		if name := nestedString(t, sink.payloadFor(t, "issues", action), "label", "name"); name != "bug" {
-			t.Errorf("issues.%s label.name = %q, want bug", action, name)
+		if name := nestedString(t, sink.payloadFor(t, "issues", action), "label", "name"); name != "regression" {
+			t.Errorf("issues.%s label.name = %q, want regression", action, name)
 		}
 	}
 	for _, action := range []string{"assigned", "unassigned"} {
@@ -260,7 +260,7 @@ func TestWebhookPullRequestActionSetIsComplete(t *testing.T) {
 		"enforce_admins":         true,
 	}), http.StatusOK, "protect main")
 	expectStatus(t, s.post(t, "/api/v3/repos/"+repo+"/labels", defaultToken, map[string]interface{}{
-		"name": "bug", "color": "d73a4a",
+		"name": "regression", "color": "d73a4a",
 	}), http.StatusCreated, "create label")
 	expectStatus(t, s.post(t, "/api/v3/repos/"+repo+"/milestones", defaultToken, map[string]interface{}{
 		"title": "v1",
@@ -282,9 +282,9 @@ func TestWebhookPullRequestActionSetIsComplete(t *testing.T) {
 
 	// Labels reach a pull request through the shared /issues surface.
 	expectStatus(t, s.post(t, "/api/v3/repos/"+repo+"/issues/1/labels", defaultToken, map[string]interface{}{
-		"labels": []string{"bug"},
+		"labels": []string{"regression"},
 	}), http.StatusOK, "add label")
-	expectStatus(t, s.delete(t, "/api/v3/repos/"+repo+"/issues/1/labels/bug", defaultToken),
+	expectStatus(t, s.delete(t, "/api/v3/repos/"+repo+"/issues/1/labels/regression", defaultToken),
 		http.StatusNoContent, "remove label")
 
 	// Assignees and the milestone are GraphQL-only on a pull request, so
@@ -349,8 +349,8 @@ func TestWebhookPullRequestActionSetIsComplete(t *testing.T) {
 		"edited", "locked", "unlocked", "closed", "reopened",
 	})
 
-	if label := nestedString(t, sink.payloadFor(t, "pull_request", "labeled"), "label", "name"); label != "bug" {
-		t.Errorf("pull_request.labeled label.name = %q, want bug", label)
+	if label := nestedString(t, sink.payloadFor(t, "pull_request", "labeled"), "label", "name"); label != "regression" {
+		t.Errorf("pull_request.labeled label.name = %q, want regression", label)
 	}
 	for _, action := range []string{"assigned", "unassigned"} {
 		if login := nestedString(t, sink.payloadFor(t, "pull_request", action), "assignee", "login"); login != "admin" {

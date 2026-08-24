@@ -93,6 +93,80 @@ func projectTargetProject(key string) func(*Resolver, map[string]interface{}) pr
 	}
 }
 
+// projectTargetItem, projectTargetField, projectTargetView,
+// projectTargetStatusUpdate and projectTargetWorkflow resolve a mutation whose
+// input names a subject inside a project rather than the project itself. Each
+// walks from the subject to its project, so the entitlement asked is still the
+// owner-scoped write on the project the subject belongs to — a mutation keyed
+// on a bare field or view id must not become a way past that.
+func projectTargetItem(key string) func(*Resolver, map[string]interface{}) projectMutationTarget {
+	return projectTargetVia(key, "node", func(s *Resolver, nodeID string) (int, bool) {
+		if item := s.store.ProjectsV2.LookupItemByNodeID(nodeID); item != nil {
+			return item.ProjectID, true
+		}
+		return 0, false
+	})
+}
+
+func projectTargetField(key string) func(*Resolver, map[string]interface{}) projectMutationTarget {
+	return projectTargetVia(key, "field", func(s *Resolver, nodeID string) (int, bool) {
+		if field := s.store.ProjectsV2.LookupFieldByNodeID(nodeID); field != nil {
+			return field.ProjectID, true
+		}
+		return 0, false
+	})
+}
+
+func projectTargetView(key string) func(*Resolver, map[string]interface{}) projectMutationTarget {
+	return projectTargetVia(key, "view", func(s *Resolver, nodeID string) (int, bool) {
+		if view := s.store.ProjectsV2.LookupViewByNodeID(nodeID); view != nil {
+			return view.ProjectID, true
+		}
+		return 0, false
+	})
+}
+
+func projectTargetStatusUpdate(key string) func(*Resolver, map[string]interface{}) projectMutationTarget {
+	return projectTargetVia(key, "status update", func(s *Resolver, nodeID string) (int, bool) {
+		if update := s.store.ProjectsV2.LookupStatusUpdateByNodeID(nodeID); update != nil {
+			return update.ProjectID, true
+		}
+		return 0, false
+	})
+}
+
+func projectTargetWorkflow(key string) func(*Resolver, map[string]interface{}) projectMutationTarget {
+	return projectTargetVia(key, "workflow", func(s *Resolver, nodeID string) (int, bool) {
+		if workflow := s.store.ProjectsV2.LookupWorkflowByNodeID(nodeID); workflow != nil {
+			return workflow.ProjectID, true
+		}
+		return 0, false
+	})
+}
+
+// projectTargetVia builds a target lookup for a subject that resolves to a
+// project id. subject names the thing in the refusal message, which stays the
+// same whether it does not exist or the caller may not reach it.
+func projectTargetVia(key, subject string, projectIDOf func(*Resolver, string) (int, bool)) func(*Resolver, map[string]interface{}) projectMutationTarget {
+	return func(s *Resolver, input map[string]interface{}) projectMutationTarget {
+		nodeID, _ := input[key].(string)
+		target := projectMutationTarget{missing: &ghNotFoundError{
+			message: fmt.Sprintf("Could not resolve to a %s with the global id of '%s'.", subject, nodeID),
+		}}
+		projectID, ok := projectIDOf(s, nodeID)
+		if !ok {
+			return target
+		}
+		proj := s.store.ProjectsV2.GetProject(projectID)
+		if proj == nil {
+			return target
+		}
+		target.project = proj
+		target.owner = s.projectV2OwnerByID(proj.OwnerID, proj.OwnerType)
+		return target
+	}
+}
+
 // projectV2OwnerByID builds the owner record the access predicates take from a
 // project's stored owner, which is how the GraphQL lane reaches them: there is
 // no request path to parse. An owner that no longer resolves yields nil and the
@@ -171,9 +245,13 @@ func (s *Resolver) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 			if !ok {
 				return nil, &ghNotFoundError{message: fmt.Sprintf("Could not resolve to an owner with the global id of '%s'.", ownerNodeID)}
 			}
+			if err := s.enterpriseOrganizationProjectsRefusal(p, ownerType, ownerID); err != nil {
+				return nil, err
+			}
 			proj := s.store.ProjectsV2.CreateProject(ownerID, ownerType, title, user.ID)
+			s.emitProjectV2Event(s.projectV2Event(p, store.ProjectV2EventProject, "created", proj))
 			return map[string]interface{}{
-				"projectV2": projectV2ToGQL(proj),
+				"projectV2": projectV2ToGQL(s.store, proj),
 			}, nil
 		},
 	})
@@ -220,6 +298,12 @@ func (s *Resolver) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 				}
 			}
 			item := s.store.ProjectsV2.AddItem(proj.ID, contentType, contentID, user.ID)
+			if item == nil {
+				return nil, &ghNotFoundError{message: "Could not resolve to a project."}
+			}
+			event := s.projectV2Event(p, store.ProjectV2EventItem, "created", proj)
+			event.Item = item
+			s.emitProjectV2Event(event)
 			return map[string]interface{}{
 				"item": projectV2ItemToGQL(item, s.store),
 			}, nil
@@ -265,6 +349,9 @@ func (s *Resolver) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 				return nil, &ghNotFoundError{message: fmt.Sprintf("Could not resolve to a node with the global id of '%s'.", itemNodeID)}
 			}
 			s.store.ProjectsV2.DeleteItem(item.ID)
+			event := s.projectV2Event(p, store.ProjectV2EventItem, "deleted", proj)
+			event.Item = item
+			s.emitProjectV2Event(event)
 			return map[string]interface{}{
 				"clientMutationId": clientMutationID,
 				"deletedItemId":    item.NodeID,
@@ -286,12 +373,10 @@ func (s *Resolver) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 		},
 	})
 
-	singleSelectOptionInputType := graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "ProjectV2SingleSelectFieldOptionInput",
-		Fields: graphql.InputObjectConfigFieldMap{
-			"name": &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
-		},
-	})
+	// GitHub's option input requires a name, a colour and a description, and
+	// carries an optional id so an edit can keep an existing option's identity.
+	// The same object is reused by updateProjectV2Field.
+	singleSelectOptionInputType := s.projectV2SingleSelectOptionInput()
 	// GitHub's input names: ProjectV2Iteration is officially an INPUT_OBJECT
 	// (the object flavor is ProjectV2IterationFieldIteration), and the
 	// configuration input is ProjectV2IterationFieldConfigurationInput.
@@ -320,6 +405,7 @@ func (s *Resolver) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 			"dataType":               &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(dataTypeEnum)},
 			"name":                   &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
 			"singleSelectOptions":    &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(singleSelectOptionInputType))},
+			"multiSelectOptions":     &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(s.projectV2MultiSelectOptionInput()))},
 			"iterationConfiguration": &graphql.InputObjectFieldConfig{Type: iterationConfigInputType},
 		},
 	})
@@ -344,16 +430,13 @@ func (s *Resolver) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 			name, _ := input["name"].(string)
 			dataType, _ := input["dataType"].(string)
 			rawOptions, _ := input["singleSelectOptions"].([]interface{})
-			rawIteration, _ := input["iterationConfiguration"].(map[string]interface{})
-			options := make([]*store.ProjectV2SingleSelectOption, 0, len(rawOptions))
-			for _, raw := range rawOptions {
-				m, ok := raw.(map[string]interface{})
-				if !ok {
-					continue
-				}
-				n, _ := m["name"].(string)
-				options = append(options, &store.ProjectV2SingleSelectOption{Name: n})
+			if multi, ok := input["multiSelectOptions"].([]interface{}); ok && len(multi) > 0 {
+				rawOptions = multi
 			}
+			rawIteration, _ := input["iterationConfiguration"].(map[string]interface{})
+			// The option input carries a colour and a description as well as a
+			// name; reading only the name silently discarded both.
+			options := projectV2OptionsFromInput(rawOptions)
 			var iteration *store.ProjectV2IterationConfiguration
 			if rawIteration != nil {
 				startDate, _ := rawIteration["startDate"].(string)
@@ -387,6 +470,10 @@ func (s *Resolver) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 				return nil, fmt.Errorf("iterationConfiguration is required for ITERATION fields")
 			}
 			field := s.store.ProjectsV2.CreateField(proj.ID, name, store.ProjectV2FieldDataType(dataType), options, iteration)
+			if field == nil {
+				return nil, &ghNotFoundError{message: "Could not resolve to a project."}
+			}
+			s.projectV2EmitProjectEdited(p, proj.ID)
 			return map[string]interface{}{
 				"projectV2Field": projectV2FieldToGQL(field),
 			}, nil
@@ -400,6 +487,7 @@ func (s *Resolver) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 		Name: "ProjectV2FieldValue",
 		Fields: graphql.InputObjectConfigFieldMap{
 			"singleSelectOptionId": &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"multiSelectOptionIds": &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(graphql.String))},
 			"text":                 &graphql.InputObjectFieldConfig{Type: graphql.String},
 			"number":               &graphql.InputObjectFieldConfig{Type: graphql.Float},
 			"date":                 &graphql.InputObjectFieldConfig{Type: dateScalar},
@@ -459,14 +547,31 @@ func (s *Resolver) addProjectV2MutationsToSchema(mutationType *graphql.Object) {
 			if err != nil {
 				return nil, err
 			}
-			if err := s.store.ProjectsV2.SetFieldValueAny(item.ID, field.ID, fieldValue); err != nil {
+			// A multi-select value is an ordered set rather than one scalar,
+			// so it takes the store's list writer.
+			if optionIDs, ok := fieldValue.([]string); ok {
+				if err := s.store.ProjectsV2.SetMultiSelectValue(item.ID, field.ID, optionIDs); err != nil {
+					return nil, err
+				}
+			} else if err := s.store.ProjectsV2.SetFieldValueAny(item.ID, field.ID, fieldValue); err != nil {
 				return nil, err
 			}
+			// `item` is the snapshot read before the write; re-read it so the
+			// payload carries the value this mutation just set.
+			updated := s.store.ProjectsV2.GetItem(item.ID)
+			if updated == nil {
+				return nil, &ghNotFoundError{message: "Could not resolve to an item."}
+			}
+			event := s.projectV2Event(p, store.ProjectV2EventItem, "edited", proj)
+			event.Item = updated
+			s.emitProjectV2Event(event)
 			return map[string]interface{}{
-				"projectV2Item": projectV2ItemToGQL(item, s.store),
+				"projectV2Item": projectV2ItemToGQL(updated, s.store),
 			}, nil
 		},
 	})
+
+	s.addProjectV2RemainingMutations(mutationType)
 }
 
 func projectV2GraphQLFieldValueInput(field *store.ProjectV2Field, value map[string]interface{}) (interface{}, error) {
@@ -477,8 +582,8 @@ func projectV2GraphQLFieldValueInput(field *store.ProjectV2Field, value map[stri
 		name  string
 		value interface{}
 	}
-	candidates := make([]candidate, 0, 5)
-	for _, key := range []string{"singleSelectOptionId", "text", "number", "date", "iterationId"} {
+	candidates := make([]candidate, 0, 6)
+	for _, key := range []string{"singleSelectOptionId", "multiSelectOptionIds", "text", "number", "date", "iterationId"} {
 		v, ok := value[key]
 		if !ok || v == nil {
 			continue
@@ -491,6 +596,7 @@ func projectV2GraphQLFieldValueInput(field *store.ProjectV2Field, value map[stri
 	got := candidates[0]
 	want := map[store.ProjectV2FieldDataType]string{
 		store.ProjectV2FieldSingleSelect: "singleSelectOptionId",
+		store.ProjectV2FieldMultiSelect:  "multiSelectOptionIds",
 		store.ProjectV2FieldText:         "text",
 		store.ProjectV2FieldNumber:       "number",
 		store.ProjectV2FieldDate:         "date",
@@ -498,6 +604,21 @@ func projectV2GraphQLFieldValueInput(field *store.ProjectV2Field, value map[stri
 	}[field.DataType]
 	if got.name != want {
 		return nil, fmt.Errorf("field %q expects %s", field.Name, want)
+	}
+	if field.DataType == store.ProjectV2FieldMultiSelect {
+		raw, ok := got.value.([]interface{})
+		if !ok {
+			return nil, fmt.Errorf("field %q expects a list of option ids", field.Name)
+		}
+		optionIDs := make([]string, 0, len(raw))
+		for _, entry := range raw {
+			id, ok := entry.(string)
+			if !ok {
+				return nil, fmt.Errorf("field %q expects a list of option ids", field.Name)
+			}
+			optionIDs = append(optionIDs, id)
+		}
+		return optionIDs, nil
 	}
 	if field.DataType == store.ProjectV2FieldNumber {
 		switch n := got.value.(type) {

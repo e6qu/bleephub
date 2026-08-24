@@ -1631,7 +1631,7 @@ func TestAttachInstallationBlockNodeID(t *testing.T) {
 func TestInstallationEventHasNoTopLevelAppID(t *testing.T) {
 	app := &store.App{ID: 99}
 	inst := &store.Installation{ID: 7, AppID: 99}
-	payload := buildInstallationEventPayload(app, "created", inst, &store.User{Login: "octocat", ID: 5, Type: "User"})
+	payload := buildInstallationEventPayload(app, "created", inst, &store.User{Login: "octocat", ID: 5, Type: "User"}, "https://bleephub.test")
 	if _, ok := payload["app_id"]; ok {
 		t.Error("installation event must NOT have a top-level app_id")
 	}
@@ -1645,7 +1645,7 @@ func TestInstallationEventHasNoTopLevelAppID(t *testing.T) {
 // TestSenderPayloadNeverNil verifies a nil originating user yields a populated
 // ghost sender object, never JSON null.
 func TestSenderPayloadNeverNil(t *testing.T) {
-	got := senderPayload(nil)
+	got := senderPayload(nil, "https://bleephub.test")
 	if got == nil {
 		t.Fatal("senderPayload(nil) returned nil; GitHub guarantees a populated sender")
 	}
@@ -1657,7 +1657,7 @@ func TestSenderPayloadNeverNil(t *testing.T) {
 	}
 
 	// A real user is rendered faithfully.
-	u := senderPayload(&store.User{Login: "octocat", ID: 5, Type: "User", AvatarURL: "http://a"})
+	u := senderPayload(&store.User{Login: "octocat", ID: 5, Type: "User", AvatarURL: "http://a"}, "https://bleephub.test")
 	if u["login"] != "octocat" || u["id"] != 5 {
 		t.Errorf("user sender = %v", u)
 	}
@@ -1722,7 +1722,7 @@ func TestPushPayloadCarriesCommitDetails(t *testing.T) {
 	sha := commitWorkflowYAMLToStorage(t, s, repoKey, "docs/README.md", "payload")
 	repo := s.store.GetRepoByFullName(repoKey)
 	payload := buildPushPayload(s.store, repo, s.store.LookupUserByLogin("push-payload"),
-		"refs/heads/main", actions.ZeroCommitSha, sha)
+		"refs/heads/main", actions.ZeroCommitSha, sha, "https://bleephub.test")
 
 	if payload["created"] != true || payload["forced"] != false {
 		t.Fatalf("push flags = created:%v forced:%v", payload["created"], payload["forced"])
@@ -1867,28 +1867,29 @@ func TestWebhookOrganizationBlock(t *testing.T) {
 
 // TestWebhookRepoAndOrgPayloadHypermedia covers the round-3 residual: the
 // nested repository and organization objects on webhook payloads carry the
-// hypermedia (node_id/url/html_url) GitHub ships, in the same relative form the
-// sender object already uses.
+// hypermedia (node_id/url/html_url) GitHub ships, in the same absolute form the
+// sender object already uses — a webhook body is read on another host, which
+// has nothing to resolve a relative reference against.
 func TestWebhookRepoAndOrgPayloadHypermedia(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
 	admin := s.store.UsersByLogin["admin"]
 	repo := s.store.CreateRepo(admin, "wh-hypermedia", "", false)
 
-	rp := repoPayload(repo)
+	rp := repoPayload(repo, "https://bleephub.test")
 	if rp["node_id"] != repo.NodeID {
 		t.Errorf("repository node_id = %v, want %q", rp["node_id"], repo.NodeID)
 	}
-	if rp["url"] != "/api/v3/repos/"+repo.FullName {
+	if rp["url"] != "https://bleephub.test/api/v3/repos/"+repo.FullName {
 		t.Errorf("repository url = %v", rp["url"])
 	}
-	if rp["html_url"] != "/"+repo.FullName {
+	if rp["html_url"] != "https://bleephub.test/"+repo.FullName {
 		t.Errorf("repository html_url = %v", rp["html_url"])
 	}
 
 	org := s.store.CreateOrg(admin, "wh-org", "WH Org", "")
-	op := orgWebhookPayload(org)
-	if op["url"] != "/api/v3/orgs/"+org.Login {
+	op := orgWebhookPayload(org, "https://bleephub.test")
+	if op["url"] != "https://bleephub.test/api/v3/orgs/"+org.Login {
 		t.Errorf("organization url = %v", op["url"])
 	}
 }

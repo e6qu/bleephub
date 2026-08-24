@@ -350,8 +350,12 @@ func (s *Server) handleGetBlob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// GitHub's blob endpoint serves the raw bytes for the .raw media type.
-	if strings.Contains(r.Header.Get("Accept"), "application/vnd.github.raw") {
+	// Unlike the contents API this one addresses an object by hash, with no
+	// path and so no filename to type it by, and answers octet-stream.
+	if acceptsGitHubMediaType(r.Header.Get("Accept"), "raw") {
+		setGitHubMediaType(w, r, "raw")
 		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(content)
 		return
@@ -407,18 +411,17 @@ func (s *Server) handleGetReadme(w http.ResponseWriter, r *http.Request) {
 		}
 
 		accept := r.Header.Get("Accept")
-		if strings.Contains(accept, "application/vnd.github.raw") {
-			w.Header().Set("Content-Type", "application/octet-stream")
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write(content)
+		if acceptsGitHubMediaType(accept, "raw") {
+			writeContentsRaw(w, r, content)
 			return
 		}
-		if strings.Contains(accept, "application/vnd.github.html") {
+		if acceptsGitHubMediaType(accept, "html") {
 			rendered, err := s.renderMarkdown(string(content), "gfm", repo.FullName, s.baseURL(r))
 			if err != nil {
 				writeGHError(w, http.StatusInternalServerError, "Markdown rendering failed")
 				return
 			}
+			setGitHubMediaType(w, r, "html")
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.WriteHeader(http.StatusOK)
 			_, _ = io.WriteString(w, rendered)
@@ -975,10 +978,13 @@ func (s *Server) writeContentsFile(
 		writeGHBlobTooLargeError(w, "This API does not support blobs larger than 100 MB in size.")
 		return
 	}
-	if blob.Size > contentsAPIInlineFileBytes && !strings.Contains(accept, "application/vnd.github.raw") {
+	if blob.Size > contentsAPIInlineFileBytes && !acceptsGitHubMediaType(accept, "raw") {
 		out := contentFileJSON(s.baseURL(r), repo, refName, requestedPath, hash.String(), blob.Size)
 		out["encoding"] = "none"
 		out["content"] = ""
+		if acceptsGitHubMediaType(accept, "object") {
+			setGitHubMediaType(w, r, "object")
+		}
 		writeJSON(w, http.StatusOK, out)
 		return
 	}
@@ -995,18 +1001,17 @@ func (s *Server) writeContentsFile(
 		return
 	}
 
-	if strings.Contains(accept, "application/vnd.github.raw") {
-		w.Header().Set("Content-Type", "application/octet-stream")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(content)
+	if acceptsGitHubMediaType(accept, "raw") {
+		writeContentsRaw(w, r, content)
 		return
 	}
-	if strings.Contains(accept, "application/vnd.github.html") {
+	if acceptsGitHubMediaType(accept, "html") {
 		rendered, err := s.renderMarkdown(string(content), "gfm", repo.FullName, s.baseURL(r))
 		if err != nil {
 			writeGHError(w, http.StatusInternalServerError, "Markdown rendering failed")
 			return
 		}
+		setGitHubMediaType(w, r, "html")
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
 		_, _ = io.WriteString(w, rendered)
@@ -1015,7 +1020,26 @@ func (s *Server) writeContentsFile(
 	out := contentFileJSON(s.baseURL(r), repo, refName, requestedPath, hash.String(), blob.Size)
 	out["encoding"] = "base64"
 	out["content"] = base64.StdEncoding.EncodeToString(content)
+	if acceptsGitHubMediaType(accept, "object") {
+		setGitHubMediaType(w, r, "object")
+	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// writeContentsRaw serves a file's bytes for the contents API's raw media type.
+//
+// GitHub answers text/plain; charset=utf-8, and the Content-Type is what
+// clients branch on: octokit hands a text/* body to the caller as a string and
+// anything else as a binary buffer, so application/octet-stream turns a
+// requested file's text into a Buffer. nosniff keeps a raw HTML file in the
+// repository from being rendered as a document by the browser, exactly as the
+// separate /{owner}/{repo}/raw/{ref}/{path} route does.
+func writeContentsRaw(w http.ResponseWriter, r *http.Request, content []byte) {
+	setGitHubMediaType(w, r, "raw")
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(content)
 }
 
 func (s *Server) writeTreeListing(
@@ -1067,7 +1091,8 @@ func (s *Server) writeTreeListing(
 		}
 		items = append(items, item)
 	}
-	if strings.Contains(r.Header.Get("Accept"), "application/vnd.github.object") {
+	if acceptsGitHubMediaType(r.Header.Get("Accept"), "object") {
+		setGitHubMediaType(w, r, "object")
 		writeJSON(w, http.StatusOK, map[string]interface{}{"type": "dir", "entries": items})
 		return
 	}

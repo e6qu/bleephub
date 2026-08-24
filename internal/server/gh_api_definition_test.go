@@ -544,6 +544,29 @@ var runnerProtocolRoutes = map[string]string{
 	"POST /actions/runner-registration": "official actions/runner registration handshake",
 }
 
+// sdkCompatibilityRoutes are real GitHub operations that no vendored
+// description still documents, but which an official SDK builds — so omitting
+// them means an unmodified client cannot perform the operation at all.
+//
+// This is deliberately a narrower door than describedOutsideDotcom, which
+// requires a citation into a vendored description. Entry here requires
+// something stricter in a different way: a named official client that
+// constructs the path, and an operation in the SDK conformance matrix
+// (test/conformance) that fails without the route and passes with it. That
+// keeps the gate meaningful — a route cannot be added because someone thought
+// it looked plausible, only because a real client demonstrably needs it.
+//
+// Each entry states the client and the method, so a future reader can retire
+// it when the SDK moves on or a description starts carrying the operation
+// again.
+var sdkCompatibilityRoutes = map[string]string{
+	"GET /repositories/{}/environments/{}/secrets":            "go-github Actions.ListEnvSecrets",
+	"GET /repositories/{}/environments/{}/secrets/public-key": "go-github Actions.GetEnvPublicKey",
+	"GET /repositories/{}/environments/{}/secrets/{}":         "go-github Actions.GetEnvSecret",
+	"PUT /repositories/{}/environments/{}/secrets/{}":         "go-github Actions.CreateOrUpdateEnvSecret",
+	"DELETE /repositories/{}/environments/{}/secrets/{}":      "go-github Actions.DeleteEnvSecret",
+}
+
 // TestRouteAllowlistCitationsHold checks the two ledgers against the
 // vendored descriptions, so neither can drift into decoration.
 func TestRouteAllowlistCitationsHold(t *testing.T) {
@@ -657,6 +680,9 @@ func TestRegisteredAPIv3RoutesExistInGitHubSpec(t *testing.T) {
 			continue
 		}
 		if _, ok := runnerProtocolRoutes[norm]; ok {
+			continue
+		}
+		if _, ok := sdkCompatibilityRoutes[norm]; ok {
 			continue
 		}
 		if _, ok := dispatchRoutes[norm]; ok {

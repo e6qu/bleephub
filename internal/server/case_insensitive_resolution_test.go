@@ -116,8 +116,8 @@ func TestUIDataViewerResolvesCaseInsensitively(t *testing.T) {
 }
 
 // TestRenameRepointsFoldedRepoResolution pins that a rename moves the folded
-// key with the canonical one: every casing of the old name stops resolving
-// (bleephub keeps no rename redirects) and every casing of the new name
+// key with the canonical one: every casing of the old name stops resolving as
+// itself and redirects to the new one instead, and every casing of the new name
 // resolves to the canonical new full name.
 func TestRenameRepointsFoldedRepoResolution(t *testing.T) {
 	t.Parallel()
@@ -133,8 +133,12 @@ func TestRenameRepointsFoldedRepoResolution(t *testing.T) {
 		t.Fatalf("rename full_name = %v, want %q", renamed["full_name"], "admin/"+newName)
 	}
 
-	requireStatus(t, s.get(t, "/api/v3/repos/ADMIN/"+strings.ToUpper(oldName), defaultToken), http.StatusNotFound)
-	requireStatus(t, s.get(t, "/api/v3/repos/admin/"+oldName, defaultToken), http.StatusNotFound)
+	// The vacated name no longer resolves as itself. It is not gone, though:
+	// GitHub keeps it pointing at the repository under its new name, so what it
+	// answers is the documented 301 — in either casing, since the redirect is
+	// recorded fold-insensitively like every other name in the store.
+	requireMovedTo(t, s, "/api/v3/repos/ADMIN/"+strings.ToUpper(oldName), "admin/"+newName)
+	requireMovedTo(t, s, "/api/v3/repos/admin/"+oldName, "admin/"+newName)
 	got := decodeJSONWithStatus(t, s.get(t, "/api/v3/repos/ADMIN/"+strings.ToUpper(newName), defaultToken), http.StatusOK)
 	if got["full_name"] != "admin/"+newName {
 		t.Errorf("post-rename full_name = %v, want %q", got["full_name"], "admin/"+newName)
@@ -225,8 +229,11 @@ func TestGHESOrgRenameRepointsFoldedLogin(t *testing.T) {
 	if org["login"] != newLogin {
 		t.Errorf("renamed org login = %v, want canonical %q", org["login"], newLogin)
 	}
-	// The owned repository moved namespaces; its folded key must follow.
-	requireStatus(t, s.get(t, "/api/v3/repos/"+strings.ToUpper(oldLogin)+"/"+repo.name, defaultToken), http.StatusNotFound)
+	// The owned repository moved namespaces; its folded key must follow, and
+	// the address it vacated redirects to the one it now has — an org rename is
+	// a transfer for every repository the org owns, so a clone or a stored URL
+	// under the old login keeps working.
+	requireMovedTo(t, s, "/api/v3/repos/"+strings.ToUpper(oldLogin)+"/"+repo.name, newLogin+"/"+repo.name)
 	moved := decodeJSONWithStatus(t,
 		s.get(t, "/api/v3/repos/"+strings.ToUpper(newLogin)+"/"+strings.ToUpper(repo.name), defaultToken),
 		http.StatusOK)
@@ -250,5 +257,23 @@ func TestTransferRepoTreatsCaseVariantOwnerAsSameOwner(t *testing.T) {
 	repo := s.store.GetRepoByFullName("admin/" + name)
 	if repo == nil || repo.FullName != "admin/"+name {
 		t.Fatalf("repository lost its canonical key after identity transfer: %+v", repo)
+	}
+}
+
+// requireMovedTo asserts that path answers the documented 301 for a repository
+// that moved, naming wantFullName as where it moved to. The request does not
+// follow the redirect, because following it would report the new name's own 200
+// and say nothing about whether the old name redirected or simply still
+// resolved.
+func requireMovedTo(t *testing.T, s *isolatedServer, path, wantFullName string) {
+	t.Helper()
+	resp := s.noRedirectGet(t, path)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusMovedPermanently {
+		t.Fatalf("GET %s = %d, want 301 to %s", path, resp.StatusCode, wantFullName)
+	}
+	location := resp.Header.Get("Location")
+	if !strings.HasSuffix(location, "/api/v3/repos/"+wantFullName) {
+		t.Fatalf("GET %s Location = %q, want it to name %q", path, location, wantFullName)
 	}
 }

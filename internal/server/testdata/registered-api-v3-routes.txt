@@ -201,6 +201,7 @@ DELETE /api/v3/repos/{owner}/{repo}/rulesets/{ruleset_id}
 DELETE /api/v3/repos/{owner}/{repo}/secret-scanning/custom-patterns
 DELETE /api/v3/repos/{owner}/{repo}/subscription
 DELETE /api/v3/repos/{owner}/{repo}/vulnerability-alerts
+DELETE /api/v3/repositories/{repository_id}/environments/{env_name}/secrets/{secret_name}
 DELETE /api/v3/scim/v2/enterprises/{enterprise}/Groups/{scim_group_id}
 DELETE /api/v3/scim/v2/enterprises/{enterprise}/Users/{scim_user_id}
 DELETE /api/v3/scim/v2/organizations/{org}/Users/{scim_user_id}
@@ -906,6 +907,9 @@ GET /api/v3/repos/{owner}/{repo}/traffic/views
 GET /api/v3/repos/{owner}/{repo}/vulnerability-alerts
 GET /api/v3/repos/{owner}/{repo}/zipball/{ref...}
 GET /api/v3/repositories
+GET /api/v3/repositories/{repository_id}/environments/{env_name}/secrets
+GET /api/v3/repositories/{repository_id}/environments/{env_name}/secrets/public-key
+GET /api/v3/repositories/{repository_id}/environments/{env_name}/secrets/{secret_name}
 GET /api/v3/scim/v2/enterprises/{enterprise}/Groups
 GET /api/v3/scim/v2/enterprises/{enterprise}/Groups/{scim_group_id}
 GET /api/v3/scim/v2/enterprises/{enterprise}/Users
@@ -1527,6 +1531,7 @@ PUT /api/v3/repos/{owner}/{repo}/rulesets/{ruleset_id}
 PUT /api/v3/repos/{owner}/{repo}/subscription
 PUT /api/v3/repos/{owner}/{repo}/topics
 PUT /api/v3/repos/{owner}/{repo}/vulnerability-alerts
+PUT /api/v3/repositories/{repository_id}/environments/{env_name}/secrets/{secret_name}
 PUT /api/v3/scim/v2/enterprises/{enterprise}/Groups/{scim_group_id}
 PUT /api/v3/scim/v2/enterprises/{enterprise}/Users/{scim_user_id}
 PUT /api/v3/scim/v2/organizations/{org}/Users/{scim_user_id}

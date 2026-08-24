@@ -57,6 +57,9 @@ var ReplicaServerAccessStoreFields = map[string]struct{}{
 	"RepoPrefixCopy":              {},
 	"RepoPrefixDelete":            {},
 	"RepoStorageOpen":             {},
+	"WikiGitStorages":             {},
+	"WikiMu":                      {},
+	"WikiProjections":             {},
 	"WorkflowsByRunID":            {},
 }
 

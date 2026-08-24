@@ -248,7 +248,7 @@ func (s *Server) handleStartImport(w http.ResponseWriter, r *http.Request) {
 		NextAuthorID: 1,
 		CreatedAt:    time.Now().UTC(),
 	}
-	writeJSON(w, http.StatusCreated, s.importToJSON(s.startRepoImport(imp, repo), repo, s.baseURL(r)))
+	writeJSON(w, http.StatusCreated, s.importToJSON(s.startRepoImport(imp, repo, ghUserFromContext(r.Context())), repo, s.baseURL(r)))
 }
 
 // acceptImportSource refuses a source URL the server must not fetch.
@@ -304,7 +304,7 @@ func (s *Server) handleUpdateImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// PATCH restarts a stalled import with the updated parameters.
-	writeJSON(w, http.StatusOK, s.importToJSON(s.startRepoImport(imp, repo), repo, s.baseURL(r)))
+	writeJSON(w, http.StatusOK, s.importToJSON(s.startRepoImport(imp, repo, ghUserFromContext(r.Context())), repo, s.baseURL(r)))
 }
 
 func (s *Server) handleCancelImport(w http.ResponseWriter, r *http.Request) {
@@ -435,6 +435,46 @@ func (s *Server) handleListImportLargeFiles(w http.ResponseWriter, r *http.Reque
 
 // --- Import execution ---
 
+// errUnsupportedImportProtocol is what fetchGitSourceInto answers for a source
+// URL whose scheme go-git's import-only transports do not speak. It is a
+// distinct error because it is a fault in the request rather than in the
+// remote: the caller failed detection, not the fetch.
+var errUnsupportedImportProtocol = errors.New("unsupported import protocol")
+
+// fetchGitSourceInto fetches every branch and tag of a remote repository into
+// stor over the import-only go-git transports.
+//
+// It is the one place a source repository is really pulled in. The source
+// import API calls it, and so does the GitHub Enterprise Importer repository
+// migration — a migration and an import differ in what they record about the
+// work, not in the work, and two copies of this would drift in exactly the
+// dimension that matters: which transports and which address policy a source
+// is dialled under.
+func fetchGitSourceInto(ctx context.Context, stor gitStorage.Storer, rawURL string, auth transport.AuthMethod) error {
+	installImportProtocols()
+	fetchURL, err := importFetchURL(rawURL)
+	if err != nil {
+		return fmt.Errorf("%w: %s", errUnsupportedImportProtocol, err)
+	}
+	remote := git.NewRemote(stor, &gitConfig.RemoteConfig{
+		Name: "bleephub-import",
+		URLs: []string{fetchURL},
+		Fetch: []gitConfig.RefSpec{
+			"+refs/heads/*:refs/heads/*",
+			"+refs/tags/*:refs/tags/*",
+		},
+	})
+	err = remote.FetchContext(ctx, &git.FetchOptions{
+		Auth:  auth,
+		Force: true,
+		Tags:  git.AllTags,
+	})
+	if err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
+		return err
+	}
+	return nil
+}
+
 // startRepoImport runs the fetch on its own goroutine and returns the record to
 // serve. The request waits importSyncWait for the outcome — long enough that a
 // reachable source still answers "complete" on the same call — and otherwise
@@ -442,7 +482,7 @@ func (s *Server) handleListImportLargeFiles(w http.ResponseWriter, r *http.Reque
 //
 // The goroutine works on a copy: the record the handler renders and the record
 // the fetch mutates must not be the same struct.
-func (s *Server) startRepoImport(imp *store.RepoImport, repo *store.Repo) *store.RepoImport {
+func (s *Server) startRepoImport(imp *store.RepoImport, repo *store.Repo, sender *store.User) *store.RepoImport {
 	pending := *imp
 	pending.Status = "importing"
 	s.store.PutRepoImport(&pending)
@@ -452,7 +492,9 @@ func (s *Server) startRepoImport(imp *store.RepoImport, repo *store.Repo) *store
 	go func() {
 		defer close(done)
 		s.runRepoImport(&running, repo)
-		s.store.ReplaceRepoImportIfCurrent(&pending, &running)
+		if s.store.ReplaceRepoImportIfCurrent(&pending, &running) {
+			s.emitRepositoryImportEvent(repo, &running, sender)
+		}
 	}()
 
 	select {
@@ -461,6 +503,29 @@ func (s *Server) startRepoImport(imp *store.RepoImport, repo *store.Repo) *store
 	case <-time.After(importSyncWait):
 		return &pending
 	}
+}
+
+// emitRepositoryImportEvent delivers GitHub's `repository_import` webhook.
+//
+// The event has no activity types; its discriminator is the `status` field,
+// which carries the outcome the import actually reached rather than a
+// hard-coded success. A cancelled import never reaches here — DELETE removes
+// the record, and ReplaceRepoImportIfCurrent then refuses to publish the
+// fetch, which is the same decision that stops a cancelled import from
+// resurrecting itself.
+func (s *Server) emitRepositoryImportEvent(repo *store.Repo, imp *store.RepoImport, sender *store.User) {
+	status := "failure"
+	if imp.Status == "complete" {
+		status = "success"
+	}
+	payload := map[string]interface{}{
+		"status":     status,
+		"repository": repoPayload(repo, s.publicOrigin()),
+	}
+	if sender != nil {
+		payload["sender"] = store.UserToJSON(sender, s.publicOrigin())
+	}
+	s.emitWebhookEvent(repo.FullName, "repository_import", "", payload)
 }
 
 // runRepoImport performs the import and records the honest outcome on imp.
@@ -496,30 +561,16 @@ func (s *Server) runRepoImport(imp *store.RepoImport, repo *store.Repo) {
 		auth = &gitHTTP.BasicAuth{Username: imp.VCSUsername, Password: imp.VCSPassword}
 	}
 
-	installImportProtocols()
-	fetchURL, err := importFetchURL(imp.VCSURL)
-	if err != nil {
-		imp.Status = "error"
-		imp.FailedStep = "detecting"
-		imp.ErrorMessage = err.Error()
-		return
-	}
-	remote := git.NewRemote(stor, &gitConfig.RemoteConfig{
-		Name: "bleephub-import",
-		URLs: []string{fetchURL},
-		Fetch: []gitConfig.RefSpec{
-			"+refs/heads/*:refs/heads/*",
-			"+refs/tags/*:refs/tags/*",
-		},
-	})
 	ctx, cancel := context.WithTimeout(context.Background(), importFetchTimeout)
 	defer cancel()
-	err = remote.FetchContext(ctx, &git.FetchOptions{
-		Auth:  auth,
-		Force: true,
-		Tags:  git.AllTags,
-	})
-	if err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
+	err := fetchGitSourceInto(ctx, stor, imp.VCSURL, auth)
+	if err != nil {
+		if errors.Is(err, errUnsupportedImportProtocol) {
+			imp.Status = "error"
+			imp.FailedStep = "detecting"
+			imp.ErrorMessage = err.Error()
+			return
+		}
 		switch {
 		case errors.Is(err, transport.ErrAuthenticationRequired), errors.Is(err, transport.ErrAuthorizationFailed):
 			imp.Status = "auth_failed"

@@ -482,7 +482,7 @@ func (s *Server) handleDeleteRef(w http.ResponseWriter, r *http.Request) {
 		s.afterCommittedRefUpdate(repo, ghUserFromContext(r.Context()), fullRef.String(), oldRef.Hash().String(), plumbing.ZeroHash.String(), s.baseURL(r))
 	}
 	// The `delete` event fires for a removed branch or tag.
-	s.emitWebhookEvent(repo.FullName, "delete", "", buildRefLifecyclePayload(repo, fullRef, ghUserFromContext(r.Context())))
+	s.emitWebhookEvent(repo.FullName, "delete", "", buildRefLifecyclePayload(repo, fullRef, ghUserFromContext(r.Context()), s.baseURL(r)))
 
 	w.WriteHeader(http.StatusNoContent)
 }

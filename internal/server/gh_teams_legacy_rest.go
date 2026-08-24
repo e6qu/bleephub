@@ -172,7 +172,7 @@ func (s *Server) handleLegacyListTeamMembers(w http.ResponseWriter, r *http.Requ
 	members := s.store.ListTeamMembers(org.Login, team.Slug)
 	result := make([]map[string]interface{}, 0, len(members))
 	for _, u := range members {
-		result = append(result, store.UserToJSON(u))
+		result = append(result, store.UserToJSON(u, s.baseURL(r)))
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, result))
 }

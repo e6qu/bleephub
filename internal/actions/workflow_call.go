@@ -128,6 +128,17 @@ func (s *Engine) expandOneCall(out *store.WorkflowDef, callerKey string, caller 
 		return fmt.Errorf("called workflow %s: %w", calledPath, err)
 	}
 
+	// Bindings already attached to the called workflow's jobs belong to calls
+	// it makes itself. Their roots become children of this call so secret
+	// resolution narrows outside-in. Collected before `binding` exists, so the
+	// chain can never close on itself.
+	nestedRoots := map[*store.WorkflowCallBinding]bool{}
+	for _, cjd := range calledDef.Jobs {
+		if cjd.Call != nil {
+			nestedRoots[callBindingRoot(cjd.Call)] = true
+		}
+	}
+
 	binding := &store.WorkflowCallBinding{
 		CallerKey:      callerKey,
 		CalledPath:     calledPath,
@@ -137,6 +148,9 @@ func (s *Engine) expandOneCall(out *store.WorkflowDef, callerKey string, caller 
 		SecretsMap:     caller.SecretsMap,
 		SecretsInherit: caller.SecretsInherit,
 		OutputDefs:     outputDefs,
+	}
+	for root := range nestedRoots {
+		root.Parent = binding
 	}
 
 	callerDisplay := caller.Name
@@ -191,6 +205,14 @@ func (s *Engine) expandOneCall(out *store.WorkflowDef, callerKey string, caller 
 		CallRole:        "collector",
 	}
 	return nil
+}
+
+// callBindingRoot walks a binding chain to its outermost call.
+func callBindingRoot(binding *store.WorkflowCallBinding) *store.WorkflowCallBinding {
+	for binding.Parent != nil {
+		binding = binding.Parent
+	}
+	return binding
 }
 
 // resolveCalledWorkflow loads the YAML a `uses:` reference points at:

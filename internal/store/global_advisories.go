@@ -15,8 +15,12 @@ func (st *Store) ListGlobalAdvisories() []*SecurityAdvisory {
 		if a.State != "published" && a.State != "withdrawn" {
 			continue
 		}
-		out = append(out, a)
+		// A detached snapshot, not the live row (STORE-021): alert derivation
+		// walks this list while holding no lock and reads the vulnerability
+		// slice off each advisory, which a concurrent advisory update would
+		// otherwise be rewriting underneath it.
+		out = append(out, cloneSecurityAdvisory(a))
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return snapshotSlice(out)
 }

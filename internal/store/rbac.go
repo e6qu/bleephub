@@ -88,7 +88,7 @@ func canAccessRepoLocked(st *Store, user *User, repo *Repo, required string) boo
 			// Organization owners administer every repository regardless of
 			// the base permission assigned to ordinary members.
 			if membership.Role == OrgRoleAdmin ||
-				repositoryPermissionAtLeast(org.DefaultRepositoryPermission, required) {
+				repositoryPermissionAtLeast(st.enterpriseClampedBasePermissionLocked(org), required) {
 				return true
 			}
 		}

@@ -46,6 +46,14 @@ def dependencies() -> list[str]:
         if EXCLUDED_PARTS.intersection(path.relative_to(ROOT).parts):
             continue
         for line in path.read_text(encoding="utf-8").splitlines():
+            # A whole-line comment is prose, not a wall-clock read. Without this
+            # the gate counts a comment that explains why a test avoids
+            # time.Now() as though it were a call to it, so documenting the very
+            # rule this script enforces trips the script. Only whole-line
+            # comments are stripped: cutting at a trailing "//" could hide a
+            # real call sitting after a URL on the same line.
+            if line.lstrip().startswith("//"):
+                continue
             if (
                 ("Date.now()" in line or "new Date()" in line)
                 or (

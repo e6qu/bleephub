@@ -306,12 +306,10 @@ func TestUpdateRepoRename(t *testing.T) {
 		t.Fatalf("expected name=renamed, got %v", data["name"])
 	}
 
-	// Old name is gone.
-	old := srv.get(t, "/api/v3/repos/admin/no-rename", defaultToken)
-	defer old.Body.Close()
-	if old.StatusCode != 404 {
-		t.Fatalf("expected 404 for old name, got %d", old.StatusCode)
-	}
+	// The old name no longer names this repository, but it is not gone: GitHub
+	// keeps it redirecting to the name the repository now has, which is what
+	// lets a stored URL or an existing clone survive the rename.
+	requireMovedTo(t, srv, "/api/v3/repos/admin/no-rename", "admin/renamed")
 }
 
 // TestCreateRepoWithLicenseTemplate verifies license object is emitted.

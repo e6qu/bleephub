@@ -17,13 +17,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 	uri := s.graphQLStringScalar("URI")
 	lockReasonEnum := s.graphQLEnum("LockReason", "OFF_TOPIC", "RESOLVED", "SPAM", "TOO_HEATED")
 	issueStateReasonEnum := s.graphQLEnum("IssueStateReason", "COMPLETED", "NOT_PLANNED", "REOPENED")
-	issueStateEnum := graphql.NewEnum(graphql.EnumConfig{
-		Name: "IssueState",
-		Values: graphql.EnumValueConfigMap{
-			"OPEN":   &graphql.EnumValueConfig{Value: "OPEN"},
-			"CLOSED": &graphql.EnumValueConfig{Value: "CLOSED"},
-		},
-	})
+	issueStateEnum := s.sharedEnum("IssueState", "OPEN", "CLOSED")
 	issueClosedStateReasonEnum := graphql.NewEnum(graphql.EnumConfig{
 		Name: "IssueClosedStateReason",
 		Values: graphql.EnumValueConfigMap{
@@ -62,6 +56,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 			"dueOn":       &graphql.Field{Type: dateTime},
 		},
 	})
+	s.graphqlTypes.milestone = issueMilestoneType
 
 	milestoneConnectionType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "MilestoneConnection",
@@ -114,8 +109,17 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 
 	// --- Issue type ---
 	issueType := graphql.NewObject(graphql.ObjectConfig{
-		Name:       "Issue",
-		Interfaces: []*graphql.Interface{nodeInterface, s.gqlLockableInterface(), s.graphqlTypes.reactable},
+		Name: "Issue",
+		// Closable and Assignable are claimed here rather than added later:
+		// graphql-go reads an object's interface list once and memoizes it, so
+		// an interface a type does not claim at construction can never gain it
+		// as a possible type. ClosedEvent.closable and AssignedEvent.assignable
+		// resolve to an Issue or a PullRequest through them.
+		Interfaces: []*graphql.Interface{
+			nodeInterface, s.gqlLockableInterface(), s.gqlLabelableInterface(),
+			s.graphqlTypes.reactable, s.uniformResourceLocatableInterface(),
+			s.gqlClosableInterface(), s.gqlAssignableInterface(),
+		},
 		Fields: graphql.Fields{
 			"id": &graphql.Field{
 				Type: graphql.NewNonNull(graphql.ID),
@@ -146,6 +150,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 				},
 			},
 			"url":              &graphql.Field{Type: graphql.NewNonNull(uri)},
+			"resourcePath":     &graphql.Field{Type: graphql.NewNonNull(uri)},
 			"createdAt":        &graphql.Field{Type: graphql.NewNonNull(dateTime)},
 			"updatedAt":        &graphql.Field{Type: graphql.NewNonNull(dateTime)},
 			"closedAt":         &graphql.Field{Type: dateTime},
@@ -178,10 +183,9 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 			},
 			"assignees": &graphql.Field{
 				Type: graphql.NewNonNull(assigneeConnectionType),
-				Args: graphql.FieldConfigArgument{
-					"first": &graphql.ArgumentConfig{Type: graphql.Int},
-					"after": &graphql.ArgumentConfig{Type: graphql.String},
-				},
+				// The full Relay argument set, which is also what the Assignable
+				// interface's contract requires of every implementation.
+				Args: relayConnectionArgs(),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					i, ok := p.Source.(map[string]interface{})
 					if !ok {
@@ -1148,7 +1152,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 					"nodeID":     pinnedIssueNodeID(issue.ID),
 					"databaseId": issue.ID,
 					"issue":      issueToGQL(issue, s.store),
-					"pinnedBy":   pinnedBy,
+					"pinnedBy":   optionalObject(pinnedBy),
 					"repository": repo,
 				})
 			}
@@ -1338,6 +1342,15 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 				return nil, gqlMissingNodeType("Issue")
 			}
 			repo := s.store.GetRepoByID(issue.RepoID)
+			// Issue deletion is one of the actions an enterprise can forbid
+			// its members outright, whatever standing they hold on the
+			// repository (gh_enterprise_policy.go is the REST half of the
+			// same policy set).
+			if err := s.enterprisePolicyRefusal(p, repo, func(policy store.EnterprisePolicy) string {
+				return policy.MembersCanDeleteIssues
+			}, "Deleting issues is disabled by an enterprise policy."); err != nil {
+				return nil, err
+			}
 			// The webhook payload has to render before the rows disappear.
 			var payload map[string]interface{}
 			if repo != nil {
@@ -1559,6 +1572,16 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 				change.BodyFrom = &before.Body
 			}
 			user := s.ghUserFromContext(p.Context)
+			if change.TitleFrom != nil && user != nil {
+				// The retitle is github's `renamed` timeline event. gh mutates
+				// titles here rather than over REST, so recording it only on
+				// the REST path would make the history depend on which client
+				// made the edit.
+				s.store.RecordIssueEvent(repo.ID, issue.ID, user.ID, "renamed", map[string]interface{}{
+					"rename_from": *change.TitleFrom,
+					"rename_to":   updated.Title,
+				})
+			}
 			s.emitIssueChanges(repo, updated, user, change)
 			// The state transition goes through the shared helper so it also
 			// records the timeline event closeIssue/reopenIssue record.
@@ -1726,12 +1749,6 @@ func issueToGQL(issue *store.Issue, st *store.Store) map[string]interface{} {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 
-	// Author
-	var author map[string]interface{}
-	if u, ok := st.Users[issue.AuthorID]; ok {
-		author = userToGraphQL(u)
-	}
-
 	// Labels
 	labelNodes := make([]map[string]interface{}, 0)
 	for _, lid := range issue.LabelIDs {
@@ -1782,9 +1799,10 @@ func issueToGQL(issue *store.Issue, st *store.Store) map[string]interface{} {
 
 	// Resolve repo for URL
 	repo := st.Repos[issue.RepoID]
-	url := ""
+	url, resourcePath := "", ""
 	if repo != nil {
-		url = externalURL("/" + repo.FullName + "/issues/" + strconv.Itoa(issue.Number))
+		resourcePath = "/" + repo.FullName + "/issues/" + strconv.Itoa(issue.Number)
+		url = externalURL(resourcePath)
 	}
 
 	// parent/subIssues resolve lazily (their eager maps would recurse
@@ -1825,13 +1843,14 @@ func issueToGQL(issue *store.Issue, st *store.Store) map[string]interface{} {
 		"state":            issue.State,
 		"stateReason":      stateReason,
 		"url":              url,
+		"resourcePath":     resourcePath,
 		"createdAt":        issue.CreatedAt.Format(time.RFC3339),
 		"updatedAt":        issue.UpdatedAt.Format(time.RFC3339),
 		"closedAt":         closedAt,
 		"isPinned":         issue.PinnedAt != nil,
 		"locked":           issue.Locked,
 		"activeLockReason": graphQLLockReason(string(issue.ActiveLockReason)),
-		"author":           author,
+		"author":           optionalRendered(st.Users[issue.AuthorID], userToGraphQL),
 		"labels": map[string]interface{}{
 			"nodes":      labelNodes,
 			"totalCount": len(labelNodes),
@@ -1852,8 +1871,8 @@ func issueToGQL(issue *store.Issue, st *store.Store) map[string]interface{} {
 				"endCursor":       nil,
 			},
 		},
-		"milestone": milestone,
-		"issueType": issueType,
+		"milestone": optionalObject(milestone),
+		"issueType": optionalObject(issueType),
 		"subIssuesSummary": map[string]interface{}{
 			"total":            totalSubIssues,
 			"completed":        completedSubIssues,
@@ -2415,10 +2434,6 @@ func commentToGQL(c *store.Comment, st *store.Store) map[string]interface{} {
 }
 
 func commentToGQLLocked(c *store.Comment, st *store.Store) map[string]interface{} {
-	var author map[string]interface{}
-	if u, ok := st.Users[c.AuthorID]; ok {
-		author = userToGraphQL(u)
-	}
 	var editor map[string]interface{}
 	var lastEditedAt interface{}
 	if c.LastEditedAt != nil {
@@ -2435,11 +2450,11 @@ func commentToGQLLocked(c *store.Comment, st *store.Store) map[string]interface{
 		"authorID":            c.AuthorID,
 		"createdAt":           c.CreatedAt.Format(time.RFC3339),
 		"updatedAt":           c.UpdatedAt.Format(time.RFC3339),
-		"author":              author,
+		"author":              optionalRendered(st.Users[c.AuthorID], userToGraphQL),
 		"authorAssociation":   commentAuthorAssociationLocked(c, st),
 		"includesCreatedEdit": c.LastEditedAt != nil,
 		"lastEditedAt":        lastEditedAt,
-		"editor":              editor,
+		"editor":              optionalObject(editor),
 		"isMinimized":         c.MinimizedReason != "",
 		"isPinned":            c.Pinned,
 		"minimizedReason":     nilStr(c.MinimizedReason),
@@ -2700,9 +2715,69 @@ type graphQLTypeRegistry struct {
 	projectV2DateValueMemo           *graphql.Object
 	projectV2IterationValueMemo      *graphql.Object
 	projectV2ItemFieldValueUnionMemo *graphql.Union
+	// The Projects v2 read surface built in gh_projects_v2_types_graphql.go:
+	// the owner interface, the status-update/workflow/draft-issue objects, the
+	// project ordering input, and the connection objects minted per node type.
+	projectV2OwnerInterface   *graphql.Interface
+	projectV2StatusUpdateType *graphql.Object
+	projectV2WorkflowType     *graphql.Object
+	projectV2DraftIssueType   *graphql.Object
+	projectV2OrderInput       *graphql.InputObject
+	projectV2OptionInput      *graphql.InputObject
+	projectV2MultiOptionInput *graphql.InputObject
+	// Query.resource's return interface and the node types it dispatches to.
+	projectV2OrderInputs     map[string]*graphql.InputObject
+	uniformResourceLocatable *graphql.Interface
+	resourceNodeTypes        map[string]*graphql.Object
+	// Shared payload types the Projects v2 field values name: a LABELS value
+	// resolves the content's labels, a MILESTONE value its milestone, and so
+	// on, so each needs the one type the rest of the schema already uses.
+	milestone              *graphql.Object
+	pullRequestConnection  *graphql.Object
+	requestedReviewerUnion *graphql.Union
+	// The ProjectV2ItemFieldValue union's remaining members and the interface
+	// the stored ones share.
+	projectV2ValueCommonInterface *graphql.Interface
+	projectV2MultiSelectValueMemo *graphql.Object
+	// The enterprise account family (gh_enterprise_graphql.go): the shared
+	// OrganizationConnection every enterprise policy-override connection
+	// returns, and the enterprise types the mutation payloads name.
+	organizationConnection        *graphql.Object
+	enterprise                    *graphql.Object
+	enterpriseUserAccount         *graphql.Object
+	enterpriseAdminInvitation     *graphql.Object
+	enterpriseMemberInvite        *graphql.Object
+	enterpriseIdentityProvide     *graphql.Object
+	ipAllowListEntry              *graphql.Object
+	ipAllowListOwner              *graphql.Union
+	projectV2LabelValueMemo       *graphql.Object
+	projectV2MilestoneValueMemo   *graphql.Object
+	projectV2RepositoryValueMemo  *graphql.Object
+	projectV2UserValueMemo        *graphql.Object
+	projectV2ReviewerValueMemo    *graphql.Object
+	projectV2PullRequestValueMemo *graphql.Object
+	projectV2MultiSelectOption    *graphql.Object
+	projectV2MultiSelectFieldMemo *graphql.Object
+	projectV2Connections          map[string]*graphql.Object
+	// The shared RepositoryConnection and Team objects. Projects v2 links to
+	// both, and GitHub's schema names one type for each, so they are memoized
+	// where they are built rather than re-minted per consumer.
+	repositoryConnection *graphql.Object
+	team                 *graphql.Object
 	// The git object graph: the Node interface and the Repository object both
 	// git objects and refs point back at, the GitObject interface with its
 	// four implementations, and the connections over them.
+	// The Copilot endpoints object (gh_copilot_graphql.go).
+	copilotEndpoints *graphql.Object
+
+	// The GitHub Marketplace type graph (gh_marketplace_graphql.go).
+	marketplace *marketplaceTypeRegistry
+
+	// The GitHub Sponsors type graph (gh_sponsors_graphql.go): the
+	// Sponsorable interface User and Organization implement, the listing
+	// object graph, and the connections over it.
+	sponsors *sponsorsTypeRegistry
+
 	node              *graphql.Interface
 	user              *graphql.Object
 	repository        *graphql.Object
@@ -2718,6 +2793,30 @@ type graphQLTypeRegistry struct {
 	blob              *graphql.Object
 	tag               *graphql.Object
 	refConnection     *graphql.Object
+	// The check-rollup members `gh pr checks` asks isRequired of, and the
+	// interface GitHub declares that field on.
+	statusContext           *graphql.Object
+	checkRun                *graphql.Object
+	requirableByPullRequest *graphql.Interface
+	// Labelable, the interface the three label mutations return their
+	// subject behind.
+	labelable *graphql.Interface
+	// Gists: the objects, edges and connection `gh gist list` reads.
+	gist           *graphql.Object
+	gistFile       *graphql.Object
+	gistEdge       *graphql.Object
+	gistConnection *graphql.Object
+	// The issue/pull-request timeline family (gh_timeline_types_graphql.go):
+	// its own registry, plus the three shared types its unions name that no
+	// other consumer had to memoize before.
+	timeline                *timelineTypeRegistry
+	pullRequestCommit       *graphql.Object
+	pullRequestReviewThread *graphql.Object
+	issueOrPullRequest      *graphql.Union
+	// The Repository / User / Organization account-surface family
+	// (gh_account_surface_graphql.go) keeps its own registry of the types it
+	// mints, so a type two of its installers both name is built once.
+	accountSurface *accountSurfaceTypes
 }
 
 func (s *Resolver) projectV2GraphQLTypes() *graphql.Object {
@@ -2746,7 +2845,7 @@ func (s *Resolver) projectV2GraphQLTypes() *graphql.Object {
 	})
 	s.graphqlTypes.projectV2Type.AddFieldConfig("fields", &graphql.Field{
 		Type: graphql.NewNonNull(s.projectV2FieldConnectionType()),
-		Args: relayConnectionArgs(),
+		Args: orderedConnectionArgs(s.projectV2FieldOrderInput()),
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			projectID, err := projectV2SourceID(p.Source)
 			if err != nil {
@@ -2757,12 +2856,13 @@ func (s *Resolver) projectV2GraphQLTypes() *graphql.Object {
 			for _, f := range fields {
 				nodes = append(nodes, projectV2FieldToGQL(f))
 			}
+			projectV2SortNodes(nodes, p.Args, map[string]string{"NAME": "name", "CREATED_AT": "createdAt"})
 			return paginateGQLMaps(nodes, p.Args), nil
 		},
 	})
 	s.graphqlTypes.projectV2Type.AddFieldConfig("views", &graphql.Field{
 		Type: graphql.NewNonNull(s.projectV2ViewConnectionType()),
-		Args: relayConnectionArgs(),
+		Args: orderedConnectionArgs(s.projectV2ViewOrderInput()),
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			projectID, err := projectV2SourceID(p.Source)
 			if err != nil {
@@ -2773,6 +2873,7 @@ func (s *Resolver) projectV2GraphQLTypes() *graphql.Object {
 			for _, v := range views {
 				nodes = append(nodes, projectV2ViewToGQL(v))
 			}
+			projectV2SortNodes(nodes, p.Args, map[string]string{"NAME": "name", "CREATED_AT": "createdAt"})
 			return paginateGQLMaps(nodes, p.Args), nil
 		},
 	})
@@ -2785,17 +2886,18 @@ func (s *Resolver) ensureProjectV2ItemsField() {
 	}
 	s.graphqlTypes.projectV2Type.AddFieldConfig("items", &graphql.Field{
 		Type: graphql.NewNonNull(s.graphqlTypes.projectV2ItemConnectionTypeMemo),
-		Args: relayConnectionArgs(),
+		Args: s.projectV2ItemConnectionArgs(),
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			projectID, err := projectV2SourceID(p.Source)
 			if err != nil {
 				return nil, err
 			}
-			items := s.store.ProjectsV2.ListItemsForProject(projectID)
+			items := projectV2ApplyItemFilters(s.store, s.store.ProjectsV2.ListItemsForProject(projectID), p.Args)
 			nodes := make([]map[string]interface{}, 0, len(items))
 			for _, it := range items {
 				nodes = append(nodes, projectV2ItemToGQL(it, s.store))
 			}
+			projectV2SortNodes(nodes, p.Args, nil)
 			return paginateGQLMaps(nodes, p.Args), nil
 		},
 	})
@@ -2817,9 +2919,10 @@ func (s *Resolver) projectV2FieldConnectionType() *graphql.Object {
 	date := s.graphQLStringScalar("Date")
 	fieldTypeEnum := s.graphQLEnum(
 		"ProjectV2FieldType",
-		"ASSIGNEES", "DATE", "ITERATION", "LABELS", "LINKED_PULL_REQUESTS",
-		"MILESTONE", "NUMBER", "REPOSITORY", "REVIEWERS", "SINGLE_SELECT",
-		"TEXT", "TITLE", "TRACKED_BY", "TRACKS",
+		"ASSIGNEES", "CLOSED", "CREATED", "DATE", "ISSUE_TYPE", "ITERATION",
+		"LABELS", "LINKED_PULL_REQUESTS", "MILESTONE", "MULTI_SELECT", "NUMBER",
+		"PARENT_ISSUE", "REPOSITORY", "REVIEWERS", "SINGLE_SELECT",
+		"SUB_ISSUES_PROGRESS", "TEXT", "TITLE", "TRACKED_BY", "TRACKS", "UPDATED",
 	)
 	optionType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "ProjectV2SingleSelectFieldOption",
@@ -2860,6 +2963,8 @@ func (s *Resolver) projectV2FieldConnectionType() *graphql.Object {
 		switch src["dataType"] {
 		case string(store.ProjectV2FieldSingleSelect):
 			return s.graphqlTypes.projectV2SingleSelectFieldMemo
+		case string(store.ProjectV2FieldMultiSelect):
+			return s.graphqlTypes.projectV2MultiSelectFieldMemo
 		case string(store.ProjectV2FieldIteration):
 			return s.graphqlTypes.projectV2IterationFieldMemo
 		default:
@@ -2918,6 +3023,42 @@ func (s *Resolver) projectV2FieldConnectionType() *graphql.Object {
 		Interfaces: []*graphql.Interface{fieldCommonInterface},
 		Fields:     singleSelectFields,
 	})
+	multiSelectFields := commonFields()
+	multiSelectFields["multiSelectOptions"] = &graphql.Field{
+		Type: graphql.NewNonNull(graphql.NewList(graphql.NewNonNull(s.projectV2MultiSelectOptionType()))),
+		Args: graphql.FieldConfigArgument{
+			"names": &graphql.ArgumentConfig{Type: graphql.NewList(graphql.NewNonNull(graphql.String))},
+		},
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			src, ok := p.Source.(map[string]interface{})
+			if !ok {
+				return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
+			}
+			options, _ := src["options"].([]map[string]interface{})
+			names, _ := p.Args["names"].([]interface{})
+			if len(names) == 0 {
+				return options, nil
+			}
+			wanted := make(map[string]bool, len(names))
+			for _, name := range names {
+				if value, ok := name.(string); ok {
+					wanted[value] = true
+				}
+			}
+			filtered := make([]map[string]interface{}, 0, len(options))
+			for _, option := range options {
+				if name, _ := option["name"].(string); wanted[name] {
+					filtered = append(filtered, option)
+				}
+			}
+			return filtered, nil
+		},
+	}
+	s.graphqlTypes.projectV2MultiSelectFieldMemo = graphql.NewObject(graphql.ObjectConfig{
+		Name:       "ProjectV2MultiSelectField",
+		Interfaces: []*graphql.Interface{fieldCommonInterface},
+		Fields:     multiSelectFields,
+	})
 	iterationFields := commonFields()
 	iterationFields["configuration"] = &graphql.Field{
 		Type: graphql.NewNonNull(iterationConfigurationType),
@@ -2939,6 +3080,7 @@ func (s *Resolver) projectV2FieldConnectionType() *graphql.Object {
 		Types: []*graphql.Object{
 			s.graphqlTypes.projectV2FieldTypeMemo,
 			s.graphqlTypes.projectV2IterationFieldMemo,
+			s.graphqlTypes.projectV2MultiSelectFieldMemo,
 			s.graphqlTypes.projectV2SingleSelectFieldMemo,
 		},
 		ResolveType: func(p graphql.ResolveTypeParams) *graphql.Object {
@@ -3051,140 +3193,11 @@ func (s *Resolver) projectV2ItemConnectionType() *graphql.Object {
 		return s.graphqlTypes.projectV2ItemConnectionTypeMemo
 	}
 	projectV2Type := s.projectV2GraphQLTypes()
-	s.graphqlTypes.projectV2SingleSelectValueMemo = graphql.NewObject(graphql.ObjectConfig{
-		Name: "ProjectV2ItemFieldSingleSelectValue",
-		Fields: graphql.Fields{
-			"optionId": &graphql.Field{
-				Type: graphql.String,
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					src, ok := p.Source.(map[string]interface{})
-					if !ok {
-						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
-					}
-					return src["optionId"], nil
-				},
-			},
-			"name": &graphql.Field{
-				Type: graphql.String,
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					src, ok := p.Source.(map[string]interface{})
-					if !ok {
-						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
-					}
-					return src["name"], nil
-				},
-			},
-		},
-	})
-	s.graphqlTypes.projectV2TextValueMemo = graphql.NewObject(graphql.ObjectConfig{
-		Name: "ProjectV2ItemFieldTextValue",
-		Fields: graphql.Fields{
-			"text": &graphql.Field{
-				Type: graphql.String,
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					src, ok := p.Source.(map[string]interface{})
-					if !ok {
-						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
-					}
-					return src["text"], nil
-				},
-			},
-		},
-	})
-	s.graphqlTypes.projectV2NumberValueMemo = graphql.NewObject(graphql.ObjectConfig{
-		Name: "ProjectV2ItemFieldNumberValue",
-		Fields: graphql.Fields{
-			"number": &graphql.Field{
-				Type: graphql.Float,
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					src, ok := p.Source.(map[string]interface{})
-					if !ok {
-						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
-					}
-					return src["number"], nil
-				},
-			},
-		},
-	})
-	s.graphqlTypes.projectV2DateValueMemo = graphql.NewObject(graphql.ObjectConfig{
-		Name: "ProjectV2ItemFieldDateValue",
-		Fields: graphql.Fields{
-			"date": &graphql.Field{
-				Type: s.graphQLStringScalar("Date"),
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					src, ok := p.Source.(map[string]interface{})
-					if !ok {
-						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
-					}
-					return src["date"], nil
-				},
-			},
-		},
-	})
-	s.graphqlTypes.projectV2IterationValueMemo = graphql.NewObject(graphql.ObjectConfig{
-		Name: "ProjectV2ItemFieldIterationValue",
-		Fields: graphql.Fields{
-			"iterationId": &graphql.Field{
-				Type: graphql.NewNonNull(graphql.String),
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					src, ok := p.Source.(map[string]interface{})
-					if !ok {
-						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
-					}
-					return src["iterationId"], nil
-				},
-			},
-			"title": &graphql.Field{
-				Type: graphql.NewNonNull(graphql.String),
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					src, ok := p.Source.(map[string]interface{})
-					if !ok {
-						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
-					}
-					return src["title"], nil
-				},
-			},
-			"startDate": &graphql.Field{
-				Type: graphql.NewNonNull(s.graphQLStringScalar("Date")),
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					src, ok := p.Source.(map[string]interface{})
-					if !ok {
-						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
-					}
-					return src["startDate"], nil
-				},
-			},
-			"duration": &graphql.Field{
-				Type: graphql.NewNonNull(graphql.Int),
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					src, ok := p.Source.(map[string]interface{})
-					if !ok {
-						return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
-					}
-					return src["duration"], nil
-				},
-			},
-		},
-	})
-	s.graphqlTypes.projectV2ItemFieldValueUnionMemo = graphql.NewUnion(graphql.UnionConfig{
-		Name:  "ProjectV2ItemFieldValue",
-		Types: []*graphql.Object{s.graphqlTypes.projectV2SingleSelectValueMemo, s.graphqlTypes.projectV2TextValueMemo, s.graphqlTypes.projectV2NumberValueMemo, s.graphqlTypes.projectV2DateValueMemo, s.graphqlTypes.projectV2IterationValueMemo},
-		ResolveType: func(p graphql.ResolveTypeParams) *graphql.Object {
-			src, _ := p.Value.(map[string]interface{})
-			switch src["kind"] {
-			case string(store.ProjectV2FieldText):
-				return s.graphqlTypes.projectV2TextValueMemo
-			case string(store.ProjectV2FieldNumber):
-				return s.graphqlTypes.projectV2NumberValueMemo
-			case string(store.ProjectV2FieldDate):
-				return s.graphqlTypes.projectV2DateValueMemo
-			case string(store.ProjectV2FieldIteration):
-				return s.graphqlTypes.projectV2IterationValueMemo
-			default:
-				return s.graphqlTypes.projectV2SingleSelectValueMemo
-			}
-		},
-	})
+	// The whole ProjectV2ItemFieldValue union — twelve members plus the
+	// ProjectV2ItemFieldValueCommon interface — is built in one pass, because
+	// graphql-go fixes a union's members and an object's interfaces when the
+	// type is created.
+	s.projectV2FieldValueTypes()
 	s.graphqlTypes.projectV2ItemTypeMemo = graphql.NewObject(graphql.ObjectConfig{
 		Name: "ProjectV2Item",
 		Fields: graphql.Fields{
@@ -3260,22 +3273,115 @@ func (s *Resolver) projectV2ItemConnectionType() *graphql.Object {
 // pre-resolved into fieldValuesByName so the fieldValueByName(name:)
 // resolver is a direct map lookup.
 func projectV2ItemToGQL(it *store.ProjectV2Item, st *store.Store) map[string]interface{} {
+	if it == nil {
+		return nil
+	}
 	var projectMap map[string]interface{}
 	if p := st.ProjectsV2.GetProject(it.ProjectID); p != nil {
-		projectMap = projectV2ToGQL(p)
+		projectMap = projectV2ToGQL(st, p)
 	}
 	byName := map[string]interface{}{}
-	for fieldID, val := range it.FieldValues {
-		field := st.ProjectsV2.GetField(fieldID)
-		if field == nil {
+	// fieldValues is ordered by field id so the connection is stable across
+	// requests; ranging the value map directly would reorder it every call.
+	// Every field on the project is considered, not only the ones with a
+	// stored value: the built-in columns (labels, assignees, repository,
+	// milestone) have no stored value at all — theirs is read off the content.
+	// Ordering is by field id so the connection is stable across requests.
+	values := make([]map[string]interface{}, 0, len(it.FieldValues))
+	for _, field := range st.ProjectsV2.FieldsForProject(it.ProjectID) {
+		var rendered map[string]interface{}
+		if stored := it.FieldValues[field.ID]; stored != nil {
+			rendered = projectV2FieldValueToGQL(stored, field)
+			rendered["field"] = projectV2FieldToGQL(field)
+		} else {
+			rendered = projectV2BuiltInFieldValue(st, it, field)
+		}
+		if rendered == nil {
 			continue
 		}
-		byName[field.Name] = projectV2FieldValueToGQL(val, field)
+		rendered["itemNodeID"] = it.NodeID
+		// A field value has no row of its own; its identity is the pair of the
+		// item and the field it belongs to.
+		rendered["valueNodeID"] = fmt.Sprintf("PVTFV_kgDO%08d%08d", it.ID, field.ID)
+		rendered["databaseId"] = field.ID
+		rendered["createdAt"] = it.CreatedAt.UTC().Format(time.RFC3339)
+		rendered["updatedAt"] = it.UpdatedAt.UTC().Format(time.RFC3339)
+		if creator := st.GetUserByID(it.CreatorID); creator != nil {
+			rendered["creator"] = userToGraphQL(creator)
+		}
+		byName[field.Name] = rendered
+		values = append(values, rendered)
 	}
-	return map[string]interface{}{
+	out := map[string]interface{}{
 		"nodeID":            it.NodeID,
-		"project":           projectMap,
+		"id":                it.ID,
+		"databaseId":        it.ID,
+		"fullDatabaseId":    it.ID,
+		"project":           optionalObject(projectMap),
 		"fieldValuesByName": byName,
+		"fieldValues":       values,
+		"type":              projectV2ItemTypeEnum(it.ContentType),
+		"isArchived":        it.ArchivedAt != nil,
+		"createdAt":         it.CreatedAt.UTC().Format(time.RFC3339),
+		"updatedAt":         it.UpdatedAt.UTC().Format(time.RFC3339),
+		"content":           optionalObject(projectV2ItemContentToGQL(st, it)),
+	}
+	out["creator"] = optionalRendered(st.GetUserByID(it.CreatorID), userToGraphQL)
+	return out
+}
+
+// projectV2ItemTypeEnum maps the stored content kind onto GitHub's
+// ProjectV2ItemType enum.
+func projectV2ItemTypeEnum(contentType string) string {
+	switch contentType {
+	case "Issue":
+		return "ISSUE"
+	case "PullRequest":
+		return "PULL_REQUEST"
+	default:
+		return "DRAFT_ISSUE"
+	}
+}
+
+// projectV2ItemContentToGQL renders the issue, pull request or draft issue an
+// item points at, as the source map its ProjectV2ItemContent member expects.
+// Content that no longer exists resolves to null rather than a half-built
+// node — GitHub's content field is nullable for exactly this case.
+func projectV2ItemContentToGQL(st *store.Store, it *store.ProjectV2Item) map[string]interface{} {
+	switch it.ContentType {
+	case "Issue":
+		issue := st.GetIssue(it.ContentID)
+		if issue == nil {
+			return nil
+		}
+		content := issueToGQL(issue, st)
+		content["__typename"] = "Issue"
+		return content
+	case "PullRequest":
+		pr := st.GetPullRequest(it.ContentID)
+		if pr == nil {
+			return nil
+		}
+		content := pullRequestToGQL(pr, st)
+		content["__typename"] = "PullRequest"
+		return content
+	default:
+		content := map[string]interface{}{
+			"__typename": "DraftIssue",
+			// A draft has no row of its own: it is the item, so the item's
+			// node id identifies it.
+			"nodeID":    it.NodeID,
+			"title":     it.DraftTitle,
+			"body":      it.DraftBody,
+			"bodyText":  it.DraftBody,
+			"bodyHTML":  it.DraftBody,
+			"createdAt": it.CreatedAt.UTC().Format(time.RFC3339),
+			"updatedAt": it.UpdatedAt.UTC().Format(time.RFC3339),
+		}
+		if creator := st.GetUserByID(it.CreatorID); creator != nil {
+			content["creator"] = userToGraphQL(creator)
+		}
+		return content
 	}
 }
 
@@ -3302,6 +3408,28 @@ func projectV2FieldValueToGQL(v *store.ProjectV2ItemFieldValue, f *store.Project
 				}
 			}
 		}
+	case store.ProjectV2FieldMultiSelect:
+		selections := make([]map[string]interface{}, 0, len(v.OptionIDs))
+		for i, id := range v.OptionIDs {
+			name := ""
+			if i < len(v.OptionNames) {
+				name = v.OptionNames[i]
+			}
+			option := map[string]interface{}{"id": id, "name": name, "description": "", "color": "GRAY"}
+			// The colour and description live on the field's option, not on
+			// the item's value, so they are looked up rather than stored twice.
+			for _, defined := range f.Options {
+				if defined.ID == id {
+					option["name"] = defined.Name
+					option["description"] = defined.Description
+					option["color"] = defined.Color
+					break
+				}
+			}
+			selections = append(selections, option)
+		}
+		out["options"] = selections
+		out["value"] = strings.Join(v.OptionNames, ", ")
 	default:
 		out["optionId"] = v.OptionID
 		out["name"] = v.OptionName
@@ -3312,16 +3440,12 @@ func projectV2FieldValueToGQL(v *store.ProjectV2ItemFieldValue, f *store.Project
 // projectV2ToGQL renders a project as a GraphQL source map. The store is not
 // embedded in the map: resolvers reach it through their *Server closure, so a
 // live *Store never flows through the resolver graph as an untyped entry.
-func projectV2ToGQL(p *store.ProjectV2) map[string]interface{} {
-	return map[string]interface{}{
-		"id":     p.ID,
-		"nodeID": p.NodeID,
-		"number": p.Number,
-		"title":  p.Title,
-		"closed": p.Closed,
-		"public": p.Public,
-		"url":    p.URL,
-	}
+//
+// The whole map is built here rather than per call site, so a project reached
+// through an issue's project items answers the same fields as one reached from
+// its owner.
+func projectV2ToGQL(st *store.Store, p *store.ProjectV2) map[string]interface{} {
+	return projectV2ToGQLFull(st, p)
 }
 
 func projectV2SourceID(source interface{}) (int, error) {
@@ -3384,7 +3508,7 @@ func projectV2FieldToGQL(f *store.ProjectV2Field) map[string]interface{} {
 		"name":          f.Name,
 		"dataType":      string(f.DataType),
 		"options":       options,
-		"configuration": iteration,
+		"configuration": optionalObject(iteration),
 		"createdAt":     f.CreatedAt.UTC().Format(time.RFC3339),
 		"updatedAt":     f.UpdatedAt.UTC().Format(time.RFC3339),
 	}
@@ -3395,16 +3519,27 @@ func projectV2ViewToGQL(v *store.ProjectV2View) map[string]interface{} {
 	if v.Filter != nil {
 		filter = *v.Filter
 	}
-	visible := append([]int(nil), v.VisibleFields...)
+	sortBy := make([]map[string]interface{}, 0, len(v.SortBy))
+	for _, entry := range v.SortBy {
+		sortBy = append(sortBy, map[string]interface{}{
+			"fieldID":   entry.FieldID,
+			"direction": entry.Direction,
+		})
+	}
 	return map[string]interface{}{
-		"nodeID":          v.NodeID,
-		"number":          v.Number,
-		"name":            v.Name,
-		"layout":          v.Layout,
-		"filter":          filter,
-		"visibleFieldIds": visible,
-		"createdAt":       v.CreatedAt.UTC().Format(time.RFC3339),
-		"updatedAt":       v.UpdatedAt.UTC().Format(time.RFC3339),
+		"nodeID":                  v.NodeID,
+		"projectID":               v.ProjectID,
+		"databaseId":              v.ID,
+		"number":                  v.Number,
+		"name":                    v.Name,
+		"layout":                  v.Layout,
+		"filter":                  filter,
+		"visibleFieldIds":         append([]int(nil), v.VisibleFields...),
+		"groupByFieldIds":         append([]int(nil), v.GroupBy...),
+		"verticalGroupByFieldIds": append([]int(nil), v.VerticalGroupBy...),
+		"sortBy":                  sortBy,
+		"createdAt":               v.CreatedAt.UTC().Format(time.RFC3339),
+		"updatedAt":               v.UpdatedAt.UTC().Format(time.RFC3339),
 	}
 }
 

@@ -508,7 +508,7 @@ func (s *Server) handleListTeamMembers(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 		}
-		result = append(result, store.UserToJSON(u))
+		result = append(result, store.UserToJSON(u, s.baseURL(r)))
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, result))
 }

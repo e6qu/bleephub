@@ -730,7 +730,7 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 		}
 		env := searchEnvelope(results, len(results), false, q, sortSearchResults)
 		env["search_type"] = "lexical" // required on issues search; the algorithm, not the subject
-		writeJSON(w, http.StatusOK, env)
+		writeSearchEnvelope(w, r, q, env)
 		return
 	}
 
@@ -748,7 +748,7 @@ func (s *Server) handleSearchIssues(w http.ResponseWriter, r *http.Request) {
 		// algorithm, not the subject. bleephub does keyword (lexical) search.
 		"search_type": "lexical",
 	}
-	writeJSON(w, http.StatusOK, out)
+	writeSearchEnvelope(w, r, q, out)
 }
 
 // searchIssueRow is a matched issue or PR gathered by the issue-search scan,
@@ -846,7 +846,7 @@ func issueToJSONForPR(pr *store.PullRequest, st *store.Store, baseURL, repoFullN
 func issueToJSONForPullRequest(pr *store.PullRequest, st *store.Store, baseURL, repoFullName string) map[string]interface{} {
 	pr = st.SnapPR(pr)
 	st.Mu.RLock()
-	authorJSON := store.UserToJSON(store.ActorUserLocked(st, pr.AuthorID))
+	authorJSON := store.UserToJSON(store.ActorUserLocked(st, pr.AuthorID), baseURL)
 	repo := st.Repos[pr.RepoID]
 
 	labels := make([]map[string]interface{}, 0)
@@ -858,7 +858,7 @@ func issueToJSONForPullRequest(pr *store.PullRequest, st *store.Store, baseURL, 
 	assignees := make([]map[string]interface{}, 0)
 	for _, aid := range pr.AssigneeIDs {
 		if u := st.Users[aid]; u != nil {
-			assignees = append(assignees, store.UserToJSON(u))
+			assignees = append(assignees, store.UserToJSON(u, baseURL))
 		}
 	}
 	var assignee interface{}
@@ -918,14 +918,14 @@ func issueToJSONForPullRequest(pr *store.PullRequest, st *store.Store, baseURL, 
 		"created_at":         pr.CreatedAt.Format(time.RFC3339),
 		"updated_at":         pr.UpdatedAt.Format(time.RFC3339),
 		"closed_at":          closedAt,
-		"closed_by":          pullRequestClosedByJSON(st, pr),
+		"closed_by":          pullRequestClosedByJSON(st, pr, baseURL),
 		"author_association": store.AuthorAssociation(st, pr.AuthorID, repo),
 		"draft":              pr.IsDraft,
 		"reactions":          reactions,
 	}
 }
 
-func pullRequestClosedByJSON(st *store.Store, pr *store.PullRequest) interface{} {
+func pullRequestClosedByJSON(st *store.Store, pr *store.PullRequest, baseURL string) interface{} {
 	if pr == nil || (pr.State != "CLOSED" && pr.State != "MERGED") {
 		return nil
 	}
@@ -945,7 +945,7 @@ func pullRequestClosedByJSON(st *store.Store, pr *store.PullRequest) interface{}
 	if actor == nil {
 		return nil
 	}
-	return store.UserToJSON(actor)
+	return store.UserToJSON(actor, baseURL)
 }
 
 // issueHasLabelNames reports whether the issue carries every named label.
@@ -1437,7 +1437,7 @@ func (s *Server) handleSearchRepositories(w http.ResponseWriter, r *http.Request
 		results = append(results, item)
 	}
 
-	writeJSON(w, http.StatusOK, searchEnvelope(results, len(results), false, q, sortRepoSearchResults))
+	writeSearchEnvelope(w, r, q, searchEnvelope(results, len(results), false, q, sortRepoSearchResults))
 }
 
 func repoIssueLabelCount(st *store.Store, repoID int, labelName string) int {
@@ -1630,7 +1630,7 @@ func (s *Server) handleSearchCode(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, searchEnvelope(results, total, truncated, q, nil))
+	writeSearchEnvelope(w, r, q, searchEnvelope(results, total, truncated, q, nil))
 }
 
 // userSearchText restricts the free-text match target to the fields named by
@@ -1785,19 +1785,19 @@ func (s *Server) handleSearchUsers(w http.ResponseWriter, r *http.Request) {
 
 	var results []map[string]interface{}
 	for _, u := range users {
-		item := s.fullUserJSON(u)
+		item := s.fullUserJSON(u, s.baseURL(r))
 		// user-search-result-item carries no twitter_username member.
 		delete(item, "twitter_username")
 		item["score"] = searchRelevanceScore(q.Terms, u.Login, u.Name+" "+u.Bio)
 		results = append(results, item)
 	}
 	for _, org := range orgs {
-		item := store.OrgAsSimpleUserJSON(org)
+		item := store.OrgAsSimpleUserJSON(org, s.baseURL(r))
 		item["score"] = searchRelevanceScore(q.Terms, org.Login, org.Name+" "+org.Description)
 		results = append(results, item)
 	}
 
-	writeJSON(w, http.StatusOK, searchEnvelope(results, len(results), false, q, sortUserSearchResults))
+	writeSearchEnvelope(w, r, q, searchEnvelope(results, len(results), false, q, sortUserSearchResults))
 }
 
 func pathMatches(text string, terms []string) bool {
@@ -1917,6 +1917,16 @@ func searchRelevanceScore(terms []string, primary, secondary string) float64 {
 // totalCount is the size of the full match set (before truncation); items is
 // the rendered slice, which may be shorter when a handler caps collection.
 // incomplete reports whether items was truncated below totalCount.
+// writeSearchEnvelope emits a search response with the Link header every other
+// collection carries, so a client can page past the first window of results.
+// The envelope's own total_count is the source of truth for how many pages
+// exist, capped at the 1,000 results GitHub will serve.
+func writeSearchEnvelope(w http.ResponseWriter, r *http.Request, q searchQuery, envelope map[string]interface{}) {
+	total, _ := envelope["total_count"].(int)
+	setSearchLinkHeader(w, r, q.Page, q.PerPage, total)
+	writeJSON(w, http.StatusOK, envelope)
+}
+
 func searchEnvelope(items []map[string]interface{}, totalCount int, incomplete bool, q searchQuery, sortBy searchSorter) map[string]interface{} {
 	orderSearchItems(items)
 	if sortBy != nil {
@@ -2220,7 +2230,7 @@ func (s *Server) handleSearchCommits(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, searchEnvelope(results, total, truncated, q, sortCommitSearchResults))
+	writeSearchEnvelope(w, r, q, searchEnvelope(results, total, truncated, q, sortCommitSearchResults))
 }
 
 // commitAuthorMatches matches the author: qualifier against the commit's
@@ -2315,7 +2325,7 @@ func (s *Server) commitSearchItemJSON(commit *object.Commit, repo *store.Repo, b
 	s.store.Mu.RLock()
 	for _, u := range s.store.Users {
 		if u.Email != "" && strings.EqualFold(u.Email, commit.Author.Email) {
-			authorJSON = store.UserToJSON(u)
+			authorJSON = store.UserToJSON(u, base)
 			break
 		}
 	}
@@ -2449,7 +2459,7 @@ func (s *Server) handleSearchLabels(w http.ResponseWriter, r *http.Request) {
 			"score":       searchRelevanceScore(q.Terms, l.Name, l.Description),
 		})
 	}
-	writeJSON(w, http.StatusOK, searchEnvelope(items, len(items), false, q, nil))
+	writeSearchEnvelope(w, r, q, searchEnvelope(items, len(items), false, q, nil))
 }
 
 // handleSearchTopics implements GET /search/topics: a real search over the
@@ -2520,5 +2530,5 @@ func (s *Server) handleSearchTopics(w http.ResponseWriter, r *http.Request) {
 			"repository_count":  t.count,
 		})
 	}
-	writeJSON(w, http.StatusOK, searchEnvelope(items, len(items), false, q, nil))
+	writeSearchEnvelope(w, r, q, searchEnvelope(items, len(items), false, q, nil))
 }

@@ -129,11 +129,11 @@ func TestConformance422DuplicateLabel(t *testing.T) {
 	createTestIssueRepo(t, "conf-label-dup")
 
 	ghPost(t, "/api/v3/repos/admin/conf-label-dup/labels", defaultToken, map[string]interface{}{
-		"name": "bug", "color": "d73a4a",
+		"name": "regression", "color": "d73a4a",
 	}).Body.Close()
 
 	resp := ghPost(t, "/api/v3/repos/admin/conf-label-dup/labels", defaultToken, map[string]interface{}{
-		"name": "bug", "color": "d73a4a",
+		"name": "regression", "color": "d73a4a",
 	})
 	if resp.StatusCode != 422 {
 		resp.Body.Close()
@@ -472,9 +472,20 @@ func TestGHApiLabelCreateThenGraphQL(t *testing.T) {
 	if len(nodes) == 0 {
 		t.Fatal("expected at least 1 label via GraphQL")
 	}
-	lbl, _ := nodes[0].(map[string]interface{})
-	if lbl["name"] != "cross-bug" {
-		t.Fatalf("expected name=cross-bug, got %v", lbl["name"])
+	// The repository also carries the default label set it was created with,
+	// so the REST-created label is somewhere in the list, not necessarily first.
+	var found map[string]interface{}
+	for _, node := range nodes {
+		lbl, _ := node.(map[string]interface{})
+		if lbl["name"] == "cross-bug" {
+			found = lbl
+		}
+	}
+	if found == nil {
+		t.Fatalf("expected cross-bug among the GraphQL labels, got %v", nodes)
+	}
+	if found["description"] != "A bug label" {
+		t.Fatalf("expected description='A bug label', got %v", found["description"])
 	}
 }
 

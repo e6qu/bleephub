@@ -1254,7 +1254,7 @@ func TestGraphQLPullRequestWithLabels(t *testing.T) {
 	s := newIsolatedServer(t)
 	s.createTestPRRepo(t, "gql-pr-labels")
 	s.post(t, "/api/v3/repos/admin/gql-pr-labels/labels", defaultToken, map[string]interface{}{
-		"name": "bug", "color": "d73a4a",
+		"name": "regression", "color": "d73a4a",
 	}).Body.Close()
 
 	// Create PR and add label via REST
@@ -1265,7 +1265,7 @@ func TestGraphQLPullRequestWithLabels(t *testing.T) {
 	prNodeID := prData["node_id"].(string)
 
 	// Get label node ID
-	r2 := s.get(t, "/api/v3/repos/admin/gql-pr-labels/labels/bug", "")
+	r2 := s.get(t, "/api/v3/repos/admin/gql-pr-labels/labels/regression", "")
 	labelData := decodeJSON(t, r2)
 	labelNodeID := labelData["node_id"].(string)
 
@@ -1295,8 +1295,8 @@ func TestGraphQLPullRequestWithLabels(t *testing.T) {
 	}
 	nodes, _ := labels["nodes"].([]interface{})
 	lbl, _ := nodes[0].(map[string]interface{})
-	if lbl["name"] != "bug" {
-		t.Fatalf("expected label name=bug, got %v", lbl["name"])
+	if lbl["name"] != "regression" {
+		t.Fatalf("expected label name=regression, got %v", lbl["name"])
 	}
 }
 

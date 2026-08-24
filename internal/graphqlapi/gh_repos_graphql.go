@@ -24,17 +24,13 @@ func (s *Resolver) addRepoFieldsToSchema(
 	dateTime := s.graphQLStringScalar("DateTime")
 	uri := s.graphQLStringScalar("URI")
 	gitSSHRemote := s.graphQLStringScalar("GitSSHRemote")
-	repositoryVisibilityEnum := graphql.NewEnum(graphql.EnumConfig{
-		Name: "RepositoryVisibility",
-		Values: graphql.EnumValueConfigMap{
-			"PUBLIC":   &graphql.EnumValueConfig{Value: "PUBLIC"},
-			"PRIVATE":  &graphql.EnumValueConfig{Value: "PRIVATE"},
-			"INTERNAL": &graphql.EnumValueConfig{Value: "INTERNAL"},
-		},
-	})
+	// Registered in the shared enum table so a later family naming
+	// RepositoryVisibility (the enterprise outside-collaborator filter) reuses
+	// this one type instead of minting a second with the same name.
+	repositoryVisibilityEnum := s.sharedEnum("RepositoryVisibility", "PUBLIC", "PRIVATE", "INTERNAL")
 	repoType := graphql.NewObject(graphql.ObjectConfig{
 		Name:       "Repository",
-		Interfaces: []*graphql.Interface{nodeInterface},
+		Interfaces: []*graphql.Interface{nodeInterface, s.uniformResourceLocatableInterface()},
 		Fields: graphql.Fields{
 			"id": &graphql.Field{
 				Type: graphql.NewNonNull(graphql.ID),
@@ -51,6 +47,7 @@ func (s *Resolver) addRepoFieldsToSchema(
 			"nameWithOwner":  &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
 			"description":    &graphql.Field{Type: graphql.String},
 			"url":            &graphql.Field{Type: graphql.NewNonNull(uri)},
+			"resourcePath":   &graphql.Field{Type: graphql.NewNonNull(uri)},
 			"sshUrl":         &graphql.Field{Type: graphql.NewNonNull(gitSSHRemote)},
 			"isPrivate":      &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
 			"isFork":         &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
@@ -492,43 +489,18 @@ func (s *Resolver) addRepoFieldsToSchema(
 			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(pageInfoType)},
 		},
 	})
+	s.graphqlTypes.repositoryConnection = repoConnectionType
 
 	// Enums that real GitHub exposes — gh CLI sends these by name (CREATED_AT, DESC,
 	// PUBLIC, OWNER, ...) not as strings. The schema must declare them so gh's
 	// `gh repo list`, `gh issue list`, etc. type-check.
-	repositoryPrivacyEnum := graphql.NewEnum(graphql.EnumConfig{
-		Name: "RepositoryPrivacy",
-		Values: graphql.EnumValueConfigMap{
-			"PUBLIC":  &graphql.EnumValueConfig{Value: "PUBLIC"},
-			"PRIVATE": &graphql.EnumValueConfig{Value: "PRIVATE"},
-		},
-	})
-	repositoryAffiliationEnum := graphql.NewEnum(graphql.EnumConfig{
-		Name: "RepositoryAffiliation",
-		Values: graphql.EnumValueConfigMap{
-			"OWNER":               &graphql.EnumValueConfig{Value: "OWNER"},
-			"COLLABORATOR":        &graphql.EnumValueConfig{Value: "COLLABORATOR"},
-			"ORGANIZATION_MEMBER": &graphql.EnumValueConfig{Value: "ORGANIZATION_MEMBER"},
-		},
-	})
-	repositoryOrderFieldEnum := graphql.NewEnum(graphql.EnumConfig{
-		Name: "RepositoryOrderField",
-		Values: graphql.EnumValueConfigMap{
-			"CREATED_AT": &graphql.EnumValueConfig{Value: "CREATED_AT"},
-			"UPDATED_AT": &graphql.EnumValueConfig{Value: "UPDATED_AT"},
-			"PUSHED_AT":  &graphql.EnumValueConfig{Value: "PUSHED_AT"},
-			"STARGAZERS": &graphql.EnumValueConfig{Value: "STARGAZERS"},
-			"NAME":       &graphql.EnumValueConfig{Value: "NAME"},
-		},
-	})
-	orderDirectionEnum := s.graphQLEnum("OrderDirection", "ASC", "DESC")
-	repositoryOrderInput := graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "RepositoryOrder",
-		Fields: graphql.InputObjectConfigFieldMap{
-			"field":     &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(repositoryOrderFieldEnum)},
-			"direction": &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(orderDirectionEnum)},
-		},
-	})
+	// Registered in the shared enum table: Repository.forks and the account
+	// surface's other repository connections name the same three types.
+	repositoryPrivacyEnum := s.sharedEnum("RepositoryPrivacy", "PUBLIC", "PRIVATE")
+	repositoryAffiliationEnum := s.sharedEnum("RepositoryAffiliation",
+		"OWNER", "COLLABORATOR", "ORGANIZATION_MEMBER")
+	orderDirectionEnum := s.sharedEnum("OrderDirection", "ASC", "DESC")
+	repositoryOrderInput := s.gqlRepositoryOrderInput()
 
 	// --- Releases (gh release list / view / download / delete) ---
 	// `gh release list` queries releases(first:$perPage, orderBy:{field:
@@ -1293,6 +1265,16 @@ var graphqlMutationAuthz = map[string]mutationRule{
 	"addUpvote":    repoRule{scope: store.ScopeDiscussions, level: mutationReadRepo, target: mutationTargetVotable("subjectId")},
 	"removeUpvote": repoRule{scope: store.ScopeDiscussions, level: mutationReadRepo, target: mutationTargetVotable("subjectId")},
 
+	// Labels. GitHub serves an issue's and a pull request's labels through the
+	// one /issues/{number}/labels surface and gates both on Issues, so these
+	// three are scopeIssues whichever kind the labelableId turns out to name.
+	// Labeling is curation of the repository's triage state rather than of
+	// your own content, so there is no author exemption: it is push, exactly
+	// as updateIssue treats its labelIds argument.
+	"addLabelsToLabelable":      repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: labelableMutationTarget("labelableId")},
+	"removeLabelsFromLabelable": repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: labelableMutationTarget("labelableId")},
+	"clearLabelsFromLabelable":  repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: labelableMutationTarget("labelableId")},
+
 	"minimizeComment":   repoRule{scope: store.ScopeIssues, level: mutationPushRepo, authorMayAct: true, target: mutationTargetIssueComment("subjectId")},
 	"unminimizeComment": repoRule{scope: store.ScopeIssues, level: mutationPushRepo, authorMayAct: true, target: mutationTargetIssueComment("subjectId")},
 	"lockLockable":      repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: mutationTargetLockable("lockableId")},
@@ -1323,6 +1305,79 @@ var graphqlMutationAuthz = map[string]mutationRule{
 	"deleteProjectV2Item":           projectRule{target: projectTargetProject("projectId")},
 	"createProjectV2Field":          projectRule{target: projectTargetProject("projectId")},
 	"updateProjectV2ItemFieldValue": projectRule{target: projectTargetProject("projectId")},
+
+	// Project metadata and lifecycle.
+	"updateProjectV2":               projectRule{target: projectTargetProject("projectId")},
+	"deleteProjectV2":               projectRule{target: projectTargetProject("projectId")},
+	"markProjectV2AsTemplate":       projectRule{target: projectTargetProject("projectId")},
+	"unmarkProjectV2AsTemplate":     projectRule{target: projectTargetProject("projectId")},
+	"linkProjectV2ToRepository":     projectRule{target: projectTargetProject("projectId")},
+	"linkProjectV2ToTeam":           projectRule{target: projectTargetProject("projectId")},
+	"unlinkProjectV2FromRepository": projectRule{target: projectTargetProject("projectId")},
+	"unlinkProjectV2FromTeam":       projectRule{target: projectTargetProject("projectId")},
+	"updateProjectV2Collaborators":  projectRule{target: projectTargetProject("projectId")},
+	// A copy reads one project and writes to another account, so neither half
+	// alone is the entitlement: projectCopyRule asks both.
+	"copyProjectV2": projectCopyRule{},
+
+	// Items. The ones GitHub keys on a bare item id still authorize over the
+	// project that item belongs to.
+	"addProjectV2DraftIssue":                projectRule{target: projectTargetProject("projectId")},
+	"archiveProjectV2Item":                  projectRule{target: projectTargetProject("projectId")},
+	"unarchiveProjectV2Item":                projectRule{target: projectTargetProject("projectId")},
+	"clearProjectV2ItemFieldValue":          projectRule{target: projectTargetProject("projectId")},
+	"updateProjectV2ItemPosition":           projectRule{target: projectTargetProject("projectId")},
+	"updateProjectV2DraftIssue":             projectRule{target: projectTargetItem("draftIssueId")},
+	"convertProjectV2DraftIssueItemToIssue": projectRule{target: projectTargetItem("itemId")},
+
+	// Fields and views, keyed on the subject rather than the project.
+	"createProjectV2IssueField": projectRule{target: projectTargetProject("projectId")},
+	"updateProjectV2Field":      projectRule{target: projectTargetField("fieldId")},
+	"deleteProjectV2Field":      projectRule{target: projectTargetField("fieldId")},
+	"createProjectV2View":       projectRule{target: projectTargetProject("projectId")},
+	"updateProjectV2View":       projectRule{target: projectTargetView("viewId")},
+	"deleteProjectV2View":       projectRule{target: projectTargetView("viewId")},
+
+	// Dismissing a Dependabot alert is a write on the repository's security
+	// events, which is the same entitlement PATCH
+	// /repos/{o}/{r}/dependabot/alerts/{n} demands: the security_events scope
+	// at write, and push standing on the repository (what resourceCapabilityFor
+	// resolves that level to, security events deliberately not being an
+	// administers-resource scope). Routing the GraphQL mutation through a
+	// weaker rule would make it the way around the REST gate.
+	"dismissRepositoryVulnerabilityAlert": repoRule{
+		scope:  store.ScopeSecurityEvents,
+		level:  mutationPushRepo,
+		target: mutationTargetVulnerabilityAlert("repositoryVulnerabilityAlertId"),
+	},
+
+	// Status updates and workflows.
+	"createProjectV2StatusUpdate": projectRule{target: projectTargetProject("projectId")},
+	"updateProjectV2StatusUpdate": projectRule{target: projectTargetStatusUpdate("statusUpdateId")},
+	"deleteProjectV2StatusUpdate": projectRule{target: projectTargetStatusUpdate("statusUpdateId")},
+	"deleteProjectV2Workflow":     projectRule{target: projectTargetWorkflow("workflowId")},
+}
+
+// projectCopyRule is the policy for copyProjectV2, the one project mutation
+// whose input names two accounts: the project being copied and the owner the
+// copy lands under. GitHub requires standing on both — a bearer who can read a
+// template but write nowhere may not mint a project, and a bearer who can
+// write to an account may not copy a project they cannot see.
+type projectCopyRule struct{}
+
+func (projectCopyRule) check() error { return nil }
+
+func (projectCopyRule) authorize(s *Resolver, p graphql.ResolveParams, input map[string]interface{}) error {
+	source := projectTargetProject("projectId")(s, input)
+	if source.owner == nil {
+		return source.missing
+	}
+	user := s.ghUserFromContext(p.Context)
+	if source.project != nil && !s.canReadProjectV2(p.Context, user, source.owner, source.project) {
+		return source.missing
+	}
+	destination := projectRule{target: projectTargetOwner("ownerId")}
+	return destination.authorize(s, p, input)
 }
 
 // guardedMutations records which names reached a mutation type through
@@ -1698,7 +1753,8 @@ func repoToGraphQLWithOrg(repo *store.Repo, getOrg func(int) *store.Org) map[str
 	} else if repo.Owner != nil {
 		ownerMap = userToGraphQL(repo.Owner)
 	}
-	webURL := externalURL("/" + repo.FullName)
+	resourcePath := "/" + repo.FullName
+	webURL := externalURL(resourcePath)
 
 	return map[string]interface{}{
 		"nodeID":              repo.NodeID,
@@ -1707,6 +1763,7 @@ func repoToGraphQLWithOrg(repo *store.Repo, getOrg func(int) *store.Org) map[str
 		"nameWithOwner":       repo.FullName,
 		"description":         repo.Description,
 		"url":                 webURL,
+		"resourcePath":        resourcePath,
 		"sshUrl":              store.SshGitURL(repo.FullName),
 		"isPrivate":           repo.Private,
 		"isFork":              repo.Fork,
@@ -1731,7 +1788,7 @@ func repoToGraphQLWithOrg(repo *store.Repo, getOrg func(int) *store.Org) map[str
 		"allowRebaseMerge":    repo.AllowRebaseMerge,
 		"deleteBranchOnMerge": repo.DeleteBranchOnMerge,
 		"isTemplate":          repo.IsTemplate,
-		"owner":               ownerMap,
+		"owner":               optionalObject(ownerMap),
 		"createdAt":           repo.CreatedAt.Format(time.RFC3339),
 		"updatedAt":           repo.UpdatedAt.Format(time.RFC3339),
 		"pushedAt":            store.NullableTimestamp(repo.PushedAt),

@@ -167,7 +167,7 @@ func TestMilestoneAndLabelGetsAreDetached(t *testing.T) {
 	repo := s.store.CreateRepo(admin, "ml-detach", "", false)
 	due := fixedTestTime.Add(48 * time.Hour)
 	ms := s.store.CreateMilestone(repo.ID, admin.ID, "v1", "desc", "open", &due)
-	lbl := s.store.CreateLabel(repo.ID, "bug", "d", "ff0000")
+	lbl := s.store.CreateLabel(repo.ID, "regression", "d", "ff0000")
 
 	m := s.store.GetMilestone(ms.ID)
 	m.Title = "hacked"

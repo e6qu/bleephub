@@ -90,3 +90,62 @@ describe("MarketplacePage", () => {
     expect(await screen.findByRole("link", { name: /Continue to Spark App setup/ })).toHaveAttribute("href", expect.stringContaining("installation_id=41"));
   });
 });
+
+describe("MarketplacePage categories and pending changes", () => {
+  const categories = [
+    { slug: "continuous-integration", name: "Continuous integration", description: "", primary_listing_count: 1, secondary_listing_count: 0 },
+    { slug: "security", name: "Security", description: "", primary_listing_count: 0, secondary_listing_count: 0 },
+  ];
+  const profiles = [
+    { slug: "spark-app", primary_category_slug: "continuous-integration", secondary_category_slug: "", state: "verified", has_verified_owner: true },
+  ];
+
+  it("filters the directory by the Marketplace taxonomy", async () => {
+    mockFetch.mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/subscriptions")) return Promise.resolve(jsonResponse([]));
+      if (url.endsWith("/categories")) return Promise.resolve(jsonResponse(categories));
+      if (url.endsWith("/listing-profiles")) return Promise.resolve(jsonResponse(profiles));
+      return Promise.resolve(jsonResponse([listing]));
+    });
+    renderAt("/ui/marketplace");
+    expect(await screen.findByRole("button", { name: "Continuous integration (1)" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Spark App/ })).toBeInTheDocument();
+
+    // A category the listing is not in empties the grid.
+    fireEvent.click(screen.getByRole("button", { name: "Security (0)" }));
+    await waitFor(() => expect(screen.queryByRole("link", { name: /Spark App/ })).not.toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "Continuous integration (1)" }));
+    await waitFor(() => expect(screen.getByRole("link", { name: /Spark App/ })).toBeInTheDocument());
+  });
+
+  it("lets a buyer call off a scheduled plan change", async () => {
+    const subscription = {
+      listing: { slug: "spark-app", name: "Spark App" },
+      account_login: "mona",
+      marketplace_purchase: { plan: { id: 12, name: "Team" }, billing_cycle: "monthly" },
+      marketplace_pending_change: { plan: { id: 11, name: "Community" }, effective_date: "2026-09-01T00:00:00Z", cancellation: false },
+      setup_url: null,
+    };
+    mockFetch.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === "DELETE") return Promise.resolve(new Response(null, { status: 200 }));
+      if (url.endsWith("/subscriptions")) return Promise.resolve(jsonResponse([subscription]));
+      if (url.endsWith("/accounts")) return Promise.resolve(jsonResponse([account]));
+      if (url.endsWith("/categories")) return Promise.resolve(jsonResponse(categories));
+      if (url.endsWith("/listing-profiles")) return Promise.resolve(jsonResponse(profiles));
+      return Promise.resolve(jsonResponse(listing));
+    });
+    renderAt("/ui/marketplace/spark-app");
+    fireEvent.click(await screen.findByRole("button", { name: "Keep current plan" }));
+    await waitFor(() => {
+      const revoke = mockFetch.mock.calls.find(
+        ([url, init]) =>
+          (init as RequestInit | undefined)?.method === "DELETE" && String(url).includes("/subscription/pending"),
+      );
+      expect(revoke).toBeTruthy();
+      expect(String(revoke![0])).toContain("account=mona");
+    });
+  });
+});

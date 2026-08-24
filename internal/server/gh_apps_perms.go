@@ -447,7 +447,23 @@ func (s *Server) viewerMayActOnRepo(ctx context.Context, repo *store.Repo, scope
 	if !s.credentialGrantsRepo(ctx, repo, scope, grant) {
 		return false
 	}
-	return s.principalHoldsRepoCapability(ctx, repo, standing)
+	if !s.principalHoldsRepoCapability(ctx, repo, standing) {
+		return false
+	}
+	// A repository locked by a migration is frozen: the export is taken
+	// against a state nobody is still writing to, which is the whole point of
+	// lock_repositories. The check belongs here rather than in each handler
+	// because this is the one predicate every repository write asks — the REST
+	// handlers, the GraphQL mutation rules and both git transports — so a lock
+	// that holds here holds everywhere, and a handler added tomorrow inherits
+	// it without knowing migrations exist.
+	//
+	// Reads are unaffected: a locked repository is still readable, and the
+	// export itself has to read it.
+	if standing >= store.PermWrite && repo != nil && s.store.RepoLockedForMigration(repo.FullName) {
+		return false
+	}
+	return true
 }
 
 // credentialGrantsRepo is the credential half of viewerHasRepoPermission: the
