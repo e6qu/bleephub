@@ -189,6 +189,19 @@ func (s *Resolver) buildEnterpriseExtraTypes(enterpriseType, userType *graphql.O
 			"permalink": &graphql.Field{Type: graphql.NewNonNull(uri)},
 			"permission": &graphql.Field{Type: graphql.NewNonNull(
 				s.sharedEnum("RepositoryPermission", "ADMIN", "MAINTAIN", "READ", "TRIAGE", "WRITE"))},
+			// The repository the invitation grants access to, as the shared
+			// RepositoryInfo interface (Repository is its implementer).
+			"repository": &graphql.Field{
+				Type: s.repositoryInfoInterface(),
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					src, _ := p.Source.(map[string]interface{})
+					repoID, _ := src["repoID"].(int)
+					if repo := s.store.GetRepoByID(repoID); repo != nil {
+						return repoToGraphQL(s.store, repo), nil
+					}
+					return nil, nil
+				},
+			},
 		},
 	})
 	extras.repositoryInvitationConnection = advisoryConnectionType("RepositoryInvitation", repoInvitationType, pageInfo)

@@ -22849,6 +22849,7 @@
       "interfaces": [
         "Node",
         "ProjectOwner",
+        "RepositoryInfo",
         "Starrable",
         "Subscribable",
         "UniformResourceLocatable"
@@ -23132,6 +23133,122 @@
         "repositoryIds": "[ID!]!"
       }
     },
+    "RepositoryInfo": {
+      "kind": "INTERFACE",
+      "fields": {
+        "archivedAt": {
+          "type": "DateTime"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "description": {
+          "type": "String"
+        },
+        "descriptionHTML": {
+          "type": "HTML!"
+        },
+        "forkCount": {
+          "type": "Int!"
+        },
+        "hasDiscussionsEnabled": {
+          "type": "Boolean!"
+        },
+        "hasIssuesEnabled": {
+          "type": "Boolean!"
+        },
+        "hasProjectsEnabled": {
+          "type": "Boolean!"
+        },
+        "hasPullRequestsEnabled": {
+          "type": "Boolean!"
+        },
+        "hasSponsorshipsEnabled": {
+          "type": "Boolean!"
+        },
+        "hasWikiEnabled": {
+          "type": "Boolean!"
+        },
+        "homepageUrl": {
+          "type": "URI"
+        },
+        "isArchived": {
+          "type": "Boolean!"
+        },
+        "isFork": {
+          "type": "Boolean!"
+        },
+        "isInOrganization": {
+          "type": "Boolean!"
+        },
+        "isLocked": {
+          "type": "Boolean!"
+        },
+        "isMirror": {
+          "type": "Boolean!"
+        },
+        "isPrivate": {
+          "type": "Boolean!"
+        },
+        "isTemplate": {
+          "type": "Boolean!"
+        },
+        "issueCreationPolicy": {
+          "type": "IssueCreationPolicy"
+        },
+        "licenseInfo": {
+          "type": "License"
+        },
+        "lockReason": {
+          "type": "RepositoryLockReason"
+        },
+        "mirrorUrl": {
+          "type": "URI"
+        },
+        "name": {
+          "type": "String!"
+        },
+        "nameWithOwner": {
+          "type": "String!"
+        },
+        "openGraphImageUrl": {
+          "type": "URI!"
+        },
+        "owner": {
+          "type": "RepositoryOwner!"
+        },
+        "pullRequestCreationPolicy": {
+          "type": "PullRequestCreationPolicy"
+        },
+        "pushedAt": {
+          "type": "DateTime"
+        },
+        "resourcePath": {
+          "type": "URI!"
+        },
+        "shortDescriptionHTML": {
+          "type": "HTML!",
+          "args": {
+            "limit": "Int"
+          }
+        },
+        "updatedAt": {
+          "type": "DateTime!"
+        },
+        "url": {
+          "type": "URI!"
+        },
+        "usesCustomOpenGraphImage": {
+          "type": "Boolean!"
+        },
+        "visibility": {
+          "type": "RepositoryVisibility!"
+        }
+      },
+      "possible_types": [
+        "Repository"
+      ]
+    },
     "RepositoryInteractionAbility": {
       "kind": "OBJECT",
       "fields": {
@@ -23193,6 +23310,9 @@
         },
         "permission": {
           "type": "RepositoryPermission!"
+        },
+        "repository": {
+          "type": "RepositoryInfo"
         }
       },
       "interfaces": [

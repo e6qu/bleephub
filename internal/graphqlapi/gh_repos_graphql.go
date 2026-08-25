@@ -39,6 +39,9 @@ func (s *Resolver) addRepoFieldsToSchema(
 			// the reason the User type declares it: graphql-go memoizes an
 			// object's interface list on first read.
 			s.projectOwnerInterfaceType(),
+			// RepositoryInfo, the shared repository-shape interface
+			// RepositoryInvitation.repository returns.
+			s.repositoryInfoInterface(),
 		},
 		Fields: graphql.Fields{
 			"id": &graphql.Field{
