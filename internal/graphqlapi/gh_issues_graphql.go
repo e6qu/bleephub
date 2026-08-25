@@ -1512,6 +1512,15 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 		"suggest":          gqlBool(),
 		"value":            gqlNonNullInputOf(issueStateEnum),
 	})
+	// IssueFieldUpdateInput names a custom issue field by its user-facing name
+	// and the operation to perform, mirroring GitHub's projects-style field
+	// editing surface on updateIssue.
+	issueFieldUpdateOperationEnum := s.sharedEnum("IssueFieldUpdateOperation", "ADD", "CLEAR", "REMOVE", "SET")
+	issueFieldUpdateInput := s.mutationInput("IssueFieldUpdateInput", graphql.InputObjectConfigFieldMap{
+		"fieldName": gqlNonNullString(),
+		"operation": gqlNonNullInputOf(issueFieldUpdateOperationEnum),
+		"value":     gqlString(),
+	})
 	updateIssueInputType := graphql.NewInputObject(graphql.InputObjectConfig{
 		Name: "UpdateIssueInput",
 		Fields: graphql.InputObjectConfigFieldMap{
@@ -1521,17 +1530,18 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 			// IssueState, not String: real GitHub types this field with the
 			// enum, and a free-form string was being written into the store
 			// verbatim, so `state: "banana"` became the issue's state.
-			"state":           &graphql.InputObjectFieldConfig{Type: issueStateEnum},
-			"milestoneId":     &graphql.InputObjectFieldConfig{Type: graphql.ID},
-			"labelIds":        &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(graphql.ID))},
-			"assigneeIds":     &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(graphql.ID))},
-			"issueTypeId":     &graphql.InputObjectFieldConfig{Type: graphql.ID},
-			"agentAssignment": gqlInputOf(agentAssignmentInput),
-			"assignees":       gqlListOf(assigneeUpdateInput),
-			"issueType":       gqlInputOf(issueTypeUpdateInput),
-			"labels":          gqlListOf(labelUpdateInput),
-			"projectIds":      gqlListOf(graphql.ID),
-			"stateInput":      gqlInputOf(issueStateUpdateInput),
+			"state":             &graphql.InputObjectFieldConfig{Type: issueStateEnum},
+			"milestoneId":       &graphql.InputObjectFieldConfig{Type: graphql.ID},
+			"labelIds":          &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(graphql.ID))},
+			"assigneeIds":       &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(graphql.ID))},
+			"issueTypeId":       &graphql.InputObjectFieldConfig{Type: graphql.ID},
+			"agentAssignment":   gqlInputOf(agentAssignmentInput),
+			"assignees":         gqlListOf(assigneeUpdateInput),
+			"issueFieldUpdates": gqlListOf(issueFieldUpdateInput),
+			"issueType":         gqlInputOf(issueTypeUpdateInput),
+			"labels":            gqlListOf(labelUpdateInput),
+			"projectIds":        gqlListOf(graphql.ID),
+			"stateInput":        gqlInputOf(issueStateUpdateInput),
 		},
 	})
 

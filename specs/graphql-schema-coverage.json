@@ -1,10 +1,10 @@
 {
-  "official_types": 1807,
-  "bleephub_types": 1814,
-  "shared_types": 1807,
-  "official_fields": 8362,
-  "implemented_fields": 8361,
-  "signature_exact_fields": 8360,
+  "official_types": 1809,
+  "bleephub_types": 1816,
+  "shared_types": 1809,
+  "official_fields": 8366,
+  "implemented_fields": 8365,
+  "signature_exact_fields": 8364,
   "compatibility_gap_count": 9,
   "missing_types": null,
   "missing_fields": {

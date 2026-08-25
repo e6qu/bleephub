@@ -11571,6 +11571,23 @@
         }
       }
     },
+    "IssueFieldUpdateInput": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "fieldName": "String!",
+        "operation": "IssueFieldUpdateOperation!",
+        "value": "String"
+      }
+    },
+    "IssueFieldUpdateOperation": {
+      "kind": "ENUM",
+      "enum_values": [
+        "ADD",
+        "CLEAR",
+        "REMOVE",
+        "SET"
+      ]
+    },
     "IssueFieldValue": {
       "kind": "UNION",
       "possible_types": [
@@ -34613,6 +34630,7 @@
         "body": "String",
         "clientMutationId": "String",
         "id": "ID!",
+        "issueFieldUpdates": "[IssueFieldUpdateInput!]",
         "issueType": "IssueTypeUpdateInput",
         "issueTypeId": "ID",
         "labelIds": "[ID!]",
