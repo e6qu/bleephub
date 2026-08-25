@@ -2212,6 +2212,12 @@ func (s *Resolver) addPullRequestFieldsToSchema(userType, issueType, milestoneTy
 		Name: "AddPullRequestReviewPayload",
 		Fields: graphql.Fields{
 			"pullRequestReview": &graphql.Field{Type: prReviewType},
+			// The created review as a connection edge; bleephub's addPullRequestReview
+			// returns the review directly, so this alternate edge view is null.
+			"reviewEdge": &graphql.Field{
+				Type:    s.simpleEdgeType("PullRequestReviewEdge", prReviewType),
+				Resolve: func(graphql.ResolveParams) (interface{}, error) { return nil, nil },
+			},
 			"clientMutationId": &graphql.Field{
 				Type: graphql.String,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {

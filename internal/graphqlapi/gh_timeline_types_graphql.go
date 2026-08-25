@@ -420,6 +420,10 @@ func (s *Resolver) addTimelineFieldsToSchema(nodeInterface *graphql.Interface, n
 	for _, name := range pullRequestTimelineMemberNames {
 		pullMembers = append(pullMembers, reg.byName[name])
 	}
+	// IssueEventRationale.issueEvent's union names ClosedEvent/LabeledEvent/
+	// UnlabeledEvent, now present in reg.byName, plus the six agent-triage
+	// events minted alongside it.
+	s.addIssueEventWithRationaleUnion(reg, dateTime)
 	for _, member := range issueMembers {
 		reg.issueMemberSet[member.Name()] = true
 	}

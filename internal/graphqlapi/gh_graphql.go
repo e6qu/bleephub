@@ -498,6 +498,15 @@ func (s *Resolver) initGraphQLSchema() {
 			s.namedObject("SshSignature"),
 			s.namedObject("SmimeSignature"),
 			s.namedObject("UnknownSignature"),
+			// The six agent-triage events are reachable only through the
+			// IssueEventWithRationale union (IssueEventRationale.issueEvent),
+			// so register them for `... on IssueFieldChangedEvent` fragments.
+			s.namedObject("IssueFieldAddedEvent"),
+			s.namedObject("IssueFieldChangedEvent"),
+			s.namedObject("IssueFieldRemovedEvent"),
+			s.namedObject("IssueTypeAddedEvent"),
+			s.namedObject("IssueTypeChangedEvent"),
+			s.namedObject("IssueTypeRemovedEvent"),
 		},
 	})
 	if err != nil {

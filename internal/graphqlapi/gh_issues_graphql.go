@@ -1436,6 +1436,9 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 			"subject":     &graphql.Field{Type: nodeInterface},
 		},
 	})
+	// timelineEdge is added later, once the timeline family builds
+	// IssueTimelineItemEdge (see addTimelineFieldsToSchema).
+	s.stashNamedObject(addCommentPayloadType)
 
 	s.registerMutation(mutationType, "addComment", &graphql.Field{
 		Type: addCommentPayloadType,

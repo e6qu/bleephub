@@ -262,6 +262,9 @@
         },
         "subject": {
           "type": "Node"
+        },
+        "timelineEdge": {
+          "type": "IssueTimelineItemEdge"
         }
       }
     },
@@ -514,6 +517,9 @@
         },
         "pullRequestReview": {
           "type": "PullRequestReview"
+        },
+        "reviewEdge": {
+          "type": "PullRequestReviewEdge"
         }
       }
     },
@@ -10434,8 +10440,98 @@
         "createdAt": {
           "type": "DateTime!"
         },
+        "issueEvent": {
+          "type": "IssueEventWithRationale"
+        },
         "rationale": {
           "type": "String!"
+        }
+      }
+    },
+    "IssueEventWithRationale": {
+      "kind": "UNION",
+      "possible_types": [
+        "ClosedEvent",
+        "IssueFieldAddedEvent",
+        "IssueFieldChangedEvent",
+        "IssueFieldRemovedEvent",
+        "IssueTypeAddedEvent",
+        "IssueTypeChangedEvent",
+        "IssueTypeRemovedEvent",
+        "LabeledEvent",
+        "UnlabeledEvent"
+      ]
+    },
+    "IssueFieldAddedEvent": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "color": {
+          "type": "String"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "intent": {
+          "type": "IssueUpdateIntent"
+        },
+        "issueField": {
+          "type": "IssueFields"
+        },
+        "options": {
+          "type": "[IssueFieldTimelineOption!]"
+        },
+        "rationale": {
+          "type": "IssueEventRationale"
+        },
+        "value": {
+          "type": "String"
+        }
+      }
+    },
+    "IssueFieldChangedEvent": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "intent": {
+          "type": "IssueUpdateIntent"
+        },
+        "issueField": {
+          "type": "IssueFields"
+        },
+        "newColor": {
+          "type": "String"
+        },
+        "newOptions": {
+          "type": "[IssueFieldTimelineOption!]"
+        },
+        "newValue": {
+          "type": "String"
+        },
+        "previousColor": {
+          "type": "String"
+        },
+        "previousOptions": {
+          "type": "[IssueFieldTimelineOption!]"
+        },
+        "previousValue": {
+          "type": "String"
+        },
+        "rationale": {
+          "type": "IssueEventRationale"
         }
       }
     },
@@ -10603,6 +10699,32 @@
         "CREATED_AT"
       ]
     },
+    "IssueFieldRemovedEvent": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "intent": {
+          "type": "IssueUpdateIntent"
+        },
+        "issueField": {
+          "type": "IssueFields"
+        },
+        "options": {
+          "type": "[IssueFieldTimelineOption!]"
+        },
+        "rationale": {
+          "type": "IssueEventRationale"
+        }
+      }
+    },
     "IssueFieldSingleSelect": {
       "kind": "OBJECT",
       "fields": {
@@ -10742,6 +10864,17 @@
           "type": "ID!"
         },
         "value": {
+          "type": "String!"
+        }
+      }
+    },
+    "IssueFieldTimelineOption": {
+      "kind": "OBJECT",
+      "fields": {
+        "color": {
+          "type": "String"
+        },
+        "name": {
           "type": "String!"
         }
       }
@@ -11117,6 +11250,55 @@
         }
       }
     },
+    "IssueTypeAddedEvent": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "intent": {
+          "type": "IssueUpdateIntent"
+        },
+        "issueType": {
+          "type": "IssueType"
+        },
+        "rationale": {
+          "type": "IssueEventRationale"
+        }
+      }
+    },
+    "IssueTypeChangedEvent": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "intent": {
+          "type": "IssueUpdateIntent"
+        },
+        "issueType": {
+          "type": "IssueType"
+        },
+        "prevIssueType": {
+          "type": "IssueType"
+        },
+        "rationale": {
+          "type": "IssueEventRationale"
+        }
+      }
+    },
     "IssueTypeColor": {
       "kind": "ENUM",
       "enum_values": [
@@ -11170,6 +11352,29 @@
       "enum_values": [
         "CREATED_AT"
       ]
+    },
+    "IssueTypeRemovedEvent": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "intent": {
+          "type": "IssueUpdateIntent"
+        },
+        "issueType": {
+          "type": "IssueType"
+        },
+        "rationale": {
+          "type": "IssueEventRationale"
+        }
+      }
     },
     "IssueTypeUpdateInput": {
       "kind": "INPUT_OBJECT",

@@ -245,6 +245,17 @@ func (s *Resolver) enrichIssueType(userType *graphql.Object) {
 			"node":   &graphql.Field{Type: timelineItem},
 		},
 	})
+	// AddCommentPayload.timelineEdge (assembled earlier, with the issue
+	// mutations) names this same edge instance; attach it now that the edge
+	// exists. bleephub's addComment returns the comment directly, so the
+	// alternate timeline-edge view resolves null.
+	s.stashNamedObject(timelineItemEdge)
+	if payload := s.namedObject("AddCommentPayload"); payload != nil {
+		payload.AddFieldConfig("timelineEdge", &graphql.Field{
+			Type:    timelineItemEdge,
+			Resolve: func(graphql.ResolveParams) (interface{}, error) { return nil, nil },
+		})
+	}
 	timelineConn := graphql.NewObject(graphql.ObjectConfig{
 		Name: "IssueTimelineConnection",
 		Fields: graphql.Fields{
