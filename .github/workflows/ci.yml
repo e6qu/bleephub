@@ -36,7 +36,9 @@ jobs:
     runs-on: ubuntu-latest
     # Two passes now (race, then coverage) instead of one combined pass, so the
     # budget is raised to cover both without the combined-instrumentation OOM.
-    timeout-minutes: 60
+    # The race pass is additionally concurrency-throttled (see below), which
+    # roughly doubles its wall time, so the budget covers the slower pass too.
+    timeout-minutes: 90
     steps:
       - &checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -57,8 +59,24 @@ jobs:
       # are split into two passes — race first, then coverage — so neither
       # pass carries both instrumentations at once. The suite is still fully
       # exercised under `-race` and fully measured for the coverage floor.
+      #
+      # The race pass alone still exceeded the 16 GB runner's RAM on the grown
+      # internal/server suite: peak RSS lands between 16 and 24 GB (it OOMs the
+      # 16 GB CI VM — surfacing as exit 143 + "runner received a shutdown
+      # signal" after a ~12-minute silent hang on that one package — but runs to
+      # completion on a 24 GB developer box). Race-detector shadow memory scales
+      # with live-goroutine concurrency and is NOT reclaimed by GC, so GOMEMLIMIT
+      # cannot bound it; the lever is concurrency. `-p 2` halves how many package
+      # test binaries build/run at once and `-parallel 2` halves how many tests
+      # run concurrently inside a package (internal/server spins up a full test
+      # server per parallel test — the dominant allocator), together roughly
+      # halving peak RSS into the ~8-12 GB range. GOMEMLIMIT backstops the
+      # GC-managed (non-shadow) heap. Throttling doubles wall time, hence the
+      # 40m test timeout (was 30m) and the 90m job budget above.
       - name: Run the complete server suite under the race detector
-        run: go test -race -tags noui -count=1 -timeout 30m ./...
+        env:
+          GOMEMLIMIT: 12GiB
+        run: go test -race -tags noui -count=1 -timeout 40m -p 2 -parallel 2 ./...
       - name: Re-run for the coverage profile
         # -coverpkg follows the ARCH-001 module split: internal/store and
         # internal/gitstore carry no test binaries of their own — they are

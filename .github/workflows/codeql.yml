@@ -31,16 +31,16 @@ jobs:
         with:
           persist-credentials: false
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@37f2634a92ba38a0926ef79a0748ac8ae7d95ab2 # v4.37.8
+        uses: github/codeql-action/init@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4.37.8
         with:
           languages: ${{ matrix.language }}
           queries: security-extended,security-and-quality
       - name: Build compiled languages
         if: matrix.language == 'go'
-        uses: github/codeql-action/autobuild@37f2634a92ba38a0926ef79a0748ac8ae7d95ab2 # v4.37.8
+        uses: github/codeql-action/autobuild@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4.37.8
       - name: Analyze
         id: analyze
-        uses: github/codeql-action/analyze@37f2634a92ba38a0926ef79a0748ac8ae7d95ab2 # v4.37.8
+        uses: github/codeql-action/analyze@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4.37.8
         with:
           category: /language:${{ matrix.language }}
           output: codeql-results
