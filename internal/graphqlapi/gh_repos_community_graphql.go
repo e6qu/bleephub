@@ -321,6 +321,11 @@ func (s *Resolver) addRepositoryCommunityFields(types *accountSurfaceTypes) {
 			"filename": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
 			"name":     &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
 			"title":    &graphql.Field{Type: graphql.String},
+			// The issue type a template records, if any. bleephub's templates
+			// (parsed from the repo's .github/ISSUE_TEMPLATE front matter) do not
+			// record an issue-type binding, so the source carries no "type" key
+			// and the nullable field resolves null.
+			"type": &graphql.Field{Type: s.graphqlTypes.issueType},
 			"assignees": &graphql.Field{
 				Type: graphql.NewNonNull(types.userConnection),
 				Args: connectionArgs(nil),

@@ -52,6 +52,19 @@ func (s *Resolver) gqlLabelableInterface() *graphql.Interface {
 	return s.graphqlTypes.labelable
 }
 
+// gqlLabelUpdateInput memoizes GitHub's LabelUpdateInput — a label id with an
+// optional confidence/rationale/suggest triple. Both AddLabelsToLabelableInput
+// and UpdateIssueInput name it, so the one memoized instance is shared through
+// this getter to keep the two definitions identical regardless of build order.
+func (s *Resolver) gqlLabelUpdateInput() *graphql.InputObject {
+	return s.mutationInput("LabelUpdateInput", graphql.InputObjectConfigFieldMap{
+		"confidence": gqlInputOf(s.sharedEnum("IssueEventConfidenceLevel", "HIGH", "LOW", "MEDIUM")),
+		"labelId":    gqlNonNullID(),
+		"rationale":  gqlString(),
+		"suggest":    gqlBool(),
+	})
+}
+
 // addLabelMutationsToSchema registers the three Labelable mutations.
 func (s *Resolver) addLabelMutationsToSchema(mutationType *graphql.Object) {
 	labelable := s.gqlLabelableInterface()
@@ -62,6 +75,10 @@ func (s *Resolver) addLabelMutationsToSchema(mutationType *graphql.Object) {
 		Fields: graphql.InputObjectConfigFieldMap{
 			"labelableId": &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
 			"labelIds":    &graphql.InputObjectFieldConfig{Type: labelIDList},
+			// labels: [LabelUpdateInput!] — the richer add form, each label
+			// carrying an optional rationale/suggest flag. Shares the one memoized
+			// LabelUpdateInput with UpdateIssueInput.labels via the getter.
+			"labels": gqlListOf(s.gqlLabelUpdateInput()),
 		},
 	})
 	removeInputType := graphql.NewInputObject(graphql.InputObjectConfig{

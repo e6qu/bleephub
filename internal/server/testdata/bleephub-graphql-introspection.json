@@ -348,7 +348,8 @@
       "input_fields": {
         "clientMutationId": "String",
         "labelIds": "[ID!]",
-        "labelableId": "ID!"
+        "labelableId": "ID!",
+        "labels": "[LabelUpdateInput!]"
       }
     },
     "AddLabelsToLabelablePayload": {
@@ -2639,6 +2640,15 @@
         "deletions": {
           "type": "Int!"
         },
+        "deployments": {
+          "type": "DeploymentConnection",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
         "file": {
           "type": "TreeEntry",
           "args": {
@@ -2699,6 +2709,9 @@
         },
         "resourcePath": {
           "type": "URI!"
+        },
+        "signature": {
+          "type": "GitSignature"
         },
         "status": {
           "type": "Status"
@@ -4289,8 +4302,11 @@
         "description": "String",
         "hasIssuesEnabled": "Boolean",
         "hasWikiEnabled": "Boolean",
+        "homepageUrl": "URI",
         "name": "String!",
         "ownerId": "ID",
+        "teamId": "ID",
+        "template": "Boolean",
         "visibility": "RepositoryVisibility!"
       }
     },
@@ -6310,6 +6326,9 @@
         "emoji": {
           "type": "String!"
         },
+        "emojiHTML": {
+          "type": "HTML!"
+        },
         "id": {
           "type": "ID!"
         },
@@ -6317,6 +6336,12 @@
           "type": "Boolean!"
         },
         "name": {
+          "type": "String!"
+        },
+        "repository": {
+          "type": "Repository!"
+        },
+        "slug": {
           "type": "String!"
         },
         "updatedAt": {
@@ -6575,6 +6600,9 @@
     "DiscussionPoll": {
       "kind": "OBJECT",
       "fields": {
+        "discussion": {
+          "type": "Discussion"
+        },
         "id": {
           "type": "ID!"
         },
@@ -6610,6 +6638,9 @@
         },
         "option": {
           "type": "String!"
+        },
+        "poll": {
+          "type": "DiscussionPoll"
         },
         "totalVoteCount": {
           "type": "Int!"
@@ -6917,6 +6948,16 @@
         },
         "id": {
           "type": "ID!"
+        },
+        "innersourceVulnerabilities": {
+          "type": "SecurityVulnerabilityConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "package": "String"
+          }
         },
         "location": {
           "type": "String"
@@ -9242,8 +9283,100 @@
     "GitSSHRemote": {
       "kind": "SCALAR"
     },
+    "GitSignature": {
+      "kind": "INTERFACE",
+      "fields": {
+        "email": {
+          "type": "String!"
+        },
+        "isValid": {
+          "type": "Boolean!"
+        },
+        "payload": {
+          "type": "String!"
+        },
+        "signature": {
+          "type": "String!"
+        },
+        "signer": {
+          "type": "User"
+        },
+        "state": {
+          "type": "GitSignatureState!"
+        },
+        "verifiedAt": {
+          "type": "DateTime"
+        },
+        "wasSignedByGitHub": {
+          "type": "Boolean!"
+        }
+      },
+      "possible_types": [
+        "GpgSignature",
+        "SmimeSignature",
+        "SshSignature",
+        "UnknownSignature"
+      ]
+    },
+    "GitSignatureState": {
+      "kind": "ENUM",
+      "enum_values": [
+        "BAD_CERT",
+        "BAD_EMAIL",
+        "EXPIRED_KEY",
+        "GPGVERIFY_ERROR",
+        "GPGVERIFY_UNAVAILABLE",
+        "INVALID",
+        "MALFORMED_SIG",
+        "NOT_SIGNING_KEY",
+        "NO_USER",
+        "OCSP_ERROR",
+        "OCSP_PENDING",
+        "OCSP_REVOKED",
+        "UNKNOWN_KEY",
+        "UNKNOWN_SIG_TYPE",
+        "UNSIGNED",
+        "UNVERIFIED_EMAIL",
+        "VALID"
+      ]
+    },
     "GitTimestamp": {
       "kind": "SCALAR"
+    },
+    "GpgSignature": {
+      "kind": "OBJECT",
+      "fields": {
+        "email": {
+          "type": "String!"
+        },
+        "isValid": {
+          "type": "Boolean!"
+        },
+        "keyId": {
+          "type": "String"
+        },
+        "payload": {
+          "type": "String!"
+        },
+        "signature": {
+          "type": "String!"
+        },
+        "signer": {
+          "type": "User"
+        },
+        "state": {
+          "type": "GitSignatureState!"
+        },
+        "verifiedAt": {
+          "type": "DateTime"
+        },
+        "wasSignedByGitHub": {
+          "type": "Boolean!"
+        }
+      },
+      "interfaces": [
+        "GitSignature"
+      ]
     },
     "GrantEnterpriseOrganizationsMigratorRoleInput": {
       "kind": "INPUT_OBJECT",
@@ -10717,6 +10850,9 @@
         },
         "title": {
           "type": "String"
+        },
+        "type": {
+          "type": "IssueType"
         }
       }
     },
@@ -10855,8 +10991,29 @@
         "id": {
           "type": "ID!"
         },
+        "isEnabled": {
+          "type": "Boolean!"
+        },
+        "isPrivate": {
+          "type": "Boolean!"
+        },
+        "issues": {
+          "type": "IssueConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "labels": "[String!]",
+            "last": "Int",
+            "repositoryId": "ID!",
+            "states": "[IssueState!]"
+          }
+        },
         "name": {
           "type": "String!"
+        },
+        "pinnedFields": {
+          "type": "[IssueFields!]"
         }
       }
     },
@@ -14824,6 +14981,15 @@
             "types": "[PinnableItemType!]"
           }
         },
+        "pinnedIssueFields": {
+          "type": "IssueFieldsConnection",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
         "pinnedItems": {
           "type": "PinnableItemConnection!",
           "args": {
@@ -15784,6 +15950,34 @@
         }
       }
     },
+    "PinnedEnvironmentConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[PinnedEnvironmentEdge]"
+        },
+        "nodes": {
+          "type": "[PinnedEnvironment]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "PinnedEnvironmentEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "PinnedEnvironment"
+        }
+      }
+    },
     "PinnedEvent": {
       "kind": "OBJECT",
       "fields": {
@@ -15809,6 +16003,9 @@
       "fields": {
         "databaseId": {
           "type": "Int"
+        },
+        "fullDatabaseId": {
+          "type": "BigInt"
         },
         "id": {
           "type": "ID!"
@@ -21672,6 +21869,15 @@
         "parent": {
           "type": "Repository"
         },
+        "pinnedEnvironments": {
+          "type": "PinnedEnvironmentConnection",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
         "pinnedIssues": {
           "type": "PinnedIssueConnection",
           "args": {
@@ -24201,6 +24407,38 @@
         }
       }
     },
+    "SmimeSignature": {
+      "kind": "OBJECT",
+      "fields": {
+        "email": {
+          "type": "String!"
+        },
+        "isValid": {
+          "type": "Boolean!"
+        },
+        "payload": {
+          "type": "String!"
+        },
+        "signature": {
+          "type": "String!"
+        },
+        "signer": {
+          "type": "User"
+        },
+        "state": {
+          "type": "GitSignatureState!"
+        },
+        "verifiedAt": {
+          "type": "DateTime"
+        },
+        "wasSignedByGitHub": {
+          "type": "Boolean!"
+        }
+      },
+      "interfaces": [
+        "GitSignature"
+      ]
+    },
     "SocialAccount": {
       "kind": "OBJECT",
       "fields": {
@@ -25371,6 +25609,41 @@
         "PR_TITLE"
       ]
     },
+    "SshSignature": {
+      "kind": "OBJECT",
+      "fields": {
+        "email": {
+          "type": "String!"
+        },
+        "isValid": {
+          "type": "Boolean!"
+        },
+        "keyFingerprint": {
+          "type": "String"
+        },
+        "payload": {
+          "type": "String!"
+        },
+        "signature": {
+          "type": "String!"
+        },
+        "signer": {
+          "type": "User"
+        },
+        "state": {
+          "type": "GitSignatureState!"
+        },
+        "verifiedAt": {
+          "type": "DateTime"
+        },
+        "wasSignedByGitHub": {
+          "type": "Boolean!"
+        }
+      },
+      "interfaces": [
+        "GitSignature"
+      ]
+    },
     "StarOrder": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
@@ -25470,6 +25743,9 @@
         },
         "node": {
           "type": "Repository!"
+        },
+        "starredAt": {
+          "type": "DateTime!"
         }
       }
     },
@@ -26731,6 +27007,38 @@
         "ReadyForReviewEvent",
         "Repository",
         "ReviewDismissedEvent"
+      ]
+    },
+    "UnknownSignature": {
+      "kind": "OBJECT",
+      "fields": {
+        "email": {
+          "type": "String!"
+        },
+        "isValid": {
+          "type": "Boolean!"
+        },
+        "payload": {
+          "type": "String!"
+        },
+        "signature": {
+          "type": "String!"
+        },
+        "signer": {
+          "type": "User"
+        },
+        "state": {
+          "type": "GitSignatureState!"
+        },
+        "verifiedAt": {
+          "type": "DateTime"
+        },
+        "wasSignedByGitHub": {
+          "type": "Boolean!"
+        }
+      },
+      "interfaces": [
+        "GitSignature"
       ]
     },
     "UnlabeledEvent": {

@@ -948,6 +948,14 @@ func (s *Resolver) addRepoFieldsToSchema(
 			"description":      &graphql.InputObjectFieldConfig{Type: graphql.String},
 			"hasIssuesEnabled": &graphql.InputObjectFieldConfig{Type: graphql.Boolean},
 			"hasWikiEnabled":   &graphql.InputObjectFieldConfig{Type: graphql.Boolean},
+			// Declaration-only members of GitHub's CreateRepositoryInput.
+			// homepageUrl: URI, teamId: ID (the team granted access), template:
+			// Boolean (mark the new repo as a template). The createRepository
+			// resolver does not yet act on them; they are declared so the input's
+			// shape matches GitHub's and a client naming them is not rejected.
+			"homepageUrl": &graphql.InputObjectFieldConfig{Type: s.graphQLStringScalar("URI")},
+			"teamId":      &graphql.InputObjectFieldConfig{Type: graphql.ID},
+			"template":    &graphql.InputObjectFieldConfig{Type: graphql.Boolean},
 		},
 	})
 

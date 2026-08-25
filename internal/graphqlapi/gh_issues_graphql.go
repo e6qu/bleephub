@@ -1143,6 +1143,13 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 				},
 			},
 			"databaseId": &graphql.Field{Type: graphql.Int},
+			"fullDatabaseId": &graphql.Field{
+				Type: s.graphQLStringScalar("BigInt"),
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					src, _ := p.Source.(map[string]interface{})
+					return strconv.Itoa(srcInt(src, "databaseId")), nil
+				},
+			},
 			"issue":      &graphql.Field{Type: graphql.NewNonNull(issueType)},
 			"pinnedBy":   &graphql.Field{Type: graphql.NewNonNull(s.graphqlTypes.actor)},
 			"repository": &graphql.Field{Type: graphql.NewNonNull(repoType)},
@@ -1491,12 +1498,9 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 		"rationale":   gqlString(),
 		"suggest":     gqlBool(),
 	})
-	labelUpdateInput := s.mutationInput("LabelUpdateInput", graphql.InputObjectConfigFieldMap{
-		"confidence": gqlInputOf(confidenceEnum),
-		"labelId":    gqlNonNullID(),
-		"rationale":  gqlString(),
-		"suggest":    gqlBool(),
-	})
+	// Shared with AddLabelsToLabelableInput.labels through the getter so the one
+	// memoized LabelUpdateInput has an identical field set at either call site.
+	labelUpdateInput := s.gqlLabelUpdateInput()
 	issueStateUpdateInput := s.mutationInput("IssueStateUpdateInput", graphql.InputObjectConfigFieldMap{
 		"confidence":       gqlInputOf(confidenceEnum),
 		"duplicateIssueId": gqlID(),
@@ -1677,6 +1681,11 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 			}, nil
 		},
 	})
+
+	// IssueType's residual members (isEnabled/isPrivate/issues/pinnedFields) are
+	// installed here, after both the IssueType meta object and the IssueFields
+	// union exist, via the single wiring call for gh_field_residue_graphql.go.
+	s.addIssueTypeResidueFields()
 
 	return issueType, issueMilestoneType
 }

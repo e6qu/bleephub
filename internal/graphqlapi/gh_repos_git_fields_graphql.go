@@ -1,6 +1,7 @@
 package graphqlapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"fmt"
@@ -86,7 +87,9 @@ func (s *Resolver) addRepositoryGitResidualFields(types *accountSurfaceTypes) {
 	s.addRepositoryIssueFieldsField(repoType)
 	s.addRepositoryPolicyFields(repoType)
 	s.addRepositoryMergeQueueField(repoType)
-	s.addRepositoryPinnedEnvironmentsField(types, repoType)
+	// pinnedEnvironments is wired in the LATE pass (addLateGitResidualFields):
+	// the PinnedEnvironment type is not assembled until the deployments family
+	// runs, well after this early residual pass.
 	s.addRepositoryRecentProjectsField(repoType)
 	s.addRepositoryCustomPropertyFields(repoType)
 	s.addRepositorySuggestedActorsField(repoType)
@@ -311,16 +314,15 @@ func (s *Resolver) addRepositoryMergeQueueField(repoType *graphql.Object) {
 
 // addRepositoryPinnedEnvironmentsField installs pinnedEnvironments, the
 // deployment environments an admin has pinned to the repository's home page.
-func (s *Resolver) addRepositoryPinnedEnvironmentsField(types *accountSurfaceTypes, repoType *graphql.Object) {
+func (s *Resolver) addRepositoryPinnedEnvironmentsField() {
+	repoType := s.graphqlTypes.repository
 	pinnedType := s.graphqlTypes.pinnedEnvironment
-	if pinnedType == nil {
+	if repoType == nil || pinnedType == nil {
 		return
 	}
 	repoType.AddFieldConfig("pinnedEnvironments", &graphql.Field{
-		Type: s.accountConnectionType(types, "PinnedEnvironment", pinnedType, false, nil),
-		Args: connectionArgs(graphql.FieldConfigArgument{
-			"orderBy": &graphql.ArgumentConfig{Type: s.gqlOrderInput(types, "PinnedEnvironmentOrder", "PinnedEnvironmentOrderField", "POSITION")},
-		}),
+		Type: s.gqlConnectionType("PinnedEnvironment", pinnedType),
+		Args: connectionArgs(nil),
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			repo, err := s.repoFromSource(p.Source)
 			if err != nil {
@@ -528,6 +530,181 @@ func (s *Resolver) addCommitGitResidualFields(types *accountSurfaceTypes) {
 	s.addCommitStatusField(commitType)
 	s.addCommitSubmodulesField(types, commitType)
 	s.addCommitSubscriptionFields(commitType)
+	s.addCommitSignatureField(commitType)
+}
+
+// addLateGitResidualFields installs the Commit and Repository members whose
+// types the deployment family assembles after the early git-residual pass, so
+// they are wired here once Deployment/Environment exist (called from
+// initGraphQLSchema after addDeploymentsMutationsToSchema).
+func (s *Resolver) addLateGitResidualFields() {
+	s.addCommitDeploymentsField()
+	s.addRepositoryPinnedEnvironmentsField()
+}
+
+// addCommitDeploymentsField installs Commit.deployments — the deployments that
+// shipped this exact commit, matched by deployment SHA.
+func (s *Resolver) addCommitDeploymentsField() {
+	commitType := s.graphqlTypes.commit
+	conn := s.namedObject("DeploymentConnection")
+	if commitType == nil || conn == nil {
+		return
+	}
+	commitType.AddFieldConfig("deployments", &graphql.Field{
+		Type: conn,
+		Args: relayConnectionArgs(),
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			repo, _, err := s.gitSourceRepo(p.Context, p.Source)
+			if err != nil || repo == nil {
+				return nil, err
+			}
+			sha := residualSourceString(p.Source, "oid")
+			repoSource := repoToGraphQL(s.store, repo)
+			var items []gqlConnItem
+			for _, d := range s.store.Deployments.ListDeployments(repo.ID) {
+				if sha != "" && !strings.EqualFold(d.Sha, sha) {
+					continue
+				}
+				d := d
+				items = append(items, gqlConnItem{
+					identity: fmt.Sprintf("%d", d.ID),
+					render:   func() map[string]interface{} { return s.deploymentSource(repo, d, repoSource) },
+				})
+			}
+			return paginateGQLItems(items, p.Args), nil
+		},
+	})
+}
+
+// addCommitSignatureField installs Commit.signature — the GitSignature a signed
+// commit carries. bleephub records the armored signature go-git parses but runs
+// no verification service, so a present signature reports state
+// GPGVERIFY_UNAVAILABLE with isValid false rather than claiming a verification
+// it cannot perform; an unsigned commit resolves null.
+func (s *Resolver) addCommitSignatureField(commitType *graphql.Object) {
+	sig := s.gqlGitSignatureInterface()
+	commitType.AddFieldConfig("signature", &graphql.Field{
+		Type: sig,
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			repo, stor, err := s.gitSourceRepo(p.Context, p.Source)
+			if err != nil || repo == nil || stor == nil {
+				return nil, err
+			}
+			sha := residualSourceString(p.Source, "oid")
+			if sha == "" {
+				return nil, nil
+			}
+			commit, err := object.GetCommit(stor, plumbing.NewHash(sha))
+			if err != nil || commit == nil || strings.TrimSpace(commit.PGPSignature) == "" {
+				return nil, nil
+			}
+			email := strings.ToLower(strings.TrimSpace(commit.Committer.Email))
+			var signer interface{}
+			if u := s.store.LookupUserByEmail(email); u != nil {
+				signer = userToGraphQL(u)
+			}
+			return map[string]interface{}{
+				"__typename":        gitSignatureTypename(commit.PGPSignature),
+				"email":             commit.Committer.Email,
+				"isValid":           false,
+				"payload":           commitSignaturePayload(commit),
+				"signature":         commit.PGPSignature,
+				"signer":            signer,
+				"state":             "GPGVERIFY_UNAVAILABLE",
+				"verifiedAt":        nil,
+				"wasSignedByGitHub": false,
+				"keyId":             nil,
+				"keyFingerprint":    nil,
+			}, nil
+		},
+	})
+}
+
+// gqlGitSignatureInterface builds GitSignature and its concrete members
+// (memoized). The concrete types are registered in the schema Types list
+// (gh_graphql.go) so a `... on GpgSignature` fragment resolves.
+func (s *Resolver) gqlGitSignatureInterface() *graphql.Interface {
+	if existing := s.mutationInterfaces["GitSignature"]; existing != nil {
+		return existing
+	}
+	dateTime := s.graphQLStringScalar("DateTime")
+	state := s.sharedEnum("GitSignatureState",
+		"BAD_CERT", "BAD_EMAIL", "EXPIRED_KEY", "GPGVERIFY_ERROR", "GPGVERIFY_UNAVAILABLE",
+		"INVALID", "MALFORMED_SIG", "NOT_SIGNING_KEY", "NO_USER", "OCSP_ERROR", "OCSP_PENDING",
+		"OCSP_REVOKED", "UNKNOWN_KEY", "UNKNOWN_SIG_TYPE", "UNSIGNED", "UNVERIFIED_EMAIL", "VALID")
+	base := func() graphql.Fields {
+		return graphql.Fields{
+			"email":             &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"isValid":           &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
+			"payload":           &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"signature":         &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"signer":            &graphql.Field{Type: s.graphqlTypes.user},
+			"state":             &graphql.Field{Type: graphql.NewNonNull(state)},
+			"verifiedAt":        &graphql.Field{Type: dateTime},
+			"wasSignedByGitHub": &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
+		}
+	}
+	iface := s.mutationInterface("GitSignature", func() graphql.Fields { return base() }, func(p graphql.ResolveTypeParams) *graphql.Object {
+		src, _ := p.Value.(map[string]interface{})
+		name, _ := src["__typename"].(string)
+		if obj := s.namedObject(name); obj != nil {
+			return obj
+		}
+		return s.namedObject("UnknownSignature")
+	})
+	build := func(name string, extra graphql.Fields) {
+		fields := base()
+		for k, v := range extra {
+			fields[k] = v
+		}
+		obj := graphql.NewObject(graphql.ObjectConfig{
+			Name:       name,
+			Interfaces: []*graphql.Interface{iface},
+			Fields:     fields,
+		})
+		s.stashNamedObject(obj)
+	}
+	build("GpgSignature", graphql.Fields{"keyId": &graphql.Field{Type: graphql.String}})
+	build("SshSignature", graphql.Fields{"keyFingerprint": &graphql.Field{Type: graphql.String}})
+	build("SmimeSignature", nil)
+	build("UnknownSignature", nil)
+	return iface
+}
+
+// gitSignatureTypename picks the concrete GitSignature type from a signature's
+// ASCII-armor header.
+func gitSignatureTypename(armor string) string {
+	switch {
+	case strings.Contains(armor, "BEGIN PGP SIGNATURE"):
+		return "GpgSignature"
+	case strings.Contains(armor, "BEGIN SSH SIGNATURE"):
+		return "SshSignature"
+	case strings.Contains(armor, "BEGIN SIGNED MESSAGE"), strings.Contains(armor, "PKCS7"):
+		return "SmimeSignature"
+	default:
+		return "UnknownSignature"
+	}
+}
+
+// commitSignaturePayload reconstructs the signed payload: the commit object
+// text with its signature header removed, which is what a verifier checks.
+func commitSignaturePayload(commit *object.Commit) string {
+	unsigned := *commit
+	unsigned.PGPSignature = ""
+	var buf bytes.Buffer
+	obj := &plumbing.MemoryObject{}
+	if err := unsigned.Encode(obj); err != nil {
+		return ""
+	}
+	reader, err := obj.Reader()
+	if err != nil {
+		return ""
+	}
+	defer reader.Close()
+	if _, err := buf.ReadFrom(reader); err != nil {
+		return ""
+	}
+	return buf.String()
 }
 
 // addCommitAssociatedPullRequestsField installs associatedPullRequests: the
@@ -1011,7 +1188,7 @@ func (s *Resolver) addRefCompareField(refType *graphql.Object) {
 		},
 	})
 	comparisonType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "Comparison",
+		Name:       "Comparison",
 		Interfaces: []*graphql.Interface{s.graphqlTypes.node},
 		Fields: graphql.Fields{
 			"id":         &graphql.Field{Type: graphql.NewNonNull(graphql.ID), Resolve: sourceKeyResolver("id")},
@@ -1021,8 +1198,8 @@ func (s *Resolver) addRefCompareField(refType *graphql.Object) {
 			"baseTarget": &graphql.Field{Type: graphql.NewNonNull(s.gqlGitObjectInterface()), Resolve: sourceKeyResolver("baseTarget")},
 			"headTarget": &graphql.Field{Type: graphql.NewNonNull(s.gqlGitObjectInterface()), Resolve: sourceKeyResolver("headTarget")},
 			"commits": &graphql.Field{
-				Type:    graphql.NewNonNull(commitConnection),
-				Args:    relayConnectionArgs(),
+				Type: graphql.NewNonNull(commitConnection),
+				Args: relayConnectionArgs(),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					src, _ := p.Source.(map[string]interface{})
 					conn := paginateGQLMaps(src["commits"].([]map[string]interface{}), p.Args)
@@ -1143,10 +1320,10 @@ func (s *Resolver) buildComparison(ctx context.Context, repoFullName string, sto
 		status = "BEHIND"
 	}
 	return map[string]interface{}{
-		"id":         "CMP_" + base64RawURL(repoFullName+":"+baseOID+"..."+headOID),
-		"aheadBy":    aheadBy,
-		"behindBy":   behindBy,
-		"status":     status,
+		"id":          "CMP_" + base64RawURL(repoFullName+":"+baseOID+"..."+headOID),
+		"aheadBy":     aheadBy,
+		"behindBy":    behindBy,
+		"status":      status,
 		"baseTarget":  optionalObject(gitObjectSource(stor, s.store, repoFullName, baseHash)),
 		"headTarget":  optionalObject(gitObjectSource(stor, s.store, repoFullName, headHash)),
 		"commits":     aheadCommits,

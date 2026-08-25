@@ -46,6 +46,50 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 			"isAnswerable": &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
 			"createdAt":    &graphql.Field{Type: graphql.NewNonNull(dateTime)},
 			"updatedAt":    &graphql.Field{Type: graphql.NewNonNull(dateTime)},
+			// The category emoji rendered to HTML. bleephub stores the emoji as a
+			// literal (":rocket:" or the glyph); GitHub returns a small HTML span
+			// around it, so a minimal non-null wrapper keeps the HTML! contract.
+			"emojiHTML": &graphql.Field{
+				Type: graphql.NewNonNull(htmlScalar),
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					cat, ok := p.Source.(map[string]interface{})
+					if !ok {
+						return "", fmt.Errorf("category source: unexpected type %T", p.Source)
+					}
+					emoji, _ := cat["emoji"].(string)
+					return "<div>" + emoji + "</div>", nil
+				},
+			},
+			// The repository this category belongs to. Non-null: every stored
+			// category carries a repo id, resolved back to the repository object.
+			"repository": &graphql.Field{
+				Type: graphql.NewNonNull(repoType),
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					cat, ok := p.Source.(map[string]interface{})
+					if !ok {
+						return nil, fmt.Errorf("category source: unexpected type %T", p.Source)
+					}
+					repoID, _ := cat["repoID"].(int)
+					repo := s.store.GetRepoByID(repoID)
+					if repo == nil {
+						return nil, fmt.Errorf("repository %d not found", repoID)
+					}
+					return repoToGraphQL(s.store, s.store.SnapRepo(repo)), nil
+				},
+			},
+			// A slugified form of the category name (lowercase, non-alphanumeric
+			// runs collapsed to '-'), matching GitHub's category slug.
+			"slug": &graphql.Field{
+				Type: graphql.NewNonNull(graphql.String),
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					cat, ok := p.Source.(map[string]interface{})
+					if !ok {
+						return nil, fmt.Errorf("category source: unexpected type %T", p.Source)
+					}
+					name, _ := cat["name"].(string)
+					return slugifyCategoryName(name), nil
+				},
+			},
 		},
 	})
 
@@ -1217,6 +1261,24 @@ func (s *Resolver) gqlVotableInterface() *graphql.Interface {
 
 // --- GraphQL converters ---
 
+// slugifyCategoryName lowercases a discussion-category name and collapses each
+// run of non-alphanumeric characters into a single '-', trimming leading and
+// trailing dashes — GitHub's DiscussionCategory.slug shape.
+func slugifyCategoryName(name string) string {
+	var b strings.Builder
+	lastDash := false
+	for _, r := range strings.ToLower(name) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			lastDash = false
+		} else if !lastDash {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+	return strings.Trim(b.String(), "-")
+}
+
 func discussionCategoryToGQL(cat *store.DiscussionCategory) map[string]interface{} {
 	return map[string]interface{}{
 		"nodeID":       cat.NodeID,
@@ -1226,6 +1288,7 @@ func discussionCategoryToGQL(cat *store.DiscussionCategory) map[string]interface
 		"isAnswerable": cat.IsAnswerable,
 		"createdAt":    cat.CreatedAt.Format(time.RFC3339),
 		"updatedAt":    cat.UpdatedAt.Format(time.RFC3339),
+		"repoID":       cat.RepoID,
 	}
 }
 

@@ -157,7 +157,21 @@ func (s *Resolver) addUserCompletionFields(types *accountSurfaceTypes) {
 	}))
 
 	// --- starredRepositories ---------------------------------------------
-	starredConnection := s.accountConnectionType(types, "StarredRepository", types.repository, true, nil)
+	// StarredRepositoryEdge carries an extra starredAt: DateTime!. bleephub
+	// records no per-star timestamp, so the repository's own createdAt is the
+	// truthful stand-in (the same choice the Gist stargazer edge makes). The
+	// edge source is {node, cursor}; the node is the repo GQL map, which holds
+	// createdAt.
+	starredConnection := s.accountConnectionType(types, "StarredRepository", types.repository, true, graphql.Fields{
+		"starredAt": &graphql.Field{
+			Type: graphql.NewNonNull(s.graphQLStringScalar("DateTime")),
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				edge, _ := p.Source.(map[string]interface{})
+				node, _ := edge["node"].(map[string]interface{})
+				return node["createdAt"], nil
+			},
+		},
+	})
 	starredConnection.AddFieldConfig("isOverLimit", &graphql.Field{
 		Type:    graphql.NewNonNull(graphql.Boolean),
 		Resolve: func(graphql.ResolveParams) (interface{}, error) { return false, nil },
@@ -439,6 +453,26 @@ func (s *Resolver) addOrganizationCompletionFields(types *accountSurfaceTypes) {
 			return paginateGQLItems(items, p.Args), nil
 		},
 	})
+
+	// --- pinnedIssueFields ------------------------------------------------
+	// The issue fields the organization pins to the top of its issue-field
+	// picker, over the same IssueFieldsConnection Repository.issueFields uses.
+	// bleephub models no per-org pinned-field ordering, so the connection is
+	// truthfully empty. (Organization.issueFields is skipped: GitHub types it as
+	// [IssueFieldCreateOrUpdateInput!] — an input type in output position that
+	// graphql-go rejects.)
+	if fieldUnion := s.graphqlTypes.issueFieldsUnion; fieldUnion != nil {
+		orgType.AddFieldConfig("pinnedIssueFields", &graphql.Field{
+			Type: s.gqlConnectionType("IssueFields", fieldUnion),
+			Args: connectionArgs(nil),
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				if _, err := s.orgFromSource(p.Source); err != nil {
+					return nil, err
+				}
+				return paginateGQLItems(nil, p.Args), nil
+			},
+		})
+	}
 
 	// --- domains ----------------------------------------------------------
 	orgType.AddFieldConfig("domains", &graphql.Field{

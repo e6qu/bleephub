@@ -61,6 +61,11 @@ func discussionPollOptionSource(poll *store.DiscussionPoll, option *store.Discus
 		"totalVoteCount": votes,
 		"viewerHasVoted": viewer != 0 && poll.VotesByUser[viewer] == option.ID,
 		"pollID":         poll.ID,
+		// The poll is keyed in the store by its discussion id (GetDiscussionPoll
+		// takes a discussion id), so the option carries it to reconstruct the
+		// parent poll for the DiscussionPollOption.poll field.
+		"discussionID": poll.DiscussionID,
+		"viewerID":     viewer,
 	}
 }
 
@@ -173,6 +178,35 @@ func (s *Resolver) addDiscussionPollTypes(mutationType, discussionType *graphql.
 				})
 			}
 			return paginateGQLItems(items, p.Args), nil
+		},
+	})
+
+	// DiscussionPoll.discussion — the discussion the poll belongs to (nullable in
+	// GitHub's schema). The poll source carries the discussion id.
+	pollType.AddFieldConfig("discussion", &graphql.Field{
+		Type: discussionType,
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			source, _ := p.Source.(map[string]interface{})
+			discussionID, _ := source["discussionID"].(int)
+			d := s.store.GetDiscussion(discussionID)
+			return optionalObject(discussionToGQL(d, s.store)), nil
+		},
+	})
+
+	// DiscussionPollOption.poll — the poll the option belongs to (nullable). The
+	// option source carries the discussion id, which keys the poll in the store.
+	optionType.AddFieldConfig("poll", &graphql.Field{
+		Type: pollType,
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			source, _ := p.Source.(map[string]interface{})
+			discussionID, _ := source["discussionID"].(int)
+			poll := s.store.GetDiscussionPoll(discussionID)
+			if poll == nil {
+				return nil, nil
+			}
+			viewer, _ := source["viewerID"].(int)
+			canVote := s.ghUserFromContext(p.Context) != nil
+			return s.discussionPollSource(poll, viewer, canVote), nil
 		},
 	})
 

@@ -1,10 +1,10 @@
 {
   "official_types": 1807,
-  "bleephub_types": 1582,
-  "shared_types": 1575,
+  "bleephub_types": 1590,
+  "shared_types": 1583,
   "official_fields": 8362,
-  "implemented_fields": 6532,
-  "signature_exact_fields": 6531,
+  "implemented_fields": 6601,
+  "signature_exact_fields": 6600,
   "compatibility_gap_count": 9,
   "missing_types": [
     "AddedToMergeQueueEvent",
@@ -45,9 +45,6 @@
     "EnterpriseServerUserAccountEmailOrderField",
     "EnvironmentPinnedFilterField",
     "GenericHovercardContext",
-    "GitSignature",
-    "GitSignatureState",
-    "GpgSignature",
     "HeadRefForcePushedEvent",
     "IssueCommentPinnedEvent",
     "IssueCommentUnpinnedEvent",
@@ -153,8 +150,6 @@
     "PinnedDiscussionEdge",
     "PinnedDiscussionGradient",
     "PinnedDiscussionPattern",
-    "PinnedEnvironmentConnection",
-    "PinnedEnvironmentEdge",
     "PinnedEnvironmentOrder",
     "PinnedEnvironmentOrderField",
     "PrivateRepositoryForkingDisableAuditEntry",
@@ -213,8 +208,6 @@
     "ReviewStatusHovercardContext",
     "SavedReplyOrder",
     "SavedReplyOrderField",
-    "SmimeSignature",
-    "SshSignature",
     "SubIssueAddedEvent",
     "SubIssueRemovedEvent",
     "SubscribableThread",
@@ -229,7 +222,6 @@
     "TeamRemoveRepositoryAuditEntry",
     "TeamReviewRequestable",
     "TopicAuditEntryData",
-    "UnknownSignature",
     "UnmarkedAsDuplicateEvent",
     "UnsubscribedEvent",
     "Updatable",
@@ -244,38 +236,12 @@
     "AddCommentPayload": [
       "timelineEdge"
     ],
-    "AddLabelsToLabelableInput": [
-      "labels"
-    ],
     "AddPullRequestReviewPayload": [
       "reviewEdge"
     ],
     "Assignable": [
       "assignedActors",
       "suggestedActors"
-    ],
-    "Commit": [
-      "deployments",
-      "signature"
-    ],
-    "CreateRepositoryInput": [
-      "homepageUrl",
-      "teamId",
-      "template"
-    ],
-    "DiscussionCategory": [
-      "emojiHTML",
-      "repository",
-      "slug"
-    ],
-    "DiscussionPoll": [
-      "discussion"
-    ],
-    "DiscussionPollOption": [
-      "poll"
-    ],
-    "Enterprise": [
-      "innersourceVulnerabilities"
     ],
     "EnterpriseServerUserAccount": [
       "emails",
@@ -288,18 +254,8 @@
     "IssueEventRationale": [
       "issueEvent"
     ],
-    "IssueTemplate": [
-      "type"
-    ],
-    "IssueType": [
-      "isEnabled",
-      "isPrivate",
-      "issues",
-      "pinnedFields"
-    ],
     "Organization": [
-      "issueFields",
-      "pinnedIssueFields"
+      "issueFields"
     ],
     "Package": [
       "latestVersion",
@@ -307,9 +263,6 @@
       "statistics",
       "version",
       "versions"
-    ],
-    "PinnedIssue": [
-      "fullDatabaseId"
     ],
     "Query": [
       "topic"
@@ -319,8 +272,7 @@
     ],
     "Repository": [
       "packages",
-      "pinnedDiscussions",
-      "pinnedEnvironments"
+      "pinnedDiscussions"
     ],
     "RepositoryCollaboratorEdge": [
       "permissionSources"
@@ -337,9 +289,6 @@
     "RepositoryRulesetBypassActor": [
       "actor",
       "repositoryRuleset"
-    ],
-    "StarredRepositoryEdge": [
-      "starredAt"
     ]
   }
 }

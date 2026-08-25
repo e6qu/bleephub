@@ -287,6 +287,24 @@ func (s *Resolver) addEnterpriseExtraFields(
 		},
 	})
 
+	// innersourceVulnerabilities — the vulnerabilities disclosed across the
+	// enterprise's internal-source repositories, over the shared
+	// SecurityVulnerabilityConnection (stashed by the advisory builder).
+	// bleephub runs no cross-repository innersource scan, so the connection is
+	// truthfully empty rather than a fabricated list.
+	if vulnConn := s.namedObject("SecurityVulnerabilityConnection"); vulnConn != nil {
+		enterpriseType.AddFieldConfig("innersourceVulnerabilities", &graphql.Field{
+			Type: graphql.NewNonNull(vulnConn),
+			Args: connectionArgs(graphql.FieldConfigArgument{
+				"package": &graphql.ArgumentConfig{Type: graphql.String},
+			}),
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				_ = s.enterpriseFromSource(p.Source)
+				return paginateGQLItems(nil, p.Args), nil
+			},
+		})
+	}
+
 	enterpriseType.AddFieldConfig("enterpriseTeam", &graphql.Field{
 		Type: extras.enterpriseTeamType,
 		Args: graphql.FieldConfigArgument{

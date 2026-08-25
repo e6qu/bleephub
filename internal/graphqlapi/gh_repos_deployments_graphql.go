@@ -193,8 +193,12 @@ func (s *Resolver) addRepositoryDeploymentFields(types *accountSurfaceTypes) {
 	s.graphqlTypes.environmentConnection = s.accountConnectionType(types, "Environment", environmentType, false, nil)
 
 	// --- Repository fields -------------------------------------------------
+	deploymentConnection := s.accountConnectionType(types, "Deployment", deploymentType, false, nil)
+	// Commit.deployments (assembled later, in the late git-residual pass) serves
+	// this same connection instance.
+	s.stashNamedObject(deploymentConnection)
 	repoType.AddFieldConfig("deployments", &graphql.Field{
-		Type: graphql.NewNonNull(s.accountConnectionType(types, "Deployment", deploymentType, false, nil)),
+		Type: graphql.NewNonNull(deploymentConnection),
 		Args: connectionArgs(graphql.FieldConfigArgument{
 			"environments": &graphql.ArgumentConfig{Type: graphql.NewList(graphql.NewNonNull(graphql.String))},
 			"orderBy": &graphql.ArgumentConfig{

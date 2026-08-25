@@ -433,6 +433,11 @@ func (s *Resolver) initGraphQLSchema() {
 	s.addChecksMutationsToSchema(mutationType)
 	s.addDeploymentsMutationsToSchema(mutationType)
 
+	// Commit.deployments and Repository.pinnedEnvironments name the Deployment
+	// and PinnedEnvironment types the two families just assembled, so they are
+	// wired after them rather than in the early git-residual pass.
+	s.addLateGitResidualFields()
+
 	// The residual account/git/actions members GitHub's Commit, Release and
 	// status-rollup types declare. This runs last so every type it hangs a
 	// field off (Commit, Release, StatusContext, StatusCheckRollup, User,
@@ -473,6 +478,13 @@ func (s *Resolver) initGraphQLSchema() {
 			s.graphqlTypes.tree,
 			s.graphqlTypes.tag,
 			s.graphqlTypes.commit,
+			// GitSignature's concrete members are reachable only through
+			// Commit.signature returning the interface, so register them
+			// explicitly for `... on GpgSignature` fragments to validate.
+			s.namedObject("GpgSignature"),
+			s.namedObject("SshSignature"),
+			s.namedObject("SmimeSignature"),
+			s.namedObject("UnknownSignature"),
 		},
 	})
 	if err != nil {
