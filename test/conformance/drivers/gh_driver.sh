@@ -739,6 +739,7 @@ run_gh_json api "gh api /licenses" "GET /licenses" 'length >= 1' api /licenses
 run_gh_json api "gh api /gitignore/templates" "GET /gitignore/templates" 'length >= 1' api /gitignore/templates
 run_gh_json api "gh api /user/repos --paginate" "GET /user/repos?per_page=1 (Link header)" \
     'length >= 1' api "/user/repos?per_page=1" --paginate --slurp
+# shellcheck disable=SC2016  # $id is a GraphQL variable (bound via -F id=...), not a shell expansion
 run_gh_json api "gh api graphql (mutation)" "POST /api/graphql" \
     '.data.addComment.commentEdge.node.body == "gh graphql comment"' \
     api graphql -F id="$(gh api "repos/$OWNER/$REPO/issues/1" --jq '.node_id')" \

@@ -97,7 +97,9 @@ acquire_lock() {
 # server starts. Until then only the lock needs releasing, so install_traps is
 # called twice — the second call supersedes the first with a handler that does
 # both.
+# shellcheck disable=SC2329  # invoked indirectly by the EXIT/INT/... trap in install_traps
 release_lock() { rm -rf "$LOCK"; }
+# shellcheck disable=SC2329  # invoked indirectly by the EXIT/INT/... trap in install_traps
 stop_server() { :; }
 
 install_traps() {
