@@ -31082,7 +31082,7 @@
         "source": "internal/server/gh_misc_endpoints.go"
       }
     ],
-    "vendored_openapi_sha256": "cb574397e102477ebc9b714e5cb8c90c786a17746777d97b90dc7ab5d817a56d"
+    "vendored_openapi_sha256": "f7afa5fa749313ad5d98e7c771be8b0c2571cadac9244290fe8158f503bf9b64"
   },
   "schema_version": 1,
   "sources": {
