@@ -47,6 +47,22 @@ ACCEPTED_FINDINGS: dict[tuple[str, str], str] = {
     ("go/incorrect-integer-conversion", "internal/store/store.go"):
         "Hex option/iteration IDs are internally-generated seeds parsed at 64-bit width; "
         "additionally range-guarded before conversion.",
+    ("go/path-injection", "internal/store/object_bytes_local.go"):
+        "resolve() rejects any key whose slash-split segments include an empty, "
+        "'.' or '..' element, then verifies the joined path is contained within "
+        "Root (equal to Root or prefixed by Root+separator) before returning it, "
+        "so no key can traverse outside Root. Keys are server-generated from "
+        "validated digests (LFSObjectDataKey and friends), never caller input. "
+        "CodeQL flows the key to the filesystem sink without modeling the "
+        "per-segment rejection or the containment guard as sanitizers.",
+    ("go/bad-redirect-check", "internal/store/rest.go"):
+        "AvatarURLFor builds the avatar_url string for a JSON body, not an HTTP "
+        "redirect, and the stored value is always concatenated after the instance "
+        "base URL so it cannot change origin. The leading-slash branch additionally "
+        "rejects a protocol-relative '//' or '/\\' second character and the fallback "
+        "branch strips leading slashes/backslashes. CodeQL treats the string "
+        "construction as a redirect sink and models neither the base-URL prefix nor "
+        "the second-character guard.",
     ("go/bad-redirect-check", "internal/server/identity.go"):
         "The post-login redirect only accepts a same-origin relative path: the guard "
         "requires a leading '/', rejects a '//' prefix, AND rejects any backslash via "
