@@ -89,6 +89,10 @@ func (s *Resolver) buildEnterpriseExtraTypes(enterpriseType, userType *graphql.O
 		},
 	})
 	extras.enterpriseTeamType = teamType
+	// Stashed by GitHub name so the residual BypassActor and PermissionGranter
+	// unions (addResidueTailFields) reach this one EnterpriseTeam instance rather
+	// than re-minting a duplicate the schema would reject.
+	s.stashNamedObject(teamType)
 	extras.enterpriseTeamConnection = advisoryConnectionType("EnterpriseTeam", teamType, pageInfo)
 
 	// --- RepositoryCustomProperty (real: enterprise schema) -----------------

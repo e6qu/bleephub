@@ -462,6 +462,14 @@ func (s *Resolver) initGraphQLSchema() {
 	// enriched in place by gqlGistCommentType, which runs after those families.)
 	s.enrichCommentTypes()
 
+	// The final tail of GitHub fields whose subject bleephub does not model:
+	// the property/id/name ruleset conditions, the bypass-actor `actor` union,
+	// RepositoryCollaboratorEdge.permissionSources and Repository.pinnedDiscussions.
+	// It runs last because its types name App, EnterpriseTeam, Organization,
+	// Repository, Discussion and the collaborator edge — all now assembled — and
+	// every field it adds resolves a truthful null/empty (no backing data).
+	s.addResidueTailFields()
+
 	// Every mutation is now registered. Authorization coverage is asserted over
 	// the assembled type rather than trusted to each family above, so a
 	// mutation that reaches the store without a policy row stops the process

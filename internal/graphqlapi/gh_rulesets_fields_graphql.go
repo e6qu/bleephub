@@ -132,12 +132,17 @@ func (s *Resolver) repositoryRuleConditionsType() *graphql.Object {
 			"include": gqlNonNullFieldListOf(graphql.String),
 		},
 	})
-	return graphql.NewObject(graphql.ObjectConfig{
+	conditions := graphql.NewObject(graphql.ObjectConfig{
 		Name: "RepositoryRuleConditions",
 		Fields: graphql.Fields{
 			"refName": gqlField(refNameTarget),
 		},
 	})
+	// Stashed so addResidueTailFields (which runs after the enterprise family
+	// mints EnterpriseTeam) can hang the organization/repository property and
+	// id/name condition targets off this one instance rather than re-minting it.
+	s.stashNamedObject(conditions)
+	return conditions
 }
 
 // repositoryRulesetBypassActorConnectionType is the Relay connection over
@@ -156,6 +161,10 @@ func (s *Resolver) repositoryRulesetBypassActorConnectionType() *graphql.Object 
 			"repositoryRoleName":       gqlField(graphql.String),
 		},
 	})
+	// Stashed so addResidueTailFields can add the `actor` (BypassActor union) and
+	// `repositoryRuleset` back-reference to this one instance once App and
+	// EnterpriseTeam — its union members, minted by later families — exist.
+	s.stashNamedObject(actorType)
 	edge := graphql.NewObject(graphql.ObjectConfig{
 		Name: "RepositoryRulesetBypassActorEdge",
 		Fields: graphql.Fields{

@@ -1535,6 +1535,15 @@
         "sponsorableLogin": "String"
       }
     },
+    "BypassActor": {
+      "kind": "UNION",
+      "possible_types": [
+        "App",
+        "EnterpriseTeam",
+        "Team",
+        "User"
+      ]
+    },
     "BypassForcePushAllowance": {
       "kind": "OBJECT",
       "fields": {
@@ -15771,11 +15780,33 @@
         "SUCCEEDED"
       ]
     },
+    "OrganizationPropertyConditionTarget": {
+      "kind": "OBJECT",
+      "fields": {
+        "exclude": {
+          "type": "[OrganizationPropertyTargetDefinition!]!"
+        },
+        "include": {
+          "type": "[OrganizationPropertyTargetDefinition!]!"
+        }
+      }
+    },
     "OrganizationPropertyConditionTargetInput": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
         "exclude": "[OrganizationPropertyTargetDefinitionInput!]!",
         "include": "[OrganizationPropertyTargetDefinitionInput!]!"
+      }
+    },
+    "OrganizationPropertyTargetDefinition": {
+      "kind": "OBJECT",
+      "fields": {
+        "name": {
+          "type": "String!"
+        },
+        "propertyValues": {
+          "type": "[String!]!"
+        }
       }
     },
     "OrganizationPropertyTargetDefinitionInput": {
@@ -16082,6 +16113,32 @@
         }
       }
     },
+    "PermissionGranter": {
+      "kind": "UNION",
+      "possible_types": [
+        "EnterpriseTeam",
+        "Organization",
+        "Repository",
+        "Team"
+      ]
+    },
+    "PermissionSource": {
+      "kind": "OBJECT",
+      "fields": {
+        "organization": {
+          "type": "Organization!"
+        },
+        "permission": {
+          "type": "DefaultRepositoryPermissionField!"
+        },
+        "roleName": {
+          "type": "String"
+        },
+        "source": {
+          "type": "PermissionGranter!"
+        }
+      }
+    },
     "PinEnvironmentInput": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
@@ -16186,6 +16243,90 @@
         "REPOSITORY",
         "TEAM",
         "USER"
+      ]
+    },
+    "PinnedDiscussion": {
+      "kind": "OBJECT",
+      "fields": {
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "databaseId": {
+          "type": "Int"
+        },
+        "discussion": {
+          "type": "Discussion!"
+        },
+        "gradientStopColors": {
+          "type": "[String!]!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "pattern": {
+          "type": "PinnedDiscussionPattern!"
+        },
+        "pinnedBy": {
+          "type": "Actor!"
+        },
+        "preconfiguredGradient": {
+          "type": "PinnedDiscussionGradient"
+        },
+        "repository": {
+          "type": "Repository!"
+        },
+        "updatedAt": {
+          "type": "DateTime!"
+        }
+      }
+    },
+    "PinnedDiscussionConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[PinnedDiscussionEdge]"
+        },
+        "nodes": {
+          "type": "[PinnedDiscussion]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "PinnedDiscussionEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "PinnedDiscussion"
+        }
+      }
+    },
+    "PinnedDiscussionGradient": {
+      "kind": "ENUM",
+      "enum_values": [
+        "BLUE_MINT",
+        "BLUE_PURPLE",
+        "PINK_BLUE",
+        "PURPLE_CORAL",
+        "RED_ORANGE"
+      ]
+    },
+    "PinnedDiscussionPattern": {
+      "kind": "ENUM",
+      "enum_values": [
+        "CHEVRON_UP",
+        "DOT",
+        "DOT_FILL",
+        "HEART_FILL",
+        "PLUS",
+        "ZAP"
       ]
     },
     "PinnedEnvironment": {
@@ -18458,6 +18599,20 @@
         "NO_POLICY",
         "REAUTH"
       ]
+    },
+    "PropertyTargetDefinition": {
+      "kind": "OBJECT",
+      "fields": {
+        "name": {
+          "type": "String!"
+        },
+        "propertyValues": {
+          "type": "[String!]!"
+        },
+        "source": {
+          "type": "String"
+        }
+      }
     },
     "PropertyTargetDefinitionInput": {
       "kind": "INPUT_OBJECT",
@@ -22155,6 +22310,15 @@
         "parent": {
           "type": "Repository"
         },
+        "pinnedDiscussions": {
+          "type": "PinnedDiscussionConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
         "pinnedEnvironments": {
           "type": "PinnedEnvironmentConnection",
           "args": {
@@ -22576,6 +22740,9 @@
         },
         "permission": {
           "type": "RepositoryPermission!"
+        },
+        "permissionSources": {
+          "type": "[PermissionSource!]"
         }
       }
     },
@@ -22743,6 +22910,14 @@
         },
         "node": {
           "type": "Repository"
+        }
+      }
+    },
+    "RepositoryIdConditionTarget": {
+      "kind": "OBJECT",
+      "fields": {
+        "repositoryIds": {
+          "type": "[ID!]!"
         }
       }
     },
@@ -22961,6 +23136,20 @@
         "CREATED_AT"
       ]
     },
+    "RepositoryNameConditionTarget": {
+      "kind": "OBJECT",
+      "fields": {
+        "exclude": {
+          "type": "[String!]!"
+        },
+        "include": {
+          "type": "[String!]!"
+        },
+        "protected": {
+          "type": "Boolean!"
+        }
+      }
+    },
     "RepositoryNameConditionTargetInput": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
@@ -23087,6 +23276,17 @@
         "PUBLIC"
       ]
     },
+    "RepositoryPropertyConditionTarget": {
+      "kind": "OBJECT",
+      "fields": {
+        "exclude": {
+          "type": "[PropertyTargetDefinition!]!"
+        },
+        "include": {
+          "type": "[PropertyTargetDefinition!]!"
+        }
+      }
+    },
     "RepositoryPropertyConditionTargetInput": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
@@ -23114,8 +23314,20 @@
     "RepositoryRuleConditions": {
       "kind": "OBJECT",
       "fields": {
+        "organizationProperty": {
+          "type": "OrganizationPropertyConditionTarget"
+        },
         "refName": {
           "type": "RefNameConditionTarget"
+        },
+        "repositoryId": {
+          "type": "RepositoryIdConditionTarget"
+        },
+        "repositoryName": {
+          "type": "RepositoryNameConditionTarget"
+        },
+        "repositoryProperty": {
+          "type": "RepositoryPropertyConditionTarget"
         }
       }
     },
@@ -23246,6 +23458,9 @@
     "RepositoryRulesetBypassActor": {
       "kind": "OBJECT",
       "fields": {
+        "actor": {
+          "type": "BypassActor"
+        },
         "bypassMode": {
           "type": "RepositoryRulesetBypassActorBypassMode"
         },
@@ -23269,6 +23484,9 @@
         },
         "repositoryRoleName": {
           "type": "String"
+        },
+        "repositoryRuleset": {
+          "type": "RepositoryRuleset"
         }
       }
     },
