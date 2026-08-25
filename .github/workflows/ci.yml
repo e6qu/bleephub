@@ -81,7 +81,18 @@ jobs:
         # exercised through internal/server's suite — and without cross-package
         # attribution the profile would count their statements as 0% and read
         # as a coverage collapse that never happened.
-        run: go test -tags noui -count=1 -timeout 30m -coverpkg=./... -coverprofile=coverage.out ./...
+        #
+        # -coverpkg=./... instruments the whole tree into internal/server's test
+        # binary, and at the default -parallel that binary's concurrent test
+        # servers also exhausted the 16 GB runner (exit 143 on internal/server,
+        # same as the race pass). Coverage counters are bounded (one per
+        # statement, allocated once) rather than monotonically accumulating like
+        # race shadow memory, so the driver is concurrent-test memory, not the
+        # instrumentation — capping -parallel is enough here (no sharding). At
+        # -parallel 2 peak RSS measures ~5 GB; GOMEMLIMIT backstops the heap.
+        env:
+          GOMEMLIMIT: 12GiB
+        run: go test -tags noui -count=1 -timeout 40m -p 2 -parallel 2 -coverpkg=./... -coverprofile=coverage.out ./...
       - name: Enforce the Go coverage floor
         run: bash ./scripts/check-go-coverage.sh coverage.out
       # The main suite runs under `-tags noui`, which compiles the embedded SPA
