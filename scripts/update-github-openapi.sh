@@ -12,7 +12,7 @@ set -euo pipefail
 # github/rest-api-description commit that the vendored copy comes from,
 # and the SHA-256 of descriptions/api.github.com/api.github.com.json at
 # that commit.
-PIN_COMMIT="fee3373e1517aa7a3510c5db165154f47baf8d97"
+PIN_COMMIT="8114b0d0e23240dfe45374e2daf01651a4729210"
 PIN_SHA256="ce1c36845d86dcadce44c665b2594f1fd8cd9117e7a48cff1cd418e245fe94f2"
 
 usage() {
