@@ -97,9 +97,9 @@ acquire_lock() {
 # server starts. Until then only the lock needs releasing, so install_traps is
 # called twice — the second call supersedes the first with a handler that does
 # both.
-# shellcheck disable=SC2329  # invoked indirectly by the EXIT/INT/... trap in install_traps
+# shellcheck disable=SC2317,SC2329  # invoked indirectly by the EXIT/INT/... trap in install_traps
 release_lock() { rm -rf "$LOCK"; }
-# shellcheck disable=SC2329  # invoked indirectly by the EXIT/INT/... trap in install_traps
+# shellcheck disable=SC2317,SC2329  # invoked indirectly by the EXIT/INT/... trap in install_traps
 stop_server() { :; }
 
 install_traps() {
@@ -154,7 +154,7 @@ BLEEPHUB_ADMIN_TOKEN="$ADMIN_TOKEN" \
     "$SERVER_BIN" -addr "127.0.0.1:$HTTP_PORT" -log-level warn >"$WORK/server.log" 2>&1 &
 SERVER_PID=$!
 
-# shellcheck disable=SC2329  # invoked indirectly, by the trap installed below.
+# shellcheck disable=SC2317,SC2329  # invoked indirectly, by the trap installed below.
 stop_server() {
     kill "$SERVER_PID" 2>/dev/null || true
     wait "$SERVER_PID" 2>/dev/null || true
