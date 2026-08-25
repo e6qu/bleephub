@@ -460,14 +460,6 @@ func refUpdateIsFastForward(stor storer.Storer, current, target plumbing.Hash) (
 	return ancestor, nil
 }
 
-// refWriteRefusal decides a REST ref write against the branch's protection
-// rule, through the same predicate the git transports push through. Push
-// access — required by the route gate — is enough for an unprotected ref.
-func (s *Server) refWriteRefusal(r *http.Request, repo *store.Repo, ref plumbing.ReferenceName, kind refWriteKind, target plumbing.Hash) string {
-	stor, _ := s.store.GitStorageForRepoID(repo.ID)
-	return s.protectedRefWriteRefusal(r.Context(), repo, stor, ref, kind, target)
-}
-
 func (s *Server) gitDataContext(w http.ResponseWriter, r *http.Request) (owner, repoName string, repo *store.Repo, stor gitStorage.Storer) {
 	owner = r.PathValue("owner")
 	repoName = r.PathValue("repo")

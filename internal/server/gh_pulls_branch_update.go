@@ -40,6 +40,7 @@ func (e *branchUpdateExpectationError) Error() string {
 func (s *Server) updatePullRequestBranch(repo *store.Repo, pr *store.PullRequest, user *store.User, expectedHeadOid, method, baseURL string) error {
 	headRepo := store.PullRequestHeadRepo(s.store, pr)
 	if headRepo == nil {
+		//lint:ignore ST1005 GitHub API parity requires this exact upstream message.
 		return fmt.Errorf("Pull request head repository is unavailable")
 	}
 	headOwner, headName, _ := store.SplitRepoFullName(headRepo.FullName)
@@ -47,11 +48,13 @@ func (s *Server) updatePullRequestBranch(repo *store.Repo, pr *store.PullRequest
 	baseOwner, baseName, _ := store.SplitRepoFullName(repo.FullName)
 	baseStor := s.store.GetGitStorage(baseOwner, baseName)
 	if headStor == nil || baseStor == nil {
+		//lint:ignore ST1005 GitHub API parity requires this exact upstream message.
 		return fmt.Errorf("Pull request branch cannot be updated")
 	}
 	headRef := plumbing.NewBranchReferenceName(pr.HeadRefName)
 	headReference, err := headStor.Reference(headRef)
 	if err != nil {
+		//lint:ignore ST1005 GitHub API parity requires this exact upstream message.
 		return fmt.Errorf("Pull request head branch does not exist")
 	}
 	before := headReference.Hash()
@@ -60,10 +63,12 @@ func (s *Server) updatePullRequestBranch(repo *store.Repo, pr *store.PullRequest
 	}
 	baseHash, err := store.ResolveGitRef(baseStor, pr.BaseRefName)
 	if err != nil {
+		//lint:ignore ST1005 GitHub API parity requires this exact upstream message.
 		return fmt.Errorf("Pull request base branch does not exist")
 	}
 	if headRepo.FullName != repo.FullName {
 		if err := store.CopyGitObjects(baseStor, headStor); err != nil {
+			//lint:ignore ST1005 GitHub API parity requires this exact upstream message.
 			return fmt.Errorf("Pull request branch cannot be updated")
 		}
 	}
@@ -78,6 +83,7 @@ func (s *Server) updatePullRequestBranch(repo *store.Repo, pr *store.PullRequest
 	after, _, err := performMerge(headStor, headRef, baseHash, pr.BaseRefName, message,
 		repoSignature(user.Login, email))
 	if err != nil {
+		//lint:ignore ST1005 GitHub API parity requires this exact upstream message.
 		return fmt.Errorf("Pull request branch cannot be updated due to conflicts")
 	}
 	s.store.UpdatePullRequest(pr.ID, func(current *store.PullRequest) {

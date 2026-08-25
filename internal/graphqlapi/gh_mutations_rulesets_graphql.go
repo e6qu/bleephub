@@ -245,7 +245,7 @@ func (s *Resolver) gqlRuleParametersInput() *graphql.InputObject {
 		"sha":          gqlString(),
 	})
 	return s.mutationInput("RuleParametersInput", graphql.InputObjectConfigFieldMap{
-		"branchNamePattern":        gqlInputOf(pattern("BranchNamePatternParametersInput")),
+		"branchNamePattern": gqlInputOf(pattern("BranchNamePatternParametersInput")),
 		"codeScanning": gqlInputOf(s.mutationInput("CodeScanningParametersInput", graphql.InputObjectConfigFieldMap{
 			"codeScanningTools": gqlNonNullListOf(s.mutationInput("CodeScanningToolInput", graphql.InputObjectConfigFieldMap{
 				"alertsThreshold":         gqlNonNullString(),
@@ -269,7 +269,7 @@ func (s *Resolver) gqlRuleParametersInput() *graphql.InputObject {
 			"minEntriesToMerge":            gqlNonNullInt(),
 			"minEntriesToMergeWaitMinutes": gqlNonNullInt(),
 		})),
-		"tagNamePattern":           gqlInputOf(pattern("TagNamePatternParametersInput")),
+		"tagNamePattern": gqlInputOf(pattern("TagNamePatternParametersInput")),
 		"fileExtensionRestriction": gqlInputOf(s.mutationInput("FileExtensionRestrictionParametersInput", graphql.InputObjectConfigFieldMap{
 			"restrictedFileExtensions": gqlNonNullListOf(graphql.String),
 		})),
@@ -283,8 +283,8 @@ func (s *Resolver) gqlRuleParametersInput() *graphql.InputObject {
 			"maxFileSize": gqlNonNullInt(),
 		})),
 		"pullRequest": gqlInputOf(s.mutationInput("PullRequestParametersInput", graphql.InputObjectConfigFieldMap{
-			"allowedMergeMethods":            gqlListOf(s.sharedEnum("PullRequestAllowedMergeMethods", "MERGE", "REBASE", "SQUASH")),
-			"dismissStaleReviewsOnPush":      gqlNonNullBool(),
+			"allowedMergeMethods":       gqlListOf(s.sharedEnum("PullRequestAllowedMergeMethods", "MERGE", "REBASE", "SQUASH")),
+			"dismissStaleReviewsOnPush": gqlNonNullBool(),
 			"dismissalRestriction": gqlInputOf(s.mutationInput("DismissalRestrictionInput", graphql.InputObjectConfigFieldMap{
 				"allowedActors": gqlListOf(graphql.ID),
 				"enabled":       gqlNonNullBool(),
@@ -453,6 +453,7 @@ func (s *Resolver) resolveCreateRepositoryRuleset(p graphql.ResolveParams) (inte
 	input, _ := p.Args["input"].(map[string]interface{})
 	name, _ := gqlInputString(input, "name")
 	if strings.TrimSpace(name) == "" {
+		//lint:ignore ST1005 GitHub API parity requires this exact upstream message.
 		return nil, fmt.Errorf("Name can't be blank")
 	}
 	enforcement, _ := gqlInputString(input, "enforcement")

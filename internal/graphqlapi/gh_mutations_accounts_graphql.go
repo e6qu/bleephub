@@ -449,6 +449,7 @@ func (s *Resolver) resolveCreateUserList(p graphql.ResolveParams) (interface{}, 
 	viewer := s.ghUserFromContext(p.Context)
 	name, _ := gqlInputString(input, "name")
 	if strings.TrimSpace(name) == "" {
+		//lint:ignore ST1005 GitHub API parity requires this exact upstream message.
 		return nil, fmt.Errorf("Name can't be blank")
 	}
 	description, _ := gqlInputString(input, "description")
@@ -456,6 +457,7 @@ func (s *Resolver) resolveCreateUserList(p graphql.ResolveParams) (interface{}, 
 
 	list := s.store.CreateUserList(viewer.ID, name, description, private)
 	if list == nil {
+		//lint:ignore ST1005 GitHub API parity requires this exact upstream message.
 		return nil, fmt.Errorf("Name has already been taken")
 	}
 	return map[string]interface{}{
@@ -487,6 +489,7 @@ func (s *Resolver) resolveUpdateUserList(p graphql.ResolveParams) (interface{}, 
 		}
 	})
 	if updated == nil {
+		//lint:ignore ST1005 GitHub API parity requires this exact upstream message.
 		return nil, fmt.Errorf("Name has already been taken")
 	}
 	return map[string]interface{}{"list": optionalObject(s.userListToGQL(updated))}, nil

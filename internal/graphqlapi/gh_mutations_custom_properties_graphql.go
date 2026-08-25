@@ -356,6 +356,7 @@ func (s *Resolver) resolveCreateRepositoryCustomProperty(p graphql.ResolveParams
 	sourceID, _ := gqlInputString(input, "sourceId")
 	if org := s.orgByNodeID(sourceID); org != nil {
 		if s.store.GetCustomProperty(org.Login, name) != nil {
+			//lint:ignore ST1005 GitHub API parity requires this exact upstream message.
 			return nil, fmt.Errorf("Property name has already been taken")
 		}
 		s.store.UpsertCustomProperty(org.Login, def)
@@ -365,6 +366,7 @@ func (s *Resolver) resolveCreateRepositoryCustomProperty(p graphql.ResolveParams
 	}
 	if e := store.FindEnterpriseByNodeID(s.store, sourceID); e != nil {
 		if s.store.GetEnterpriseCustomProperty(name) != nil {
+			//lint:ignore ST1005 GitHub API parity requires this exact upstream message.
 			return nil, fmt.Errorf("Property name has already been taken")
 		}
 		s.store.UpsertEnterpriseCustomProperty(def)

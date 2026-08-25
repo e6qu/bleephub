@@ -302,6 +302,7 @@ func (s *Resolver) resolveCreateLabel(p graphql.ResolveParams) (interface{}, err
 	}
 	name, _ := gqlInputString(input, "name")
 	if strings.TrimSpace(name) == "" {
+		//lint:ignore ST1005 GitHub API parity requires this exact upstream message.
 		return nil, fmt.Errorf("Name can't be blank")
 	}
 	color, _ := gqlInputString(input, "color")
@@ -309,6 +310,7 @@ func (s *Resolver) resolveCreateLabel(p graphql.ResolveParams) (interface{}, err
 
 	label := s.store.CreateLabel(repo.ID, name, description, strings.TrimPrefix(color, "#"))
 	if label == nil {
+		//lint:ignore ST1005 GitHub API parity requires this exact upstream message.
 		return nil, fmt.Errorf("Name has already been taken")
 	}
 	s.emitLabelEvent(repo, label, p, "created")
@@ -331,10 +333,12 @@ func (s *Resolver) resolveUpdateLabel(p graphql.ResolveParams) (interface{}, err
 	}
 	name, renaming := gqlInputString(input, "name")
 	if renaming && strings.TrimSpace(name) == "" {
+		//lint:ignore ST1005 GitHub API parity requires this exact upstream message.
 		return nil, fmt.Errorf("Name can't be blank")
 	}
 	if renaming {
 		if clash := s.store.GetLabelByName(repo.ID, name); clash != nil && clash.ID != labelID {
+			//lint:ignore ST1005 GitHub API parity requires this exact upstream message.
 			return nil, fmt.Errorf("Name has already been taken")
 		}
 	}

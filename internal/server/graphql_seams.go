@@ -260,6 +260,7 @@ func (a graphqlSeams) RepositoryMigrationLogURL(m *store.RepositoryMigration) st
 func (a graphqlSeams) RenameRepository(repo *store.Repo, newName string) error {
 	owner, name, ok := store.SplitRepoFullName(repo.FullName)
 	if !ok {
+		//lint:ignore ST1005 GitHub API parity requires this exact upstream message.
 		return fmt.Errorf("Repository name is invalid")
 	}
 	return a.s.renameRepository(owner, name, newName)
@@ -395,6 +396,7 @@ func (a graphqlSeams) storageFor(repo *store.Repo) gitStorage.Storer {
 func (a graphqlSeams) GenerateFromTemplate(ctx context.Context, template *store.Repo, sender *store.User, ownerLogin, name, description string, includeAllBranches, private bool) (*store.Repo, error) {
 	templateOwner, templateName, ok := store.SplitRepoFullName(template.FullName)
 	if !ok {
+		//lint:ignore ST1005 GitHub API parity requires this exact upstream message.
 		return nil, fmt.Errorf("Repository name is invalid")
 	}
 	var repo *store.Repo

@@ -667,9 +667,9 @@ func (s *Resolver) sponsorsListingType() *graphql.Object {
 		Fields: graphql.FieldsThunk(func() graphql.Fields {
 			uri := s.graphQLStringScalar("URI")
 			return graphql.Fields{
-				"id":                    &graphql.Field{Type: graphql.NewNonNull(graphql.ID)},
-				"slug":                  &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-				"name":                  &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+				"id":   &graphql.Field{Type: graphql.NewNonNull(graphql.ID)},
+				"slug": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+				"name": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
 				// bleephub runs no Stripe integration, so a listing has no active
 				// Stripe Connect account; the field is present (its type exists)
 				// and answers a truthful null rather than being missing.

@@ -921,10 +921,12 @@ func (s *Resolver) resolveCreateBranchProtectionRule(p graphql.ResolveParams) (i
 	pattern, _ := gqlInputString(input, "pattern")
 	pattern = strings.TrimSpace(pattern)
 	if pattern == "" {
+		//lint:ignore ST1005 GitHub API parity requires this exact upstream message.
 		return nil, fmt.Errorf("Pattern can't be blank")
 	}
 	_, _, patternRules, exists := s.lookupBranchProtectionRule(repo, pattern)
 	if exists {
+		//lint:ignore ST1005 GitHub API parity requires this exact upstream message.
 		return nil, fmt.Errorf("Pattern has already been taken")
 	}
 
@@ -968,6 +970,7 @@ func (s *Resolver) resolveUpdateBranchProtectionRule(p graphql.ResolveParams) (i
 	}
 	if newPattern != pattern {
 		if _, _, _, taken := s.lookupBranchProtectionRule(repo, newPattern); taken {
+			//lint:ignore ST1005 GitHub API parity requires this exact upstream message.
 			return nil, fmt.Errorf("Pattern has already been taken")
 		}
 	}

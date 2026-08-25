@@ -185,6 +185,7 @@ func (s *Server) createRevertBranch(ctx context.Context, repo *store.Repo, pr *s
 	}
 	owner, name, ok := store.SplitRepoFullName(repo.FullName)
 	if !ok {
+		//lint:ignore ST1005 GitHub API parity requires this exact upstream message.
 		return "", fmt.Errorf("Repository name is invalid")
 	}
 	stor := s.store.GetGitStorage(owner, name)

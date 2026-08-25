@@ -91,6 +91,7 @@ func (st *Store) CreateVerifiableDomain(ownerType string, ownerID int, domain st
 	defer st.Mu.Unlock()
 	for _, existing := range st.VerifiableDomains {
 		if existing.OwnerType == ownerType && existing.OwnerID == ownerID && existing.Domain == cleaned {
+			//lint:ignore ST1005 GitHub API parity requires this exact upstream message.
 			return nil, fmt.Errorf("Domain has already been added")
 		}
 	}

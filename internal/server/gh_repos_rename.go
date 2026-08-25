@@ -18,6 +18,7 @@ import (
 // neither.
 func (s *Server) renameRepository(owner, name, newName string) error {
 	if !s.store.RenameRepo(owner, name, newName) {
+		//lint:ignore ST1005 GitHub API parity requires this exact upstream message.
 		return fmt.Errorf("Repository rename failed")
 	}
 	oldFull := owner + "/" + name

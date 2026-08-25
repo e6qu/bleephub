@@ -839,6 +839,7 @@ func (s *Resolver) resolveCreateIssueType(p graphql.ResolveParams) (interface{},
 	}
 	name, _ := gqlInputString(input, "name")
 	if strings.TrimSpace(name) == "" {
+		//lint:ignore ST1005 GitHub API parity requires this exact upstream message.
 		return nil, fmt.Errorf("Name can't be blank")
 	}
 	description := optionalStringPtr(input, "description")
@@ -847,6 +848,7 @@ func (s *Resolver) resolveCreateIssueType(p graphql.ResolveParams) (interface{},
 
 	issueType := s.store.CreateIssueType(org.Login, name, description, color, enabled)
 	if issueType == nil {
+		//lint:ignore ST1005 GitHub API parity requires this exact upstream message.
 		return nil, fmt.Errorf("Name has already been taken")
 	}
 	return map[string]interface{}{"issueType": optionalObject(issueTypeToGQL(issueType))}, nil
@@ -879,6 +881,7 @@ func (s *Resolver) resolveUpdateIssueType(p graphql.ResolveParams) (interface{},
 
 	updated := s.store.UpdateIssueType(orgLogin, existing.ID, name, description, color, enabled)
 	if updated == nil {
+		//lint:ignore ST1005 GitHub API parity requires this exact upstream message.
 		return nil, fmt.Errorf("Name has already been taken")
 	}
 	return map[string]interface{}{"issueType": optionalObject(issueTypeToGQL(updated))}, nil
@@ -936,6 +939,7 @@ func (s *Resolver) resolveCreateIssueField(p graphql.ResolveParams) (interface{}
 	}
 	name, _ := gqlInputString(input, "name")
 	if strings.TrimSpace(name) == "" {
+		//lint:ignore ST1005 GitHub API parity requires this exact upstream message.
 		return nil, fmt.Errorf("Name can't be blank")
 	}
 	dataType, _ := gqlInputString(input, "dataType")
@@ -945,6 +949,7 @@ func (s *Resolver) resolveCreateIssueField(p graphql.ResolveParams) (interface{}
 		strings.ToLower(dataType), issueFieldVisibilityStored(visibility),
 		issueFieldOptionRequests(input))
 	if field == nil {
+		//lint:ignore ST1005 GitHub API parity requires this exact upstream message.
 		return nil, fmt.Errorf("Name has already been taken")
 	}
 	return map[string]interface{}{"issueField": optionalObject(s.issueFieldToGQL(field))}, nil

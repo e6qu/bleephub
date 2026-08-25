@@ -513,6 +513,7 @@ func (s *Resolver) resolveAddPullRequestReviewComment(p graphql.ResolveParams) (
 	user := s.ghUserFromContext(p.Context)
 	body, _ := gqlInputString(input, "body")
 	if body == "" {
+		//lint:ignore ST1005 GitHub API parity requires this exact upstream message.
 		return nil, fmt.Errorf("Body can't be blank")
 	}
 
@@ -541,6 +542,7 @@ func (s *Resolver) resolveAddPullRequestReviewComment(p graphql.ResolveParams) (
 	}
 	path, _ := gqlInputString(input, "path")
 	if path == "" {
+		//lint:ignore ST1005 GitHub API parity requires this exact upstream message.
 		return nil, fmt.Errorf("Path can't be blank")
 	}
 	position, _ := gqlInputInt(input, "position")
@@ -587,6 +589,7 @@ func (s *Resolver) resolveAddPullRequestReviewThread(p graphql.ResolveParams) (i
 	body, _ := gqlInputString(input, "body")
 	path, _ := gqlInputString(input, "path")
 	if path == "" {
+		//lint:ignore ST1005 GitHub API parity requires this exact upstream message.
 		return nil, fmt.Errorf("Path can't be blank")
 	}
 	line, _ := gqlInputInt(input, "line")
@@ -715,6 +718,7 @@ func (s *Resolver) resolveDeletePullRequestReview(p graphql.ResolveParams) (inte
 	// GitHub only lets a pending review be deleted; a submitted one is part of
 	// the record and is dismissed instead.
 	if deleted.State != "PENDING" {
+		//lint:ignore ST1005 GitHub API parity requires this exact upstream message.
 		return nil, fmt.Errorf("Can not delete a submitted review")
 	}
 	rendered := prReviewToGQL(deleted, s.store)
@@ -854,6 +858,7 @@ func (s *Resolver) resolveFileViewed(p graphql.ResolveParams, viewed bool) (inte
 	}
 	path, _ := gqlInputString(input, "path")
 	if path == "" {
+		//lint:ignore ST1005 GitHub API parity requires this exact upstream message.
 		return nil, fmt.Errorf("Path can't be blank")
 	}
 	user := s.ghUserFromContext(p.Context)
@@ -918,6 +923,7 @@ func (s *Resolver) resolveEnqueuePullRequest(p graphql.ResolveParams) (interface
 	}
 	if expected, ok := gqlInputString(input, "expectedHeadOid"); ok && expected != "" {
 		if head := s.prHeadSha(repo, pr); head != "" && head != expected {
+			//lint:ignore ST1005 GitHub API parity requires this exact upstream message.
 			return nil, fmt.Errorf("Head has changed since the expected oid was read")
 		}
 	}

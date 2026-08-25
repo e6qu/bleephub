@@ -242,8 +242,10 @@ func (s *Resolver) addWorkflowRunFields() {
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) { return workflowRunResourcePath(p.Source), nil },
 	})
 	runType.AddFieldConfig("url", &graphql.Field{
-		Type:    graphql.NewNonNull(uri),
-		Resolve: func(p graphql.ResolveParams) (interface{}, error) { return externalURL(workflowRunResourcePath(p.Source)), nil },
+		Type: graphql.NewNonNull(uri),
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			return externalURL(workflowRunResourcePath(p.Source)), nil
+		},
 	})
 	runType.AddFieldConfig("checkSuite", &graphql.Field{
 		Type: graphql.NewNonNull(s.graphqlTypes.checkSuite),
@@ -362,8 +364,10 @@ func (s *Resolver) addWorkflowFileFields() {
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) { return workflowFileResourcePath(p.Source), nil },
 	})
 	fileType.AddFieldConfig("url", &graphql.Field{
-		Type:    graphql.NewNonNull(uri),
-		Resolve: func(p graphql.ResolveParams) (interface{}, error) { return externalURL(workflowFileResourcePath(p.Source)), nil },
+		Type: graphql.NewNonNull(uri),
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			return externalURL(workflowFileResourcePath(p.Source)), nil
+		},
 	})
 	fileType.AddFieldConfig("runs", &graphql.Field{
 		Type: graphql.NewNonNull(t.workflowRunConnection),
@@ -561,8 +565,10 @@ func (s *Resolver) addCheckSuiteResidueFields() {
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) { return checkSuiteResourcePath(p.Source), nil },
 	})
 	suiteType.AddFieldConfig("url", &graphql.Field{
-		Type:    graphql.NewNonNull(uri),
-		Resolve: func(p graphql.ResolveParams) (interface{}, error) { return externalURL(checkSuiteResourcePath(p.Source)), nil },
+		Type: graphql.NewNonNull(uri),
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			return externalURL(checkSuiteResourcePath(p.Source)), nil
+		},
 	})
 }
 
@@ -605,8 +611,10 @@ func (s *Resolver) addCheckRunResidueFields() {
 		Resolve: func(graphql.ResolveParams) (interface{}, error) { return nil, nil },
 	})
 	runType.AddFieldConfig("permalink", &graphql.Field{
-		Type:    graphql.NewNonNull(uri),
-		Resolve: func(p graphql.ResolveParams) (interface{}, error) { return externalURL(checkRunResourcePath(p.Source)), nil },
+		Type: graphql.NewNonNull(uri),
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			return externalURL(checkRunResourcePath(p.Source)), nil
+		},
 	})
 	runType.AddFieldConfig("repository", &graphql.Field{
 		Type: graphql.NewNonNull(s.graphqlTypes.repository),
@@ -631,8 +639,10 @@ func (s *Resolver) addCheckRunResidueFields() {
 		},
 	})
 	runType.AddFieldConfig("url", &graphql.Field{
-		Type:    graphql.NewNonNull(uri),
-		Resolve: func(p graphql.ResolveParams) (interface{}, error) { return externalURL(checkRunResourcePath(p.Source)), nil },
+		Type: graphql.NewNonNull(uri),
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			return externalURL(checkRunResourcePath(p.Source)), nil
+		},
 	})
 }
 
