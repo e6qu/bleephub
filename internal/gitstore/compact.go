@@ -847,6 +847,20 @@ func (s *atomicRefStorer) adoptPack() {
 	s.mu.Lock()
 	if reindexer, ok := s.storer.(interface{ Reindex() }); ok {
 		reindexer.Reindex()
+		// Reindex only clears go-git's lazily-built pack index; the rebuild
+		// happens inside the next requireIndex(), which mutates the shared
+		// index and pack list. Every read method (EncodedObject and friends)
+		// calls requireIndex, and this wrapper runs those under RLock — so
+		// leaving the rebuild to them lets concurrent readers race to
+		// repopulate the index right after a compaction, and one can observe a
+		// partial pack set: a spurious ErrObjectNotFound for an object the
+		// freshly published pack holds (a concurrent clone reading a ref's
+		// commit while its objects move loose->pack). Force the rebuild here,
+		// under the exclusive lock, so every RLock reader afterwards finds a
+		// complete, non-nil index and requireIndex is a no-op for them. The
+		// probe's result is irrelevant; it exists only to drive requireIndex
+		// through go-git's public surface.
+		_ = s.storer.HasEncodedObject(plumbing.ZeroHash)
 	}
 	s.mu.Unlock()
 	s.fs.repoIndexFor().invalidate()
