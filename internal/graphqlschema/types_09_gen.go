@@ -5,6 +5,44 @@ package graphqlschema
 
 import "github.com/graphql-go/graphql"
 
+func (r *Registry) definePushAllowanceConnection() {
+	r.object("PushAllowanceConnection", "The connection type for PushAllowance.", nil, func() graphql.Fields {
+		return graphql.Fields{
+			"edges": {
+				Type:        graphql.NewList(r.t("PushAllowanceEdge")),
+				Description: "A list of edges.",
+			},
+			"nodes": {
+				Type:        graphql.NewList(r.t("PushAllowance")),
+				Description: "A list of nodes.",
+			},
+			"pageInfo": {
+				Type:        graphql.NewNonNull(r.t("PageInfo")),
+				Description: "Information to aid in pagination.",
+			},
+			"totalCount": {
+				Type:        graphql.NewNonNull(r.t("Int")),
+				Description: "Identifies the total count of items in the connection.",
+			},
+		}
+	})
+}
+
+func (r *Registry) definePushAllowanceEdge() {
+	r.object("PushAllowanceEdge", "An edge in a connection.", nil, func() graphql.Fields {
+		return graphql.Fields{
+			"cursor": {
+				Type:        graphql.NewNonNull(r.t("String")),
+				Description: "A cursor for use in pagination.",
+			},
+			"node": {
+				Type:        r.t("PushAllowance"),
+				Description: "The item at the end of the edge.",
+			},
+		}
+	})
+}
+
 func (r *Registry) defineQuery() {
 	r.object("Query", "The query root of GitHub's GraphQL interface.", []string{"Node"}, func() graphql.Fields {
 		return graphql.Fields{
@@ -6824,36 +6862,6 @@ func (r *Registry) defineRepositoryCustomPropertyConnection() {
 			"totalCount": {
 				Type:        graphql.NewNonNull(r.t("Int")),
 				Description: "Identifies the total count of items in the connection.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineRepositoryCustomPropertyEdge() {
-	r.object("RepositoryCustomPropertyEdge", "An edge in a connection.", nil, func() graphql.Fields {
-		return graphql.Fields{
-			"cursor": {
-				Type:        graphql.NewNonNull(r.t("String")),
-				Description: "A cursor for use in pagination.",
-			},
-			"node": {
-				Type:        r.t("RepositoryCustomProperty"),
-				Description: "The item at the end of the edge.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineRepositoryCustomPropertyValue() {
-	r.object("RepositoryCustomPropertyValue", "A value associated with a repository custom property.", nil, func() graphql.Fields {
-		return graphql.Fields{
-			"propertyName": {
-				Type:        graphql.NewNonNull(r.t("String")),
-				Description: "The name of the custom property.",
-			},
-			"value": {
-				Type:        graphql.NewNonNull(r.t("CustomPropertyValue")),
-				Description: "The value of the custom property.",
 			},
 		}
 	})

@@ -6,12 +6,12 @@ package graphqlschema
 // Counts of the generated type universe, used to presize the registry's
 // maps and asserted by the completeness ratchet.
 const (
-	generatedTypeCount      = 1807
+	generatedTypeCount      = 1809
 	generatedObjectCount    = 1025
 	generatedInterfaceCount = 50
 	generatedUnionCount     = 49
-	generatedEnumCount      = 254
-	generatedInputCount     = 416
+	generatedEnumCount      = 255
+	generatedInputCount     = 417
 	generatedScalarCount    = 13
 	generatedAbstractCount  = 99
 )
@@ -706,6 +706,8 @@ func (r *Registry) defineAllTypes() {
 	r.defineIssueFieldText()
 	r.defineIssueFieldTextValue()
 	r.defineIssueFieldTimelineOption()
+	r.defineIssueFieldUpdateInput()
+	r.defineIssueFieldUpdateOperation()
 	r.defineIssueFieldValue()
 	r.defineIssueFieldValueCommon()
 	r.defineIssueFieldValueConnection()

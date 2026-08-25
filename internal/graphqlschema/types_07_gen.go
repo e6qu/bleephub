@@ -5,6 +5,74 @@ package graphqlschema
 
 import "github.com/graphql-go/graphql"
 
+func (r *Registry) defineOrganizationMembersCanCreateRepositoriesSettingValue() {
+	r.enum("OrganizationMembersCanCreateRepositoriesSettingValue", "The possible values for the members can create repositories setting on an organization.", graphql.EnumValueConfigMap{
+		"ALL": {
+			Value:       "ALL",
+			Description: "Members will be able to create public and private repositories.",
+		},
+		"DISABLED": {
+			Value:       "DISABLED",
+			Description: "Members will not be able to create public or private repositories.",
+		},
+		"INTERNAL": {
+			Value:       "INTERNAL",
+			Description: "Members will be able to create only internal repositories.",
+		},
+		"PRIVATE": {
+			Value:       "PRIVATE",
+			Description: "Members will be able to create only private repositories.",
+		},
+	})
+}
+
+func (r *Registry) defineOrganizationMigration() {
+	r.object("OrganizationMigration", "A GitHub Enterprise Importer (GEI) organization migration.", []string{"Node"}, func() graphql.Fields {
+		return graphql.Fields{
+			"createdAt": {
+				Type:        graphql.NewNonNull(r.t("DateTime")),
+				Description: "Identifies the date and time when the object was created.",
+			},
+			"databaseId": {
+				Type:        r.t("String"),
+				Description: "Identifies the primary key from the database.",
+			},
+			"failureReason": {
+				Type:        r.t("String"),
+				Description: "The reason the organization migration failed.",
+			},
+			"id": {
+				Type:        graphql.NewNonNull(r.t("ID")),
+				Description: "The Node ID of the OrganizationMigration object",
+			},
+			"remainingRepositoriesCount": {
+				Type:        r.t("Int"),
+				Description: "The remaining amount of repos to be migrated.",
+			},
+			"sourceOrgName": {
+				Type:        graphql.NewNonNull(r.t("String")),
+				Description: "The name of the source organization to be migrated.",
+			},
+			"sourceOrgUrl": {
+				Type:        graphql.NewNonNull(r.t("URI")),
+				Description: "The URL of the source organization to migrate.",
+			},
+			"state": {
+				Type:        graphql.NewNonNull(r.t("OrganizationMigrationState")),
+				Description: "The migration state.",
+			},
+			"targetOrgName": {
+				Type:        graphql.NewNonNull(r.t("String")),
+				Description: "The name of the target organization.",
+			},
+			"totalRepositoriesCount": {
+				Type:        r.t("Int"),
+				Description: "The total amount of repositories to be migrated.",
+			},
+		}
+	})
+}
+
 func (r *Registry) defineOrganizationMigrationState() {
 	r.enum("OrganizationMigrationState", "The Octoshift Organization migration state.", graphql.EnumValueConfigMap{
 		"FAILED": {
@@ -3742,64 +3810,6 @@ func (r *Registry) defineProjectV2ItemFieldLabelValue() {
 						Description: "Returns the last _n_ elements from the list.",
 					},
 				},
-			},
-		}
-	})
-}
-
-func (r *Registry) defineProjectV2ItemFieldMilestoneValue() {
-	r.object("ProjectV2ItemFieldMilestoneValue", "The value of a milestone field in a Project item.", nil, func() graphql.Fields {
-		return graphql.Fields{
-			"field": {
-				Type:        graphql.NewNonNull(r.t("ProjectV2FieldConfiguration")),
-				Description: "The field that contains this value.",
-			},
-			"milestone": {
-				Type:        r.t("Milestone"),
-				Description: "Milestone value of a field",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineProjectV2ItemFieldMultiSelectValue() {
-	r.object("ProjectV2ItemFieldMultiSelectValue", "The value of a multi select field in a Project item.", []string{"Node", "ProjectV2ItemFieldValueCommon"}, func() graphql.Fields {
-		return graphql.Fields{
-			"createdAt": {
-				Type:        graphql.NewNonNull(r.t("DateTime")),
-				Description: "Identifies the date and time when the object was created.",
-			},
-			"creator": {
-				Type:        r.t("Actor"),
-				Description: "The actor who created the item.",
-			},
-			"databaseId": {
-				Type:        r.t("Int"),
-				Description: "Identifies the primary key from the database.",
-			},
-			"field": {
-				Type:        graphql.NewNonNull(r.t("ProjectV2FieldConfiguration")),
-				Description: "The project field that contains this value.",
-			},
-			"id": {
-				Type:        graphql.NewNonNull(r.t("ID")),
-				Description: "The Node ID of the ProjectV2ItemFieldMultiSelectValue object",
-			},
-			"item": {
-				Type:        graphql.NewNonNull(r.t("ProjectV2Item")),
-				Description: "The project item that contains this value.",
-			},
-			"options": {
-				Type:        graphql.NewList(graphql.NewNonNull(r.t("ProjectV2MultiSelectFieldOption"))),
-				Description: "The selected multi select options.",
-			},
-			"updatedAt": {
-				Type:        graphql.NewNonNull(r.t("DateTime")),
-				Description: "Identifies the date and time when the object was last updated.",
-			},
-			"value": {
-				Type:        graphql.NewNonNull(r.t("String")),
-				Description: "Comma-separated names of the selected multi select options.",
 			},
 		}
 	})

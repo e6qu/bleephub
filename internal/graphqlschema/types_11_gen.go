@@ -5,6 +5,164 @@ package graphqlschema
 
 import "github.com/graphql-go/graphql"
 
+func (r *Registry) defineSecurityAdvisory() {
+	r.object("SecurityAdvisory", "A GitHub Security Advisory", []string{"Node"}, func() graphql.Fields {
+		return graphql.Fields{
+			"classification": {
+				Type:        graphql.NewNonNull(r.t("SecurityAdvisoryClassification")),
+				Description: "The classification of the advisory",
+			},
+			"cvss": {
+				Type:              graphql.NewNonNull(r.t("CVSS")),
+				Description:       "The CVSS associated with this advisory",
+				DeprecationReason: "`cvss` will be removed. New `cvss_severities` field will now contain both `cvss_v3` and `cvss_v4` properties. Removal on 2025-10-01 UTC.",
+			},
+			"cvssSeverities": {
+				Type:        graphql.NewNonNull(r.t("CvssSeverities")),
+				Description: "The CVSS associated with this advisory",
+			},
+			"cwes": {
+				Type:        graphql.NewNonNull(r.t("CWEConnection")),
+				Description: "CWEs associated with this Advisory",
+				Args: graphql.FieldConfigArgument{
+					"after": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come after the specified cursor.",
+					},
+					"before": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come before the specified cursor.",
+					},
+					"first": {
+						Type:        r.t("Int"),
+						Description: "Returns the first _n_ elements from the list.",
+					},
+					"last": {
+						Type:        r.t("Int"),
+						Description: "Returns the last _n_ elements from the list.",
+					},
+				},
+			},
+			"databaseId": {
+				Type:        r.t("Int"),
+				Description: "Identifies the primary key from the database.",
+			},
+			"description": {
+				Type:        graphql.NewNonNull(r.t("String")),
+				Description: "This is a long plaintext description of the advisory",
+			},
+			"epss": {
+				Type:        r.t("EPSS"),
+				Description: "The Exploit Prediction Scoring System",
+			},
+			"ghsaId": {
+				Type:        graphql.NewNonNull(r.t("String")),
+				Description: "The GitHub Security Advisory ID",
+			},
+			"id": {
+				Type:        graphql.NewNonNull(r.t("ID")),
+				Description: "The Node ID of the SecurityAdvisory object",
+			},
+			"identifiers": {
+				Type:        graphql.NewNonNull(graphql.NewList(graphql.NewNonNull(r.t("SecurityAdvisoryIdentifier")))),
+				Description: "A list of identifiers for this advisory",
+			},
+			"notificationsPermalink": {
+				Type:        r.t("URI"),
+				Description: "The permalink for the advisory's dependabot alerts page",
+			},
+			"origin": {
+				Type:        graphql.NewNonNull(r.t("String")),
+				Description: "The organization that originated the advisory",
+			},
+			"permalink": {
+				Type:        r.t("URI"),
+				Description: "The permalink for the advisory",
+			},
+			"publishedAt": {
+				Type:        graphql.NewNonNull(r.t("DateTime")),
+				Description: "When the advisory was published",
+			},
+			"references": {
+				Type:        graphql.NewNonNull(graphql.NewList(graphql.NewNonNull(r.t("SecurityAdvisoryReference")))),
+				Description: "A list of references for this advisory",
+			},
+			"severity": {
+				Type:        graphql.NewNonNull(r.t("SecurityAdvisorySeverity")),
+				Description: "The severity of the advisory",
+			},
+			"summary": {
+				Type:        graphql.NewNonNull(r.t("String")),
+				Description: "A short plaintext summary of the advisory",
+			},
+			"updatedAt": {
+				Type:        graphql.NewNonNull(r.t("DateTime")),
+				Description: "When the advisory was last updated",
+			},
+			"vulnerabilities": {
+				Type:        graphql.NewNonNull(r.t("SecurityVulnerabilityConnection")),
+				Description: "Vulnerabilities associated with this Advisory",
+				Args: graphql.FieldConfigArgument{
+					"after": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come after the specified cursor.",
+					},
+					"before": {
+						Type:        r.t("String"),
+						Description: "Returns the elements in the list that come before the specified cursor.",
+					},
+					"classifications": {
+						Type:        graphql.NewList(graphql.NewNonNull(r.t("SecurityAdvisoryClassification"))),
+						Description: "A list of advisory classifications to filter vulnerabilities by.",
+					},
+					"ecosystem": {
+						Type:        r.t("SecurityAdvisoryEcosystem"),
+						Description: "An ecosystem to filter vulnerabilities by.",
+					},
+					"first": {
+						Type:        r.t("Int"),
+						Description: "Returns the first _n_ elements from the list.",
+					},
+					"last": {
+						Type:        r.t("Int"),
+						Description: "Returns the last _n_ elements from the list.",
+					},
+					"orderBy": {
+						Type:         r.t("SecurityVulnerabilityOrder"),
+						DefaultValue: map[string]interface{}{"direction": "DESC", "field": "UPDATED_AT"},
+						Description:  "Ordering options for the returned topics.",
+					},
+					"package": {
+						Type:        r.t("String"),
+						Description: "A package name to filter vulnerabilities by.",
+					},
+					"severities": {
+						Type:        graphql.NewList(graphql.NewNonNull(r.t("SecurityAdvisorySeverity"))),
+						Description: "A list of severities to filter vulnerabilities by.",
+					},
+				},
+			},
+			"withdrawnAt": {
+				Type:        r.t("DateTime"),
+				Description: "When the advisory was withdrawn, if it has been withdrawn",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineSecurityAdvisoryClassification() {
+	r.enum("SecurityAdvisoryClassification", "Classification of the advisory.", graphql.EnumValueConfigMap{
+		"GENERAL": {
+			Value:       "GENERAL",
+			Description: "Classification of general advisories.",
+		},
+		"MALWARE": {
+			Value:       "MALWARE",
+			Description: "Classification of malware advisories.",
+		},
+	})
+}
+
 func (r *Registry) defineSecurityAdvisoryConnection() {
 	r.object("SecurityAdvisoryConnection", "The connection type for SecurityAdvisory.", nil, func() graphql.Fields {
 		return graphql.Fields{
@@ -4168,494 +4326,6 @@ func (r *Registry) defineTagNamePatternParametersInput() {
 			"pattern": {
 				Type:        graphql.NewNonNull(r.t("String")),
 				Description: "The pattern to match with.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineTeam() {
-	r.object("Team", "A team of users in an organization.", []string{"MemberStatusable", "Node", "Subscribable", "TeamReviewRequestable"}, func() graphql.Fields {
-		return graphql.Fields{
-			"ancestors": {
-				Type:        graphql.NewNonNull(r.t("TeamConnection")),
-				Description: "A list of teams that are ancestors of this team.",
-				Args: graphql.FieldConfigArgument{
-					"after": {
-						Type:        r.t("String"),
-						Description: "Returns the elements in the list that come after the specified cursor.",
-					},
-					"before": {
-						Type:        r.t("String"),
-						Description: "Returns the elements in the list that come before the specified cursor.",
-					},
-					"first": {
-						Type:        r.t("Int"),
-						Description: "Returns the first _n_ elements from the list.",
-					},
-					"last": {
-						Type:        r.t("Int"),
-						Description: "Returns the last _n_ elements from the list.",
-					},
-				},
-			},
-			"avatarUrl": {
-				Type:        r.t("URI"),
-				Description: "A URL pointing to the team's avatar.",
-				Args: graphql.FieldConfigArgument{
-					"size": {
-						Type:         r.t("Int"),
-						DefaultValue: 400,
-						Description:  "The size in pixels of the resulting square image.",
-					},
-				},
-			},
-			"childTeams": {
-				Type:        graphql.NewNonNull(r.t("TeamConnection")),
-				Description: "List of child teams belonging to this team",
-				Args: graphql.FieldConfigArgument{
-					"after": {
-						Type:        r.t("String"),
-						Description: "Returns the elements in the list that come after the specified cursor.",
-					},
-					"before": {
-						Type:        r.t("String"),
-						Description: "Returns the elements in the list that come before the specified cursor.",
-					},
-					"first": {
-						Type:        r.t("Int"),
-						Description: "Returns the first _n_ elements from the list.",
-					},
-					"immediateOnly": {
-						Type:         r.t("Boolean"),
-						DefaultValue: true,
-						Description:  "Whether to list immediate child teams or all descendant child teams.",
-					},
-					"last": {
-						Type:        r.t("Int"),
-						Description: "Returns the last _n_ elements from the list.",
-					},
-					"orderBy": {
-						Type:        r.t("TeamOrder"),
-						Description: "Order for connection",
-					},
-					"userLogins": {
-						Type:        graphql.NewList(graphql.NewNonNull(r.t("String"))),
-						Description: "User logins to filter by",
-					},
-				},
-			},
-			"combinedSlug": {
-				Type:        graphql.NewNonNull(r.t("String")),
-				Description: "The slug corresponding to the organization and team.",
-			},
-			"createdAt": {
-				Type:        graphql.NewNonNull(r.t("DateTime")),
-				Description: "Identifies the date and time when the object was created.",
-			},
-			"databaseId": {
-				Type:        r.t("Int"),
-				Description: "Identifies the primary key from the database.",
-			},
-			"description": {
-				Type:        r.t("String"),
-				Description: "The description of the team.",
-			},
-			"editTeamResourcePath": {
-				Type:        graphql.NewNonNull(r.t("URI")),
-				Description: "The HTTP path for editing this team",
-			},
-			"editTeamUrl": {
-				Type:        graphql.NewNonNull(r.t("URI")),
-				Description: "The HTTP URL for editing this team",
-			},
-			"id": {
-				Type:        graphql.NewNonNull(r.t("ID")),
-				Description: "The Node ID of the Team object",
-			},
-			"invitations": {
-				Type:        r.t("OrganizationInvitationConnection"),
-				Description: "A list of pending invitations for users to this team",
-				Args: graphql.FieldConfigArgument{
-					"after": {
-						Type:        r.t("String"),
-						Description: "Returns the elements in the list that come after the specified cursor.",
-					},
-					"before": {
-						Type:        r.t("String"),
-						Description: "Returns the elements in the list that come before the specified cursor.",
-					},
-					"first": {
-						Type:        r.t("Int"),
-						Description: "Returns the first _n_ elements from the list.",
-					},
-					"last": {
-						Type:        r.t("Int"),
-						Description: "Returns the last _n_ elements from the list.",
-					},
-				},
-			},
-			"memberStatuses": {
-				Type:        graphql.NewNonNull(r.t("UserStatusConnection")),
-				Description: "Get the status messages members of this entity have set that are either public or visible only to the organization.",
-				Args: graphql.FieldConfigArgument{
-					"after": {
-						Type:        r.t("String"),
-						Description: "Returns the elements in the list that come after the specified cursor.",
-					},
-					"before": {
-						Type:        r.t("String"),
-						Description: "Returns the elements in the list that come before the specified cursor.",
-					},
-					"first": {
-						Type:        r.t("Int"),
-						Description: "Returns the first _n_ elements from the list.",
-					},
-					"last": {
-						Type:        r.t("Int"),
-						Description: "Returns the last _n_ elements from the list.",
-					},
-					"orderBy": {
-						Type:         r.t("UserStatusOrder"),
-						DefaultValue: map[string]interface{}{"direction": "DESC", "field": "UPDATED_AT"},
-						Description:  "Ordering options for user statuses returned from the connection.",
-					},
-				},
-			},
-			"members": {
-				Type:        graphql.NewNonNull(r.t("TeamMemberConnection")),
-				Description: "A list of users who are members of this team.",
-				Args: graphql.FieldConfigArgument{
-					"after": {
-						Type:        r.t("String"),
-						Description: "Returns the elements in the list that come after the specified cursor.",
-					},
-					"before": {
-						Type:        r.t("String"),
-						Description: "Returns the elements in the list that come before the specified cursor.",
-					},
-					"first": {
-						Type:        r.t("Int"),
-						Description: "Returns the first _n_ elements from the list.",
-					},
-					"last": {
-						Type:        r.t("Int"),
-						Description: "Returns the last _n_ elements from the list.",
-					},
-					"membership": {
-						Type:         r.t("TeamMembershipType"),
-						DefaultValue: "ALL",
-						Description:  "Filter by membership type",
-					},
-					"orderBy": {
-						Type:        r.t("TeamMemberOrder"),
-						Description: "Order for the connection.",
-					},
-					"query": {
-						Type:        r.t("String"),
-						Description: "The search string to look for.",
-					},
-					"role": {
-						Type:        r.t("TeamMemberRole"),
-						Description: "Filter by team member role",
-					},
-				},
-			},
-			"membersResourcePath": {
-				Type:        graphql.NewNonNull(r.t("URI")),
-				Description: "The HTTP path for the team' members",
-			},
-			"membersUrl": {
-				Type:        graphql.NewNonNull(r.t("URI")),
-				Description: "The HTTP URL for the team' members",
-			},
-			"name": {
-				Type:        graphql.NewNonNull(r.t("String")),
-				Description: "The name of the team.",
-			},
-			"newTeamResourcePath": {
-				Type:        graphql.NewNonNull(r.t("URI")),
-				Description: "The HTTP path creating a new team",
-			},
-			"newTeamUrl": {
-				Type:        graphql.NewNonNull(r.t("URI")),
-				Description: "The HTTP URL creating a new team",
-			},
-			"notificationSetting": {
-				Type:        graphql.NewNonNull(r.t("TeamNotificationSetting")),
-				Description: "The notification setting that the team has set.",
-			},
-			"organization": {
-				Type:        graphql.NewNonNull(r.t("Organization")),
-				Description: "The organization that owns this team.",
-			},
-			"parentTeam": {
-				Type:        r.t("Team"),
-				Description: "The parent team of the team.",
-			},
-			"privacy": {
-				Type:        graphql.NewNonNull(r.t("TeamPrivacy")),
-				Description: "The level of privacy the team has.",
-			},
-			"projectV2": {
-				Type:        r.t("ProjectV2"),
-				Description: "Finds and returns the project according to the provided project number.",
-				Args: graphql.FieldConfigArgument{
-					"number": {
-						Type:        graphql.NewNonNull(r.t("Int")),
-						Description: "The Project number.",
-					},
-				},
-			},
-			"projectsV2": {
-				Type:        graphql.NewNonNull(r.t("ProjectV2Connection")),
-				Description: "List of projects this team has collaborator access to.",
-				Args: graphql.FieldConfigArgument{
-					"after": {
-						Type:        r.t("String"),
-						Description: "Returns the elements in the list that come after the specified cursor.",
-					},
-					"before": {
-						Type:        r.t("String"),
-						Description: "Returns the elements in the list that come before the specified cursor.",
-					},
-					"filterBy": {
-						Type:         r.t("ProjectV2Filters"),
-						DefaultValue: map[string]interface{}{},
-						Description:  "Filtering options for projects returned from this connection",
-					},
-					"first": {
-						Type:        r.t("Int"),
-						Description: "Returns the first _n_ elements from the list.",
-					},
-					"last": {
-						Type:        r.t("Int"),
-						Description: "Returns the last _n_ elements from the list.",
-					},
-					"minPermissionLevel": {
-						Type:         r.t("ProjectV2PermissionLevel"),
-						DefaultValue: "READ",
-						Description:  "Filter projects based on user role.",
-					},
-					"orderBy": {
-						Type:         r.t("ProjectV2Order"),
-						DefaultValue: map[string]interface{}{"direction": "DESC", "field": "NUMBER"},
-						Description:  "How to order the returned projects.",
-					},
-					"query": {
-						Type:         r.t("String"),
-						DefaultValue: "",
-						Description:  "The query to search projects by.",
-					},
-				},
-			},
-			"repositories": {
-				Type:        graphql.NewNonNull(r.t("TeamRepositoryConnection")),
-				Description: "A list of repositories this team has access to.",
-				Args: graphql.FieldConfigArgument{
-					"after": {
-						Type:        r.t("String"),
-						Description: "Returns the elements in the list that come after the specified cursor.",
-					},
-					"before": {
-						Type:        r.t("String"),
-						Description: "Returns the elements in the list that come before the specified cursor.",
-					},
-					"first": {
-						Type:        r.t("Int"),
-						Description: "Returns the first _n_ elements from the list.",
-					},
-					"last": {
-						Type:        r.t("Int"),
-						Description: "Returns the last _n_ elements from the list.",
-					},
-					"orderBy": {
-						Type:        r.t("TeamRepositoryOrder"),
-						Description: "Order for the connection.",
-					},
-					"query": {
-						Type:        r.t("String"),
-						Description: "The search string to look for. Repositories will be returned where the name contains your search string.",
-					},
-				},
-			},
-			"repositoriesResourcePath": {
-				Type:        graphql.NewNonNull(r.t("URI")),
-				Description: "The HTTP path for this team's repositories",
-			},
-			"repositoriesUrl": {
-				Type:        graphql.NewNonNull(r.t("URI")),
-				Description: "The HTTP URL for this team's repositories",
-			},
-			"resourcePath": {
-				Type:        graphql.NewNonNull(r.t("URI")),
-				Description: "The HTTP path for this team",
-			},
-			"reviewRequestDelegationAlgorithm": {
-				Type:        r.t("TeamReviewAssignmentAlgorithm"),
-				Description: "What algorithm is used for review assignment for this team",
-			},
-			"reviewRequestDelegationEnabled": {
-				Type:        graphql.NewNonNull(r.t("Boolean")),
-				Description: "True if review assignment is enabled for this team",
-			},
-			"reviewRequestDelegationMemberCount": {
-				Type:        r.t("Int"),
-				Description: "How many team members are required for review assignment for this team",
-			},
-			"reviewRequestDelegationNotifyTeam": {
-				Type:        graphql.NewNonNull(r.t("Boolean")),
-				Description: "When assigning team members via delegation, whether the entire team should be notified as well.",
-			},
-			"slug": {
-				Type:        graphql.NewNonNull(r.t("String")),
-				Description: "The slug corresponding to the team.",
-			},
-			"teamsResourcePath": {
-				Type:        graphql.NewNonNull(r.t("URI")),
-				Description: "The HTTP path for this team's teams",
-			},
-			"teamsUrl": {
-				Type:        graphql.NewNonNull(r.t("URI")),
-				Description: "The HTTP URL for this team's teams",
-			},
-			"updatedAt": {
-				Type:        graphql.NewNonNull(r.t("DateTime")),
-				Description: "Identifies the date and time when the object was last updated.",
-			},
-			"url": {
-				Type:        graphql.NewNonNull(r.t("URI")),
-				Description: "The HTTP URL for this team",
-			},
-			"viewerCanAdminister": {
-				Type:        graphql.NewNonNull(r.t("Boolean")),
-				Description: "Team is adminable by the viewer.",
-			},
-			"viewerCanSubscribe": {
-				Type:              graphql.NewNonNull(r.t("Boolean")),
-				Description:       "Check if the viewer is able to change their subscription status for the subscribable entity.",
-				DeprecationReason: "`Team.viewerCanSubscribe` will be removed. Team notifications subscriptions are being deprecated. Removal on 2026-07-01 UTC.",
-			},
-			"viewerSubscription": {
-				Type:              r.t("SubscriptionState"),
-				Description:       "Identifies if the viewer is watching, not watching, or ignoring the subscribable entity.",
-				DeprecationReason: "`Team.viewerSubscription` will be removed. Team notifications subscriptions are being deprecated. Removal on 2026-07-01 UTC.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineTeamAddMemberAuditEntry() {
-	r.object("TeamAddMemberAuditEntry", "Audit log entry for a team.add_member event.", []string{"AuditEntry", "Node", "OrganizationAuditEntryData", "TeamAuditEntryData"}, func() graphql.Fields {
-		return graphql.Fields{
-			"action": {
-				Type:              graphql.NewNonNull(r.t("String")),
-				Description:       "The action name",
-				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
-			},
-			"actor": {
-				Type:              r.t("AuditEntryActor"),
-				Description:       "The user who initiated the action",
-				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
-			},
-			"actorIp": {
-				Type:              r.t("String"),
-				Description:       "The IP address of the actor",
-				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
-			},
-			"actorLocation": {
-				Type:              r.t("ActorLocation"),
-				Description:       "A readable representation of the actor's location",
-				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
-			},
-			"actorLogin": {
-				Type:              r.t("String"),
-				Description:       "The username of the user who initiated the action",
-				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
-			},
-			"actorResourcePath": {
-				Type:              r.t("URI"),
-				Description:       "The HTTP path for the actor.",
-				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
-			},
-			"actorUrl": {
-				Type:              r.t("URI"),
-				Description:       "The HTTP URL for the actor.",
-				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
-			},
-			"createdAt": {
-				Type:              graphql.NewNonNull(r.t("PreciseDateTime")),
-				Description:       "The time the action was initiated",
-				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
-			},
-			"id": {
-				Type:        graphql.NewNonNull(r.t("ID")),
-				Description: "The Node ID of the TeamAddMemberAuditEntry object",
-			},
-			"isLdapMapped": {
-				Type:              r.t("Boolean"),
-				Description:       "Whether the team was mapped to an LDAP Group.",
-				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
-			},
-			"operationType": {
-				Type:              r.t("OperationType"),
-				Description:       "The corresponding operation type for the action",
-				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
-			},
-			"organization": {
-				Type:              r.t("Organization"),
-				Description:       "The Organization associated with the Audit Entry.",
-				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
-			},
-			"organizationName": {
-				Type:              r.t("String"),
-				Description:       "The name of the Organization.",
-				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
-			},
-			"organizationResourcePath": {
-				Type:              r.t("URI"),
-				Description:       "The HTTP path for the organization",
-				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
-			},
-			"organizationUrl": {
-				Type:              r.t("URI"),
-				Description:       "The HTTP URL for the organization",
-				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
-			},
-			"team": {
-				Type:        r.t("Team"),
-				Description: "The team associated with the action",
-			},
-			"teamName": {
-				Type:        r.t("String"),
-				Description: "The name of the team",
-			},
-			"teamResourcePath": {
-				Type:        r.t("URI"),
-				Description: "The HTTP path for this team",
-			},
-			"teamUrl": {
-				Type:        r.t("URI"),
-				Description: "The HTTP URL for this team",
-			},
-			"user": {
-				Type:              r.t("User"),
-				Description:       "The user affected by the action",
-				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
-			},
-			"userLogin": {
-				Type:              r.t("String"),
-				Description:       "For actions involving two users, the actor is the initiator and the user is the affected user.",
-				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
-			},
-			"userResourcePath": {
-				Type:              r.t("URI"),
-				Description:       "The HTTP path for the user.",
-				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
-			},
-			"userUrl": {
-				Type:              r.t("URI"),
-				Description:       "The HTTP URL for the user.",
-				DeprecationReason: "The GraphQL audit-log is deprecated. Please use the REST API instead. Removal on 2026-04-01 UTC.",
 			},
 		}
 	})

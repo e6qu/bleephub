@@ -5,6 +5,80 @@ package graphqlschema
 
 import "github.com/graphql-go/graphql"
 
+func (r *Registry) defineMarkedAsDuplicateEvent() {
+	r.object("MarkedAsDuplicateEvent", "Represents a 'marked_as_duplicate' event on a given issue or pull request.", []string{"Node"}, func() graphql.Fields {
+		return graphql.Fields{
+			"actor": {
+				Type:        r.t("Actor"),
+				Description: "Identifies the actor who performed the event.",
+			},
+			"canonical": {
+				Type:        r.t("IssueOrPullRequest"),
+				Description: "The authoritative issue or pull request which has been duplicated by another.",
+			},
+			"createdAt": {
+				Type:        graphql.NewNonNull(r.t("DateTime")),
+				Description: "Identifies the date and time when the object was created.",
+			},
+			"duplicate": {
+				Type:        r.t("IssueOrPullRequest"),
+				Description: "The issue or pull request which has been marked as a duplicate of another.",
+			},
+			"id": {
+				Type:        graphql.NewNonNull(r.t("ID")),
+				Description: "The Node ID of the MarkedAsDuplicateEvent object",
+			},
+			"isCrossRepository": {
+				Type:        graphql.NewNonNull(r.t("Boolean")),
+				Description: "Canonical and duplicate belong to different repositories.",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineMarketplaceCategory() {
+	r.object("MarketplaceCategory", "A public description of a Marketplace category.", []string{"Node"}, func() graphql.Fields {
+		return graphql.Fields{
+			"description": {
+				Type:        r.t("String"),
+				Description: "The category's description.",
+			},
+			"howItWorks": {
+				Type:        r.t("String"),
+				Description: "The technical description of how apps listed in this category work with GitHub.",
+			},
+			"id": {
+				Type:        graphql.NewNonNull(r.t("ID")),
+				Description: "The Node ID of the MarketplaceCategory object",
+			},
+			"name": {
+				Type:        graphql.NewNonNull(r.t("String")),
+				Description: "The category's name.",
+			},
+			"primaryListingCount": {
+				Type:        graphql.NewNonNull(r.t("Int")),
+				Description: "How many Marketplace listings have this as their primary category.",
+			},
+			"resourcePath": {
+				Type:        graphql.NewNonNull(r.t("URI")),
+				Description: "The HTTP path for this Marketplace category.",
+			},
+			"secondaryListingCount": {
+				Type:        graphql.NewNonNull(r.t("Int")),
+				Description: "How many Marketplace listings have this as their secondary category.",
+			},
+			"slug": {
+				Type:        graphql.NewNonNull(r.t("String")),
+				Description: "The short name of the category used in its URL.",
+			},
+			"url": {
+				Type:        graphql.NewNonNull(r.t("URI")),
+				Description: "The HTTP URL for this Marketplace category.",
+			},
+		}
+	})
+}
+
 func (r *Registry) defineMarketplaceListing() {
 	r.object("MarketplaceListing", "A listing in the GitHub integration marketplace.", []string{"Node"}, func() graphql.Fields {
 		return graphql.Fields{
@@ -9991,73 +10065,5 @@ func (r *Registry) defineOrganizationMemberRole() {
 			Value:       "MEMBER",
 			Description: "The user is a member of the organization.",
 		},
-	})
-}
-
-func (r *Registry) defineOrganizationMembersCanCreateRepositoriesSettingValue() {
-	r.enum("OrganizationMembersCanCreateRepositoriesSettingValue", "The possible values for the members can create repositories setting on an organization.", graphql.EnumValueConfigMap{
-		"ALL": {
-			Value:       "ALL",
-			Description: "Members will be able to create public and private repositories.",
-		},
-		"DISABLED": {
-			Value:       "DISABLED",
-			Description: "Members will not be able to create public or private repositories.",
-		},
-		"INTERNAL": {
-			Value:       "INTERNAL",
-			Description: "Members will be able to create only internal repositories.",
-		},
-		"PRIVATE": {
-			Value:       "PRIVATE",
-			Description: "Members will be able to create only private repositories.",
-		},
-	})
-}
-
-func (r *Registry) defineOrganizationMigration() {
-	r.object("OrganizationMigration", "A GitHub Enterprise Importer (GEI) organization migration.", []string{"Node"}, func() graphql.Fields {
-		return graphql.Fields{
-			"createdAt": {
-				Type:        graphql.NewNonNull(r.t("DateTime")),
-				Description: "Identifies the date and time when the object was created.",
-			},
-			"databaseId": {
-				Type:        r.t("String"),
-				Description: "Identifies the primary key from the database.",
-			},
-			"failureReason": {
-				Type:        r.t("String"),
-				Description: "The reason the organization migration failed.",
-			},
-			"id": {
-				Type:        graphql.NewNonNull(r.t("ID")),
-				Description: "The Node ID of the OrganizationMigration object",
-			},
-			"remainingRepositoriesCount": {
-				Type:        r.t("Int"),
-				Description: "The remaining amount of repos to be migrated.",
-			},
-			"sourceOrgName": {
-				Type:        graphql.NewNonNull(r.t("String")),
-				Description: "The name of the source organization to be migrated.",
-			},
-			"sourceOrgUrl": {
-				Type:        graphql.NewNonNull(r.t("URI")),
-				Description: "The URL of the source organization to migrate.",
-			},
-			"state": {
-				Type:        graphql.NewNonNull(r.t("OrganizationMigrationState")),
-				Description: "The migration state.",
-			},
-			"targetOrgName": {
-				Type:        graphql.NewNonNull(r.t("String")),
-				Description: "The name of the target organization.",
-			},
-			"totalRepositoriesCount": {
-				Type:        r.t("Int"),
-				Description: "The total amount of repositories to be migrated.",
-			},
-		}
 	})
 }

@@ -2079,6 +2079,46 @@ func (r *Registry) defineIssueFieldTimelineOption() {
 	})
 }
 
+func (r *Registry) defineIssueFieldUpdateInput() {
+	r.input("IssueFieldUpdateInput", "Updates an issue field using its user-facing name.", func() graphql.InputObjectConfigFieldMap {
+		return graphql.InputObjectConfigFieldMap{
+			"fieldName": {
+				Type:        graphql.NewNonNull(r.t("String")),
+				Description: "The name of the issue field.",
+			},
+			"operation": {
+				Type:        graphql.NewNonNull(r.t("IssueFieldUpdateOperation")),
+				Description: "The operation to perform.",
+			},
+			"value": {
+				Type:        r.t("String"),
+				Description: "The value or comma-separated option names for the operation.",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineIssueFieldUpdateOperation() {
+	r.enum("IssueFieldUpdateOperation", "The operation to perform on an issue field value.", graphql.EnumValueConfigMap{
+		"ADD": {
+			Value:       "ADD",
+			Description: "Sets a scalar field or adds options to a multi-select field.",
+		},
+		"CLEAR": {
+			Value:       "CLEAR",
+			Description: "Clears the field value.",
+		},
+		"REMOVE": {
+			Value:       "REMOVE",
+			Description: "Removes options from a multi-select field.",
+		},
+		"SET": {
+			Value:       "SET",
+			Description: "Replaces the field value.",
+		},
+	})
+}
+
 func (r *Registry) defineIssueFieldValue() {
 	r.union("IssueFieldValue", "Issue field values", []string{"IssueFieldDateValue", "IssueFieldMultiSelectValue", "IssueFieldNumberValue", "IssueFieldSingleSelectValue", "IssueFieldTextValue"})
 }
@@ -4141,80 +4181,6 @@ func (r *Registry) defineMarkPullRequestReadyForReviewPayload() {
 			"pullRequest": {
 				Type:        r.t("PullRequest"),
 				Description: "The pull request that is ready for review.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineMarkedAsDuplicateEvent() {
-	r.object("MarkedAsDuplicateEvent", "Represents a 'marked_as_duplicate' event on a given issue or pull request.", []string{"Node"}, func() graphql.Fields {
-		return graphql.Fields{
-			"actor": {
-				Type:        r.t("Actor"),
-				Description: "Identifies the actor who performed the event.",
-			},
-			"canonical": {
-				Type:        r.t("IssueOrPullRequest"),
-				Description: "The authoritative issue or pull request which has been duplicated by another.",
-			},
-			"createdAt": {
-				Type:        graphql.NewNonNull(r.t("DateTime")),
-				Description: "Identifies the date and time when the object was created.",
-			},
-			"duplicate": {
-				Type:        r.t("IssueOrPullRequest"),
-				Description: "The issue or pull request which has been marked as a duplicate of another.",
-			},
-			"id": {
-				Type:        graphql.NewNonNull(r.t("ID")),
-				Description: "The Node ID of the MarkedAsDuplicateEvent object",
-			},
-			"isCrossRepository": {
-				Type:        graphql.NewNonNull(r.t("Boolean")),
-				Description: "Canonical and duplicate belong to different repositories.",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineMarketplaceCategory() {
-	r.object("MarketplaceCategory", "A public description of a Marketplace category.", []string{"Node"}, func() graphql.Fields {
-		return graphql.Fields{
-			"description": {
-				Type:        r.t("String"),
-				Description: "The category's description.",
-			},
-			"howItWorks": {
-				Type:        r.t("String"),
-				Description: "The technical description of how apps listed in this category work with GitHub.",
-			},
-			"id": {
-				Type:        graphql.NewNonNull(r.t("ID")),
-				Description: "The Node ID of the MarketplaceCategory object",
-			},
-			"name": {
-				Type:        graphql.NewNonNull(r.t("String")),
-				Description: "The category's name.",
-			},
-			"primaryListingCount": {
-				Type:        graphql.NewNonNull(r.t("Int")),
-				Description: "How many Marketplace listings have this as their primary category.",
-			},
-			"resourcePath": {
-				Type:        graphql.NewNonNull(r.t("URI")),
-				Description: "The HTTP path for this Marketplace category.",
-			},
-			"secondaryListingCount": {
-				Type:        graphql.NewNonNull(r.t("Int")),
-				Description: "How many Marketplace listings have this as their secondary category.",
-			},
-			"slug": {
-				Type:        graphql.NewNonNull(r.t("String")),
-				Description: "The short name of the category used in its URL.",
-			},
-			"url": {
-				Type:        graphql.NewNonNull(r.t("URI")),
-				Description: "The HTTP URL for this Marketplace category.",
 			},
 		}
 	})

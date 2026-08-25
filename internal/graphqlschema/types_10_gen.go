@@ -5,6 +5,36 @@ package graphqlschema
 
 import "github.com/graphql-go/graphql"
 
+func (r *Registry) defineRepositoryCustomPropertyEdge() {
+	r.object("RepositoryCustomPropertyEdge", "An edge in a connection.", nil, func() graphql.Fields {
+		return graphql.Fields{
+			"cursor": {
+				Type:        graphql.NewNonNull(r.t("String")),
+				Description: "A cursor for use in pagination.",
+			},
+			"node": {
+				Type:        r.t("RepositoryCustomProperty"),
+				Description: "The item at the end of the edge.",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineRepositoryCustomPropertyValue() {
+	r.object("RepositoryCustomPropertyValue", "A value associated with a repository custom property.", nil, func() graphql.Fields {
+		return graphql.Fields{
+			"propertyName": {
+				Type:        graphql.NewNonNull(r.t("String")),
+				Description: "The name of the custom property.",
+			},
+			"value": {
+				Type:        graphql.NewNonNull(r.t("CustomPropertyValue")),
+				Description: "The value of the custom property.",
+			},
+		}
+	})
+}
+
 func (r *Registry) defineRepositoryCustomPropertyValueConnection() {
 	r.object("RepositoryCustomPropertyValueConnection", "The connection type for RepositoryCustomPropertyValue.", nil, func() graphql.Fields {
 		return graphql.Fields{
@@ -3261,164 +3291,6 @@ func (r *Registry) defineSearchType() {
 		"USER": {
 			Value:       "USER",
 			Description: "Returns results matching users and organizations on GitHub.",
-		},
-	})
-}
-
-func (r *Registry) defineSecurityAdvisory() {
-	r.object("SecurityAdvisory", "A GitHub Security Advisory", []string{"Node"}, func() graphql.Fields {
-		return graphql.Fields{
-			"classification": {
-				Type:        graphql.NewNonNull(r.t("SecurityAdvisoryClassification")),
-				Description: "The classification of the advisory",
-			},
-			"cvss": {
-				Type:              graphql.NewNonNull(r.t("CVSS")),
-				Description:       "The CVSS associated with this advisory",
-				DeprecationReason: "`cvss` will be removed. New `cvss_severities` field will now contain both `cvss_v3` and `cvss_v4` properties. Removal on 2025-10-01 UTC.",
-			},
-			"cvssSeverities": {
-				Type:        graphql.NewNonNull(r.t("CvssSeverities")),
-				Description: "The CVSS associated with this advisory",
-			},
-			"cwes": {
-				Type:        graphql.NewNonNull(r.t("CWEConnection")),
-				Description: "CWEs associated with this Advisory",
-				Args: graphql.FieldConfigArgument{
-					"after": {
-						Type:        r.t("String"),
-						Description: "Returns the elements in the list that come after the specified cursor.",
-					},
-					"before": {
-						Type:        r.t("String"),
-						Description: "Returns the elements in the list that come before the specified cursor.",
-					},
-					"first": {
-						Type:        r.t("Int"),
-						Description: "Returns the first _n_ elements from the list.",
-					},
-					"last": {
-						Type:        r.t("Int"),
-						Description: "Returns the last _n_ elements from the list.",
-					},
-				},
-			},
-			"databaseId": {
-				Type:        r.t("Int"),
-				Description: "Identifies the primary key from the database.",
-			},
-			"description": {
-				Type:        graphql.NewNonNull(r.t("String")),
-				Description: "This is a long plaintext description of the advisory",
-			},
-			"epss": {
-				Type:        r.t("EPSS"),
-				Description: "The Exploit Prediction Scoring System",
-			},
-			"ghsaId": {
-				Type:        graphql.NewNonNull(r.t("String")),
-				Description: "The GitHub Security Advisory ID",
-			},
-			"id": {
-				Type:        graphql.NewNonNull(r.t("ID")),
-				Description: "The Node ID of the SecurityAdvisory object",
-			},
-			"identifiers": {
-				Type:        graphql.NewNonNull(graphql.NewList(graphql.NewNonNull(r.t("SecurityAdvisoryIdentifier")))),
-				Description: "A list of identifiers for this advisory",
-			},
-			"notificationsPermalink": {
-				Type:        r.t("URI"),
-				Description: "The permalink for the advisory's dependabot alerts page",
-			},
-			"origin": {
-				Type:        graphql.NewNonNull(r.t("String")),
-				Description: "The organization that originated the advisory",
-			},
-			"permalink": {
-				Type:        r.t("URI"),
-				Description: "The permalink for the advisory",
-			},
-			"publishedAt": {
-				Type:        graphql.NewNonNull(r.t("DateTime")),
-				Description: "When the advisory was published",
-			},
-			"references": {
-				Type:        graphql.NewNonNull(graphql.NewList(graphql.NewNonNull(r.t("SecurityAdvisoryReference")))),
-				Description: "A list of references for this advisory",
-			},
-			"severity": {
-				Type:        graphql.NewNonNull(r.t("SecurityAdvisorySeverity")),
-				Description: "The severity of the advisory",
-			},
-			"summary": {
-				Type:        graphql.NewNonNull(r.t("String")),
-				Description: "A short plaintext summary of the advisory",
-			},
-			"updatedAt": {
-				Type:        graphql.NewNonNull(r.t("DateTime")),
-				Description: "When the advisory was last updated",
-			},
-			"vulnerabilities": {
-				Type:        graphql.NewNonNull(r.t("SecurityVulnerabilityConnection")),
-				Description: "Vulnerabilities associated with this Advisory",
-				Args: graphql.FieldConfigArgument{
-					"after": {
-						Type:        r.t("String"),
-						Description: "Returns the elements in the list that come after the specified cursor.",
-					},
-					"before": {
-						Type:        r.t("String"),
-						Description: "Returns the elements in the list that come before the specified cursor.",
-					},
-					"classifications": {
-						Type:        graphql.NewList(graphql.NewNonNull(r.t("SecurityAdvisoryClassification"))),
-						Description: "A list of advisory classifications to filter vulnerabilities by.",
-					},
-					"ecosystem": {
-						Type:        r.t("SecurityAdvisoryEcosystem"),
-						Description: "An ecosystem to filter vulnerabilities by.",
-					},
-					"first": {
-						Type:        r.t("Int"),
-						Description: "Returns the first _n_ elements from the list.",
-					},
-					"last": {
-						Type:        r.t("Int"),
-						Description: "Returns the last _n_ elements from the list.",
-					},
-					"orderBy": {
-						Type:         r.t("SecurityVulnerabilityOrder"),
-						DefaultValue: map[string]interface{}{"direction": "DESC", "field": "UPDATED_AT"},
-						Description:  "Ordering options for the returned topics.",
-					},
-					"package": {
-						Type:        r.t("String"),
-						Description: "A package name to filter vulnerabilities by.",
-					},
-					"severities": {
-						Type:        graphql.NewList(graphql.NewNonNull(r.t("SecurityAdvisorySeverity"))),
-						Description: "A list of severities to filter vulnerabilities by.",
-					},
-				},
-			},
-			"withdrawnAt": {
-				Type:        r.t("DateTime"),
-				Description: "When the advisory was withdrawn, if it has been withdrawn",
-			},
-		}
-	})
-}
-
-func (r *Registry) defineSecurityAdvisoryClassification() {
-	r.enum("SecurityAdvisoryClassification", "Classification of the advisory.", graphql.EnumValueConfigMap{
-		"GENERAL": {
-			Value:       "GENERAL",
-			Description: "Classification of general advisories.",
-		},
-		"MALWARE": {
-			Value:       "MALWARE",
-			Description: "Classification of malware advisories.",
 		},
 	})
 }

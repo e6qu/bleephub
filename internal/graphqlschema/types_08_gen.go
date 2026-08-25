@@ -5,6 +5,64 @@ package graphqlschema
 
 import "github.com/graphql-go/graphql"
 
+func (r *Registry) defineProjectV2ItemFieldMilestoneValue() {
+	r.object("ProjectV2ItemFieldMilestoneValue", "The value of a milestone field in a Project item.", nil, func() graphql.Fields {
+		return graphql.Fields{
+			"field": {
+				Type:        graphql.NewNonNull(r.t("ProjectV2FieldConfiguration")),
+				Description: "The field that contains this value.",
+			},
+			"milestone": {
+				Type:        r.t("Milestone"),
+				Description: "Milestone value of a field",
+			},
+		}
+	})
+}
+
+func (r *Registry) defineProjectV2ItemFieldMultiSelectValue() {
+	r.object("ProjectV2ItemFieldMultiSelectValue", "The value of a multi select field in a Project item.", []string{"Node", "ProjectV2ItemFieldValueCommon"}, func() graphql.Fields {
+		return graphql.Fields{
+			"createdAt": {
+				Type:        graphql.NewNonNull(r.t("DateTime")),
+				Description: "Identifies the date and time when the object was created.",
+			},
+			"creator": {
+				Type:        r.t("Actor"),
+				Description: "The actor who created the item.",
+			},
+			"databaseId": {
+				Type:        r.t("Int"),
+				Description: "Identifies the primary key from the database.",
+			},
+			"field": {
+				Type:        graphql.NewNonNull(r.t("ProjectV2FieldConfiguration")),
+				Description: "The project field that contains this value.",
+			},
+			"id": {
+				Type:        graphql.NewNonNull(r.t("ID")),
+				Description: "The Node ID of the ProjectV2ItemFieldMultiSelectValue object",
+			},
+			"item": {
+				Type:        graphql.NewNonNull(r.t("ProjectV2Item")),
+				Description: "The project item that contains this value.",
+			},
+			"options": {
+				Type:        graphql.NewList(graphql.NewNonNull(r.t("ProjectV2MultiSelectFieldOption"))),
+				Description: "The selected multi select options.",
+			},
+			"updatedAt": {
+				Type:        graphql.NewNonNull(r.t("DateTime")),
+				Description: "Identifies the date and time when the object was last updated.",
+			},
+			"value": {
+				Type:        graphql.NewNonNull(r.t("String")),
+				Description: "Comma-separated names of the selected multi select options.",
+			},
+		}
+	})
+}
+
 func (r *Registry) defineProjectV2ItemFieldNumberValue() {
 	r.object("ProjectV2ItemFieldNumberValue", "The value of a number field in a Project item.", []string{"Node", "ProjectV2ItemFieldValueCommon"}, func() graphql.Fields {
 		return graphql.Fields{
@@ -4953,42 +5011,4 @@ func (r *Registry) definePushAllowance() {
 
 func (r *Registry) definePushAllowanceActor() {
 	r.union("PushAllowanceActor", "Types that can be an actor.", []string{"App", "Team", "User"})
-}
-
-func (r *Registry) definePushAllowanceConnection() {
-	r.object("PushAllowanceConnection", "The connection type for PushAllowance.", nil, func() graphql.Fields {
-		return graphql.Fields{
-			"edges": {
-				Type:        graphql.NewList(r.t("PushAllowanceEdge")),
-				Description: "A list of edges.",
-			},
-			"nodes": {
-				Type:        graphql.NewList(r.t("PushAllowance")),
-				Description: "A list of nodes.",
-			},
-			"pageInfo": {
-				Type:        graphql.NewNonNull(r.t("PageInfo")),
-				Description: "Information to aid in pagination.",
-			},
-			"totalCount": {
-				Type:        graphql.NewNonNull(r.t("Int")),
-				Description: "Identifies the total count of items in the connection.",
-			},
-		}
-	})
-}
-
-func (r *Registry) definePushAllowanceEdge() {
-	r.object("PushAllowanceEdge", "An edge in a connection.", nil, func() graphql.Fields {
-		return graphql.Fields{
-			"cursor": {
-				Type:        graphql.NewNonNull(r.t("String")),
-				Description: "A cursor for use in pagination.",
-			},
-			"node": {
-				Type:        r.t("PushAllowance"),
-				Description: "The item at the end of the edge.",
-			},
-		}
-	})
 }
