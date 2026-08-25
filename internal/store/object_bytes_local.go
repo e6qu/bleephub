@@ -57,7 +57,17 @@ func (s *FilesystemByteStore) resolve(key string) (string, error) {
 			return "", fmt.Errorf("invalid object key %q", key)
 		}
 	}
-	return filepath.Join(s.Root, filepath.FromSlash(clean)), nil
+	joined := filepath.Join(s.Root, filepath.FromSlash(clean))
+	// Containment guard: the joined path must stay strictly beneath Root. The
+	// per-segment check above already rejects traversal, so this only ever
+	// holds — but stating it at the boundary makes the join provably safe (and
+	// satisfies path-injection analysis) rather than relying on the reader to
+	// trust the segment loop.
+	root := filepath.Clean(s.Root)
+	if joined != root && !strings.HasPrefix(joined, root+string(os.PathSeparator)) {
+		return "", fmt.Errorf("invalid object key %q", key)
+	}
+	return joined, nil
 }
 
 func (s *FilesystemByteStore) Put(ctx context.Context, key string, data []byte) error {

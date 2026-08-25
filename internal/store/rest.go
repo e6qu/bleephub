@@ -61,10 +61,13 @@ func AvatarURLFor(stored string, id int, baseURL string) string {
 	switch {
 	case strings.HasPrefix(stored, "http://"), strings.HasPrefix(stored, "https://"):
 		return stored
-	case strings.HasPrefix(stored, "/"):
+	// A single leading slash is a path under the instance base. Reject a
+	// protocol-relative "//host" or "/\host" second character so the result
+	// can never point off-origin, then join under the base.
+	case strings.HasPrefix(stored, "/") && !strings.HasPrefix(stored, "//") && !strings.HasPrefix(stored, `/\`):
 		return baseURL + stored
 	case stored != "":
-		return baseURL + "/" + stored
+		return baseURL + "/" + strings.TrimLeft(stored, `/\`)
 	}
 	return baseURL + "/avatars/u/" + strconv.Itoa(id) + "?v=4"
 }

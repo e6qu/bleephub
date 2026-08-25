@@ -1829,7 +1829,10 @@ func (ss *SponsorsStore) RunSponsorsPayout(listingID int, now time.Time) *Sponso
 	}
 	now = now.UTC()
 	amount := 0
-	periodStart, periodEnd := now, now
+	// periodEnd starts at now and widens to the latest claimed invoice;
+	// periodStart is set from the first claimed invoice below (there is always
+	// one past the len==0 guard), so it needs no initializer here.
+	periodEnd := now
 	claimed := make([]*SponsorsInvoice, 0)
 	for _, i := range ss.invoices {
 		if i.ListingID != listingID || i.Status != "paid" || i.PayoutID != 0 {
@@ -1841,7 +1844,7 @@ func (ss *SponsorsStore) RunSponsorsPayout(listingID int, now time.Time) *Sponso
 		return nil
 	}
 	sort.Slice(claimed, func(a, b int) bool { return claimed[a].ID < claimed[b].ID })
-	periodStart = claimed[0].CreatedAt
+	periodStart := claimed[0].CreatedAt
 	for _, i := range claimed {
 		amount += i.AmountInCents
 		if i.CreatedAt.Before(periodStart) {
