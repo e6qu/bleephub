@@ -112,6 +112,11 @@ def go_dependencies() -> dict[str, dt.datetime]:
     modules = (
         (ROOT, ROOT / "go.mod", []),
         (ROOT / "sdk-tests", ROOT / "sdk-tests/go.mod", []),
+        (
+            ROOT / "test/conformance/drivers/gogithub",
+            ROOT / "test/conformance/drivers/gogithub/go.mod",
+            [],
+        ),
         (ROOT / "terraform/wake", ROOT / "terraform/wake/go.mod", []),
         (
             ROOT / "test/terraform-sockerless",
@@ -586,6 +591,46 @@ def python_dependencies() -> dict[str, dt.datetime]:
     return dependencies
 
 
+def conformance_dependencies() -> dict[str, dt.datetime]:
+    """Age-check the SDK/CLI conformance harness's own pinned clients.
+
+    The harness drives real third-party clients, so it pins them the same way
+    everything else here is pinned. Only PyGithub needs a check of its own, from
+    the hashed lock in test/conformance/requirements.txt: go-github is resolved
+    through test/conformance/drivers/gogithub/go.mod, which the `go` ecosystem
+    already walks; octokit.js comes from web's lockfile, which `bun` already
+    walks; and the GitHub CLI comes from Dockerfile.gh-test's digest-checked
+    release, which the `docker` ecosystem's image pin covers.
+    """
+    dependencies: dict[str, dt.datetime] = {}
+
+    requirements = ROOT / "test/conformance/requirements.txt"
+    pinned: dict[str, str] = {}
+    for raw_line in requirements.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or line.startswith("--hash"):
+            continue
+        name, separator, remainder = line.partition("==")
+        if not separator:
+            raise RuntimeError(f"conformance requirement is not exactly pinned: {line}")
+        version = remainder.split()[0].strip().rstrip("\\").strip()
+        pinned[re.sub(r"[-_.]+", "-", name).lower()] = version
+    if not pinned:
+        raise RuntimeError("the conformance requirements lock contains no packages")
+    for name, version in sorted(pinned.items()):
+        metadata = request_json(f"https://pypi.org/pypi/{name}/{version}/json")
+        uploads = [
+            parse_time(item["upload_time_iso_8601"])
+            for item in metadata.get("urls", [])
+            if item.get("upload_time_iso_8601")
+        ]
+        if not uploads:
+            raise RuntimeError(f"PyPI package {name}=={version} has no upload time")
+        dependencies[f"pypi:{name}=={version}"] = max(uploads)
+
+    return dependencies
+
+
 def check_age(dependencies: dict[str, dt.datetime]) -> None:
     now = dt.datetime.now(UTC)
     too_young = sorted(
@@ -620,6 +665,7 @@ def main() -> None:
             "actions",
             "runner",
             "python",
+            "conformance",
         ),
         default=(
             "go",
@@ -630,6 +676,7 @@ def main() -> None:
             "actions",
             "runner",
             "python",
+            "conformance",
         ),
     )
     args = parser.parse_args()
@@ -642,6 +689,7 @@ def main() -> None:
         "actions": action_dependencies,
         "runner": runner_dependencies,
         "python": python_dependencies,
+        "conformance": conformance_dependencies,
     }
     dependencies: dict[str, dt.datetime] = {}
     for ecosystem in args.ecosystems:

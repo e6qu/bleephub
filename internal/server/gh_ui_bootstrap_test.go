@@ -180,7 +180,7 @@ func TestUIBootstrapIssueSubPayloadsMatchStandaloneEndpoints(t *testing.T) {
 	mustPost(t, s.post(t, repo.path()+"/issues/"+numStr+"/comments", defaultToken,
 		map[string]interface{}{"body": "first comment"}))
 	mustPost(t, s.post(t, repo.path()+"/labels", defaultToken,
-		map[string]interface{}{"name": "bug", "color": "ff0000"}))
+		map[string]interface{}{"name": "regression", "color": "ff0000"}))
 	mustPost(t, s.post(t, repo.path()+"/milestones", defaultToken,
 		map[string]interface{}{"title": "v1"}))
 	// A closed milestone makes state=all observably different from state=open,

@@ -2,17 +2,18 @@ package store
 
 // OrgAsSimpleUserJSON converts an Org to the simple-user shape GitHub uses
 // as the owner field of repositories owned by an organization. The fields
-// are identical to UserToJSON; only the type differs.
-func OrgAsSimpleUserJSON(org *Org) map[string]interface{} {
-	api := "/api/v3/users/" + org.Login
+// are identical to UserToJSON; only the type differs — including the
+// absolute hypermedia the `simple-user` schema requires.
+func OrgAsSimpleUserJSON(org *Org, baseURL string) map[string]interface{} {
+	api := baseURL + "/api/v3/users/" + org.Login
 	return map[string]interface{}{
 		"login":               org.Login,
 		"id":                  org.ID,
 		"node_id":             org.NodeID,
-		"avatar_url":          org.AvatarURL,
+		"avatar_url":          AvatarURLFor(org.AvatarURL, org.ID, baseURL),
 		"gravatar_id":         "",
 		"url":                 api,
-		"html_url":            "/" + org.Login,
+		"html_url":            baseURL + "/" + org.Login,
 		"followers_url":       api + "/followers",
 		"following_url":       api + "/following{/other_user}",
 		"gists_url":           api + "/gists{/gist_id}",

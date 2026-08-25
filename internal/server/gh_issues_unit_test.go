@@ -235,7 +235,7 @@ func TestUnitCreateLabel(t *testing.T) {
 	admin := s.store.UsersByLogin["admin"]
 	repo := s.store.CreateRepo(admin, "testrepo", "", false)
 
-	body, _ := json.Marshal(map[string]string{"name": "bug", "color": "ff0000"})
+	body, _ := json.Marshal(map[string]string{"name": "regression", "color": "ff0000"})
 	w := doMiscReq(s, "POST", "/api/v3/repos/"+repo.FullName+"/labels", string(body))
 	if w.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201; body = %s", w.Code, w.Body.String())
@@ -245,8 +245,8 @@ func TestUnitCreateLabel(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &label); err != nil {
 		t.Fatal(err)
 	}
-	if name, _ := label["name"].(string); name != "bug" {
-		t.Errorf("name = %q, want %q", name, "bug")
+	if name, _ := label["name"].(string); name != "regression" {
+		t.Errorf("name = %q, want %q", name, "regression")
 	}
 }
 
@@ -254,7 +254,7 @@ func TestUnitDeleteLabel(t *testing.T) {
 	s := issueTestServer(t)
 	admin := s.store.UsersByLogin["admin"]
 	repo := s.store.CreateRepo(admin, "testrepo", "", false)
-	lbl := s.store.CreateLabel(repo.ID, "bug", "", "ff0000")
+	lbl := s.store.CreateLabel(repo.ID, "regression", "", "ff0000")
 
 	w := doMiscReq(s, "DELETE", "/api/v3/repos/"+repo.FullName+"/labels/"+lbl.Name, "")
 	if w.Code != http.StatusNoContent {

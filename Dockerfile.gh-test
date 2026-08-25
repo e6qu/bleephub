@@ -5,9 +5,14 @@ ENV GOTOOLCHAIN=auto
 WORKDIR /src
 COPY . .
 RUN CGO_ENABLED=0 go build -tags noui -o /out/bleephub ./cmd/bleephub
+# The conformance driver's attestation operation needs a real Sigstore trust
+# chain, which is minted here rather than mounted in: the final image has no Go
+# toolchain, and a fixture built from this same checkout cannot drift from the
+# driver that consumes it.
+RUN CGO_ENABLED=0 go build -o /out/attestation-fixture ./test/conformance/attestation
 
 FROM ubuntu:26.04@sha256:3131b4cc82a783df6c9df078f86e01819a13594b865c2cad47bd1bca2b7063bb
-RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates jq git openssl zip && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates jq git openssh-client openssl zip && rm -rf /var/lib/apt/lists/*
 # gh is pinned to the exact version the compatibility docs verify
 # (docs/BLEEPHUB_GH_CLI.md: "verified on 2.92.0"). The cli.github.com apt
 # repository only ever carries whatever release is current, so installing `gh`
@@ -30,8 +35,13 @@ RUN arch="$(dpkg --print-architecture)" && \
     printf '%s  %s\n' "$gh_sha256" /tmp/gh.deb | sha256sum --check --strict - && \
     apt-get update && apt-get install -y --no-install-recommends /tmp/gh.deb && \
     rm -f /tmp/gh.deb && rm -rf /var/lib/apt/lists/*
-COPY --from=builder /out/bleephub /usr/local/bin/
+COPY --from=builder /out/bleephub /out/attestation-fixture /usr/local/bin/
 COPY test/run-gh-test.sh /test/run-gh-test.sh
-RUN chmod +x /test/run-gh-test.sh
+# The SDK/CLI conformance harness reuses this image rather than building a
+# second one: it needs exactly the same pinned `gh` and the same server. It is
+# run by overriding the entry point (test/conformance/drivers/gh_container.sh),
+# so the default behaviour of this image is unchanged.
+COPY test/conformance/drivers/gh_driver.sh /test/gh_driver.sh
+RUN chmod +x /test/run-gh-test.sh /test/gh_driver.sh
 WORKDIR /test
 ENTRYPOINT ["/test/run-gh-test.sh"]

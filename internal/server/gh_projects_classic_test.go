@@ -22,7 +22,7 @@ func TestProjectClassicGetIsDetached(t *testing.T) {
 	}
 
 	newName := "Renamed"
-	updated := s.store.UpdateProjectClassic(got, &newName, nil, nil)
+	updated := s.store.UpdateProjectClassic(got, &newName, nil, nil, nil)
 	if updated.Name != "Renamed" {
 		t.Fatalf("update returned %q, want Renamed", updated.Name)
 	}
@@ -275,9 +275,9 @@ func TestProjectsClassic_CardMove(t *testing.T) {
 	proj := s.store.CreateProjectClassic(repo, admin.ID, "Board", "", "open")
 	col1 := s.store.CreateProjectColumn(proj.ID, "Col1")
 	col2 := s.store.CreateProjectColumn(proj.ID, "Col2")
-	cardA := s.store.CreateProjectCard(col1.ID, admin.ID, "A", 0)
-	cardB := s.store.CreateProjectCard(col1.ID, admin.ID, "B", 0)
-	cardC := s.store.CreateProjectCard(col1.ID, admin.ID, "C", 0)
+	cardA := s.store.CreateProjectCard(col1.ID, admin.ID, "A", 0, 0)
+	cardB := s.store.CreateProjectCard(col1.ID, admin.ID, "B", 0, 0)
+	cardC := s.store.CreateProjectCard(col1.ID, admin.ID, "C", 0, 0)
 	_ = cardA
 
 	// Move B to first

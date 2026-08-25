@@ -60,12 +60,12 @@ func TestUpdateIssueRecordsLabelAndMilestoneEvents(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
 	s.post(t, "/api/v3/user/repos", defaultToken, map[string]interface{}{"name": "iss-edit-events"}).Body.Close()
-	s.post(t, "/api/v3/repos/admin/iss-edit-events/labels", defaultToken, map[string]interface{}{"name": "bug"}).Body.Close()
+	s.post(t, "/api/v3/repos/admin/iss-edit-events/labels", defaultToken, map[string]interface{}{"name": "regression"}).Body.Close()
 	s.post(t, "/api/v3/repos/admin/iss-edit-events/milestones", defaultToken, map[string]interface{}{"title": "v1"}).Body.Close()
 	s.post(t, "/api/v3/repos/admin/iss-edit-events/issues", defaultToken, map[string]interface{}{"title": "an issue"}).Body.Close()
 
 	requireStatus(t, s.patch(t, "/api/v3/repos/admin/iss-edit-events/issues/1", defaultToken, map[string]interface{}{
-		"labels":    []string{"bug"},
+		"labels":    []string{"regression"},
 		"milestone": 1,
 	}), 200)
 

@@ -310,10 +310,10 @@ func (s *Server) handleDispatchWorkflow(w http.ResponseWriter, r *http.Request) 
 		"workflow": wf.Path,
 	}
 	if user := ghUserFromContext(r.Context()); user != nil {
-		payload["sender"] = senderPayload(user)
+		payload["sender"] = senderPayload(user, s.baseURL(r))
 	}
 	if repoObj := s.store.GetRepoByFullName(repo); repoObj != nil {
-		payload["repository"] = repoPayload(repoObj)
+		payload["repository"] = repoPayload(repoObj, s.baseURL(r))
 	}
 
 	meta := actions.WorkflowEventMeta{

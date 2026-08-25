@@ -140,10 +140,14 @@ function buildRoutes(): { route: string; label: string }[] {
     { route: "/ui/search?q=test", label: "search" },
     { route: "/ui/repos", label: "repos-list" },
     { route: "/ui/gists", label: "gists" },
+    { route: "/ui/advisories", label: "advisory-database" },
     { route: "/ui/packages", label: "packages" },
     { route: "/ui/runners", label: "runners" },
     { route: "/ui/workflows", label: "workflows" },
     { route: "/ui/marketplace", label: "marketplace" },
+    { route: "/ui/sponsors", label: "sponsors" },
+    { route: `/ui/sponsors/${o}`, label: "sponsors-profile" },
+    { route: `/ui/sponsors/${o}/dashboard`, label: "sponsors-dashboard" },
     { route: "/ui/codespaces", label: "codespaces" },
     { route: "/ui/migrations", label: "migrations" },
     { route: "/ui/metrics", label: "metrics" },
@@ -312,6 +316,24 @@ test.beforeAll(async ({ browser }) => {
     }
   }
 
+  // a GitHub Sponsors profile with a published tier and a goal, so the
+  // three Sponsors routes render real content rather than an empty state.
+  ok("sponsors-listing", await api(page, "PUT", `/ui-data/sponsors/${seeded.owner}`, {
+    name: "Parity maintainer",
+    short_description: "Keeps the parity suite green",
+    full_description: "A seeded GitHub Sponsors profile for the accessibility sweep.",
+    is_public: true,
+  }));
+  ok("sponsors-tier", await api(page, "POST", `/ui-data/sponsors/${seeded.owner}/tiers`, {
+    amount_in_cents: 500,
+    description: "A coffee a month",
+    publish: true,
+  }));
+  ok("sponsors-goal", await api(page, "PUT", `/ui-data/sponsors/${seeded.owner}/goal`, {
+    kind: "MONTHLY_SPONSORSHIP_AMOUNT",
+    target_value: 5000,
+  }));
+
   // organization owned by admin (so the viewer owns it)
   ok("org", await api(page, "POST", "/api/v3/admin/organizations", {
     login: seeded.org,
@@ -358,12 +380,15 @@ test.beforeAll(async ({ browser }) => {
         : undefined;
     if (projNumber) {
       seeded.projectNumber = projNumber;
+      // A second single-select column beside the Status field every project is
+      // seeded with, so the table renders more than one dropdown. It cannot be
+      // named Status: field names are unique per project.
       ok("project-field", await api(page, "POST", `/api/v3/orgs/${seeded.org}/projectsV2/${projNumber}/fields`, {
-        name: "Status",
+        name: "Priority",
         data_type: "single_select",
         single_select_options: [
-          { name: "Todo", color: "GRAY", description: "" },
-          { name: "Done", color: "GREEN", description: "" },
+          { name: "High", color: "RED", description: "" },
+          { name: "Low", color: "GRAY", description: "" },
         ],
       }));
       // A text field too, so the table renders an editable text input to scan.

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 )
@@ -15,6 +16,11 @@ type CustomProperty struct {
 	AllowedValues         []string    `json:"allowed_values"`
 	ValuesEditableBy      string      `json:"values_editable_by"`
 	RequireExplicitValues bool        `json:"require_explicit_values"`
+	// Regex is the pattern a `string` property's values must match. It is a
+	// GraphQL-surface member (createRepositoryCustomProperty carries it);
+	// GitHub's REST schema shape does not include it, so the REST renderers
+	// leave it out.
+	Regex *string `json:"regex,omitempty"`
 }
 
 // ListCustomProperties returns the org's property definitions sorted by name.
@@ -35,14 +41,15 @@ func (st *Store) ListCustomProperties(orgLogin string) []*CustomProperty {
 	return snapshotCustomProperties(out)
 }
 
-// GetCustomProperty returns a property definition by name, or nil.
+// GetCustomProperty returns a detached snapshot of a property definition by
+// name, or nil (STORE-021).
 func (st *Store) GetCustomProperty(orgLogin, name string) *CustomProperty {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 	if property := st.OrgCustomProperties[orgLogin][name]; property != nil {
-		return property
+		return cloneCustomProperty(property)
 	}
-	return st.EnterpriseSettings.RepositoryCustomProperties[name]
+	return cloneCustomProperty(st.EnterpriseSettings.RepositoryCustomProperties[name])
 }
 
 // UpsertCustomProperty creates or replaces a property definition.
@@ -86,6 +93,64 @@ func (st *Store) DeleteCustomProperty(orgLogin, name string) bool {
 		panic(&PersistenceFailure{Op: "batch", Bucket: "org_custom_properties", Err: err})
 	}
 	return true
+}
+
+// OrgOwnsCustomProperty reports whether the definition is the organization's
+// own rather than one inherited from the enterprise schema. The GraphQL
+// mutations need the distinction because editing an enterprise-level
+// definition is the enterprise owner's call, not the organization's.
+func (st *Store) OrgOwnsCustomProperty(orgLogin, name string) bool {
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
+	return st.OrgCustomProperties[orgLogin][name] != nil
+}
+
+// GetEnterpriseCustomProperty returns a detached snapshot of the
+// enterprise-level repository property definition by name, or nil.
+func (st *Store) GetEnterpriseCustomProperty(name string) *CustomProperty {
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
+	return cloneCustomProperty(st.EnterpriseSettings.RepositoryCustomProperties[name])
+}
+
+// UpsertEnterpriseCustomProperty creates or replaces an enterprise-level
+// repository property definition — the same map the enterprise properties
+// REST surface writes.
+func (st *Store) UpsertEnterpriseCustomProperty(def *CustomProperty) {
+	st.Mu.Lock()
+	defer st.Mu.Unlock()
+	st.EnterpriseSettings.RepositoryCustomProperties[def.PropertyName] = def
+	st.PersistEnterpriseSettings()
+}
+
+// DeleteEnterpriseCustomProperty removes an enterprise-level repository
+// property definition. Returns true when the definition existed.
+func (st *Store) DeleteEnterpriseCustomProperty(name string) bool {
+	st.Mu.Lock()
+	defer st.Mu.Unlock()
+	if st.EnterpriseSettings.RepositoryCustomProperties[name] == nil {
+		return false
+	}
+	delete(st.EnterpriseSettings.RepositoryCustomProperties, name)
+	st.PersistEnterpriseSettings()
+	return true
+}
+
+// PromoteCustomProperty copies an organization's property definition into the
+// enterprise schema — the same write PUT /enterprises/{e}/properties/schema/
+// organizations/{org}/{name}/promote performs — and returns the promoted
+// definition, or nil when the organization holds no such definition.
+func (st *Store) PromoteCustomProperty(orgLogin, name string) *CustomProperty {
+	st.Mu.Lock()
+	defer st.Mu.Unlock()
+	property := st.OrgCustomProperties[orgLogin][name]
+	if property == nil {
+		return nil
+	}
+	promoted := cloneCustomProperty(property)
+	st.EnterpriseSettings.RepositoryCustomProperties[name] = promoted
+	st.PersistEnterpriseSettings()
+	return cloneCustomProperty(promoted)
 }
 
 // SetRepoCustomPropertyValues applies a validated batch of values to one
@@ -174,6 +239,63 @@ func (st *Store) ListOrgReposForProperties(orgLogin, query string) []*Repo {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return snapshotRepos(out)
+}
+
+// ValidateCustomPropertyValue checks a non-null value against the property's
+// value type (and allowed values for the select types). The REST values
+// routes and the GraphQL setRepositoryCustomPropertyValues mutation both ask
+// it, so the two surfaces cannot drift on what a value may be.
+func ValidateCustomPropertyValue(def *CustomProperty, value interface{}) error {
+	allowed := func(str string) bool {
+		for _, v := range def.AllowedValues {
+			if v == str {
+				return true
+			}
+		}
+		return false
+	}
+	switch def.ValueType {
+	case "string", "url":
+		if _, ok := value.(string); !ok {
+			return fmt.Errorf("property %q expects a string value", def.PropertyName)
+		}
+	case "true_false":
+		str, ok := value.(string)
+		if !ok || (str != "true" && str != "false") {
+			return fmt.Errorf("property %q expects \"true\" or \"false\"", def.PropertyName)
+		}
+	case "single_select":
+		str, ok := value.(string)
+		if !ok || !allowed(str) {
+			return fmt.Errorf("property %q expects one of its allowed values", def.PropertyName)
+		}
+	case "multi_select":
+		switch v := value.(type) {
+		case string:
+			// A bare string is accepted as a one-element selection.
+			if !allowed(v) {
+				return fmt.Errorf("property %q expects a subset of its allowed values", def.PropertyName)
+			}
+		case []interface{}:
+			for _, item := range v {
+				str, ok := item.(string)
+				if !ok || !allowed(str) {
+					return fmt.Errorf("property %q expects a subset of its allowed values", def.PropertyName)
+				}
+			}
+		case []string:
+			for _, item := range v {
+				if !allowed(item) {
+					return fmt.Errorf("property %q expects a subset of its allowed values", def.PropertyName)
+				}
+			}
+		default:
+			return fmt.Errorf("property %q expects an array of allowed values", def.PropertyName)
+		}
+	default:
+		return fmt.Errorf("property %q has unsupported value type %q", def.PropertyName, def.ValueType)
+	}
+	return nil
 }
 
 func CloneCustomPropertyValue(value interface{}) interface{} {

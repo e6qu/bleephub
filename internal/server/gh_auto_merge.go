@@ -127,6 +127,6 @@ func (s *Server) attemptAutoMerge(repo *store.Repo, pr *store.PullRequest) {
 	}
 
 	merged := s.store.GetPullRequest(pr.ID)
-	payload := buildPullRequestPayload(s.store, repo, merged, enabler, "closed")
+	payload := buildPullRequestPayload(s.store, repo, merged, enabler, "closed", s.publicOrigin())
 	s.emitWebhookEvent(repo.FullName, "pull_request", "closed", payload)
 }

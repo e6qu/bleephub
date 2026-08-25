@@ -25,6 +25,9 @@ type TriggerDef struct {
 	Paths          []string
 	PathsIgnore    []string
 	Types          []string
+	// Workflows names the source workflows an `on.workflow_run` trigger
+	// listens to. Empty means every workflow in the repository.
+	Workflows []string
 	// Inputs carries workflow_dispatch / workflow_call input declarations.
 	Inputs map[string]*store.WorkflowInputDef
 	// Schedules carries every cron line together with its optional IANA
@@ -67,6 +70,9 @@ type TriggerEvent struct {
 	// computed, matching GitHub's behavior for new-branch pushes).
 	ChangedFiles      []string
 	ChangedFilesKnown bool
+	// WorkflowName is the name of the workflow whose run raised a
+	// `workflow_run` event; it is what `on.workflow_run.workflows` filters on.
+	WorkflowName string
 }
 
 // defaultActivityTypes are the activity types an event matches when its
@@ -165,6 +171,7 @@ func parseTriggerDef(event string, node *yaml.Node) (*TriggerDef, error) {
 		Paths          []string                           `yaml:"paths"`
 		PathsIgnore    []string                           `yaml:"paths-ignore"`
 		Types          []string                           `yaml:"types"`
+		Workflows      []string                           `yaml:"workflows"`
 		Inputs         map[string]*store.WorkflowInputDef `yaml:"inputs"`
 		Outputs        map[string]*workflowCallOutputDef  `yaml:"outputs"`
 		Secrets        map[string]*WorkflowCallSecretDef  `yaml:"secrets"`
@@ -180,6 +187,7 @@ func parseTriggerDef(event string, node *yaml.Node) (*TriggerDef, error) {
 		Paths:          raw.Paths,
 		PathsIgnore:    raw.PathsIgnore,
 		Types:          raw.Types,
+		Workflows:      raw.Workflows,
 		Inputs:         raw.Inputs,
 		Secrets:        raw.Secrets,
 	}
@@ -233,6 +241,22 @@ func WorkflowTriggersOn(on map[string]*TriggerDef, ev TriggerEvent) bool {
 
 	if td == nil {
 		return true
+	}
+
+	// `on.workflow_run.workflows` names the source workflows the trigger
+	// listens to. Without it a listener starts on EVERY run in the repository,
+	// including its own — the filter is what scopes it.
+	if len(td.Workflows) > 0 {
+		matched := false
+		for _, name := range td.Workflows {
+			if name == ev.WorkflowName {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
 	}
 
 	// Branch / tag filters. For push events they apply to the pushed ref;

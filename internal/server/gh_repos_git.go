@@ -393,7 +393,7 @@ func (s *Server) registerGHGitDataRoutes() {
 	s.route("POST /api/v3/repos/{owner}/{repo}/git/refs", s.requirePerm(store.ScopeContents, store.PermWrite, s.requireRepoPush(s.handleCreateRef)))
 	s.route("PATCH /api/v3/repos/{owner}/{repo}/git/refs/{ref...}", s.requirePerm(store.ScopeContents, store.PermWrite, s.requireRepoPush(s.handleUpdateRef)))
 	s.route("DELETE /api/v3/repos/{owner}/{repo}/git/refs/{ref...}",
-		s.requirePerm(store.ScopeContents, store.PermWrite, s.requireRepoPush(s.requireRefDeletionAllowed(s.handleDeleteRef))))
+		s.requirePerm(store.ScopeContents, store.PermWrite, s.requireRepoPush(s.handleDeleteRef)))
 }
 
 // requireRepoAdmin resolves the repository named in the path and admits only a
@@ -458,33 +458,6 @@ func refUpdateIsFastForward(stor storer.Storer, current, target plumbing.Hash) (
 		return false, fmt.Errorf("ancestry of %s in %s: %w", current, target, err)
 	}
 	return ancestor, nil
-}
-
-// refWriteRefusal decides a REST ref write against the branch's protection
-// rule, through the same predicate the git transports push through. Push
-// access — required by the route gate — is enough for an unprotected ref.
-func (s *Server) refWriteRefusal(r *http.Request, repo *store.Repo, ref plumbing.ReferenceName, kind refWriteKind, target plumbing.Hash) string {
-	stor, _ := s.store.GitStorageForRepoID(repo.ID)
-	return s.protectedRefWriteRefusal(r.Context(), repo, stor, ref, kind, target)
-}
-
-// requireRefDeletionAllowed guards the delete-ref route, whose handler lives
-// with the other ref readers. Deleting a protected branch is the one ref write
-// with no body to inspect, so it is decided here rather than in the handler.
-func (s *Server) requireRefDeletionAllowed(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		repo := s.store.GetRepo(r.PathValue("owner"), r.PathValue("repo"))
-		if repo == nil {
-			writeGHError(w, http.StatusNotFound, "Not Found")
-			return
-		}
-		ref := plumbing.ReferenceName("refs/" + r.PathValue("ref"))
-		if refusal := s.refWriteRefusal(r, repo, ref, refDeletion, plumbing.ZeroHash); refusal != "" {
-			writeGHError(w, http.StatusForbidden, refusal)
-			return
-		}
-		next(w, r)
-	}
 }
 
 func (s *Server) gitDataContext(w http.ResponseWriter, r *http.Request) (owner, repoName string, repo *store.Repo, stor gitStorage.Storer) {
@@ -1016,7 +989,7 @@ func (s *Server) handleGetTag(w http.ResponseWriter, r *http.Request) {
 // buildRefLifecyclePayload assembles the shared body of GitHub's `create` and
 // `delete` webhook events so `on: create` / `on: delete` workflows fire for
 // branch and tag creation/deletion (ACT-026).
-func buildRefLifecyclePayload(repo *store.Repo, fullRef plumbing.ReferenceName, sender *store.User) map[string]interface{} {
+func buildRefLifecyclePayload(repo *store.Repo, fullRef plumbing.ReferenceName, sender *store.User, baseURL string) map[string]interface{} {
 	refType := "tag"
 	if fullRef.IsBranch() {
 		refType = "branch"
@@ -1025,8 +998,8 @@ func buildRefLifecyclePayload(repo *store.Repo, fullRef plumbing.ReferenceName, 
 		"ref":         fullRef.Short(),
 		"ref_type":    refType,
 		"pusher_type": "user",
-		"repository":  repoPayload(repo),
-		"sender":      store.UserToJSON(sender),
+		"repository":  repoPayload(repo, baseURL),
+		"sender":      store.UserToJSON(sender, baseURL),
 	}
 }
 
@@ -1046,52 +1019,17 @@ func (s *Server) handleCreateRef(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnprocessableEntity, "ref and sha are required")
 		return
 	}
-	if !validFullyQualifiedGitRef(req.Ref) {
-		store.WriteGHValidationError(w, "Reference", "ref", "invalid")
-		return
-	}
 	if !store.ValidGitObjectID(req.SHA) {
 		store.WriteGHValidationError(w, "Reference", "sha", "invalid")
 		return
 	}
 	fullRef := plumbing.ReferenceName(req.Ref)
-	target := plumbing.NewHash(req.SHA)
-	if _, err := stor.EncodedObject(plumbing.AnyObject, target); err != nil {
-		writeGHError(w, http.StatusUnprocessableEntity, "Object does not exist")
+	failure := s.createGitRef(r.Context(), repo, stor, ghUserFromContext(r.Context()),
+		fullRef, plumbing.NewHash(req.SHA), s.baseURL(r))
+	if failure != nil {
+		failure.write(w)
 		return
 	}
-	if refusal := s.refWriteRefusal(r, repo, fullRef, refCreation, target); refusal != "" {
-		writeGHError(w, http.StatusForbidden, refusal)
-		return
-	}
-	if ph, err := s.secretScanningPushProtectionPlaceholderForRef(repo, stor, fullRef, target); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	} else if ph != nil {
-		writeSecretScanningPushProtectionBlocked(w, ph)
-		return
-	}
-	if err := gitstore.CreateReferenceIfAbsent(stor, plumbing.NewHashReference(fullRef, target)); err != nil {
-		if errors.Is(err, gitstore.ErrReferenceAlreadyExists) {
-			writeGHError(w, http.StatusUnprocessableEntity, "Reference already exists")
-			return
-		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if err := s.scanRefForSecretScanning(repo, stor, fullRef, target, s.baseURL(r)); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if fullRef.IsBranch() {
-		s.afterCommittedRefUpdate(repo, ghUserFromContext(r.Context()), fullRef.String(), plumbing.ZeroHash.String(), target.String(), s.baseURL(r))
-	}
-	// The `create` event fires for a newly-created branch or tag (distinct from
-	// the `push` above, which afterCommittedRefUpdate emits for branches).
-	createPayload := buildRefLifecyclePayload(repo, fullRef, ghUserFromContext(r.Context()))
-	createPayload["master_branch"] = repo.DefaultBranch
-	createPayload["description"] = repo.Description
-	s.emitWebhookEvent(repo.FullName, "create", "", createPayload)
 	ref, _ := stor.Reference(fullRef)
 	refJSON := refToJSON(stor, s.baseURL(r), repo.FullName, ref)
 	writeJSONCreated(w, jsonStringField(refJSON, "url"), refJSON)
@@ -1102,7 +1040,6 @@ func (s *Server) handleUpdateRef(w http.ResponseWriter, r *http.Request) {
 	if repo == nil {
 		return
 	}
-	refPath := r.PathValue("ref")
 	var req struct {
 		SHA   string `json:"sha"`
 		Force bool   `json:"force"`
@@ -1110,65 +1047,20 @@ func (s *Server) handleUpdateRef(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	fullRef := plumbing.ReferenceName("refs/" + refPath)
+	fullRef := plumbing.ReferenceName("refs/" + r.PathValue("ref"))
 	if req.SHA == "" {
 		store.WriteGHValidationError(w, "Reference", "sha", "missing_field")
 		return
 	}
-	if !validFullyQualifiedGitRef(fullRef.String()) || !store.ValidGitObjectID(req.SHA) {
+	if !store.ValidGitObjectID(req.SHA) {
 		store.WriteGHValidationError(w, "Reference", "sha", "invalid")
 		return
 	}
-	kind := refFastForward
-	if req.Force {
-		kind = refForcePush
-	}
-	newTarget := plumbing.NewHash(req.SHA)
-	if refusal := s.refWriteRefusal(r, repo, fullRef, kind, newTarget); refusal != "" {
-		writeGHError(w, http.StatusForbidden, refusal)
+	failure := s.updateGitRef(r.Context(), repo, stor, ghUserFromContext(r.Context()),
+		fullRef, plumbing.NewHash(req.SHA), req.Force, s.baseURL(r))
+	if failure != nil {
+		failure.write(w)
 		return
-	}
-	oldRef, err := stor.Reference(fullRef)
-	if err != nil {
-		writeGHError(w, http.StatusUnprocessableEntity, "Reference does not exist")
-		return
-	}
-	if _, err := stor.EncodedObject(plumbing.AnyObject, newTarget); err != nil {
-		writeGHError(w, http.StatusUnprocessableEntity, "Object does not exist")
-		return
-	}
-	if !req.Force && oldRef.Type() == plumbing.HashReference && newTarget != oldRef.Hash() {
-		fastForward, err := refUpdateIsFastForward(stor, oldRef.Hash(), newTarget)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		if !fastForward {
-			writeGHError(w, http.StatusUnprocessableEntity, "Update is not a fast forward")
-			return
-		}
-	}
-	if ph, err := s.secretScanningPushProtectionPlaceholderForRef(repo, stor, fullRef, newTarget); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	} else if ph != nil {
-		writeSecretScanningPushProtectionBlocked(w, ph)
-		return
-	}
-	if err := stor.CheckAndSetReference(plumbing.NewHashReference(fullRef, newTarget), oldRef); err != nil {
-		if errors.Is(err, gitStorage.ErrReferenceHasChanged) {
-			writeGHError(w, http.StatusConflict, "Reference update failed: the ref changed while the request was being processed")
-			return
-		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if err := s.scanRefForSecretScanning(repo, stor, fullRef, newTarget, s.baseURL(r)); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if fullRef.IsBranch() {
-		s.afterCommittedRefUpdate(repo, ghUserFromContext(r.Context()), fullRef.String(), oldRef.Hash().String(), newTarget.String(), s.baseURL(r))
 	}
 	ref, _ := stor.Reference(fullRef)
 	writeJSON(w, http.StatusOK, refToJSON(stor, s.baseURL(r), repo.FullName, ref))

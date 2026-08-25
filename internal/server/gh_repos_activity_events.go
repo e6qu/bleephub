@@ -93,7 +93,7 @@ func (s *Server) handleListRepoActivity(w http.ResponseWriter, r *http.Request) 
 		}
 		var actorJSON interface{}
 		if actor != nil {
-			actorJSON = store.UserToJSON(actor)
+			actorJSON = store.UserToJSON(actor, s.baseURL(r))
 		}
 		out = append(out, map[string]interface{}{
 			"id":            a.ID,
@@ -129,7 +129,7 @@ func eventActorAbsJSON(u *store.User, base string) map[string]interface{} {
 		"login":       u.Login,
 		"gravatar_id": "",
 		"url":         base + "/api/v3/users/" + u.Login,
-		"avatar_url":  u.AvatarURL,
+		"avatar_url":  store.AvatarURLFor(u.AvatarURL, u.ID, base),
 	}
 }
 

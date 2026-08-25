@@ -45,6 +45,82 @@ type gqlAuthzFixture struct {
 	threadNodeID  string
 	reviewNodeID  string
 	headSHA       string
+	// orgRepo, teamNodeID and packageVersionNodeID are seeded by the
+	// updateTeamsRepository and deletePackageVersion rows' setups: a team
+	// grant needs an organization-owned repository, and a version needs a
+	// package, neither of which the base fixture carries.
+	orgRepo              *store.Repo
+	teamNodeID           string
+	packageVersionNodeID string
+	pollOptionNodeID     string
+	enterpriseNodeID     string
+	attributionOrgNodeID string
+	mannequinNodeID      string
+	// linkedBranchNodeID is seeded by the deleteLinkedBranch case's setup, for
+	// the same reason the Dependabot alert below is: an issue carries no linked
+	// branch until something links one.
+	linkedBranchNodeID string
+	// dependabotAlert is minted by the dismissRepositoryVulnerabilityAlert
+	// case's setup rather than by the fixture: every other row addresses a
+	// record the fixture seeds, but an alert is derived state, and seeding one
+	// unconditionally would put a vulnerability on a fixture repository that
+	// the rest of the table has no reason to carry.
+	dependabotAlert *store.DependabotAlert
+	// subIssue is seeded by the cases that need a second issue in the same
+	// repository (the sub-issue, dependency and duplicate rows).
+	subIssue *store.Issue
+	// reviewCommentNodeID is the seeded review thread's root comment, which
+	// the pull-request comment mutations address.
+	reviewCommentNodeID string
+	// propsOrg is the organization the custom-property and verifiable-domain
+	// rows create in their setups (those records belong to org or enterprise
+	// accounts, never to a user), along with the ruleset and domain the
+	// update/delete rows address.
+	propsOrg      *store.Org
+	rulesetNodeID string
+	domainNodeID  string
+	// The checks and deployments/environments cases' seeded records.
+	checkSuiteNodeID  string
+	checkRunNodeID    string
+	deploymentNodeID  string
+	environmentNodeID string
+	workflowRunNodeID string
+	// The classic-projects subjects, seeded by the classic-project cases'
+	// setups rather than by the base fixture: a repo-scoped board with two
+	// columns and a note card, and a user-owned board for the repository-link
+	// mutations (which refuse repo-scoped boards by design).
+	classicProject      *store.ProjectClassic
+	classicColumn       *store.ProjectColumn
+	classicColumn2      *store.ProjectColumn
+	classicCard         *store.ProjectCard
+	classicOwnerProject *store.ProjectClassic
+}
+
+// seedClassicProjectFixture arranges the repo-scoped classic board the
+// classic-project mutation cases act on.
+func seedClassicProjectFixture(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+	t.Helper()
+	st := s.store
+	f.classicProject = st.CreateProjectClassic(f.repo, f.owner.ID, "classic board", "triage", "open")
+	if f.classicProject == nil {
+		t.Fatalf("could not seed the classic project")
+	}
+	f.classicColumn = st.CreateProjectColumn(f.classicProject.ID, "To do")
+	f.classicColumn2 = st.CreateProjectColumn(f.classicProject.ID, "Done")
+	f.classicCard = st.CreateProjectCard(f.classicColumn.ID, f.owner.ID, "a note", 0, 0)
+	if f.classicColumn == nil || f.classicColumn2 == nil || f.classicCard == nil {
+		t.Fatalf("could not seed the classic project's columns and card")
+	}
+}
+
+// seedClassicOwnerProjectFixture arranges the private user-owned board the
+// repository-link cases act on.
+func seedClassicOwnerProjectFixture(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+	t.Helper()
+	f.classicOwnerProject = s.store.CreateProjectClassicForOwner("User", f.owner.Login, f.owner.ID, "owner board", "", false)
+	if f.classicOwnerProject == nil {
+		t.Fatalf("could not seed the user-owned classic project")
+	}
 }
 
 func newGQLAuthzFixture(t *testing.T, srv *Server, tag string, private bool) *gqlAuthzFixture {
@@ -104,6 +180,7 @@ func newGQLAuthzFixture(t *testing.T, srv *Server, tag string, private bool) *gq
 		t.Fatalf("fixture %s: could not seed a review thread", tag)
 	}
 	f.threadNodeID = store.PRReviewThreadNodeID(root.ID)
+	f.reviewCommentNodeID = root.NodeID
 
 	// A pending review owned by the repo owner, for the submit/dismiss cases.
 	pendingReview := st.CreatePRReview(f.pr.ID, f.owner.ID, "PENDING", "pending body")
@@ -145,6 +222,265 @@ type gqlMutationCase struct {
 // resolver is what decides which owner the caller may create under.
 var gqlMutationCases = []gqlMutationCase{
 	{
+		name: "accessUserNamespaceRepository",
+		doc:  `mutation($input:AccessUserNamespaceRepositoryInput!){accessUserNamespaceRepository(input:$input){expiresAt repository{name}}}`,
+		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+			// The grant needs an enterprise that manages the repository's
+			// owner: the OWNER of the fixture repo is enrolled as a managed
+			// member, the fixture owner holds enterprise ownership, and an
+			// identity provider marks the accounts as IdP-provisioned. The
+			// stranger holds no enterprise role, so the refusal is about
+			// enterprise standing, not authentication.
+			e := s.store.CreateEnterprise("authz-emu-"+f.owner.Login, "EMU", "billing@bleephub.invalid")
+			if e == nil {
+				t.Fatal("fixture enterprise could not be created")
+			}
+			if s.store.SetEnterpriseMembership(e.ID, f.owner.ID, store.EnterpriseRoleOwner) == nil {
+				t.Fatal("fixture enterprise owner could not be enrolled")
+			}
+			if s.store.SetEnterpriseIdentityProvider(e.ID, "https://idp.invalid/sso", "issuer", "cert", "", "", nil) == nil {
+				t.Fatal("fixture identity provider could not be bound")
+			}
+			f.enterpriseNodeID = e.NodeID
+		},
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{
+				"enterpriseId": f.enterpriseNodeID,
+				"repositoryId": f.repo.NodeID,
+			}
+		},
+	},
+	{
+		name: "createAttributionInvitation",
+		doc:  `mutation($input:CreateAttributionInvitationInput!){createAttributionInvitation(input:$input){source{... on Mannequin{login}}}}`,
+		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+			org := s.store.CreateOrg(f.owner, "authz-attrib-org-"+f.owner.Login, "", "")
+			if org == nil {
+				t.Fatal("fixture org could not be created")
+			}
+			m := s.store.EnsureMannequin(org.ID, "imported-ghost", "ghost@import.invalid")
+			if m == nil {
+				t.Fatal("fixture mannequin could not be created")
+			}
+			f.attributionOrgNodeID = org.NodeID
+			f.mannequinNodeID = m.NodeID
+		},
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{
+				"ownerId":  f.attributionOrgNodeID,
+				"sourceId": f.mannequinNodeID,
+				"targetId": f.owner.NodeID,
+			}
+		},
+	},
+	{
+		name: "addDiscussionPollVote",
+		doc:  `mutation($input:AddDiscussionPollVoteInput!){addDiscussionPollVote(input:$input){pollOption{totalVoteCount viewerHasVoted}}}`,
+		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+			poll := s.store.CreateDiscussionPoll(f.discussion.ID, "authz question", []string{"yes", "no"})
+			if poll == nil || len(poll.Options) == 0 {
+				t.Fatal("fixture poll could not be created")
+			}
+			f.pollOptionNodeID = poll.Options[0].NodeID
+		},
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"pollOptionId": f.pollOptionNodeID}
+		},
+	},
+	{
+		name: "cloneTemplateRepository",
+		doc:  `mutation($input:CloneTemplateRepositoryInput!){cloneTemplateRepository(input:$input){repository{name}}}`,
+		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+			// The template needs a commit to copy and the template bit set;
+			// the second fixture repo becomes it so the primary keeps its
+			// pristine invariants for the untouched-assertion.
+			seedPullRequestBranches(t, s.Server, f.repo2, "seed")
+			owner, _, _ := store.SplitRepoFullName(f.repo2.FullName)
+			s.store.UpdateRepo(owner, f.repo2.Name, func(rp *store.Repo) { rp.IsTemplate = true })
+		},
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{
+				"repositoryId": f.repo2.NodeID,
+				"ownerId":      f.owner.NodeID,
+				"name":         "authz-generated",
+				"visibility":   "PRIVATE",
+			}
+		},
+	},
+	{
+		name: "updateRefs",
+		doc:  `mutation($input:UpdateRefsInput!){updateRefs(input:$input){clientMutationId}}`,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{
+				"repositoryId": f.repo.NodeID,
+				"refUpdates": []interface{}{map[string]interface{}{
+					"name": "refs/heads/authz-bulk-ref", "afterOid": f.headSHA,
+				}},
+			}
+		},
+	},
+	{
+		name: "updateTeamsRepository",
+		doc:  `mutation($input:UpdateTeamsRepositoryInput!){updateTeamsRepository(input:$input){teams{slug}}}`,
+		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+			// The grant under test needs an organization-owned repository and a
+			// team in that organization; the fixture's user-owned repo cannot
+			// carry a team grant.
+			org := s.store.CreateOrg(f.owner, "authz-teams-org-"+f.owner.Login, "", "")
+			if org == nil {
+				t.Fatal("fixture org could not be created")
+			}
+			f.orgRepo = s.store.CreateOrgRepo(org, f.owner, "authz-teams-repo", "", true)
+			if f.orgRepo == nil {
+				t.Fatal("fixture org repo could not be created")
+			}
+			team := s.store.CreateTeam(org.Login, "authz-grant-team", store.TeamOptions{})
+			if team == nil {
+				t.Fatal("fixture team could not be created")
+			}
+			f.teamNodeID = team.NodeID
+		},
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{
+				"repositoryId": f.orgRepo.NodeID,
+				"teamIds":      []interface{}{f.teamNodeID},
+				"permission":   "WRITE",
+			}
+		},
+	},
+	{
+		name: "deletePackageVersion",
+		doc:  `mutation($input:DeletePackageVersionInput!){deletePackageVersion(input:$input){success}}`,
+		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+			if pkg, _ := s.store.CreatePackage("user", f.owner.Login, "npm", "authz-package", "private"); pkg == nil {
+				t.Fatal("fixture package could not be created")
+			}
+			version, err := s.store.CreatePackageVersion("user", f.owner.Login, "npm", "authz-package", "1.0.0", "", nil, nil)
+			if err != nil || version == nil {
+				t.Fatalf("fixture package version could not be created: %v", err)
+			}
+			f.packageVersionNodeID = version.NodeID
+		},
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"packageVersionId": f.packageVersionNodeID}
+		},
+	},
+	{
+		name: "closeDiscussion",
+		doc:  `mutation($input:CloseDiscussionInput!){closeDiscussion(input:$input){discussion{closed stateReason}}}`,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"discussionId": f.discussion.NodeID, "reason": "OUTDATED"}
+		},
+	},
+	{
+		name: "reopenDiscussion",
+		doc:  `mutation($input:ReopenDiscussionInput!){reopenDiscussion(input:$input){discussion{closed stateReason}}}`,
+		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+			// Only a closed discussion can be reopened; the fixture's is
+			// closed by the store here so the mutation under test is the
+			// reopen, not the close.
+			if !s.store.UpdateDiscussion(f.discussion.ID, func(d *store.Discussion) {
+				d.Closed = true
+				d.StateReason = "RESOLVED"
+			}) {
+				t.Fatal("fixture discussion could not be closed")
+			}
+		},
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"discussionId": f.discussion.NodeID}
+		},
+	},
+	{
+		name: "createRef",
+		doc:  `mutation($input:CreateRefInput!){createRef(input:$input){ref{name}}}`,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{
+				"repositoryId": f.repo.NodeID, "name": "refs/heads/authz-created-ref", "oid": f.headSHA,
+			}
+		},
+	},
+	{
+		name: "updateRef",
+		doc:  `mutation($input:UpdateRefInput!){updateRef(input:$input){ref{name}}}`,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{
+				"refId": store.GitObjectNodeID(store.GitRefNodeIDPrefix, f.repo.ID, "refs/heads/spare"),
+				"oid":   f.headSHA,
+				// The fixture's branches share no ancestry ordering, so the
+				// move under test is the forced one; an unforced non-fast-
+				// forward refusal would make the entitled case read as an
+				// authorization failure.
+				"force": true,
+			}
+		},
+	},
+	{
+		name: "mergeBranch",
+		doc:  `mutation($input:MergeBranchInput!){mergeBranch(input:$input){clientMutationId}}`,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{
+				"repositoryId": f.repo.NodeID, "base": "spare", "head": "feature",
+				"commitMessage": "authz merge",
+			}
+		},
+	},
+	{
+		name: "createCommitOnBranch",
+		doc:  `mutation($input:CreateCommitOnBranchInput!){createCommitOnBranch(input:$input){commit{oid}}}`,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{
+				"branch":          map[string]interface{}{"repositoryNameWithOwner": f.repo.FullName, "branchName": "feature"},
+				"expectedHeadOid": f.headSHA,
+				"message":         map[string]interface{}{"headline": "authz commit"},
+				"fileChanges": map[string]interface{}{
+					"additions": []interface{}{map[string]interface{}{"path": "authz-commit.txt", "contents": "YXV0aHo="}},
+				},
+			}
+		},
+	},
+	{
+		name: "deleteRef",
+		doc:  `mutation($input:DeleteRefInput!){deleteRef(input:$input){clientMutationId}}`,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{
+				"refId": store.GitObjectNodeID(store.GitRefNodeIDPrefix, f.repo.ID, "refs/heads/spare"),
+			}
+		},
+	},
+	{
+		name: "revertPullRequest",
+		doc:  `mutation($input:RevertPullRequestInput!){revertPullRequest(input:$input){revertPullRequest{number}}}`,
+		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+			// Only a merged pull request can be reverted, so the fixture's is
+			// merged here by its owner before either caller attempts the
+			// mutation: the stranger must be refused against the very state
+			// the owner succeeds against.
+			resp := s.put(t, "/api/v3/repos/"+f.repo.FullName+"/pulls/"+itoa(f.pr.Number)+"/merge", f.ownerToken, map[string]interface{}{})
+			defer resp.Body.Close()
+			if resp.StatusCode != 200 {
+				t.Fatalf("fixture pull request did not merge: %d", resp.StatusCode)
+			}
+		},
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"pullRequestId": f.pr.NodeID}
+		},
+	},
+	{
+		name: "dismissRepositoryVulnerabilityAlert",
+		doc:  `mutation($input:DismissRepositoryVulnerabilityAlertInput!){dismissRepositoryVulnerabilityAlert(input:$input){repositoryVulnerabilityAlert{state}}}`,
+		setup: func(_ *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+			f.dependabotAlert = s.store.CreateDependabotAlertIfNew(f.repo.FullName,
+				"lodash", "npm", "package-lock.json", "GHSA-authz-table", "CVE-2021-0001",
+				"high", "prototype pollution", "a description", "< 4.17.21", "4.17.21")
+		},
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{
+				"repositoryVulnerabilityAlertId": f.dependabotAlert.NodeID,
+				"dismissReason":                  "TOLERABLE_RISK",
+			}
+		},
+	},
+	{
 		name: "deleteRepository",
 		doc:  `mutation($input:DeleteRepositoryInput!){deleteRepository(input:$input){clientMutationId}}`,
 		input: func(f *gqlAuthzFixture) map[string]interface{} {
@@ -156,6 +492,29 @@ var gqlMutationCases = []gqlMutationCase{
 		doc:  `mutation($input:CreateIssueInput!){createIssue(input:$input){issue{number}}}`,
 		input: func(f *gqlAuthzFixture) map[string]interface{} {
 			return map[string]interface{}{"repositoryId": f.repo.NodeID, "title": "from the table"}
+		},
+	},
+	{
+		name: "createLinkedBranch",
+		doc:  `mutation($input:CreateLinkedBranchInput!){createLinkedBranch(input:$input){linkedBranch{id ref{name}}}}`,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{
+				"issueId": f.issue.NodeID, "oid": f.headSHA, "name": "authz-linked-branch",
+			}
+		},
+	},
+	{
+		name: "deleteLinkedBranch",
+		doc:  `mutation($input:DeleteLinkedBranchInput!){deleteLinkedBranch(input:$input){issue{number}}}`,
+		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+			const ref = "refs/heads/authz-seeded-linked-branch"
+			if found, _ := s.store.LinkIssueBranch(f.issue.ID, f.repo.ID, ref); !found {
+				t.Fatalf("could not seed a linked branch on the fixture issue")
+			}
+			f.linkedBranchNodeID = store.LinkedBranchNodeID(f.issue.ID, ref)
+		},
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"linkedBranchId": f.linkedBranchNodeID}
 		},
 	},
 	{
@@ -332,6 +691,33 @@ var gqlMutationCases = []gqlMutationCase{
 		},
 	},
 	{
+		name: "addLabelsToLabelable",
+		doc:  `mutation($input:AddLabelsToLabelableInput!){addLabelsToLabelable(input:$input){labelable{__typename}}}`,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{
+				"labelableId": f.issue.NodeID,
+				"labelIds":    []interface{}{f.label.NodeID},
+			}
+		},
+	},
+	{
+		name: "removeLabelsFromLabelable",
+		doc:  `mutation($input:RemoveLabelsFromLabelableInput!){removeLabelsFromLabelable(input:$input){labelable{__typename}}}`,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{
+				"labelableId": f.issue.NodeID,
+				"labelIds":    []interface{}{f.label.NodeID},
+			}
+		},
+	},
+	{
+		name: "clearLabelsFromLabelable",
+		doc:  `mutation($input:ClearLabelsFromLabelableInput!){clearLabelsFromLabelable(input:$input){labelable{__typename}}}`,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"labelableId": f.issue.NodeID}
+		},
+	},
+	{
 		name: "createPullRequest",
 		doc:  `mutation($input:CreatePullRequestInput!){createPullRequest(input:$input){pullRequest{number}}}`,
 		input: func(f *gqlAuthzFixture) map[string]interface{} {
@@ -456,6 +842,639 @@ var gqlMutationCases = []gqlMutationCase{
 			return map[string]interface{}{"threadId": f.threadNodeID}
 		},
 	},
+
+	// --- checks -------------------------------------------------------------
+	{
+		name: "createCheckRun",
+		doc:  `mutation($input:CreateCheckRunInput!){createCheckRun(input:$input){checkRun{name status}}}`,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{
+				"repositoryId": f.repo.NodeID, "name": "authz-check", "headSha": f.headSHA,
+			}
+		},
+	},
+	{
+		name: "createCheckSuite",
+		doc:  `mutation($input:CreateCheckSuiteInput!){createCheckSuite(input:$input){checkSuite{id status}}}`,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"repositoryId": f.repo.NodeID, "headSha": f.headSHA}
+		},
+	},
+	{
+		name: "rerequestCheckSuite",
+		doc:  `mutation($input:RerequestCheckSuiteInput!){rerequestCheckSuite(input:$input){checkSuite{status}}}`,
+		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+			suite := s.store.CreateCheckSuite(f.repo.FullName, "", f.headSHA, 0)
+			if suite == nil {
+				t.Fatal("fixture check suite could not be created")
+			}
+			f.checkSuiteNodeID = suite.NodeID
+		},
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"repositoryId": f.repo.NodeID, "checkSuiteId": f.checkSuiteNodeID}
+		},
+	},
+	{
+		name: "updateCheckRun",
+		doc:  `mutation($input:UpdateCheckRunInput!){updateCheckRun(input:$input){checkRun{status conclusion}}}`,
+		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+			run := s.store.CreateCheckRun(f.repo.FullName, f.headSHA, "authz-existing-check", 0, 0)
+			if run == nil {
+				t.Fatal("fixture check run could not be created")
+			}
+			f.checkRunNodeID = run.NodeID
+		},
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{
+				"repositoryId": f.repo.NodeID, "checkRunId": f.checkRunNodeID,
+				"status": "COMPLETED", "conclusion": "SUCCESS",
+			}
+		},
+	},
+	{
+		name: "updateCheckSuitePreferences",
+		doc:  `mutation($input:UpdateCheckSuitePreferencesInput!){updateCheckSuitePreferences(input:$input){repository{name}}}`,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{
+				"repositoryId": f.repo.NodeID, "autoTriggerPreferences": []interface{}{},
+			}
+		},
+	},
+
+	// --- deployments --------------------------------------------------------
+	{
+		name: "createDeployment",
+		doc:  `mutation($input:CreateDeploymentInput!){createDeployment(input:$input){autoMerged deployment{environment commitOid}}}`,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{
+				"repositoryId": f.repo.NodeID,
+				"refId":        store.GitObjectNodeID(store.GitRefNodeIDPrefix, f.repo.ID, "refs/heads/feature"),
+				"environment":  "authz-env",
+			}
+		},
+	},
+	{
+		name: "createDeploymentStatus",
+		doc:  `mutation($input:CreateDeploymentStatusInput!){createDeploymentStatus(input:$input){deploymentStatus{state environment}}}`,
+		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+			deployment := s.store.Deployments.CreateDeployment(f.repo.ID, f.owner.ID, "feature", f.headSHA, "deploy", "authz-env", "", nil, false, false)
+			if deployment == nil {
+				t.Fatal("fixture deployment could not be created")
+			}
+			f.deploymentNodeID = deployment.NodeID
+		},
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"deploymentId": f.deploymentNodeID, "state": "SUCCESS"}
+		},
+	},
+	{
+		name: "deleteDeployment",
+		doc:  `mutation($input:DeleteDeploymentInput!){deleteDeployment(input:$input){clientMutationId}}`,
+		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+			deployment := s.store.Deployments.CreateDeployment(f.repo.ID, f.owner.ID, "feature", f.headSHA, "deploy", "authz-env", "", nil, false, false)
+			if deployment == nil {
+				t.Fatal("fixture deployment could not be created")
+			}
+			f.deploymentNodeID = deployment.NodeID
+		},
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"id": f.deploymentNodeID}
+		},
+	},
+	{
+		name: "approveDeployments",
+		doc:  `mutation($input:ApproveDeploymentsInput!){approveDeployments(input:$input){deployments{environment}}}`,
+		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+			f.workflowRunNodeID = seedPendingDeploymentRun(t, s, f)
+		},
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{
+				"workflowRunId":  f.workflowRunNodeID,
+				"environmentIds": []interface{}{f.environmentNodeID},
+			}
+		},
+	},
+	{
+		name: "rejectDeployments",
+		doc:  `mutation($input:RejectDeploymentsInput!){rejectDeployments(input:$input){deployments{environment}}}`,
+		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+			f.workflowRunNodeID = seedPendingDeploymentRun(t, s, f)
+		},
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{
+				"workflowRunId":  f.workflowRunNodeID,
+				"environmentIds": []interface{}{f.environmentNodeID},
+				"comment":        "not this one",
+			}
+		},
+	},
+
+	// --- environments -------------------------------------------------------
+	{
+		name: "createEnvironment",
+		doc:  `mutation($input:CreateEnvironmentInput!){createEnvironment(input:$input){environment{name}}}`,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"repositoryId": f.repo.NodeID, "name": "authz-created-env"}
+		},
+	},
+	{
+		name: "updateEnvironment",
+		doc:  `mutation($input:UpdateEnvironmentInput!){updateEnvironment(input:$input){environment{name}}}`,
+		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+			seedAuthzEnvironment(t, s, f)
+		},
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{
+				"environmentId": f.environmentNodeID, "waitTimer": 30, "preventSelfReview": true,
+			}
+		},
+	},
+	{
+		name: "deleteEnvironment",
+		doc:  `mutation($input:DeleteEnvironmentInput!){deleteEnvironment(input:$input){clientMutationId}}`,
+		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+			seedAuthzEnvironment(t, s, f)
+		},
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"id": f.environmentNodeID}
+		},
+	},
+	{
+		name: "pinEnvironment",
+		doc:  `mutation($input:PinEnvironmentInput!){pinEnvironment(input:$input){environment{isPinned} pinnedEnvironment{position}}}`,
+		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+			seedAuthzEnvironment(t, s, f)
+		},
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"environmentId": f.environmentNodeID, "pinned": true}
+		},
+	},
+	{
+		name: "reorderEnvironment",
+		doc:  `mutation($input:ReorderEnvironmentInput!){reorderEnvironment(input:$input){environment{pinnedPosition}}}`,
+		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+			env := seedAuthzEnvironment(t, s, f)
+			if s.store.Deployments.PinEnvironment(f.repo.ID, env.ID, fixedTestTime.UTC()) == nil {
+				t.Fatal("fixture environment could not be pinned")
+			}
+		},
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"environmentId": f.environmentNodeID, "position": 1}
+		},
+	},
+
+	// --- classic projects ---------------------------------------------------
+	{
+		name: "createProject",
+		doc:  `mutation($input:CreateProjectInput!){createProject(input:$input){project{id name}}}`,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"ownerId": f.repo.NodeID, "name": "authz classic board"}
+		},
+	},
+	{
+		name:  "updateProject",
+		doc:   `mutation($input:UpdateProjectInput!){updateProject(input:$input){project{name state}}}`,
+		setup: seedClassicProjectFixture,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"projectId": f.classicProject.NodeID, "name": "renamed board", "state": "CLOSED"}
+		},
+	},
+	{
+		name:  "deleteProject",
+		doc:   `mutation($input:DeleteProjectInput!){deleteProject(input:$input){owner{id}}}`,
+		setup: seedClassicProjectFixture,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"projectId": f.classicProject.NodeID}
+		},
+	},
+	{
+		name:  "cloneProject",
+		doc:   `mutation($input:CloneProjectInput!){cloneProject(input:$input){project{id name}}}`,
+		setup: seedClassicProjectFixture,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{
+				"sourceId": f.classicProject.NodeID, "targetOwnerId": f.repo.NodeID,
+				"name": "cloned board", "includeWorkflows": false,
+			}
+		},
+	},
+	{
+		// importProject names its owner by login; the refusing stranger is not
+		// that user, so the account-scoped half of the rule is what refuses.
+		name: "importProject",
+		doc:  `mutation($input:ImportProjectInput!){importProject(input:$input){project{id}}}`,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{
+				"ownerName": f.owner.Login, "name": "imported board",
+				"columnImports": []interface{}{},
+			}
+		},
+	},
+	{
+		name:  "addProjectColumn",
+		doc:   `mutation($input:AddProjectColumnInput!){addProjectColumn(input:$input){project{id} columnEdge{node{id name}}}}`,
+		setup: seedClassicProjectFixture,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"projectId": f.classicProject.NodeID, "name": "In review"}
+		},
+	},
+	{
+		name:  "updateProjectColumn",
+		doc:   `mutation($input:UpdateProjectColumnInput!){updateProjectColumn(input:$input){projectColumn{name}}}`,
+		setup: seedClassicProjectFixture,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"projectColumnId": f.classicColumn.NodeID, "name": "Renamed"}
+		},
+	},
+	{
+		name:  "deleteProjectColumn",
+		doc:   `mutation($input:DeleteProjectColumnInput!){deleteProjectColumn(input:$input){deletedColumnId project{id}}}`,
+		setup: seedClassicProjectFixture,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"columnId": f.classicColumn2.NodeID}
+		},
+	},
+	{
+		name:  "moveProjectColumn",
+		doc:   `mutation($input:MoveProjectColumnInput!){moveProjectColumn(input:$input){columnEdge{node{id}}}}`,
+		setup: seedClassicProjectFixture,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"columnId": f.classicColumn2.NodeID}
+		},
+	},
+	{
+		name:  "addProjectCard",
+		doc:   `mutation($input:AddProjectCardInput!){addProjectCard(input:$input){cardEdge{node{id note}} projectColumn{id}}}`,
+		setup: seedClassicProjectFixture,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"projectColumnId": f.classicColumn.NodeID, "note": "another note"}
+		},
+	},
+	{
+		name:  "updateProjectCard",
+		doc:   `mutation($input:UpdateProjectCardInput!){updateProjectCard(input:$input){projectCard{note isArchived}}}`,
+		setup: seedClassicProjectFixture,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"projectCardId": f.classicCard.NodeID, "note": "edited note", "isArchived": true}
+		},
+	},
+	{
+		name:  "deleteProjectCard",
+		doc:   `mutation($input:DeleteProjectCardInput!){deleteProjectCard(input:$input){deletedCardId column{id}}}`,
+		setup: seedClassicProjectFixture,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"cardId": f.classicCard.NodeID}
+		},
+	},
+	{
+		name:  "moveProjectCard",
+		doc:   `mutation($input:MoveProjectCardInput!){moveProjectCard(input:$input){cardEdge{node{id}}}}`,
+		setup: seedClassicProjectFixture,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"cardId": f.classicCard.NodeID, "columnId": f.classicColumn2.NodeID}
+		},
+	},
+	{
+		name:  "convertProjectCardNoteToIssue",
+		doc:   `mutation($input:ConvertProjectCardNoteToIssueInput!){convertProjectCardNoteToIssue(input:$input){projectCard{state}}}`,
+		setup: seedClassicProjectFixture,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"projectCardId": f.classicCard.NodeID, "repositoryId": f.repo.NodeID}
+		},
+	},
+	{
+		// The link mutations act on a private user-owned board: a repo-scoped
+		// board refuses links by design, so the entitled half needs the owner
+		// board while the stranger is refused by the account-scoped rule.
+		name:  "linkRepositoryToProject",
+		doc:   `mutation($input:LinkRepositoryToProjectInput!){linkRepositoryToProject(input:$input){project{id} repository{name}}}`,
+		setup: seedClassicOwnerProjectFixture,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"projectId": f.classicOwnerProject.NodeID, "repositoryId": f.repo.NodeID}
+		},
+	},
+	{
+		name: "unlinkRepositoryFromProject",
+		doc:  `mutation($input:UnlinkRepositoryFromProjectInput!){unlinkRepositoryFromProject(input:$input){project{id} repository{name}}}`,
+		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+			t.Helper()
+			seedClassicOwnerProjectFixture(t, s, f)
+			if !s.store.LinkRepoToProjectClassic(f.classicOwnerProject.ID, f.repo.ID) {
+				t.Fatalf("could not link the fixture repository to the owner board")
+			}
+		},
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"projectId": f.classicOwnerProject.NodeID, "repositoryId": f.repo.NodeID}
+		},
+	},
+
+	// --- branch protection ---------------------------------------------------
+	{
+		name: "createBranchProtectionRule",
+		doc:  `mutation($input:CreateBranchProtectionRuleInput!){createBranchProtectionRule(input:$input){branchProtectionRule{pattern requiresApprovingReviews requiredApprovingReviewCount}}}`,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{
+				"repositoryId": f.repo.NodeID, "pattern": "main",
+				"requiresApprovingReviews": true, "requiredApprovingReviewCount": 1,
+			}
+		},
+	},
+	{
+		name: "updateBranchProtectionRule",
+		doc:  `mutation($input:UpdateBranchProtectionRuleInput!){updateBranchProtectionRule(input:$input){branchProtectionRule{pattern allowsDeletions}}}`,
+		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+			t.Helper()
+			s.store.SetBranchProtection(f.repo.ID, "main", &store.BranchProtection{
+				Enabled: true, RequiredLinearHistory: &store.BPEnabled{Enabled: true},
+			})
+		},
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{
+				"branchProtectionRuleId": store.BranchProtectionRuleNodeID(f.repo.ID, "main"),
+				"allowsDeletions":        true,
+			}
+		},
+	},
+	{
+		name: "deleteBranchProtectionRule",
+		doc:  `mutation($input:DeleteBranchProtectionRuleInput!){deleteBranchProtectionRule(input:$input){clientMutationId}}`,
+		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+			t.Helper()
+			s.store.SetBranchProtection(f.repo.ID, "main", &store.BranchProtection{
+				Enabled: true, RequiredLinearHistory: &store.BPEnabled{Enabled: true},
+			})
+		},
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{
+				"branchProtectionRuleId": store.BranchProtectionRuleNodeID(f.repo.ID, "main"),
+			}
+		},
+	},
+
+	// --- repository rulesets -------------------------------------------------
+	{
+		name: "createRepositoryRuleset",
+		doc:  `mutation($input:CreateRepositoryRulesetInput!){createRepositoryRuleset(input:$input){ruleset{name enforcement}}}`,
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{
+				"sourceId": f.repo.NodeID, "name": "authz-ruleset", "enforcement": "ACTIVE",
+				"conditions": map[string]interface{}{
+					"refName": map[string]interface{}{"include": []interface{}{"~ALL"}, "exclude": []interface{}{}},
+				},
+			}
+		},
+	},
+	{
+		name: "updateRepositoryRuleset",
+		doc:  `mutation($input:UpdateRepositoryRulesetInput!){updateRepositoryRuleset(input:$input){ruleset{enforcement}}}`,
+		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+			t.Helper()
+			rs := s.store.CreateRuleset(f.repo, &store.Ruleset{Name: "authz-seeded-ruleset"})
+			if rs == nil {
+				t.Fatal("fixture ruleset could not be created")
+			}
+			f.rulesetNodeID = rs.NodeID
+		},
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"repositoryRulesetId": f.rulesetNodeID, "enforcement": "DISABLED"}
+		},
+	},
+	{
+		name: "deleteRepositoryRuleset",
+		doc:  `mutation($input:DeleteRepositoryRulesetInput!){deleteRepositoryRuleset(input:$input){clientMutationId}}`,
+		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+			t.Helper()
+			rs := s.store.CreateRuleset(f.repo, &store.Ruleset{Name: "authz-seeded-ruleset"})
+			if rs == nil {
+				t.Fatal("fixture ruleset could not be created")
+			}
+			f.rulesetNodeID = rs.NodeID
+		},
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"repositoryRulesetId": f.rulesetNodeID}
+		},
+	},
+
+	// --- repository custom properties ----------------------------------------
+	//
+	// The definitions belong to organization (or enterprise) accounts, so
+	// these rows seed an organization owned by the fixture owner and widen
+	// both tokens to admin:org — the stranger still holds no standing on the
+	// organization, so their refusal is about this organization rather than
+	// about the token's scopes.
+	{
+		name: "createRepositoryCustomProperty",
+		doc:  `mutation($input:CreateRepositoryCustomPropertyInput!){createRepositoryCustomProperty(input:$input){repositoryCustomProperty{propertyName valueType}}}`,
+		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+			seedAuthzPropsOrg(t, s, f)
+		},
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{
+				"sourceId": f.propsOrg.NodeID, "propertyName": "authz-prop", "valueType": "STRING",
+			}
+		},
+	},
+	{
+		name: "updateRepositoryCustomProperty",
+		doc:  `mutation($input:UpdateRepositoryCustomPropertyInput!){updateRepositoryCustomProperty(input:$input){repositoryCustomProperty{propertyName description}}}`,
+		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+			seedAuthzPropsOrg(t, s, f)
+			seedAuthzCustomProperty(t, s, f)
+		},
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{
+				"repositoryCustomPropertyId": "RCP_" + f.propsOrg.Login + "/authz-prop",
+				"description":                "edited",
+			}
+		},
+	},
+	{
+		name: "deleteRepositoryCustomProperty",
+		doc:  `mutation($input:DeleteRepositoryCustomPropertyInput!){deleteRepositoryCustomProperty(input:$input){repositoryCustomProperty{propertyName}}}`,
+		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+			seedAuthzPropsOrg(t, s, f)
+			seedAuthzCustomProperty(t, s, f)
+		},
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"id": "RCP_" + f.propsOrg.Login + "/authz-prop"}
+		},
+	},
+	{
+		// Promotion writes into the enterprise schema, which is the
+		// enterprise owner's — on this instance, a site administrator's —
+		// call; the setup grants the fixture owner that standing.
+		name: "promoteRepositoryCustomProperty",
+		doc:  `mutation($input:PromoteRepositoryCustomPropertyInput!){promoteRepositoryCustomProperty(input:$input){repositoryCustomProperty{propertyName}}}`,
+		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+			seedAuthzPropsOrg(t, s, f)
+			seedAuthzCustomProperty(t, s, f)
+			s.store.Mu.Lock()
+			s.store.Users[f.owner.ID].SiteAdmin = true
+			s.store.Mu.Unlock()
+		},
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{
+				"repositoryCustomPropertyId": "RCP_" + f.propsOrg.Login + "/authz-prop",
+			}
+		},
+	},
+	{
+		// Values are per-repository administration; the definition lives
+		// under the repository owner's schema, which for the fixture's
+		// user-owned repository is the owner's own login.
+		name: "setRepositoryCustomPropertyValues",
+		doc:  `mutation($input:SetRepositoryCustomPropertyValuesInput!){setRepositoryCustomPropertyValues(input:$input){repository{name}}}`,
+		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+			t.Helper()
+			s.store.UpsertCustomProperty(f.owner.Login, &store.CustomProperty{
+				PropertyName: "authz-prop", ValueType: "string", ValuesEditableBy: "org_actors",
+			})
+		},
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{
+				"repositoryId": f.repo.NodeID,
+				"properties": []interface{}{
+					map[string]interface{}{"propertyName": "authz-prop", "value": "authz-value"},
+				},
+			}
+		},
+	},
+
+	// --- verifiable domains --------------------------------------------------
+	{
+		name: "addVerifiableDomain",
+		doc:  `mutation($input:AddVerifiableDomainInput!){addVerifiableDomain(input:$input){domain{domain isVerified}}}`,
+		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+			seedAuthzPropsOrg(t, s, f)
+		},
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"ownerId": f.propsOrg.NodeID, "domain": "authz.example.com"}
+		},
+	},
+	{
+		name: "approveVerifiableDomain",
+		doc:  `mutation($input:ApproveVerifiableDomainInput!){approveVerifiableDomain(input:$input){domain{domain isApproved}}}`,
+		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+			seedAuthzPropsOrg(t, s, f)
+			seedAuthzVerifiableDomain(t, s, f)
+		},
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"id": f.domainNodeID}
+		},
+	},
+	{
+		name: "verifyVerifiableDomain",
+		doc:  `mutation($input:VerifyVerifiableDomainInput!){verifyVerifiableDomain(input:$input){domain{domain isVerified}}}`,
+		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+			seedAuthzPropsOrg(t, s, f)
+			seedAuthzVerifiableDomain(t, s, f)
+		},
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"id": f.domainNodeID}
+		},
+	},
+	{
+		name: "regenerateVerifiableDomainToken",
+		doc:  `mutation($input:RegenerateVerifiableDomainTokenInput!){regenerateVerifiableDomainToken(input:$input){verificationToken}}`,
+		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+			seedAuthzPropsOrg(t, s, f)
+			seedAuthzVerifiableDomain(t, s, f)
+		},
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"id": f.domainNodeID}
+		},
+	},
+	{
+		name: "deleteVerifiableDomain",
+		doc:  `mutation($input:DeleteVerifiableDomainInput!){deleteVerifiableDomain(input:$input){owner{__typename}}}`,
+		setup: func(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+			seedAuthzPropsOrg(t, s, f)
+			seedAuthzVerifiableDomain(t, s, f)
+		},
+		input: func(f *gqlAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"id": f.domainNodeID}
+		},
+	},
+}
+
+// seedAuthzPropsOrg creates the organization the custom-property and
+// verifiable-domain rows act on, owned by the fixture owner, and widens both
+// tokens to carry admin:org — the entitlement under test is standing on the
+// organization, not the token's scope ceiling.
+func seedAuthzPropsOrg(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+	t.Helper()
+	f.propsOrg = s.store.CreateOrg(f.owner, "authz-props-org-"+f.owner.Login, "", "")
+	if f.propsOrg == nil {
+		t.Fatal("fixture organization could not be created")
+	}
+	ownerTok := s.store.CreateToken(f.owner.ID, "repo,admin:org")
+	strangerTok := s.store.CreateToken(f.stranger.ID, "repo,admin:org")
+	if ownerTok == nil || strangerTok == nil {
+		t.Fatal("fixture tokens could not be widened to admin:org")
+	}
+	f.ownerToken = ownerTok.Value
+	f.strangerToken = strangerTok.Value
+}
+
+// seedAuthzCustomProperty defines the property the update/delete/promote
+// rows address on the seeded organization.
+func seedAuthzCustomProperty(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+	t.Helper()
+	s.store.UpsertCustomProperty(f.propsOrg.Login, &store.CustomProperty{
+		PropertyName: "authz-prop", ValueType: "string", ValuesEditableBy: "org_actors",
+	})
+}
+
+// seedAuthzVerifiableDomain adds the domain the approve/verify/regenerate/
+// delete rows address to the seeded organization.
+func seedAuthzVerifiableDomain(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) {
+	t.Helper()
+	domain, err := s.store.CreateVerifiableDomain(store.VerifiableDomainOwnerOrganization, f.propsOrg.ID, "authz.example.com")
+	if err != nil || domain == nil {
+		t.Fatalf("fixture verifiable domain could not be created: %v", err)
+	}
+	f.domainNodeID = domain.NodeID
+}
+
+// seedAuthzEnvironment seeds one environment on the fixture repository and
+// records its node id on the fixture.
+func seedAuthzEnvironment(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) *store.Environment {
+	t.Helper()
+	env := s.store.Deployments.UpsertEnvironment(f.repo.ID, "authz-env")
+	if env == nil {
+		t.Fatal("fixture environment could not be created")
+	}
+	f.environmentNodeID = env.NodeID
+	return env
+}
+
+// seedPendingDeploymentRun seeds a reviewer-protected environment and a
+// workflow run waiting on it, answering the run's global id. The run carries
+// no jobs: the review path under test is the authorization and the pending
+// bookkeeping, which is exactly what the REST pending_deployments tests
+// drive the engine with.
+func seedPendingDeploymentRun(t *testing.T, s *isolatedServer, f *gqlAuthzFixture) string {
+	t.Helper()
+	env := seedAuthzEnvironment(t, s, f)
+	wf := &store.Workflow{
+		ID:           "authz-run-" + f.owner.Login,
+		Name:         "authz-workflow",
+		RunID:        700000 + f.repo.ID,
+		Jobs:         map[string]*store.WorkflowJob{},
+		Status:       store.WorkflowStatusWaiting,
+		RepoFullName: f.repo.FullName,
+		Ref:          "feature",
+		Sha:          f.headSHA,
+		CreatedAt:    fixedTestTime.UTC(),
+		PendingDeployments: []*store.PendingDeployment{{
+			EnvID: env.ID, EnvName: env.Name, WaitTimerStartedAt: fixedTestTime.UTC(),
+		}},
+	}
+	s.store.Mu.Lock()
+	s.store.Workflows[wf.ID] = wf
+	s.store.WorkflowsByRunID[wf.RunID] = wf
+	s.store.Mu.Unlock()
+	return "WFR_" + wf.ID
 }
 
 func TestGraphQLMutationsRefuseAnUnrelatedAuthenticatedUser(t *testing.T) {
@@ -501,6 +1520,18 @@ func (s *isolatedServer) assertGQLFixtureUntouched(t *testing.T, what string, f 
 	case issue.PinnedAt != nil:
 		t.Errorf("%s: the issue was pinned by a stranger", what)
 	}
+	if issue := st.GetIssue(f.issue.ID); issue != nil && len(issue.LabelIDs) != 0 {
+		t.Errorf("%s: the issue was labeled by a stranger: %v", what, issue.LabelIDs)
+	}
+	// Only the deleteLinkedBranch row seeds a link, and its refusal has to
+	// leave that link in place; every other row must not have gained one.
+	wantLinks := 0
+	if what == "deleteLinkedBranch" {
+		wantLinks = 1
+	}
+	if issue := st.GetIssue(f.issue.ID); issue != nil && len(issue.LinkedBranches) != wantLinks {
+		t.Errorf("%s: linked branches = %v, want %d", what, issue.LinkedBranches, wantLinks)
+	}
 	if c := st.GetComment(f.comment.ID); c == nil || c.MinimizedReason != "" {
 		t.Errorf("%s: the comment was moderated by a stranger: %+v", what, c)
 	}
@@ -510,17 +1541,37 @@ func (s *isolatedServer) assertGQLFixtureUntouched(t *testing.T, what string, f 
 	if dc := st.GetDiscussionComment(f.discComment.ID); dc == nil || dc.IsAnswer || dc.Body != "fixture answer" {
 		t.Errorf("%s: the discussion comment was changed by a stranger: %+v", what, dc)
 	}
+	// The revertPullRequest row's own setup merges the fixture pull request —
+	// by its owner, before either caller attempts the mutation — because only
+	// a merged pull request can be reverted. MERGED is that row's seeded
+	// state, not a stranger's write; the stranger's refusal is instead proved
+	// by no revert pull request having been opened.
+	wantPRState := "OPEN"
+	if what == "revertPullRequest" {
+		wantPRState = "MERGED"
+	}
 	pr := st.GetPullRequest(f.pr.ID)
 	switch {
 	case pr == nil:
 		t.Errorf("%s: the pull request disappeared", what)
-	case pr.State != "OPEN":
-		t.Errorf("%s: pull request state = %q, want OPEN", what, pr.State)
+	case pr.State != wantPRState:
+		t.Errorf("%s: pull request state = %q, want %s", what, pr.State, wantPRState)
 	case pr.Title != "fixture pr":
 		t.Errorf("%s: pull request title = %q, want the seeded title", what, pr.Title)
 	}
+	if what == "revertPullRequest" {
+		if prs := st.ListPullRequests(f.repo.ID, "all"); len(prs) != 1 {
+			t.Errorf("%s: a stranger's refusal still opened a pull request: %d exist, want the fixture's 1", what, len(prs))
+		}
+	}
 	if thread := st.PRReviewComments.GetThread(parsedThreadID(t, f.threadNodeID)); thread == nil || thread.IsResolved {
 		t.Errorf("%s: the review thread was resolved by a stranger: %+v", what, thread)
+	}
+	if f.dependabotAlert != nil {
+		alert := st.GetDependabotAlert(f.repo.FullName, f.dependabotAlert.Number)
+		if alert == nil || alert.State != store.DependabotStateOpen {
+			t.Errorf("%s: the Dependabot alert was dismissed by a stranger: %+v", what, alert)
+		}
 	}
 }
 
@@ -822,6 +1873,62 @@ func TestGraphQLEveryMutationIsCoveredByThePolicyTable(t *testing.T) {
 	for _, tc := range gqlProjectMutationCases {
 		inCases[tc.name] = true
 	}
+	// The rest of GitHub's mutation surface (gh_mutations_*_graphql.go) is
+	// exercised by its own refusal and entitled tables, which are driven over
+	// the same fixture by the same two halves.
+	for _, tc := range gqlSurfaceMutationCases {
+		inCases[tc.name] = true
+	}
+	// Its account-scoped half names an account rather than a repository, so
+	// its refusal table drives a credential without a grant over that account
+	// and a stranger against another account's records.
+	for _, tc := range gqlAccountMutationCases {
+		inCases[tc.name] = true
+	}
+	// The issue family's repository-scoped and organization-scoped halves.
+	for _, tc := range gqlIssueMutationCases {
+		inCases[tc.name] = true
+	}
+	for _, tc := range gqlIssueOrgMutationCases {
+		inCases[tc.name] = true
+	}
+	// The pull-request family. updateTeamReviewAssignment names a team rather
+	// than a repository, so its refusal is the organization-scoped one in
+	// TestGraphQLUpdateTeamReviewAssignment.
+	for _, tc := range gqlPullMutationCases {
+		inCases[tc.name] = true
+	}
+	inCases["updateTeamReviewAssignment"] = true
+	// The activity and account-policy family: a repository-scoped half over the
+	// private-repository fixture, and an organization-scoped half whose
+	// refusing caller owns a different organization.
+	for _, tc := range gqlActivityMutationCases {
+		inCases[tc.name] = true
+	}
+	for _, tc := range gqlActivityOrgMutationCases {
+		inCases[tc.name] = true
+	}
+	// The enterprise mutations name an enterprise rather than a repository or
+	// a project; their refusal table is the cross-tenant one in
+	// gh_enterprise_graphql_test.go, where the refusing caller is the owner of
+	// a *different* enterprise.
+	for _, tc := range allGQLEnterpriseMutationCases() {
+		inCases[tc.name] = true
+	}
+	// The Sponsors mutations name a sponsor or a sponsorable account rather
+	// than a repository or a project; their refusal table is the
+	// account-scoped one in gh_sponsors_test.go, where the refusing caller
+	// is a signed-in account with standing over neither party.
+	for _, tc := range gqlSponsorsMutationCases() {
+		inCases[tc.name] = true
+	}
+	// The migration mutations name an organization or an enterprise rather
+	// than a repository or a project; their refusal table is the cross-tenant
+	// one in gh_migrations_gei_test.go, where the refusing caller owns another
+	// organization and holds the migrator role on it.
+	for _, tc := range gqlMigrationMutationCases() {
+		inCases[tc.name] = true
+	}
 	for name := range fields {
 		if inCases[name] {
 			continue
@@ -851,6 +1958,19 @@ type gqlProjectAuthzFixture struct {
 	spareIssue    *store.Issue
 	strangerIssue *store.Issue
 	org           *store.Org
+	// The subjects the rest of the Projects v2 mutation surface names. The
+	// team and repository links, and every mutation keyed on a view, status
+	// update or workflow id, each need one to act on.
+	ownerRepo    *store.Repo
+	draftItem    *store.ProjectV2Item
+	view         *store.ProjectV2View
+	statusUpdate *store.ProjectV2StatusUpdate
+	workflow     *store.ProjectV2Workflow
+	// A team link is only meaningful on an organization-owned project, so the
+	// team cases act on orgProject rather than the user-owned one.
+	orgProject *store.ProjectV2
+	team       *store.Team
+	issueField *store.IssueField
 }
 
 func (s *isolatedServer) newGQLProjectAuthzFixture(t *testing.T, tag string) *gqlProjectAuthzFixture {
@@ -904,6 +2024,34 @@ func (s *isolatedServer) newGQLProjectAuthzFixture(t *testing.T, tag string) *gq
 	f.org = st.CreateOrg(f.owner, "gqlpauthz-org-"+tag, "Project Org", "")
 	if f.org == nil {
 		t.Fatalf("fixture %s: could not create the organization", tag)
+	}
+
+	f.ownerRepo = ownerRepo
+	f.draftItem = st.ProjectsV2.AddDraftItem(f.project.ID, "a draft", "body", f.owner.ID)
+	// Every project is seeded with a table view and the default workflows, so
+	// the view and workflow subjects come from the project itself.
+	views := st.ProjectsV2.ViewsForProject(f.project.ID)
+	workflows := st.ProjectsV2.WorkflowsForProject(f.project.ID)
+	if len(views) == 0 || len(workflows) == 0 {
+		t.Fatalf("fixture %s: the project was created without its seeded view and workflows", tag)
+	}
+	f.view = views[0]
+	f.workflow = workflows[0]
+	f.statusUpdate = st.ProjectsV2.CreateStatusUpdate(f.project.ID, f.owner.ID, "on track", "ON_TRACK", "", "")
+	if f.draftItem == nil || f.statusUpdate == nil {
+		t.Fatalf("fixture %s: could not seed the draft item or status update", tag)
+	}
+
+	f.orgProject = st.ProjectsV2.CreateProject(f.org.ID, "Organization", "org fixture project", f.owner.ID)
+	f.team = st.CreateTeam(f.org.Login, "gqlpauthz-team", store.TeamOptions{})
+	if f.orgProject == nil || f.team == nil {
+		t.Fatalf("fixture %s: could not seed the org project or team", tag)
+	}
+	optionName, optionColor := "Todo", "GRAY"
+	f.issueField = st.CreateIssueField(f.org.Login, "Stage-"+tag, nil, "single_select", "private",
+		[]store.IssueFieldOptionRequest{{Name: &optionName, Color: &optionColor}})
+	if f.issueField == nil {
+		t.Fatalf("fixture %s: could not seed the organization issue field", tag)
 	}
 
 	ownerTok := st.CreateToken(f.owner.ID, "repo, project")
@@ -963,6 +2111,198 @@ var gqlProjectMutationCases = []gqlProjectMutationCase{
 			}
 		},
 	},
+	{
+		name: "updateProjectV2",
+		doc:  `mutation($input:UpdateProjectV2Input!){updateProjectV2(input:$input){projectV2{id}}}`,
+		input: func(f *gqlProjectAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"projectId": f.project.NodeID, "title": "renamed by the table"}
+		},
+	},
+	{
+		name: "deleteProjectV2",
+		doc:  `mutation($input:DeleteProjectV2Input!){deleteProjectV2(input:$input){projectV2{id}}}`,
+		input: func(f *gqlProjectAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"projectId": f.project.NodeID}
+		},
+	},
+	{
+		name: "copyProjectV2",
+		doc:  `mutation($input:CopyProjectV2Input!){copyProjectV2(input:$input){projectV2{id}}}`,
+		input: func(f *gqlProjectAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"projectId": f.project.NodeID, "ownerId": f.owner.NodeID, "title": "a copy"}
+		},
+	},
+	{
+		name: "markProjectV2AsTemplate",
+		doc:  `mutation($input:MarkProjectV2AsTemplateInput!){markProjectV2AsTemplate(input:$input){projectV2{id}}}`,
+		input: func(f *gqlProjectAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"projectId": f.project.NodeID}
+		},
+	},
+	{
+		name: "unmarkProjectV2AsTemplate",
+		doc:  `mutation($input:UnmarkProjectV2AsTemplateInput!){unmarkProjectV2AsTemplate(input:$input){projectV2{id}}}`,
+		input: func(f *gqlProjectAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"projectId": f.project.NodeID}
+		},
+	},
+	{
+		name: "linkProjectV2ToRepository",
+		doc:  `mutation($input:LinkProjectV2ToRepositoryInput!){linkProjectV2ToRepository(input:$input){repository{id}}}`,
+		input: func(f *gqlProjectAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"projectId": f.project.NodeID, "repositoryId": f.ownerRepo.NodeID}
+		},
+	},
+	{
+		name: "unlinkProjectV2FromRepository",
+		doc:  `mutation($input:UnlinkProjectV2FromRepositoryInput!){unlinkProjectV2FromRepository(input:$input){repository{id}}}`,
+		input: func(f *gqlProjectAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"projectId": f.project.NodeID, "repositoryId": f.ownerRepo.NodeID}
+		},
+	},
+	{
+		name: "linkProjectV2ToTeam",
+		doc:  `mutation($input:LinkProjectV2ToTeamInput!){linkProjectV2ToTeam(input:$input){team{id}}}`,
+		input: func(f *gqlProjectAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"projectId": f.orgProject.NodeID, "teamId": f.team.NodeID}
+		},
+	},
+	{
+		name: "unlinkProjectV2FromTeam",
+		doc:  `mutation($input:UnlinkProjectV2FromTeamInput!){unlinkProjectV2FromTeam(input:$input){team{id}}}`,
+		input: func(f *gqlProjectAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"projectId": f.orgProject.NodeID, "teamId": f.team.NodeID}
+		},
+	},
+	{
+		name: "updateProjectV2Collaborators",
+		doc:  `mutation($input:UpdateProjectV2CollaboratorsInput!){updateProjectV2Collaborators(input:$input){collaborators(first:5){totalCount}}}`,
+		input: func(f *gqlProjectAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{
+				"projectId":     f.project.NodeID,
+				"collaborators": []interface{}{map[string]interface{}{"userId": f.stranger.NodeID, "role": "READER"}},
+			}
+		},
+	},
+	{
+		name: "addProjectV2DraftIssue",
+		doc:  `mutation($input:AddProjectV2DraftIssueInput!){addProjectV2DraftIssue(input:$input){projectItem{id}}}`,
+		input: func(f *gqlProjectAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"projectId": f.project.NodeID, "title": "from the table"}
+		},
+	},
+	{
+		name: "updateProjectV2DraftIssue",
+		doc:  `mutation($input:UpdateProjectV2DraftIssueInput!){updateProjectV2DraftIssue(input:$input){draftIssue{id}}}`,
+		input: func(f *gqlProjectAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"draftIssueId": f.draftItem.NodeID, "title": "renamed by the table"}
+		},
+	},
+	{
+		name: "convertProjectV2DraftIssueItemToIssue",
+		doc:  `mutation($input:ConvertProjectV2DraftIssueItemToIssueInput!){convertProjectV2DraftIssueItemToIssue(input:$input){item{id}}}`,
+		input: func(f *gqlProjectAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"itemId": f.draftItem.NodeID, "repositoryId": f.ownerRepo.NodeID}
+		},
+	},
+	{
+		name: "archiveProjectV2Item",
+		doc:  `mutation($input:ArchiveProjectV2ItemInput!){archiveProjectV2Item(input:$input){item{id}}}`,
+		input: func(f *gqlProjectAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"projectId": f.project.NodeID, "itemId": f.item.NodeID}
+		},
+	},
+	{
+		name: "unarchiveProjectV2Item",
+		doc:  `mutation($input:UnarchiveProjectV2ItemInput!){unarchiveProjectV2Item(input:$input){item{id}}}`,
+		input: func(f *gqlProjectAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"projectId": f.project.NodeID, "itemId": f.item.NodeID}
+		},
+	},
+	{
+		name: "clearProjectV2ItemFieldValue",
+		doc:  `mutation($input:ClearProjectV2ItemFieldValueInput!){clearProjectV2ItemFieldValue(input:$input){projectV2Item{id}}}`,
+		input: func(f *gqlProjectAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"projectId": f.project.NodeID, "itemId": f.item.NodeID, "fieldId": f.field.NodeID}
+		},
+	},
+	{
+		name: "updateProjectV2ItemPosition",
+		doc:  `mutation($input:UpdateProjectV2ItemPositionInput!){updateProjectV2ItemPosition(input:$input){items(first:5){totalCount}}}`,
+		input: func(f *gqlProjectAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"projectId": f.project.NodeID, "itemId": f.item.NodeID, "afterId": f.draftItem.NodeID}
+		},
+	},
+	{
+		name: "updateProjectV2Field",
+		doc:  `mutation($input:UpdateProjectV2FieldInput!){updateProjectV2Field(input:$input){projectV2Field{... on ProjectV2FieldCommon{id}}}}`,
+		input: func(f *gqlProjectAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"fieldId": f.field.NodeID, "name": "renamed by the table"}
+		},
+	},
+	{
+		name: "deleteProjectV2Field",
+		doc:  `mutation($input:DeleteProjectV2FieldInput!){deleteProjectV2Field(input:$input){projectV2Field{... on ProjectV2FieldCommon{id}}}}`,
+		input: func(f *gqlProjectAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"fieldId": f.field.NodeID}
+		},
+	},
+	{
+		name: "createProjectV2IssueField",
+		doc:  `mutation($input:CreateProjectV2IssueFieldInput!){createProjectV2IssueField(input:$input){projectV2Field{... on ProjectV2FieldCommon{id}}}}`,
+		input: func(f *gqlProjectAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"projectId": f.orgProject.NodeID, "issueFieldId": f.issueField.NodeID}
+		},
+	},
+	{
+		name: "createProjectV2View",
+		doc:  `mutation($input:CreateProjectV2ViewInput!){createProjectV2View(input:$input){projectV2View{id}}}`,
+		input: func(f *gqlProjectAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"projectId": f.project.NodeID, "name": "from the table", "layout": "BOARD_LAYOUT"}
+		},
+	},
+	{
+		name: "updateProjectV2View",
+		doc:  `mutation($input:UpdateProjectV2ViewInput!){updateProjectV2View(input:$input){projectV2View{id}}}`,
+		input: func(f *gqlProjectAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"viewId": f.view.NodeID, "name": "renamed by the table"}
+		},
+	},
+	{
+		name: "deleteProjectV2View",
+		doc:  `mutation($input:DeleteProjectV2ViewInput!){deleteProjectV2View(input:$input){projectV2View{id}}}`,
+		input: func(f *gqlProjectAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"viewId": f.view.NodeID}
+		},
+	},
+	{
+		name: "createProjectV2StatusUpdate",
+		doc:  `mutation($input:CreateProjectV2StatusUpdateInput!){createProjectV2StatusUpdate(input:$input){statusUpdate{id}}}`,
+		input: func(f *gqlProjectAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"projectId": f.project.NodeID, "body": "from the table", "status": "ON_TRACK"}
+		},
+	},
+	{
+		name: "updateProjectV2StatusUpdate",
+		doc:  `mutation($input:UpdateProjectV2StatusUpdateInput!){updateProjectV2StatusUpdate(input:$input){statusUpdate{id}}}`,
+		input: func(f *gqlProjectAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"statusUpdateId": f.statusUpdate.NodeID, "body": "edited by the table"}
+		},
+	},
+	{
+		name: "deleteProjectV2StatusUpdate",
+		doc:  `mutation($input:DeleteProjectV2StatusUpdateInput!){deleteProjectV2StatusUpdate(input:$input){deletedStatusUpdateId}}`,
+		input: func(f *gqlProjectAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"statusUpdateId": f.statusUpdate.NodeID}
+		},
+	},
+	{
+		name: "deleteProjectV2Workflow",
+		doc:  `mutation($input:DeleteProjectV2WorkflowInput!){deleteProjectV2Workflow(input:$input){deletedWorkflowId}}`,
+		input: func(f *gqlProjectAuthzFixture) map[string]interface{} {
+			return map[string]interface{}{"workflowId": f.workflow.NodeID}
+		},
+	},
 }
 
 func TestGraphQLProjectV2MutationsRefuseAnUnrelatedAuthenticatedUser(t *testing.T) {
@@ -1018,12 +2358,16 @@ func TestGraphQLCreateProjectV2HonoursOrganizationMembership(t *testing.T) {
 	doc := `mutation($input:CreateProjectV2Input!){createProjectV2(input:$input){projectV2{id}}}`
 	input := map[string]interface{}{"ownerId": f.org.NodeID, "title": "org project"}
 
+	// The fixture already owns a project under this organization, so the
+	// assertions below are over the change this mutation makes, not a count.
+	before := len(s.store.ProjectsV2.ListProjectsForOwner(f.org.ID, "Organization"))
+
 	env := s.gqlAuthzPost(t, f.strangerToken, doc, map[string]interface{}{"input": input})
 	if len(gqlAuthzErrors(env)) == 0 {
 		t.Errorf("a non-member created a project under the organization: %v", env)
 	}
-	if got := len(s.store.ProjectsV2.ListProjectsForOwner(f.org.ID, "Organization")); got != 0 {
-		t.Fatalf("organization project count after the refusal = %d, want 0", got)
+	if got := len(s.store.ProjectsV2.ListProjectsForOwner(f.org.ID, "Organization")); got != before {
+		t.Fatalf("organization project count after the refusal = %d, want %d", got, before)
 	}
 
 	// The organization's admin, who created it, still may.
@@ -1031,8 +2375,8 @@ func TestGraphQLCreateProjectV2HonoursOrganizationMembership(t *testing.T) {
 	if errs := gqlAuthzErrors(env); len(errs) > 0 {
 		t.Fatalf("an organization admin was refused: %v", errs)
 	}
-	if got := len(s.store.ProjectsV2.ListProjectsForOwner(f.org.ID, "Organization")); got != 1 {
-		t.Errorf("organization project count after the accepted create = %d, want 1", got)
+	if got := len(s.store.ProjectsV2.ListProjectsForOwner(f.org.ID, "Organization")); got != before+1 {
+		t.Errorf("organization project count after the accepted create = %d, want %d", got, before+1)
 	}
 }
 

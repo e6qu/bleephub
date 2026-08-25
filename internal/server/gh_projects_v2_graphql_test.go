@@ -243,7 +243,7 @@ func TestProjectsV2GraphQL_ProjectLevelConnections(t *testing.T) {
 				projectItems(first:10){
 					nodes{
 						project{
-							fields(first:10){
+							fields(first:50){
 								totalCount
 								nodes{
 									... on ProjectV2FieldCommon { id name dataType }
@@ -253,7 +253,7 @@ func TestProjectsV2GraphQL_ProjectLevelConnections(t *testing.T) {
 							}
 							views(first:10){
 								totalCount
-								nodes{ id number name layout filter fields(first:10){ nodes { ... on ProjectV2FieldCommon { id } } } }
+								nodes{ id number name layout filter fields(first:50){ nodes { ... on ProjectV2FieldCommon { id } } } }
 							}
 							items(first:10){
 								totalCount
@@ -270,21 +270,27 @@ func TestProjectsV2GraphQL_ProjectLevelConnections(t *testing.T) {
 	projectNode := data["repository"].(map[string]interface{})["issue"].(map[string]interface{})["projectItems"].(map[string]interface{})["nodes"].([]interface{})[0].(map[string]interface{})["project"].(map[string]interface{})
 
 	fields := projectNode["fields"].(map[string]interface{})
-	if got := int(fields["totalCount"].(float64)); got != 2 {
-		t.Fatalf("fields.totalCount = %d, want 2: %v", got, fields)
+	// The project carries the seeded defaults plus the two this test created.
+	if got, want := int(fields["totalCount"].(float64)), len(s.store.ProjectsV2.FieldsForProject(project.ID)); got != want {
+		t.Fatalf("fields.totalCount = %d, want %d: %v", got, want, fields)
 	}
 	fieldNodes := fields["nodes"].([]interface{})
-	firstField := fieldNodes[0].(map[string]interface{})
-	if firstField["id"] != stage.NodeID || firstField["name"] != "Stage" || firstField["dataType"] != string(store.ProjectV2FieldSingleSelect) {
-		t.Fatalf("first field = %v", firstField)
+	byNodeID := map[string]map[string]interface{}{}
+	for _, raw := range fieldNodes {
+		node := raw.(map[string]interface{})
+		byNodeID[node["id"].(string)] = node
+	}
+	firstField := byNodeID[stage.NodeID]
+	if firstField == nil || firstField["name"] != "Stage" || firstField["dataType"] != string(store.ProjectV2FieldSingleSelect) {
+		t.Fatalf("stage field = %v", firstField)
 	}
 	options := firstField["options"].([]interface{})
 	if len(options) != 2 || options[0].(map[string]interface{})["name"] != "Todo" || options[0].(map[string]interface{})["description"] != "ready to schedule" {
 		t.Fatalf("stage options = %v", options)
 	}
-	secondField := fieldNodes[1].(map[string]interface{})
-	if secondField["id"] != sprint.NodeID || secondField["dataType"] != string(store.ProjectV2FieldIteration) {
-		t.Fatalf("second field = %v", secondField)
+	secondField := byNodeID[sprint.NodeID]
+	if secondField == nil || secondField["dataType"] != string(store.ProjectV2FieldIteration) {
+		t.Fatalf("sprint field = %v", secondField)
 	}
 	iteration := secondField["configuration"].(map[string]interface{})
 	// 2026-07-06 is a Monday (startDay 1); Sprint 1 ended 2026-07-20, so it
@@ -302,11 +308,18 @@ func TestProjectsV2GraphQL_ProjectLevelConnections(t *testing.T) {
 	}
 
 	views := projectNode["views"].(map[string]interface{})
-	if got := int(views["totalCount"].(float64)); got != 1 {
-		t.Fatalf("views.totalCount = %d, want 1: %v", got, views)
+	// The seeded "View 1" every project starts with, plus the one this test
+	// created.
+	if got := int(views["totalCount"].(float64)); got != 2 {
+		t.Fatalf("views.totalCount = %d, want 2: %v", got, views)
 	}
-	viewNode := views["nodes"].([]interface{})[0].(map[string]interface{})
-	if viewNode["id"] != view.NodeID || viewNode["name"] != "Issues board" || viewNode["layout"] != "BOARD_LAYOUT" || viewNode["filter"] != "is:issue" {
+	var viewNode map[string]interface{}
+	for _, raw := range views["nodes"].([]interface{}) {
+		if node := raw.(map[string]interface{}); node["id"] == view.NodeID {
+			viewNode = node
+		}
+	}
+	if viewNode == nil || viewNode["name"] != "Issues board" || viewNode["layout"] != "BOARD_LAYOUT" || viewNode["filter"] != "is:issue" {
 		t.Fatalf("view node = %v", viewNode)
 	}
 	viewFields := viewNode["fields"].(map[string]interface{})["nodes"].([]interface{})

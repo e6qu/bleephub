@@ -130,6 +130,11 @@ const (
 	// SecurityInternalError means the operation could not be completed for a
 	// reason unrelated to the caller — the entropy source failed.
 	SecurityInternalError
+	// SecurityMethodDisallowed means the code was genuine but arrived through a
+	// second-factor method an enterprise policy bans. It is distinct from
+	// SecurityInvalidCode because the remedy is different: use the other
+	// factor, not a corrected code.
+	SecurityMethodDisallowed
 )
 
 // TwoFactorStatusFor returns a detached snapshot of the account's second-factor
@@ -229,47 +234,130 @@ func (st *Store) ConfirmTwoFactorEnrollment(userID int, code string, now time.Ti
 	return codes, twoFactorStatusOf(config, now), SecurityOK
 }
 
+// ─── The second factors this instance implements ───────────────────────────
+
+// TwoFactorMethod names one second factor bleephub actually implements. The
+// set is deliberately closed and reported verbatim by the account's
+// authentication view, so nothing claims a factor the server cannot verify.
+type TwoFactorMethod string
+
+const (
+	// TwoFactorMethodTOTP is a time-based one-time password from an
+	// authenticator app: a per-30-second value derived from a secret the server
+	// and the app share, never transmitted between them.
+	TwoFactorMethodTOTP TwoFactorMethod = "totp"
+	// TwoFactorMethodRecoveryCode is one of the printed single-use codes. It is
+	// a static shared secret the user carries and retypes, so — unlike a TOTP —
+	// a phished or shoulder-surfed code stays valid until it is spent. That is
+	// the property GitHub's "insecure 2FA methods" policy is about, and it is
+	// what makes this the insecure method bleephub has.
+	TwoFactorMethodRecoveryCode TwoFactorMethod = "recovery_code"
+)
+
+// TwoFactorMethodDescription is one entry in the catalogue of second factors
+// this instance implements: its name, whether it is classed insecure, and why.
+type TwoFactorMethodDescription struct {
+	Method   TwoFactorMethod `json:"method"`
+	Insecure bool            `json:"insecure"`
+	Summary  string          `json:"summary"`
+}
+
+// SupportedTwoFactorMethods is the truthful catalogue of second factors
+// bleephub implements. GitHub's own insecure method is SMS; this instance has
+// no SMS or telephone factor at all, so it is absent from the catalogue rather
+// than listed and unenforced.
+func SupportedTwoFactorMethods() []TwoFactorMethodDescription {
+	return []TwoFactorMethodDescription{
+		{
+			Method:  TwoFactorMethodTOTP,
+			Summary: "Time-based one-time password from an authenticator app.",
+		},
+		{
+			Method:   TwoFactorMethodRecoveryCode,
+			Insecure: true,
+			Summary:  "Printed single-use recovery code: a static secret the user retypes, valid until spent.",
+		},
+	}
+}
+
+// InsecureTwoFactorMethods is the subset of the catalogue an enterprise
+// disallows when its two-factor-disallowed-methods policy is INSECURE.
+func InsecureTwoFactorMethods() []TwoFactorMethod {
+	var out []TwoFactorMethod
+	for _, described := range SupportedTwoFactorMethods() {
+		if described.Insecure {
+			out = append(out, described.Method)
+		}
+	}
+	return out
+}
+
+func methodDisallowed(method TwoFactorMethod, disallowed []TwoFactorMethod) bool {
+	for _, banned := range disallowed {
+		if banned == method {
+			return true
+		}
+	}
+	return false
+}
+
 // VerifySecondFactor spends one second factor: a TOTP code, or one unused
 // recovery code. Verification and consumption happen under the same lock, so
 // two concurrent requests cannot both spend the same code.
 func (st *Store) VerifySecondFactor(userID int, code string, now time.Time) AccountSecurityResult {
-	st.Mu.Lock()
-	defer st.Mu.Unlock()
-	return st.verifySecondFactorLocked(userID, code, now)
+	result, _ := st.VerifySecondFactorExcluding(userID, code, now, nil)
+	return result
 }
 
-func (st *Store) verifySecondFactorLocked(userID int, code string, now time.Time) AccountSecurityResult {
+// VerifySecondFactorExcluding is VerifySecondFactor with a set of methods the
+// caller's policy bans. A code that would only verify through a banned method
+// is refused as SecurityMethodDisallowed and — crucially — is NOT spent, so a
+// policy change cannot silently burn a user's recovery codes. The method
+// actually used is returned so the caller can report which factor answered.
+func (st *Store) VerifySecondFactorExcluding(userID int, code string, now time.Time, disallowed []TwoFactorMethod) (AccountSecurityResult, TwoFactorMethod) {
+	st.Mu.Lock()
+	defer st.Mu.Unlock()
+	return st.verifySecondFactorLocked(userID, code, now, disallowed)
+}
+
+func (st *Store) verifySecondFactorLocked(userID int, code string, now time.Time, disallowed []TwoFactorMethod) (AccountSecurityResult, TwoFactorMethod) {
 	user := st.Users[userID]
 	if user == nil {
-		return SecurityUnknownUser
+		return SecurityUnknownUser, ""
 	}
 	config := user.TwoFactor
 	if config == nil || !config.Enabled {
-		return SecurityTwoFactorNotEnabled
+		return SecurityTwoFactorNotEnabled, ""
 	}
 	if step, ok := verifyTOTP(config.Secret, code, now, config.LastStep); ok {
+		if methodDisallowed(TwoFactorMethodTOTP, disallowed) {
+			return SecurityMethodDisallowed, TwoFactorMethodTOTP
+		}
 		config.LastStep = step
 		user.UpdatedAt = now
 		st.persistUserLocked(user)
-		return SecurityOK
+		return SecurityOK, TwoFactorMethodTOTP
 	}
 	if index, ok := matchRecoveryCode(config.RecoveryCodes, code); ok {
+		if methodDisallowed(TwoFactorMethodRecoveryCode, disallowed) {
+			return SecurityMethodDisallowed, TwoFactorMethodRecoveryCode
+		}
 		config.RecoveryCodes[index].UsedAt = now
 		user.UpdatedAt = now
 		st.persistUserLocked(user)
-		return SecurityOK
+		return SecurityOK, TwoFactorMethodRecoveryCode
 	}
-	return SecurityInvalidCode
+	return SecurityInvalidCode, ""
 }
 
 // DisableTwoFactor turns the second factor off, and only on proof of
 // possession: switching protection off is exactly the operation an attacker
 // holding a stolen session wants, so it costs a code like every other
 // second-factor operation.
-func (st *Store) DisableTwoFactor(userID int, code string, now time.Time) AccountSecurityResult {
+func (st *Store) DisableTwoFactor(userID int, code string, now time.Time, disallowed []TwoFactorMethod) AccountSecurityResult {
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
-	if result := st.verifySecondFactorLocked(userID, code, now); result != SecurityOK {
+	if result, _ := st.verifySecondFactorLocked(userID, code, now, disallowed); result != SecurityOK {
 		return result
 	}
 	user := st.Users[userID]
@@ -303,14 +391,14 @@ func (st *Store) CancelTwoFactorEnrollment(userID int, now time.Time) AccountSec
 // RegenerateRecoveryCodes replaces the whole set, invalidating every previous
 // code including unused ones, and returns the new codes once. It costs a valid
 // second factor for the same reason disabling does.
-func (st *Store) RegenerateRecoveryCodes(userID int, code string, now time.Time) ([]string, TwoFactorStatus, AccountSecurityResult) {
+func (st *Store) RegenerateRecoveryCodes(userID int, code string, now time.Time, disallowed []TwoFactorMethod) ([]string, TwoFactorStatus, AccountSecurityResult) {
 	codes, hashes, err := newRecoveryCodes()
 	if err != nil {
 		return nil, TwoFactorStatus{}, SecurityInternalError
 	}
 	st.Mu.Lock()
 	defer st.Mu.Unlock()
-	if result := st.verifySecondFactorLocked(userID, code, now); result != SecurityOK {
+	if result, _ := st.verifySecondFactorLocked(userID, code, now, disallowed); result != SecurityOK {
 		status := TwoFactorStatus{}
 		if user := st.Users[userID]; user != nil {
 			status = twoFactorStatusOf(user.TwoFactor, now)

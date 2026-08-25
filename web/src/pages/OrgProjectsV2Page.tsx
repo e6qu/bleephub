@@ -11,6 +11,7 @@ import {
   createOrgProjectV2Draft,
   deleteOrgProjectV2Item,
   setOrgProjectV2ItemField,
+  ghGraphQL,
 } from "../api.js";
 import { OrgHeader } from "../components/PageHeader.js";
 import { PageTitle, Box, Blankslate, Button, ErrorBanner } from "../components/ui.js";
@@ -167,7 +168,8 @@ function ProjectV2Detail({ org, number }: { org: string; number: number }) {
         </Link>
       </div>
       <PageTitle title={projectQ.data.title} meta={`#${projectQ.data.number}`} />
-      <Box header={<span style={{ fontWeight: 600 }}>Add an item</span>}>
+      <ProjectOverviewPanel org={org} number={number} />
+      <Box className="mt-3" header={<span style={{ fontWeight: 600 }}>Add an item</span>}>
         <div style={{ padding: "1rem", display: "flex", flexWrap: "wrap", gap: "0.5rem", alignItems: "flex-end" }}>
           {addMut.error && <ErrorBanner>{String(addMut.error)}</ErrorBanner>}
           <label className="flex flex-col gap-1" style={{ fontSize: "0.78rem" }}>
@@ -313,6 +315,293 @@ function ProjectV2Detail({ org, number }: { org: string; number: number }) {
               />
             </div>
           ))}
+        </Box>
+      )}
+    </>
+  );
+}
+
+// ─── Project overview, status updates and workflows ──────────────────────────
+//
+// These read and write through GraphQL rather than REST: GitHub's documented
+// REST surface for Projects v2 covers items, fields and views only, so a
+// project's description, its status updates and its automation rules have no
+// REST route to call. The queries are declared here rather than in the shared
+// api module so the entry chunk does not grow for a page most sessions never
+// open.
+
+interface ProjectOverview {
+  id: string;
+  shortDescription: string | null;
+  readme: string | null;
+  public: boolean;
+  closed: boolean;
+  template: boolean;
+  viewerCanUpdate: boolean;
+  statusUpdates: { nodes: ProjectStatusUpdate[] };
+  workflows: { nodes: ProjectWorkflow[] };
+}
+
+interface ProjectStatusUpdate {
+  id: string;
+  body: string | null;
+  status: string | null;
+  startDate: string | null;
+  targetDate: string | null;
+  createdAt: string;
+  creator: { login: string } | null;
+}
+
+interface ProjectWorkflow {
+  id: string;
+  name: string;
+  number: number;
+  enabled: boolean;
+}
+
+const PROJECT_OVERVIEW_QUERY = `query($org:String!,$number:Int!){
+  organization(login:$org){
+    projectV2(number:$number){
+      id shortDescription readme public closed template viewerCanUpdate
+      statusUpdates(first:20){ nodes{ id body status startDate targetDate createdAt creator{ login } } }
+      workflows(first:20){ nodes{ id name number enabled } }
+    }
+  }
+}`;
+
+const UPDATE_PROJECT_MUTATION = `mutation($id:ID!,$shortDescription:String,$readme:String){
+  updateProjectV2(input:{projectId:$id,shortDescription:$shortDescription,readme:$readme}){
+    projectV2{ id }
+  }
+}`;
+
+const CREATE_STATUS_UPDATE_MUTATION = `mutation($id:ID!,$body:String,$status:ProjectV2StatusUpdateStatus){
+  createProjectV2StatusUpdate(input:{projectId:$id,body:$body,status:$status}){ statusUpdate{ id } }
+}`;
+
+const DELETE_STATUS_UPDATE_MUTATION = `mutation($id:ID!){
+  deleteProjectV2StatusUpdate(input:{statusUpdateId:$id}){ deletedStatusUpdateId }
+}`;
+
+const STATUS_CHOICES = ["INACTIVE", "ON_TRACK", "AT_RISK", "OFF_TRACK", "COMPLETE"] as const;
+
+/** Turns GitHub's SCREAMING_SNAKE status into the label the UI shows. */
+function statusLabel(status: string): string {
+  return status.charAt(0) + status.slice(1).toLowerCase().replace(/_/g, " ");
+}
+
+function fetchProjectOverview(org: string, number: number) {
+  return ghGraphQL<{ organization: { projectV2: ProjectOverview | null } | null }>(
+    PROJECT_OVERVIEW_QUERY,
+    { org, number },
+  ).then((d) => d.organization?.projectV2 ?? null);
+}
+
+function ProjectOverviewPanel({ org, number }: { org: string; number: number }) {
+  const qc = useQueryClient();
+  const key = ["project-v2-overview", org, number];
+  const q = useQuery({ queryKey: key, queryFn: () => fetchProjectOverview(org, number) });
+  const [editing, setEditing] = useState(false);
+  const [description, setDescription] = useState("");
+  const [readme, setReadme] = useState("");
+  const [statusBody, setStatusBody] = useState("");
+  const [status, setStatus] = useState<string>("ON_TRACK");
+  const invalidate = () => void qc.invalidateQueries({ queryKey: key });
+
+  const saveMut = useMutation({
+    mutationFn: () =>
+      ghGraphQL(UPDATE_PROJECT_MUTATION, {
+        id: q.data?.id,
+        shortDescription: description,
+        readme,
+      }),
+    onSuccess: () => {
+      invalidate();
+      setEditing(false);
+    },
+  });
+  const statusMut = useMutation({
+    mutationFn: () =>
+      ghGraphQL(CREATE_STATUS_UPDATE_MUTATION, { id: q.data?.id, body: statusBody.trim(), status }),
+    onSuccess: () => {
+      invalidate();
+      setStatusBody("");
+    },
+  });
+  const deleteStatusMut = useMutation({
+    mutationFn: (id: string) => ghGraphQL(DELETE_STATUS_UPDATE_MUTATION, { id }),
+    onSuccess: invalidate,
+  });
+
+  if (q.isLoading) return <Spinner label="loading project details" />;
+  if (q.isError) return <InlineError title="Failed to load project details" detail={String(q.error)} />;
+  const project = q.data;
+  if (!project) return null;
+
+  const beginEditing = () => {
+    setDescription(project.shortDescription ?? "");
+    setReadme(project.readme ?? "");
+    setEditing(true);
+  };
+
+  return (
+    <>
+      <Box
+        className="mt-3"
+        header={
+          <div className="flex items-center justify-between gap-2">
+            <span style={{ fontWeight: 600 }}>About</span>
+            {project.viewerCanUpdate && !editing && (
+              <Button size="sm" variant="secondary" onClick={beginEditing}>
+                Edit details
+              </Button>
+            )}
+          </div>
+        }
+      >
+        <div style={{ padding: "0.8rem 1rem", display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+          {saveMut.error && <ErrorBanner>{String(saveMut.error)}</ErrorBanner>}
+          {editing ? (
+            <>
+              <label className="flex flex-col gap-1" style={{ fontSize: "0.78rem" }}>
+                Short description
+                <input
+                  aria-label="project short description"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  className="w-full"
+                />
+              </label>
+              <label className="flex flex-col gap-1" style={{ fontSize: "0.78rem" }}>
+                README
+                <textarea
+                  aria-label="project readme"
+                  value={readme}
+                  onChange={(e) => setReadme(e.target.value)}
+                  rows={4}
+                  className="w-full"
+                />
+              </label>
+              <div className="flex gap-2">
+                <Button variant="primary" disabled={saveMut.isPending} onClick={() => saveMut.mutate()}>
+                  Save
+                </Button>
+                <Button variant="secondary" onClick={() => setEditing(false)}>
+                  Cancel
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p style={{ margin: 0 }}>
+                {project.shortDescription ?? (
+                  <span style={{ color: "var(--color-fg-muted)" }}>No description</span>
+                )}
+              </p>
+              {project.readme && (
+                <pre
+                  style={{
+                    margin: 0,
+                    whiteSpace: "pre-wrap",
+                    fontFamily: "inherit",
+                    color: "var(--color-fg-muted)",
+                    fontSize: "0.85rem",
+                  }}
+                >
+                  {project.readme}
+                </pre>
+              )}
+              <div className="flex flex-wrap gap-2" style={{ fontSize: "0.75rem", color: "var(--color-fg-muted)" }}>
+                <span>{project.public ? "Public" : "Private"}</span>
+                <span>{project.closed ? "Closed" : "Open"}</span>
+                {project.template && <span>Template</span>}
+              </div>
+            </>
+          )}
+        </div>
+      </Box>
+
+      <Box className="mt-3" header={<span style={{ fontWeight: 600 }}>Status updates</span>}>
+        <div style={{ padding: "0.8rem 1rem", display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+          {statusMut.error && <ErrorBanner>{String(statusMut.error)}</ErrorBanner>}
+          {deleteStatusMut.error && <ErrorBanner>{String(deleteStatusMut.error)}</ErrorBanner>}
+          {project.viewerCanUpdate && (
+            <div className="flex flex-wrap items-end gap-2">
+              <label className="flex min-w-0 flex-1 flex-col gap-1" style={{ fontSize: "0.78rem" }}>
+                New status update
+                <input
+                  aria-label="status update body"
+                  value={statusBody}
+                  onChange={(e) => setStatusBody(e.target.value)}
+                  placeholder="How is it going?"
+                  className="w-full"
+                />
+              </label>
+              <label className="flex flex-col gap-1" style={{ fontSize: "0.78rem" }}>
+                Status
+                <select aria-label="status update status" value={status} onChange={(e) => setStatus(e.target.value)}>
+                  {STATUS_CHOICES.map((choice) => (
+                    <option key={choice} value={choice}>
+                      {statusLabel(choice)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <Button
+                variant="secondary"
+                disabled={statusMut.isPending || !statusBody.trim()}
+                onClick={() => statusMut.mutate()}
+              >
+                Post update
+              </Button>
+            </div>
+          )}
+          {project.statusUpdates.nodes.length === 0 ? (
+            <p style={{ margin: 0, color: "var(--color-fg-muted)", fontSize: "0.85rem" }}>No status updates yet.</p>
+          ) : (
+            <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+              {project.statusUpdates.nodes.map((update) => (
+                <li
+                  key={update.id}
+                  className="flex items-start justify-between gap-2"
+                  style={{ borderTop: "1px solid var(--color-border)", paddingTop: "0.5rem" }}
+                >
+                  <div className="min-w-0">
+                    <div style={{ fontSize: "0.75rem", color: "var(--color-fg-muted)" }}>
+                      {update.status ? statusLabel(update.status) : "No status"}
+                      {update.creator ? ` · ${update.creator.login}` : ""}
+                    </div>
+                    <div>{update.body}</div>
+                  </div>
+                  {project.viewerCanUpdate && (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={deleteStatusMut.isPending}
+                      onClick={() => deleteStatusMut.mutate(update.id)}
+                    >
+                      Delete
+                    </Button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </Box>
+
+      {project.workflows.nodes.length > 0 && (
+        <Box className="mt-3" header={<span style={{ fontWeight: 600 }}>Workflows</span>}>
+          <ul style={{ listStyle: "none", margin: 0, padding: "0.5rem 1rem" }}>
+            {project.workflows.nodes.map((workflow) => (
+              <li key={workflow.id} className="flex items-center justify-between gap-2" style={{ padding: "0.25rem 0" }}>
+                <span>{workflow.name}</span>
+                <span style={{ fontSize: "0.75rem", color: "var(--color-fg-muted)" }}>
+                  {workflow.enabled ? "Enabled" : "Disabled"}
+                </span>
+              </li>
+            ))}
+          </ul>
         </Box>
       )}
     </>

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -86,7 +87,7 @@ func (s *Server) handleCreateDeployment(w http.ResponseWriter, r *http.Request) 
 	}
 	s.store.Deployments.UpsertEnvironment(repo.ID, env)
 	d := s.store.Deployments.CreateDeployment(repo.ID, user.ID, req.Ref, req.Ref, req.Task, env, req.Description, req.Payload, bool(req.ProductionEnvironment), bool(req.TransientEnvironment))
-	s.emitWebhookEvent(repo.FullName, "deployment", "created", buildDeploymentEventPayload(repo, d, user, "created"))
+	s.emitWebhookEvent(repo.FullName, "deployment", "created", buildDeploymentEventPayload(repo, d, user, "created", s.baseURL(r)))
 	s.recordAuditEvent("deployment.create", user.Login, "", map[string]interface{}{"repo": repo.FullName, "deployment_id": d.ID})
 	deployJSON := deploymentToJSON(d, s.store, s.baseURL(r), repo)
 	writeJSONCreated(w, jsonStringField(deployJSON, "url"), deployJSON)
@@ -97,13 +98,49 @@ func (s *Server) handleListDeployments(w http.ResponseWriter, r *http.Request) {
 	if repo == nil {
 		return
 	}
-	deployments := s.store.Deployments.ListDeployments(repo.ID)
+	deployments := filterDeployments(s.store.Deployments.ListDeployments(repo.ID), r.URL.Query())
 	page := paginateAndLink(w, r, deployments)
 	out := make([]map[string]interface{}, 0, len(page))
 	for _, d := range page {
 		out = append(out, deploymentToJSON(d, s.store, s.baseURL(r), repo))
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// filterDeployments applies the four documented query filters on the
+// deployments listing: sha (the SHA recorded at creation time), ref (the branch,
+// tag or SHA name), task, and environment. Each is an exact match on the value
+// recorded when the deployment was created, and each is independent — a listing
+// narrowed by several of them keeps only the deployments matching all of them.
+//
+// A filter that was not sent narrows nothing. The published contract writes the
+// default of each as the string "none", which reads as a sentinel for "no
+// filter" rather than a value to match, so an absent — or empty — parameter
+// leaves the listing whole.
+func filterDeployments(deployments []*store.Deployment, query url.Values) []*store.Deployment {
+	filters := []struct {
+		want  string
+		field func(*store.Deployment) string
+	}{
+		{query.Get("sha"), func(d *store.Deployment) string { return d.Sha }},
+		{query.Get("ref"), func(d *store.Deployment) string { return d.Ref }},
+		{query.Get("task"), func(d *store.Deployment) string { return d.Task }},
+		{query.Get("environment"), func(d *store.Deployment) string { return d.Environment }},
+	}
+	out := make([]*store.Deployment, 0, len(deployments))
+	for _, d := range deployments {
+		keep := true
+		for _, f := range filters {
+			if f.want != "" && f.field(d) != f.want {
+				keep = false
+				break
+			}
+		}
+		if keep {
+			out = append(out, d)
+		}
+	}
+	return out
 }
 
 func (s *Server) handleGetDeployment(w http.ResponseWriter, r *http.Request) {
@@ -182,7 +219,7 @@ func (s *Server) handleCreateDeploymentStatus(w http.ResponseWriter, r *http.Req
 		env = d.Environment
 	}
 	status, autoInactivated := s.store.Deployments.AddStatus(id, user.ID, req.State, req.Description, "", req.LogURL, req.EnvironmentURL, env, bool(req.AutoInactive))
-	s.emitWebhookEvent(repo.FullName, "deployment_status", req.State, buildDeploymentStatusEventPayload(repo, d, status, user))
+	s.emitWebhookEvent(repo.FullName, "deployment_status", req.State, buildDeploymentStatusEventPayload(repo, d, status, user, s.baseURL(r)))
 	for _, ai := range autoInactivated {
 		priorDep := s.store.Deployments.GetDeployment(ai.DeploymentID)
 		if priorDep == nil {
@@ -192,7 +229,7 @@ func (s *Server) handleCreateDeploymentStatus(w http.ResponseWriter, r *http.Req
 		if priorRepo == nil {
 			continue
 		}
-		s.emitWebhookEvent(priorRepo.FullName, "deployment_status", "inactive", buildDeploymentStatusEventPayload(priorRepo, priorDep, ai.Status, user))
+		s.emitWebhookEvent(priorRepo.FullName, "deployment_status", "inactive", buildDeploymentStatusEventPayload(priorRepo, priorDep, ai.Status, user, s.baseURL(r)))
 	}
 	statusJSON := deploymentStatusToJSON(status, s.store, s.baseURL(r), repo)
 	writeJSONCreated(w, jsonStringField(statusJSON, "url"), statusJSON)
@@ -295,6 +332,7 @@ func (s *Server) handleUpsertEnvironment(w http.ResponseWriter, r *http.Request)
 			Type string `json:"type"`
 			ID   int    `json:"id"`
 		} `json:"reviewers"`
+		PreventSelfReview      *bool                         `json:"prevent_self_review"`
 		DeploymentBranchPolicy *store.DeploymentBranchPolicy `json:"deployment_branch_policy"`
 	}
 	// An absent body is valid (environment with no protection config), but
@@ -315,6 +353,9 @@ func (s *Server) handleUpsertEnvironment(w http.ResponseWriter, r *http.Request)
 			reviewers = append(reviewers, map[string]interface{}{"type": revType, "id": rev.ID})
 		}
 		s.store.Deployments.SetEnvironmentProtection(repo.ID, env.Name, body.WaitTimer, reviewers)
+	}
+	if body.PreventSelfReview != nil {
+		s.store.Deployments.SetEnvironmentPreventSelfReview(repo.ID, env.Name, *body.PreventSelfReview)
 	}
 	s.store.Deployments.SetEnvironmentBranchPolicyConfig(repo.ID, env.Name, body.DeploymentBranchPolicy)
 	writeJSON(w, http.StatusOK, environmentToJSON(env, s.store, s.baseURL(r), repo))
@@ -342,7 +383,7 @@ func deploymentToJSON(d *store.Deployment, st *store.Store, baseURL string, repo
 	var creator map[string]interface{}
 	st.Mu.RLock()
 	if u := st.Users[d.CreatorID]; u != nil {
-		creator = store.UserToJSON(u)
+		creator = store.UserToJSON(u, baseURL)
 	}
 	st.Mu.RUnlock()
 	return map[string]interface{}{
@@ -373,7 +414,7 @@ func deploymentStatusToJSON(st *store.DeploymentStatus, stor *store.Store, baseU
 	var creator map[string]interface{}
 	stor.Mu.RLock()
 	if u := stor.Users[st.CreatorID]; u != nil {
-		creator = store.UserToJSON(u)
+		creator = store.UserToJSON(u, baseURL)
 	}
 	stor.Mu.RUnlock()
 	return map[string]interface{}{
@@ -470,7 +511,7 @@ func environmentReviewersJSON(e *store.Environment, st *store.Store, baseURL str
 		default: // "User"
 			st.Mu.RLock()
 			if u := st.Users[id]; u != nil {
-				entry["reviewer"] = store.UserToJSON(u)
+				entry["reviewer"] = store.UserToJSON(u, baseURL)
 			}
 			st.Mu.RUnlock()
 		}
@@ -479,7 +520,7 @@ func environmentReviewersJSON(e *store.Environment, st *store.Store, baseURL str
 	return out
 }
 
-func buildDeploymentEventPayload(repo *store.Repo, d *store.Deployment, sender *store.User, action string) map[string]interface{} {
+func buildDeploymentEventPayload(repo *store.Repo, d *store.Deployment, sender *store.User, action, baseURL string) map[string]interface{} {
 	return attachInstallationBlock(map[string]interface{}{
 		"action": action,
 		"deployment": map[string]interface{}{
@@ -489,12 +530,12 @@ func buildDeploymentEventPayload(repo *store.Repo, d *store.Deployment, sender *
 			"task":        d.Task,
 			"environment": d.Environment,
 		},
-		"repository": repoPayload(repo),
-		"sender":     senderPayload(sender),
+		"repository": repoPayload(repo, baseURL),
+		"sender":     senderPayload(sender, baseURL),
 	}, nil)
 }
 
-func buildDeploymentStatusEventPayload(repo *store.Repo, d *store.Deployment, status *store.DeploymentStatus, sender *store.User) map[string]interface{} {
+func buildDeploymentStatusEventPayload(repo *store.Repo, d *store.Deployment, status *store.DeploymentStatus, sender *store.User, baseURL string) map[string]interface{} {
 	return attachInstallationBlock(map[string]interface{}{
 		"action": status.State,
 		"deployment_status": map[string]interface{}{
@@ -507,7 +548,7 @@ func buildDeploymentStatusEventPayload(repo *store.Repo, d *store.Deployment, st
 			"id":          d.ID,
 			"environment": d.Environment,
 		},
-		"repository": repoPayload(repo),
-		"sender":     senderPayload(sender),
+		"repository": repoPayload(repo, baseURL),
+		"sender":     senderPayload(sender, baseURL),
 	}, nil)
 }

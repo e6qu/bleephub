@@ -24,17 +24,25 @@ func (s *Resolver) addRepoFieldsToSchema(
 	dateTime := s.graphQLStringScalar("DateTime")
 	uri := s.graphQLStringScalar("URI")
 	gitSSHRemote := s.graphQLStringScalar("GitSSHRemote")
-	repositoryVisibilityEnum := graphql.NewEnum(graphql.EnumConfig{
-		Name: "RepositoryVisibility",
-		Values: graphql.EnumValueConfigMap{
-			"PUBLIC":   &graphql.EnumValueConfig{Value: "PUBLIC"},
-			"PRIVATE":  &graphql.EnumValueConfig{Value: "PRIVATE"},
-			"INTERNAL": &graphql.EnumValueConfig{Value: "INTERNAL"},
-		},
-	})
+	// Registered in the shared enum table so a later family naming
+	// RepositoryVisibility (the enterprise outside-collaborator filter) reuses
+	// this one type instead of minting a second with the same name.
+	repositoryVisibilityEnum := s.sharedEnum("RepositoryVisibility", "PUBLIC", "PRIVATE", "INTERNAL")
 	repoType := graphql.NewObject(graphql.ObjectConfig{
-		Name:       "Repository",
-		Interfaces: []*graphql.Interface{nodeInterface},
+		Name: "Repository",
+		Interfaces: []*graphql.Interface{
+			nodeInterface,
+			s.uniformResourceLocatableInterface(),
+			s.starrableInterface(),
+			s.subscribableInterface(),
+			// ProjectOwner (classic projects) is declared at construction for
+			// the reason the User type declares it: graphql-go memoizes an
+			// object's interface list on first read.
+			s.projectOwnerInterfaceType(),
+			// RepositoryInfo, the shared repository-shape interface
+			// RepositoryInvitation.repository returns.
+			s.repositoryInfoInterface(),
+		},
 		Fields: graphql.Fields{
 			"id": &graphql.Field{
 				Type: graphql.NewNonNull(graphql.ID),
@@ -51,6 +59,7 @@ func (s *Resolver) addRepoFieldsToSchema(
 			"nameWithOwner":  &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
 			"description":    &graphql.Field{Type: graphql.String},
 			"url":            &graphql.Field{Type: graphql.NewNonNull(uri)},
+			"resourcePath":   &graphql.Field{Type: graphql.NewNonNull(uri)},
 			"sshUrl":         &graphql.Field{Type: graphql.NewNonNull(gitSSHRemote)},
 			"isPrivate":      &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
 			"isFork":         &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
@@ -261,6 +270,27 @@ func (s *Resolver) addRepoFieldsToSchema(
 			}, nil
 		},
 	})
+	repoType.AddFieldConfig("stargazers", &graphql.Field{
+		// Real GitHub: stargazers: StargazerConnection! — the Starrable
+		// member, backed by the same star store PUT /user/starred writes.
+		Type: graphql.NewNonNull(s.gqlStargazerConnectionType()),
+		Args: s.stargazerConnectionArgs(),
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			r, ok := p.Source.(map[string]interface{})
+			if !ok {
+				return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
+			}
+			repoID, ok := r["databaseId"].(int)
+			if !ok || repoID == 0 {
+				return nil, fmt.Errorf("repository stargazer source missing databaseId")
+			}
+			repo := s.store.GetRepoByID(repoID)
+			if repo == nil {
+				return gqlConnectionSource(nil), nil
+			}
+			return repaginateConnection(s.stargazerConnectionSource(repo), p.Args), nil
+		},
+	})
 	repoType.AddFieldConfig("licenseInfo", &graphql.Field{
 		// Real GitHub: licenseInfo: License — the same full License type
 		// Query.license serves, resolved from the vendored license catalog.
@@ -319,10 +349,27 @@ func (s *Resolver) addRepoFieldsToSchema(
 				"edges": &graphql.Field{Type: graphql.NewList(graphql.NewObject(graphql.ObjectConfig{
 					Name: "LanguageEdge",
 					Fields: graphql.Fields{
-						"size": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
-						"node": &graphql.Field{Type: graphql.NewNonNull(languageType)},
+						"size":   &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
+						"node":   &graphql.Field{Type: graphql.NewNonNull(languageType)},
+						"cursor": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
 					},
 				}))},
+				"nodes": &graphql.Field{
+					Type: graphql.NewList(languageType),
+					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+						return languageConnectionNodes(p.Source), nil
+					},
+				},
+				"pageInfo": &graphql.Field{
+					Type:    graphql.NewNonNull(s.gqlPageInfoType()),
+					Resolve: fullPageInfoResolver,
+				},
+				"totalSize": &graphql.Field{
+					Type: graphql.NewNonNull(graphql.Int),
+					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+						return languageConnectionTotalSize(p.Source), nil
+					},
+				},
 				"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
 			},
 		}),
@@ -366,8 +413,9 @@ func (s *Resolver) addRepoFieldsToSchema(
 					break
 				}
 				edges = append(edges, map[string]interface{}{
-					"size": p.size,
-					"node": map[string]interface{}{"name": p.lang},
+					"size":   p.size,
+					"node":   map[string]interface{}{"name": p.lang},
+					"cursor": encodeCursor(i),
 				})
 			}
 			return map[string]interface{}{"edges": edges, "totalCount": len(pairs)}, nil
@@ -375,24 +423,7 @@ func (s *Resolver) addRepoFieldsToSchema(
 	})
 	repoType.AddFieldConfig("repositoryTopics", &graphql.Field{
 		// Backed by Repo.Topics (REST PUT /repos/{o}/{r}/topics).
-		Type: graphql.NewNonNull(graphql.NewObject(graphql.ObjectConfig{
-			Name: "RepositoryTopicConnection",
-			Fields: graphql.Fields{
-				"nodes": &graphql.Field{Type: graphql.NewList(graphql.NewObject(graphql.ObjectConfig{
-					Name: "RepositoryTopic",
-					Fields: graphql.Fields{
-						"topic": &graphql.Field{Type: graphql.NewNonNull(graphql.NewObject(graphql.ObjectConfig{
-							Name: "Topic",
-							Fields: graphql.Fields{
-								"name": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-							},
-						}))},
-					},
-				}))},
-				"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
-				"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
-			},
-		})),
+		Type: graphql.NewNonNull(s.gqlRepositoryTopicConnectionType()),
 		Args: graphql.FieldConfigArgument{
 			"first": &graphql.ArgumentConfig{Type: graphql.Int},
 		},
@@ -402,14 +433,15 @@ func (s *Resolver) addRepoFieldsToSchema(
 				return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
 			}
 			topics, _ := r["topics"].([]string)
-			nodes := make([]interface{}, 0, len(topics))
-			for _, tp := range topics {
-				nodes = append(nodes, map[string]interface{}{
-					"topic": map[string]interface{}{"name": tp},
-				})
+			nodes := make([]map[string]interface{}, 0, len(topics))
+			edges := make([]map[string]interface{}, 0, len(topics))
+			for i, tp := range topics {
+				node := map[string]interface{}{"topic": map[string]interface{}{"name": tp}, "name": tp}
+				nodes = append(nodes, node)
+				edges = append(edges, map[string]interface{}{"node": node, "cursor": encodeCursor(i)})
 			}
 			return map[string]interface{}{
-				"nodes": nodes, "totalCount": len(nodes),
+				"nodes": nodes, "edges": edges, "totalCount": len(nodes),
 				"pageInfo": map[string]interface{}{
 					"hasNextPage": false, "hasPreviousPage": false,
 					"startCursor": nil, "endCursor": nil,
@@ -492,43 +524,18 @@ func (s *Resolver) addRepoFieldsToSchema(
 			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(pageInfoType)},
 		},
 	})
+	s.graphqlTypes.repositoryConnection = repoConnectionType
 
 	// Enums that real GitHub exposes — gh CLI sends these by name (CREATED_AT, DESC,
 	// PUBLIC, OWNER, ...) not as strings. The schema must declare them so gh's
 	// `gh repo list`, `gh issue list`, etc. type-check.
-	repositoryPrivacyEnum := graphql.NewEnum(graphql.EnumConfig{
-		Name: "RepositoryPrivacy",
-		Values: graphql.EnumValueConfigMap{
-			"PUBLIC":  &graphql.EnumValueConfig{Value: "PUBLIC"},
-			"PRIVATE": &graphql.EnumValueConfig{Value: "PRIVATE"},
-		},
-	})
-	repositoryAffiliationEnum := graphql.NewEnum(graphql.EnumConfig{
-		Name: "RepositoryAffiliation",
-		Values: graphql.EnumValueConfigMap{
-			"OWNER":               &graphql.EnumValueConfig{Value: "OWNER"},
-			"COLLABORATOR":        &graphql.EnumValueConfig{Value: "COLLABORATOR"},
-			"ORGANIZATION_MEMBER": &graphql.EnumValueConfig{Value: "ORGANIZATION_MEMBER"},
-		},
-	})
-	repositoryOrderFieldEnum := graphql.NewEnum(graphql.EnumConfig{
-		Name: "RepositoryOrderField",
-		Values: graphql.EnumValueConfigMap{
-			"CREATED_AT": &graphql.EnumValueConfig{Value: "CREATED_AT"},
-			"UPDATED_AT": &graphql.EnumValueConfig{Value: "UPDATED_AT"},
-			"PUSHED_AT":  &graphql.EnumValueConfig{Value: "PUSHED_AT"},
-			"STARGAZERS": &graphql.EnumValueConfig{Value: "STARGAZERS"},
-			"NAME":       &graphql.EnumValueConfig{Value: "NAME"},
-		},
-	})
-	orderDirectionEnum := s.graphQLEnum("OrderDirection", "ASC", "DESC")
-	repositoryOrderInput := graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "RepositoryOrder",
-		Fields: graphql.InputObjectConfigFieldMap{
-			"field":     &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(repositoryOrderFieldEnum)},
-			"direction": &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(orderDirectionEnum)},
-		},
-	})
+	// Registered in the shared enum table: Repository.forks and the account
+	// surface's other repository connections name the same three types.
+	repositoryPrivacyEnum := s.sharedEnum("RepositoryPrivacy", "PUBLIC", "PRIVATE")
+	repositoryAffiliationEnum := s.sharedEnum("RepositoryAffiliation",
+		"OWNER", "COLLABORATOR", "ORGANIZATION_MEMBER")
+	orderDirectionEnum := s.sharedEnum("OrderDirection", "ASC", "DESC")
+	repositoryOrderInput := s.gqlRepositoryOrderInput()
 
 	// --- Releases (gh release list / view / download / delete) ---
 	// `gh release list` queries releases(first:$perPage, orderBy:{field:
@@ -568,10 +575,18 @@ func (s *Resolver) addRepoFieldsToSchema(
 	s.graphqlTypes.release = releaseType
 	s.addReactableFields(releaseType, "release")
 
+	releaseEdgeType := graphql.NewObject(graphql.ObjectConfig{
+		Name: "ReleaseEdge",
+		Fields: graphql.Fields{
+			"node":   &graphql.Field{Type: releaseType},
+			"cursor": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+		},
+	})
 	releaseConnectionType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "ReleaseConnection",
 		Fields: graphql.Fields{
 			"nodes":      &graphql.Field{Type: graphql.NewList(releaseType)},
+			"edges":      &graphql.Field{Type: graphql.NewList(releaseEdgeType)},
 			"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
 			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
 		},
@@ -936,6 +951,14 @@ func (s *Resolver) addRepoFieldsToSchema(
 			"description":      &graphql.InputObjectFieldConfig{Type: graphql.String},
 			"hasIssuesEnabled": &graphql.InputObjectFieldConfig{Type: graphql.Boolean},
 			"hasWikiEnabled":   &graphql.InputObjectFieldConfig{Type: graphql.Boolean},
+			// Declaration-only members of GitHub's CreateRepositoryInput.
+			// homepageUrl: URI, teamId: ID (the team granted access), template:
+			// Boolean (mark the new repo as a template). The createRepository
+			// resolver does not yet act on them; they are declared so the input's
+			// shape matches GitHub's and a client naming them is not rejected.
+			"homepageUrl": &graphql.InputObjectFieldConfig{Type: s.graphQLStringScalar("URI")},
+			"teamId":      &graphql.InputObjectFieldConfig{Type: graphql.ID},
+			"template":    &graphql.InputObjectFieldConfig{Type: graphql.Boolean},
 		},
 	})
 
@@ -1279,11 +1302,21 @@ var graphqlMutationAuthz = map[string]mutationRule{
 	"deleteIssue":   repoRule{scope: store.ScopeIssues, level: mutationAdminRepo, target: mutationTargetIssue("issueId")},
 	"transferIssue": issueTransferRule{},
 
+	// Linking a branch to an issue writes a reference into the repository, so
+	// the grant it needs is contents rather than issues; unlinking only removes
+	// the association and leaves the branch, so it is an issues write. Neither
+	// admits the issue's author on standing alone: an author with no write
+	// access cannot create a branch in the repository.
+	"createLinkedBranch": repoRule{scope: store.ScopeContents, level: mutationPushRepo, target: mutationTargetIssue("issueId")},
+	"deleteLinkedBranch": repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: mutationTargetLinkedBranch("linkedBranchId")},
+
 	"createDiscussion":                repoRule{scope: store.ScopeDiscussions, level: mutationReadRepo, target: mutationTargetRepo("repositoryId")},
 	"addDiscussionComment":            repoRule{scope: store.ScopeDiscussions, level: mutationReadRepo, target: mutationTargetDiscussion("discussionId")},
 	"addReaction":                     repoRule{scopeFor: reactableScope("subjectId"), level: mutationReadRepo, target: mutationTargetReactable("subjectId")},
 	"removeReaction":                  repoRule{scopeFor: reactableScope("subjectId"), level: mutationReadRepo, target: mutationTargetReactable("subjectId")},
 	"updateDiscussion":                repoRule{scope: store.ScopeDiscussions, level: mutationAdminRepo, authorMayAct: true, target: mutationTargetDiscussion("discussionId")},
+	"closeDiscussion":                 repoRule{scope: store.ScopeDiscussions, level: mutationAdminRepo, authorMayAct: true, target: mutationTargetDiscussion("discussionId")},
+	"reopenDiscussion":                repoRule{scope: store.ScopeDiscussions, level: mutationAdminRepo, authorMayAct: true, target: mutationTargetDiscussion("discussionId")},
 	"deleteDiscussion":                repoRule{scope: store.ScopeDiscussions, level: mutationAdminRepo, authorMayAct: true, target: mutationTargetDiscussion("id")},
 	"updateDiscussionComment":         repoRule{scope: store.ScopeDiscussions, level: mutationAdminRepo, authorMayAct: true, target: mutationTargetDiscussionComment("commentId")},
 	"deleteDiscussionComment":         repoRule{scope: store.ScopeDiscussions, level: mutationAdminRepo, authorMayAct: true, target: mutationTargetDiscussionComment("id")},
@@ -1292,6 +1325,16 @@ var graphqlMutationAuthz = map[string]mutationRule{
 	// Upvoting is participation, like reacting: any reader may vote.
 	"addUpvote":    repoRule{scope: store.ScopeDiscussions, level: mutationReadRepo, target: mutationTargetVotable("subjectId")},
 	"removeUpvote": repoRule{scope: store.ScopeDiscussions, level: mutationReadRepo, target: mutationTargetVotable("subjectId")},
+
+	// Labels. GitHub serves an issue's and a pull request's labels through the
+	// one /issues/{number}/labels surface and gates both on Issues, so these
+	// three are scopeIssues whichever kind the labelableId turns out to name.
+	// Labeling is curation of the repository's triage state rather than of
+	// your own content, so there is no author exemption: it is push, exactly
+	// as updateIssue treats its labelIds argument.
+	"addLabelsToLabelable":      repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: labelableMutationTarget("labelableId")},
+	"removeLabelsFromLabelable": repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: labelableMutationTarget("labelableId")},
+	"clearLabelsFromLabelable":  repoRule{scope: store.ScopeIssues, level: mutationPushRepo, target: labelableMutationTarget("labelableId")},
 
 	"minimizeComment":   repoRule{scope: store.ScopeIssues, level: mutationPushRepo, authorMayAct: true, target: mutationTargetIssueComment("subjectId")},
 	"unminimizeComment": repoRule{scope: store.ScopeIssues, level: mutationPushRepo, authorMayAct: true, target: mutationTargetIssueComment("subjectId")},
@@ -1323,6 +1366,79 @@ var graphqlMutationAuthz = map[string]mutationRule{
 	"deleteProjectV2Item":           projectRule{target: projectTargetProject("projectId")},
 	"createProjectV2Field":          projectRule{target: projectTargetProject("projectId")},
 	"updateProjectV2ItemFieldValue": projectRule{target: projectTargetProject("projectId")},
+
+	// Project metadata and lifecycle.
+	"updateProjectV2":               projectRule{target: projectTargetProject("projectId")},
+	"deleteProjectV2":               projectRule{target: projectTargetProject("projectId")},
+	"markProjectV2AsTemplate":       projectRule{target: projectTargetProject("projectId")},
+	"unmarkProjectV2AsTemplate":     projectRule{target: projectTargetProject("projectId")},
+	"linkProjectV2ToRepository":     projectRule{target: projectTargetProject("projectId")},
+	"linkProjectV2ToTeam":           projectRule{target: projectTargetProject("projectId")},
+	"unlinkProjectV2FromRepository": projectRule{target: projectTargetProject("projectId")},
+	"unlinkProjectV2FromTeam":       projectRule{target: projectTargetProject("projectId")},
+	"updateProjectV2Collaborators":  projectRule{target: projectTargetProject("projectId")},
+	// A copy reads one project and writes to another account, so neither half
+	// alone is the entitlement: projectCopyRule asks both.
+	"copyProjectV2": projectCopyRule{},
+
+	// Items. The ones GitHub keys on a bare item id still authorize over the
+	// project that item belongs to.
+	"addProjectV2DraftIssue":                projectRule{target: projectTargetProject("projectId")},
+	"archiveProjectV2Item":                  projectRule{target: projectTargetProject("projectId")},
+	"unarchiveProjectV2Item":                projectRule{target: projectTargetProject("projectId")},
+	"clearProjectV2ItemFieldValue":          projectRule{target: projectTargetProject("projectId")},
+	"updateProjectV2ItemPosition":           projectRule{target: projectTargetProject("projectId")},
+	"updateProjectV2DraftIssue":             projectRule{target: projectTargetItem("draftIssueId")},
+	"convertProjectV2DraftIssueItemToIssue": projectRule{target: projectTargetItem("itemId")},
+
+	// Fields and views, keyed on the subject rather than the project.
+	"createProjectV2IssueField": projectRule{target: projectTargetProject("projectId")},
+	"updateProjectV2Field":      projectRule{target: projectTargetField("fieldId")},
+	"deleteProjectV2Field":      projectRule{target: projectTargetField("fieldId")},
+	"createProjectV2View":       projectRule{target: projectTargetProject("projectId")},
+	"updateProjectV2View":       projectRule{target: projectTargetView("viewId")},
+	"deleteProjectV2View":       projectRule{target: projectTargetView("viewId")},
+
+	// Dismissing a Dependabot alert is a write on the repository's security
+	// events, which is the same entitlement PATCH
+	// /repos/{o}/{r}/dependabot/alerts/{n} demands: the security_events scope
+	// at write, and push standing on the repository (what resourceCapabilityFor
+	// resolves that level to, security events deliberately not being an
+	// administers-resource scope). Routing the GraphQL mutation through a
+	// weaker rule would make it the way around the REST gate.
+	"dismissRepositoryVulnerabilityAlert": repoRule{
+		scope:  store.ScopeSecurityEvents,
+		level:  mutationPushRepo,
+		target: mutationTargetVulnerabilityAlert("repositoryVulnerabilityAlertId"),
+	},
+
+	// Status updates and workflows.
+	"createProjectV2StatusUpdate": projectRule{target: projectTargetProject("projectId")},
+	"updateProjectV2StatusUpdate": projectRule{target: projectTargetStatusUpdate("statusUpdateId")},
+	"deleteProjectV2StatusUpdate": projectRule{target: projectTargetStatusUpdate("statusUpdateId")},
+	"deleteProjectV2Workflow":     projectRule{target: projectTargetWorkflow("workflowId")},
+}
+
+// projectCopyRule is the policy for copyProjectV2, the one project mutation
+// whose input names two accounts: the project being copied and the owner the
+// copy lands under. GitHub requires standing on both — a bearer who can read a
+// template but write nowhere may not mint a project, and a bearer who can
+// write to an account may not copy a project they cannot see.
+type projectCopyRule struct{}
+
+func (projectCopyRule) check() error { return nil }
+
+func (projectCopyRule) authorize(s *Resolver, p graphql.ResolveParams, input map[string]interface{}) error {
+	source := projectTargetProject("projectId")(s, input)
+	if source.owner == nil {
+		return source.missing
+	}
+	user := s.ghUserFromContext(p.Context)
+	if source.project != nil && !s.canReadProjectV2(p.Context, user, source.owner, source.project) {
+		return source.missing
+	}
+	destination := projectRule{target: projectTargetOwner("ownerId")}
+	return destination.authorize(s, p, input)
 }
 
 // guardedMutations records which names reached a mutation type through
@@ -1482,6 +1598,21 @@ func mutationTargetIssue(key string) func(*Resolver, map[string]interface{}) mut
 		nodeID, _ := input[key].(string)
 		target := mutationTarget{missing: gqlMissingNode("Issue", nodeID)}
 		if issue := store.FindIssueByNodeID(s.store, nodeID); issue != nil {
+			target.repo = s.store.GetRepoByID(issue.RepoID)
+			target.authorID = issue.AuthorID
+		}
+		return target
+	}
+}
+
+// mutationTargetLinkedBranch resolves a linked branch's global id to the
+// repository of the issue that carries the link, which is the repository the
+// caller has to have standing on to unlink it.
+func mutationTargetLinkedBranch(key string) func(*Resolver, map[string]interface{}) mutationTarget {
+	return func(s *Resolver, input map[string]interface{}) mutationTarget {
+		nodeID, _ := input[key].(string)
+		target := mutationTarget{missing: gqlMissingNode("LinkedBranch", nodeID)}
+		if issue, _, ok := store.FindIssueByLinkedBranchNodeID(s.store, nodeID); ok {
 			target.repo = s.store.GetRepoByID(issue.RepoID)
 			target.authorID = issue.AuthorID
 		}
@@ -1698,7 +1829,8 @@ func repoToGraphQLWithOrg(repo *store.Repo, getOrg func(int) *store.Org) map[str
 	} else if repo.Owner != nil {
 		ownerMap = userToGraphQL(repo.Owner)
 	}
-	webURL := externalURL("/" + repo.FullName)
+	resourcePath := "/" + repo.FullName
+	webURL := externalURL(resourcePath)
 
 	return map[string]interface{}{
 		"nodeID":              repo.NodeID,
@@ -1707,6 +1839,7 @@ func repoToGraphQLWithOrg(repo *store.Repo, getOrg func(int) *store.Org) map[str
 		"nameWithOwner":       repo.FullName,
 		"description":         repo.Description,
 		"url":                 webURL,
+		"resourcePath":        resourcePath,
 		"sshUrl":              store.SshGitURL(repo.FullName),
 		"isPrivate":           repo.Private,
 		"isFork":              repo.Fork,
@@ -1731,7 +1864,7 @@ func repoToGraphQLWithOrg(repo *store.Repo, getOrg func(int) *store.Org) map[str
 		"allowRebaseMerge":    repo.AllowRebaseMerge,
 		"deleteBranchOnMerge": repo.DeleteBranchOnMerge,
 		"isTemplate":          repo.IsTemplate,
-		"owner":               ownerMap,
+		"owner":               optionalObject(ownerMap),
 		"createdAt":           repo.CreatedAt.Format(time.RFC3339),
 		"updatedAt":           repo.UpdatedAt.Format(time.RFC3339),
 		"pushedAt":            store.NullableTimestamp(repo.PushedAt),
@@ -1790,6 +1923,13 @@ func releaseToGQL(rel *store.Release, latestID int, repoFullName string, immutab
 	if rel.Name != "" {
 		name = rel.Name
 	}
+	// updatedAt: the store does not track release edit times, so the honest
+	// value is the publish time when published, else the creation time — the
+	// most recent moment the record is known to reflect.
+	updatedAt := rel.CreatedAt.Format(time.RFC3339)
+	if rel.PublishedAt != nil {
+		updatedAt = rel.PublishedAt.Format(time.RFC3339)
+	}
 	return map[string]interface{}{
 		"nodeID":       rel.NodeID,
 		"databaseId":   rel.ID,
@@ -1803,6 +1943,15 @@ func releaseToGQL(rel *store.Release, latestID int, repoFullName string, immutab
 		"publishedAt":  publishedAt,
 		"url":          externalURL("/" + repoFullName + "/releases/tag/" + rel.TagName),
 		"description":  nilStr(rel.Body),
+		// Raw fields the account-surface Release members resolve from
+		// (author, descriptionHTML, repository, resourcePath, tag, tagCommit,
+		// mentions, releaseAssets, updatedAt) — see addAccountActionsFields.
+		"authorID":        rel.AuthorID,
+		"repoID":          rel.RepoID,
+		"repoFullName":    repoFullName,
+		"body":            rel.Body,
+		"targetCommitish": rel.TargetCommitish,
+		"updatedAt":       updatedAt,
 	}
 }
 
@@ -1907,13 +2056,7 @@ func (s *Resolver) gqlRefType() *graphql.Object {
 	if s.graphqlTypes.ref != nil {
 		return s.graphqlTypes.ref
 	}
-	branchProtectionRuleType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "BranchProtectionRule",
-		Fields: graphql.Fields{
-			"requiresStrictStatusChecks":   &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
-			"requiredApprovingReviewCount": &graphql.Field{Type: graphql.Int},
-		},
-	})
+	branchProtectionRuleType := s.gqlBranchProtectionRuleType()
 	s.graphqlTypes.ref = graphql.NewObject(graphql.ObjectConfig{
 		Name:       "Ref",
 		Interfaces: []*graphql.Interface{s.graphqlTypes.node},

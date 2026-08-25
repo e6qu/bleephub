@@ -177,6 +177,11 @@ func (s *Server) handleCreateUserKey(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
 	}
+	// Adding or removing an authentication key is a sensitive action: an
+	// enterprise demanding proof of presence gets it before the key set moves.
+	if s.requireProofOfPresence(w, r) {
+		return
+	}
 	var req struct {
 		Title string `json:"title"`
 		Key   string `json:"key"`
@@ -235,6 +240,11 @@ func (s *Server) handleDeleteUserKey(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnauthorized, "Requires authentication")
 		return
 	}
+	// Adding or removing an authentication key is a sensitive action: an
+	// enterprise demanding proof of presence gets it before the key set moves.
+	if s.requireProofOfPresence(w, r) {
+		return
+	}
 	id, err := strconv.Atoi(r.PathValue("key_id"))
 	if err != nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -285,6 +295,11 @@ func (s *Server) handleCreateGPGKey(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
+		return
+	}
+	// Adding or removing an authentication key is a sensitive action: an
+	// enterprise demanding proof of presence gets it before the key set moves.
+	if s.requireProofOfPresence(w, r) {
 		return
 	}
 	var req struct {
@@ -344,6 +359,11 @@ func (s *Server) handleDeleteGPGKey(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
+		return
+	}
+	// Adding or removing an authentication key is a sensitive action: an
+	// enterprise demanding proof of presence gets it before the key set moves.
+	if s.requireProofOfPresence(w, r) {
 		return
 	}
 	id, err := strconv.Atoi(r.PathValue("gpg_key_id"))
@@ -455,11 +475,11 @@ func (s *Server) handleListUserKeysByLogin(w http.ResponseWriter, r *http.Reques
 // with no store user. Must not be called with Misc.mu held: LookupUserByLogin
 // takes Store.mu, and Store.mu is never acquired under Misc.mu (the lock
 // order is Store.mu before Misc.mu).
-func (s *Server) resolveLoginsJSON(logins []string) []map[string]interface{} {
+func (s *Server) resolveLoginsJSON(logins []string, baseURL string) []map[string]interface{} {
 	out := []map[string]interface{}{}
 	for _, login := range logins {
 		if u := s.store.LookupUserByLogin(login); u != nil {
-			out = append(out, store.UserToJSON(u))
+			out = append(out, store.UserToJSON(u, baseURL))
 		}
 	}
 	return out
@@ -494,10 +514,10 @@ func (s *Server) followingLogins(login string) []string {
 }
 
 func (s *Server) handleListFollowers(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, paginateAndLink(w, r, s.resolveLoginsJSON(s.followerLogins(r.PathValue("username")))))
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, s.resolveLoginsJSON(s.followerLogins(r.PathValue("username")), s.baseURL(r))))
 }
 func (s *Server) handleListFollowing(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, paginateAndLink(w, r, s.resolveLoginsJSON(s.followingLogins(r.PathValue("username")))))
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, s.resolveLoginsJSON(s.followingLogins(r.PathValue("username")), s.baseURL(r))))
 }
 func (s *Server) handleListMyFollowers(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
@@ -505,7 +525,7 @@ func (s *Server) handleListMyFollowers(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, []map[string]interface{}{})
 		return
 	}
-	writeJSON(w, http.StatusOK, paginateAndLink(w, r, s.resolveLoginsJSON(s.followerLogins(user.Login))))
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, s.resolveLoginsJSON(s.followerLogins(user.Login), s.baseURL(r))))
 }
 func (s *Server) handleListMyFollowing(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
@@ -513,7 +533,7 @@ func (s *Server) handleListMyFollowing(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, []map[string]interface{}{})
 		return
 	}
-	writeJSON(w, http.StatusOK, paginateAndLink(w, r, s.resolveLoginsJSON(s.followingLogins(user.Login))))
+	writeJSON(w, http.StatusOK, paginateAndLink(w, r, s.resolveLoginsJSON(s.followingLogins(user.Login), s.baseURL(r))))
 }
 
 func (s *Server) handleFollowUser(w http.ResponseWriter, r *http.Request) {
@@ -522,16 +542,7 @@ func (s *Server) handleFollowUser(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
 	}
-	target := r.PathValue("username")
-	s.store.Misc.Mu.Lock()
-	if s.store.Misc.Follows[user.Login] == nil {
-		s.store.Misc.Follows[user.Login] = map[string]bool{}
-	}
-	s.store.Misc.Follows[user.Login][target] = true
-	if s.store.Misc.Persist != nil {
-		s.store.Misc.Persist.MustPut("misc", "follows", s.store.Misc.Follows)
-	}
-	s.store.Misc.Mu.Unlock()
+	s.store.SetFollow(user.Login, r.PathValue("username"), true)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -541,15 +552,7 @@ func (s *Server) handleUnfollowUser(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
 	}
-	target := r.PathValue("username")
-	s.store.Misc.Mu.Lock()
-	if s.store.Misc.Follows[user.Login] != nil {
-		delete(s.store.Misc.Follows[user.Login], target)
-	}
-	if s.store.Misc.Persist != nil {
-		s.store.Misc.Persist.MustPut("misc", "follows", s.store.Misc.Follows)
-	}
-	s.store.Misc.Mu.Unlock()
+	s.store.SetFollow(user.Login, r.PathValue("username"), false)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -1188,8 +1191,8 @@ func (s *Server) runPagesBuild(ctx context.Context, repo *store.Repo, pusher *st
 			"commit":   buildCommit,
 			"duration": buildDuration,
 		},
-		"repository": repoPayload(repo),
-		"sender":     store.UserToJSON(s.store.LookupUserByLogin(actor)),
+		"repository": repoPayload(repo, baseURL),
+		"sender":     store.UserToJSON(s.store.LookupUserByLogin(actor), baseURL),
 	})
 	return build, true
 }
@@ -1304,25 +1307,9 @@ func auditEntryMatchesPhrase(e *store.AuditEntry, phrase string) bool {
 }
 
 func (s *Server) recordAuditEvent(action, actor, org string, data map[string]interface{}) {
-	s.store.Misc.Mu.Lock()
-	defer s.store.Misc.Mu.Unlock()
-	s.store.Misc.NextAuditID++
-	entry := &store.AuditEntry{
-		ID:        s.store.Misc.NextAuditID,
-		Timestamp: s.store.CurrentTime().Format(time.RFC3339Nano),
-		Action:    action,
-		Actor:     actor,
-		Org:       org,
-		Data:      data,
-		Version:   "1.1",
-	}
-	s.store.Misc.AuditLog = append([]*store.AuditEntry{entry}, s.store.Misc.AuditLog...)
-	if len(s.store.Misc.AuditLog) > maxAuditLogEntries {
-		s.store.Misc.AuditLog = s.store.Misc.AuditLog[:maxAuditLogEntries]
-	}
-	if s.store.Misc.Persist != nil {
-		s.store.Misc.Persist.MustPut("audit_log", fmt.Sprintf("%d", entry.ID), entry)
-	}
+	// The append lives in the store so the GraphQL resolvers, which cannot
+	// reach the HTTP layer, write the same entries through the same path.
+	s.store.RecordAuditEntry(action, actor, org, data)
 }
 
 // maxAuditLogEntries bounds the in-memory audit log. Real GitHub retains audit

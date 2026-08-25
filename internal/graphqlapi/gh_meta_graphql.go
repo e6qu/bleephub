@@ -44,7 +44,6 @@ func (s *Resolver) graphQLStringScalar(name string) *graphql.Scalar {
 // Octokit and schema-aware clients use for capability discovery.
 func (s *Resolver) addMetaFieldsToSchema(queryType *graphql.Object) {
 	dateTime := s.graphQLStringScalar("DateTime")
-	uri := s.graphQLStringScalar("URI")
 	gitObjectID := s.graphQLStringScalar("GitObjectID")
 
 	rateLimitType := graphql.NewObject(graphql.ObjectConfig{
@@ -140,17 +139,9 @@ func (s *Resolver) addMetaFieldsToSchema(queryType *graphql.Object) {
 		},
 	})
 
-	codeOfConductType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "CodeOfConduct",
-		Fields: graphql.Fields{
-			"body":         &graphql.Field{Type: graphql.String},
-			"id":           &graphql.Field{Type: graphql.NewNonNull(graphql.ID)},
-			"key":          &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"name":         &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"resourcePath": &graphql.Field{Type: uri},
-			"url":          &graphql.Field{Type: uri},
-		},
-	})
+	// Repository.codeOfConduct returns the same type, so it is memoized in
+	// the account-surface registry rather than minted here.
+	codeOfConductType := s.gqlCodeOfConductType()
 	codeOfConductJSON := func(c store.CodeOfConduct) map[string]interface{} {
 		return map[string]interface{}{
 			"body": c.Body, "id": "COC_" + c.Key, "key": c.Key, "name": c.Name,

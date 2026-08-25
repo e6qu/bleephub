@@ -63,9 +63,36 @@ func (s *Server) authenticationSettingsJSON(userID int) (map[string]interface{},
 		return nil, false
 	}
 	return map[string]interface{}{
-		"authentication": authentication,
-		"two_factor":     status,
+		"authentication":     authentication,
+		"two_factor":         status,
+		"two_factor_methods": s.twoFactorMethodsJSON(s.store.GetUserByID(userID)),
 	}, true
+}
+
+// twoFactorMethodsJSON reports the second factors this instance implements and
+// which of them the enterprise currently refuses. It is the honest answer to
+// "what can I enrol in": the catalogue is the store's closed set, so the page
+// can never offer a factor the server cannot verify, and `disallowed` is the
+// live policy rather than a description of one.
+func (s *Server) twoFactorMethodsJSON(user *store.User) []map[string]interface{} {
+	disallowed := s.enterpriseDisallowedTwoFactorMethods(user)
+	described := store.SupportedTwoFactorMethods()
+	out := make([]map[string]interface{}, 0, len(described))
+	for _, method := range described {
+		banned := false
+		for _, name := range disallowed {
+			if name == method.Method {
+				banned = true
+			}
+		}
+		out = append(out, map[string]interface{}{
+			"method":     string(method.Method),
+			"insecure":   method.Insecure,
+			"summary":    method.Summary,
+			"disallowed": banned,
+		})
+	}
+	return out
 }
 
 func (s *Server) handleGetAuthenticationSettings(w http.ResponseWriter, r *http.Request) {
@@ -105,6 +132,9 @@ func writeAccountSecurityError(w http.ResponseWriter, result store.AccountSecuri
 		// them nothing.
 		writeGHError(w, http.StatusUnprocessableEntity,
 			"That code is not valid. Check your authenticator app — or use a recovery code — and try again.")
+	case store.SecurityMethodDisallowed:
+		writeGHError(w, http.StatusForbidden,
+			"That second-factor method is disallowed by an enterprise policy. Use your authenticator app instead.")
 	case store.SecurityInternalError:
 		writeGHError(w, http.StatusServiceUnavailable, "Two-factor enrollment is temporarily unavailable.")
 	default:
@@ -124,6 +154,11 @@ func (s *Server) handleBeginTwoFactorEnrollment(w http.ResponseWriter, r *http.R
 	}
 	if s.crossSiteBrowserPost(r) {
 		writeGHError(w, http.StatusForbidden, "cross-origin request denied")
+		return
+	}
+	// Changing the account's authentication is the archetypal sensitive action
+	// GitHub's sudo mode guards.
+	if s.requireProofOfPresence(w, r) {
 		return
 	}
 	secret, result := s.store.BeginTwoFactorEnrollment(viewer.ID, s.currentTime())
@@ -184,6 +219,11 @@ func (s *Server) handleCancelTwoFactorEnrollment(w http.ResponseWriter, r *http.
 		writeGHError(w, http.StatusForbidden, "cross-origin request denied")
 		return
 	}
+	// Changing the account's authentication is the archetypal sensitive action
+	// GitHub's sudo mode guards.
+	if s.requireProofOfPresence(w, r) {
+		return
+	}
 	if result := s.store.CancelTwoFactorEnrollment(viewer.ID, s.currentTime()); result != store.SecurityOK {
 		writeAccountSecurityError(w, result)
 		return
@@ -203,6 +243,11 @@ func (s *Server) handleConfirmTwoFactorEnrollment(w http.ResponseWriter, r *http
 	}
 	if s.crossSiteBrowserPost(r) {
 		writeGHError(w, http.StatusForbidden, "cross-origin request denied")
+		return
+	}
+	// Changing the account's authentication is the archetypal sensitive action
+	// GitHub's sudo mode guards.
+	if s.requireProofOfPresence(w, r) {
 		return
 	}
 	var req otpRequest
@@ -232,11 +277,25 @@ func (s *Server) handleDisableTwoFactor(w http.ResponseWriter, r *http.Request) 
 		writeGHError(w, http.StatusForbidden, "cross-origin request denied")
 		return
 	}
+	// Changing the account's authentication is the archetypal sensitive action
+	// GitHub's sudo mode guards.
+	if s.requireProofOfPresence(w, r) {
+		return
+	}
 	var req otpRequest
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	if result := s.store.DisableTwoFactor(viewer.ID, req.Code, s.currentTime()); result != store.SecurityOK {
+	// An enterprise that requires two-factor authentication of its members
+	// does not let one of them turn it off.
+	if e := s.primaryEnterprise(); e != nil && e.Policy.TwoFactorRequired == store.EnterprisePolicyEnabled &&
+		!enterpriseOwnerRole(s.enterpriseRoleOfUser(e, viewer)) {
+		writeGHError(w, http.StatusForbidden,
+			"Two-factor authentication is required by an enterprise policy and cannot be disabled.")
+		return
+	}
+	if result := s.store.DisableTwoFactor(viewer.ID, req.Code, s.currentTime(),
+		s.enterpriseDisallowedTwoFactorMethods(viewer)); result != store.SecurityOK {
 		writeAccountSecurityError(w, result)
 		return
 	}
@@ -256,11 +315,17 @@ func (s *Server) handleRegenerateRecoveryCodes(w http.ResponseWriter, r *http.Re
 		writeGHError(w, http.StatusForbidden, "cross-origin request denied")
 		return
 	}
+	// Changing the account's authentication is the archetypal sensitive action
+	// GitHub's sudo mode guards.
+	if s.requireProofOfPresence(w, r) {
+		return
+	}
 	var req otpRequest
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	codes, status, result := s.store.RegenerateRecoveryCodes(viewer.ID, req.Code, s.currentTime())
+	codes, status, result := s.store.RegenerateRecoveryCodes(viewer.ID, req.Code, s.currentTime(),
+		s.enterpriseDisallowedTwoFactorMethods(viewer))
 	if result != store.SecurityOK {
 		writeAccountSecurityError(w, result)
 		return
@@ -312,6 +377,11 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.crossSiteBrowserPost(r) {
 		writeGHError(w, http.StatusForbidden, "cross-origin request denied")
+		return
+	}
+	// Changing the account's authentication is the archetypal sensitive action
+	// GitHub's sudo mode guards.
+	if s.requireProofOfPresence(w, r) {
 		return
 	}
 	var req struct {
@@ -430,6 +500,11 @@ func (s *Server) handleRevokeLoginSession(w http.ResponseWriter, r *http.Request
 	}
 	if s.crossSiteBrowserPost(r) {
 		writeGHError(w, http.StatusForbidden, "cross-origin request denied")
+		return
+	}
+	// Changing the account's authentication is the archetypal sensitive action
+	// GitHub's sudo mode guards.
+	if s.requireProofOfPresence(w, r) {
 		return
 	}
 	handle := r.PathValue("handle")

@@ -114,7 +114,7 @@ func (s *Server) handleCreateHook(w http.ResponseWriter, r *http.Request) {
 	// is created (so the consumer can verify the endpoint). Inactive hooks
 	// receive no deliveries.
 	if hook.Active {
-		s.enqueueWebhookDelivery(hook, "ping", "", mustMarshal(buildPingPayload(repo, hook, user)))
+		s.enqueueWebhookDelivery(hook, "ping", "", mustMarshal(buildPingPayload(repo, hook, user, s.baseURL(r))))
 	}
 
 	hookJSON := s.hookToJSON(hook, s.store.HookLastResp(hook), r, r.PathValue("owner"), r.PathValue("repo"))
@@ -327,7 +327,7 @@ func (s *Server) handlePingHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.enqueueWebhookDelivery(hook, "ping", "", mustMarshal(buildPingPayload(repo, hook, ghUserFromContext(r.Context()))))
+	s.enqueueWebhookDelivery(hook, "ping", "", mustMarshal(buildPingPayload(repo, hook, ghUserFromContext(r.Context()), s.baseURL(r))))
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -445,7 +445,7 @@ func (s *Server) handleTestHook(w http.ResponseWriter, r *http.Request) {
 			writeGHError(w, http.StatusUnprocessableEntity, "No default branch commit found")
 			return
 		}
-		payload := buildPushPayload(s.store, repo, sender, "refs/heads/"+branch, headSha, headSha)
+		payload := buildPushPayload(s.store, repo, sender, "refs/heads/"+branch, headSha, headSha, s.baseURL(r))
 		s.enqueueWebhookDelivery(hook, "push", "", mustMarshal(payload))
 	}
 	w.WriteHeader(http.StatusNoContent)

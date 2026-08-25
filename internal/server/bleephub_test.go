@@ -184,6 +184,10 @@ func TestMain(m *testing.M) {
 	srv := NewServer(addr, logger)
 	testServer = srv
 	useFixedTestClock(testServer)
+	// Typed-nil source ratchet (see graphql_source_audit_test.go): every
+	// GraphQL request the suite makes doubles as an audit of the source maps
+	// the resolvers build.
+	instrumentGraphQLSourceAudit(srv.graphql.Schema())
 	// The package-wide fixture intentionally reuses one credential across
 	// thousands of otherwise independent tests. Keep that synthetic principal
 	// from coupling late tests to early request volume; dedicated rate-limit
@@ -281,6 +285,13 @@ func TestMain(m *testing.M) {
 			if code == 0 {
 				code = 1
 			}
+		}
+	}
+
+	if report := graphqlSourceAuditReport(); report != "" {
+		fmt.Fprint(os.Stderr, report)
+		if code == 0 {
+			code = 1
 		}
 	}
 

@@ -3,7 +3,7 @@
     "literal_event_producers": [
       {
         "event": "branch_protection_rule",
-        "line": 374,
+        "line": 373,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_branch_protection.go"
       },
@@ -27,39 +27,63 @@
       },
       {
         "event": "create",
-        "line": 1094,
+        "line": 93,
         "producer": "emitWebhookEvent",
-        "source": "internal/server/gh_repos_git.go"
+        "source": "internal/server/gh_git_ref_writes.go"
       },
       {
         "event": "delete",
-        "line": 485,
+        "line": 172,
         "producer": "emitWebhookEvent",
-        "source": "internal/server/gh_repos_refs.go"
+        "source": "internal/server/gh_git_ref_writes.go"
+      },
+      {
+        "event": "dependabot_alert",
+        "line": 55,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_advisories_events.go"
       },
       {
         "event": "deployment",
-        "line": 89,
+        "line": 90,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_deployments.go"
+      },
+      {
+        "event": "deployment",
+        "line": 161,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/graphql_seams.go"
+      },
+      {
+        "event": "deployment_status",
+        "line": 222,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_deployments.go"
       },
       {
         "event": "deployment_status",
-        "line": 185,
+        "line": 232,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_deployments.go"
       },
       {
         "event": "deployment_status",
-        "line": 195,
+        "line": 166,
         "producer": "emitWebhookEvent",
-        "source": "internal/server/gh_deployments.go"
+        "source": "internal/server/graphql_seams.go"
       },
       {
         "event": "fork",
-        "line": 64,
+        "line": 72,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_repos_forks.go"
+      },
+      {
+        "event": "gollum",
+        "line": 174,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_wiki_git.go"
       },
       {
         "event": "issue_comment",
@@ -69,13 +93,13 @@
       },
       {
         "event": "issue_comment",
-        "line": 122,
+        "line": 129,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_issue_moderation.go"
       },
       {
         "event": "issue_comment",
-        "line": 697,
+        "line": 708,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_issues_rest.go"
       },
@@ -141,37 +165,37 @@
       },
       {
         "event": "page_build",
-        "line": 1185,
+        "line": 1188,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
         "event": "project",
-        "line": 161,
+        "line": 166,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_projects_classic.go"
       },
       {
         "event": "project_card",
-        "line": 463,
+        "line": 468,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_projects_classic.go"
       },
       {
         "event": "project_card",
-        "line": 574,
+        "line": 579,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_projects_classic.go"
       },
       {
         "event": "project_column",
-        "line": 284,
+        "line": 289,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_projects_classic.go"
       },
       {
         "event": "public",
-        "line": 937,
+        "line": 964,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_repos_rest.go"
       },
@@ -195,7 +219,7 @@
       },
       {
         "event": "pull_request",
-        "line": 589,
+        "line": 634,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
@@ -207,25 +231,25 @@
       },
       {
         "event": "pull_request_review",
-        "line": 786,
+        "line": 831,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request_review",
-        "line": 972,
+        "line": 1017,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request_review",
-        "line": 1073,
+        "line": 1118,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
       {
         "event": "pull_request_review",
-        "line": 1141,
+        "line": 1186,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_pulls_rest.go"
       },
@@ -249,7 +273,7 @@
       },
       {
         "event": "push",
-        "line": 30,
+        "line": 32,
         "producer": "emitWebhookEvent",
         "source": "internal/server/committed_ref_events.go"
       },
@@ -261,21 +285,45 @@
       },
       {
         "event": "release",
-        "line": 528,
+        "line": 540,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_releases.go"
       },
       {
         "event": "release",
-        "line": 574,
+        "line": 586,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_releases.go"
+      },
+      {
+        "event": "repository_advisory",
+        "line": 261,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_advisories_events.go"
       },
       {
         "event": "repository_dispatch",
         "line": 80,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_actions_extras.go"
+      },
+      {
+        "event": "repository_import",
+        "line": 528,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_import.go"
+      },
+      {
+        "event": "security_advisory",
+        "line": 282,
+        "producer": "emitWebhookEvent",
+        "source": "internal/server/gh_advisories_events.go"
+      },
+      {
+        "event": "sponsorship",
+        "line": 228,
+        "producer": "emitOrgWebhookEvent",
+        "source": "internal/server/gh_sponsors.go"
       },
       {
         "event": "status",
@@ -285,7 +333,7 @@
       },
       {
         "event": "watch",
-        "line": 1348,
+        "line": 1387,
         "producer": "emitWebhookEvent",
         "source": "internal/server/gh_repos_rest.go"
       },
@@ -310,45 +358,151 @@
   "graphql": {
     "compatibility_gap_count": 9,
     "coverage": {
-      "bleephub_types": 306,
+      "bleephub_types": 1816,
       "compatibility_gap_count": 9,
-      "implemented_fields": 1150,
-      "official_fields": 8362,
-      "official_types": 1807,
-      "shared_types": 299,
-      "signature_exact_fields": 1149
+      "implemented_fields": 8365,
+      "official_fields": 8366,
+      "official_types": 1809,
+      "shared_types": 1809,
+      "signature_exact_fields": 8364
     },
-    "introspection_snapshot_sha256": "9334f073f184e39a44c7f9cbaa1e9c2be692097eadc6036e66b3e87d0a340d91",
+    "introspection_snapshot_sha256": "b49800b4e7276d5582131a655744df0517a63e2adec712875b41e2a54a4f8c62",
     "official_schema": {
-      "content_sha256": "30347e4f3bb975195f982351e55636ca03c76969c279980ca515a96ea7b40c3d",
+      "content_sha256": "e67fbf3cf655481ac815f53b0495efabed0f792a12a405577f74d6532e70b792",
       "source": "https://docs.github.com/public/fpt/schema.docs.graphql"
     },
     "resolver_files": [
+      "internal/graphqlapi/gh_account_actions_fields_graphql.go",
+      "internal/graphqlapi/gh_account_surface_graphql.go",
+      "internal/graphqlapi/gh_actions_fields_graphql.go",
+      "internal/graphqlapi/gh_advisories_graphql.go",
+      "internal/graphqlapi/gh_audit_log_graphql.go",
+      "internal/graphqlapi/gh_branch_protection_graphql.go",
+      "internal/graphqlapi/gh_checks_required_graphql.go",
+      "internal/graphqlapi/gh_comment_fields_graphql.go",
+      "internal/graphqlapi/gh_content_traits_graphql.go",
+      "internal/graphqlapi/gh_contributions_graphql.go",
+      "internal/graphqlapi/gh_conversation_fields_graphql.go",
+      "internal/graphqlapi/gh_copilot_graphql.go",
+      "internal/graphqlapi/gh_discussion_polls_graphql.go",
       "internal/graphqlapi/gh_discussions_graphql.go",
+      "internal/graphqlapi/gh_enterprise_fields2_graphql.go",
+      "internal/graphqlapi/gh_enterprise_fields_graphql.go",
+      "internal/graphqlapi/gh_enterprise_graphql.go",
+      "internal/graphqlapi/gh_enterprise_mutations_graphql.go",
+      "internal/graphqlapi/gh_enterprise_types_graphql.go",
+      "internal/graphqlapi/gh_field_residue_graphql.go",
+      "internal/graphqlapi/gh_final_residue_graphql.go",
+      "internal/graphqlapi/gh_gists_graphql.go",
       "internal/graphqlapi/gh_git_objects_graphql.go",
+      "internal/graphqlapi/gh_git_writes_graphql.go",
+      "internal/graphqlapi/gh_issue_fields_graphql.go",
+      "internal/graphqlapi/gh_issue_rationale_events_graphql.go",
       "internal/graphqlapi/gh_issues_graphql.go",
+      "internal/graphqlapi/gh_labels_graphql.go",
+      "internal/graphqlapi/gh_linked_branches_graphql.go",
+      "internal/graphqlapi/gh_marketplace_graphql.go",
       "internal/graphqlapi/gh_meta_graphql.go",
+      "internal/graphqlapi/gh_migrations_graphql.go",
+      "internal/graphqlapi/gh_misc_fields_graphql.go",
       "internal/graphqlapi/gh_moderation_graphql.go",
+      "internal/graphqlapi/gh_mutations_accounts_graphql.go",
+      "internal/graphqlapi/gh_mutations_activity_graphql.go",
+      "internal/graphqlapi/gh_mutations_admin_graphql.go",
+      "internal/graphqlapi/gh_mutations_authz_graphql.go",
+      "internal/graphqlapi/gh_mutations_checks_graphql.go",
+      "internal/graphqlapi/gh_mutations_custom_properties_graphql.go",
+      "internal/graphqlapi/gh_mutations_deployments_graphql.go",
+      "internal/graphqlapi/gh_mutations_domains_graphql.go",
+      "internal/graphqlapi/gh_mutations_emu_graphql.go",
+      "internal/graphqlapi/gh_mutations_issues_graphql.go",
+      "internal/graphqlapi/gh_mutations_projects_classic_graphql.go",
+      "internal/graphqlapi/gh_mutations_pulls_graphql.go",
+      "internal/graphqlapi/gh_mutations_repos_graphql.go",
+      "internal/graphqlapi/gh_mutations_rulesets_graphql.go",
+      "internal/graphqlapi/gh_mutations_surface_graphql.go",
+      "internal/graphqlapi/gh_mutations_types_graphql.go",
       "internal/graphqlapi/gh_orgs_graphql.go",
+      "internal/graphqlapi/gh_orgs_surface_graphql.go",
+      "internal/graphqlapi/gh_pinned_items_graphql.go",
+      "internal/graphqlapi/gh_projects_classic_graphql.go",
+      "internal/graphqlapi/gh_projects_v2_fields_graphql.go",
       "internal/graphqlapi/gh_projects_v2_graphql.go",
+      "internal/graphqlapi/gh_projects_v2_mutations_graphql.go",
+      "internal/graphqlapi/gh_projects_v2_ordering_graphql.go",
+      "internal/graphqlapi/gh_projects_v2_types_graphql.go",
+      "internal/graphqlapi/gh_projects_v2_values_graphql.go",
+      "internal/graphqlapi/gh_pulls_fields2_graphql.go",
+      "internal/graphqlapi/gh_pulls_fields_graphql.go",
       "internal/graphqlapi/gh_pulls_graphql.go",
       "internal/graphqlapi/gh_reactions_graphql.go",
-      "internal/graphqlapi/gh_repos_graphql.go"
+      "internal/graphqlapi/gh_repos_community_graphql.go",
+      "internal/graphqlapi/gh_repos_deployments_graphql.go",
+      "internal/graphqlapi/gh_repos_git_fields_graphql.go",
+      "internal/graphqlapi/gh_repos_graphql.go",
+      "internal/graphqlapi/gh_repos_people_graphql.go",
+      "internal/graphqlapi/gh_repos_settings_graphql.go",
+      "internal/graphqlapi/gh_repository_info_graphql.go",
+      "internal/graphqlapi/gh_residue_tail_graphql.go",
+      "internal/graphqlapi/gh_resource_graphql.go",
+      "internal/graphqlapi/gh_rulesets_fields_graphql.go",
+      "internal/graphqlapi/gh_rulesets_graphql.go",
+      "internal/graphqlapi/gh_schema_shells_graphql.go",
+      "internal/graphqlapi/gh_search_repositories_graphql.go",
+      "internal/graphqlapi/gh_shells_audit_graphql.go",
+      "internal/graphqlapi/gh_shells_events_graphql.go",
+      "internal/graphqlapi/gh_shells_interfaces_graphql.go",
+      "internal/graphqlapi/gh_shells_misc_graphql.go",
+      "internal/graphqlapi/gh_shells_ordering_graphql.go",
+      "internal/graphqlapi/gh_sponsors_graphql.go",
+      "internal/graphqlapi/gh_sponsors_mutations_graphql.go",
+      "internal/graphqlapi/gh_teams_fields_graphql.go",
+      "internal/graphqlapi/gh_teams_graphql.go",
+      "internal/graphqlapi/gh_timeline_graphql.go",
+      "internal/graphqlapi/gh_timeline_types_graphql.go",
+      "internal/graphqlapi/gh_users_org_fields_graphql.go",
+      "internal/graphqlapi/gh_users_surface_graphql.go"
     ],
     "test_files": [
+      "internal/graphqlapi/gh_account_actions_fields_graphql_test.go",
+      "internal/graphqlapi/gh_actions_fields_graphql_test.go",
+      "internal/graphqlapi/gh_audit_log_graphql_test.go",
+      "internal/graphqlapi/gh_comment_fields_graphql_test.go",
+      "internal/graphqlapi/gh_contributions_graphql_test.go",
+      "internal/graphqlapi/gh_orgs_surface_graphql_test.go",
+      "internal/graphqlapi/gh_pinned_items_graphql_test.go",
+      "internal/graphqlapi/gh_pulls_fields_graphql_test.go",
+      "internal/graphqlapi/gh_repos_community_graphql_test.go",
+      "internal/graphqlapi/gh_repos_deployments_graphql_test.go",
+      "internal/graphqlapi/gh_repos_people_graphql_test.go",
+      "internal/graphqlapi/gh_repos_settings_graphql_test.go",
+      "internal/graphqlapi/gh_users_surface_graphql_test.go",
+      "internal/server/gh_advisories_graphql_test.go",
       "internal/server/gh_discussions_graphql_test.go",
+      "internal/server/gh_enterprise_graphql_test.go",
+      "internal/server/gh_governance_mutations_graphql_test.go",
       "internal/server/gh_graphql_connection_pagination_test.go",
       "internal/server/gh_graphql_node_test.go",
       "internal/server/gh_issue_pin_transfer_upvote_graphql_test.go",
       "internal/server/gh_issues_graphql_test.go",
+      "internal/server/gh_mutations_accounts_graphql_test.go",
+      "internal/server/gh_mutations_activity_graphql_test.go",
+      "internal/server/gh_mutations_issues_graphql_test.go",
+      "internal/server/gh_mutations_pulls_graphql_test.go",
+      "internal/server/gh_mutations_surface_graphql_test.go",
       "internal/server/gh_projects_v2_graphql_test.go",
+      "internal/server/gh_search_repositories_graphql_test.go",
       "internal/server/gh_sweep_graphql_test.go",
       "internal/server/graphql_authz_test.go",
       "internal/server/graphql_cost_test.go",
       "internal/server/graphql_credential_test.go",
+      "internal/server/graphql_generated_schema_parity_test.go",
+      "internal/server/graphql_gh_cli_conformance_test.go",
       "internal/server/graphql_git_objects_test.go",
       "internal/server/graphql_reactions_subject_test.go",
       "internal/server/graphql_schema_parity_test.go",
+      "internal/server/graphql_source_audit_test.go",
+      "internal/server/graphql_timeline_items_test.go",
       "internal/server/org_pr_graphql_test.go"
     ]
   },
@@ -3064,6 +3218,42 @@
         "status_kind": "fixed"
       },
       {
+        "category": "REST",
+        "finding": "a draft release was served to any repository reader by id or by tag, and its assets with it, though the list endpoint already hid drafts from callers without push access",
+        "id": "REST-185",
+        "location": "gh_releases.go",
+        "severity": "M",
+        "status": "fixed \u2014 one visibility predicate gates every by-id/by-tag release read plus the asset list and asset fetch, so the direct fetch can no longer be used to walk around the list filter. Verified: a non-pusher gets 404 on both shapes while the owner still sees the draft",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "the rate-limit resource classifier matched bare substrings against user-controlled path segments, so every request to a repository named `important` was billed to the 100-per-hour `source_import` budget and 403'd there",
+        "id": "REST-186",
+        "location": "rate_limits.go",
+        "severity": "m",
+        "status": "fixed \u2014 the special-resource paths match on whole segments, and the two root-scoped families (`scim`, `app-manifests`) match by prefix. Verified: colliding repository names classify as `core` while every real endpoint keeps its budget",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "`serveProjectV2UpdateItem` rendered its 200 from the item it read before applying the field writes, so a PATCH answered with the values the item held beforehand",
+        "id": "REST-187",
+        "location": "gh_projects_v2_rest.go",
+        "severity": "M",
+        "status": "fixed \u2014 the item is re-read after the writes and the response renders the updated row. The defect was latent while the store returned live rows and became observable when STORE-080 detached them",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "the `projects_v2`, `projects_v2_item` and `projects_v2_status_update` webhook family was not emitted at all, so nothing outside the API could observe a project change",
+        "id": "REST-188",
+        "location": "gh_projects_v2_webhooks.go",
+        "severity": "M",
+        "status": "fixed \u2014 one renderer builds GitHub's payload shapes (`projects_v2` with its owner and creator, `projects_v2_item` naming its project and content by node id, `projects_v2_status_update`) and both the REST write paths and the GraphQL mutations deliver through it, so a hook subscriber cannot tell which surface made a change. Delivery is to the owning organization's hooks; `edited` actions carry GitHub's before/after `changes` diff. Verified: a receiver test asserts all three event names arrive with their objects, and a second asserts the REST create/delete pair emits the same actions",
+        "status_kind": "fixed"
+      },
+      {
         "category": "GQL",
         "finding": "`POST /api/graphql` serves anonymous requests; real GitHub 401s every unauthenticated request",
         "id": "GQL-001",
@@ -3613,6 +3803,33 @@
         "status_kind": "fixed"
       },
       {
+        "category": "STORE",
+        "finding": "the release store was a hole in the closed getter-detachment invariant: `Get`, `GetByTag`, `Latest`, `List`, `GetReleaseAsset` and `ListReleaseAssets` all handed back the live rows, so any reader could rewrite a persisted release or asset by touching the value it was given",
+        "id": "STORE-079",
+        "location": "releases.go",
+        "severity": "M",
+        "status": "fixed \u2014 every release and asset getter returns a snapshot (`Assets` and `PublishedAt` are the only reference fields), matching the pattern the other stores already hold. Verified by reversion: restoring the live return fails the new detachment pin",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "STORE",
+        "finding": "the Projects v2 store was a hole in the closed getter-detachment invariant: `GetProject`, `GetItem`, `GetField`, `GetView`, every `Lookup*ByNodeID` and every `List*`/`*ForProject` handed back the live rows, so a reader could rewrite a persisted project, item, field or view by touching the value it was given",
+        "id": "STORE-080",
+        "location": "store_projects_v2.go",
+        "severity": "M",
+        "status": "fixed \u2014 every getter and list returns a snapshot, with per-type clones because each row carries slices or maps (`Collaborators`, `FieldValues`, `Options`, `Iterations`, `VisibleFields`, `SortBy`). Two call sites were relying on the aliasing to observe their own writes and now re-read explicitly (GQL-073, REST-187)",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "STORE",
+        "finding": "a new project was created empty, so `gh project field-list` returned nothing and a board had no Status column until somebody built one by hand; github.com seeds every project with its built-in fields, a Status option set, a table view and the default workflows",
+        "id": "STORE-081",
+        "location": "store_projects_v2.go",
+        "severity": "M",
+        "status": "fixed \u2014 `SeedProjectDefaults` installs the seven built-in fields plus Status (Todo/In Progress/Done with GitHub's colours), a \"View 1\" table view and the three default workflows. `ProjectV2SeededFieldNames` exists so tests count against the seed rather than a literal",
+        "status_kind": "fixed"
+      },
+      {
         "category": "REST",
         "finding": "`resolveReactionParent` re-scoped only the `issue` parent to the repository in the URL; for `issue_comment`, `commit_comment`, `pull_request_review_comment` and `release` it returned the raw path id unchecked. Since the store looks each up by global id alone, a caller with write on any repo could `POST /repos/{owned}/{repo}/issues/comments/{victimCommentID}/reactions` to inject a reaction onto \u2014 and via the list endpoint read the reactions and reacting users of \u2014 a comment or release in another (private) repository. It also never verified the parent existed",
         "id": "REST-124",
@@ -3772,6 +3989,132 @@
         "location": "gh_reactions_graphql.go",
         "severity": "m",
         "status": "fixed \u2014 all three fields now resolve. `reactionGroups: [ReactionGroup!]` off the mutated subject (r29); `reaction: Reaction` returns the created/removed reaction with a `REA_` node id via the shared Reaction type (r34); and `subject: Reactable` (r36) returns the fully-populated concrete subject through a real Reactable interface (id/databaseId/reactionGroups/reactions/viewerCanReact) with ResolveType across all nine official concrete types \u2014 Issue, PullRequest, PullRequestReview, Discussion, DiscussionComment, IssueComment, CommitComment (a new GraphQL type), PullRequestReviewComment and Release, each declared to implement it \u2014 and addReaction/removeReaction now resolve every one of the nine subjects (four new node-id finders added). Introspection snapshot + official-schema ratchet regenerated with no new compatibility gaps; verified by a test selecting `subject{__typename ...on Issue{title} viewerCanReact reactionGroups{content}}` from addReaction",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "GQL",
+        "finding": "Projects v2 had no query entry point: `Organization.projectV2/projectsV2`, `User.projectV2/projectsV2` and the `Repository` pair were all absent, so a project was reachable only from an issue that already sat on one \u2014 every `gh project` subcommand starts from the owner and had nothing to query",
+        "id": "GQL-069",
+        "location": "gh_projects_v2_types_graphql.go",
+        "severity": "B",
+        "status": "fixed \u2014 all six fields resolve, gated by the same owner-scoped read predicate the REST surface uses, with `orderBy` (ProjectV2Order) and `query` filtering. A private project is dropped from the connection and answers null by number for a caller who may not see it, so the listing cannot become an enumeration oracle. Verified: entry-point, user-owner and stranger-visibility tests, plus `gh project list/view` in the CLI harness",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "GQL",
+        "finding": "The page-size guard rejected `first: 0` as malformed, but zero is a legal Relay window asking for a connection's metadata without nodes \u2014 `gh project create` selects the shared project fragment with `items(first: 0)` and `fields(first: 0)`, so the command was refused outright with \"first must be between 1 and 100\"",
+        "id": "GQL-070",
+        "location": "gh_graphql.go:598",
+        "severity": "B",
+        "status": "fixed \u2014 the bound is 0..100, and `paginateGQLItems` now honours an explicit zero as an empty window instead of folding it into \"unspecified\" and serving the 30-item default. Verified by the CLI harness (`gh project create` was the failing verb) and by tests asserting totalCount survives while nodes is empty, and that -1 and 101 are still refused",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "GQL",
+        "finding": "`ProjectV2Owner` was minted while the Projects v2 surface was assembled, long after the `User` and `Organization` objects were built; graphql-go reads an object's interface list once and memoizes it, so neither type could ever become a possible type and gh's `... on Organization` spread failed validation with \"objects of type ProjectV2Owner can never be of type Organization\"",
+        "id": "GQL-071",
+        "location": "gh_graphql.go:183, gh_orgs_graphql.go:16",
+        "severity": "M",
+        "status": "fixed \u2014 the interface is constructed before both objects and declared in their `Interfaces` lists, with its own fields behind a thunk so it may name the ProjectV2 object that does not exist that early",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "GQL",
+        "finding": "`createProjectV2Field` read only `name` out of each single-select option, silently discarding the colour and description GitHub requires, and `ProjectV2SingleSelectFieldOptionInput` declared only `name` where GitHub declares `name`, `color`, `description` and an optional `id`",
+        "id": "GQL-072",
+        "location": "gh_projects_v2_graphql.go",
+        "severity": "M",
+        "status": "fixed \u2014 one memoized option input matching GitHub's shape, shared with `updateProjectV2Field` and mirrored by `ProjectV2MultiSelectFieldOptionInput`; the resolver reads all four members. Verified: a test asserts a created option keeps its RED colour and description",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "GQL",
+        "finding": "`updateProjectV2ItemFieldValue` rendered its payload from the item snapshot read before the write, so the mutation answered with the value the item had beforehand",
+        "id": "GQL-073",
+        "location": "gh_projects_v2_graphql.go",
+        "severity": "M",
+        "status": "fixed \u2014 the item is re-read after the store write and the payload renders the updated row; the same defect in the REST twin is REST-187",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "GQL",
+        "finding": "Twenty-seven of GitHub's thirty-two ProjectV2 mutations were absent \u2014 project metadata, delete, copy, templates, repository/team links, collaborators, field and view editing, item archival, reordering, draft editing and conversion, status updates and workflows",
+        "id": "GQL-074",
+        "location": "gh_projects_v2_mutations_graphql.go",
+        "severity": "M",
+        "status": "fixed \u2014 all twenty-seven added, each through `registerMutation` with a `graphqlMutationAuthz` row plus refusal and entitled test cases. Subjects named by a bare field, view, status-update or workflow id authorize over the project that subject belongs to; `copyProjectV2` demands read on the source and write on the destination account through its own two-sided rule",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "GQL",
+        "finding": "`Query.resource` \u2014 GitHub's URL-to-node lookup \u2014 did not exist, so `gh project item-add --url` could not turn a pasted issue or pull-request URL into the node id `addProjectV2ItemById` takes, and failed before reaching the mutation",
+        "id": "GQL-075",
+        "location": "gh_resource_graphql.go",
+        "severity": "B",
+        "status": "fixed \u2014 `resource(url: URI!): UniformResourceLocatable` resolves a repository, issue or pull-request URL, with the `UniformResourceLocatable` interface declared on all three types (and `resourcePath` added to each, which GitHub exposes and none of them had). A repository the caller cannot read answers the same null a missing one does, so a pasted URL is not an existence oracle. Verified: tests resolve an issue and a repository URL, reject four non-resource URLs, and confirm a stranger gets null for a private repository's issue",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "GQL",
+        "finding": "the `ProjectV2ItemFieldValue` union had five of GitHub's twelve members and no `ProjectV2ItemFieldValueCommon` interface, so `gh project item-list`'s single fragment \u2014 which names every member \u2014 failed validation, taking every `gh project` subcommand down with it, not only the ones reading those columns",
+        "id": "GQL-076",
+        "location": "gh_issues_graphql.go",
+        "severity": "M",
+        "status": "fixed \u2014 all twelve members exist: the six stored ones (text, number, date, single select, multi select, iteration) implement Node and ProjectV2ItemFieldValueCommon, and the six content-derived ones (labels, milestone, repository, users, reviewers, linked pull requests) read their value off the issue or pull request the item points at. The union and both interfaces are built in one pass, because graphql-go fixes a union's members and an object's interfaces at construction",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "GQL",
+        "finding": "`PullRequest.repository` was absent \u2014 only `headRepository` existed \u2014 and gh's shared project item fragment selects it",
+        "id": "GQL-077",
+        "location": "gh_pulls_graphql.go",
+        "severity": "M",
+        "status": "fixed \u2014 the field resolves the repository the pull request was opened against, as distinct from the fork its head came from",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "GQL",
+        "finding": "`ProjectV2FieldType` omitted seven of GitHub's values including `MULTI_SELECT`, and there was no `ProjectV2MultiSelectField` configuration type, so a multi-select field's `dataType` returned null for a non-nullable field and the whole selection errored",
+        "id": "GQL-078",
+        "location": "gh_issues_graphql.go",
+        "severity": "M",
+        "status": "fixed \u2014 the enum carries all twenty-one values, `ProjectV2MultiSelectField` joins the ProjectV2FieldConfiguration union with its `multiSelectOptions(names:)` lookup, and the store persists options for both option-bearing data types rather than single-select only. `createProjectV2Field`/`updateProjectV2Field` accept `multiSelectOptions`, and `updateProjectV2ItemFieldValue` accepts `multiSelectOptionIds`. Verified: a round-trip test writes a two-option selection and reads back the options plus GitHub's comma-joined `value`, and an unknown option id is refused",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "GQL",
+        "finding": "GitHub's three Labelable mutations were absent \u2014 `addLabelsToLabelable`, `removeLabelsFromLabelable`, `clearLabelsFromLabelable` \u2014 and so was the `Labelable` interface their payloads return; `gh issue edit --add-label` speaks only these and has no REST fallback, so the command died on `Unknown type \"AddLabelsToLabelableInput\"`",
+        "id": "GQL-079",
+        "location": "gh_labels_graphql.go, gh_repos_graphql.go",
+        "severity": "B",
+        "status": "fixed \u2014 all three registered signature-exact to the official schema (`labelableId: ID!` plus `labelIds: [ID!]` for add and `[ID!]!` for remove), returning `labelable: Labelable` behind a real interface Issue and PullRequest declare. They share one resolver that writes through the store's replace-the-set primitive, so the labeled/unlabeled timeline events and the webhook label delta are the same ones the REST routes produce, and a label id belonging to another repository is refused rather than attached. Each has a `graphqlMutationAuthz` row (issues scope, push level, no author exemption \u2014 labeling is triage of the repository, not of your own content) with refusal and entitled coverage cases; introspection snapshot and official-schema ratchet regenerated with no new gaps",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "GQL",
+        "finding": "`gitActorSourceLocked` wrote its user lookup into the `GitActor` source unconditionally, and a nil `map[string]interface{}` placed in an interface-typed member is not a nil interface \u2014 so a commit signed by an address no account owns produced a non-null `User` shell with no node id and the whole query failed with `Cannot return null for non-nullable field User.id`, taking every field of `gh pr view --json commits` down with it",
+        "id": "GQL-080",
+        "location": "gh_pulls_graphql.go:2955",
+        "severity": "B",
+        "status": "fixed \u2014 the member is present only when the signature's email belongs to an account, which is where GitHub puts the null; `PullRequest.headRepository`/`headRepositoryOwner` carried the same typed-nil defect and are now interface-typed too. Verified by reversion: the regression reproduces the exact error and path before the fix and passes after, with a companion case proving a known address still resolves its account",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "GQL",
+        "finding": "`StatusContext.isRequired` and `CheckRun.isRequired` did not exist, so `gh pr checks` \u2014 which selects the field on every rollup context \u2014 failed document validation and the subcommand was unusable",
+        "id": "GQL-081",
+        "location": "gh_checks_required_graphql.go, gh_pulls_graphql.go:122",
+        "severity": "M",
+        "status": "fixed \u2014 both fields plus the `RequirableByPullRequest` interface GitHub declares them on, with GitHub's `pullRequestId`/`pullRequestNumber` argument pair. The answer comes from the base branch's protection through a new `RequiredStatusCheckContexts` seam over the server's `requiredCheckContexts`, the same set the merge gate blocks on, so the table cannot mark a check required that the merge would let through; a pull request in another repository is not allowed to answer for this commit. Verified: a test asserting one required and one optional context of each kind, both argument forms, and a pull request onto an unprotected branch requiring nothing",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "GQL",
+        "finding": "`User.gists` and the whole gist object graph \u2014 `GistPrivacy`, `GistOrder`, `GistOrderField`, `Gist`, `GistFile`, `GistEdge`, `GistConnection` \u2014 were absent though the REST `/gists` surface is fully backed, so `gh gist list` failed validation on `Unknown type \"GistPrivacy\"`",
+        "id": "GQL-082",
+        "location": "gh_gists_graphql.go",
+        "severity": "M",
+        "status": "fixed \u2014 the field resolves with GitHub's `privacy`, `orderBy` and all four Relay window arguments, rendering gists from the one store the REST surface reads. A secret gist is listed for its owner alone, so the connection cannot become a way around the REST gate, and equal timestamps break their tie on the node id so a page boundary does not move between identical requests. Verified: the gist-list document gh sends, privacy filtering both ways, cursor pagination, and a stranger seeing only the public gist",
         "status_kind": "fixed"
       },
       {
@@ -4005,7 +4348,7 @@
         "id": "ACT-026",
         "location": "webhooks.go:249",
         "severity": "M",
-        "status": "fixed \u2014 webhook emission is the single event-production choke point and every implemented mutation event automatically feeds Actions. Issue-comment create/edit/delete and pull-request-review submit/dismiss now join push, PR, issue, review-comment, release, deployment, status/check and workflow lifecycle producers; families with no real mutation producer remain open, though the set keeps shrinking \u2014 label create/edit/delete now produces the `label` event (regression `TestWebhookLabelEvent`), and milestone create/close/reopen/edit/delete now produces the `milestone` event with GitHub's action semantics (regression `TestWebhookMilestoneEvent`); branch/tag creation and deletion now produce the `create` and `delete` events with `ref`/`ref_type` (regression `TestWebhookCreateDeleteRefEvent`); commit-comment creation produces the `commit_comment` event repository forks produce the `fork` event on the source repo (regression `TestWebhookCommitCommentAndForkEvents`, which also surfaced and fixed a pre-existing commit-comment response-shape gap \u2014 `path`/`position`/`line` are now emitted as required-nullable), starring a repo produces the `watch` event with action `started` (regression `TestWebhookWatchEvent`), switching a repo from private to public produces the `public` event (regression `TestWebhookPublicEvent`), creating a classic project produces the `project` event (regression `TestWebhookProjectEvent`), establishing/updating/removing a branch-protection rule produces the `branch_protection_rule` event (regression `TestWebhookBranchProtectionRuleEvent`); accepting a repo invitation produces the `member` event, creating a discussion/comment produces the `discussion`/`discussion_comment` events, finishing a Pages build produces the `page_build` event, and classic project column/card create and card move produce the `project_column`/`project_card` events (regressions `TestWebhookMemberEvent`, `TestWebhookDiscussionEvents`, `TestWebhookPageBuildEvent`, `TestWebhookProjectCardColumnEvents`) Every GitHub-Actions `on:` trigger event that has a producer in bleephub now fires: the pre-existing set plus the families wired here (create, delete, milestone, commit_comment, fork, watch, public, project, project_column, project_card, branch_protection_rule, member, discussion, discussion_comment, page_build, registry_package). The only Actions trigger events that still do not fire are the ones with no producer in this surface \u2014 `gollum` (no wiki), `merge_group` (no merge queue) \u2014 and the non-webhook mechanisms `workflow_dispatch`/`workflow_call`; `pull_request_target` shares the `pull_request` producer.",
+        "status": "fixed \u2014 webhook emission is the single event-production choke point and every implemented mutation event automatically feeds Actions. Issue-comment create/edit/delete and pull-request-review submit/dismiss now join push, PR, issue, review-comment, release, deployment, status/check and workflow lifecycle producers; families with no real mutation producer remain open, though the set keeps shrinking \u2014 label create/edit/delete now produces the `label` event (regression `TestWebhookLabelEvent`), and milestone create/close/reopen/edit/delete now produces the `milestone` event with GitHub's action semantics (regression `TestWebhookMilestoneEvent`); branch/tag creation and deletion now produce the `create` and `delete` events with `ref`/`ref_type` (regression `TestWebhookCreateDeleteRefEvent`); commit-comment creation produces the `commit_comment` event repository forks produce the `fork` event on the source repo (regression `TestWebhookCommitCommentAndForkEvents`, which also surfaced and fixed a pre-existing commit-comment response-shape gap \u2014 `path`/`position`/`line` are now emitted as required-nullable), starring a repo produces the `watch` event with action `started` (regression `TestWebhookWatchEvent`), switching a repo from private to public produces the `public` event (regression `TestWebhookPublicEvent`), creating a classic project produces the `project` event (regression `TestWebhookProjectEvent`), establishing/updating/removing a branch-protection rule produces the `branch_protection_rule` event (regression `TestWebhookBranchProtectionRuleEvent`); accepting a repo invitation produces the `member` event, creating a discussion/comment produces the `discussion`/`discussion_comment` events, finishing a Pages build produces the `page_build` event, and classic project column/card create and card move produce the `project_column`/`project_card` events (regressions `TestWebhookMemberEvent`, `TestWebhookDiscussionEvents`, `TestWebhookPageBuildEvent`, `TestWebhookProjectCardColumnEvents`) Every GitHub-Actions `on:` trigger event that has a producer in bleephub now fires: the pre-existing set plus the families wired here (create, delete, milestone, commit_comment, fork, watch, public, project, project_column, project_card, branch_protection_rule, member, discussion, discussion_comment, page_build, registry_package). The only Actions trigger events that still do not fire are the ones with no producer in this surface \u2014 `merge_group` (no merge queue; `gollum` now has a producer, see the wiki-over-git entry) \u2014 and the non-webhook mechanisms `workflow_dispatch`/`workflow_call`; `pull_request_target` shares the `pull_request` producer.",
         "status_kind": "fixed"
       },
       {
@@ -4330,6 +4673,51 @@
         "location": "webhooks.go",
         "severity": "m",
         "status": "fixed \u2014 each attempt mints a fresh GUID (retries stay flagged as redeliveries), matching GitHub's one-GUID-per-delivery model",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "ACT",
+        "finding": "a `pull_request` run whose head is a fork received every repository, organization and environment secret, though the fork contributor authors the workflow file that run executes",
+        "id": "ACT-105",
+        "location": "workflows_msg.go",
+        "severity": "B",
+        "status": "fixed \u2014 a fork-originated `pull_request` run is handed no secrets beyond `GITHUB_TOKEN`, matching GitHub's unconditional rule; `pull_request_target` is deliberately unaffected because it runs the base repository's definition in the base context. Verified: the fork case loses the repository secret while the same-repo and `pull_request_target` cases keep it",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "ACT",
+        "finding": "secrets re-widened at the second level of reusable-workflow nesting: a caller that passed an explicit `secrets:` map to workflow B, which then called C with `secrets: inherit`, gave C's jobs the repository's FULL secret set rather than the one secret B holds",
+        "id": "ACT-106",
+        "location": "workflow_call.go, workflows_msg.go",
+        "severity": "B",
+        "status": "fixed \u2014 call bindings carry a parent link and secret resolution walks the chain outside-in, so each call can only narrow what the enclosing call already granted. Verified: the leaf job of a two-level chain sees only the mapped name, never the caller's unmapped secret",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "ACT",
+        "finding": "`include:` merging deviated from GitHub's documented algorithm two ways \u2014 an include could not overwrite a key an earlier include contributed, and combinations appended by an earlier include were themselves matched by later ones \u2014 so GitHub's own documentation example produced 5 jobs with wrong values instead of 6",
+        "id": "ACT-107",
+        "location": "matrix.go",
+        "severity": "M",
+        "status": "fixed \u2014 merge candidates are the Cartesian combinations only, and the overwrite rule is scoped to the ORIGINAL matrix dimensions; `ExpandMatrix(nil)` also no longer dereferences its nil argument. Verified: the documented fruit/animal/color example now reproduces byte-for-byte",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "ACT",
+        "finding": "`on.workflow_run.workflows` was parsed nowhere and filtered nothing, so a listener workflow started on EVERY run in the repository \u2014 including its own completion",
+        "id": "ACT-108",
+        "location": "workflow_triggers.go, webhooks.go",
+        "severity": "M",
+        "status": "fixed \u2014 the filter is parsed, the source run's name rides the trigger event, and a listener only starts for the workflows it names. Verified through the real event path: a `Release` completion no longer starts a `CI`-scoped listener, and the listener no longer restarts itself",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "ACT",
+        "finding": "the implicit `success()` a job carries was only dropped for `always()` and `failure()`, so an `if: cancelled()` job was skipped by the dependency roll-up for the very cancellation that made its condition true \u2014 the case `CancelWorkflow` deliberately keeps such a job pending for",
+        "id": "ACT-109",
+        "location": "workflows.go",
+        "severity": "M",
+        "status": "fixed \u2014 any of `success()`/`always()`/`cancelled()`/`failure()` replaces the default status check, the same rule the step path already applied, and the cancellation gate is now token-accurate instead of a substring search that a string literal could satisfy. Verified: an `if: cancelled()` job with a cancelled dependency dispatches, while a status-function-free `if:` still skips behind a failed dependency",
         "status_kind": "fixed"
       },
       {
@@ -7159,6 +7547,15 @@
         "status_kind": "fixed"
       },
       {
+        "category": "WEB",
+        "finding": "the Projects v2 page showed only items, fields and views: a project's description, README, status updates and automation rules had no surface at all, though the server now stores and serves all four",
+        "id": "WEB-208",
+        "location": "web/src/pages/OrgProjectsV2Page.tsx",
+        "severity": "m",
+        "status": "fixed \u2014 a lazy-page overview panel reads them through GraphQL (there is no documented REST route for project metadata) and writes back through `updateProjectV2`, `createProjectV2StatusUpdate` and `deleteProjectV2StatusUpdate`; the edit and compose controls are gated on `viewerCanUpdate`, so a reader is not shown a control the server would refuse. The queries live in the lazy page rather than the shared api module, so the entry chunk does not grow",
+        "status_kind": "fixed"
+      },
+      {
         "category": "TEST",
         "finding": "`-race` appears nowhere in the repository, while five tests name the race detector as their assertion mechanism",
         "id": "TEST-001",
@@ -8516,15 +8913,537 @@
         "severity": "m",
         "status": "fixed \u2014 the injection block re-points store.ActionsArtifacts alongside the engine rebuild, so both access paths reach the injected byte store",
         "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "a repository's Dependabot alerts and its still-embargoed draft advisories were readable by any authenticated account on a PUBLIC repository, because both surfaces gated on repository readability alone \u2014 so the exact vulnerable dependency versions an instance is running, and every advisory under embargo, were open to anyone holding a token",
+        "id": "REST-189",
+        "location": "gh_security_advisories.go, gh_dependabot.go",
+        "severity": "B",
+        "status": "fixed \u2014 a shared `viewerHasRepoSecurityAccess` predicate asks security_events at read plus push standing on the repository, which is what GitHub requires on public repositories exactly as on private ones. The alert routes refuse with 404 rather than 403 so the refusal is not an oracle for whether findings exist; the advisory list filters embargoed rows out for a caller without security access while still serving published ones, since a published advisory is public. GraphQL's `Repository.vulnerabilityAlerts` asks the same predicate and answers null rather than an empty connection, so silence cannot be read as \"this repository is clean\". Verified: a REST isolation test proving the stranger is refused on both surfaces and the owner is not, plus the GraphQL half over public and private repositories",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "`repository-advisory-create` and `-update` decoded the CVSS vector from `cvss_vector` and had no `cve_id` member at all, but the documented request spells them `cvss_vector_string` and `cve_id` \u2014 so every GitHub SDK's vector and CVE identifier were silently discarded and the advisory came back with both null",
+        "id": "REST-190",
+        "location": "store_security_advisories.go",
+        "severity": "B",
+        "status": "fixed \u2014 both members carry their documented names on create and update, and `start_private_fork`, `collaborating_users`, `collaborating_teams` and per-vulnerability `vulnerable_functions` are accepted and stored rather than dropped. `collaborating_users`/`collaborating_teams` and `vulnerable_functions` were previously hardcoded empty arrays in the response; they now render what the request asked for, teams through the shared `teamToJSON` so a team here is byte-identical to one from `/orgs/{org}/teams`. Verified by a go-github conformance operation that writes each member and reads it back, and by a round-trip test that also clears the collaborator list with `[]`",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "`cvss.score` was served as null whenever the author supplied only a vector, which is all the documented create request accepts \u2014 so an advisory carrying a \"critical\" vector reported no score, and the `/advisories` `ecosystem` and `affects` filters rejected every advisory outright on the stale premise that repository advisories carry no package coordinates",
+        "id": "REST-191",
+        "location": "gh_security_advisories.go, gh_global_advisories.go",
+        "severity": "M",
+        "status": "fixed \u2014 the score is computed from the vector with the CVSS v3.0/v3.1 base formula, including the specification's Roundup rule rather than the naive ceiling that rounds a representable value up a tenth; a v4 vector is refused rather than scored with v3 arithmetic, because its score comes from a lookup table. The two filters now match against the advisory's vulnerabilities, with `affects` accepting `package@version` and testing the version against the vulnerable range under that ecosystem's ordering. Verified: nine published CVSS vectors with their known scores, the refusal cases, and conformance operations asserting both filters include a matching advisory and exclude a non-matching one",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "`dismissed_by` was a hardcoded null on every Dependabot alert response, so an alert a person had dismissed came back looking anonymous",
+        "id": "REST-192",
+        "location": "gh_dependabot.go",
+        "severity": "M",
+        "status": "fixed \u2014 the member renders the dismissing account through the shared user shape, or null when the alert stands. Verified by a go-github conformance operation that dismisses an alert and asserts the client decodes an account",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "Dependabot alert derivation compared package versions with one generic comparator for every ecosystem, so it both missed and invented alerts: a PEP 440 post-release read as a prerelease of its own release, a Maven service pack read as older than the release it patches, and a Composer `dev` build sorted above `alpha`",
+        "id": "REST-193",
+        "location": "dependabot_ingest.go, store_advisories_versions.go",
+        "severity": "M",
+        "status": "fixed \u2014 the comparison is ecosystem-aware, with SemVer 2.0.0 for npm/Go/Cargo/Hex/pub/SwiftPM/Actions, PEP 440 for pip, Maven's ComparableVersion for maven, Gem::Version for rubygems, four-part NuGetVersion for nuget and PHP's version_compare stability order for composer. A version dialect no comparator can read still raises the alert rather than silently ruling the dependency safe. Ecosystem spellings are folded, so a purl's `pypi`/`cargo`/`golang` matches an advisory's `pip`/`rust`/`go` instead of never matching. Verified: a table of orderings per ecosystem including three version pairs that two ecosystems place in opposite orders, plus antisymmetry on every case",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "no `dependabot_alert`, `repository_advisory` or `security_advisory` webhook was ever delivered, and an alert's state only ever moved when a person moved it \u2014 a repository that had upgraded past every vulnerable range still reported all of its alerts open",
+        "id": "REST-194",
+        "location": "gh_advisories_events.go",
+        "severity": "M",
+        "status": "fixed \u2014 derivation emits `created`, and a reconciliation pass over the repository's current dependency set closes an alert whose package is no longer declared at a vulnerable version (`fixed`) and reopens one whose vulnerable version returned (`reintroduced`), leaving a dismissed alert alone because a person already ruled on it. The REST alert update and the GraphQL dismissal both deliver through one payload builder, so a subscriber cannot tell which surface moved the alert. `repository_advisory` carries `reported` and `published`; `security_advisory` carries `published`, `updated` and `withdrawn` and fans out to the repositories actually holding an alert against the advisory. An advisory under embargo produces nothing. Verified: a receiver test walking created \u2192 dismissed \u2192 reopened \u2192 fixed \u2192 reintroduced and asserting each payload's members",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "GQL",
+        "finding": "the entire security-advisory, vulnerability-alert and dependency-graph GraphQL surface was absent \u2014 `securityAdvisory`, `securityAdvisories`, `securityVulnerabilities`, `Repository.vulnerabilityAlerts`, `Repository.dependencyGraphManifests`, `Repository.hasVulnerabilityAlertsEnabled` and `dismissRepositoryVulnerabilityAlert` \u2014 so any client selecting one failed document validation on an unknown field",
+        "id": "GQL-083",
+        "location": "gh_advisories_graphql.go",
+        "severity": "B",
+        "status": "fixed \u2014 the whole family is registered against the vendored schema: `SecurityAdvisory` with its identifiers, CWE connection, CVSS, classification, withdrawal and vulnerabilities connection; `SecurityVulnerability` with its package, range and first patched version; `RepositoryVulnerabilityAlert` with its state, dismisser, reason, advisory and vulnerability, dependency scope and relationship; `DependencyGraphManifest` and `DependencyGraphDependency`; `CWE`, `CVSS`, `CvssSeverities`, `EPSS`, `DependabotUpdate`, `DependabotUpdateError`, the `RepositoryNode` interface, ten enums, three input objects and every Relay connection and edge. The four Node implementors resolve through `Query.node` behind the same access check their fields use. The mutation has a `graphqlMutationAuthz` row at security_events/push \u2014 the entitlement the REST alert update demands, so GraphQL cannot become the way around it \u2014 with refusal and entitled coverage, and the introspection snapshot regenerated. Verified: the global-database queries, the derived-alert lifecycle, the manifests connection, node dispatch, ordering and cursor pagination, and cross-tenant isolation over public and private repositories",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "GQL",
+        "finding": "`RepositoryVulnerabilityAlert`'s nullable object members were written as nil Go maps, and a nil map boxed in an `interface{}` is not a nil interface \u2014 so an alert nobody had dismissed rendered a non-null `User` shell and failed the whole query with `Cannot return null for non-nullable field User.login`; separately the advisory and vulnerability source maps referred to one another, so any reflective walk over one recursed until the stack was gone",
+        "id": "GQL-084",
+        "location": "gh_advisories_graphql.go",
+        "severity": "M",
+        "status": "fixed \u2014 the four nullable members go through a helper that yields an untyped nil, and `SecurityVulnerability.advisory` resolves on demand from the vulnerability's GHSA id instead of embedding its parent, which removes the cycle and renders the advisory only when the field is selected. Verified: the alert query is exercised against an undismissed alert in every advisory test, which is what reproduced the failure",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "STORE",
+        "finding": "`ListGlobalAdvisories` returned the live advisory rows rather than detached snapshots (STORE-021), and alert derivation walks that list holding no lock while reading each advisory's vulnerability slice",
+        "id": "STORE-082",
+        "location": "global_advisories.go",
+        "severity": "M",
+        "status": "fixed \u2014 the listing clones each advisory and returns a snapshot slice, and the deep copy now also detaches the per-vulnerability `vulnerable_functions` slice the STORE-021 sweep predated",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "a new repository was created with no labels at all; github seeds nine (`bug`, `documentation`, `duplicate`, `enhancement`, `good first issue`, `help wanted`, `invalid`, `question`, `wontfix`), and `gh label list`, go-github `listLabelsForRepo` and PyGithub `get_labels` all read them",
+        "id": "REST-195",
+        "location": "gh_repos_rest.go, store_repos.go",
+        "severity": "M",
+        "status": "fixed \u2014 seeded in the same transaction as the repository row from every creation path including fork and generate-from-template, with the colours and descriptions taken from the live API rather than the docs table, which lists different prose and a tenth label the API does not return. `ListLabels` also sorted by map iteration order and now sorts by id",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "search responses carried no `Link` header, so `octokit.paginate` over `/search/issues` returned one result of seven and go-github saw no next page \u2014 silent truncation, where the client receives a plausible short answer and cannot tell",
+        "id": "REST-196",
+        "location": "gh_pagination.go, gh_search.go",
+        "severity": "M",
+        "status": "fixed \u2014 the same `buildLinkHeader` every other collection uses now applies to all seven search endpoints through the envelope writer, capped at github's 1000-result window so `rel=\"next\"` never walks a client into the documented refusal",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "`gh pr diff` printed the pull request object as JSON: the media-type matcher tested for `application/vnd.github.diff` and never matched gh's versioned `application/vnd.github.v3.diff`. The same miss silently disabled `.diff`/`.patch` on commits and compare, whose bodies were already implemented",
+        "id": "REST-197",
+        "location": "gh_pulls_rest.go, gh_repos_commit_reads.go, gh_repos_compare.go",
+        "severity": "M",
+        "status": "fixed \u2014 one matcher accepts both spellings; the pull-request diff is built on a source extracted from the existing changed-files path rather than a second diff implementation",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "`Accept: application/vnd.github.raw` on the contents API answered `application/octet-stream` and still reported `X-GitHub-Media-Type: \u2026format=json`, so octokit handed callers a binary buffer where github sends `text/plain; charset=utf-8`",
+        "id": "REST-198",
+        "location": "gh_repos_objects.go, gh_media_types.go",
+        "severity": "M",
+        "status": "fixed \u2014 content type and media-type header are handler-set per requested media type for contents and readme; `/git/blobs` keeps octet-stream (it addresses a hash with no filename) but now reports its parameter. The XSS-safe `/{owner}/{repo}/raw/{ref}/{path}` route is untouched and guarded by a test",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "gist `html_url` was `/{owner}/{id}` and the git URLs carried the owner segment; github keys all three on the id alone (`/gist/{id}`, `/gist/{id}.git`)",
+        "id": "REST-199",
+        "location": "gh_gists_rest.go",
+        "severity": "m",
+        "status": "fixed \u2014 verified every gist URL member against the vendored examples; the four api.github.com-shaped members already matched",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "`required_status_checks.contexts` was never populated although `status-check-policy` requires both `contexts` and `checks`, so the `/contexts` sub-resource read empty and `POST` answered with only the value just added",
+        "id": "REST-200",
+        "location": "gh_branch_protection.go, branch_protection.go",
+        "severity": "M",
+        "status": "fixed \u2014 the two are one set, and writing either populates both",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "every documented deployment filter (`sha`, `ref`, `task`, `environment`) was ignored, `check_name` was ignored on both check-run listings, and the suite listing ignored `status` and `filter`. `latest` also keyed on the suite alone, so a suite with several named checks collapsed to one",
+        "id": "REST-201",
+        "location": "gh_deployments.go, gh_checks_rest.go",
+        "severity": "M",
+        "status": "fixed \u2014 filters applied on both endpoints and `latest` re-keyed on (suite, name)",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "go-github's only typed environment-secret methods use `/repositories/{id}/environments/{env}/secrets`, which bleephub does not serve, so an unmodified go-github cannot read environment secrets",
+        "id": "REST-202",
+        "location": "secrets.go",
+        "severity": "m",
+        "status": "open \u2014 the id-based form appears in none of the five vendored descriptions and go-github cites GHES 3.7 docs older than the oldest description carrying environment secrets, so serving it would fail the uncited-route gate. Closing it needs a vendored ghes-3.7 index or a shim carve-out",
+        "status_kind": "open"
+      },
+      {
+        "category": "REST",
+        "finding": "the `marketplace_purchase` webhook emitted only purchased/changed/cancelled, so a scheduled downgrade or a paid cancellation produced no event, and a scheduled change could not be revoked",
+        "id": "REST-203",
+        "location": "gh_marketplace.go",
+        "severity": "M",
+        "status": "fixed \u2014 `pending_change` and `pending_change_cancelled` with `effective_date` and upcoming-versus-current purchase objects, plus a revoke path and a browser control",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "REST",
+        "finding": "`/orgs/{org}/copilot/billing` reported a hardcoded plan and feature policy, every seat reported `last_activity_at: null` with no way to record activity, and `/copilot/metrics` was permanently empty",
+        "id": "REST-204",
+        "location": "gh_copilot.go",
+        "severity": "M",
+        "status": "fixed \u2014 org policy, per-seat activity and a usage ledger are persisted and reported; the 1-day report's shape was corrected to `report_day`, which had been failing the openapi shape ratchet",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "AUTH",
+        "finding": "a rule-level `DELETE` under `/protection` removed the entire branch protection whenever it cleared the last rule, so `DELETE .../enforce_admins` left the branch unprotected and `GET` answered `404 Branch not protected`. All five sub-resource deletes were affected",
+        "id": "AUTH-121",
+        "location": "gh_branch_protection.go, branch_protection.go",
+        "severity": "B",
+        "status": "fixed \u2014 protection carries an explicit enabled state cleared only by `DELETE .../protection`; the test covers all five sub-resources, each with exactly one rule",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "AUTH",
+        "finding": "`GET /user` answered an installation token 200 with the `[bot]` account where github answers `403 Resource not accessible by integration` \u2014 the distinction clients use to tell a user credential from an installation credential",
+        "id": "AUTH-122",
+        "location": "gh_installation_user_scope.go, server.go",
+        "severity": "M",
+        "status": "fixed \u2014 a refusal applied from the route registrar so new routes inherit it, over 94 account-scoped `/user` registrations, held against the vendored `x-github.enabledForGitHubApps` data in both directions. That two-way test caught an over-refusal of ten routes on the first attempt",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "AUTH",
+        "finding": "the new git rename redirect built its `Location` from the client-supplied `Host`, a high-severity open redirect in code added the same day",
+        "id": "AUTH-123",
+        "location": "gh_repo_redirects.go",
+        "severity": "M",
+        "status": "fixed \u2014 same-origin relative path assembled from server-chosen parts only, which also fixes proxy deployments",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "AUTH",
+        "finding": "the device-flow endpoints parsed form encoding only and answered a JSON body with `incorrect_client_credentials`, so octokit's own `auth-oauth-device` strategy could not complete the grant",
+        "id": "AUTH-124",
+        "location": "gh_oauth.go",
+        "severity": "M",
+        "status": "fixed \u2014 both encodings accepted on every leg; `unsupported_grant_type` also bypassed `Accept` negotiation and `Cache-Control: no-store`",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "AUTH",
+        "finding": "wiki writes were hard-wired to push access, so github's restrict-editing-to-collaborators setting could not be relaxed and the git lane had no wiki policy at all",
+        "id": "AUTH-125",
+        "location": "gh_wiki.go, gh_wiki_git.go",
+        "severity": "M",
+        "status": "fixed \u2014 one predicate both lanes ask; the stored flag is inverted so the zero value is github's restricted default, and unrestricting relaxes the principal without relaxing the credential's grant",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "AUTH",
+        "finding": "`membersCanMakePurchases` was stored and served but governed nothing",
+        "id": "AUTH-126",
+        "location": "gh_enterprise_policy.go, gh_marketplace.go",
+        "severity": "M",
+        "status": "fixed \u2014 gated at the purchase and plan-change write paths, resolving the enterprise from the buying account; both-directions test asserts the store is unchanged on refusal",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "AUTH",
+        "finding": "`organizationProjects` fed only the `has_organization_projects` field and gated no creation path",
+        "id": "AUTH-127",
+        "location": "gh_enterprise_graphql.go, gh_projects_v2_graphql.go",
+        "severity": "M",
+        "status": "fixed \u2014 gates `createProjectV2` for organization owners. Classic org projects have no creation path to gate: github retired them from the REST contract, so adding one would violate the real-route gate",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "AUTH",
+        "finding": "`proofOfPresenceRequired` had no implementation at all \u2014 there was no sudo mode, so a hijacked session could change security settings, delete repositories and manage keys without ever re-proving presence",
+        "id": "AUTH-128",
+        "location": "gh_sudo_mode.go, store_login_sessions.go",
+        "severity": "B",
+        "status": "fixed \u2014 per-session sudo timestamp with a three-hour window, a challenge honouring the schema's MFA/REAUTH distinction, and enforcement at twelve sensitive operations. The challenge reuses the second-factor verifier so the disallowed-methods policy applies to it too",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "AUTH",
+        "finding": "`ipAllowListUserLevelEnforcementEnabled` had no user-scoped allow list to enforce",
+        "id": "AUTH-129",
+        "location": "gh_user_ip_allow_list.go, gh_enterprise_policy.go",
+        "severity": "M",
+        "status": "fixed \u2014 a user-owned list enforced in the API middleware when the enterprise enables it. Its management surface sits deliberately outside the enforced scope so an account that locks itself out with a bad range can still undo it",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "AUTH",
+        "finding": "`twoFactorDisallowedMethods` had nothing to disallow",
+        "id": "AUTH-130",
+        "location": "account_security.go",
+        "severity": "M",
+        "status": "fixed \u2014 a truthful closed catalogue of the methods that exist; recovery codes are classed insecure and refused, unspent, at every second-factor chokepoint. Github's `INSECURE` targets SMS, which bleephub does not implement, so that method is absent from the catalogue rather than listed and silently unenforced",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "AUTH",
+        "finding": "`notificationDeliveryRestrictionEnabled` restricted nothing and had no verified-domain model to restrict against",
+        "id": "AUTH-131",
+        "location": "store_enterprise_accounts.go, gh_enterprise_verified_domains.go",
+        "severity": "M",
+        "status": "fixed \u2014 enterprise verified domains built; selecting email delivery for an address outside every verified domain is refused and the served preferences are clamped, so an account never claims a delivery that cannot happen. The outbound send itself is ungovernable because no mail transport exists in the process",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "GQL",
+        "finding": "the typed-nil source defect was systemic, not the single instance recorded as GQL-084: a nilable child written straight into an `interface{}` source member is a non-nil interface holding a nil map, which graphql-go reports as present, so the child's non-null fields fail and the panic discards a whole subtree. An audit over the full suite found 85 affected field paths reducing to five reachable defects \u2014 `Issue.milestone` and `Issue.issueType` on any issue without one, `IssueComment.editor` when the editor's account is gone, `PullRequest.mergedBy` on every unmerged pull request, and `projectV2(number:)` for a number that does not exist \u2014 plus roughly forty more of the same shape not reachable by the current fixtures. Not one of them failed a test",
+        "id": "GQL-085",
+        "location": "gh_issues_graphql.go, gh_pulls_graphql.go, gh_projects_v2_types_graphql.go, gh_repos_graphql.go, gh_discussions_graphql.go",
+        "severity": "B",
+        "status": "fixed \u2014 two helpers replace the ad-hoc predecessor, collapsing the declare-then-conditionally-assign dance the defect hides in into one safe expression so the shortest way to write the field is the correct one; every site converted, and a schema-local test pins the failure mode against the pinned graphql-go so a library upgrade speaks up",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "GQL",
+        "finding": "github Sponsors was absent from GraphQL entirely \u2014 no `Sponsorable` interface, no listing, tier, goal or sponsorship types \u2014 so every Sponsors field a client selected was an unknown-field error",
+        "id": "GQL-086",
+        "location": "gh_sponsors_graphql.go",
+        "severity": "M",
+        "status": "fixed \u2014 66 types with `Sponsorable` on both User and Organization, `Query.sponsorables`, and all nine mutations, each with a policy row plus refusal and entitled cases. Private sponsorships are gated by one predicate that `includePrivate` cannot override",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "GQL",
+        "finding": "`Query.marketplaceListing(s)`, `marketplaceCategory(-ies)` and both types were absent, and listings carried no category taxonomy",
+        "id": "GQL-087",
+        "location": "gh_marketplace_graphql.go, store_marketplace_categories.go",
+        "severity": "M",
+        "status": "fixed \u2014 github's 19-slug taxonomy seeded per instance with a per-listing profile; every `viewerCan*`, `viewerHasPurchased` and `installedForViewer` answered from real ownership, purchases and installations, and a delisted listing reads as absent to non-publishers even under `allStates`",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "GQL",
+        "finding": "`User.copilotEndpoints` was absent, so a Copilot client could not resolve the instance's service endpoints",
+        "id": "GQL-088",
+        "location": "gh_copilot_graphql.go",
+        "severity": "m",
+        "status": "fixed \u2014 served from the instance's own URLs and scoped to the authenticated user as github scopes it",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "GQL",
+        "finding": "the whole importer GraphQL surface was absent \u2014 no `Migration` interface, no `RepositoryMigration`, `OrganizationMigration` or `MigrationSource`, no `Organization.repositoryMigrations`, and none of the seven mutations",
+        "id": "GQL-089",
+        "location": "gh_migrations_graphql.go",
+        "severity": "M",
+        "status": "fixed \u2014 22 types and 7 mutations at exact github signatures, each behind a policy row with refusal and entitled cases, all resolving the migrator predicate the REST lane already used",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "GQL",
+        "finding": "`SearchType.REPOSITORY`, `SearchResultItemConnection.repositoryCount` and `Repository` in the `SearchResultItem` union were all absent",
+        "id": "GQL-090",
+        "location": "gh_search_repositories_graphql.go",
+        "severity": "M",
+        "status": "fixed \u2014 all three served, with a Go test alongside the conformance operation",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "GQL",
+        "finding": "`Repository.rulesets` was absent although rulesets are served over REST, so `gh ruleset list` failed with a field error",
+        "id": "GQL-091",
+        "location": "gh_rulesets_graphql.go",
+        "severity": "M",
+        "status": "fixed \u2014 the GraphQL view reads the existing ruleset data",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "GQL",
+        "finding": "Repository, User and Organization served 64, 37 and 34 of github's fields, so a client rendering a repository, profile or organization page hit validation errors for settings, community files, collaborators, deployments, teams, the follow graph and pinned items",
+        "id": "GQL-092",
+        "location": "gh_account_surface_graphql.go and eight sibling files",
+        "severity": "M",
+        "status": "fixed \u2014 131 fields closed across the three types and 25 more on Team, each backed by existing store data, with per-field authorization tests covering secret teams, private membership and private repository content. En route: a latent typed-nil in the commit-comment author, and seven enums minted as unshared locals that collided once a second consumer named them",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "GQL",
+        "finding": "`Repository.stargazers` and `User.starredRepositories` cannot be served because both edges declare `starredAt` as non-null and the store records stargazers as a set with no timestamp",
+        "id": "GQL-093",
+        "location": "gh_repos_graphql.go",
+        "severity": "m",
+        "status": "open \u2014 needs a starred-at map on the repository row, set on star, cloned in the snapshot and persisted; it would also let REST serve the star media type",
+        "status_kind": "open"
+      },
+      {
+        "category": "GQL",
+        "finding": "`User.status` and `Organization.memberStatuses` need a user-status model (emoji, message, expiry, organization scope) that does not exist",
+        "id": "GQL-094",
+        "location": "gh_users_surface_graphql.go",
+        "severity": "m",
+        "status": "open",
+        "status_kind": "open"
+      },
+      {
+        "category": "GQL",
+        "finding": "`packages` on Repository, User and Organization is unserved although the package store holds the data; it needs the `Package`/`PackageVersion`/`PackageStatistics` type graph",
+        "id": "GQL-095",
+        "location": "gh_account_surface_graphql.go",
+        "severity": "m",
+        "status": "open",
+        "status_kind": "open"
+      },
+      {
+        "category": "GQL",
+        "finding": "`Organization.auditLog` needs github's roughly one hundred typed audit-entry objects; the store keeps one generic entry row",
+        "id": "GQL-096",
+        "location": "gh_orgs_surface_graphql.go",
+        "severity": "m",
+        "status": "open",
+        "status_kind": "open"
+      },
+      {
+        "category": "GQL",
+        "finding": "`Repository.branchProtectionRules` is blocked on the rule type being a two-field shell, and `vulnerabilityAlert(number:)` on the alert object living in a non-memoized local registry with no per-repository alert number",
+        "id": "GQL-097",
+        "location": "gh_repos_settings_graphql.go",
+        "severity": "m",
+        "status": "open \u2014 the branch-protection half is fixed: `BranchProtectionRule` is now the complete 31-field object (memoized, `gh_branch_protection_graphql.go`) backed by the same store the REST protection routes drive, `Repository.branchProtectionRules` is implemented, and the create/update/delete mutations exist with authz rows and refusal/entitled cases; the `vulnerabilityAlert(number:)` half (non-memoized alert registry, no per-repository alert number) remains",
+        "status_kind": "open"
+      },
+      {
+        "category": "GQL",
+        "finding": "the git-write mutations were absent: createRef, updateRef, deleteRef, mergeBranch, createCommitOnBranch, updateRefs and revertPullRequest had no GraphQL surface, and the Repos seam declared six methods nothing implemented \u2014 a dangling interface that broke the build when it landed",
+        "id": "GQL-098",
+        "location": "gh_git_writes_graphql.go, graphql_seams.go",
+        "severity": "M",
+        "status": "fixed \u2014 all seven mutations, each driving the same branch-protection, secret-scanning and push machinery the REST git-database routes run through six new seam implementations; updateRefs honours beforeOid as a lost-update refusal, a zero afterOid deletes, an absent reference is created; revertPullRequest builds the inverse commit on a revert branch and opens the pull request through the checked constructor with CODEOWNERS collection",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "GQL",
+        "finding": "discussions could not be closed: the store had no closed state, so closeDiscussion and reopenDiscussion could not exist and the Discussion type served neither closed, closedAt nor stateReason",
+        "id": "GQL-099",
+        "location": "gh_discussions_graphql.go, store_discussions.go",
+        "severity": "m",
+        "status": "fixed \u2014 close state on the store row, both mutations with the documented DiscussionCloseReason vocabulary and REOPENED on reopen, the closed and reopened webhook actions, and the three fields on the type",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "GQL",
+        "finding": "updateTeamsRepository, deletePackageVersion and cloneTemplateRepository were absent; teams and package versions had no node-id finders at all",
+        "id": "GQL-100",
+        "location": "gh_mutations_admin_graphql.go, node_finders.go",
+        "severity": "m",
+        "status": "fixed \u2014 the three mutations with exact signatures; team grants map github's five-value permission vocabulary onto the stored grant levels and refuse a team from another organization; deleting a package version answers not-yours identically to does-not-exist so the mutation is no existence oracle; template generation runs the same storage copy and owner rule as the REST generate route",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "TEST",
+        "finding": "the conformance matrix carried four skips, and a skip counted as neither pass nor failure \u2014 'no SDK can produce this' was asserted where the deployment could in fact produce it",
+        "id": "TEST-096",
+        "location": "test/conformance",
+        "severity": "M",
+        "status": "fixed \u2014 zero skips: artifacts are produced by a genuinely dispatched workflow run and read back through each SDK's typed methods, gh attestation verify runs against a bundle the deployment serves with a custom trusted root, and the one subcommand gh refuses to send to a non-github.com host was replaced by a covering octokit operation that exercises linked branches for real; 698 of 698 operations pass",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "STORE",
+        "finding": "a recurring sponsorship had no billing cycle, so an upgrade could not bill and a downgrade or cancellation could not take effect at the end of a paid period",
+        "id": "STORE-083",
+        "location": "store_sponsors.go",
+        "severity": "M",
+        "status": "fixed \u2014 pending changes and cancellations applied on the cycle boundary, upgrades billed the prorated difference in integer cents with the multiplication before the division, and every reported money figure derived from the invoice ledger rather than stored separately to drift",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "STORE",
+        "finding": "the wiki page store and the wiki git repository were two independent copies of the same content, so a push and a browser edit could silently diverge",
+        "id": "STORE-084",
+        "location": "repos_wiki.go, store_wiki_git.go",
+        "severity": "B",
+        "status": "fixed \u2014 git is the single source of truth and the page map is a tip-stamped memo of a pure projection, rebuilt on any read whose tip moved, so a stale memo is detected by comparing object ids rather than invalidated by a writer that has to remember. The former persistence buckets were removed outright",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "STORE",
+        "finding": "a migration's source lock was recorded and never honoured, so an importer migration's source stayed writable while it was being read",
+        "id": "STORE-085",
+        "location": "store_migrations_state.go",
+        "severity": "M",
+        "status": "fixed \u2014 folded into the single predicate every repository write asks, so it holds across REST, GraphQL and both git transports, and a terminal migration releases it",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "CORE",
+        "finding": "`{owner}/{repo}.wiki.git` answered 404 on both git transports, so no unmodified client could clone or edit a wiki \u2014 and git is the only interface github gives wiki content",
+        "id": "CORE-034",
+        "location": "git_http.go, git_ssh.go, gh_wiki_git.go",
+        "severity": "B",
+        "status": "fixed \u2014 resolved to storage keyed on the `.wiki.git` suffix, which no repository can own because repository names ending in `.git` are refused, and served by the same upload-pack and receive-pack as any repository, so protocol v2, shallow, partial clone, thin packs and LFS all apply",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "CORE",
+        "finding": "a wiki write emitted no `gollum` webhook, the one Actions trigger the parity inventory recorded as having no producer",
+        "id": "CORE-035",
+        "location": "gh_wiki_git.go",
+        "severity": "M",
+        "status": "fixed \u2014 emitted from both the push and the browser lane with github's documented payload; a regression also asserts a wiki push raises no `push` event",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "CORE",
+        "finding": "`git lfs` failed with a 501 unless object storage was configured, so a default deployment had no working LFS at all, which real github always has",
+        "id": "CORE-036",
+        "location": "object_bytes_local.go, gh_repos_lfs.go",
+        "severity": "M",
+        "status": "fixed \u2014 a filesystem-backed byte store under the data directory, following the package-data precedent, with the object-storage path unchanged when configured and the persistence guard still refusing a persistent deployment without it",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "CORE",
+        "finding": "the importer store layer existed but nothing ran it: there was no repository or organization migration worker, so a migration could only sit queued, and the resume call in the serving path referenced a function that was never written",
+        "id": "CORE-037",
+        "location": "gh_migrations_gei.go, server.go",
+        "severity": "B",
+        "status": "fixed \u2014 both workers follow the export worker's pattern, claiming before working under the server lifetime, and the resume path runs ahead of the listener so a migration interrupted by a restart completes",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "TEST",
+        "finding": "the typed-nil source class was found twice independently and neither instance failed a test, because the defect is invisible unless a query happens to select the absent child",
+        "id": "TEST-092",
+        "location": "graphql_source_audit_test.go",
+        "severity": "M",
+        "status": "fixed \u2014 a ratchet wraps every object field resolver of every test server and walks each resolved source map against the schema, so reaching a type audits all of its members rather than only the selected one. The walk is type-directed, so a nil map behind a leaf scalar is not mistaken for the defect; two self-tests keep it from going vacuous, and reverting a known fix reproduces the original error while reverting a newly-found one leaves every test green and fails only the ratchet",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "TEST",
+        "finding": "the rename-redirect and secret-upsert fixes had landed while tests still pinned the pre-fix contract \u2014 404 on a vacated repository name, 204 on secret creation \u2014 and one test pinned the installation-token deviation itself, so three separate sweeps reported landed work as broken",
+        "id": "TEST-093",
+        "location": "fourteen assertions across eight files",
+        "severity": "M",
+        "status": "fixed \u2014 assertions moved to the documented contract. A test asserting the old behaviour is why a landed fix can still read as failing",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "TEST",
+        "finding": "the clock gate scanned raw lines, so a comment explaining why a test avoids wall-clock reads counted as one \u2014 documenting the rule tripped the rule",
+        "id": "TEST-094",
+        "location": "check-test-clock-dependencies.py",
+        "severity": "m",
+        "status": "fixed \u2014 whole-line comments are skipped, and a trailing comment marker is deliberately not stripped so a real call sitting after a URL cannot hide. The sponsors end-to-end fixture also named an organization from the clock, which made a failure unreproducible by re-running; it now derives from the worker and retry index",
+        "status_kind": "fixed"
+      },
+      {
+        "category": "TEST",
+        "finding": "nothing measured whether unmodified SDKs and CLIs work against bleephub, so the claim was asserted rather than tested",
+        "id": "TEST-095",
+        "location": "test/conformance",
+        "severity": "M",
+        "status": "fixed \u2014 a harness boots a server and drives real gh, go-github, octokit, PyGithub and git through 698 operations, asserting each client's own parse rather than a status code, published as a machine-readable report and ratcheted so a pass can never silently become a failure. Its work directory is exclusive-locked because concurrent runs corrupted two scoreboards",
+        "status_kind": "fixed"
       }
     ],
     "summary": {
       "categories": {
         "ACT": {
           "status": {
-            "fixed": 67
+            "fixed": 72
           },
-          "total": 67
+          "total": 72
         },
         "ARCH": {
           "status": {
@@ -8534,9 +9453,9 @@
         },
         "AUTH": {
           "status": {
-            "fixed": 120
+            "fixed": 131
           },
-          "total": 120
+          "total": 131
         },
         "CI": {
           "status": {
@@ -8546,15 +9465,16 @@
         },
         "CORE": {
           "status": {
-            "fixed": 33
+            "fixed": 37
           },
-          "total": 33
+          "total": 37
         },
         "GQL": {
           "status": {
-            "fixed": 68
+            "fixed": 95,
+            "open": 5
           },
-          "total": 68
+          "total": 100
         },
         "PAR": {
           "status": {
@@ -8564,41 +9484,43 @@
         },
         "REST": {
           "status": {
-            "fixed": 184
+            "fixed": 203,
+            "open": 1
           },
-          "total": 184
+          "total": 204
         },
         "STORE": {
           "status": {
-            "fixed": 78
+            "fixed": 85
           },
-          "total": 78
+          "total": 85
         },
         "TEST": {
           "status": {
             "deferred": 1,
-            "fixed": 39
+            "fixed": 44
           },
-          "total": 40
+          "total": 45
         },
         "WEB": {
           "status": {
             "deferred": 2,
-            "fixed": 205
+            "fixed": 206
           },
-          "total": 207
+          "total": 208
         }
       },
       "severity": {
-        "blocker": 167,
-        "major": 432,
-        "minor": 308
+        "blocker": 183,
+        "major": 488,
+        "minor": 321
       },
       "status": {
         "deferred": 3,
-        "fixed": 904
+        "fixed": 983,
+        "open": 6
       },
-      "total": 907
+      "total": 992
     }
   },
   "rest": {
@@ -21244,13 +22166,13 @@
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 72,
+        "line": 91,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/actions/secrets/{secret_name}",
         "source": "internal/server/secrets.go"
       },
       {
-        "line": 76,
+        "line": 95,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/actions/secrets/{secret_name}/repositories/{repository_id}",
         "source": "internal/server/secrets.go"
@@ -21466,13 +22388,13 @@
         "source": "internal/server/gh_members_rest.go"
       },
       {
-        "line": 34,
+        "line": 32,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/migrations/{migration_id}/archive",
         "source": "internal/server/gh_migrations.go"
       },
       {
-        "line": 35,
+        "line": 33,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/migrations/{migration_id}/repos/{repo_name}/lock",
         "source": "internal/server/gh_migrations.go"
@@ -21544,7 +22466,7 @@
         "source": "internal/server/gh_projects_v2_rest.go"
       },
       {
-        "line": 43,
+        "line": 42,
         "method": "DELETE",
         "path": "/api/v3/orgs/{org}/properties/schema/{custom_property_name}",
         "source": "internal/server/gh_custom_properties.go"
@@ -21682,7 +22604,7 @@
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 57,
+        "line": 58,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/actions/secrets/{secret_name}",
         "source": "internal/server/secrets.go"
@@ -21832,7 +22754,7 @@
         "source": "internal/server/gh_dependabot.go"
       },
       {
-        "line": 38,
+        "line": 39,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/deployments/{deployment_id}",
         "source": "internal/server/gh_deployments.go"
@@ -21844,7 +22766,7 @@
         "source": "internal/server/gh_security_reviews.go"
       },
       {
-        "line": 53,
+        "line": 54,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/environments/{env_name}",
         "source": "internal/server/gh_deployments.go"
@@ -21862,7 +22784,7 @@
         "source": "internal/server/gh_environment_policies.go"
       },
       {
-        "line": 65,
+        "line": 66,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/environments/{env_name}/secrets/{secret_name}",
         "source": "internal/server/secrets.go"
@@ -21904,7 +22826,7 @@
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 25,
+        "line": 26,
         "method": "DELETE",
         "path": "/api/v3/repos/{owner}/{repo}/interaction-limits/pulls/bypass-list",
         "source": "internal/server/gh_pull_extensions.go"
@@ -22060,6 +22982,12 @@
         "source": "internal/server/gh_repos_rest.go"
       },
       {
+        "line": 84,
+        "method": "DELETE",
+        "path": "/api/v3/repositories/{repository_id}/environments/{env_name}/secrets/{secret_name}",
+        "source": "internal/server/secrets.go"
+      },
+      {
         "line": 36,
         "method": "DELETE",
         "path": "/api/v3/scim/v2/enterprises/{enterprise}/Groups/{scim_group_id}",
@@ -22162,13 +23090,13 @@
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 24,
+        "line": 22,
         "method": "DELETE",
         "path": "/api/v3/user/migrations/{migration_id}/archive",
         "source": "internal/server/gh_migrations.go"
       },
       {
-        "line": 26,
+        "line": 24,
         "method": "DELETE",
         "path": "/api/v3/user/migrations/{migration_id}/repos/{repo_name}/lock",
         "source": "internal/server/gh_migrations.go"
@@ -23662,25 +24590,25 @@
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 68,
+        "line": 87,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/secrets",
         "source": "internal/server/secrets.go"
       },
       {
-        "line": 69,
+        "line": 88,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/secrets/public-key",
         "source": "internal/server/secrets.go"
       },
       {
-        "line": 70,
+        "line": 89,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/secrets/{secret_name}",
         "source": "internal/server/secrets.go"
       },
       {
-        "line": 73,
+        "line": 92,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/actions/secrets/{secret_name}/repositories",
         "source": "internal/server/secrets.go"
@@ -24202,7 +25130,7 @@
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 17,
+        "line": 18,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/interaction-limits/pulls/creation-cap",
         "source": "internal/server/gh_pull_extensions.go"
@@ -24268,25 +25196,25 @@
         "source": "internal/server/gh_members_rest.go"
       },
       {
-        "line": 30,
+        "line": 28,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/migrations",
         "source": "internal/server/gh_migrations.go"
       },
       {
-        "line": 31,
+        "line": 29,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/migrations/{migration_id}",
         "source": "internal/server/gh_migrations.go"
       },
       {
-        "line": 33,
+        "line": 31,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/migrations/{migration_id}/archive",
         "source": "internal/server/gh_migrations.go"
       },
       {
-        "line": 32,
+        "line": 30,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/migrations/{migration_id}/repositories",
         "source": "internal/server/gh_migrations.go"
@@ -24448,19 +25376,19 @@
         "source": "internal/server/gh_projects_v2_rest.go"
       },
       {
-        "line": 35,
+        "line": 34,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/properties/schema",
         "source": "internal/server/gh_custom_properties.go"
       },
       {
-        "line": 39,
+        "line": 38,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/properties/schema/{custom_property_name}",
         "source": "internal/server/gh_custom_properties.go"
       },
       {
-        "line": 45,
+        "line": 44,
         "method": "GET",
         "path": "/api/v3/orgs/{org}/properties/values",
         "source": "internal/server/gh_custom_properties.go"
@@ -24766,7 +25694,7 @@
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 58,
+        "line": 59,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/organization-secrets",
         "source": "internal/server/secrets.go"
@@ -24916,19 +25844,19 @@
         "source": "internal/server/gh_actions_extras.go"
       },
       {
-        "line": 53,
+        "line": 54,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/secrets",
         "source": "internal/server/secrets.go"
       },
       {
-        "line": 54,
+        "line": 55,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/secrets/public-key",
         "source": "internal/server/secrets.go"
       },
       {
-        "line": 55,
+        "line": 56,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/actions/secrets/{secret_name}",
         "source": "internal/server/secrets.go"
@@ -25054,13 +25982,13 @@
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 20,
+        "line": 18,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/branches",
         "source": "internal/server/gh_repos_refs.go"
       },
       {
-        "line": 21,
+        "line": 19,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/branches/{branch}",
         "source": "internal/server/gh_repos_refs.go"
@@ -25498,25 +26426,25 @@
         "source": "internal/server/gh_dependency_graph.go"
       },
       {
-        "line": 34,
+        "line": 35,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/deployments",
         "source": "internal/server/gh_deployments.go"
       },
       {
-        "line": 36,
+        "line": 37,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/deployments/{deployment_id}",
         "source": "internal/server/gh_deployments.go"
       },
       {
-        "line": 42,
+        "line": 43,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/deployments/{deployment_id}/statuses",
         "source": "internal/server/gh_deployments.go"
       },
       {
-        "line": 44,
+        "line": 45,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/deployments/{deployment_id}/statuses/{status_id}",
         "source": "internal/server/gh_deployments.go"
@@ -25558,13 +26486,13 @@
         "source": "internal/server/gh_security_reviews.go"
       },
       {
-        "line": 47,
+        "line": 48,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/environments",
         "source": "internal/server/gh_deployments.go"
       },
       {
-        "line": 49,
+        "line": 50,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/environments/{env_name}",
         "source": "internal/server/gh_deployments.go"
@@ -25600,19 +26528,19 @@
         "source": "internal/server/gh_environment_policies.go"
       },
       {
-        "line": 61,
+        "line": 62,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/environments/{env_name}/secrets",
         "source": "internal/server/secrets.go"
       },
       {
-        "line": 62,
+        "line": 63,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/environments/{env_name}/secrets/public-key",
         "source": "internal/server/secrets.go"
       },
       {
-        "line": 63,
+        "line": 64,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/environments/{env_name}/secrets/{secret_name}",
         "source": "internal/server/secrets.go"
@@ -25756,13 +26684,13 @@
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 21,
+        "line": 22,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/interaction-limits/pulls/bypass-list",
         "source": "internal/server/gh_pull_extensions.go"
       },
       {
-        "line": 13,
+        "line": 14,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/interaction-limits/pulls/creation-cap",
         "source": "internal/server/gh_pull_extensions.go"
@@ -25798,7 +26726,7 @@
         "source": "internal/server/gh_labels_rest.go"
       },
       {
-        "line": 39,
+        "line": 40,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/issues/{issue_number}/suggestions",
         "source": "internal/server/gh_pull_extensions.go"
@@ -25942,7 +26870,7 @@
         "source": "internal/server/gh_projects_classic.go"
       },
       {
-        "line": 49,
+        "line": 48,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/properties/values",
         "source": "internal/server/gh_custom_properties.go"
@@ -26158,13 +27086,13 @@
         "source": "internal/server/gh_security_advisories.go"
       },
       {
-        "line": 28,
+        "line": 29,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/stacks",
         "source": "internal/server/gh_pull_extensions.go"
       },
       {
-        "line": 32,
+        "line": 33,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/stacks/{stack_number}",
         "source": "internal/server/gh_pull_extensions.go"
@@ -26224,7 +27152,7 @@
         "source": "internal/server/gh_repos_reads.go"
       },
       {
-        "line": 22,
+        "line": 20,
         "method": "GET",
         "path": "/api/v3/repos/{owner}/{repo}/tags",
         "source": "internal/server/gh_repos_refs.go"
@@ -26288,6 +27216,24 @@
         "method": "GET",
         "path": "/api/v3/repositories",
         "source": "internal/server/gh_repos_reads.go"
+      },
+      {
+        "line": 81,
+        "method": "GET",
+        "path": "/api/v3/repositories/{repository_id}/environments/{env_name}/secrets",
+        "source": "internal/server/secrets.go"
+      },
+      {
+        "line": 0,
+        "method": "GET",
+        "path": "/api/v3/repositories/{repository_id}/environments/{env_name}/secrets/public-key",
+        "source": "runtime route table (programmatic registration)"
+      },
+      {
+        "line": 0,
+        "method": "GET",
+        "path": "/api/v3/repositories/{repository_id}/environments/{env_name}/secrets/{secret_name}",
+        "source": "runtime route table (programmatic registration)"
       },
       {
         "line": 31,
@@ -26590,25 +27536,25 @@
         "source": "internal/server/gh_members_rest.go"
       },
       {
-        "line": 21,
+        "line": 19,
         "method": "GET",
         "path": "/api/v3/user/migrations",
         "source": "internal/server/gh_migrations.go"
       },
       {
-        "line": 22,
+        "line": 20,
         "method": "GET",
         "path": "/api/v3/user/migrations/{migration_id}",
         "source": "internal/server/gh_migrations.go"
       },
       {
-        "line": 23,
+        "line": 21,
         "method": "GET",
         "path": "/api/v3/user/migrations/{migration_id}/archive",
         "source": "internal/server/gh_migrations.go"
       },
       {
-        "line": 25,
+        "line": 23,
         "method": "GET",
         "path": "/api/v3/user/migrations/{migration_id}/repositories",
         "source": "internal/server/gh_migrations.go"
@@ -27268,7 +28214,7 @@
         "source": "internal/server/gh_org_hooks_rest.go"
       },
       {
-        "line": 19,
+        "line": 20,
         "method": "PATCH",
         "path": "/api/v3/orgs/{org}/interaction-limits/pulls/creation-cap",
         "source": "internal/server/gh_pull_extensions.go"
@@ -27304,13 +28250,13 @@
         "source": "internal/server/gh_projects_v2_rest.go"
       },
       {
-        "line": 37,
+        "line": 36,
         "method": "PATCH",
         "path": "/api/v3/orgs/{org}/properties/schema",
         "source": "internal/server/gh_custom_properties.go"
       },
       {
-        "line": 47,
+        "line": 46,
         "method": "PATCH",
         "path": "/api/v3/orgs/{org}/properties/values",
         "source": "internal/server/gh_custom_properties.go"
@@ -27514,7 +28460,7 @@
         "source": "internal/server/gh_import.go"
       },
       {
-        "line": 15,
+        "line": 16,
         "method": "PATCH",
         "path": "/api/v3/repos/{owner}/{repo}/interaction-limits/pulls/creation-cap",
         "source": "internal/server/gh_pull_extensions.go"
@@ -27562,7 +28508,7 @@
         "source": "internal/server/gh_ghes_pre_receive.go"
       },
       {
-        "line": 50,
+        "line": 49,
         "method": "PATCH",
         "path": "/api/v3/repos/{owner}/{repo}/properties/values",
         "source": "internal/server/gh_custom_properties.go"
@@ -28228,7 +29174,7 @@
         "source": "internal/server/gh_codespaces.go"
       },
       {
-        "line": 29,
+        "line": 27,
         "method": "POST",
         "path": "/api/v3/orgs/{org}/migrations",
         "source": "internal/server/gh_migrations.go"
@@ -28582,13 +29528,13 @@
         "source": "internal/server/gh_dependency_graph.go"
       },
       {
-        "line": 32,
+        "line": 33,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/deployments",
         "source": "internal/server/gh_deployments.go"
       },
       {
-        "line": 40,
+        "line": 41,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/deployments/{deployment_id}/statuses",
         "source": "internal/server/gh_deployments.go"
@@ -28696,13 +29642,13 @@
         "source": "internal/server/gh_reactions.go"
       },
       {
-        "line": 41,
+        "line": 42,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/issues/{issue_number}/suggestions/{suggestion_id}/approve",
         "source": "internal/server/gh_pull_extensions.go"
       },
       {
-        "line": 43,
+        "line": 44,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/issues/{issue_number}/suggestions/{suggestion_id}/dismiss",
         "source": "internal/server/gh_pull_extensions.go"
@@ -28924,19 +29870,19 @@
         "source": "internal/server/gh_security_advisories.go"
       },
       {
-        "line": 30,
+        "line": 31,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/stacks",
         "source": "internal/server/gh_pull_extensions.go"
       },
       {
-        "line": 34,
+        "line": 35,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/stacks/{stack_number}/add",
         "source": "internal/server/gh_pull_extensions.go"
       },
       {
-        "line": 36,
+        "line": 37,
         "method": "POST",
         "path": "/api/v3/repos/{owner}/{repo}/stacks/{stack_number}/unstack",
         "source": "internal/server/gh_pull_extensions.go"
@@ -29026,7 +29972,7 @@
         "source": "internal/server/gh_misc_endpoints.go"
       },
       {
-        "line": 20,
+        "line": 18,
         "method": "POST",
         "path": "/api/v3/user/migrations",
         "source": "internal/server/gh_migrations.go"
@@ -29470,19 +30416,19 @@
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 71,
+        "line": 90,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/actions/secrets/{secret_name}",
         "source": "internal/server/secrets.go"
       },
       {
-        "line": 74,
+        "line": 93,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/actions/secrets/{secret_name}/repositories",
         "source": "internal/server/secrets.go"
       },
       {
-        "line": 75,
+        "line": 94,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/actions/secrets/{secret_name}/repositories/{repository_id}",
         "source": "internal/server/secrets.go"
@@ -29668,7 +30614,7 @@
         "source": "internal/server/gh_orgs_people_rest.go"
       },
       {
-        "line": 41,
+        "line": 40,
         "method": "PUT",
         "path": "/api/v3/orgs/{org}/properties/schema/{custom_property_name}",
         "source": "internal/server/gh_custom_properties.go"
@@ -29788,7 +30734,7 @@
         "source": "internal/server/gh_actions_permissions.go"
       },
       {
-        "line": 56,
+        "line": 57,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/actions/secrets/{secret_name}",
         "source": "internal/server/secrets.go"
@@ -29872,7 +30818,7 @@
         "source": "internal/server/gh_dependabot.go"
       },
       {
-        "line": 51,
+        "line": 52,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/environments/{env_name}",
         "source": "internal/server/gh_deployments.go"
@@ -29884,7 +30830,7 @@
         "source": "internal/server/gh_environment_policies.go"
       },
       {
-        "line": 64,
+        "line": 65,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/environments/{env_name}/secrets/{secret_name}",
         "source": "internal/server/secrets.go"
@@ -29908,7 +30854,7 @@
         "source": "internal/server/gh_repos_rest.go"
       },
       {
-        "line": 23,
+        "line": 24,
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/interaction-limits/pulls/bypass-list",
         "source": "internal/server/gh_pull_extensions.go"
@@ -30014,6 +30960,12 @@
         "method": "PUT",
         "path": "/api/v3/repos/{owner}/{repo}/vulnerability-alerts",
         "source": "internal/server/gh_repos_rest.go"
+      },
+      {
+        "line": 83,
+        "method": "PUT",
+        "path": "/api/v3/repositories/{repository_id}/environments/{env_name}/secrets/{secret_name}",
+        "source": "internal/server/secrets.go"
       },
       {
         "line": 34,
@@ -30130,7 +31082,7 @@
         "source": "internal/server/gh_misc_endpoints.go"
       }
     ],
-    "vendored_openapi_sha256": "cb574397e102477ebc9b714e5cb8c90c786a17746777d97b90dc7ab5d817a56d"
+    "vendored_openapi_sha256": "f7afa5fa749313ad5d98e7c771be8b0c2571cadac9244290fe8158f503bf9b64"
   },
   "schema_version": 1,
   "sources": {
@@ -30142,37 +31094,37 @@
   "ui": {
     "browser_navigations": [
       {
-        "line": 213,
+        "line": 217,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 476,
+        "line": 501,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/"
       },
       {
-        "line": 515,
+        "line": 540,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/${seeded.owner}/${seeded.repo}/settings"
       },
       {
-        "line": 550,
+        "line": 575,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/${seeded.owner}/${seeded.repo}/settings"
       },
       {
-        "line": 588,
+        "line": 613,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/${seeded.org}/org-parity/settings"
       },
       {
-        "line": 620,
+        "line": 645,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/search"
       },
       {
-        "line": 653,
+        "line": 678,
         "source": "web/e2e/a11y-theme-sweep.spec.ts",
         "target": "/ui/orgs/${seeded.org}/governance?tab=code-security"
       },
@@ -30427,22 +31379,52 @@
         "target": "/ui/marketplace"
       },
       {
-        "line": 1073,
+        "line": 1078,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/sponsors"
+      },
+      {
+        "line": 1081,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/sponsors/${org}"
+      },
+      {
+        "line": 1085,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/sponsors/${org}/dashboard"
+      },
+      {
+        "line": 1098,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/sponsors/${org}"
+      },
+      {
+        "line": 1102,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/sponsors/${org}/dashboard"
+      },
+      {
+        "line": 1109,
+        "source": "web/e2e/bleephub.spec.ts",
+        "target": "/ui/sponsors"
+      },
+      {
+        "line": 1127,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/operations"
       },
       {
-        "line": 1078,
+        "line": 1132,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/repos"
       },
       {
-        "line": 1090,
+        "line": 1144,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/ui/${owner}/dark-theme-repo"
       },
       {
-        "line": 1103,
+        "line": 1157,
         "source": "web/e2e/bleephub.spec.ts",
         "target": "/health"
       },
@@ -30525,7 +31507,7 @@
     "routes": [
       {
         "component": "DashboardPage",
-        "line": 237,
+        "line": 247,
         "path": "/ui/",
         "rendered_tests": [
           "web/src/__tests__/DashboardPage.test.tsx"
@@ -30537,7 +31519,7 @@
       },
       {
         "component": "RepoNotFound",
-        "line": 341,
+        "line": 359,
         "path": "/ui/*",
         "rendered_tests": [
           "web/src/__tests__/notFoundPages.test.tsx"
@@ -30549,7 +31531,7 @@
       },
       {
         "component": "ProfilePage",
-        "line": 338,
+        "line": 356,
         "path": "/ui/:login",
         "rendered_tests": [
           "web/src/__tests__/ProfilePage.test.tsx",
@@ -30563,7 +31545,7 @@
       },
       {
         "component": "RepoDetailPage",
-        "line": 250,
+        "line": 260,
         "path": "/ui/:owner/:repo",
         "rendered_tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx",
@@ -30582,7 +31564,7 @@
       },
       {
         "component": "ActionsPage",
-        "line": 275,
+        "line": 285,
         "path": "/ui/:owner/:repo/actions",
         "rendered_tests": [
           "web/src/__tests__/ActionsPage.test.tsx"
@@ -30594,7 +31576,7 @@
       },
       {
         "component": "RunDetailPage",
-        "line": 276,
+        "line": 286,
         "path": "/ui/:owner/:repo/actions/runs/:runId",
         "rendered_tests": [
           "web/src/__tests__/RunDetailPage.test.tsx",
@@ -30608,7 +31590,7 @@
       },
       {
         "component": "RepoDetailPage",
-        "line": 254,
+        "line": 264,
         "path": "/ui/:owner/:repo/activity",
         "rendered_tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx",
@@ -30627,7 +31609,7 @@
       },
       {
         "component": "BlamePage",
-        "line": 259,
+        "line": 269,
         "path": "/ui/:owner/:repo/blame/:ref/*",
         "rendered_tests": [
           "web/src/__tests__/BlamePage.test.tsx"
@@ -30639,7 +31621,7 @@
       },
       {
         "component": "RepoFilePage",
-        "line": 258,
+        "line": 268,
         "path": "/ui/:owner/:repo/blob/:ref/*",
         "rendered_tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx",
@@ -30653,7 +31635,7 @@
       },
       {
         "component": "RepoDetailPage",
-        "line": 252,
+        "line": 262,
         "path": "/ui/:owner/:repo/branches",
         "rendered_tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx",
@@ -30672,7 +31654,7 @@
       },
       {
         "component": "CodespacesPage",
-        "line": 301,
+        "line": 316,
         "path": "/ui/:owner/:repo/codespaces",
         "rendered_tests": [
           "web/src/__tests__/CodespacesPage.test.tsx"
@@ -30684,7 +31666,7 @@
       },
       {
         "component": "RepoDetailPage",
-        "line": 251,
+        "line": 261,
         "path": "/ui/:owner/:repo/commits",
         "rendered_tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx",
@@ -30703,7 +31685,7 @@
       },
       {
         "component": "RepoCommitPage",
-        "line": 256,
+        "line": 266,
         "path": "/ui/:owner/:repo/commits/:sha",
         "rendered_tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx"
@@ -30715,7 +31697,7 @@
       },
       {
         "component": "RepoComparePage",
-        "line": 257,
+        "line": 267,
         "path": "/ui/:owner/:repo/compare/:range",
         "rendered_tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx",
@@ -30729,7 +31711,7 @@
       },
       {
         "component": "DeploymentsPage",
-        "line": 315,
+        "line": 333,
         "path": "/ui/:owner/:repo/deployments",
         "rendered_tests": [
           "web/src/__tests__/DeploymentsPage.test.tsx",
@@ -30743,7 +31725,7 @@
       },
       {
         "component": "DiscussionsPage",
-        "line": 273,
+        "line": 283,
         "path": "/ui/:owner/:repo/discussions",
         "rendered_tests": [
           "web/src/__tests__/DiscussionsPage.test.tsx",
@@ -30758,7 +31740,7 @@
       },
       {
         "component": "DiscussionsPage",
-        "line": 274,
+        "line": 284,
         "path": "/ui/:owner/:repo/discussions/:number",
         "rendered_tests": [
           "web/src/__tests__/DiscussionsPage.test.tsx",
@@ -30773,7 +31755,7 @@
       },
       {
         "component": "RepoSocialPage",
-        "line": 325,
+        "line": 343,
         "path": "/ui/:owner/:repo/forks",
         "rendered_tests": [
           "web/src/__tests__/RepoSocialPage.test.tsx",
@@ -30787,7 +31769,7 @@
       },
       {
         "component": "WebhookDeliveriesPage",
-        "line": 316,
+        "line": 334,
         "path": "/ui/:owner/:repo/hooks/:hookId/deliveries",
         "rendered_tests": [
           "web/src/__tests__/WebhookDeliveriesPage.test.tsx",
@@ -30801,7 +31783,7 @@
       },
       {
         "component": "InsightsPage",
-        "line": 267,
+        "line": 277,
         "path": "/ui/:owner/:repo/insights",
         "rendered_tests": [
           "web/src/__tests__/InsightsPage.test.tsx",
@@ -30815,7 +31797,7 @@
       },
       {
         "component": "IssuesPage",
-        "line": 263,
+        "line": 273,
         "path": "/ui/:owner/:repo/issues",
         "rendered_tests": [
           "web/src/__tests__/AnonymousBrowsing.test.tsx",
@@ -30829,7 +31811,7 @@
       },
       {
         "component": "IssuesPage",
-        "line": 264,
+        "line": 274,
         "path": "/ui/:owner/:repo/issues/:number",
         "rendered_tests": [
           "web/src/__tests__/AnonymousBrowsing.test.tsx",
@@ -30843,7 +31825,7 @@
       },
       {
         "component": "IssuesPage",
-        "line": 265,
+        "line": 275,
         "path": "/ui/:owner/:repo/labels",
         "rendered_tests": [
           "web/src/__tests__/AnonymousBrowsing.test.tsx",
@@ -30857,7 +31839,7 @@
       },
       {
         "component": "IssuesPage",
-        "line": 266,
+        "line": 276,
         "path": "/ui/:owner/:repo/milestones",
         "rendered_tests": [
           "web/src/__tests__/AnonymousBrowsing.test.tsx",
@@ -30871,7 +31853,7 @@
       },
       {
         "component": "PackagesPage",
-        "line": 297,
+        "line": 312,
         "path": "/ui/:owner/:repo/packages",
         "rendered_tests": [
           "web/src/__tests__/PackagesPage.test.tsx",
@@ -30885,7 +31867,7 @@
       },
       {
         "component": "ProjectsClassicPage",
-        "line": 284,
+        "line": 294,
         "path": "/ui/:owner/:repo/projects-classic",
         "rendered_tests": [
           "web/src/__tests__/pageErrorPaths.test.tsx"
@@ -30898,7 +31880,7 @@
       },
       {
         "component": "PullsPage",
-        "line": 268,
+        "line": 278,
         "path": "/ui/:owner/:repo/pulls",
         "rendered_tests": [
           "web/src/__tests__/PullsPage.test.tsx",
@@ -30912,7 +31894,7 @@
       },
       {
         "component": "PullsPage",
-        "line": 269,
+        "line": 279,
         "path": "/ui/:owner/:repo/pulls/:number",
         "rendered_tests": [
           "web/src/__tests__/PullsPage.test.tsx",
@@ -30926,7 +31908,7 @@
       },
       {
         "component": "PullsPage",
-        "line": 272,
+        "line": 282,
         "path": "/ui/:owner/:repo/pulls/:number/checks",
         "rendered_tests": [
           "web/src/__tests__/PullsPage.test.tsx",
@@ -30940,7 +31922,7 @@
       },
       {
         "component": "PullsPage",
-        "line": 270,
+        "line": 280,
         "path": "/ui/:owner/:repo/pulls/:number/commits",
         "rendered_tests": [
           "web/src/__tests__/PullsPage.test.tsx",
@@ -30954,7 +31936,7 @@
       },
       {
         "component": "PullsPage",
-        "line": 271,
+        "line": 281,
         "path": "/ui/:owner/:repo/pulls/:number/files",
         "rendered_tests": [
           "web/src/__tests__/PullsPage.test.tsx",
@@ -30968,7 +31950,7 @@
       },
       {
         "component": "ReleasesPage",
-        "line": 260,
+        "line": 270,
         "path": "/ui/:owner/:repo/releases",
         "rendered_tests": [
           "web/src/__tests__/ReleasesPage.test.tsx",
@@ -30983,7 +31965,7 @@
       },
       {
         "component": "ReleasesPage",
-        "line": 262,
+        "line": 272,
         "path": "/ui/:owner/:repo/releases/:releaseId",
         "rendered_tests": [
           "web/src/__tests__/ReleasesPage.test.tsx",
@@ -30998,7 +31980,7 @@
       },
       {
         "component": "ReleasesPage",
-        "line": 261,
+        "line": 271,
         "path": "/ui/:owner/:repo/releases/new",
         "rendered_tests": [
           "web/src/__tests__/ReleasesPage.test.tsx",
@@ -31013,7 +31995,7 @@
       },
       {
         "component": "RepoSecurityOverviewPage",
-        "line": 279,
+        "line": 289,
         "path": "/ui/:owner/:repo/security",
         "rendered_tests": [
           "web/src/__tests__/RepoSecurityOverviewPage.test.tsx"
@@ -31025,7 +32007,7 @@
       },
       {
         "component": "SecurityAdvisoriesPage",
-        "line": 283,
+        "line": 293,
         "path": "/ui/:owner/:repo/security/advisories",
         "rendered_tests": [
           "web/src/__tests__/SecurityAdvisoriesPage.test.tsx",
@@ -31041,7 +32023,7 @@
       },
       {
         "component": "CodeScanningPage",
-        "line": 281,
+        "line": 291,
         "path": "/ui/:owner/:repo/security/code-scanning",
         "rendered_tests": [
           "web/src/__tests__/CodeScanningPage.test.tsx"
@@ -31053,7 +32035,7 @@
       },
       {
         "component": "DependabotPage",
-        "line": 282,
+        "line": 292,
         "path": "/ui/:owner/:repo/security/dependabot",
         "rendered_tests": [
           "web/src/__tests__/UiFidelityJourneys.test.tsx",
@@ -31067,7 +32049,7 @@
       },
       {
         "component": "SecretScanningPage",
-        "line": 280,
+        "line": 290,
         "path": "/ui/:owner/:repo/security/secret-scanning",
         "rendered_tests": [
           "web/src/__tests__/SecretScanningPage.test.tsx",
@@ -31085,7 +32067,7 @@
       },
       {
         "component": "RepoSettingsPage",
-        "line": 277,
+        "line": 287,
         "path": "/ui/:owner/:repo/settings",
         "rendered_tests": [
           "web/src/__tests__/RepoCollaboratorsTab.test.tsx",
@@ -31101,7 +32083,7 @@
       },
       {
         "component": "BranchProtectionPage",
-        "line": 278,
+        "line": 288,
         "path": "/ui/:owner/:repo/settings/branch-protection",
         "rendered_tests": [
           "web/src/__tests__/BranchProtectionPage.test.tsx",
@@ -31117,7 +32099,7 @@
       },
       {
         "component": "RepoSecretsPage",
-        "line": 287,
+        "line": 297,
         "path": "/ui/:owner/:repo/settings/secrets",
         "rendered_tests": [
           "web/src/__tests__/RepoSecretsPage.test.tsx"
@@ -31129,7 +32111,7 @@
       },
       {
         "component": "RepoSocialPage",
-        "line": 323,
+        "line": 341,
         "path": "/ui/:owner/:repo/stargazers",
         "rendered_tests": [
           "web/src/__tests__/RepoSocialPage.test.tsx",
@@ -31143,7 +32125,7 @@
       },
       {
         "component": "RepoDetailPage",
-        "line": 253,
+        "line": 263,
         "path": "/ui/:owner/:repo/tags",
         "rendered_tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx",
@@ -31162,7 +32144,7 @@
       },
       {
         "component": "RepoDetailPage",
-        "line": 255,
+        "line": 265,
         "path": "/ui/:owner/:repo/tree/:ref/*",
         "rendered_tests": [
           "web/src/__tests__/RepoDetailPage.test.tsx",
@@ -31181,7 +32163,7 @@
       },
       {
         "component": "RepoSocialPage",
-        "line": 324,
+        "line": 342,
         "path": "/ui/:owner/:repo/watchers",
         "rendered_tests": [
           "web/src/__tests__/RepoSocialPage.test.tsx",
@@ -31195,7 +32177,7 @@
       },
       {
         "component": "WikiPage",
-        "line": 285,
+        "line": 295,
         "path": "/ui/:owner/:repo/wiki",
         "rendered_tests": [
           "web/src/__tests__/WikiPage.test.tsx",
@@ -31209,7 +32191,7 @@
       },
       {
         "component": "WikiPage",
-        "line": 286,
+        "line": 296,
         "path": "/ui/:owner/:repo/wiki/:slug",
         "rendered_tests": [
           "web/src/__tests__/WikiPage.test.tsx",
@@ -31223,7 +32205,7 @@
       },
       {
         "component": "AccountPage",
-        "line": 321,
+        "line": 339,
         "path": "/ui/account",
         "rendered_tests": [
           "web/src/__tests__/AccountPage.test.tsx",
@@ -31236,8 +32218,32 @@
         ]
       },
       {
+        "component": "GlobalAdvisoriesPage",
+        "line": 305,
+        "path": "/ui/advisories",
+        "rendered_tests": [
+          "web/src/__tests__/GlobalAdvisoriesPage.test.tsx"
+        ],
+        "source": "web/src/App.tsx",
+        "tests": [
+          "web/src/__tests__/GlobalAdvisoriesPage.test.tsx"
+        ]
+      },
+      {
+        "component": "GlobalAdvisoryDetailPage",
+        "line": 306,
+        "path": "/ui/advisories/:ghsaId",
+        "rendered_tests": [
+          "web/src/__tests__/GlobalAdvisoriesPage.test.tsx"
+        ],
+        "source": "web/src/App.tsx",
+        "tests": [
+          "web/src/__tests__/GlobalAdvisoriesPage.test.tsx"
+        ]
+      },
+      {
         "component": "AppsPage",
-        "line": 288,
+        "line": 298,
         "path": "/ui/apps",
         "rendered_tests": [
           "web/src/__tests__/AppsPage.test.tsx"
@@ -31249,7 +32255,7 @@
       },
       {
         "component": "MarketplacePublisherPage",
-        "line": 289,
+        "line": 299,
         "path": "/ui/apps/:publisher/marketplace",
         "rendered_tests": [
           "web/src/__tests__/MarketplacePublisherPage.test.tsx"
@@ -31261,7 +32267,7 @@
       },
       {
         "component": "ClassroomPage",
-        "line": 303,
+        "line": 318,
         "path": "/ui/classrooms",
         "rendered_tests": [
           "web/src/__tests__/ClassroomPage.test.tsx"
@@ -31274,7 +32280,7 @@
       },
       {
         "component": "ClassroomPage",
-        "line": 304,
+        "line": 319,
         "path": "/ui/classrooms/:classroomId",
         "rendered_tests": [
           "web/src/__tests__/ClassroomPage.test.tsx"
@@ -31287,7 +32293,7 @@
       },
       {
         "component": "ClassroomPage",
-        "line": 305,
+        "line": 320,
         "path": "/ui/classrooms/accept/:inviteCode",
         "rendered_tests": [
           "web/src/__tests__/ClassroomPage.test.tsx"
@@ -31300,7 +32306,7 @@
       },
       {
         "component": "CodespacesPage",
-        "line": 299,
+        "line": 314,
         "path": "/ui/codespaces",
         "rendered_tests": [
           "web/src/__tests__/CodespacesPage.test.tsx"
@@ -31312,7 +32318,7 @@
       },
       {
         "component": "CodespacesPage",
-        "line": 300,
+        "line": 315,
         "path": "/ui/codespaces/:codespaceName",
         "rendered_tests": [
           "web/src/__tests__/CodespacesPage.test.tsx"
@@ -31324,7 +32330,7 @@
       },
       {
         "component": "PersonalCopilotSpacesPage",
-        "line": 302,
+        "line": 317,
         "path": "/ui/copilot/spaces",
         "rendered_tests": [
           "web/src/__tests__/CopilotPage.test.tsx"
@@ -31336,7 +32342,7 @@
       },
       {
         "component": "GistsPage",
-        "line": 292,
+        "line": 307,
         "path": "/ui/gists",
         "rendered_tests": [
           "web/src/__tests__/GistsPage.test.tsx"
@@ -31348,7 +32354,7 @@
       },
       {
         "component": "GistDetailPage",
-        "line": 293,
+        "line": 308,
         "path": "/ui/gists/:id",
         "rendered_tests": [
           "web/src/__tests__/GistDetailPage.test.tsx",
@@ -31362,7 +32368,7 @@
       },
       {
         "component": "MarketplacePage",
-        "line": 306,
+        "line": 321,
         "path": "/ui/marketplace",
         "rendered_tests": [
           "web/src/__tests__/MarketplacePage.test.tsx"
@@ -31374,7 +32380,7 @@
       },
       {
         "component": "MarketplacePage",
-        "line": 307,
+        "line": 322,
         "path": "/ui/marketplace/:slug",
         "rendered_tests": [
           "web/src/__tests__/MarketplacePage.test.tsx"
@@ -31386,7 +32392,7 @@
       },
       {
         "component": "MetricsPage",
-        "line": 291,
+        "line": 301,
         "path": "/ui/metrics",
         "rendered_tests": [
           "web/src/__tests__/MetricsPage.test.tsx"
@@ -31398,7 +32404,7 @@
       },
       {
         "component": "MigrationsPage",
-        "line": 298,
+        "line": 313,
         "path": "/ui/migrations",
         "rendered_tests": [
           "web/src/__tests__/MigrationsPage.test.tsx"
@@ -31410,7 +32416,7 @@
       },
       {
         "component": "NotificationsPage",
-        "line": 294,
+        "line": 309,
         "path": "/ui/notifications",
         "rendered_tests": [
           "web/src/__tests__/NotificationsPage.test.tsx"
@@ -31422,7 +32428,7 @@
       },
       {
         "component": "OAuthPage",
-        "line": 290,
+        "line": 300,
         "path": "/ui/oauth",
         "rendered_tests": [
           "web/src/__tests__/OAuthPage.test.tsx"
@@ -31434,7 +32440,7 @@
       },
       {
         "component": "OverviewPage",
-        "line": 308,
+        "line": 326,
         "path": "/ui/operations",
         "rendered_tests": [
           "web/src/__tests__/OverviewPage.test.tsx"
@@ -31446,7 +32452,7 @@
       },
       {
         "component": "AuditLogPage",
-        "line": 313,
+        "line": 331,
         "path": "/ui/operations/audit-log",
         "rendered_tests": [
           "web/src/__tests__/AuditLogPage.test.tsx",
@@ -31460,7 +32466,7 @@
       },
       {
         "component": "EnterprisePage",
-        "line": 312,
+        "line": 330,
         "path": "/ui/operations/enterprise",
         "rendered_tests": [
           "web/src/__tests__/EnterprisePage.test.tsx",
@@ -31474,7 +32480,7 @@
       },
       {
         "component": "OrgsPage",
-        "line": 310,
+        "line": 328,
         "path": "/ui/operations/orgs",
         "rendered_tests": [
           "web/src/__tests__/UiFidelityJourneys.test.tsx",
@@ -31488,7 +32494,7 @@
       },
       {
         "component": "TeamsPage",
-        "line": 311,
+        "line": 329,
         "path": "/ui/operations/teams",
         "rendered_tests": [
           "web/src/__tests__/TeamsPage.test.tsx"
@@ -31500,7 +32506,7 @@
       },
       {
         "component": "UsersPage",
-        "line": 309,
+        "line": 327,
         "path": "/ui/operations/users",
         "rendered_tests": [
           "web/src/__tests__/UsersPage.test.tsx",
@@ -31514,7 +32520,7 @@
       },
       {
         "component": "OrgOverviewPage",
-        "line": 330,
+        "line": 348,
         "path": "/ui/orgs/:org",
         "rendered_tests": [
           "web/src/__tests__/OrgOverviewPage.test.tsx",
@@ -31528,7 +32534,7 @@
       },
       {
         "component": "CopilotPage",
-        "line": 249,
+        "line": 259,
         "path": "/ui/orgs/:org/copilot",
         "rendered_tests": [
           "web/src/__tests__/CopilotPage.test.tsx",
@@ -31542,7 +32548,7 @@
       },
       {
         "component": "OrgGovernancePage",
-        "line": 246,
+        "line": 256,
         "path": "/ui/orgs/:org/governance",
         "rendered_tests": [
           "web/src/__tests__/OrgGovernancePage.test.tsx",
@@ -31556,7 +32562,7 @@
       },
       {
         "component": "OrgHooksPage",
-        "line": 317,
+        "line": 335,
         "path": "/ui/orgs/:org/hooks",
         "rendered_tests": [
           "web/src/__tests__/OrgHooksPage.test.tsx"
@@ -31568,7 +32574,7 @@
       },
       {
         "component": "WebhookDeliveriesPage",
-        "line": 318,
+        "line": 336,
         "path": "/ui/orgs/:org/hooks/:hookId/deliveries",
         "rendered_tests": [
           "web/src/__tests__/WebhookDeliveriesPage.test.tsx",
@@ -31582,7 +32588,7 @@
       },
       {
         "component": "OrgInsightsPage",
-        "line": 248,
+        "line": 258,
         "path": "/ui/orgs/:org/insights",
         "rendered_tests": [
           "web/src/__tests__/OrgInsightsPage.test.tsx"
@@ -31594,7 +32600,7 @@
       },
       {
         "component": "PackagesPage",
-        "line": 296,
+        "line": 311,
         "path": "/ui/orgs/:org/packages",
         "rendered_tests": [
           "web/src/__tests__/PackagesPage.test.tsx",
@@ -31608,7 +32614,7 @@
       },
       {
         "component": "OrgPeoplePage",
-        "line": 331,
+        "line": 349,
         "path": "/ui/orgs/:org/people",
         "rendered_tests": [
           "web/src/__tests__/OrgPeoplePage.test.tsx",
@@ -31622,7 +32628,7 @@
       },
       {
         "component": "OrgProjectsV2Page",
-        "line": 243,
+        "line": 253,
         "path": "/ui/orgs/:org/projects",
         "rendered_tests": [
           "web/src/__tests__/OrgProjectsV2Page.test.tsx"
@@ -31634,7 +32640,7 @@
       },
       {
         "component": "OrgProjectsV2Page",
-        "line": 244,
+        "line": 254,
         "path": "/ui/orgs/:org/projects/:number",
         "rendered_tests": [
           "web/src/__tests__/OrgProjectsV2Page.test.tsx"
@@ -31646,7 +32652,7 @@
       },
       {
         "component": "OrgReposPage",
-        "line": 242,
+        "line": 252,
         "path": "/ui/orgs/:org/repos",
         "rendered_tests": [
           "web/src/__tests__/OrgReposPage.test.tsx"
@@ -31658,7 +32664,7 @@
       },
       {
         "component": "RulesetsPage",
-        "line": 245,
+        "line": 255,
         "path": "/ui/orgs/:org/rulesets",
         "rendered_tests": [
           "web/src/__tests__/RulesetsPage.test.tsx",
@@ -31672,7 +32678,7 @@
       },
       {
         "component": "OrgSettingsPage",
-        "line": 247,
+        "line": 257,
         "path": "/ui/orgs/:org/settings",
         "rendered_tests": [
           "web/src/__tests__/OrgSettingsPage.test.tsx"
@@ -31684,7 +32690,7 @@
       },
       {
         "component": "OrgTeamsPage",
-        "line": 332,
+        "line": 350,
         "path": "/ui/orgs/:org/teams",
         "rendered_tests": [
           "web/src/__tests__/OrgPeopleTeamsPage.test.tsx",
@@ -31698,7 +32704,7 @@
       },
       {
         "component": "OrgTeamDetailPage",
-        "line": 333,
+        "line": 351,
         "path": "/ui/orgs/:org/teams/:slug",
         "rendered_tests": [
           "web/src/__tests__/OrgTeamDetail.test.tsx"
@@ -31710,7 +32716,7 @@
       },
       {
         "component": "PackagesPage",
-        "line": 295,
+        "line": 310,
         "path": "/ui/packages",
         "rendered_tests": [
           "web/src/__tests__/PackagesPage.test.tsx",
@@ -31724,7 +32730,7 @@
       },
       {
         "component": "ReposPage",
-        "line": 241,
+        "line": 251,
         "path": "/ui/repos",
         "rendered_tests": [
           "web/src/__tests__/RepoListPage.test.tsx",
@@ -31738,7 +32744,7 @@
       },
       {
         "component": "RunnersPage",
-        "line": 240,
+        "line": 250,
         "path": "/ui/runners",
         "rendered_tests": [
           "web/src/__tests__/RunnersPage.test.tsx"
@@ -31750,7 +32756,7 @@
       },
       {
         "component": "SearchPage",
-        "line": 320,
+        "line": 338,
         "path": "/ui/search",
         "rendered_tests": [
           "web/src/__tests__/SearchPage.test.tsx",
@@ -31764,7 +32770,7 @@
       },
       {
         "component": "MyOrganizationsPage",
-        "line": 322,
+        "line": 340,
         "path": "/ui/settings/organizations",
         "rendered_tests": [
           "web/src/__tests__/MyOrganizationsPage.test.tsx"
@@ -31775,8 +32781,44 @@
         ]
       },
       {
+        "component": "SponsorsPage",
+        "line": 323,
+        "path": "/ui/sponsors",
+        "rendered_tests": [
+          "web/src/__tests__/SponsorsPage.test.tsx"
+        ],
+        "source": "web/src/App.tsx",
+        "tests": [
+          "web/src/__tests__/SponsorsPage.test.tsx"
+        ]
+      },
+      {
+        "component": "SponsorsPage",
+        "line": 324,
+        "path": "/ui/sponsors/:login",
+        "rendered_tests": [
+          "web/src/__tests__/SponsorsPage.test.tsx"
+        ],
+        "source": "web/src/App.tsx",
+        "tests": [
+          "web/src/__tests__/SponsorsPage.test.tsx"
+        ]
+      },
+      {
+        "component": "SponsorsDashboardPage",
+        "line": 325,
+        "path": "/ui/sponsors/:login/dashboard",
+        "rendered_tests": [
+          "web/src/__tests__/SponsorsPage.test.tsx"
+        ],
+        "source": "web/src/App.tsx",
+        "tests": [
+          "web/src/__tests__/SponsorsPage.test.tsx"
+        ]
+      },
+      {
         "component": "ProfilePage",
-        "line": 334,
+        "line": 352,
         "path": "/ui/users/:login",
         "rendered_tests": [
           "web/src/__tests__/ProfilePage.test.tsx",
@@ -31790,7 +32832,7 @@
       },
       {
         "component": "WorkflowsPage",
-        "line": 238,
+        "line": 248,
         "path": "/ui/workflows",
         "rendered_tests": [
           "web/src/__tests__/WorkflowsPage.test.tsx"
@@ -31802,7 +32844,7 @@
       },
       {
         "component": "WorkflowDetailPage",
-        "line": 239,
+        "line": 249,
         "path": "/ui/workflows/:id",
         "rendered_tests": [
           "web/src/__tests__/WorkflowDetailPage.test.tsx"
@@ -31814,10 +32856,10 @@
       }
     ],
     "summary": {
-      "browser_navigations": 76,
-      "routes": 94,
-      "routes_with_direct_render": 94,
-      "routes_with_test_reference": 94
+      "browser_navigations": 82,
+      "routes": 99,
+      "routes_with_direct_render": 99,
+      "routes_with_test_reference": 99
     }
   }
 }

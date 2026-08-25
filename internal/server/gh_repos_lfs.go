@@ -24,11 +24,16 @@ import (
 // working tree and `git lfs push` aborts in the pre-push hook, both against a
 // bare "404 page not found" that git-lfs cannot even parse as an error.
 //
-// The object bytes go to the S3-backed object byte store under
-// store.LFSObjectDataKey — never to the git object store (git only ever sees
-// the pointer file) and never to the filesystem. Every transfer moves through
-// PutStream/GetStream, so an object larger than the process's memory is a temp
-// file at worst and never a heap allocation (STORE-019).
+// The object bytes go to the object byte store under store.LFSObjectDataKey —
+// never to the git object store, which only ever sees the pointer file. Every
+// transfer moves through PutStream/GetStream, so an object larger than the
+// process's memory is a temp file at worst and never a heap allocation
+// (STORE-019).
+//
+// Storage is S3 when BLEEPHUB_OBJECT_S3_BUCKET is configured and the local
+// fallback store otherwise, so LFS works on a default deployment. Real GitHub
+// always has LFS: refusing `git lfs push` until an operator configured object
+// storage made a repository's own default (LFSEnabled) a lie.
 
 const (
 	// lfsMediaType is the media type of every LFS API request and response,
@@ -244,6 +249,16 @@ func (s *Server) authorizeLFS(w http.ResponseWriter, r *http.Request, owner, nam
 
 // ─── Batch API ──────────────────────────────────────────────────────────
 
+// lfsObjectStore returns the byte store LFS object transfers use: the
+// configured object storage when there is one, and the local fallback
+// otherwise. It is never nil, so LFS never has to answer "not configured".
+func (s *Server) lfsObjectStore() store.ActionsByteStore {
+	if configured := s.store.ObjectByteStore; configured != nil {
+		return configured
+	}
+	return s.localByteStore
+}
+
 func (s *Server) handleLFSBatch(w http.ResponseWriter, r *http.Request, owner, name string) {
 	var request lfsBatchRequest
 	if err := json.NewDecoder(io.LimitReader(r.Body, maxLFSBatchRequestBody)).Decode(&request); err != nil {
@@ -270,10 +285,6 @@ func (s *Server) handleLFSBatch(w http.ResponseWriter, r *http.Request, owner, n
 	}
 	if request.HashAlgo != "" && request.HashAlgo != "sha256" {
 		writeLFSError(w, http.StatusUnprocessableEntity, "Only the sha256 hash algorithm is supported")
-		return
-	}
-	if s.store.ObjectByteStore == nil {
-		writeLFSError(w, http.StatusNotImplemented, "Git LFS object storage is not configured on this server")
 		return
 	}
 
@@ -401,11 +412,7 @@ func (s *Server) handleLFSDownload(w http.ResponseWriter, r *http.Request, owner
 		writeLFSError(w, http.StatusNotFound, "Object does not exist")
 		return
 	}
-	if s.store.ObjectByteStore == nil {
-		writeLFSError(w, http.StatusNotImplemented, "Git LFS object storage is not configured on this server")
-		return
-	}
-	body, err := s.store.ObjectByteStore.GetStream(r.Context(), store.LFSObjectDataKey(oid))
+	body, err := s.lfsObjectStore().GetStream(r.Context(), store.LFSObjectDataKey(oid))
 	if err != nil {
 		s.logger.Error().Err(err).Str("repo", repo.FullName).Msg("git lfs: object bytes missing from the object store")
 		writeLFSError(w, http.StatusNotFound, "Object does not exist")
@@ -450,10 +457,6 @@ func (s *Server) handleLFSUpload(w http.ResponseWriter, r *http.Request, owner, 
 		writeLFSError(w, http.StatusUnprocessableEntity, "Object size does not match the size declared in the batch request")
 		return
 	}
-	if s.store.ObjectByteStore == nil {
-		writeLFSError(w, http.StatusNotImplemented, "Git LFS object storage is not configured on this server")
-		return
-	}
 
 	limit := int64(maxLFSObjectSize)
 	if declared >= 0 {
@@ -480,7 +483,7 @@ func (s *Server) handleLFSUpload(w http.ResponseWriter, r *http.Request, owner, 
 	}
 
 	key := store.LFSObjectDataKey(oid)
-	if err := s.store.ObjectByteStore.PutStream(r.Context(), key, counted); err != nil {
+	if err := s.lfsObjectStore().PutStream(r.Context(), key, counted); err != nil {
 		s.logger.Error().Err(err).Str("repo", repo.FullName).Msg("git lfs: object upload failed")
 		writeLFSError(w, http.StatusInternalServerError, "Failed to store the uploaded object")
 		return
@@ -501,7 +504,7 @@ func (s *Server) finishLFSUpload(w http.ResponseWriter, repo *store.Repo, oid st
 	digest := hex.EncodeToString(counted.hash.Sum(nil))
 	discard := func(status int, message string) bool {
 		if wrote {
-			if err := s.store.ObjectByteStore.Delete(context.Background(), store.LFSObjectDataKey(oid)); err != nil {
+			if err := s.lfsObjectStore().Delete(context.Background(), store.LFSObjectDataKey(oid)); err != nil {
 				s.logger.Error().Err(err).Str("repo", repo.FullName).Msg("git lfs: discarding a rejected object failed")
 			}
 		}

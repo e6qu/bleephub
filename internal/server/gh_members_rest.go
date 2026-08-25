@@ -66,7 +66,7 @@ func (s *Server) handleListOrgMembers(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 		}
-		result = append(result, store.UserToJSON(u))
+		result = append(result, store.UserToJSON(u, s.baseURL(r)))
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, result))
 }
@@ -135,6 +135,17 @@ func (s *Server) handleSetOrgMembership(w http.ResponseWriter, r *http.Request) 
 	target := s.store.LookupUserByLogin(username)
 	if target == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+
+	// An enterprise that requires two-factor authentication does not admit a
+	// person who has not enrolled a second factor into one of its
+	// organizations.
+	if s.enterpriseRequiresTwoFactor(org) && !s.store.TwoFactorEnabled(target.ID) {
+		writeGHError(w, http.StatusUnprocessableEntity,
+			// target.Login is the store's own spelling of the account, not the
+			// request's, so no request string reaches the response body.
+			"Validation Failed: "+target.Login+" is not enrolled in two-factor authentication, which an enterprise policy requires.")
 		return
 	}
 
@@ -287,7 +298,7 @@ func (s *Server) handleListPublicOrgMembers(w http.ResponseWriter, r *http.Reque
 	members := s.store.ListPublicOrgMembers(orgLogin)
 	result := make([]map[string]interface{}, 0, len(members))
 	for _, u := range members {
-		result = append(result, store.UserToJSON(u))
+		result = append(result, store.UserToJSON(u, s.baseURL(r)))
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, result))
 }
@@ -445,7 +456,7 @@ func membershipToJSON(m *store.Membership, user *store.User, org *store.Org, bas
 		"organization_url": baseURL + "/api/v3/orgs/" + org.Login,
 		"state":            m.State,
 		"role":             m.Role,
-		"user":             store.UserToJSON(user),
+		"user":             store.UserToJSON(user, baseURL),
 		"organization":     orgSimpleJSON(org, baseURL),
 	}
 }

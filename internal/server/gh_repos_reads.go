@@ -77,7 +77,7 @@ func (s *Server) handleListRepoSubscribers(w http.ResponseWriter, r *http.Reques
 	users := s.store.ListRepoSubscribers(repo.ID)
 	out := make([]map[string]interface{}, 0, len(users))
 	for _, u := range users {
-		out = append(out, store.UserToJSON(u))
+		out = append(out, store.UserToJSON(u, s.baseURL(r)))
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
@@ -126,7 +126,7 @@ func (s *Server) handleListRepoAssignees(w http.ResponseWriter, r *http.Request)
 	users := s.store.ListAssignableUsers(repo)
 	out := make([]map[string]interface{}, 0, len(users))
 	for _, u := range users {
-		out = append(out, store.UserToJSON(u))
+		out = append(out, store.UserToJSON(u, s.baseURL(r)))
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }

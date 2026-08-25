@@ -508,7 +508,12 @@ func (rw *ghResponseWriter) WriteHeader(code int) {
 			apiVersion = defaultGitHubAPIVersion
 		}
 		h.Set("X-GitHub-Api-Version", apiVersion)
-		h.Set("X-GitHub-Media-Type", "github.v3; format=json")
+		// A handler that served a custom media type (raw, html, object, diff,
+		// patch) has already reported it; only an untouched response is the
+		// plain JSON representation.
+		if h.Get("X-GitHub-Media-Type") == "" {
+			h.Set("X-GitHub-Media-Type", "github.v3; format=json")
+		}
 
 		// Activity feeds and the notifications list advertise a polling
 		// interval so clients pace their (now conditional, ETag-backed) polling

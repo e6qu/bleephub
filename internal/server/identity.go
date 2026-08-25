@@ -511,7 +511,7 @@ func (s *Server) handleIdentitySession(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"authenticated": true,
-		"user":          s.fullUserJSON(user),
+		"user":          s.fullUserJSON(user, s.baseURL(r)),
 	})
 }
 
@@ -927,7 +927,7 @@ func (s *Server) handleLocalLogin(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusServiceUnavailable, "browser session is unavailable")
 		return
 	}
-	writeJSON(w, http.StatusOK, s.fullUserJSON(user))
+	writeJSON(w, http.StatusOK, s.fullUserJSON(user, s.baseURL(r)))
 }
 
 // handleTokenLogin exchanges a user access token for an HttpOnly browser
@@ -975,7 +975,7 @@ func (s *Server) handleTokenLogin(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusServiceUnavailable, "browser session is unavailable")
 		return
 	}
-	writeJSON(w, http.StatusOK, s.fullUserJSON(user))
+	writeJSON(w, http.StatusOK, s.fullUserJSON(user, s.baseURL(r)))
 }
 
 // errFederatedLogin marks a federated sign-in that must not provision or resolve
@@ -1110,6 +1110,13 @@ func (s *Server) createOIDCBrowserSession(w http.ResponseWriter, r *http.Request
 	session.CreatedAt = s.currentTime()
 	session.UserAgent = truncateSessionUserAgent(r.UserAgent())
 	session.SignedInIP = sessionClientIP(r)
+	// Signing in *is* a fresh re-authentication, so the new session starts
+	// inside the proof-of-presence window rather than being challenged again a
+	// moment after the credential was checked. The MFA half of the proof is
+	// claimed only when the account actually has a second factor, because that
+	// is the only case in which the sign-in verified one.
+	session.SudoAt = session.CreatedAt
+	session.SudoMFA = s.store.TwoFactorEnabled(user.ID)
 	if session.ExpiresAt.IsZero() {
 		session.ExpiresAt = time.Now().Add(12 * time.Hour)
 	}
@@ -1191,7 +1198,17 @@ func (s *Server) requireSecondFactor(w http.ResponseWriter, user *store.User, co
 		writeGHError(w, http.StatusUnauthorized, "Must specify two-factor authentication OTP code.")
 		return true
 	}
-	if result := s.store.VerifySecondFactor(user.ID, code, s.currentTime()); result != store.SecurityOK {
+	// A method the enterprise disallows must not authenticate a sign-in either:
+	// banning it only in the settings pages would leave the front door open.
+	result, _ := s.store.VerifySecondFactorExcluding(user.ID, code, s.currentTime(),
+		s.enterpriseDisallowedTwoFactorMethods(user))
+	if result == store.SecurityMethodDisallowed {
+		w.Header().Set("X-GitHub-OTP", "required; app")
+		writeGHError(w, http.StatusUnauthorized,
+			"That second-factor method is disallowed by an enterprise policy. Use your authenticator app instead.")
+		return true
+	}
+	if result != store.SecurityOK {
 		w.Header().Set("X-GitHub-OTP", "required; app")
 		writeGHError(w, http.StatusUnauthorized, "Two-factor authentication code is invalid.")
 		return true

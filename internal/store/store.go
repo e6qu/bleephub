@@ -159,9 +159,13 @@ type User struct {
 	// PinnedRepos is the user's ordered list of pinned repository full names
 	// (max 6), shown on the profile Overview. GitHub exposes pins only over
 	// GraphQL, so the simulator serves them from a /ui-data endpoint.
-	PinnedRepos []string  `json:"pinned_repos,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	PinnedRepos []string `json:"pinned_repos,omitempty"`
+	// Status is the profile status message, emoji and availability flag the
+	// changeUserStatus mutation sets. GitHub keeps one per account, so it
+	// travels with the account rather than in a table of its own.
+	Status    *UserStatus `json:"status,omitempty"`
+	CreatedAt time.Time   `json:"created_at"`
+	UpdatedAt time.Time   `json:"updated_at"`
 	// Account security + notification preferences. GitHub's 2FA and notification
 	// settings are web-only (no REST), so the simulator serves them from a
 	// browser-only /ui-data endpoint rather than an invented /api/v3 path.
@@ -304,13 +308,15 @@ type RepoAutolink struct {
 	CreatedAt      time.Time `json:"created_at"`
 }
 
-// WikiPage is a single markdown page in a repository's wiki. Real GitHub backs
-// wikis with a separate `<repo>.wiki.git` repository and exposes no REST API;
-// the simulator uses a dedicated per-repo page store keyed by slug instead.
+// WikiPage is a single markup page in a repository's wiki. It is not stored:
+// every field is derived from the `<repo>.wiki.git` repository, which is the
+// wiki — a page is a file in it, and this struct is the projection of that file
+// the browser UI reads. See store_wiki_git.go.
 type WikiPage struct {
 	Slug      string    `json:"slug"`
 	Title     string    `json:"title"`
 	Body      string    `json:"body"`
+	Path      string    `json:"-"`
 	RepoKey   string    `json:"-"`
 	Author    string    `json:"author,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
@@ -351,6 +357,15 @@ type LoginSession struct {
 	CreatedAt  time.Time
 	UserAgent  string
 	SignedInIP string
+	// SudoAt is when this session last satisfied a proof-of-presence challenge
+	// (GitHub's "sudo mode"). It is per session, not per account, so proving
+	// presence in one browser does not unlock a sensitive operation in another.
+	// Zero means the session has never been elevated.
+	SudoAt time.Time
+	// SudoMFA records whether that proof carried a second factor. GitHub's MFA
+	// proof-of-presence requirement is satisfied only by a proof that did, so a
+	// password re-entry cannot be mistaken for an MFA challenge later.
+	SudoMFA bool
 }
 
 // GistFile is a single file inside a gist.
@@ -443,49 +458,52 @@ type Store struct {
 	LoginSessions                map[string]*LoginSession // _gh_sess cookie value → session
 	OIDCLogoutClaims             map[string]time.Time     // replay key → expiry (ephemeral stores only)
 	Repos                        map[int]*Repo
-	ReposByName                  map[string]*Repo                          // "owner/name" → repo
-	GitStorages                  map[string]gitStorage.Storer              // "owner/name" → go-git storage (memory or filesystem)
-	Orgs                         map[int]*Org                              // id → org
-	OrgsByLogin                  map[string]*Org                           // login → org
-	Teams                        map[int]*Team                             // id → team
-	TeamsBySlug                  map[string]*Team                          // "org/slug" → team
-	Memberships                  map[string]*Membership                    // "org/user" → membership
-	Issues                       map[int]*Issue                            // id → issue
-	IssuesByRepo                 map[int]map[int]*Issue                    // repoID → number → issue (secondary index)
-	IssueOrderByRepo             map[int][]*Issue                          // repoID → issues ordered by (CreatedAt, Number) asc (secondary index; maintained by indexIssueLocked/unindexIssueLocked)
-	Labels                       map[int]*IssueLabel                       // id → label
-	Milestones                   map[int]*Milestone                        // id → milestone
-	Comments                     map[int]*Comment                          // id → comment
-	CommentCounts                map[string]int                            // "parentType\x1fparentID" → comment count (index)
-	CommentsByParent             map[string][]*Comment                     // "parentType\x1fparentID" → comments (index, avoids scanning every comment per parent)
-	IssueEvents                  map[int]*IssueEvent                       // id → issue event
-	PullRequests                 map[int]*PullRequest                      // id → PR
-	PullsByRepo                  map[int]map[int]*PullRequest              // repoID → number → PR (secondary index)
-	PRReviews                    map[int]*PullRequestReview                // id → review
-	PRReviewsByPR                map[int][]*PullRequestReview              // PR id → reviews (secondary index)
-	Workflows                    map[string]*Workflow                      // id → workflow (run-level)
-	WorkflowFiles                map[int64]*WorkflowFile                   // id → workflow file (file-level)
-	PendingMessages              []*TaskAgentMessage                       // messages awaiting delivery
-	RepoSecrets                  map[string]map[string]*Secret             // "owner/repo" → name → secret
-	RepoVariables                map[string]map[string]*ActionsVariable    // "owner/repo" → NAME → variable
-	RepoCollaborators            map[string]map[string]string              // "owner/repo" → login → permission (pull/push/admin)
-	RepoAutolinks                map[string]map[int]*RepoAutolink          // "owner/repo" → id → autolink
-	RepoWikiPages                map[string]map[string]*WikiPage           // "owner/repo" → slug → wiki page
-	RepoWikiRevisions            map[string]map[string][]*WikiPageRevision // "owner/repo" → slug → revisions (oldest first)
-	LFSObjects                   map[string]map[string]int64               // "owner/repo" → Git LFS oid (sha256 hex) → size in bytes (bytes live in the object store)
-	LFSLocks                     map[string]map[int]*LFSLock               // "owner/repo" → lock id → Git LFS file lock
-	RepoInvitations              map[string]map[int]*RepoInvitation        // "owner/repo" → id → invitation
-	RepoDeployKeys               map[string]map[int]*RepoDeployKey         // "owner/repo" → id → deploy key
-	RepoSubscriptions            map[string]*RepoSubscription              // "userID:repoID" → subscription
-	OrgSecrets                   map[string]map[string]*OrgSecret          // org login → NAME → org secret
-	OrgVariables                 map[string]map[string]*ActionsVariable    // org login → NAME → org variable
-	EnvSecrets                   map[string]map[string]*Secret             // envScopeKey(repo, env) → NAME → secret
-	EnvVariables                 map[string]map[string]*ActionsVariable    // envScopeKey(repo, env) → NAME → variable
-	TimelineRecords              map[string][]*TimelineRecord              // planID → runner-uploaded timeline records
-	LogFiles                     map[int][]byte                            // logID → uploaded runner log content
-	LogMasks                     map[string][]string                       // planID → exact values scrubbed from every log surface
-	WorkflowAttempts             map[int][]*Workflow                       // runID → prior attempts (oldest first)
-	RunnerGroups                 map[int]*RunnerGroup                      // org runner groups (global pool overlay)
+	ReposByName                  map[string]*Repo                       // "owner/name" → repo
+	RepoRedirects                map[string]int                         // FoldName("owner/old-name") → repo id, for a renamed or transferred repository
+	GitStorages                  map[string]gitStorage.Storer           // "owner/name" → go-git storage (memory or filesystem)
+	Orgs                         map[int]*Org                           // id → org
+	OrgsByLogin                  map[string]*Org                        // login → org
+	Teams                        map[int]*Team                          // id → team
+	TeamsBySlug                  map[string]*Team                       // "org/slug" → team
+	Memberships                  map[string]*Membership                 // "org/user" → membership
+	Issues                       map[int]*Issue                         // id → issue
+	IssuesByRepo                 map[int]map[int]*Issue                 // repoID → number → issue (secondary index)
+	IssueOrderByRepo             map[int][]*Issue                       // repoID → issues ordered by (CreatedAt, Number) asc (secondary index; maintained by indexIssueLocked/unindexIssueLocked)
+	Labels                       map[int]*IssueLabel                    // id → label
+	UserLists                    map[int]*UserList                      // id → user list (the profile "lists" a user sorts starred repositories into)
+	Milestones                   map[int]*Milestone                     // id → milestone
+	Comments                     map[int]*Comment                       // id → comment
+	CommentCounts                map[string]int                         // "parentType\x1fparentID" → comment count (index)
+	CommentsByParent             map[string][]*Comment                  // "parentType\x1fparentID" → comments (index, avoids scanning every comment per parent)
+	IssueEvents                  map[int]*IssueEvent                    // id → issue event
+	PullRequests                 map[int]*PullRequest                   // id → PR
+	PullsByRepo                  map[int]map[int]*PullRequest           // repoID → number → PR (secondary index)
+	PRReviews                    map[int]*PullRequestReview             // id → review
+	PRReviewsByPR                map[int][]*PullRequestReview           // PR id → reviews (secondary index)
+	Workflows                    map[string]*Workflow                   // id → workflow (run-level)
+	WorkflowFiles                map[int64]*WorkflowFile                // id → workflow file (file-level)
+	PendingMessages              []*TaskAgentMessage                    // messages awaiting delivery
+	RepoSecrets                  map[string]map[string]*Secret          // "owner/repo" → name → secret
+	RepoVariables                map[string]map[string]*ActionsVariable // "owner/repo" → NAME → variable
+	RepoCollaborators            map[string]map[string]string           // "owner/repo" → login → permission (pull/push/admin)
+	RepoAutolinks                map[string]map[int]*RepoAutolink       // "owner/repo" → id → autolink
+	WikiGitStorages              map[string]gitStorage.Storer           // "owner/repo" → go-git storage of that repository's wiki
+	WikiProjections              map[string]*WikiProjection             // "owner/repo" → pages/history derived from the wiki tip
+	WikiMu                       sync.Mutex                             `json:"-"` // serializes wiki git I/O and projection rebuilds
+	LFSObjects                   map[string]map[string]int64            // "owner/repo" → Git LFS oid (sha256 hex) → size in bytes (bytes live in the object store)
+	LFSLocks                     map[string]map[int]*LFSLock            // "owner/repo" → lock id → Git LFS file lock
+	RepoInvitations              map[string]map[int]*RepoInvitation     // "owner/repo" → id → invitation
+	RepoDeployKeys               map[string]map[int]*RepoDeployKey      // "owner/repo" → id → deploy key
+	RepoSubscriptions            map[string]*RepoSubscription           // "userID:repoID" → subscription
+	OrgSecrets                   map[string]map[string]*OrgSecret       // org login → NAME → org secret
+	OrgVariables                 map[string]map[string]*ActionsVariable // org login → NAME → org variable
+	EnvSecrets                   map[string]map[string]*Secret          // envScopeKey(repo, env) → NAME → secret
+	EnvVariables                 map[string]map[string]*ActionsVariable // envScopeKey(repo, env) → NAME → variable
+	TimelineRecords              map[string][]*TimelineRecord           // planID → runner-uploaded timeline records
+	LogFiles                     map[int][]byte                         // logID → uploaded runner log content
+	LogMasks                     map[string][]string                    // planID → exact values scrubbed from every log surface
+	WorkflowAttempts             map[int][]*Workflow                    // runID → prior attempts (oldest first)
+	RunnerGroups                 map[int]*RunnerGroup                   // org runner groups (global pool overlay)
 	NextRunnerGroupID            int
 	Hooks                        map[string][]*Webhook         // "owner/repo" → hooks
 	OrgHooks                     map[string][]*Webhook         // org login → org-level hooks
@@ -519,6 +537,10 @@ type Store struct {
 	ProjectCards                 map[int]*ProjectCard                   // id → card
 	UserMigrations               map[int]*UserMigration                 // id → user migration
 	OrgMigrations                map[int]*OrgMigration                  // id → org migration
+	MigrationSources             map[int]*MigrationSource               // id → GEI migration source
+	RepositoryMigrations         map[int]*RepositoryMigration           // id → GEI repository migration
+	OrganizationMigrations       map[int]*OrganizationMigration         // id → GEI organization migration
+	OrgMigratorRoles             map[string]*OrgMigratorRole            // org/type/actor → migrator grant
 	Codespaces                   map[int]*Codespace                     // id → codespace
 	CodespacesByName             map[string]*Codespace                  // name → codespace
 	CodespaceSecrets             map[string]map[string]*CodespaceSecret // scope\x1fname → secret
@@ -575,6 +597,7 @@ type Store struct {
 	NextTeam                     int
 	NextIssue                    int
 	NextLabel                    int
+	NextUserListID               int
 	NextMilestone                int
 	NextComment                  int
 	NextIssueEventID             int
@@ -594,6 +617,9 @@ type Store struct {
 	NextProjectCardID            int
 	NextUserMigrationID          int
 	NextOrgMigrationID           int
+	NextMigrationSourceID        int
+	NextRepositoryMigrationID    int
+	NextOrganizationMigrationID  int
 	NextAutolinkID               int
 	NextLFSLockID                int
 	NextInvitationID             int
@@ -601,10 +627,19 @@ type Store struct {
 	NextSecurityAdvisoryID       int
 	NextSecurityAdvisoryReportID int
 	Discussions                  map[int]*Discussion
+	DiscussionPolls              map[int]*DiscussionPoll
+	UserNamespaceGrants          map[int]*UserNamespaceAccessGrant
+	Mannequins                   map[int]*Mannequin
+	AttributionInvitations       map[int]*AttributionInvitation
 	DiscussionCategories         map[int]*DiscussionCategory
 	DiscussionComments           map[int]*DiscussionComment
 	PinnedDiscussions            map[int][]int // repoID → ordered pinned discussion IDs (≤ MaxPinnedDiscussions)
 	NextDiscussionID             int
+	NextDiscussionPollID         int
+	NextUserNamespaceGrantID     int
+	NextMannequinID              int
+	NextAttributionInvitationID  int
+	NextDiscussionPollOptionID   int
 	NextDiscussionNumber         map[int]int // repoID → next per-repo discussion number (high-water; monotonic across tombstones)
 	NextDiscussionCategoryID     int
 	NextDiscussionCommentID      int
@@ -665,6 +700,25 @@ type Store struct {
 	NextEnterpriseTeamID               int
 	NextEnterpriseCodeSecurityConfigID int
 
+	// enterprise accounts (store_enterprise_accounts.go). Everything here is
+	// keyed by enterprise id so no read can cross from one enterprise to
+	// another.
+	Enterprises           map[int]*Enterprise
+	EnterprisesBySlug     map[string]*Enterprise           // lower-cased slug → enterprise
+	EnterpriseMemberships map[string]*EnterpriseMembership // "<enterpriseID>/<userID>" → membership
+	EnterpriseOrgs        map[int]*EnterpriseOrganization  // org id → owning enterprise link
+	EnterpriseInvitations map[int]*EnterpriseInvitation
+	IPAllowListEntries    map[int]*IPAllowListEntry
+	VerifiableDomains     map[int]*VerifiableDomain
+	// primaryEnterpriseSlug is the instance's own enterprise (configuration,
+	// set at boot); see PrimaryEnterpriseSlug.
+	primaryEnterpriseSlug      string
+	NextEnterpriseID           int
+	NextEnterpriseMembershipID int
+	NextEnterpriseInvitationID int
+	NextIPAllowListEntryID     int
+	NextVerifiableDomainID     int
+
 	// attestations + org artifact metadata
 	Attestations                   map[int]*Attestation // id → attestation
 	NextAttestationID              int
@@ -683,6 +737,21 @@ type Store struct {
 	NextCopilotSpaceID       int64
 	CodeQualitySetups        map[string]*CodeQualitySetup           // repo full name → setup
 	CodeQualityFindings      map[string]map[int]*CodeQualityFinding // repo full name → finding number → finding
+
+	// GitHub Copilot subscription policy, seat activity and the usage
+	// ledger the metrics endpoints aggregate (store_copilot_policy.go).
+	CopilotPolicies *CopilotPolicyStore
+
+	// GitHub Marketplace publication state (store_marketplace_categories.go):
+	// the category taxonomy and each listing's marketing profile, beside the
+	// billing state in store_marketplace.go.
+	MarketplaceProfiles *MarketplaceProfileStore
+
+	// GitHub Sponsors (store_sponsors.go). Listings, tiers, sponsorships,
+	// the activity feed, newsletters and the invoice/payout ledger live
+	// behind their own mutex so a billing-cycle transition is atomic across
+	// every record it touches.
+	Sponsors *SponsorsStore
 
 	// Current GitHub REST resource families introduced after the original
 	// OpenAPI pin. They are first-class durable state, not route-only shims.
@@ -961,6 +1030,7 @@ func NewStore() *Store {
 		OIDCLogoutClaims:             make(map[string]time.Time),
 		Repos:                        make(map[int]*Repo),
 		ReposByName:                  make(map[string]*Repo),
+		RepoRedirects:                make(map[string]int),
 		GitStorages:                  make(map[string]gitStorage.Storer),
 		PendingRepoCreations:         make(map[string]bool),
 		Orgs:                         make(map[int]*Org),
@@ -972,6 +1042,7 @@ func NewStore() *Store {
 		IssuesByRepo:                 make(map[int]map[int]*Issue),
 		IssueOrderByRepo:             make(map[int][]*Issue),
 		Labels:                       make(map[int]*IssueLabel),
+		UserLists:                    make(map[int]*UserList),
 		Milestones:                   make(map[int]*Milestone),
 		Comments:                     make(map[int]*Comment),
 		CommentCounts:                make(map[string]int),
@@ -987,8 +1058,8 @@ func NewStore() *Store {
 		RepoVariables:                make(map[string]map[string]*ActionsVariable),
 		RepoCollaborators:            make(map[string]map[string]string),
 		RepoAutolinks:                make(map[string]map[int]*RepoAutolink),
-		RepoWikiPages:                make(map[string]map[string]*WikiPage),
-		RepoWikiRevisions:            make(map[string]map[string][]*WikiPageRevision),
+		WikiGitStorages:              make(map[string]gitStorage.Storer),
+		WikiProjections:              make(map[string]*WikiProjection),
 		LFSObjects:                   make(map[string]map[string]int64),
 		LFSLocks:                     make(map[string]map[int]*LFSLock),
 		RepoInvitations:              make(map[string]map[int]*RepoInvitation),
@@ -1036,6 +1107,10 @@ func NewStore() *Store {
 		ProjectCards:                 map[int]*ProjectCard{},
 		UserMigrations:               map[int]*UserMigration{},
 		OrgMigrations:                map[int]*OrgMigration{},
+		MigrationSources:             map[int]*MigrationSource{},
+		RepositoryMigrations:         map[int]*RepositoryMigration{},
+		OrganizationMigrations:       map[int]*OrganizationMigration{},
+		OrgMigratorRoles:             map[string]*OrgMigratorRole{},
 		Codespaces:                   map[int]*Codespace{},
 		CodespacesByName:             map[string]*Codespace{},
 		CodespaceSecrets:             map[string]map[string]*CodespaceSecret{},
@@ -1070,6 +1145,10 @@ func NewStore() *Store {
 		PackageVersionsByPackage:     map[int]map[int]*PackageVersion{},
 		PackageFilesByVersion:        map[int]map[int]*PackageFile{},
 		Discussions:                  map[int]*Discussion{},
+		DiscussionPolls:              map[int]*DiscussionPoll{},
+		UserNamespaceGrants:          map[int]*UserNamespaceAccessGrant{},
+		Mannequins:                   map[int]*Mannequin{},
+		AttributionInvitations:       map[int]*AttributionInvitation{},
 		DiscussionCategories:         map[int]*DiscussionCategory{},
 		DiscussionComments:           map[int]*DiscussionComment{},
 		PinnedDiscussions:            map[int][]int{},
@@ -1117,6 +1196,9 @@ func NewStore() *Store {
 		NextProjectCardID:            1,
 		NextUserMigrationID:          1,
 		NextOrgMigrationID:           1,
+		NextMigrationSourceID:        1,
+		NextRepositoryMigrationID:    1,
+		NextOrganizationMigrationID:  1,
 		NextCodespaceID:              1,
 		NextCodespaceSecretID:        1,
 		NextAutolinkID:               1,
@@ -1127,6 +1209,11 @@ func NewStore() *Store {
 		NextSecurityAdvisoryID:       1,
 		NextSecurityAdvisoryReportID: 1,
 		NextDiscussionID:             1,
+		NextDiscussionPollID:         1,
+		NextUserNamespaceGrantID:     1,
+		NextMannequinID:              1,
+		NextAttributionInvitationID:  1,
+		NextDiscussionPollOptionID:   1,
 		NextDiscussionNumber:         make(map[int]int),
 		NextDiscussionCategoryID:     1,
 		NextDiscussionCommentID:      1,
@@ -1138,6 +1225,18 @@ func NewStore() *Store {
 		EnterpriseSettings:                 defaultEnterpriseSettings(),
 		NextEnterpriseTeamID:               1,
 		NextEnterpriseCodeSecurityConfigID: 1,
+		Enterprises:                        map[int]*Enterprise{},
+		EnterprisesBySlug:                  map[string]*Enterprise{},
+		EnterpriseMemberships:              map[string]*EnterpriseMembership{},
+		EnterpriseOrgs:                     map[int]*EnterpriseOrganization{},
+		EnterpriseInvitations:              map[int]*EnterpriseInvitation{},
+		IPAllowListEntries:                 map[int]*IPAllowListEntry{},
+		VerifiableDomains:                  map[int]*VerifiableDomain{},
+		NextEnterpriseID:                   1,
+		NextEnterpriseMembershipID:         1,
+		NextEnterpriseInvitationID:         1,
+		NextIPAllowListEntryID:             1,
+		NextVerifiableDomainID:             1,
 
 		// attestations + org artifact metadata
 		Attestations:                   map[int]*Attestation{},
@@ -1275,6 +1374,17 @@ func NewStore() *Store {
 	store.CodespaceRuntimeDelete = store.deleteCodespaceRuntime
 	store.CodespaceWorkspacePrepare = prepareCodespaceWorkspace
 	store.RepoStorageOpen = gitstore.OpenOrInitGitStorage
+	// Sponsors bills against the store's clock, so a frozen test clock
+	// freezes the billing cycle with it.
+	store.Sponsors = NewSponsorsStore(store.CurrentTime)
+	store.MarketplaceProfiles = NewMarketplaceProfileStore(store.CurrentTime)
+	store.CopilotPolicies = NewCopilotPolicyStore()
+	// GitHub's Marketplace taxonomy exists on every instance, persisted or
+	// not: MarketplaceListing.primaryCategory is non-null, so a listing
+	// always needs a category to point at.
+	if err := store.MarketplaceProfiles.SeedDefaultCategories(); err != nil {
+		panic(fmt.Sprintf("seed marketplace categories: %v", err))
+	}
 	return store
 }
 
@@ -1334,6 +1444,9 @@ func (st *Store) wirePersistence(p *Persistence) {
 	st.Misc.Persist = p
 	st.CommitStatuses.Persist = p
 	st.CommitComments.Persist = p
+	st.Sponsors.Persist = p
+	st.MarketplaceProfiles.Persist = p
+	st.CopilotPolicies.Persist = p
 	st.Mu.Unlock()
 	// Object-store git bytes have no advisory locking of their own; the durable
 	// store is what every replica already shares, so it is what arbitrates
@@ -1727,6 +1840,19 @@ func (st *Store) loadFromPersistence() error {
 	}); err != nil {
 		return err
 	}
+	if err := st.loadBucket("user_lists", func(raw []byte) error {
+		var l UserList
+		if err := LoadJSON(raw, &l); err != nil {
+			return err
+		}
+		st.UserLists[l.ID] = &l
+		if l.ID >= st.NextUserListID {
+			st.NextUserListID = l.ID + 1
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
 	if err := st.loadBucket("milestones", func(raw []byte) error {
 		var m Milestone
 		if err := LoadJSON(raw, &m); err != nil {
@@ -1968,25 +2094,6 @@ func (st *Store) loadFromPersistence() error {
 				}
 			}
 			st.LFSLocks[key] = locks
-			return nil
-		}},
-		{"repo_wiki_pages", func(key string, raw []byte) error {
-			var pages map[string]*WikiPage
-			if err := LoadJSON(raw, &pages); err != nil {
-				return err
-			}
-			for _, p := range pages {
-				p.RepoKey = key
-			}
-			st.RepoWikiPages[key] = pages
-			return nil
-		}},
-		{"repo_wiki_revisions", func(key string, raw []byte) error {
-			var revisions map[string][]*WikiPageRevision
-			if err := LoadJSON(raw, &revisions); err != nil {
-				return err
-			}
-			st.RepoWikiRevisions[key] = revisions
 			return nil
 		}},
 		{"repo_invitations", func(key string, raw []byte) error {
@@ -2247,6 +2354,18 @@ func (st *Store) loadFromPersistence() error {
 			}
 			return nil
 		}},
+		{"pinned_environments", func(_ string, raw []byte) error {
+			var pin PinnedEnvironment
+			if err := LoadJSON(raw, &pin); err != nil {
+				return err
+			}
+			st.Deployments.pinnedEnvs[pin.ID] = &pin
+			st.Deployments.pinsByRepo[pin.RepoID] = append(st.Deployments.pinsByRepo[pin.RepoID], &pin)
+			if pin.ID >= st.Deployments.nextPinID {
+				st.Deployments.nextPinID = pin.ID + 1
+			}
+			return nil
+		}},
 		{"pr_review_comments", func(_ string, raw []byte) error {
 			rec := prReviewCommentRecord{PRReviewComment: &PRReviewComment{}}
 			if err := LoadJSON(raw, &rec); err != nil {
@@ -2348,6 +2467,11 @@ func (st *Store) loadFromPersistence() error {
 	for _, d := range st.Deployments.deployments {
 		sort.Slice(d.Statuses, func(i, j int) bool { return d.Statuses[i].ID < d.Statuses[j].ID })
 	}
+	// Pinned environments likewise reloaded in map-iteration order; the pin
+	// slices must hold position order (unpin and reorder renumber from it).
+	for _, pins := range st.Deployments.pinsByRepo {
+		sort.Slice(pins, func(i, j int) bool { return pins[i].Position < pins[j].Position })
+	}
 
 	for _, loadFn := range []struct {
 		Name string `json:"-"`
@@ -2421,6 +2545,14 @@ func (st *Store) loadFromPersistence() error {
 				return err
 			}
 			st.Misc.BranchProtection[key] = &bp
+			return nil
+		}},
+		{"branch_protection_extras", func(key string, raw []byte) error {
+			var extras BranchProtectionRuleExtras
+			if err := LoadJSON(raw, &extras); err != nil {
+				return err
+			}
+			st.Misc.BranchProtectionExtras[key] = &extras
 			return nil
 		}},
 		{"branch_protection_patterns", func(key string, raw []byte) error {
@@ -2759,6 +2891,58 @@ func (st *Store) loadFromPersistence() error {
 			}
 			if d.Number >= st.NextDiscussionNumber[d.RepoID] {
 				st.NextDiscussionNumber[d.RepoID] = d.Number + 1
+			}
+			return nil
+		}},
+		{"mannequins", func(_ string, raw []byte) error {
+			var m Mannequin
+			if err := LoadJSON(raw, &m); err != nil {
+				return err
+			}
+			st.Mannequins[m.ID] = &m
+			if m.ID >= st.NextMannequinID {
+				st.NextMannequinID = m.ID + 1
+			}
+			return nil
+		}},
+		{"attribution_invitations", func(_ string, raw []byte) error {
+			var inv AttributionInvitation
+			if err := LoadJSON(raw, &inv); err != nil {
+				return err
+			}
+			st.AttributionInvitations[inv.ID] = &inv
+			if inv.ID >= st.NextAttributionInvitationID {
+				st.NextAttributionInvitationID = inv.ID + 1
+			}
+			return nil
+		}},
+		{"user_namespace_grants", func(_ string, raw []byte) error {
+			var grant UserNamespaceAccessGrant
+			if err := LoadJSON(raw, &grant); err != nil {
+				return err
+			}
+			st.UserNamespaceGrants[grant.ID] = &grant
+			if grant.ID >= st.NextUserNamespaceGrantID {
+				st.NextUserNamespaceGrantID = grant.ID + 1
+			}
+			return nil
+		}},
+		{"discussion_polls", func(_ string, raw []byte) error {
+			var poll DiscussionPoll
+			if err := LoadJSON(raw, &poll); err != nil {
+				return err
+			}
+			if poll.VotesByUser == nil {
+				poll.VotesByUser = map[int]int{}
+			}
+			st.DiscussionPolls[poll.ID] = &poll
+			if poll.ID >= st.NextDiscussionPollID {
+				st.NextDiscussionPollID = poll.ID + 1
+			}
+			for _, option := range poll.Options {
+				if option.ID >= st.NextDiscussionPollOptionID {
+					st.NextDiscussionPollOptionID = option.ID + 1
+				}
 			}
 			return nil
 		}},
@@ -3101,6 +3285,12 @@ func (st *Store) loadFromPersistence() error {
 	}); err != nil {
 		return err
 	}
+	if err := st.loadEnterpriseAccountBuckets(); err != nil {
+		return err
+	}
+	if err := st.loadGEIMigrationBuckets(); err != nil {
+		return err
+	}
 	if err := st.loadBucket("enterprise_settings", func(raw []byte) error {
 		var s EnterpriseSettings
 		if err := LoadJSON(raw, &s); err != nil {
@@ -3132,6 +3322,45 @@ func (st *Store) loadFromPersistence() error {
 	}); err != nil {
 		return err
 	}
+
+	// projects-v2 status updates
+	if err := st.loadBucket("project_v2_status_updates", func(raw []byte) error {
+		var u ProjectV2StatusUpdate
+		if err := LoadJSON(raw, &u); err != nil {
+			return err
+		}
+		st.ProjectsV2.statusUpdates[u.ID] = &u
+		st.ProjectsV2.statusByProj[u.ProjectID] = append(st.ProjectsV2.statusByProj[u.ProjectID], &u)
+		if u.ID >= st.ProjectsV2.nextStatusID {
+			st.ProjectsV2.nextStatusID = u.ID + 1
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	for _, updates := range st.ProjectsV2.statusByProj {
+		sort.Slice(updates, func(i, j int) bool { return updates[i].ID < updates[j].ID })
+	}
+
+	// projects-v2 workflows
+	if err := st.loadBucket("project_v2_workflows", func(raw []byte) error {
+		var w ProjectV2Workflow
+		if err := LoadJSON(raw, &w); err != nil {
+			return err
+		}
+		st.ProjectsV2.workflows[w.ID] = &w
+		st.ProjectsV2.workflowsByProj[w.ProjectID] = append(st.ProjectsV2.workflowsByProj[w.ProjectID], &w)
+		if w.ID >= st.ProjectsV2.nextWorkflowID {
+			st.ProjectsV2.nextWorkflowID = w.ID + 1
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	for _, workflows := range st.ProjectsV2.workflowsByProj {
+		sort.Slice(workflows, func(i, j int) bool { return workflows[i].ID < workflows[j].ID })
+	}
+
 	// Rows arrive in map-iteration order; restore per-project creation
 	// (ID) order for fields, views, and per-content item slices. Iteration
 	// IDs share the option-seed space with single-select option IDs, so
@@ -4017,6 +4246,15 @@ func (st *Store) loadFromPersistence() error {
 		st.CodespaceSecrets[scope] = m
 	}
 
+	if err := st.loadSponsors(); err != nil {
+		return err
+	}
+	if err := st.loadMarketplaceProfiles(); err != nil {
+		return err
+	}
+	if err := st.loadCopilotPolicies(); err != nil {
+		return err
+	}
 	if err := st.applyDurableIDCounters(); err != nil {
 		return err
 	}
@@ -4214,16 +4452,25 @@ func (st *Store) idCounterBuckets() map[string]*int {
 		"discussion_comments":              &st.NextDiscussionCommentID,
 		"discussions":                      &st.NextDiscussionID,
 		"enterprise_code_security_configs": &st.NextEnterpriseCodeSecurityConfigID,
+		"enterprise_invitations":           &st.NextEnterpriseInvitationID,
+		"enterprise_memberships":           &st.NextEnterpriseMembershipID,
 		"enterprise_teams":                 &st.NextEnterpriseTeamID,
+		"enterprises":                      &st.NextEnterpriseID,
+		"ip_allow_list_entries":            &st.NextIPAllowListEntryID,
+		"verifiable_domains":               &st.NextVerifiableDomainID,
 		"gist_comments":                    &st.NextGistCommentID,
 		"hosted_runner_custom_images":      &st.NextHostedRunnerImageID,
 		"hosted_runners":                   &st.NextHostedRunnerID,
 		"issue_events":                     &st.NextIssueEventID,
 		"issues":                           &st.NextIssue,
 		"labels":                           &st.NextLabel,
+		"user_lists":                       &st.NextUserListID,
 		"milestones":                       &st.NextMilestone,
 		"org_invitations":                  &st.NextOrgInvitationID,
+		"migration_sources":                &st.NextMigrationSourceID,
 		"org_migrations":                   &st.NextOrgMigrationID,
+		"organization_migrations":          &st.NextOrganizationMigrationID,
+		"repository_migrations":            &st.NextRepositoryMigrationID,
 		"orgs":                             &st.NextOrg,
 		"package_files":                    &st.NextPackageFileID,
 		"package_versions":                 &st.NextPackageVersionID,

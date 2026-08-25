@@ -21,7 +21,7 @@ func TestMoveProjectCardRefusesCrossProjectColumn(t *testing.T) {
 	attackerRepo := st.CreateRepo(admin, "cards-idor-attacker", "", false)
 	attackerProject := st.CreateProjectClassic(attackerRepo, admin.ID, "attacker board", "", "open")
 	attackerColumn := st.CreateProjectColumn(attackerProject.ID, "todo")
-	card := st.CreateProjectCard(attackerColumn.ID, admin.ID, "attacker card", 0)
+	card := st.CreateProjectCard(attackerColumn.ID, admin.ID, "attacker card", 0, 0)
 	if card == nil {
 		t.Fatal("create attacker card")
 	}

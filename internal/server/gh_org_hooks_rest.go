@@ -384,7 +384,7 @@ func (s *Server) orgPingPayload(org *store.Org, hook *store.Webhook, r *http.Req
 		"zen":          "Keep it logically awesome.",
 		"hook_id":      hook.ID,
 		"hook":         orgHookToJSON(hook, org, s.baseURL(r)),
-		"organization": orgWebhookPayload(org),
+		"organization": orgWebhookPayload(org, s.baseURL(r)),
 	}
 }
 
@@ -437,17 +437,17 @@ func (s *Server) emitOrgWebhookEvent(orgLogin, eventType, action string, payload
 func (s *Server) emitOrgMembershipEvent(org *store.Org, action string, m *store.Membership, target, sender *store.User) {
 	payload := map[string]interface{}{
 		"action":       action,
-		"organization": orgWebhookPayload(org),
+		"organization": orgWebhookPayload(org, s.publicOrigin()),
 	}
 	if sender != nil {
-		payload["sender"] = store.UserToJSON(sender)
+		payload["sender"] = store.UserToJSON(sender, s.publicOrigin())
 	}
 	if action == "member_invited" {
 		invitationRole := "direct_member"
 		if m.Role == store.OrgRoleAdmin {
 			invitationRole = "admin"
 		}
-		payload["user"] = store.UserToJSON(target)
+		payload["user"] = store.UserToJSON(target, s.publicOrigin())
 		payload["invitation"] = map[string]interface{}{
 			"id":         authorizationID(org.Login + "/" + target.Login),
 			"login":      target.Login,
@@ -461,7 +461,7 @@ func (s *Server) emitOrgMembershipEvent(org *store.Org, action string, m *store.
 			"organization_url": "/api/v3/orgs/" + org.Login,
 			"state":            m.State,
 			"role":             m.Role,
-			"user":             store.UserToJSON(target),
+			"user":             store.UserToJSON(target, s.publicOrigin()),
 		}
 	}
 	s.emitOrgWebhookEvent(org.Login, "organization", action, payload)

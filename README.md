@@ -319,7 +319,7 @@ The S3 filesystem test suite drives this path through a real S3 server — a Min
 
 Actions byte storage is selected separately from git storage:
 
-- default — in-memory bytes while metadata persistence is disabled;
+- default — in-memory bytes while metadata persistence is disabled. Git LFS object bytes are the exception: they fall back to a filesystem store under `<BLEEPHUB_DATA_DIR>/objects` (in-process when no data directory is set), so `git lfs push` and `git lfs pull` work on a deployment that configured no object storage, as they do against real GitHub;
 - `BLEEPHUB_OBJECT_S3_BUCKET` (+ optional `BLEEPHUB_OBJECT_S3_ENDPOINT`, `BLEEPHUB_OBJECT_S3_PREFIX`) — service byte content in S3-compatible object storage: GitHub Actions artifacts, dependency caches, runner-uploaded log files, release assets, package files, container-registry blobs, CodeQL database archives, CodeQL variant-analysis query packs, artifact attestation bundles, and published GitHub Pages archives. If `BLEEPHUB_OBJECT_S3_BUCKET` is set and the bucket cannot be reached with `HeadBucket`, startup fails loudly.
 - `BLEEPHUB_PAGES_JEKYLL_EXECUTABLE` — executable coordinate for the GitHub Pages Jekyll command contract; defaults to the `bleephub-pages-jekyll` wrapper shipped in the release image and is used directly without a static-copy fallback.
 

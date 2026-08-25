@@ -27,6 +27,7 @@ func TestBranchProtectionCloneCoversEveryField(t *testing.T) {
 		"LockBranch":                     true,
 		"AllowForkSyncing":               true,
 		"URL":                            true,
+		"Enabled":                        true,
 	}
 	model := reflect.TypeOf(store.BranchProtection{})
 	if model.NumField() != len(wantFields) {

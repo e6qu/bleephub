@@ -55,6 +55,8 @@ export function CopilotPage() {
       <OrgHeader org={org} active="copilot" />
       <div className="flex flex-col gap-6">
         <BillingSection org={org} />
+        <PolicySection org={org} />
+        <UsageSection org={org} />
         <SeatsSection org={org} />
         <ContentExclusionSection org={org} />
         <CodingAgentSection org={org} />
@@ -128,6 +130,163 @@ function BillingSection({ org }: { org: string }) {
             </div>
           </Box>
         </>
+      )}
+    </section>
+  );
+}
+
+/** The Copilot subscription policy an organization owner configures. */
+export interface CopilotPolicy {
+  plan_type: string;
+  seat_management_setting: string;
+  public_code_suggestions: string;
+  ide_chat: string;
+  platform_chat: string;
+  cli: string;
+}
+
+/** One day of aggregated Copilot usage, as the metrics endpoint reports it. */
+interface CopilotMetricsDay {
+  date: string;
+  total_active_users: number;
+  total_engaged_users: number;
+  copilot_ide_code_completions: {
+    total_engaged_users: number;
+    editors: {
+      name: string;
+      total_engaged_users: number;
+      models: { name: string; languages: { name: string; total_code_suggestions: number; total_code_acceptances: number }[] }[];
+    }[];
+  };
+  copilot_ide_chat: { total_engaged_users: number; editors: { models: { total_chats: number }[] }[] };
+}
+
+// The policy and usage wrappers live in this lazy page: api.ts is reachable
+// from the entry chunk, which sits against its 160 KB budget.
+const fetchCopilotPolicy = (org: string, signal?: AbortSignal) =>
+  ghFetch<CopilotPolicy>(`/ui-data/orgs/${enc(org)}/copilot/policy`, signal);
+const fetchCopilotMetrics = (org: string, signal?: AbortSignal) =>
+  ghFetch<CopilotMetricsDay[]>(`/api/v3/orgs/${enc(org)}/copilot/metrics`, signal);
+
+const COPILOT_POLICY_FIELDS: { key: keyof CopilotPolicy; label: string; options: string[] }[] = [
+  { key: "plan_type", label: "Plan", options: ["business", "enterprise", "individual", "unknown"] },
+  { key: "seat_management_setting", label: "Seat management", options: ["assign_selected", "assign_all", "disabled", "unconfigured"] },
+  { key: "public_code_suggestions", label: "Public code suggestions", options: ["allow", "block", "unconfigured"] },
+  { key: "ide_chat", label: "IDE chat", options: ["enabled", "disabled", "unconfigured"] },
+  { key: "platform_chat", label: "Platform chat", options: ["enabled", "disabled", "unconfigured"] },
+  { key: "cli", label: "CLI", options: ["enabled", "disabled", "unconfigured"] },
+];
+
+function PolicySection({ org }: { org: string }) {
+  const qc = useQueryClient();
+  const [error, setError] = useState<string | null>(null);
+  const { data, isLoading, isError, error: loadErr } = useQuery({
+    queryKey: ["copilot-policy", org],
+    queryFn: ({ signal }) => fetchCopilotPolicy(org, signal),
+  });
+  const save = useMutation({
+    mutationFn: (patch: Partial<CopilotPolicy>) => ghSend("PUT", `/ui-data/orgs/${enc(org)}/copilot/policy`, patch),
+    onSuccess: () => {
+      setError(null);
+      qc.invalidateQueries({ queryKey: ["copilot-policy", org] });
+      qc.invalidateQueries({ queryKey: ["copilot-billing", org] });
+      qc.invalidateQueries({ queryKey: ["copilot-seats", org] });
+    },
+    onError: (err: Error) => setError(err.message),
+  });
+
+  return (
+    <section>
+      <SectionLabel>Policy</SectionLabel>
+      {error && <ErrorBanner>{error}</ErrorBanner>}
+      {isLoading && <Spinner label="loading Copilot policy" />}
+      {isError && <InlineError title="Failed to load Copilot policy" detail={String(loadErr)} />}
+      {data && (
+        <Box>
+          <div className="grid gap-3 sm:grid-cols-3" style={{ padding: "0.75rem 1rem" }}>
+            {COPILOT_POLICY_FIELDS.map((field) => (
+              <div key={field.key}>
+                <FormLabel id={`copilot-policy-${field.key}`}>{field.label}</FormLabel>
+                <select
+                  id={`copilot-policy-${field.key}`}
+                  className="w-full"
+                  value={data[field.key]}
+                  disabled={save.isPending}
+                  onChange={(e) => save.mutate({ [field.key]: e.target.value } as Partial<CopilotPolicy>)}
+                >
+                  {field.options.map((option) => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </select>
+              </div>
+            ))}
+          </div>
+        </Box>
+      )}
+    </section>
+  );
+}
+
+function UsageSection({ org }: { org: string }) {
+  const { data, isLoading, isError, error } = useQuery({
+    queryKey: ["copilot-metrics", org],
+    queryFn: ({ signal }) => fetchCopilotMetrics(org, signal),
+  });
+
+  return (
+    <section>
+      <SectionLabel>Usage</SectionLabel>
+      {isLoading && <Spinner label="loading Copilot usage" />}
+      {isError && <InlineError title="Failed to load Copilot usage" detail={String(error)} />}
+      {data && data.length === 0 && (
+        <Blankslate title="No Copilot activity recorded">
+          Metrics appear once members use their seats; nothing is reported that did not happen.
+        </Blankslate>
+      )}
+      {data && data.length > 0 && (
+        <Box>
+          <div style={{ overflowX: "auto" }}>
+          <table className="w-full" style={{ fontSize: "0.9rem", minWidth: "30rem" }}>
+            <caption className="sr-only">Daily Copilot usage</caption>
+            <thead>
+              <tr>
+                <th scope="col" style={{ textAlign: "left", padding: "0.5rem 1rem" }}>Day</th>
+                <th scope="col" style={{ textAlign: "left", padding: "0.5rem 1rem" }}>Active users</th>
+                <th scope="col" style={{ textAlign: "left", padding: "0.5rem 1rem" }}>Suggestions</th>
+                <th scope="col" style={{ textAlign: "left", padding: "0.5rem 1rem" }}>Acceptances</th>
+                <th scope="col" style={{ textAlign: "left", padding: "0.5rem 1rem" }}>Chats</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.map((day) => {
+                let suggestions = 0;
+                let acceptances = 0;
+                for (const editor of day.copilot_ide_code_completions.editors) {
+                  for (const model of editor.models) {
+                    for (const language of model.languages) {
+                      suggestions += language.total_code_suggestions;
+                      acceptances += language.total_code_acceptances;
+                    }
+                  }
+                }
+                const chats = day.copilot_ide_chat.editors.reduce(
+                  (total, editor) => total + editor.models.reduce((sum, model) => sum + model.total_chats, 0),
+                  0,
+                );
+                return (
+                  <tr key={day.date}>
+                    <td style={{ padding: "0.5rem 1rem" }}>{day.date}</td>
+                    <td style={{ padding: "0.5rem 1rem" }}>{day.total_active_users}</td>
+                    <td style={{ padding: "0.5rem 1rem" }}>{suggestions}</td>
+                    <td style={{ padding: "0.5rem 1rem" }}>{acceptances}</td>
+                    <td style={{ padding: "0.5rem 1rem" }}>{chats}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          </div>
+        </Box>
       )}
     </section>
   );

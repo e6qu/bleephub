@@ -90,7 +90,7 @@ func searchItemIDs(t *testing.T, w *httptest.ResponseRecorder) []float64 {
 // ─── deleted users render as ghost, never a nil dereference ──────────────
 
 func TestUserToJSONNilRendersGhostAccount(t *testing.T) {
-	got := store.UserToJSON(nil)
+	got := store.UserToJSON(nil, "https://bleephub.test")
 	if got["login"] != "ghost" {
 		t.Fatalf("login = %v, want ghost", got["login"])
 	}
@@ -100,7 +100,7 @@ func TestUserToJSONNilRendersGhostAccount(t *testing.T) {
 	if got["node_id"] != "U_bleephub_ghost" {
 		t.Fatalf("node_id = %v", got["node_id"])
 	}
-	if got["url"] != "/api/v3/users/ghost" {
+	if got["url"] != "https://bleephub.test/api/v3/users/ghost" {
 		t.Fatalf("url = %v", got["url"])
 	}
 }
@@ -157,7 +157,7 @@ func seedProjectCard(t *testing.T, s *Server) (*store.ProjectCard, *store.Projec
 		t.Fatal("CreateProjectClassic returned nil")
 	}
 	col := s.store.CreateProjectColumn(proj.ID, "todo")
-	card := s.store.CreateProjectCard(col.ID, admin.ID, "a note", 0)
+	card := s.store.CreateProjectCard(col.ID, admin.ID, "a note", 0, 0)
 	if card == nil {
 		t.Fatal("CreateProjectCard returned nil")
 	}

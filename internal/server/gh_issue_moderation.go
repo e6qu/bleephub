@@ -119,6 +119,13 @@ func (s *Server) handleDeleteIssueComment(w http.ResponseWriter, r *http.Request
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
+	// github leaves a `comment_deleted` event behind so the conversation shows
+	// that something was removed and by whom; the comment row itself is gone,
+	// so the event carries the deleted comment's id and its author.
+	s.store.RecordIssueOrPREvent(repo.ID, parentNumber, user.ID, "comment_deleted", map[string]interface{}{
+		"comment_id":  c.ID,
+		"assignee_id": c.AuthorID,
+	})
 	s.emitWebhookEvent(repo.FullName, "issue_comment", "deleted", payload)
 	w.WriteHeader(http.StatusNoContent)
 }

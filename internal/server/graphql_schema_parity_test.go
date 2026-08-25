@@ -194,8 +194,17 @@ func bleephubIntrospectionShape(t *testing.T) schemaShape {
 	t.Helper()
 	server := newTestServer()
 	server.graphql = server.newGraphQLResolver()
+	return introspectionShape(t, server.graphql.Schema())
+}
+
+// introspectionShape renders any assembled schema into the comparable
+// shape the ratchets diff. The served schema and the generated one
+// (internal/graphqlschema) are both measured through it, so neither can be
+// graded on a different scale.
+func introspectionShape(t *testing.T, schema graphql.Schema) schemaShape {
+	t.Helper()
 	result := graphql.Do(graphql.Params{
-		Schema:        server.graphql.Schema(),
+		Schema:        schema,
 		RequestString: schemaIntrospectionQuery,
 	})
 	if len(result.Errors) != 0 {
@@ -501,11 +510,11 @@ func TestGraphQLSchemaMatchesIntrospectionAndOfficialRatchets(t *testing.T) {
 	// able to bless less coverage or more incompatibility. These monotonic
 	// floors make "update the generated files" incapable of hiding a schema
 	// regression.
-	if report.ImplementedFields < 1150 {
-		t.Fatalf("GraphQL implemented fields regressed to %d; floor is 1150", report.ImplementedFields)
+	if report.ImplementedFields < 1640 {
+		t.Fatalf("GraphQL implemented fields regressed to %d; floor is 1640", report.ImplementedFields)
 	}
-	if report.SignatureExactFields < 1149 {
-		t.Fatalf("GraphQL exact-signature fields regressed to %d; floor is 1149", report.SignatureExactFields)
+	if report.SignatureExactFields < 1639 {
+		t.Fatalf("GraphQL exact-signature fields regressed to %d; floor is 1639", report.SignatureExactFields)
 	}
 	if report.CompatibilityGapCount > 9 {
 		t.Fatalf("GraphQL compatibility gaps grew to %d; ceiling is 9", report.CompatibilityGapCount)

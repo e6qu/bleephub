@@ -24,12 +24,12 @@ import (
 // commitSignatureUserJSON resolves a git signature to a GitHub account (a
 // `simple-user`) or nil, matching real GitHub — a commit's author/committer is
 // the resolved account or null, never an empty object.
-func commitSignatureUserJSON(st *store.Store, sig object.Signature) interface{} {
+func commitSignatureUserJSON(st *store.Store, sig object.Signature, baseURL string) interface{} {
 	if st == nil {
 		return nil
 	}
 	if u := st.ResolveUserBySignature(sig.Name, sig.Email); u != nil {
-		return store.UserToJSON(u)
+		return store.UserToJSON(u, baseURL)
 	}
 	return nil
 }
@@ -56,8 +56,8 @@ func commitToJSON(c *object.Commit, repo *store.Repo, st *store.Store, baseURL s
 		"url":          commitURL,
 		"html_url":     htmlURL,
 		"comments_url": commitURL + "/comments",
-		"author":       commitSignatureUserJSON(st, c.Author),
-		"committer":    commitSignatureUserJSON(st, c.Committer),
+		"author":       commitSignatureUserJSON(st, c.Author, baseURL),
+		"committer":    commitSignatureUserJSON(st, c.Committer, baseURL),
 		"parents":      parents,
 		"commit": map[string]interface{}{
 			"url":           commitURL,
@@ -291,7 +291,7 @@ func (s *Server) handleCompareRefs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	accept := r.Header.Get("Accept")
-	if strings.Contains(accept, "application/vnd.github.patch") {
+	if acceptsGitHubMediaType(accept, "patch") {
 		// github's compare .patch is a series of per-commit git-format-patches
 		// (oldest first), not a single tree diff.
 		commits, err := store.CommitsBetween(stor, baseHash, headHash)
@@ -311,12 +311,13 @@ func (s *Server) handleCompareRefs(w http.ResponseWriter, r *http.Request) {
 				patch.WriteString("\n")
 			}
 		}
+		setGitHubMediaType(w, r, "patch")
 		w.Header().Set("Content-Type", "application/vnd.github.patch; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
 		_, _ = io.WriteString(w, patch.String())
 		return
 	}
-	if strings.Contains(accept, "application/vnd.github.diff") {
+	if acceptsGitHubMediaType(accept, "diff") {
 		changes, err := object.DiffTree(baseTree, headTree)
 		if err != nil {
 			writeGHError(w, http.StatusInternalServerError, "Diff computation failed")
@@ -331,6 +332,7 @@ func (s *Server) handleCompareRefs(w http.ResponseWriter, r *http.Request) {
 			}
 			diff.WriteString(patch.String())
 		}
+		setGitHubMediaType(w, r, "diff")
 		w.Header().Set("Content-Type", "application/vnd.github.diff; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
 		_, _ = io.WriteString(w, diff.String())
@@ -849,10 +851,7 @@ func (s *Server) handleMergeRefs(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnauthorized, "Bad credentials")
 		return
 	}
-
-	owner := r.PathValue("owner")
-	name := r.PathValue("repo")
-	repo := s.store.GetRepo(owner, name)
+	repo := s.store.GetRepo(r.PathValue("owner"), r.PathValue("repo"))
 	if repo == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -861,7 +860,6 @@ func (s *Server) handleMergeRefs(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusForbidden, "Must have push access to Repository.")
 		return
 	}
-
 	var req struct {
 		Base          string `json:"base"`
 		Head          string `json:"head"`
@@ -874,65 +872,21 @@ func (s *Server) handleMergeRefs(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnprocessableEntity, "base and head are required")
 		return
 	}
-
-	stor := s.store.GetGitStorage(owner, name)
-	if stor == nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
+	commitHash, failure := s.mergeBranchRefs(repo, user, req.Base, req.Head, req.CommitMessage, "")
+	if failure != nil {
+		failure.write(w)
 		return
 	}
-
-	headHash, err := store.ResolveGitRef(stor, req.Head)
-	if err != nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
-		return
-	}
-
-	baseRef := plumbing.NewBranchReferenceName(req.Base)
-	baseRefObj, err := stor.Reference(baseRef)
-	if err != nil {
-		writeGHError(w, http.StatusNotFound, "Not Found")
-		return
-	}
-	baseHash := baseRefObj.Hash()
-
-	// Already merged: head is an ancestor of base.
-	mergeBase, err := store.FindMergeBase(stor, baseHash, headHash)
-	if err != nil {
-		writeGHError(w, http.StatusInternalServerError, "merge base lookup failed")
-		return
-	}
-	if mergeBase == headHash {
+	if commitHash.IsZero() {
+		// Already merged: head was an ancestor of base.
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-
-	email := user.Email
-	if email == "" {
-		email = user.Login + "@users.noreply.bleephub.local"
-	}
-	sig := repoSignature(store.CoalesceStr(user.Name, user.Login), email)
-	commitHash, _, err := performMerge(stor, baseRef, headHash, req.Head, req.CommitMessage, sig)
-	if err != nil {
-		if errors.Is(err, gitStorage.ErrReferenceHasChanged) {
-			writeGHError(w, http.StatusConflict, "Base branch changed while the merge was being prepared")
-			return
-		}
-		if strings.Contains(err.Error(), "merge conflict") {
-			writeGHError(w, http.StatusConflict, "Merge conflict")
-			return
-		}
-		writeGHError(w, http.StatusInternalServerError, "Merge failed")
-		return
-	}
-
+	stor := s.store.GetGitStorage(r.PathValue("owner"), r.PathValue("repo"))
 	mergeCommit, err := object.GetCommit(stor, commitHash)
 	if err != nil {
 		writeGHError(w, http.StatusInternalServerError, "Merge failed")
 		return
 	}
-
-	s.store.UpdateRepo(owner, name, func(r *store.Repo) {
-		r.PushedAt = time.Now().UTC()
-	})
 	writeJSON(w, http.StatusCreated, commitToJSON(mergeCommit, repo, s.store, s.baseURL(r)))
 }

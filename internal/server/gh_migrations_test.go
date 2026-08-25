@@ -9,7 +9,33 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/e6qu/bleephub/internal/server/testutil"
 )
+
+// waitForMigrationExport polls a migration until its export worker has landed
+// it in a terminal state, and fails loudly on "failed" with the reason the
+// worker recorded rather than timing out on a state that will never change.
+func (s *isolatedServer) waitForMigrationExport(t *testing.T, path string) {
+	t.Helper()
+	var last map[string]any
+	if !testutil.TestEventually(20*time.Second, 25*time.Millisecond, func() bool {
+		resp := s.get(t, path, defaultToken)
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			return false
+		}
+		last = decodeJSON(t, resp)
+		state, _ := last["state"].(string)
+		return state == "exported" || state == "failed"
+	}) {
+		t.Fatalf("%s never left the pending/exporting states: %v", path, last)
+	}
+	if state, _ := last["state"].(string); state != "exported" {
+		t.Fatalf("%s ended %s: %v", path, state, last)
+	}
+}
 
 func TestMigrations_UserCRUD(t *testing.T) {
 	t.Parallel()
@@ -29,13 +55,16 @@ func TestMigrations_UserCRUD(t *testing.T) {
 		t.Fatalf("create user migration: %d %s", resp.StatusCode, b)
 	}
 	created := decodeJSON(t, resp)
-	if created["state"] != "exported" {
-		t.Fatalf("expected state exported, got %v", created["state"])
+	// A migration is created pending: the export is real work an owned worker
+	// does, so the 201 reports that it was queued rather than that it is done.
+	if created["state"] != "pending" {
+		t.Fatalf("expected state pending on creation, got %v", created["state"])
 	}
 	if len(created["repositories"].([]any)) != 2 {
 		t.Fatalf("expected 2 repositories, got %v", created["repositories"])
 	}
 	migrationID := int(created["id"].(float64))
+	s.waitForMigrationExport(t, "/api/v3/user/migrations/"+itoa(migrationID))
 
 	// List
 	resp = s.get(t, "/api/v3/user/migrations", defaultToken)
@@ -90,7 +119,7 @@ func TestMigrations_UserCRUD(t *testing.T) {
 		t.Fatalf("gzip reader: %v", err)
 	}
 	tr := tar.NewReader(gz)
-	foundMeta := false
+	entries := map[string]bool{}
 	for {
 		h, err := tr.Next()
 		if err == io.EOF {
@@ -99,13 +128,19 @@ func TestMigrations_UserCRUD(t *testing.T) {
 		if err != nil {
 			t.Fatalf("tar next: %v", err)
 		}
-		if h.Name == "metadata.json" {
-			foundMeta = true
-		}
+		entries[h.Name] = true
 	}
 	resp.Body.Close()
-	if !foundMeta {
-		t.Fatal("archive missing metadata.json")
+	// The archive is the export the worker actually produced: the schema stamp
+	// that says which layout it is, the migration's own record, and the roll of
+	// repositories it carries.
+	for _, want := range []string{"schema.json", "migration.json", "repositories_000001.json"} {
+		if !entries[want] {
+			t.Fatalf("archive is missing %s; it holds %v", want, entries)
+		}
+	}
+	if !entries["repositories/"+r1.FullName+"/issues_000001.json"] {
+		t.Fatalf("archive is missing %s's records; it holds %v", r1.FullName, entries)
 	}
 
 	// Delete archive
@@ -160,6 +195,7 @@ func TestMigrations_OrgCRUD(t *testing.T) {
 	}
 	created := decodeJSON(t, resp)
 	migrationID := int(created["id"].(float64))
+	s.waitForMigrationExport(t, "/api/v3/orgs/"+org.Login+"/migrations/"+itoa(migrationID))
 
 	// List
 	resp = s.get(t, "/api/v3/orgs/"+org.Login+"/migrations", defaultToken)

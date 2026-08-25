@@ -493,7 +493,7 @@ func (s *Server) handleCreateUserInternal(w http.ResponseWriter, r *http.Request
 	}
 	s.store.Mu.Unlock()
 
-	userJSON := s.fullUserJSON(u)
+	userJSON := s.fullUserJSON(u, s.baseURL(r))
 	writeJSONCreated(w, jsonStringField(userJSON, "url"), userJSON)
 }
 
@@ -511,7 +511,7 @@ func (s *Server) handleGetUserInternal(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	writeJSON(w, http.StatusOK, s.fullUserJSON(u))
+	writeJSON(w, http.StatusOK, s.fullUserJSON(u, s.baseURL(r)))
 }
 
 func (s *Server) handleUpdateUserInternal(w http.ResponseWriter, r *http.Request) {
@@ -554,7 +554,7 @@ func (s *Server) handleUpdateUserInternal(w http.ResponseWriter, r *http.Request
 	}
 	s.store.Mu.Unlock()
 
-	writeJSON(w, http.StatusOK, s.fullUserJSON(u))
+	writeJSON(w, http.StatusOK, s.fullUserJSON(u, s.baseURL(r)))
 }
 
 func (s *Server) handleDeleteUserInternal(w http.ResponseWriter, r *http.Request) {

@@ -20,6 +20,7 @@ import {
   AuditLogIcon,
   GraphIcon,
   CommentIcon,
+  LockIcon,
 } from "./octicons.js";
 
 // ─── global-nav drawer (hamburger) ──────────────────────────────────────────
@@ -42,11 +43,13 @@ function githubNav(viewerLogin?: string): DrawerItem[] {
   { label: "Gists", to: "/ui/gists", icon: <GistIcon size={16} /> },
   { label: "Packages", to: "/ui/packages", icon: <PackageIcon size={16} /> },
   { label: "Marketplace", to: "/ui/marketplace", icon: <PackageIcon size={16} /> },
+  { label: "Sponsors", to: "/ui/sponsors", icon: <PackageIcon size={16} /> },
   { label: "Codespaces", to: "/ui/codespaces", icon: <CodespaceIcon size={16} /> },
   { label: "Copilot Spaces", to: "/ui/copilot/spaces", icon: <CommentIcon size={16} /> },
   { label: "Classroom", to: "/ui/classrooms", icon: <PeopleIcon size={16} /> },
   { label: "Migrations", to: "/ui/migrations", icon: <MigrationIcon size={16} /> },
   { label: "Notifications", to: "/ui/notifications", icon: <NotificationBellIcon size={16} /> },
+  { label: "Advisory database", to: "/ui/advisories", icon: <LockIcon size={16} /> },
   { label: "Explore", to: "/ui/search", icon: <SearchIcon size={16} /> },
   ];
 }

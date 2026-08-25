@@ -12,7 +12,10 @@ import (
 // ExpandMatrix produces all combinations from a MatrixDef.
 // It computes the Cartesian product of Values, applies includes, then excludes.
 func ExpandMatrix(m *store.MatrixDef) []map[string]interface{} {
-	if m == nil || len(m.Values) == 0 {
+	if m == nil {
+		return nil
+	}
+	if len(m.Values) == 0 {
 		// No matrix values — just apply includes if any
 		if len(m.Include) > 0 {
 			return m.Include
@@ -27,7 +30,11 @@ func ExpandMatrix(m *store.MatrixDef) []map[string]interface{} {
 	// include just restored, which is the opposite of what the workflow asked
 	// for and silently produces a smaller matrix.
 	combos = applyExcludes(combos, m.Exclude)
-	combos = applyIncludes(combos, m.Include)
+	original := make(map[string]bool, len(m.Values))
+	for key := range m.Values {
+		original[key] = true
+	}
+	combos = applyIncludes(combos, m.Include, original)
 	return combos
 }
 
@@ -70,22 +77,35 @@ func expandCartesian(values map[string][]interface{}, declaredOrder []string) []
 	return result
 }
 
-// applyIncludes adds include entries to the combination list.
-// If an include entry matches an existing combo on shared keys, it extends that combo.
-// Otherwise, it's added as a new combination.
-func applyIncludes(combos []map[string]interface{}, includes []map[string]interface{}) []map[string]interface{} {
+// applyIncludes adds include entries to the combination list, following
+// GitHub's documented rule: an include entry is merged into every combination
+// of the *original* matrix whose original values it does not overwrite, and is
+// otherwise appended as a standalone combination.
+//
+// Two consequences of "original" are load-bearing and easy to get wrong:
+//
+//   - Only the Cartesian combinations (post-exclude) are candidates for
+//     merging. Combinations a previous include appended are not, so
+//     `- fruit: banana` followed by `- {fruit: banana, animal: cat}` yields two
+//     combinations, not one merged combination.
+//   - Keys a previous include contributed are not original values, so a later
+//     include overwrites them. `- color: green` followed by
+//     `- {color: pink, animal: cat}` leaves the cat rows pink, not green.
+func applyIncludes(combos, includes []map[string]interface{}, original map[string]bool) []map[string]interface{} {
+	// Candidate count is frozen before any include appends: indices below it
+	// keep addressing the same maps even when append reallocates the slice.
+	candidates := len(combos)
 	for _, inc := range includes {
 		matched := false
-		for _, combo := range combos {
-			if matchesSharedKeys(combo, inc) {
-				// Extend the combo with extra keys from include
-				for k, v := range inc {
-					if _, exists := combo[k]; !exists {
-						combo[k] = v
-					}
-				}
-				matched = true
+		for i := 0; i < candidates; i++ {
+			combo := combos[i]
+			if !matchesOriginalKeys(combo, inc, original) {
+				continue
 			}
+			for k, v := range inc {
+				combo[k] = v
+			}
+			matched = true
 		}
 		if !matched {
 			// Add as a new combination
@@ -121,9 +141,15 @@ func applyExcludes(combos []map[string]interface{}, excludes []map[string]interf
 	return result
 }
 
-// matchesSharedKeys returns true if all keys present in both maps have equal values.
-func matchesSharedKeys(combo, entry map[string]interface{}) bool {
+// matchesOriginalKeys reports whether an include entry can be merged into a
+// combination: every key the entry shares with the combination's *original*
+// matrix dimensions must carry the same value. Keys an earlier include added
+// are not original values, so they neither block the merge nor survive it.
+func matchesOriginalKeys(combo, entry map[string]interface{}, original map[string]bool) bool {
 	for k, v := range entry {
+		if !original[k] {
+			continue
+		}
 		if cv, ok := combo[k]; ok {
 			if !matrixValuesEqual(cv, v) {
 				return false

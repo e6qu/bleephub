@@ -42,6 +42,54 @@ type ProjectV2 struct {
 	URL       string
 	CreatedAt time.Time
 	UpdatedAt time.Time
+
+	// ShortDescription is the one-line blurb shown next to the title in
+	// project listings; Readme is the long-form markdown body.
+	ShortDescription string
+	Readme           string
+	// Template marks the project as one new projects may be copied from.
+	Template bool
+	// LinkedRepoIDs / LinkedTeamIDs are the repositories and teams the
+	// project is linked to (linkProjectV2ToRepository / …ToTeam).
+	LinkedRepoIDs []int
+	LinkedTeamIDs []int
+	// Collaborators are the per-account permission grants layered on top of
+	// the owner's own access.
+	Collaborators []*ProjectV2Collaborator
+}
+
+// ProjectV2Collaborator is one account's explicit permission on a project.
+// Role is GitHub's ProjectV2Roles enum: READER, WRITER, ADMIN or NONE.
+type ProjectV2Collaborator struct {
+	UserID int
+	TeamID int // set instead of UserID when the collaborator is a team
+	Role   string
+}
+
+// ProjectV2StatusUpdate is a dated progress note posted on a project.
+type ProjectV2StatusUpdate struct {
+	ID         int
+	NodeID     string
+	ProjectID  int
+	CreatorID  int
+	Body       string
+	Status     string // ProjectV2StatusUpdateStatus enum, "" when unset
+	StartDate  string // YYYY-MM-DD, "" when unset
+	TargetDate string // YYYY-MM-DD, "" when unset
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+}
+
+// ProjectV2Workflow is one automation rule on a project.
+type ProjectV2Workflow struct {
+	ID        int
+	NodeID    string
+	ProjectID int
+	Number    int // per-project sequential
+	Name      string
+	Enabled   bool
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // ProjectV2Item links an issue or PR (or a draft issue) to a project.
@@ -59,6 +107,9 @@ type ProjectV2Item struct {
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 	ArchivedAt  *time.Time
+	// Position orders the item within its project. Items are handed out in
+	// ascending Position, and updateProjectV2ItemPosition rewrites it.
+	Position int
 }
 
 // ProjectV2FieldDataType is the custom-field data type. The values are
@@ -69,11 +120,18 @@ type ProjectV2FieldDataType string
 
 const (
 	ProjectV2FieldSingleSelect ProjectV2FieldDataType = "SINGLE_SELECT"
+	ProjectV2FieldMultiSelect  ProjectV2FieldDataType = "MULTI_SELECT"
 	ProjectV2FieldText         ProjectV2FieldDataType = "TEXT"
 	ProjectV2FieldNumber       ProjectV2FieldDataType = "NUMBER"
 	ProjectV2FieldDate         ProjectV2FieldDataType = "DATE"
 	ProjectV2FieldIteration    ProjectV2FieldDataType = "ITERATION"
 )
+
+// SelectsOptions reports whether the data type carries a list of selectable
+// options, which SINGLE_SELECT and MULTI_SELECT both do.
+func (t ProjectV2FieldDataType) SelectsOptions() bool {
+	return t == ProjectV2FieldSingleSelect || t == ProjectV2FieldMultiSelect
+}
 
 // ProjectV2Field is a column on a project. SINGLE_SELECT carries
 // per-option metadata in Options; ITERATION carries its schedule in
@@ -128,6 +186,10 @@ type ProjectV2ItemFieldValue struct {
 	NumberValue float64 // NUMBER
 	DateValue   string  // DATE, YYYY-MM-DD
 	IterationID string  // ITERATION
+	// OptionIDs / OptionNames carry MULTI_SELECT, which holds an ordered set
+	// rather than the single OptionID above.
+	OptionIDs   []string
+	OptionNames []string
 }
 
 // ProjectV2View is a board/table/roadmap view inside a project.
@@ -143,26 +205,44 @@ type ProjectV2View struct {
 	VisibleFields []int   // field IDs shown in the view
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
+
+	// GroupBy / VerticalGroupBy are field IDs the view groups rows and
+	// columns by; SortBy is the ordered sort specification.
+	GroupBy         []int
+	VerticalGroupBy []int
+	SortBy          []*ProjectV2ViewSort
+}
+
+// ProjectV2ViewSort is one entry of a view's sort specification.
+type ProjectV2ViewSort struct {
+	FieldID   int
+	Direction string // "ASC" or "DESC"
 }
 
 // ProjectV2Store is the in-memory store. Concurrency-safe via mu.
 type ProjectV2Store struct {
-	Mu             sync.RWMutex     `json:"-"`
-	ClockMu        sync.RWMutex     `json:"-"`
-	ClockNow       func() time.Time `json:"-"`
-	projects       map[int]*ProjectV2
-	items          map[int]*ProjectV2Item
-	itemsByOwner   map[int][]*ProjectV2Item // contentID → items it appears in
-	fields         map[int]*ProjectV2Field
-	FieldsByProj   map[int][]*ProjectV2Field `json:"-"`
-	views          map[int]*ProjectV2View
-	viewsByProj    map[int][]*ProjectV2View
-	nextProjectID  int
-	nextItemID     int
-	nextFieldID    int
-	nextOptionSeed int
-	nextViewID     int
-	Persist        *Persistence `json:"-"`
+	Mu              sync.RWMutex     `json:"-"`
+	ClockMu         sync.RWMutex     `json:"-"`
+	ClockNow        func() time.Time `json:"-"`
+	projects        map[int]*ProjectV2
+	items           map[int]*ProjectV2Item
+	itemsByOwner    map[int][]*ProjectV2Item // contentID → items it appears in
+	fields          map[int]*ProjectV2Field
+	FieldsByProj    map[int][]*ProjectV2Field `json:"-"`
+	views           map[int]*ProjectV2View
+	viewsByProj     map[int][]*ProjectV2View
+	statusUpdates   map[int]*ProjectV2StatusUpdate
+	statusByProj    map[int][]*ProjectV2StatusUpdate
+	workflows       map[int]*ProjectV2Workflow
+	workflowsByProj map[int][]*ProjectV2Workflow
+	nextProjectID   int
+	nextItemID      int
+	nextFieldID     int
+	nextOptionSeed  int
+	nextViewID      int
+	nextStatusID    int
+	nextWorkflowID  int
+	Persist         *Persistence `json:"-"`
 }
 
 func (s *ProjectV2Store) CurrentTime() time.Time {
@@ -179,19 +259,25 @@ func (s *ProjectV2Store) CurrentTime() time.Time {
 
 func NewProjectV2Store(p *Persistence) *ProjectV2Store {
 	return &ProjectV2Store{
-		projects:       map[int]*ProjectV2{},
-		items:          map[int]*ProjectV2Item{},
-		itemsByOwner:   map[int][]*ProjectV2Item{},
-		fields:         map[int]*ProjectV2Field{},
-		FieldsByProj:   map[int][]*ProjectV2Field{},
-		views:          map[int]*ProjectV2View{},
-		viewsByProj:    map[int][]*ProjectV2View{},
-		nextProjectID:  1,
-		nextItemID:     1,
-		nextFieldID:    1,
-		nextOptionSeed: 1,
-		nextViewID:     1,
-		Persist:        p,
+		projects:        map[int]*ProjectV2{},
+		items:           map[int]*ProjectV2Item{},
+		itemsByOwner:    map[int][]*ProjectV2Item{},
+		fields:          map[int]*ProjectV2Field{},
+		FieldsByProj:    map[int][]*ProjectV2Field{},
+		views:           map[int]*ProjectV2View{},
+		viewsByProj:     map[int][]*ProjectV2View{},
+		statusUpdates:   map[int]*ProjectV2StatusUpdate{},
+		statusByProj:    map[int][]*ProjectV2StatusUpdate{},
+		workflows:       map[int]*ProjectV2Workflow{},
+		workflowsByProj: map[int][]*ProjectV2Workflow{},
+		nextProjectID:   1,
+		nextItemID:      1,
+		nextFieldID:     1,
+		nextOptionSeed:  1,
+		nextViewID:      1,
+		nextStatusID:    1,
+		nextWorkflowID:  1,
+		Persist:         p,
 	}
 }
 
@@ -199,41 +285,21 @@ func NewProjectV2Store(p *Persistence) *ProjectV2Store {
 // recording the creating user.
 func (s *ProjectV2Store) CreateProject(ownerID int, ownerType, title string, creatorID int) *ProjectV2 {
 	s.Mu.Lock()
-	defer s.Mu.Unlock()
-	id := s.nextProjectID
-	s.nextProjectID++
-	// Per-owner sequential number.
-	number := 1
-	for _, p := range s.projects {
-		if p.OwnerID == ownerID && p.OwnerType == ownerType && p.Number >= number {
-			number = p.Number + 1
-		}
-	}
-	now := s.CurrentTime()
-	p := &ProjectV2{
-		ID:        id,
-		NodeID:    fmt.Sprintf("PVT_kgDO%08d", id),
-		Number:    number,
-		OwnerID:   ownerID,
-		OwnerType: ownerType,
-		CreatorID: creatorID,
-		Title:     title,
-		Public:    false,
-		CreatedAt: now,
-		UpdatedAt: now,
-	}
-	s.projects[id] = p
-	if s.Persist != nil {
-		s.Persist.MustPut("projects_v2", strconv.Itoa(id), p)
-	}
-	return p
+	p := s.createProjectLocked(ownerID, ownerType, title, creatorID, nil)
+	s.persistProjectLocked(p)
+	id := p.ID
+	s.Mu.Unlock()
+	// Seeding takes the lock per mutator, so it runs after the project row is
+	// published rather than under the same critical section.
+	s.SeedProjectDefaults(id, creatorID)
+	return s.GetProject(id)
 }
 
 // GetProject returns a project by ID or nil.
 func (s *ProjectV2Store) GetProject(id int) *ProjectV2 {
 	s.Mu.RLock()
 	defer s.Mu.RUnlock()
-	return s.projects[id]
+	return cloneProjectV2(s.projects[id])
 }
 
 // LookupProjectByNodeID returns the project with the given global node id.
@@ -242,12 +308,12 @@ func (s *ProjectV2Store) LookupProjectByNodeID(nodeID string) *ProjectV2 {
 	defer s.Mu.RUnlock()
 	if id, ok := DecodeNodeDBID(nodeID, "PVT_kgDO"); ok {
 		if p := s.projects[id]; p != nil && p.NodeID == nodeID {
-			return p
+			return cloneProjectV2(p)
 		}
 	}
 	for _, p := range s.projects {
 		if p.NodeID == nodeID {
-			return p
+			return cloneProjectV2(p)
 		}
 	}
 	return nil
@@ -264,7 +330,7 @@ func (s *ProjectV2Store) AddItem(projectID int, contentType string, contentID, c
 	// Avoid duplicate item for the same (project, content).
 	for _, it := range s.itemsByOwner[contentID] {
 		if it.ProjectID == projectID && it.ContentType == contentType {
-			return it
+			return cloneProjectV2Item(it)
 		}
 	}
 	id := s.nextItemID
@@ -280,6 +346,7 @@ func (s *ProjectV2Store) AddItem(projectID int, contentType string, contentID, c
 		FieldValues: map[int]*ProjectV2ItemFieldValue{},
 		CreatedAt:   now,
 		UpdatedAt:   now,
+		Position:    s.nextPositionLocked(projectID),
 	}
 	s.items[id] = it
 	s.itemsByOwner[contentID] = append(s.itemsByOwner[contentID], it)
@@ -310,6 +377,7 @@ func (s *ProjectV2Store) AddDraftItem(projectID int, title, body string, creator
 		FieldValues: map[int]*ProjectV2ItemFieldValue{},
 		CreatedAt:   now,
 		UpdatedAt:   now,
+		Position:    s.nextPositionLocked(projectID),
 	}
 	s.items[id] = it
 	if s.Persist != nil {
@@ -326,7 +394,7 @@ func (s *ProjectV2Store) ListItemsForIssue(issueID int) []*ProjectV2Item {
 	out := make([]*ProjectV2Item, 0)
 	for _, it := range s.itemsByOwner[issueID] {
 		if it.ContentType == "Issue" {
-			out = append(out, it)
+			out = append(out, cloneProjectV2Item(it))
 		}
 	}
 	return out
@@ -340,7 +408,7 @@ func (s *ProjectV2Store) ListItemsForPR(prID int) []*ProjectV2Item {
 	out := make([]*ProjectV2Item, 0)
 	for _, it := range s.itemsByOwner[prID] {
 		if it.ContentType == "PullRequest" {
-			out = append(out, it)
+			out = append(out, cloneProjectV2Item(it))
 		}
 	}
 	return out
@@ -350,7 +418,7 @@ func (s *ProjectV2Store) ListItemsForPR(prID int) []*ProjectV2Item {
 func (s *ProjectV2Store) GetItem(id int) *ProjectV2Item {
 	s.Mu.RLock()
 	defer s.Mu.RUnlock()
-	return s.items[id]
+	return cloneProjectV2Item(s.items[id])
 }
 
 // LookupItemByNodeID returns the item with the given GraphQL node id.
@@ -359,12 +427,12 @@ func (s *ProjectV2Store) LookupItemByNodeID(nodeID string) *ProjectV2Item {
 	defer s.Mu.RUnlock()
 	if id, ok := DecodeNodeDBID(nodeID, "PVTI_kgDO"); ok {
 		if it := s.items[id]; it != nil && it.NodeID == nodeID {
-			return it
+			return cloneProjectV2Item(it)
 		}
 	}
 	for _, it := range s.items {
 		if it.NodeID == nodeID {
-			return it
+			return cloneProjectV2Item(it)
 		}
 	}
 	return nil
@@ -392,7 +460,7 @@ func (s *ProjectV2Store) CreateField(projectID int, name string, dataType Projec
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
-	if dataType == ProjectV2FieldSingleSelect {
+	if dataType.SelectsOptions() {
 		for _, opt := range options {
 			color := opt.Color
 			if color == "" {
@@ -429,6 +497,18 @@ func (s *ProjectV2Store) CreateField(projectID int, name string, dataType Projec
 	return f
 }
 
+// nextPositionLocked returns the position that places a new item at the end of
+// its project. Callers must hold s.Mu.
+func (s *ProjectV2Store) nextPositionLocked(projectID int) int {
+	next := 0
+	for _, it := range s.items {
+		if it.ProjectID == projectID && it.Position >= next {
+			next = it.Position + 1
+		}
+	}
+	return next
+}
+
 // nextOptionIDLocked mints the next 8-char hex ID shared by
 // single-select options and iterations. Callers must hold s.Mu.
 func (s *ProjectV2Store) nextOptionIDLocked() string {
@@ -441,7 +521,7 @@ func (s *ProjectV2Store) nextOptionIDLocked() string {
 func (s *ProjectV2Store) GetField(id int) *ProjectV2Field {
 	s.Mu.RLock()
 	defer s.Mu.RUnlock()
-	return s.fields[id]
+	return cloneProjectV2Field(s.fields[id])
 }
 
 // LookupFieldByNodeID returns the field with the given GraphQL node id.
@@ -450,12 +530,12 @@ func (s *ProjectV2Store) LookupFieldByNodeID(nodeID string) *ProjectV2Field {
 	defer s.Mu.RUnlock()
 	if id, ok := DecodeNodeDBID(nodeID, "PVTF_kgDO"); ok {
 		if f := s.fields[id]; f != nil && f.NodeID == nodeID {
-			return f
+			return cloneProjectV2Field(f)
 		}
 	}
 	for _, f := range s.fields {
 		if f.NodeID == nodeID {
-			return f
+			return cloneProjectV2Field(f)
 		}
 	}
 	return nil
@@ -466,7 +546,9 @@ func (s *ProjectV2Store) FieldsForProject(projectID int) []*ProjectV2Field {
 	s.Mu.RLock()
 	defer s.Mu.RUnlock()
 	out := make([]*ProjectV2Field, 0, len(s.FieldsByProj[projectID]))
-	out = append(out, s.FieldsByProj[projectID]...)
+	for _, f := range s.FieldsByProj[projectID] {
+		out = append(out, cloneProjectV2Field(f))
+	}
 	return out
 }
 
@@ -478,7 +560,7 @@ func (s *ProjectV2Store) FieldByNameOnProject(projectID int, name string) *Proje
 	defer s.Mu.RUnlock()
 	for _, f := range s.FieldsByProj[projectID] {
 		if f.Name == name {
-			return f
+			return cloneProjectV2Field(f)
 		}
 	}
 	return nil
@@ -543,7 +625,7 @@ func (s *ProjectV2Store) ListProjectsForOwner(ownerID int, ownerType string) []*
 	out := make([]*ProjectV2, 0)
 	for _, p := range s.projects {
 		if p.OwnerID == ownerID && p.OwnerType == ownerType {
-			out = append(out, p)
+			out = append(out, cloneProjectV2(p))
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Number < out[j].Number })
@@ -654,10 +736,17 @@ func (s *ProjectV2Store) ListItemsForProject(projectID int) []*ProjectV2Item {
 	out := make([]*ProjectV2Item, 0)
 	for _, it := range s.items {
 		if it.ProjectID == projectID {
-			out = append(out, it)
+			out = append(out, cloneProjectV2Item(it))
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	// Position is the project's own ordering; ID breaks ties so items added
+	// before any reorder keep a stable, insertion-ordered sequence.
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Position != out[j].Position {
+			return out[i].Position < out[j].Position
+		}
+		return out[i].ID < out[j].ID
+	})
 	return out
 }
 
@@ -922,7 +1011,7 @@ func (s *ProjectV2Store) CreateView(projectID int, name, layout string, filter *
 func (s *ProjectV2Store) GetView(id int) *ProjectV2View {
 	s.Mu.RLock()
 	defer s.Mu.RUnlock()
-	return s.views[id]
+	return cloneProjectV2View(s.views[id])
 }
 
 // GetViewByNumber returns the project's view with the given per-project
@@ -932,7 +1021,7 @@ func (s *ProjectV2Store) GetViewByNumber(projectID, number int) *ProjectV2View {
 	defer s.Mu.RUnlock()
 	for _, v := range s.viewsByProj[projectID] {
 		if v.Number == number {
-			return v
+			return cloneProjectV2View(v)
 		}
 	}
 	return nil
@@ -943,7 +1032,9 @@ func (s *ProjectV2Store) ViewsForProject(projectID int) []*ProjectV2View {
 	s.Mu.RLock()
 	defer s.Mu.RUnlock()
 	out := make([]*ProjectV2View, 0, len(s.viewsByProj[projectID]))
-	out = append(out, s.viewsByProj[projectID]...)
+	for _, v := range s.viewsByProj[projectID] {
+		out = append(out, cloneProjectV2View(v))
+	}
 	return out
 }
 
@@ -954,7 +1045,7 @@ func (s *ProjectV2Store) GetProjectByOwnerNumber(ownerID int, ownerType string, 
 	defer s.Mu.RUnlock()
 	for _, p := range s.projects {
 		if p.OwnerID == ownerID && p.OwnerType == ownerType && p.Number == number {
-			return p
+			return cloneProjectV2(p)
 		}
 	}
 	return nil

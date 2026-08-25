@@ -41,22 +41,22 @@ func TestAuthScheme_CaseInsensitive(t *testing.T) {
 
 // TestAddIssueLabels_AcceptsBothBodyForms guards the fix for go-github /
 // real-GitHub sending the add-labels body as a bare array. The endpoint must
-// accept BOTH ["bug"] and {"labels":["bug"]}.
+// accept BOTH ["triage"] and {"labels":["triage"]}.
 func TestAddIssueLabels_AcceptsBothBodyForms(t *testing.T) {
 	s := newTestServer()
 	s.registerRoutes()
 	admin := s.store.UsersByLogin["admin"]
 	repo := s.store.CreateRepo(admin, "labels-repo", "", false)
-	s.store.CreateLabel(repo.ID, "bug", "", "ff0000")
+	s.store.CreateLabel(repo.ID, "triage", "", "ff0000")
 	issue := s.store.CreateIssue(repo.ID, admin.ID, "needs label", "", nil, nil, 0)
 
 	path := "/api/v3/repos/admin/labels-repo/issues/" + itoa(issue.Number) + "/labels"
 	auth := "token " + defaultToken
 
-	if w := authedReqScheme(s, "POST", path, auth, `["bug"]`); w.Code != http.StatusOK {
+	if w := authedReqScheme(s, "POST", path, auth, `["triage"]`); w.Code != http.StatusOK {
 		t.Errorf("bare-array body = %d, want 200; body=%s", w.Code, w.Body.String())
 	}
-	if w := authedReqScheme(s, "POST", path, auth, `{"labels":["bug"]}`); w.Code != http.StatusOK {
+	if w := authedReqScheme(s, "POST", path, auth, `{"labels":["triage"]}`); w.Code != http.StatusOK {
 		t.Errorf("object body = %d, want 200; body=%s", w.Code, w.Body.String())
 	}
 }

@@ -258,3 +258,35 @@ func FindReleaseByNodeID(st *Store, nodeID string) *Release {
 	}
 	return nil
 }
+
+// FindTeamByNodeID resolves a team's global id to the live row, and the org
+// that owns it, in the same live-row convention as the other Find* lookups.
+func FindTeamByNodeID(st *Store, nodeID string) (*Team, *Org) {
+	if nodeID == "" {
+		return nil, nil
+	}
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
+	for _, team := range st.Teams {
+		if team.NodeID == nodeID {
+			return team, st.Orgs[team.OrgID]
+		}
+	}
+	return nil, nil
+}
+
+// FindPackageVersionByNodeID resolves a package version's global id to the
+// live version row and its owning package.
+func FindPackageVersionByNodeID(st *Store, nodeID string) (*PackageVersion, *Package) {
+	if nodeID == "" {
+		return nil, nil
+	}
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
+	for _, version := range st.PackageVersions {
+		if version.NodeID == nodeID {
+			return version, st.Packages[version.PackageID]
+		}
+	}
+	return nil, nil
+}

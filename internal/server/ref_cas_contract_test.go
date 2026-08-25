@@ -17,7 +17,12 @@ func TestDerivedRefMutationsUseCompareAndSwap(t *testing.T) {
 			"createFileCommitExpected",
 			"createFileCommitExpectedGuarded",
 			"deleteFileCommit",
-			"handleUpdateRef",
+		},
+		// The three reference writes were factored out of their REST handlers
+		// so the GraphQL ref mutations perform the same act; the
+		// compare-and-set guarantee travelled with them.
+		"gh_git_ref_writes.go": {
+			"updateGitRef",
 		},
 		"gh_repos_compare.go": {
 			"performMerge",
@@ -78,10 +83,10 @@ func TestRefLifecycleMutationsKeepAtomicStorageBoundaries(t *testing.T) {
 	expectations := map[string]map[string]string{
 		"gh_repos_git.go": {
 			"commitRootBranchWithFiles": "InitializeRepositoryReferences",
-			"handleCreateRef":           "CreateReferenceIfAbsent",
 		},
-		"gh_repos_refs.go": {
-			"handleDeleteRef": "RemoveReferenceCAS",
+		"gh_git_ref_writes.go": {
+			"createGitRef": "CreateReferenceIfAbsent",
+			"deleteGitRef": "RemoveReferenceCAS",
 		},
 		"git_receivepack.go": {
 			"applyPushCommandAtomic":  "CheckAndSetReference",

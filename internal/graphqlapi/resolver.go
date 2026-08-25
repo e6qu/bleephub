@@ -34,6 +34,18 @@ type Authz interface {
 	CredentialGrantsAccount(ctx context.Context, kind store.AccountKind, login string, scope store.PermScope, level store.PermLevel) bool
 	PrincipalHoldsRepoCapability(ctx context.Context, repo *store.Repo, need store.PermLevel) bool
 	ViewerIsOrgMember(ctx context.Context, orgLogin string) bool
+	// ViewerCanAdminAccount reports whether the request may administer the
+	// user or organization account named by login — the user themselves, an
+	// owner of the organization, or a site administrator. GitHub Sponsors
+	// gates listing management, tier management, payout figures and the
+	// visibility of private sponsorships on exactly this standing.
+	ViewerCanAdminAccount(ctx context.Context, login string) bool
+	// ViewerMayMigrateOrg reports whether the request may start, read or
+	// download an organization's migrations: an owner of that organization,
+	// or a principal granted the migrator role on it. It is delegated rather
+	// than recomposed here so the REST migration surface and the GraphQL one
+	// cannot drift on who a migration is open to.
+	ViewerMayMigrateOrg(ctx context.Context, org *store.Org) bool
 	VisibleRepos(ctx context.Context, repos []*store.Repo) []*store.Repo
 	CanReadProjectV2(ctx context.Context, user *store.User, owner *store.ProjectV2Owner, p *store.ProjectV2) bool
 	CanWriteProjectV2(ctx context.Context, user *store.User, owner *store.ProjectV2Owner) bool
@@ -47,12 +59,39 @@ type Events interface {
 	BuildIssuesPayload(repo *store.Repo, issue *store.Issue, sender *store.User, action string) map[string]interface{}
 	BuildPullRequestPayload(repo *store.Repo, pr *store.PullRequest, sender *store.User, action string) map[string]interface{}
 	RepoPayload(repo *store.Repo) map[string]interface{}
+	// SenderPayload renders the `sender` account a webhook body carries, in the
+	// same absolute-hypermedia `simple-user` shape the REST surface serves. It
+	// lives behind the seam because only the HTTP layer knows the instance's
+	// public origin.
+	SenderPayload(user *store.User) map[string]interface{}
 	// EmitIssueChanges / EmitPullRequestChanges fan one mutation out into
 	// GitHub's per-change actions (edited, labeled, assigned, milestoned, …).
 	// The derivation lives behind the seam so the REST handlers and these
 	// resolvers cannot drift on which actions a change produces.
 	EmitIssueChanges(repo *store.Repo, issue *store.Issue, sender *store.User, change store.SubjectChange)
 	EmitPullRequestChanges(repo *store.Repo, pr *store.PullRequest, sender *store.User, change store.SubjectChange)
+	// EmitProjectV2Event delivers the projects_v2 event family. A project
+	// belongs to an account rather than a repository, so these are delivered
+	// to the owning organization's hooks and carry no repository — which is
+	// why they cannot go through EmitWebhookEvent's repo-keyed path.
+	EmitProjectV2Event(event store.ProjectV2Event)
+	// EmitSponsorshipEvent delivers the `sponsorship` event family for a
+	// billing-lifecycle transition. A sponsorship belongs to an account
+	// rather than a repository, so like the projects_v2 events it cannot go
+	// through EmitWebhookEvent's repo-keyed path.
+	EmitSponsorshipEvent(action string, transition *store.SponsorsTransition, sender *store.User)
+	// EmitCheckRunEvent / EmitCheckSuiteEvent fire the check_run and
+	// check_suite webhook events with the same payloads the REST checks
+	// routes emit (the builders render the run and suite through the HTTP
+	// layer's own JSON shapes, which the resolver layer may not reach).
+	EmitCheckRunEvent(repoKey string, checkRunID int64, action string)
+	EmitCheckSuiteEvent(repoKey string, suiteID int64, action string)
+	// EmitDeploymentEvent / EmitDeploymentStatusEvent fire the deployment
+	// and deployment_status webhook events exactly as POST /deployments and
+	// POST /deployments/{id}/statuses do (the status event's action is the
+	// status's own state, per GitHub's contract).
+	EmitDeploymentEvent(repo *store.Repo, d *store.Deployment, sender *store.User, action string)
+	EmitDeploymentStatusEvent(repo *store.Repo, d *store.Deployment, status *store.DeploymentStatus, sender *store.User)
 }
 
 // Pulls is the merge gate plus the PR file-diff renderer, shared with the
@@ -63,18 +102,112 @@ type Pulls interface {
 	// satisfied for merging headSha into baseBranch (the server's
 	// evaluateChecksForMerge, narrowed to what the resolver consumes).
 	MissingRequiredChecks(repo *store.Repo, baseBranch, headSha string) []string
+	// RequiredStatusCheckContexts reports every context branch protection
+	// demands before baseBranch may be merged into, whether satisfied or
+	// not. StatusContext.isRequired / CheckRun.isRequired answer from it, so
+	// what `gh pr checks` marks required is the same set the merge gate
+	// enforces rather than a second opinion about it.
+	RequiredStatusCheckContexts(repo *store.Repo, baseBranch string) []string
 	CanMergePullRequest(ctx context.Context, repo *store.Repo, pr *store.PullRequest) (bool, string)
 	CompletePullRequestMerge(repo *store.Repo, pr *store.PullRequest, user *store.User, method, commitTitle, commitMessage, expectedHead string) (string, string)
-	BranchProtectionRuleForPR(repo *store.Repo, baseBranch string) map[string]interface{}
 	ChangedFiles(repo *store.Repo, pr *store.PullRequest, baseURL string) ([]map[string]interface{}, error)
 	// MaybeAutoMerge re-evaluates a pull request's armed auto-merge request
 	// after a review lands or is dismissed through GraphQL — the merge
 	// itself runs through the server's REST-shared merge gate.
 	MaybeAutoMerge(prID int)
+	// MaybeAutoMergeRepo re-evaluates every armed auto-merge in the
+	// repository after a branch-protection change lands through GraphQL —
+	// the protection handlers on the REST side trigger the same
+	// re-evaluation, because a rule change can be the event an armed
+	// auto-merge was waiting for.
+	MaybeAutoMergeRepo(repo *store.Repo)
+	// UpdatePullRequestBranch brings a pull request's head branch up to date
+	// with its base, by the named PullRequestBranchUpdateMethod. It is a git
+	// write — it moves the head ref and fires the push machinery — so it lives
+	// behind the seam, and PUT /pulls/{n}/update-branch performs the same one.
+	UpdatePullRequestBranch(repo *store.Repo, pr *store.PullRequest, user *store.User, expectedHeadOid, method string) error
 	// AutoRequestCodeOwners requests the CODEOWNERS owners of a newly opened
 	// pull request's changed files as reviewers. A pull request opened through
 	// GraphQL collects the same reviewers one opened through REST does.
 	AutoRequestCodeOwners(repo *store.Repo, pr *store.PullRequest, sender *store.User)
+	// MaybeAutoMergeHeadSHA re-evaluates every armed auto-merge whose pull
+	// request's head is this commit, which is what the REST checks routes do
+	// when a check run lands completed — a check reported through GraphQL
+	// must release the same waiting merges.
+	MaybeAutoMergeHeadSHA(repo *store.Repo, headSha string)
+}
+
+// Migrations starts the GitHub Enterprise Importer's workers. The mutations
+// that queue a migration live here, but the work itself is the server's: it
+// dials the source, writes git storage and creates repositories, none of which
+// the resolver layer may reach (ARCH-003). The resolver records the migration
+// and asks for it to be run.
+type Migrations interface {
+	// StartRepositoryMigration runs the queued repository migration with this
+	// database id on a supervised background goroutine.
+	StartRepositoryMigration(id int)
+	// StartOrganizationMigration does the same for an organization migration.
+	StartOrganizationMigration(id int)
+	// RepositoryMigrationLogURL is where the migration's log can be read, or
+	// "" when it has not produced one. It is a path on this server behind the
+	// same authorization the migration is behind rather than a signed URL, so
+	// it is not a credential that outlives the caller's access.
+	RepositoryMigrationLogURL(m *store.RepositoryMigration) string
+}
+
+// Repos is the repository machinery that lives in the HTTP layer because it
+// reaches state the resolver layer may not (ARCH-003): the artifact metadata
+// that embeds a repository's full name, the git HEAD a default-branch change
+// repoints, and the template instantiation that copies one repository's tree
+// into another. The mutations that need those effects ask here rather than
+// reimplementing them, so GraphQL and REST cannot drift on what a rename or a
+// template instantiation carries with it.
+type Repos interface {
+	// RenameRepository renames the repository, carrying every record that
+	// embeds its full name across with it. It answers an error when the new
+	// name is taken or the carry failed; in either case nothing moved.
+	RenameRepository(repo *store.Repo, newName string) error
+	// CreateGitRef, UpdateGitRef and DeleteGitRef are the three reference
+	// writes the git-refs REST routes perform, and they carry everything
+	// those routes carry: the branch-protection refusal, the secret-scanning
+	// push-protection block, the fast-forward test, the compare-and-set
+	// against the reference the caller saw, the push machinery and the
+	// create/delete webhooks. A resolver reaching for the storer itself would
+	// be a way around branch protection, so the ref mutations ask here.
+	CreateGitRef(ctx context.Context, repo *store.Repo, sender *store.User, qualifiedName, oid string) error
+	UpdateGitRef(ctx context.Context, repo *store.Repo, sender *store.User, qualifiedName, oid string, force bool) error
+	DeleteGitRef(ctx context.Context, repo *store.Repo, sender *store.User, qualifiedName string) error
+	// MergeBranch merges head into base and answers the merge commit's oid,
+	// or "" when head was already an ancestor of base. It is what POST
+	// /repos/{owner}/{repo}/merges performs.
+	MergeBranch(ctx context.Context, repo *store.Repo, sender *store.User, base, head, commitMessage, authorEmail string) (string, error)
+	// CreateCommitOnBranch writes one commit containing the named file
+	// additions and deletions onto a branch whose head must currently be
+	// expectedHeadOid, and answers the new commit's oid. It is the multi-file
+	// form of the contents API's single-file commit, and goes through the
+	// same tree-building and ref-advancing machinery.
+	CreateCommitOnBranch(ctx context.Context, repo *store.Repo, sender *store.User, qualifiedName, expectedHeadOid string,
+		additions map[string][]byte, deletions []string, headline, body string) (string, error)
+	// GenerateFromTemplate creates a repository under ownerLogin from a
+	// template repository, copying its default branch (or every branch) the
+	// same way POST /repos/{template_owner}/{template_repo}/generate does,
+	// and answers the new repository. The seam enforces the owner-side rule:
+	// the caller may generate under their own account or an organization
+	// they are an active member of.
+	GenerateFromTemplate(ctx context.Context, template *store.Repo, sender *store.User, ownerLogin, name, description string, includeAllBranches, private bool) (*store.Repo, error)
+	// RevertPullRequest opens a pull request that undoes a merged one: it
+	// creates the revert branch off the base, commits the inverse of the
+	// merged change onto it, and opens the pull request. It answers the new
+	// pull request's database id.
+	RevertPullRequest(ctx context.Context, repo *store.Repo, pr *store.PullRequest, sender *store.User, title, body string, draft bool) (int, error)
+	// ReviewPendingDeployments applies an approve/reject review to a
+	// workflow run's pending reviewer-protected deployments and answers the
+	// environment names the review covered. It is the actions-engine work
+	// POST /actions/runs/{id}/pending_deployments performs — releasing or
+	// failing the waiting jobs — which the resolver layer may not reach
+	// (ARCH-003). It refuses a self-review on an environment configured
+	// with preventSelfReview.
+	ReviewPendingDeployments(ctx context.Context, wf *store.Workflow, envIDs []int, state, comment string, reviewer *store.User) ([]string, error)
 }
 
 // RateSnapshot is the API rate-limit accounting the rateLimit root field
@@ -97,6 +230,10 @@ type Config struct {
 	Events Events
 	// Pulls is the merge gate and PR diff renderer.
 	Pulls Pulls
+	// Migrations starts the GitHub Enterprise Importer's workers.
+	Migrations Migrations
+	// Repos is the repository machinery the mutation surface reaches for.
+	Repos Repos
 	// UserFromContext extracts the already-authenticated user from the
 	// request context. Authentication itself stays in the HTTP layer; the
 	// resolver layer only reads the principal middleware attached.
@@ -117,12 +254,44 @@ type Resolver struct {
 	authz           Authz
 	events          Events
 	pulls           Pulls
+	migrations      Migrations
+	repos           Repos
 	userFromContext func(ctx context.Context) *store.User
 	apiRateFn       func(ctx context.Context) RateSnapshot
 	buildCommit     func() string
 
 	graphqlTypes  graphQLTypeRegistry
 	graphqlSchema graphql.Schema
+
+	// extraSchemaTypes holds types that exist in GitHub's schema but are
+	// reachable in bleephub's only through an interface/union possible-type or
+	// not at all (schema-fidelity shells for data this instance does not
+	// produce). They are spread into graphql.NewSchema's Types list so
+	// introspection lists them. registerExtraSchemaType appends here from any
+	// family builder, avoiding a central-file edit per type.
+	extraSchemaTypes []graphql.Type
+
+	// The Actions/Checks leaf types and connections built once by
+	// buildActionsSupportTypes (gh_actions_fields_graphql.go).
+	actionsTypes *actionsFamilyTypes
+
+	// The enterprise family's two memoized types: the organization-membership
+	// connection two enterprise types both name, and the invitation ordering
+	// inputs, keyed by GitHub's input-object name.
+	enterpriseOrgMembershipConnMemo *graphql.Object
+	enterpriseOrderInputs           map[string]*graphql.InputObject
+
+	// The remaining GitHub mutation surface (gh_mutations_*_graphql.go) mints
+	// several hundred input, payload and supporting types, many of which more
+	// than one family names — CheckRunOutput is written by createCheckRun and
+	// updateCheckRun, ProjectColumn is returned by six classic-project
+	// mutations. graphql-go rejects a schema carrying two objects of one name,
+	// so every such type is minted once through the memos below and looked up
+	// by GitHub's own spelling thereafter.
+	mutationObjects    map[string]*graphql.Object
+	mutationInputs     map[string]*graphql.InputObject
+	mutationInterfaces map[string]*graphql.Interface
+	mutationUnions     map[string]*graphql.Union
 }
 
 // NewResolver builds a resolver and assembles the schema. It panics when
@@ -143,6 +312,12 @@ func NewResolver(cfg Config) *Resolver {
 	if cfg.Pulls == nil {
 		panic("graphqlapi.NewResolver: Config.Pulls is nil — the merge gate and PR diff renderer delegate to it; wire the server's pulls seam or a stub")
 	}
+	if cfg.Migrations == nil {
+		panic("graphqlapi.NewResolver: Config.Migrations is nil — the migration mutations dereference it to run the work they queue; wire the server's migration seam or a stub")
+	}
+	if cfg.Repos == nil {
+		panic("graphqlapi.NewResolver: Config.Repos is nil — the repository mutation surface dereferences it to rename and instantiate repositories; wire the server's repository seam or a stub")
+	}
 	if cfg.UserFromContext == nil {
 		panic("graphqlapi.NewResolver: Config.UserFromContext is nil — viewer resolution dereferences it on every request; wire the server's context extractor or a stub")
 	}
@@ -155,6 +330,8 @@ func NewResolver(cfg Config) *Resolver {
 		authz:           cfg.Authz,
 		events:          cfg.Events,
 		pulls:           cfg.Pulls,
+		migrations:      cfg.Migrations,
+		repos:           cfg.Repos,
 		userFromContext: cfg.UserFromContext,
 		apiRateFn:       cfg.APIRate,
 		buildCommit:     cfg.BuildCommit,
@@ -225,6 +402,14 @@ func (s *Resolver) viewerIsOrgMember(ctx context.Context, orgLogin string) bool 
 	return s.authz.ViewerIsOrgMember(ctx, orgLogin)
 }
 
+func (s *Resolver) viewerCanAdminAccount(ctx context.Context, login string) bool {
+	return s.authz.ViewerCanAdminAccount(ctx, login)
+}
+
+func (s *Resolver) viewerMayMigrateOrg(ctx context.Context, org *store.Org) bool {
+	return s.authz.ViewerMayMigrateOrg(ctx, org)
+}
+
 func (s *Resolver) visibleRepos(ctx context.Context, repos []*store.Repo) []*store.Repo {
 	return s.authz.VisibleRepos(ctx, repos)
 }
@@ -241,6 +426,14 @@ func (s *Resolver) emitWebhookEvent(repoKey, eventType, action string, payload i
 	s.events.EmitWebhookEvent(repoKey, eventType, action, payload)
 }
 
+func (s *Resolver) emitProjectV2Event(event store.ProjectV2Event) {
+	s.events.EmitProjectV2Event(event)
+}
+
+func (s *Resolver) emitSponsorshipEvent(action string, transition *store.SponsorsTransition, sender *store.User) {
+	s.events.EmitSponsorshipEvent(action, transition, sender)
+}
+
 func (s *Resolver) buildIssuesPayload(repo *store.Repo, issue *store.Issue, sender *store.User, action string) map[string]interface{} {
 	return s.events.BuildIssuesPayload(repo, issue, sender, action)
 }
@@ -251,6 +444,10 @@ func (s *Resolver) buildPullRequestPayload(repo *store.Repo, pr *store.PullReque
 
 func (s *Resolver) repoPayload(repo *store.Repo) map[string]interface{} {
 	return s.events.RepoPayload(repo)
+}
+
+func (s *Resolver) senderPayload(user *store.User) map[string]interface{} {
+	return s.events.SenderPayload(user)
 }
 
 func (s *Resolver) emitIssueChanges(repo *store.Repo, issue *store.Issue, sender *store.User, change store.SubjectChange) {
@@ -269,6 +466,10 @@ func (s *Resolver) missingRequiredChecks(repo *store.Repo, baseBranch, headSha s
 	return s.pulls.MissingRequiredChecks(repo, baseBranch, headSha)
 }
 
+func (s *Resolver) requiredStatusCheckContexts(repo *store.Repo, baseBranch string) []string {
+	return s.pulls.RequiredStatusCheckContexts(repo, baseBranch)
+}
+
 func (s *Resolver) canMergePullRequest(ctx context.Context, repo *store.Repo, pr *store.PullRequest) (bool, string) {
 	return s.pulls.CanMergePullRequest(ctx, repo, pr)
 }
@@ -277,8 +478,8 @@ func (s *Resolver) completePullRequestMerge(repo *store.Repo, pr *store.PullRequ
 	return s.pulls.CompletePullRequestMerge(repo, pr, user, method, commitTitle, commitMessage, expectedHead)
 }
 
-func (s *Resolver) branchProtectionRuleForPR(repo *store.Repo, baseBranch string) map[string]interface{} {
-	return s.pulls.BranchProtectionRuleForPR(repo, baseBranch)
+func (s *Resolver) maybeAutoMergeRepo(repo *store.Repo) {
+	s.pulls.MaybeAutoMergeRepo(repo)
 }
 
 func (s *Resolver) pullRequestChangedFiles(repo *store.Repo, pr *store.PullRequest, baseURL string) ([]map[string]interface{}, error) {
@@ -291,6 +492,18 @@ func (s *Resolver) maybeAutoMerge(prID int) {
 
 func (s *Resolver) autoRequestCodeOwners(repo *store.Repo, pr *store.PullRequest, sender *store.User) {
 	s.pulls.AutoRequestCodeOwners(repo, pr, sender)
+}
+
+func (s *Resolver) startRepositoryMigration(id int) {
+	s.migrations.StartRepositoryMigration(id)
+}
+
+func (s *Resolver) startOrganizationMigration(id int) {
+	s.migrations.StartOrganizationMigration(id)
+}
+
+func (s *Resolver) repositoryMigrationLogURL(m *store.RepositoryMigration) string {
+	return s.migrations.RepositoryMigrationLogURL(m)
 }
 
 func (s *Resolver) ghUserFromContext(ctx context.Context) *store.User {

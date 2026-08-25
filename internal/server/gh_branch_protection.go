@@ -255,21 +255,10 @@ func (s *Server) getBranchProtection(r *http.Request) (*store.Repo, string, *sto
 // so that whatever the caller does with its own rule afterwards — render it,
 // hydrate URLs into it, edit it again — cannot reach the stored table.
 func (s *Server) setBranchProtection(repo *store.Repo, branch string, bp *store.BranchProtection) {
-	key := store.BpKey(repo.ID, branch)
-	stored := cloneBranchProtection(bp)
-	s.store.Misc.Mu.Lock()
-	if stored == nil || !stored.IsProtected() {
-		delete(s.store.Misc.BranchProtection, key)
-		if s.store.Misc.Persist != nil {
-			s.store.Misc.Persist.MustDelete("branch_protection", key)
-		}
-	} else {
-		s.store.Misc.BranchProtection[key] = stored
-		if s.store.Misc.Persist != nil {
-			s.store.Misc.Persist.MustPut("branch_protection", key, stored)
-		}
-	}
-	s.store.Misc.Mu.Unlock()
+	// The store method is the same one the GraphQL branch-protection
+	// mutations drive, so the two surfaces cannot drift on what a write
+	// stores or when it deletes.
+	s.store.SetBranchProtection(repo.ID, branch, cloneBranchProtection(bp))
 	// A protection state change can clear the condition an armed auto-merge
 	// was waiting for (every protection sub-resource handler funnels here).
 	s.maybeAutoMergeBranch(repo, branch)
@@ -299,6 +288,12 @@ func (s *Server) handleBranchProtectionPut(w http.ResponseWriter, r *http.Reques
 	repo := s.lookupRepoFromPath(r)
 	if repo == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	// Branch protection is what an enterprise's controls rest on, so an
+	// enterprise can reserve changing it to itself even from repository
+	// administrators.
+	if s.enterpriseForbidsProtectedBranchUpdate(w, r, repo) {
 		return
 	}
 	branch := r.PathValue("branch")
@@ -331,6 +326,10 @@ func (s *Server) handleBranchProtectionPut(w http.ResponseWriter, r *http.Reques
 		bp = &store.BranchProtection{}
 	}
 	bp = s.applyBranchProtectionRequest(bp, &req)
+	// A successful PUT protects the branch. Every rule it names may later be
+	// turned off one at a time without the branch falling out of protection;
+	// only DELETE .../protection removes it.
+	bp.Enabled = true
 	for name, clear := range map[string]func(){
 		"required_status_checks":        func() { bp.RequiredStatusChecks = nil },
 		"required_pull_request_reviews": func() { bp.RequiredPullRequestReviews = nil },
@@ -374,15 +373,28 @@ func (s *Server) emitBranchProtectionRuleEvent(repo *store.Repo, branch, action 
 	s.emitWebhookEvent(repo.FullName, "branch_protection_rule", action, map[string]interface{}{
 		"action":     action,
 		"rule":       map[string]interface{}{"name": branch, "repository_id": repo.ID},
-		"repository": repoPayload(repo),
-		"sender":     store.UserToJSON(ghUserFromContext(r.Context())),
+		"repository": repoPayload(repo, s.baseURL(r)),
+		"sender":     store.UserToJSON(ghUserFromContext(r.Context()), s.baseURL(r)),
 	})
+}
+
+// enterpriseForbidsProtectedBranchUpdate writes the refusal when the
+// enterprise's members-can-update-protected-branches policy forbids the
+// caller from changing this repository's branch protection.
+func (s *Server) enterpriseForbidsProtectedBranchUpdate(w http.ResponseWriter, r *http.Request, repo *store.Repo) bool {
+	policy, enterprise := s.enterprisePolicyForRepo(repo)
+	return s.refuseByEnterprisePolicy(w, r, enterprise, policy.MembersCanUpdateProtectedBranches,
+		"Updating protected branches is disabled by an enterprise policy.")
 }
 
 func (s *Server) handleBranchProtectionDelete(w http.ResponseWriter, r *http.Request) {
 	repo := s.lookupRepoFromPath(r)
 	if repo == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	// Removing protection is an update to it.
+	if s.enterpriseForbidsProtectedBranchUpdate(w, r, repo) {
 		return
 	}
 	branch := r.PathValue("branch")
@@ -401,6 +413,14 @@ func (s *Server) handleBranchProtectionDelete(w http.ResponseWriter, r *http.Req
 func (s *Server) applyBranchProtectionRequest(bp *store.BranchProtection, req *bpRequest) *store.BranchProtection {
 	if req.RequiredStatusChecks != nil {
 		bp.RequiredStatusChecks = req.RequiredStatusChecks
+		// The body may name the required set through either view; whichever it
+		// used, both have to end up naming it. `checks` wins when a body carries
+		// both, because it is the view that can also name the reporting app.
+		if req.RequiredStatusChecks.Checks != nil {
+			bp.RequiredStatusChecks.SetChecks(req.RequiredStatusChecks.Checks)
+		} else {
+			bp.RequiredStatusChecks.SetContexts(req.RequiredStatusChecks.Contexts)
+		}
 	}
 	if req.RequiredPullRequestReviews != nil {
 		// An explicit review-policy object enables the rule even when its
@@ -445,6 +465,11 @@ func (s *Server) hydrateBranchProtectionURLs(bp *store.BranchProtection, repo *s
 	if bp == nil {
 		return nil
 	}
+	// Enabled is stored state, not a rendered member: `protected-branch` (the
+	// PUT response) has no `enabled`, and the callers that do publish one derive
+	// it themselves. hydrate operates on a detached copy, so clearing it here
+	// cannot reach the stored rule.
+	bp.Enabled = false
 	bp.URL = s.branchProtectionURL(baseURL, repo.FullName, branch)
 	if bp.RequiredStatusChecks != nil {
 		bp.RequiredStatusChecks.URL = s.branchProtectionSubURL(baseURL, repo.FullName, branch, "required_status_checks")
@@ -554,11 +579,10 @@ func (s *Server) handleBPStatusChecksPatch(w http.ResponseWriter, r *http.Reques
 	if req.Strict != nil {
 		bp.RequiredStatusChecks.Strict = *req.Strict
 	}
-	if req.Contexts != nil {
-		bp.RequiredStatusChecks.Contexts = *req.Contexts
-	}
 	if req.Checks != nil {
-		bp.RequiredStatusChecks.Checks = *req.Checks
+		bp.RequiredStatusChecks.SetChecks(*req.Checks)
+	} else if req.Contexts != nil {
+		bp.RequiredStatusChecks.SetContexts(*req.Contexts)
 	}
 	s.setBranchProtection(repo, branch, bp)
 	writeJSON(w, http.StatusOK, s.statusCheckPolicyJSON(bp.RequiredStatusChecks, repo, branch, s.baseURL(r)))
@@ -591,7 +615,11 @@ func (s *Server) handleBPContextsGet(w http.ResponseWriter, r *http.Request) {
 		s.branchProtectionNotFound(w)
 		return
 	}
-	writeJSON(w, http.StatusOK, bp.RequiredStatusChecks.Contexts)
+	contexts := bp.RequiredStatusChecks.Contexts
+	if contexts == nil {
+		contexts = []string{}
+	}
+	writeJSON(w, http.StatusOK, contexts)
 }
 
 func (s *Server) handleBPContextsPost(w http.ResponseWriter, r *http.Request) {
@@ -608,11 +636,13 @@ func (s *Server) handleBPContextsPost(w http.ResponseWriter, r *http.Request) {
 	if !decodeStringArrayBody(w, r, &contexts) {
 		return
 	}
+	merged := append([]string(nil), bp.RequiredStatusChecks.Contexts...)
 	for _, context := range contexts {
-		if !stringSliceContains(bp.RequiredStatusChecks.Contexts, context) {
-			bp.RequiredStatusChecks.Contexts = append(bp.RequiredStatusChecks.Contexts, context)
+		if !stringSliceContains(merged, context) {
+			merged = append(merged, context)
 		}
 	}
+	bp.RequiredStatusChecks.SetContexts(merged)
 	s.setBranchProtection(repo, branch, bp)
 	writeJSON(w, http.StatusOK, bp.RequiredStatusChecks.Contexts)
 }
@@ -631,9 +661,9 @@ func (s *Server) handleBPContextsPut(w http.ResponseWriter, r *http.Request) {
 	if !decodeStringArrayBody(w, r, &contexts) {
 		return
 	}
-	bp.RequiredStatusChecks.Contexts = contexts
+	bp.RequiredStatusChecks.SetContexts(contexts)
 	s.setBranchProtection(repo, branch, bp)
-	writeJSON(w, http.StatusOK, contexts)
+	writeJSON(w, http.StatusOK, bp.RequiredStatusChecks.Contexts)
 }
 
 func (s *Server) handleBPContextsDelete(w http.ResponseWriter, r *http.Request) {
@@ -650,7 +680,7 @@ func (s *Server) handleBPContextsDelete(w http.ResponseWriter, r *http.Request) 
 	if !decodeStringArrayBody(w, r, &contexts) {
 		return
 	}
-	bp.RequiredStatusChecks.Contexts = removeStrings(bp.RequiredStatusChecks.Contexts, contexts)
+	bp.RequiredStatusChecks.SetContexts(removeStrings(bp.RequiredStatusChecks.Contexts, contexts))
 	s.setBranchProtection(repo, branch, bp)
 	writeJSON(w, http.StatusOK, bp.RequiredStatusChecks.Contexts)
 }
@@ -777,7 +807,7 @@ func (s *Server) handleBPRestrictionsUsersGet(w http.ResponseWriter, r *http.Req
 		s.branchProtectionNotFound(w)
 		return
 	}
-	writeJSON(w, http.StatusOK, s.bpRestrictedUsersJSON(bp.Restrictions.Users))
+	writeJSON(w, http.StatusOK, s.bpRestrictedUsersJSON(bp.Restrictions.Users, s.baseURL(r)))
 }
 
 func (s *Server) handleBPRestrictionsUsersPost(w http.ResponseWriter, r *http.Request) {
@@ -800,7 +830,7 @@ func (s *Server) handleBPRestrictionsUsersPost(w http.ResponseWriter, r *http.Re
 		}
 	}
 	s.setBranchProtection(repo, branch, bp)
-	writeJSON(w, http.StatusOK, s.bpRestrictedUsersJSON(bp.Restrictions.Users))
+	writeJSON(w, http.StatusOK, s.bpRestrictedUsersJSON(bp.Restrictions.Users, s.baseURL(r)))
 }
 
 func (s *Server) handleBPRestrictionsUsersPut(w http.ResponseWriter, r *http.Request) {
@@ -819,7 +849,7 @@ func (s *Server) handleBPRestrictionsUsersPut(w http.ResponseWriter, r *http.Req
 	}
 	bp.Restrictions.Users = users
 	s.setBranchProtection(repo, branch, bp)
-	writeJSON(w, http.StatusOK, s.bpRestrictedUsersJSON(users))
+	writeJSON(w, http.StatusOK, s.bpRestrictedUsersJSON(users, s.baseURL(r)))
 }
 
 func (s *Server) handleBPRestrictionsUsersDelete(w http.ResponseWriter, r *http.Request) {
@@ -838,7 +868,7 @@ func (s *Server) handleBPRestrictionsUsersDelete(w http.ResponseWriter, r *http.
 	}
 	bp.Restrictions.Users = removeBPActors(bp.Restrictions.Users, users)
 	s.setBranchProtection(repo, branch, bp)
-	writeJSON(w, http.StatusOK, s.bpRestrictedUsersJSON(bp.Restrictions.Users))
+	writeJSON(w, http.StatusOK, s.bpRestrictedUsersJSON(bp.Restrictions.Users, s.baseURL(r)))
 }
 
 // --- Restrictions teams ---
@@ -961,14 +991,14 @@ func (s *Server) decodeBPUserLogins(w http.ResponseWriter, r *http.Request) ([]s
 	return actors, true
 }
 
-func (s *Server) bpRestrictedUsersJSON(actors []store.BPActor) []map[string]interface{} {
+func (s *Server) bpRestrictedUsersJSON(actors []store.BPActor, baseURL string) []map[string]interface{} {
 	out := make([]map[string]interface{}, 0, len(actors))
 	for _, actor := range actors {
 		s.store.Mu.RLock()
 		user := s.store.Users[actor.ID]
 		var rendered map[string]interface{}
 		if user != nil {
-			rendered = store.UserToJSON(user)
+			rendered = store.UserToJSON(user, baseURL)
 		}
 		s.store.Mu.RUnlock()
 		if rendered != nil {
@@ -1029,11 +1059,14 @@ func (s *Server) handleBPEnforceAdminsGet(w http.ResponseWriter, r *http.Request
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	if bp == nil || bp.EnforceAdmins == nil {
+	if bp == nil {
 		s.branchProtectionNotFound(w)
 		return
 	}
-	ea := *bp.EnforceAdmins
+	ea := store.BPEnforceAdmins{}
+	if bp.EnforceAdmins != nil {
+		ea = *bp.EnforceAdmins
+	}
 	ea.URL = s.branchProtectionSubURL(s.baseURL(r), repo.FullName, branch, "enforce_admins")
 	writeJSON(w, http.StatusOK, ea)
 }
@@ -1065,7 +1098,10 @@ func (s *Server) handleBPEnforceAdminsDelete(w http.ResponseWriter, r *http.Requ
 		s.branchProtectionNotFound(w)
 		return
 	}
-	bp.EnforceAdmins = nil
+	// The endpoint is documented only to disable admin enforcement. Clearing
+	// the member instead would make GET .../enforce_admins answer 404, and —
+	// when it was the last rule — drop every other protection rule with it.
+	bp.EnforceAdmins = &store.BPEnforceAdmins{Enabled: false}
 	s.setBranchProtection(repo, branch, bp)
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -1135,7 +1171,7 @@ func (s *Server) bpRestrictedAppsJSON(actors []store.BPActor) []map[string]inter
 		app := s.store.AppsBySlug[actor.Login]
 		s.store.Mu.RUnlock()
 		if app != nil {
-			out = append(out, appToJSON(s.store, app, false))
+			out = append(out, appToJSON(s.store, app, false, s.publicOrigin()))
 		}
 	}
 	return out
@@ -1670,24 +1706,4 @@ func (s *Server) requiredCheckContexts(repoID int, baseBranch string) []string {
 		add(c.Context)
 	}
 	return out
-}
-
-// branchProtectionRuleForPR returns a GraphQL-shaped map for baseRef.branchProtectionRule.
-func (s *Server) branchProtectionRuleForPR(repo *store.Repo, baseBranch string) map[string]interface{} {
-	bp := s.branchProtectionFor(repo.ID, baseBranch)
-	if bp == nil {
-		return nil
-	}
-	strict := false
-	count := 0
-	if bp.RequiredStatusChecks != nil {
-		strict = bp.RequiredStatusChecks.Strict
-	}
-	if bp.RequiredPullRequestReviews != nil {
-		count = bp.RequiredPullRequestReviews.RequiredApprovingReviewCount
-	}
-	return map[string]interface{}{
-		"requiresStrictStatusChecks":   strict,
-		"requiredApprovingReviewCount": count,
-	}
 }

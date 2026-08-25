@@ -58,7 +58,7 @@ func (s *Server) handleGetEnterpriseInstallation(w http.ResponseWriter, r *http.
 	}
 	for _, installation := range s.store.ListAppInstallations(app.ID) {
 		if installation.TargetType == "Enterprise" && installation.TargetLogin == s.enterpriseSlug() {
-			writeJSON(w, http.StatusOK, installationToJSON(installation))
+			writeJSON(w, http.StatusOK, installationToJSON(installation, s.baseURL(r)))
 			return
 		}
 	}

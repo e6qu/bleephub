@@ -458,10 +458,10 @@ func TestGetAuthenticatedApp(t *testing.T) {
 	if owner["login"] != "admin" {
 		t.Errorf("owner.login = %v, want admin", owner["login"])
 	}
-	// owner is the simple-user shape with bleephub's own html_url, not a
-	// hardcoded github.com link.
-	if owner["html_url"] != "/admin" {
-		t.Errorf("owner.html_url = %v, want /admin", owner["html_url"])
+	// owner is the simple-user shape with bleephub's own absolute html_url,
+	// not a hardcoded github.com link.
+	if owner["html_url"] != s.baseURL+"/admin" {
+		t.Errorf("owner.html_url = %v, want %s/admin", owner["html_url"], s.baseURL)
 	}
 	if _, present := owner["node_id"]; !present {
 		t.Error("owner missing node_id")
@@ -666,23 +666,39 @@ func TestInstallationTokenAuth(t *testing.T) {
 	tokData := decodeJSON(t, httpResp)
 	ghsToken := tokData["token"].(string)
 
-	// Use the installation token to call a GitHub application programming
-	// interface endpoint.
-	req2, _ := http.NewRequest("GET", s.baseURL+"/api/v3/user", nil)
-	req2.Header.Set("Authorization", "Bearer "+ghsToken)
-	resp3, err := http.DefaultClient.Do(req2)
-	if err != nil {
-		t.Fatal(err)
+	// The installation token authenticates: it reaches the endpoint that exists
+	// to be read with one, which reports the repositories the installation was
+	// granted.
+	get := func(path string) *http.Response {
+		t.Helper()
+		req, _ := http.NewRequest("GET", s.baseURL+path, nil)
+		req.Header.Set("Authorization", "Bearer "+ghsToken)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp
 	}
-	if resp3.StatusCode != 200 {
-		resp3.Body.Close()
-		t.Fatalf("expected 200 with ghs_ token, got %d", resp3.StatusCode)
+	reposResp := get("/api/v3/installation/repositories")
+	if reposResp.StatusCode != 200 {
+		reposResp.Body.Close()
+		t.Fatalf("expected 200 for installation/repositories with ghs_ token, got %d", reposResp.StatusCode)
 	}
-	userData := decodeJSON(t, resp3)
-	login, _ := userData["login"].(string)
-	if !strings.Contains(login, "[bot]") {
-		t.Fatalf("expected bot login, got %s", login)
+	reposResp.Body.Close()
+
+	// It is not, however, a user credential, and GET /user is the endpoint that
+	// says so. Answering it 200 with the App's `<slug>[bot]` login would tell
+	// the client it holds a user credential when it does not — so the App's
+	// writes would be attributed to that login as though a person had made
+	// them, and a client choosing between a user flow and an App flow by asking
+	// "can I read /user?" would take the wrong branch outright.
+	userResp := get("/api/v3/user")
+	userData := decodeJSONWithStatus(t, userResp, http.StatusForbidden)
+	if userData["message"] != "Resource not accessible by integration" {
+		t.Fatalf("GET /user with a ghs_ token: message = %v, want %q",
+			userData["message"], "Resource not accessible by integration")
 	}
+
 }
 
 func TestInstallationTokenWrongApp(t *testing.T) {

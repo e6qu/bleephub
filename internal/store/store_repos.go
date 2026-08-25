@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,41 +17,52 @@ import (
 )
 
 type Repo struct {
-	ID                                       int          `json:"id"`
-	NodeID                                   string       `json:"node_id"`
-	Name                                     string       `json:"name"`
-	FullName                                 string       `json:"full_name"`
-	Description                              string       `json:"description"`
-	Homepage                                 string       `json:"homepage"`
-	DefaultBranch                            string       `json:"default_branch"`
-	Visibility                               string       `json:"visibility"`
-	Language                                 string       `json:"language"`
-	Owner                                    *User        `json:"-"`
-	OwnerID                                  int          `json:"owner_id"`   // serialized so Owner can be relinked on reload
-	OwnerType                                string       `json:"owner_type"` // "User" or "Organization"
-	Private                                  bool         `json:"private"`
-	Fork                                     bool         `json:"fork"`
-	Archived                                 bool         `json:"archived"`
-	ArchivedAt                               *time.Time   `json:"archived_at,omitempty"`
-	IsTemplate                               bool         `json:"is_template"`
-	WebCommitSignoffRequired                 bool         `json:"web_commit_signoff_required"`
-	HasIssues                                bool         `json:"has_issues"`
-	HasProjects                              bool         `json:"has_projects"`
-	HasWiki                                  bool         `json:"has_wiki"`
-	HasDiscussions                           *bool        `json:"has_discussions"`
-	HasPullRequests                          bool         `json:"has_pull_requests"`
-	AllowSquashMerge                         bool         `json:"allow_squash_merge"`
-	AllowMergeCommit                         bool         `json:"allow_merge_commit"`
-	AllowRebaseMerge                         bool         `json:"allow_rebase_merge"`
-	AllowAutoMerge                           bool         `json:"allow_auto_merge"`
-	AllowUpdateBranch                        bool         `json:"allow_update_branch"`
-	DeleteBranchOnMerge                      bool         `json:"delete_branch_on_merge"`
-	UseSquashPRTitleAsDefault                bool         `json:"use_squash_pr_title_as_default"`
-	SquashMergeCommitTitle                   string       `json:"squash_merge_commit_title"`
-	SquashMergeCommitMessage                 string       `json:"squash_merge_commit_message"`
-	MergeCommitTitle                         string       `json:"merge_commit_title"`
-	MergeCommitMessage                       string       `json:"merge_commit_message"`
-	PullRequestCreationPolicy                string       `json:"pull_request_creation_policy"`
+	ID                        int        `json:"id"`
+	NodeID                    string     `json:"node_id"`
+	Name                      string     `json:"name"`
+	FullName                  string     `json:"full_name"`
+	Description               string     `json:"description"`
+	Homepage                  string     `json:"homepage"`
+	DefaultBranch             string     `json:"default_branch"`
+	Visibility                string     `json:"visibility"`
+	Language                  string     `json:"language"`
+	Owner                     *User      `json:"-"`
+	OwnerID                   int        `json:"owner_id"`   // serialized so Owner can be relinked on reload
+	OwnerType                 string     `json:"owner_type"` // "User" or "Organization"
+	Private                   bool       `json:"private"`
+	Fork                      bool       `json:"fork"`
+	Archived                  bool       `json:"archived"`
+	ArchivedAt                *time.Time `json:"archived_at,omitempty"`
+	IsTemplate                bool       `json:"is_template"`
+	WebCommitSignoffRequired  bool       `json:"web_commit_signoff_required"`
+	HasIssues                 bool       `json:"has_issues"`
+	HasProjects               bool       `json:"has_projects"`
+	HasWiki                   bool       `json:"has_wiki"`
+	WikiEditsUnrestricted     bool       `json:"wiki_edits_unrestricted"` // github's "restrict editing to collaborators only", inverted so the zero value is the checked default (see viewerMayEditWiki)
+	HasDiscussions            *bool      `json:"has_discussions"`
+	HasPullRequests           bool       `json:"has_pull_requests"`
+	AllowSquashMerge          bool       `json:"allow_squash_merge"`
+	AllowMergeCommit          bool       `json:"allow_merge_commit"`
+	AllowRebaseMerge          bool       `json:"allow_rebase_merge"`
+	AllowAutoMerge            bool       `json:"allow_auto_merge"`
+	AllowUpdateBranch         bool       `json:"allow_update_branch"`
+	DeleteBranchOnMerge       bool       `json:"delete_branch_on_merge"`
+	UseSquashPRTitleAsDefault bool       `json:"use_squash_pr_title_as_default"`
+	SquashMergeCommitTitle    string     `json:"squash_merge_commit_title"`
+	SquashMergeCommitMessage  string     `json:"squash_merge_commit_message"`
+	MergeCommitTitle          string     `json:"merge_commit_title"`
+	MergeCommitMessage        string     `json:"merge_commit_message"`
+	PullRequestCreationPolicy string     `json:"pull_request_creation_policy"`
+	IssueCreationPolicy       string     `json:"issue_creation_policy"`
+	// HasSponsorships records an explicit answer to "does this repository show
+	// a sponsor button". Nil means the repository never said, and the answer is
+	// derived from the owner's Sponsors listing and the FUNDING file, which is
+	// what GitHub does until the setting is touched.
+	HasSponsorships *bool `json:"has_sponsorships,omitempty"`
+	// DeclinedTopics are the topic names an administrator declined for this
+	// repository. A declined topic is never applied by a suggestion accept and
+	// is not offered again.
+	DeclinedTopics                           []string     `json:"declined_topics,omitempty"`
 	LicenseKey                               string       `json:"license_key"`
 	LicenseName                              string       `json:"license_name"`
 	LicenseSPDX                              string       `json:"license_spdx"`
@@ -166,6 +178,7 @@ func (st *Store) createRepoLocked(batch *PersistBatch, fullName, name, descripti
 		AllowMergeCommit:          true,
 		AllowRebaseMerge:          true,
 		PullRequestCreationPolicy: "all",
+		IssueCreationPolicy:       "all",
 		Topics:                    []string{},
 		Stargazers:                map[int]bool{},
 		NextIssueNumber:           1,
@@ -194,6 +207,8 @@ func (st *Store) createRepoLocked(batch *PersistBatch, fullName, name, descripti
 	st.Repos[repo.ID] = repo
 	st.ReposByName[fullName] = repo
 	st.IndexRepoNameLocked(fullName)
+	// A name that is live again is not a name that redirects.
+	delete(st.RepoRedirects, FoldName(fullName))
 	st.GitStorages[fullName] = stor
 	// git.Init leaves HEAD on refs/heads/master; the repository's default
 	// branch is what a clone must check out.
@@ -202,6 +217,7 @@ func (st *Store) createRepoLocked(batch *PersistBatch, fullName, name, descripti
 	}
 
 	st.ensureDefaultDiscussionCategoriesBatchLocked(batch, repo.ID)
+	st.ensureDefaultLabelsBatchLocked(batch, repo.ID)
 
 	if ownBatch {
 		if err := batch.Commit(); err != nil {
@@ -347,6 +363,7 @@ func (st *Store) ForkRepo(owner *User, sourceRepo *Repo, name string) *Repo {
 		HasIssues:                 source.HasIssues,
 		HasProjects:               source.HasProjects,
 		HasWiki:                   source.HasWiki,
+		WikiEditsUnrestricted:     source.WikiEditsUnrestricted,
 		HasDiscussions:            BoolPointer(RepoHasDiscussions(source)),
 		HasPullRequests:           source.HasPullRequests,
 		AllowSquashMerge:          source.AllowSquashMerge,
@@ -361,6 +378,7 @@ func (st *Store) ForkRepo(owner *User, sourceRepo *Repo, name string) *Repo {
 		MergeCommitTitle:          source.MergeCommitTitle,
 		MergeCommitMessage:        source.MergeCommitMessage,
 		PullRequestCreationPolicy: source.PullRequestCreationPolicy,
+		IssueCreationPolicy:       source.IssueCreationPolicy,
 		LicenseKey:                source.LicenseKey,
 		LicenseName:               source.LicenseName,
 		LicenseSPDX:               source.LicenseSPDX,
@@ -380,6 +398,8 @@ func (st *Store) ForkRepo(owner *User, sourceRepo *Repo, name string) *Repo {
 	st.Repos[repo.ID] = repo
 	st.ReposByName[fullName] = repo
 	st.IndexRepoNameLocked(fullName)
+	// A name that is live again is not a name that redirects.
+	delete(st.RepoRedirects, FoldName(fullName))
 	st.GitStorages[fullName] = stor
 	// The copied storage carries the source repository's HEAD, which may name
 	// a branch the fork does not treat as its default.
@@ -388,6 +408,10 @@ func (st *Store) ForkRepo(owner *User, sourceRepo *Repo, name string) *Repo {
 	}
 
 	st.ensureDefaultDiscussionCategoriesBatchLocked(batch, repo.ID)
+	// A fork starts from GitHub's default label set, not the parent's labels:
+	// a fork of a repository carrying custom labels lists exactly the nine
+	// `default: true` labels.
+	st.ensureDefaultLabelsBatchLocked(batch, repo.ID)
 	if err := batch.Commit(); err != nil {
 		panic(&PersistenceFailure{Op: "batch", Bucket: "repos", Key: strconv.Itoa(repo.ID), Err: err})
 	}
@@ -431,7 +455,12 @@ func cloneRepo(repo *Repo) *Repo {
 		v := *repo.HasDiscussions
 		clone.HasDiscussions = &v
 	}
+	if repo.HasSponsorships != nil {
+		v := *repo.HasSponsorships
+		clone.HasSponsorships = &v
+	}
 	clone.Topics = append([]string(nil), repo.Topics...)
+	clone.DeclinedTopics = append([]string(nil), repo.DeclinedTopics...)
 	clone.Stargazers = make(map[int]bool, len(repo.Stargazers))
 	for userID, starred := range repo.Stargazers {
 		clone.Stargazers[userID] = starred
@@ -718,10 +747,12 @@ func (st *Store) renameRepoUnderLock(owner, name, newName string) bool {
 	st.IndexRepoNameLocked(newFull)
 	delete(st.ReposByName, oldFull)
 	st.UnindexRepoNameLocked(oldFull)
+	st.recordRepoRedirectLocked(oldFull, newFull, repo.ID)
 
 	if stor != nil {
 		st.GitStorages[newFull] = stor
 		delete(st.GitStorages, oldFull)
+		st.RekeyWikiGitStorage(oldFull, newFull)
 	}
 	// Re-key the repos row and every subresource bucket in one transaction, so a
 	// crash can never leave the repository split across its old and new names.
@@ -812,9 +843,11 @@ func (st *Store) renameRepoS3(owner, name, newName string) bool {
 	st.IndexRepoNameLocked(newFull)
 	delete(st.ReposByName, oldFull)
 	st.UnindexRepoNameLocked(oldFull)
+	st.recordRepoRedirectLocked(oldFull, newFull, live.ID)
 	if stor != nil {
 		st.GitStorages[newFull] = stor
 		delete(st.GitStorages, oldFull)
+		st.RekeyWikiGitStorage(oldFull, newFull)
 	}
 	batch := NewPersistBatch(st.Persist)
 	batch.Put("repos", strconv.Itoa(live.ID), live)
@@ -966,6 +999,8 @@ func (st *Store) deleteRepoLocked(owner, name string) (bool, PendingDeletion, er
 	// Cascades below key off the canonical name, whatever casing the caller
 	// used.
 	fullName := repo.FullName
+	// A deleted repository leaves nothing for its former names to redirect to.
+	st.dropRepoRedirectsLocked(repo.ID)
 
 	intent := st.repoDeletionIntentLocked(repo)
 	planIDs, logIDs := st.repoWorkflowCleanupIDsLocked(fullName)
@@ -997,6 +1032,7 @@ func (st *Store) deleteRepoLocked(owner, name string) (bool, PendingDeletion, er
 	delete(st.ReposByName, fullName)
 	st.UnindexRepoNameLocked(fullName)
 	delete(st.GitStorages, fullName)
+	st.DropWikiGitStorage(fullName)
 	batch.Delete("repos", strconv.Itoa(repo.ID))
 
 	// Cascade: purge everything keyed to this repo from memory AND the DB.
@@ -1332,6 +1368,12 @@ func (st *Store) deleteRepoLocked(owner, name string) (bool, PendingDeletion, er
 			batch.Delete("branch_protection", key)
 		}
 	}
+	for key := range st.Misc.BranchProtectionExtras {
+		if strings.HasPrefix(key, bpPrefix) {
+			delete(st.Misc.BranchProtectionExtras, key)
+			batch.Delete("branch_protection_extras", key)
+		}
+	}
 	delete(st.Misc.PagesBuilds, fullName)
 	batch.Delete("pages_builds", fullName)
 	st.Misc.Mu.Unlock()
@@ -1449,7 +1491,18 @@ func repoGitStorageIsPathBound() bool {
 	return gitstore.GitDataDir() != "" || gitstore.IsS3GitStorage()
 }
 
+// moveRepoGitStorage moves a repository's git bytes, and with them its wiki's:
+// the wiki lives at its own storage key beside the repository, so a rename that
+// moved only the repository would leave the wiki addressable under a name
+// nothing resolves to.
 func moveRepoGitStorage(oldFull, newFull string) error {
+	if err := moveOneGitStoragePrefix(oldFull, newFull); err != nil {
+		return err
+	}
+	return moveOneGitStoragePrefix(WikiStorageName(oldFull), WikiStorageName(newFull))
+}
+
+func moveOneGitStoragePrefix(oldFull, newFull string) error {
 	if err := gitstore.ValidateRepoStorageFullName(oldFull); err != nil {
 		return err
 	}
@@ -1464,6 +1517,9 @@ func moveRepoGitStorage(oldFull, newFull string) error {
 		newDir, err := gitstore.RepoGitDirPath(gitDir, newFull)
 		if err != nil {
 			return err
+		}
+		if _, statErr := os.Stat(oldDir); errors.Is(statErr, os.ErrNotExist) {
+			return nil
 		}
 		if err := os.MkdirAll(filepath.Dir(newDir), 0o750); err != nil {
 			return fmt.Errorf("create git directory %s: %w", filepath.Dir(newDir), err)
@@ -1488,7 +1544,15 @@ func moveRepoGitStorage(oldFull, newFull string) error {
 	return nil
 }
 
+// deleteRepoGitStorage purges a repository's git bytes and its wiki's.
 func deleteRepoGitStorage(fullName string) error {
+	if err := deleteOneGitStoragePrefix(fullName); err != nil {
+		return err
+	}
+	return deleteOneGitStoragePrefix(WikiStorageName(fullName))
+}
+
+func deleteOneGitStoragePrefix(fullName string) error {
 	if err := gitstore.ValidateRepoStorageFullName(fullName); err != nil {
 		return err
 	}
@@ -2845,10 +2909,12 @@ func (st *Store) TransferRepo(owner, name, newOwner string) bool {
 	st.IndexRepoNameLocked(newFull)
 	delete(st.ReposByName, oldFull)
 	st.UnindexRepoNameLocked(oldFull)
+	st.recordRepoRedirectLocked(oldFull, newFull, repo.ID)
 
 	if stor != nil {
 		st.GitStorages[newFull] = stor
 		delete(st.GitStorages, oldFull)
+		st.RekeyWikiGitStorage(oldFull, newFull)
 	}
 
 	// Re-key the repos row and every subresource bucket in one transaction, so a
@@ -3412,6 +3478,12 @@ func (st *Store) RenameBranch(repoID int, branch, newName string) bool {
 		delete(st.Misc.BranchProtection, oldProtectionKey)
 		batch.Put("branch_protection", newProtectionKey, protection)
 		batch.Delete("branch_protection", oldProtectionKey)
+	}
+	if extras, ok := st.Misc.BranchProtectionExtras[oldProtectionKey]; ok {
+		st.Misc.BranchProtectionExtras[newProtectionKey] = extras
+		delete(st.Misc.BranchProtectionExtras, oldProtectionKey)
+		batch.Put("branch_protection_extras", newProtectionKey, extras)
+		batch.Delete("branch_protection_extras", oldProtectionKey)
 	}
 	st.Misc.Mu.Unlock()
 	repo.UpdatedAt = st.CurrentTime()

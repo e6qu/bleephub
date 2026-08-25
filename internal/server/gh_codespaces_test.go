@@ -274,16 +274,15 @@ func TestCodespaces_UserSecretsCRUD(t *testing.T) {
 	}
 
 	// Put secret.
-	resp = s.put(t, "/api/v3/user/codespaces/secrets/MY_SECRET", defaultToken, map[string]any{
-		"encrypted_value": enc,
-		"key_id":          keyID,
-	})
-	if resp.StatusCode != http.StatusNoContent {
-		b, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		t.Fatalf("put user secret: %d %s", resp.StatusCode, b)
+	putUserSecret := func() *http.Response {
+		return s.put(t, "/api/v3/user/codespaces/secrets/MY_SECRET", defaultToken, map[string]any{
+			"encrypted_value": enc,
+			"key_id":          keyID,
+		})
 	}
-	resp.Body.Close()
+	requireSecretCreated(t, putUserSecret(), "put user secret")
+	// The same PUT again replaces rather than creates.
+	requireSecretReplaced(t, putUserSecret(), "re-put user secret")
 
 	// List.
 	resp = s.get(t, "/api/v3/user/codespaces/secrets", defaultToken)
@@ -339,16 +338,14 @@ func TestCodespaces_RepoSecretsCRUD(t *testing.T) {
 	keyID := pk["key_id"].(string)
 	enc, _, _ := s.store.SealSecretValue("repo-secret")
 
-	resp = s.put(t, fmt.Sprintf("/api/v3/repos/%s/codespaces/secrets/REPO_SECRET", repo.FullName), defaultToken, map[string]any{
-		"encrypted_value": enc,
-		"key_id":          keyID,
-	})
-	if resp.StatusCode != http.StatusNoContent {
-		b, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		t.Fatalf("put repo secret: %d %s", resp.StatusCode, b)
+	putRepoSecret := func() *http.Response {
+		return s.put(t, fmt.Sprintf("/api/v3/repos/%s/codespaces/secrets/REPO_SECRET", repo.FullName), defaultToken, map[string]any{
+			"encrypted_value": enc,
+			"key_id":          keyID,
+		})
 	}
-	resp.Body.Close()
+	requireSecretCreated(t, putRepoSecret(), "put repo secret")
+	requireSecretReplaced(t, putRepoSecret(), "re-put repo secret")
 
 	resp = s.get(t, fmt.Sprintf("/api/v3/repos/%s/codespaces/secrets/REPO_SECRET", repo.FullName), defaultToken)
 	if resp.StatusCode != http.StatusOK {
@@ -378,17 +375,15 @@ func TestCodespaces_OrgSecretsCRUD(t *testing.T) {
 	keyID := pk["key_id"].(string)
 	enc, _, _ := s.store.SealSecretValue("org-secret")
 
-	resp = s.put(t, fmt.Sprintf("/api/v3/orgs/%s/codespaces/secrets/ORG_SECRET", org.Login), defaultToken, map[string]any{
-		"encrypted_value": enc,
-		"key_id":          keyID,
-		"visibility":      "all",
-	})
-	if resp.StatusCode != http.StatusNoContent {
-		b, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		t.Fatalf("put org secret: %d %s", resp.StatusCode, b)
+	putOrgSecret := func() *http.Response {
+		return s.put(t, fmt.Sprintf("/api/v3/orgs/%s/codespaces/secrets/ORG_SECRET", org.Login), defaultToken, map[string]any{
+			"encrypted_value": enc,
+			"key_id":          keyID,
+			"visibility":      "all",
+		})
 	}
-	resp.Body.Close()
+	requireSecretCreated(t, putOrgSecret(), "put org secret")
+	requireSecretReplaced(t, putOrgSecret(), "re-put org secret")
 
 	resp = s.get(t, fmt.Sprintf("/api/v3/orgs/%s/codespaces/secrets/ORG_SECRET", org.Login), defaultToken)
 	if resp.StatusCode != http.StatusOK {
@@ -717,10 +712,8 @@ func TestCodespaces_OrgSecretSelectedRepoAddRemove(t *testing.T) {
 		"visibility":              "selected",
 		"selected_repository_ids": []int{r1.ID},
 	})
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusNoContent {
-		t.Fatalf("put org codespace secret: %d, want 204", resp.StatusCode)
-	}
+	// A secret that did not exist is created, which is a 201.
+	requireSecretCreated(t, resp, "put org codespace secret")
 
 	// Add the second repository.
 	resp = s.put(t, fmt.Sprintf("/api/v3/orgs/cs-secret-repo-org/codespaces/secrets/CS_SELECTED/repositories/%d", r2.ID), defaultToken, nil)
@@ -753,10 +746,7 @@ func TestCodespaces_OrgSecretSelectedRepoAddRemove(t *testing.T) {
 		"key_id":          keyID,
 		"visibility":      "all",
 	})
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusNoContent {
-		t.Fatalf("put all-visibility secret: %d, want 204", resp.StatusCode)
-	}
+	requireSecretCreated(t, resp, "put all-visibility secret")
 	resp = s.put(t, fmt.Sprintf("/api/v3/orgs/cs-secret-repo-org/codespaces/secrets/CS_ALL/repositories/%d", r1.ID), defaultToken, nil)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusConflict {
@@ -906,7 +896,7 @@ func TestCodespaces_UserSecretsListPagination(t *testing.T) {
 	total := int(baseListing["total_count"].(float64)) + 2
 
 	for _, name := range []string{"PG_SECRET_ONE", "PG_SECRET_TWO"} {
-		putPaginationSealedSecret(t, s, "/api/v3/user/codespaces/secrets/"+name, "value-"+name, http.StatusNoContent)
+		putPaginationSealedSecret(t, s, "/api/v3/user/codespaces/secrets/"+name, "value-"+name, http.StatusCreated)
 	}
 
 	assertCodespaceWrapperPage(t, s, "/api/v3/user/codespaces/secrets?per_page=1", "secrets", 1, total, true)
@@ -918,7 +908,7 @@ func TestCodespaces_RepoSecretsListPagination(t *testing.T) {
 	s.registerRoutes()
 	repo := createPaginationCodespaceRepo(t, s, "cs-pg-repo-secrets")
 	for _, name := range []string{"PG_REPO_SECRET_ONE", "PG_REPO_SECRET_TWO"} {
-		putPaginationSealedSecret(t, s, fmt.Sprintf("/api/v3/repos/%s/codespaces/secrets/%s", repo.FullName, name), "value-"+name, http.StatusNoContent)
+		putPaginationSealedSecret(t, s, fmt.Sprintf("/api/v3/repos/%s/codespaces/secrets/%s", repo.FullName, name), "value-"+name, http.StatusCreated)
 	}
 
 	assertCodespaceWrapperPage(t, s, fmt.Sprintf("/api/v3/repos/%s/codespaces/secrets?per_page=1", repo.FullName), "secrets", 1, 2, true)
@@ -949,8 +939,8 @@ func TestCodespaces_OrgSecretReposListPagination(t *testing.T) {
 		"visibility":              "selected",
 		"selected_repository_ids": []int{r1.ID, r2.ID},
 	})
-	if w.Code != http.StatusNoContent {
-		t.Fatalf("put org codespace secret: %d, want 204", w.Code)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("put org codespace secret: %d, want 201 on create: %s", w.Code, w.Body.String())
 	}
 
 	page1 := assertCodespaceWrapperPage(t, s, "/api/v3/orgs/cs-pg-secret-repo-org/codespaces/secrets/PG_SELECTED/repositories?per_page=1", "repositories", 1, 2, true)
@@ -967,4 +957,37 @@ func TestCodespaces_RepoDevcontainersPagination(t *testing.T) {
 	s.registerRoutes()
 	repo := createPaginationCodespaceRepo(t, s, "cs-pg-devcontainers")
 	assertCodespaceWrapperPage(t, s, fmt.Sprintf("/api/v3/repos/%s/codespaces/devcontainers?per_page=1", repo.FullName), "devcontainers", 0, 0, false)
+}
+
+// requireSecretCreated asserts the documented response of a secret PUT that
+// created the secret: 201 carrying an empty object. Both 201 (created) and 204
+// (replaced) are declared on every ".../secrets/{secret_name}" PUT, and which
+// one comes back is how a client tells the two apart — so a 201 with a
+// zero-length body would not satisfy the schema, and a blanket 204 would tell
+// every caller its first write replaced something that was not there.
+func requireSecretCreated(t *testing.T, resp *http.Response, what string) {
+	t.Helper()
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("%s: %d, want 201 on create: %s", what, resp.StatusCode, b)
+	}
+	var body map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("%s: 201 body is not an object: %v", what, err)
+	}
+	if len(body) != 0 {
+		t.Errorf("%s: 201 body = %v, want an empty object", what, body)
+	}
+}
+
+// requireSecretReplaced asserts the other half of that pair: a PUT over a
+// secret that already exists answers 204, with no body.
+func requireSecretReplaced(t *testing.T, resp *http.Response, what string) {
+	t.Helper()
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("%s: %d, want 204 when replacing an existing secret: %s", what, resp.StatusCode, b)
+	}
 }

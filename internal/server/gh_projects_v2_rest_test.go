@@ -155,6 +155,7 @@ func TestOrgProjectV2Fields_CreateListGet(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
 	org, p := s.seedProjectV2Org(t, "pv2-fields-org", "Fields")
+	seededFields := len(projectV2SeededFieldNames(t, s, p.ID))
 	base := "/api/v3/orgs/" + org.Login + "/projectsV2/" + strconv.Itoa(p.Number)
 
 	// text field
@@ -232,8 +233,11 @@ func TestOrgProjectV2Fields_CreateListGet(t *testing.T) {
 		t.Fatalf("list fields = %d, want 200", resp.StatusCode)
 	}
 	fields := decodeJSONArray(t, resp)
-	if len(fields) != 3 {
-		t.Fatalf("fields = %d, want 3", len(fields))
+	// The seeded defaults every new project carries, plus the three this test
+	// created.
+	wantFields := seededFields + 3
+	if len(fields) != wantFields {
+		t.Fatalf("fields = %d, want %d", len(fields), wantFields)
 	}
 
 	// get single field
@@ -350,13 +354,17 @@ func TestOrgProjectV2Items_AddGetPatchDelete(t *testing.T) {
 
 	// Field values: text + single select set via PATCH, read back.
 	textField := s.store.ProjectsV2.CreateField(p.ID, "Notes", store.ProjectV2FieldText, nil, nil)
-	ssField := s.store.ProjectsV2.CreateField(p.ID, "Status", store.ProjectV2FieldSingleSelect,
-		[]*store.ProjectV2SingleSelectOption{{Name: "Todo"}, {Name: "Done"}}, nil)
+	// Status is one of the fields every project is seeded with, so this reuses
+	// it rather than creating a second field of the same name.
+	ssField := s.store.ProjectsV2.FieldByNameOnProject(p.ID, "Status")
+	if ssField == nil {
+		t.Fatal("seeded Status field missing")
+	}
 	numField := s.store.ProjectsV2.CreateField(p.ID, "Points", store.ProjectV2FieldNumber, nil, nil)
 	resp = s.patch(t, base+"/items/"+strconv.Itoa(itemID), defaultToken, map[string]interface{}{
 		"fields": []map[string]interface{}{
 			{"id": textField.ID, "value": "needs review"},
-			{"id": ssField.ID, "value": ssField.Options[1].ID},
+			{"id": ssField.ID, "value": ssField.Options[2].ID},
 			{"id": numField.ID, "value": 5},
 		},
 	})
@@ -475,6 +483,7 @@ func TestOrgProjectV2Views_CreateAndListItems(t *testing.T) {
 	issue := s.store.CreateIssue(repo.ID, admin.ID, "An issue", "", nil, nil, 0)
 	s.store.ProjectsV2.AddItem(p.ID, "Issue", issue.ID, admin.ID)
 	s.store.ProjectsV2.AddDraftItem(p.ID, "A draft", "", admin.ID)
+	seededFields := len(projectV2SeededFieldNames(t, s, p.ID))
 	field := s.store.ProjectsV2.CreateField(p.ID, "Stage", store.ProjectV2FieldText, nil, nil)
 	base := "/api/v3/orgs/" + org.Login + "/projectsV2/" + strconv.Itoa(p.Number)
 
@@ -489,9 +498,20 @@ func TestOrgProjectV2Views_CreateAndListItems(t *testing.T) {
 	if view["layout"] != "board" || view["filter"] != "is:issue" {
 		t.Fatalf("view = %v", view)
 	}
+	// visible_fields defaults to every field on the project: the seeded
+	// defaults plus the one this test added.
 	visible, _ := view["visible_fields"].([]interface{})
-	if len(visible) != 1 || int(visible[0].(float64)) != field.ID {
-		t.Fatalf("default visible_fields = %v, want [%d]", view["visible_fields"], field.ID)
+	if len(visible) != seededFields+1 {
+		t.Fatalf("default visible_fields = %v", view["visible_fields"])
+	}
+	sawField := false
+	for _, raw := range visible {
+		if int(raw.(float64)) == field.ID {
+			sawField = true
+		}
+	}
+	if !sawField {
+		t.Fatalf("default visible_fields %v omits the created field %d", view["visible_fields"], field.ID)
 	}
 	viewNumber := int(view["number"].(float64))
 

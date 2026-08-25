@@ -81,9 +81,16 @@ func (s *Server) handleListGlobalAdvisories(w http.ResponseWriter, r *http.Reque
 				continue
 			}
 		}
-		// Repository advisories carry no package coordinates, so the
-		// ecosystem and affects filters match nothing.
-		if q.Get("ecosystem") != "" || q.Get("affects") != "" {
+		// The ecosystem and affects filters match against the advisory's
+		// package coordinates. They used to reject every advisory outright,
+		// on the reasoning that repository advisories carry no coordinates —
+		// which stopped being true once vulnerabilities recorded a package,
+		// leaving a documented filter that returned an empty list whatever
+		// the instance actually held.
+		if v := q.Get("ecosystem"); v != "" && !advisoryAffectsEcosystem(a, v) {
+			continue
+		}
+		if v := q.Get("affects"); v != "" && !advisoryAffectsAnyPackage(a, v) {
 			continue
 		}
 		if v := q.Get("published"); v != "" && !advisoryDateInRange(*a.PublishedAt, v) {
@@ -249,7 +256,7 @@ func (s *Server) globalAdvisoryToJSON(a *store.SecurityAdvisory, baseURL string)
 			"package":                  map[string]interface{}{"ecosystem": v.PackageEcosystem, "name": v.PackageName},
 			"vulnerable_version_range": v.VulnerableVersionRange,
 			"first_patched_version":    firstPatched,
-			"vulnerable_functions":     []string{},
+			"vulnerable_functions":     advisoryVulnerableFunctions(v),
 		})
 	}
 	if len(vulnerabilities) == 0 && a.VulnerableVersionRange != "" {
@@ -265,8 +272,8 @@ func (s *Server) globalAdvisoryToJSON(a *store.SecurityAdvisory, baseURL string)
 	}
 
 	var cvssScore interface{}
-	if a.CVSSScore != 0 {
-		cvssScore = a.CVSSScore
+	if score, ok := store.AdvisoryCVSSScore(a); ok {
+		cvssScore = score
 	}
 
 	publishedAt := a.PublishedAt.UTC().Format(time.RFC3339)
@@ -278,7 +285,7 @@ func (s *Server) globalAdvisoryToJSON(a *store.SecurityAdvisory, baseURL string)
 	credits := []map[string]interface{}{}
 	if u := s.store.GetUserByID(a.AuthorID); u != nil {
 		credits = append(credits, map[string]interface{}{
-			"user": store.UserToJSON(u),
+			"user": store.UserToJSON(u, baseURL),
 			"type": "reporter",
 		})
 	}
@@ -315,4 +322,44 @@ func (s *Server) globalAdvisoryToJSON(a *store.SecurityAdvisory, baseURL string)
 		out["source_code_location"] = nil
 	}
 	return out
+}
+
+// advisoryAffectsEcosystem reports whether any of the advisory's
+// vulnerabilities names a package in the given ecosystem, comparing the
+// folded ecosystem keys so a "pypi" query and a "pip" advisory agree.
+func advisoryAffectsEcosystem(a *store.SecurityAdvisory, ecosystem string) bool {
+	want := store.NormalizeAdvisoryEcosystem(ecosystem)
+	for _, v := range a.Vulnerabilities {
+		if store.NormalizeAdvisoryEcosystem(v.PackageEcosystem) == want {
+			return true
+		}
+	}
+	return false
+}
+
+// advisoryAffectsAnyPackage evaluates the `affects` filter: a comma-separated
+// list of package names, each optionally carrying a version
+// ("lodash@4.17.20"). A bare name matches the package however it is
+// versioned; a name with a version matches only when that version falls
+// inside the advisory's vulnerable range, under the ecosystem's own ordering.
+func advisoryAffectsAnyPackage(a *store.SecurityAdvisory, affects string) bool {
+	for _, entry := range strings.Split(affects, ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		name, version, hasVersion := strings.Cut(entry, "@")
+		for _, v := range a.Vulnerabilities {
+			if !strings.EqualFold(v.PackageName, strings.TrimSpace(name)) {
+				continue
+			}
+			if !hasVersion {
+				return true
+			}
+			if store.VersionInVulnerableRange(v.PackageEcosystem, strings.TrimSpace(version), v.VulnerableVersionRange) {
+				return true
+			}
+		}
+	}
+	return false
 }

@@ -122,14 +122,14 @@ func (s *Server) handleGetUserByAccountID(w http.ResponseWriter, r *http.Request
 		writeJSON(w, http.StatusOK, s.privateUserJSON(user))
 		return
 	}
-	writeJSON(w, http.StatusOK, s.fullUserJSON(user))
+	writeJSON(w, http.StatusOK, s.fullUserJSON(user, s.baseURL(r)))
 }
 
 // privateUserJSON renders GitHub's `private-user` schema — the
 // authenticated user's own account view. The private counters and
 // two_factor_authentication are derived live from store state.
 func (s *Server) privateUserJSON(u *store.User) map[string]interface{} {
-	out := s.fullUserJSON(u)
+	out := s.fullUserJSON(u, s.publicOrigin())
 	out["user_view_type"] = "private"
 	privateRepos := s.store.CountPrivateRepos(u.Login)
 	out["owned_private_repos"] = privateRepos
@@ -300,29 +300,6 @@ func (s *Server) handleGetMySSHSigningKey(w http.ResponseWriter, r *http.Request
 
 // interactionLimitExpiry maps GitHub's interaction-expiry enum to the
 // moment the restriction lapses.
-func interactionLimitExpiry(expiry string, from time.Time) (time.Time, bool) {
-	switch expiry {
-	case "", "one_day":
-		return from.Add(24 * time.Hour), true
-	case "three_days":
-		return from.Add(3 * 24 * time.Hour), true
-	case "one_week":
-		return from.Add(7 * 24 * time.Hour), true
-	case "one_month":
-		return from.AddDate(0, 1, 0), true
-	case "six_months":
-		return from.AddDate(0, 6, 0), true
-	}
-	return time.Time{}, false
-}
-
-func isInteractionGroup(limit string) bool {
-	switch limit {
-	case "existing_users", "contributors_only", "collaborators_only":
-		return true
-	}
-	return false
-}
 
 func (s *Server) handleGetUserInteractionLimits(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
@@ -359,11 +336,11 @@ func (s *Server) handleSetUserInteractionLimits(w http.ResponseWriter, r *http.R
 		store.WriteGHValidationError(w, "InteractionLimit", "limit", "missing_field")
 		return
 	}
-	if !isInteractionGroup(req.Limit) {
+	if !store.IsInteractionGroup(req.Limit) {
 		store.WriteGHValidationError(w, "InteractionLimit", "limit", "invalid")
 		return
 	}
-	expiresAt, ok := interactionLimitExpiry(req.Expiry, s.currentTime())
+	expiresAt, ok := store.InteractionLimitExpiry(req.Expiry, s.currentTime())
 	if !ok {
 		store.WriteGHValidationError(w, "InteractionLimit", "expiry", "invalid")
 		return

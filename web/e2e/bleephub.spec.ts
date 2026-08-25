@@ -1058,6 +1058,60 @@ test.describe("GitHub Marketplace", () => {
   });
 });
 
+// ─── GitHub Sponsors ─────────────────────────────────────────────────────────
+
+test.describe("GitHub Sponsors", () => {
+  // The whole vertical through the browser: a maintainer opens a Sponsors
+  // profile, publishes a tier and a goal, a viewer sponsors it, and the
+  // dashboard shows the invoice that was actually billed.
+  test("opens a profile, publishes a tier, takes a sponsorship, and bills it", async ({ page }) => {
+    // The sponsorable is an organization so the viewer can actually fund it:
+    // an account may not sponsor itself.
+    // Named from the worker rather than the clock. The name only has to be
+    // unique across the workers sharing one server in a run; a timestamp makes
+    // it differ between runs too, which turns a failure into something that
+    // cannot be reproduced by re-running the same command, and the repo's
+    // clock-dependency gate forbids calendar-sensitive data in tests for
+    // exactly that reason.
+    const org = `sponsors-e2e-w${test.info().parallelIndex}r${test.info().retry}`;
+    // apiPost runs inside the page, so the app origin has to be loaded first.
+    await page.goto("/ui/sponsors");
+    await apiPost(page, "/api/v3/admin/organizations", { login: org, admin: "admin", profile_name: "Sponsors E2E" });
+
+    await page.goto(`/ui/sponsors/${org}`);
+    await page.getByRole("button", { name: "Open a Sponsors profile" }).click();
+    await expect(page.getByRole("heading", { name: `Sponsor ${org}` })).toBeVisible();
+
+    await page.goto(`/ui/sponsors/${org}/dashboard`);
+    await expect(page.getByRole("heading", { name: "Sponsors dashboard" })).toBeVisible();
+    await page.getByLabel("Amount (USD per month)").fill("7");
+    await page.getByLabel("Description").fill("A coffee a month");
+    await page.getByRole("button", { name: "Add tier" }).click();
+    await expect(page.getByText("$7.00 a month").first()).toBeVisible();
+
+    await page.getByLabel("Monthly goal (USD)").fill("70");
+    await page.getByRole("button", { name: "Set goal" }).click();
+    await expect(page.getByRole("progressbar", { name: "Earn $70 per month" })).toBeVisible();
+
+    // Fund it from the profile page, then confirm the dashboard shows the
+    // sponsorship and the invoice that was actually billed for it.
+    await page.goto(`/ui/sponsors/${org}`);
+    await page.getByRole("button", { name: "Select" }).first().click();
+    await expect(page.getByText(/You are sponsoring/)).toBeVisible();
+
+    await page.goto(`/ui/sponsors/${org}/dashboard`);
+    await expect(page.getByRole("cell", { name: "admin" }).first()).toBeVisible();
+    await expect(page.getByText("$7.00 is awaiting payout.")).toBeVisible();
+    await page.getByRole("button", { name: "Run payout" }).click();
+    await expect(page.getByText("$0.00 is awaiting payout.")).toBeVisible();
+
+    // The directory lists the sponsorable and the viewer's own sponsorship.
+    await page.goto("/ui/sponsors");
+    await expect(page.getByRole("heading", { name: /GitHub Sponsors/ })).toBeVisible();
+    await expect(page.getByRole("link", { name: org }).first()).toBeVisible();
+  });
+});
+
 // ─── Dark theme capture ──────────────────────────────────────────────────────
 
 test.describe("Dark theme", () => {

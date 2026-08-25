@@ -1,6 +1,7 @@
 package bleephub
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -135,7 +136,7 @@ func (s *Server) handleGetPRCreationBypass(w http.ResponseWriter, r *http.Reques
 	users := s.store.PRCreationBypassUsers(repo.FullName)
 	out := make([]map[string]interface{}, 0, len(users))
 	for _, user := range paginateAndLink(w, r, users) {
-		out = append(out, store.UserToJSON(user))
+		out = append(out, store.UserToJSON(user, s.baseURL(r)))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -424,42 +425,19 @@ func (s *Server) resolveIssueSuggestion(w http.ResponseWriter, r *http.Request, 
 	var eventID *int
 	if approve {
 		state = "approved"
-		switch target.Action {
-		case "close_issue":
-			s.store.UpdateIssue(issue.ID, func(item *store.Issue) {
-				item.State = "CLOSED"
-				now := time.Now().UTC()
-				item.ClosedAt = &now
-			})
-		case "add_label":
-			if target.TargetID == nil || s.store.GetLabel(*target.TargetID) == nil {
-				store.WriteGHValidationError(w, "IssueSuggestion", "target_id", "invalid")
+		// The change itself is the store's, so the GraphQL
+		// applyPendingIssueSuggestions mutation performs exactly what this
+		// route performs.
+		event, err := s.store.PerformIssueSuggestion(repo, issue, target, user.ID)
+		if err != nil {
+			var targetErr *store.ErrIssueSuggestionTarget
+			if errors.As(err, &targetErr) {
+				store.WriteGHValidationError(w, "IssueSuggestion", targetErr.Field, targetErr.Reason)
 				return
 			}
-			s.store.AddIssueLabels(repo.FullName, issue.Number, []int{*target.TargetID})
-		case "add_assignee":
-			if target.TargetID == nil || s.store.GetUserByID(*target.TargetID) == nil {
-				store.WriteGHValidationError(w, "IssueSuggestion", "target_id", "invalid")
-				return
-			}
-			s.store.AddIssueAssignees(repo.ID, issue.Number, []int{*target.TargetID}, user.ID)
-		case "set_type":
-			if target.TargetID == nil || s.store.GetAssignableIssueTypeForRepo(repo, *target.TargetID) == nil {
-				store.WriteGHValidationError(w, "IssueSuggestion", "target_id", "invalid")
-				return
-			}
-			s.store.UpdateIssue(issue.ID, func(item *store.Issue) { item.IssueTypeID = *target.TargetID })
-		case "add_field":
-			if target.TargetID == nil {
-				store.WriteGHValidationError(w, "IssueSuggestion", "target_id", "invalid")
-				return
-			}
-			s.store.AddIssueFieldValues(issue.ID, map[int]interface{}{*target.TargetID: target.TargetValue})
-		default:
-			store.WriteGHValidationError(w, "IssueSuggestion", "action", "invalid")
+			writeGHError(w, http.StatusUnprocessableEntity, err.Error())
 			return
 		}
-		event := s.store.RecordIssueEvent(repo.ID, issue.ID, user.ID, "issue_suggestion_approved", map[string]interface{}{})
 		eventID = &event.ID
 	}
 	resolved := s.store.ResolveIssueSuggestion(repo.FullName, issue.ID, id, user.ID, state, eventID)

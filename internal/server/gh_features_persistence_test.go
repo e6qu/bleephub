@@ -11,6 +11,11 @@ import (
 // email through a real persistence close/re-open.
 func TestFeatureStatePersistsAcrossRestart(t *testing.T) {
 	const repoKey = "admin/persist-features"
+	// A wiki's durability is its git repository's durability: the pages and
+	// their history are commits in `<repo>.wiki.git`, so this test needs the
+	// same real git storage a repository's own commits need to survive a
+	// restart, rather than the memory storer an unset git directory selects.
+	t.Setenv("BLEEPHUB_GIT_DIR", t.TempDir())
 	var adminID int
 	var threadID string
 	st2 := reloadedStore(t, func(p *store.Persistence, st *store.Store) {

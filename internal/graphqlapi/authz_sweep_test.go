@@ -75,20 +75,31 @@ func TestMutationAuthzTableMatchesSchema(t *testing.T) {
 	}
 }
 
-// TestMutationAuthzAccountScopedRowsArePinned pins the exact set of
-// account-scoped policy rows (rules with no repository/project subject).
-// The server-side coverage gate exempts exactly these names from its
-// refusal-case requirement, so adding another account-scoped rule must
-// update both this pin and that exemption together.
+// TestMutationAuthzAccountScopedRowsArePinned pins the exact set of policy
+// rows whose subject is neither a repository nor a project.
+//
+// createRepository is the one such row whose entitlement is over a plain
+// account; the server-side coverage gate exempts it by name from its
+// refusal-case requirement. The enterprise rows are the other family, and
+// they are not exempt: the server's gate covers them through the enterprise
+// refusal table, whose refusing caller owns a *different* enterprise. Adding
+// another rule of either shape must update this pin and the gate together.
 func TestMutationAuthzAccountScopedRowsArePinned(t *testing.T) {
 	t.Parallel()
-	got := map[string]bool{}
+	accountScoped := map[string]bool{}
+	enterpriseScoped := 0
 	for name, rule := range graphqlMutationAuthz {
-		if _, accountScoped := rule.(repoCreationRule); accountScoped {
-			got[name] = true
+		switch rule.(type) {
+		case repoCreationRule:
+			accountScoped[name] = true
+		case enterpriseOwnerRule, enterpriseInvitationRule, enterpriseTransferRule, ipAllowListOwnerRule:
+			enterpriseScoped++
 		}
 	}
-	if len(got) != 1 || !got["createRepository"] {
-		t.Fatalf("account-scoped policy rows = %v, want exactly {createRepository}; update the server-side coverage gate's exemption in the same change", got)
+	if len(accountScoped) != 1 || !accountScoped["createRepository"] {
+		t.Fatalf("account-scoped policy rows = %v, want exactly {createRepository}; update the server-side coverage gate's exemption in the same change", accountScoped)
+	}
+	if want := len(enterpriseMutationAuthzRows()); enterpriseScoped != want {
+		t.Fatalf("enterprise-scoped policy rows = %d, want %d; every enterprise mutation authorizes against the enterprise its input names", enterpriseScoped, want)
 	}
 }

@@ -76,7 +76,7 @@ func (s *Server) handleRepositoryDispatch(w http.ResponseWriter, r *http.Request
 		store.WriteGHValidationError(w, "RepositoryDispatch", "event_type", "missing_field")
 		return
 	}
-	payload := repositoryDispatchPayload(repo, user, req.EventType, req.ClientPayload)
+	payload := repositoryDispatchPayload(repo, user, req.EventType, req.ClientPayload, s.baseURL(r))
 	s.emitWebhookEvent(repo.FullName, "repository_dispatch", req.EventType, attachInstallationBlock(payload, nil))
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -84,14 +84,14 @@ func (s *Server) handleRepositoryDispatch(w http.ResponseWriter, r *http.Request
 // repositoryDispatchPayload builds the repository_dispatch webhook event
 // body. GitHub includes a top-level `branch` (the repo's default branch)
 // alongside action / client_payload / repository / sender.
-func repositoryDispatchPayload(repo *store.Repo, user *store.User, eventType string, clientPayload map[string]interface{}) map[string]interface{} {
+func repositoryDispatchPayload(repo *store.Repo, user *store.User, eventType string, clientPayload map[string]interface{}, baseURL string) map[string]interface{} {
 	return map[string]interface{}{
 		"action":         eventType,
 		"event_type":     eventType,
 		"branch":         repo.DefaultBranch,
 		"client_payload": clientPayload,
-		"repository":     repoPayload(repo),
-		"sender":         senderPayload(user),
+		"repository":     repoPayload(repo, baseURL),
+		"sender":         senderPayload(user, baseURL),
 	}
 }
 
@@ -263,7 +263,8 @@ func (s *Server) handleRerunFailedJobs(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusUnprocessableEntity, "rerun submit: "+err.Error())
 		return
 	}
-	w.WriteHeader(http.StatusCreated)
+	// 201 with schema empty-object, not an empty body.
+	writeJSON(w, http.StatusCreated, map[string]interface{}{})
 }
 
 // handleRunTiming returns the per-job billing-style timing summary.
@@ -577,7 +578,7 @@ func (s *Server) handleRunApprovals(w http.ResponseWriter, r *http.Request) {
 		var user map[string]interface{}
 		s.store.Mu.RLock()
 		if u := s.store.Users[a.UserID]; u != nil {
-			user = store.UserToJSON(u)
+			user = store.UserToJSON(u, s.baseURL(r))
 		}
 		s.store.Mu.RUnlock()
 		out = append(out, map[string]interface{}{
@@ -667,7 +668,11 @@ func (s *Server) handleReviewPendingDeployments(w http.ResponseWriter, r *http.R
 	}
 
 	reviewer := ghUserFromContext(r.Context())
-	names := s.actions.ApplyDeploymentReview(r.Context(), wf, body.EnvironmentIDs, body.State, body.Comment, reviewer)
+	names, err := s.reviewPendingDeployments(r.Context(), wf, body.EnvironmentIDs, body.State, body.Comment, reviewer)
+	if err != nil {
+		writeGHError(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
 
 	deployments := []map[string]interface{}{}
 	if body.State == "approved" {
@@ -682,6 +687,26 @@ func (s *Server) handleReviewPendingDeployments(w http.ResponseWriter, r *http.R
 		}
 	}
 	writeJSON(w, http.StatusOK, deployments)
+}
+
+// reviewPendingDeployments is the one deployment-review path both surfaces
+// run: the REST pending_deployments route and the GraphQL
+// approveDeployments/rejectDeployments mutations. It refuses a self-review on
+// an environment configured with prevent_self_review — the reviewer may not
+// be the user who triggered the run — then hands the review to the actions
+// engine, which releases or fails the waiting jobs.
+func (s *Server) reviewPendingDeployments(ctx context.Context, wf *store.Workflow, envIDs []int, state, comment string, reviewer *store.User) ([]string, error) {
+	if reviewer != nil {
+		if sender := s.workflowSender(wf); sender != nil && sender.ID == reviewer.ID {
+			for _, id := range envIDs {
+				env := s.store.Deployments.GetEnvironmentByID(id)
+				if env != nil && env.PreventSelfReview {
+					return nil, fmt.Errorf("environment %q does not allow deployments to be reviewed by the user who triggered them", env.Name)
+				}
+			}
+		}
+	}
+	return s.actions.ApplyDeploymentReview(ctx, wf, envIDs, state, comment, reviewer), nil
 }
 
 // lookupRunFromPath resolves the {owner}/{repo} + {run_id} path params to

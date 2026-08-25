@@ -21,6 +21,8 @@ func (s *Server) registerGHAccountSettingsRoutes() {
 	// email endpoints add/remove/list but never re-point primary).
 	s.route("PUT /ui-data/user/emails/primary", s.handleSetPrimaryEmail)
 	s.registerGHAccountSecurityRoutes()
+	s.registerGHSudoModeRoutes()
+	s.registerGHUserIPAllowListRoutes()
 }
 
 // handleSetPrimaryEmail promotes one of the viewer's verified addresses to
@@ -71,7 +73,10 @@ func (s *Server) handleGetNotificationSettings(w http.ResponseWriter, r *http.Re
 		writeGHError(w, http.StatusUnauthorized, "Requires authentication")
 		return
 	}
-	preferences, ok := s.store.GetNotificationPreferences(viewer.ID)
+	// The enterprise's notification-delivery restriction is applied to the
+	// answer, so the page shows what would actually be delivered rather than
+	// what was once saved.
+	preferences, ok := s.store.EffectiveNotificationPreferences(viewer.ID)
 	if !ok {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
@@ -96,10 +101,20 @@ func (s *Server) handleSetNotificationSettings(w http.ResponseWriter, r *http.Re
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
+	// An enterprise that restricts notification delivery to its verified
+	// domains will not deliver to an address outside them. Saving a document
+	// that asks for email delivery anyway would record a promise the instance
+	// cannot keep, so the request is refused rather than silently ignored.
+	if allowed, restricted := s.store.NotificationEmailDeliveryAllowed(viewer.ID); restricted && !allowed && req.SelectsEmailDelivery() {
+		writeGHError(w, http.StatusForbidden,
+			"Email notification delivery is restricted to the enterprise's verified domains, "+
+				"and this account's address is not in one of them.")
+		return
+	}
 	if !s.store.SetNotificationPreferences(viewer.ID, req, s.currentTime()) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	preferences, _ := s.store.GetNotificationPreferences(viewer.ID)
+	preferences, _ := s.store.EffectiveNotificationPreferences(viewer.ID)
 	writeJSON(w, http.StatusOK, preferences)
 }

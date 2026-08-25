@@ -825,12 +825,9 @@ func TestRepoRenameREST(t *testing.T) {
 		t.Fatalf("unexpected rename response: %v", got)
 	}
 
-	// Old name is gone.
-	oldResp := s.get(t, "/api/v3/repos/admin/rename-me", defaultToken)
-	defer oldResp.Body.Close()
-	if oldResp.StatusCode != 404 {
-		t.Fatalf("expected 404 for old name, got %d", oldResp.StatusCode)
-	}
+	// The old name redirects to the new one rather than 404ing, so a client
+	// holding the pre-rename address still reaches the repository.
+	requireMovedTo(t, s, "/api/v3/repos/admin/rename-me", "admin/renamed-repo")
 
 	// New name resolves and git storage still works.
 	newResp := s.get(t, "/api/v3/repos/admin/renamed-repo", defaultToken)

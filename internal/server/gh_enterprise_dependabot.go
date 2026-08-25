@@ -83,7 +83,7 @@ func (s *Server) handleListEnterpriseDependabotAlerts(w http.ResponseWriter, r *
 		if repo == nil {
 			continue
 		}
-		alertJSON := dependabotAlertToJSON(a, baseURL, repo)
+		alertJSON := dependabotAlertToJSON(a, baseURL, repo, s.store)
 		alertJSON["repository"] = simpleRepoJSON(repo, s.store, baseURL)
 		out = append(out, alertJSON)
 	}

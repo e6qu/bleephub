@@ -892,10 +892,10 @@ func (s *Server) codeQLDatabaseJSON(db *store.CodeQLDatabase, baseURL string, re
 	uploader := s.store.GetUserByID(db.UploaderID)
 	var uploaderJSON map[string]interface{}
 	if uploader != nil {
-		uploaderJSON = store.UserToJSON(uploader)
+		uploaderJSON = store.UserToJSON(uploader, baseURL)
 	} else if db.UploaderID < 0 {
 		if app := s.store.GetApp(-db.UploaderID); app != nil {
-			uploaderJSON = store.UserToJSON(&store.User{ID: -app.ID, Login: app.Slug + "[bot]", Type: "Bot"})
+			uploaderJSON = store.UserToJSON(&store.User{ID: -app.ID, Login: app.Slug + "[bot]", Type: "Bot"}, baseURL)
 		}
 	}
 	return map[string]interface{}{
@@ -1163,7 +1163,7 @@ func (s *Server) variantAnalysisJSON(va *store.CodeQLVariantAnalysis, baseURL st
 	actor := s.store.GetUserByID(va.ActorID)
 	var actorJSON map[string]interface{}
 	if actor != nil {
-		actorJSON = store.UserToJSON(actor)
+		actorJSON = store.UserToJSON(actor, baseURL)
 	}
 
 	scanned := make([]map[string]interface{}, 0, len(va.ScannedRepositories))

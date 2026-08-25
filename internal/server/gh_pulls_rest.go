@@ -125,7 +125,7 @@ func (s *Server) handleCreatePullRequest(w http.ResponseWriter, r *http.Request)
 	// opened event (and the workflow run it triggers) reports the merge ref
 	// (ACT-027).
 	s.refreshPullRequestPotentialMerge(repo, pr)
-	openedPayload := buildPullRequestPayload(s.store, repo, pr, user, "opened")
+	openedPayload := buildPullRequestPayload(s.store, repo, pr, user, "opened", s.baseURL(r))
 	s.emitWebhookEvent(repoKey, "pull_request", "opened", openedPayload)
 	// The code owners of the changed files are requested as reviewers once the
 	// pull request exists, and deliver their own review_requested events after
@@ -338,6 +338,36 @@ func (s *Server) handleGetPullRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The diff and patch media types are GitHub's contract for this endpoint,
+	// and `gh pr diff` asks for the versioned spelling of the first one; a
+	// server that ignored it answered the pull request object instead, which
+	// the client printed verbatim as a "diff".
+	accept := r.Header.Get("Accept")
+	if acceptsGitHubMediaType(accept, "patch") {
+		patch, err := pullRequestFormatPatch(s.store, repo, pr)
+		if err != nil {
+			writeGHError(w, http.StatusInternalServerError, "diff computation failed")
+			return
+		}
+		setGitHubMediaType(w, r, "patch")
+		w.Header().Set("Content-Type", "application/vnd.github.patch; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, patch)
+		return
+	}
+	if acceptsGitHubMediaType(accept, "diff") {
+		diff, err := pullRequestUnifiedDiff(s.store, repo, pr)
+		if err != nil {
+			writeGHError(w, http.StatusInternalServerError, "diff computation failed")
+			return
+		}
+		setGitHubMediaType(w, r, "diff")
+		w.Header().Set("Content-Type", "application/vnd.github.diff; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, diff)
+		return
+	}
+
 	out := pullRequestToJSON(pr, s.store, s.baseURL(r), repo.FullName)
 	s.applyChecksToMergeability(out, repo, pr)
 	writeJSON(w, http.StatusOK, out)
@@ -454,6 +484,21 @@ func (s *Server) handleUpdatePullRequest(w http.ResponseWriter, r *http.Request)
 		s.store.RecordPullRequestEvent(repo.ID, pr.ID, user.ID, "closed", "", 0)
 	case priorState == "CLOSED" && updated.State == "OPEN":
 		s.store.RecordPullRequestEvent(repo.ID, pr.ID, user.ID, "reopened", "", 0)
+	}
+	// A retitle and a retarget are two more github timeline events this
+	// endpoint produces. Both carry a before/after pair, which the event row's
+	// rename members hold.
+	if v, ok := req["title"].(string); ok && v != pr.Title {
+		s.store.RecordIssueOrPREvent(repo.ID, pr.Number, user.ID, "renamed", map[string]interface{}{
+			"rename_from": pr.Title,
+			"rename_to":   v,
+		})
+	}
+	if v, ok := req["base"].(string); ok && v != pr.BaseRefName {
+		s.store.RecordIssueOrPREvent(repo.ID, pr.Number, user.ID, "base_ref_changed", map[string]interface{}{
+			"rename_from": pr.BaseRefName,
+			"rename_to":   v,
+		})
 	}
 
 	// One PATCH is several GitHub events: the edit itself, then the state
@@ -585,7 +630,7 @@ func (s *Server) handleMergePullRequest(w http.ResponseWriter, r *http.Request) 
 
 	merged := s.store.GetPullRequest(pr.ID)
 	repoKey := owner + "/" + repoName
-	mergedPayload := buildPullRequestPayload(s.store, repo, merged, user, "closed")
+	mergedPayload := buildPullRequestPayload(s.store, repo, merged, user, "closed", s.baseURL(r))
 	s.emitWebhookEvent(repoKey, "pull_request", "closed", mergedPayload)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -1292,7 +1337,7 @@ func (s *Server) handleListRequestedReviewers(w http.ResponseWriter, r *http.Req
 	s.store.Mu.RLock()
 	for _, id := range pr.RequestedReviewerIDs {
 		if u, ok := s.store.Users[id]; ok {
-			users = append(users, store.UserToJSON(u))
+			users = append(users, store.UserToJSON(u, s.baseURL(r)))
 		}
 	}
 	org := s.store.OrgsByLogin[ownerFromRepoFullName(repo.FullName)]
@@ -1516,62 +1561,14 @@ func (s *Server) handleUpdateBranch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	headRepo := store.PullRequestHeadRepo(s.store, pr)
-	if headRepo == nil {
-		writeGHError(w, http.StatusUnprocessableEntity, "Pull request head repository is unavailable")
-		return
-	}
-	headOwner, headName, _ := store.SplitRepoFullName(headRepo.FullName)
-	headStor := s.store.GetGitStorage(headOwner, headName)
-	baseOwner, baseName, _ := store.SplitRepoFullName(repo.FullName)
-	baseStor := s.store.GetGitStorage(baseOwner, baseName)
-	if headStor == nil || baseStor == nil {
-		writeGHError(w, http.StatusUnprocessableEntity, "Pull request branch cannot be updated")
-		return
-	}
-	headRef := plumbing.NewBranchReferenceName(pr.HeadRefName)
-	headReference, err := headStor.Reference(headRef)
-	if err != nil {
-		writeGHError(w, http.StatusUnprocessableEntity, "Pull request head branch does not exist")
-		return
-	}
-	before := headReference.Hash()
-	if body.ExpectedHeadSHA != "" && body.ExpectedHeadSHA != before.String() {
-		store.WriteGHValidationError(w, "PullRequest", "expected_head_sha", "invalid")
-		return
-	}
-	baseHash, err := store.ResolveGitRef(baseStor, pr.BaseRefName)
-	if err != nil {
-		writeGHError(w, http.StatusUnprocessableEntity, "Pull request base branch does not exist")
-		return
-	}
-	if headRepo.FullName != repo.FullName {
-		if err := store.CopyGitObjects(baseStor, headStor); err != nil {
-			writeGHError(w, http.StatusUnprocessableEntity, "Pull request branch cannot be updated")
+	if err := s.updatePullRequestBranch(repo, pr, user, body.ExpectedHeadSHA, "MERGE", s.baseURL(r)); err != nil {
+		var mismatch *branchUpdateExpectationError
+		if errors.As(err, &mismatch) {
+			store.WriteGHValidationError(w, "PullRequest", "expected_head_sha", "invalid")
 			return
 		}
-	}
-	email := user.Email
-	if email == "" {
-		email = user.Login + "@users.noreply.bleephub.local"
-	}
-	after, _, err := performMerge(
-		headStor, headRef, baseHash, pr.BaseRefName,
-		fmt.Sprintf("Merge branch '%s' into %s", pr.BaseRefName, pr.HeadRefName),
-		repoSignature(user.Login, email),
-	)
-	if err != nil {
-		writeGHError(w, http.StatusUnprocessableEntity, "Pull request branch cannot be updated due to conflicts")
+		writeGHError(w, http.StatusUnprocessableEntity, err.Error())
 		return
-	}
-	s.store.UpdatePullRequest(pr.ID, func(current *store.PullRequest) {
-		current.BaseSHA = baseHash.String()
-		current.Mergeable = "UNKNOWN"
-	})
-	if after != before {
-		s.afterCommittedRefUpdate(
-			headRepo, user, headRef.String(), before.String(), after.String(), s.baseURL(r),
-		)
 	}
 	writeJSON(w, http.StatusAccepted, map[string]interface{}{
 		"message": "Updating pull request branch.",
@@ -1672,7 +1669,7 @@ func pullRequestSimpleJSON(pr *store.PullRequest, st *store.Store, baseURL, repo
 	// Resolve author
 	var authorJSON map[string]interface{}
 	if u := store.ActorUserLocked(st, pr.AuthorID); u != nil {
-		authorJSON = store.UserToJSON(u)
+		authorJSON = store.UserToJSON(u, baseURL)
 	}
 
 	// Resolve labels
@@ -1687,7 +1684,7 @@ func pullRequestSimpleJSON(pr *store.PullRequest, st *store.Store, baseURL, repo
 	assignees := make([]map[string]interface{}, 0)
 	for _, aid := range pr.AssigneeIDs {
 		if u, ok := st.Users[aid]; ok {
-			assignees = append(assignees, store.UserToJSON(u))
+			assignees = append(assignees, store.UserToJSON(u, baseURL))
 		}
 	}
 
@@ -1695,7 +1692,7 @@ func pullRequestSimpleJSON(pr *store.PullRequest, st *store.Store, baseURL, repo
 	requestedReviewers := make([]map[string]interface{}, 0)
 	for _, rid := range pr.RequestedReviewerIDs {
 		if u, ok := st.Users[rid]; ok {
-			requestedReviewers = append(requestedReviewers, store.UserToJSON(u))
+			requestedReviewers = append(requestedReviewers, store.UserToJSON(u, baseURL))
 		}
 	}
 	requestedTeams := make([]map[string]interface{}, 0)
@@ -1713,7 +1710,7 @@ func pullRequestSimpleJSON(pr *store.PullRequest, st *store.Store, baseURL, repo
 	if pr.AutoMerge != nil {
 		var enabledBy map[string]interface{}
 		if u, ok := st.Users[pr.AutoMerge.EnabledByID]; ok {
-			enabledBy = store.UserToJSON(u)
+			enabledBy = store.UserToJSON(u, baseURL)
 		}
 		autoMerge = map[string]interface{}{
 			"enabled_by":     enabledBy,
@@ -1920,7 +1917,7 @@ func pullRequestToJSON(pr *store.PullRequest, st *store.Store, baseURL, repoFull
 	if pr.MergedByID > 0 {
 		st.Mu.RLock()
 		if u, ok := st.Users[pr.MergedByID]; ok {
-			mergedByJSON = store.UserToJSON(u)
+			mergedByJSON = store.UserToJSON(u, baseURL)
 		}
 		st.Mu.RUnlock()
 	}
@@ -1998,7 +1995,7 @@ func reviewToJSON(review *store.PullRequestReview, st *store.Store, baseURL, rep
 	var authorAssociation string
 	st.Mu.RLock()
 	if u, ok := st.Users[review.AuthorID]; ok {
-		authorJSON = store.UserToJSON(u)
+		authorJSON = store.UserToJSON(u, baseURL)
 	}
 	// Match the review author's real relationship to the repo (OWNER / MEMBER /
 	// COLLABORATOR / CONTRIBUTOR / NONE), the same enum the sibling review-comment
@@ -2068,23 +2065,38 @@ func (s *Server) handleListPullRequestFiles(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, files))
 }
 
-// pullRequestChangedFiles diffs the PR's merge-base against its head tip and
-// returns the per-file JSON GitHub's pulls/{n}/files endpoint emits, including
-// the unified-diff `patch` for text changes.
-func pullRequestChangedFiles(st *store.Store, repo *store.Repo, pr *store.PullRequest, baseURL string) ([]map[string]interface{}, error) {
+// pullRequestDiffChangeSource is the one derivation of what a pull request
+// changed: the storage holding its head branch, the merge base of its base and
+// head, and the tree pair the change set is the difference of. Every rendering
+// of a PR's changes — the files endpoint, the unified diff, the patch series
+// and the review-comment position map — starts here, so they can never
+// disagree about which trees were compared.
+type pullRequestDiffChangeSource struct {
+	stor      gitStorage.Storer
+	mergeBase plumbing.Hash
+	headHash  plumbing.Hash
+	baseTree  *object.Tree // nil for a root-commit head: diffed against the empty tree
+	headTree  *object.Tree
+}
+
+// pullRequestDiffSource resolves that derivation. It returns (nil, nil) when
+// the pull request has nothing resolvable to diff — storage gone, head or base
+// ref deleted — which is an empty change set rather than a failure, and a
+// non-nil error only when git storage that should hold the objects cannot.
+func pullRequestDiffSource(st *store.Store, repo *store.Repo, pr *store.PullRequest) (*pullRequestDiffChangeSource, error) {
 	stor, _ := store.PullRequestGitStorage(st, repo, pr)
 	if stor == nil {
-		return []map[string]interface{}{}, nil
+		return nil, nil
 	}
 	headHash, err := store.ResolveGitRef(stor, pr.HeadRefName)
 	if err != nil {
-		return []map[string]interface{}{}, nil
+		return nil, nil
 	}
 	var baseHash plumbing.Hash
 	if pr.BaseSHA != "" {
 		baseHash = plumbing.NewHash(pr.BaseSHA)
 	} else if baseHash, err = store.ResolveGitRef(stor, pr.BaseRefName); err != nil {
-		return []map[string]interface{}{}, nil
+		return nil, nil
 	}
 	mergeBase, err := store.FindMergeBase(stor, baseHash, headHash)
 	if err != nil {
@@ -2098,13 +2110,77 @@ func pullRequestChangedFiles(st *store.Store, repo *store.Repo, pr *store.PullRe
 	if err != nil {
 		return nil, err
 	}
-	var baseTree *object.Tree
+	source := &pullRequestDiffChangeSource{stor: stor, mergeBase: mergeBase, headHash: headHash, headTree: headTree}
 	if !mergeBase.IsZero() {
 		if baseCommit, err := object.GetCommit(stor, mergeBase); err == nil {
-			baseTree, _ = baseCommit.Tree()
+			source.baseTree, _ = baseCommit.Tree()
 		}
 	}
-	changes, err := object.DiffTree(baseTree, headTree)
+	return source, nil
+}
+
+// pullRequestUnifiedDiff renders a pull request as the unified diff GitHub
+// serves for the .diff media type: one merge-base→head tree diff, the same
+// comparison the files endpoint reports per file, concatenated in tree order.
+func pullRequestUnifiedDiff(st *store.Store, repo *store.Repo, pr *store.PullRequest) (string, error) {
+	source, err := pullRequestDiffSource(st, repo, pr)
+	if err != nil || source == nil {
+		return "", err
+	}
+	changes, err := object.DiffTree(source.baseTree, source.headTree)
+	if err != nil {
+		return "", err
+	}
+	var diff strings.Builder
+	for _, change := range changes {
+		patch, err := change.Patch()
+		if err != nil {
+			return "", err
+		}
+		diff.WriteString(patch.String())
+	}
+	return diff.String(), nil
+}
+
+// pullRequestFormatPatch renders a pull request for the .patch media type: a
+// git-format-patch series, one mbox-headed patch per commit the PR adds,
+// oldest first — not the single tree diff .diff carries.
+func pullRequestFormatPatch(st *store.Store, repo *store.Repo, pr *store.PullRequest) (string, error) {
+	stor, _ := store.PullRequestGitStorage(st, repo, pr)
+	if stor == nil {
+		return "", nil
+	}
+	commits, err := store.PullRequestCommitObjectsFromStorage(stor, pr)
+	if err != nil {
+		return "", err
+	}
+	var series strings.Builder
+	for i, commit := range commits {
+		patch, err := commitFormatPatch(commit)
+		if err != nil {
+			return "", err
+		}
+		if i > 0 {
+			series.WriteString("\n")
+		}
+		series.WriteString(patch)
+	}
+	return series.String(), nil
+}
+
+// pullRequestChangedFiles diffs the PR's merge-base against its head tip and
+// returns the per-file JSON GitHub's pulls/{n}/files endpoint emits, including
+// the unified-diff `patch` for text changes.
+func pullRequestChangedFiles(st *store.Store, repo *store.Repo, pr *store.PullRequest, baseURL string) ([]map[string]interface{}, error) {
+	source, err := pullRequestDiffSource(st, repo, pr)
+	if err != nil {
+		return nil, err
+	}
+	if source == nil {
+		return []map[string]interface{}{}, nil
+	}
+	headHash := source.headHash
+	changes, err := object.DiffTree(source.baseTree, source.headTree)
 	if err != nil {
 		return nil, err
 	}

@@ -100,8 +100,8 @@ func (s *Server) handleCreateCommitComment(w http.ResponseWriter, r *http.Reques
 	s.emitWebhookEvent(repo.FullName, "commit_comment", "created", map[string]interface{}{
 		"action":     "created",
 		"comment":    commitCommentJSON,
-		"repository": repoPayload(repo),
-		"sender":     store.UserToJSON(user),
+		"repository": repoPayload(repo, s.baseURL(r)),
+		"sender":     store.UserToJSON(user, s.baseURL(r)),
 	})
 	writeJSONCreated(w, jsonStringField(commitCommentJSON, "url"), commitCommentJSON)
 }
@@ -202,7 +202,7 @@ func commitCommentToJSON(c *store.CommitComment, st *store.Store, baseURL string
 	var author map[string]interface{}
 	st.Mu.RLock()
 	if u := st.Users[c.AuthorID]; u != nil {
-		author = store.UserToJSON(u)
+		author = store.UserToJSON(u, baseURL)
 	}
 	st.Mu.RUnlock()
 	out := map[string]interface{}{

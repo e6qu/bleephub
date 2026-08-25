@@ -39601,10 +39601,69 @@ export interface components {
             intent?: components["schemas"]["nullable-issue-event-intent"];
         };
         /**
+         * Issue Reference
+         * @description A minimal reference to an issue linked from a timeline event (e.g. sub-issue, parent-issue, or dependency events).
+         */
+        "issue-reference": {
+            /** @description The number of the referenced issue. */
+            number: number;
+            /** @description The title of the referenced issue. */
+            title: string;
+            /** @description The state of the referenced issue. */
+            state: string;
+            /** @description The reason for the referenced issue's state. */
+            state_reason?: string | null;
+            repository: components["schemas"]["simple-repository"];
+            /**
+             * Issue Type
+             * @description The type of the referenced issue.
+             */
+            issue_type: {
+                /** @description The unique identifier of the issue type. */
+                id: number;
+                /** @description The node identifier of the issue type. */
+                node_id: string;
+                /** @description The name of the issue type. */
+                name: string;
+                /** @description The color of the issue type. */
+                color?: string | null;
+            } | null;
+        } | null;
+        /**
+         * Timeline Connected Event
+         * @description Timeline Connected Event
+         */
+        "timeline-connected-event": {
+            id: number;
+            node_id: string;
+            url: string;
+            actor: components["schemas"]["simple-user"];
+            event: string;
+            commit_id: string | null;
+            commit_url: string | null;
+            created_at: string;
+            performed_via_github_app: components["schemas"]["nullable-integration"];
+        };
+        /**
+         * Timeline Disconnected Event
+         * @description Timeline Disconnected Event
+         */
+        "timeline-disconnected-event": {
+            id: number;
+            node_id: string;
+            url: string;
+            actor: components["schemas"]["simple-user"];
+            event: string;
+            commit_id: string | null;
+            commit_url: string | null;
+            created_at: string;
+            performed_via_github_app: components["schemas"]["nullable-integration"];
+        };
+        /**
          * Timeline Event
          * @description Timeline Event
          */
-        "timeline-issue-events": components["schemas"]["labeled-issue-event"] | components["schemas"]["unlabeled-issue-event"] | components["schemas"]["milestoned-issue-event"] | components["schemas"]["demilestoned-issue-event"] | components["schemas"]["renamed-issue-event"] | components["schemas"]["review-requested-issue-event"] | components["schemas"]["review-request-removed-issue-event"] | components["schemas"]["review-dismissed-issue-event"] | components["schemas"]["locked-issue-event"] | components["schemas"]["added-to-project-issue-event"] | components["schemas"]["moved-column-in-project-issue-event"] | components["schemas"]["removed-from-project-issue-event"] | components["schemas"]["converted-note-to-issue-issue-event"] | components["schemas"]["timeline-comment-event"] | components["schemas"]["timeline-cross-referenced-event"] | components["schemas"]["timeline-committed-event"] | components["schemas"]["timeline-reviewed-event"] | components["schemas"]["timeline-line-commented-event"] | components["schemas"]["timeline-commit-commented-event"] | components["schemas"]["timeline-assigned-issue-event"] | components["schemas"]["timeline-unassigned-issue-event"] | components["schemas"]["state-change-issue-event"] | components["schemas"]["issue-type-added-issue-event"] | components["schemas"]["issue-type-removed-issue-event"] | components["schemas"]["issue-type-changed-issue-event"] | components["schemas"]["sub-issue-added-issue-event"] | components["schemas"]["sub-issue-removed-issue-event"] | components["schemas"]["parent-issue-added-issue-event"] | components["schemas"]["parent-issue-removed-issue-event"] | components["schemas"]["blocked-by-added-issue-event"] | components["schemas"]["blocked-by-removed-issue-event"] | components["schemas"]["blocking-added-issue-event"] | components["schemas"]["blocking-removed-issue-event"];
+        "timeline-issue-events": components["schemas"]["labeled-issue-event"] | components["schemas"]["unlabeled-issue-event"] | components["schemas"]["milestoned-issue-event"] | components["schemas"]["demilestoned-issue-event"] | components["schemas"]["renamed-issue-event"] | components["schemas"]["review-requested-issue-event"] | components["schemas"]["review-request-removed-issue-event"] | components["schemas"]["review-dismissed-issue-event"] | components["schemas"]["locked-issue-event"] | components["schemas"]["added-to-project-issue-event"] | components["schemas"]["moved-column-in-project-issue-event"] | components["schemas"]["removed-from-project-issue-event"] | components["schemas"]["converted-note-to-issue-issue-event"] | components["schemas"]["timeline-comment-event"] | components["schemas"]["timeline-cross-referenced-event"] | components["schemas"]["timeline-committed-event"] | components["schemas"]["timeline-reviewed-event"] | components["schemas"]["timeline-line-commented-event"] | components["schemas"]["timeline-commit-commented-event"] | components["schemas"]["timeline-assigned-issue-event"] | components["schemas"]["timeline-unassigned-issue-event"] | components["schemas"]["state-change-issue-event"] | components["schemas"]["issue-type-added-issue-event"] | components["schemas"]["issue-type-removed-issue-event"] | components["schemas"]["issue-type-changed-issue-event"] | components["schemas"]["sub-issue-added-issue-event"] | components["schemas"]["sub-issue-removed-issue-event"] | components["schemas"]["parent-issue-added-issue-event"] | components["schemas"]["parent-issue-removed-issue-event"] | components["schemas"]["blocked-by-added-issue-event"] | components["schemas"]["blocked-by-removed-issue-event"] | components["schemas"]["blocking-added-issue-event"] | components["schemas"]["blocking-removed-issue-event"] | components["schemas"]["timeline-connected-event"] | components["schemas"]["timeline-disconnected-event"];
         /**
          * Deploy Key
          * @description An SSH key granting access to a single repository.
@@ -117459,10 +117518,6 @@ export interface operations {
                 sort?: components["parameters"]["secret-scanning-custom-pattern-sort"];
                 /** @description The direction to sort the results by. */
                 direction?: components["parameters"]["direction"];
-                /** @description The page number of the results to fetch. For more information, see "[Using pagination in the REST API](https://docs.github.com/rest/using-the-rest-api/using-pagination-in-the-rest-api)." */
-                page?: components["parameters"]["page"];
-                /** @description The number of results per page (max 100). For more information, see "[Using pagination in the REST API](https://docs.github.com/rest/using-the-rest-api/using-pagination-in-the-rest-api)." */
-                per_page?: components["parameters"]["per-page"];
                 /** @description A cursor, as given in the [Link header](https://docs.github.com/rest/guides/using-pagination-in-the-rest-api#using-link-headers). If specified, the query only searches for results before this cursor. For more information, see "[Using pagination in the REST API](https://docs.github.com/rest/using-the-rest-api/using-pagination-in-the-rest-api)." */
                 before?: components["parameters"]["pagination-before"];
                 /** @description A cursor, as given in the [Link header](https://docs.github.com/rest/guides/using-pagination-in-the-rest-api#using-link-headers). If specified, the query only searches for results after this cursor. For more information, see "[Using pagination in the REST API](https://docs.github.com/rest/using-the-rest-api/using-pagination-in-the-rest-api)." */
@@ -136249,10 +136304,6 @@ export interface operations {
                 sort?: components["parameters"]["secret-scanning-custom-pattern-sort"];
                 /** @description The direction to sort the results by. */
                 direction?: components["parameters"]["direction"];
-                /** @description The page number of the results to fetch. For more information, see "[Using pagination in the REST API](https://docs.github.com/rest/using-the-rest-api/using-pagination-in-the-rest-api)." */
-                page?: components["parameters"]["page"];
-                /** @description The number of results per page (max 100). For more information, see "[Using pagination in the REST API](https://docs.github.com/rest/using-the-rest-api/using-pagination-in-the-rest-api)." */
-                per_page?: components["parameters"]["per-page"];
                 /** @description A cursor, as given in the [Link header](https://docs.github.com/rest/guides/using-pagination-in-the-rest-api#using-link-headers). If specified, the query only searches for results before this cursor. For more information, see "[Using pagination in the REST API](https://docs.github.com/rest/using-the-rest-api/using-pagination-in-the-rest-api)." */
                 before?: components["parameters"]["pagination-before"];
                 /** @description A cursor, as given in the [Link header](https://docs.github.com/rest/guides/using-pagination-in-the-rest-api#using-link-headers). If specified, the query only searches for results after this cursor. For more information, see "[Using pagination in the REST API](https://docs.github.com/rest/using-the-rest-api/using-pagination-in-the-rest-api)." */

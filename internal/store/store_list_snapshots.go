@@ -65,6 +65,10 @@ func cloneCustomProperty(x *CustomProperty) *CustomProperty {
 		v := *x.Description
 		c.Description = &v
 	}
+	if x.Regex != nil {
+		v := *x.Regex
+		c.Regex = &v
+	}
 	c.AllowedValues = append([]string(nil), x.AllowedValues...)
 	return &c
 }

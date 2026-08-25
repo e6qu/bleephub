@@ -434,6 +434,22 @@ func (st *Store) ListEnterpriseTeams() []*EnterpriseTeam {
 	return snapshotEnterpriseTeams(out)
 }
 
+// ListEnterpriseCustomProperties returns detached snapshots of the
+// enterprise-level repository custom property definitions, ordered by name.
+// GetEnterpriseCustomProperty/UpsertEnterpriseCustomProperty write the same
+// map; this is the enumeration the GraphQL Enterprise.repositoryCustomProperties
+// connection reads.
+func (st *Store) ListEnterpriseCustomProperties() []*CustomProperty {
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
+	out := make([]*CustomProperty, 0, len(st.EnterpriseSettings.RepositoryCustomProperties))
+	for _, p := range st.EnterpriseSettings.RepositoryCustomProperties {
+		out = append(out, p)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].PropertyName < out[j].PropertyName })
+	return snapshotCustomProperties(out)
+}
+
 // UpdateEnterpriseTeam applies the non-nil fields. Renaming re-slugs the team
 // exactly as GitHub does. Returns false when the new slug collides with a
 // different existing team.

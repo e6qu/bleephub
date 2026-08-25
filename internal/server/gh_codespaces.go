@@ -108,7 +108,7 @@ func (s *Server) handleGetCodespaceDefaults(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"billable_owner": store.UserToJSON(ghUserFromContext(r.Context())),
+		"billable_owner": store.UserToJSON(ghUserFromContext(r.Context()), s.baseURL(r)),
 		"defaults": map[string]interface{}{
 			"location":          "EastUs",
 			"devcontainer_path": nil,
@@ -742,8 +742,9 @@ func (s *Server) handlePutUserCodespaceSecret(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
+	created := s.store.GetCodespaceSecret(store.CodespaceSecretScopeKey("user", user.Login), name) == nil
 	s.store.CreateCodespaceSecret(store.CodespaceSecretScopeKey("user", user.Login), name, value, "", nil)
-	w.WriteHeader(http.StatusNoContent)
+	writeSecretUpsert(w, created)
 }
 
 func (s *Server) handleDeleteUserCodespaceSecret(w http.ResponseWriter, r *http.Request) {
@@ -796,8 +797,9 @@ func (s *Server) handlePutRepoCodespaceSecret(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
+	created := s.store.GetCodespaceSecret(store.CodespaceSecretScopeKey("repo", repo.FullName), name) == nil
 	s.store.CreateCodespaceSecret(store.CodespaceSecretScopeKey("repo", repo.FullName), name, value, "", nil)
-	w.WriteHeader(http.StatusNoContent)
+	writeSecretUpsert(w, created)
 }
 
 func (s *Server) handleDeleteRepoCodespaceSecret(w http.ResponseWriter, r *http.Request) {
@@ -857,8 +859,9 @@ func (s *Server) handlePutOrgCodespaceSecret(w http.ResponseWriter, r *http.Requ
 			req.Visibility = "all"
 		}
 	}
+	created := s.store.GetCodespaceSecret(store.CodespaceSecretScopeKey("org", org), name) == nil
 	s.store.CreateCodespaceSecret(store.CodespaceSecretScopeKey("org", org), name, plain, req.Visibility, req.SelectedRepositoryIDs)
-	w.WriteHeader(http.StatusNoContent)
+	writeSecretUpsert(w, created)
 }
 
 func (s *Server) handleDeleteOrgCodespaceSecret(w http.ResponseWriter, r *http.Request) {
@@ -1042,7 +1045,7 @@ func (s *Server) codespaceToJSON(live *store.Codespace, baseURL string) map[stri
 	owner := s.store.LookupUserByLogin(cs.OwnerLogin)
 	ownerJSON := map[string]interface{}(nil)
 	if owner != nil {
-		ownerJSON = store.UserToJSON(owner)
+		ownerJSON = store.UserToJSON(owner, baseURL)
 	}
 	var repoJSON map[string]interface{}
 	if cs.RepoKey != "" {

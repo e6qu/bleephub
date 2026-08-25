@@ -110,6 +110,30 @@ func (st *Store) PutLoginSession(id string, session *LoginSession) error {
 	return nil
 }
 
+// MarkLoginSessionSudo records that the session behind the given cookie value
+// has just satisfied a proof-of-presence challenge. It reports whether such a
+// session existed; a session that expired between the challenge and the write
+// is not resurrected.
+//
+// The elevation is written through the same PutLoginSession the sign-in path
+// uses, so it lands in the durable row and survives a replica switch — a sudo
+// grant that evaporated on the next request would make the challenge a loop.
+func (st *Store) MarkLoginSessionSudo(id string, now time.Time, withSecondFactor bool) (bool, error) {
+	session, err := st.GetLoginSession(id)
+	if err != nil {
+		return false, err
+	}
+	if session == nil {
+		return false, nil
+	}
+	session.SudoAt = now.UTC()
+	session.SudoMFA = withSecondFactor
+	if err := st.PutLoginSession(id, session); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // ReapExpiredLoginSessions bounds both the in-memory session index and its
 // durable bucket. It reaps two kinds of dead session: those past their expiry,
 // and those orphaned by user deletion — a deleted user is dropped from the

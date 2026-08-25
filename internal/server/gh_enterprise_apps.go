@@ -104,8 +104,8 @@ func sortInstallations(installations []*store.Installation) {
 	sort.Slice(installations, func(i, j int) bool { return installations[i].ID < installations[j].ID })
 }
 
-func enterpriseInstallationJSON(installation *store.Installation, enterprise, org string) map[string]interface{} {
-	value := installationToJSON(installation)
+func enterpriseInstallationJSON(installation *store.Installation, enterprise, org, baseURL string) map[string]interface{} {
+	value := installationToJSON(installation, baseURL)
 	value["repositories_url"] = "/api/v3/enterprises/" + enterprise + "/apps/organizations/" + org +
 		"/installations/" + strconv.Itoa(installation.ID) + "/repositories"
 	return value
@@ -119,7 +119,7 @@ func (s *Server) handleListEnterpriseOrganizationInstallations(w http.ResponseWr
 	installations := paginateAndLink(w, r, s.organizationInstallations(org.Login))
 	out := make([]map[string]interface{}, len(installations))
 	for i, installation := range installations {
-		out[i] = map[string]interface{}{"value": enterpriseInstallationJSON(installation, s.enterpriseSlug(), org.Login)}
+		out[i] = map[string]interface{}{"value": enterpriseInstallationJSON(installation, s.enterpriseSlug(), org.Login, s.baseURL(r))}
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -180,7 +180,7 @@ func (s *Server) handleCreateEnterpriseOrganizationInstallation(w http.ResponseW
 			s.store.UnsuspendInstallation(existing.ID)
 			s.store.SetInstallationRepositorySelection(existing.ID, req.RepositorySelection, repoIDs)
 			writeJSON(w, http.StatusOK, enterpriseInstallationJSON(
-				s.store.GetInstallation(existing.ID), s.enterpriseSlug(), org.Login))
+				s.store.GetInstallation(existing.ID), s.enterpriseSlug(), org.Login, s.baseURL(r)))
 			return
 		}
 	}
@@ -188,7 +188,7 @@ func (s *Server) handleCreateEnterpriseOrganizationInstallation(w http.ResponseW
 		app.ID, "Organization", org.ID, org.Login, app.Permissions, app.Events)
 	s.store.SetInstallationRepositorySelection(installation.ID, req.RepositorySelection, repoIDs)
 	writeJSON(w, http.StatusCreated, enterpriseInstallationJSON(
-		s.store.GetInstallation(installation.ID), s.enterpriseSlug(), org.Login))
+		s.store.GetInstallation(installation.ID), s.enterpriseSlug(), org.Login, s.baseURL(r)))
 }
 
 func (s *Server) enterpriseOrganizationInstallation(w http.ResponseWriter, r *http.Request, org *store.Org) *store.Installation {
@@ -266,7 +266,7 @@ func (s *Server) handleSetEnterpriseInstallationRepositories(w http.ResponseWrit
 	}
 	s.store.SetInstallationRepositorySelection(installation.ID, req.RepositorySelection, repoIDs)
 	writeJSON(w, http.StatusOK, enterpriseInstallationJSON(
-		s.store.GetInstallation(installation.ID), s.enterpriseSlug(), org.Login))
+		s.store.GetInstallation(installation.ID), s.enterpriseSlug(), org.Login, s.baseURL(r)))
 }
 
 func (s *Server) mutateEnterpriseInstallationRepositories(w http.ResponseWriter, r *http.Request, add bool) {

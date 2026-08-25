@@ -49,6 +49,14 @@ func (s *Server) handleCreateFork(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Forking a private repository copies its code into a new namespace, so
+	// an enterprise governs both whether it may happen at all and where the
+	// fork may land.
+	if refusal := s.enterpriseForbidsPrivateForking(r.Context(), sourceRepo, nil); refusal != "" {
+		writeGHError(w, http.StatusForbidden, refusal)
+		return
+	}
+
 	fork := s.store.ForkRepo(user, sourceRepo, forkName)
 	if fork == nil {
 		writeGHError(w, http.StatusUnprocessableEntity, "Fork failed.")
@@ -63,8 +71,8 @@ func (s *Server) handleCreateFork(w http.ResponseWriter, r *http.Request) {
 	// carrying the new fork as `forkee` (ACT-026).
 	s.emitWebhookEvent(sourceRepo.FullName, "fork", "", map[string]interface{}{
 		"forkee":     fullRepoJSONForViewer(fork, s.store, s.baseURL(r), user),
-		"repository": repoPayload(sourceRepo),
-		"sender":     store.UserToJSON(user),
+		"repository": repoPayload(sourceRepo, s.baseURL(r)),
+		"sender":     store.UserToJSON(user, s.baseURL(r)),
 	})
 	writeJSON(w, http.StatusAccepted, fullRepoJSONForViewer(fork, s.store, s.baseURL(r), user))
 }

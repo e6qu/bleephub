@@ -13,7 +13,7 @@ func (s *Server) actionsRepoPayload(repoKey string) (map[string]interface{}, *st
 	if repo == nil {
 		return nil, nil
 	}
-	return repoPayload(repo), repo
+	return repoPayload(repo, s.publicOrigin()), repo
 }
 
 // WorkflowRunEvent fires the workflow_run webhook event.
@@ -35,7 +35,7 @@ func (s *Server) WorkflowRunEvent(wf *store.Workflow, action string) {
 		"action":       action,
 		"workflow_run": runJSON,
 		"repository":   repoJSON,
-		"sender":       senderPayload(s.workflowSender(wf)),
+		"sender":       senderPayload(s.workflowSender(wf), s.publicOrigin()),
 	}
 	if wfFileJSON != nil {
 		payload["workflow"] = wfFileJSON
@@ -55,7 +55,7 @@ func (s *Server) WorkflowJobEvent(wf *store.Workflow, job *store.WorkflowJob, ac
 		"action":       action,
 		"workflow_job": jobJSON,
 		"repository":   repoJSON,
-		"sender":       senderPayload(s.workflowSender(wf)),
+		"sender":       senderPayload(s.workflowSender(wf), s.publicOrigin()),
 	}
 	s.emitWebhookEvent(wf.RepoFullName, "workflow_job", action, payload)
 }
@@ -74,7 +74,7 @@ func (s *Server) CheckRunEvent(repoKey string, checkRunID int64, action string) 
 		"action":     action,
 		"check_run":  s.checkRunToJSON(cr, s.externalURL),
 		"repository": repoJSON,
-		"sender":     ghostSenderPayload(),
+		"sender":     ghostSenderPayload(s.publicOrigin()),
 	}
 	s.emitWebhookEvent(repoKey, "check_run", action, payload)
 }
@@ -93,7 +93,7 @@ func (s *Server) CheckSuiteEvent(repoKey string, suiteID int64, action string) {
 		"action":      action,
 		"check_suite": s.checkSuiteToJSON(suite, s.externalURL),
 		"repository":  repoJSON,
-		"sender":      ghostSenderPayload(),
+		"sender":      ghostSenderPayload(s.publicOrigin()),
 	}
 	s.emitWebhookEvent(repoKey, "check_suite", action, payload)
 }

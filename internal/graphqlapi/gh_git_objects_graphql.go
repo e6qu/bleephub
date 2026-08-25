@@ -93,6 +93,10 @@ func gitCommitSource(commit *object.Commit, st *store.Store, repoFullName string
 
 // gitActorSource renders a git signature as GitActor, resolving the account
 // that owns the signature's email when one exists.
+//
+// GitActor.user is null for a commit signed by an address no account owns —
+// optionalRendered keeps that an untyped nil rather than a User shell whose
+// non-null id would abort the query (see gql_optional_source.go).
 func gitActorSource(st *store.Store, signature object.Signature) map[string]interface{} {
 	actor := map[string]interface{}{
 		"name":  signature.Name,
@@ -100,9 +104,7 @@ func gitActorSource(st *store.Store, signature object.Signature) map[string]inte
 		"date":  signature.When.UTC().Format(time.RFC3339),
 	}
 	if st != nil {
-		if user := st.ResolveUserBySignature(signature.Name, signature.Email); user != nil {
-			actor["user"] = userToGraphQL(user)
-		}
+		actor["user"] = optionalRendered(st.ResolveUserBySignature(signature.Name, signature.Email), userToGraphQL)
 	}
 	return actor
 }
@@ -251,6 +253,17 @@ func (s *Resolver) gqlLanguageType() *graphql.Object {
 		Name: "Language",
 		Fields: graphql.Fields{
 			"name": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"id": &graphql.Field{
+				Type: graphql.NewNonNull(graphql.ID),
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					src, _ := p.Source.(map[string]interface{})
+					name, _ := src["name"].(string)
+					return languageNodeID(name), nil
+				},
+			},
+			// bleephub does not carry Linguist's per-language colors, so color is
+			// a truthful null rather than an invented hex value.
+			"color": &graphql.Field{Type: graphql.String, Resolve: nilResolver},
 		},
 	})
 	return s.graphqlTypes.language
@@ -1156,7 +1169,7 @@ func (s *Resolver) gqlTagType() *graphql.Object {
 			if err != nil {
 				return nil, err
 			}
-			return gitObjectSource(stor, s.store, repo.FullName, plumbing.NewHash(targetOID)), nil
+			return optionalObject(gitObjectSource(stor, s.store, repo.FullName, plumbing.NewHash(targetOID))), nil
 		},
 	})
 	return tagType
@@ -1214,7 +1227,7 @@ func (s *Resolver) addGitRefFields(refType *graphql.Object) {
 				}
 				oid = hash.String()
 			}
-			return gitObjectSource(stor, s.store, repo.FullName, plumbing.NewHash(oid)), nil
+			return optionalObject(gitObjectSource(stor, s.store, repo.FullName, plumbing.NewHash(oid))), nil
 		},
 	})
 }

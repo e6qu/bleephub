@@ -148,7 +148,10 @@ func paginateGQLItems(items []gqlConnItem, args map[string]interface{}) map[stri
 			start = end - last
 		}
 	}
-	if first, ok := intArg(args, "first"); ok && first > 0 {
+	// A supplied first bounds the window, including first: 0, which asks for
+	// the connection's metadata with no nodes. Folding zero into "unspecified"
+	// answered such a request with the default page instead of an empty one.
+	if first, ok := intArg(args, "first"); ok && first >= 0 {
 		if first > 100 {
 			first = 100
 		}
@@ -156,7 +159,7 @@ func paginateGQLItems(items []gqlConnItem, args map[string]interface{}) map[stri
 			end = start + first
 		}
 	}
-	if first, ok := intArg(args, "first"); !ok || first <= 0 {
+	if _, ok := intArg(args, "first"); !ok {
 		if last, ok := intArg(args, "last"); !ok || last <= 0 {
 			if end-start > 30 {
 				end = start + 30

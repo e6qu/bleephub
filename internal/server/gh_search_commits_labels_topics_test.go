@@ -132,7 +132,7 @@ func TestSearchLabels(t *testing.T) {
 	})
 	decodeJSONWithStatus(t, resp, 201)
 	resp = s.post(t, repoKey.path()+"/labels", defaultToken, map[string]interface{}{
-		"name": "enhancement", "color": "a2eeef",
+		"name": "improvement", "color": "a2eeef",
 	})
 	decodeJSONWithStatus(t, resp, 201)
 

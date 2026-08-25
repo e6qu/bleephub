@@ -70,6 +70,10 @@ func newIsolatedServer(t *testing.T) *isolatedServer {
 	if apiShapeValidator != nil {
 		s.responseObserver = apiShapeValidator.Observe
 	}
+	// Typed-nil source ratchet (graphql_source_audit_test.go): isolated
+	// servers carry most of the GraphQL traffic converted off the shared
+	// harness, so they must feed the audit too.
+	instrumentGraphQLSourceAudit(s.graphql.Schema())
 	ts := httptest.NewServer(s.requestHandler())
 	t.Cleanup(ts.Close)
 	return &isolatedServer{Server: s, baseURL: ts.URL}

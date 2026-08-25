@@ -267,16 +267,16 @@ func (s *Server) projectV2APIURL(r *http.Request, owner *store.ProjectV2Owner, n
 
 // projectV2CreatorJSON renders the creating user; a creator that no
 // longer resolves renders as GitHub's "ghost" placeholder account.
-func (s *Server) projectV2CreatorJSON(creatorID int) map[string]interface{} {
-	return store.UserToJSON(s.store.GetUserByID(creatorID))
+func (s *Server) projectV2CreatorJSON(creatorID int, baseURL string) map[string]interface{} {
+	return store.UserToJSON(s.store.GetUserByID(creatorID), baseURL)
 }
 
-func (s *Server) projectV2JSON(p *store.ProjectV2, owner *store.ProjectV2Owner) map[string]interface{} {
+func (s *Server) projectV2JSON(p *store.ProjectV2, owner *store.ProjectV2Owner, baseURL string) map[string]interface{} {
 	var ownerJSON map[string]interface{}
 	if owner.Org != nil {
-		ownerJSON = store.OrgAsSimpleUserJSON(owner.Org)
+		ownerJSON = store.OrgAsSimpleUserJSON(owner.Org, baseURL)
 	} else if owner.User != nil {
-		ownerJSON = store.UserToJSON(owner.User)
+		ownerJSON = store.UserToJSON(owner.User, baseURL)
 	}
 	state := "open"
 	var closedAt interface{}
@@ -290,7 +290,7 @@ func (s *Server) projectV2JSON(p *store.ProjectV2, owner *store.ProjectV2Owner) 
 		"id":                p.ID,
 		"node_id":           p.NodeID,
 		"owner":             ownerJSON,
-		"creator":           s.projectV2CreatorJSON(p.CreatorID),
+		"creator":           s.projectV2CreatorJSON(p.CreatorID, baseURL),
 		"title":             p.Title,
 		"description":       nil,
 		"public":            p.Public,
@@ -373,7 +373,7 @@ func (s *Server) projectV2ItemSimpleJSON(it *store.ProjectV2Item, projectURL str
 		"id":           it.ID,
 		"node_id":      it.NodeID,
 		"content_type": it.ContentType,
-		"creator":      s.projectV2CreatorJSON(it.CreatorID),
+		"creator":      s.projectV2CreatorJSON(it.CreatorID, s.publicOrigin()),
 		"created_at":   it.CreatedAt.UTC().Format(time.RFC3339),
 		"updated_at":   it.UpdatedAt.UTC().Format(time.RFC3339),
 		"archived_at":  archivedAt,
@@ -415,7 +415,7 @@ func (s *Server) projectV2ItemContentJSON(r *http.Request, it *store.ProjectV2It
 	case "DraftIssue":
 		var user interface{}
 		if u := s.store.GetUserByID(it.CreatorID); u != nil {
-			user = store.UserToJSON(u)
+			user = store.UserToJSON(u, s.baseURL(r))
 		}
 		return map[string]interface{}{
 			"id":         it.ID,
@@ -511,7 +511,7 @@ func (s *Server) projectV2ViewJSON(r *http.Request, v *store.ProjectV2View, owne
 		"node_id":           v.NodeID,
 		"project_url":       s.projectV2APIURL(r, owner, project.Number),
 		"html_url":          s.baseURL(r) + ownerPath + "/projects/" + strconv.Itoa(project.Number) + "/views/" + strconv.Itoa(v.Number),
-		"creator":           s.projectV2CreatorJSON(v.CreatorID),
+		"creator":           s.projectV2CreatorJSON(v.CreatorID, s.baseURL(r)),
 		"created_at":        v.CreatedAt.UTC().Format(time.RFC3339),
 		"updated_at":        v.UpdatedAt.UTC().Format(time.RFC3339),
 		"filter":            filter,
@@ -694,7 +694,7 @@ func (s *Server) serveProjectsV2List(w http.ResponseWriter, r *http.Request, own
 	setCursorLinkHeader(w, r, pi)
 	out := make([]map[string]interface{}, 0, len(page))
 	for _, p := range page {
-		out = append(out, s.projectV2JSON(p, owner))
+		out = append(out, s.projectV2JSON(p, owner, s.baseURL(r)))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -704,7 +704,7 @@ func (s *Server) serveProjectV2Get(w http.ResponseWriter, r *http.Request, owner
 	if !ok {
 		return
 	}
-	writeJSON(w, http.StatusOK, s.projectV2JSON(p, owner))
+	writeJSON(w, http.StatusOK, s.projectV2JSON(p, owner, s.baseURL(r)))
 }
 
 func (s *Server) serveProjectV2CreateDraft(w http.ResponseWriter, r *http.Request, owner *store.ProjectV2Owner) {
@@ -728,6 +728,11 @@ func (s *Server) serveProjectV2CreateDraft(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	item := s.store.ProjectsV2.AddDraftItem(p.ID, *req.Title, req.Body, user.ID)
+	if item == nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	s.emitProjectV2ItemEvent("created", p, item, user)
 	writeJSON(w, http.StatusCreated, s.projectV2ItemSimpleJSON(item, s.projectV2APIURL(r, owner, p.Number)))
 }
 
@@ -859,6 +864,11 @@ func (s *Server) serveProjectV2CreateField(w http.ResponseWriter, r *http.Reques
 	}
 
 	field := s.store.ProjectsV2.CreateField(p.ID, *req.Name, store.ProjectV2FieldDataType(strings.ToUpper(*req.DataType)), options, iteration)
+	if field == nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	s.emitProjectV2ProjectEdited(p.ID, ghUserFromContext(r.Context()))
 	writeJSON(w, http.StatusCreated, projectV2FieldJSON(field, s.projectV2APIURL(r, owner, p.Number)))
 }
 
@@ -983,7 +993,43 @@ func (s *Server) serveProjectV2AddItem(w http.ResponseWriter, r *http.Request, o
 	}
 
 	item := s.store.ProjectsV2.AddItem(p.ID, req.Type, contentID, user.ID)
+	if item == nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	s.emitProjectV2ItemEvent("created", p, item, user)
 	writeJSON(w, http.StatusCreated, s.projectV2ItemSimpleJSON(item, s.projectV2APIURL(r, owner, p.Number)))
+}
+
+// emitProjectV2ItemEvent delivers one projects_v2_item event. The REST write
+// paths and the GraphQL mutations produce the same events through the same
+// renderer, so a client watching hooks cannot tell which surface made the
+// change — which is the point.
+func (s *Server) emitProjectV2ItemEvent(action string, project *store.ProjectV2, item *store.ProjectV2Item, sender *store.User) {
+	s.emitProjectV2Event(store.ProjectV2Event{
+		Event:   store.ProjectV2EventItem,
+		Action:  action,
+		Project: project,
+		Item:    item,
+		Sender:  sender,
+	})
+}
+
+// emitProjectV2ProjectEdited reports a change to a project's shape — a field
+// or a view — as an `edited` project event, which is how GitHub surfaces one:
+// there is no per-field or per-view webhook.
+func (s *Server) emitProjectV2ProjectEdited(projectID int, sender *store.User) {
+	s.store.ProjectsV2.TouchProject(projectID)
+	project := s.store.ProjectsV2.GetProject(projectID)
+	if project == nil {
+		return
+	}
+	s.emitProjectV2Event(store.ProjectV2Event{
+		Event:   store.ProjectV2EventProject,
+		Action:  "edited",
+		Project: project,
+		Sender:  sender,
+	})
 }
 
 // projectV2ItemFromRequest resolves {item_id} within the project,
@@ -1053,7 +1099,15 @@ func (s *Server) serveProjectV2UpdateItem(w http.ResponseWriter, r *http.Request
 			return
 		}
 	}
-	writeJSON(w, http.StatusOK, s.projectV2ItemWithContentJSON(r, it, s.projectV2APIURL(r, owner, p.Number), nil))
+	// `it` is the snapshot taken before the writes above; re-read so the
+	// response carries the values this request just set.
+	updated := s.store.ProjectsV2.GetItem(it.ID)
+	if updated == nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	s.emitProjectV2ItemEvent("edited", p, updated, ghUserFromContext(r.Context()))
+	writeJSON(w, http.StatusOK, s.projectV2ItemWithContentJSON(r, updated, s.projectV2APIURL(r, owner, p.Number), nil))
 }
 
 func (s *Server) serveProjectV2DeleteItem(w http.ResponseWriter, r *http.Request, owner *store.ProjectV2Owner) {
@@ -1069,6 +1123,7 @@ func (s *Server) serveProjectV2DeleteItem(w http.ResponseWriter, r *http.Request
 		return
 	}
 	s.store.ProjectsV2.DeleteItem(it.ID)
+	s.emitProjectV2ItemEvent("deleted", p, it, ghUserFromContext(r.Context()))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -1126,6 +1181,11 @@ func (s *Server) serveProjectV2CreateView(w http.ResponseWriter, r *http.Request
 	}
 
 	view := s.store.ProjectsV2.CreateView(p.ID, *req.Name, *req.Layout, req.Filter, visible, user.ID)
+	if view == nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	s.emitProjectV2ProjectEdited(p.ID, user)
 	writeJSON(w, http.StatusCreated, s.projectV2ViewJSON(r, view, owner, p))
 }
 

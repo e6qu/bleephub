@@ -29,11 +29,11 @@ func RepoToJSONForViewer(repo *Repo, st *Store, baseURL string, viewer *User) ma
 		parts := strings.SplitN(repo.FullName, "/", 2)
 		if len(parts) == 2 {
 			if org := st.GetOrg(parts[0]); org != nil {
-				ownerJSON = OrgAsSimpleUserJSON(org)
+				ownerJSON = OrgAsSimpleUserJSON(org, baseURL)
 			}
 		}
 	} else if repo.Owner != nil {
-		ownerJSON = UserToJSON(repo.Owner)
+		ownerJSON = UserToJSON(repo.Owner, baseURL)
 	}
 
 	topics := repo.Topics

@@ -283,6 +283,37 @@ func (st *Store) UpdateUserProfile(userID int, fn func(*User)) *User {
 	return u
 }
 
+// IsInteractionGroup reports whether name is one of the three groups GitHub
+// accepts as an interaction limit. The REST routes and the three GraphQL
+// set-limit mutations both ask it, so neither can accept a limit the other
+// refuses.
+func IsInteractionGroup(limit string) bool {
+	switch limit {
+	case "existing_users", "contributors_only", "collaborators_only":
+		return true
+	}
+	return false
+}
+
+// InteractionLimitExpiry translates GitHub's expiry vocabulary into the
+// instant a limit set at from lapses. An empty expiry is GitHub's default of
+// one day.
+func InteractionLimitExpiry(expiry string, from time.Time) (time.Time, bool) {
+	switch expiry {
+	case "", "one_day":
+		return from.Add(24 * time.Hour), true
+	case "three_days":
+		return from.Add(3 * 24 * time.Hour), true
+	case "one_week":
+		return from.Add(7 * 24 * time.Hour), true
+	case "one_month":
+		return from.AddDate(0, 1, 0), true
+	case "six_months":
+		return from.AddDate(0, 6, 0), true
+	}
+	return time.Time{}, false
+}
+
 // SetUserInteractionLimit records (or clears, with limit == "") the
 // account-level interaction limit.
 func (st *Store) SetUserInteractionLimit(userID int, limit string, expiresAt *time.Time) bool {

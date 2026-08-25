@@ -148,6 +148,17 @@ func (s *Server) handleCreateRepoDeployKey(w http.ResponseWriter, r *http.Reques
 		store.WriteGHValidationError(w, "DeployKey", "key", "missing_field")
 		return
 	}
+	// A deploy key is a credential that outlives the person who added it, which
+	// is why an enterprise can forbid them — and why one demanding proof of
+	// presence gets it before a new one is minted.
+	if s.requireProofOfPresence(w, r) {
+		return
+	}
+	policy, enterprise := s.enterprisePolicyForRepo(repo)
+	if s.refuseByEnterprisePolicy(w, r, enterprise, policy.RepositoryDeployKey,
+		"Deploy keys are disabled by an enterprise policy.") {
+		return
+	}
 	key := s.store.CreateRepoDeployKey(repo.ID, req.Title, req.Key, req.ReadOnly)
 	keyJSON := deployKeyToJSON(key, repo.FullName, s.baseURL(r))
 	writeJSONCreated(w, jsonStringField(keyJSON, "url"), keyJSON)
@@ -572,11 +583,11 @@ func (s *Server) handleSetInteractionLimits(w http.ResponseWriter, r *http.Reque
 		store.WriteGHValidationError(w, "InteractionLimit", "limit", "missing_field")
 		return
 	}
-	if !isInteractionGroup(req.Limit) {
+	if !store.IsInteractionGroup(req.Limit) {
 		store.WriteGHValidationError(w, "InteractionLimit", "limit", "invalid")
 		return
 	}
-	expiresAt, ok := interactionLimitExpiry(req.Expiry, s.currentTime())
+	expiresAt, ok := store.InteractionLimitExpiry(req.Expiry, s.currentTime())
 	if !ok {
 		store.WriteGHValidationError(w, "InteractionLimit", "expiry", "invalid")
 		return
@@ -765,6 +776,19 @@ func (s *Server) handleGetRepo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, fullRepoJSONForViewer(repo, s.store, s.baseURL(r), user))
 }
 
+// changesVisibility reports whether a repository update body asks for a
+// different visibility than the repository already has. A body that restates
+// the current visibility changes nothing and is not governed.
+func changesVisibility(req map[string]interface{}, repo *store.Repo) bool {
+	if v, ok := coerceBool(req["private"]); ok && v != repo.Private {
+		return true
+	}
+	if v, ok := req["visibility"].(string); ok && v != "" && !strings.EqualFold(v, repo.Visibility) {
+		return true
+	}
+	return false
+}
+
 func (s *Server) handleUpdateRepo(w http.ResponseWriter, r *http.Request) {
 	user := ghUserFromContext(r.Context())
 	if user == nil {
@@ -796,23 +820,26 @@ func (s *Server) handleUpdateRepo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if newName, ok := req["name"].(string); ok && newName != "" && newName != repo.Name {
-		if !s.store.RenameRepo(owner, name, newName) {
-			writeGHError(w, http.StatusUnprocessableEntity, "Repository rename failed.")
+	// A visibility change is separately governed: an enterprise may let its
+	// members administer a repository while forbidding them to change who can
+	// see it.
+	if changesVisibility(req, repo) {
+		policy, enterprise := s.enterprisePolicyForRepo(repo)
+		if s.refuseByEnterprisePolicy(w, r, enterprise, policy.MembersCanChangeRepositoryVisibility,
+			"Changing repository visibility is disabled by an enterprise policy.") {
 			return
 		}
-		// Update artifacts that embed the repo full name.
-		oldFull := owner + "/" + name
-		newFull := owner + "/" + newName
-		if err := s.artifactStore.RenameRepository(oldFull, newFull); err != nil {
-			if !s.store.RenameRepo(owner, newName, name) {
-				writeGHError(w, http.StatusInternalServerError, "repository artifact metadata rename failed and repository rename rollback failed: "+err.Error())
+	}
+
+	if newName, ok := req["name"].(string); ok && newName != "" && newName != repo.Name {
+		if err := s.renameRepository(owner, name, newName); err != nil {
+			if strings.HasPrefix(err.Error(), "Repository rename failed") {
+				writeGHError(w, http.StatusUnprocessableEntity, "Repository rename failed.")
 				return
 			}
-			writeGHError(w, http.StatusInternalServerError, "repository artifact metadata rename failed; repository rename rolled back: "+err.Error())
+			writeGHError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-
 		name = newName
 	}
 
@@ -935,8 +962,8 @@ func (s *Server) handleUpdateRepo(w http.ResponseWriter, r *http.Request) {
 	// public, so `on: public` workflows run (ACT-026).
 	if wasPrivate && updated != nil && !updated.Private {
 		s.emitWebhookEvent(updated.FullName, "public", "", map[string]interface{}{
-			"repository": repoPayload(updated),
-			"sender":     store.UserToJSON(user),
+			"repository": repoPayload(updated, s.baseURL(r)),
+			"sender":     store.UserToJSON(user, s.baseURL(r)),
 		})
 	}
 	writeJSON(w, http.StatusOK, fullRepoJSONForViewer(updated, s.store, s.baseURL(r), user))
@@ -961,6 +988,18 @@ func (s *Server) handleDeleteRepo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Destroying a repository is irreversible, so an enterprise demanding proof
+	// of presence gets it here before anything is removed.
+	if s.requireProofOfPresence(w, r) {
+		return
+	}
+	// Repository deletion is one of the actions an enterprise may forbid its
+	// members outright, whatever standing they hold on the repository.
+	policy, enterprise := s.enterprisePolicyForRepo(repo)
+	if s.refuseByEnterprisePolicy(w, r, enterprise, policy.MembersCanDeleteRepositories,
+		"Repository deletion is disabled by an enterprise policy.") {
+		return
+	}
 	if _, err := s.store.DeleteRepo(owner, name); err != nil {
 		writeGHError(w, http.StatusInternalServerError, "repository delete failed: "+err.Error())
 		return
@@ -1162,7 +1201,7 @@ func fullRepoJSONForViewer(repo *store.Repo, st *store.Store, baseURL string, vi
 	out := store.RepoToJSONForViewer(repo, st, baseURL, viewer)
 	out["network_count"] = out["forks_count"]
 	out["subscribers_count"] = len(st.ListRepoSubscribers(repo.ID))
-	out["organization"] = repoOrganizationJSON(repo, st)
+	out["organization"] = repoOrganizationJSON(repo, st, baseURL)
 	out["allow_squash_merge"] = repo.AllowSquashMerge
 	out["allow_merge_commit"] = repo.AllowMergeCommit
 	out["allow_rebase_merge"] = repo.AllowRebaseMerge
@@ -1280,12 +1319,12 @@ func repoOwnerREST(repo *store.Repo, st *store.Store, baseURL string) map[string
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 	if repo.Owner != nil {
-		return store.UserToJSON(repo.Owner)
+		return store.UserToJSON(repo.Owner, baseURL)
 	}
 	return nil
 }
 
-func repoOrganizationJSON(repo *store.Repo, st *store.Store) interface{} {
+func repoOrganizationJSON(repo *store.Repo, st *store.Store, baseURL string) interface{} {
 	if repo.OwnerType != "Organization" {
 		return nil
 	}
@@ -1297,7 +1336,7 @@ func repoOrganizationJSON(repo *store.Repo, st *store.Store) interface{} {
 	if org == nil {
 		return nil
 	}
-	return store.OrgAsSimpleUserJSON(org)
+	return store.OrgAsSimpleUserJSON(org, baseURL)
 }
 
 func (s *Server) handleListStargazers(w http.ResponseWriter, r *http.Request) {
@@ -1312,7 +1351,7 @@ func (s *Server) handleListStargazers(w http.ResponseWriter, r *http.Request) {
 	out := make([]map[string]interface{}, 0, len(ids))
 	for _, id := range ids {
 		if u := s.store.GetUserByID(id); u != nil {
-			out = append(out, store.UserToJSON(u))
+			out = append(out, store.UserToJSON(u, s.baseURL(r)))
 		}
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
@@ -1347,8 +1386,8 @@ func (s *Server) handleStarRepo(w http.ResponseWriter, r *http.Request) {
 	if repo := s.store.GetRepo(owner, name); repo != nil {
 		s.emitWebhookEvent(repo.FullName, "watch", "started", map[string]interface{}{
 			"action":     "started",
-			"repository": repoPayload(repo),
-			"sender":     store.UserToJSON(user),
+			"repository": repoPayload(repo, s.baseURL(r)),
+			"sender":     store.UserToJSON(user, s.baseURL(r)),
 		})
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -1435,11 +1474,11 @@ func (s *Server) handleListCollaborators(w http.ResponseWriter, r *http.Request)
 	collabs := s.store.ListRepoCollaborators(owner, name)
 	out := make([]map[string]interface{}, 0, len(collabs)+1)
 	if repo.Owner != nil {
-		out = append(out, collaboratorJSON(repo.Owner, "admin"))
+		out = append(out, collaboratorJSON(repo.Owner, "admin", s.baseURL(r)))
 	}
 	for login, perm := range collabs {
 		if u := s.store.LookupUserByLogin(login); u != nil {
-			out = append(out, collaboratorJSON(u, perm))
+			out = append(out, collaboratorJSON(u, perm, s.baseURL(r)))
 		}
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
@@ -1468,7 +1507,7 @@ func (s *Server) handleGetCollaboratorPermission(w http.ResponseWriter, r *http.
 			return
 		}
 	}
-	userJSON := store.UserToJSON(u)
+	userJSON := store.UserToJSON(u, s.baseURL(r))
 	userJSON["role_name"] = githubRoleName(perm)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"permission": perm,
@@ -1490,6 +1529,13 @@ func (s *Server) handleAddCollaborator(w http.ResponseWriter, r *http.Request) {
 	u := s.store.LookupUserByLogin(username)
 	if u == nil {
 		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	// Inviting somebody onto a repository is an enterprise-governed action:
+	// it is how a person outside the enterprise gains access to its code.
+	policy, enterprise := s.enterprisePolicyForRepo(repo)
+	if s.refuseByEnterprisePolicy(w, r, enterprise, policy.MembersCanInviteCollaborators,
+		"Inviting collaborators is disabled by an enterprise policy.") {
 		return
 	}
 	var req struct {
@@ -1564,8 +1610,8 @@ func (s *Server) handleRemoveCollaborator(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func collaboratorJSON(u *store.User, perm string) map[string]interface{} {
-	json := store.UserToJSON(u)
+func collaboratorJSON(u *store.User, perm, baseURL string) map[string]interface{} {
+	json := store.UserToJSON(u, baseURL)
 	json["permissions"] = collaboratorPermsJSON(perm)
 	json["role_name"] = perm
 	return json

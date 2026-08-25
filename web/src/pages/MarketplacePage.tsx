@@ -10,6 +10,8 @@ import {
   fetchMarketplaceListings,
   fetchMarketplaceSubscriptions,
   purchaseMarketplacePlan,
+  ghFetch,
+  ghSend,
 } from "../api.js";
 import type { GithubMarketplaceListing, GithubMarketplacePlan } from "../types.js";
 import { Blankslate, Box, Button, ErrorBanner, FormLabel, StateLabel } from "../components/ui.js";
@@ -50,9 +52,8 @@ function MarketplaceHero({ subscriptions }: { subscriptions: number }) {
   );
 }
 
-// Listing payloads carry no category taxonomy (the server's Marketplace
-// shape has no categories field), so the sidebar filters on real listing
-// facts — pricing and app kind — instead of dead category anchors.
+// The pricing and app-kind facets. Categories come from the Marketplace
+// taxonomy and are listed alongside them.
 type MarketplaceFilter = "all" | "free" | "trial" | "github-apps" | "oauth-apps";
 
 const MARKETPLACE_FILTERS: { key: MarketplaceFilter; label: string }[] = [
@@ -62,6 +63,36 @@ const MARKETPLACE_FILTERS: { key: MarketplaceFilter; label: string }[] = [
   { key: "github-apps", label: "GitHub Apps" },
   { key: "oauth-apps", label: "OAuth Apps" },
 ];
+
+/** One entry in the GitHub Marketplace taxonomy. */
+export interface MarketplaceCategoryRow {
+  slug: string;
+  name: string;
+  description: string;
+  primary_listing_count: number;
+  secondary_listing_count: number;
+}
+
+/** A listing's category membership and publication state. */
+export interface MarketplaceListingProfileRow {
+  slug: string;
+  primary_category_slug: string;
+  secondary_category_slug: string;
+  state: string;
+  has_verified_owner: boolean;
+}
+
+// Defined here rather than in api.ts: api.ts is reachable from the entry
+// chunk, which sits against its 160 KB budget.
+const fetchMarketplaceCategories = (signal?: AbortSignal) =>
+  ghFetch<MarketplaceCategoryRow[]>("/ui-data/marketplace/categories", signal);
+const fetchMarketplaceListingProfiles = (signal?: AbortSignal) =>
+  ghFetch<MarketplaceListingProfileRow[]>("/ui-data/marketplace/listing-profiles", signal);
+const revokeMarketplacePendingChange = (slug: string, account: string) =>
+  ghSend(
+    "DELETE",
+    `/ui-data/marketplace/listings/${encodeURIComponent(slug)}/subscription/pending?account=${encodeURIComponent(account)}`,
+  );
 
 function matchesMarketplaceFilter(listing: GithubMarketplaceListing, filter: MarketplaceFilter): boolean {
   switch (filter) {
@@ -81,16 +112,31 @@ function matchesMarketplaceFilter(listing: GithubMarketplaceListing, filter: Mar
 function MarketplaceDirectory() {
   const listings = useQuery({ queryKey: ["marketplace", "listings"], queryFn: fetchMarketplaceListings });
   const subscriptions = useQuery({ queryKey: ["marketplace", "subscriptions"], queryFn: fetchMarketplaceSubscriptions });
+  const categories = useQuery({ queryKey: ["marketplace", "categories"], queryFn: ({ signal }) => fetchMarketplaceCategories(signal) });
+  const profiles = useQuery({ queryKey: ["marketplace", "listing-profiles"], queryFn: ({ signal }) => fetchMarketplaceListingProfiles(signal) });
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<MarketplaceFilter>("all");
+  const [category, setCategory] = useState("");
+  const categoryBySlug = useMemo(() => {
+    const map = new Map<string, MarketplaceListingProfileRow>();
+    for (const profile of profiles.data ?? []) map.set(profile.slug, profile);
+    return map;
+  }, [profiles.data]);
   const visible = useMemo(() => {
     const query = search.trim().toLowerCase();
-    return (listings.data ?? []).filter(
-      (listing) =>
+    return (listings.data ?? []).filter((listing) => {
+      const profile = categoryBySlug.get(listing.slug);
+      const inCategory =
+        !category ||
+        profile?.primary_category_slug === category ||
+        profile?.secondary_category_slug === category;
+      return (
         matchesMarketplaceFilter(listing, filter) &&
-        (!query || `${listing.name} ${listing.description}`.toLowerCase().includes(query)),
-    );
-  }, [listings.data, search, filter]);
+        inCategory &&
+        (!query || `${listing.name} ${listing.description}`.toLowerCase().includes(query))
+      );
+    });
+  }, [listings.data, search, filter, category, categoryBySlug]);
 
   if (listings.isLoading || subscriptions.isLoading) return <Spinner label="loading Marketplace" />;
   if (listings.isError || subscriptions.isError) return <InlineError title="Marketplace unavailable" detail={String(listings.error || subscriptions.error)} />;
@@ -111,6 +157,28 @@ function MarketplaceDirectory() {
               onClick={() => setFilter(f.key)}
             >
               {f.label}
+            </button>
+          ))}
+          <h2 className="mt-4">Categories</h2>
+          <button
+            type="button"
+            className={`marketplace-category${category === "" ? " active" : ""}`}
+            aria-pressed={category === ""}
+            style={{ background: "transparent", border: "none", textAlign: "left", cursor: "pointer" }}
+            onClick={() => setCategory("")}
+          >
+            All categories
+          </button>
+          {(categories.data ?? []).map((row) => (
+            <button
+              key={row.slug}
+              type="button"
+              className={`marketplace-category${category === row.slug ? " active" : ""}`}
+              aria-pressed={category === row.slug}
+              style={{ background: "transparent", border: "none", textAlign: "left", cursor: "pointer" }}
+              onClick={() => setCategory(row.slug)}
+            >
+              {row.name} ({row.primary_listing_count})
             </button>
           ))}
           <Link to="/ui/apps" className="marketplace-publisher-link">Publish an app →</Link>
@@ -212,6 +280,12 @@ function MarketplaceDetail({ slug }: { slug: string }) {
     mutationFn: () => cancelMarketplacePlan(slug, selectedAccount),
     onSuccess: invalidate,
   });
+  // A scheduled downgrade or cancellation can be called off until it takes
+  // effect; GitHub announces that as marketplace_purchase/pending_change_cancelled.
+  const revoke = useMutation({
+    mutationFn: () => revokeMarketplacePendingChange(slug, selectedAccount),
+    onSuccess: invalidate,
+  });
 
   if (listing.isLoading || accounts.isLoading || subscriptions.isLoading) return <Spinner label="loading Marketplace listing" />;
   if (listing.isError || accounts.isError || subscriptions.isError) return <InlineError title="Marketplace listing unavailable" detail={String(listing.error || accounts.error || subscriptions.error)} />;
@@ -252,8 +326,14 @@ function MarketplaceDetail({ slug }: { slug: string }) {
               </div>
               {selectedPlan?.price_model === "PER_UNIT" && <div className="mt-4"><FormLabel id="marketplace-units">{selectedPlan.unit_name || "Units"}</FormLabel><input id="marketplace-units" className="w-full" type="number" min={1} value={unitCount} onChange={(event) => setUnitCount(Number(event.target.value))} /></div>}
               {!current && selectedPlan?.has_free_trial && <label className="mt-4 flex items-start gap-2 marketplace-checkbox"><input type="checkbox" checked={freeTrial} onChange={(event) => setFreeTrial(event.target.checked)} /><span><b>Start with a 14-day free trial</b><small>You can cancel immediately during the trial.</small></span></label>}
-              {current?.marketplace_pending_change && <div className="marketplace-pending mt-4"><b>{current.marketplace_pending_change.cancellation ? "Cancellation scheduled" : "Plan change scheduled"}</b><span>Effective {new Date(current.marketplace_pending_change.effective_date).toLocaleDateString()}</span></div>}
-              {(save.error || cancel.error) && <div className="mt-4"><ErrorBanner>{String(save.error || cancel.error)}</ErrorBanner></div>}
+              {current?.marketplace_pending_change && (
+                <div className="marketplace-pending mt-4">
+                  <b>{current.marketplace_pending_change.cancellation ? "Cancellation scheduled" : "Plan change scheduled"}</b>
+                  <span>Effective {new Date(current.marketplace_pending_change.effective_date).toLocaleDateString()}</span>
+                  <Button className="mt-2" disabled={revoke.isPending} onClick={() => revoke.mutate()}>Keep current plan</Button>
+                </div>
+              )}
+              {(save.error || cancel.error || revoke.error) && <div className="mt-4"><ErrorBanner>{String(save.error || cancel.error || revoke.error)}</ErrorBanner></div>}
               <Button className="mt-5 w-full" variant="primary" disabled={!selectedPlan || save.isPending || !selectedAccount} onClick={() => save.mutate()}>
                 {current ? "Update plan" : "Complete order and begin installation"}
               </Button>

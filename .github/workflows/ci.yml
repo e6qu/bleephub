@@ -34,7 +34,11 @@ jobs:
   server:
     name: Go server (full race + coverage)
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # Two passes now (race, then coverage) instead of one combined pass, so the
+    # budget is raised to cover both without the combined-instrumentation OOM.
+    # The race pass is additionally concurrency-throttled (see below), which
+    # roughly doubles its wall time, so the budget covers the slower pass too.
+    timeout-minutes: 90
     steps:
       - &checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -49,13 +53,46 @@ jobs:
       # a slower runner turned a slow suite into a timeout — which surfaces as a
       # hung test rather than a slow one, and sends whoever is on the PR looking
       # for a deadlock that isn't there.
-      - name: Run the complete server suite against MinIO S3
+      # The race detector and whole-repo coverage instrumentation are each
+      # memory-heavy; run together over the (large) internal/server suite they
+      # exhaust the runner's RAM and the step is OOM-killed (exit 143). They
+      # are split into two passes — race first, then coverage — so neither
+      # pass carries both instrumentations at once. The suite is still fully
+      # exercised under `-race` and fully measured for the coverage floor.
+      #
+      # The race pass needs more than the split, though: the race detector keeps
+      # per-process "shadow memory" for every location a test touches and never
+      # reclaims it, so a single `go test -race` over internal/server's 2400+
+      # tests climbs monotonically past the 16 GB runner and the VM is torn down
+      # (a ~1-hour hang on one step, then exit 143 + "runner received a shutdown
+      # signal"). Throttling -p/-parallel only slowed the climb (12 min → 63 min
+      # to OOM); it does not cap accumulation. run-race-suite.sh instead runs
+      # internal/server across several fresh, count-balanced shard processes —
+      # each starts with empty shadow memory — while racing every other package
+      # together, holding a single shard's peak RSS well under the ceiling.
+      # GOMEMLIMIT backstops the GC-managed (non-shadow) heap.
+      - name: Run the complete server suite under the race detector
+        env:
+          GOMEMLIMIT: 12GiB
+        run: bash ./scripts/run-race-suite.sh
+      - name: Re-run for the coverage profile
         # -coverpkg follows the ARCH-001 module split: internal/store and
         # internal/gitstore carry no test binaries of their own — they are
         # exercised through internal/server's suite — and without cross-package
         # attribution the profile would count their statements as 0% and read
         # as a coverage collapse that never happened.
-        run: go test -race -tags noui -count=1 -timeout 40m -coverpkg=./... -coverprofile=coverage.out ./...
+        #
+        # -coverpkg=./... instruments the whole tree into internal/server's test
+        # binary, and at the default -parallel that binary's concurrent test
+        # servers also exhausted the 16 GB runner (exit 143 on internal/server,
+        # same as the race pass). Coverage counters are bounded (one per
+        # statement, allocated once) rather than monotonically accumulating like
+        # race shadow memory, so the driver is concurrent-test memory, not the
+        # instrumentation — capping -parallel is enough here (no sharding). At
+        # -parallel 2 peak RSS measures ~5 GB; GOMEMLIMIT backstops the heap.
+        env:
+          GOMEMLIMIT: 12GiB
+        run: go test -tags noui -count=1 -timeout 40m -p 2 -parallel 2 -coverpkg=./... -coverprofile=coverage.out ./...
       - name: Enforce the Go coverage floor
         run: bash ./scripts/check-go-coverage.sh coverage.out
       # The main suite runs under `-tags noui`, which compiles the embedded SPA
@@ -130,7 +167,7 @@ jobs:
       - name: Lint the workflows
         run: actionlint .github/workflows/*.yml
       - name: Lint the shell scripts
-        run: shellcheck scripts/*.sh docker/*.sh test/runner/sockerless/*.sh web/e2e/*.sh
+        run: shellcheck scripts/*.sh docker/*.sh test/runner/sockerless/*.sh test/conformance/*.sh test/conformance/drivers/*.sh web/e2e/*.sh
       - name: Test bounded command retries
         run: ./scripts/test-retry-command.sh
       # The findings ledger is edited constantly and by several hands, and a
@@ -147,6 +184,12 @@ jobs:
         run: ./scripts/check-github-openapi-drift.sh
       - name: Require the current official GitHub GraphQL schema
         run: ./scripts/check-github-graphql-schema-drift.sh
+      # The generated GraphQL type universe is a witness of the vendored
+      # schema. The completeness ratchet in internal/server catches a missing
+      # type or a wrong signature; only this catches a stale description or a
+      # dropped deprecation reason after a schema bump.
+      - name: Check the generated GraphQL schema types
+        run: ./scripts/check-graphql-schema-types-drift.sh
 
   security:
     name: Security analysis
@@ -284,7 +327,7 @@ jobs:
       - name: Build and vet every nested module
         run: |
           set -euo pipefail
-          for module in sdk-tests terraform/wake test/terraform-sockerless; do
+          for module in sdk-tests terraform/wake test/terraform-sockerless test/conformance/drivers/gogithub; do
             echo "::group::$module"
             (cd "$module" && go build ./... && go vet ./...)
             echo "::endgroup::"
@@ -299,7 +342,7 @@ jobs:
       - name: Assert every module is covered
         run: |
           set -euo pipefail
-          expected=$'./go.mod\n./sdk-tests/go.mod\n./terraform/wake/go.mod\n./test/terraform-sockerless/go.mod'
+          expected=$'./go.mod\n./sdk-tests/go.mod\n./terraform/wake/go.mod\n./test/conformance/drivers/gogithub/go.mod\n./test/terraform-sockerless/go.mod'
           found=$(find . -name go.mod -not -path './web/*' | sort)
           if [ "$found" != "$(printf '%s' "$expected" | sort)" ]; then
             echo "Go modules changed. Found:"; echo "$found"
@@ -473,6 +516,49 @@ jobs:
       - *checkout
       - name: Exercise the official GitHub CLI against Bleephub
         run: make gh-test
+
+  # The project's definition of done is that every software development kit and
+  # command-line interface targeting github.com works against Bleephub
+  # unmodified. That was an assertion; this job measures it. It boots a real
+  # server and drives real, unmodified clients — the GitHub CLI, go-github,
+  # octokit.js, PyGithub and git itself — recording pass or fail for each
+  # operation, then publishes the scoreboard to the job summary.
+  #
+  # It does not fail on today's known deviations, which are recorded in
+  # test/conformance/floor.json. It fails when the scoreboard REGRESSES: an
+  # operation that used to pass stops passing, stops running, or a client's
+  # total pass count drops. That is the same ratchet shape the GraphQL schema
+  # parity test and the accessibility baseline use, and it is what makes the
+  # number safe to publish — it can only go up.
+  conformance:
+    name: SDK and CLI conformance
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - *checkout
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - *setup-bun
+      - *bun-install-cache
+      - name: Install locked web dependencies (octokit.js lives in web's lockfile)
+        run: cd web && bun install --frozen-lockfile
+      - name: Enforce the transitive dependency quarantine window
+        run: ./scripts/check-dependency-age.py conformance
+      # The `gh` driver runs inside Dockerfile.gh-test's image: it needs the
+      # exact pinned release (a runner's floating `gh` would make the scoreboard
+      # depend on a version nobody here reviewed) and a server on 443 with a
+      # trusted certificate authority, which an unprivileged runner user cannot
+      # provide. Running it the same way here as on a developer's machine is
+      # what lets one recorded floor apply to both.
+      - name: Drive every client against a real server
+        env:
+          CONFORMANCE_REQUIRE_CLIENTS: gh go-github octokit pygithub git
+        run: ./test/conformance/run.sh
+      - name: Publish the conformance scoreboard
+        if: always()
+        run: cat test/conformance/report/conformance-summary.md >> "$GITHUB_STEP_SUMMARY"
 
   browser:
     name: Browser end-to-end

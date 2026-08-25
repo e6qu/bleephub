@@ -221,8 +221,11 @@ func (s *Engine) BuildJobMessageFromDef(serverURL string, wf *store.Workflow, wf
 		if err != nil {
 			return nil, err
 		}
-		if jd.Call != nil && jd.CallRole == "" && !jd.Call.SecretsInherit {
-			secretsMap, err = RemapCallSecrets(s, wf, jd.Call, secretsMap)
+		if forkPullRequestWithholdsSecrets(wf) {
+			secretsMap = nil
+		}
+		if jd.Call != nil && jd.CallRole == "" {
+			secretsMap, err = EffectiveCallSecrets(s, wf, jd.Call, secretsMap)
 			if err != nil {
 				return nil, err
 			}
@@ -423,6 +426,44 @@ func githubRunnerContext(s *Engine, wf *store.Workflow, wfJob *store.WorkflowJob
 		m["job_workflow_ref"] = workflowRef
 	}
 	return m
+}
+
+// forkPullRequestWithholdsSecrets reports whether a run must be denied the
+// repository's, organization's and environment's secrets: "with the exception
+// of GITHUB_TOKEN, secrets are not passed to the runner when a workflow is
+// triggered from a forked repository". A fork contributor authors the workflow
+// file the `pull_request` run executes, so handing that run the base
+// repository's secrets hands them to the contributor — and no approval gate
+// changes that, because approval only decides whether the run starts.
+//
+// pull_request_target is deliberately excluded: it runs the BASE repository's
+// workflow definition in the base context and does receive secrets, which is
+// the whole distinction between the two triggers.
+func forkPullRequestWithholdsSecrets(wf *store.Workflow) bool {
+	return wf.EventName == "pull_request" && pullRequestIsFromFork(wf.EventPayload, wf.RepoFullName)
+}
+
+// EffectiveCallSecrets resolves the secrets a job inside a reusable-workflow
+// call actually receives, narrowing the repository's set once per call in the
+// nesting chain from the outermost inwards. `secrets: inherit` inherits the
+// CALLING workflow's secrets — which, for a nested call, is whatever the
+// enclosing call already narrowed them to, not the repository's full set.
+func EffectiveCallSecrets(s *Engine, wf *store.Workflow, binding *store.WorkflowCallBinding, repoSecrets map[string]string) (map[string]string, error) {
+	if binding == nil {
+		return repoSecrets, nil
+	}
+	callerSecrets := repoSecrets
+	if binding.Parent != nil {
+		var err error
+		callerSecrets, err = EffectiveCallSecrets(s, wf, binding.Parent, repoSecrets)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if binding.SecretsInherit {
+		return callerSecrets, nil
+	}
+	return RemapCallSecrets(s, wf, binding, callerSecrets)
 }
 
 // RemapCallSecrets applies a reusable-workflow call's explicit `secrets:`

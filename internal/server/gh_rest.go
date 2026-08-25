@@ -209,7 +209,7 @@ func (s *Server) handleGHUserByLogin(w http.ResponseWriter, r *http.Request) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	writeJSON(w, http.StatusOK, s.fullUserJSON(user))
+	writeJSON(w, http.StatusOK, s.fullUserJSON(user, s.baseURL(r)))
 }
 
 // handleGHRateLimit returns rate limit status.
@@ -276,11 +276,11 @@ func mutated[T any](w http.ResponseWriter, v *T) bool {
 // twitter_username are null, matching real GitHub. Followers/following
 // and repository counts are derived live from the store; gists are not a
 // bleephub feature so public_gists is 0.
-func (s *Server) fullUserJSON(u *store.User) map[string]interface{} {
+func (s *Server) fullUserJSON(u *store.User, baseURL string) map[string]interface{} {
 	if u == nil {
 		u = store.GhostUser()
 	}
-	out := store.UserToJSON(u)
+	out := store.UserToJSON(u, baseURL)
 	out["bio"] = u.Bio
 	out["blog"] = u.Blog
 	out["company"] = nullableString(u.Company)

@@ -50,19 +50,29 @@ type Server struct {
 	// fully persistent server (BLEEPHUB_PERSIST=true) with an in-memory object
 	// store instead of requiring a live S3/MinIO endpoint.
 	injectedByteStore store.ActionsByteStore
+	// localByteStore is the byte store used when no object storage is
+	// configured: filesystem-backed under the data directory, or in-process
+	// when there is no data directory. Git LFS is served from it so a
+	// deployment that never set BLEEPHUB_OBJECT_S3_BUCKET still has working
+	// LFS, which real GitHub always does.
+	localByteStore store.ActionsByteStore
 	// actions is the extracted Actions execution engine (ARCH-002). It owns
 	// workflow submission/dispatch, the broker queue, concurrency admission,
 	// scheduling, and the checks/webhook event loop; the server reaches it
 	// exclusively through its exported surface.
-	actions               *actions.Engine
-	registryUploadsMu     sync.Mutex
-	registryUploads       map[string]*containerRegistryUpload
-	classroomMu           sync.Mutex // serializes multi-resource Classroom browser transactions
-	marketplaceMu         sync.Mutex // serializes Marketplace billing transitions and webhook emission
-	rateLimitsMu          sync.Mutex
-	rateLimits            map[string]*apiRateWindow // hashed credential + resource -> current primary-limit window
-	routePatterns         []string                  // every pattern registered via route(), for fidelity enumeration
-	externalURL           string                    // BLEEPHUB_EXTERNAL_URL; when set, overrides request-Host URL derivation (job messages, action URLs) — the GHES "external URL" knob
+	actions           *actions.Engine
+	registryUploadsMu sync.Mutex
+	registryUploads   map[string]*containerRegistryUpload
+	classroomMu       sync.Mutex // serializes multi-resource Classroom browser transactions
+	marketplaceMu     sync.Mutex // serializes Marketplace billing transitions and webhook emission
+	rateLimitsMu      sync.Mutex
+	rateLimits        map[string]*apiRateWindow // hashed credential + resource -> current primary-limit window
+	routePatterns     []string                  // every pattern registered via route(), for fidelity enumeration
+	externalURL       string                    // BLEEPHUB_EXTERNAL_URL; when set, overrides request-Host URL derivation (job messages, action URLs) — the GHES "external URL" knob
+	// observedOrigin is the origin of the most recently served request, used to
+	// render absolute hypermedia in payloads built outside a request (webhook
+	// deliveries) when no external URL is configured. See hypermedia.go.
+	observedOrigin        observedOriginBox
 	pagesJekyllExecutable string
 	identity              identityConfig
 	identityStateKey      []byte // random per-process HMAC key for OAuth state cookies
@@ -170,6 +180,7 @@ func newServerState(addr string, logger zerolog.Logger, construction serverConst
 		store:                  store.NewStore(),
 		actionCache:            NewActionCache(),
 		artifactStore:          store.NewArtifactStoreWithByteStore(construction.dataDir, construction.byteStore),
+		localByteStore:         store.NewLocalByteStore(construction.dataDir),
 		metrics:                NewMetrics(),
 		maxConcurrentWorkflows: construction.maxConcurrentWorkflows,
 		registryUploads:        map[string]*containerRegistryUpload{},
@@ -210,9 +221,11 @@ func (s *Server) newActionsEngine() *actions.Engine {
 		MintJobToken: func(scopeID string, wf *store.Workflow, jd *store.JobDef) string {
 			return makeJobJWT(scopeID, wf.RepoFullName, s.resolveJobTokenPermissions(wf, jd))
 		},
-		RepoEventPayload: repoPayload,
-		Now:              s.currentTime,
-		Go:               s.goBackground,
+		RepoEventPayload: func(repo *store.Repo) map[string]interface{} {
+			return repoPayload(repo, s.publicOrigin())
+		},
+		Now: s.currentTime,
+		Go:  s.goBackground,
 		// The engine's minute tick carries the server-side housekeeping that
 		// rode the schedule dispatcher before the extraction.
 		OnScheduleTick: []func(time.Time){
@@ -261,7 +274,9 @@ func (s *Server) route(pattern string, handler http.HandlerFunc) {
 	}
 	// /api/v3 routes are instrumented so served requests feed the API
 	// insights stats (gh_api_insights.go); other patterns pass through.
-	s.mux.HandleFunc(pattern, s.nameSpan(pattern, s.instrumentAPIRoute(pattern, s.enforceFineGrainedPATResource(pattern, handler))))
+	s.mux.HandleFunc(pattern, s.nameSpan(pattern, s.instrumentAPIRoute(pattern,
+		s.enforceEnterpriseIPAllowList(pattern, s.enforceFineGrainedPATResource(pattern,
+			s.refuseInstallationTokenOnUserRoutes(pattern, handler))))))
 }
 
 // nameSpan replaces the coarse "bleephub" span name otelhttp assigns before
@@ -434,6 +449,10 @@ func NewServer(addr string, logger zerolog.Logger, options ...ServerOption) *Ser
 	if err := s.seedConfiguredApps(); err != nil {
 		logger.Fatal().Err(err).Msg("failed to seed configured GitHub Apps")
 	}
+	// The instance's own enterprise account. It names the same enterprise the
+	// /api/v3/enterprises/{enterprise} settings surface is keyed on, so the
+	// REST settings and the GraphQL account describe one enterprise.
+	s.seedPrimaryEnterprise()
 	s.registerRoutes()
 	return s
 }
@@ -592,6 +611,8 @@ func (s *Server) registerRoutes() {
 	s.registerGHAttestationsRoutes()
 	s.registerGHOrgArtifactMetadataRoutes()
 	s.registerGHCopilotRoutes()
+	// Copilot subscription policy, seat activity and usage (gh_copilot_policy.go)
+	s.registerGHCopilotPolicyRoutes()
 	s.registerGHCopilotSpacesRoutes()
 	s.registerGHCodeQualityRoutes()
 	s.registerGHIssueTypeRoutes()
@@ -653,11 +674,17 @@ func (s *Server) registerRoutes() {
 	s.registerGHDependencyGraphRoutes()
 	s.registerGHMarkdownRoutes()
 	s.registerGHMetaExtrasRoutes()
+	s.registerAvatarRoutes()
 	s.registerGHCodesOfConductRoutes()
 	s.registerGHGlobalAdvisoriesRoutes()
 	s.registerGHClassroomRoutes()
 	s.registerGHClassroomWebRoutes()
 	s.registerGHMarketplaceRoutes()
+	// Marketplace pending-change lifecycle, categories and listing profiles
+	// (gh_marketplace_lifecycle.go)
+	s.registerGHMarketplaceLifecycleRoutes()
+	// GitHub Sponsors browser surface + webhooks (gh_sponsors.go)
+	s.registerGHSponsorsRoutes()
 	s.registerGHEventsFeedsRoutes()
 	s.registerGHUserIssuesRoutes()
 	// Repository read surfaces (gh_repos_reads.go)
@@ -832,6 +859,15 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	})
 	defer gitstore.SetCompactionRequestHandler(nil)
 	s.actions.Start(ctx)
+	// Migration exports a previous process was in the middle of are re-run
+	// before the listener opens: nothing else claims them, and a migration
+	// left "exporting" by a process that is gone would otherwise never finish.
+	s.resumeMigrationExports()
+	// The same for the GitHub Enterprise Importer's migrations, which move
+	// data in rather than out: a repository or organization migration a dead
+	// process left mid-flight is requeued and re-driven here, because nothing
+	// else ever will and an unfinished migration is a half-populated target.
+	s.resumeGEIMigrations()
 	handler := s.requestHandler()
 
 	srv := &http.Server{
@@ -911,7 +947,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 // response observation, and telemetry cannot silently diverge from the live
 // listener.
 func (s *Server) requestHandler() http.Handler {
-	inner := s.prefixStripMiddleware(s.replicaRefreshMiddleware(s.internalAuthMiddleware(s.mux)))
+	inner := s.originMiddleware(s.prefixStripMiddleware(s.replicaRefreshMiddleware(s.internalAuthMiddleware(s.repoRedirectMiddleware(s.mux)))))
 	ghWrapped := s.ghHeadersMiddleware(inner)
 	observed := ghWrapped
 	if s.responseObserver != nil {

@@ -44,6 +44,9 @@ func (s *Server) tryHandleGitRequest(w http.ResponseWriter, r *http.Request) boo
 		repoPath := strings.TrimSuffix(path, "/info/refs")
 		owner, repo := splitRepoPath(repoPath)
 		if owner != "" && repo != "" {
+			if s.redirectMovedGitRepo(w, r, owner, repo) {
+				return true
+			}
 			s.handleGitInfoRefs(w, r, owner, repo)
 			return true
 		}
@@ -54,6 +57,9 @@ func (s *Server) tryHandleGitRequest(w http.ResponseWriter, r *http.Request) boo
 		repoPath := strings.TrimSuffix(path, "/git-upload-pack")
 		owner, repo := splitRepoPath(repoPath)
 		if owner != "" && repo != "" {
+			if s.redirectMovedGitRepo(w, r, owner, repo) {
+				return true
+			}
 			s.handleGitUploadPack(w, r, owner, repo)
 			return true
 		}
@@ -64,6 +70,9 @@ func (s *Server) tryHandleGitRequest(w http.ResponseWriter, r *http.Request) boo
 		repoPath := strings.TrimSuffix(path, "/git-receive-pack")
 		owner, repo := splitRepoPath(repoPath)
 		if owner != "" && repo != "" {
+			if s.redirectMovedGitRepo(w, r, owner, repo) {
+				return true
+			}
 			s.handleGitReceivePack(w, r, owner, repo)
 			return true
 		}
@@ -87,13 +96,18 @@ func (s *Server) resolveGitRepo(owner, repoName string) storer.Storer { //nolint
 	return s.store.GetGitStorage(owner, repoName)
 }
 
-// authorizeGitHTTP authenticates the request before resolving the repository:
+// authorizeGitHTTP authenticates the request before resolving what it addresses:
 // anonymous requests receive the same 401 challenge whether or not the
 // repository exists, and authenticated-but-unauthorized requests receive the
 // same 404 as a nonexistent repository, so neither response discloses whether
 // a private repository name is taken. When it returns ok=false the response
 // has already been written.
-func (s *Server) authorizeGitHTTP(w http.ResponseWriter, r *http.Request, owner, repoName string, wantWrite bool) (context.Context, *store.User, *store.Repo, storer.Storer, bool) {
+//
+// A wiki goes through here rather than through a second authorization path:
+// reading `<repo>.wiki.git` is the repository's own contents:read, so a stranger
+// cannot clone a private repository's wiki for the same reason they cannot clone
+// the repository, and the write half is the one wiki policy decision.
+func (s *Server) authorizeGitHTTP(w http.ResponseWriter, r *http.Request, owner, repoName string, wantWrite bool) (context.Context, *store.User, *gitTarget, bool) {
 	ctx, user := s.authenticateGitRequest(r)
 	// git HTTP sits outside ghHeadersMiddleware, so an invalid or revoked
 	// credential would otherwise be silently downgraded to anonymous and, on a
@@ -102,29 +116,32 @@ func (s *Server) authorizeGitHTTP(w http.ResponseWriter, r *http.Request, owner,
 	if invalid, _ := ctx.Value(ctxInvalidCredential).(bool); invalid {
 		w.Header().Set("WWW-Authenticate", `Basic realm="GitHub"`)
 		http.Error(w, "401 Authorization Required", http.StatusUnauthorized)
-		return ctx, user, nil, nil, false
+		return ctx, user, nil, false
 	}
-	stor := s.resolveGitRepo(owner, repoName)
-	repo := s.store.GetRepo(owner, repoName)
-	if stor == nil || repo == nil || !s.viewerHasRepoPermission(ctx, repo, store.ScopeContents, store.PermRead) {
+	target := s.resolveGitTarget(owner, repoName)
+	if !target.exists() || !s.viewerHasRepoPermission(ctx, target.repo, store.ScopeContents, store.PermRead) {
 		if user == nil {
 			w.Header().Set("WWW-Authenticate", `Basic realm="GitHub"`)
 			http.Error(w, "401 Authorization Required", http.StatusUnauthorized)
 		} else {
 			http.NotFound(w, r)
 		}
-		return ctx, user, nil, nil, false
+		return ctx, user, nil, false
 	}
-	if wantWrite && !s.viewerHasRepoPermission(ctx, repo, store.ScopeContents, store.PermWrite) {
+	if wantWrite && !s.viewerMayWriteGitTarget(ctx, target) {
 		if user == nil {
 			w.Header().Set("WWW-Authenticate", `Basic realm="GitHub"`)
 			http.Error(w, "401 Authorization Required", http.StatusUnauthorized)
 		} else {
 			http.Error(w, "403 Forbidden", http.StatusForbidden)
 		}
-		return ctx, user, nil, nil, false
+		return ctx, user, nil, false
 	}
-	return ctx, user, repo, stor, true
+	if !s.openGitTarget(target) {
+		http.NotFound(w, r)
+		return ctx, user, nil, false
+	}
+	return ctx, user, target, true
 }
 
 func (s *Server) handleGitInfoRefs(w http.ResponseWriter, r *http.Request, owner, repoName string) {
@@ -138,7 +155,7 @@ func (s *Server) handleGitInfoRefs(w http.ResponseWriter, r *http.Request, owner
 		return
 	}
 
-	_, _, repo, stor, ok := s.authorizeGitHTTP(w, r, owner, repoName, service == "git-receive-pack")
+	_, _, target, ok := s.authorizeGitHTTP(w, r, owner, repoName, service == "git-receive-pack")
 	if !ok {
 		return
 	}
@@ -172,12 +189,12 @@ func (s *Server) handleGitInfoRefs(w http.ResponseWriter, r *http.Request, owner
 		}
 		// Built here rather than by go-git's server transport, which cannot
 		// advertise the shallow capabilities — see git_uploadpack.go.
-		info, err := gitUploadPackAdvertisement(stor)
+		info, err := gitUploadPackAdvertisement(target.stor)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		advertiseDefaultBranchSymref(info, repo)
+		advertiseDefaultBranchSymref(info, target.defaultBranch)
 		if err := info.Encode(w); err != nil {
 			s.logger.Error().Err(err).Msg("failed to encode advertised refs")
 		}
@@ -186,12 +203,12 @@ func (s *Server) handleGitInfoRefs(w http.ResponseWriter, r *http.Request, owner
 		// Built here rather than by go-git's server transport, which advertises
 		// neither atomic, push options, a side band nor report-status-v2 — see
 		// git_receivepack.go.
-		info, err := gitReceivePackAdvertisement(stor)
+		info, err := gitReceivePackAdvertisement(target.stor)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		advertiseDefaultBranchSymref(info, repo)
+		advertiseDefaultBranchSymref(info, target.defaultBranch)
 		if err := info.Encode(w); err != nil {
 			s.logger.Error().Err(err).Msg("failed to encode advertised refs")
 		}
@@ -216,11 +233,11 @@ func (s *Server) handleGitInfoRefs(w http.ResponseWriter, r *http.Request, owner
 // simply carries no commits yet does not, because pointing a client at a ref
 // that is missing from an otherwise populated advertisement only draws a
 // warning.
-func advertiseDefaultBranchSymref(info *packp.AdvRefs, repo *store.Repo) {
-	if info == nil || repo == nil || repo.DefaultBranch == "" {
+func advertiseDefaultBranchSymref(info *packp.AdvRefs, defaultBranch string) {
+	if info == nil || defaultBranch == "" {
 		return
 	}
-	target := plumbing.NewBranchReferenceName(repo.DefaultBranch)
+	target := plumbing.NewBranchReferenceName(defaultBranch)
 	tip, exists := info.References[target.String()]
 	if !exists && len(info.References) > 0 {
 		return
@@ -234,7 +251,7 @@ func advertiseDefaultBranchSymref(info *packp.AdvRefs, repo *store.Repo) {
 }
 
 func (s *Server) handleGitUploadPack(w http.ResponseWriter, r *http.Request, owner, repoName string) {
-	_, user, repo, stor, ok := s.authorizeGitHTTP(w, r, owner, repoName, false)
+	_, user, target, ok := s.authorizeGitHTTP(w, r, owner, repoName, false)
 	if !ok {
 		return
 	}
@@ -263,12 +280,12 @@ func (s *Server) handleGitUploadPack(w http.ResponseWriter, r *http.Request, own
 	// pkt-line, no wants, a capability never advertised — is still answerable
 	// with a 400.
 	w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
-	stor = gitStorerWithPackReuse(r.Context(), repo.FullName, stor)
+	stor := gitStorerWithPackReuse(r.Context(), target.storageName, target.stor)
 	var result gitUploadPackResult
 	if gitRequestUsesProtocolV2(r, requestReader) {
 		// Each POST of a smart-HTTP conversation is one whole request, so the
 		// v2 command loop serves a single command and returns.
-		result, err = serveGitProtocolV2(r.Context(), stor, repo.DefaultBranch, requestReader, w, true)
+		result, err = serveGitProtocolV2(r.Context(), stor, target.defaultBranch, requestReader, w, true)
 	} else {
 		result, err = serveGitUploadPack(r.Context(), stor, requestReader, w)
 	}
@@ -277,12 +294,12 @@ func (s *Server) handleGitUploadPack(w http.ResponseWriter, r *http.Request, own
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		s.logger.Error().Err(err).Str("repo", owner+"/"+repoName).Msg("git HTTP upload-pack failed")
+		s.logger.Error().Err(err).Str("repo", target.storageName).Msg("git HTTP upload-pack failed")
 		return
 	}
 	if result.sessionID != "" {
 		s.logger.Debug().
-			Str("repo", owner+"/"+repoName).
+			Str("repo", target.storageName).
 			Str("client_session_id", result.sessionID).
 			Str("server_session_id", gitServerSessionID()).
 			Msg("git HTTP upload-pack session")
@@ -294,7 +311,10 @@ func (s *Server) handleGitUploadPack(w http.ResponseWriter, r *http.Request, own
 	// alone and is the same clone as the request that follows it. The actor
 	// identity is the authenticated login, or the remote host for anonymous
 	// clones of public repos.
-	if result.packed && result.clone {
+	//
+	// Wiki clones are not repository clones and github does not count them in
+	// the traffic API, so only the repository itself is recorded.
+	if result.packed && result.clone && !target.wiki {
 		actor := r.RemoteAddr
 		if host, _, splitErr := net.SplitHostPort(r.RemoteAddr); splitErr == nil {
 			actor = host
@@ -302,7 +322,7 @@ func (s *Server) handleGitUploadPack(w http.ResponseWriter, r *http.Request, own
 		if user != nil {
 			actor = user.Login
 		}
-		s.store.RecordRepoClone(repo.ID, actor)
+		s.store.RecordRepoClone(target.repo.ID, actor)
 	}
 }
 
@@ -319,7 +339,7 @@ func gitRequestUsesProtocolV2(r *http.Request, body *bufio.Reader) bool {
 }
 
 func (s *Server) handleGitReceivePack(w http.ResponseWriter, r *http.Request, owner, repoName string) {
-	ctx, user, repo, stor, ok := s.authorizeGitHTTP(w, r, owner, repoName, true)
+	ctx, user, target, ok := s.authorizeGitHTTP(w, r, owner, repoName, true)
 	if !ok {
 		return
 	}
@@ -333,19 +353,23 @@ func (s *Server) handleGitReceivePack(w http.ResponseWriter, r *http.Request, ow
 		return
 	}
 
-	outcome, err := s.applyGitReceivePack(ctx, repo, stor, request)
+	outcome, err := s.applyGitReceivePack(ctx, target, request)
 	if err != nil {
 		var refused *refusedPushError
 		if errors.As(err, &refused) {
 			http.Error(w, refused.reason, http.StatusForbidden)
 			return
 		}
-		s.logger.Error().Err(err).Str("repo", owner+"/"+repoName).Msg("git HTTP receive-pack failed")
+		s.logger.Error().Err(err).Str("repo", target.storageName).Msg("git HTTP receive-pack failed")
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	s.afterGitReceivePack(repo, user, outcome.applied, s.baseURL(r))
+	if target.wiki {
+		s.afterWikiReceivePack(target.repo, user, outcome.applied, s.baseURL(r))
+	} else {
+		s.afterGitReceivePack(target.repo, user, outcome.applied, s.baseURL(r))
+	}
 
 	w.Header().Set("Content-Type", "application/x-git-receive-pack-result")
 	if err := writeGitReceivePackResponse(w, request, outcome); err != nil {

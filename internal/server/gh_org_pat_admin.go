@@ -122,7 +122,7 @@ func patTokenExpiryJSON(expiresAt *time.Time) (expired bool, expiresJSON interfa
 func (s *Server) patGrantRequestJSON(req *store.OrgPATGrantRequest, baseURL string) map[string]interface{} {
 	owner := map[string]interface{}(nil)
 	if u := s.store.GetUserByID(req.OwnerUserID); u != nil {
-		owner = store.UserToJSON(u)
+		owner = store.UserToJSON(u, baseURL)
 	}
 	expired, expiresJSON := patTokenExpiryJSON(req.TokenExpiresAt)
 	var reason interface{}
@@ -148,7 +148,7 @@ func (s *Server) patGrantRequestJSON(req *store.OrgPATGrantRequest, baseURL stri
 func (s *Server) patGrantJSON(g *store.OrgPATGrant, baseURL string) map[string]interface{} {
 	owner := map[string]interface{}(nil)
 	if u := s.store.GetUserByID(g.OwnerUserID); u != nil {
-		owner = store.UserToJSON(u)
+		owner = store.UserToJSON(u, baseURL)
 	}
 	expired, expiresJSON := patTokenExpiryJSON(g.TokenExpiresAt)
 	return map[string]interface{}{

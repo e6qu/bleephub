@@ -75,7 +75,7 @@ func (s *Server) handleListGistCommits(w http.ResponseWriter, r *http.Request) {
 	base := s.baseURL(r)
 	var ownerJSON interface{}
 	if owner := s.store.GetUserByID(gist.OwnerID); owner != nil {
-		ownerJSON = store.UserToJSON(owner)
+		ownerJSON = store.UserToJSON(owner, s.baseURL(r))
 	}
 	items := make([]map[string]interface{}, len(commits))
 	for i, h := range commits {
@@ -506,12 +506,14 @@ func (s *Server) gistView(g *store.Gist, r *http.Request) *store.Gist {
 	view.ForksURL = view.URL + "/forks"
 	view.CommitsURL = view.URL + "/commits"
 	view.CommentsURL = view.URL + "/comments"
-	ownerLogin := ""
-	if owner := s.store.GetUserByID(view.OwnerID); owner != nil {
-		ownerLogin = owner.Login
-		view.HTMLURL = base + "/" + owner.Login + "/" + view.ID
-	}
-	view.GitPullURL = base + "/gist/" + ownerLogin + "/" + view.ID + ".git"
+	// A gist's web and clone URLs are keyed by the gist id alone — never by its
+	// owner. On github.com they are https://gist.github.com/{id}[.git] (the
+	// vendored contract's own examples), and a single-host GitHub Enterprise
+	// Server serves the same shape under /gist/{id}. An owner-scoped path
+	// sends `gh gist view --web` and `git clone <git_pull_url>` to a URL that
+	// resolves to the owner's profile or to nothing at all.
+	view.HTMLURL = base + "/gist/" + view.ID
+	view.GitPullURL = view.HTMLURL + ".git"
 	view.GitPushURL = view.GitPullURL
 	for name, f := range view.Files {
 		f.RawURL = base + "/raw/" + view.ID + "/" + name
@@ -585,7 +587,7 @@ func (s *Server) gistToJSON(g *store.Gist, r *http.Request, includeContent bool)
 		var forkOwnerJSON interface{}
 		if forkOwner := s.store.GetUserByID(f.OwnerID); forkOwner != nil {
 			// gist-simple forks[].user is a full public-user, not simple-user.
-			forkOwnerJSON = s.fullUserJSON(forkOwner)
+			forkOwnerJSON = s.fullUserJSON(forkOwner, s.baseURL(r))
 		}
 		forks = append(forks, map[string]interface{}{
 			"id":         f.ID,
@@ -599,7 +601,7 @@ func (s *Server) gistToJSON(g *store.Gist, r *http.Request, includeContent bool)
 	owner := s.store.GetUserByID(g.OwnerID)
 	var ownerJSON interface{}
 	if owner != nil {
-		ownerJSON = store.UserToJSON(owner)
+		ownerJSON = store.UserToJSON(owner, s.baseURL(r))
 	}
 
 	history := make([]map[string]interface{}, len(g.History))
@@ -650,7 +652,7 @@ func (s *Server) gistCommentToJSON(c *store.GistComment, r *http.Request) map[st
 	user := s.store.GetUserByID(c.UserID)
 	var userJSON interface{}
 	if user != nil {
-		userJSON = store.UserToJSON(user)
+		userJSON = store.UserToJSON(user, s.baseURL(r))
 	}
 	return map[string]interface{}{
 		"id":                 c.ID,

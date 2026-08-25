@@ -635,6 +635,22 @@ func rulesetNodeID(id int) string {
 	return "RSR_" + base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprintf("ruleset:%d", id)))
 }
 
+// FindRulesetByNodeID resolves a RepositoryRuleset global id to the LIVE row
+// (repository-, organization- or enterprise-scoped — they share one table).
+func FindRulesetByNodeID(st *Store, nodeID string) *Ruleset {
+	if nodeID == "" {
+		return nil
+	}
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
+	for _, rs := range st.Rulesets {
+		if rs.NodeID == nodeID {
+			return rs
+		}
+	}
+	return nil
+}
+
 func cloneRulesetSuite(suite *RulesetSuite) *RulesetSuite {
 	if suite == nil {
 		return nil

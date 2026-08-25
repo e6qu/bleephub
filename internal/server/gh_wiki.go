@@ -11,13 +11,16 @@ import (
 
 // Wiki is git-backed on real GitHub with NO REST API, so these routes live
 // under the browser-only /ui-data namespace rather than /api/v3 — inventing a
-// GitHub-namespaced path is a defect the route-definition tests reject. The
-// simulator exposes a small page store so the /ui wiki tab has something to
-// drive: list/read for anyone who can read the repo, create/update/delete for
-// anyone with push access. A repository whose wiki is disabled (has_wiki=false)
-// reports 404 for the whole surface, matching a disabled wiki on github.com.
+// GitHub-namespaced path is a defect the route-definition tests reject. They are
+// the browser's view of the `<repo>.wiki.git` repository, not a second store:
+// every read here projects that repository's tip commit and every write here is
+// a commit on it (store_wiki_git.go), so a page edited in the UI is in the next
+// clone and a page pushed over git is on the next page load. A repository whose
+// wiki is disabled (has_wiki=false) reports 404 for the whole surface, matching
+// a disabled wiki on github.com.
 // (`s.route` auto-wraps /ui-data patterns with authenticateUIData.)
 func (s *Server) registerGHWikiRoutes() {
+	s.registerGHWikiSettingsRoutes()
 	s.route("GET /ui-data/repos/{owner}/{repo}/wiki/pages", s.handleListWikiPages)
 	s.route("GET /ui-data/repos/{owner}/{repo}/wiki/pages/{slug}", s.handleGetWikiPage)
 	s.route("PUT /ui-data/repos/{owner}/{repo}/wiki/pages/{slug}", s.handlePutWikiPage)
@@ -53,7 +56,9 @@ func (s *Server) wikiRepoForWrite(w http.ResponseWriter, r *http.Request) *store
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return nil
 	}
-	if !s.viewerCanPushRepo(r.Context(), repo) {
+	// The same policy the git transport applies to a push, asked in the one
+	// place it is decided.
+	if !s.viewerMayEditWiki(r.Context(), repo) {
 		writeGHError(w, http.StatusForbidden, "Must have push access to edit the wiki.")
 		return nil
 	}
@@ -111,15 +116,25 @@ func (s *Server) handlePutWikiPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	existed := s.store.GetWikiPage(repo.FullName, slug) != nil
+	user := ghUserFromContext(r.Context())
 	author := ""
-	if u := ghUserFromContext(r.Context()); u != nil {
-		author = u.Login
+	if user != nil {
+		author = user.Login
 	}
 	page := s.store.UpsertWikiPage(repo.FullName, slug, req.Title, req.Body, author, req.Message)
+	if page == nil {
+		writeGHError(w, http.StatusInternalServerError, "Could not write the wiki page.")
+		return
+	}
 	status := http.StatusOK
+	action := "edited"
 	if !existed {
 		status = http.StatusCreated
+		action = "created"
 	}
+	// A browser edit is a commit, so it raises the same gollum event a push of
+	// that commit would have raised.
+	s.emitGollumEvent(repo, user, wikiPageChangeFor(page, action, s.store.WikiTipSHA(repo.FullName)), s.baseURL(r))
 	writeJSON(w, status, wikiPageJSON(page))
 }
 

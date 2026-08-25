@@ -57,6 +57,26 @@ func (s *Resolver) initReactionGraphQLTypes(userType *graphql.Object) {
 			"edges":      &graphql.Field{Type: graphql.NewList(graphql.NewObject(graphql.ObjectConfig{Name: "ReactionEdge", Fields: graphql.Fields{"node": &graphql.Field{Type: reactionType}, "cursor": &graphql.Field{Type: graphql.NewNonNull(graphql.String)}}}))},
 			"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
 			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
+			// Whether the authenticated viewer has left any reaction among the
+			// connection's nodes.
+			"viewerHasReacted": &graphql.Field{
+				Type: graphql.NewNonNull(graphql.Boolean),
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					viewer := s.ghUserFromContext(p.Context)
+					if viewer == nil {
+						return false, nil
+					}
+					src, _ := p.Source.(map[string]interface{})
+					nodes, _ := src["nodes"].([]map[string]interface{})
+					for _, n := range nodes {
+						u, _ := n["user"].(map[string]interface{})
+						if u != nil && srcInt(u, "databaseId") == viewer.ID {
+							return true, nil
+						}
+					}
+					return false, nil
+				},
+			},
 		},
 	})
 
@@ -100,6 +120,20 @@ func (s *Resolver) initReactionGraphQLTypes(userType *graphql.Object) {
 		},
 	})
 
+	// The Reactable-dependent Reaction fields are added now that the interface
+	// exists (the Reaction type itself is built before it). reactable resolves
+	// the reacted-to subject; createdAt/databaseId read the enriched node source.
+	dateTime := s.graphQLStringScalar("DateTime")
+	reactionType.AddFieldConfig("createdAt", &graphql.Field{Type: graphql.NewNonNull(dateTime)})
+	reactionType.AddFieldConfig("databaseId", &graphql.Field{Type: graphql.Int})
+	reactionType.AddFieldConfig("reactable", &graphql.Field{
+		Type: graphql.NewNonNull(s.graphqlTypes.reactable),
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			r, _ := p.Source.(map[string]interface{})
+			return s.reactableSubjectSource(srcStr(r, "parentType"), srcInt(r, "parentID")), nil
+		},
+	})
+
 	// CommitComment is the one Reactable subject with no pre-existing GraphQL
 	// type; create it now that the interface exists.
 	s.initCommitCommentType()
@@ -135,17 +169,16 @@ func (s *Resolver) initCommitCommentType() {
 
 // commitCommentToGQL renders a store commit comment as its GraphQL source map.
 func commitCommentToGQL(c *store.CommitComment, st *store.Store) map[string]interface{} {
-	var author map[string]interface{}
-	if u := st.GetUserByID(c.AuthorID); u != nil {
-		author = userToGraphQL(u)
-	}
 	return map[string]interface{}{
 		"nodeID":     c.NodeID,
 		"databaseId": c.ID,
 		"body":       c.Body,
 		"path":       c.Path,
 		"createdAt":  c.CreatedAt.Format(time.RFC3339),
-		"author":     author,
+		// A comment left by an account since removed has no author, and the
+		// absent child has to be an untyped nil rather than a nil map or the
+		// Actor type's non-null fields abort the surrounding subtree.
+		"author": optionalRendered(st.GetUserByID(c.AuthorID), userToGraphQL),
 	}
 }
 

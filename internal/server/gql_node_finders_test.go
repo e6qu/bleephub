@@ -20,7 +20,7 @@ func TestGQLNodeFindersDecodeDBID(t *testing.T) {
 	st := s.store
 
 	issue := st.CreateIssue(repo.ID, admin.ID, "issue", "", nil, nil, 0)
-	label := st.CreateLabel(repo.ID, "bug", "", "ff0000")
+	label := st.CreateLabel(repo.ID, "regression", "", "ff0000")
 	milestone := st.CreateMilestone(repo.ID, admin.ID, "v1", "", "open", nil)
 	comment := st.CreateComment(issue.ID, admin.ID, "hello")
 	pr := st.CreatePullRequest(repo.ID, admin.ID, "pr", "", "feature", "main", false, nil, nil, 0)

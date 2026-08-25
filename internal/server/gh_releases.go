@@ -333,13 +333,25 @@ func (s *Server) handleGetLatestRelease(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, releaseToJSON(rel, s.store, s.baseURL(r), repo))
 }
 
+// releaseVisibleTo reports whether a release may be shown to the caller. A
+// draft is unpublished: real GitHub serves it only to users with push access
+// and 404s everyone else. The list endpoint has always filtered drafts, so
+// applying the same rule on every by-id/by-tag read is what makes the two
+// surfaces agree instead of leaving a direct fetch as a way around the filter.
+func (s *Server) releaseVisibleTo(r *http.Request, repo *store.Repo, rel *store.Release) bool {
+	if rel == nil || repo == nil || rel.RepoID != repo.ID {
+		return false
+	}
+	return !rel.Draft || s.viewerCanPushRepo(r.Context(), repo)
+}
+
 func (s *Server) handleGetReleaseByTag(w http.ResponseWriter, r *http.Request) {
 	repo := s.lookupReadableRepoFromPath(w, r)
 	if repo == nil {
 		return
 	}
 	rel := s.store.Releases.GetByTag(repo.ID, r.PathValue("tag"))
-	if rel == nil {
+	if !s.releaseVisibleTo(r, repo, rel) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -357,7 +369,7 @@ func (s *Server) handleGetRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rel := s.store.Releases.Get(id)
-	if rel == nil || rel.RepoID != repo.ID {
+	if !s.releaseVisibleTo(r, repo, rel) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -650,7 +662,7 @@ func (s *Server) handleListReleaseAssets(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	rel := s.store.Releases.Get(releaseID)
-	if rel == nil || rel.RepoID != repo.ID {
+	if !s.releaseVisibleTo(r, repo, rel) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -678,7 +690,7 @@ func (s *Server) handleGetReleaseAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rel := s.store.Releases.Get(asset.ReleaseID)
-	if rel == nil || rel.RepoID != repo.ID {
+	if !s.releaseVisibleTo(r, repo, rel) {
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
@@ -786,7 +798,7 @@ func (s *Server) handleDeleteReleaseAsset(w http.ResponseWriter, r *http.Request
 func releaseAssetToJSON(asset *store.ReleaseAsset, st *store.Store, baseURL string, repo *store.Repo, rel *store.Release) map[string]interface{} {
 	var uploader map[string]interface{}
 	if user := st.Users[asset.UploaderID]; user != nil {
-		uploader = store.UserToJSON(user)
+		uploader = store.UserToJSON(user, baseURL)
 	}
 	downloadURL := fmt.Sprintf("%s/api/v3/repos/%s/releases/assets/%d", baseURL, repo.FullName, asset.ID)
 	return map[string]interface{}{
@@ -959,7 +971,7 @@ func releaseToJSON(rel *store.Release, st *store.Store, baseURL string, repo *st
 	var author map[string]interface{}
 	st.Mu.RLock()
 	if u := st.Users[rel.AuthorID]; u != nil {
-		author = store.UserToJSON(u)
+		author = store.UserToJSON(u, baseURL)
 	}
 	st.Mu.RUnlock()
 	publishedAt := interface{}(nil)
@@ -1010,7 +1022,7 @@ func (s *Server) buildReleaseEventPayload(repo *store.Repo, rel *store.Release, 
 	return attachInstallationBlock(map[string]interface{}{
 		"action":     action,
 		"release":    releaseToJSON(rel, s.store, baseURL, repo),
-		"repository": repoPayload(repo),
-		"sender":     senderPayload(sender),
+		"repository": repoPayload(repo, baseURL),
+		"sender":     senderPayload(sender, baseURL),
 	}, nil)
 }

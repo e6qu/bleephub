@@ -39,7 +39,7 @@ func TestCreateLabel(t *testing.T) {
 	createTestIssueRepo(t, "label-test")
 
 	resp := ghPost(t, "/api/v3/repos/admin/label-test/labels", defaultToken, map[string]interface{}{
-		"name":        "bug",
+		"name":        "regression",
 		"color":       "d73a4a",
 		"description": "Something is broken",
 	})
@@ -49,8 +49,8 @@ func TestCreateLabel(t *testing.T) {
 	}
 	data := decodeJSON(t, resp)
 
-	if data["name"] != "bug" {
-		t.Fatalf("expected name=bug, got %v", data["name"])
+	if data["name"] != "regression" {
+		t.Fatalf("expected name=regression, got %v", data["name"])
 	}
 	if data["color"] != "d73a4a" {
 		t.Fatalf("expected color=d73a4a, got %v", data["color"])
@@ -63,7 +63,7 @@ func TestCreateLabel(t *testing.T) {
 func TestListLabels(t *testing.T) {
 	createTestIssueRepo(t, "label-list")
 	mustPost(t, ghPost(t, "/api/v3/repos/admin/label-list/labels", defaultToken, map[string]interface{}{
-		"name": "enhancement", "color": "a2eeef",
+		"name": "improvement", "color": "a2eeef",
 	}))
 
 	resp := ghGet(t, "/api/v3/repos/admin/label-list/labels", "")
@@ -97,10 +97,10 @@ func TestGetLabel(t *testing.T) {
 func TestUpdateLabel(t *testing.T) {
 	createTestIssueRepo(t, "label-update")
 	mustPost(t, ghPost(t, "/api/v3/repos/admin/label-update/labels", defaultToken, map[string]interface{}{
-		"name": "wontfix", "color": "ffffff",
+		"name": "declined", "color": "ffffff",
 	}))
 
-	resp := ghPatch(t, "/api/v3/repos/admin/label-update/labels/wontfix", defaultToken, map[string]interface{}{
+	resp := ghPatch(t, "/api/v3/repos/admin/label-update/labels/declined", defaultToken, map[string]interface{}{
 		"color": "000000",
 	})
 	if resp.StatusCode != 200 {
@@ -369,7 +369,7 @@ func TestUpdateIssueREST(t *testing.T) {
 func TestUpdateIssueMilestoneLabelsAssigneesREST(t *testing.T) {
 	createTestIssueRepo(t, "issue-update-fields")
 	mustPost(t, ghPost(t, "/api/v3/repos/admin/issue-update-fields/labels", defaultToken, map[string]interface{}{
-		"name": "bug", "color": "d73a4a",
+		"name": "regression", "color": "d73a4a",
 	}))
 	mustPost(t, ghPost(t, "/api/v3/repos/admin/issue-update-fields/milestones", defaultToken, map[string]interface{}{
 		"title": "v1.0",
@@ -381,7 +381,7 @@ func TestUpdateIssueMilestoneLabelsAssigneesREST(t *testing.T) {
 	// PATCH sets milestone (by number), labels, and assignees.
 	resp := ghPatch(t, "/api/v3/repos/admin/issue-update-fields/issues/1", defaultToken, map[string]interface{}{
 		"milestone": 1,
-		"labels":    []string{"bug"},
+		"labels":    []string{"regression"},
 		"assignees": []string{"admin"},
 	})
 	if resp.StatusCode != 200 {
@@ -479,14 +479,14 @@ func TestListCommentsREST(t *testing.T) {
 func TestAddIssueLabelsREST(t *testing.T) {
 	createTestIssueRepo(t, "issue-addlabels")
 	mustPost(t, ghPost(t, "/api/v3/repos/admin/issue-addlabels/labels", defaultToken, map[string]interface{}{
-		"name": "bug", "color": "d73a4a",
+		"name": "regression", "color": "d73a4a",
 	}))
 	mustPost(t, ghPost(t, "/api/v3/repos/admin/issue-addlabels/issues", defaultToken, map[string]interface{}{
 		"title": "Label test",
 	}))
 
 	resp := ghPost(t, "/api/v3/repos/admin/issue-addlabels/issues/1/labels", defaultToken, map[string]interface{}{
-		"labels": []string{"bug"},
+		"labels": []string{"regression"},
 	})
 	if resp.StatusCode != 200 {
 		resp.Body.Close()
@@ -496,8 +496,8 @@ func TestAddIssueLabelsREST(t *testing.T) {
 	if len(labels) == 0 {
 		t.Fatal("expected at least 1 label")
 	}
-	if labels[0]["name"] != "bug" {
-		t.Fatalf("expected label name=bug, got %v", labels[0]["name"])
+	if labels[0]["name"] != "regression" {
+		t.Fatalf("expected label name=regression, got %v", labels[0]["name"])
 	}
 }
 
@@ -525,14 +525,14 @@ func TestRemoveIssueLabelREST(t *testing.T) {
 func TestSetIssueLabelsREST(t *testing.T) {
 	createTestIssueRepo(t, "issue-setlabels")
 	mustPost(t, ghPost(t, "/api/v3/repos/admin/issue-setlabels/labels", defaultToken, map[string]interface{}{
-		"name": "bug", "color": "d73a4a",
+		"name": "regression", "color": "d73a4a",
 	}))
 	mustPost(t, ghPost(t, "/api/v3/repos/admin/issue-setlabels/labels", defaultToken, map[string]interface{}{
 		"name": "feature", "color": "a2eeef",
 	}))
 	mustPost(t, ghPost(t, "/api/v3/repos/admin/issue-setlabels/issues", defaultToken, map[string]interface{}{
 		"title":  "Set labels test",
-		"labels": []string{"bug"},
+		"labels": []string{"regression"},
 	}))
 
 	resp := ghPut(t, "/api/v3/repos/admin/issue-setlabels/issues/1/labels", defaultToken, map[string]interface{}{
@@ -554,11 +554,11 @@ func TestSetIssueLabelsREST(t *testing.T) {
 func TestClearIssueLabelsREST(t *testing.T) {
 	createTestIssueRepo(t, "issue-clearlabels")
 	mustPost(t, ghPost(t, "/api/v3/repos/admin/issue-clearlabels/labels", defaultToken, map[string]interface{}{
-		"name": "bug", "color": "d73a4a",
+		"name": "regression", "color": "d73a4a",
 	}))
 	mustPost(t, ghPost(t, "/api/v3/repos/admin/issue-clearlabels/issues", defaultToken, map[string]interface{}{
 		"title":  "Clear labels test",
-		"labels": []string{"bug"},
+		"labels": []string{"regression"},
 	}))
 
 	resp := ghDelete(t, "/api/v3/repos/admin/issue-clearlabels/issues/1/labels", defaultToken)

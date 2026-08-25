@@ -18,7 +18,7 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 	users := s.store.ListUsers()
 	out := make([]map[string]interface{}, 0, len(users))
 	for _, u := range users {
-		out = append(out, store.UserToJSON(u))
+		out = append(out, store.UserToJSON(u, s.baseURL(r)))
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))
 }
@@ -97,7 +97,7 @@ func (s *Server) handleAdminCreateUser(w http.ResponseWriter, r *http.Request) {
 		s.store.Persist.MustPut("users", strconv.Itoa(u.ID), u)
 	}
 	s.store.Mu.Unlock()
-	newUserJSON := store.UserToJSON(u)
+	newUserJSON := store.UserToJSON(u, s.baseURL(r))
 	writeJSONCreated(w, jsonStringField(newUserJSON, "url"), newUserJSON)
 }
 
@@ -451,7 +451,7 @@ func (s *Server) handleListUserBlocks(w http.ResponseWriter, r *http.Request) {
 	out := make([]map[string]interface{}, 0, len(logins))
 	for _, login := range logins {
 		if u := s.store.LookupUserByLogin(login); u != nil {
-			out = append(out, store.UserToJSON(u))
+			out = append(out, store.UserToJSON(u, s.baseURL(r)))
 		}
 	}
 	writeJSON(w, http.StatusOK, paginateAndLink(w, r, out))

@@ -199,7 +199,7 @@ func (s *Server) handleListEnterpriseTeamMemberships(w http.ResponseWriter, r *h
 	page := paginateAndLink(w, r, members)
 	out := make([]map[string]interface{}, 0, len(page))
 	for _, u := range page {
-		out = append(out, store.UserToJSON(u))
+		out = append(out, store.UserToJSON(u, s.baseURL(r)))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -233,7 +233,7 @@ func (s *Server) handleBulkAddEnterpriseTeamMemberships(w http.ResponseWriter, r
 	out := make([]map[string]interface{}, 0, len(users))
 	for _, u := range users {
 		s.store.AddEnterpriseTeamMember(team, u.ID)
-		out = append(out, store.UserToJSON(u))
+		out = append(out, store.UserToJSON(u, s.baseURL(r)))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -267,7 +267,7 @@ func (s *Server) handleBulkRemoveEnterpriseTeamMemberships(w http.ResponseWriter
 	out := make([]map[string]interface{}, 0, len(users))
 	for _, u := range users {
 		if s.store.RemoveEnterpriseTeamMember(team, u.ID) {
-			out = append(out, store.UserToJSON(u))
+			out = append(out, store.UserToJSON(u, s.baseURL(r)))
 		}
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -283,7 +283,7 @@ func (s *Server) handleGetEnterpriseTeamMembership(w http.ResponseWriter, r *htt
 		writeGHError(w, http.StatusNotFound, "Not Found")
 		return
 	}
-	writeJSON(w, http.StatusOK, store.UserToJSON(u))
+	writeJSON(w, http.StatusOK, store.UserToJSON(u, s.baseURL(r)))
 }
 
 func (s *Server) handleAddEnterpriseTeamMembership(w http.ResponseWriter, r *http.Request) {
@@ -297,7 +297,7 @@ func (s *Server) handleAddEnterpriseTeamMembership(w http.ResponseWriter, r *htt
 		return
 	}
 	s.store.AddEnterpriseTeamMember(team, u.ID)
-	writeJSON(w, http.StatusCreated, store.UserToJSON(u))
+	writeJSON(w, http.StatusCreated, store.UserToJSON(u, s.baseURL(r)))
 }
 
 func (s *Server) handleRemoveEnterpriseTeamMembership(w http.ResponseWriter, r *http.Request) {

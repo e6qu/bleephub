@@ -171,3 +171,81 @@ describe("MigrationsPage organization scope", () => {
     });
   });
 });
+
+// The GitHub Enterprise Importer tab: an organization's repository-migration
+// history, the sources it migrates from, and its migrator grants. It is a
+// separate surface from the export migrations above because a migration into
+// this instance and a migration out of it answer different questions.
+describe("MigrationsPage importer tab", () => {
+  const geiMigration = {
+    id: 7,
+    node_id: "RM_kgDO00000007",
+    repository_name: "landed",
+    source_url: "https://github.com/octo/landed.git",
+    state: "SUCCEEDED",
+    failure_reason: "",
+    warnings_count: 0,
+    warning_log: [],
+    continue_on_error: true,
+    lock_source: true,
+    skip_releases: false,
+    locked_repository: "",
+    org_migration_id: 0,
+    created_at: "2026-01-02T03:04:05Z",
+    updated_at: "2026-01-02T03:09:05Z",
+    source: { id: 3, name: "github-com", type: "GITHUB_ARCHIVE", url: "https://github.com" },
+    log_url: "/ui-data/orgs/acme/migrations/repositories/7/log",
+  };
+
+  function importerRouter(url: string) {
+    const u = url.toString();
+    if (u.startsWith("/api/v3/user/orgs")) return jsonResponse([{ id: 1, login: "acme" }]);
+    if (u === "/ui-data/orgs/acme/migrations/repositories") return jsonResponse([geiMigration]);
+    if (u === "/ui-data/orgs/acme/migrations/sources") {
+      return jsonResponse([{ id: 3, node_id: "MS_x", name: "github-com", type: "GITHUB_ARCHIVE", url: "https://github.com", created_at: "2026-01-01T00:00:00Z" }]);
+    }
+    if (u === "/ui-data/orgs/acme/migrations/migrators") {
+      return jsonResponse([{ actor_type: "USER", actor: "octocat", created_at: "2026-01-01T00:00:00Z" }]);
+    }
+    return baseRouter(u);
+  }
+
+  it("lists an organization's repository migrations, sources and migrators", async () => {
+    mockFetch.mockImplementation((url: string) => Promise.resolve(importerRouter(url)));
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("tab", { name: "Importer" }));
+    fireEvent.change(await screen.findByLabelText("Organization"), { target: { value: "acme" } });
+
+    expect(await screen.findByText("landed")).toBeInTheDocument();
+    expect(await screen.findByText("Succeeded")).toBeInTheDocument();
+    expect(await screen.findByText("github-com")).toBeInTheDocument();
+    expect(await screen.findByText("octocat")).toBeInTheDocument();
+  });
+
+  it("shows a failed migration's real reason and its warnings", async () => {
+    const failed = {
+      ...geiMigration,
+      state: "FAILED_VALIDATION",
+      failure_reason: "a repository named acme/landed already exists",
+      warnings_count: 1,
+      warning_log: ["no metadata archive was declared"],
+      log_url: null,
+    };
+    mockFetch.mockImplementation((url: string) => {
+      const u = url.toString();
+      if (u === "/ui-data/orgs/acme/migrations/repositories") return Promise.resolve(jsonResponse([failed]));
+      return Promise.resolve(importerRouter(u));
+    });
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("tab", { name: "Importer" }));
+    fireEvent.change(await screen.findByLabelText("Organization"), { target: { value: "acme" } });
+    fireEvent.click(await screen.findByRole("button", { name: "Details" }));
+
+    expect(
+      await screen.findByText(/a repository named acme\/landed already exists/),
+    ).toBeInTheDocument();
+    expect(screen.getByText("no metadata archive was declared")).toBeInTheDocument();
+  });
+});

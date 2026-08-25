@@ -93,7 +93,7 @@ func (s *Server) handleCreateIssue(w http.ResponseWriter, r *http.Request) {
 		issue = s.store.GetIssue(issue.ID)
 	}
 	repoKey := owner + "/" + name
-	s.emitWebhookEvent(repoKey, "issues", "opened", buildIssuesPayload(s.store, repo, issue, user, "opened"))
+	s.emitWebhookEvent(repoKey, "issues", "opened", buildIssuesPayload(s.store, repo, issue, user, "opened", s.baseURL(r)))
 
 	s.recordAuditEvent("issues.create", user.Login, "", map[string]interface{}{"repo": repoKey, "issue_id": issue.ID, "title": issue.Title})
 	issueJSON := issueToJSON(issue, s.store, s.baseURL(r), repo.FullName)
@@ -627,6 +627,17 @@ func (s *Server) handleUpdateIssue(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// A title edit is github's `renamed` issue event, carrying the old and new
+	// titles. The event's rename members were already modelled and rendered by
+	// both the timeline and the events endpoints, but nothing recorded one, so
+	// a retitled issue's history silently skipped the rename.
+	if v, ok := req["title"].(string); ok && v != issue.Title {
+		s.store.RecordIssueEvent(repo.ID, issue.ID, user.ID, "renamed", map[string]interface{}{
+			"rename_from": issue.Title,
+			"rename_to":   v,
+		})
+	}
+
 	if v, ok := req["state"].(string); ok {
 		if v == "closed" && previousState != "CLOSED" {
 			s.store.RecordIssueEvent(repo.ID, issue.ID, user.ID, "closed", nil)
@@ -817,20 +828,26 @@ func (s *Server) handleAddIssueLabels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.store.UpdateIssue(issue.ID, func(i *store.Issue) {
-		for _, lid := range newLabelIDs {
-			found := false
-			for _, existing := range i.LabelIDs {
-				if existing == lid {
-					found = true
-					break
-				}
-			}
-			if !found {
-				i.LabelIDs = append(i.LabelIDs, lid)
+	// Through SetIssueLabels rather than a raw UpdateIssue mutator: it records
+	// the `labeled` issue event for each addition, which is what the issue's
+	// timeline and events surfaces read. A direct mutation left the label
+	// attached with no history of who attached it, and the pull-request branch
+	// above (AddPullRequestLabels) already recorded one, so the two halves of
+	// the same endpoint disagreed.
+	next := append([]int(nil), issue.LabelIDs...)
+	for _, lid := range newLabelIDs {
+		found := false
+		for _, existing := range next {
+			if existing == lid {
+				found = true
+				break
 			}
 		}
-	})
+		if !found {
+			next = append(next, lid)
+		}
+	}
+	s.store.SetIssueLabels(repo.ID, issue.Number, next, user.ID)
 
 	// Return current labels
 	updated := s.store.GetIssue(issue.ID)
@@ -884,14 +901,15 @@ func (s *Server) handleRemoveIssueLabel(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	s.store.UpdateIssue(issue.ID, func(i *store.Issue) {
-		for idx, lid := range i.LabelIDs {
-			if lid == label.ID {
-				i.LabelIDs = append(i.LabelIDs[:idx], i.LabelIDs[idx+1:]...)
-				break
-			}
+	// SetIssueLabels for the same reason the add path uses it: the removal has
+	// to leave an `unlabeled` event behind, and a raw mutator leaves none.
+	next := make([]int, 0, len(issue.LabelIDs))
+	for _, lid := range issue.LabelIDs {
+		if lid != label.ID {
+			next = append(next, lid)
 		}
-	})
+	}
+	s.store.SetIssueLabels(repo.ID, issue.Number, next, user.ID)
 
 	updated := s.store.GetIssue(issue.ID)
 	s.issueEmitter(repo, updated, user).emitLabelDelta(issue.LabelIDs, updated.LabelIDs)
@@ -1300,7 +1318,7 @@ func crossRefEvent(st *store.Store, baseURL, repoFullName string, actorID int, c
 	var actor interface{}
 	st.Mu.RLock()
 	if u, ok := st.Users[actorID]; ok {
-		actor = store.UserToJSON(u)
+		actor = store.UserToJSON(u, baseURL)
 	}
 	st.Mu.RUnlock()
 	return map[string]interface{}{
@@ -1437,7 +1455,7 @@ func issueToJSON(issue *store.Issue, st *store.Store, baseURL, repoFullName stri
 	var authorJSON map[string]interface{}
 	st.Mu.RLock()
 	if u, ok := st.Users[issue.AuthorID]; ok {
-		authorJSON = store.UserToJSON(u)
+		authorJSON = store.UserToJSON(u, baseURL)
 	}
 
 	// Resolve labels
@@ -1452,7 +1470,7 @@ func issueToJSON(issue *store.Issue, st *store.Store, baseURL, repoFullName stri
 	assignees := make([]map[string]interface{}, 0)
 	for _, aid := range issue.AssigneeIDs {
 		if u, ok := st.Users[aid]; ok {
-			assignees = append(assignees, store.UserToJSON(u))
+			assignees = append(assignees, store.UserToJSON(u, baseURL))
 		}
 	}
 
@@ -1561,7 +1579,7 @@ func issueToJSON(issue *store.Issue, st *store.Store, baseURL, repoFullName stri
 		"created_at":         createdAt.Format(time.RFC3339),
 		"updated_at":         updatedAt.Format(time.RFC3339),
 		"closed_at":          closedAt,
-		"closed_by":          issueClosedByJSON(st, repoID, issueID, rawState),
+		"closed_by":          issueClosedByJSON(st, repoID, issueID, rawState, baseURL),
 		"author_association": store.AuthorAssociation(st, authorID, repo),
 		"draft":              false,
 		"sub_issues_summary": map[string]interface{}{
@@ -1577,7 +1595,7 @@ func issueToJSON(issue *store.Issue, st *store.Store, baseURL, repoFullName stri
 	return out
 }
 
-func issueClosedByJSON(st *store.Store, repoID, issueID int, state string) interface{} {
+func issueClosedByJSON(st *store.Store, repoID, issueID int, state, baseURL string) interface{} {
 	if state != "CLOSED" {
 		return nil
 	}
@@ -1590,7 +1608,7 @@ func issueClosedByJSON(st *store.Store, repoID, issueID int, state string) inter
 		actor := store.ActorUserLocked(st, events[i].ActorID)
 		var out interface{}
 		if actor != nil {
-			out = store.UserToJSON(actor)
+			out = store.UserToJSON(actor, baseURL)
 		}
 		st.Mu.RUnlock()
 		return out
@@ -1608,11 +1626,11 @@ func issueEventToJSON(e *store.IssueEvent, st *store.Store, baseURL, repoFullNam
 	}
 	var assigneeJSON interface{}
 	if u, ok := st.Users[e.AssigneeID]; ok {
-		assigneeJSON = store.UserToJSON(u)
+		assigneeJSON = store.UserToJSON(u, baseURL)
 	}
 	var assignerJSON interface{}
 	if u, ok := st.Users[e.AssignerID]; ok {
-		assignerJSON = store.UserToJSON(u)
+		assignerJSON = store.UserToJSON(u, baseURL)
 	}
 	var milestoneJSON interface{}
 	if ms, ok := st.Milestones[e.MilestoneID]; ok {
@@ -1655,10 +1673,10 @@ func issueEventForIssueToJSON(e *store.IssueEvent, st *store.Store, baseURL, rep
 		st.Mu.RLock()
 		var assigneeJSON, assignerJSON interface{}
 		if u, ok := st.Users[e.AssigneeID]; ok {
-			assigneeJSON = store.UserToJSON(u)
+			assigneeJSON = store.UserToJSON(u, baseURL)
 		}
 		if u, ok := st.Users[e.AssignerID]; ok {
-			assignerJSON = store.UserToJSON(u)
+			assignerJSON = store.UserToJSON(u, baseURL)
 		}
 		st.Mu.RUnlock()
 		out["assignee"] = assigneeJSON
@@ -1680,10 +1698,10 @@ func issueEventForIssueToJSON(e *store.IssueEvent, st *store.Store, baseURL, rep
 		st.Mu.RLock()
 		var requesterJSON, reviewerJSON interface{}
 		if u, ok := st.Users[e.ActorID]; ok {
-			requesterJSON = store.UserToJSON(u)
+			requesterJSON = store.UserToJSON(u, baseURL)
 		}
 		if u, ok := st.Users[e.RequestedReviewerID]; ok {
-			reviewerJSON = store.UserToJSON(u)
+			reviewerJSON = store.UserToJSON(u, baseURL)
 		}
 		st.Mu.RUnlock()
 		// GitHub's actor on review-request events is the requester.

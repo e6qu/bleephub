@@ -46,6 +46,50 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 			"isAnswerable": &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
 			"createdAt":    &graphql.Field{Type: graphql.NewNonNull(dateTime)},
 			"updatedAt":    &graphql.Field{Type: graphql.NewNonNull(dateTime)},
+			// The category emoji rendered to HTML. bleephub stores the emoji as a
+			// literal (":rocket:" or the glyph); GitHub returns a small HTML span
+			// around it, so a minimal non-null wrapper keeps the HTML! contract.
+			"emojiHTML": &graphql.Field{
+				Type: graphql.NewNonNull(htmlScalar),
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					cat, ok := p.Source.(map[string]interface{})
+					if !ok {
+						return "", fmt.Errorf("category source: unexpected type %T", p.Source)
+					}
+					emoji, _ := cat["emoji"].(string)
+					return "<div>" + emoji + "</div>", nil
+				},
+			},
+			// The repository this category belongs to. Non-null: every stored
+			// category carries a repo id, resolved back to the repository object.
+			"repository": &graphql.Field{
+				Type: graphql.NewNonNull(repoType),
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					cat, ok := p.Source.(map[string]interface{})
+					if !ok {
+						return nil, fmt.Errorf("category source: unexpected type %T", p.Source)
+					}
+					repoID, _ := cat["repoID"].(int)
+					repo := s.store.GetRepoByID(repoID)
+					if repo == nil {
+						return nil, fmt.Errorf("repository %d not found", repoID)
+					}
+					return repoToGraphQL(s.store, s.store.SnapRepo(repo)), nil
+				},
+			},
+			// A slugified form of the category name (lowercase, non-alphanumeric
+			// runs collapsed to '-'), matching GitHub's category slug.
+			"slug": &graphql.Field{
+				Type: graphql.NewNonNull(graphql.String),
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					cat, ok := p.Source.(map[string]interface{})
+					if !ok {
+						return nil, fmt.Errorf("category source: unexpected type %T", p.Source)
+					}
+					name, _ := cat["name"].(string)
+					return slugifyCategoryName(name), nil
+				},
+			},
 		},
 	})
 
@@ -76,7 +120,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 		Name:       "DiscussionComment",
 		Interfaces: []*graphql.Interface{s.gqlMinimizableInterface(), s.graphqlTypes.reactable, s.gqlVotableInterface()},
 		Fields: graphql.FieldsThunk(func() graphql.Fields {
-			return graphql.Fields{
+			base := graphql.Fields{
 				// Votable contract.
 				"upvoteCount": &graphql.Field{
 					Type: graphql.NewNonNull(graphql.Int),
@@ -114,6 +158,22 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 						c, _ := p.Source.(map[string]interface{})
 						return c["minimizedReason"], nil
+					},
+				},
+				"viewerCanMinimize": &graphql.Field{
+					Type: graphql.NewNonNull(graphql.Boolean),
+					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+						c, _ := p.Source.(map[string]interface{})
+						can, _ := s.commentMinimizePerms(p, c)
+						return can, nil
+					},
+				},
+				"viewerCanUnminimize": &graphql.Field{
+					Type: graphql.NewNonNull(graphql.Boolean),
+					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+						c, _ := p.Source.(map[string]interface{})
+						_, can := s.commentMinimizePerms(p, c)
+						return can, nil
 					},
 				},
 				"id": &graphql.Field{
@@ -226,6 +286,14 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 					},
 				},
 			}
+			// Merge the remaining GitHub fields (authorAssociation, replyTo,
+			// url/resourcePath, viewerCan*, …). DiscussionComment is built from a
+			// FieldsThunk, which AddFieldConfig cannot extend, so the extra fields
+			// join here.
+			for k, v := range s.discussionCommentExtraFields() {
+				base[k] = v
+			}
+			return base
 		}),
 	})
 
@@ -342,6 +410,9 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 			"updatedAt":        &graphql.Field{Type: graphql.NewNonNull(dateTime)},
 			"lastEditedAt":     &graphql.Field{Type: dateTime},
 			"locked":           &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
+			"closed":           &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
+			"closedAt":         &graphql.Field{Type: dateTime},
+			"stateReason":      &graphql.Field{Type: s.graphQLEnum("DiscussionStateReason", "DUPLICATE", "OUTDATED", "REOPENED", "RESOLVED")},
 			"activeLockReason": &graphql.Field{Type: s.graphQLEnum("LockReason", "OFF_TOPIC", "RESOLVED", "SPAM", "TOO_HEATED")},
 			"publishedAt":      &graphql.Field{Type: dateTime},
 			"url":              &graphql.Field{Type: graphql.NewNonNull(uri)},
@@ -479,6 +550,10 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
 		},
 	})
+	// The account surface, assembled later, publishes Organization.repositoryDiscussions
+	// and User.repositoryDiscussions over these very connection instances.
+	s.stashNamedObject(discussionConnectionType)
+	s.stashNamedObject(discussionCommentConnectionType)
 
 	// --- Enums ---
 	discussionOrderFieldEnum := graphql.NewEnum(graphql.EnumConfig{
@@ -767,7 +842,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 				"action":     "created",
 				"discussion": map[string]interface{}{"number": d.Number, "title": d.Title, "body": d.Body},
 				"repository": s.repoPayload(repo),
-				"sender":     store.UserToJSON(user),
+				"sender":     s.senderPayload(user),
 			})
 			return map[string]interface{}{
 				"discussion":       discussionToGQL(d, s.store),
@@ -802,7 +877,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 				}
 			})
 			return map[string]interface{}{
-				"discussion":       discussionToGQL(s.store.GetDiscussion(d.ID), s.store),
+				"discussion":       optionalObject(discussionToGQL(s.store.GetDiscussion(d.ID), s.store)),
 				"clientMutationId": input["clientMutationId"],
 			}, nil
 		},
@@ -828,6 +903,119 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 			}, nil
 		},
 	})
+
+	closeDiscussionInputType := graphql.NewInputObject(graphql.InputObjectConfig{
+		Name: "CloseDiscussionInput",
+		Fields: graphql.InputObjectConfigFieldMap{
+			"clientMutationId": &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"discussionId":     &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
+			"reason":           &graphql.InputObjectFieldConfig{Type: s.graphQLEnum("DiscussionCloseReason", "DUPLICATE", "OUTDATED", "RESOLVED"), DefaultValue: "RESOLVED"},
+		},
+	})
+	closeDiscussionPayloadType := graphql.NewObject(graphql.ObjectConfig{
+		Name: "CloseDiscussionPayload",
+		Fields: graphql.Fields{
+			"clientMutationId": &graphql.Field{Type: graphql.String},
+			"discussion":       &graphql.Field{Type: discussionType},
+		},
+	})
+	s.registerMutation(mutationType, "closeDiscussion", &graphql.Field{
+		Type: closeDiscussionPayloadType,
+		Args: graphql.FieldConfigArgument{
+			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(closeDiscussionInputType)},
+		},
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			user := s.ghUserFromContext(p.Context)
+			input, _ := p.Args["input"].(map[string]interface{})
+			discussionNodeID, _ := input["discussionId"].(string)
+			d := store.FindDiscussionByNodeID(s.store, discussionNodeID)
+			if d == nil {
+				return nil, gqlMissingNodeType("Discussion")
+			}
+			if d.Closed {
+				return nil, fmt.Errorf("the discussion is already closed")
+			}
+			reason, _ := input["reason"].(string)
+			if reason == "" {
+				reason = "RESOLVED"
+			}
+			now := s.store.CurrentTime()
+			s.store.UpdateDiscussion(d.ID, func(disc *store.Discussion) {
+				disc.Closed = true
+				disc.ClosedAt = &now
+				disc.StateReason = reason
+			})
+			repo := s.store.GetRepoByID(d.RepoID)
+			if repo != nil {
+				s.emitWebhookEvent(repo.FullName, "discussion", "closed", map[string]interface{}{
+					"action":     "closed",
+					"discussion": map[string]interface{}{"number": d.Number, "title": d.Title, "state_reason": reason},
+					"repository": s.repoPayload(repo),
+					"sender":     s.senderPayload(user),
+				})
+			}
+			return map[string]interface{}{
+				"discussion":       optionalObject(discussionToGQL(s.store.GetDiscussion(d.ID), s.store)),
+				"clientMutationId": input["clientMutationId"],
+			}, nil
+		},
+	})
+
+	reopenDiscussionInputType := graphql.NewInputObject(graphql.InputObjectConfig{
+		Name: "ReopenDiscussionInput",
+		Fields: graphql.InputObjectConfigFieldMap{
+			"clientMutationId": &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"discussionId":     &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
+		},
+	})
+	reopenDiscussionPayloadType := graphql.NewObject(graphql.ObjectConfig{
+		Name: "ReopenDiscussionPayload",
+		Fields: graphql.Fields{
+			"clientMutationId": &graphql.Field{Type: graphql.String},
+			"discussion":       &graphql.Field{Type: discussionType},
+		},
+	})
+	s.registerMutation(mutationType, "reopenDiscussion", &graphql.Field{
+		Type: reopenDiscussionPayloadType,
+		Args: graphql.FieldConfigArgument{
+			"input": &graphql.ArgumentConfig{Type: graphql.NewNonNull(reopenDiscussionInputType)},
+		},
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			user := s.ghUserFromContext(p.Context)
+			input, _ := p.Args["input"].(map[string]interface{})
+			discussionNodeID, _ := input["discussionId"].(string)
+			d := store.FindDiscussionByNodeID(s.store, discussionNodeID)
+			if d == nil {
+				return nil, gqlMissingNodeType("Discussion")
+			}
+			if !d.Closed {
+				return nil, fmt.Errorf("the discussion is not closed")
+			}
+			s.store.UpdateDiscussion(d.ID, func(disc *store.Discussion) {
+				disc.Closed = false
+				disc.ClosedAt = nil
+				// REOPENED is the state github reports after a reopen: the
+				// close reason no longer describes the discussion, but the
+				// header still explains why it is in the state it is in.
+				disc.StateReason = "REOPENED"
+			})
+			repo := s.store.GetRepoByID(d.RepoID)
+			if repo != nil {
+				s.emitWebhookEvent(repo.FullName, "discussion", "reopened", map[string]interface{}{
+					"action":     "reopened",
+					"discussion": map[string]interface{}{"number": d.Number, "title": d.Title},
+					"repository": s.repoPayload(repo),
+					"sender":     s.senderPayload(user),
+				})
+			}
+			return map[string]interface{}{
+				"discussion":       optionalObject(discussionToGQL(s.store.GetDiscussion(d.ID), s.store)),
+				"clientMutationId": input["clientMutationId"],
+			}, nil
+		},
+	})
+
+	s.addDiscussionPollTypes(mutationType, discussionType)
 
 	s.registerMutation(mutationType, "addDiscussionComment", &graphql.Field{
 		Type: addDiscussionCommentPayloadType,
@@ -860,7 +1048,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 					"comment":    map[string]interface{}{"id": c.ID, "body": c.Body},
 					"discussion": map[string]interface{}{"number": d.Number, "title": d.Title},
 					"repository": s.repoPayload(repo),
-					"sender":     store.UserToJSON(user),
+					"sender":     s.senderPayload(user),
 				})
 			}
 			return map[string]interface{}{
@@ -935,7 +1123,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 			}
 			s.store.MarkDiscussionCommentAsAnswer(c.ID)
 			return map[string]interface{}{
-				"discussion":       discussionToGQL(s.store.GetDiscussion(d.ID), s.store),
+				"discussion":       optionalObject(discussionToGQL(s.store.GetDiscussion(d.ID), s.store)),
 				"clientMutationId": input["clientMutationId"],
 			}, nil
 		},
@@ -959,7 +1147,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 			}
 			s.store.UnmarkDiscussionCommentAsAnswer(c.ID)
 			return map[string]interface{}{
-				"discussion":       discussionToGQL(s.store.GetDiscussion(d.ID), s.store),
+				"discussion":       optionalObject(discussionToGQL(s.store.GetDiscussion(d.ID), s.store)),
 				"clientMutationId": input["clientMutationId"],
 			}, nil
 		},
@@ -1011,7 +1199,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 			if d := store.FindDiscussionByNodeID(s.store, subjectNodeID); d != nil {
 				s.store.SetDiscussionUpvote(d.ID, user.ID, up)
 				return map[string]interface{}{
-					"subject":          discussionToGQL(s.store.GetDiscussion(d.ID), s.store),
+					"subject":          optionalObject(discussionToGQL(s.store.GetDiscussion(d.ID), s.store)),
 					"clientMutationId": input["clientMutationId"],
 				}, nil
 			}
@@ -1073,6 +1261,24 @@ func (s *Resolver) gqlVotableInterface() *graphql.Interface {
 
 // --- GraphQL converters ---
 
+// slugifyCategoryName lowercases a discussion-category name and collapses each
+// run of non-alphanumeric characters into a single '-', trimming leading and
+// trailing dashes — GitHub's DiscussionCategory.slug shape.
+func slugifyCategoryName(name string) string {
+	var b strings.Builder
+	lastDash := false
+	for _, r := range strings.ToLower(name) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			lastDash = false
+		} else if !lastDash {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+	return strings.Trim(b.String(), "-")
+}
+
 func discussionCategoryToGQL(cat *store.DiscussionCategory) map[string]interface{} {
 	return map[string]interface{}{
 		"nodeID":       cat.NodeID,
@@ -1082,6 +1288,7 @@ func discussionCategoryToGQL(cat *store.DiscussionCategory) map[string]interface
 		"isAnswerable": cat.IsAnswerable,
 		"createdAt":    cat.CreatedAt.Format(time.RFC3339),
 		"updatedAt":    cat.UpdatedAt.Format(time.RFC3339),
+		"repoID":       cat.RepoID,
 	}
 }
 
@@ -1123,6 +1330,15 @@ func discussionToGQL(d *store.Discussion, st *store.Store) map[string]interface{
 		publishedAt = d.PublishedAt.Format(time.RFC3339)
 	}
 
+	var closedAt interface{}
+	if d.ClosedAt != nil {
+		closedAt = d.ClosedAt.Format(time.RFC3339)
+	}
+	var stateReason interface{}
+	if d.StateReason != "" {
+		stateReason = d.StateReason
+	}
+
 	return map[string]interface{}{
 		"nodeID":           d.NodeID,
 		"databaseId":       d.ID,
@@ -1132,13 +1348,16 @@ func discussionToGQL(d *store.Discussion, st *store.Store) map[string]interface{
 		"body":             d.Body,
 		"bodyHTML":         discussionBodyToHTML(d.Body),
 		"bodyText":         discussionBodyToText(d.Body),
-		"author":           author,
+		"author":           optionalObject(author),
 		"authorID":         d.AuthorID,
-		"category":         category,
+		"category":         optionalObject(category),
 		"createdAt":        d.CreatedAt.Format(time.RFC3339),
 		"updatedAt":        d.UpdatedAt.Format(time.RFC3339),
 		"lastEditedAt":     lastEditedAt,
 		"locked":           d.Locked,
+		"closed":           d.Closed,
+		"closedAt":         closedAt,
+		"stateReason":      stateReason,
 		"activeLockReason": graphQLLockReason(d.LockedReason),
 		"publishedAt":      publishedAt,
 		"url":              url,
@@ -1160,11 +1379,19 @@ func discussionCommentToGQL(c *store.DiscussionComment, st *store.Store) map[str
 		lastEditedAt = c.LastEditedAt.Format(time.RFC3339)
 	}
 
+	repoID := 0
+	if d := st.Discussions[c.DiscussionID]; d != nil {
+		repoID = d.RepoID
+	}
+
 	return map[string]interface{}{
 		"nodeID":       c.NodeID,
 		"databaseId":   c.ID,
 		"discussionID": c.DiscussionID,
-		"author":       author,
+		"repoID":       repoID,
+		"authorID":     c.AuthorID,
+		"parentID":     c.ParentID,
+		"author":       optionalObject(author),
 		"body":         c.Body,
 		"bodyHTML":     discussionBodyToHTML(c.Body),
 		"bodyText":     discussionBodyToText(c.Body),
@@ -1225,9 +1452,13 @@ func reactionNodeToGraphQL(st *store.Store, r *store.Reaction) map[string]interf
 		userMap = userToGraphQL(u)
 	}
 	return map[string]interface{}{
-		"id":      fmt.Sprintf("REA_kgDO%08d", r.ID),
-		"content": r.Content,
-		"user":    userMap,
+		"id":         fmt.Sprintf("REA_kgDO%08d", r.ID),
+		"databaseId": r.ID,
+		"content":    r.Content,
+		"createdAt":  r.CreatedAt.Format(time.RFC3339),
+		"user":       optionalObject(userMap),
+		"parentType": r.ParentType,
+		"parentID":   r.ParentID,
 	}
 }
 

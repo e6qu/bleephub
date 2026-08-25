@@ -135,6 +135,11 @@ func (s *Server) handleCreatePersonalAccessTokenWeb(w http.ResponseWriter, r *ht
 	if user == nil {
 		return
 	}
+	// Minting or revoking a credential is a sensitive action under GitHub's
+	// sudo mode, so an enterprise demanding proof of presence gets it here.
+	if s.requireProofOfPresence(w, r) {
+		return
+	}
 	var body store.CreatePersonalAccessTokenWebRequest
 	if !decodeJSONBody(w, r, &body) {
 		return
@@ -217,6 +222,11 @@ func validPATPermissions(perms store.OrgPATPermissions) bool {
 func (s *Server) handleDeletePersonalAccessTokenWeb(w http.ResponseWriter, r *http.Request) {
 	user, _ := s.personalAccessTokenWebUser(w, r)
 	if user == nil {
+		return
+	}
+	// Minting or revoking a credential is a sensitive action under GitHub's
+	// sudo mode, so an enterprise demanding proof of presence gets it here.
+	if s.requireProofOfPresence(w, r) {
 		return
 	}
 	id, err := strconv.Atoi(r.PathValue("token_id"))

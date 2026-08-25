@@ -154,6 +154,11 @@ func (s *Server) handleCreateProjectClassic(w http.ResponseWriter, r *http.Reque
 		store.WriteGHValidationError(w, "Project", "name", "missing_field")
 		return
 	}
+	policy, enterprise := s.enterprisePolicyForRepo(repo)
+	if s.refuseByEnterprisePolicy(w, r, enterprise, policy.RepositoryProjects,
+		"Repository projects are disabled by an enterprise policy.") {
+		return
+	}
 	proj := s.store.CreateProjectClassic(repo, user.ID, body.Name, body.Body, body.State)
 	s.recordAuditEvent("project.create", user.Login, "", map[string]interface{}{"repo": repo.FullName, "project_id": proj.ID})
 	projJSON := projectClassicToJSON(proj, s.store, s.baseURL(r), repo.FullName)
@@ -161,8 +166,8 @@ func (s *Server) handleCreateProjectClassic(w http.ResponseWriter, r *http.Reque
 	s.emitWebhookEvent(repo.FullName, "project", "created", map[string]interface{}{
 		"action":     "created",
 		"project":    projJSON,
-		"repository": repoPayload(repo),
-		"sender":     store.UserToJSON(user),
+		"repository": repoPayload(repo, s.baseURL(r)),
+		"sender":     store.UserToJSON(user, s.baseURL(r)),
 	})
 	writeJSONCreated(w, jsonStringField(projJSON, "url"), projJSON)
 }
@@ -207,7 +212,7 @@ func (s *Server) handleUpdateProjectClassic(w http.ResponseWriter, r *http.Reque
 	if !decodeJSONBody(w, r, &body) {
 		return
 	}
-	updated := s.store.UpdateProjectClassic(proj, body.Name, body.Body, body.State)
+	updated := s.store.UpdateProjectClassic(proj, body.Name, body.Body, body.State, nil)
 	writeJSON(w, http.StatusOK, projectClassicToJSON(updated, s.store, s.baseURL(r), repo.FullName))
 }
 
@@ -284,8 +289,8 @@ func (s *Server) handleCreateProjectColumn(w http.ResponseWriter, r *http.Reques
 	s.emitWebhookEvent(repo.FullName, "project_column", "created", map[string]interface{}{
 		"action":         "created",
 		"project_column": colJSON,
-		"repository":     repoPayload(repo),
-		"sender":         store.UserToJSON(user),
+		"repository":     repoPayload(repo, s.baseURL(r)),
+		"sender":         store.UserToJSON(user, s.baseURL(r)),
 	})
 	writeJSONCreated(w, jsonStringField(colJSON, "url"), colJSON)
 }
@@ -454,7 +459,7 @@ func (s *Server) handleCreateProjectCard(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	card := s.store.CreateProjectCard(col.ID, user.ID, body.Note, issueID)
+	card := s.store.CreateProjectCard(col.ID, user.ID, body.Note, issueID, 0)
 	item, ok := projectCardToJSON(card, s.store, s.baseURL(r))
 	if !ok {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -463,8 +468,8 @@ func (s *Server) handleCreateProjectCard(w http.ResponseWriter, r *http.Request)
 	s.emitWebhookEvent(repo.FullName, "project_card", "created", map[string]interface{}{
 		"action":       "created",
 		"project_card": item,
-		"repository":   repoPayload(repo),
-		"sender":       store.UserToJSON(user),
+		"repository":   repoPayload(repo, s.baseURL(r)),
+		"sender":       store.UserToJSON(user, s.baseURL(r)),
 	})
 	writeJSONCreated(w, jsonStringField(item, "url"), item)
 }
@@ -512,7 +517,7 @@ func (s *Server) handleUpdateProjectCard(w http.ResponseWriter, r *http.Request)
 	if !decodeJSONBody(w, r, &body) {
 		return
 	}
-	updated := s.store.UpdateProjectCard(card, body.Note)
+	updated := s.store.UpdateProjectCard(card, &body.Note, nil)
 	item, ok := projectCardToJSON(updated, s.store, s.baseURL(r))
 	if !ok {
 		writeGHError(w, http.StatusNotFound, "Not Found")
@@ -574,8 +579,8 @@ func (s *Server) handleMoveProjectCard(w http.ResponseWriter, r *http.Request) {
 	s.emitWebhookEvent(repo.FullName, "project_card", "moved", map[string]interface{}{
 		"action":       "moved",
 		"project_card": map[string]interface{}{"id": card.ID, "url": cardMoveURL},
-		"repository":   repoPayload(repo),
-		"sender":       store.UserToJSON(user),
+		"repository":   repoPayload(repo, s.baseURL(r)),
+		"sender":       store.UserToJSON(user, s.baseURL(r)),
 	})
 	writeJSONCreated(w, cardMoveURL, map[string]interface{}{"id": card.ID, "url": cardMoveURL})
 }
@@ -659,7 +664,7 @@ func projectClassicToJSON(p *store.ProjectClassic, st *store.Store, baseURL, rep
 	var creator map[string]interface{}
 	st.Mu.RLock()
 	if u := st.Users[p.CreatorID]; u != nil {
-		creator = store.UserToJSON(u)
+		creator = store.UserToJSON(u, baseURL)
 	}
 	st.Mu.RUnlock()
 
@@ -708,7 +713,7 @@ func projectCardToJSON(c *store.ProjectCard, st *store.Store, baseURL string) (m
 	var contentURL interface{}
 	st.Mu.RLock()
 	if u := st.Users[c.CreatorID]; u != nil {
-		creator = store.UserToJSON(u)
+		creator = store.UserToJSON(u, baseURL)
 	}
 	col := st.ProjectColumns[c.ColumnID]
 	var proj *store.ProjectClassic
@@ -731,7 +736,7 @@ func projectCardToJSON(c *store.ProjectCard, st *store.Store, baseURL string) (m
 		"id":          c.ID,
 		"node_id":     c.NodeID,
 		"note":        nullIfEmpty(c.Note),
-		"archived":    false,
+		"archived":    c.Archived,
 		"creator":     creator,
 		"created_at":  c.CreatedAt.UTC().Format(time.RFC3339),
 		"updated_at":  c.UpdatedAt.UTC().Format(time.RFC3339),

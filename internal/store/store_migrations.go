@@ -31,10 +31,46 @@ type MigrationCommon struct {
 	UpdatedAt            time.Time `json:"updated_at"`
 	ExportedAt           time.Time `json:"exported_at"`
 
+	// FailureReason records why an export ended in state "failed". GitHub's
+	// Migration payload has no field for it, so it is served through the UI
+	// surface and the audit log rather than the REST object.
+	FailureReason string `json:"failure_reason,omitempty"`
+	// ArchiveKey names the object in the byte store holding the export's
+	// bytes; it is empty until the export succeeds. ArchiveSize and
+	// ArchiveSHA256 describe those bytes, and are what a download's
+	// Content-Length and integrity header are answered from without reading
+	// the object back into memory.
+	ArchiveKey    string `json:"archive_key,omitempty"`
+	ArchiveSize   int64  `json:"archive_size,omitempty"`
+	ArchiveSHA256 string `json:"archive_sha256,omitempty"`
+
 	// Internal state omitted from API responses.
 	LockedRepos    map[string]bool `json:"-"`
 	ArchiveDeleted bool            `json:"-"`
 }
+
+// The states a GitHub export migration moves through. A migration is created
+// pending, an export worker claims it into exporting, and it ends in exactly
+// one of exported or failed.
+const (
+	MigrationStatePending   = "pending"
+	MigrationStateExporting = "exporting"
+	MigrationStateExported  = "exported"
+	MigrationStateFailed    = "failed"
+)
+
+// MigrationScope distinguishes the two export migration families. They are
+// separate id sequences, separate buckets and separate authorization rules, so
+// every state-machine entry point takes the scope alongside the id rather than
+// guessing from the number.
+type MigrationScope string
+
+const (
+	// UserMigrationScope is a migration of a user's own repositories.
+	UserMigrationScope MigrationScope = "user"
+	// OrgMigrationScope is a migration of an organization's repositories.
+	OrgMigrationScope MigrationScope = "orgs"
+)
 
 // UserMigration is a user-scoped GitHub migration export.
 type UserMigration struct {
@@ -150,7 +186,7 @@ func (st *Store) CreateUserMigration(userID int, repos []string, lock, exMeta, e
 			ID:                   id,
 			NodeID:               migrationNodeID(id),
 			GUID:                 uuid.New().String(),
-			State:                "exported",
+			State:                MigrationStatePending,
 			Repositories:         append([]string(nil), repos...),
 			LockRepositories:     lock,
 			ExcludeMetadata:      exMeta,
@@ -161,7 +197,6 @@ func (st *Store) CreateUserMigration(userID int, repos []string, lock, exMeta, e
 			OrgMetadataOnly:      orgMetaOnly,
 			CreatedAt:            now,
 			UpdatedAt:            now,
-			ExportedAt:           now,
 			LockedRepos:          map[string]bool{},
 		},
 		UserID: userID,
@@ -176,7 +211,7 @@ func (st *Store) CreateUserMigration(userID int, repos []string, lock, exMeta, e
 	st.UserMigrations[id] = m
 	st.NextUserMigrationID++
 	st.persistUserMigration(m)
-	return m
+	return cloneUserMigration(m)
 }
 
 // GetUserMigration returns a user migration by ID, or nil.
@@ -255,7 +290,7 @@ func (st *Store) CreateOrgMigration(orgLogin string, repos []string, lock, exMet
 			ID:                   id,
 			NodeID:               migrationNodeID(id),
 			GUID:                 uuid.New().String(),
-			State:                "exported",
+			State:                MigrationStatePending,
 			Repositories:         append([]string(nil), repos...),
 			LockRepositories:     lock,
 			ExcludeMetadata:      exMeta,
@@ -266,7 +301,6 @@ func (st *Store) CreateOrgMigration(orgLogin string, repos []string, lock, exMet
 			OrgMetadataOnly:      orgMetaOnly,
 			CreatedAt:            now,
 			UpdatedAt:            now,
-			ExportedAt:           now,
 			LockedRepos:          map[string]bool{},
 		},
 		OrgLogin: orgLogin,
@@ -281,7 +315,7 @@ func (st *Store) CreateOrgMigration(orgLogin string, repos []string, lock, exMet
 	st.OrgMigrations[id] = m
 	st.NextOrgMigrationID++
 	st.persistOrgMigration(m)
-	return m
+	return cloneOrgMigration(m)
 }
 
 // GetOrgMigration returns an org migration by ID, or nil.

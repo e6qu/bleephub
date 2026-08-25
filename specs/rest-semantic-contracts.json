@@ -30607,9 +30607,7 @@
       "pagination": {
         "parameters": [
           "after",
-          "before",
-          "page",
-          "per_page"
+          "before"
         ],
         "required": true
       },
@@ -30648,20 +30646,6 @@
             "name": "direction",
             "required": false,
             "type": "string"
-          },
-          {
-            "default": 1,
-            "in": "query",
-            "name": "page",
-            "required": false,
-            "type": "integer"
-          },
-          {
-            "default": 30,
-            "in": "query",
-            "name": "per_page",
-            "required": false,
-            "type": "integer"
           },
           {
             "enum": [
@@ -65344,9 +65328,7 @@
       "pagination": {
         "parameters": [
           "after",
-          "before",
-          "page",
-          "per_page"
+          "before"
         ],
         "required": true
       },
@@ -65391,20 +65373,6 @@
             "name": "direction",
             "required": false,
             "type": "string"
-          },
-          {
-            "default": 1,
-            "in": "query",
-            "name": "page",
-            "required": false,
-            "type": "integer"
-          },
-          {
-            "default": 30,
-            "in": "query",
-            "name": "per_page",
-            "required": false,
-            "type": "integer"
           },
           {
             "enum": [
@@ -79670,7 +79638,7 @@
   ],
   "schema_version": 1,
   "source": "third_party/github-openapi.json.gz",
-  "source_sha256": "cb574397e102477ebc9b714e5cb8c90c786a17746777d97b90dc7ab5d817a56d",
+  "source_sha256": "f7afa5fa749313ad5d98e7c771be8b0c2571cadac9244290fe8158f503bf9b64",
   "summary": {
     "operations": 1221,
     "state_changing": 584,
