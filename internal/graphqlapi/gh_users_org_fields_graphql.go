@@ -17,8 +17,10 @@ package graphqlapi
 // report enumerates them.
 
 import (
+	"context"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/graphql-go/graphql"
 
@@ -207,6 +209,163 @@ func (s *Resolver) addUserCompletionFields(types *accountSurfaceTypes) {
 			return paginateGQLItems(nil, p.Args), nil
 		},
 	})
+
+	// --- contributionsCollection -----------------------------------------
+	// A real aggregate of the account's issues, pull requests, reviews, repos
+	// and commits over a time window (default the trailing year), with the
+	// contribution calendar computed from the same data.
+	contributionsDateTime := s.graphQLStringScalar("DateTime")
+	userType.AddFieldConfig("contributionsCollection", &graphql.Field{
+		Type: graphql.NewNonNull(s.gqlContributionsCollectionType()),
+		Args: graphql.FieldConfigArgument{
+			"from":           &graphql.ArgumentConfig{Type: contributionsDateTime},
+			"to":             &graphql.ArgumentConfig{Type: contributionsDateTime},
+			"organizationID": &graphql.ArgumentConfig{Type: graphql.ID},
+		},
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			user, err := s.userFromSource(p.Source)
+			if err != nil {
+				return nil, err
+			}
+			from := parseContributionTime(p.Args["from"])
+			to := parseContributionTime(p.Args["to"])
+			orgID := 0
+			if raw, ok := p.Args["organizationID"].(string); ok && raw != "" {
+				if id, kind, ok := resolveProjectOwner(s.store, raw); ok && kind == "Organization" {
+					orgID = id
+				}
+			}
+			return s.contributionsCollectionSource(user.ID, from, to, orgID), nil
+		},
+	})
+
+	// --- repositoryDiscussions / repositoryDiscussionComments ------------
+	// The discussions and discussion comments this account authored, across
+	// every repository the viewer may read.
+	if discussionConn := s.namedObject("DiscussionConnection"); discussionConn != nil {
+		userType.AddFieldConfig("repositoryDiscussions", &graphql.Field{
+			Type: graphql.NewNonNull(discussionConn),
+			Args: connectionArgs(graphql.FieldConfigArgument{
+				"repositoryId": &graphql.ArgumentConfig{Type: graphql.ID},
+				"answered":     &graphql.ArgumentConfig{Type: graphql.Boolean},
+			}),
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				user, err := s.userFromSource(p.Source)
+				if err != nil {
+					return nil, err
+				}
+				return paginateGQLItems(s.userAuthoredDiscussionItems(p.Context, user.ID), p.Args), nil
+			},
+		})
+	}
+	if commentConn := s.namedObject("DiscussionCommentConnection"); commentConn != nil {
+		userType.AddFieldConfig("repositoryDiscussionComments", &graphql.Field{
+			Type: graphql.NewNonNull(commentConn),
+			Args: connectionArgs(graphql.FieldConfigArgument{
+				"repositoryId": &graphql.ArgumentConfig{Type: graphql.ID},
+				"onlyAnswers":  &graphql.ArgumentConfig{Type: graphql.Boolean},
+			}),
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				user, err := s.userFromSource(p.Source)
+				if err != nil {
+					return nil, err
+				}
+				return paginateGQLItems(s.userAuthoredDiscussionCommentItems(p.Context, user.ID), p.Args), nil
+			},
+		})
+	}
+}
+
+// ownerRepositoryDiscussionItems aggregates the discussions across an owner's
+// own readable repositories, for Organization.repositoryDiscussions.
+func (s *Resolver) ownerRepositoryDiscussionItems(ctx context.Context, login string) []gqlConnItem {
+	repos := s.visibleRepos(ctx, s.store.ListReposByOwner(login))
+	var items []gqlConnItem
+	for _, repo := range repos {
+		for _, d := range s.store.ListDiscussions(repo.ID, 0) {
+			d := d
+			items = append(items, gqlConnItem{
+				identity: d.NodeID,
+				render:   func() map[string]interface{} { return discussionToGQL(d, s.store) },
+			})
+		}
+	}
+	return items
+}
+
+// ownerRepositoryDiscussionCommentItems aggregates the comments across an
+// owner's own readable repositories, for Organization.repositoryDiscussionComments.
+func (s *Resolver) ownerRepositoryDiscussionCommentItems(ctx context.Context, login string) []gqlConnItem {
+	repos := s.visibleRepos(ctx, s.store.ListReposByOwner(login))
+	var items []gqlConnItem
+	for _, repo := range repos {
+		for _, d := range s.store.ListDiscussions(repo.ID, 0) {
+			for _, c := range s.store.ListDiscussionComments(d.ID, 0) {
+				c := c
+				items = append(items, gqlConnItem{
+					identity: c.NodeID,
+					render:   func() map[string]interface{} { return discussionCommentToGQL(c, s.store) },
+				})
+			}
+		}
+	}
+	return items
+}
+
+// userAuthoredDiscussionItems aggregates the discussions authored by a user
+// across every readable repository, for User.repositoryDiscussions.
+func (s *Resolver) userAuthoredDiscussionItems(ctx context.Context, userID int) []gqlConnItem {
+	repos := s.visibleRepos(ctx, s.store.ListEveryRepo())
+	var items []gqlConnItem
+	for _, repo := range repos {
+		for _, d := range s.store.ListDiscussions(repo.ID, 0) {
+			if d.AuthorID != userID {
+				continue
+			}
+			d := d
+			items = append(items, gqlConnItem{
+				identity: d.NodeID,
+				render:   func() map[string]interface{} { return discussionToGQL(d, s.store) },
+			})
+		}
+	}
+	return items
+}
+
+// userAuthoredDiscussionCommentItems aggregates the discussion comments
+// authored by a user, for User.repositoryDiscussionComments.
+func (s *Resolver) userAuthoredDiscussionCommentItems(ctx context.Context, userID int) []gqlConnItem {
+	repos := s.visibleRepos(ctx, s.store.ListEveryRepo())
+	var items []gqlConnItem
+	for _, repo := range repos {
+		for _, d := range s.store.ListDiscussions(repo.ID, 0) {
+			for _, c := range s.store.ListDiscussionComments(d.ID, 0) {
+				if c.AuthorID != userID {
+					continue
+				}
+				c := c
+				items = append(items, gqlConnItem{
+					identity: c.NodeID,
+					render:   func() map[string]interface{} { return discussionCommentToGQL(c, s.store) },
+				})
+			}
+		}
+	}
+	return items
+}
+
+// parseContributionTime reads an optional RFC3339 DateTime argument, returning
+// the zero time when absent so contributionsCollectionSource applies its
+// trailing-year default.
+func parseContributionTime(arg interface{}) time.Time {
+	raw, ok := arg.(string)
+	if !ok || raw == "" {
+		return time.Time{}
+	}
+	if parsed, err := time.Parse(time.RFC3339, raw); err == nil {
+		return parsed
+	}
+	return time.Time{}
 }
 
 // addOrganizationCompletionFields installs the previously-missing members of
@@ -378,6 +537,118 @@ func (s *Resolver) addOrganizationCompletionFields(types *accountSurfaceTypes) {
 			return nil, nil
 		},
 	})
+
+	// --- auditLog ---------------------------------------------------------
+	// The organization's audit trail, served from the real admin_audit_log
+	// store and gated to owners inside organizationAuditLogConnection.
+	auditOrder := s.mutationInput("AuditLogOrder", graphql.InputObjectConfigFieldMap{
+		"field":     &graphql.InputObjectFieldConfig{Type: s.graphQLEnum("AuditLogOrderField", "CREATED_AT")},
+		"direction": &graphql.InputObjectFieldConfig{Type: s.sharedEnum("OrderDirection", "ASC", "DESC")},
+	})
+	orgType.AddFieldConfig("auditLog", &graphql.Field{
+		Type: graphql.NewNonNull(s.gqlOrganizationAuditEntryConnectionType()),
+		Args: graphql.FieldConfigArgument{
+			"first":   &graphql.ArgumentConfig{Type: graphql.Int},
+			"last":    &graphql.ArgumentConfig{Type: graphql.Int},
+			"after":   &graphql.ArgumentConfig{Type: graphql.String},
+			"before":  &graphql.ArgumentConfig{Type: graphql.String},
+			"query":   &graphql.ArgumentConfig{Type: graphql.String},
+			"orderBy": &graphql.ArgumentConfig{Type: auditOrder, DefaultValue: map[string]interface{}{"field": "CREATED_AT", "direction": "DESC"}},
+		},
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			org, err := s.orgFromSource(p.Source)
+			if err != nil {
+				return nil, err
+			}
+			return s.organizationAuditLogConnection(p, org)
+		},
+	})
+
+	// --- mannequins -------------------------------------------------------
+	mannequinConnection := s.gqlConnectionType("Mannequin", s.gqlMannequinType())
+	orgType.AddFieldConfig("mannequins", &graphql.Field{
+		Type: graphql.NewNonNull(mannequinConnection),
+		Args: connectionArgs(graphql.FieldConfigArgument{"login": &graphql.ArgumentConfig{Type: graphql.String}}),
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			org, err := s.orgFromSource(p.Source)
+			if err != nil {
+				return nil, err
+			}
+			// A mannequin is an import artifact of the organization; only an
+			// owner sees the placeholders awaiting attribution.
+			if !s.viewerCanAdminAccount(p.Context, org.Login) {
+				return paginateGQLItems(nil, p.Args), nil
+			}
+			mannequins := s.store.ListMannequins(org.ID)
+			sort.Slice(mannequins, func(i, j int) bool { return mannequins[i].ID < mannequins[j].ID })
+			var items []gqlConnItem
+			for i := range mannequins {
+				m := mannequins[i]
+				items = append(items, gqlConnItem{
+					identity: m.NodeID,
+					render:   func() map[string]interface{} { return s.mannequinSource(m) },
+				})
+			}
+			return paginateGQLItems(items, p.Args), nil
+		},
+	})
+
+	// --- repositoryDiscussions / repositoryDiscussionComments ------------
+	// The discussions and discussion comments across the organization's own
+	// repositories, over the shared Discussion/DiscussionComment connections
+	// the discussion family assembled earlier.
+	if discussionConn := s.namedObject("DiscussionConnection"); discussionConn != nil {
+		orgType.AddFieldConfig("repositoryDiscussions", &graphql.Field{
+			Type: graphql.NewNonNull(discussionConn),
+			Args: connectionArgs(graphql.FieldConfigArgument{
+				"repositoryId": &graphql.ArgumentConfig{Type: graphql.ID},
+				"answered":     &graphql.ArgumentConfig{Type: graphql.Boolean},
+			}),
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				org, err := s.orgFromSource(p.Source)
+				if err != nil {
+					return nil, err
+				}
+				return paginateGQLItems(s.ownerRepositoryDiscussionItems(p.Context, org.Login), p.Args), nil
+			},
+		})
+	}
+	if commentConn := s.namedObject("DiscussionCommentConnection"); commentConn != nil {
+		orgType.AddFieldConfig("repositoryDiscussionComments", &graphql.Field{
+			Type: graphql.NewNonNull(commentConn),
+			Args: connectionArgs(graphql.FieldConfigArgument{
+				"repositoryId": &graphql.ArgumentConfig{Type: graphql.ID},
+				"onlyAnswers":  &graphql.ArgumentConfig{Type: graphql.Boolean},
+			}),
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				org, err := s.orgFromSource(p.Source)
+				if err != nil {
+					return nil, err
+				}
+				return paginateGQLItems(s.ownerRepositoryDiscussionCommentItems(p.Context, org.Login), p.Args), nil
+			},
+		})
+	}
+
+	// --- innersourceVulnerabilities --------------------------------------
+	// The vulnerabilities disclosed across the organization's internal-source
+	// repositories. bleephub runs no cross-repository innersource scan, so the
+	// connection is truthfully empty over the shared SecurityVulnerability
+	// connection rather than a fabricated list.
+	if vulnConn := s.namedObject("SecurityVulnerabilityConnection"); vulnConn != nil {
+		orgType.AddFieldConfig("innersourceVulnerabilities", &graphql.Field{
+			Type: graphql.NewNonNull(vulnConn),
+			Args: connectionArgs(graphql.FieldConfigArgument{
+				"package": &graphql.ArgumentConfig{Type: graphql.String},
+			}),
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				if _, err := s.orgFromSource(p.Source); err != nil {
+					return nil, err
+				}
+				return paginateGQLItems(nil, p.Args), nil
+			},
+		})
+	}
 
 	// --- samlIdentityProvider --------------------------------------------
 	// SAML on this instance is bound at the enterprise, never at the

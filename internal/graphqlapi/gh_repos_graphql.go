@@ -572,10 +572,18 @@ func (s *Resolver) addRepoFieldsToSchema(
 	s.graphqlTypes.release = releaseType
 	s.addReactableFields(releaseType, "release")
 
+	releaseEdgeType := graphql.NewObject(graphql.ObjectConfig{
+		Name: "ReleaseEdge",
+		Fields: graphql.Fields{
+			"node":   &graphql.Field{Type: releaseType},
+			"cursor": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+		},
+	})
 	releaseConnectionType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "ReleaseConnection",
 		Fields: graphql.Fields{
 			"nodes":      &graphql.Field{Type: graphql.NewList(releaseType)},
+			"edges":      &graphql.Field{Type: graphql.NewList(releaseEdgeType)},
 			"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
 			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
 		},

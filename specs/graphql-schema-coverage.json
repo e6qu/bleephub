@@ -1,20 +1,15 @@
 {
   "official_types": 1807,
-  "bleephub_types": 1518,
-  "shared_types": 1511,
+  "bleephub_types": 1582,
+  "shared_types": 1575,
   "official_fields": 8362,
-  "implemented_fields": 6167,
-  "signature_exact_fields": 6166,
+  "implemented_fields": 6532,
+  "signature_exact_fields": 6531,
   "compatibility_gap_count": 9,
   "missing_types": [
-    "ActorLocation",
     "AddedToMergeQueueEvent",
     "AddedToProjectEvent",
     "Agentic",
-    "AuditEntry",
-    "AuditEntryActor",
-    "AuditLogOrder",
-    "AuditLogOrderField",
     "AutoRebaseEnabledEvent",
     "AutoSquashEnabledEvent",
     "AutomaticBaseChangeFailedEvent",
@@ -30,38 +25,9 @@
     "CheckRunType",
     "Comment",
     "CommitCommentThread",
-    "CommitContributionOrder",
-    "CommitContributionOrderField",
-    "CommitContributionsByRepository",
     "ConnectedEvent",
-    "Contribution",
-    "ContributionCalendar",
-    "ContributionCalendarDay",
-    "ContributionCalendarMonth",
-    "ContributionCalendarWeek",
-    "ContributionLevel",
-    "ContributionOrder",
-    "ContributionsCollection",
     "ConvertedFromDraftEvent",
     "ConvertedNoteToIssueEvent",
-    "CreatedCommitContribution",
-    "CreatedCommitContributionConnection",
-    "CreatedCommitContributionEdge",
-    "CreatedIssueContribution",
-    "CreatedIssueContributionConnection",
-    "CreatedIssueContributionEdge",
-    "CreatedIssueOrRestrictedContribution",
-    "CreatedPullRequestContribution",
-    "CreatedPullRequestContributionConnection",
-    "CreatedPullRequestContributionEdge",
-    "CreatedPullRequestOrRestrictedContribution",
-    "CreatedPullRequestReviewContribution",
-    "CreatedPullRequestReviewContributionConnection",
-    "CreatedPullRequestReviewContributionEdge",
-    "CreatedRepositoryContribution",
-    "CreatedRepositoryContributionConnection",
-    "CreatedRepositoryContributionEdge",
-    "CreatedRepositoryOrRestrictedContribution",
     "Deletable",
     "DeployedEvent",
     "DeploymentEnvironmentChangedEvent",
@@ -85,7 +51,6 @@
     "HeadRefForcePushedEvent",
     "IssueCommentPinnedEvent",
     "IssueCommentUnpinnedEvent",
-    "IssueContributionsByRepository",
     "IssueDependencyOrder",
     "IssueDependencyOrderField",
     "IssueEventWithRationale",
@@ -98,11 +63,8 @@
     "IssueTypeAddedEvent",
     "IssueTypeChangedEvent",
     "IssueTypeRemovedEvent",
-    "JoinedGitHubContribution",
     "LanguageOrder",
     "LanguageOrderField",
-    "MannequinConnection",
-    "MannequinEdge",
     "MannequinOrder",
     "MannequinOrderField",
     "MarkedAsDuplicateEvent",
@@ -117,15 +79,11 @@
     "OauthApplicationAuditEntryData",
     "OauthApplicationCreateAuditEntry",
     "OauthApplicationCreateAuditEntryState",
-    "OperationType",
     "OrgAddBillingManagerAuditEntry",
     "OrgAddMemberAuditEntry",
     "OrgAddMemberAuditEntryPermission",
-    "OrgBlockUserAuditEntry",
     "OrgConfigDisableCollaboratorsOnlyAuditEntry",
     "OrgConfigEnableCollaboratorsOnlyAuditEntry",
-    "OrgCreateAuditEntry",
-    "OrgCreateAuditEntryBillingPlan",
     "OrgDisableOauthAppRestrictionsAuditEntry",
     "OrgDisableSamlAuditEntry",
     "OrgDisableTwoFactorRequirementAuditEntry",
@@ -146,15 +104,11 @@
     "OrgRemoveMemberAuditEntry",
     "OrgRemoveMemberAuditEntryMembershipType",
     "OrgRemoveMemberAuditEntryReason",
-    "OrgRemoveOutsideCollaboratorAuditEntry",
-    "OrgRemoveOutsideCollaboratorAuditEntryMembershipType",
-    "OrgRemoveOutsideCollaboratorAuditEntryReason",
     "OrgRestoreMemberAuditEntry",
     "OrgRestoreMemberAuditEntryMembership",
     "OrgRestoreMemberMembershipOrganizationAuditEntryData",
     "OrgRestoreMemberMembershipRepositoryAuditEntryData",
     "OrgRestoreMemberMembershipTeamAuditEntryData",
-    "OrgUnblockUserAuditEntry",
     "OrgUpdateDefaultRepositoryPermissionAuditEntry",
     "OrgUpdateDefaultRepositoryPermissionAuditEntryPermission",
     "OrgUpdateMemberAuditEntry",
@@ -162,12 +116,6 @@
     "OrgUpdateMemberRepositoryCreationPermissionAuditEntry",
     "OrgUpdateMemberRepositoryCreationPermissionAuditEntryVisibility",
     "OrgUpdateMemberRepositoryInvitationPermissionAuditEntry",
-    "OrganizationAuditEntry",
-    "OrganizationAuditEntryConnection",
-    "OrganizationAuditEntryData",
-    "OrganizationAuditEntryEdge",
-    "OrganizationInvitationConnection",
-    "OrganizationInvitationEdge",
     "OrganizationOrUser",
     "OrganizationOrder",
     "OrganizationOrderField",
@@ -209,7 +157,6 @@
     "PinnedEnvironmentEdge",
     "PinnedEnvironmentOrder",
     "PinnedEnvironmentOrderField",
-    "PreciseDateTime",
     "PrivateRepositoryForkingDisableAuditEntry",
     "PrivateRepositoryForkingEnableAuditEntry",
     "ProfileOwner",
@@ -224,13 +171,10 @@
     "ProjectV2State",
     "PropertyTargetDefinition",
     "PullRequestCommitCommentThread",
-    "PullRequestContributionsByRepository",
-    "PullRequestReviewContributionsByRepository",
     "PullRequestRevisionMarker",
     "PullRequestThread",
     "ReactionOrder",
     "ReactionOrderField",
-    "ReleaseEdge",
     "RemovedFromMergeQueueEvent",
     "RemovedFromProjectEvent",
     "RemovedFromProjectV2Event",
@@ -253,14 +197,9 @@
     "RepoConfigEnableSockpuppetDisallowedAuditEntry",
     "RepoConfigLockAnonymousGitAccessAuditEntry",
     "RepoConfigUnlockAnonymousGitAccessAuditEntry",
-    "RepoCreateAuditEntry",
-    "RepoCreateAuditEntryVisibility",
-    "RepoDestroyAuditEntry",
-    "RepoDestroyAuditEntryVisibility",
     "RepoRemoveMemberAuditEntry",
     "RepoRemoveMemberAuditEntryVisibility",
     "RepoRemoveTopicAuditEntry",
-    "RepositoryAuditEntryData",
     "RepositoryDiscussionAuthor",
     "RepositoryDiscussionCommentAuthor",
     "RepositoryIdConditionTarget",
@@ -271,7 +210,6 @@
     "RepositoryRuleOrderField",
     "RepositoryVisibilityChangeDisableAuditEntry",
     "RepositoryVisibilityChangeEnableAuditEntry",
-    "RestrictedContribution",
     "ReviewStatusHovercardContext",
     "SavedReplyOrder",
     "SavedReplyOrderField",
@@ -298,8 +236,6 @@
     "UpdatableComment",
     "UserBlockDuration",
     "UserBlockedEvent",
-    "UserStatusOrder",
-    "UserStatusOrderField",
     "ViewerHovercardContext",
     "WorkflowRunOrder",
     "WorkflowRunOrderField"
@@ -316,28 +252,11 @@
     ],
     "Assignable": [
       "assignedActors",
-      "suggestedActors",
-      "viewerCanAssign"
-    ],
-    "Closable": [
-      "viewerCanClose",
-      "viewerCanReopen"
-    ],
-    "CloseIssueInput": [
-      "confidence",
-      "duplicateIssueId",
-      "isSuggestion",
-      "rationale"
+      "suggestedActors"
     ],
     "Commit": [
       "deployments",
       "signature"
-    ],
-    "CreateIssueInput": [
-      "agentAssignment",
-      "issueFields",
-      "parentIssueId",
-      "projectV2Ids"
     ],
     "CreateRepositoryInput": [
       "homepageUrl",
@@ -366,12 +285,6 @@
       "enterprise",
       "enterpriseServerInstallation"
     ],
-    "IssueCommentConnection": [
-      "edges"
-    ],
-    "IssueCommentEdge": [
-      "cursor"
-    ],
     "IssueEventRationale": [
       "issueEvent"
     ],
@@ -384,27 +297,9 @@
       "issues",
       "pinnedFields"
     ],
-    "Labelable": [
-      "viewerCanLabel"
-    ],
-    "LockLockablePayload": [
-      "actor"
-    ],
-    "Mannequin": [
-      "name"
-    ],
-    "Minimizable": [
-      "viewerCanMinimize",
-      "viewerCanUnminimize"
-    ],
     "Organization": [
-      "auditLog",
-      "innersourceVulnerabilities",
       "issueFields",
-      "mannequins",
-      "pinnedIssueFields",
-      "repositoryDiscussionComments",
-      "repositoryDiscussions"
+      "pinnedIssueFields"
     ],
     "Package": [
       "latestVersion",
@@ -421,9 +316,6 @@
     ],
     "Ref": [
       "rules"
-    ],
-    "ReleaseConnection": [
-      "edges"
     ],
     "Repository": [
       "packages",
@@ -448,29 +340,6 @@
     ],
     "StarredRepositoryEdge": [
       "starredAt"
-    ],
-    "Team": [
-      "invitations",
-      "memberStatuses",
-      "projectV2",
-      "projectsV2",
-      "reviewRequestDelegationAlgorithm",
-      "reviewRequestDelegationEnabled",
-      "reviewRequestDelegationMemberCount",
-      "reviewRequestDelegationNotifyTeam",
-      "viewerCanSubscribe",
-      "viewerSubscription"
-    ],
-    "UnlockLockablePayload": [
-      "actor"
-    ],
-    "UpdateIssuePayload": [
-      "actor"
-    ],
-    "User": [
-      "contributionsCollection",
-      "repositoryDiscussionComments",
-      "repositoryDiscussions"
     ]
   }
 }

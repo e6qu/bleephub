@@ -131,6 +131,7 @@ func (s *Resolver) addModerationMutationsToSchema(mutationType *graphql.Object) 
 		Name: "LockLockablePayload",
 		Fields: graphql.Fields{
 			"lockedRecord": &graphql.Field{Type: s.gqlLockableInterface()},
+			"actor":        s.mutationActorField(),
 		},
 	})
 
@@ -138,6 +139,7 @@ func (s *Resolver) addModerationMutationsToSchema(mutationType *graphql.Object) 
 		Name: "UnlockLockablePayload",
 		Fields: graphql.Fields{
 			"unlockedRecord": &graphql.Field{Type: s.gqlLockableInterface()},
+			"actor":          s.mutationActorField(),
 		},
 	})
 
@@ -283,8 +285,10 @@ func (s *Resolver) gqlMinimizableInterface() *graphql.Interface {
 	s.graphqlTypes.minimizable = graphql.NewInterface(graphql.InterfaceConfig{
 		Name: "Minimizable",
 		Fields: graphql.Fields{
-			"isMinimized":     &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
-			"minimizedReason": &graphql.Field{Type: graphql.String},
+			"isMinimized":         &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
+			"minimizedReason":     &graphql.Field{Type: graphql.String},
+			"viewerCanMinimize":   &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
+			"viewerCanUnminimize": &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
 		},
 		ResolveType: func(p graphql.ResolveTypeParams) *graphql.Object {
 			source, _ := p.Value.(map[string]interface{})

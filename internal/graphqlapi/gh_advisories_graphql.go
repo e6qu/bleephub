@@ -263,6 +263,9 @@ func (s *Resolver) buildVulnerabilityObject(types *advisorySchema, dateTime *gra
 		},
 	})
 	types.vulnConnection = advisoryConnectionType("SecurityVulnerability", types.vulnerability, s.gqlPageInfoType())
+	// Organization.innersourceVulnerabilities and Enterprise.innersourceVulnerabilities,
+	// assembled later, publish this same connection instance.
+	s.stashNamedObject(types.vulnConnection)
 
 	// The advisory's own vulnerabilities connection is added after the
 	// vulnerability type exists, which is the cycle graphql-go cannot express

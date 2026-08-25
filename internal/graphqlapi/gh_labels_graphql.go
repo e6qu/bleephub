@@ -38,6 +38,7 @@ func (s *Resolver) gqlLabelableInterface() *graphql.Interface {
 					"after": &graphql.ArgumentConfig{Type: graphql.String},
 				},
 			},
+			"viewerCanLabel": &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
 		},
 		ResolveType: func(p graphql.ResolveTypeParams) *graphql.Object {
 			source, _ := p.Value.(map[string]interface{})

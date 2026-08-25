@@ -18,13 +18,20 @@ import (
 // without depending on that wiring being present yet.
 func auditLogTestSchema(t *testing.T, res *Resolver, org *store.Org) graphql.Schema {
 	t.Helper()
-	orderInput := graphql.NewInputObject(graphql.InputObjectConfig{
-		Name: "AuditLogOrder",
-		Fields: graphql.InputObjectConfigFieldMap{
-			"direction": &graphql.InputObjectFieldConfig{Type: graphql.String},
-			"field":     &graphql.InputObjectFieldConfig{Type: graphql.String},
-		},
-	})
+	// Organization.auditLog is now wired in production, so the shared
+	// AuditLogOrder input is reachable through the Organization type the
+	// connection's nodes name; reuse it rather than minting a second type of
+	// the same name (which graphql-go rejects).
+	orderInput := res.mutationInputs["AuditLogOrder"]
+	if orderInput == nil {
+		orderInput = graphql.NewInputObject(graphql.InputObjectConfig{
+			Name: "AuditLogOrder",
+			Fields: graphql.InputObjectConfigFieldMap{
+				"direction": &graphql.InputObjectFieldConfig{Type: graphql.String},
+				"field":     &graphql.InputObjectFieldConfig{Type: graphql.String},
+			},
+		})
+	}
 	query := graphql.NewObject(graphql.ObjectConfig{
 		Name: "Query",
 		Fields: graphql.Fields{
@@ -77,7 +84,7 @@ func TestOrganizationAuditLogConnectionServesModeledEntries(t *testing.T) {
 	schema := auditLogTestSchema(t, h.res, org)
 
 	document := `{
-	  auditLog(first: 50, orderBy: {field: "CREATED_AT", direction: "ASC"}) {
+	  auditLog(first: 50, orderBy: {field: CREATED_AT, direction: ASC}) {
 	    totalCount
 	    pageInfo { hasNextPage hasPreviousPage }
 	    edges { cursor node { __typename } }

@@ -216,7 +216,8 @@ func (s *Resolver) createdRepositoryOrRestrictedUnion() *graphql.Union {
 
 func (s *Resolver) contributionConnectionType(name string, node *graphql.Object) *graphql.Object {
 	return s.mutationObject(name, graphql.Fields{
-		"edges":      gqlFieldListOf(s.contributionEdgeType(name[:len(name)-len("Connection")]+"Edge", node)),
+		// GitHub declares these edges as [Edge] (nullable elements), not [Edge!].
+		"edges":      &graphql.Field{Type: graphql.NewList(s.contributionEdgeType(name[:len(name)-len("Connection")]+"Edge", node))},
 		"nodes":      &graphql.Field{Type: graphql.NewList(node)},
 		"pageInfo":   gqlNonNull(s.gqlPageInfoType()),
 		"totalCount": gqlNonNull(graphql.Int),

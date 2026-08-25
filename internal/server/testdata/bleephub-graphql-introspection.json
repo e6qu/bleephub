@@ -173,6 +173,26 @@
         }
       }
     },
+    "ActorLocation": {
+      "kind": "OBJECT",
+      "fields": {
+        "city": {
+          "type": "String"
+        },
+        "country": {
+          "type": "String"
+        },
+        "countryCode": {
+          "type": "String"
+        },
+        "region": {
+          "type": "String"
+        },
+        "regionCode": {
+          "type": "String"
+        }
+      }
+    },
     "ActorType": {
       "kind": "ENUM",
       "enum_values": [
@@ -871,6 +891,9 @@
             "first": "Int",
             "last": "Int"
           }
+        },
+        "viewerCanAssign": {
+          "type": "Boolean!"
         }
       },
       "possible_types": [
@@ -950,6 +973,79 @@
         "rationale": "String",
         "suggest": "Boolean"
       }
+    },
+    "AuditEntry": {
+      "kind": "INTERFACE",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      },
+      "possible_types": [
+        "OrgBlockUserAuditEntry",
+        "OrgCreateAuditEntry",
+        "OrgRemoveOutsideCollaboratorAuditEntry",
+        "OrgUnblockUserAuditEntry",
+        "RepoCreateAuditEntry",
+        "RepoDestroyAuditEntry"
+      ]
+    },
+    "AuditEntryActor": {
+      "kind": "UNION",
+      "possible_types": [
+        "Bot",
+        "Organization",
+        "User"
+      ]
+    },
+    "AuditLogOrder": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "direction": "OrderDirection",
+        "field": "AuditLogOrderField"
+      }
+    },
+    "AuditLogOrderField": {
+      "kind": "ENUM",
+      "enum_values": [
+        "CREATED_AT"
+      ]
     },
     "AutoMergeDisabledEvent": {
       "kind": "OBJECT",
@@ -2225,6 +2321,12 @@
         },
         "closedAt": {
           "type": "DateTime"
+        },
+        "viewerCanClose": {
+          "type": "Boolean!"
+        },
+        "viewerCanReopen": {
+          "type": "Boolean!"
         }
       },
       "possible_types": [
@@ -2255,7 +2357,11 @@
       "kind": "INPUT_OBJECT",
       "input_fields": {
         "clientMutationId": "String",
+        "confidence": "IssueEventConfidenceLevel",
+        "duplicateIssueId": "ID",
+        "isSuggestion": "Boolean",
         "issueId": "ID!",
+        "rationale": "String",
         "stateReason": "IssueClosedStateReason"
       }
     },
@@ -2833,6 +2939,44 @@
         }
       }
     },
+    "CommitContributionOrder": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "direction": "OrderDirection!",
+        "field": "CommitContributionOrderField!"
+      }
+    },
+    "CommitContributionOrderField": {
+      "kind": "ENUM",
+      "enum_values": [
+        "COMMIT_COUNT",
+        "OCCURRED_AT"
+      ]
+    },
+    "CommitContributionsByRepository": {
+      "kind": "OBJECT",
+      "fields": {
+        "contributions": {
+          "type": "CreatedCommitContributionConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "orderBy": "CommitContributionOrder"
+          }
+        },
+        "repository": {
+          "type": "Repository!"
+        },
+        "resourcePath": {
+          "type": "URI!"
+        },
+        "url": {
+          "type": "URI!"
+        }
+      }
+    },
     "CommitEdge": {
       "kind": "OBJECT",
       "fields": {
@@ -3026,6 +3170,306 @@
         },
         "url": {
           "type": "URI"
+        }
+      }
+    },
+    "Contribution": {
+      "kind": "INTERFACE",
+      "fields": {
+        "isRestricted": {
+          "type": "Boolean!"
+        },
+        "occurredAt": {
+          "type": "DateTime!"
+        },
+        "resourcePath": {
+          "type": "URI!"
+        },
+        "url": {
+          "type": "URI!"
+        },
+        "user": {
+          "type": "User!"
+        }
+      },
+      "possible_types": [
+        "CreatedCommitContribution",
+        "CreatedIssueContribution",
+        "CreatedPullRequestContribution",
+        "CreatedPullRequestReviewContribution",
+        "CreatedRepositoryContribution",
+        "JoinedGitHubContribution",
+        "RestrictedContribution"
+      ]
+    },
+    "ContributionCalendar": {
+      "kind": "OBJECT",
+      "fields": {
+        "colors": {
+          "type": "[String!]!"
+        },
+        "isHalloween": {
+          "type": "Boolean!"
+        },
+        "months": {
+          "type": "[ContributionCalendarMonth!]!"
+        },
+        "totalContributions": {
+          "type": "Int!"
+        },
+        "weeks": {
+          "type": "[ContributionCalendarWeek!]!"
+        }
+      }
+    },
+    "ContributionCalendarDay": {
+      "kind": "OBJECT",
+      "fields": {
+        "color": {
+          "type": "String!"
+        },
+        "contributionCount": {
+          "type": "Int!"
+        },
+        "contributionLevel": {
+          "type": "ContributionLevel!"
+        },
+        "date": {
+          "type": "Date!"
+        },
+        "weekday": {
+          "type": "Int!"
+        }
+      }
+    },
+    "ContributionCalendarMonth": {
+      "kind": "OBJECT",
+      "fields": {
+        "firstDay": {
+          "type": "Date!"
+        },
+        "name": {
+          "type": "String!"
+        },
+        "totalWeeks": {
+          "type": "Int!"
+        },
+        "year": {
+          "type": "Int!"
+        }
+      }
+    },
+    "ContributionCalendarWeek": {
+      "kind": "OBJECT",
+      "fields": {
+        "contributionDays": {
+          "type": "[ContributionCalendarDay!]!"
+        },
+        "firstDay": {
+          "type": "Date!"
+        }
+      }
+    },
+    "ContributionLevel": {
+      "kind": "ENUM",
+      "enum_values": [
+        "FIRST_QUARTILE",
+        "FOURTH_QUARTILE",
+        "NONE",
+        "SECOND_QUARTILE",
+        "THIRD_QUARTILE"
+      ]
+    },
+    "ContributionOrder": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "direction": "OrderDirection!"
+      }
+    },
+    "ContributionsCollection": {
+      "kind": "OBJECT",
+      "fields": {
+        "commitContributionsByRepository": {
+          "type": "[CommitContributionsByRepository!]!",
+          "args": {
+            "maxRepositories": "Int"
+          }
+        },
+        "contributionCalendar": {
+          "type": "ContributionCalendar!"
+        },
+        "contributionYears": {
+          "type": "[Int!]!"
+        },
+        "doesEndInCurrentMonth": {
+          "type": "Boolean!"
+        },
+        "earliestRestrictedContributionDate": {
+          "type": "Date"
+        },
+        "endedAt": {
+          "type": "DateTime!"
+        },
+        "firstIssueContribution": {
+          "type": "CreatedIssueOrRestrictedContribution"
+        },
+        "firstPullRequestContribution": {
+          "type": "CreatedPullRequestOrRestrictedContribution"
+        },
+        "firstRepositoryContribution": {
+          "type": "CreatedRepositoryOrRestrictedContribution"
+        },
+        "hasActivityInThePast": {
+          "type": "Boolean!"
+        },
+        "hasAnyContributions": {
+          "type": "Boolean!"
+        },
+        "hasAnyRestrictedContributions": {
+          "type": "Boolean!"
+        },
+        "isSingleDay": {
+          "type": "Boolean!"
+        },
+        "issueContributions": {
+          "type": "CreatedIssueContributionConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "excludeFirst": "Boolean",
+            "excludePopular": "Boolean",
+            "first": "Int",
+            "last": "Int",
+            "orderBy": "ContributionOrder"
+          }
+        },
+        "issueContributionsByRepository": {
+          "type": "[IssueContributionsByRepository!]!",
+          "args": {
+            "excludeFirst": "Boolean",
+            "excludePopular": "Boolean",
+            "maxRepositories": "Int"
+          }
+        },
+        "joinedGitHubContribution": {
+          "type": "JoinedGitHubContribution"
+        },
+        "latestRestrictedContributionDate": {
+          "type": "Date"
+        },
+        "mostRecentCollectionWithActivity": {
+          "type": "ContributionsCollection"
+        },
+        "mostRecentCollectionWithoutActivity": {
+          "type": "ContributionsCollection"
+        },
+        "popularIssueContribution": {
+          "type": "CreatedIssueContribution"
+        },
+        "popularPullRequestContribution": {
+          "type": "CreatedPullRequestContribution"
+        },
+        "pullRequestContributions": {
+          "type": "CreatedPullRequestContributionConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "excludeFirst": "Boolean",
+            "excludePopular": "Boolean",
+            "first": "Int",
+            "last": "Int",
+            "orderBy": "ContributionOrder"
+          }
+        },
+        "pullRequestContributionsByRepository": {
+          "type": "[PullRequestContributionsByRepository!]!",
+          "args": {
+            "excludeFirst": "Boolean",
+            "excludePopular": "Boolean",
+            "maxRepositories": "Int"
+          }
+        },
+        "pullRequestReviewContributions": {
+          "type": "CreatedPullRequestReviewContributionConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "orderBy": "ContributionOrder"
+          }
+        },
+        "pullRequestReviewContributionsByRepository": {
+          "type": "[PullRequestReviewContributionsByRepository!]!",
+          "args": {
+            "maxRepositories": "Int"
+          }
+        },
+        "repositoryContributions": {
+          "type": "CreatedRepositoryContributionConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "excludeFirst": "Boolean",
+            "first": "Int",
+            "last": "Int",
+            "orderBy": "ContributionOrder"
+          }
+        },
+        "restrictedContributionsCount": {
+          "type": "Int!"
+        },
+        "startedAt": {
+          "type": "DateTime!"
+        },
+        "totalCommitContributions": {
+          "type": "Int!"
+        },
+        "totalIssueContributions": {
+          "type": "Int!",
+          "args": {
+            "excludeFirst": "Boolean",
+            "excludePopular": "Boolean"
+          }
+        },
+        "totalPullRequestContributions": {
+          "type": "Int!",
+          "args": {
+            "excludeFirst": "Boolean",
+            "excludePopular": "Boolean"
+          }
+        },
+        "totalPullRequestReviewContributions": {
+          "type": "Int!"
+        },
+        "totalRepositoriesWithContributedCommits": {
+          "type": "Int!"
+        },
+        "totalRepositoriesWithContributedIssues": {
+          "type": "Int!",
+          "args": {
+            "excludeFirst": "Boolean",
+            "excludePopular": "Boolean"
+          }
+        },
+        "totalRepositoriesWithContributedPullRequestReviews": {
+          "type": "Int!"
+        },
+        "totalRepositoriesWithContributedPullRequests": {
+          "type": "Int!",
+          "args": {
+            "excludeFirst": "Boolean",
+            "excludePopular": "Boolean"
+          }
+        },
+        "totalRepositoryContributions": {
+          "type": "Int!",
+          "args": {
+            "excludeFirst": "Boolean"
+          }
+        },
+        "user": {
+          "type": "User!"
         }
       }
     },
@@ -3521,14 +3965,18 @@
     "CreateIssueInput": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
+        "agentAssignment": "AgentAssignmentInput",
         "assigneeIds": "[ID!]",
         "body": "String",
         "clientMutationId": "String",
+        "issueFields": "[IssueFieldCreateOrUpdateInput!]",
         "issueTemplate": "String",
         "issueTypeId": "ID",
         "labelIds": "[ID!]",
         "milestoneId": "ID",
+        "parentIssueId": "ID",
         "projectIds": "[ID!]",
+        "projectV2Ids": "[ID!]",
         "repositoryId": "ID!",
         "title": "String!"
       }
@@ -4002,6 +4450,306 @@
           "type": "User"
         }
       }
+    },
+    "CreatedCommitContribution": {
+      "kind": "OBJECT",
+      "fields": {
+        "commitCount": {
+          "type": "Int!"
+        },
+        "isRestricted": {
+          "type": "Boolean!"
+        },
+        "occurredAt": {
+          "type": "DateTime!"
+        },
+        "repository": {
+          "type": "Repository!"
+        },
+        "resourcePath": {
+          "type": "URI!"
+        },
+        "url": {
+          "type": "URI!"
+        },
+        "user": {
+          "type": "User!"
+        }
+      },
+      "interfaces": [
+        "Contribution"
+      ]
+    },
+    "CreatedCommitContributionConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[CreatedCommitContributionEdge]"
+        },
+        "nodes": {
+          "type": "[CreatedCommitContribution]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "CreatedCommitContributionEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "CreatedCommitContribution"
+        }
+      }
+    },
+    "CreatedIssueContribution": {
+      "kind": "OBJECT",
+      "fields": {
+        "isRestricted": {
+          "type": "Boolean!"
+        },
+        "issue": {
+          "type": "Issue!"
+        },
+        "occurredAt": {
+          "type": "DateTime!"
+        },
+        "resourcePath": {
+          "type": "URI!"
+        },
+        "url": {
+          "type": "URI!"
+        },
+        "user": {
+          "type": "User!"
+        }
+      },
+      "interfaces": [
+        "Contribution"
+      ]
+    },
+    "CreatedIssueContributionConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[CreatedIssueContributionEdge]"
+        },
+        "nodes": {
+          "type": "[CreatedIssueContribution]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "CreatedIssueContributionEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "CreatedIssueContribution"
+        }
+      }
+    },
+    "CreatedIssueOrRestrictedContribution": {
+      "kind": "UNION",
+      "possible_types": [
+        "CreatedIssueContribution",
+        "RestrictedContribution"
+      ]
+    },
+    "CreatedPullRequestContribution": {
+      "kind": "OBJECT",
+      "fields": {
+        "isRestricted": {
+          "type": "Boolean!"
+        },
+        "occurredAt": {
+          "type": "DateTime!"
+        },
+        "pullRequest": {
+          "type": "PullRequest!"
+        },
+        "resourcePath": {
+          "type": "URI!"
+        },
+        "url": {
+          "type": "URI!"
+        },
+        "user": {
+          "type": "User!"
+        }
+      },
+      "interfaces": [
+        "Contribution"
+      ]
+    },
+    "CreatedPullRequestContributionConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[CreatedPullRequestContributionEdge]"
+        },
+        "nodes": {
+          "type": "[CreatedPullRequestContribution]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "CreatedPullRequestContributionEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "CreatedPullRequestContribution"
+        }
+      }
+    },
+    "CreatedPullRequestOrRestrictedContribution": {
+      "kind": "UNION",
+      "possible_types": [
+        "CreatedPullRequestContribution",
+        "RestrictedContribution"
+      ]
+    },
+    "CreatedPullRequestReviewContribution": {
+      "kind": "OBJECT",
+      "fields": {
+        "isRestricted": {
+          "type": "Boolean!"
+        },
+        "occurredAt": {
+          "type": "DateTime!"
+        },
+        "pullRequest": {
+          "type": "PullRequest!"
+        },
+        "pullRequestReview": {
+          "type": "PullRequestReview!"
+        },
+        "repository": {
+          "type": "Repository!"
+        },
+        "resourcePath": {
+          "type": "URI!"
+        },
+        "url": {
+          "type": "URI!"
+        },
+        "user": {
+          "type": "User!"
+        }
+      },
+      "interfaces": [
+        "Contribution"
+      ]
+    },
+    "CreatedPullRequestReviewContributionConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[CreatedPullRequestReviewContributionEdge]"
+        },
+        "nodes": {
+          "type": "[CreatedPullRequestReviewContribution]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "CreatedPullRequestReviewContributionEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "CreatedPullRequestReviewContribution"
+        }
+      }
+    },
+    "CreatedRepositoryContribution": {
+      "kind": "OBJECT",
+      "fields": {
+        "isRestricted": {
+          "type": "Boolean!"
+        },
+        "occurredAt": {
+          "type": "DateTime!"
+        },
+        "repository": {
+          "type": "Repository!"
+        },
+        "resourcePath": {
+          "type": "URI!"
+        },
+        "url": {
+          "type": "URI!"
+        },
+        "user": {
+          "type": "User!"
+        }
+      },
+      "interfaces": [
+        "Contribution"
+      ]
+    },
+    "CreatedRepositoryContributionConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[CreatedRepositoryContributionEdge]"
+        },
+        "nodes": {
+          "type": "[CreatedRepositoryContribution]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "CreatedRepositoryContributionEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "CreatedRepositoryContribution"
+        }
+      }
+    },
+    "CreatedRepositoryOrRestrictedContribution": {
+      "kind": "UNION",
+      "possible_types": [
+        "CreatedRepositoryContribution",
+        "RestrictedContribution"
+      ]
     },
     "CrossReferencedEvent": {
       "kind": "OBJECT",
@@ -9328,6 +10076,9 @@
     "IssueCommentConnection": {
       "kind": "OBJECT",
       "fields": {
+        "edges": {
+          "type": "[IssueCommentEdge]"
+        },
         "nodes": {
           "type": "[IssueComment]"
         },
@@ -9342,6 +10093,9 @@
     "IssueCommentEdge": {
       "kind": "OBJECT",
       "fields": {
+        "cursor": {
+          "type": "String!"
+        },
         "node": {
           "type": "IssueComment"
         }
@@ -9374,6 +10128,24 @@
         },
         "totalCount": {
           "type": "Int!"
+        }
+      }
+    },
+    "IssueContributionsByRepository": {
+      "kind": "OBJECT",
+      "fields": {
+        "contributions": {
+          "type": "CreatedIssueContributionConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "orderBy": "ContributionOrder"
+          }
+        },
+        "repository": {
+          "type": "Repository!"
         }
       }
     },
@@ -10168,6 +10940,29 @@
         }
       }
     },
+    "JoinedGitHubContribution": {
+      "kind": "OBJECT",
+      "fields": {
+        "isRestricted": {
+          "type": "Boolean!"
+        },
+        "occurredAt": {
+          "type": "DateTime!"
+        },
+        "resourcePath": {
+          "type": "URI!"
+        },
+        "url": {
+          "type": "URI!"
+        },
+        "user": {
+          "type": "User!"
+        }
+      },
+      "interfaces": [
+        "Contribution"
+      ]
+    },
     "Label": {
       "kind": "OBJECT",
       "fields": {
@@ -10281,6 +11076,9 @@
             "after": "String",
             "first": "Int"
           }
+        },
+        "viewerCanLabel": {
+          "type": "Boolean!"
         }
       },
       "possible_types": [
@@ -10554,6 +11352,9 @@
     "LockLockablePayload": {
       "kind": "OBJECT",
       "fields": {
+        "actor": {
+          "type": "Actor"
+        },
         "clientMutationId": {
           "type": "String"
         },
@@ -10637,6 +11438,9 @@
         "login": {
           "type": "String!"
         },
+        "name": {
+          "type": "String"
+        },
         "resourcePath": {
           "type": "URI!"
         },
@@ -10645,6 +11449,34 @@
         },
         "url": {
           "type": "URI!"
+        }
+      }
+    },
+    "MannequinConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[MannequinEdge]"
+        },
+        "nodes": {
+          "type": "[Mannequin]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "MannequinEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "Mannequin"
         }
       }
     },
@@ -11566,6 +12398,12 @@
         },
         "minimizedReason": {
           "type": "String"
+        },
+        "viewerCanMinimize": {
+          "type": "Boolean!"
+        },
+        "viewerCanUnminimize": {
+          "type": "Boolean!"
         }
       },
       "possible_types": [
@@ -13336,6 +14174,10 @@
         "MigrationSource",
         "MilestonedEvent",
         "OIDCProvider",
+        "OrgBlockUserAuditEntry",
+        "OrgCreateAuditEntry",
+        "OrgRemoveOutsideCollaboratorAuditEntry",
+        "OrgUnblockUserAuditEntry",
         "Organization",
         "OrganizationInvitation",
         "OrganizationMigration",
@@ -13355,6 +14197,8 @@
         "ReferencedEvent",
         "RenamedTitleEvent",
         "ReopenedEvent",
+        "RepoCreateAuditEntry",
+        "RepoDestroyAuditEntry",
         "Repository",
         "RepositoryInvitation",
         "RepositoryMigration",
@@ -13427,11 +14271,337 @@
         "AAD"
       ]
     },
+    "OperationType": {
+      "kind": "ENUM",
+      "enum_values": [
+        "ACCESS",
+        "AUTHENTICATION",
+        "CREATE",
+        "MODIFY",
+        "REMOVE",
+        "RESTORE",
+        "TRANSFER"
+      ]
+    },
     "OrderDirection": {
       "kind": "ENUM",
       "enum_values": [
         "ASC",
         "DESC"
+      ]
+    },
+    "OrgBlockUserAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "blockedUser": {
+          "type": "User"
+        },
+        "blockedUserName": {
+          "type": "String"
+        },
+        "blockedUserResourcePath": {
+          "type": "URI"
+        },
+        "blockedUserUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      },
+      "interfaces": [
+        "AuditEntry",
+        "Node",
+        "OrganizationAuditEntryData"
+      ]
+    },
+    "OrgCreateAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "billingPlan": {
+          "type": "OrgCreateAuditEntryBillingPlan"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      },
+      "interfaces": [
+        "AuditEntry",
+        "Node",
+        "OrganizationAuditEntryData"
+      ]
+    },
+    "OrgCreateAuditEntryBillingPlan": {
+      "kind": "ENUM",
+      "enum_values": [
+        "BUSINESS",
+        "BUSINESS_PLUS",
+        "FREE",
+        "TIERED_PER_SEAT",
+        "UNLIMITED"
+      ]
+    },
+    "OrgRemoveOutsideCollaboratorAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "membershipTypes": {
+          "type": "[OrgRemoveOutsideCollaboratorAuditEntryMembershipType!]"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "reason": {
+          "type": "OrgRemoveOutsideCollaboratorAuditEntryReason"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      },
+      "interfaces": [
+        "AuditEntry",
+        "Node",
+        "OrganizationAuditEntryData"
+      ]
+    },
+    "OrgRemoveOutsideCollaboratorAuditEntryMembershipType": {
+      "kind": "ENUM",
+      "enum_values": [
+        "BILLING_MANAGER",
+        "OUTSIDE_COLLABORATOR",
+        "UNAFFILIATED"
+      ]
+    },
+    "OrgRemoveOutsideCollaboratorAuditEntryReason": {
+      "kind": "ENUM",
+      "enum_values": [
+        "SAML_EXTERNAL_IDENTITY_MISSING",
+        "TWO_FACTOR_REQUIREMENT_NON_COMPLIANCE"
+      ]
+    },
+    "OrgUnblockUserAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "blockedUser": {
+          "type": "User"
+        },
+        "blockedUserName": {
+          "type": "String"
+        },
+        "blockedUserResourcePath": {
+          "type": "URI"
+        },
+        "blockedUserUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      },
+      "interfaces": [
+        "AuditEntry",
+        "Node",
+        "OrganizationAuditEntryData"
       ]
     },
     "Organization": {
@@ -13448,6 +14618,17 @@
         },
         "archivedAt": {
           "type": "DateTime"
+        },
+        "auditLog": {
+          "type": "OrganizationAuditEntryConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "orderBy": "AuditLogOrder",
+            "query": "String"
+          }
         },
         "avatarUrl": {
           "type": "URI!",
@@ -13496,6 +14677,16 @@
         },
         "id": {
           "type": "ID!"
+        },
+        "innersourceVulnerabilities": {
+          "type": "SecurityVulnerabilityConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "package": "String"
+          }
         },
         "interactionAbility": {
           "type": "RepositoryInteractionAbility"
@@ -13555,6 +14746,16 @@
         },
         "login": {
           "type": "String!"
+        },
+        "mannequins": {
+          "type": "MannequinConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "login": "String"
+          }
         },
         "memberStatuses": {
           "type": "UserStatusConnection!",
@@ -13722,6 +14923,28 @@
           "type": "RepositoryCustomProperty",
           "args": {
             "propertyName": "String!"
+          }
+        },
+        "repositoryDiscussionComments": {
+          "type": "DiscussionCommentConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "onlyAnswers": "Boolean",
+            "repositoryId": "ID"
+          }
+        },
+        "repositoryDiscussions": {
+          "type": "DiscussionConnection!",
+          "args": {
+            "after": "String",
+            "answered": "Boolean",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "repositoryId": "ID"
           }
         },
         "repositoryMigrations": {
@@ -13936,6 +15159,70 @@
         "Sponsorable"
       ]
     },
+    "OrganizationAuditEntry": {
+      "kind": "UNION",
+      "possible_types": [
+        "OrgBlockUserAuditEntry",
+        "OrgCreateAuditEntry",
+        "OrgRemoveOutsideCollaboratorAuditEntry",
+        "OrgUnblockUserAuditEntry",
+        "RepoCreateAuditEntry",
+        "RepoDestroyAuditEntry"
+      ]
+    },
+    "OrganizationAuditEntryConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[OrganizationAuditEntryEdge]"
+        },
+        "nodes": {
+          "type": "[OrganizationAuditEntry]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "OrganizationAuditEntryData": {
+      "kind": "INTERFACE",
+      "fields": {
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        }
+      },
+      "possible_types": [
+        "OrgBlockUserAuditEntry",
+        "OrgCreateAuditEntry",
+        "OrgRemoveOutsideCollaboratorAuditEntry",
+        "OrgUnblockUserAuditEntry",
+        "RepoCreateAuditEntry",
+        "RepoDestroyAuditEntry"
+      ]
+    },
+    "OrganizationAuditEntryEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "OrganizationAuditEntry"
+        }
+      }
+    },
     "OrganizationConnection": {
       "kind": "OBJECT",
       "fields": {
@@ -14070,6 +15357,34 @@
       "interfaces": [
         "Node"
       ]
+    },
+    "OrganizationInvitationConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[OrganizationInvitationEdge]"
+        },
+        "nodes": {
+          "type": "[OrganizationInvitation]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "OrganizationInvitationEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "OrganizationInvitation"
+        }
+      }
     },
     "OrganizationInvitationRole": {
       "kind": "ENUM",
@@ -14562,6 +15877,9 @@
           "type": "PinnedIssue"
         }
       }
+    },
+    "PreciseDateTime": {
+      "kind": "SCALAR"
     },
     "ProfileItemShowcase": {
       "kind": "OBJECT",
@@ -17388,6 +18706,24 @@
         }
       }
     },
+    "PullRequestContributionsByRepository": {
+      "kind": "OBJECT",
+      "fields": {
+        "contributions": {
+          "type": "CreatedPullRequestContributionConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "orderBy": "ContributionOrder"
+          }
+        },
+        "repository": {
+          "type": "Repository!"
+        }
+      }
+    },
     "PullRequestCreationCapConfig": {
       "kind": "OBJECT",
       "fields": {
@@ -17836,6 +19172,24 @@
         },
         "totalCount": {
           "type": "Int!"
+        }
+      }
+    },
+    "PullRequestReviewContributionsByRepository": {
+      "kind": "OBJECT",
+      "fields": {
+        "contributions": {
+          "type": "CreatedPullRequestReviewContributionConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "orderBy": "ContributionOrder"
+          }
+        },
+        "repository": {
+          "type": "Repository!"
         }
       }
     },
@@ -19232,6 +20586,9 @@
     "ReleaseConnection": {
       "kind": "OBJECT",
       "fields": {
+        "edges": {
+          "type": "[ReleaseEdge]"
+        },
         "nodes": {
           "type": "[Release]"
         },
@@ -19240,6 +20597,17 @@
         },
         "totalCount": {
           "type": "Int!"
+        }
+      }
+    },
+    "ReleaseEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "Release"
         }
       }
     },
@@ -19703,6 +21071,188 @@
           "type": "String"
         }
       }
+    },
+    "RepoCreateAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "forkParentName": {
+          "type": "String"
+        },
+        "forkSourceName": {
+          "type": "String"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "repository": {
+          "type": "Repository"
+        },
+        "repositoryName": {
+          "type": "String"
+        },
+        "repositoryResourcePath": {
+          "type": "URI"
+        },
+        "repositoryUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        },
+        "visibility": {
+          "type": "RepoCreateAuditEntryVisibility"
+        }
+      },
+      "interfaces": [
+        "AuditEntry",
+        "Node",
+        "OrganizationAuditEntryData",
+        "RepositoryAuditEntryData"
+      ]
+    },
+    "RepoCreateAuditEntryVisibility": {
+      "kind": "ENUM",
+      "enum_values": [
+        "INTERNAL",
+        "PRIVATE",
+        "PUBLIC"
+      ]
+    },
+    "RepoDestroyAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "repository": {
+          "type": "Repository"
+        },
+        "repositoryName": {
+          "type": "String"
+        },
+        "repositoryResourcePath": {
+          "type": "URI"
+        },
+        "repositoryUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        },
+        "visibility": {
+          "type": "RepoDestroyAuditEntryVisibility"
+        }
+      },
+      "interfaces": [
+        "AuditEntry",
+        "Node",
+        "OrganizationAuditEntryData",
+        "RepositoryAuditEntryData"
+      ]
+    },
+    "RepoDestroyAuditEntryVisibility": {
+      "kind": "ENUM",
+      "enum_values": [
+        "INTERNAL",
+        "PRIVATE",
+        "PUBLIC"
+      ]
     },
     "ReportedContentClassifiers": {
       "kind": "ENUM",
@@ -20449,6 +21999,27 @@
         "COLLABORATOR",
         "ORGANIZATION_MEMBER",
         "OWNER"
+      ]
+    },
+    "RepositoryAuditEntryData": {
+      "kind": "INTERFACE",
+      "fields": {
+        "repository": {
+          "type": "Repository"
+        },
+        "repositoryName": {
+          "type": "String"
+        },
+        "repositoryResourcePath": {
+          "type": "URI"
+        },
+        "repositoryUrl": {
+          "type": "URI"
+        }
+      },
+      "possible_types": [
+        "RepoCreateAuditEntry",
+        "RepoDestroyAuditEntry"
       ]
     },
     "RepositoryCodeowners": {
@@ -21724,6 +23295,29 @@
           "type": "PullRequestReviewThread"
         }
       }
+    },
+    "RestrictedContribution": {
+      "kind": "OBJECT",
+      "fields": {
+        "isRestricted": {
+          "type": "Boolean!"
+        },
+        "occurredAt": {
+          "type": "DateTime!"
+        },
+        "resourcePath": {
+          "type": "URI!"
+        },
+        "url": {
+          "type": "URI!"
+        },
+        "user": {
+          "type": "User!"
+        }
+      },
+      "interfaces": [
+        "Contribution"
+      ]
     },
     "RetireSponsorsTierInput": {
       "kind": "INPUT_OBJECT",
@@ -24428,6 +26022,25 @@
         "id": {
           "type": "ID!"
         },
+        "invitations": {
+          "type": "OrganizationInvitationConnection",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "memberStatuses": {
+          "type": "UserStatusConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "orderBy": "UserStatusOrder"
+          }
+        },
         "members": {
           "type": "TeamMemberConnection!",
           "args": {
@@ -24467,6 +26080,23 @@
         "privacy": {
           "type": "TeamPrivacy!"
         },
+        "projectV2": {
+          "type": "ProjectV2",
+          "args": {
+            "number": "Int!"
+          }
+        },
+        "projectsV2": {
+          "type": "ProjectV2Connection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "orderBy": "ProjectV2Order",
+            "query": "String"
+          }
+        },
         "repositories": {
           "type": "TeamRepositoryConnection!",
           "args": {
@@ -24487,6 +26117,18 @@
         "resourcePath": {
           "type": "URI!"
         },
+        "reviewRequestDelegationAlgorithm": {
+          "type": "TeamReviewAssignmentAlgorithm"
+        },
+        "reviewRequestDelegationEnabled": {
+          "type": "Boolean!"
+        },
+        "reviewRequestDelegationMemberCount": {
+          "type": "Int"
+        },
+        "reviewRequestDelegationNotifyTeam": {
+          "type": "Boolean!"
+        },
         "slug": {
           "type": "String!"
         },
@@ -24504,6 +26146,12 @@
         },
         "viewerCanAdminister": {
           "type": "Boolean!"
+        },
+        "viewerCanSubscribe": {
+          "type": "Boolean!"
+        },
+        "viewerSubscription": {
+          "type": "SubscriptionState"
         }
       }
     },
@@ -25184,6 +26832,9 @@
     "UnlockLockablePayload": {
       "kind": "OBJECT",
       "fields": {
+        "actor": {
+          "type": "Actor"
+        },
         "clientMutationId": {
           "type": "String"
         },
@@ -26137,6 +27788,9 @@
     "UpdateIssuePayload": {
       "kind": "OBJECT",
       "fields": {
+        "actor": {
+          "type": "Actor"
+        },
         "clientMutationId": {
           "type": "String"
         },
@@ -26954,6 +28608,14 @@
         "companyHTML": {
           "type": "HTML!"
         },
+        "contributionsCollection": {
+          "type": "ContributionsCollection!",
+          "args": {
+            "from": "DateTime",
+            "organizationID": "ID",
+            "to": "DateTime"
+          }
+        },
         "copilotEndpoints": {
           "type": "CopilotEndpoints"
         },
@@ -27295,6 +28957,28 @@
           "args": {
             "followRenames": "Boolean",
             "name": "String!"
+          }
+        },
+        "repositoryDiscussionComments": {
+          "type": "DiscussionCommentConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "onlyAnswers": "Boolean",
+            "repositoryId": "ID"
+          }
+        },
+        "repositoryDiscussions": {
+          "type": "DiscussionConnection!",
+          "args": {
+            "after": "String",
+            "answered": "Boolean",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "repositoryId": "ID"
           }
         },
         "resourcePath": {
@@ -27832,6 +29516,19 @@
           "type": "UserStatus"
         }
       }
+    },
+    "UserStatusOrder": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "direction": "OrderDirection!",
+        "field": "UserStatusOrderField!"
+      }
+    },
+    "UserStatusOrderField": {
+      "kind": "ENUM",
+      "enum_values": [
+        "UPDATED_AT"
+      ]
     },
     "UserViewType": {
       "kind": "ENUM",

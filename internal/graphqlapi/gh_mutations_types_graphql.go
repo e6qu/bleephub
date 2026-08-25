@@ -72,6 +72,40 @@ func (s *Resolver) memoizedMutationObject(name string) *graphql.Object {
 	return s.mutationObjects[name]
 }
 
+// mutationActorField is a mutation payload's `actor` member — the Actor who
+// performed the mutation, which on bleephub is always the authenticated viewer.
+func (s *Resolver) mutationActorField() *graphql.Field {
+	return &graphql.Field{
+		Type: s.graphqlTypes.actor,
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			return optionalRendered(s.ghUserFromContext(p.Context), userToGraphQL), nil
+		},
+	}
+}
+
+// stashNamedObject records an object type that one family builds so a
+// later-assembled family can reference the same instance by GitHub name — the
+// discussion, advisory and mannequin connections are built deep inside their
+// own recursive builders, and the account surface (assembled afterwards) needs
+// the very same instances to publish Organization/User connection fields.
+func (s *Resolver) stashNamedObject(o *graphql.Object) {
+	if o == nil {
+		return
+	}
+	if s.mutationObjects == nil {
+		s.mutationObjects = map[string]*graphql.Object{}
+	}
+	if _, exists := s.mutationObjects[o.Name()]; !exists {
+		s.mutationObjects[o.Name()] = o
+	}
+}
+
+// namedObject returns a previously stashed (or memoized) object type by name,
+// or nil when no family has built it yet.
+func (s *Resolver) namedObject(name string) *graphql.Object {
+	return s.memoizedMutationObject(name)
+}
+
 // mutationInput memoizes an input object type by GitHub's name. Like
 // mutationObject the field map is eager: registerMutation adds
 // clientMutationId to every mutation input, and graphql-go records a schema

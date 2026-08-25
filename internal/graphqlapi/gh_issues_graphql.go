@@ -924,8 +924,12 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 			// mutation. projectIds, when supplied, add the issue to those
 			// ProjectV2 boards (see the resolver). issueTemplate is a client
 			// hint with no server-side state, accepted for coercion.
-			"projectIds":    &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(graphql.ID))},
-			"issueTemplate": &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"projectIds":      &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(graphql.ID))},
+			"issueTemplate":   &graphql.InputObjectFieldConfig{Type: graphql.String},
+			"parentIssueId":   &graphql.InputObjectFieldConfig{Type: graphql.ID},
+			"projectV2Ids":    &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(graphql.ID))},
+			"agentAssignment": &graphql.InputObjectFieldConfig{Type: s.gqlAgentAssignmentInput()},
+			"issueFields":     &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(s.gqlIssueFieldCreateOrUpdateInput()))},
 		},
 	})
 
@@ -1028,8 +1032,12 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 	closeIssueInputType := graphql.NewInputObject(graphql.InputObjectConfig{
 		Name: "CloseIssueInput",
 		Fields: graphql.InputObjectConfigFieldMap{
-			"issueId":     &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
-			"stateReason": &graphql.InputObjectFieldConfig{Type: issueClosedStateReasonEnum},
+			"issueId":          &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
+			"stateReason":      &graphql.InputObjectFieldConfig{Type: issueClosedStateReasonEnum},
+			"confidence":       &graphql.InputObjectFieldConfig{Type: s.sharedEnum("IssueEventConfidenceLevel", "HIGH", "LOW", "MEDIUM")},
+			"duplicateIssueId": &graphql.InputObjectFieldConfig{Type: graphql.ID},
+			"isSuggestion":     &graphql.InputObjectFieldConfig{Type: graphql.Boolean},
+			"rationale":        &graphql.InputObjectFieldConfig{Type: graphql.String},
 		},
 	})
 
@@ -1411,12 +1419,8 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 		},
 	})
 
-	commentEdgeType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "IssueCommentEdge",
-		Fields: graphql.Fields{
-			"node": &graphql.Field{Type: issueCommentType},
-		},
-	})
+	commentEdgeType := s.gqlIssueCommentEdgeType()
+	_ = issueCommentType
 
 	addCommentPayloadType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "AddCommentPayload",
@@ -1528,6 +1532,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 		Name: "UpdateIssuePayload",
 		Fields: graphql.Fields{
 			"issue": &graphql.Field{Type: issueType},
+			"actor": s.mutationActorField(),
 		},
 	})
 
@@ -2241,6 +2246,22 @@ func (s *Resolver) gqlIssueCommentType() *graphql.Object {
 					return c["isMinimized"], nil
 				},
 			},
+			"viewerCanMinimize": &graphql.Field{
+				Type: graphql.NewNonNull(graphql.Boolean),
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					c, _ := p.Source.(map[string]interface{})
+					can, _ := s.commentMinimizePerms(p, c)
+					return can, nil
+				},
+			},
+			"viewerCanUnminimize": &graphql.Field{
+				Type: graphql.NewNonNull(graphql.Boolean),
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					c, _ := p.Source.(map[string]interface{})
+					_, can := s.commentMinimizePerms(p, c)
+					return can, nil
+				},
+			},
 			"isPinned": &graphql.Field{
 				Type: graphql.Boolean,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -2301,11 +2322,50 @@ func (s *Resolver) gqlIssueCommentConnectionType() *graphql.Object {
 		Name: "IssueCommentConnection",
 		Fields: graphql.Fields{
 			"nodes":      &graphql.Field{Type: graphql.NewList(s.gqlIssueCommentType())},
+			"edges":      &graphql.Field{Type: graphql.NewList(s.gqlIssueCommentEdgeType())},
 			"totalCount": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
 			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
 		},
 	})
 	return s.graphqlTypes.issueCommentConnection
+}
+
+// gqlAgentAssignmentInput is GitHub's AgentAssignmentInput (memoized); the
+// agent-triage mutations and CreateIssueInput.agentAssignment name one type.
+func (s *Resolver) gqlAgentAssignmentInput() *graphql.InputObject {
+	return s.mutationInput("AgentAssignmentInput", graphql.InputObjectConfigFieldMap{
+		"baseRef":            gqlString(),
+		"customAgent":        gqlString(),
+		"customInstructions": gqlString(),
+		"targetRepositoryId": gqlID(),
+	})
+}
+
+// gqlIssueFieldCreateOrUpdateInput is GitHub's IssueFieldCreateOrUpdateInput
+// (memoized); the issue-field mutations and CreateIssueInput.issueFields name
+// one type.
+func (s *Resolver) gqlIssueFieldCreateOrUpdateInput() *graphql.InputObject {
+	return s.mutationInput("IssueFieldCreateOrUpdateInput", graphql.InputObjectConfigFieldMap{
+		"fieldId":              gqlNonNullID(),
+		"textValue":            gqlString(),
+		"dateValue":            gqlString(),
+		"numberValue":          gqlInputOf(graphql.Float),
+		"singleSelectOptionId": gqlID(),
+		"multiSelectOptionIds": gqlListOf(graphql.ID),
+		"delete":               gqlBool(),
+		"suggest":              gqlBool(),
+		"rationale":            gqlString(),
+		"confidence":           gqlInputOf(s.sharedEnum("IssueEventConfidenceLevel", "HIGH", "LOW", "MEDIUM")),
+	})
+}
+
+// gqlIssueCommentEdgeType returns the shared IssueCommentEdge (memoized), used
+// by IssueCommentConnection.edges and AddCommentPayload.commentEdge.
+func (s *Resolver) gqlIssueCommentEdgeType() *graphql.Object {
+	return s.mutationObject("IssueCommentEdge", graphql.Fields{
+		"node":   &graphql.Field{Type: s.gqlIssueCommentType()},
+		"cursor": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+	})
 }
 
 // gqlIssueConnectionType returns the shared IssueConnection type (memoized).
@@ -2610,7 +2670,39 @@ func commentToGQLLocked(c *store.Comment, st *store.Store) map[string]interface{
 		"isPinned":            c.Pinned,
 		"minimizedReason":     nilStr(c.MinimizedReason),
 		"reactionGroups":      reactionGroupsForGraphQL(st.Reactions, "issue_comment", c.ID, 0),
+		"repoID":              commentRepoIDLocked(c, st),
 	}
+}
+
+// commentMinimizePerms reports whether the viewer may hide (minimize) and
+// reveal (unminimize) a comment: a repository maintainer may do both, and an
+// author may additionally hide their own comment — GitHub's moderation model.
+func (s *Resolver) commentMinimizePerms(p graphql.ResolveParams, src map[string]interface{}) (canMinimize, canUnminimize bool) {
+	viewer := s.ghUserFromContext(p.Context)
+	if viewer == nil || src == nil {
+		return false, false
+	}
+	repoID, _ := src["repoID"].(int)
+	repo := s.store.GetRepoByID(repoID)
+	canPush := repo != nil && s.viewerCanPushRepo(p.Context, repo)
+	authorID, _ := src["authorID"].(int)
+	return canPush || viewer.ID == authorID, canPush
+}
+
+// commentRepoIDLocked resolves the repository a comment belongs to through its
+// parent issue or pull request, for the moderation-permission resolvers.
+func commentRepoIDLocked(comment *store.Comment, st *store.Store) int {
+	switch comment.ParentType {
+	case "pull_request":
+		if pull := st.PullRequests[comment.IssueID]; pull != nil {
+			return pull.RepoID
+		}
+	default:
+		if issue := st.Issues[comment.IssueID]; issue != nil {
+			return issue.RepoID
+		}
+	}
+	return 0
 }
 
 func commentAuthorAssociationLocked(comment *store.Comment, st *store.Store) string {

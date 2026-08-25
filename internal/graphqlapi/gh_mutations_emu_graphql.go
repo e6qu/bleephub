@@ -50,6 +50,27 @@ func (attributionInvitationRule) authorize(s *Resolver, p graphql.ResolveParams,
 	return nil
 }
 
+// gqlMannequinType is GitHub's Mannequin object, memoized so the attribution
+// mutations and Organization.mannequins name one instance.
+func (s *Resolver) gqlMannequinType() *graphql.Object {
+	return s.mutationObject("Mannequin", graphql.Fields{
+		"id":         &graphql.Field{Type: graphql.NewNonNull(graphql.ID)},
+		"login":      &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+		"name":       &graphql.Field{Type: graphql.String},
+		"email":      &graphql.Field{Type: graphql.String},
+		"claimant":   &graphql.Field{Type: s.graphqlTypes.user},
+		"databaseId": &graphql.Field{Type: graphql.Int},
+		"createdAt":  &graphql.Field{Type: graphql.NewNonNull(s.graphQLStringScalar("DateTime"))},
+		"updatedAt":  &graphql.Field{Type: graphql.NewNonNull(s.graphQLStringScalar("DateTime"))},
+		"avatarUrl": &graphql.Field{
+			Type: graphql.NewNonNull(s.graphQLStringScalar("URI")),
+			Args: graphql.FieldConfigArgument{"size": &graphql.ArgumentConfig{Type: graphql.Int}},
+		},
+		"url":          &graphql.Field{Type: graphql.NewNonNull(s.graphQLStringScalar("URI"))},
+		"resourcePath": &graphql.Field{Type: graphql.NewNonNull(s.graphQLStringScalar("URI"))},
+	})
+}
+
 // mannequinSource renders the Mannequin type from its store row.
 func (s *Resolver) mannequinSource(m *store.Mannequin) map[string]interface{} {
 	if m == nil {
@@ -144,24 +165,7 @@ func (s *Resolver) addEMUMutationsToSchema(mutationType *graphql.Object) {
 			"targetId":         &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
 		},
 	})
-	mannequinType := graphql.NewObject(graphql.ObjectConfig{
-		Name: "Mannequin",
-		Fields: graphql.Fields{
-			"id":         &graphql.Field{Type: graphql.NewNonNull(graphql.ID)},
-			"login":      &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"email":      &graphql.Field{Type: graphql.String},
-			"claimant":   &graphql.Field{Type: s.graphqlTypes.user},
-			"databaseId": &graphql.Field{Type: graphql.Int},
-			"createdAt":  &graphql.Field{Type: graphql.NewNonNull(s.graphQLStringScalar("DateTime"))},
-			"updatedAt":  &graphql.Field{Type: graphql.NewNonNull(s.graphQLStringScalar("DateTime"))},
-			"avatarUrl": &graphql.Field{
-				Type: graphql.NewNonNull(s.graphQLStringScalar("URI")),
-				Args: graphql.FieldConfigArgument{"size": &graphql.ArgumentConfig{Type: graphql.Int}},
-			},
-			"url":          &graphql.Field{Type: graphql.NewNonNull(s.graphQLStringScalar("URI"))},
-			"resourcePath": &graphql.Field{Type: graphql.NewNonNull(s.graphQLStringScalar("URI"))},
-		},
-	})
+	mannequinType := s.gqlMannequinType()
 
 	// Claimable is the union of identities whose work can be claimed: the
 	// mannequin holding it, or the user it would move to.

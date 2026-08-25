@@ -63,8 +63,10 @@ func (s *Resolver) gqlClosableInterface() *graphql.Interface {
 	s.graphqlTypes.timeline.closable = graphql.NewInterface(graphql.InterfaceConfig{
 		Name: "Closable",
 		Fields: graphql.Fields{
-			"closed":   &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
-			"closedAt": &graphql.Field{Type: s.graphQLStringScalar("DateTime")},
+			"closed":         &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
+			"closedAt":       &graphql.Field{Type: s.graphQLStringScalar("DateTime")},
+			"viewerCanClose": &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
+			"viewerCanReopen": &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
 		},
 		ResolveType: func(p graphql.ResolveTypeParams) *graphql.Object {
 			return s.issueOrPullRequestObject(p.Value)
@@ -89,6 +91,7 @@ func (s *Resolver) gqlAssignableInterface() *graphql.Interface {
 				Type: graphql.NewNonNull(s.gqlUserConnectionType(s.graphqlTypes.user)),
 				Args: relayConnectionArgs(),
 			},
+			"viewerCanAssign": &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
 		},
 		ResolveType: func(p graphql.ResolveTypeParams) *graphql.Object {
 			return s.issueOrPullRequestObject(p.Value)

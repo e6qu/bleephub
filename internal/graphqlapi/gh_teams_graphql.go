@@ -251,6 +251,10 @@ func (s *Resolver) addTeamFields(types *accountSurfaceTypes) {
 			return ok && role == store.TeamRoleMaintainer, nil
 		},
 	})
+
+	// The remaining Team members (invitations, memberStatuses, projectsV2,
+	// review-request delegation, subscription pair) are completed here.
+	s.addTeamExtraFields(types)
 }
 
 // gqlTeamConnectionType is the one TeamConnection type. The Projects v2

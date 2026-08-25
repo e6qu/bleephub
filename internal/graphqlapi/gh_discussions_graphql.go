@@ -116,6 +116,22 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 						return c["minimizedReason"], nil
 					},
 				},
+				"viewerCanMinimize": &graphql.Field{
+					Type: graphql.NewNonNull(graphql.Boolean),
+					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+						c, _ := p.Source.(map[string]interface{})
+						can, _ := s.commentMinimizePerms(p, c)
+						return can, nil
+					},
+				},
+				"viewerCanUnminimize": &graphql.Field{
+					Type: graphql.NewNonNull(graphql.Boolean),
+					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+						c, _ := p.Source.(map[string]interface{})
+						_, can := s.commentMinimizePerms(p, c)
+						return can, nil
+					},
+				},
 				"id": &graphql.Field{
 					Type: graphql.NewNonNull(graphql.ID),
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -490,6 +506,10 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
 		},
 	})
+	// The account surface, assembled later, publishes Organization.repositoryDiscussions
+	// and User.repositoryDiscussions over these very connection instances.
+	s.stashNamedObject(discussionConnectionType)
+	s.stashNamedObject(discussionCommentConnectionType)
 
 	// --- Enums ---
 	discussionOrderFieldEnum := graphql.NewEnum(graphql.EnumConfig{
@@ -1296,10 +1316,16 @@ func discussionCommentToGQL(c *store.DiscussionComment, st *store.Store) map[str
 		lastEditedAt = c.LastEditedAt.Format(time.RFC3339)
 	}
 
+	repoID := 0
+	if d := st.Discussions[c.DiscussionID]; d != nil {
+		repoID = d.RepoID
+	}
+
 	return map[string]interface{}{
 		"nodeID":       c.NodeID,
 		"databaseId":   c.ID,
 		"discussionID": c.DiscussionID,
+		"repoID":       repoID,
 		"authorID":     c.AuthorID,
 		"parentID":     c.ParentID,
 		"author":       optionalObject(author),
