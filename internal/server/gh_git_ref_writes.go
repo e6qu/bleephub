@@ -39,8 +39,6 @@ type gitRefWriteFailure struct {
 	blocked *store.SecretScanningPushProtectionPlaceholder
 }
 
-func (e *gitRefWriteFailure) Error() string { return e.message }
-
 // write renders the failure onto a REST response.
 func (e *gitRefWriteFailure) write(w http.ResponseWriter) {
 	switch {

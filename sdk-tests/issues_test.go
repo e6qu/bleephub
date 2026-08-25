@@ -199,15 +199,15 @@ func TestIssuesLabels(t *testing.T) {
 	createRepo(t, name)
 
 	label, _, err := client.Issues.CreateLabel(ctx(), "admin", name, &github.Label{
-		Name:        github.Ptr("bug"),
+		Name:        github.Ptr("triage"),
 		Color:       github.Ptr("ff0000"),
 		Description: github.Ptr("Something is broken"),
 	})
 	if err != nil {
 		t.Fatalf("CreateLabel: %v", err)
 	}
-	if label.GetName() != "bug" {
-		t.Errorf("label name = %q, want bug", label.GetName())
+	if label.GetName() != "triage" {
+		t.Errorf("label name = %q, want triage", label.GetName())
 	}
 	if label.GetColor() != "ff0000" {
 		t.Errorf("label color = %q, want ff0000", label.GetColor())
@@ -219,12 +219,12 @@ func TestIssuesLabels(t *testing.T) {
 	}
 	found := false
 	for _, l := range all {
-		if l.GetName() == "bug" {
+		if l.GetName() == "triage" {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("ListLabels missing 'bug'")
+		t.Errorf("ListLabels missing 'triage'")
 	}
 
 	// AddLabelsToIssue is split out because it triggers a real bleephub
@@ -232,15 +232,15 @@ func TestIssuesLabels(t *testing.T) {
 }
 
 // TestIssuesAddLabelsToIssue verifies go-github's Issues.AddLabelsToIssue,
-// which sends the request body as a bare JSON array (`["bug"]`) — one of the
+// which sends the request body as a bare JSON array (`["triage"]`) — one of the
 // two shapes GitHub's "Add labels to an issue" endpoint accepts (the other
-// being the object form `{"labels":["bug"]}`). bleephub must accept both.
+// being the object form `{"labels":["triage"]}`). bleephub must accept both.
 func TestIssuesAddLabelsToIssue(t *testing.T) {
 	name := uniqueName("addlabels")
 	createRepo(t, name)
 
 	if _, _, err := client.Issues.CreateLabel(ctx(), "admin", name, &github.Label{
-		Name:  github.Ptr("bug"),
+		Name:  github.Ptr("triage"),
 		Color: github.Ptr("ff0000"),
 	}); err != nil {
 		t.Fatalf("CreateLabel: %v", err)
@@ -253,18 +253,18 @@ func TestIssuesAddLabelsToIssue(t *testing.T) {
 	}
 
 	// go-github sends the bare array form here.
-	labels, _, err := client.Issues.AddLabelsToIssue(ctx(), "admin", name, issue.GetNumber(), []string{"bug"})
+	labels, _, err := client.Issues.AddLabelsToIssue(ctx(), "admin", name, issue.GetNumber(), []string{"triage"})
 	if err != nil {
 		t.Fatalf("AddLabelsToIssue: %v", err)
 	}
 	found := false
 	for _, l := range labels {
-		if l.GetName() == "bug" {
+		if l.GetName() == "triage" {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("AddLabelsToIssue: 'bug' not in resulting labels %v", labels)
+		t.Errorf("AddLabelsToIssue: 'triage' not in resulting labels %v", labels)
 	}
 }
 
