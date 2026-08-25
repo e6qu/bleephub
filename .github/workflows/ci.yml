@@ -34,7 +34,9 @@ jobs:
   server:
     name: Go server (full race + coverage)
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # Two passes now (race, then coverage) instead of one combined pass, so the
+    # budget is raised to cover both without the combined-instrumentation OOM.
+    timeout-minutes: 60
     steps:
       - &checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -49,13 +51,21 @@ jobs:
       # a slower runner turned a slow suite into a timeout — which surfaces as a
       # hung test rather than a slow one, and sends whoever is on the PR looking
       # for a deadlock that isn't there.
-      - name: Run the complete server suite against MinIO S3
+      # The race detector and whole-repo coverage instrumentation are each
+      # memory-heavy; run together over the (large) internal/server suite they
+      # exhaust the runner's RAM and the step is OOM-killed (exit 143). They
+      # are split into two passes — race first, then coverage — so neither
+      # pass carries both instrumentations at once. The suite is still fully
+      # exercised under `-race` and fully measured for the coverage floor.
+      - name: Run the complete server suite under the race detector
+        run: go test -race -tags noui -count=1 -timeout 30m ./...
+      - name: Re-run for the coverage profile
         # -coverpkg follows the ARCH-001 module split: internal/store and
         # internal/gitstore carry no test binaries of their own — they are
         # exercised through internal/server's suite — and without cross-package
         # attribution the profile would count their statements as 0% and read
         # as a coverage collapse that never happened.
-        run: go test -race -tags noui -count=1 -timeout 40m -coverpkg=./... -coverprofile=coverage.out ./...
+        run: go test -tags noui -count=1 -timeout 30m -coverpkg=./... -coverprofile=coverage.out ./...
       - name: Enforce the Go coverage floor
         run: bash ./scripts/check-go-coverage.sh coverage.out
       # The main suite runs under `-tags noui`, which compiles the embedded SPA
