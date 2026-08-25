@@ -213,36 +213,13 @@ func (s *Resolver) addRepositoryDeploymentFields(types *accountSurfaceTypes) {
 			if !s.viewerCanReadRepo(p.Context, repo) {
 				return paginateGQLItems(nil, p.Args), nil
 			}
-			deployments := s.store.Deployments.ListDeployments(repo.ID)
-			if wanted := stringListArg(p.Args["environments"]); len(wanted) > 0 {
-				kept := make([]*store.Deployment, 0, len(deployments))
-				for _, deployment := range deployments {
-					for _, name := range wanted {
-						if deployment.Environment == name {
-							kept = append(kept, deployment)
-							break
-						}
-					}
-				}
-				deployments = kept
-			}
-			descending := orderDirectionDescending(p.Args, "orderBy", false)
-			sort.Slice(deployments, func(i, j int) bool {
-				if descending {
-					return deployments[i].ID > deployments[j].ID
-				}
-				return deployments[i].ID < deployments[j].ID
-			})
 			repoSource := repoToGraphQL(s.store, s.store.SnapRepo(repo))
-			items := make([]gqlConnItem, 0, len(deployments))
-			for i := range deployments {
-				row := deployments[i]
-				items = append(items, gqlConnItem{
-					identity: row.NodeID,
-					render:   func() map[string]interface{} { return s.deploymentSource(repo, row, repoSource) },
-				})
-			}
-			return paginateGQLItems(items, p.Args), nil
+			return repoDeploymentChildConnection(p, s.store.Deployments.ListDeployments(repo.ID), "environments",
+				func(d *store.Deployment, name string) bool { return d.Environment == name },
+				func(a, b *store.Deployment) bool { return a.ID < b.ID },
+				func(d *store.Deployment) string { return d.NodeID },
+				func(d *store.Deployment) map[string]interface{} { return s.deploymentSource(repo, d, repoSource) },
+			), nil
 		},
 	})
 
@@ -262,36 +239,13 @@ func (s *Resolver) addRepositoryDeploymentFields(types *accountSurfaceTypes) {
 			if !s.viewerCanReadRepo(p.Context, repo) {
 				return paginateGQLItems(nil, p.Args), nil
 			}
-			environments := s.store.Deployments.ListEnvironments(repo.ID)
-			if wanted := stringListArg(p.Args["names"]); len(wanted) > 0 {
-				kept := make([]*store.Environment, 0, len(environments))
-				for _, env := range environments {
-					for _, name := range wanted {
-						if env.Name == name {
-							kept = append(kept, env)
-							break
-						}
-					}
-				}
-				environments = kept
-			}
-			descending := orderDirectionDescending(p.Args, "orderBy", false)
-			sort.Slice(environments, func(i, j int) bool {
-				if descending {
-					return environments[i].Name > environments[j].Name
-				}
-				return environments[i].Name < environments[j].Name
-			})
 			repoSource := repoToGraphQL(s.store, s.store.SnapRepo(repo))
-			items := make([]gqlConnItem, 0, len(environments))
-			for i := range environments {
-				row := environments[i]
-				items = append(items, gqlConnItem{
-					identity: row.NodeID,
-					render:   func() map[string]interface{} { return s.environmentSource(repo, row, repoSource) },
-				})
-			}
-			return paginateGQLItems(items, p.Args), nil
+			return repoDeploymentChildConnection(p, s.store.Deployments.ListEnvironments(repo.ID), "names",
+				func(e *store.Environment, name string) bool { return e.Name == name },
+				func(a, b *store.Environment) bool { return a.Name < b.Name },
+				func(e *store.Environment) string { return e.NodeID },
+				func(e *store.Environment) map[string]interface{} { return s.environmentSource(repo, e, repoSource) },
+			), nil
 		},
 	})
 
@@ -317,6 +271,50 @@ func (s *Resolver) addRepositoryDeploymentFields(types *accountSurfaceTypes) {
 			return s.environmentSource(repo, env, repoSource), nil
 		},
 	})
+}
+
+// repoDeploymentChildConnection is the shared body of Repository.deployments and
+// Repository.environments: filter the rows by an optional name-list argument,
+// order them (ascending unless orderBy asks otherwise), and render them into a
+// paginated connection. The two fields differ only in the row type, the filter
+// field, the sort key and the renderer, which are the closures passed here.
+func repoDeploymentChildConnection[T any](
+	p graphql.ResolveParams,
+	rows []*T,
+	filterArg string,
+	matchesName func(row *T, name string) bool,
+	ascending func(a, b *T) bool,
+	identity func(row *T) string,
+	render func(row *T) map[string]interface{},
+) interface{} {
+	if wanted := stringListArg(p.Args[filterArg]); len(wanted) > 0 {
+		kept := make([]*T, 0, len(rows))
+		for _, row := range rows {
+			for _, name := range wanted {
+				if matchesName(row, name) {
+					kept = append(kept, row)
+					break
+				}
+			}
+		}
+		rows = kept
+	}
+	descending := orderDirectionDescending(p.Args, "orderBy", false)
+	sort.Slice(rows, func(i, j int) bool {
+		if descending {
+			return ascending(rows[j], rows[i])
+		}
+		return ascending(rows[i], rows[j])
+	})
+	items := make([]gqlConnItem, 0, len(rows))
+	for i := range rows {
+		row := rows[i]
+		items = append(items, gqlConnItem{
+			identity: identity(row),
+			render:   func() map[string]interface{} { return render(row) },
+		})
+	}
+	return paginateGQLItems(items, p.Args)
 }
 
 // deploymentSource renders one deployment, including the commit and ref it
