@@ -1,10 +1,10 @@
 {
   "official_types": 1807,
-  "bleephub_types": 1590,
-  "shared_types": 1583,
+  "bleephub_types": 1601,
+  "shared_types": 1594,
   "official_fields": 8362,
-  "implemented_fields": 6601,
-  "signature_exact_fields": 6600,
+  "implemented_fields": 6660,
+  "signature_exact_fields": 6659,
   "compatibility_gap_count": 9,
   "missing_types": [
     "AddedToMergeQueueEvent",
@@ -38,9 +38,6 @@
     "EnterpriseMemberOrderField",
     "EnterpriseOrder",
     "EnterpriseOrderField",
-    "EnterpriseServerUserAccountEmail",
-    "EnterpriseServerUserAccountEmailConnection",
-    "EnterpriseServerUserAccountEmailEdge",
     "EnterpriseServerUserAccountEmailOrder",
     "EnterpriseServerUserAccountEmailOrderField",
     "EnvironmentPinnedFilterField",
@@ -120,22 +117,14 @@
     "OrganizationPropertyTargetDefinition",
     "OrganizationTeamsHovercardContext",
     "OrganizationsHovercardContext",
-    "PackageFile",
-    "PackageFileConnection",
-    "PackageFileEdge",
     "PackageFileOrder",
     "PackageFileOrderField",
     "PackageOrder",
     "PackageOrderField",
     "PackageOwner",
-    "PackageStatistics",
     "PackageTag",
-    "PackageVersion",
-    "PackageVersionConnection",
-    "PackageVersionEdge",
     "PackageVersionOrder",
     "PackageVersionOrderField",
-    "PackageVersionStatistics",
     "ParentIssueAddedEvent",
     "ParentIssueRemovedEvent",
     "PendingAssigneeSuggestion",
@@ -239,39 +228,13 @@
     "AddPullRequestReviewPayload": [
       "reviewEdge"
     ],
-    "Assignable": [
-      "assignedActors",
-      "suggestedActors"
-    ],
-    "EnterpriseServerUserAccount": [
-      "emails",
-      "enterpriseServerInstallation"
-    ],
-    "EnterpriseServerUserAccountsUpload": [
-      "enterprise",
-      "enterpriseServerInstallation"
-    ],
     "IssueEventRationale": [
       "issueEvent"
     ],
     "Organization": [
       "issueFields"
     ],
-    "Package": [
-      "latestVersion",
-      "repository",
-      "statistics",
-      "version",
-      "versions"
-    ],
-    "Query": [
-      "topic"
-    ],
-    "Ref": [
-      "rules"
-    ],
     "Repository": [
-      "packages",
       "pinnedDiscussions"
     ],
     "RepositoryCollaboratorEdge": [

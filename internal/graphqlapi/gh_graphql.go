@@ -400,6 +400,11 @@ func (s *Resolver) initGraphQLSchema() {
 	// installed last, once all of them are assembled.
 	s.addAccountSurfaceFieldsToSchema(userType, orgType, repoType)
 
+	// Query.topic(name:) resolves a topic by name onto the Topic object the
+	// repository-metadata family builds; wired here because it is the one root
+	// field that needs the queryType handed to this builder.
+	s.addQueryTopicField(queryType)
+
 	// Projects classic (v1): the Project/ProjectColumn/ProjectCard family, the
 	// ProjectOwner members on User/Organization/Repository, and the sixteen
 	// classic-project mutations. It goes after the account surface because a

@@ -89,6 +89,11 @@ func (s *Resolver) addRulesetFieldsToSchema(repoType, orgType *graphql.Object) {
 	// objects exist.
 	s.installRuleDetailTypes(ruleType, ruleConnection, rulesetType)
 
+	// Ref.rules (gh_final_residue_graphql.go) reuses this one
+	// RepositoryRuleConnection instance; stash it so the residue installer can
+	// reach it by GitHub name rather than minting a duplicate.
+	s.stashNamedObject(ruleConnection)
+
 	rulesetEdge := graphql.NewObject(graphql.ObjectConfig{
 		Name: "RepositoryRulesetEdge",
 		Fields: graphql.Fields{

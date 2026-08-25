@@ -99,6 +99,13 @@ func (s *Resolver) addAccountSurfaceFieldsToSchema(userType, orgType, repoType *
 	s.addUserProfileFields(types)
 	s.addUserConnectionFields(types)
 	s.addPinnedItemFields(types)
+
+	// The final residue: the Package object graph and Repository.packages, the
+	// Assignable interface's actor connections, and Ref.rules. It runs last so
+	// every type it names — the PackageConnection User/Org already built, the
+	// shared AssigneeConnection, the RepositoryRuleConnection, Repository, Ref,
+	// Release — is assembled.
+	s.addFinalResidueFields(types)
 }
 
 // --- source helpers --------------------------------------------------------

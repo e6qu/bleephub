@@ -738,6 +738,10 @@ func (s *Resolver) addRecentProjectsField(owner *graphql.Object, ownerType strin
 // OwnerKey to the login for User- and Organization-owned packages).
 func (s *Resolver) packagesField(types *accountSurfaceTypes, ownerLogin func(graphql.ResolveParams) (string, error)) *graphql.Field {
 	connection := s.accountConnectionType(types, "Package", s.gqlPackageType(), false, nil)
+	// Repository.packages (gh_final_residue_graphql.go) reuses this one
+	// PackageConnection instance rather than minting a duplicate; stash it so
+	// the residue installer can reach it by GitHub name.
+	s.stashNamedObject(connection)
 	return &graphql.Field{
 		Type: graphql.NewNonNull(connection),
 		Args: connectionArgs(nil),
@@ -763,13 +767,7 @@ func (s *Resolver) packagesField(types *accountSurfaceTypes, ownerLogin func(gra
 				}
 				items = append(items, gqlConnItem{
 					identity: pkg.NodeID,
-					render: func() map[string]interface{} {
-						return map[string]interface{}{
-							"id":          pkg.NodeID,
-							"name":        pkg.Name,
-							"packageType": kind,
-						}
-					},
+					render:   func() map[string]interface{} { return packageSourceMap(pkg, kind) },
 				})
 			}
 			return paginateGQLItems(items, p.Args), nil

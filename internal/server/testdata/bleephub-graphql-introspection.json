@@ -884,6 +884,15 @@
     "Assignable": {
       "kind": "INTERFACE",
       "fields": {
+        "assignedActors": {
+          "type": "AssigneeConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
         "assignees": {
           "type": "UserConnection!",
           "args": {
@@ -891,6 +900,16 @@
             "before": "String",
             "first": "Int",
             "last": "Int"
+          }
+        },
+        "suggestedActors": {
+          "type": "AssigneeConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "query": "String"
           }
         },
         "viewerCanAssign": {
@@ -8119,6 +8138,18 @@
         "createdAt": {
           "type": "DateTime!"
         },
+        "emails": {
+          "type": "EnterpriseServerUserAccountEmailConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "enterpriseServerInstallation": {
+          "type": "EnterpriseServerInstallation!"
+        },
         "id": {
           "type": "ID!"
         },
@@ -8173,6 +8204,60 @@
         }
       }
     },
+    "EnterpriseServerUserAccountEmail": {
+      "kind": "OBJECT",
+      "fields": {
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "email": {
+          "type": "String!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "isPrimary": {
+          "type": "Boolean!"
+        },
+        "updatedAt": {
+          "type": "DateTime!"
+        },
+        "userAccount": {
+          "type": "EnterpriseServerUserAccount!"
+        }
+      },
+      "interfaces": [
+        "Node"
+      ]
+    },
+    "EnterpriseServerUserAccountEmailConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[EnterpriseServerUserAccountEmailEdge]"
+        },
+        "nodes": {
+          "type": "[EnterpriseServerUserAccountEmail]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "EnterpriseServerUserAccountEmailEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "EnterpriseServerUserAccountEmail"
+        }
+      }
+    },
     "EnterpriseServerUserAccountOrder": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
@@ -8192,6 +8277,12 @@
       "fields": {
         "createdAt": {
           "type": "DateTime!"
+        },
+        "enterprise": {
+          "type": "Enterprise!"
+        },
+        "enterpriseServerInstallation": {
+          "type": "EnterpriseServerInstallation!"
         },
         "id": {
           "type": "ID!"
@@ -14313,6 +14404,7 @@
         "EnterpriseRepositoryInfo",
         "EnterpriseServerInstallation",
         "EnterpriseServerUserAccount",
+        "EnterpriseServerUserAccountEmail",
         "EnterpriseServerUserAccountsUpload",
         "EnterpriseTeam",
         "EnterpriseUserAccount",
@@ -15699,11 +15791,35 @@
         "id": {
           "type": "ID!"
         },
+        "latestVersion": {
+          "type": "PackageVersion"
+        },
         "name": {
           "type": "String!"
         },
         "packageType": {
           "type": "PackageType!"
+        },
+        "repository": {
+          "type": "Repository"
+        },
+        "statistics": {
+          "type": "PackageStatistics"
+        },
+        "version": {
+          "type": "PackageVersion",
+          "args": {
+            "version": "String!"
+          }
+        },
+        "versions": {
+          "type": "PackageVersionConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
         }
       }
     },
@@ -15735,6 +15851,74 @@
         }
       }
     },
+    "PackageFile": {
+      "kind": "OBJECT",
+      "fields": {
+        "id": {
+          "type": "ID!"
+        },
+        "md5": {
+          "type": "String"
+        },
+        "name": {
+          "type": "String!"
+        },
+        "packageVersion": {
+          "type": "PackageVersion"
+        },
+        "sha1": {
+          "type": "String"
+        },
+        "sha256": {
+          "type": "String"
+        },
+        "size": {
+          "type": "Int"
+        },
+        "updatedAt": {
+          "type": "DateTime!"
+        },
+        "url": {
+          "type": "URI"
+        }
+      }
+    },
+    "PackageFileConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[PackageFileEdge]"
+        },
+        "nodes": {
+          "type": "[PackageFile]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "PackageFileEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "PackageFile"
+        }
+      }
+    },
+    "PackageStatistics": {
+      "kind": "OBJECT",
+      "fields": {
+        "downloadsTotalCount": {
+          "type": "Int!"
+        }
+      }
+    },
     "PackageType": {
       "kind": "ENUM",
       "enum_values": [
@@ -15746,6 +15930,83 @@
         "PYPI",
         "RUBYGEMS"
       ]
+    },
+    "PackageVersion": {
+      "kind": "OBJECT",
+      "fields": {
+        "files": {
+          "type": "PackageFileConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "package": {
+          "type": "Package"
+        },
+        "platform": {
+          "type": "String"
+        },
+        "preRelease": {
+          "type": "Boolean!"
+        },
+        "readme": {
+          "type": "String"
+        },
+        "release": {
+          "type": "Release"
+        },
+        "statistics": {
+          "type": "PackageVersionStatistics"
+        },
+        "summary": {
+          "type": "String"
+        },
+        "version": {
+          "type": "String!"
+        }
+      }
+    },
+    "PackageVersionConnection": {
+      "kind": "OBJECT",
+      "fields": {
+        "edges": {
+          "type": "[PackageVersionEdge]"
+        },
+        "nodes": {
+          "type": "[PackageVersion]"
+        },
+        "pageInfo": {
+          "type": "PageInfo!"
+        },
+        "totalCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "PackageVersionEdge": {
+      "kind": "OBJECT",
+      "fields": {
+        "cursor": {
+          "type": "String!"
+        },
+        "node": {
+          "type": "PackageVersion"
+        }
+      }
+    },
+    "PackageVersionStatistics": {
+      "kind": "OBJECT",
+      "fields": {
+        "downloadsTotalCount": {
+          "type": "Int!"
+        }
+      }
     },
     "PageInfo": {
       "kind": "OBJECT",
@@ -18634,7 +18895,8 @@
             "after": "String",
             "before": "String",
             "first": "Int",
-            "last": "Int"
+            "last": "Int",
+            "query": "String"
           }
         },
         "suggestedReviewerActors": {
@@ -20064,6 +20326,12 @@
             "orgLoginForDependencies": "String"
           }
         },
+        "topic": {
+          "type": "Topic",
+          "args": {
+            "name": "String!"
+          }
+        },
         "user": {
           "type": "User",
           "args": {
@@ -20372,6 +20640,15 @@
         },
         "repository": {
           "type": "Repository!"
+        },
+        "rules": {
+          "type": "RepositoryRuleConnection",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
         },
         "target": {
           "type": "GitObject"
@@ -21865,6 +22142,15 @@
         },
         "owner": {
           "type": "RepositoryOwner!"
+        },
+        "packages": {
+          "type": "PackageConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
         },
         "parent": {
           "type": "Repository"

@@ -198,6 +198,42 @@ func (s *Resolver) addEnterpriseIdentityCompletionFields(
 				s.sharedEnum("EnterpriseServerUserAccountsUploadSyncState", "FAILURE", "PENDING", "SUCCESS"))},
 		},
 	})
+	// The account's emails, back-references and the upload's enterprise/
+	// installation members. No GHES installation exists under a single
+	// instance, so userAccounts/userAccountsUploads never realize a node and
+	// these resolvers never run; the fields are declared for schema parity, the
+	// non-null back-references reading their (never-produced) source.
+	serverUserAccountEmail := graphql.NewObject(graphql.ObjectConfig{
+		Name:       "EnterpriseServerUserAccountEmail",
+		Interfaces: []*graphql.Interface{nodeInterface},
+		Fields: graphql.Fields{
+			"id":          &graphql.Field{Type: graphql.NewNonNull(graphql.ID)},
+			"createdAt":   &graphql.Field{Type: graphql.NewNonNull(dateTime)},
+			"updatedAt":   &graphql.Field{Type: graphql.NewNonNull(dateTime)},
+			"email":       &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+			"isPrimary":   &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
+			"userAccount": &graphql.Field{Type: graphql.NewNonNull(serverUserAccount)},
+		},
+	})
+	serverUserAccountEmailConnection := s.enterpriseEdgeAndConnectionTypes(
+		"EnterpriseServerUserAccountEmailConnection", "EnterpriseServerUserAccountEmailEdge", serverUserAccountEmail, nil, nil)
+	serverUserAccount.AddFieldConfig("emails", &graphql.Field{
+		Type: graphql.NewNonNull(serverUserAccountEmailConnection),
+		Args: relayConnectionArgs(),
+		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+			return enterpriseConnection(nil, p.Args), nil
+		},
+	})
+	serverUserAccount.AddFieldConfig("enterpriseServerInstallation", &graphql.Field{
+		Type: graphql.NewNonNull(extras.serverInstallationType),
+	})
+	serverUpload.AddFieldConfig("enterprise", &graphql.Field{
+		Type: graphql.NewNonNull(s.graphqlTypes.enterprise),
+	})
+	serverUpload.AddFieldConfig("enterpriseServerInstallation", &graphql.Field{
+		Type: graphql.NewNonNull(extras.serverInstallationType),
+	})
+
 	serverUserAccountConnection := s.enterpriseEdgeAndConnectionTypes(
 		"EnterpriseServerUserAccountConnection", "EnterpriseServerUserAccountEdge", serverUserAccount, nil, nil)
 	serverUploadConnection := s.enterpriseEdgeAndConnectionTypes(

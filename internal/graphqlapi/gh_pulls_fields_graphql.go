@@ -336,7 +336,7 @@ func (s *Resolver) addPullRequestNodeFields(
 	// no suggestion ranking, so the list is empty.
 	pr.AddFieldConfig("suggestedActors", &graphql.Field{
 		Type:    graphql.NewNonNull(assigneeConn),
-		Args:    relayConnectionArgs(),
+		Args:    withArg(relayConnectionArgs(), "query", graphql.String),
 		Resolve: func(graphql.ResolveParams) (interface{}, error) { return prEmptyConnection(), nil },
 	})
 
