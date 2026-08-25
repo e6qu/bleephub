@@ -358,15 +358,15 @@
   "graphql": {
     "compatibility_gap_count": 9,
     "coverage": {
-      "bleephub_types": 1624,
+      "bleephub_types": 1814,
       "compatibility_gap_count": 9,
-      "implemented_fields": 6789,
+      "implemented_fields": 8361,
       "official_fields": 8362,
       "official_types": 1807,
-      "shared_types": 1617,
-      "signature_exact_fields": 6788
+      "shared_types": 1807,
+      "signature_exact_fields": 8360
     },
-    "introspection_snapshot_sha256": "3779322e14b3bb3fb4f4f19ddee948697961dfda30de7743a4b9731e8732a10a",
+    "introspection_snapshot_sha256": "2a50aaa997c64ddec20477e085a190fb668bcb5bd503a80fb5328f8a81c5132e",
     "official_schema": {
       "content_sha256": "30347e4f3bb975195f982351e55636ca03c76969c279980ca515a96ea7b40c3d",
       "source": "https://docs.github.com/public/fpt/schema.docs.graphql"
@@ -447,7 +447,13 @@
       "internal/graphqlapi/gh_resource_graphql.go",
       "internal/graphqlapi/gh_rulesets_fields_graphql.go",
       "internal/graphqlapi/gh_rulesets_graphql.go",
+      "internal/graphqlapi/gh_schema_shells_graphql.go",
       "internal/graphqlapi/gh_search_repositories_graphql.go",
+      "internal/graphqlapi/gh_shells_audit_graphql.go",
+      "internal/graphqlapi/gh_shells_events_graphql.go",
+      "internal/graphqlapi/gh_shells_interfaces_graphql.go",
+      "internal/graphqlapi/gh_shells_misc_graphql.go",
+      "internal/graphqlapi/gh_shells_ordering_graphql.go",
       "internal/graphqlapi/gh_sponsors_graphql.go",
       "internal/graphqlapi/gh_sponsors_mutations_graphql.go",
       "internal/graphqlapi/gh_teams_fields_graphql.go",

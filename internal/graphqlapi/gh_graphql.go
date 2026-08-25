@@ -476,38 +476,39 @@ func (s *Resolver) initGraphQLSchema() {
 	// here instead of shipping open to any signed-in account.
 	assertMutationsAuthorized(mutationType)
 
+	s.addSchemaFidelityShells()
+
+	// Schema-fidelity shells (audit-entry subtypes, unmodeled timeline events,
+	// ordering inputs) that GitHub declares for data this instance does not
+	// produce; each family registered them through registerExtraSchemaType.
+	schemaTypes := append([]graphql.Type{
+		s.graphqlTypes.commitComment,
+		s.graphqlTypes.blob,
+		s.graphqlTypes.tree,
+		s.graphqlTypes.tag,
+		s.graphqlTypes.commit,
+		// GitSignature's concrete members are reachable only through
+		// Commit.signature returning the interface, so register them
+		// explicitly for `... on GpgSignature` fragments to validate.
+		s.namedObject("GpgSignature"),
+		s.namedObject("SshSignature"),
+		s.namedObject("SmimeSignature"),
+		s.namedObject("UnknownSignature"),
+		// The six agent-triage events are reachable only through the
+		// IssueEventWithRationale union (IssueEventRationale.issueEvent),
+		// so register them for `... on IssueFieldChangedEvent` fragments.
+		s.namedObject("IssueFieldAddedEvent"),
+		s.namedObject("IssueFieldChangedEvent"),
+		s.namedObject("IssueFieldRemovedEvent"),
+		s.namedObject("IssueTypeAddedEvent"),
+		s.namedObject("IssueTypeChangedEvent"),
+		s.namedObject("IssueTypeRemovedEvent"),
+	}, s.extraSchemaTypes...)
+
 	schema, err := graphql.NewSchema(graphql.SchemaConfig{
 		Query:    queryType,
 		Mutation: mutationType,
-		// CommitComment is a Reactable subject not reachable from any root
-		// field, so register it explicitly to include it (and its Reactable
-		// possibleType membership) in the schema. Blob, Tree and Tag are
-		// reachable only through the GitObject interface, whose implementors
-		// graphql-go cannot discover on its own; without them a client's
-		// `... on Blob` fragment fails validation as an unknown type.
-		Types: []graphql.Type{
-			s.graphqlTypes.commitComment,
-			s.graphqlTypes.blob,
-			s.graphqlTypes.tree,
-			s.graphqlTypes.tag,
-			s.graphqlTypes.commit,
-			// GitSignature's concrete members are reachable only through
-			// Commit.signature returning the interface, so register them
-			// explicitly for `... on GpgSignature` fragments to validate.
-			s.namedObject("GpgSignature"),
-			s.namedObject("SshSignature"),
-			s.namedObject("SmimeSignature"),
-			s.namedObject("UnknownSignature"),
-			// The six agent-triage events are reachable only through the
-			// IssueEventWithRationale union (IssueEventRationale.issueEvent),
-			// so register them for `... on IssueFieldChangedEvent` fragments.
-			s.namedObject("IssueFieldAddedEvent"),
-			s.namedObject("IssueFieldChangedEvent"),
-			s.namedObject("IssueFieldRemovedEvent"),
-			s.namedObject("IssueTypeAddedEvent"),
-			s.namedObject("IssueTypeChangedEvent"),
-			s.namedObject("IssueTypeRemovedEvent"),
-		},
+		Types:    schemaTypes,
 	})
 	if err != nil {
 		panic(fmt.Sprintf("failed to create graphql schema: %v", err))

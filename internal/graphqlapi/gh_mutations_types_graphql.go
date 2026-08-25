@@ -83,6 +83,28 @@ func (s *Resolver) mutationActorField() *graphql.Field {
 	}
 }
 
+// registerExtraSchemaType makes a type appear in the schema's introspection
+// even when no field returns it — the schema-fidelity shells (audit-entry
+// subtypes, unmodeled timeline events, ordering inputs) GitHub declares for
+// data this instance does not produce. Nil and duplicate entries are ignored.
+func (s *Resolver) registerExtraSchemaType(types ...graphql.Type) {
+	for _, t := range types {
+		if t == nil {
+			continue
+		}
+		dup := false
+		for _, existing := range s.extraSchemaTypes {
+			if existing.Name() == t.Name() {
+				dup = true
+				break
+			}
+		}
+		if !dup {
+			s.extraSchemaTypes = append(s.extraSchemaTypes, t)
+		}
+	}
+}
+
 // stashNamedObject records an object type that one family builds so a
 // later-assembled family can reference the same instance by GitHub name — the
 // discussion, advisory and mannequin connections are built deep inside their

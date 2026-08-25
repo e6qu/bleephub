@@ -263,6 +263,14 @@ type Resolver struct {
 	graphqlTypes  graphQLTypeRegistry
 	graphqlSchema graphql.Schema
 
+	// extraSchemaTypes holds types that exist in GitHub's schema but are
+	// reachable in bleephub's only through an interface/union possible-type or
+	// not at all (schema-fidelity shells for data this instance does not
+	// produce). They are spread into graphql.NewSchema's Types list so
+	// introspection lists them. registerExtraSchemaType appends here from any
+	// family builder, avoiding a central-file edit per type.
+	extraSchemaTypes []graphql.Type
+
 	// The Actions/Checks leaf types and connections built once by
 	// buildActionsSupportTypes (gh_actions_fields_graphql.go).
 	actionsTypes *actionsFamilyTypes

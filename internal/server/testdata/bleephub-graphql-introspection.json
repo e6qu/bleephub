@@ -673,6 +673,55 @@
         }
       }
     },
+    "AddedToMergeQueueEvent": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "enqueuer": {
+          "type": "User"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "mergeQueue": {
+          "type": "MergeQueue"
+        },
+        "pullRequest": {
+          "type": "PullRequest"
+        }
+      }
+    },
+    "AddedToProjectEvent": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "databaseId": {
+          "type": "Int"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "project": {
+          "type": "Project"
+        },
+        "projectCard": {
+          "type": "ProjectCard"
+        },
+        "projectColumnName": {
+          "type": "String!"
+        }
+      }
+    },
     "AddedToProjectV2Event": {
       "kind": "OBJECT",
       "fields": {
@@ -704,6 +753,23 @@
         "customAgent": "String",
         "customInstructions": "String",
         "targetRepositoryId": "ID"
+      }
+    },
+    "Agentic": {
+      "kind": "INTERFACE",
+      "fields": {
+        "viewerCopilotAgentCreatesChannel": {
+          "type": "String"
+        },
+        "viewerCopilotAgentLogUpdatesChannel": {
+          "type": "String"
+        },
+        "viewerCopilotAgentTaskUpdatesChannel": {
+          "type": "String"
+        },
+        "viewerCopilotAgentUpdatesChannel": {
+          "type": "String"
+        }
       }
     },
     "AnnouncementBanner": {
@@ -1151,6 +1217,92 @@
         }
       }
     },
+    "AutoRebaseEnabledEvent": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "enabler": {
+          "type": "User"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "pullRequest": {
+          "type": "PullRequest"
+        }
+      }
+    },
+    "AutoSquashEnabledEvent": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "enabler": {
+          "type": "User"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "pullRequest": {
+          "type": "PullRequest"
+        }
+      }
+    },
+    "AutomaticBaseChangeFailedEvent": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "newBase": {
+          "type": "String!"
+        },
+        "oldBase": {
+          "type": "String!"
+        },
+        "pullRequest": {
+          "type": "PullRequest!"
+        }
+      }
+    },
+    "AutomaticBaseChangeSucceededEvent": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "newBase": {
+          "type": "String!"
+        },
+        "oldBase": {
+          "type": "String!"
+        },
+        "pullRequest": {
+          "type": "PullRequest!"
+        }
+      }
+    },
     "Base64String": {
       "kind": "SCALAR"
     },
@@ -1182,6 +1334,52 @@
       "interfaces": [
         "Node"
       ]
+    },
+    "BaseRefDeletedEvent": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "baseRefName": {
+          "type": "String"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "pullRequest": {
+          "type": "PullRequest"
+        }
+      }
+    },
+    "BaseRefForcePushedEvent": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "afterCommit": {
+          "type": "Commit"
+        },
+        "beforeCommit": {
+          "type": "Commit"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "pullRequest": {
+          "type": "PullRequest!"
+        },
+        "ref": {
+          "type": "Ref"
+        }
+      }
     },
     "BigInt": {
       "kind": "SCALAR"
@@ -1249,6 +1447,74 @@
         "GitObject",
         "Node"
       ]
+    },
+    "BlockedByAddedEvent": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "blockingIssue": {
+          "type": "Issue"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        }
+      }
+    },
+    "BlockedByRemovedEvent": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "blockingIssue": {
+          "type": "Issue"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        }
+      }
+    },
+    "BlockingAddedEvent": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "blockedIssue": {
+          "type": "Issue"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        }
+      }
+    },
+    "BlockingRemovedEvent": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "blockedIssue": {
+          "type": "Issue"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        }
+      }
     },
     "Boolean": {
       "kind": "SCALAR"
@@ -2028,6 +2294,17 @@
         }
       }
     },
+    "CheckRunFilter": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "appId": "Int",
+        "checkName": "String",
+        "checkType": "CheckRunType",
+        "conclusions": "[CheckConclusionState!]",
+        "status": "CheckStatusState",
+        "statuses": "[CheckStatusState!]"
+      }
+    },
     "CheckRunOutput": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
@@ -2075,6 +2352,13 @@
           "type": "CheckRunState!"
         }
       }
+    },
+    "CheckRunType": {
+      "kind": "ENUM",
+      "enum_values": [
+        "ALL",
+        "LATEST"
+      ]
     },
     "CheckStatusState": {
       "kind": "ENUM",
@@ -2543,6 +2827,62 @@
         "OUTSIDE"
       ]
     },
+    "Comment": {
+      "kind": "INTERFACE",
+      "fields": {
+        "author": {
+          "type": "Actor"
+        },
+        "authorAssociation": {
+          "type": "CommentAuthorAssociation!"
+        },
+        "body": {
+          "type": "String!"
+        },
+        "bodyHTML": {
+          "type": "HTML!"
+        },
+        "bodyText": {
+          "type": "String!"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "createdViaEmail": {
+          "type": "Boolean!"
+        },
+        "editor": {
+          "type": "Actor"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "includesCreatedEdit": {
+          "type": "Boolean!"
+        },
+        "lastEditedAt": {
+          "type": "DateTime"
+        },
+        "publishedAt": {
+          "type": "DateTime"
+        },
+        "updatedAt": {
+          "type": "DateTime!"
+        },
+        "userContentEdits": {
+          "type": "UserContentEditConnection",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "viewerDidAuthor": {
+          "type": "Boolean!"
+        }
+      }
+    },
     "CommentAuthorAssociation": {
       "kind": "ENUM",
       "enum_values": [
@@ -2969,6 +3309,35 @@
         }
       }
     },
+    "CommitCommentThread": {
+      "kind": "OBJECT",
+      "fields": {
+        "comments": {
+          "type": "CommitCommentConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "commit": {
+          "type": "Commit"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "path": {
+          "type": "String"
+        },
+        "position": {
+          "type": "Int"
+        },
+        "repository": {
+          "type": "Repository!"
+        }
+      }
+    },
     "CommitConnection": {
       "kind": "OBJECT",
       "fields": {
@@ -3182,6 +3551,29 @@
         "DIVERGED",
         "IDENTICAL"
       ]
+    },
+    "ConnectedEvent": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "isCrossRepository": {
+          "type": "Boolean!"
+        },
+        "source": {
+          "type": "ReferencedSubject!"
+        },
+        "subject": {
+          "type": "ReferencedSubject!"
+        }
+      }
     },
     "ContentWarning": {
       "kind": "OBJECT",
@@ -3604,6 +3996,52 @@
         "Node",
         "UniformResourceLocatable"
       ]
+    },
+    "ConvertedFromDraftEvent": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "project": {
+          "type": "ProjectV2"
+        },
+        "wasAutomated": {
+          "type": "Boolean!"
+        }
+      }
+    },
+    "ConvertedNoteToIssueEvent": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "databaseId": {
+          "type": "Int"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "project": {
+          "type": "Project"
+        },
+        "projectCard": {
+          "type": "ProjectCard"
+        },
+        "projectColumnName": {
+          "type": "String!"
+        }
+      }
     },
     "ConvertedToDiscussionEvent": {
       "kind": "OBJECT",
@@ -4913,6 +5351,14 @@
         "WRITE"
       ]
     },
+    "Deletable": {
+      "kind": "INTERFACE",
+      "fields": {
+        "viewerCanDelete": {
+          "type": "Boolean!"
+        }
+      }
+    },
     "DeleteBranchProtectionRuleInput": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
@@ -5714,6 +6160,32 @@
         }
       }
     },
+    "DeployedEvent": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "databaseId": {
+          "type": "Int"
+        },
+        "deployment": {
+          "type": "Deployment!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "pullRequest": {
+          "type": "PullRequest!"
+        },
+        "ref": {
+          "type": "Ref"
+        }
+      }
+    },
     "Deployment": {
       "kind": "OBJECT",
       "fields": {
@@ -5804,6 +6276,26 @@
         },
         "node": {
           "type": "Deployment"
+        }
+      }
+    },
+    "DeploymentEnvironmentChangedEvent": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "deploymentStatus": {
+          "type": "DeploymentStatus!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "pullRequest": {
+          "type": "PullRequest!"
         }
       }
     },
@@ -6170,6 +6662,29 @@
         },
         "pullRequest": {
           "type": "PullRequest"
+        }
+      }
+    },
+    "DisconnectedEvent": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "isCrossRepository": {
+          "type": "Boolean!"
+        },
+        "source": {
+          "type": "ReferencedSubject!"
+        },
+        "subject": {
+          "type": "ReferencedSubject!"
         }
       }
     },
@@ -6726,6 +7241,13 @@
         "VOTE_COUNT"
       ]
     },
+    "DiscussionState": {
+      "kind": "ENUM",
+      "enum_values": [
+        "CLOSED",
+        "OPEN"
+      ]
+    },
     "DiscussionStateReason": {
       "kind": "ENUM",
       "enum_values": [
@@ -7217,6 +7739,20 @@
         "USER_ACCOUNTS"
       ]
     },
+    "EnterpriseAuditEntryData": {
+      "kind": "INTERFACE",
+      "fields": {
+        "enterpriseResourcePath": {
+          "type": "URI"
+        },
+        "enterpriseSlug": {
+          "type": "String"
+        },
+        "enterpriseUrl": {
+          "type": "URI"
+        }
+      }
+    },
     "EnterpriseBillingInfo": {
       "kind": "OBJECT",
       "fields": {
@@ -7489,6 +8025,20 @@
         "CREATED_AT"
       ]
     },
+    "EnterpriseMemberOrder": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "direction": "OrderDirection!",
+        "field": "EnterpriseMemberOrderField!"
+      }
+    },
+    "EnterpriseMemberOrderField": {
+      "kind": "ENUM",
+      "enum_values": [
+        "CREATED_AT",
+        "LOGIN"
+      ]
+    },
     "EnterpriseMembersCanCreateRepositoriesSettingValue": {
       "kind": "ENUM",
       "enum_values": [
@@ -7513,6 +8063,19 @@
         "ALL",
         "BILLING_MANAGER",
         "ORG_MEMBERSHIP"
+      ]
+    },
+    "EnterpriseOrder": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "direction": "OrderDirection!",
+        "field": "EnterpriseOrderField!"
+      }
+    },
+    "EnterpriseOrderField": {
+      "kind": "ENUM",
+      "enum_values": [
+        "NAME"
       ]
     },
     "EnterpriseOrganizationMembershipConnection": {
@@ -8273,6 +8836,19 @@
         }
       }
     },
+    "EnterpriseServerUserAccountEmailOrder": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "direction": "OrderDirection!",
+        "field": "EnterpriseServerUserAccountEmailOrderField!"
+      }
+    },
+    "EnterpriseServerUserAccountEmailOrderField": {
+      "kind": "ENUM",
+      "enum_values": [
+        "EMAIL"
+      ]
+    },
     "EnterpriseServerUserAccountOrder": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
@@ -8719,6 +9295,14 @@
         "NAME"
       ]
     },
+    "EnvironmentPinnedFilterField": {
+      "kind": "ENUM",
+      "enum_values": [
+        "ALL",
+        "NONE",
+        "ONLY"
+      ]
+    },
     "Environments": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
@@ -8997,6 +9581,17 @@
         "THANKS_DEV",
         "TIDELIFT"
       ]
+    },
+    "GenericHovercardContext": {
+      "kind": "OBJECT",
+      "fields": {
+        "message": {
+          "type": "String!"
+        },
+        "octicon": {
+          "type": "String!"
+        }
+      }
     },
     "Gist": {
       "kind": "OBJECT",
@@ -9557,6 +10152,32 @@
       "interfaces": [
         "Node"
       ]
+    },
+    "HeadRefForcePushedEvent": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "afterCommit": {
+          "type": "Commit"
+        },
+        "beforeCommit": {
+          "type": "Commit"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "pullRequest": {
+          "type": "PullRequest!"
+        },
+        "ref": {
+          "type": "Ref"
+        }
+      }
     },
     "HeadRefRestoredEvent": {
       "kind": "OBJECT",
@@ -10353,6 +10974,40 @@
         "UPDATED_AT"
       ]
     },
+    "IssueCommentPinnedEvent": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "issueComment": {
+          "type": "IssueComment"
+        }
+      }
+    },
+    "IssueCommentUnpinnedEvent": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "issueComment": {
+          "type": "IssueComment"
+        }
+      }
+    },
     "IssueConnection": {
       "kind": "OBJECT",
       "fields": {
@@ -10411,6 +11066,20 @@
           "type": "Int!"
         }
       }
+    },
+    "IssueDependencyOrder": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "direction": "OrderDirection!",
+        "field": "IssueDependencyOrderField!"
+      }
+    },
+    "IssueDependencyOrderField": {
+      "kind": "ENUM",
+      "enum_values": [
+        "CREATED_AT",
+        "DEPENDENCY_ADDED_AT"
+      ]
     },
     "IssueEdge": {
       "kind": "OBJECT",
@@ -10532,6 +11201,29 @@
         },
         "rationale": {
           "type": "IssueEventRationale"
+        }
+      }
+    },
+    "IssueFieldCommon": {
+      "kind": "INTERFACE",
+      "fields": {
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "dataType": {
+          "type": "IssueFieldDataType!"
+        },
+        "description": {
+          "type": "String"
+        },
+        "fullDatabaseId": {
+          "type": "BigInt"
+        },
+        "name": {
+          "type": "String!"
+        },
+        "visibility": {
+          "type": "IssueFieldVisibility!"
         }
       }
     },
@@ -10888,6 +11580,14 @@
         "IssueFieldSingleSelectValue",
         "IssueFieldTextValue"
       ]
+    },
+    "IssueFieldValueCommon": {
+      "kind": "INTERFACE",
+      "fields": {
+        "field": {
+          "type": "IssueFields"
+        }
+      }
     },
     "IssueFieldValueConnection": {
       "kind": "OBJECT",
@@ -11625,6 +12325,19 @@
         }
       }
     },
+    "LanguageOrder": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "direction": "OrderDirection!",
+        "field": "LanguageOrderField!"
+      }
+    },
+    "LanguageOrderField": {
+      "kind": "ENUM",
+      "enum_values": [
+        "SIZE"
+      ]
+    },
     "LexicalFallbackReason": {
       "kind": "ENUM",
       "enum_values": [
@@ -11942,6 +12655,20 @@
         }
       }
     },
+    "MannequinOrder": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "direction": "OrderDirection!",
+        "field": "MannequinOrderField!"
+      }
+    },
+    "MannequinOrderField": {
+      "kind": "ENUM",
+      "enum_values": [
+        "CREATED_AT",
+        "LOGIN"
+      ]
+    },
     "MarkDiscussionCommentAsAnswerInput": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
@@ -12012,6 +12739,29 @@
         },
         "pullRequest": {
           "type": "PullRequest"
+        }
+      }
+    },
+    "MarkedAsDuplicateEvent": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "canonical": {
+          "type": "IssueOrPullRequest"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "duplicate": {
+          "type": "IssueOrPullRequest"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "isCrossRepository": {
+          "type": "Boolean!"
         }
       }
     },
@@ -12283,6 +13033,242 @@
       "kind": "INPUT_OBJECT",
       "input_fields": {
         "maxFileSize": "Int!"
+      }
+    },
+    "MemberFeatureRequestNotification": {
+      "kind": "OBJECT",
+      "fields": {
+        "body": {
+          "type": "String!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "title": {
+          "type": "String!"
+        },
+        "updatedAt": {
+          "type": "DateTime!"
+        }
+      }
+    },
+    "MemberStatusable": {
+      "kind": "INTERFACE",
+      "fields": {
+        "memberStatuses": {
+          "type": "UserStatusConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "orderBy": "UserStatusOrder"
+          }
+        }
+      }
+    },
+    "MembersCanDeleteReposClearAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "enterpriseResourcePath": {
+          "type": "URI"
+        },
+        "enterpriseSlug": {
+          "type": "String"
+        },
+        "enterpriseUrl": {
+          "type": "URI"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      }
+    },
+    "MembersCanDeleteReposDisableAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "enterpriseResourcePath": {
+          "type": "URI"
+        },
+        "enterpriseSlug": {
+          "type": "String"
+        },
+        "enterpriseUrl": {
+          "type": "URI"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      }
+    },
+    "MembersCanDeleteReposEnableAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "enterpriseResourcePath": {
+          "type": "URI"
+        },
+        "enterpriseSlug": {
+          "type": "String"
+        },
+        "enterpriseUrl": {
+          "type": "URI"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
       }
     },
     "MentionedEvent": {
@@ -12822,6 +13808,22 @@
         "PullRequest"
       ]
     },
+    "MilestoneOrder": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "direction": "OrderDirection!",
+        "field": "MilestoneOrderField!"
+      }
+    },
+    "MilestoneOrderField": {
+      "kind": "ENUM",
+      "enum_values": [
+        "CREATED_AT",
+        "DUE_DATE",
+        "NUMBER",
+        "UPDATED_AT"
+      ]
+    },
     "MilestoneState": {
       "kind": "ENUM",
       "enum_values": [
@@ -12928,6 +13930,35 @@
         },
         "columnEdge": {
           "type": "ProjectColumnEdge"
+        }
+      }
+    },
+    "MovedColumnsInProjectEvent": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "databaseId": {
+          "type": "Int"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "previousProjectColumnName": {
+          "type": "String!"
+        },
+        "project": {
+          "type": "Project"
+        },
+        "projectCard": {
+          "type": "ProjectCard"
+        },
+        "projectColumnName": {
+          "type": "String!"
         }
       }
     },
@@ -14734,6 +15765,108 @@
         "AAD"
       ]
     },
+    "OauthApplicationAuditEntryData": {
+      "kind": "INTERFACE",
+      "fields": {
+        "oauthApplicationName": {
+          "type": "String"
+        },
+        "oauthApplicationResourcePath": {
+          "type": "URI"
+        },
+        "oauthApplicationUrl": {
+          "type": "URI"
+        }
+      }
+    },
+    "OauthApplicationCreateAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "applicationUrl": {
+          "type": "URI"
+        },
+        "callbackUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "oauthApplicationName": {
+          "type": "String"
+        },
+        "oauthApplicationResourcePath": {
+          "type": "URI"
+        },
+        "oauthApplicationUrl": {
+          "type": "URI"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "rateLimit": {
+          "type": "Int"
+        },
+        "state": {
+          "type": "OauthApplicationCreateAuditEntryState"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      }
+    },
+    "OauthApplicationCreateAuditEntryState": {
+      "kind": "ENUM",
+      "enum_values": [
+        "ACTIVE",
+        "PENDING_DELETION",
+        "SUSPENDED"
+      ]
+    },
     "OperationType": {
       "kind": "ENUM",
       "enum_values": [
@@ -14751,6 +15884,137 @@
       "enum_values": [
         "ASC",
         "DESC"
+      ]
+    },
+    "OrgAddBillingManagerAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "invitationEmail": {
+          "type": "String"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      }
+    },
+    "OrgAddMemberAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "permission": {
+          "type": "OrgAddMemberAuditEntryPermission"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      }
+    },
+    "OrgAddMemberAuditEntryPermission": {
+      "kind": "ENUM",
+      "enum_values": [
+        "ADMIN",
+        "READ"
       ]
     },
     "OrgBlockUserAuditEntry": {
@@ -14829,6 +16093,124 @@
         "OrganizationAuditEntryData"
       ]
     },
+    "OrgConfigDisableCollaboratorsOnlyAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      }
+    },
+    "OrgConfigEnableCollaboratorsOnlyAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      }
+    },
     "OrgCreateAuditEntry": {
       "kind": "OBJECT",
       "fields": {
@@ -14904,6 +16286,1026 @@
         "FREE",
         "TIERED_PER_SEAT",
         "UNLIMITED"
+      ]
+    },
+    "OrgDisableOauthAppRestrictionsAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      }
+    },
+    "OrgDisableSamlAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "digestMethodUrl": {
+          "type": "URI"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "issuerUrl": {
+          "type": "URI"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "signatureMethodUrl": {
+          "type": "URI"
+        },
+        "singleSignOnUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      }
+    },
+    "OrgDisableTwoFactorRequirementAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      }
+    },
+    "OrgEnableOauthAppRestrictionsAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      }
+    },
+    "OrgEnableSamlAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "digestMethodUrl": {
+          "type": "URI"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "issuerUrl": {
+          "type": "URI"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "signatureMethodUrl": {
+          "type": "URI"
+        },
+        "singleSignOnUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      }
+    },
+    "OrgEnableTwoFactorRequirementAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      }
+    },
+    "OrgEnterpriseOwnerOrder": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "direction": "OrderDirection!",
+        "field": "OrgEnterpriseOwnerOrderField!"
+      }
+    },
+    "OrgEnterpriseOwnerOrderField": {
+      "kind": "ENUM",
+      "enum_values": [
+        "LOGIN"
+      ]
+    },
+    "OrgInviteMemberAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "email": {
+          "type": "String"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationInvitation": {
+          "type": "OrganizationInvitation"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      }
+    },
+    "OrgInviteToBusinessAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "enterpriseResourcePath": {
+          "type": "URI"
+        },
+        "enterpriseSlug": {
+          "type": "String"
+        },
+        "enterpriseUrl": {
+          "type": "URI"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      }
+    },
+    "OrgOauthAppAccessApprovedAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "oauthApplicationName": {
+          "type": "String"
+        },
+        "oauthApplicationResourcePath": {
+          "type": "URI"
+        },
+        "oauthApplicationUrl": {
+          "type": "URI"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      }
+    },
+    "OrgOauthAppAccessBlockedAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "oauthApplicationName": {
+          "type": "String"
+        },
+        "oauthApplicationResourcePath": {
+          "type": "URI"
+        },
+        "oauthApplicationUrl": {
+          "type": "URI"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      }
+    },
+    "OrgOauthAppAccessDeniedAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "oauthApplicationName": {
+          "type": "String"
+        },
+        "oauthApplicationResourcePath": {
+          "type": "URI"
+        },
+        "oauthApplicationUrl": {
+          "type": "URI"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      }
+    },
+    "OrgOauthAppAccessRequestedAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "oauthApplicationName": {
+          "type": "String"
+        },
+        "oauthApplicationResourcePath": {
+          "type": "URI"
+        },
+        "oauthApplicationUrl": {
+          "type": "URI"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      }
+    },
+    "OrgOauthAppAccessUnblockedAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "oauthApplicationName": {
+          "type": "String"
+        },
+        "oauthApplicationResourcePath": {
+          "type": "URI"
+        },
+        "oauthApplicationUrl": {
+          "type": "URI"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      }
+    },
+    "OrgRemoveBillingManagerAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "reason": {
+          "type": "OrgRemoveBillingManagerAuditEntryReason"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      }
+    },
+    "OrgRemoveBillingManagerAuditEntryReason": {
+      "kind": "ENUM",
+      "enum_values": [
+        "SAML_EXTERNAL_IDENTITY_MISSING",
+        "SAML_SSO_ENFORCEMENT_REQUIRES_EXTERNAL_IDENTITY",
+        "TWO_FACTOR_REQUIREMENT_NON_COMPLIANCE"
+      ]
+    },
+    "OrgRemoveMemberAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "membershipTypes": {
+          "type": "[OrgRemoveMemberAuditEntryMembershipType!]"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "reason": {
+          "type": "OrgRemoveMemberAuditEntryReason"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      }
+    },
+    "OrgRemoveMemberAuditEntryMembershipType": {
+      "kind": "ENUM",
+      "enum_values": [
+        "ADMIN",
+        "BILLING_MANAGER",
+        "DIRECT_MEMBER",
+        "OUTSIDE_COLLABORATOR",
+        "SUSPENDED",
+        "UNAFFILIATED"
+      ]
+    },
+    "OrgRemoveMemberAuditEntryReason": {
+      "kind": "ENUM",
+      "enum_values": [
+        "SAML_EXTERNAL_IDENTITY_MISSING",
+        "SAML_SSO_ENFORCEMENT_REQUIRES_EXTERNAL_IDENTITY",
+        "TWO_FACTOR_ACCOUNT_RECOVERY",
+        "TWO_FACTOR_REQUIREMENT_NON_COMPLIANCE",
+        "USER_ACCOUNT_DELETED"
       ]
     },
     "OrgRemoveOutsideCollaboratorAuditEntry": {
@@ -14991,6 +17393,145 @@
         "TWO_FACTOR_REQUIREMENT_NON_COMPLIANCE"
       ]
     },
+    "OrgRestoreMemberAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "restoredCustomEmailRoutingsCount": {
+          "type": "Int"
+        },
+        "restoredIssueAssignmentsCount": {
+          "type": "Int"
+        },
+        "restoredMemberships": {
+          "type": "[OrgRestoreMemberAuditEntryMembership!]"
+        },
+        "restoredMembershipsCount": {
+          "type": "Int"
+        },
+        "restoredRepositoriesCount": {
+          "type": "Int"
+        },
+        "restoredRepositoryStarsCount": {
+          "type": "Int"
+        },
+        "restoredRepositoryWatchesCount": {
+          "type": "Int"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      }
+    },
+    "OrgRestoreMemberAuditEntryMembership": {
+      "kind": "UNION",
+      "possible_types": [
+        "OrgRestoreMemberMembershipOrganizationAuditEntryData",
+        "OrgRestoreMemberMembershipRepositoryAuditEntryData",
+        "OrgRestoreMemberMembershipTeamAuditEntryData"
+      ]
+    },
+    "OrgRestoreMemberMembershipOrganizationAuditEntryData": {
+      "kind": "OBJECT",
+      "fields": {
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        }
+      }
+    },
+    "OrgRestoreMemberMembershipRepositoryAuditEntryData": {
+      "kind": "OBJECT",
+      "fields": {
+        "repository": {
+          "type": "Repository"
+        },
+        "repositoryName": {
+          "type": "String"
+        },
+        "repositoryResourcePath": {
+          "type": "URI"
+        },
+        "repositoryUrl": {
+          "type": "URI"
+        }
+      }
+    },
+    "OrgRestoreMemberMembershipTeamAuditEntryData": {
+      "kind": "OBJECT",
+      "fields": {
+        "team": {
+          "type": "Team"
+        },
+        "teamName": {
+          "type": "String"
+        },
+        "teamResourcePath": {
+          "type": "URI"
+        },
+        "teamUrl": {
+          "type": "URI"
+        }
+      }
+    },
     "OrgUnblockUserAuditEntry": {
       "kind": "OBJECT",
       "fields": {
@@ -15066,6 +17607,292 @@
         "Node",
         "OrganizationAuditEntryData"
       ]
+    },
+    "OrgUpdateDefaultRepositoryPermissionAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "permission": {
+          "type": "OrgUpdateDefaultRepositoryPermissionAuditEntryPermission"
+        },
+        "permissionWas": {
+          "type": "OrgUpdateDefaultRepositoryPermissionAuditEntryPermission"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      }
+    },
+    "OrgUpdateDefaultRepositoryPermissionAuditEntryPermission": {
+      "kind": "ENUM",
+      "enum_values": [
+        "ADMIN",
+        "NONE",
+        "READ",
+        "WRITE"
+      ]
+    },
+    "OrgUpdateMemberAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "permission": {
+          "type": "OrgUpdateMemberAuditEntryPermission"
+        },
+        "permissionWas": {
+          "type": "OrgUpdateMemberAuditEntryPermission"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      }
+    },
+    "OrgUpdateMemberAuditEntryPermission": {
+      "kind": "ENUM",
+      "enum_values": [
+        "ADMIN",
+        "READ"
+      ]
+    },
+    "OrgUpdateMemberRepositoryCreationPermissionAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "canCreateRepositories": {
+          "type": "Boolean"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        },
+        "visibility": {
+          "type": "OrgUpdateMemberRepositoryCreationPermissionAuditEntryVisibility"
+        }
+      }
+    },
+    "OrgUpdateMemberRepositoryCreationPermissionAuditEntryVisibility": {
+      "kind": "ENUM",
+      "enum_values": [
+        "ALL",
+        "INTERNAL",
+        "NONE",
+        "PRIVATE",
+        "PRIVATE_INTERNAL",
+        "PUBLIC",
+        "PUBLIC_INTERNAL",
+        "PUBLIC_PRIVATE"
+      ]
+    },
+    "OrgUpdateMemberRepositoryInvitationPermissionAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "canInviteOutsideCollaboratorsToRepositories": {
+          "type": "Boolean"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      }
     },
     "Organization": {
       "kind": "OBJECT",
@@ -15985,6 +18812,27 @@
         "SUCCEEDED"
       ]
     },
+    "OrganizationOrUser": {
+      "kind": "UNION",
+      "possible_types": [
+        "Organization",
+        "User"
+      ]
+    },
+    "OrganizationOrder": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "direction": "OrderDirection!",
+        "field": "OrganizationOrderField!"
+      }
+    },
+    "OrganizationOrderField": {
+      "kind": "ENUM",
+      "enum_values": [
+        "CREATED_AT",
+        "LOGIN"
+      ]
+    },
     "OrganizationPropertyConditionTarget": {
       "kind": "OBJECT",
       "fields": {
@@ -16019,6 +18867,59 @@
       "input_fields": {
         "name": "String!",
         "propertyValues": "[String!]!"
+      }
+    },
+    "OrganizationTeamsHovercardContext": {
+      "kind": "OBJECT",
+      "fields": {
+        "message": {
+          "type": "String!"
+        },
+        "octicon": {
+          "type": "String!"
+        },
+        "relevantTeams": {
+          "type": "TeamConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "teamsResourcePath": {
+          "type": "URI!"
+        },
+        "teamsUrl": {
+          "type": "URI!"
+        },
+        "totalTeamCount": {
+          "type": "Int!"
+        }
+      }
+    },
+    "OrganizationsHovercardContext": {
+      "kind": "OBJECT",
+      "fields": {
+        "message": {
+          "type": "String!"
+        },
+        "octicon": {
+          "type": "String!"
+        },
+        "relevantOrganizations": {
+          "type": "OrganizationConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "orderBy": "OrganizationOrder"
+          }
+        },
+        "totalOrganizationCount": {
+          "type": "Int!"
+        }
       }
     },
     "Package": {
@@ -16147,11 +19048,72 @@
         }
       }
     },
+    "PackageFileOrder": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "direction": "OrderDirection",
+        "field": "PackageFileOrderField"
+      }
+    },
+    "PackageFileOrderField": {
+      "kind": "ENUM",
+      "enum_values": [
+        "CREATED_AT"
+      ]
+    },
+    "PackageOrder": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "direction": "OrderDirection",
+        "field": "PackageOrderField"
+      }
+    },
+    "PackageOrderField": {
+      "kind": "ENUM",
+      "enum_values": [
+        "CREATED_AT"
+      ]
+    },
+    "PackageOwner": {
+      "kind": "INTERFACE",
+      "fields": {
+        "id": {
+          "type": "ID!"
+        },
+        "packages": {
+          "type": "PackageConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "names": "[String]",
+            "orderBy": "PackageOrder",
+            "packageType": "PackageType",
+            "repositoryId": "ID"
+          }
+        }
+      }
+    },
     "PackageStatistics": {
       "kind": "OBJECT",
       "fields": {
         "downloadsTotalCount": {
           "type": "Int!"
+        }
+      }
+    },
+    "PackageTag": {
+      "kind": "OBJECT",
+      "fields": {
+        "id": {
+          "type": "ID!"
+        },
+        "name": {
+          "type": "String!"
+        },
+        "version": {
+          "type": "PackageVersion"
         }
       }
     },
@@ -16236,6 +19198,19 @@
         }
       }
     },
+    "PackageVersionOrder": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "direction": "OrderDirection",
+        "field": "PackageVersionOrderField"
+      }
+    },
+    "PackageVersionOrderField": {
+      "kind": "ENUM",
+      "enum_values": [
+        "CREATED_AT"
+      ]
+    },
     "PackageVersionStatistics": {
       "kind": "OBJECT",
       "fields": {
@@ -16261,6 +19236,40 @@
         }
       }
     },
+    "ParentIssueAddedEvent": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "parent": {
+          "type": "Issue"
+        }
+      }
+    },
+    "ParentIssueRemovedEvent": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "parent": {
+          "type": "Issue"
+        }
+      }
+    },
     "PatchStatus": {
       "kind": "ENUM",
       "enum_values": [
@@ -16271,6 +19280,72 @@
         "MODIFIED",
         "RENAMED"
       ]
+    },
+    "PendingAssigneeSuggestion": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "assignee": {
+          "type": "Assignee"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "rationale": {
+          "type": "String"
+        },
+        "updatedAt": {
+          "type": "DateTime"
+        }
+      }
+    },
+    "PendingCloseSuggestion": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "duplicateOf": {
+          "type": "IssueOrPullRequest"
+        },
+        "rationale": {
+          "type": "String"
+        },
+        "stateReason": {
+          "type": "IssueStateReason"
+        },
+        "updatedAt": {
+          "type": "DateTime"
+        }
+      }
+    },
+    "PendingFieldSuggestion": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "issueField": {
+          "type": "IssueFields"
+        },
+        "rationale": {
+          "type": "String"
+        },
+        "suggestedValue": {
+          "type": "String"
+        },
+        "updatedAt": {
+          "type": "DateTime"
+        }
+      }
     },
     "PendingIssueSuggestion": {
       "kind": "UNION",
@@ -16309,6 +19384,26 @@
         },
         "label": {
           "type": "Label"
+        },
+        "rationale": {
+          "type": "String"
+        },
+        "updatedAt": {
+          "type": "DateTime"
+        }
+      }
+    },
+    "PendingTypeSuggestion": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "issueType": {
+          "type": "IssueType"
         },
         "rationale": {
           "type": "String"
@@ -16399,6 +19494,26 @@
         },
         "issue": {
           "type": "Issue"
+        }
+      }
+    },
+    "Pinnable": {
+      "kind": "INTERFACE",
+      "fields": {
+        "isPinned": {
+          "type": "Boolean"
+        },
+        "pinnedAt": {
+          "type": "DateTime"
+        },
+        "pinnedBy": {
+          "type": "User"
+        },
+        "viewerCanPin": {
+          "type": "Boolean!"
+        },
+        "viewerCanUnpin": {
+          "type": "Boolean!"
         }
       }
     },
@@ -16585,6 +19700,19 @@
         }
       }
     },
+    "PinnedEnvironmentOrder": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "direction": "OrderDirection!",
+        "field": "PinnedEnvironmentOrderField!"
+      }
+    },
+    "PinnedEnvironmentOrderField": {
+      "kind": "ENUM",
+      "enum_values": [
+        "POSITION"
+      ]
+    },
     "PinnedEvent": {
       "kind": "OBJECT",
       "fields": {
@@ -16685,6 +19813,166 @@
     "PreciseDateTime": {
       "kind": "SCALAR"
     },
+    "PrivateRepositoryForkingDisableAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "enterpriseResourcePath": {
+          "type": "URI"
+        },
+        "enterpriseSlug": {
+          "type": "String"
+        },
+        "enterpriseUrl": {
+          "type": "URI"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "repository": {
+          "type": "Repository"
+        },
+        "repositoryName": {
+          "type": "String"
+        },
+        "repositoryResourcePath": {
+          "type": "URI"
+        },
+        "repositoryUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      }
+    },
+    "PrivateRepositoryForkingEnableAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "enterpriseResourcePath": {
+          "type": "URI"
+        },
+        "enterpriseSlug": {
+          "type": "String"
+        },
+        "enterpriseUrl": {
+          "type": "URI"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "repository": {
+          "type": "Repository"
+        },
+        "repositoryName": {
+          "type": "String"
+        },
+        "repositoryResourcePath": {
+          "type": "URI"
+        },
+        "repositoryUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      }
+    },
     "ProfileItemShowcase": {
       "kind": "OBJECT",
       "fields": {
@@ -16699,6 +19987,64 @@
             "first": "Int",
             "last": "Int"
           }
+        }
+      }
+    },
+    "ProfileOwner": {
+      "kind": "INTERFACE",
+      "fields": {
+        "anyPinnableItems": {
+          "type": "Boolean!",
+          "args": {
+            "type": "PinnableItemType"
+          }
+        },
+        "email": {
+          "type": "String"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "itemShowcase": {
+          "type": "ProfileItemShowcase!"
+        },
+        "location": {
+          "type": "String"
+        },
+        "login": {
+          "type": "String!"
+        },
+        "name": {
+          "type": "String"
+        },
+        "pinnableItems": {
+          "type": "PinnableItemConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "types": "[PinnableItemType!]"
+          }
+        },
+        "pinnedItems": {
+          "type": "PinnableItemConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "types": "[PinnableItemType!]"
+          }
+        },
+        "pinnedItemsRemaining": {
+          "type": "Int!"
+        },
+        "viewerCanChangePinnedItems": {
+          "type": "Boolean!"
+        },
+        "websiteUrl": {
+          "type": "URI"
         }
       }
     },
@@ -17006,6 +20352,21 @@
           "type": "Project"
         }
       }
+    },
+    "ProjectOrder": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "direction": "OrderDirection!",
+        "field": "ProjectOrderField!"
+      }
+    },
+    "ProjectOrderField": {
+      "kind": "ENUM",
+      "enum_values": [
+        "CREATED_AT",
+        "NAME",
+        "UPDATED_AT"
+      ]
     },
     "ProjectOwner": {
       "kind": "INTERFACE",
@@ -17523,6 +20884,22 @@
         "text": "String"
       }
     },
+    "ProjectV2Filters": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "state": "ProjectV2State"
+      }
+    },
+    "ProjectV2IssueFieldValues": {
+      "kind": "UNION",
+      "possible_types": [
+        "IssueFieldDateValue",
+        "IssueFieldMultiSelectValue",
+        "IssueFieldNumberValue",
+        "IssueFieldSingleSelectValue",
+        "IssueFieldTextValue"
+      ]
+    },
     "ProjectV2Item": {
       "kind": "OBJECT",
       "fields": {
@@ -18027,6 +21404,17 @@
         "POSITION"
       ]
     },
+    "ProjectV2ItemIssueFieldValue": {
+      "kind": "OBJECT",
+      "fields": {
+        "field": {
+          "type": "ProjectV2FieldConfiguration!"
+        },
+        "issueFieldValue": {
+          "type": "ProjectV2IssueFieldValues"
+        }
+      }
+    },
     "ProjectV2ItemOrder": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
@@ -18039,6 +21427,32 @@
       "enum_values": [
         "POSITION"
       ]
+    },
+    "ProjectV2ItemStatusChangedEvent": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "previousStatus": {
+          "type": "String!"
+        },
+        "project": {
+          "type": "ProjectV2"
+        },
+        "status": {
+          "type": "String!"
+        },
+        "wasAutomated": {
+          "type": "Boolean!"
+        }
+      }
     },
     "ProjectV2ItemType": {
       "kind": "ENUM",
@@ -18255,6 +21669,28 @@
         "User"
       ]
     },
+    "ProjectV2PermissionLevel": {
+      "kind": "ENUM",
+      "enum_values": [
+        "ADMIN",
+        "READ",
+        "WRITE"
+      ]
+    },
+    "ProjectV2Recent": {
+      "kind": "INTERFACE",
+      "fields": {
+        "recentProjects": {
+          "type": "ProjectV2Connection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        }
+      }
+    },
     "ProjectV2Roles": {
       "kind": "ENUM",
       "enum_values": [
@@ -18424,6 +21860,13 @@
           "type": "ProjectV2SortByField"
         }
       }
+    },
+    "ProjectV2State": {
+      "kind": "ENUM",
+      "enum_values": [
+        "CLOSED",
+        "OPEN"
+      ]
     },
     "ProjectV2StatusOrder": {
       "kind": "INPUT_OBJECT",
@@ -19480,6 +22923,38 @@
         }
       }
     },
+    "PullRequestCommitCommentThread": {
+      "kind": "OBJECT",
+      "fields": {
+        "comments": {
+          "type": "CommitCommentConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int"
+          }
+        },
+        "commit": {
+          "type": "Commit!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "path": {
+          "type": "String"
+        },
+        "position": {
+          "type": "Int"
+        },
+        "pullRequest": {
+          "type": "PullRequest!"
+        },
+        "repository": {
+          "type": "Repository!"
+        }
+      }
+    },
     "PullRequestCommitConnection": {
       "kind": "OBJECT",
       "fields": {
@@ -20153,6 +23628,20 @@
         "LINE"
       ]
     },
+    "PullRequestRevisionMarker": {
+      "kind": "OBJECT",
+      "fields": {
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "lastSeenCommit": {
+          "type": "Commit!"
+        },
+        "pullRequest": {
+          "type": "PullRequest!"
+        }
+      }
+    },
     "PullRequestStack": {
       "kind": "OBJECT",
       "fields": {
@@ -20243,6 +23732,69 @@
         },
         "repository": {
           "type": "Repository!"
+        }
+      }
+    },
+    "PullRequestThread": {
+      "kind": "OBJECT",
+      "fields": {
+        "comments": {
+          "type": "PullRequestReviewCommentConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "skip": "Int"
+          }
+        },
+        "diffSide": {
+          "type": "DiffSide!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "isCollapsed": {
+          "type": "Boolean!"
+        },
+        "isOutdated": {
+          "type": "Boolean!"
+        },
+        "isResolved": {
+          "type": "Boolean!"
+        },
+        "line": {
+          "type": "Int"
+        },
+        "path": {
+          "type": "String!"
+        },
+        "pullRequest": {
+          "type": "PullRequest!"
+        },
+        "repository": {
+          "type": "Repository!"
+        },
+        "resolvedBy": {
+          "type": "User"
+        },
+        "startDiffSide": {
+          "type": "DiffSide"
+        },
+        "startLine": {
+          "type": "Int"
+        },
+        "subjectType": {
+          "type": "PullRequestReviewThreadSubjectType!"
+        },
+        "viewerCanReply": {
+          "type": "Boolean!"
+        },
+        "viewerCanResolve": {
+          "type": "Boolean!"
+        },
+        "viewerCanUnresolve": {
+          "type": "Boolean!"
         }
       }
     },
@@ -20895,6 +24447,19 @@
           "type": "Boolean!"
         }
       }
+    },
+    "ReactionOrder": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "direction": "OrderDirection!",
+        "field": "ReactionOrderField!"
+      }
+    },
+    "ReactionOrderField": {
+      "kind": "ENUM",
+      "enum_values": [
+        "CREATED_AT"
+      ]
     },
     "Reactor": {
       "kind": "UNION",
@@ -21755,6 +25320,78 @@
         }
       }
     },
+    "RemovedFromMergeQueueEvent": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "beforeCommit": {
+          "type": "Commit"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "enqueuer": {
+          "type": "User"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "mergeQueue": {
+          "type": "MergeQueue"
+        },
+        "pullRequest": {
+          "type": "PullRequest"
+        },
+        "reason": {
+          "type": "String"
+        }
+      }
+    },
+    "RemovedFromProjectEvent": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "databaseId": {
+          "type": "Int"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "project": {
+          "type": "Project"
+        },
+        "projectColumnName": {
+          "type": "String!"
+        }
+      }
+    },
+    "RemovedFromProjectV2Event": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "project": {
+          "type": "ProjectV2"
+        },
+        "wasAutomated": {
+          "type": "Boolean!"
+        }
+      }
+    },
     "RenamedTitleEvent": {
       "kind": "OBJECT",
       "fields": {
@@ -21903,6 +25540,1124 @@
         },
         "clientMutationId": {
           "type": "String"
+        }
+      }
+    },
+    "RepoAccessAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "repository": {
+          "type": "Repository"
+        },
+        "repositoryName": {
+          "type": "String"
+        },
+        "repositoryResourcePath": {
+          "type": "URI"
+        },
+        "repositoryUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        },
+        "visibility": {
+          "type": "RepoAccessAuditEntryVisibility"
+        }
+      }
+    },
+    "RepoAccessAuditEntryVisibility": {
+      "kind": "ENUM",
+      "enum_values": [
+        "INTERNAL",
+        "PRIVATE",
+        "PUBLIC"
+      ]
+    },
+    "RepoAddMemberAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "repository": {
+          "type": "Repository"
+        },
+        "repositoryName": {
+          "type": "String"
+        },
+        "repositoryResourcePath": {
+          "type": "URI"
+        },
+        "repositoryUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        },
+        "visibility": {
+          "type": "RepoAddMemberAuditEntryVisibility"
+        }
+      }
+    },
+    "RepoAddMemberAuditEntryVisibility": {
+      "kind": "ENUM",
+      "enum_values": [
+        "INTERNAL",
+        "PRIVATE",
+        "PUBLIC"
+      ]
+    },
+    "RepoAddTopicAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "repository": {
+          "type": "Repository"
+        },
+        "repositoryName": {
+          "type": "String"
+        },
+        "repositoryResourcePath": {
+          "type": "URI"
+        },
+        "repositoryUrl": {
+          "type": "URI"
+        },
+        "topic": {
+          "type": "Topic"
+        },
+        "topicName": {
+          "type": "String"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      }
+    },
+    "RepoArchivedAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "repository": {
+          "type": "Repository"
+        },
+        "repositoryName": {
+          "type": "String"
+        },
+        "repositoryResourcePath": {
+          "type": "URI"
+        },
+        "repositoryUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        },
+        "visibility": {
+          "type": "RepoArchivedAuditEntryVisibility"
+        }
+      }
+    },
+    "RepoArchivedAuditEntryVisibility": {
+      "kind": "ENUM",
+      "enum_values": [
+        "INTERNAL",
+        "PRIVATE",
+        "PUBLIC"
+      ]
+    },
+    "RepoChangeMergeSettingAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "isEnabled": {
+          "type": "Boolean"
+        },
+        "mergeType": {
+          "type": "RepoChangeMergeSettingAuditEntryMergeType"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "repository": {
+          "type": "Repository"
+        },
+        "repositoryName": {
+          "type": "String"
+        },
+        "repositoryResourcePath": {
+          "type": "URI"
+        },
+        "repositoryUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      }
+    },
+    "RepoChangeMergeSettingAuditEntryMergeType": {
+      "kind": "ENUM",
+      "enum_values": [
+        "MERGE",
+        "REBASE",
+        "SQUASH"
+      ]
+    },
+    "RepoConfigDisableAnonymousGitAccessAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "repository": {
+          "type": "Repository"
+        },
+        "repositoryName": {
+          "type": "String"
+        },
+        "repositoryResourcePath": {
+          "type": "URI"
+        },
+        "repositoryUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      }
+    },
+    "RepoConfigDisableCollaboratorsOnlyAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "repository": {
+          "type": "Repository"
+        },
+        "repositoryName": {
+          "type": "String"
+        },
+        "repositoryResourcePath": {
+          "type": "URI"
+        },
+        "repositoryUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      }
+    },
+    "RepoConfigDisableContributorsOnlyAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "repository": {
+          "type": "Repository"
+        },
+        "repositoryName": {
+          "type": "String"
+        },
+        "repositoryResourcePath": {
+          "type": "URI"
+        },
+        "repositoryUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      }
+    },
+    "RepoConfigDisableSockpuppetDisallowedAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "repository": {
+          "type": "Repository"
+        },
+        "repositoryName": {
+          "type": "String"
+        },
+        "repositoryResourcePath": {
+          "type": "URI"
+        },
+        "repositoryUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      }
+    },
+    "RepoConfigEnableAnonymousGitAccessAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "repository": {
+          "type": "Repository"
+        },
+        "repositoryName": {
+          "type": "String"
+        },
+        "repositoryResourcePath": {
+          "type": "URI"
+        },
+        "repositoryUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      }
+    },
+    "RepoConfigEnableCollaboratorsOnlyAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "repository": {
+          "type": "Repository"
+        },
+        "repositoryName": {
+          "type": "String"
+        },
+        "repositoryResourcePath": {
+          "type": "URI"
+        },
+        "repositoryUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      }
+    },
+    "RepoConfigEnableContributorsOnlyAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "repository": {
+          "type": "Repository"
+        },
+        "repositoryName": {
+          "type": "String"
+        },
+        "repositoryResourcePath": {
+          "type": "URI"
+        },
+        "repositoryUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      }
+    },
+    "RepoConfigEnableSockpuppetDisallowedAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "repository": {
+          "type": "Repository"
+        },
+        "repositoryName": {
+          "type": "String"
+        },
+        "repositoryResourcePath": {
+          "type": "URI"
+        },
+        "repositoryUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      }
+    },
+    "RepoConfigLockAnonymousGitAccessAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "repository": {
+          "type": "Repository"
+        },
+        "repositoryName": {
+          "type": "String"
+        },
+        "repositoryResourcePath": {
+          "type": "URI"
+        },
+        "repositoryUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      }
+    },
+    "RepoConfigUnlockAnonymousGitAccessAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "repository": {
+          "type": "Repository"
+        },
+        "repositoryName": {
+          "type": "String"
+        },
+        "repositoryResourcePath": {
+          "type": "URI"
+        },
+        "repositoryUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
         }
       }
     },
@@ -22087,6 +26842,165 @@
         "PRIVATE",
         "PUBLIC"
       ]
+    },
+    "RepoRemoveMemberAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "repository": {
+          "type": "Repository"
+        },
+        "repositoryName": {
+          "type": "String"
+        },
+        "repositoryResourcePath": {
+          "type": "URI"
+        },
+        "repositoryUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        },
+        "visibility": {
+          "type": "RepoRemoveMemberAuditEntryVisibility"
+        }
+      }
+    },
+    "RepoRemoveMemberAuditEntryVisibility": {
+      "kind": "ENUM",
+      "enum_values": [
+        "INTERNAL",
+        "PRIVATE",
+        "PUBLIC"
+      ]
+    },
+    "RepoRemoveTopicAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "repository": {
+          "type": "Repository"
+        },
+        "repositoryName": {
+          "type": "String"
+        },
+        "repositoryResourcePath": {
+          "type": "URI"
+        },
+        "repositoryUrl": {
+          "type": "URI"
+        },
+        "topic": {
+          "type": "Topic"
+        },
+        "topicName": {
+          "type": "String"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      }
     },
     "ReportedContentClassifiers": {
       "kind": "ENUM",
@@ -23108,6 +28022,40 @@
         "ORG_AND_REPO_ACTORS"
       ]
     },
+    "RepositoryDiscussionAuthor": {
+      "kind": "INTERFACE",
+      "fields": {
+        "repositoryDiscussions": {
+          "type": "DiscussionConnection!",
+          "args": {
+            "after": "String",
+            "answered": "Boolean",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "orderBy": "DiscussionOrder",
+            "repositoryId": "ID",
+            "states": "[DiscussionState!]"
+          }
+        }
+      }
+    },
+    "RepositoryDiscussionCommentAuthor": {
+      "kind": "INTERFACE",
+      "fields": {
+        "repositoryDiscussionComments": {
+          "type": "DiscussionCommentConnection!",
+          "args": {
+            "after": "String",
+            "before": "String",
+            "first": "Int",
+            "last": "Int",
+            "onlyAnswers": "Boolean",
+            "repositoryId": "ID"
+          }
+        }
+      }
+    },
     "RepositoryEdge": {
       "kind": "OBJECT",
       "fields": {
@@ -23702,6 +28650,21 @@
         "type": "RepositoryRuleType!"
       }
     },
+    "RepositoryRuleOrder": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "direction": "OrderDirection!",
+        "field": "RepositoryRuleOrderField!"
+      }
+    },
+    "RepositoryRuleOrderField": {
+      "kind": "ENUM",
+      "enum_values": [
+        "CREATED_AT",
+        "TYPE",
+        "UPDATED_AT"
+      ]
+    },
     "RepositoryRuleType": {
       "kind": "ENUM",
       "enum_values": [
@@ -23959,6 +28922,142 @@
         "PRIVATE",
         "PUBLIC"
       ]
+    },
+    "RepositoryVisibilityChangeDisableAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "enterpriseResourcePath": {
+          "type": "URI"
+        },
+        "enterpriseSlug": {
+          "type": "String"
+        },
+        "enterpriseUrl": {
+          "type": "URI"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      }
+    },
+    "RepositoryVisibilityChangeEnableAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "enterpriseResourcePath": {
+          "type": "URI"
+        },
+        "enterpriseSlug": {
+          "type": "String"
+        },
+        "enterpriseUrl": {
+          "type": "URI"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      }
     },
     "RepositoryVulnerabilityAlert": {
       "kind": "OBJECT",
@@ -24585,6 +29684,20 @@
         "Node"
       ]
     },
+    "ReviewStatusHovercardContext": {
+      "kind": "OBJECT",
+      "fields": {
+        "message": {
+          "type": "String!"
+        },
+        "octicon": {
+          "type": "String!"
+        },
+        "reviewDecision": {
+          "type": "PullRequestReviewDecision"
+        }
+      }
+    },
     "RevokeEnterpriseOrganizationsMigratorRoleInput": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
@@ -24765,6 +29878,19 @@
           "type": "SavedReply"
         }
       }
+    },
+    "SavedReplyOrder": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "direction": "OrderDirection!",
+        "field": "SavedReplyOrderField!"
+      }
+    },
+    "SavedReplyOrderField": {
+      "kind": "ENUM",
+      "enum_values": [
+        "UPDATED_AT"
+      ]
     },
     "SearchResultItem": {
       "kind": "UNION",
@@ -26841,6 +31967,40 @@
         }
       }
     },
+    "SubIssueAddedEvent": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "subIssue": {
+          "type": "Issue"
+        }
+      }
+    },
+    "SubIssueRemovedEvent": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "subIssue": {
+          "type": "Issue"
+        }
+      }
+    },
     "SubIssuesSummary": {
       "kind": "OBJECT",
       "fields": {
@@ -26946,6 +32106,37 @@
       "possible_types": [
         "Repository"
       ]
+    },
+    "SubscribableThread": {
+      "kind": "INTERFACE",
+      "fields": {
+        "id": {
+          "type": "ID!"
+        },
+        "viewerThreadSubscriptionFormAction": {
+          "type": "ThreadSubscriptionFormAction"
+        },
+        "viewerThreadSubscriptionStatus": {
+          "type": "ThreadSubscriptionState"
+        }
+      }
+    },
+    "SubscribedEvent": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "subscribable": {
+          "type": "Subscribable!"
+        }
+      }
     },
     "SubscriptionState": {
       "kind": "ENUM",
@@ -27260,6 +32451,281 @@
         }
       }
     },
+    "TeamAddMemberAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "isLdapMapped": {
+          "type": "Boolean"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "team": {
+          "type": "Team"
+        },
+        "teamName": {
+          "type": "String"
+        },
+        "teamResourcePath": {
+          "type": "URI"
+        },
+        "teamUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      }
+    },
+    "TeamAddRepositoryAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "isLdapMapped": {
+          "type": "Boolean"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "repository": {
+          "type": "Repository"
+        },
+        "repositoryName": {
+          "type": "String"
+        },
+        "repositoryResourcePath": {
+          "type": "URI"
+        },
+        "repositoryUrl": {
+          "type": "URI"
+        },
+        "team": {
+          "type": "Team"
+        },
+        "teamName": {
+          "type": "String"
+        },
+        "teamResourcePath": {
+          "type": "URI"
+        },
+        "teamUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      }
+    },
+    "TeamAuditEntryData": {
+      "kind": "INTERFACE",
+      "fields": {
+        "team": {
+          "type": "Team"
+        },
+        "teamName": {
+          "type": "String"
+        },
+        "teamResourcePath": {
+          "type": "URI"
+        },
+        "teamUrl": {
+          "type": "URI"
+        }
+      }
+    },
+    "TeamChangeParentTeamAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "isLdapMapped": {
+          "type": "Boolean"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "parentTeam": {
+          "type": "Team"
+        },
+        "parentTeamName": {
+          "type": "String"
+        },
+        "parentTeamNameWas": {
+          "type": "String"
+        },
+        "parentTeamResourcePath": {
+          "type": "URI"
+        },
+        "parentTeamUrl": {
+          "type": "URI"
+        },
+        "parentTeamWas": {
+          "type": "Team"
+        },
+        "parentTeamWasResourcePath": {
+          "type": "URI"
+        },
+        "parentTeamWasUrl": {
+          "type": "URI"
+        },
+        "team": {
+          "type": "Team"
+        },
+        "teamName": {
+          "type": "String"
+        },
+        "teamResourcePath": {
+          "type": "URI"
+        },
+        "teamUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      }
+    },
     "TeamConnection": {
       "kind": "OBJECT",
       "fields": {
@@ -27325,6 +32791,20 @@
         }
       }
     },
+    "TeamMemberOrder": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "direction": "OrderDirection!",
+        "field": "TeamMemberOrderField!"
+      }
+    },
+    "TeamMemberOrderField": {
+      "kind": "ENUM",
+      "enum_values": [
+        "CREATED_AT",
+        "LOGIN"
+      ]
+    },
     "TeamMemberRole": {
       "kind": "ENUM",
       "enum_values": [
@@ -27366,6 +32846,166 @@
         "SECRET",
         "VISIBLE"
       ]
+    },
+    "TeamRemoveMemberAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "isLdapMapped": {
+          "type": "Boolean"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "team": {
+          "type": "Team"
+        },
+        "teamName": {
+          "type": "String"
+        },
+        "teamResourcePath": {
+          "type": "URI"
+        },
+        "teamUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      }
+    },
+    "TeamRemoveRepositoryAuditEntry": {
+      "kind": "OBJECT",
+      "fields": {
+        "action": {
+          "type": "String!"
+        },
+        "actor": {
+          "type": "AuditEntryActor"
+        },
+        "actorIp": {
+          "type": "String"
+        },
+        "actorLocation": {
+          "type": "ActorLocation"
+        },
+        "actorLogin": {
+          "type": "String"
+        },
+        "actorResourcePath": {
+          "type": "URI"
+        },
+        "actorUrl": {
+          "type": "URI"
+        },
+        "createdAt": {
+          "type": "PreciseDateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "isLdapMapped": {
+          "type": "Boolean"
+        },
+        "operationType": {
+          "type": "OperationType"
+        },
+        "organization": {
+          "type": "Organization"
+        },
+        "organizationName": {
+          "type": "String"
+        },
+        "organizationResourcePath": {
+          "type": "URI"
+        },
+        "organizationUrl": {
+          "type": "URI"
+        },
+        "repository": {
+          "type": "Repository"
+        },
+        "repositoryName": {
+          "type": "String"
+        },
+        "repositoryResourcePath": {
+          "type": "URI"
+        },
+        "repositoryUrl": {
+          "type": "URI"
+        },
+        "team": {
+          "type": "Team"
+        },
+        "teamName": {
+          "type": "String"
+        },
+        "teamResourcePath": {
+          "type": "URI"
+        },
+        "teamUrl": {
+          "type": "URI"
+        },
+        "user": {
+          "type": "User"
+        },
+        "userLogin": {
+          "type": "String"
+        },
+        "userResourcePath": {
+          "type": "URI"
+        },
+        "userUrl": {
+          "type": "URI"
+        }
+      }
     },
     "TeamRepositoryConnection": {
       "kind": "OBJECT",
@@ -27422,6 +33062,20 @@
         "LOAD_BALANCE",
         "ROUND_ROBIN"
       ]
+    },
+    "TeamReviewRequestable": {
+      "kind": "INTERFACE",
+      "fields": {
+        "id": {
+          "type": "ID!"
+        },
+        "name": {
+          "type": "String!"
+        },
+        "slug": {
+          "type": "String!"
+        }
+      }
     },
     "TeamRole": {
       "kind": "ENUM",
@@ -27527,6 +33181,17 @@
         },
         "viewerHasStarred": {
           "type": "Boolean!"
+        }
+      }
+    },
+    "TopicAuditEntryData": {
+      "kind": "INTERFACE",
+      "fields": {
+        "topic": {
+          "type": "Topic"
+        },
+        "topicName": {
+          "type": "String"
         }
       }
     },
@@ -28074,6 +33739,29 @@
         }
       }
     },
+    "UnmarkedAsDuplicateEvent": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "canonical": {
+          "type": "IssueOrPullRequest"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "duplicate": {
+          "type": "IssueOrPullRequest"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "isCrossRepository": {
+          "type": "Boolean!"
+        }
+      }
+    },
     "UnminimizeCommentInput": {
       "kind": "INPUT_OBJECT",
       "input_fields": {
@@ -28166,6 +33854,39 @@
         },
         "thread": {
           "type": "PullRequestReviewThread"
+        }
+      }
+    },
+    "UnsubscribedEvent": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "subscribable": {
+          "type": "Subscribable!"
+        }
+      }
+    },
+    "Updatable": {
+      "kind": "INTERFACE",
+      "fields": {
+        "viewerCanUpdate": {
+          "type": "Boolean!"
+        }
+      }
+    },
+    "UpdatableComment": {
+      "kind": "INTERFACE",
+      "fields": {
+        "viewerCannotUpdateReasons": {
+          "type": "[CommentCannotUpdateReason!]!"
         }
       }
     },
@@ -30330,6 +36051,36 @@
         "Sponsorable"
       ]
     },
+    "UserBlockDuration": {
+      "kind": "ENUM",
+      "enum_values": [
+        "ONE_DAY",
+        "ONE_MONTH",
+        "ONE_WEEK",
+        "PERMANENT",
+        "THREE_DAYS"
+      ]
+    },
+    "UserBlockedEvent": {
+      "kind": "OBJECT",
+      "fields": {
+        "actor": {
+          "type": "Actor"
+        },
+        "blockDuration": {
+          "type": "UserBlockDuration!"
+        },
+        "createdAt": {
+          "type": "DateTime!"
+        },
+        "id": {
+          "type": "ID!"
+        },
+        "subject": {
+          "type": "User"
+        }
+      }
+    },
     "UserConnection": {
       "kind": "OBJECT",
       "fields": {
@@ -30794,6 +36545,20 @@
         }
       }
     },
+    "ViewerHovercardContext": {
+      "kind": "OBJECT",
+      "fields": {
+        "message": {
+          "type": "String!"
+        },
+        "octicon": {
+          "type": "String!"
+        },
+        "viewer": {
+          "type": "User!"
+        }
+      }
+    },
     "Votable": {
       "kind": "INTERFACE",
       "fields": {
@@ -30997,6 +36762,19 @@
           "type": "Boolean!"
         }
       }
+    },
+    "WorkflowRunOrder": {
+      "kind": "INPUT_OBJECT",
+      "input_fields": {
+        "direction": "OrderDirection!",
+        "field": "WorkflowRunOrderField!"
+      }
+    },
+    "WorkflowRunOrderField": {
+      "kind": "ENUM",
+      "enum_values": [
+        "CREATED_AT"
+      ]
     },
     "WorkflowState": {
       "kind": "ENUM",
