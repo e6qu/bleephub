@@ -60,23 +60,21 @@ jobs:
       # pass carries both instrumentations at once. The suite is still fully
       # exercised under `-race` and fully measured for the coverage floor.
       #
-      # The race pass alone still exceeded the 16 GB runner's RAM on the grown
-      # internal/server suite: peak RSS lands between 16 and 24 GB (it OOMs the
-      # 16 GB CI VM — surfacing as exit 143 + "runner received a shutdown
-      # signal" after a ~12-minute silent hang on that one package — but runs to
-      # completion on a 24 GB developer box). Race-detector shadow memory scales
-      # with live-goroutine concurrency and is NOT reclaimed by GC, so GOMEMLIMIT
-      # cannot bound it; the lever is concurrency. `-p 2` halves how many package
-      # test binaries build/run at once and `-parallel 2` halves how many tests
-      # run concurrently inside a package (internal/server spins up a full test
-      # server per parallel test — the dominant allocator), together roughly
-      # halving peak RSS into the ~8-12 GB range. GOMEMLIMIT backstops the
-      # GC-managed (non-shadow) heap. Throttling doubles wall time, hence the
-      # 40m test timeout (was 30m) and the 90m job budget above.
+      # The race pass needs more than the split, though: the race detector keeps
+      # per-process "shadow memory" for every location a test touches and never
+      # reclaims it, so a single `go test -race` over internal/server's 2400+
+      # tests climbs monotonically past the 16 GB runner and the VM is torn down
+      # (a ~1-hour hang on one step, then exit 143 + "runner received a shutdown
+      # signal"). Throttling -p/-parallel only slowed the climb (12 min → 63 min
+      # to OOM); it does not cap accumulation. run-race-suite.sh instead runs
+      # internal/server across several fresh, count-balanced shard processes —
+      # each starts with empty shadow memory — while racing every other package
+      # together, holding a single shard's peak RSS well under the ceiling.
+      # GOMEMLIMIT backstops the GC-managed (non-shadow) heap.
       - name: Run the complete server suite under the race detector
         env:
           GOMEMLIMIT: 12GiB
-        run: go test -race -tags noui -count=1 -timeout 40m -p 2 -parallel 2 ./...
+        run: bash ./scripts/run-race-suite.sh
       - name: Re-run for the coverage profile
         # -coverpkg follows the ARCH-001 module split: internal/store and
         # internal/gitstore carry no test binaries of their own — they are
