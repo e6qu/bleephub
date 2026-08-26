@@ -366,7 +366,7 @@
       "shared_types": 1809,
       "signature_exact_fields": 8364
     },
-    "introspection_snapshot_sha256": "b49800b4e7276d5582131a655744df0517a63e2adec712875b41e2a54a4f8c62",
+    "introspection_snapshot_sha256": "0ba26e8188dab475c1b1551832db7d3df1aee75565a7ba99b0f0d68b34736ffa",
     "official_schema": {
       "content_sha256": "e67fbf3cf655481ac815f53b0495efabed0f792a12a405577f74d6532e70b792",
       "source": "https://docs.github.com/public/fpt/schema.docs.graphql"
@@ -9269,28 +9269,28 @@
         "category": "GQL",
         "finding": "`User.status` and `Organization.memberStatuses` need a user-status model (emoji, message, expiry, organization scope) that does not exist",
         "id": "GQL-094",
-        "location": "gh_users_surface_graphql.go",
+        "location": "gh_users_org_fields_graphql.go",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 `store.UserStatus` carries emoji/message/expiry/organization and `User.status`, `Organization.memberStatuses` and `Team.memberStatuses` all resolve from it (gh_users_org_fields_graphql.go, gh_teams_fields_graphql.go); the finding predated the model",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
         "finding": "`packages` on Repository, User and Organization is unserved although the package store holds the data; it needs the `Package`/`PackageVersion`/`PackageStatistics` type graph",
         "id": "GQL-095",
-        "location": "gh_account_surface_graphql.go",
+        "location": "gh_final_residue_graphql.go",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 the `Package`/`PackageVersion`/`PackageStatistics`/`PackageFile` graph resolves from the package store, and `PackageVersion.files` now returns the stored files once `store.PackageFile` gained the `updatedAt` its non-null `DateTime!` field requires",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
         "finding": "`Organization.auditLog` needs github's roughly one hundred typed audit-entry objects; the store keeps one generic entry row",
         "id": "GQL-096",
-        "location": "gh_orgs_surface_graphql.go",
+        "location": "gh_audit_log_graphql.go",
         "severity": "m",
-        "status": "open",
-        "status_kind": "open"
+        "status": "fixed \u2014 `auditLog` dispatches each entry to its concrete typed `*AuditEntry` object (not a generic row); every recorded action with a GitHub `OrganizationAuditEntry` union counterpart is typed (`org.invite_member` added). The remaining union members model audit events bleephub does not record",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -9471,8 +9471,8 @@
         },
         "GQL": {
           "status": {
-            "fixed": 95,
-            "open": 5
+            "fixed": 98,
+            "open": 2
           },
           "total": 100
         },
@@ -9517,8 +9517,8 @@
       },
       "status": {
         "deferred": 3,
-        "fixed": 983,
-        "open": 6
+        "fixed": 986,
+        "open": 3
       },
       "total": 992
     }

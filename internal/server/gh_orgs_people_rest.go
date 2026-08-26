@@ -269,7 +269,7 @@ func (s *Server) handleCreateOrgInvitation(w http.ResponseWriter, r *http.Reques
 			s.emitOrgMembershipEvent(org, "member_invited", m, invitee, user)
 		}
 	}
-	s.recordAuditEvent("org.invite_member", user.Login, org.Login, map[string]interface{}{"invitation_id": inv.ID, "role": role})
+	s.recordAuditEvent("org.invite_member", user.Login, org.Login, map[string]interface{}{"invitation_id": inv.ID, "role": role, "email": inv.Email})
 	writeJSON(w, http.StatusCreated, s.orgInvitationJSON(inv, org, s.baseURL(r)))
 }
 

@@ -41,6 +41,8 @@ func auditEntryTypeName(action string) string {
 	switch action {
 	case "org.create":
 		return "OrgCreateAuditEntry"
+	case "org.invite_member":
+		return "OrgInviteMemberAuditEntry"
 	case "org.block_user":
 		return "OrgBlockUserAuditEntry"
 	case "org.unblock_user":
@@ -183,6 +185,8 @@ func (s *Resolver) resolveAuditEntryConcrete(p graphql.ResolveTypeParams) *graph
 	switch m["_auditType"] {
 	case "OrgCreateAuditEntry":
 		return s.gqlOrgCreateAuditEntryType()
+	case "OrgInviteMemberAuditEntry":
+		return s.gqlOrgInviteMemberAuditEntryType()
 	case "OrgBlockUserAuditEntry":
 		return s.gqlOrgBlockUserAuditEntryType()
 	case "OrgUnblockUserAuditEntry":
@@ -275,6 +279,15 @@ func (s *Resolver) gqlOrgRemoveOutsideCollaboratorAuditEntryType() *graphql.Obje
 		}, s.auditEntryBaseFields(), s.orgAuditDataFields()))
 }
 
+func (s *Resolver) gqlOrgInviteMemberAuditEntryType() *graphql.Object {
+	return s.auditObject("OrgInviteMemberAuditEntry", s.orgAuditInterfaces(),
+		mergeAuditFields(graphql.Fields{
+			"id":                     gqlNonNull(graphql.ID),
+			"email":                  gqlField(graphql.String),
+			"organizationInvitation": gqlField(s.reachOrganizationInvitationType()),
+		}, s.auditEntryBaseFields(), s.orgAuditDataFields()))
+}
+
 func (s *Resolver) gqlRepoCreateAuditEntryType() *graphql.Object {
 	visibility := s.sharedEnum("RepoCreateAuditEntryVisibility", "INTERNAL", "PRIVATE", "PUBLIC")
 	return s.auditObject("RepoCreateAuditEntry", s.repoAuditInterfaces(),
@@ -301,6 +314,7 @@ func (s *Resolver) gqlOrganizationAuditEntryUnion() *graphql.Union {
 	return s.mutationUnion("OrganizationAuditEntry", func() []*graphql.Object {
 		return []*graphql.Object{
 			s.gqlOrgCreateAuditEntryType(),
+			s.gqlOrgInviteMemberAuditEntryType(),
 			s.gqlOrgBlockUserAuditEntryType(),
 			s.gqlOrgUnblockUserAuditEntryType(),
 			s.gqlOrgRemoveOutsideCollaboratorAuditEntryType(),
@@ -496,6 +510,12 @@ func (s *Resolver) renderAuditEntry(typeName string, e *store.AuditEntry) map[st
 			if u := s.store.LookupUserByLogin(blocked); u != nil {
 				m["blockedUser"] = userToGraphQL(u)
 			}
+		}
+	case "OrgInviteMemberAuditEntry":
+		// email is the invitee address the invitation carried; organizationInvitation
+		// stays null once the invitation is consumed or expired.
+		if email := auditDataString(e, "email"); email != "" {
+			m["email"] = email
 		}
 	case "OrgRemoveOutsideCollaboratorAuditEntry":
 		s.setAuditUser(m, auditDataString(e, "user"))

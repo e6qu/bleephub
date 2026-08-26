@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/e6qu/bleephub/internal/store"
 )
 
 // TestPackageVersionGetReturnsDetachedSnapshot pins STORE-021 for the package
@@ -682,4 +684,75 @@ func TestPackages_OrgDockerConflicts(t *testing.T) {
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("unauthenticated docker conflicts: %d, want 401", resp.StatusCode)
 	}
+}
+
+// TestPackageVersionFilesServedOverGraphQL pins GQL-095: PackageVersion.files
+// returns the version's stored files (name/size/updatedAt) instead of an empty
+// connection.
+func TestPackageVersionFilesServedOverGraphQL(t *testing.T) {
+	s := newIsolatedServer(t)
+	if _, ok := s.store.CreatePackage("User", "admin", "npm", "filed-pkg", "private"); !ok {
+		t.Fatal("create package failed")
+	}
+	if _, err := s.store.CreatePackageVersion("User", "admin", "npm", "filed-pkg", "1.0.0", "desc", nil,
+		[]store.PackageFileInput{{
+			Name:          "filed-pkg-1.0.0.tgz",
+			ContentType:   "application/gzip",
+			ContentBase64: base64.StdEncoding.EncodeToString([]byte("hello")),
+		}}); err != nil {
+		t.Fatalf("create version: %v", err)
+	}
+
+	query := `{user(login:"admin"){packages(first:1){nodes{versions(first:1){nodes{files{nodes{name size updatedAt}}}}}}}}`
+	resp := s.post(t, "/api/graphql", defaultToken, map[string]string{"query": query})
+	data := decodeJSON(t, resp)
+	if data["errors"] != nil {
+		t.Fatalf("graphql errors: %v", data["errors"])
+	}
+	files := nestedNodes(t, data,
+		"data", "user", "packages", "nodes", 0, "versions", "nodes", 0, "files", "nodes")
+	if len(files) != 1 {
+		t.Fatalf("files nodes = %d, want 1 (%v)", len(files), files)
+	}
+	file, _ := files[0].(map[string]interface{})
+	if file["name"] != "filed-pkg-1.0.0.tgz" {
+		t.Errorf("file.name = %#v, want filed-pkg-1.0.0.tgz", file["name"])
+	}
+	if sz, _ := file["size"].(float64); int(sz) != 5 {
+		t.Errorf("file.size = %#v, want 5", file["size"])
+	}
+	if file["updatedAt"] == nil || file["updatedAt"] == "" {
+		t.Errorf("file.updatedAt must be a non-null DateTime, got %#v", file["updatedAt"])
+	}
+}
+
+// nestedNodes walks a decoded GraphQL response by a path of string keys and int
+// slice indices, returning the []interface{} the final key names.
+func nestedNodes(t *testing.T, m map[string]interface{}, path ...interface{}) []interface{} {
+	t.Helper()
+	var cur interface{} = m
+	for _, step := range path {
+		switch key := step.(type) {
+		case string:
+			obj, ok := cur.(map[string]interface{})
+			if !ok {
+				t.Fatalf("path %v: expected object at %q, got %T", path, key, cur)
+			}
+			cur = obj[key]
+		case int:
+			arr, ok := cur.([]interface{})
+			if !ok {
+				t.Fatalf("path %v: expected array at index %d, got %T", path, key, cur)
+			}
+			if key >= len(arr) {
+				t.Fatalf("path %v: index %d out of range (len %d)", path, key, len(arr))
+			}
+			cur = arr[key]
+		}
+	}
+	out, ok := cur.([]interface{})
+	if !ok {
+		t.Fatalf("path %v: expected final array, got %T", path, cur)
+	}
+	return out
 }

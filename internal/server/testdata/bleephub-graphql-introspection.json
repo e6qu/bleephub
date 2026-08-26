@@ -1112,6 +1112,7 @@
       "possible_types": [
         "OrgBlockUserAuditEntry",
         "OrgCreateAuditEntry",
+        "OrgInviteMemberAuditEntry",
         "OrgRemoveOutsideCollaboratorAuditEntry",
         "OrgUnblockUserAuditEntry",
         "RepoCreateAuditEntry",
@@ -15687,6 +15688,7 @@
         "OIDCProvider",
         "OrgBlockUserAuditEntry",
         "OrgCreateAuditEntry",
+        "OrgInviteMemberAuditEntry",
         "OrgRemoveOutsideCollaboratorAuditEntry",
         "OrgUnblockUserAuditEntry",
         "Organization",
@@ -16759,7 +16761,12 @@
         "userUrl": {
           "type": "URI"
         }
-      }
+      },
+      "interfaces": [
+        "AuditEntry",
+        "Node",
+        "OrganizationAuditEntryData"
+      ]
     },
     "OrgInviteToBusinessAuditEntry": {
       "kind": "OBJECT",
@@ -18480,6 +18487,7 @@
       "possible_types": [
         "OrgBlockUserAuditEntry",
         "OrgCreateAuditEntry",
+        "OrgInviteMemberAuditEntry",
         "OrgRemoveOutsideCollaboratorAuditEntry",
         "OrgUnblockUserAuditEntry",
         "RepoCreateAuditEntry",
@@ -18522,6 +18530,7 @@
       "possible_types": [
         "OrgBlockUserAuditEntry",
         "OrgCreateAuditEntry",
+        "OrgInviteMemberAuditEntry",
         "OrgRemoveOutsideCollaboratorAuditEntry",
         "OrgUnblockUserAuditEntry",
         "RepoCreateAuditEntry",
