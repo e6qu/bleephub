@@ -10206,6 +10206,17 @@
       },
       {
         "method": "GET",
+        "operation_id": "enterprise-team-memberships/list-teams-for-user",
+        "path": "/enterprises/{enterprise}/members/{username}/teams",
+        "statuses": [
+          "200",
+          "401",
+          "403",
+          "404"
+        ]
+      },
+      {
+        "method": "GET",
         "operation_id": "enterprise-teams/list",
         "path": "/enterprises/{enterprise}/teams",
         "statuses": [
@@ -21512,9 +21523,11 @@
           "represented_operations": 1190
         },
         "ghec": {
-          "documented_operations": 1470,
+          "documented_operations": 1472,
           "missing_operations": [
+            "DELETE /enterprises/{}/credential-authorizations",
             "GET /enterprises/{}/actions/runners/deprecations/{}",
+            "GET /enterprises/{}/members/{}/teams",
             "GET /orgs/{}/actions/runners/deprecations/{}",
             "GET /repos/{}/{}/actions/runners/deprecations/{}",
             "POST /orgs/{}/credential-authorizations/revoke-all",
@@ -31082,7 +31095,7 @@
         "source": "internal/server/gh_misc_endpoints.go"
       }
     ],
-    "vendored_openapi_sha256": "f7afa5fa749313ad5d98e7c771be8b0c2571cadac9244290fe8158f503bf9b64"
+    "vendored_openapi_sha256": "f7faf6baadf09ecf59042a10e2901b136f99faa13938c7cd3c4e1b1602bfbb91"
   },
   "schema_version": 1,
   "sources": {
