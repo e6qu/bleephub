@@ -43,9 +43,11 @@ func (s *Server) enterpriseTeamJSON(t *store.EnterpriseTeam, baseURL string) map
 	return map[string]interface{}{
 		"id":   t.ID,
 		"name": t.Name,
-		// enterprise-team.description is a non-nullable string in the schema, so
-		// an unset description renders as "" rather than null.
-		"description":                 t.Description,
+		// description is null when unset: GitHub's team schemas model it as
+		// nullable and only enterprise-team marks it non-nullable (a spec
+		// imprecision), so match GitHub's actual behavior (PAR-009). The
+		// null-not-allowed deviation is carried in openapi-violation-allowlist.txt.
+		"description":                 nullOrString(t.Description),
 		"slug":                        t.Slug,
 		"url":                         api,
 		"organization_selection_type": t.OrganizationSelectionType,

@@ -454,7 +454,7 @@ func TestEnterpriseMemberTeams_ListsTheMembersTeams(t *testing.T) {
 	t.Parallel()
 	s := newIsolatedServer(t)
 
-	resp := s.post(t, enterpriseAPI+"/teams", defaultToken, map[string]interface{}{"name": "Squad"})
+	resp := s.post(t, enterpriseAPI+"/teams", defaultToken, map[string]interface{}{"name": "Squad", "description": "The squad"})
 	if resp.StatusCode != http.StatusCreated {
 		resp.Body.Close()
 		t.Fatalf("create team: got %d", resp.StatusCode)
