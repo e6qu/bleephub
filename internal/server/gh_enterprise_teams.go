@@ -12,6 +12,7 @@ import (
 func (s *Server) registerGHEnterpriseTeamRoutes() {
 	s.route("GET /api/v3/enterprises/{enterprise}/teams", s.requireEnterpriseMember(s.handleListEnterpriseTeams))
 	s.route("POST /api/v3/enterprises/{enterprise}/teams", s.requireEnterpriseOwner(s.handleCreateEnterpriseTeam))
+	s.route("GET /api/v3/enterprises/{enterprise}/members/{username}/teams", s.requireEnterpriseOwner(s.handleListEnterpriseMemberTeams))
 	s.route("GET /api/v3/enterprises/{enterprise}/teams/{team_slug}", s.requireEnterpriseMember(s.handleGetEnterpriseTeam))
 	s.route("PATCH /api/v3/enterprises/{enterprise}/teams/{team_slug}", s.requireEnterpriseOwner(s.handleUpdateEnterpriseTeam))
 	s.route("DELETE /api/v3/enterprises/{enterprise}/teams/{team_slug}", s.requireEnterpriseOwner(s.handleDeleteEnterpriseTeam))
@@ -40,9 +41,11 @@ func (s *Server) enterpriseTeamJSON(t *store.EnterpriseTeam, baseURL string) map
 		groupID = *t.GroupID
 	}
 	return map[string]interface{}{
-		"id":                          t.ID,
-		"name":                        t.Name,
-		"description":                 nullOrString(t.Description),
+		"id":   t.ID,
+		"name": t.Name,
+		// enterprise-team.description is a non-nullable string in the schema, so
+		// an unset description renders as "" rather than null.
+		"description":                 t.Description,
 		"slug":                        t.Slug,
 		"url":                         api,
 		"organization_selection_type": t.OrganizationSelectionType,
@@ -74,6 +77,34 @@ func validEnterpriseTeamEnums(selectionType, notificationSetting string) (string
 func (s *Server) handleListEnterpriseTeams(w http.ResponseWriter, r *http.Request) {
 	teams := s.store.ListEnterpriseTeams()
 	page := paginateAndLink(w, r, teams)
+	base := s.baseURL(r)
+	out := make([]map[string]interface{}, 0, len(page))
+	for _, t := range page {
+		out = append(out, s.enterpriseTeamJSON(t, base))
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// handleListEnterpriseMemberTeams serves GET
+// /enterprises/{enterprise}/members/{username}/teams: the enterprise teams the
+// named member belongs to. The response items use the list-context
+// enterprise-team schema (no members_count), so the shared renderer applies.
+func (s *Server) handleListEnterpriseMemberTeams(w http.ResponseWriter, r *http.Request) {
+	user := s.store.LookupUserByLogin(r.PathValue("username"))
+	if user == nil {
+		writeGHError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	var member []*store.EnterpriseTeam
+	for _, t := range s.store.ListEnterpriseTeams() {
+		for _, id := range t.MemberIDs {
+			if id == user.ID {
+				member = append(member, t)
+				break
+			}
+		}
+	}
+	page := paginateAndLink(w, r, member)
 	base := s.baseURL(r)
 	out := make([]map[string]interface{}, 0, len(page))
 	for _, t := range page {
