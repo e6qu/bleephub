@@ -1547,6 +1547,7 @@ var fuzzRoutePatterns = []string{
 	"GET /api/v3/enterprises/{enterprise}/copilot/custom-agents/source",
 	"GET /api/v3/enterprises/{enterprise}/copilot/usage-records",
 	"GET /api/v3/enterprises/{enterprise}/members/{username}/copilot",
+	"GET /api/v3/enterprises/{enterprise}/members/{username}/teams",
 	"POST /api/v3/enterprises/{enterprise}/copilot/billing/selected_enterprise_teams",
 	"POST /api/v3/enterprises/{enterprise}/copilot/billing/selected_users",
 	"PUT /api/v3/enterprises/{enterprise}/copilot/content_exclusion",
