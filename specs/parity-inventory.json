@@ -21527,7 +21527,6 @@
           "missing_operations": [
             "DELETE /enterprises/{}/credential-authorizations",
             "GET /enterprises/{}/actions/runners/deprecations/{}",
-            "GET /enterprises/{}/members/{}/teams",
             "GET /orgs/{}/actions/runners/deprecations/{}",
             "GET /repos/{}/{}/actions/runners/deprecations/{}",
             "POST /orgs/{}/credential-authorizations/revoke-all",
@@ -21535,7 +21534,7 @@
             "POST /orgs/{}/credential-authorizations/{}/revoke",
             "POST /orgs/{}/credential-authorizations/{}/revoke-credential-type"
           ],
-          "represented_operations": 1463
+          "represented_operations": 1464
         },
         "ghes-2.22": {
           "documented_operations": 642,
@@ -22035,19 +22034,19 @@
         "source": "internal/server/gh_enterprise_billing.go"
       },
       {
-        "line": 17,
+        "line": 18,
         "method": "DELETE",
         "path": "/api/v3/enterprises/{enterprise}/teams/{team_slug}",
         "source": "internal/server/gh_enterprise_teams.go"
       },
       {
-        "line": 24,
+        "line": 25,
         "method": "DELETE",
         "path": "/api/v3/enterprises/{enterprise}/teams/{team_slug}/memberships/{username}",
         "source": "internal/server/gh_enterprise_teams.go"
       },
       {
-        "line": 31,
+        "line": 32,
         "method": "DELETE",
         "path": "/api/v3/enterprises/{enterprise}/teams/{team_slug}/organizations/{org}",
         "source": "internal/server/gh_enterprise_teams.go"
@@ -23955,6 +23954,12 @@
         "source": "internal/server/gh_enterprise_copilot_v2.go"
       },
       {
+        "line": 15,
+        "method": "GET",
+        "path": "/api/v3/enterprises/{enterprise}/members/{username}/teams",
+        "source": "internal/server/gh_enterprise_teams.go"
+      },
+      {
         "line": 44,
         "method": "GET",
         "path": "/api/v3/enterprises/{enterprise}/network-configurations",
@@ -24117,31 +24122,31 @@
         "source": "internal/server/gh_enterprise_teams.go"
       },
       {
-        "line": 15,
+        "line": 16,
         "method": "GET",
         "path": "/api/v3/enterprises/{enterprise}/teams/{team_slug}",
         "source": "internal/server/gh_enterprise_teams.go"
       },
       {
-        "line": 19,
+        "line": 20,
         "method": "GET",
         "path": "/api/v3/enterprises/{enterprise}/teams/{team_slug}/memberships",
         "source": "internal/server/gh_enterprise_teams.go"
       },
       {
-        "line": 22,
+        "line": 23,
         "method": "GET",
         "path": "/api/v3/enterprises/{enterprise}/teams/{team_slug}/memberships/{username}",
         "source": "internal/server/gh_enterprise_teams.go"
       },
       {
-        "line": 26,
+        "line": 27,
         "method": "GET",
         "path": "/api/v3/enterprises/{enterprise}/teams/{team_slug}/organizations",
         "source": "internal/server/gh_enterprise_teams.go"
       },
       {
-        "line": 29,
+        "line": 30,
         "method": "GET",
         "path": "/api/v3/enterprises/{enterprise}/teams/{team_slug}/organizations/{org}",
         "source": "internal/server/gh_enterprise_teams.go"
@@ -28113,7 +28118,7 @@
         "source": "internal/server/gh_enterprise_billing.go"
       },
       {
-        "line": 16,
+        "line": 17,
         "method": "PATCH",
         "path": "/api/v3/enterprises/{enterprise}/teams/{team_slug}",
         "source": "internal/server/gh_enterprise_teams.go"
@@ -28923,25 +28928,25 @@
         "source": "internal/server/gh_enterprise_teams.go"
       },
       {
-        "line": 20,
+        "line": 21,
         "method": "POST",
         "path": "/api/v3/enterprises/{enterprise}/teams/{team_slug}/memberships/add",
         "source": "internal/server/gh_enterprise_teams.go"
       },
       {
-        "line": 21,
+        "line": 22,
         "method": "POST",
         "path": "/api/v3/enterprises/{enterprise}/teams/{team_slug}/memberships/remove",
         "source": "internal/server/gh_enterprise_teams.go"
       },
       {
-        "line": 27,
+        "line": 28,
         "method": "POST",
         "path": "/api/v3/enterprises/{enterprise}/teams/{team_slug}/organizations/add",
         "source": "internal/server/gh_enterprise_teams.go"
       },
       {
-        "line": 28,
+        "line": 29,
         "method": "POST",
         "path": "/api/v3/enterprises/{enterprise}/teams/{team_slug}/organizations/remove",
         "source": "internal/server/gh_enterprise_teams.go"
@@ -30279,13 +30284,13 @@
         "source": "internal/server/gh_enterprise_rulesets.go"
       },
       {
-        "line": 23,
+        "line": 24,
         "method": "PUT",
         "path": "/api/v3/enterprises/{enterprise}/teams/{team_slug}/memberships/{username}",
         "source": "internal/server/gh_enterprise_teams.go"
       },
       {
-        "line": 30,
+        "line": 31,
         "method": "PUT",
         "path": "/api/v3/enterprises/{enterprise}/teams/{team_slug}/organizations/{org}",
         "source": "internal/server/gh_enterprise_teams.go"
