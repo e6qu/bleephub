@@ -126,7 +126,12 @@ func (s *Server) handleGetEnterpriseTeam(w http.ResponseWriter, r *http.Request)
 	if team == nil {
 		return
 	}
-	writeJSON(w, http.StatusOK, s.enterpriseTeamJSON(team, s.baseURL(r)))
+	// members_count is required on the single-team read, but absent from the
+	// list/create/update `enterprise-team` schema, so it is added here rather
+	// than in the shared renderer.
+	teamJSON := s.enterpriseTeamJSON(team, s.baseURL(r))
+	teamJSON["members_count"] = len(team.MemberIDs)
+	writeJSON(w, http.StatusOK, teamJSON)
 }
 
 func (s *Server) handleUpdateEnterpriseTeam(w http.ResponseWriter, r *http.Request) {
