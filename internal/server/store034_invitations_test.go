@@ -349,16 +349,16 @@ func TestRepoGetIsDetached(t *testing.T) {
 	}
 
 	got := s.store.GetRepo(admin.Login, repo.Name)
-	if got.Stargazers == nil || !got.Stargazers[admin.ID] {
+	if _, ok := got.Stargazers[admin.ID]; got.Stargazers == nil || !ok {
 		t.Fatal("expected the star to be visible on the getter result")
 	}
 	// Mutate every mutable reference field on the returned snapshot.
-	got.Stargazers[999] = true
+	got.Stargazers[999] = time.Unix(1, 0).UTC()
 	got.Topics = append(got.Topics, "tampered")
 	got.Description = "TAMPERED"
 
 	fresh := s.store.GetRepoByID(repo.ID)
-	if fresh.Stargazers[999] {
+	if _, leaked := fresh.Stargazers[999]; leaked {
 		t.Fatal("Stargazers map is shared with the store (STORE-021 fatal-map race)")
 	}
 	if len(fresh.Topics) != 0 {
@@ -371,7 +371,7 @@ func TestRepoGetIsDetached(t *testing.T) {
 	if !s.store.UnstarRepo(admin.ID, admin.Login, repo.Name) {
 		t.Fatal("UnstarRepo failed")
 	}
-	if s.store.GetRepo(admin.Login, repo.Name).Stargazers[admin.ID] {
+	if _, stillStarred := s.store.GetRepo(admin.Login, repo.Name).Stargazers[admin.ID]; stillStarred {
 		t.Fatal("UnstarRepo did not update the live row")
 	}
 }

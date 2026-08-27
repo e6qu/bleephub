@@ -2,6 +2,7 @@ package bleephub
 
 import (
 	"testing"
+	"time"
 )
 
 // The refusal and entitled halves for the activity and account-policy family
@@ -396,4 +397,78 @@ func nestedInt(t *testing.T, env map[string]interface{}, path ...string) int {
 		t.Fatalf("path %v is not a number in %v", path, env)
 	}
 	return int(number)
+}
+
+// TestGraphQLStarredAtReportsTheRealStarInstant pins GQL-093: the non-null
+// starredAt on Repository.stargazers and User.starredRepositories is the instant
+// the user starred the repo, not the repository's createdAt stand-in.
+func TestGraphQLStarredAtReportsTheRealStarInstant(t *testing.T) {
+	t.Parallel()
+	s := newIsolatedServer(t)
+	f := newGQLAuthzFixture(t, s.Server, "star-time", false)
+
+	// Freeze the clock to an instant distinct from the repo's creation, then
+	// star. The edges must report this instant.
+	starInstant := time.Date(2021, 6, 15, 12, 0, 0, 0, time.UTC)
+	prev := s.replaceClockNow(func() time.Time { return starInstant })
+	t.Cleanup(func() { s.replaceClockNow(prev) })
+	if !s.store.StarRepo(f.owner.ID, f.owner.Login, f.repo.Name) {
+		t.Fatal("StarRepo failed")
+	}
+	const want = "2021-06-15T12:00:00Z"
+
+	env := s.gqlAuthzPost(t, f.ownerToken,
+		`query($o:String!,$n:String!){repository(owner:$o,name:$n){createdAt stargazers(first:10){edges{starredAt node{login}}}}}`,
+		map[string]interface{}{"o": f.owner.Login, "n": f.repo.Name})
+	if errs := gqlAuthzErrors(env); len(errs) > 0 {
+		t.Fatalf("stargazers query: %v", errs)
+	}
+	repoMap := starTestObj(t, env, "data", "repository")
+	if repoMap["createdAt"] == want {
+		t.Fatalf("test setup: repo createdAt coincides with starInstant; choose a distinct instant")
+	}
+	if got := starTestFirstEdge(t, repoMap, "stargazers")["starredAt"]; got != want {
+		t.Errorf("Repository.stargazers edge starredAt = %v, want %s", got, want)
+	}
+
+	env = s.gqlAuthzPost(t, f.ownerToken,
+		`query($l:String!){user(login:$l){starredRepositories(first:10){edges{starredAt node{name}}}}}`,
+		map[string]interface{}{"l": f.owner.Login})
+	if errs := gqlAuthzErrors(env); len(errs) > 0 {
+		t.Fatalf("starredRepositories query: %v", errs)
+	}
+	userMap := starTestObj(t, env, "data", "user")
+	if got := starTestFirstEdge(t, userMap, "starredRepositories")["starredAt"]; got != want {
+		t.Errorf("User.starredRepositories edge starredAt = %v, want %s", got, want)
+	}
+}
+
+func starTestObj(t *testing.T, m map[string]interface{}, path ...string) map[string]interface{} {
+	t.Helper()
+	cur := m
+	for _, k := range path {
+		next, ok := cur[k].(map[string]interface{})
+		if !ok {
+			t.Fatalf("path %v: %q is not an object (%T)", path, k, cur[k])
+		}
+		cur = next
+	}
+	return cur
+}
+
+func starTestFirstEdge(t *testing.T, obj map[string]interface{}, connField string) map[string]interface{} {
+	t.Helper()
+	conn, ok := obj[connField].(map[string]interface{})
+	if !ok {
+		t.Fatalf("%q is not a connection: %T", connField, obj[connField])
+	}
+	edges, ok := conn["edges"].([]interface{})
+	if !ok || len(edges) == 0 {
+		t.Fatalf("%q has no edges: %v", connField, conn)
+	}
+	edge, ok := edges[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("%q edge[0] not an object: %T", connField, edges[0])
+	}
+	return edge
 }

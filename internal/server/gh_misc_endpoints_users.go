@@ -86,7 +86,7 @@ func (s *Server) handleAdminCreateUser(w http.ResponseWriter, r *http.Request) {
 		Type:         "User",
 		SiteAdmin:    false,
 		Suspended:    req.Suspended,
-		StarredRepos: map[string]bool{},
+		StarredRepos: map[string]time.Time{},
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}

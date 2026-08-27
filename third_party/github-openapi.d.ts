@@ -130613,6 +130613,8 @@ export interface operations {
                      * @example Epic
                      */
                     type?: string | null;
+                    /** @description The id of the parent issue to add this issue to as a sub-issue. _NOTE: Only users with triage access to both the parent issue's repository and this repository can set the parent issue._ */
+                    parent_issue_id?: number;
                 };
             };
         };

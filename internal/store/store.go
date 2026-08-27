@@ -145,17 +145,17 @@ func (st *Store) ReserveWorkflowRunNumber(wf *Workflow) int {
 
 // User represents a GitHub user account.
 type User struct {
-	ID           int             `json:"id"`
-	NodeID       string          `json:"node_id"`
-	Login        string          `json:"login"`
-	Name         string          `json:"name"`
-	Email        string          `json:"email"`
-	AvatarURL    string          `json:"avatar_url"`
-	Bio          string          `json:"bio"`
-	Type         string          `json:"type"`
-	SiteAdmin    bool            `json:"site_admin"`
-	Suspended    bool            `json:"suspended,omitempty"`
-	StarredRepos map[string]bool `json:"starred_repos,omitempty"`
+	ID           int                  `json:"id"`
+	NodeID       string               `json:"node_id"`
+	Login        string               `json:"login"`
+	Name         string               `json:"name"`
+	Email        string               `json:"email"`
+	AvatarURL    string               `json:"avatar_url"`
+	Bio          string               `json:"bio"`
+	Type         string               `json:"type"`
+	SiteAdmin    bool                 `json:"site_admin"`
+	Suspended    bool                 `json:"suspended,omitempty"`
+	StarredRepos map[string]time.Time `json:"starred_repos,omitempty"`
 	// PinnedRepos is the user's ordered list of pinned repository full names
 	// (max 6), shown on the profile Overview. GitHub exposes pins only over
 	// GraphQL, so the simulator serves them from a /ui-data endpoint.
@@ -4572,7 +4572,7 @@ func (st *Store) SeedDefaultUser() {
 		Bio:          "",
 		Type:         "User",
 		SiteAdmin:    true,
-		StarredRepos: map[string]bool{},
+		StarredRepos: map[string]time.Time{},
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}

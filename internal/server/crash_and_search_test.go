@@ -452,7 +452,7 @@ func TestSearchUsersPaginationIsTotallyOrdered(t *testing.T) {
 			NodeID:       fmt.Sprintf("U_kgDO%08d", s.store.NextUser),
 			Login:        fmt.Sprintf("orderable-user-%d", i),
 			Type:         "User",
-			StarredRepos: map[string]bool{},
+			StarredRepos: map[string]time.Time{},
 		}
 		s.store.NextUser++
 		s.store.Users[u.ID] = u

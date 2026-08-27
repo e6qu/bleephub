@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/e6qu/bleephub/internal/server/testutil"
 	"github.com/e6qu/bleephub/internal/store"
@@ -29,7 +30,7 @@ func authflowStranger(t *testing.T, s *Server, login string) (*store.User, strin
 	t.Helper()
 	s.store.Mu.Lock()
 	now := fixedTestTime.UTC()
-	user := &store.User{ID: s.store.NextUser, Login: login, Type: "User", StarredRepos: map[string]bool{}, CreatedAt: now, UpdatedAt: now}
+	user := &store.User{ID: s.store.NextUser, Login: login, Type: "User", StarredRepos: map[string]time.Time{}, CreatedAt: now, UpdatedAt: now}
 	s.store.Users[user.ID] = user
 	s.store.UsersByLogin[login] = user
 	s.store.NextUser++

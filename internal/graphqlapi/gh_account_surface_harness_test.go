@@ -190,7 +190,7 @@ func (h *accountHarness) user(login string) *store.User {
 		Name:         login,
 		Email:        login + "@bleephub.test",
 		Type:         "User",
-		StarredRepos: map[string]bool{},
+		StarredRepos: map[string]time.Time{},
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}

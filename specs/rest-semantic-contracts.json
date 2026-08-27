@@ -54619,6 +54619,9 @@
                 "milestone": {
                   "nullable": true
                 },
+                "parent_issue_id": {
+                  "type": "integer"
+                },
                 "title": {},
                 "type": {
                   "nullable": true,
@@ -79707,7 +79710,7 @@
   ],
   "schema_version": 1,
   "source": "third_party/github-openapi.json.gz",
-  "source_sha256": "f7faf6baadf09ecf59042a10e2901b136f99faa13938c7cd3c4e1b1602bfbb91",
+  "source_sha256": "c65c7a320859f885c9e46f617879aa02c4322310abe481396767be63ff52f810",
   "summary": {
     "operations": 1222,
     "state_changing": 584,

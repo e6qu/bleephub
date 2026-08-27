@@ -9,6 +9,8 @@ package store
 // reference fields get fresh backing arrays/maps; write-once nested pointees
 // (e.g. a CheckRun's Output, a manifest) are shared by pointer.
 
+import "time"
+
 func cloneCheckRun(x *CheckRun) *CheckRun {
 	if x == nil {
 		return nil
@@ -437,7 +439,7 @@ func cloneUser(u *User) *User {
 	}
 	c := *u
 	if u.StarredRepos != nil {
-		m := make(map[string]bool, len(u.StarredRepos))
+		m := make(map[string]time.Time, len(u.StarredRepos))
 		for k, v := range u.StarredRepos {
 			m[k] = v
 		}

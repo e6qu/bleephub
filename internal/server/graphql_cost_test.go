@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/graphql-go/graphql/language/ast"
 	"github.com/graphql-go/graphql/language/parser"
@@ -130,7 +131,7 @@ func TestGraphQLRepositoryConnectionHonorsAffiliationOrderAndBackwardPagination(
 	other := &store.User{
 		ID: admin.ID + 1, NodeID: "U_kgDOgraphqlother", Login: "other",
 		Name: "Other", Email: "other@example.test", Type: "User",
-		StarredRepos: map[string]bool{}, CreatedAt: now, UpdatedAt: now,
+		StarredRepos: map[string]time.Time{}, CreatedAt: now, UpdatedAt: now,
 	}
 	server.store.Mu.Lock()
 	server.store.Users[other.ID] = other

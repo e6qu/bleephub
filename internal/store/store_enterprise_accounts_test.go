@@ -18,7 +18,7 @@ func newEnterpriseTestUser(st *Store, login string) *User {
 		Name:         login,
 		Email:        login + "@example.test",
 		Type:         "User",
-		StarredRepos: map[string]bool{},
+		StarredRepos: map[string]time.Time{},
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}

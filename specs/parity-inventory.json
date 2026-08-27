@@ -9258,12 +9258,12 @@
       },
       {
         "category": "GQL",
-        "finding": "`Repository.stargazers` and `User.starredRepositories` cannot be served because both edges declare `starredAt` as non-null and the store records stargazers as a set with no timestamp",
+        "finding": "`Repository.stargazers` and `User.starredRepositories` reported the repository createdAt as a stand-in for the non-null starredAt because stargazers were a timestamp-less set",
         "id": "GQL-093",
-        "location": "gh_repos_graphql.go",
+        "location": "gh_mutations_activity_graphql.go, gh_users_org_fields_graphql.go",
         "severity": "m",
-        "status": "open \u2014 needs a starred-at map on the repository row, set on star, cloned in the snapshot and persisted; it would also let REST serve the star media type",
-        "status_kind": "open"
+        "status": "fixed \u2014 `Repo.Stargazers`/`User.StarredRepos` now map to the star instant (set together in `StarRepo`, cloned in the snapshot, persisted); both edges render the real per-user starredAt via `RepoStargazersAt`/`StarredReposAt`, verified with a frozen-clock test",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -9294,12 +9294,12 @@
       },
       {
         "category": "GQL",
-        "finding": "`Repository.branchProtectionRules` is blocked on the rule type being a two-field shell, and `vulnerabilityAlert(number:)` on the alert object living in a non-memoized local registry with no per-repository alert number",
+        "finding": "`Repository.branchProtectionRules` was a two-field shell and `vulnerabilityAlert(number:)` was unserved",
         "id": "GQL-097",
-        "location": "gh_repos_settings_graphql.go",
+        "location": "gh_advisories_graphql.go, gh_repos_git_fields_graphql.go",
         "severity": "m",
-        "status": "open \u2014 the branch-protection half is fixed: `BranchProtectionRule` is now the complete 31-field object (memoized, `gh_branch_protection_graphql.go`) backed by the same store the REST protection routes drive, `Repository.branchProtectionRules` is implemented, and the create/update/delete mutations exist with authz rows and refusal/entitled cases; the `vulnerabilityAlert(number:)` half (non-memoized alert registry, no per-repository alert number) remains",
-        "status_kind": "open"
+        "status": "fixed \u2014 `BranchProtectionRule` is the full 31-field object with `Repository.branchProtectionRules` and create/update/delete mutations; `vulnerabilityAlert(number:)` resolves the alert via `GetDependabotAlert(repo.FullName, number)` under the same security-access gate as the connection, verified by test",
+        "status_kind": "fixed"
       },
       {
         "category": "GQL",
@@ -9471,8 +9471,7 @@
         },
         "GQL": {
           "status": {
-            "fixed": 98,
-            "open": 2
+            "fixed": 100
           },
           "total": 100
         },
@@ -9517,8 +9516,8 @@
       },
       "status": {
         "deferred": 3,
-        "fixed": 986,
-        "open": 3
+        "fixed": 988,
+        "open": 1
       },
       "total": 992
     }
@@ -23012,7 +23011,7 @@
         "source": "internal/server/gh_enterprise_scim.go"
       },
       {
-        "line": 24,
+        "line": 25,
         "method": "DELETE",
         "path": "/api/v3/scim/v2/organizations/{org}/Users/{scim_user_id}",
         "source": "internal/server/gh_org_scim.go"
@@ -27278,13 +27277,13 @@
         "source": "internal/server/gh_enterprise_scim.go"
       },
       {
-        "line": 19,
+        "line": 20,
         "method": "GET",
         "path": "/api/v3/scim/v2/organizations/{org}/Users",
         "source": "internal/server/gh_org_scim.go"
       },
       {
-        "line": 21,
+        "line": 22,
         "method": "GET",
         "path": "/api/v3/scim/v2/organizations/{org}/Users/{scim_user_id}",
         "source": "internal/server/gh_org_scim.go"
@@ -28586,7 +28585,7 @@
         "source": "internal/server/gh_enterprise_scim.go"
       },
       {
-        "line": 23,
+        "line": 24,
         "method": "PATCH",
         "path": "/api/v3/scim/v2/organizations/{org}/Users/{scim_user_id}",
         "source": "internal/server/gh_org_scim.go"
@@ -29936,7 +29935,7 @@
         "source": "internal/server/gh_enterprise_scim.go"
       },
       {
-        "line": 20,
+        "line": 21,
         "method": "POST",
         "path": "/api/v3/scim/v2/organizations/{org}/Users",
         "source": "internal/server/gh_org_scim.go"
@@ -30998,7 +30997,7 @@
         "source": "internal/server/gh_enterprise_scim.go"
       },
       {
-        "line": 22,
+        "line": 23,
         "method": "PUT",
         "path": "/api/v3/scim/v2/organizations/{org}/Users/{scim_user_id}",
         "source": "internal/server/gh_org_scim.go"
@@ -31100,7 +31099,7 @@
         "source": "internal/server/gh_misc_endpoints.go"
       }
     ],
-    "vendored_openapi_sha256": "f7faf6baadf09ecf59042a10e2901b136f99faa13938c7cd3c4e1b1602bfbb91"
+    "vendored_openapi_sha256": "c65c7a320859f885c9e46f617879aa02c4322310abe481396767be63ff52f810"
   },
   "schema_version": 1,
   "sources": {

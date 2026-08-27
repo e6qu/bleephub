@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/e6qu/bleephub/internal/store"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -373,7 +374,7 @@ func TestRepoStargazersPagination(t *testing.T) {
 
 	st := s.store
 	st.Mu.Lock()
-	other := &store.User{ID: st.NextUser, Login: "stargazer-user", Type: "User", StarredRepos: map[string]bool{}}
+	other := &store.User{ID: st.NextUser, Login: "stargazer-user", Type: "User", StarredRepos: map[string]time.Time{}}
 	st.NextUser++
 	st.Users[other.ID] = other
 	st.UsersByLogin[other.Login] = other
@@ -429,7 +430,7 @@ func TestRepoCollaboratorsREST(t *testing.T) {
 
 	// Create another user.
 	s.store.Mu.Lock()
-	other := &store.User{ID: s.store.NextUser, Login: "collab-user", Type: "User", StarredRepos: map[string]bool{}}
+	other := &store.User{ID: s.store.NextUser, Login: "collab-user", Type: "User", StarredRepos: map[string]time.Time{}}
 	s.store.NextUser++
 	s.store.Users[other.ID] = other
 	s.store.UsersByLogin[other.Login] = other
@@ -548,7 +549,7 @@ func TestRepoCollaboratorsPagination(t *testing.T) {
 
 	st := s.store
 	st.Mu.Lock()
-	other := &store.User{ID: st.NextUser, Login: "collab-pg-user", Type: "User", StarredRepos: map[string]bool{}}
+	other := &store.User{ID: st.NextUser, Login: "collab-pg-user", Type: "User", StarredRepos: map[string]time.Time{}}
 	st.NextUser++
 	st.Users[other.ID] = other
 	st.UsersByLogin[other.Login] = other
