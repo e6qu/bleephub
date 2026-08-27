@@ -157,17 +157,19 @@ func (s *Resolver) addUserCompletionFields(types *accountSurfaceTypes) {
 	}))
 
 	// --- starredRepositories ---------------------------------------------
-	// StarredRepositoryEdge carries an extra starredAt: DateTime!. bleephub
-	// records no per-star timestamp, so the repository's own createdAt is the
-	// truthful stand-in (the same choice the Gist stargazer edge makes). The
-	// edge source is {node, cursor}; the node is the repo GQL map, which holds
-	// createdAt.
+	// StarredRepositoryEdge carries an extra starredAt: DateTime! — the instant
+	// the user starred each repo, recorded per (repo, user) by StarRepo. The
+	// edge source is {node, cursor}; the resolver below stashes the real time on
+	// the node as `_starredAt`, falling back to the repo's createdAt.
 	starredConnection := s.accountConnectionType(types, "StarredRepository", types.repository, true, graphql.Fields{
 		"starredAt": &graphql.Field{
 			Type: graphql.NewNonNull(s.graphQLStringScalar("DateTime")),
 			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 				edge, _ := p.Source.(map[string]interface{})
 				node, _ := edge["node"].(map[string]interface{})
+				if at, ok := node["_starredAt"]; ok && at != nil {
+					return at, nil
+				}
 				return node["createdAt"], nil
 			},
 		},
@@ -184,6 +186,7 @@ func (s *Resolver) addUserCompletionFields(types *accountSurfaceTypes) {
 			if err != nil {
 				return nil, err
 			}
+			starredAt := s.store.StarredReposAt(user.ID)
 			var repos []*store.Repo
 			for _, fullName := range s.store.ListStarredRepos(user.ID) {
 				owner, name, ok := store.SplitRepoFullName(fullName)
@@ -195,7 +198,25 @@ func (s *Resolver) addUserCompletionFields(types *accountSurfaceTypes) {
 				}
 			}
 			repos = s.visibleRepos(p.Context, repos)
-			return paginateGQLItems(s.repositoryConnectionItems(repos), p.Args), nil
+			sort.Slice(repos, func(i, j int) bool { return repos[i].FullName < repos[j].FullName })
+			items := make([]gqlConnItem, 0, len(repos))
+			for i := range repos {
+				row := repos[i]
+				at := starredAt[row.FullName]
+				if at.IsZero() {
+					at = row.CreatedAt
+				}
+				starredAtStr := at.UTC().Format(time.RFC3339)
+				items = append(items, gqlConnItem{
+					identity: row.NodeID,
+					render: func() map[string]interface{} {
+						node := repoToGraphQL(s.store, s.store.SnapRepo(row))
+						node["_starredAt"] = starredAtStr
+						return node
+					},
+				})
+			}
+			return paginateGQLItems(items, p.Args), nil
 		},
 	})
 

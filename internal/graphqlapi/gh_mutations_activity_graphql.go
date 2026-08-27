@@ -254,15 +254,14 @@ func (s *Resolver) gqlStargazerEdgeType() *graphql.Object {
 }
 
 // stargazerConnectionSource renders a repository's stargazers into the
-// connection shape. StarredAt is the repository's own star bookkeeping, which
-// records no per-star timestamp, so the repository's creation time stands in
-// the way the REST stargazer list's starred_at does.
+// connection shape. Each node's non-null starredAt is the instant that user
+// starred the repo, recorded per (repo, user) by StarRepo.
 func (s *Resolver) stargazerConnectionSource(repo *store.Repo) map[string]interface{} {
 	owner, name, ok := store.SplitRepoFullName(repo.FullName)
 	if !ok {
 		return gqlConnectionSource(nil)
 	}
-	starredAt := repo.CreatedAt.Format(time.RFC3339)
+	starredAt := s.store.RepoStargazersAt(owner, name)
 	ids := s.store.ListRepoStargazers(owner, name)
 	nodes := make([]map[string]interface{}, 0, len(ids))
 	for _, id := range ids {
@@ -271,7 +270,13 @@ func (s *Resolver) stargazerConnectionSource(repo *store.Repo) map[string]interf
 			continue
 		}
 		node := userToGraphQL(user)
-		node["starredAt"] = starredAt
+		at := starredAt[id]
+		if at.IsZero() {
+			// starredAt is DateTime! — a star recorded before the timestamp
+			// existed falls back to the repo's creation instant.
+			at = repo.CreatedAt
+		}
+		node["starredAt"] = at.UTC().Format(time.RFC3339)
 		nodes = append(nodes, node)
 	}
 	return gqlConnectionSource(nodes)

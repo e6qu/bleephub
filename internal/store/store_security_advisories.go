@@ -446,7 +446,7 @@ func (st *Store) CreateTemporaryFork(repoID int, ghsaID string) *Repo {
 		LicenseName:               repo.LicenseName,
 		LicenseSPDX:               repo.LicenseSPDX,
 		Topics:                    append([]string(nil), repo.Topics...),
-		Stargazers:                map[int]bool{},
+		Stargazers:                map[int]time.Time{},
 		NextIssueNumber:           1,
 		NextMilestoneNumber:       1,
 		CreatedAt:                 st.CurrentTime(),

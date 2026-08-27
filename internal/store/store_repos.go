@@ -62,31 +62,31 @@ type Repo struct {
 	// DeclinedTopics are the topic names an administrator declined for this
 	// repository. A declined topic is never applied by a suggestion accept and
 	// is not offered again.
-	DeclinedTopics                           []string     `json:"declined_topics,omitempty"`
-	LicenseKey                               string       `json:"license_key"`
-	LicenseName                              string       `json:"license_name"`
-	LicenseSPDX                              string       `json:"license_spdx"`
-	StargazersCount                          int          `json:"stargazers_count"`
-	Topics                                   []string     `json:"topics"`
-	Stargazers                               map[int]bool `json:"stargazers,omitempty"`
-	ParentID                                 int          `json:"parent_id"`
-	SourceID                                 int          `json:"source_id"`
-	TemplateRepoID                           int          `json:"template_repo_id,omitempty"`
-	NextIssueNumber                          int          `json:"-"`
-	NextMilestoneNumber                      int          `json:"-"`
-	AutomatedSecurityFixesEnabled            bool         `json:"automated_security_fixes_enabled"`
-	AdvancedSecurityEnabled                  bool         `json:"advanced_security_enabled"`
-	SecretScanningEnabled                    bool         `json:"secret_scanning_enabled"`
-	SecretScanningPushProtectionEnabled      bool         `json:"secret_scanning_push_protection_enabled"`
-	SecretScanningNonProviderPatternsEnabled bool         `json:"secret_scanning_non_provider_patterns_enabled"`
-	PrivateVulnerabilityReportingEnabled     bool         `json:"private_vulnerability_reporting_enabled"`
-	VulnerabilityAlertsEnabled               bool         `json:"vulnerability_alerts_enabled"`
-	InteractionLimit                         string       `json:"interaction_limit"`
-	InteractionLimitExpiry                   *time.Time   `json:"interaction_limit_expiry,omitempty"`
-	LFSEnabled                               bool         `json:"lfs_enabled,omitempty"`
-	CreatedAt                                time.Time    `json:"created_at"`
-	UpdatedAt                                time.Time    `json:"updated_at"`
-	PushedAt                                 time.Time    `json:"pushed_at"`
+	DeclinedTopics                           []string          `json:"declined_topics,omitempty"`
+	LicenseKey                               string            `json:"license_key"`
+	LicenseName                              string            `json:"license_name"`
+	LicenseSPDX                              string            `json:"license_spdx"`
+	StargazersCount                          int               `json:"stargazers_count"`
+	Topics                                   []string          `json:"topics"`
+	Stargazers                               map[int]time.Time `json:"stargazers,omitempty"`
+	ParentID                                 int               `json:"parent_id"`
+	SourceID                                 int               `json:"source_id"`
+	TemplateRepoID                           int               `json:"template_repo_id,omitempty"`
+	NextIssueNumber                          int               `json:"-"`
+	NextMilestoneNumber                      int               `json:"-"`
+	AutomatedSecurityFixesEnabled            bool              `json:"automated_security_fixes_enabled"`
+	AdvancedSecurityEnabled                  bool              `json:"advanced_security_enabled"`
+	SecretScanningEnabled                    bool              `json:"secret_scanning_enabled"`
+	SecretScanningPushProtectionEnabled      bool              `json:"secret_scanning_push_protection_enabled"`
+	SecretScanningNonProviderPatternsEnabled bool              `json:"secret_scanning_non_provider_patterns_enabled"`
+	PrivateVulnerabilityReportingEnabled     bool              `json:"private_vulnerability_reporting_enabled"`
+	VulnerabilityAlertsEnabled               bool              `json:"vulnerability_alerts_enabled"`
+	InteractionLimit                         string            `json:"interaction_limit"`
+	InteractionLimitExpiry                   *time.Time        `json:"interaction_limit_expiry,omitempty"`
+	LFSEnabled                               bool              `json:"lfs_enabled,omitempty"`
+	CreatedAt                                time.Time         `json:"created_at"`
+	UpdatedAt                                time.Time         `json:"updated_at"`
+	PushedAt                                 time.Time         `json:"pushed_at"`
 }
 
 func (st *Store) CreateRepo(owner *User, name, description string, private bool) *Repo {
@@ -180,7 +180,7 @@ func (st *Store) createRepoLocked(batch *PersistBatch, fullName, name, descripti
 		PullRequestCreationPolicy: "all",
 		IssueCreationPolicy:       "all",
 		Topics:                    []string{},
-		Stargazers:                map[int]bool{},
+		Stargazers:                map[int]time.Time{},
 		NextIssueNumber:           1,
 		NextMilestoneNumber:       1,
 		CreatedAt:                 now,
@@ -383,7 +383,7 @@ func (st *Store) ForkRepo(owner *User, sourceRepo *Repo, name string) *Repo {
 		LicenseName:               source.LicenseName,
 		LicenseSPDX:               source.LicenseSPDX,
 		Topics:                    append([]string(nil), source.Topics...),
-		Stargazers:                map[int]bool{},
+		Stargazers:                map[int]time.Time{},
 		NextIssueNumber:           1,
 		NextMilestoneNumber:       1,
 		CreatedAt:                 now,
@@ -461,9 +461,9 @@ func cloneRepo(repo *Repo) *Repo {
 	}
 	clone.Topics = append([]string(nil), repo.Topics...)
 	clone.DeclinedTopics = append([]string(nil), repo.DeclinedTopics...)
-	clone.Stargazers = make(map[int]bool, len(repo.Stargazers))
-	for userID, starred := range repo.Stargazers {
-		clone.Stargazers[userID] = starred
+	clone.Stargazers = make(map[int]time.Time, len(repo.Stargazers))
+	for userID, starredAt := range repo.Stargazers {
+		clone.Stargazers[userID] = starredAt
 	}
 	return &clone
 }
@@ -2534,19 +2534,24 @@ func (st *Store) StarRepo(userID int, owner, name string) bool {
 		return false
 	}
 	if repo.Stargazers == nil {
-		repo.Stargazers = map[int]bool{}
+		repo.Stargazers = map[int]time.Time{}
 	}
 	if user.StarredRepos == nil {
-		user.StarredRepos = map[string]bool{}
+		user.StarredRepos = map[string]time.Time{}
 	}
-	if repo.Stargazers[userID] {
+	if _, already := repo.Stargazers[userID]; already {
 		return false
 	}
-	repo.Stargazers[userID] = true
+	// The star instant is recorded per (repo, user) so the GraphQL
+	// Stargazer/StarredRepository edges' non-null starredAt and the REST star
+	// media type report the real time, not a stand-in. Both sides share one
+	// timestamp so they can never disagree.
+	now := st.CurrentTime()
+	repo.Stargazers[userID] = now
 	repo.StargazersCount = len(repo.Stargazers)
-	repo.UpdatedAt = st.CurrentTime()
-	user.StarredRepos[fullName] = true
-	user.UpdatedAt = st.CurrentTime()
+	repo.UpdatedAt = now
+	user.StarredRepos[fullName] = now
+	user.UpdatedAt = now
 	// One transaction: the repo's stargazer count and the user's starred list
 	// must never disagree across a crash mid-persist.
 	batch := NewPersistBatch(st.Persist)
@@ -2573,7 +2578,7 @@ func (st *Store) UnstarRepo(userID int, owner, name string) bool {
 	if !ok {
 		return false
 	}
-	if repo.Stargazers == nil || !repo.Stargazers[userID] {
+	if _, starred := repo.Stargazers[userID]; !starred {
 		return false
 	}
 	delete(repo.Stargazers, userID)
@@ -2600,10 +2605,11 @@ func (st *Store) IsRepoStarredBy(userID int, owner, name string) bool {
 	defer st.Mu.RUnlock()
 
 	repo := st.RepoByNameLocked(owner + "/" + name)
-	if repo == nil || repo.Stargazers == nil {
+	if repo == nil {
 		return false
 	}
-	return repo.Stargazers[userID]
+	_, starred := repo.Stargazers[userID]
+	return starred
 }
 
 // ListRepoStargazers returns the user IDs who starred the repo, sorted
@@ -2638,6 +2644,42 @@ func (st *Store) ListStarredRepos(userID int) []string {
 		out = append(out, name)
 	}
 	sort.Strings(out)
+	return out
+}
+
+// RepoStargazersAt returns a detached copy of the repo's stargazers with the
+// instant each user starred it, backing the non-null starredAt of the GraphQL
+// Stargazer edge and the REST star media type. Empty when the repo is unknown.
+func (st *Store) RepoStargazersAt(owner, name string) map[int]time.Time {
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
+
+	repo := st.RepoByNameLocked(owner + "/" + name)
+	if repo == nil {
+		return nil
+	}
+	out := make(map[int]time.Time, len(repo.Stargazers))
+	for id, at := range repo.Stargazers {
+		out[id] = at
+	}
+	return out
+}
+
+// StarredReposAt returns a detached copy of the repos userID has starred with
+// the instant each was starred, backing the non-null starredAt of the GraphQL
+// StarredRepository edge.
+func (st *Store) StarredReposAt(userID int) map[string]time.Time {
+	st.Mu.RLock()
+	defer st.Mu.RUnlock()
+
+	user, ok := st.Users[userID]
+	if !ok {
+		return nil
+	}
+	out := make(map[string]time.Time, len(user.StarredRepos))
+	for name, at := range user.StarredRepos {
+		out[name] = at
+	}
 	return out
 }
 

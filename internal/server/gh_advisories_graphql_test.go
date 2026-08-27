@@ -891,3 +891,47 @@ func advisoryGHSAIDs(t *testing.T, data map[string]interface{}) []string {
 	}
 	return ids
 }
+
+// TestGraphQLRepositoryVulnerabilityAlertByNumber pins GQL-097: the single
+// Repository.vulnerabilityAlert(number:) lookup returns the alert with that
+// number, and null (not an error) for an unknown number.
+func TestGraphQLRepositoryVulnerabilityAlertByNumber(t *testing.T) {
+	t.Parallel()
+	f := newAdvisoryFixture(t, "alert-by-number", false)
+	f.draftAdvisory(t)
+	f.publishAdvisory(t)
+
+	alerts := f.alertNodes(t, f.ownerToken)
+	if len(alerts) != 1 {
+		t.Fatalf("want exactly one alert after publication, got %d", len(alerts))
+	}
+	number, ok := alerts[0]["number"].(float64)
+	if !ok {
+		t.Fatalf("alert has no numeric number: %v", alerts[0])
+	}
+
+	env := f.server.gqlAuthzPost(t, f.ownerToken,
+		`query($o:String!,$n:String!,$num:Int!){repository(owner:$o,name:$n){vulnerabilityAlert(number:$num){number state securityAdvisory{ghsaId}}}}`,
+		map[string]interface{}{"o": f.repo.Owner.Login, "n": f.repo.Name, "num": int(number)})
+	if errs := gqlAuthzErrors(env); len(errs) != 0 {
+		t.Fatalf("vulnerabilityAlert query: %v", errs)
+	}
+	alert := starTestObj(t, env, "data", "repository", "vulnerabilityAlert")
+	if got, _ := alert["number"].(float64); got != number {
+		t.Errorf("vulnerabilityAlert.number = %v, want %v", alert["number"], number)
+	}
+	if alert["state"] != "OPEN" {
+		t.Errorf("vulnerabilityAlert.state = %v, want OPEN", alert["state"])
+	}
+
+	// An unknown number resolves to null, not an error.
+	env = f.server.gqlAuthzPost(t, f.ownerToken,
+		`query($o:String!,$n:String!){repository(owner:$o,name:$n){vulnerabilityAlert(number:987654){number}}}`,
+		map[string]interface{}{"o": f.repo.Owner.Login, "n": f.repo.Name})
+	if errs := gqlAuthzErrors(env); len(errs) != 0 {
+		t.Fatalf("unknown-number query errored: %v", errs)
+	}
+	if repoMap := starTestObj(t, env, "data", "repository"); repoMap["vulnerabilityAlert"] != nil {
+		t.Errorf("unknown alert number should resolve null, got %v", repoMap["vulnerabilityAlert"])
+	}
+}

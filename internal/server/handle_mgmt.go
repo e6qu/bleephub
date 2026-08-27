@@ -480,7 +480,7 @@ func (s *Server) handleCreateUserInternal(w http.ResponseWriter, r *http.Request
 		Bio:          "",
 		Type:         "User",
 		SiteAdmin:    siteAdmin,
-		StarredRepos: map[string]bool{},
+		StarredRepos: map[string]time.Time{},
 		CreatedAt:    now,
 		UpdatedAt:    now,
 		PasswordHash: passwordHash,

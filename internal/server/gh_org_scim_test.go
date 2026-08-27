@@ -3,6 +3,7 @@ package bleephub
 import (
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/e6qu/bleephub/internal/store"
 )
@@ -99,7 +100,7 @@ func TestOrganizationSCIMCannotHijackExistingAccount(t *testing.T) {
 
 	// A pre-existing, non-SCIM account.
 	srv.store.Mu.Lock()
-	victim := &store.User{ID: srv.store.NextUser, Login: "victim", Name: "Victim", Email: "victim@real.test", Type: "User", StarredRepos: map[string]bool{}}
+	victim := &store.User{ID: srv.store.NextUser, Login: "victim", Name: "Victim", Email: "victim@real.test", Type: "User", StarredRepos: map[string]time.Time{}}
 	srv.store.NextUser++
 	srv.store.Users[victim.ID] = victim
 	srv.store.UsersByLogin["victim"] = victim

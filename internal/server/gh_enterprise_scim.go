@@ -193,7 +193,7 @@ func (s *Server) createSCIMBackingUser(w http.ResponseWriter, req *scimUserReque
 	user := &store.User{
 		ID: userID, NodeID: fmt.Sprintf("U_kgDO%08d", userID),
 		Login: login, Name: req.DisplayName, Email: email, Type: "User",
-		Suspended: !active, StarredRepos: map[string]bool{}, CreatedAt: now, UpdatedAt: now,
+		Suspended: !active, StarredRepos: map[string]time.Time{}, CreatedAt: now, UpdatedAt: now,
 	}
 	s.store.Users[user.ID] = user
 	s.store.UsersByLogin[user.Login] = user

@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/e6qu/bleephub/internal/store"
 	"github.com/google/uuid"
@@ -122,7 +123,7 @@ func (s *Server) createOrResolveOrganizationSCIMBackingUser(w http.ResponseWrite
 		ID: userID, NodeID: fmt.Sprintf("U_kgDO%08d", userID),
 		Login: login, Name: req.DisplayName, Email: primarySCIMEmail(req.Emails), Type: "User",
 		SCIMManagedByOrg: org.Login,
-		StarredRepos:     map[string]bool{}, CreatedAt: now, UpdatedAt: now,
+		StarredRepos:     map[string]time.Time{}, CreatedAt: now, UpdatedAt: now,
 	}
 	s.store.Users[user.ID] = user
 	s.store.UsersByLogin[user.Login] = user

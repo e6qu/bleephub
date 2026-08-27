@@ -32,7 +32,7 @@ func makeLocalPasswordUser(t *testing.T, s *Server, login, password string) *sto
 		Login:        login,
 		Type:         "User",
 		PasswordHash: string(hash),
-		StarredRepos: map[string]bool{},
+		StarredRepos: map[string]time.Time{},
 	}
 	s.store.Users[u.ID] = u
 	s.store.UsersByLogin[u.Login] = u

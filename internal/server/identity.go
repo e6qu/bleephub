@@ -1039,7 +1039,7 @@ func (s *Server) upsertExternalUser(issuer, subject, login, name, email, avatarU
 		return existing, nil
 	}
 	now := time.Now().UTC()
-	user := &store.User{ID: s.store.ReserveGlobalID("next_user", &s.store.NextUser), NodeID: "U_bleephub_" + login, Login: login, Name: name, Email: email, AvatarURL: avatarURL, Type: "User", SiteAdmin: siteAdmin, StarredRepos: map[string]bool{}, CreatedAt: now, UpdatedAt: now}
+	user := &store.User{ID: s.store.ReserveGlobalID("next_user", &s.store.NextUser), NodeID: "U_bleephub_" + login, Login: login, Name: name, Email: email, AvatarURL: avatarURL, Type: "User", SiteAdmin: siteAdmin, StarredRepos: map[string]time.Time{}, CreatedAt: now, UpdatedAt: now}
 	s.store.Users[user.ID], s.store.UsersByLogin[user.Login] = user, user
 	s.store.IndexUserLoginLocked(user.Login)
 	s.bindExternalIdentityLocked(user, externalKey)

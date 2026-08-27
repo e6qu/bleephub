@@ -2,6 +2,7 @@ package bleephub
 
 import (
 	"testing"
+	"time"
 
 	"github.com/e6qu/bleephub/internal/store"
 )
@@ -25,7 +26,7 @@ func TestSiteAdministratorCanAccessOrganizationRepository(t *testing.T) {
 		Login:        "external-site-admin",
 		Type:         "User",
 		SiteAdmin:    true,
-		StarredRepos: map[string]bool{},
+		StarredRepos: map[string]time.Time{},
 	}
 	st.NextUser++
 	st.Users[siteAdmin.ID] = siteAdmin
