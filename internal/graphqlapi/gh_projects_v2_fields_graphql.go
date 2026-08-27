@@ -7,26 +7,18 @@ import (
 	"github.com/graphql-go/graphql"
 )
 
-// addProjectV2FieldFamilyResidualFields fills in the members GitHub's
-// ProjectV2FieldCommon interface and its four implementers (ProjectV2Field,
-// ProjectV2IterationField, ProjectV2MultiSelectField,
-// ProjectV2SingleSelectField), the single-select option and iteration objects,
-// ProjectV2View and DraftIssue declare that the core Projects v2 read surface
-// did not install. It runs at the end of enrichProjectV2Types, once every type
-// it hangs a field off is assembled, and mirrors the addAccountActionsFields
-// pattern of hanging residual members off already-built types.
+// addProjectV2FieldFamilyResidualFields fills in the residual members on the
+// ProjectV2FieldCommon interface and its implementers, the option/iteration
+// objects, ProjectV2View and DraftIssue that the core read surface did not
+// install. Runs at the end of enrichProjectV2Types, once every type it hangs a
+// field off is assembled.
 //
-// databaseId is decoded from the field's own node id; project follows the
-// stored project id to the owning ProjectV2. isIssueField / issueField model
-// GitHub's organization issue-type custom fields: bleephub records no
+// isIssueField / issueField are a constant false / null: bleephub records no
 // association between a project field and an org issue field (a project field
-// is a standalone copy), so isIssueField is a truthful constant false and
-// issueField a truthful null rather than a stub. The *HTML members render the
-// plain-text name / title / description through the same markdown renderer the
-// rest of the GraphQL surface uses.
+// is a standalone copy).
 func (s *Resolver) addProjectV2FieldFamilyResidualFields() {
-	// Guarantee the field-configuration and view types exist before hanging
-	// members off them (both builders are memoized, so this is idempotent).
+	// Both builders are memoized; call them so the types exist before hanging
+	// members off them.
 	s.projectV2FieldConnectionType()
 	s.projectV2ViewConnectionType()
 
@@ -39,7 +31,7 @@ func (s *Resolver) addProjectV2FieldFamilyResidualFields() {
 
 // addProjectV2FieldCommonFields installs databaseId / isIssueField / project on
 // the ProjectV2FieldCommon interface and every implementer, plus issueField on
-// the three implementers GitHub declares it on (all but ProjectV2IterationField).
+// all but ProjectV2IterationField.
 func (s *Resolver) addProjectV2FieldCommonFields() {
 	projectType := s.graphqlTypes.projectV2Type
 	issueFieldsUnion := s.graphqlTypes.issueFieldsUnion
@@ -69,8 +61,7 @@ func (s *Resolver) addProjectV2FieldCommonFields() {
 		}
 	}
 
-	// The interface only carries the field type (its resolvers are supplied by
-	// the concrete objects graphql-go dispatches to).
+	// The interface carries only the field type; concrete objects supply resolvers.
 	if iface := projectV2FieldCommonInterface(s.graphqlTypes.projectV2FieldTypeMemo); iface != nil {
 		iface.AddFieldConfig("databaseId", &graphql.Field{Type: graphql.Int})
 		iface.AddFieldConfig("isIssueField", &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)})
@@ -105,8 +96,8 @@ func (s *Resolver) addProjectV2FieldCommonFields() {
 	}
 }
 
-// projectV2FieldDatabaseID reads the field's primary key straight out of its
-// node id, so it stays correct even for the snapshot a delete payload renders.
+// projectV2FieldDatabaseID reads the field's primary key from its node id, so it
+// stays correct even for the snapshot a delete payload renders.
 func projectV2FieldDatabaseID(p graphql.ResolveParams) (interface{}, error) {
 	nodeID, err := projectV2FieldSourceNodeID(p.Source)
 	if err != nil {
@@ -136,8 +127,7 @@ func (s *Resolver) projectV2FieldOwningProject(p graphql.ResolveParams) (interfa
 }
 
 // addProjectV2SingleSelectOptionHTML installs descriptionHTML / nameHTML on the
-// ProjectV2SingleSelectFieldOption object, reached through the single-select
-// field's options member (its map source carries "name"/"description").
+// ProjectV2SingleSelectFieldOption object.
 func (s *Resolver) addProjectV2SingleSelectOptionHTML() {
 	optionType := namedObjectFromField(s.graphqlTypes.projectV2SingleSelectFieldMemo, "options")
 	if optionType == nil {
@@ -154,8 +144,7 @@ func (s *Resolver) addProjectV2SingleSelectOptionHTML() {
 }
 
 // addProjectV2IterationTitleHTML installs titleHTML on the
-// ProjectV2IterationFieldIteration object, reached through the iteration
-// field's configuration.iterations member (its map source carries "title").
+// ProjectV2IterationFieldIteration object.
 func (s *Resolver) addProjectV2IterationTitleHTML() {
 	configType := namedObjectFromField(s.graphqlTypes.projectV2IterationFieldMemo, "configuration")
 	iterationType := namedObjectFromField(configType, "iterations")
@@ -168,8 +157,7 @@ func (s *Resolver) addProjectV2IterationTitleHTML() {
 	})
 }
 
-// addProjectV2ViewFullDatabaseID installs fullDatabaseId on ProjectV2View, the
-// 64-bit-safe form of the numeric id the view source already carries.
+// addProjectV2ViewFullDatabaseID installs fullDatabaseId on ProjectV2View.
 func (s *Resolver) addProjectV2ViewFullDatabaseID() {
 	viewType := s.graphqlTypes.projectV2ViewTypeMemo
 	if viewType == nil {
@@ -183,9 +171,8 @@ func (s *Resolver) addProjectV2ViewFullDatabaseID() {
 
 // addDraftIssueResidualFields installs assignees, projectV2Items and projectsV2
 // on DraftIssue. A draft has no row of its own — it is the project item — so
-// projectV2Items yields that one item and projectsV2 the one project that
-// contains it. bleephub's draft-issue model records no assignees, so assignees
-// is a truthful empty UserConnection.
+// projectV2Items yields that one item and projectsV2 its one project. assignees
+// is empty: the draft-issue model records none.
 func (s *Resolver) addDraftIssueResidualFields() {
 	draftType := s.graphqlTypes.projectV2DraftIssueType
 	if draftType == nil {
@@ -229,8 +216,8 @@ func (s *Resolver) addDraftIssueResidualFields() {
 	})
 }
 
-// draftIssueItem resolves the project item a DraftIssue source describes. The
-// draft's node id is the item's node id (a draft has no row of its own).
+// draftIssueItem resolves the project item a DraftIssue source describes; the
+// draft's node id is the item's node id.
 func (s *Resolver) draftIssueItem(source interface{}) *store.ProjectV2Item {
 	src, ok := source.(map[string]interface{})
 	if !ok {
@@ -243,8 +230,7 @@ func (s *Resolver) draftIssueItem(source interface{}) *store.ProjectV2Item {
 	return s.store.ProjectsV2.LookupItemByNodeID(nodeID)
 }
 
-// projectV2FieldSourceNodeID reads the node id every ProjectV2 field source map
-// carries under "nodeID".
+// projectV2FieldSourceNodeID reads the "nodeID" every ProjectV2 field source carries.
 func projectV2FieldSourceNodeID(source interface{}) (string, error) {
 	src, ok := source.(map[string]interface{})
 	if !ok {
@@ -267,8 +253,7 @@ func projectV2RenderedSourceHTML(key string) graphql.FieldResolveFn {
 }
 
 // projectV2FieldCommonInterface returns the ProjectV2FieldCommon interface an
-// object implements, so its residual fields can be installed on the interface
-// declaration itself (which lives on a local var in the field-type builder).
+// object implements, so residual fields can be installed on the interface itself.
 func projectV2FieldCommonInterface(obj *graphql.Object) *graphql.Interface {
 	if obj == nil {
 		return nil

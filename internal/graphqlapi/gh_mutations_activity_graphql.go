@@ -1,15 +1,9 @@
 package graphqlapi
 
-// Activity and account-policy mutations: the star pair, the watch
-// subscription, the three interaction limits, outside-collaborator removal and
-// the two organization settings toggles `gh api` reaches over REST.
-//
-// Each one writes through the store primitive its REST route writes through —
-// StarRepo/UnstarRepo, SetRepoSubscription, SetRepoInteractionLimit,
-// SetOrgInteractionLimit, SetUserInteractionLimit, RemoveOutsideCollaborator
-// and UpdateOrg — so a star added over GraphQL is the same record PUT
-// /user/starred writes, and the interaction limit a GraphQL caller sets is the
-// one GET /repos/{o}/{r}/interaction-limits reports.
+// Activity and account-policy mutations: stars, the watch subscription, the
+// three interaction limits, outside-collaborator removal and two organization
+// settings toggles. Each writes through the same store primitive its REST route
+// uses, so the two surfaces stay consistent.
 
 import (
 	"fmt"
@@ -21,7 +15,6 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// addActivityMutations registers the activity and account-policy families.
 func (s *Resolver) addActivityMutations(mutationType *graphql.Object) {
 	userType := s.graphqlTypes.user
 	organizationType := s.graphqlTypes.organization
@@ -163,8 +156,8 @@ func (s *Resolver) addActivityMutations(mutationType *graphql.Object) {
 	})
 }
 
-// repositoryInteractionLimitEnum is the enum both the repository's
-// interactionAbility read and the three set-limit mutations name.
+// repositoryInteractionLimitEnum is shared by interactionAbility and the three
+// set-limit mutations.
 func (s *Resolver) repositoryInteractionLimitEnum() *graphql.Enum {
 	return s.sharedEnum("RepositoryInteractionLimit",
 		"COLLABORATORS_ONLY", "CONTRIBUTORS_ONLY", "EXISTING_USERS", "NO_LIMIT")
@@ -172,10 +165,9 @@ func (s *Resolver) repositoryInteractionLimitEnum() *graphql.Enum {
 
 // --- Starrable and Subscribable ---------------------------------------------
 
-// starrableInterface is the interface the two star mutations return their
-// subject behind. Repository is the implementation the schema carries, which
-// is the subset of GitHub's Gist/Repository/Topic that bleephub's star store
-// records stargazers for.
+// starrableInterface is the payload interface for the star mutations.
+// Repository is the only implementation bleephub's star store records
+// stargazers for.
 func (s *Resolver) starrableInterface() *graphql.Interface {
 	return s.mutationInterface("Starrable", func() graphql.Fields {
 		return graphql.Fields{
@@ -192,8 +184,8 @@ func (s *Resolver) starrableInterface() *graphql.Interface {
 	})
 }
 
-// subscribableInterface is updateSubscription's payload type. Repository is
-// the subject bleephub records watch subscriptions for.
+// subscribableInterface is updateSubscription's payload interface; Repository
+// is the only subject bleephub records watch subscriptions for.
 func (s *Resolver) subscribableInterface() *graphql.Interface {
 	return s.mutationInterface("Subscribable", func() graphql.Fields {
 		return graphql.Fields{
@@ -206,8 +198,7 @@ func (s *Resolver) subscribableInterface() *graphql.Interface {
 	})
 }
 
-// stargazerConnectionArgs are the arguments GitHub declares on every
-// `stargazers` field: the four pagination arguments and a StarOrder.
+// stargazerConnectionArgs are the four pagination arguments plus a StarOrder.
 func (s *Resolver) stargazerConnectionArgs() graphql.FieldConfigArgument {
 	return graphql.FieldConfigArgument{
 		"after":  &graphql.ArgumentConfig{Type: graphql.String},
@@ -235,8 +226,8 @@ func (s *Resolver) gqlStargazerEdgeType() *graphql.Object {
 		"cursor": gqlNonNull(graphql.String),
 		"node":   gqlNonNull(s.graphqlTypes.user),
 		"starredAt": &graphql.Field{
-			// The generic connection builder mints edges as {node, cursor},
-			// so the timestamp is carried on the node the edge wraps.
+			// Edges are minted as {node, cursor}, so starredAt rides on
+			// the node.
 			Type: graphql.NewNonNull(s.graphQLStringScalar("DateTime")),
 			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 				edge, ok := p.Source.(map[string]interface{})
@@ -253,9 +244,8 @@ func (s *Resolver) gqlStargazerEdgeType() *graphql.Object {
 	})
 }
 
-// stargazerConnectionSource renders a repository's stargazers into the
-// connection shape. Each node's non-null starredAt is the instant that user
-// starred the repo, recorded per (repo, user) by StarRepo.
+// stargazerConnectionSource renders a repository's stargazers as a connection,
+// each node carrying the instant that user starred the repo.
 func (s *Resolver) stargazerConnectionSource(repo *store.Repo) map[string]interface{} {
 	owner, name, ok := store.SplitRepoFullName(repo.FullName)
 	if !ok {
@@ -272,8 +262,8 @@ func (s *Resolver) stargazerConnectionSource(repo *store.Repo) map[string]interf
 		node := userToGraphQL(user)
 		at := starredAt[id]
 		if at.IsZero() {
-			// starredAt is DateTime! — a star recorded before the timestamp
-			// existed falls back to the repo's creation instant.
+			// starredAt is DateTime!; a star with no recorded timestamp
+			// falls back to the repo's creation instant.
 			at = repo.CreatedAt
 		}
 		node["starredAt"] = at.UTC().Format(time.RFC3339)
@@ -294,11 +284,9 @@ func (s *Resolver) resolveStar(p graphql.ResolveParams, star bool) (interface{},
 	if !ok {
 		return nil, gqlMissingNodeType("Repository")
 	}
-	// Both mutations are idempotent on github.com: starring a repository the
-	// viewer already starred is served, and so is unstarring one they never
-	// starred. The store primitives report "nothing to do" and "no such
-	// repository" with the same false, so the current state is read first and
-	// only a real change is written.
+	// Both mutations are idempotent on github.com. The store primitives report
+	// "nothing to do" and "no such repository" with the same false, so read
+	// current state first and write only a real change.
 	viewer := s.ghUserFromContext(p.Context)
 	starred := s.store.IsRepoStarredBy(viewer.ID, owner, name)
 	changed := false
@@ -319,9 +307,8 @@ func (s *Resolver) resolveStar(p graphql.ResolveParams, star bool) (interface{},
 		return nil, gqlMissingNodeType("Repository")
 	}
 	if star && changed {
-		// GitHub's `watch` event (action "started") is what fires when a
-		// repository is starred, exactly as PUT /user/starred emits it; the
-		// event name is historical.
+		// Starring fires the `watch` event (action "started"); the event name
+		// is historical.
 		s.emitWebhookEvent(updated.FullName, "watch", "started", map[string]interface{}{
 			"action":     "started",
 			"repository": s.repoPayload(updated),
@@ -423,10 +410,9 @@ func (s *Resolver) resolveSetUserInteractionLimit(p graphql.ResolveParams) (inte
 	return map[string]interface{}{"user": optionalRendered(updated, userToGraphQL)}, nil
 }
 
-// interactionLimitFromInput translates the two enums the three limit mutations
-// share into the stored limit name and expiry instant. NO_LIMIT is GitHub's
-// way of spelling "remove the limit", which is the DELETE route's effect and
-// so is answered as an empty limit with no expiry.
+// interactionLimitFromInput translates the limit/expiry enums into the stored
+// limit name and expiry instant. NO_LIMIT means "remove the limit", returned as
+// an empty limit with no expiry.
 func (s *Resolver) interactionLimitFromInput(input map[string]interface{}) (string, *time.Time, error) {
 	limit, _ := gqlInputString(input, "limit")
 	if limit == "NO_LIMIT" {
@@ -499,9 +485,7 @@ func (s *Resolver) resolveUpdateOrganizationWebCommitSignoff(p graphql.ResolvePa
 	}, nil
 }
 
-// mutationOrgFromInput resolves the organization a mutation input names. The
-// policy row already refused a caller with no standing over it, so a miss here
-// is an organization that stopped existing between the two lookups.
+// mutationOrgFromInput resolves the organization a mutation input names.
 func (s *Resolver) mutationOrgFromInput(input map[string]interface{}, key string) (*store.Org, error) {
 	nodeID, _ := gqlInputString(input, key)
 	org := s.orgByNodeID(nodeID)
@@ -511,9 +495,8 @@ func (s *Resolver) mutationOrgFromInput(input map[string]interface{}, key string
 	return org, nil
 }
 
-// updateOrgRow applies a settings write through the same copy-on-write
-// primitive the REST organization routes use, and answers the detached row
-// that resulted.
+// updateOrgRow applies a settings write through UpdateOrg and returns the
+// resulting detached row.
 func (s *Resolver) updateOrgRow(input map[string]interface{}, apply func(*store.Org)) (*store.Org, error) {
 	org, err := s.mutationOrgFromInput(input, "organizationId")
 	if err != nil {

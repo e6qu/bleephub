@@ -9,17 +9,10 @@ import (
 )
 
 // Repository search over the GraphQL `search` connection.
-//
-// The official schema declares REPOSITORY in `enum SearchType`, `Repository`
-// in `union SearchResultItem`, and `repositoryCount: Int!` on
-// SearchResultItemConnection. octokit's own repository search sends all three
-// in one query, so any one of them missing fails the whole request.
 
-// searchRepositories evaluates a repository search query against the
-// repositories the viewer may read, newest first. It understands the
-// qualifiers GitHub's repository search shares with the REST surface —
-// user:/org:/fork:/is: — and treats every remaining bare token as a substring
-// the name, full name or description must contain.
+// searchRepositories evaluates a repository search against the repositories the
+// viewer may read, newest first. It handles the user:/org:/fork:/is: qualifiers
+// and treats every remaining bare token as a name/full-name/description substring.
 func (s *Resolver) searchRepositories(ctx context.Context, query string, viewer *store.User) []gqlConnItem {
 	var owners, keywords []string
 	visibility := ""
@@ -55,9 +48,7 @@ func (s *Resolver) searchRepositories(ctx context.Context, query string, viewer 
 				visibility = strings.ToLower(value)
 			}
 		default:
-			// An unrecognized qualifier is not a keyword: matching "repo:x" as
-			// the substring "repo:x" would silently return nothing rather than
-			// admit the qualifier is unsupported.
+			// An unrecognized qualifier is dropped, not matched as a substring.
 		}
 	}
 
@@ -76,8 +67,8 @@ func (s *Resolver) searchRepositories(ctx context.Context, query string, viewer 
 	}
 	s.store.Mu.RUnlock()
 
-	// Authorization runs off the store lock: viewerCanReadRepo takes its own
-	// locks, and a private repository must never be disclosed by a search.
+	// Authorize off the store lock: viewerCanReadRepo takes its own locks, and a
+	// private repository must never be disclosed by a search.
 	readable := matches[:0]
 	for _, repo := range matches {
 		if repo.Private && !s.viewerCanReadRepo(ctx, repo) {

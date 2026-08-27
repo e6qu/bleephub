@@ -1,30 +1,15 @@
 package graphqlapi
 
-// This file completes the residual GitHub GraphQL surface of the pull-request
-// type family — the connection `edges`/`pageInfo` members, the identity and
-// back-reference fields on PullRequestCommit / ReviewRequest / the stray
-// Bot and SearchResultItem* types, and the one cross-family field
-// (ReviewDismissedEvent.pullRequestCommit) whose owning type is minted by the
-// timeline builder that runs after the pull-request family.
-//
-// Every field is either backed by the real store/git data the surrounding
-// renderers already carry, or answers the truthful empty/null where bleephub
-// genuinely models nothing (a stacked-PR graph, a stale-commit link, the
-// unused Bot reviewer stub). Nothing is fabricated.
-//
-// The only installer wired from a pull-request family function is
-// addReviewDismissedEventPullRequestCommit, called once from
-// addPullRequestSurfaceMutations (which runs after the timeline family, so the
-// ReviewDismissedEvent object already exists). Every other field on this file's
-// types is attached at the type's own definition site in the pulls files.
+// Residual connection/back-reference fields of the pull-request type family,
+// plus ReviewDismissedEvent.pullRequestCommit, whose owning type the timeline
+// builder mints after this family.
 
 import (
 	"github.com/graphql-go/graphql"
 )
 
-// gqlConnNodes coerces a connection source's "nodes" value (stored as either
-// []interface{} or []map[string]interface{} depending on the renderer) to a
-// uniform []interface{}.
+// gqlConnNodes coerces a connection source's "nodes" value ([]interface{} or
+// []map[string]interface{} depending on the renderer) to a uniform []interface{}.
 func gqlConnNodes(v interface{}) []interface{} {
 	switch n := v.(type) {
 	case []interface{}:
@@ -39,12 +24,9 @@ func gqlConnNodes(v interface{}) []interface{} {
 	return nil
 }
 
-// gqlConnEdges returns the connection source's edges. When the source was built
-// by the pagination helpers it already carries a well-formed "edges" slice
-// (with cursors consistent with its pageInfo); that is preferred. When the
-// source only carries "nodes" (an eagerly embedded connection whose reviewer
-// nodes are []interface{} and so bypass repaginateConnection), edges are
-// synthesised so the connection's `edges` selection is never a typed nil.
+// gqlConnEdges returns the connection source's edges, preferring a well-formed
+// "edges" slice; when the source carries only "nodes", edges are synthesised so
+// the `edges` selection is never a typed nil.
 func gqlConnEdges(src interface{}) interface{} {
 	m, ok := src.(map[string]interface{})
 	if !ok {
@@ -77,9 +59,8 @@ func gqlConnEdges(src interface{}) interface{} {
 	return edges
 }
 
-// gqlConnPageInfo returns the connection source's pageInfo, or a well-formed
-// empty (all-false) pageInfo when the source carries none — never a nil that
-// would break the non-null PageInfo child.
+// gqlConnPageInfo returns the source's pageInfo, or an all-false pageInfo when
+// it carries none — never a nil that would break the non-null PageInfo child.
 func gqlConnPageInfo(src interface{}) interface{} {
 	if m, ok := src.(map[string]interface{}); ok {
 		if pi, ok := m["pageInfo"]; ok && pi != nil {
@@ -94,8 +75,7 @@ func gqlConnPageInfo(src interface{}) interface{} {
 	}
 }
 
-// gqlEdgesField builds a connection's `edges` field over the given edge type,
-// resolving from whatever connection source map the connection field produced.
+// gqlEdgesField builds a connection's `edges` field over the given edge type.
 func gqlEdgesField(edgeType *graphql.Object) *graphql.Field {
 	return &graphql.Field{
 		Type: graphql.NewList(edgeType),
@@ -105,8 +85,7 @@ func gqlEdgesField(edgeType *graphql.Object) *graphql.Field {
 	}
 }
 
-// gqlPageInfoField builds a connection's non-null `pageInfo` field, resolving
-// from the connection source map (or a synthesised empty pageInfo).
+// gqlPageInfoField builds a connection's non-null `pageInfo` field.
 func (s *Resolver) gqlPageInfoField() *graphql.Field {
 	return &graphql.Field{
 		Type: graphql.NewNonNull(s.gqlPageInfoType()),
@@ -116,11 +95,8 @@ func (s *Resolver) gqlPageInfoField() *graphql.Field {
 	}
 }
 
-// simpleEdgeType returns the standard Relay edge object (cursor + node) GitHub
-// declares for a connection whose edges carry no extra fields, memoized by name
-// through the shared mutation-object registry so a name another family also
-// mints (e.g. PullRequestReviewCommentEdge) resolves to one instance rather
-// than a duplicate the schema rejects.
+// simpleEdgeType returns a standard Relay edge object (cursor + node), memoized
+// by name so a name another family also mints resolves to one instance.
 func (s *Resolver) simpleEdgeType(name string, node graphql.Output) *graphql.Object {
 	return s.mutationObject(name, graphql.Fields{
 		"cursor": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
@@ -128,11 +104,9 @@ func (s *Resolver) simpleEdgeType(name string, node graphql.Output) *graphql.Obj
 	})
 }
 
-// pullTimelineMember reaches a member object of the PullRequestTimelineItems
-// union by name, navigating from the memoized PullRequest type through its
-// timelineItems connection. Used to reach types the timeline builder mints
-// after the pull-request family (it runs later), so the pulls family can still
-// complete their pull-request-specific fields.
+// pullTimelineMember reaches a PullRequestTimelineItems union member by name,
+// navigating from PullRequest.timelineItems — used to reach types the timeline
+// builder mints after this family so their PR-specific fields can be completed.
 func (s *Resolver) pullTimelineMember(name string) *graphql.Object {
 	pr := s.graphqlTypes.pullRequest
 	if pr == nil {
@@ -162,12 +136,10 @@ func (s *Resolver) pullTimelineMember(name string) *graphql.Object {
 	return nil
 }
 
-// addReviewDismissedEventPullRequestCommit completes ReviewDismissedEvent, whose
-// remaining field points back into the pull-request family. bleephub does not
-// record which commit staled a dismissed review, so the (nullable) field
-// answers the truthful null; adding it keeps the type's GraphQL surface
-// complete. Wired once from addPullRequestSurfaceMutations, which runs after the
-// timeline family has minted the ReviewDismissedEvent object.
+// addReviewDismissedEventPullRequestCommit adds ReviewDismissedEvent's back-ref
+// into the pull-request family. bleephub does not record which commit staled a
+// review, so the nullable field answers null. Wired once from
+// addPullRequestSurfaceMutations, after the timeline family mints the type.
 func (s *Resolver) addReviewDismissedEventPullRequestCommit() {
 	event := s.pullTimelineMember("ReviewDismissedEvent")
 	if event == nil {
@@ -176,7 +148,6 @@ func (s *Resolver) addReviewDismissedEventPullRequestCommit() {
 	event.AddFieldConfig("pullRequestCommit", &graphql.Field{
 		Type: s.graphqlTypes.pullRequestCommit,
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			// The commit that stales a review is not modelled; nullable field.
 			return srcMap(p)["pullRequestCommit"], nil
 		},
 	})

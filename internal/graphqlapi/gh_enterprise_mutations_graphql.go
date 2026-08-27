@@ -1,23 +1,9 @@
 package graphqlapi
 
-// The enterprise account mutation surface: every enterprise mutation GitHub's
-// schema declares — the profile, the whole policy set, membership and
-// administrator roles, invitations, organizations, support entitlements, the
-// SAML identity provider binding and the IP allow list.
-//
-// Authorization is a table row per mutation, like the rest of the mutation
-// surface. Enterprise mutations name no repository, so they carry their own
-// rule types: enterpriseOwnerRule (the enterprise the input names must be one
-// the viewer owns), enterpriseInvitationRule (an invitation may be accepted
-// only by its invitee and cancelled only by an owner of the enterprise that
-// issued it), enterpriseTransferRule (both the source and destination
-// enterprise must be the viewer's to administer) and ipAllowListOwnerRule
-// (the allow-list entry's owner must be).
-//
-// Cross-tenant isolation falls out of that: every rule resolves the
-// enterprise from the input and asks store.EffectiveEnterpriseRole about
-// *that* enterprise, so owning one enterprise never authorizes a write
-// against another.
+// The enterprise account mutation surface. Enterprise mutations name no
+// repository, so they carry their own authorization rule types. Every rule
+// resolves the enterprise from the input, so owning one enterprise never
+// authorizes a write against another.
 
 import (
 	"crypto/rand"
@@ -34,8 +20,7 @@ import (
 
 // --- authorization rules ---------------------------------------------------
 
-// enterpriseOwnerRule requires the viewer to be an owner of the enterprise
-// the input names through idKey.
+// enterpriseOwnerRule requires the viewer to own the enterprise named by idKey.
 type enterpriseOwnerRule struct {
 	idKey string
 }
@@ -59,21 +44,16 @@ func (r enterpriseOwnerRule) authorize(s *Resolver, p graphql.ResolveParams, inp
 	return nil
 }
 
-// enterpriseOwnerRequired is the refusal for a write only an enterprise owner
-// may perform.
 func enterpriseOwnerRequired() error {
 	return &ghForbiddenError{message: "You must be an owner of the enterprise to perform this action."}
 }
 
-// enterpriseInvitationRule is the policy for the four invitation mutations.
-// accept admits only the invitee (an invitation is addressed to one person,
-// and nobody else may consume it); cancel admits only an owner of the
-// enterprise that issued it.
+// enterpriseInvitationRule is the policy for the four invitation mutations:
+// accept admits only the invitee, cancel only an owner of the issuing enterprise.
 type enterpriseInvitationRule struct {
-	// accept selects the invitee test rather than the owner test.
 	accept bool
-	// kind is "admin" or "member": an administrator invitation may not be
-	// accepted through the member mutation, or the role would be laundered.
+	// kind is "admin" or "member": an admin invitation accepted through the
+	// member mutation would launder the role.
 	kind string
 }
 
@@ -93,8 +73,8 @@ func (r enterpriseInvitationRule) authorize(s *Resolver, p graphql.ResolveParams
 	viewer := s.ghUserFromContext(p.Context)
 	if r.accept {
 		if viewer == nil || inv.InviteeID == 0 || viewer.ID != inv.InviteeID {
-			// The same answer as "no such invitation": otherwise the mutation
-			// tells a stranger that somebody was invited.
+			// Same answer as "no such invitation", so it does not leak to a
+			// stranger that somebody was invited.
 			return gqlMissingNode(enterpriseInvitationTypeName(r.kind), nodeID)
 		}
 		return nil
@@ -112,11 +92,9 @@ func enterpriseInvitationTypeName(kind string) string {
 	return "EnterpriseMemberInvitation"
 }
 
-// enterpriseTransferRule is the policy for transferEnterpriseOrganization,
-// the one enterprise mutation whose effect spans two enterprises: the viewer
-// must own the destination and must own the enterprise the organization is
-// leaving. Owning only one side moves an organization out of an enterprise
-// the viewer has no authority over, or into one they do not administer.
+// enterpriseTransferRule is the policy for transferEnterpriseOrganization, whose
+// effect spans two enterprises: the viewer must own both the destination and the
+// enterprise the organization is leaving.
 type enterpriseTransferRule struct{}
 
 func (enterpriseTransferRule) check() error { return nil }
@@ -143,12 +121,11 @@ func (enterpriseTransferRule) authorize(s *Resolver, p graphql.ResolveParams, in
 	return nil
 }
 
-// ipAllowListOwnerRule is the policy for the IP allow list mutations. The
-// entitlement is over the allow list's owner: an enterprise's list is its
-// owners' to write, an organization's list is its owners'.
+// ipAllowListOwnerRule authorizes an IP allow list mutation against the list's
+// owner (an enterprise or organization).
 type ipAllowListOwnerRule struct {
-	// ownerKey names the owner directly; entryKey names an existing entry
-	// whose owner is looked up. Exactly one is set.
+	// Exactly one is set: ownerKey names the owner directly, entryKey names an
+	// existing entry whose owner is looked up.
 	ownerKey string
 	entryKey string
 }
@@ -204,7 +181,6 @@ func (r ipAllowListOwnerRule) resolveOwner(s *Resolver, input map[string]interfa
 	return "", 0, nodeID, gqlMissingNode("IpAllowListOwner", nodeID)
 }
 
-// orgByNodeID resolves an Organization global id.
 func (s *Resolver) orgByNodeID(nodeID string) *store.Org {
 	if nodeID == "" {
 		return nil
@@ -220,9 +196,8 @@ func (s *Resolver) orgByNodeID(nodeID string) *store.Org {
 	return nil
 }
 
-// enterpriseMutationAuthzRows is the enterprise family's half of the
-// mutation authorization table. It is installed by init so the rows and the
-// resolvers that need them live in one file.
+// enterpriseMutationAuthzRows is the enterprise family's half of the mutation
+// authorization table.
 func enterpriseMutationAuthzRows() map[string]mutationRule {
 	ownerRule := func(key string) mutationRule { return enterpriseOwnerRule{idKey: key} }
 	rows := map[string]mutationRule{
@@ -245,8 +220,7 @@ func enterpriseMutationAuthzRows() map[string]mutationRule {
 	return rows
 }
 
-// enterpriseOwnerGatedMutations are the mutations whose input names the
-// enterprise directly and which only an enterprise owner may perform.
+// enterpriseOwnerGatedMutations name the enterprise directly and are owner-only.
 func enterpriseOwnerGatedMutations() []string {
 	return []string{
 		"addEnterpriseOrganizationMember",
@@ -296,9 +270,7 @@ func init() {
 
 // --- audit -----------------------------------------------------------------
 
-// recordEnterpriseAudit writes one enterprise audit-log entry. Every
-// enterprise mutation records one, so what an enterprise owner did is
-// answerable from the audit log rather than only from the resulting state.
+// recordEnterpriseAudit writes one enterprise audit-log entry.
 func (s *Resolver) recordEnterpriseAudit(p graphql.ResolveParams, e *store.Enterprise, action string, data map[string]interface{}) {
 	actor := ""
 	if user := s.ghUserFromContext(p.Context); user != nil {
@@ -316,7 +288,6 @@ func (s *Resolver) recordEnterpriseAudit(p graphql.ResolveParams, e *store.Enter
 
 // --- schema assembly -------------------------------------------------------
 
-// addEnterpriseMutationsToSchema registers every enterprise mutation.
 func (s *Resolver) addEnterpriseMutationsToSchema(mutationType *graphql.Object) {
 	enterpriseType := s.graphqlTypes.enterprise
 	userType := s.graphqlTypes.user
@@ -330,8 +301,8 @@ func (s *Resolver) addEnterpriseMutationsToSchema(mutationType *graphql.Object) 
 	s.addIPAllowListMutations(mutationType)
 }
 
-// enterpriseSettingPayload mints the {enterprise, message} payload almost
-// every policy mutation returns.
+// enterpriseSettingPayload mints the {enterprise, message} payload most policy
+// mutations return.
 func (s *Resolver) enterpriseSettingPayload(name string, enterpriseType *graphql.Object) *graphql.Object {
 	return graphql.NewObject(graphql.ObjectConfig{
 		Name: name,
@@ -342,22 +313,18 @@ func (s *Resolver) enterpriseSettingPayload(name string, enterpriseType *graphql
 	})
 }
 
-// enterprisePolicyMutation is one policy setting's whole definition: the
-// mutation name, the enum its settingValue takes, and the write it performs.
+// enterprisePolicyMutation is one policy setting's whole definition.
 type enterprisePolicyMutation struct {
-	name  string
-	enum  *graphql.Enum
-	apply func(policy *store.EnterprisePolicy, value string)
-	// extraInputFields are the additional inputs a few settings carry.
+	name             string
+	enum             *graphql.Enum
+	apply            func(policy *store.EnterprisePolicy, value string)
 	extraInputFields graphql.InputObjectConfigFieldMap
 	// settingValueOptional marks the one setting whose settingValue GitHub
 	// declares nullable (members-can-create-repositories, whose booleans can
-	// carry the change on their own).
+	// carry the change alone).
 	settingValueOptional bool
-	// applyExtras writes the additional inputs.
-	applyExtras func(policy *store.EnterprisePolicy, input map[string]interface{})
-	// enforcement names where the setting takes effect, for the audit entry.
-	auditAction string
+	applyExtras          func(policy *store.EnterprisePolicy, input map[string]interface{})
+	auditAction          string
 }
 
 func (s *Resolver) addEnterprisePolicyMutations(mutationType *graphql.Object, enterpriseType *graphql.Object) {
@@ -451,8 +418,7 @@ func (s *Resolver) addEnterprisePolicyMutations(mutationType *graphql.Object, en
 			assign("membersCanCreateInternalRepositories", &p.MembersCanCreateInternalRepositories)
 			assign("membersCanCreatePrivateRepositories", &p.MembersCanCreatePrivateRepositories)
 			assign("membersCanCreatePublicRepositories", &p.MembersCanCreatePublicRepositories)
-			// A disabled policy is GitHub's way of saying the enterprise
-			// imposes nothing here; the enum then carries no meaning.
+			// A disabled policy means the enterprise imposes nothing here.
 			if enabled, ok := input["membersCanCreateRepositoriesPolicyEnabled"].(bool); ok && !enabled {
 				p.MembersCanCreateRepositories = store.EnterprisePolicyNoPolicy
 			}
@@ -600,8 +566,7 @@ func (s *Resolver) addEnterpriseMembershipMutations(mutationType, enterpriseType
 			if err != nil {
 				return nil, err
 			}
-			// Demoting rather than deleting: an administrator removed from the
-			// administrator roll is still a member of the enterprise if their
+			// Demote rather than delete: a removed admin stays a member if their
 			// organizations keep them one.
 			s.store.SetEnterpriseMembership(e.ID, admin.ID, store.EnterpriseRoleMember)
 			s.recordEnterpriseAudit(p, e, "business.remove_admin", map[string]interface{}{"user": admin.Login})
@@ -645,10 +610,8 @@ func (s *Resolver) addEnterpriseMembershipMutations(mutationType, enterpriseType
 			if user == nil {
 				return nil, gqlMissingNode("User", userNodeID)
 			}
-			// Removing somebody from an enterprise removes them from the
-			// organizations that enterprise owns: an enterprise membership is
-			// the sum of those, so dropping the row alone would leave the
-			// person a member through the organization on the next read.
+			// An enterprise membership is the sum of its org memberships, so
+			// removal must also drop the person from every org the enterprise owns.
 			s.store.RemoveEnterpriseMembership(e.ID, user.ID)
 			for _, orgID := range s.store.ListEnterpriseOrgIDs(e.ID) {
 				if org := s.store.GetOrgByID(orgID); org != nil {
@@ -709,7 +672,7 @@ func (s *Resolver) addEnterpriseMembershipMutations(mutationType, enterpriseType
 	s.registerEnterpriseMigratorRoleMutation(mutationType, "revokeEnterpriseOrganizationsMigratorRole", false)
 }
 
-// enterpriseAndLogin resolves the enterprise an input names plus the user its
+// enterpriseAndLogin resolves the enterprise the input names plus the user its
 // login names.
 func (s *Resolver) enterpriseAndLogin(input map[string]interface{}, loginKey string) (*store.Enterprise, *store.User, error) {
 	nodeID, _ := input["enterpriseId"].(string)
@@ -857,9 +820,8 @@ func (s *Resolver) registerEnterpriseSupportEntitlementMutation(mutationType *gr
 			if err != nil {
 				return nil, err
 			}
-			// A support entitlement belongs to a membership: granting one to
-			// somebody with no membership row creates it at the member role
-			// first, so the entitlement cannot dangle.
+			// A support entitlement belongs to a membership, so grant creates a
+			// member row first rather than let the entitlement dangle.
 			if s.store.GetEnterpriseMembership(e.ID, user.ID) == nil {
 				if !grant {
 					return nil, fmt.Errorf("%s has no support entitlement in %s", user.Login, e.Slug)
@@ -889,10 +851,8 @@ func (s *Resolver) registerEnterpriseMigratorRoleMutation(mutationType *graphql.
 			"login":        &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.String)},
 		},
 	})
-	// The payload reports which organizations the grant reached, which is the
-	// only place a caller learns the blast radius of an enterprise-wide
-	// migrator role: it is every organization of the enterprise, and naming
-	// them makes that concrete rather than implied.
+	// The payload names every organization the grant reached — the whole
+	// enterprise — so the caller learns the blast radius.
 	payloadType := graphql.NewObject(graphql.ObjectConfig{
 		Name: payloadName,
 		Fields: graphql.Fields{
@@ -1111,8 +1071,7 @@ func (s *Resolver) addEnterpriseOrganizationMutations(mutationType, enterpriseTy
 			if org == nil {
 				return nil, gqlMissingNode("Organization", orgNodeID)
 			}
-			// The organization must be one this enterprise owns, or the
-			// mutation would seat people into somebody else's organization.
+			// The org must be one this enterprise owns.
 			if s.store.EnterpriseIDForOrg(org.ID) != e.ID {
 				return nil, fmt.Errorf("%s does not belong to %s", org.Login, e.Slug)
 			}
@@ -1239,10 +1198,8 @@ func (s *Resolver) addEnterpriseIdentityProviderMutations(mutationType *graphql.
 			digest, _ := input["digestMethod"].(string)
 			codes := enterpriseRecoveryCodes()
 			if existing := s.store.GetEnterpriseByID(e.ID); existing != nil && existing.IdentityProvider != nil {
-				// Rebinding an existing provider keeps the recovery codes the
-				// enterprise already wrote down; only
-				// regenerateEnterpriseIdentityProviderRecoveryCodes replaces
-				// them.
+				// Rebinding keeps the existing recovery codes; only
+				// regenerateEnterpriseIdentityProviderRecoveryCodes replaces them.
 				codes = existing.IdentityProvider.RecoveryCodes
 			}
 			if s.store.SetEnterpriseIdentityProvider(e.ID, ssoURL, issuer, certificate, signature, digest, codes) == nil {
@@ -1317,16 +1274,14 @@ func (s *Resolver) addEnterpriseIdentityProviderMutations(mutationType *graphql.
 	})
 }
 
-// enterpriseRecoveryCodes mints the ten single-use codes GitHub issues when
-// an enterprise binds an identity provider. They are the way back in when the
-// provider is unreachable, so they come from crypto/rand.
+// enterpriseRecoveryCodes mints the ten single-use crypto/rand codes GitHub
+// issues when an enterprise binds an identity provider.
 func enterpriseRecoveryCodes() []string {
 	codes := make([]string, 10)
 	for i := range codes {
 		buf := make([]byte, 5)
 		if _, err := rand.Read(buf); err != nil {
-			// crypto/rand failing is not a condition to paper over with a
-			// weaker code: an unreadable entropy source is fatal.
+			// An unreadable entropy source is fatal, never a weaker code.
 			panic("enterprise recovery codes: " + err.Error())
 		}
 		encoded := hex.EncodeToString(buf)
@@ -1472,9 +1427,7 @@ func (s *Resolver) registerIPAllowListSettingMutation(mutationType *graphql.Obje
 			}
 			value, _ := input["settingValue"].(string)
 			if ownerType != "Enterprise" {
-				// An organization's IP allow list is governed by the
-				// enterprise that owns it; bleephub stores the toggle on the
-				// enterprise, so the organization form points at it.
+				// bleephub stores the toggle on the enterprise that owns the org.
 				org := s.store.GetOrgByID(ownerID)
 				if org == nil {
 					return nil, gqlMissingNode("IpAllowListOwner", nodeID)
@@ -1495,10 +1448,8 @@ func (s *Resolver) registerIPAllowListSettingMutation(mutationType *graphql.Obje
 	})
 }
 
-// validIPAllowListValue reports whether a value is an address or CIDR range
-// GitHub would accept for an allow-list entry. It is the resolver-layer copy
-// of the predicate the enforcement path applies, so an entry that could never
-// match anything cannot be written in the first place.
+// validIPAllowListValue reports whether a value is an IP address or CIDR range,
+// rejecting an entry that could never match at write time.
 func validIPAllowListValue(value string) bool {
 	value = strings.TrimSpace(value)
 	if value == "" {

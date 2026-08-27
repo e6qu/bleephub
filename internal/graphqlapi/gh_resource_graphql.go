@@ -9,20 +9,13 @@ import (
 	"github.com/graphql-go/graphql"
 )
 
-// Query.resource — GitHub's URL-to-node lookup.
-//
-// It is how a client turns something a person pasted into the node id an API
-// call needs: `gh project item-add --url https://host/owner/repo/issues/7`
-// resolves the issue through this field before calling addProjectV2ItemById.
-// Without it that command could not run at all, whatever the Projects v2
-// surface supported.
+// Query.resource — GitHub's URL-to-node lookup, e.g. `gh project item-add --url`
+// resolves the issue here before calling addProjectV2ItemById.
 
-// uniformResourceLocatableInterface is GitHub's UniformResourceLocatable.
-//
-// It is built before Repository, Issue and PullRequest are, because graphql-go
-// reads an object's interface list once and memoizes it: an interface a type
-// does not claim at construction can never gain it as a possible type, and the
-// `... on Issue` spread `gh project item-add` sends would fail validation.
+// uniformResourceLocatableInterface is GitHub's UniformResourceLocatable. It is
+// built before Repository, Issue and PullRequest, because graphql-go reads an
+// object's interface list once at construction: a type cannot gain a possible
+// type later, and the `... on Issue` spread would fail validation.
 func (s *Resolver) uniformResourceLocatableInterface() *graphql.Interface {
 	if s.graphqlTypes.uniformResourceLocatable != nil {
 		return s.graphqlTypes.uniformResourceLocatable
@@ -43,9 +36,9 @@ func (s *Resolver) uniformResourceLocatableInterface() *graphql.Interface {
 	return s.graphqlTypes.uniformResourceLocatable
 }
 
-// addResourceFieldToSchema installs Query.resource over the
-// UniformResourceLocatable interface, whose implementations are the node types
-// a bleephub URL can name: a repository, an issue, or a pull request.
+// addResourceFieldToSchema installs Query.resource over
+// UniformResourceLocatable, whose implementations are the node types a bleephub
+// URL can name: a repository, an issue, or a pull request.
 func (s *Resolver) addResourceFieldToSchema(queryType *graphql.Object, nodeTypes map[string]*graphql.Object) {
 	s.graphqlTypes.resourceNodeTypes = nodeTypes
 	queryType.AddFieldConfig("resource", &graphql.Field{
@@ -60,9 +53,8 @@ func (s *Resolver) addResourceFieldToSchema(queryType *graphql.Object, nodeTypes
 				return nil, nil
 			}
 			repo := s.store.GetRepoByFullName(owner + "/" + name)
-			// A repository the caller cannot read resolves to null, exactly as
-			// one that does not exist does: the lookup must not become a way
-			// to confirm a private repository by pasting its URL.
+			// A repository the caller cannot read resolves to null like a
+			// missing one, so the lookup cannot confirm a private repository.
 			if repo == nil || !s.viewerCanReadRepo(p.Context, repo) {
 				return nil, nil
 			}
@@ -74,8 +66,7 @@ func (s *Resolver) addResourceFieldToSchema(queryType *graphql.Object, nodeTypes
 			case "issues":
 				issue := s.store.GetIssueByNumber(repo.ID, number)
 				if issue == nil {
-					// GitHub serves /issues/{n} for a pull request too, since
-					// pull requests are issues underneath.
+					// GitHub serves /issues/{n} for a pull request too.
 					if pr := s.store.GetPullRequestByNumber(repo.ID, number); pr != nil {
 						return resourcePullRequest(s.store, pr), nil
 					}
@@ -103,14 +94,12 @@ func resourcePullRequest(st *store.Store, pr *store.PullRequest) map[string]inte
 }
 
 // parseResourceURL picks the owner, repository, subject kind and number out of
-// a bleephub web URL. It accepts the three shapes a URL can name — a
-// repository, an issue and a pull request — and rejects everything else by
-// reporting ok=false, which the resolver answers with null.
+// a bleephub web URL, accepting the repository/issue/pull-request shapes and
+// reporting ok=false for anything else.
 //
 // The host is deliberately not checked: an instance is reachable under several
-// names (its external URL, a proxy, localhost in tests), and refusing a URL
-// whose host does not match the one this process happens to know would reject
-// URLs the same instance served.
+// names (external URL, proxy, localhost in tests), so matching against one
+// would reject URLs the same instance served.
 func parseResourceURL(raw string) (owner, name, kind string, number int, ok bool) {
 	parsed, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {

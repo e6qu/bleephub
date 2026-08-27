@@ -12,15 +12,13 @@ import (
 	"github.com/graphql-go/graphql"
 )
 
-// This file completes the Milestone, Label, Discussion and DiscussionComment
-// field surfaces, and the small metadata connection types (RepositoryTopic,
-// Language, Reactor/ReactingUser). It is the companion to
-// gh_issue_fields_graphql.go; the split keeps each file readable.
+// Milestone, Label, Discussion and DiscussionComment field surfaces, plus the
+// small metadata connection types (RepositoryTopic, Language, Reactor).
+// Companion to gh_issue_fields_graphql.go.
 
 // --- shared render helpers -------------------------------------------------
 
-// repoNodeSource renders a repository as its GraphQL source map, or nil when
-// the repository is gone.
+// repoNodeSource renders a repository as its GraphQL source map.
 func (s *Resolver) repoNodeSource(repoID int) map[string]interface{} {
 	repo := s.store.GetRepoByID(repoID)
 	if repo == nil {
@@ -29,8 +27,8 @@ func (s *Resolver) repoNodeSource(repoID int) map[string]interface{} {
 	return repoToGraphQL(s.store, s.store.SnapRepo(repo))
 }
 
-// fullPageInfoResolver answers the static, all-false pageInfo for a connection
-// materialised in full (no windowing applied).
+// fullPageInfoResolver answers the all-false pageInfo for a fully materialised
+// connection.
 func fullPageInfoResolver(graphql.ResolveParams) (interface{}, error) {
 	return map[string]interface{}{
 		"hasNextPage": false, "hasPreviousPage": false,
@@ -46,8 +44,8 @@ func repositoryTopicNodeID(name string) string {
 	return "RT_" + base64.RawURLEncoding.EncodeToString([]byte("RepositoryTopic"+name))
 }
 
-// languageConnectionNodes derives the node list from a language connection
-// source that carries only edges.
+// languageConnectionNodes derives the node list from an edges-only language
+// connection source.
 func languageConnectionNodes(source interface{}) []interface{} {
 	src, _ := source.(map[string]interface{})
 	edges, _ := src["edges"].([]interface{})
@@ -81,8 +79,7 @@ func languageConnectionTotalSize(source interface{}) int {
 	return total
 }
 
-// gqlRepositoryTopicConnectionType builds RepositoryTopicConnection with the
-// full RepositoryTopic (id/topic/resourcePath/url) and RepositoryTopicEdge.
+// gqlRepositoryTopicConnectionType builds RepositoryTopicConnection.
 func (s *Resolver) gqlRepositoryTopicConnectionType() *graphql.Object {
 	if s.graphqlTypes.repositoryTopicConnection != nil {
 		return s.graphqlTypes.repositoryTopicConnection
@@ -136,8 +133,8 @@ func (s *Resolver) gqlRepositoryTopicConnectionType() *graphql.Object {
 }
 
 // reactorConnectionFor builds the connection ReactionGroup.reactors and
-// ReactionGroup.users both resolve to: the real users who reacted with the
-// group's emoji, each edge carrying its reactedAt instant.
+// ReactionGroup.users share: the users who reacted with the group's emoji,
+// each edge carrying its reactedAt instant.
 func (s *Resolver) reactorConnectionFor(parentType string, parentID int, restContent string, args map[string]interface{}) map[string]interface{} {
 	reactions := s.store.Reactions.ListReactions(parentType, parentID, restContent)
 	sort.SliceStable(reactions, func(a, b int) bool {
@@ -222,7 +219,7 @@ func (s *Resolver) enrichMilestoneType() {
 		}
 		return "/" + repo.FullName + "/milestone/" + strconv.Itoa(srcInt(src, "number"))
 	}
-	// milestoneCounts returns (open, closed) issue counts for the milestone.
+	// counts returns (open, closed) issue counts for the milestone.
 	counts := func(src map[string]interface{}) (int, int) {
 		repoID := srcInt(src, "repoID")
 		msID := srcInt(src, "_dbID")
@@ -399,8 +396,7 @@ func (s *Resolver) enrichLabelType() {
 
 	fields := graphql.Fields{
 		"createdAt": &graphql.Field{Type: dateTime},
-		// bleephub does not record a label's last-updated instant, so updatedAt
-		// is a truthful null.
+		// No label last-updated instant is recorded (null).
 		"updatedAt": &graphql.Field{Type: dateTime, Resolve: nilResolver},
 		"isDefault": &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
 		"repository": &graphql.Field{
@@ -560,8 +556,7 @@ func (s *Resolver) enrichDiscussionType() {
 				return discussionCommentToGQL(ans, s.store), nil
 			},
 		},
-		// bleephub does not record who chose an answer or when, so these are a
-		// truthful null even for an answered discussion.
+		// Who chose an answer and when are unrecorded (null even when answered).
 		"answerChosenAt": &graphql.Field{Type: dateTime, Resolve: nilResolver},
 		"answerChosenBy": &graphql.Field{Type: actor, Resolve: nilResolver},
 		"repository": &graphql.Field{
@@ -582,8 +577,7 @@ func (s *Resolver) enrichDiscussionType() {
 				return discussionPath(src), nil
 			},
 		},
-		// bleephub discussions carry no labels, so this is a real empty
-		// connection rather than a fabricated set.
+		// Discussions carry no labels (real empty connection).
 		"labels": &graphql.Field{
 			Type:    labelConn,
 			Args:    relayConnectionArgs(),
@@ -612,8 +606,7 @@ func (s *Resolver) enrichDiscussionType() {
 	}
 }
 
-// discussionAnswerComment returns the comment marked as a discussion's answer,
-// or nil when it is unanswered.
+// discussionAnswerComment returns the comment marked as a discussion's answer.
 func (s *Resolver) discussionAnswerComment(discussionID int) *store.DiscussionComment {
 	for _, c := range s.store.ListDiscussionComments(discussionID, 0) {
 		if c.IsAnswer {
@@ -625,9 +618,9 @@ func (s *Resolver) discussionAnswerComment(discussionID int) *store.DiscussionCo
 
 // --- DiscussionComment -----------------------------------------------------
 
-// discussionCommentExtraFields returns the remaining GitHub fields for the
-// DiscussionComment type. Because that type is built from a FieldsThunk (which
-// AddFieldConfig cannot extend), the thunk merges these in directly.
+// discussionCommentExtraFields returns the remaining DiscussionComment fields.
+// The type is built from a FieldsThunk that AddFieldConfig cannot extend, so
+// the thunk merges these in directly.
 func (s *Resolver) discussionCommentExtraFields() graphql.Fields {
 	uri := s.graphQLStringScalar("URI")
 	dateTime := s.graphQLStringScalar("DateTime")
@@ -636,7 +629,6 @@ func (s *Resolver) discussionCommentExtraFields() graphql.Fields {
 		"COLLABORATOR", "CONTRIBUTOR", "FIRST_TIMER", "FIRST_TIME_CONTRIBUTOR",
 		"MANNEQUIN", "MEMBER", "NONE", "OWNER")
 
-	// commentRepo returns the repo owning the comment's discussion.
 	commentRepo := func(src map[string]interface{}) *store.Repo {
 		d := s.store.GetDiscussion(srcInt(src, "discussionID"))
 		if d == nil {
@@ -706,8 +698,7 @@ func (s *Resolver) discussionCommentExtraFields() graphql.Fields {
 			},
 		},
 		"createdViaEmail": &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean), Resolve: falseResolver},
-		// bleephub records no deletion timestamp for a comment, so deletedAt is a
-		// truthful null.
+		// No comment deletion timestamp is recorded (null).
 		"deletedAt": &graphql.Field{Type: dateTime, Resolve: nilResolver},
 		"editor":    &graphql.Field{Type: actor, Resolve: nilResolver},
 		"includesCreatedEdit": &graphql.Field{

@@ -10,25 +10,15 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// This file completes the GitHub GraphQL surface of the three pull-request
-// types the schema-coverage ratchet tracks — PullRequest, PullRequestReview and
-// PullRequestReviewThread — with every field backed by the real store/git data
-// the REST surface already serves. Where bleephub genuinely models nothing (a
-// merge queue, a stacked-PR graph, a suggested-reviewer engine) the field
-// answers the truthful zero — false, an empty connection, or null — rather than
-// a fabricated value, and each such case is called out at its resolver.
-//
-// The types are added additively: addPullRequestSurfaceFields runs once, from
-// addPullRequestFieldsToSchema, after the three object types and their shared
-// helpers exist. It only calls AddFieldConfig and builds the few connection /
-// union / object types GitHub declares for these fields but no other consumer
-// had to mint. The renderers (pullRequestToGQL, prReviewSourceLocked,
-// reviewThreadsForGraphQL) gain a handful of new source keys without changing
-// any existing one.
+// Completes the GraphQL surface of PullRequest, PullRequestReview and
+// PullRequestReviewThread, backed by the same store/git data REST serves. Where
+// bleephub models nothing (merge queue, stacked-PR graph, suggested-reviewer
+// engine) the field answers the truthful zero, called out at its resolver.
+// addPullRequestSurfaceFields runs once, after the three types and their
+// helpers exist, adding fields additively.
 
-// prSurfaceDeps carries the already-built type objects the surface fields name.
-// They are locals of addPullRequestFieldsToSchema, passed in rather than
-// re-minted (graphql-go rejects two types of one name).
+// prSurfaceDeps carries the already-built type objects the surface fields name,
+// passed in rather than re-minted (graphql-go rejects two types of one name).
 type prSurfaceDeps struct {
 	pullRequest          *graphql.Object
 	review               *graphql.Object
@@ -48,9 +38,8 @@ type prSurfaceDeps struct {
 	pullRequestMergeEnum *graphql.Enum
 }
 
-// prEmptyConnection is the source a nodes/edges/pageInfo/totalCount connection
-// resolves to when the collection is genuinely empty — a well-formed empty
-// connection, never a nil that would break a non-null child.
+// prEmptyConnection is a well-formed empty connection, never a nil that would
+// break a non-null child.
 func prEmptyConnection() map[string]interface{} {
 	return map[string]interface{}{
 		"nodes":      []interface{}{},
@@ -70,8 +59,8 @@ func srcMap(p graphql.ResolveParams) map[string]interface{} {
 	return m
 }
 
-// prRepoPerms resolves the viewer's real read/write/admin standing on the repo
-// a source map's repoID points at, plus the viewer and the source's authorID.
+// prRepoPerms resolves the viewer's read/write/admin standing on the source's
+// repo, plus the viewer and the source's authorID.
 func (s *Resolver) prRepoPerms(p graphql.ResolveParams) (viewer *store.User, authorID int, read, write, admin bool) {
 	src := srcMap(p)
 	authorID, _ = src["authorID"].(int)
@@ -86,7 +75,7 @@ func (s *Resolver) prRepoPerms(p graphql.ResolveParams) (viewer *store.User, aut
 	return
 }
 
-// boolField is a Boolean! field computed from the viewer's permissions.
+// prBoolField is a Boolean! field computed from the viewer's permissions.
 func (s *Resolver) prBoolField(fn func(viewer *store.User, authorID int, read, write, admin bool) bool) *graphql.Field {
 	return &graphql.Field{
 		Type: graphql.NewNonNull(graphql.Boolean),
@@ -105,9 +94,8 @@ func constBoolField(v bool) *graphql.Field {
 }
 
 // prCannotUpdateReasons is the [CommentCannotUpdateReason!]! companion of a
-// viewerCanUpdate: empty when the viewer may edit, LOGIN_REQUIRED for an
-// anonymous viewer, INSUFFICIENT_ACCESS otherwise — the same reasons GitHub
-// reports.
+// viewerCanUpdate: empty when editable, else LOGIN_REQUIRED or
+// INSUFFICIENT_ACCESS.
 func prCannotUpdateReasons(canUpdate bool, viewer *store.User) []interface{} {
 	if canUpdate {
 		return []interface{}{}
@@ -153,8 +141,6 @@ func (s *Resolver) addPullRequestNodeFields(
 	uri := d.uri
 	dateTime := d.dateTime
 
-	// Body/title projections and the plain identity fields read straight off the
-	// source map (default resolver) or off keys the renderer already carries.
 	pr.AddFieldConfig("bodyHTML", &graphql.Field{
 		Type: graphql.NewNonNull(d.htmlScalar),
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -178,8 +164,6 @@ func (s *Resolver) addPullRequestNodeFields(
 	})
 	pr.AddFieldConfig("authorAssociation", &graphql.Field{Type: graphql.NewNonNull(d.commentAuthorAssoc)})
 
-	// Hypermedia the source path already implies. permalink is the canonical URL
-	// of the PR; the checks/revert paths are the sub-resources GitHub links.
 	pr.AddFieldConfig("permalink", &graphql.Field{
 		Type:    graphql.NewNonNull(uri),
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) { return srcMap(p)["url"], nil },
@@ -189,9 +173,8 @@ func (s *Resolver) addPullRequestNodeFields(
 	pr.AddFieldConfig("revertResourcePath", srcPathField(uri, "resourcePath", "/revert", false))
 	pr.AddFieldConfig("revertUrl", srcPathField(uri, "resourcePath", "/revert", true))
 
-	// Timestamps and edit-history traits. bleephub records no per-edit history
-	// for a PR body, so lastEditedAt/editor/includesCreatedEdit answer the
-	// truthful "never edited" and userContentEdits is a real empty connection.
+	// No per-edit history is recorded, so the edit-history fields answer "never
+	// edited" and userContentEdits is a real empty connection.
 	pr.AddFieldConfig("publishedAt", &graphql.Field{
 		Type:    dateTime,
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) { return srcMap(p)["createdAt"], nil },
@@ -208,9 +191,9 @@ func (s *Resolver) addPullRequestNodeFields(
 		Resolve: func(graphql.ResolveParams) (interface{}, error) { return emptyUserContentEditConnection(), nil },
 	})
 
-	// createdViaEmail is truthfully false: bleephub has no inbound-email PR path.
+	// No inbound-email PR path.
 	pr.AddFieldConfig("createdViaEmail", constBoolField(false))
-	// No merge queue is modelled, so both membership and enablement are false.
+	// No merge queue is modelled.
 	pr.AddFieldConfig("isInMergeQueue", constBoolField(false))
 	pr.AddFieldConfig("isMergeQueueEnabled", constBoolField(false))
 	pr.AddFieldConfig("mergeQueue", &graphql.Field{
@@ -230,12 +213,10 @@ func (s *Resolver) addPullRequestNodeFields(
 		Type:    stackEntryType,
 		Resolve: func(graphql.ResolveParams) (interface{}, error) { return nil, nil },
 	})
-	// isReadByViewer is genuinely unknown (bleephub tracks no per-viewer read
-	// state on a PR); the field is nullable, so null is the truthful answer.
+	// No per-viewer read state is tracked; the field is nullable, so null.
 	pr.AddFieldConfig("isReadByViewer", &graphql.Field{Type: graphql.Boolean})
 
-	// canBeRebased tracks the stored mergeability — the only merge gate bleephub
-	// models.
+	// canBeRebased tracks the stored mergeability, the only merge gate modelled.
 	pr.AddFieldConfig("canBeRebased", &graphql.Field{
 		Type: graphql.NewNonNull(graphql.Boolean),
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -244,8 +225,8 @@ func (s *Resolver) addPullRequestNodeFields(
 		},
 	})
 
-	// Default merge-message text: GitHub seeds the merge dialog with the PR
-	// title as the headline and the body as the message; bleephub mirrors that.
+	// Default merge-message text: title as headline, body as message, like
+	// GitHub's merge dialog.
 	mergeArgs := graphql.FieldConfigArgument{"mergeType": &graphql.ArgumentConfig{Type: d.pullRequestMergeEnum}}
 	pr.AddFieldConfig("viewerMergeHeadlineText", &graphql.Field{
 		Type:    graphql.NewNonNull(graphql.String),
@@ -258,26 +239,22 @@ func (s *Resolver) addPullRequestNodeFields(
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) { b, _ := srcMap(p)["body"].(string); return b, nil },
 	})
 
-	// totalCommentsCount and statusCheckRollup are computed by the renderer
-	// (they need the lock-held comment/check stores); the field reads the key.
+	// Computed by the renderer under the store lock; the field reads the key.
 	pr.AddFieldConfig("totalCommentsCount", &graphql.Field{Type: graphql.Int})
 	pr.AddFieldConfig("statusCheckRollup", &graphql.Field{Type: d.statusCheckRollup})
 
-	// Refs. baseRef already exists; headRef mirrors it off headRefName.
 	pr.AddFieldConfig("headRef", &graphql.Field{
 		Type: s.gqlRefType(),
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			return s.prRefSource(srcMap(p), "headRefName"), nil
 		},
 	})
-	// baseRepository is the repo the PR opened against; source already carries it.
 	pr.AddFieldConfig("baseRepository", &graphql.Field{
 		Type:    d.repoType,
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) { return srcMap(p)["repository"], nil },
 	})
 
-	// Hovercard: bleephub computes no relationship contexts, so the (non-null)
-	// contexts list is a real empty list.
+	// No relationship contexts are computed; the contexts list is empty.
 	pr.AddFieldConfig("hovercard", &graphql.Field{
 		Type: graphql.NewNonNull(hovercardType),
 		Args: graphql.FieldConfigArgument{"includeNotificationContexts": &graphql.ArgumentConfig{Type: graphql.Boolean}},
@@ -286,7 +263,6 @@ func (s *Resolver) addPullRequestNodeFields(
 		},
 	})
 
-	// assignedActors / participants carry real data the renderer builds.
 	pr.AddFieldConfig("assignedActors", &graphql.Field{
 		Type: graphql.NewNonNull(assigneeConn),
 		Args: relayConnectionArgs(),
@@ -302,8 +278,8 @@ func (s *Resolver) addPullRequestNodeFields(
 		},
 	})
 
-	// latestOpinionatedReviews — the newest APPROVED/CHANGES_REQUESTED review per
-	// author, a strict subset of latestReviews. Shares PullRequestReviewConnection.
+	// latestOpinionatedReviews — the APPROVED/CHANGES_REQUESTED subset of
+	// latestReviews.
 	pr.AddFieldConfig("latestOpinionatedReviews", &graphql.Field{
 		Type: d.reviewConnection,
 		Args: relayConnectionArgs(),
@@ -321,8 +297,7 @@ func (s *Resolver) addPullRequestNodeFields(
 		},
 	})
 
-	// Suggested reviewers: bleephub runs no suggestion engine, so these are
-	// truthfully empty.
+	// No suggestion engine, so these are empty.
 	pr.AddFieldConfig("suggestedReviewers", &graphql.Field{
 		Type:    graphql.NewNonNull(graphql.NewList(suggestedReviewerType)),
 		Resolve: func(graphql.ResolveParams) (interface{}, error) { return []interface{}{}, nil },
@@ -332,33 +307,29 @@ func (s *Resolver) addPullRequestNodeFields(
 		Args:    relayConnectionArgs(),
 		Resolve: func(graphql.ResolveParams) (interface{}, error) { return prEmptyConnection(), nil },
 	})
-	// suggestedActors are the assignable actors GitHub would offer; bleephub has
-	// no suggestion ranking, so the list is empty.
+	// No suggestion ranking, so empty.
 	pr.AddFieldConfig("suggestedActors", &graphql.Field{
 		Type:    graphql.NewNonNull(assigneeConn),
 		Args:    withArg(relayConnectionArgs(), "query", graphql.String),
 		Resolve: func(graphql.ResolveParams) (interface{}, error) { return prEmptyConnection(), nil },
 	})
 
-	// timeline is GitHub's deprecated alias of timelineItems. The live data is
-	// served by timelineItems (built by the timeline installer, untouched here);
-	// this alias carries the review/comment members its older union declares,
-	// filtered from the same real entries.
+	// timeline is GitHub's deprecated alias of timelineItems, carrying the
+	// review/comment members of its older union filtered from the same entries.
 	pr.AddFieldConfig("timeline", &graphql.Field{
 		Type:    graphql.NewNonNull(timelineConn),
 		Args:    prTimelineArgs(dateTime),
 		Resolve: s.resolvePullRequestTimeline,
 	})
 
-	// projectCards — bleephub does not model classic project cards for PRs, so
-	// the connection is a real empty one.
+	// No classic project cards for PRs, so empty.
 	pr.AddFieldConfig("projectCards", &graphql.Field{
 		Type:    graphql.NewNonNull(s.projectClassicCardConnectionType()),
 		Args:    relayConnectionArgs(),
 		Resolve: func(graphql.ResolveParams) (interface{}, error) { return prEmptyConnection(), nil },
 	})
-	// projectV2 / projectsV2 — a PR is a ProjectV2Owner in GitHub but bleephub
-	// attaches projects to orgs/users/repos, not PRs, so it owns none.
+	// A PR is a ProjectV2Owner in GitHub, but projects attach to
+	// orgs/users/repos here, not PRs, so it owns none.
 	pr.AddFieldConfig("projectV2", &graphql.Field{
 		Type:    projectV2Type,
 		Args:    graphql.FieldConfigArgument{"number": &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.Int)}},
@@ -370,7 +341,7 @@ func (s *Resolver) addPullRequestNodeFields(
 		Resolve: func(graphql.ResolveParams) (interface{}, error) { return prEmptyConnection(), nil },
 	})
 
-	// viewer-relationship booleans, each from the viewer's real repo standing.
+	// viewer-relationship booleans, from the viewer's repo standing.
 	pr.AddFieldConfig("viewerDidAuthor", s.prBoolField(func(v *store.User, authorID int, _, _, _ bool) bool {
 		return v != nil && v.ID == authorID
 	}))
@@ -401,16 +372,13 @@ func (s *Resolver) addPullRequestNodeFields(
 		},
 	})
 
-	// viewerSubscription mirrors GitHub's auto-subscribe: a participant (author
-	// or assignee) is SUBSCRIBED, a repo-watcher inherits the watch, everyone
-	// else is UNSUBSCRIBED; an anonymous viewer gets null.
+	// viewerSubscription mirrors GitHub's auto-subscribe: a participant is
+	// SUBSCRIBED, a repo-watcher inherits, else UNSUBSCRIBED; anonymous is null.
 	pr.AddFieldConfig("viewerSubscription", &graphql.Field{
 		Type:    d.subscriptionState,
 		Resolve: s.resolvePullRequestViewerSubscription,
 	})
 
-	// viewerLatestReview / viewerLatestReviewRequest resolve from the same review
-	// and review-request stores the connections use.
 	pr.AddFieldConfig("viewerLatestReview", &graphql.Field{
 		Type:    d.review,
 		Resolve: s.resolveViewerLatestReview,
@@ -421,8 +389,8 @@ func (s *Resolver) addPullRequestNodeFields(
 	})
 }
 
-// srcPathField renders a URI!/resource-path field derived from a source path key
-// plus a suffix; external=true wraps it as an absolute URL.
+// srcPathField renders a URI! from a source path key plus a suffix;
+// external=true wraps it as an absolute URL.
 func srcPathField(uri *graphql.Scalar, key, suffix string, external bool) *graphql.Field {
 	return &graphql.Field{
 		Type: graphql.NewNonNull(uri),
@@ -530,10 +498,9 @@ func (s *Resolver) resolveViewerLatestReviewRequest(p graphql.ResolveParams) (in
 	return nil, nil
 }
 
-// resolvePullRequestTimeline answers the deprecated PullRequest.timeline. It
-// reuses the live timelineItems entries, keeping only the members the older
-// PullRequestTimelineItem union declares (reviews, review threads, and issue
-// comments) — real data, never a stub.
+// resolvePullRequestTimeline answers the deprecated PullRequest.timeline,
+// reusing the live timelineItems entries filtered to the older union's members
+// (reviews, review threads, issue comments).
 func (s *Resolver) resolvePullRequestTimeline(p graphql.ResolveParams) (interface{}, error) {
 	items, err := s.resolveTimelineItems(p, "pull_request")
 	if err != nil {
@@ -613,8 +580,8 @@ func (s *Resolver) addPullRequestReviewFields(d prSurfaceDeps, cannotUpdateEnum 
 		Resolve: func(graphql.ResolveParams) (interface{}, error) { return emptyUserContentEditConnection(), nil },
 	})
 
-	// authorCanPushToRepository is derived from the author's stored association,
-	// the same signal REST uses: OWNER/MEMBER/COLLABORATOR can push.
+	// authorCanPushToRepository from the author's stored association, as REST:
+	// OWNER/MEMBER/COLLABORATOR can push.
 	rv.AddFieldConfig("authorCanPushToRepository", &graphql.Field{
 		Type: graphql.NewNonNull(graphql.Boolean),
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -623,24 +590,20 @@ func (s *Resolver) addPullRequestReviewFields(d prSurfaceDeps, cannotUpdateEnum 
 		},
 	})
 
-	// A review is never on behalf of a team in bleephub — the connection is real
-	// and empty.
+	// A review is never on behalf of a team here; empty connection.
 	rv.AddFieldConfig("onBehalfOf", &graphql.Field{
 		Type:    graphql.NewNonNull(s.gqlTeamConnectionType()),
 		Args:    relayConnectionArgs(),
 		Resolve: func(graphql.ResolveParams) (interface{}, error) { return prEmptyConnection(), nil },
 	})
 
-	// The review's inline comments — the real PR review comments carrying this
-	// review's id.
 	rv.AddFieldConfig("comments", &graphql.Field{
 		Type:    graphql.NewNonNull(d.reviewCommentConn),
 		Args:    relayConnectionArgs(),
 		Resolve: s.resolveReviewComments,
 	})
 
-	// pullRequest / repository resolve lazily from the store, so a review map
-	// never has to embed a whole PR (and recurse).
+	// Resolve lazily so a review map never embeds a whole PR (and recurses).
 	rv.AddFieldConfig("pullRequest", &graphql.Field{
 		Type:    graphql.NewNonNull(d.pullRequest),
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) { return s.prFromID(srcMap(p)["_prID"]) },
@@ -740,9 +703,8 @@ func (s *Resolver) repoFromID(raw interface{}) (interface{}, error) {
 	return repoToGraphQL(s.store, repo), nil
 }
 
-// prParticipantsLocked builds the deduplicated set of users involved in a PR —
-// its author, assignees, requested reviewers, review authors and comment
-// authors — the same population GitHub's participants connection reports.
+// prParticipantsLocked builds the deduplicated set of users involved in a PR:
+// author, assignees, requested reviewers, review authors and comment authors.
 // Caller must hold st.Mu.RLock.
 func prParticipantsLocked(pr *store.PullRequest, st *store.Store) []map[string]interface{} {
 	seen := map[int]bool{}
@@ -774,8 +736,8 @@ func prParticipantsLocked(pr *store.PullRequest, st *store.Store) []map[string]i
 	return nodes
 }
 
-// prReviewThreadCommentCount sums the comments across rendered review threads,
-// for PullRequest.totalCommentsCount.
+// prReviewThreadCommentCount sums comments across rendered review threads, for
+// PullRequest.totalCommentsCount.
 func prReviewThreadCommentCount(threads []map[string]interface{}) int {
 	total := 0
 	for _, t := range threads {
@@ -791,9 +753,7 @@ func prReviewThreadCommentCount(threads []map[string]interface{}) int {
 // --- supporting types --------------------------------------------------------
 
 func (s *Resolver) prAssigneeConnectionType(userType *graphql.Object) *graphql.Object {
-	// AssigneeConnection is shared with Issue; the memoized builder
-	// (sharedAssigneeConnectionType, in gh_issue_fields_graphql.go) owns the one
-	// instance so both surfaces name the same type.
+	// AssigneeConnection is shared with Issue via sharedAssigneeConnectionType.
 	return s.sharedAssigneeConnectionType(userType)
 }
 
@@ -836,8 +796,7 @@ func (s *Resolver) prSuggestedReviewerActorConnectionType() *graphql.Object {
 }
 
 func (s *Resolver) prHovercardType() *graphql.Object {
-	// Hovercard is shared with Issue; the memoized builder (sharedHovercardType,
-	// in gh_issue_fields_graphql.go) owns the one instance.
+	// Hovercard is shared with Issue via sharedHovercardType.
 	return s.sharedHovercardType()
 }
 
@@ -856,8 +815,7 @@ func (s *Resolver) prStackTypes() (*graphql.Object, *graphql.Object) {
 		Fields: graphql.Fields{
 			"id":       &graphql.Field{Type: graphql.NewNonNull(graphql.ID)},
 			"position": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
-			// No stacked-PR graph is modelled, so an entry never occupies a real
-			// pull request or stack; both are nullable and answer null.
+			// No stacked-PR graph is modelled; both are nullable and answer null.
 			"pullRequest": &graphql.Field{
 				Type:    s.graphqlTypes.pullRequest,
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) { return srcMap(p)["pullRequest"], nil },
@@ -877,8 +835,7 @@ func (s *Resolver) prStackTypes() (*graphql.Object, *graphql.Object) {
 			"pageInfo":   s.gqlPageInfoField(),
 		},
 	})
-	// The stack's entries. bleephub models no stacked-PR graph, so the
-	// connection is a truthful empty one.
+	// No stacked-PR graph, so empty.
 	stack.AddFieldConfig("entries", &graphql.Field{
 		Type: graphql.NewNonNull(stackEntryConnection),
 		Args: relayConnectionArgs(),
@@ -896,9 +853,8 @@ func prTimelineArgs(dateTime *graphql.Scalar) graphql.FieldConfigArgument {
 }
 
 func (s *Resolver) prTimelineConnectionType(d prSurfaceDeps) *graphql.Object {
-	// The deprecated PullRequestTimelineItem union — the older member set. Only
-	// the members the live timeline emits and this alias serves are listed; all
-	// are members of GitHub's PullRequestTimelineItem union.
+	// The deprecated PullRequestTimelineItem union, listing only the members the
+	// live timeline emits and this alias serves.
 	item := graphql.NewUnion(graphql.UnionConfig{
 		Name:  "PullRequestTimelineItem",
 		Types: []*graphql.Object{d.review, d.thread, s.graphqlTypes.issueComment},
@@ -933,7 +889,7 @@ func (s *Resolver) prTimelineConnectionType(d prSurfaceDeps) *graphql.Object {
 }
 
 // projectClassicCardConnectionType returns the shared ProjectCardConnection the
-// classic-project surface already mints, so PR.projectCards names one type.
+// classic-project surface mints.
 func (s *Resolver) projectClassicCardConnectionType() *graphql.Object {
 	conn, _ := s.projectClassicConnectionPair("ProjectCard", s.projectClassicCardType())
 	return conn

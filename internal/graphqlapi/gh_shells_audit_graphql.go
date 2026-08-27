@@ -1,20 +1,9 @@
 package graphqlapi
 
-// Schema-fidelity shells for the OrganizationAuditEntry concrete-member family
-// that bleephub does not itself produce. The audit-log family
-// (gh_audit_log_graphql.go) builds the AuditEntry / OrganizationAuditEntryData
-// / RepositoryAuditEntryData interfaces, the AuditEntryActor union, ActorLocation
-// and OperationType, plus the handful of concrete entries whose actions the store
-// records. GitHub declares dozens more concrete *AuditEntry objects (and the
-// EnterpriseAuditEntryData / OauthApplicationAuditEntryData / TeamAuditEntryData /
-// TopicAuditEntryData mixin interfaces, sub-enums and the restore-member union
-// they reference) for actions this instance never writes. They are minted here
-// as introspection-only shells so bleephub's schema matches GitHub's shape; no
-// resolved field returns them.
-//
-// Every type is transcribed signature-exact from the vendored SDL
-// (third_party/github-graphql-schema.graphql.gz). Shared members reuse the
-// audit-log family's field builders so a change there propagates here.
+// Introspection-only shells for the OrganizationAuditEntry concrete members
+// bleephub never writes (the audit-log family builds the ones it does record).
+// They exist so the schema matches GitHub's shape; no resolved field returns
+// them. Every type is transcribed signature-exact from the vendored SDL.
 
 import "github.com/graphql-go/graphql"
 
@@ -24,7 +13,6 @@ func init() {
 
 // --- mixin field sets the new interfaces and their implementers share ---------
 
-// enterpriseAuditDataFields is the EnterpriseAuditEntryData interface's members.
 func (s *Resolver) enterpriseAuditDataFields() graphql.Fields {
 	uri := s.graphQLStringScalar("URI")
 	return graphql.Fields{
@@ -34,7 +22,6 @@ func (s *Resolver) enterpriseAuditDataFields() graphql.Fields {
 	}
 }
 
-// oauthAppAuditDataFields is the OauthApplicationAuditEntryData interface's members.
 func (s *Resolver) oauthAppAuditDataFields() graphql.Fields {
 	uri := s.graphQLStringScalar("URI")
 	return graphql.Fields{
@@ -44,7 +31,6 @@ func (s *Resolver) oauthAppAuditDataFields() graphql.Fields {
 	}
 }
 
-// teamAuditDataFields is the TeamAuditEntryData interface's members.
 func (s *Resolver) teamAuditDataFields() graphql.Fields {
 	uri := s.graphQLStringScalar("URI")
 	return graphql.Fields{
@@ -55,7 +41,6 @@ func (s *Resolver) teamAuditDataFields() graphql.Fields {
 	}
 }
 
-// topicAuditDataFields is the TopicAuditEntryData interface's members.
 func (s *Resolver) topicAuditDataFields() graphql.Fields {
 	return graphql.Fields{
 		"topic":     gqlField(s.namedObject("Topic")),
@@ -63,16 +48,14 @@ func (s *Resolver) topicAuditDataFields() graphql.Fields {
 	}
 }
 
-// auditShellIDField is the id: ID! every concrete audit entry declares on top of
-// the AuditEntry interface's shared members.
+// auditShellIDField is the id: ID! every concrete audit entry declares.
 func auditShellIDField() graphql.Fields {
 	return graphql.Fields{"id": gqlNonNull(graphql.ID)}
 }
 
-// auditShellObject builds one concrete audit-entry shell object from a set of
-// mixin field maps (base, org, repo, enterprise, ...) plus any type-specific
-// extras, memoized by GitHub's name. The object carries no declared interfaces:
-// introspection only needs the type to exist.
+// auditShellObject builds one audit-entry shell from mixin field maps plus any
+// extras, memoized by GitHub's name. It declares no interfaces: introspection
+// only needs the type to exist.
 func (s *Resolver) auditShellObject(name string, parts ...graphql.Fields) *graphql.Object {
 	fields := graphql.Fields{}
 	for _, part := range parts {
@@ -84,8 +67,7 @@ func (s *Resolver) auditShellObject(name string, parts ...graphql.Fields) *graph
 }
 
 // addAuditEntryShells mints every OrganizationAuditEntry concrete-member shell,
-// the four mixin interfaces, the sub-enums and the restore-member union, and
-// registers each so it appears in introspection.
+// the four mixin interfaces, the sub-enums and the restore-member union.
 func (s *Resolver) addAuditEntryShells() {
 	uri := s.graphQLStringScalar("URI")
 

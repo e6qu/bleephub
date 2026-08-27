@@ -12,43 +12,17 @@ import (
 )
 
 // The security-advisory, vulnerability-alert and dependency-graph GraphQL
-// surface: GitHub's global advisory database, a repository's Dependabot
-// alerts, the manifests those alerts are derived from, and the one mutation
-// that dismisses an alert.
+// surface.
 //
-// # What is public and what is not
-//
-// The three root fields — securityAdvisory, securityAdvisories and
-// securityVulnerabilities — read the global advisory database, which is
-// public on GitHub and public here. They take no viewer and apply no
-// repository filter, because a published advisory is a public fact about a
-// package rather than about the repository that happened to draft it. What
-// they cannot reach is anything unpublished: a draft repository advisory is
-// private to the repository's security team, so it never enters the listings
-// these fields walk.
-//
-// Repository.vulnerabilityAlerts is the opposite: an alert says which
-// vulnerable dependency a specific repository is running, which is exactly
-// the fact a private repository is entitled to keep. The field answers only
-// for a viewer holding read on security events for that repository, and
-// answers null — not an empty connection — for everyone else, so its silence
-// cannot be read as "this repository is clean".
-//
-// # Where the data comes from
-//
-// Nothing here is seeded. An advisory exists because somebody drafted and
-// published one through the repository security-advisory API; an alert
-// exists because a submitted dependency snapshot declares a package whose
-// resolved version falls inside a published advisory's vulnerable range,
-// under that ecosystem's own version ordering (see
-// store.VersionInVulnerableRange). Both the manifests connection and the
-// alerts connection therefore read the same dependency set the derivation
-// matched against.
+// The three root fields (securityAdvisory, securityAdvisories,
+// securityVulnerabilities) read the public global advisory database and take
+// no viewer; draft repository advisories never enter their listings.
+// Repository.vulnerabilityAlerts is private: it answers only a viewer with read
+// on the repository's security events, and null — not an empty connection — for
+// everyone else, so silence is not "this repository is clean".
 
-// advisorySchema holds the types this family builds. They are constructed
-// once, in dependency order, inside addAdvisoryFieldsToSchema — no
-// memoization is needed because nothing outside this file mints them and the
-// assembly runs once per Resolver.
+// advisorySchema holds the types this family builds, constructed once in
+// dependency order inside addAdvisoryFieldsToSchema.
 type advisorySchema struct {
 	severityEnum       *graphql.Enum
 	ecosystemEnum      *graphql.Enum
@@ -79,20 +53,17 @@ type advisorySchema struct {
 	cvssSeverities        *graphql.Object
 	dependabotUpdateError *graphql.Object
 
-	// vulnerabilityOrder is minted once and shared: both Query and
-	// SecurityAdvisory name SecurityVulnerabilityOrder, and a schema may hold
-	// only one type per name.
+	// vulnerabilityOrder is shared: both Query and SecurityAdvisory name
+	// SecurityVulnerabilityOrder, and a schema holds one type per name.
 	vulnerabilityOrder *graphql.InputObject
 }
 
 // addAdvisoryFieldsToSchema builds the advisory type graph, hangs the three
-// repository fields off Repository, registers the three root fields and the
-// dismissal mutation, and records the four Node implementors for
-// Query.node dispatch.
+// repository fields off Repository, registers the root fields and the dismissal
+// mutation, and records the four Node implementors for Query.node.
 //
-// It must run after the pull-request family, because DependabotUpdate names
-// PullRequest, and after the repository family, because four types name
-// Repository.
+// Must run after the pull-request family (DependabotUpdate names PullRequest)
+// and the repository family (four types name Repository).
 func (s *Resolver) addAdvisoryFieldsToSchema(
 	userType, repoType, mutationType, queryType *graphql.Object,
 	nodeInterface *graphql.Interface,
@@ -120,7 +91,6 @@ func (s *Resolver) addAdvisoryFieldsToSchema(
 	nodeTypes["DependencyGraphManifest"] = types.manifest
 }
 
-// buildAdvisoryEnums mints every enum the family names.
 func (s *Resolver) buildAdvisoryEnums(types *advisorySchema) {
 	types.severityEnum = s.graphQLEnum("SecurityAdvisorySeverity",
 		"CRITICAL", "HIGH", "LOW", "MODERATE", "UNKNOWN")
@@ -133,8 +103,7 @@ func (s *Resolver) buildAdvisoryEnums(types *advisorySchema) {
 		"AUTO_DISMISSED", "DISMISSED", "FIXED", "OPEN")
 }
 
-// buildAdvisoryLeafTypes mints the small value objects an advisory is
-// composed of.
+// buildAdvisoryLeafTypes mints the small value objects an advisory is made of.
 func (s *Resolver) buildAdvisoryLeafTypes(types *advisorySchema, uri *graphql.Scalar) {
 	types.cvss = graphql.NewObject(graphql.ObjectConfig{
 		Name: "CVSS",
@@ -185,7 +154,6 @@ func (s *Resolver) buildAdvisoryLeafTypes(types *advisorySchema, uri *graphql.Sc
 	})
 }
 
-// buildAdvisoryObject mints CWE, SecurityAdvisory and their connections.
 func (s *Resolver) buildAdvisoryObject(types *advisorySchema, dateTime *graphql.Scalar, uri *graphql.Scalar, nodeInterface *graphql.Interface) {
 	types.cwe = graphql.NewObject(graphql.ObjectConfig{
 		Name:       "CWE",
@@ -237,20 +205,16 @@ func (s *Resolver) buildAdvisoryObject(types *advisorySchema, dateTime *graphql.
 	types.advisoryConnection = advisoryConnectionType("SecurityAdvisory", types.advisory, s.gqlPageInfoType())
 }
 
-// buildVulnerabilityObject mints SecurityVulnerability, whose advisory field
-// closes the cycle back onto SecurityAdvisory, and then adds the advisory's
-// own vulnerabilities connection.
+// buildVulnerabilityObject mints SecurityVulnerability (whose advisory field
+// closes the cycle back onto SecurityAdvisory) and the advisory's own
+// vulnerabilities connection.
 func (s *Resolver) buildVulnerabilityObject(types *advisorySchema, dateTime *graphql.Scalar) {
 	types.vulnerability = graphql.NewObject(graphql.ObjectConfig{
 		Name: "SecurityVulnerability",
 		Fields: graphql.Fields{
-			// advisory is resolved on demand from the vulnerability's GHSA id
-			// rather than carried as an embedded map. Embedding it made the
-			// two source maps mutually referential — the advisory holds its
-			// vulnerabilities, each of which held the advisory — and any %v
-			// or reflective walk over one of those values recurses until the
-			// stack is gone. Resolving it here also means the advisory is
-			// rendered only when the field is actually selected.
+			// Resolve advisory on demand from the vulnerability's GHSA id.
+			// Embedding it made the two maps mutually referential, so any %v
+			// or reflective walk recursed until the stack was gone.
 			"advisory": &graphql.Field{
 				Type:    graphql.NewNonNull(types.advisory),
 				Resolve: s.resolveVulnerabilityAdvisory,
@@ -263,13 +227,12 @@ func (s *Resolver) buildVulnerabilityObject(types *advisorySchema, dateTime *gra
 		},
 	})
 	types.vulnConnection = advisoryConnectionType("SecurityVulnerability", types.vulnerability, s.gqlPageInfoType())
-	// Organization.innersourceVulnerabilities and Enterprise.innersourceVulnerabilities,
-	// assembled later, publish this same connection instance.
+	// Organization/Enterprise.innersourceVulnerabilities, assembled later,
+	// publish this same connection instance.
 	s.stashNamedObject(types.vulnConnection)
 
-	// The advisory's own vulnerabilities connection is added after the
-	// vulnerability type exists, which is the cycle graphql-go cannot express
-	// through a field map literal.
+	// Added after the vulnerability type exists — the cycle graphql-go cannot
+	// express through a field map literal.
 	types.advisory.AddFieldConfig("vulnerabilities", &graphql.Field{
 		Type: graphql.NewNonNull(types.vulnConnection),
 		Args: relayArgs(graphql.FieldConfigArgument{
@@ -287,12 +250,10 @@ func (s *Resolver) buildVulnerabilityObject(types *advisorySchema, dateTime *gra
 }
 
 // buildDependencyGraphTypes mints the RepositoryNode interface,
-// DependencyGraphDependency and DependencyGraphManifest with their
-// connections.
+// DependencyGraphDependency and DependencyGraphManifest with their connections.
 func (s *Resolver) buildDependencyGraphTypes(types *advisorySchema, repoType *graphql.Object, uri *graphql.Scalar, nodeInterface *graphql.Interface) {
-	// RepositoryNode is declared here because the two types that claim it in
-	// this build are declared here. graphql-go reads an object's interface
-	// list once at construction, so the interface has to exist before either.
+	// RepositoryNode must exist before the two types that claim it, since
+	// graphql-go reads an object's interface list once at construction.
 	types.repositoryNode = graphql.NewInterface(graphql.InterfaceConfig{
 		Name: "RepositoryNode",
 		Fields: graphql.Fields{
@@ -351,8 +312,6 @@ func (s *Resolver) buildDependencyGraphTypes(types *advisorySchema, repoType *gr
 	types.manifestConnection = advisoryConnectionType("DependencyGraphManifest", types.manifest, s.gqlPageInfoType())
 }
 
-// buildVulnerabilityAlertTypes mints DependabotUpdate and
-// RepositoryVulnerabilityAlert with its connection.
 func (s *Resolver) buildVulnerabilityAlertTypes(types *advisorySchema, userType, repoType *graphql.Object, dateTime *graphql.Scalar, nodeInterface *graphql.Interface) {
 	types.dependabotUpdateError = graphql.NewObject(graphql.ObjectConfig{
 		Name: "DependabotUpdateError",
@@ -409,8 +368,7 @@ func (s *Resolver) buildVulnerabilityAlertTypes(types *advisorySchema, userType,
 // ---------------------------------------------------------------------------
 
 // addAdvisoryRootFields registers securityAdvisory, securityAdvisories and
-// securityVulnerabilities. All three read the public advisory database, so
-// none takes a viewer.
+// securityVulnerabilities, all reading the public advisory database.
 func (s *Resolver) addAdvisoryRootFields(queryType *graphql.Object, types *advisorySchema, dateTime *graphql.Scalar) {
 	identifierFilter := graphql.NewInputObject(graphql.InputObjectConfig{
 		Name: "SecurityAdvisoryIdentifierFilter",
@@ -429,9 +387,8 @@ func (s *Resolver) addAdvisoryRootFields(queryType *graphql.Object, types *advis
 			ghsaID, _ := p.Args["ghsaId"].(string)
 			advisory := s.store.GetGlobalAdvisoryByGHSA(ghsaID)
 			if advisory == nil {
-				// A withdrawn advisory is still addressable — the lookup above
-				// finds it — so this is genuinely "no such published
-				// advisory", which is the nullable field's honest answer.
+				// A withdrawn advisory is still found above, so nil here means
+				// no such published advisory.
 				return nil, nil
 			}
 			return s.advisoryToGQL(advisory), nil
@@ -481,7 +438,6 @@ func (s *Resolver) addAdvisoryRootFields(queryType *graphql.Object, types *advis
 	})
 }
 
-// securityAdvisoryOrderInput is the SecurityAdvisoryOrder input object.
 func (s *Resolver) securityAdvisoryOrderInput() *graphql.InputObject {
 	return graphql.NewInputObject(graphql.InputObjectConfig{
 		Name: "SecurityAdvisoryOrder",
@@ -497,8 +453,6 @@ func (s *Resolver) securityAdvisoryOrderInput() *graphql.InputObject {
 	})
 }
 
-// securityVulnerabilityOrderInput mints the SecurityVulnerabilityOrder input
-// object.
 func (s *Resolver) securityVulnerabilityOrderInput() *graphql.InputObject {
 	return graphql.NewInputObject(graphql.InputObjectConfig{
 		Name: "SecurityVulnerabilityOrder",
@@ -517,8 +471,6 @@ func (s *Resolver) securityVulnerabilityOrderInput() *graphql.InputObject {
 // Repository fields
 // ---------------------------------------------------------------------------
 
-// addRepositoryAdvisoryFields hangs hasVulnerabilityAlertsEnabled,
-// vulnerabilityAlerts and dependencyGraphManifests off Repository.
 func (s *Resolver) addRepositoryAdvisoryFields(repoType *graphql.Object, types *advisorySchema) {
 	repoType.AddFieldConfig("hasVulnerabilityAlertsEnabled", &graphql.Field{
 		Type: graphql.NewNonNull(graphql.Boolean),
@@ -546,17 +498,11 @@ func (s *Resolver) addRepositoryAdvisoryFields(repoType *graphql.Object, types *
 			if err != nil {
 				return nil, err
 			}
-			// An alert names a vulnerable dependency this repository is
-			// running. Answering an empty connection to a viewer without
-			// security access would report that as "no alerts"; the field is
-			// nullable so that the two can be told apart.
-			//
-			// The predicate is viewerMayActOnRepo rather than
-			// viewerHasRepoPermission because the latter is satisfied by mere
-			// readability, which every account has on a public repository —
-			// so it published the vulnerable dependency versions of every
-			// public repository on the instance. Push standing is what GitHub
-			// requires, and it is what the REST alert routes now require too.
+			// Null, not an empty connection, for a viewer without security
+			// access, so silence isn't read as "no alerts". Security access
+			// (viewerMayActOnRepo) is push standing, not the mere readability
+			// every account has on a public repository, matching GitHub and
+			// the REST alert routes.
 			if repo == nil || !s.viewerHasRepoSecurityAccess(p.Context, repo) {
 				return nil, nil
 			}
@@ -577,8 +523,7 @@ func (s *Resolver) addRepositoryAdvisoryFields(repoType *graphql.Object, types *
 			if err != nil {
 				return nil, err
 			}
-			// The dependency graph is as readable as the repository's code:
-			// a viewer who can read the contents can read what they depend on.
+			// The dependency graph is as readable as the repository's code.
 			if repo == nil || !s.viewerCanReadRepo(p.Context, repo) {
 				return nil, nil
 			}
@@ -588,18 +533,15 @@ func (s *Resolver) addRepositoryAdvisoryFields(repoType *graphql.Object, types *
 	})
 }
 
-// viewerHasRepoSecurityAccess is the resolver layer's copy of the question
-// the REST security routes ask: may this viewer read the repository's
-// security findings? Readability is not enough — a public repository is
-// readable by everyone, and its alerts are not.
+// viewerHasRepoSecurityAccess reports whether the viewer may read the
+// repository's security findings; readability alone (public repos) is not it.
 func (s *Resolver) viewerHasRepoSecurityAccess(ctx context.Context, repo *store.Repo) bool {
 	return s.viewerMayActOnRepo(ctx, repo, store.ScopeSecurityEvents, store.PermRead, store.PermWrite)
 }
 
 // repoFromAdvisorySource resolves the *store.Repo behind a Repository source
-// map. It returns a nil repo (not an error) when the source names a
-// repository the store no longer holds, so a field can answer null rather
-// than fail the whole query.
+// map, returning nil (not an error) for a repository the store no longer holds
+// so a field can answer null.
 func (s *Resolver) repoFromAdvisorySource(p graphql.ResolveParams) (*store.Repo, error) {
 	source, ok := p.Source.(map[string]interface{})
 	if !ok {
@@ -616,8 +558,6 @@ func (s *Resolver) repoFromAdvisorySource(p graphql.ResolveParams) (*store.Repo,
 // Mutation
 // ---------------------------------------------------------------------------
 
-// addVulnerabilityAlertMutation registers
-// dismissRepositoryVulnerabilityAlert.
 func (s *Resolver) addVulnerabilityAlertMutation(mutationType *graphql.Object, types *advisorySchema) {
 	dismissReasonEnum := s.graphQLEnum("DismissReason",
 		"FIX_STARTED", "INACCURATE", "NOT_USED", "NO_BANDWIDTH", "TOLERABLE_RISK")
@@ -649,9 +589,8 @@ func (s *Resolver) addVulnerabilityAlertMutation(mutationType *graphql.Object, t
 			if !ok {
 				return nil, fmt.Errorf("dismissReason %q is not a DismissReason", rawReason)
 			}
-			// The policy row already proved the viewer may act on the alert's
-			// repository; re-reading the alert here is the lookup, not a
-			// second authorization decision.
+			// The policy row already authorized the repository; this is the
+			// lookup, not a second authz decision.
 			alert := s.store.LookupDependabotAlertByNodeID(nodeID)
 			if alert == nil {
 				return nil, gqlMissingNode("RepositoryVulnerabilityAlert", nodeID)
@@ -669,13 +608,9 @@ func (s *Resolver) addVulnerabilityAlertMutation(mutationType *graphql.Object, t
 	})
 }
 
-// mutationTargetVulnerabilityAlert resolves the repository a
-// RepositoryVulnerabilityAlert node id belongs to, for the mutation policy
-// table.
-//
-// The alert carries no author, so there is no author exemption to grant: the
-// person who has a vulnerable dependency is not thereby entitled to dismiss
-// the alert about it.
+// mutationTargetVulnerabilityAlert resolves a RepositoryVulnerabilityAlert node
+// id to its repository, for the mutation policy table. The alert carries no
+// author, so there is no author exemption to grant.
 func mutationTargetVulnerabilityAlert(key string) func(*Resolver, map[string]interface{}) mutationTarget {
 	return func(s *Resolver, input map[string]interface{}) mutationTarget {
 		nodeID, _ := input[key].(string)
@@ -687,9 +622,8 @@ func mutationTargetVulnerabilityAlert(key string) func(*Resolver, map[string]int
 	}
 }
 
-// emitDependabotAlertEvent delivers a dependabot_alert webhook for an alert
-// a GraphQL mutation moved, through the same payload builder the REST alert
-// routes use.
+// emitDependabotAlertEvent delivers a dependabot_alert webhook through the same
+// payload builder the REST alert routes use.
 func (s *Resolver) emitDependabotAlertEvent(repo *store.Repo, alert *store.DependabotAlert, sender *store.User, action string) {
 	if repo == nil || alert == nil {
 		return
@@ -713,8 +647,7 @@ func (s *Resolver) emitDependabotAlertEvent(repo *store.Repo, alert *store.Depen
 // ---------------------------------------------------------------------------
 
 // advisoryToGQL renders one advisory as its SecurityAdvisory source map. The
-// private "_cwes" and "_vulnerabilities" keys carry the connection members;
-// the schema exposes neither.
+// private "_cwes" and "_vulnerabilities" keys carry the connection members.
 func (s *Resolver) advisoryToGQL(advisory *store.SecurityAdvisory) map[string]interface{} {
 	if advisory == nil {
 		return nil
@@ -733,19 +666,15 @@ func (s *Resolver) advisoryToGQL(advisory *store.SecurityAdvisory) map[string]in
 			"__typename": "CWE",
 			"id":         store.CWENodeID(identifier),
 			"cweId":      identifier,
-			// This instance records a CWE's identifier and nothing else, so
-			// the identifier is the whole of what it can name it. The fields
-			// are non-null in GitHub's schema; reporting the identifier and
-			// an empty description is what it actually knows.
+			// Only the CWE identifier is stored; name/description are non-null
+			// in GitHub's schema, so report the identifier and empty description.
 			"name":        identifier,
 			"description": "",
 		})
 	}
 
-	// CVSS.score is non-null in GitHub's schema. An advisory authored with a
-	// vector and no explicit score is scored from that vector rather than
-	// reported as 0.0, which would read as "no risk" for a vector that says
-	// the opposite.
+	// CVSS.score is non-null. An advisory with a vector but no explicit score
+	// is scored from the vector, not reported as 0.0 ("no risk").
 	cvssScore, _ := store.AdvisoryCVSSScore(advisory)
 	cvss := map[string]interface{}{
 		"score":        cvssScore,
@@ -754,10 +683,8 @@ func (s *Resolver) advisoryToGQL(advisory *store.SecurityAdvisory) map[string]in
 	permalink := externalURL("/advisories/" + advisory.GHSAID)
 
 	rendered := map[string]interface{}{
-		// SecurityAdvisory, CWE, RepositoryVulnerabilityAlert and
-		// DependencyGraphManifest all implement Node, and the Node interface
-		// dispatches on this discriminator. Without it Query.node resolves
-		// the value to no concrete type and fails the field.
+		// The Node interface dispatches on __typename; without it Query.node
+		// resolves to no concrete type and fails.
 		"__typename":             "SecurityAdvisory",
 		"id":                     advisory.NodeID,
 		"databaseId":             advisory.ID,
@@ -774,13 +701,10 @@ func (s *Resolver) advisoryToGQL(advisory *store.SecurityAdvisory) map[string]in
 		"notificationsPermalink": permalink + "/dependabot",
 		"cvss":                   cvss,
 		"cvssSeverities":         map[string]interface{}{"cvssV3": cvss, "cvssV4": nil},
-		// EPSS is a third-party exploit-probability score this instance does
-		// not compute and has no source for, so the nullable field is null.
+		// EPSS is a third-party score this instance has no source for.
 		"epss":        nil,
 		"identifiers": identifiers,
-		// References are URLs an advisory cites. Neither the advisory
-		// creation nor the update contract carries any, so an advisory
-		// published here genuinely has none.
+		// The advisory create/update contract carries no references.
 		"references": []map[string]interface{}{},
 		"_cwes":      cwes,
 	}
@@ -793,13 +717,12 @@ func (s *Resolver) advisoryToGQL(advisory *store.SecurityAdvisory) map[string]in
 	return rendered
 }
 
-// vulnerabilityToGQL renders one advisory/vulnerability pair.
 func (s *Resolver) vulnerabilityToGQL(advisory *store.SecurityAdvisory, vulnerability store.SecurityAdvisoryVulnerability) map[string]interface{} {
 	return advisoryVulnerabilityToGQL(advisory, vulnerability)
 }
 
 // resolveVulnerabilityAdvisory renders the advisory a SecurityVulnerability
-// belongs to, looked up by the GHSA id the vulnerability source carries.
+// belongs to, by the GHSA id the vulnerability source carries.
 func (s *Resolver) resolveVulnerabilityAdvisory(p graphql.ResolveParams) (interface{}, error) {
 	source, ok := p.Source.(map[string]interface{})
 	if !ok {
@@ -808,27 +731,23 @@ func (s *Resolver) resolveVulnerabilityAdvisory(p graphql.ResolveParams) (interf
 	ghsaID, _ := source["_advisoryGHSA"].(string)
 	advisory := s.store.GetGlobalAdvisoryByGHSA(ghsaID)
 	if advisory == nil {
-		// SecurityVulnerability.advisory is non-null, so a vulnerability whose
-		// advisory has vanished cannot be rendered at all; saying so is better
-		// than completing the field with an empty object.
+		// SecurityVulnerability.advisory is non-null, so a vanished advisory
+		// must error rather than complete with an empty object.
 		return nil, fmt.Errorf("advisory %s is no longer published", ghsaID)
 	}
 	return s.advisoryToGQL(advisory), nil
 }
 
 // advisoryVulnerabilityToGQL renders a SecurityVulnerability. The parent
-// advisory is referenced by GHSA id, not embedded: see the advisory field's
-// resolver for why.
+// advisory is referenced by GHSA id, not embedded (see the advisory field).
 func advisoryVulnerabilityToGQL(advisory *store.SecurityAdvisory, vulnerability store.SecurityAdvisoryVulnerability) map[string]interface{} {
 	firstPatched := interface{}(nil)
 	if vulnerability.FirstPatchedVersion != "" {
 		firstPatched = map[string]interface{}{"identifier": vulnerability.FirstPatchedVersion}
 	}
-	// SecurityAdvisoryPackage.ecosystem is non-null, so a vulnerability whose
-	// ecosystem is outside the enum cannot be rendered as a package at all —
-	// but `package` is non-null too, which means such a vulnerability simply
-	// is not a SecurityVulnerability. The ecosystem is carried privately so
-	// the caller can drop it rather than emit an invalid member.
+	// ecosystem is carried privately (under _ecosystem) so a caller can drop a
+	// vulnerability whose ecosystem is outside the non-null enum rather than
+	// emit an invalid package member.
 	ecosystem := store.AdvisoryEcosystemGraphQL(vulnerability.PackageEcosystem)
 	return map[string]interface{}{
 		"_advisoryGHSA": advisory.GHSAID,
@@ -846,8 +765,7 @@ func advisoryVulnerabilityToGQL(advisory *store.SecurityAdvisory, vulnerability 
 	}
 }
 
-// vulnerabilityAlertNodes renders a repository's Dependabot alerts as
-// RepositoryVulnerabilityAlert source maps, honoring the connection's
+// vulnerabilityAlertNodes renders a repository's Dependabot alerts, honoring the
 // states and dependencyScopes filters.
 func (s *Resolver) vulnerabilityAlertNodes(repo *store.Repo, args map[string]interface{}) []map[string]interface{} {
 	wantStates := enumArgSet(args, "states")
@@ -871,8 +789,6 @@ func (s *Resolver) vulnerabilityAlertNodes(repo *store.Repo, args map[string]int
 	return nodes
 }
 
-// vulnerabilityAlertToGQL renders one Dependabot alert as a
-// RepositoryVulnerabilityAlert source map.
 func (s *Resolver) vulnerabilityAlertToGQL(repo *store.Repo, alert *store.DependabotAlert) map[string]interface{} {
 	if alert == nil {
 		return nil
@@ -889,9 +805,8 @@ func (s *Resolver) vulnerabilityAlertToGQL(repo *store.Repo, alert *store.Depend
 		}
 	}
 
-	// The advisory an alert points at may have been withdrawn, or may never
-	// have been published on this instance at all if the alert outlived it.
-	// Both fields are nullable for exactly that case.
+	// The advisory an alert points at may be withdrawn or never published here;
+	// both fields are nullable for that case.
 	var advisoryNode, vulnerabilityNode map[string]interface{}
 	if advisory := s.store.GetGlobalAdvisoryByGHSA(alert.VulnerabilityID); advisory != nil {
 		advisoryNode = s.advisoryToGQL(advisory)
@@ -918,21 +833,16 @@ func (s *Resolver) vulnerabilityAlertToGQL(repo *store.Repo, alert *store.Depend
 		"fixedAt":         formatAdvisoryTime(alert.FixedAt),
 		"dismissReason":   nullOrEmptyString(store.DependabotDismissReasonText(alert.DismissedReason)),
 		"dismissComment":  nullOrEmptyString(alert.DismissedComment),
-		// These four are written through nullOrMap rather than directly: a
-		// nil Go map boxed into an interface{} is not a nil interface, and
-		// graphql-go reads the non-nil box as an object present — then fails
-		// the whole query on the first non-nullable field inside the absent
-		// object (an alert nobody dismissed reported "cannot return null for
-		// User.login").
+		// optionalObject, not the raw map: a nil Go map boxed into interface{}
+		// is not a nil interface, so graphql-go would descend into the absent
+		// object and fail its first non-null field (User.login).
 		"dismisser":                  optionalObject(dismisser),
 		"repository":                 optionalObject(repository),
 		"securityAdvisory":           optionalObject(advisoryNode),
 		"securityVulnerability":      optionalObject(vulnerabilityNode),
 		"vulnerableManifestPath":     alert.ManifestPath,
 		"vulnerableManifestFilename": store.DependabotAlertManifestFilename(alert.ManifestPath),
-		// Dependabot on this instance raises alerts; it does not open update
-		// pull requests, so there is no update to report rather than an
-		// empty one.
+		// Dependabot here raises alerts but opens no update pull requests.
 		"dependabotUpdate":       nil,
 		"vulnerableRequirements": nil,
 		"dependencyScope":        nil,
@@ -940,10 +850,9 @@ func (s *Resolver) vulnerabilityAlertToGQL(repo *store.Repo, alert *store.Depend
 		"__typename":             "RepositoryVulnerabilityAlert",
 	}
 
-	// Scope and relationship are properties of the manifest entry, not of the
-	// alert, so they are read from the repository's current dependency set.
-	// An alert whose dependency has since been removed reports null for both
-	// rather than the stale answer.
+	// Scope and relationship are manifest-entry properties, read from the
+	// repository's current dependency set — null for both when the dependency
+	// has since been removed, rather than a stale answer.
 	if repo != nil {
 		dependency, found := s.store.LookupResolvedDependency(
 			repo.ID, "refs/heads/"+repo.DefaultBranch,
@@ -959,15 +868,13 @@ func (s *Resolver) vulnerabilityAlertToGQL(repo *store.Repo, alert *store.Depend
 	return node
 }
 
-// dependencyManifestNodes renders a repository's current dependency
-// manifests as DependencyGraphManifest source maps.
+// dependencyManifestNodes renders a repository's current dependency manifests.
 func (s *Resolver) dependencyManifestNodes(repo *store.Repo, args map[string]interface{}) []map[string]interface{} {
 	repository := repoToGraphQL(s.store, s.store.SnapRepo(repo))
 	manifests := s.store.ResolvedDependencyManifests(repo.ID, "refs/heads/"+repo.DefaultBranch, "")
 
-	// withDependencies: false asks for the manifests without their members,
-	// which is how a client counts manifests without paying for every
-	// dependency in the repository.
+	// withDependencies:false lets a client count manifests without paying for
+	// every dependency.
 	includeDependencies := true
 	if want, ok := args["withDependencies"].(bool); ok {
 		includeDependencies = want
@@ -986,8 +893,7 @@ func (s *Resolver) dependencyManifestNodes(repo *store.Repo, args map[string]int
 			"id":         store.DependencyGraphManifestNodeID(repo.ID, manifest.Name),
 			"filename":   manifest.Name,
 			"blobPath":   "/" + repo.FullName + "/blob/" + repo.DefaultBranch + "/" + manifest.Name,
-			// A manifest reached this view by being accepted through the
-			// dependency submission API, which parses it before storing it.
+			// The dependency submission API parsed the manifest before storing it.
 			"parseable":         true,
 			"exceedsMaxSize":    false,
 			"dependenciesCount": len(manifest.Dependencies),
@@ -998,7 +904,6 @@ func (s *Resolver) dependencyManifestNodes(repo *store.Repo, args map[string]int
 	return nodes
 }
 
-// dependencyToGQL renders one resolved dependency.
 func dependencyToGQL(dependency store.ResolvedDependency) map[string]interface{} {
 	requirements := ""
 	if dependency.Version != "" {
@@ -1013,8 +918,7 @@ func dependencyToGQL(dependency store.ResolvedDependency) map[string]interface{}
 		"relationship":    dependencyRelationshipString(dependency.Relationship),
 		"requirements":    requirements,
 		"hasDependencies": len(dependency.DependsOn) != 0,
-		// The package's own repository would be the upstream project's, which
-		// this instance does not host and cannot invent a link to.
+		// The package's own repository is the upstream project's, unhosted here.
 		"repository": nil,
 	}
 }
@@ -1023,8 +927,7 @@ func dependencyToGQL(dependency store.ResolvedDependency) map[string]interface{}
 // Argument and value helpers
 // ---------------------------------------------------------------------------
 
-// relayArgs returns the four Relay connection arguments merged with any
-// field-specific ones, so no connection can accidentally omit one.
+// relayArgs merges the four Relay connection arguments with field-specific ones.
 func relayArgs(extra graphql.FieldConfigArgument) graphql.FieldConfigArgument {
 	args := graphql.FieldConfigArgument{
 		"first":  &graphql.ArgumentConfig{Type: graphql.Int},
@@ -1038,8 +941,7 @@ func relayArgs(extra graphql.FieldConfigArgument) graphql.FieldConfigArgument {
 	return args
 }
 
-// advisoryConnectionType builds the Relay connection and edge objects for one
-// advisory-family node type.
+// advisoryConnectionType builds the Relay connection and edge for a node type.
 func advisoryConnectionType(name string, nodeType *graphql.Object, pageInfo *graphql.Object) *graphql.Object {
 	edgeType := graphql.NewObject(graphql.ObjectConfig{
 		Name: name + "Edge",
@@ -1069,8 +971,7 @@ func advisorySourceNodes(source interface{}, key string) []map[string]interface{
 	return nodes
 }
 
-// advisoryFilterFromArgs translates the root fields' arguments into the
-// store's filter.
+// advisoryFilterFromArgs translates the root arguments into the store filter.
 func advisoryFilterFromArgs(args map[string]interface{}) store.GlobalAdvisoryFilter {
 	filter := store.GlobalAdvisoryFilter{}
 	if identifier, ok := args["identifier"].(map[string]interface{}); ok {
@@ -1079,9 +980,7 @@ func advisoryFilterFromArgs(args map[string]interface{}) store.GlobalAdvisoryFil
 		switch strings.ToUpper(kind) {
 		case "CVE":
 			filter.CVEID = value
-			// A client naming a specific advisory is asking about that
-			// advisory, so a withdrawal is an answer rather than a reason to
-			// report it missing.
+			// A client naming a specific advisory wants it even if withdrawn.
 			filter.IncludeWithdrawn = true
 		case "GHSA":
 			filter.GHSAID = value
@@ -1106,8 +1005,8 @@ func advisoryFilterFromArgs(args map[string]interface{}) store.GlobalAdvisoryFil
 	return filter
 }
 
-// sortAdvisoriesForArgs applies the connection's orderBy, defaulting to
-// GitHub's documented {field: UPDATED_AT, direction: DESC}.
+// sortAdvisoriesForArgs applies orderBy, defaulting to GitHub's
+// {field: UPDATED_AT, direction: DESC}.
 func sortAdvisoriesForArgs(advisories []*store.SecurityAdvisory, args map[string]interface{}) {
 	field, direction := "UPDATED_AT", "DESC"
 	if order, ok := args["orderBy"].(map[string]interface{}); ok {
@@ -1123,15 +1022,12 @@ func sortAdvisoriesForArgs(advisories []*store.SecurityAdvisory, args map[string
 		store.SortAdvisoriesByPublicationOrder(advisories, ascending)
 		return
 	}
-	// EPSS_PERCENTAGE and EPSS_PERCENTILE order by a score this instance does
-	// not have, and every advisory would tie. Ordering by update time keeps
-	// the connection's cursors stable instead of leaving the order to a map
-	// walk, which is what a client paging through it actually depends on.
+	// EPSS_PERCENTAGE/EPSS_PERCENTILE order by a score this instance lacks, so
+	// every advisory ties; order by update time to keep cursors stable.
 	store.SortAdvisoriesByUpdate(advisories, ascending)
 }
 
-// filterVulnerabilityNodes applies the ecosystem/package/severity narrowing an
-// advisory's vulnerabilities connection accepts.
+// filterVulnerabilityNodes applies the ecosystem/package/severity narrowing.
 func filterVulnerabilityNodes(nodes []map[string]interface{}, args map[string]interface{}) []map[string]interface{} {
 	wantEcosystem, _ := args["ecosystem"].(string)
 	wantPackage, _ := args["package"].(string)
@@ -1156,8 +1052,7 @@ func filterVulnerabilityNodes(nodes []map[string]interface{}, args map[string]in
 	return filtered
 }
 
-// enumArgSet reads a list-of-enum argument into a set. graphql-go delivers
-// the members as []interface{} of strings.
+// enumArgSet reads a list-of-enum argument into a set.
 func enumArgSet(args map[string]interface{}, key string) map[string]bool {
 	raw, ok := args[key].([]interface{})
 	if !ok || len(raw) == 0 {
@@ -1172,8 +1067,7 @@ func enumArgSet(args map[string]interface{}, key string) map[string]bool {
 	return set
 }
 
-// parseAdvisoryTimeArg reads a DateTime argument, which arrives as the string
-// the custom scalar carries.
+// parseAdvisoryTimeArg reads a DateTime argument (the scalar's string form).
 func parseAdvisoryTimeArg(args map[string]interface{}, key string) (time.Time, bool) {
 	value, ok := args[key].(string)
 	if !ok || value == "" {
@@ -1186,9 +1080,8 @@ func parseAdvisoryTimeArg(args map[string]interface{}, key string) (time.Time, b
 	return parsed.UTC(), true
 }
 
-// advisorySeverityEnum renders a stored severity as its
-// SecurityAdvisorySeverity member. GitHub's enum has no INFO or NONE, so a
-// severity outside the five reports UNKNOWN rather than an invalid member.
+// advisorySeverityEnum renders a stored severity as its SecurityAdvisorySeverity
+// member; anything outside the five reports UNKNOWN (GitHub has no INFO/NONE).
 func advisorySeverityEnum(severity string) string {
 	switch strings.ToUpper(strings.TrimSpace(severity)) {
 	case "CRITICAL":
@@ -1204,9 +1097,8 @@ func advisorySeverityEnum(severity string) string {
 	}
 }
 
-// dependencyScopeEnum renders a submitted dependency scope as its
-// RepositoryVulnerabilityAlertDependencyScope member, or nil when the
-// submission did not state one — the enum has no member for "unstated".
+// dependencyScopeEnum renders a submitted scope as its
+// RepositoryVulnerabilityAlertDependencyScope member, or nil when unstated.
 func dependencyScopeEnum(scope string) interface{} {
 	switch strings.ToLower(strings.TrimSpace(scope)) {
 	case "development":
@@ -1219,10 +1111,8 @@ func dependencyScopeEnum(scope string) interface{} {
 }
 
 // dependencyRelationshipEnum renders a submitted relationship as its
-// RepositoryVulnerabilityAlertDependencyRelationship member. The submission
-// API's vocabulary is direct/indirect; the alert enum's is
-// direct/transitive/inconclusive/unknown, and an unstated relationship is
-// UNKNOWN rather than a guess at DIRECT.
+// RepositoryVulnerabilityAlertDependencyRelationship member; the submission
+// vocabulary is direct/indirect, and an unstated relationship is UNKNOWN.
 func dependencyRelationshipEnum(relationship string) interface{} {
 	switch strings.ToLower(strings.TrimSpace(relationship)) {
 	case "direct":
@@ -1235,8 +1125,7 @@ func dependencyRelationshipEnum(relationship string) interface{} {
 }
 
 // dependencyRelationshipString renders a relationship for
-// DependencyGraphDependency.relationship, which GitHub types as a lowercase
-// String! rather than as an enum.
+// DependencyGraphDependency.relationship, a lowercase String! not an enum.
 func dependencyRelationshipString(relationship string) string {
 	switch strings.ToLower(strings.TrimSpace(relationship)) {
 	case "direct":
@@ -1256,8 +1145,7 @@ func formatAdvisoryTime(at *time.Time) interface{} {
 	return at.UTC().Format(time.RFC3339)
 }
 
-// nullOrEmptyString renders an empty string as a null, which a nullable
-// GraphQL String must be rather than "".
+// nullOrEmptyString renders an empty string as null.
 func nullOrEmptyString(value string) interface{} {
 	if value == "" {
 		return nil
@@ -1265,9 +1153,8 @@ func nullOrEmptyString(value string) interface{} {
 	return value
 }
 
-// advisoryNodeByID resolves the node ids this family mints, for Query.node.
-// Repository-scoped nodes are answered only to a viewer entitled to them;
-// an advisory is public.
+// advisoryNodeByID resolves this family's node ids for Query.node.
+// Repository-scoped nodes answer only an entitled viewer; an advisory is public.
 func (s *Resolver) advisoryNodeByID(ctx context.Context, nodeID string) interface{} {
 	if advisory := s.store.GetGlobalAdvisoryByGHSA(ghsaIDFromAdvisoryNodeID(s, nodeID)); advisory != nil {
 		return s.advisoryToGQL(advisory)
@@ -1293,9 +1180,8 @@ func (s *Resolver) advisoryNodeByID(ctx context.Context, nodeID string) interfac
 	return nil
 }
 
-// ghsaIDFromAdvisoryNodeID maps a SecurityAdvisory node id back to its GHSA
-// id by scanning the published advisories, which is the only index the store
-// keeps them under.
+// ghsaIDFromAdvisoryNodeID maps a SecurityAdvisory node id to its GHSA id by
+// scanning published advisories, the store's only index for them.
 func ghsaIDFromAdvisoryNodeID(s *Resolver, nodeID string) string {
 	if !strings.HasPrefix(nodeID, "GSA_") {
 		return ""

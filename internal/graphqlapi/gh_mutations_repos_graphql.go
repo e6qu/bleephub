@@ -1,14 +1,8 @@
 package graphqlapi
 
-// Repository metadata mutations: the label CRUD `gh label create/edit/delete`
-// speaks, the topic surface, the archive/unarchive pair, the settings
-// mutation `gh repo edit` sends, and the web-commit-signoff toggle.
-//
-// Every one of them writes through the same store primitive the REST route
-// for the same change writes through — CreateLabel/UpdateLabel/DeleteLabel and
-// UpdateRepo — and emits the same webhook, so a label created over GraphQL is
-// indistinguishable from one created over REST, and neither can drift into
-// being the only way to make a change.
+// Repository metadata mutations: label CRUD, topics, archive/unarchive,
+// settings, and the web-commit-signoff toggle. Each writes through the same
+// store primitive and webhook as its REST route.
 
 import (
 	"encoding/base64"
@@ -20,18 +14,15 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// topicNodeID is the global id GitHub gives a Topic node. The topic's name is
-// its identity (there is no numeric key), so the id is a base64 of the type
-// name and the topic name, matching the RepositoryTopic scheme in the
-// conversation-fields family.
+// topicNodeID is the Topic global id: a base64 of the type name and topic name
+// (a topic has no numeric key). Matches the RepositoryTopic scheme.
 func topicNodeID(name string) string {
 	return "TO_" + base64.RawURLEncoding.EncodeToString([]byte("Topic"+name))
 }
 
-// addTopicResidueFields completes the Topic object's Starrable and repository
-// members. bleephub models neither topic stars nor a related-topics graph, so
-// stargazerCount/viewerHasStarred/relatedTopics answer truthful zero/false/empty;
-// repositories is backed by the repositories that actually carry the topic.
+// addTopicResidueFields completes Topic's Starrable and repository members.
+// bleephub models no topic stars or related-topics graph, so those answer
+// zero/false/empty; repositories is backed by repos carrying the topic.
 func (s *Resolver) addTopicResidueFields() {
 	topicType := s.gqlTopicType()
 
@@ -62,8 +53,7 @@ func (s *Resolver) addTopicResidueFields() {
 			"first": &graphql.ArgumentConfig{Type: graphql.Int, DefaultValue: 3},
 		},
 		Resolve: func(graphql.ResolveParams) (interface{}, error) {
-			// No related-topics graph is modeled; the list is empty rather than
-			// invented, and non-nil so the non-null list resolves.
+			// No related-topics graph is modeled; non-nil so the non-null resolves.
 			return []interface{}{}, nil
 		},
 	})
@@ -110,12 +100,9 @@ func topicSourceName(source interface{}) string {
 	return name
 }
 
-// maxRepositoryTopics is github.com's cap on the topics one repository may
-// carry; the REST topics route enforces the same number.
+// maxRepositoryTopics is the cap on topics per repository, as the REST route enforces.
 const maxRepositoryTopics = 20
 
-// addRepositoryMetadataMutations registers the label, topic, archive and
-// settings mutations.
 func (s *Resolver) addRepositoryMetadataMutations(mutationType *graphql.Object) {
 	repositoryType := s.graphqlTypes.repository
 	labelType := s.gqlLabelType()
@@ -279,9 +266,7 @@ func (s *Resolver) addRepositoryMetadataMutations(mutationType *graphql.Object) 
 	})
 }
 
-// gqlTopicType returns the shared Topic object (memoized). Repository.topics
-// names it through RepositoryTopic and the two topic-suggestion payloads
-// return it directly, so it has to be one object rather than one per consumer.
+// gqlTopicType returns the shared Topic object (memoized).
 func (s *Resolver) gqlTopicType() *graphql.Object {
 	return s.mutationObject("Topic", graphql.Fields{
 		"name": gqlNonNull(graphql.String),
@@ -320,8 +305,8 @@ func (s *Resolver) resolveCreateLabel(p graphql.ResolveParams) (interface{}, err
 func (s *Resolver) resolveUpdateLabel(p graphql.ResolveParams) (interface{}, error) {
 	input, _ := p.Args["input"].(map[string]interface{})
 	nodeID, _ := gqlInputString(input, "id")
-	// The node finder hands back the live row, so the id is all that is read
-	// off it; the label the payload renders is re-read after the write.
+	// FindLabelByNodeID returns the live row; read only its id and re-read after
+	// the write.
 	found := store.FindLabelByNodeID(s.store, nodeID)
 	if found == nil {
 		return nil, gqlMissingNode("Label", nodeID)
@@ -375,8 +360,7 @@ func (s *Resolver) resolveDeleteLabel(p graphql.ResolveParams) (interface{}, err
 	if repo == nil {
 		return nil, gqlMissingNodeType("Repository")
 	}
-	// The webhook body carries the label as it was, so it is snapshotted
-	// before the row is destroyed.
+	// Snapshot the label for the webhook body before the row is destroyed.
 	deleted := s.store.GetLabel(found.ID)
 	if deleted == nil {
 		return nil, gqlMissingNodeType("Label")
@@ -388,8 +372,7 @@ func (s *Resolver) resolveDeleteLabel(p graphql.ResolveParams) (interface{}, err
 	return map[string]interface{}{}, nil
 }
 
-// emitLabelEvent delivers the `label` webhook the REST label routes deliver,
-// through the same repo-keyed fan-out.
+// emitLabelEvent delivers the `label` webhook, as the REST label routes do.
 func (s *Resolver) emitLabelEvent(repo *store.Repo, label *store.IssueLabel, p graphql.ResolveParams, action string) {
 	sender := s.ghUserFromContext(p.Context)
 	s.emitWebhookEvent(repo.FullName, "label", action, map[string]interface{}{
@@ -449,9 +432,8 @@ func (s *Resolver) resolveUpdateTopics(p graphql.ResolveParams) (interface{}, er
 	}, nil
 }
 
-// validRepositoryTopic is the same rule PUT /repos/{owner}/{repo}/topics
-// enforces: a non-empty name of at most fifty characters carrying none of the
-// separators a topic may not contain.
+// validRepositoryTopic is the rule the REST topics route enforces: non-empty, at
+// most fifty characters, no separators.
 func validRepositoryTopic(name string) bool {
 	return name != "" && len(name) <= 50 && !strings.ContainsAny(name, " /\\:")
 }
@@ -495,9 +477,8 @@ func (s *Resolver) resolveDeclineTopicSuggestion(p graphql.ResolveParams) (inter
 	if !validRepositoryTopic(name) {
 		return nil, fmt.Errorf("topic name %q is invalid", name)
 	}
-	// Declining a topic both records the decision — so the topic is never
-	// suggested for this repository again — and takes the topic off the
-	// repository if it was already carrying it.
+	// Record the decision (so it is never suggested again) and drop the topic if
+	// the repository was carrying it.
 	if _, err := s.updateRepoRow(repo, func(r *store.Repo) {
 		r.Topics = withoutString(r.Topics, name)
 		if !containsFold(r.DeclinedTopics, name) {
@@ -559,10 +540,8 @@ func (s *Resolver) resolveUpdateRepository(p graphql.ResolveParams) (interface{}
 	if err != nil {
 		return nil, err
 	}
-	// A rename moves every record that embeds the repository's full name, so
-	// it goes through the server's seam and happens before the field writes:
-	// UpdateRepo is keyed on owner/name, and writing under the old name after
-	// a successful rename would write nothing.
+	// Rename first: UpdateRepo is keyed on owner/name, so a field write under the
+	// old name after a rename would write nothing.
 	if newName, renaming := gqlInputString(input, "name"); renaming && newName != "" && newName != repo.Name {
 		if err := s.repos.RenameRepository(repo, newName); err != nil {
 			return nil, err
@@ -641,8 +620,8 @@ func (s *Resolver) resolveUpdateRepositoryWebCommitSignoff(p graphql.ResolvePara
 // --- shared helpers ---------------------------------------------------------
 
 // mutationRepoFromInput resolves the repository a mutation input names. The
-// policy row already refused a caller who may not reach it, so a miss here is
-// a repository that stopped existing between the two lookups.
+// policy row already authorized the caller, so a miss here is a repository that
+// stopped existing between the two lookups.
 func (s *Resolver) mutationRepoFromInput(input map[string]interface{}, key string) (*store.Repo, error) {
 	nodeID, _ := gqlInputString(input, key)
 	repo := store.FindRepoByNodeID(s.store, nodeID)
@@ -652,10 +631,8 @@ func (s *Resolver) mutationRepoFromInput(input map[string]interface{}, key strin
 	return repo, nil
 }
 
-// updateRepoRow applies a field write to a repository through the same
-// copy-on-write primitive the REST repository routes use, and answers the
-// detached row that resulted. The timestamp bump is part of the write so a
-// GraphQL edit ages the repository exactly as a REST edit does.
+// updateRepoRow applies a field write through the same copy-on-write primitive
+// the REST routes use, bumping UpdatedAt, and returns the detached row.
 func (s *Resolver) updateRepoRow(repo *store.Repo, apply func(*store.Repo)) (*store.Repo, error) {
 	owner, name, ok := store.SplitRepoFullName(repo.FullName)
 	if !ok {

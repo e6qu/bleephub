@@ -10,20 +10,13 @@ import (
 	"github.com/graphql-go/graphql"
 )
 
-// Projects v2 — the read surface: the ProjectV2 object's full field set, the
-// item/status-update/workflow types hanging off it, and the entry points that
-// reach a project in the first place (Organization.projectV2, User.projectsV2,
-// Repository.projectsV2). The mutation surface lives in
-// gh_projects_v2_graphql.go and gh_projects_v2_mutations_graphql.go.
-//
-// Without the entry points a project was reachable only from an issue that
-// happened to be on one, so `gh project list` and `gh project view` — which
-// start from the owner — had nothing to query.
+// Projects v2 read surface: the ProjectV2 object's field set, the
+// item/status-update/workflow types, and the owner entry points
+// (Organization/User/Repository) `gh project list` and `view` start from. The
+// mutation surface lives in gh_projects_v2_graphql.go.
 
-// projectV2ToGQLFull renders a project as its GraphQL source map. Everything
-// the ProjectV2 object resolves is either here or reachable from the "id" key
-// the connection resolvers re-read the store with, so a project rendered for
-// one field selection answers every other field the same way.
+// projectV2ToGQLFull renders a project as its GraphQL source map. Fields not
+// here are reachable from the "id" key the connection resolvers re-read with.
 func projectV2ToGQLFull(st *store.Store, p *store.ProjectV2) map[string]interface{} {
 	if p == nil {
 		return nil
@@ -62,7 +55,7 @@ func projectV2ToGQLFull(st *store.Store, p *store.ProjectV2) map[string]interfac
 }
 
 // projectV2OwnerSource resolves a project's owner into its login and the
-// source map the ProjectV2Owner interface dispatches on.
+// source map ProjectV2Owner dispatches on.
 func projectV2OwnerSource(st *store.Store, p *store.ProjectV2) (string, map[string]interface{}) {
 	if p.OwnerType == "Organization" {
 		if org := st.GetOrgByID(p.OwnerID); org != nil {
@@ -80,8 +73,8 @@ func projectV2OwnerSource(st *store.Store, p *store.ProjectV2) (string, map[stri
 	return "", nil
 }
 
-// projectV2ResourcePath is github.com's project path: organization projects
-// live under /orgs/{login}, user projects under /users/{login}.
+// projectV2ResourcePath is github.com's project path: /orgs/{login} for
+// organizations, /users/{login} for users.
 func projectV2ResourcePath(p *store.ProjectV2, ownerLogin string) string {
 	if ownerLogin == "" {
 		return fmt.Sprintf("/projects/%d", p.Number)
@@ -93,9 +86,8 @@ func projectV2ResourcePath(p *store.ProjectV2, ownerLogin string) string {
 	return fmt.Sprintf("/%s/%s/projects/%d", scope, ownerLogin, p.Number)
 }
 
-// nullableString maps the store's empty string onto GraphQL null, which is
-// what a nullable String field means when the instance has no value. Returning
-// "" instead would claim the project has an empty description rather than none.
+// nullableString maps the store's empty string onto GraphQL null, so a nullable
+// field reports "no value" rather than an empty string.
 func nullableString(value string) interface{} {
 	if value == "" {
 		return nil
@@ -106,13 +98,11 @@ func nullableString(value string) interface{} {
 // ---------------------------------------------------------------------------
 // Type enrichment
 
-// enrichProjectV2Types adds the fields the ProjectV2 object graph carries
-// beyond the handful the issue family built it with. It runs once, after every
-// type it references exists.
+// enrichProjectV2Types adds the ProjectV2 fields beyond the handful the issue
+// family built. It runs once, after every type it references exists.
 func (s *Resolver) enrichProjectV2Types(repoType *graphql.Object, nodeTypes map[string]*graphql.Object) {
 	projectType := s.projectV2GraphQLTypes()
-	// Building the item connection also builds the item type, the field-value
-	// union and the ProjectV2.items field.
+	// Also builds the item type, the field-value union and ProjectV2.items.
 	s.projectV2ItemConnectionType()
 
 	dateTime := s.graphQLStringScalar("DateTime")
@@ -130,11 +120,7 @@ func (s *Resolver) enrichProjectV2Types(repoType *graphql.Object, nodeTypes map[
 	s.addProjectV2ViewerPermissions(projectType)
 	s.enrichProjectV2ItemType(dateTime, bigInt, nodeTypes)
 	s.enrichProjectV2ViewType()
-	// The residual members of the ProjectV2 field-configuration family, the
-	// option/iteration objects, ProjectV2View and DraftIssue. It runs last so
-	// every type it hangs a field off — the four field configurations and their
-	// common interface, the ProjectV2 object, the ProjectV2Item connection and
-	// the IssueFields union — is already assembled.
+	// Runs last, once every type it hangs a field off is assembled.
 	s.addProjectV2FieldFamilyResidualFields()
 }
 
@@ -157,18 +143,12 @@ func (s *Resolver) addProjectV2ScalarFields(projectType *graphql.Object, dateTim
 	}
 }
 
-// projectV2OwnerInterfaceType is GitHub's ProjectV2Owner interface: the thing
-// a project belongs to.
-//
-// It is built before the Organization and User objects are, because
-// graphql-go derives an interface's possible types from the Interfaces list
-// each object declares at construction and memoizes that on first read. An
-// interface minted later can never gain implementations, and a client's
-// `... on Organization` spread against it fails validation — which is exactly
-// what `gh project list` sends.
-//
-// Its fields are declared through a thunk so it may name the ProjectV2 object
-// and its connection, neither of which exists this early.
+// projectV2OwnerInterfaceType is GitHub's ProjectV2Owner interface. It must be
+// built before the Organization and User objects: graphql-go derives an
+// interface's possible types from each object's Interfaces list at
+// construction, so an interface minted later gains no implementations and a
+// `... on Organization` spread (as `gh project list` sends) fails validation.
+// Fields go through a thunk to name the not-yet-built ProjectV2 object.
 func (s *Resolver) projectV2OwnerInterfaceType() *graphql.Interface {
 	if s.graphqlTypes.projectV2OwnerInterface != nil {
 		return s.graphqlTypes.projectV2OwnerInterface
@@ -202,8 +182,8 @@ func (s *Resolver) projectV2OwnerInterfaceType() *graphql.Interface {
 	return s.graphqlTypes.projectV2OwnerInterface
 }
 
-// addProjectV2OwnerField wires ProjectV2.owner. The owner is an interface with
-// two implementations, so the source map carries __typename for dispatch.
+// addProjectV2OwnerField wires ProjectV2.owner; the source map carries
+// __typename for interface dispatch.
 func (s *Resolver) addProjectV2OwnerField(projectType *graphql.Object) {
 	projectType.AddFieldConfig("owner", &graphql.Field{
 		Type: graphql.NewNonNull(s.projectV2OwnerInterfaceType()),
@@ -217,8 +197,7 @@ func (s *Resolver) addProjectV2OwnerField(projectType *graphql.Object) {
 	})
 }
 
-// projectV2ConnectionArgs is the argument set a projectsV2 connection takes:
-// the Relay window plus GitHub's ordering and search members.
+// projectV2ConnectionArgs is the Relay window plus GitHub's orderBy and query.
 func (s *Resolver) projectV2ConnectionArgs() graphql.FieldConfigArgument {
 	args := relayConnectionArgs()
 	args["orderBy"] = &graphql.ArgumentConfig{Type: s.projectV2OrderInput()}
@@ -226,8 +205,8 @@ func (s *Resolver) projectV2ConnectionArgs() graphql.FieldConfigArgument {
 	return args
 }
 
-// addProjectV2FieldLookup wires ProjectV2.field(name:), the single-field
-// lookup `gh project item-edit` uses to turn a field name into its id.
+// addProjectV2FieldLookup wires ProjectV2.field(name:), the lookup
+// `gh project item-edit` uses to turn a field name into its id.
 func (s *Resolver) addProjectV2FieldLookup(projectType *graphql.Object) {
 	projectType.AddFieldConfig("field", &graphql.Field{
 		Type: s.projectV2FieldConfigurationUnion(),
@@ -272,14 +251,14 @@ func (s *Resolver) addProjectV2ViewLookup(projectType *graphql.Object) {
 }
 
 // projectV2ViewObjectType returns the ProjectV2View object, building the view
-// connection (which owns the memo) on first use.
+// connection (which owns the memo) first.
 func (s *Resolver) projectV2ViewObjectType() *graphql.Object {
 	s.projectV2ViewConnectionType()
 	return s.graphqlTypes.projectV2ViewTypeMemo
 }
 
-// enrichProjectV2ViewType adds the view's configuration surface: the grouping,
-// sorting and visible-field selections a board or roadmap view carries.
+// enrichProjectV2ViewType adds the view's grouping, sorting and visible-field
+// configuration.
 func (s *Resolver) enrichProjectV2ViewType() {
 	viewType := s.projectV2ViewObjectType()
 	fieldConnection := s.projectV2FieldConnectionType()
@@ -301,10 +280,9 @@ func (s *Resolver) enrichProjectV2ViewType() {
 		}
 	}
 
-	// GitHub splits these two ways. The bare names predate custom field types
-	// and are typed over the plain ProjectV2Field object; the newer `…Fields`
-	// names widen to the ProjectV2FieldConfiguration union. Both read the same
-	// stored id list.
+	// GitHub splits these two ways over the same stored id list: bare names are
+	// typed over the plain ProjectV2Field object, the newer `…Fields` names
+	// widen to the ProjectV2FieldConfiguration union.
 	plainFieldConnection := s.projectV2PlainFieldConnectionType()
 	for name, key := range map[string]string{
 		"visibleFields":   "visibleFieldIds",
@@ -340,8 +318,7 @@ func (s *Resolver) enrichProjectV2ViewType() {
 				},
 			},
 		})),
-		// The configuration object is a view of the same source map, so it
-		// resolves to the view itself rather than a second copy.
+		// The configuration object is the same source map as the view.
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) { return p.Source, nil },
 	})
 
@@ -376,8 +353,8 @@ func (s *Resolver) enrichProjectV2ViewType() {
 	viewType.AddFieldConfig("sortBy", &graphql.Field{
 		Type: sortByConnection, Args: relayConnectionArgs(), Resolve: resolveSortBy,
 	})
-	// sortByFields is the same list under GitHub's newer name, whose element
-	// type widens `field` to the configuration union.
+	// sortByFields is the same list under GitHub's newer name, widening `field`
+	// to the configuration union.
 	sortByFieldType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "ProjectV2SortByField",
 		Fields: graphql.Fields{
@@ -404,17 +381,16 @@ func (s *Resolver) enrichProjectV2ViewType() {
 }
 
 // projectV2PlainFieldConnectionType is the connection over the plain
-// ProjectV2Field object, as distinct from the union-typed
-// ProjectV2FieldConfigurationConnection. GitHub keeps both, and the view's
-// grouping fields are typed over this one.
+// ProjectV2Field object, distinct from the union-typed
+// ProjectV2FieldConfigurationConnection GitHub also keeps.
 func (s *Resolver) projectV2PlainFieldConnectionType() *graphql.Object {
-	// Building the configuration connection is what mints the field objects.
+	// Building the configuration connection mints the field objects.
 	s.projectV2FieldConnectionType()
 	return s.gqlConnectionType("ProjectV2Field", s.graphqlTypes.projectV2FieldTypeMemo)
 }
 
-// gqlConnectionType builds the Relay connection and edge objects for a node
-// type, under GitHub's <Name>Connection / <Name>Edge naming.
+// gqlConnectionType builds the <Name>Connection / <Name>Edge objects for a
+// node type.
 func (s *Resolver) gqlConnectionType(name string, nodeType graphql.Output) *graphql.Object {
 	if s.graphqlTypes.projectV2Connections == nil {
 		s.graphqlTypes.projectV2Connections = map[string]*graphql.Object{}
@@ -632,9 +608,8 @@ func (s *Resolver) addProjectV2LinkConnections(projectType *graphql.Object, repo
 			nodes := make([]map[string]interface{}, 0, len(project.LinkedRepoIDs))
 			for _, repoID := range project.LinkedRepoIDs {
 				repo := s.store.GetRepoByID(repoID)
-				// A repository the caller cannot read is not listed: the link
-				// list would otherwise disclose private repository names to
-				// anyone who can see the project.
+				// Omit repos the caller cannot read: the link list must not
+				// disclose private repository names.
 				if repo == nil || !s.viewerCanReadRepo(p.Context, repo) {
 					continue
 				}
@@ -681,10 +656,8 @@ func (s *Resolver) addProjectV2LinkConnections(projectType *graphql.Object, repo
 // ---------------------------------------------------------------------------
 // Viewer permissions
 
-// addProjectV2ViewerPermissions wires the three viewerCan* booleans. They are
-// answered by the same predicates that gate the mutations, so a client that
-// hides a control on `viewerCanUpdate: false` is hiding exactly the operation
-// the server would refuse.
+// addProjectV2ViewerPermissions wires the three viewerCan* booleans, answered
+// by the same predicates that gate the mutations.
 func (s *Resolver) addProjectV2ViewerPermissions(projectType *graphql.Object) {
 	canWrite := func(p graphql.ResolveParams) (interface{}, error) {
 		projectID, err := projectV2SourceID(p.Source)
@@ -710,9 +683,9 @@ func (s *Resolver) addProjectV2ViewerPermissions(projectType *graphql.Object) {
 	}
 }
 
-// sourceKeyResolver reads one key out of a source map. Node ids are stored
-// under "nodeID" so the database id can keep the "id" key that the connection
-// resolvers re-read the store with.
+// sourceKeyResolver reads one key out of a source map. Node ids live under
+// "nodeID" so the database id can keep the "id" key connection resolvers re-read
+// the store with.
 func sourceKeyResolver(key string) graphql.FieldResolveFn {
 	return func(p graphql.ResolveParams) (interface{}, error) {
 		src, ok := p.Source.(map[string]interface{})
@@ -726,10 +699,9 @@ func sourceKeyResolver(key string) graphql.FieldResolveFn {
 // ---------------------------------------------------------------------------
 // ProjectV2Item
 
-// enrichProjectV2ItemType adds everything on a project item beyond the id,
-// project and fieldValueByName the issue family built: the content union that
-// `gh project item-list` reads titles out of, the fieldValues connection, and
-// the item's own metadata.
+// enrichProjectV2ItemType adds the project-item members beyond the id, project
+// and fieldValueByName the issue family built: the content union, the
+// fieldValues connection and the item's metadata.
 func (s *Resolver) enrichProjectV2ItemType(dateTime, bigInt *graphql.Scalar, nodeTypes map[string]*graphql.Object) {
 	itemType := s.projectV2ItemType()
 
@@ -806,16 +778,15 @@ func (s *Resolver) enrichProjectV2ItemType(dateTime, bigInt *graphql.Scalar, nod
 // ---------------------------------------------------------------------------
 // Owner entry points
 
-// addProjectV2OwnerFields wires the fields that reach a project from its
-// owner. Organization and User carry the pair GitHub's ProjectV2Owner
-// interface declares; Repository carries the same pair over its owner's
-// projects, which is what github.com's repository Projects tab lists.
+// addProjectV2OwnerFields wires the fields that reach a project from its owner.
+// Organization and User carry the ProjectV2Owner pair; Repository carries the
+// same pair over its owner's projects, matching github.com's Projects tab.
 func (s *Resolver) addProjectV2OwnerFields(orgType, userType, repoType *graphql.Object) {
 	projectType := s.projectV2GraphQLTypes()
 	connection := s.gqlConnectionType("ProjectV2", projectType)
 
-	// listFor answers a projectsV2 connection for whichever account the source
-	// map names, filtered to what this viewer may see.
+	// listFor answers a projectsV2 connection for the account the source map
+	// names, filtered to what the viewer may see.
 	listFor := func(ownerType string) graphql.FieldResolveFn {
 		return func(p graphql.ResolveParams) (interface{}, error) {
 			ownerID, err := projectV2OwnerSourceID(p.Source)
@@ -854,9 +825,8 @@ func (s *Resolver) addProjectV2OwnerFields(orgType, userType, repoType *graphql.
 		})
 	}
 
-	// A repository's Projects tab lists its owner's projects, so the
-	// repository fields resolve through the repository's owner rather than
-	// over a project-to-repository association a repository does not have.
+	// A repository's Projects tab lists its owner's projects, so these fields
+	// resolve through the repository's owner.
 	repoOwner := func(source interface{}) (int, string, error) {
 		src, ok := source.(map[string]interface{})
 		if !ok {
@@ -899,9 +869,8 @@ func (s *Resolver) addProjectV2OwnerFields(orgType, userType, repoType *graphql.
 	})
 }
 
-// projectV2OrderInput is GitHub's ProjectV2Order input. The ordering is
-// applied by projectV2Connection; declaring it lets gh's queries type-check,
-// which they do not without it.
+// projectV2OrderInput is GitHub's ProjectV2Order input, applied by
+// projectV2Connection. Declaring it lets gh's queries type-check.
 func (s *Resolver) projectV2OrderInput() *graphql.InputObject {
 	if s.graphqlTypes.projectV2OrderInput != nil {
 		return s.graphqlTypes.projectV2OrderInput
@@ -920,9 +889,8 @@ func (s *Resolver) projectV2OrderInput() *graphql.InputObject {
 	return s.graphqlTypes.projectV2OrderInput
 }
 
-// projectV2OwnerSourceID reads the database id of the account a source map
-// describes. Organization and User source maps both carry it under
-// "databaseId".
+// projectV2OwnerSourceID reads the account database id, carried under
+// "databaseId" on both Organization and User source maps.
 func projectV2OwnerSourceID(source interface{}) (int, error) {
 	src, ok := source.(map[string]interface{})
 	if !ok {
@@ -935,8 +903,8 @@ func projectV2OwnerSourceID(source interface{}) (int, error) {
 	return id, nil
 }
 
-// projectV2Connection lists an owner's projects, dropping the ones this
-// viewer may not see and applying the requested ordering and search.
+// projectV2Connection lists an owner's projects the viewer may see, applying
+// the requested ordering and search.
 func (s *Resolver) projectV2Connection(p graphql.ResolveParams, ownerID int, ownerType string) map[string]interface{} {
 	owner := s.projectV2OwnerByID(ownerID, ownerType)
 	if owner == nil {
@@ -969,8 +937,8 @@ func (s *Resolver) projectV2Connection(p graphql.ResolveParams, ownerID int, own
 	return paginateGQLMaps(nodes, p.Args)
 }
 
-// sortProjectV2 applies a ProjectV2Order argument. The default is ascending
-// project number, which is the order ListProjectsForOwner already returns.
+// sortProjectV2 applies a ProjectV2Order argument, defaulting to the ascending
+// project number ListProjectsForOwner already returns.
 func sortProjectV2(projects []*store.ProjectV2, args map[string]interface{}) {
 	orderBy, _ := args["orderBy"].(map[string]interface{})
 	if orderBy == nil {
@@ -995,8 +963,8 @@ func sortProjectV2(projects []*store.ProjectV2, args map[string]interface{}) {
 	})
 }
 
-// projectV2ByNumber resolves one project by its per-owner number, answering
-// nil for both "no such project" and "you may not see it".
+// projectV2ByNumber resolves one project by its per-owner number, answering nil
+// for both "no such project" and "not visible".
 func (s *Resolver) projectV2ByNumber(p graphql.ResolveParams, ownerID int, ownerType string, number int) map[string]interface{} {
 	owner := s.projectV2OwnerByID(ownerID, ownerType)
 	if owner == nil {

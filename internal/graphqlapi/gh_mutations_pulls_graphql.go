@@ -1,14 +1,10 @@
 package graphqlapi
 
-// The pull-request mutation surface: review comments and threads, review
-// editing and deletion, reviewer requests, the per-reviewer viewed-file marks,
-// bringing a branch up to date, archival, the merge queue, the
-// pull-request-creation bypass list and a team's review-assignment settings.
-//
-// Each writes through the store primitive its REST equivalent writes through,
-// and the two that are git writes — updatePullRequestBranch and
-// revertPullRequest — go through the Pulls seam so the ref moves exactly as
-// PUT /pulls/{n}/update-branch moves it.
+// The pull-request mutation surface: review comments and threads, reviews,
+// reviewer requests, viewed-file marks, branch updates, archival, the merge
+// queue, the creation-cap bypass list and team review-assignment settings. Each
+// writes through the store primitive its REST equivalent uses; the git writes
+// go through the Pulls seam.
 
 import (
 	"fmt"
@@ -20,9 +16,8 @@ import (
 )
 
 func (s *Resolver) addPullRequestSurfaceMutations(mutationType *graphql.Object) {
-	// Completes ReviewDismissedEvent.pullRequestCommit. The owning object is
-	// minted by the timeline family, which runs after the pull-request family;
-	// this mutation installer runs later still, so the object now exists.
+	// Completes ReviewDismissedEvent.pullRequestCommit, whose owning object the
+	// timeline family has minted by the time this installer runs.
 	s.addReviewDismissedEventPullRequestCommit()
 
 	pullRequestType := s.graphqlTypes.pullRequest
@@ -38,8 +33,7 @@ func (s *Resolver) addPullRequestSurfaceMutations(mutationType *graphql.Object) 
 		"cursor": gqlNonNull(graphql.String),
 		"node":   gqlField(reviewCommentType),
 	})
-	// The account surface mints GitHub's one UserEdge; the two review-request
-	// payloads name that same object rather than a second of the name.
+	// Reuse the account surface's one UserEdge object.
 	userEdge := s.gqlUserEdgeType(s.graphqlTypes.accountSurface)
 	diffSide := s.sharedEnum("DiffSide", "LEFT", "RIGHT")
 
@@ -386,8 +380,8 @@ func (s *Resolver) gqlMergeQueueEntryType() *graphql.Object {
 				"AWAITING_CHECKS", "LOCKED", "MERGEABLE", "QUEUED", "UNMERGEABLE")),
 			"pullRequest": gqlField(s.graphqlTypes.pullRequest),
 			"mergeQueue":  gqlField(s.gqlMergeQueueType()),
-			// The base/head commits of the queued pull request, resolved from
-			// the entry's stored SHAs (nullable when the git object is absent).
+			// Resolved from the entry's stored SHAs; nullable when the git
+			// object is absent.
 			"baseCommit": gqlField(s.graphqlTypes.commit),
 			"headCommit": gqlField(s.graphqlTypes.commit),
 		}
@@ -420,7 +414,7 @@ func mergeQueueEntryNodeID(prID int) string {
 	return fmt.Sprintf("MQE_kwDO%08d", prID)
 }
 
-// mergeQueueToGQL renders the queue a pull request's base branch has.
+// mergeQueueToGQL renders one base branch's merge queue.
 func (s *Resolver) mergeQueueToGQL(repo *store.Repo, baseRef string) map[string]interface{} {
 	if repo == nil {
 		return nil
@@ -436,8 +430,8 @@ func (s *Resolver) mergeQueueToGQL(repo *store.Repo, baseRef string) map[string]
 		"resourcePath":  resourcePath,
 		"url":           externalURL(resourcePath),
 		"configuration": optionalObject(s.mergeQueueConfigurationToGQL(repo)),
-		// bleephub merges a queue entry as soon as its own checks pass rather
-		// than building batches, so there is no batch wait to estimate.
+		// bleephub merges an entry as soon as its own checks pass; no batch
+		// wait to estimate.
 		"nextEntryEstimatedTimeToMerge": nil,
 		"entries":                       gqlConnectionSource(entries),
 	}
@@ -458,15 +452,13 @@ func (s *Resolver) mergeQueueConfigurationToGQL(repo *store.Repo) map[string]int
 		"minimumEntriesToMerge":         1,
 		"minimumEntriesToMergeWaitTime": 0,
 		"mergeMethod":                   method,
-		// Every queued pull request must be green on its own before it merges,
-		// which is GitHub's ALLGREEN strategy.
+		// Every entry must be green on its own before merging (ALLGREEN).
 		"mergingStrategy": "ALLGREEN",
 	}
 }
 
-// mergeQueueEntryToGQL renders one queued pull request. withQueue is false
-// when the entry is being rendered from inside the queue itself, so the two do
-// not render each other forever.
+// mergeQueueEntryToGQL renders one queued pull request. withQueue is false when
+// rendering from inside the queue itself, to break the mutual recursion.
 func (s *Resolver) mergeQueueEntryToGQL(repo *store.Repo, pr *store.PullRequest, withQueue bool) map[string]interface{} {
 	if pr == nil {
 		return nil
@@ -491,7 +483,7 @@ func (s *Resolver) mergeQueueEntryToGQL(repo *store.Repo, pr *store.PullRequest,
 		"solo":       pr.MergeQueuePosition == 1,
 		"enqueuedAt": enqueuedAt.Format(time.RFC3339),
 		"enqueuer":   optionalRendered(s.store.GetUserByID(pr.AuthorID), userToGraphQL),
-		// The estimate is a batching figure bleephub does not compute.
+		// A batching figure bleephub does not compute.
 		"estimatedTimeToMerge": nil,
 		"state":                state,
 		"pullRequest":          optionalObject(pullRequestToGQL(pr, s.store)),
@@ -518,7 +510,7 @@ func (s *Resolver) resolveAddPullRequestReviewComment(p graphql.ResolveParams) (
 	}
 
 	// A reply names the comment it answers; a new comment names the pull
-	// request (or the pending review it belongs to) and the line it is on.
+	// request (or its pending review) and the line it is on.
 	if replyTo, ok := gqlInputString(input, "inReplyTo"); ok && replyTo != "" {
 		parent := store.FindPullRequestReviewCommentByNodeID(s.store, replyTo)
 		if parent == nil {
@@ -556,8 +548,7 @@ func (s *Resolver) resolveAddPullRequestReviewComment(p graphql.ResolveParams) (
 }
 
 // attachReviewComment binds a new comment to the pending review the input
-// names, which is what makes it part of that review rather than a standalone
-// comment.
+// names.
 func (s *Resolver) attachReviewComment(input map[string]interface{}, commentID int) {
 	reviewNodeID, ok := gqlInputString(input, "pullRequestReviewId")
 	if !ok || reviewNodeID == "" {
@@ -662,8 +653,8 @@ func (s *Resolver) resolveDeletePullRequestReviewComment(p graphql.ResolveParams
 	if comment == nil {
 		return nil, gqlMissingNode("PullRequestReviewComment", nodeID)
 	}
-	// The payload carries the comment as it was and the review it belonged
-	// to, so both are read before the row is destroyed.
+	// Read the comment and its review before destroying the row; the payload
+	// carries both.
 	deleted := s.store.PRReviewComments.Get(comment.ID)
 	if deleted == nil {
 		return nil, gqlMissingNodeType("PullRequestReviewComment")
@@ -715,8 +706,7 @@ func (s *Resolver) resolveDeletePullRequestReview(p graphql.ResolveParams) (inte
 	if deleted == nil {
 		return nil, gqlMissingNodeType("PullRequestReview")
 	}
-	// GitHub only lets a pending review be deleted; a submitted one is part of
-	// the record and is dismissed instead.
+	// Only a pending review may be deleted; a submitted one is dismissed.
 	if deleted.State != "PENDING" {
 		//lint:ignore ST1005 GitHub API parity requires this exact upstream message.
 		return nil, fmt.Errorf("Can not delete a submitted review")
@@ -730,9 +720,9 @@ func (s *Resolver) resolveDeletePullRequestReview(p graphql.ResolveParams) (inte
 
 // --- reviewer requests -----------------------------------------------------------
 
-// resolveRequestReviews is the body requestReviews and requestReviewsByLogin
-// share. `union: false` — GitHub's default — replaces the requested set;
-// `union: true` adds to it, which is why the removal half runs first.
+// resolveRequestReviews backs requestReviews and requestReviewsByLogin.
+// `union: false` (default) replaces the requested set, `union: true` adds to it,
+// so the removal half runs first.
 func (s *Resolver) resolveRequestReviews(p graphql.ResolveParams, byLogin bool) (interface{}, error) {
 	input, _ := p.Args["input"].(map[string]interface{})
 	pr, repo, err := s.pullRequestAndRepoFromInput(input, "pullRequestId")
@@ -784,9 +774,8 @@ func (s *Resolver) resolveRequestReviews(p graphql.ResolveParams, byLogin bool) 
 }
 
 // reviewersFromInput resolves the accounts and teams a request names, by node
-// id or by login depending on which mutation is asking. A Bot reviewer is
-// resolved through the same account lookup: bleephub models an app's identity
-// as an account, so a bot login names a user row.
+// id or by login. Bots resolve through the account lookup: bleephub models an
+// app's identity as a user row.
 func (s *Resolver) reviewersFromInput(input map[string]interface{}, repo *store.Repo, byLogin bool) ([]int, []int, error) {
 	var userIDs, teamIDs []int
 	if byLogin {
@@ -832,7 +821,7 @@ func (s *Resolver) reviewersFromInput(input map[string]interface{}, repo *store.
 	return userIDs, teamIDs, nil
 }
 
-// teamByNodeID resolves a Team global node id to its row.
+// teamByNodeID resolves a Team node id to a detached row.
 func (s *Resolver) teamByNodeID(nodeID string) *store.Team {
 	if nodeID == "" {
 		return nil
@@ -1039,8 +1028,7 @@ func (s *Resolver) resolveUpdateTeamReviewAssignment(p graphql.ResolveParams) (i
 	return map[string]interface{}{"team": optionalObject(s.teamToGQL(updated))}, nil
 }
 
-// teamToGQL renders a team into the shared Team source shape the requested-
-// reviewer union and the read surface already use.
+// teamToGQL renders a team into the shared Team source shape.
 func (s *Resolver) teamToGQL(team *store.Team) map[string]interface{} {
 	if team == nil {
 		return nil
@@ -1059,7 +1047,7 @@ func (s *Resolver) teamToGQL(team *store.Team) map[string]interface{} {
 
 // --- shared helpers ---------------------------------------------------------------------
 
-// pullRequestFromInput resolves the pull request a mutation input names as a
+// pullRequestFromInput resolves the pull request a mutation input names, as a
 // detached snapshot.
 func (s *Resolver) pullRequestFromInput(input map[string]interface{}, key string) (*store.PullRequest, error) {
 	nodeID, _ := gqlInputString(input, key)
@@ -1087,8 +1075,7 @@ func (s *Resolver) pullRequestAndRepoFromInput(input map[string]interface{}, key
 }
 
 // pullRequestFromReviewInput resolves the pull request a review-comment input
-// names, which GitHub lets a client give either directly or through the
-// pending review the comment joins.
+// names, given either directly or through the pending review the comment joins.
 func (s *Resolver) pullRequestFromReviewInput(input map[string]interface{}) (*store.PullRequest, error) {
 	if nodeID, ok := gqlInputString(input, "pullRequestId"); ok && nodeID != "" {
 		return s.pullRequestFromInput(input, "pullRequestId")

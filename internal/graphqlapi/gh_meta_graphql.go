@@ -40,8 +40,8 @@ func (s *Resolver) graphQLStringScalar(name string) *graphql.Scalar {
 	return scalar
 }
 
-// addMetaFieldsToSchema implements the small, widely-used root family that
-// Octokit and schema-aware clients use for capability discovery.
+// addMetaFieldsToSchema adds the root capability-discovery fields (rateLimit,
+// meta, license(s), codeOfConduct, id, relay).
 func (s *Resolver) addMetaFieldsToSchema(queryType *graphql.Object) {
 	dateTime := s.graphQLStringScalar("DateTime")
 	gitObjectID := s.graphQLStringScalar("GitObjectID")
@@ -112,10 +112,8 @@ func (s *Resolver) addMetaFieldsToSchema(queryType *graphql.Object) {
 			"key": &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.String)},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			// Comma-ok: the arg is String! so graphql-go's validation normally
-			// guarantees a string here, but never assert a request-derived value
-			// unconditionally — a coercion edge case would panic instead of
-			// returning a clean null.
+			// Never assert a request-derived value unconditionally; a coercion
+			// edge case would panic instead of returning a clean null.
 			key, ok := p.Args["key"].(string)
 			if !ok {
 				return nil, nil
@@ -139,8 +137,7 @@ func (s *Resolver) addMetaFieldsToSchema(queryType *graphql.Object) {
 		},
 	})
 
-	// Repository.codeOfConduct returns the same type, so it is memoized in
-	// the account-surface registry rather than minted here.
+	// Shared with Repository.codeOfConduct via the account-surface registry.
 	codeOfConductType := s.gqlCodeOfConductType()
 	codeOfConductJSON := func(c store.CodeOfConduct) map[string]interface{} {
 		return map[string]interface{}{
@@ -191,9 +188,9 @@ func (s *Resolver) addMetaFieldsToSchema(queryType *graphql.Object) {
 	})
 }
 
-// gqlLicenseType returns the shared License object type (memoized). Both
-// Query.license/licenses and Repository.licenseInfo resolve to this type —
-// matching GitHub, where licenseInfo is a full License, not a summary fork.
+// gqlLicenseType returns the memoized shared License type. Both
+// Query.license/licenses and Repository.licenseInfo resolve to it, matching
+// GitHub where licenseInfo is a full License.
 func (s *Resolver) gqlLicenseType() *graphql.Object {
 	if s.graphqlTypes.license != nil {
 		return s.graphqlTypes.license
@@ -230,8 +227,8 @@ func (s *Resolver) gqlLicenseType() *graphql.Object {
 	return s.graphqlTypes.license
 }
 
-// graphQLLicenseJSON renders the GraphQL source map for a catalog license
-// key, or nil when the key names no vendored license template.
+// graphQLLicenseJSON renders the source map for a catalog license key, or nil
+// when the key names no vendored template.
 func graphQLLicenseJSON(key string) interface{} {
 	tmpl, ok := store.LicenseTemplates[strings.ToLower(key)]
 	if !ok {

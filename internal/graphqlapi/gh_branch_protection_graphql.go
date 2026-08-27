@@ -1,20 +1,12 @@
 package graphqlapi
 
-// The branch-protection GraphQL family: the complete BranchProtectionRule
-// object (the two-field shell it replaces answered only what `gh pr status`
-// asked), Repository.branchProtectionRules, and the three write mutations —
-// createBranchProtectionRule, updateBranchProtectionRule and
-// deleteBranchProtectionRule.
+// The branch-protection GraphQL family: BranchProtectionRule,
+// Repository.branchProtectionRules, and the create/update/delete mutations.
 //
-// The mutations write the very records the REST protection routes serve:
-// a pattern without wildcards is the exact-name rule PUT/DELETE
-// /repos/{owner}/{repo}/branches/{branch}/protection reads and removes, and a
-// wildcard pattern is a web-only fnmatch rule on the /ui-data
-// branch-protection-patterns surface. Both feed the same enforcement
-// chokepoint, so a rule created over GraphQL refuses a push exactly as one
-// created over REST does. The GraphQL-only members REST's shape cannot hold
-// (deployment requirements, force-push bypass actors, the creator) live in
-// the store's BranchProtectionRuleExtras beside the rule.
+// A non-wildcard pattern writes the exact-name rule the REST protection routes
+// serve; a wildcard pattern writes a web-only fnmatch rule. GraphQL-only members
+// (deployment requirements, force-push bypass actors, creator) live in the
+// store's BranchProtectionRuleExtras.
 
 import (
 	"fmt"
@@ -27,9 +19,8 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// appLogoBackgroundColor is the hex (without the leading '#') the App.logoBackgroundColor
-// field reports. bleephub stores no per-app logo color, so it answers GitHub's
-// neutral default rather than an invented per-app value.
+// appLogoBackgroundColor is GitHub's neutral default for App.logoBackgroundColor;
+// bleephub stores no per-app logo color.
 const appLogoBackgroundColor = "FFFFFF"
 
 func init() {
@@ -60,10 +51,8 @@ func mutationTargetBranchProtectionRule(key string) func(*Resolver, map[string]i
 
 // --- types ------------------------------------------------------------------
 
-// gqlAppType is the App object the allowance unions and
-// RequiredStatusCheckDescription name (memoized). bleephub renders no App
-// actors yet, but the type has to exist with GitHub's signature for the
-// unions to be GitHub's unions.
+// gqlAppType returns the App object the allowance unions and
+// RequiredStatusCheckDescription name (memoized).
 func (s *Resolver) gqlAppType() *graphql.Object {
 	dateTime := s.graphQLStringScalar("DateTime")
 	return s.mutationObject("App", graphql.Fields{
@@ -78,9 +67,8 @@ func (s *Resolver) gqlAppType() *graphql.Object {
 	})
 }
 
-// branchAllowanceActorUnion mints one of the three App | Team | User actor
-// unions the allowance objects name; GitHub declares them as three distinct
-// union types with identical membership.
+// branchAllowanceActorUnion mints an App | Team | User actor union. GitHub
+// declares three distinct such unions with identical membership.
 func (s *Resolver) branchAllowanceActorUnion(name string) *graphql.Union {
 	appType := s.gqlAppType()
 	return s.mutationUnion(name,
@@ -100,8 +88,7 @@ func (s *Resolver) branchAllowanceActorUnion(name string) *graphql.Union {
 		})
 }
 
-// gqlAllowanceConnection mints one allowance object (actor,
-// branchProtectionRule, id) plus its edge and connection.
+// gqlAllowanceConnection mints an allowance object plus its edge and connection.
 func (s *Resolver) gqlAllowanceConnection(nodeName string, actorUnion *graphql.Union) *graphql.Object {
 	node := s.mutationObject(nodeName, graphql.Fields{
 		"id":                   gqlNonNull(graphql.ID),
@@ -121,8 +108,7 @@ func (s *Resolver) gqlAllowanceConnection(nodeName string, actorUnion *graphql.U
 }
 
 // branchProtectionRuleBacklinkField resolves the owning rule from the hidden
-// repo/pattern keys an allowance or conflict source carries, so the backlink
-// is computed only when a client selects it.
+// repo/pattern keys an allowance or conflict source carries.
 func (s *Resolver) branchProtectionRuleBacklinkField() *graphql.Field {
 	return &graphql.Field{
 		Type: s.gqlBranchProtectionRuleType(),
@@ -146,9 +132,9 @@ func (s *Resolver) branchProtectionRuleBacklinkField() *graphql.Field {
 	}
 }
 
-// gqlBranchProtectionRuleType returns the complete BranchProtectionRule
-// object (memoized). Its fields are a thunk because the type is minted while
-// the Ref type is being built and refers back to Ref through matchingRefs.
+// gqlBranchProtectionRuleType returns the BranchProtectionRule object (memoized).
+// Fields are a thunk: the type is minted mid-Ref-build and refers back to Ref
+// through matchingRefs.
 func (s *Resolver) gqlBranchProtectionRuleType() *graphql.Object {
 	if s.graphqlTypes.branchProtectionRule != nil {
 		return s.graphqlTypes.branchProtectionRule
@@ -257,9 +243,7 @@ func (s *Resolver) branchProtectionRuleFields() graphql.Fields {
 		"pushAllowances":              repaginatedField(pushAllowanceConnection, "pushAllowances"),
 		"reviewDismissalAllowances":   repaginatedField(reviewDismissalConnection, "reviewDismissalAllowances"),
 
-		// bleephub records no overlapping-rule analysis, so the conflict
-		// connection is served empty rather than absent — the field GitHub
-		// declares, with nothing to report.
+		// Served empty: bleephub records no overlapping-rule analysis.
 		"branchProtectionRuleConflicts": &graphql.Field{
 			Type: graphql.NewNonNull(conflictConnection),
 			Args: connectionPagingArgs(),
@@ -340,10 +324,8 @@ func (s *Resolver) resolveBranchProtectionMatchingRefs(p graphql.ResolveParams) 
 
 // --- rendering --------------------------------------------------------------
 
-// branchProtectionRuleForPR renders baseRef.branchProtectionRule: the
-// exact-name rule protecting the pull request's base branch, in the full
-// GraphQL shape. It reads the same stored record the REST protection GET
-// serves.
+// branchProtectionRuleForPR renders baseRef.branchProtectionRule: the exact-name
+// rule protecting the pull request's base branch.
 func (s *Resolver) branchProtectionRuleForPR(repo *store.Repo, baseBranch string) map[string]interface{} {
 	bp := s.store.GetBranchProtection(repo.ID, baseBranch)
 	if bp == nil {
@@ -354,8 +336,6 @@ func (s *Resolver) branchProtectionRuleForPR(repo *store.Repo, baseBranch string
 
 func bpEnabled(rule *store.BPEnabled) bool { return rule != nil && rule.Enabled }
 
-// branchProtectionRuleSource renders one protection rule as its
-// BranchProtectionRule source map.
 func (s *Resolver) branchProtectionRuleSource(repo *store.Repo, pattern string, bp *store.BranchProtection) map[string]interface{} {
 	extras := s.store.GetBranchProtectionExtras(repo.ID, pattern)
 	if extras == nil {
@@ -446,8 +426,7 @@ func flattenBPActors(groups ...[]store.BPActor) []store.BPActor {
 }
 
 // allowanceConnectionSource renders one allowance list as a pre-paginated
-// connection source. Each node's synthetic id names the rule, the allowance
-// kind and the actor, which is enough to be stable across reads.
+// connection source. Each node's synthetic id (rule/kind/actor) is stable across reads.
 func (s *Resolver) allowanceConnectionSource(repo *store.Repo, pattern, kind string, actors []store.BPActor) map[string]interface{} {
 	nodes := make([]map[string]interface{}, 0, len(actors))
 	for _, actor := range actors {
@@ -461,10 +440,9 @@ func (s *Resolver) allowanceConnectionSource(repo *store.Repo, pattern, kind str
 	return paginateGQLMaps(nodes, nil)
 }
 
-// bpActorSource renders a restriction actor as its union member: the user by
-// login, the team by slug under the repository's owning organization. An
-// actor that no longer resolves renders a null actor on an allowance that
-// still lists it, which is what GitHub serves for a deleted account.
+// bpActorSource renders a restriction actor as its union member. An unresolvable
+// actor renders null on an allowance that still lists it, matching GitHub's
+// behavior for a deleted account.
 func (s *Resolver) bpActorSource(repo *store.Repo, actor store.BPActor) interface{} {
 	owner, _, _ := store.SplitRepoFullName(repo.FullName)
 	switch actor.Type {
@@ -485,7 +463,7 @@ func (s *Resolver) bpActorSource(repo *store.Repo, actor store.BPActor) interfac
 // --- Repository.branchProtectionRules ---------------------------------------
 
 // addBranchProtectionFieldsToSchema installs Repository.branchProtectionRules
-// and the three branch-protection mutations.
+// and the branch-protection mutations.
 func (s *Resolver) addBranchProtectionFieldsToSchema(repoType *graphql.Object, mutationType *graphql.Object) {
 	ruleType := s.gqlBranchProtectionRuleType()
 	ruleEdge := s.mutationObject("BranchProtectionRuleEdge", graphql.Fields{
@@ -527,18 +505,13 @@ func (s *Resolver) addBranchProtectionFieldsToSchema(repoType *graphql.Object, m
 
 	s.addBranchProtectionMutations(mutationType)
 
-	// The residue fields on the Gist, App and Topic objects. They are wired
-	// from here because this family installer runs after the account, gist,
-	// sponsors, marketplace and enterprise families, so every cross-family
-	// type they reach read-only — GistCommentConnection, IpAllowListEntryConnection,
-	// StargazerConnection, RepositoryConnection — is already assembled.
+	// Residue fields on Gist, App and Topic. Wired here because this installer
+	// runs last, so every cross-family type they reach is already assembled.
 	s.addMiscGraphQLFields()
 }
 
-// addAppResidueFields completes the App object with the four members the
-// two-field shell omitted: the homepage url, the logo url/background color and
-// the (always-empty) ipAllowListEntries connection. Every App source carries
-// databaseId and slug (appGQLSource), which is all these resolvers need.
+// addAppResidueFields completes the App object: homepage url, logo
+// url/background color, and the always-empty ipAllowListEntries connection.
 func (s *Resolver) addAppResidueFields() {
 	appType := s.gqlAppType()
 	uri := s.graphQLStringScalar("URI")
@@ -560,9 +533,7 @@ func (s *Resolver) addAppResidueFields() {
 			"size": &graphql.ArgumentConfig{Type: graphql.Int},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			// GitHub serves an app's logo from the integration-avatar namespace
-			// (/in/<app_id>); the instance-hosted mirror is the truthful,
-			// deterministic address for it.
+			// GitHub serves an app's logo from the integration-avatar namespace (/in/<app_id>).
 			logo := externalURL("/avatars/in/" + strconv.Itoa(sourceInt(p.Source, "databaseId")) + "?v=4")
 			if size, ok := intArg(p.Args, "size"); ok && size > 0 {
 				logo += "&s=" + strconv.Itoa(size)
@@ -578,10 +549,7 @@ func (s *Resolver) addAppResidueFields() {
 		},
 	})
 
-	// The IP allow list is an enterprise/organization feature; an app carries
-	// no entries in bleephub, so this is a truthful-empty connection rather
-	// than a missing field. The connection type is the one the enterprise
-	// family already built.
+	// Truthful-empty: an app carries no IP allow list entries in bleephub.
 	if types := s.accountSurfaceRegistry(); types.ipAllowListEntryConnection != nil {
 		appType.AddFieldConfig("ipAllowListEntries", &graphql.Field{
 			Type: graphql.NewNonNull(types.ipAllowListEntryConnection),
@@ -607,9 +575,8 @@ func (s *Resolver) addBranchProtectionMutations(mutationType *graphql.Object) {
 		"context": gqlNonNullString(),
 	})
 
-	// The create and update inputs share every configuration member; they
-	// differ only in how the subject is named (repositoryId + pattern! vs
-	// branchProtectionRuleId + optional pattern).
+	// Create and update share every configuration member, differing only in how
+	// the subject is named.
 	configurationInputFields := func() graphql.InputObjectConfigFieldMap {
 		return graphql.InputObjectConfigFieldMap{
 			"allowsDeletions":                gqlBool(),
@@ -678,9 +645,8 @@ func (s *Resolver) addBranchProtectionMutations(mutationType *graphql.Object) {
 	})
 }
 
-// enterpriseForbidsProtectedBranchUpdate is the enterprise-policy gate the
-// REST protection handlers apply; the GraphQL mutations must refuse the same
-// callers or the policy has a side door.
+// enterpriseForbidsProtectedBranchUpdate applies the same enterprise-policy gate
+// the REST protection handlers apply, so GraphQL is not a side door.
 func (s *Resolver) enterpriseForbidsProtectedBranchUpdate(p graphql.ResolveParams, repo *store.Repo) error {
 	policy, enterprise := s.store.EnterprisePolicyForRepo(repo)
 	if s.store.EnterprisePolicyForbids(enterprise, policy.MembersCanUpdateProtectedBranches, s.ghUserFromContext(p.Context)) {
@@ -689,9 +655,8 @@ func (s *Resolver) enterpriseForbidsProtectedBranchUpdate(p graphql.ResolveParam
 	return nil
 }
 
-// branchProtectionPatternIsWildcard reports whether the pattern addresses
-// matching branches (the web-rule store) rather than one exact name (the
-// REST-visible exact rule).
+// branchProtectionPatternIsWildcard reports whether the pattern is a web-rule
+// fnmatch (vs one exact branch name).
 func branchProtectionPatternIsWildcard(pattern string) bool {
 	return strings.ContainsAny(pattern, "*?[")
 }
@@ -710,9 +675,8 @@ func (s *Resolver) lookupBranchProtectionRule(repo *store.Repo, pattern string) 
 	return false, nil, rules, false
 }
 
-// applyBranchProtectionRuleInput merges the configuration members present in
-// a create/update input into the protection record — sparse, exactly as the
-// REST PUT merges its body.
+// applyBranchProtectionRuleInput sparsely merges an input's configuration members
+// into the protection record, as the REST PUT merges its body.
 func (s *Resolver) applyBranchProtectionRuleInput(bp *store.BranchProtection, input map[string]interface{}) {
 	setEnabled := func(field **store.BPEnabled, key string) {
 		if value, ok := gqlInputBool(input, key); ok {
@@ -733,7 +697,7 @@ func (s *Resolver) applyBranchProtectionRuleInput(bp *store.BranchProtection, in
 		bp.RequiredSignatures = &store.BPEnabledURL{Enabled: value}
 	}
 
-	// Status checks: any of the four check members establishes the rule.
+	// Any of the four check members establishes the rule.
 	contexts, hasContexts := gqlInputStrings(input, "requiredStatusCheckContexts")
 	checkInputs := gqlInputObjects(input, "requiredStatusChecks")
 	_, hasChecksList := input["requiredStatusChecks"]
@@ -772,8 +736,8 @@ func (s *Resolver) applyBranchProtectionRuleInput(bp *store.BranchProtection, in
 		}
 	}
 
-	// Reviews: any review member establishes the rule; requiresApprovingReviews
-	// false removes it, exactly as a null required_pull_request_reviews does.
+	// Any review member establishes the rule; requiresApprovingReviews=false
+	// removes it, as a null required_pull_request_reviews does.
 	requiresReviews, hasRequiresReviews := gqlInputBool(input, "requiresApprovingReviews")
 	count, hasCount := gqlInputInt(input, "requiredApprovingReviewCount")
 	dismissStale, hasDismissStale := gqlInputBool(input, "dismissesStaleReviews")
@@ -819,7 +783,6 @@ func (s *Resolver) applyBranchProtectionRuleInput(bp *store.BranchProtection, in
 		}
 	}
 
-	// Push restrictions.
 	restrictsPushes, hasRestrictsPushes := gqlInputBool(input, "restrictsPushes")
 	pushIDs, hasPushIDs := gqlInputStrings(input, "pushActorIds")
 	if hasRestrictsPushes && !restrictsPushes {
@@ -846,9 +809,8 @@ func (s *Resolver) applyBranchProtectionExtrasInput(extras *store.BranchProtecti
 	}
 }
 
-// bpRestrictionsFromActorIDs resolves User/Team global ids to the actor rows
-// the REST restrictions objects hold. Ids that name neither are dropped, as
-// the REST routes drop unknown logins.
+// bpRestrictionsFromActorIDs resolves User/Team global ids to actor rows. Ids
+// naming neither are dropped, as the REST routes drop unknown logins.
 func (s *Resolver) bpRestrictionsFromActorIDs(nodeIDs []string) *store.BPRestrictions {
 	restrictions := &store.BPRestrictions{Users: []store.BPActor{}, Teams: []store.BPActor{}, Apps: []store.BPActor{}}
 	for _, nodeID := range nodeIDs {
@@ -863,8 +825,8 @@ func (s *Resolver) bpRestrictionsFromActorIDs(nodeIDs []string) *store.BPRestric
 	return restrictions
 }
 
-// writeBranchProtectionRule stores the rule under its pattern in whichever
-// store the pattern belongs to, replacing patternRules for the wildcard case.
+// writeBranchProtectionRule stores the rule under its pattern in whichever store
+// the pattern belongs to (exact-name vs wildcard).
 func (s *Resolver) writeBranchProtectionRule(repo *store.Repo, pattern string, bp *store.BranchProtection, patternRules []*store.BranchProtectionPatternRule) {
 	if branchProtectionPatternIsWildcard(pattern) {
 		replaced := false
@@ -898,8 +860,7 @@ func (s *Resolver) removeBranchProtectionRule(repo *store.Repo, pattern string, 
 	s.store.SetBranchProtection(repo.ID, pattern, nil)
 }
 
-// emitBranchProtectionRuleEvent delivers the `branch_protection_rule` webhook
-// the REST protection routes deliver, through the same repo-keyed fan-out.
+// emitBranchProtectionRuleEvent delivers the `branch_protection_rule` webhook.
 func (s *Resolver) emitBranchProtectionRuleEvent(p graphql.ResolveParams, repo *store.Repo, pattern, action string) {
 	s.emitWebhookEvent(repo.FullName, "branch_protection_rule", action, map[string]interface{}{
 		"action":     action,
@@ -980,7 +941,7 @@ func (s *Resolver) resolveUpdateBranchProtectionRule(p graphql.ResolveParams) (i
 	if newPattern != pattern {
 		s.removeBranchProtectionRule(repo, pattern, isPattern)
 		s.store.MoveBranchProtectionExtras(repo.ID, pattern, newPattern)
-		// The rule list was re-read by the removal; write against the fresh set.
+		// Re-read: the removal mutated the rule list.
 		patternRules = s.store.ListBranchProtectionPatterns(repo.ID)
 	}
 	s.writeBranchProtectionRule(repo, newPattern, bp, patternRules)

@@ -8,19 +8,17 @@ import (
 	"github.com/graphql-go/graphql"
 )
 
-// Discussion polls: the poll a discussion may carry, its options, and the one
-// mutation the schema defines over them — addDiscussionPollVote. One vote per
-// user per poll, revoting replaces, which the store makes structural by
-// recording the option per user rather than a counter per option.
+// Discussion polls: the poll a discussion carries, its options, and the
+// addDiscussionPollVote mutation. One vote per user per poll; revoting
+// replaces, kept structural by recording the option per user.
 
 func init() {
 	graphqlMutationAuthz["addDiscussionPollVote"] = discussionPollVoteRule{}
 }
 
-// discussionPollVoteRule authorizes a vote against the repository holding the
-// poll's discussion: voting needs the same read standing that seeing the
-// discussion needs, and a private repository's poll must answer NOT_FOUND to
-// a stranger rather than confirming its existence.
+// discussionPollVoteRule authorizes a vote by the read standing on the poll's
+// repository; a private repo's poll answers NOT_FOUND to a stranger rather
+// than confirming its existence.
 type discussionPollVoteRule struct{}
 
 func (discussionPollVoteRule) check() error { return nil }
@@ -45,8 +43,8 @@ func (discussionPollVoteRule) authorize(s *Resolver, p graphql.ResolveParams, in
 	return nil
 }
 
-// discussionPollOptionSource renders one option. viewer is the asking user's
-// id, or zero for an anonymous read.
+// discussionPollOptionSource renders one option; viewer is the asking user's
+// id, or zero when anonymous.
 func discussionPollOptionSource(poll *store.DiscussionPoll, option *store.DiscussionPollOption, viewer int) map[string]interface{} {
 	votes := 0
 	for _, chosen := range poll.VotesByUser {
@@ -61,15 +59,13 @@ func discussionPollOptionSource(poll *store.DiscussionPoll, option *store.Discus
 		"totalVoteCount": votes,
 		"viewerHasVoted": viewer != 0 && poll.VotesByUser[viewer] == option.ID,
 		"pollID":         poll.ID,
-		// The poll is keyed in the store by its discussion id (GetDiscussionPoll
-		// takes a discussion id), so the option carries it to reconstruct the
-		// parent poll for the DiscussionPollOption.poll field.
+		// GetDiscussionPoll keys by discussion id, so carry it to reconstruct
+		// the parent poll for DiscussionPollOption.poll.
 		"discussionID": poll.DiscussionID,
 		"viewerID":     viewer,
 	}
 }
 
-// discussionPollSource renders a poll with its options in the order asked.
 func (s *Resolver) discussionPollSource(poll *store.DiscussionPoll, viewer int, canVote bool) map[string]interface{} {
 	if poll == nil {
 		return nil
@@ -86,9 +82,8 @@ func (s *Resolver) discussionPollSource(poll *store.DiscussionPoll, viewer int, 
 	}
 }
 
-// addDiscussionPollTypes builds the poll read surface and the vote mutation.
-// discussionType is the already-built Discussion object, which gains its poll
-// field here.
+// addDiscussionPollTypes builds the poll read surface and the vote mutation,
+// adding the poll field to the existing Discussion object.
 func (s *Resolver) addDiscussionPollTypes(mutationType, discussionType *graphql.Object) {
 	optionType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "DiscussionPollOption",
@@ -181,8 +176,6 @@ func (s *Resolver) addDiscussionPollTypes(mutationType, discussionType *graphql.
 		},
 	})
 
-	// DiscussionPoll.discussion — the discussion the poll belongs to (nullable in
-	// GitHub's schema). The poll source carries the discussion id.
 	pollType.AddFieldConfig("discussion", &graphql.Field{
 		Type: discussionType,
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -193,8 +186,6 @@ func (s *Resolver) addDiscussionPollTypes(mutationType, discussionType *graphql.
 		},
 	})
 
-	// DiscussionPollOption.poll — the poll the option belongs to (nullable). The
-	// option source carries the discussion id, which keys the poll in the store.
 	optionType.AddFieldConfig("poll", &graphql.Field{
 		Type: pollType,
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {

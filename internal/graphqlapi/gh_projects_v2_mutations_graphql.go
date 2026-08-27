@@ -8,20 +8,12 @@ import (
 	"github.com/graphql-go/graphql"
 )
 
-// Projects v2 — the rest of the mutation surface. The five `gh` reaches for
-// first (create project, add item, delete item, create field, set a field
-// value) are registered in gh_projects_v2_graphql.go; everything else GitHub
-// exposes is here: project metadata and lifecycle, templates, copying, links
-// to repositories and teams, collaborators, field and view editing, item
-// archival, reordering and draft conversion, status updates, and workflows.
-//
-// Every mutation goes through registerMutation, so each one below has a row in
-// graphqlMutationAuthz and cannot reach the store without the owner-scoped
-// write entitlement that row names.
+// Projects v2 — the rest of the mutation surface (the five `gh` reaches for
+// first live in gh_projects_v2_graphql.go). Every mutation goes through
+// registerMutation, so each has an owner-scoped graphqlMutationAuthz row.
 
-// addProjectV2RemainingMutations registers the mutations above onto the
-// mutation type. It runs from addProjectV2MutationsToSchema, after the shared
-// project/item/field types exist.
+// addProjectV2RemainingMutations runs from addProjectV2MutationsToSchema, after
+// the shared project/item/field types exist.
 func (s *Resolver) addProjectV2RemainingMutations(mutationType *graphql.Object) {
 	projectType := s.projectV2GraphQLTypes()
 	itemType := s.projectV2ItemType()
@@ -43,10 +35,8 @@ func (s *Resolver) addProjectV2RemainingMutations(mutationType *graphql.Object) 
 // ---------------------------------------------------------------------------
 // Shared helpers
 
-// projectV2MutationInput reads the input map and resolves the project a
-// mutation names, refusing with GitHub's not-found wording when it does not
-// resolve. The policy row has already authorized the caller by the time a
-// resolver runs, so this is a lookup rather than a second check.
+// projectV2MutationProject resolves the project a mutation names. The policy row
+// already authorized the caller, so this is a lookup, not a second check.
 func (s *Resolver) projectV2MutationProject(input map[string]interface{}, key string) (*store.ProjectV2, error) {
 	nodeID, _ := input[key].(string)
 	project := s.store.ProjectsV2.LookupProjectByNodeID(nodeID)
@@ -59,9 +49,7 @@ func (s *Resolver) projectV2MutationProject(input map[string]interface{}, key st
 }
 
 // projectV2MutationItem resolves an item and checks it belongs to the named
-// project. An item id naming an item in another project is answered as
-// not-found: it is not this project's item, and saying so would confirm the
-// item exists somewhere the caller cannot see.
+// project. An item in another project is answered as not-found, never confirmed.
 func (s *Resolver) projectV2MutationItem(input map[string]interface{}, itemKey string, project *store.ProjectV2) (*store.ProjectV2Item, error) {
 	nodeID, _ := input[itemKey].(string)
 	item := s.store.ProjectsV2.LookupItemByNodeID(nodeID)
@@ -73,8 +61,8 @@ func (s *Resolver) projectV2MutationItem(input map[string]interface{}, itemKey s
 	return item, nil
 }
 
-// projectV2SenderAndProject is the pair every emitted event needs: who acted,
-// and the project as it stands after the change.
+// projectV2Event is the pair every emitted event needs: who acted, and the
+// project after the change.
 func (s *Resolver) projectV2Event(p graphql.ResolveParams, event, action string, project *store.ProjectV2) store.ProjectV2Event {
 	return store.ProjectV2Event{
 		Event:   event,
@@ -84,17 +72,16 @@ func (s *Resolver) projectV2Event(p graphql.ResolveParams, event, action string,
 	}
 }
 
-// stringChange records a before/after pair when the value actually moved.
-// GitHub's `edited` payloads carry only the fields that changed.
+// stringChange records a before/after pair only when the value moved; `edited`
+// payloads carry only changed fields.
 func stringChange(changes map[string]store.ProjectV2Change, name, before, after string) {
 	if before != after {
 		changes[name] = store.ProjectV2Change{From: nullableString(before), To: nullableString(after)}
 	}
 }
 
-// optionalString reads a nullable String input member, returning nil when the
-// client did not supply it — which a mutation must distinguish from an empty
-// string, since one means "leave alone" and the other "clear".
+// optionalString reads a nullable String input member: nil (absent, "leave
+// alone") is distinct from an empty string ("clear").
 func optionalString(input map[string]interface{}, key string) *string {
 	raw, present := input[key]
 	if !present || raw == nil {
@@ -135,7 +122,6 @@ func projectV2NodeIDs(input map[string]interface{}, key string) []string {
 // Project lifecycle
 
 func (s *Resolver) addProjectV2LifecycleMutations(mutationType *graphql.Object, projectType *graphql.Object) {
-	// updateProjectV2 — title, description, readme, open/closed and visibility.
 	s.registerMutation(mutationType, "updateProjectV2", &graphql.Field{
 		Type: graphql.NewObject(graphql.ObjectConfig{
 			Name:   "UpdateProjectV2Payload",
@@ -170,8 +156,8 @@ func (s *Resolver) addProjectV2LifecycleMutations(mutationType *graphql.Object, 
 				return nil, &ghNotFoundError{message: "Could not resolve to a project."}
 			}
 
-			// GitHub reports open/closed transitions as their own actions and
-			// everything else as `edited` with a diff.
+			// Open/closed transitions are their own actions; everything else is
+			// `edited` with a diff.
 			action := "edited"
 			changes := map[string]store.ProjectV2Change{}
 			stringChange(changes, "title", before.Title, after.Title)
@@ -195,7 +181,6 @@ func (s *Resolver) addProjectV2LifecycleMutations(mutationType *graphql.Object, 
 		},
 	})
 
-	// deleteProjectV2 — the project and everything it owns, in one commit.
 	s.registerMutation(mutationType, "deleteProjectV2", &graphql.Field{
 		Type: graphql.NewObject(graphql.ObjectConfig{
 			Name:   "DeleteProjectV2Payload",
@@ -213,8 +198,7 @@ func (s *Resolver) addProjectV2LifecycleMutations(mutationType *graphql.Object, 
 			if err != nil {
 				return nil, err
 			}
-			// The payload is rendered from the snapshot taken before the
-			// delete: after it the row is gone and there is nothing to render.
+			// Render before deleting; afterwards the row is gone.
 			rendered := projectV2ToGQLFull(s.store, project)
 			if !s.store.ProjectsV2.DeleteProject(project.ID) {
 				return nil, &ghNotFoundError{message: "Could not resolve to a project."}
@@ -224,7 +208,6 @@ func (s *Resolver) addProjectV2LifecycleMutations(mutationType *graphql.Object, 
 		},
 	})
 
-	// copyProjectV2 — a new project with the source's fields and views.
 	s.registerMutation(mutationType, "copyProjectV2", &graphql.Field{
 		Type: graphql.NewObject(graphql.ObjectConfig{
 			Name:   "CopyProjectV2Payload",
@@ -264,7 +247,6 @@ func (s *Resolver) addProjectV2LifecycleMutations(mutationType *graphql.Object, 
 		},
 	})
 
-	// markProjectV2AsTemplate / unmarkProjectV2AsTemplate.
 	for _, variant := range []struct {
 		name     string
 		template bool
@@ -336,9 +318,8 @@ func (s *Resolver) addProjectV2LinkMutations(mutationType *graphql.Object) {
 				}
 				repoNodeID, _ := input["repositoryId"].(string)
 				repo := store.FindRepoByNodeID(s.store, repoNodeID)
-				// Linking republishes the repository's name wherever the
-				// project is visible, so a repository the caller cannot read
-				// answers the same way one that does not exist does.
+				// A repository the caller cannot read answers as not-found, since
+				// linking would republish its name wherever the project is visible.
 				if repo == nil || !s.viewerCanReadRepo(p.Context, repo) {
 					return nil, &ghNotFoundError{
 						message: fmt.Sprintf("Could not resolve to a Repository with the global id of '%s'.", repoNodeID),
@@ -384,8 +365,7 @@ func (s *Resolver) addProjectV2LinkMutations(mutationType *graphql.Object) {
 				}
 				teamNodeID, _ := input["teamId"].(string)
 				team := s.projectV2TeamByNodeID(teamNodeID)
-				// A team outside the project's owning organization is not a
-				// team this project may be linked to.
+				// The team must belong to the project's owning organization.
 				if team == nil || project.OwnerType != "Organization" || team.OrgID != project.OwnerID {
 					return nil, &ghNotFoundError{
 						message: fmt.Sprintf("Could not resolve to a Team with the global id of '%s'.", teamNodeID),
@@ -431,9 +411,8 @@ func (s *Resolver) projectV2TeamByNodeID(nodeID string) *store.Team {
 	return nil
 }
 
-// projectV2PayloadName / projectV2InputName derive GitHub's payload and input
-// type names from the mutation name, which is the convention the whole schema
-// follows.
+// projectV2PayloadName / projectV2InputName derive the payload and input type
+// names from the mutation name.
 func projectV2PayloadName(mutation string) string {
 	return strings.ToUpper(mutation[:1]) + mutation[1:] + "Payload"
 }
@@ -573,9 +552,7 @@ func (s *Resolver) addProjectV2CollaboratorMutations(mutationType *graphql.Objec
 // Fields
 
 func (s *Resolver) addProjectV2FieldMutations(mutationType *graphql.Object, fieldUnion *graphql.Union) {
-	// GitHub's two option inputs are structurally identical but separately
-	// named, and a client sending one where the other is declared fails
-	// validation, so both exist.
+	// The two option inputs are structurally identical but separately named.
 	singleSelectOptionInput := s.projectV2SingleSelectOptionInput()
 	multiSelectOptionInput := s.projectV2MultiSelectOptionInput()
 
@@ -648,8 +625,8 @@ func (s *Resolver) addProjectV2FieldMutations(mutationType *graphql.Object, fiel
 		},
 	})
 
-	// createProjectV2IssueField promotes an organization issue field onto a
-	// project, so the project column and the issue field stay one definition.
+	// createProjectV2IssueField promotes an org issue field onto a project, so the
+	// column and the issue field stay one definition.
 	s.registerMutation(mutationType, "createProjectV2IssueField", &graphql.Field{
 		Type: graphql.NewObject(graphql.ObjectConfig{
 			Name:   "CreateProjectV2IssueFieldPayload",
@@ -699,9 +676,8 @@ func (s *Resolver) addProjectV2FieldMutations(mutationType *graphql.Object, fiel
 	})
 }
 
-// projectV2IssueFieldByNodeID finds an organization issue field by its global
-// node id. Issue fields are keyed per organization in the store, so this is a
-// scan across the org buckets rather than a map lookup.
+// projectV2IssueFieldByNodeID finds an org issue field by node id, scanning the
+// per-org buckets it is keyed in.
 func (s *Resolver) projectV2IssueFieldByNodeID(nodeID string) *store.IssueField {
 	if nodeID == "" {
 		return nil
@@ -718,9 +694,8 @@ func (s *Resolver) projectV2IssueFieldByNodeID(nodeID string) *store.IssueField 
 	return nil
 }
 
-// projectV2SingleSelectOptionInput is GitHub's ProjectV2SingleSelectFieldOptionInput,
-// memoized because createProjectV2Field and updateProjectV2Field both declare
-// it and a GraphQL schema may name a type once.
+// projectV2SingleSelectOptionInput is ProjectV2SingleSelectFieldOptionInput,
+// memoized (createProjectV2Field and updateProjectV2Field both declare it).
 func (s *Resolver) projectV2SingleSelectOptionInput() *graphql.InputObject {
 	if s.graphqlTypes.projectV2OptionInput != nil {
 		return s.graphqlTypes.projectV2OptionInput
@@ -732,10 +707,8 @@ func (s *Resolver) projectV2SingleSelectOptionInput() *graphql.InputObject {
 	return s.graphqlTypes.projectV2OptionInput
 }
 
-// projectV2MultiSelectOptionInput is GitHub's
-// ProjectV2MultiSelectFieldOptionInput, memoized for the same reason its
-// single-select twin is: createProjectV2Field and updateProjectV2Field both
-// declare it.
+// projectV2MultiSelectOptionInput is ProjectV2MultiSelectFieldOptionInput,
+// memoized like its single-select twin.
 func (s *Resolver) projectV2MultiSelectOptionInput() *graphql.InputObject {
 	if s.graphqlTypes.projectV2MultiOptionInput != nil {
 		return s.graphqlTypes.projectV2MultiOptionInput
@@ -799,8 +772,7 @@ func (s *Resolver) projectV2IterationConfigurationInput() *graphql.InputObject {
 }
 
 // projectV2IterationFromInput reads an iterationConfiguration input into a store
-// iteration schedule. Iteration IDs are minted by the store, so none are set
-// here; existing IDs survive an update by title match.
+// schedule. IDs are minted by the store; existing ones survive by title match.
 func projectV2IterationFromInput(rawIteration map[string]interface{}) (*store.ProjectV2IterationConfiguration, error) {
 	if rawIteration == nil {
 		return nil, nil
@@ -829,8 +801,8 @@ func projectV2IterationFromInput(rawIteration map[string]interface{}) (*store.Pr
 	return iteration, nil
 }
 
-// projectV2DataTypeForIssueField maps an organization issue field's type onto
-// the project field data type that stores the same values.
+// projectV2DataTypeForIssueField maps an org issue field's type onto the project
+// field data type that stores the same values.
 func projectV2DataTypeForIssueField(dataType string) store.ProjectV2FieldDataType {
 	switch strings.ToUpper(dataType) {
 	case "NUMBER":
@@ -858,9 +830,8 @@ func (s *Resolver) projectV2MutationField(input map[string]interface{}, key stri
 	return field, nil
 }
 
-// projectV2EmitProjectEdited reports a change to a project's shape (a field or
-// a view) as an `edited` project event, which is how GitHub surfaces them:
-// there is no per-field webhook.
+// projectV2EmitProjectEdited reports a field or view change as an `edited`
+// project event; there is no per-field webhook.
 func (s *Resolver) projectV2EmitProjectEdited(p graphql.ResolveParams, projectID int) {
 	s.store.ProjectsV2.TouchProject(projectID)
 	project := s.store.ProjectsV2.GetProject(projectID)
@@ -909,8 +880,7 @@ func (s *Resolver) addProjectV2ViewMutations(mutationType *graphql.Object, viewT
 				return nil, err
 			}
 			if visible == nil {
-				// GitHub's default for a new view is every field on the
-				// project, which is what the REST create path does too.
+				// A new view defaults to every field on the project.
 				for _, f := range s.store.ProjectsV2.FieldsForProject(project.ID) {
 					visible = append(visible, f.ID)
 				}
@@ -1022,7 +992,7 @@ func (s *Resolver) projectV2VisibleFieldIDs(input map[string]interface{}, projec
 	return visible, nil
 }
 
-// projectV2StoreLayout maps GitHub's ProjectV2ViewLayout enum onto the store's
+// projectV2StoreLayout maps the ProjectV2ViewLayout enum onto the store's
 // lowercase layout name.
 func projectV2StoreLayout(layout string) string {
 	return strings.ToLower(strings.TrimSuffix(layout, "_LAYOUT"))
@@ -1044,7 +1014,6 @@ func (s *Resolver) projectV2MutationView(input map[string]interface{}, key strin
 // Items
 
 func (s *Resolver) addProjectV2ItemMutations(mutationType *graphql.Object, itemType, draftIssueType *graphql.Object) {
-	// addProjectV2DraftIssue — the mutation behind `gh project item-create`.
 	s.registerMutation(mutationType, "addProjectV2DraftIssue", &graphql.Field{
 		Type: graphql.NewObject(graphql.ObjectConfig{
 			Name:   "AddProjectV2DraftIssuePayload",
@@ -1082,7 +1051,6 @@ func (s *Resolver) addProjectV2ItemMutations(mutationType *graphql.Object, itemT
 		},
 	})
 
-	// updateProjectV2DraftIssue — the draft's own title and body.
 	s.registerMutation(mutationType, "updateProjectV2DraftIssue", &graphql.Field{
 		Type: graphql.NewObject(graphql.ObjectConfig{
 			Name:   "UpdateProjectV2DraftIssuePayload",
@@ -1099,8 +1067,7 @@ func (s *Resolver) addProjectV2ItemMutations(mutationType *graphql.Object, itemT
 		}))}},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			input, _ := p.Args["input"].(map[string]interface{})
-			// A draft issue has no row of its own: the item is the draft, so
-			// the draft's global id is the item's.
+			// A draft issue has no row of its own; the item's global id is the draft's.
 			item, err := s.projectV2MutationItem(input, "draftIssueId", nil)
 			if err != nil {
 				return nil, err
@@ -1124,7 +1091,6 @@ func (s *Resolver) addProjectV2ItemMutations(mutationType *graphql.Object, itemT
 		},
 	})
 
-	// archiveProjectV2Item / unarchiveProjectV2Item.
 	for _, variant := range []struct {
 		name     string
 		archived bool
@@ -1168,7 +1134,6 @@ func (s *Resolver) addProjectV2ItemMutations(mutationType *graphql.Object, itemT
 		})
 	}
 
-	// clearProjectV2ItemFieldValue.
 	s.registerMutation(mutationType, "clearProjectV2ItemFieldValue", &graphql.Field{
 		Type: graphql.NewObject(graphql.ObjectConfig{
 			Name:   "ClearProjectV2ItemFieldValuePayload",
@@ -1210,7 +1175,6 @@ func (s *Resolver) addProjectV2ItemMutations(mutationType *graphql.Object, itemT
 		},
 	})
 
-	// updateProjectV2ItemPosition — the drag-and-drop reorder.
 	s.registerMutation(mutationType, "updateProjectV2ItemPosition", &graphql.Field{
 		Type: graphql.NewObject(graphql.ObjectConfig{
 			Name: "UpdateProjectV2ItemPositionPayload",
@@ -1248,8 +1212,7 @@ func (s *Resolver) addProjectV2ItemMutations(mutationType *graphql.Object, itemT
 				return nil, err
 			}
 			afterID := 0
-			// A null afterId means "move to the front", which is different
-			// from the key being absent only in that GitHub allows both.
+			// A null/absent afterId means move to the front.
 			if afterNodeID, _ := input["afterId"].(string); afterNodeID != "" {
 				after, err := s.projectV2MutationItem(map[string]interface{}{"afterId": afterNodeID}, "afterId", project)
 				if err != nil {
@@ -1273,8 +1236,6 @@ func (s *Resolver) addProjectV2ItemMutations(mutationType *graphql.Object, itemT
 		},
 	})
 
-	// convertProjectV2DraftIssueItemToIssue — the draft becomes a real issue
-	// in the named repository, and the item follows it.
 	s.registerMutation(mutationType, "convertProjectV2DraftIssueItemToIssue", &graphql.Field{
 		Type: graphql.NewObject(graphql.ObjectConfig{
 			Name:   "ConvertProjectV2DraftIssueItemToIssuePayload",
@@ -1303,9 +1264,8 @@ func (s *Resolver) addProjectV2ItemMutations(mutationType *graphql.Object, itemT
 					message: fmt.Sprintf("Could not resolve to a Repository with the global id of '%s'.", repoNodeID),
 				}
 			}
-			// Opening an issue is a write on the repository, and project write
-			// is not repository write: the caller must be able to file an
-			// issue there in their own right.
+			// Project write is not repository write; the caller must be able to
+			// file an issue in the repository in their own right.
 			if !s.credentialGrantsRepo(p.Context, repo, store.ScopeIssues, store.PermWrite) {
 				return nil, &ghForbiddenError{message: "resource not accessible by integration"}
 			}
@@ -1456,8 +1416,7 @@ func (s *Resolver) addProjectV2StatusUpdateMutations(mutationType, projectType, 
 	})
 }
 
-// projectV2StatusDates validates the two date members a status-update
-// mutation may carry.
+// projectV2StatusDates validates the two date members a status-update may carry.
 func projectV2StatusDates(input map[string]interface{}) (string, string, error) {
 	startDate, _ := input["startDate"].(string)
 	targetDate, _ := input["targetDate"].(string)

@@ -5,20 +5,16 @@ import (
 	"github.com/graphql-go/graphql"
 )
 
-// addIssueTypeResidueFields completes GitHub's IssueType object with the members
-// the read surface had not yet claimed. IssueType is minted and stored on
-// s.graphqlTypes.issueType in addIssueFieldsToSchema; its source map (from
-// issueTypeToGQL) carries only id/name/description/color, so the store row is
-// re-read by node id for the enabled state and the numeric id used to filter
-// issues. Wired by the single call at the end of addIssueFieldsToSchema.
+// addIssueTypeResidueFields adds the remaining IssueType members. The source
+// map carries only id/name/description/color, so the store row is re-read by
+// node id for state and issue filtering. Called from addIssueFieldsToSchema.
 func (s *Resolver) addIssueTypeResidueFields() {
 	issueTypeMeta := s.graphqlTypes.issueType
 	if issueTypeMeta == nil {
 		return
 	}
 
-	// isEnabled: Boolean! — the org's enabled flag for this issue type, re-read
-	// from the store row; a missing row is truthfully not enabled.
+	// A missing store row is truthfully not enabled.
 	issueTypeMeta.AddFieldConfig("isEnabled", &graphql.Field{
 		Type: graphql.NewNonNull(graphql.Boolean),
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -29,17 +25,14 @@ func (s *Resolver) addIssueTypeResidueFields() {
 		},
 	})
 
-	// isPrivate: Boolean! — bleephub does not model private issue types (a
-	// deprecated GitHub concept), so the field is truthfully false.
+	// bleephub does not model private issue types (a deprecated GitHub concept).
 	issueTypeMeta.AddFieldConfig("isPrivate", &graphql.Field{
 		Type:    graphql.NewNonNull(graphql.Boolean),
 		Resolve: func(graphql.ResolveParams) (interface{}, error) { return false, nil },
 	})
 
-	// issues: IssueConnection! — the issues carrying this issue type in the
-	// repository named by the required repositoryId argument. A real scan of the
-	// repo's issues filtered by the issue-type id; empty when the type or repo is
-	// unresolved.
+	// The repo's issues (repositoryId argument) filtered by this issue-type id;
+	// empty when the type or repo is unresolved.
 	if issueObj := s.graphqlTypes.issue; issueObj != nil {
 		issueTypeMeta.AddFieldConfig("issues", &graphql.Field{
 			Type: graphql.NewNonNull(s.gqlIssueConnectionType(issueObj)),
@@ -79,9 +72,7 @@ func (s *Resolver) addIssueTypeResidueFields() {
 		})
 	}
 
-	// pinnedFields: [IssueFields!] — a nullable list (not a connection) of the
-	// org's pinned issue fields. bleephub models no per-type pinned-field
-	// ordering, so the list is truthfully empty.
+	// bleephub models no per-type pinned-field ordering, so the list is empty.
 	if fieldUnion := s.graphqlTypes.issueFieldsUnion; fieldUnion != nil {
 		issueTypeMeta.AddFieldConfig("pinnedFields", &graphql.Field{
 			Type: graphql.NewList(graphql.NewNonNull(fieldUnion)),

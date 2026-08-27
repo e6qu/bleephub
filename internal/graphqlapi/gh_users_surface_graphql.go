@@ -1,8 +1,7 @@
 package graphqlapi
 
-// The User account surface: the profile members a client renders a user page
-// from, the follow graph, the account's authentication keys and social links,
-// and the connections over what the account has written and starred.
+// The User account surface: profile members, the follow graph, authentication
+// keys and social links, and connections over what the account wrote and starred.
 
 import (
 	"sort"
@@ -87,9 +86,7 @@ func (s *Resolver) addUserProfileFields(types *accountSurfaceTypes) {
 		return u.Hireable != nil && *u.Hireable
 	}))
 	userType.AddFieldConfig("isEmployee", userBool(func(_ graphql.ResolveParams, u *store.User) bool {
-		// GitHub's isEmployee marks a GitHub, Inc. staff account. The
-		// equivalent standing on this instance is site administration, which
-		// is the only staff role it models.
+		// isEmployee marks staff; the only staff role modeled here is site admin.
 		return u.SiteAdmin
 	}))
 	userType.AddFieldConfig("isViewer", userBool(func(p graphql.ResolveParams, u *store.User) bool {
@@ -105,8 +102,7 @@ func (s *Resolver) addUserProfileFields(types *accountSurfaceTypes) {
 		return viewer != nil && s.store.LoginFollows(u.Login, viewer.Login)
 	}))
 	userType.AddFieldConfig("viewerCanFollow", userBool(func(p graphql.ResolveParams, u *store.User) bool {
-		// An account may follow any other account but itself, and only while
-		// signed in.
+		// An account may follow any other but itself, and only while signed in.
 		viewer := s.ghUserFromContext(p.Context)
 		return viewer != nil && viewer.ID != u.ID
 	}))
@@ -117,9 +113,8 @@ func (s *Resolver) addUserProfileFields(types *accountSurfaceTypes) {
 			if err != nil {
 				return nil, err
 			}
-			// PRIVATE is the view an account gets of itself: the one that
-			// carries its private repositories, secret gists and email
-			// addresses.
+			// PRIVATE is the view an account gets of itself (private repos,
+			// secret gists, email addresses).
 			viewer := s.ghUserFromContext(p.Context)
 			if viewer != nil && viewer.ID == user.ID {
 				return "PRIVATE", nil
@@ -177,9 +172,8 @@ func (s *Resolver) addUserProfileFields(types *accountSurfaceTypes) {
 							"fingerprint": sshKeyFingerprint(row.Key),
 							"createdAt":   nullableRFC3339(row.CreatedAt),
 							"updatedAt":   nullableRFC3339(row.CreatedAt),
-							// An authentication key records no last-use
-							// instant on this instance, and it is never
-							// read-only: it authenticates both fetch and push.
+							// No last-use instant is recorded; a key is never
+							// read-only (it authenticates both fetch and push).
 							"accessedAt": nil,
 							"isReadOnly": false,
 						}
@@ -248,7 +242,7 @@ func (s *Resolver) addUserProfileFields(types *accountSurfaceTypes) {
 				return nil, nil
 			}
 			// A private membership is visible only to the account itself and
-			// to somebody who can already see the organization's roster.
+			// anyone who can already see the org's roster.
 			if !membership.Public && !s.viewerIsOrgMember(p.Context, org.Login) {
 				viewer := s.ghUserFromContext(p.Context)
 				if viewer == nil || viewer.ID != user.ID {
@@ -259,9 +253,7 @@ func (s *Resolver) addUserProfileFields(types *accountSurfaceTypes) {
 		},
 	})
 
-	// The account-completion members (status, lists, packages, starred
-	// repositories, recent projects and the truthful program-membership
-	// constants) live in gh_users_org_fields_graphql.go.
+	// The account-completion members live in gh_users_org_fields_graphql.go.
 	s.addUserCompletionFields(types)
 }
 
@@ -477,8 +469,7 @@ func (s *Resolver) addUserConnectionFields(types *accountSurfaceTypes) {
 			if gist == nil || gist.OwnerID != user.ID {
 				return nil, nil
 			}
-			// A secret gist is readable only by its owner, the same rule the
-			// gists connection and the REST /gists surface enforce.
+			// A secret gist is readable only by its owner.
 			if !gist.Public {
 				viewer := s.ghUserFromContext(p.Context)
 				if viewer == nil || viewer.ID != user.ID {
@@ -557,8 +548,8 @@ func (s *Resolver) addUserConnectionFields(types *accountSurfaceTypes) {
 			if err != nil {
 				return nil, err
 			}
-			// GitHub's topRepositories are the repositories the account has
-			// most recently contributed to, ordered by the caller's orderBy.
+			// topRepositories are the account's most recently contributed-to
+			// repos, ordered by the caller's orderBy.
 			repos := s.repositoriesContributedTo(p, user)
 			field := orderField(p.Args, "orderBy", "PUSHED_AT")
 			descending := orderDirectionDescending(p.Args, "orderBy", true)
@@ -576,8 +567,7 @@ func (s *Resolver) addUserConnectionFields(types *accountSurfaceTypes) {
 	})
 }
 
-// gqlGistCommentType is GitHub's GistComment, the subset bleephub's gist
-// comment store records.
+// gqlGistCommentType is GitHub's GistComment, the subset the store records.
 func (s *Resolver) gqlGistCommentType(types *accountSurfaceTypes) *graphql.Object {
 	if types.gistComment != nil {
 		return types.gistComment
@@ -593,9 +583,6 @@ func (s *Resolver) gqlGistCommentType(types *accountSurfaceTypes) *graphql.Objec
 			"author":    &graphql.Field{Type: s.graphqlTypes.actor},
 		},
 	})
-	// Install the shared Comment-trait, gist back-reference and viewer-permission
-	// fields. The gist and repository families exist by the time the account
-	// surface builds this type.
 	s.addGistCommentFields(types.gistComment)
 	return types.gistComment
 }
@@ -612,10 +599,9 @@ func stringSet(values []string) map[string]bool {
 	return out
 }
 
-// readableRepos is every repository the request may read, which is the scope
-// an account-wide connection has to walk (a comment or an issue lives in a
-// repository, and one the viewer cannot read must not surface through the
-// author's profile).
+// readableRepos is every repository the request may read — the scope an
+// account-wide connection walks, so a repo the viewer cannot read never
+// surfaces through the author's profile.
 func (s *Resolver) readableRepos(p graphql.ResolveParams) []*store.Repo {
 	return s.visibleRepos(p.Context, s.store.ListEveryRepo())
 }
@@ -739,15 +725,13 @@ func sortReposByOrderField(repos []*store.Repo, field string, descending bool) {
 	})
 }
 
-// pullRequestStateEnum maps a stored pull request onto GitHub's
-// PullRequestState.
+// pullRequestStateName maps a stored pull request onto GitHub's PullRequestState.
 func pullRequestStateName(pr *store.PullRequest) string {
 	return strings.ToUpper(pr.State)
 }
 
-// socialAccountProvider identifies the platform a profile link points at, so
-// a client renders the right icon. GENERIC is GitHub's own answer for a link
-// it does not recognize.
+// socialAccountProvider identifies the platform a profile link points at.
+// GENERIC is the answer for an unrecognized link.
 func socialAccountProvider(url string) string {
 	host := strings.ToLower(url)
 	for _, candidate := range []struct {
@@ -775,8 +759,8 @@ func socialAccountProvider(url string) string {
 	return "GENERIC"
 }
 
-// socialAccountDisplayName is the handle GitHub shows for a profile link: the
-// last path segment, or the host when the link names no path.
+// socialAccountDisplayName is the handle shown for a profile link: the last
+// path segment, or the host when the link names no path.
 func socialAccountDisplayName(url string) string {
 	trimmed := strings.TrimSuffix(url, "/")
 	trimmed = strings.TrimPrefix(strings.TrimPrefix(trimmed, "https://"), "http://")
@@ -786,10 +770,9 @@ func socialAccountDisplayName(url string) string {
 	return trimmed
 }
 
-// sshKeyFingerprint is the SHA-256 fingerprint GitHub reports for an
-// authentication key, computed from the same authorized-key text the SSH
-// transport authenticates with. A key whose text never parsed has no
-// fingerprint to report, and says so rather than inventing one.
+// sshKeyFingerprint is the SHA-256 fingerprint of an authentication key,
+// computed from the same authorized-key text the SSH transport uses. Returns ""
+// when the text does not parse.
 func sshKeyFingerprint(authorizedKey string) string {
 	parsed, _, _, _, err := ssh.ParseAuthorizedKey([]byte(authorizedKey))
 	if err != nil {
@@ -798,7 +781,6 @@ func sshKeyFingerprint(authorizedKey string) string {
 	return ssh.FingerprintSHA256(parsed)
 }
 
-// sshKeyIdentity renders a key's row id for its node identity.
 func sshKeyIdentity(id int) string {
 	return strconv.Itoa(id)
 }

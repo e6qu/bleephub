@@ -1,13 +1,10 @@
 package graphqlapi
 
-// GitHub Marketplace — the GraphQL read surface: the MarketplaceListing and
-// MarketplaceCategory types and the four root fields that reach them.
-//
-// A listing's identity, plans and purchases live in the store's Marketplace
-// billing tables; its taxonomy, marketing links and verification state live
-// in the profile store. This file joins the two into the one type GitHub
-// publishes, and answers every viewer* field from the same publisher and
-// purchase facts the REST surface enforces on.
+// GitHub Marketplace GraphQL read surface: the MarketplaceListing and
+// MarketplaceCategory types and their four root fields. A listing's billing
+// facts live in the Marketplace tables and its taxonomy/marketing/verification
+// state in the profile store; this joins the two and answers viewer* fields
+// from the same facts the REST surface enforces.
 
 import (
 	"context"
@@ -35,8 +32,8 @@ func (s *Resolver) marketplaceTypes() *marketplaceTypeRegistry {
 // rendering
 
 // marketplaceProfileFor returns the listing's stored profile, or the
-// synthesized default when its publisher has not filled one in. A read
-// never writes one (STORE-034).
+// synthesized default when the publisher has not filled one in. A read never
+// writes one (STORE-034).
 func (s *Resolver) marketplaceProfileFor(slug string) *store.MarketplaceListingProfile {
 	if profile := s.store.MarketplaceProfiles.GetMarketplaceListingProfile(slug); profile != nil {
 		return profile
@@ -79,9 +76,8 @@ func (s *Resolver) marketplaceCategoryCounts() (primary, secondary map[string]in
 	return primary, secondary
 }
 
-// marketplaceListingGQL renders a listing joined with its profile. The
-// viewer-scoped fields resolve lazily off the slug so one rendering serves
-// every viewer.
+// marketplaceListingGQL renders a listing joined with its profile. Viewer-scoped
+// fields resolve lazily off the slug so one rendering serves every viewer.
 func (s *Resolver) marketplaceListingGQL(listing *store.MarketplaceListing) map[string]interface{} {
 	if listing == nil {
 		return nil
@@ -168,10 +164,8 @@ func marketplaceURLOrDefault(value, fallback string) string {
 // ---------------------------------------------------------------------------
 // viewer-scoped facts
 
-// viewerAdminsMarketplaceListing reports whether the viewer publishes the
-// app behind the listing. Every listing-management viewer* field answers
-// from it, so the GraphQL surface and the settings surface agree on who a
-// listing belongs to.
+// viewerAdminsMarketplaceListing reports whether the viewer publishes the app
+// behind the listing. Every listing-management viewer* field answers from it.
 func (s *Resolver) viewerAdminsMarketplaceListing(ctx context.Context, slug string) bool {
 	viewer := s.ghUserFromContext(ctx)
 	if viewer == nil {
@@ -195,8 +189,8 @@ func (s *Resolver) viewerAdminsMarketplaceListing(ctx context.Context, slug stri
 	return false
 }
 
-// viewerMarketplaceAccounts is the set of accounts the viewer buys for:
-// themselves plus every organization they belong to.
+// viewerMarketplaceAccounts is the accounts the viewer buys for: themselves plus
+// every organization they belong to.
 func (s *Resolver) viewerMarketplaceAccounts(ctx context.Context) []store.MarketplaceBuyerAccount {
 	viewer := s.ghUserFromContext(ctx)
 	if viewer == nil {
@@ -233,8 +227,8 @@ func (s *Resolver) viewerHasPurchasedMarketplaceListing(ctx context.Context, slu
 	return organizations > 0 && organizations == purchasedOrgs
 }
 
-// marketplaceListingInstalledForViewer reports whether the GitHub App
-// behind the listing is installed on any account the viewer buys for.
+// marketplaceListingInstalledForViewer reports whether the GitHub App behind the
+// listing is installed on any account the viewer buys for.
 func (s *Resolver) marketplaceListingInstalledForViewer(ctx context.Context, slug string) bool {
 	listing := s.store.GetMarketplaceListing(slug)
 	if listing == nil || listing.GitHubAppID == 0 {
@@ -279,8 +273,8 @@ func (s *Resolver) marketplaceCategoryType() *graphql.Object {
 	return types.category
 }
 
-// marketplaceViewerField builds a Boolean! field answered by the given
-// predicate over the listing's slug.
+// marketplaceViewerField builds a Boolean! field answered by the predicate over
+// the listing's slug.
 func (s *Resolver) marketplaceViewerField(answer func(context.Context, string) bool) *graphql.Field {
 	return &graphql.Field{
 		Type: graphql.NewNonNull(graphql.Boolean),
@@ -383,8 +377,7 @@ func (s *Resolver) marketplaceListingType() *graphql.Object {
 						return optionalObject(s.marketplaceCategoryGQL(s.store.MarketplaceProfiles.GetMarketplaceCategory(slug, false))), nil
 					},
 				},
-				// Listing administration is the publisher's; GitHub answers
-				// every one of these false to anybody else.
+				// These answer false to anyone but the publisher.
 				"viewerCanAddPlans":        s.marketplaceViewerField(admin),
 				"viewerCanApprove":         s.marketplaceViewerField(admin),
 				"viewerCanDelist":          s.marketplaceViewerField(admin),
@@ -422,8 +415,8 @@ func (s *Resolver) marketplaceListingConnectionType() *graphql.Object {
 // ---------------------------------------------------------------------------
 // root fields
 
-// addMarketplaceFieldsToSchema installs the four Marketplace root fields
-// and registers the two node types.
+// addMarketplaceFieldsToSchema installs the four Marketplace root fields and
+// registers the two node types.
 func (s *Resolver) addMarketplaceFieldsToSchema(queryType *graphql.Object, nodeTypes map[string]*graphql.Object) {
 	listingType := s.marketplaceListingType()
 	categoryType := s.marketplaceCategoryType()
@@ -438,8 +431,7 @@ func (s *Resolver) addMarketplaceFieldsToSchema(queryType *graphql.Object, nodeT
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			slug, _ := p.Args["slug"].(string)
 			listing := s.store.GetMarketplaceListing(slug)
-			// An unpublished listing exists only for its publisher; to
-			// anybody else it must read as absent rather than as hidden.
+			// An unpublished listing reads as absent to anyone but its publisher.
 			if listing == nil || (!listing.Published && !s.viewerAdminsMarketplaceListing(p.Context, listing.Slug)) {
 				return nil, nil
 			}
@@ -530,8 +522,7 @@ func (s *Resolver) resolveMarketplaceListings(p graphql.ResolveParams) (interfac
 		}
 		category = resolved.Slug
 	}
-	// allStates asks for unpublished listings too, which only a listing's
-	// own publisher may see.
+	// allStates includes unpublished listings, which only their publisher sees.
 	nodes := []map[string]interface{}{}
 	for _, listing := range s.store.ListMarketplaceListings(false) {
 		admin := s.viewerAdminsMarketplaceListing(p.Context, listing.Slug)

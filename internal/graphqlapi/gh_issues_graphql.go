@@ -87,13 +87,8 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 	assigneeConnectionType := s.gqlUserConnectionType(userType)
 
 	// --- Issue-type and sub-issue support types ---
-	// gh CLI's `gh issue view` selects GitHub's issue-type and sub-issue
-	// fields. Issue types resolve from the organization definitions assigned
-	// to the issue row. Sub-issues are backed by the same ordered store links
-	// used by the REST API.
-	// Memoized: the issue-type and issue-field mutations
-	// (gh_mutations_issues_graphql.go) return these same objects, and
-	// graphql-go refuses a schema holding two types of one name.
+	// Memoized: the issue-type and issue-field mutations return these same
+	// objects, and graphql-go refuses a schema holding two types of one name.
 	issueTypeMetaType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "IssueType",
 		Fields: graphql.Fields{
@@ -123,11 +118,9 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 	// --- Issue type ---
 	issueType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "Issue",
-		// Closable and Assignable are claimed here rather than added later:
-		// graphql-go reads an object's interface list once and memoizes it, so
-		// an interface a type does not claim at construction can never gain it
-		// as a possible type. ClosedEvent.closable and AssignedEvent.assignable
-		// resolve to an Issue or a PullRequest through them.
+		// Every interface must be claimed at construction: graphql-go memoizes
+		// the interface list once, so one added later can never gain Issue as a
+		// possible type.
 		Interfaces: []*graphql.Interface{
 			nodeInterface, s.gqlLockableInterface(), s.gqlLabelableInterface(),
 			s.graphqlTypes.reactable, s.uniformResourceLocatableInterface(),
@@ -150,7 +143,6 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 			"body":        &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
 			"state":       &graphql.Field{Type: graphql.NewNonNull(issueStateEnum)},
 			"stateReason": &graphql.Field{Type: issueStateReasonEnum},
-			// gh's shared issue/PR field set selects `closed`.
 			"closed": &graphql.Field{
 				Type: graphql.NewNonNull(graphql.Boolean),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -196,8 +188,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 			},
 			"assignees": &graphql.Field{
 				Type: graphql.NewNonNull(assigneeConnectionType),
-				// The full Relay argument set, which is also what the Assignable
-				// interface's contract requires of every implementation.
+				// The full Relay set the Assignable interface contract requires.
 				Args: relayConnectionArgs(),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					i, ok := p.Source.(map[string]interface{})
@@ -216,17 +207,13 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 					}
 					m, ok := i["milestone"].(map[string]interface{})
 					if !ok || m == nil {
-						// graphql-go's NonNull checks fire even on a nil-valued
-						// map[string]interface{}; return untyped nil so the field
-						// resolves to null cleanly.
+						// Return untyped nil: graphql-go's NonNull checks fire even
+						// on a nil-valued map[string]interface{}.
 						return nil, nil
 					}
 					return m, nil
 				},
 			},
-			// ProjectV2 items — gh CLI's `gh issue view` queries Issue.projectItems
-			// as a second round-trip. Returns the real ProjectV2Item nodes the
-			// issue has been added to via addProjectV2ItemById.
 			"projectItems": &graphql.Field{
 				Type: s.projectV2ItemConnectionType(),
 				Args: relayConnectionArgs(),
@@ -308,16 +295,13 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 		},
 	})
 
-	// Registered for interface ResolveType dispatch (Lockable, Reactable).
+	// Registered for interface ResolveType dispatch.
 	s.graphqlTypes.issue = issueType
 	s.addReactableFields(issueType, "issue")
 
-	// parent / subIssues carry GitHub's real signatures (Issue and
-	// IssueConnection!) — added after issueType exists because both are
-	// self-referential. They resolve lazily from the sub-issue store: eagerly
-	// embedding full issue maps in issueToGQL would recurse parent↔child
-	// forever, so the source map no longer carries them and each level of
-	// nesting renders only when the query actually selects it.
+	// parent / subIssues are self-referential, so they are added after issueType
+	// exists and resolve lazily from the sub-issue store — embedding full issue
+	// maps eagerly would recurse parent↔child forever.
 	issueType.AddFieldConfig("parent", &graphql.Field{
 		Type: issueType,
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -360,8 +344,6 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 			return paginateGQLMaps(nodes, p.Args), nil
 		},
 	})
-	// Issue.repository — Repository!, same as real GitHub; resolves the
-	// issue's owning repository (RelatedIssueRepository's old role).
 	issueType.AddFieldConfig("repository", &graphql.Field{
 		Type: graphql.NewNonNull(repoType),
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -386,9 +368,6 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 	issueConnectionType := s.gqlIssueConnectionType(issueType)
 
 	// --- Issue filters input ---
-	// IssueFieldValueFilter matches issues by a custom issue-field value; it is
-	// all optional scalars/ids, so it declares as GitHub spells it and needs no
-	// resolver (input types carry no resolvers).
 	issueFieldValueFilterInput := s.mutationInput("IssueFieldValueFilter", graphql.InputObjectConfigFieldMap{
 		"dateValue":               gqlString(),
 		"fieldId":                 gqlID(),
@@ -437,9 +416,8 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 	repoType.AddFieldConfig("viewerPermission", &graphql.Field{
 		Type: s.graphQLEnum("RepositoryPermission", "ADMIN", "MAINTAIN", "READ", "TRIAGE", "WRITE"),
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			// Real GitHub computes viewerPermission from the viewer's actual
-			// access — ADMIN/WRITE/READ (bleephub models pull/push/admin; it
-			// does not track MAINTAIN/TRIAGE). Return null for no access.
+			// bleephub models pull/push/admin only, never MAINTAIN/TRIAGE; null
+			// for no access.
 			src, _ := p.Source.(map[string]interface{})
 			fullName, _ := src["nameWithOwner"].(string)
 			parts := strings.SplitN(fullName, "/", 2)
@@ -508,8 +486,6 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 		},
 	})
 
-	// IssueOrderField + OrderDirection enums — gh CLI sends enum names like
-	// CREATED_AT / DESC, not strings.
 	issueOrderFieldEnum := graphql.NewEnum(graphql.EnumConfig{
 		Name: "IssueOrderField",
 		Values: graphql.EnumValueConfigMap{
@@ -545,7 +521,6 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 				issues = append(issues, s.store.SnapIssue(issue))
 			}
 
-			// Filter by states arg
 			if states, ok := p.Args["states"].([]interface{}); ok && len(states) > 0 {
 				stateMap := make(map[string]bool)
 				for _, st := range states {
@@ -560,7 +535,6 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 				issues = filtered
 			}
 
-			// Filter by labels arg
 			if labelNames, ok := p.Args["labels"].([]interface{}); ok && len(labelNames) > 0 {
 				var names []string
 				for _, ln := range labelNames {
@@ -575,7 +549,6 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 				issues = filtered
 			}
 
-			// Filter by filterBy
 			if filterBy, ok := p.Args["filterBy"].(map[string]interface{}); ok {
 				if assignee, ok := filterBy["assignee"].(string); ok && assignee != "" {
 					u := s.store.LookupUserByLogin(assignee)
@@ -590,8 +563,8 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 							}
 						}
 					}
-					// An unresolved login means no issue can match. Keeping the
-					// old list silently widened a typo to every issue.
+					// An unresolved login matches no issue (keeping the old list
+					// would silently widen a typo to every issue).
 					issues = filtered
 				}
 				if creator, ok := filterBy["createdBy"].(string); ok && creator != "" {
@@ -713,7 +686,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 
 			issue := s.store.GetIssueByNumber(repoID, number)
 			if issue == nil {
-				// Real GitHub returns a typed NOT_FOUND error, not bare null.
+				// GitHub returns a typed NOT_FOUND error, not bare null.
 				return nil, &ghNotFoundError{
 					message: fmt.Sprintf("Could not resolve to an Issue with the number of %d.", number),
 				}
@@ -722,10 +695,8 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 		},
 	})
 
-	// issueOrPullRequest is defined in addPullRequestFieldsToSchema (after the
-	// PullRequest type exists), so it can return a union of Issue|PullRequest.
-	// gh CLI's `gh issue view <N>` uses `...on Issue` + `...on PullRequest`
-	// fragments which require a real union return type.
+	// issueOrPullRequest is defined in addPullRequestFieldsToSchema, after the
+	// PullRequest type exists, so it can return an Issue|PullRequest union.
 
 	repoType.AddFieldConfig("labels", &graphql.Field{
 		Type: labelConnectionType,
@@ -735,10 +706,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 			"after":  &graphql.ArgumentConfig{Type: graphql.String},
 			"before": &graphql.ArgumentConfig{Type: graphql.String},
 			"query":  &graphql.ArgumentConfig{Type: graphql.String},
-			// gh sends literal enum names (gh label list/create issue
-			// `labels(orderBy: {field: NAME, direction: ASC})`), so
-			// field/direction must be enums — string-typed inputs reject
-			// the literals.
+			// gh sends literal enum names, so field/direction must be enums.
 			"orderBy": &graphql.ArgumentConfig{Type: graphql.NewInputObject(graphql.InputObjectConfig{
 				Name: "LabelOrder",
 				Fields: graphql.InputObjectConfigFieldMap{
@@ -762,7 +730,6 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 
 			labels := s.store.ListLabels(repoID)
 
-			// Filter by query
 			if q, ok := p.Args["query"].(string); ok && q != "" {
 				q = strings.ToLower(q)
 				var filtered []*store.IssueLabel
@@ -815,7 +782,6 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 
 			state := ""
 			if states, ok := p.Args["states"].([]interface{}); ok && len(states) > 0 {
-				// Use first state as filter (or "all" if multiple)
 				if len(states) == 1 {
 					state = strings.ToLower(fmt.Sprintf("%v", states[0]))
 				}
@@ -823,7 +789,6 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 
 			milestones := s.store.ListMilestones(repoID, state)
 
-			// Filter by query
 			if q, ok := p.Args["query"].(string); ok && q != "" {
 				q = strings.ToLower(q)
 				var filtered []*store.Milestone
@@ -881,7 +846,6 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 				users = append(users, user)
 			}
 
-			// Filter by query
 			if q, ok := p.Args["query"].(string); ok && q != "" {
 				q = strings.ToLower(q)
 				var filtered []*store.User
@@ -893,8 +857,8 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 				users = filtered
 			}
 
-			// assignableUsers iterates a Go map, so order is nondeterministic;
-			// sort by ID to make cursor pagination stable across pages.
+			// Sort by ID: the map iteration above is nondeterministic and cursor
+			// pagination must be stable across pages.
 			sort.Slice(users, func(a, b int) bool { return users[a].ID < users[b].ID })
 
 			first := 0
@@ -918,12 +882,9 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 			"milestoneId":  &graphql.InputObjectFieldConfig{Type: graphql.ID},
 			"assigneeIds":  &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(graphql.ID))},
 			"issueTypeId":  &graphql.InputObjectFieldConfig{Type: graphql.ID},
-			// gh's IssueCreate mutation always serializes projectIds (null
-			// unless --project) and issueTemplate when a template applies — the
-			// input must declare them or variable coercion rejects the whole
-			// mutation. projectIds, when supplied, add the issue to those
-			// ProjectV2 boards (see the resolver). issueTemplate is a client
-			// hint with no server-side state, accepted for coercion.
+			// gh's IssueCreate always serializes these, so the input must declare
+			// them or variable coercion rejects the mutation. projectIds add the
+			// issue to those ProjectV2 boards; issueTemplate is an accepted no-op.
 			"projectIds":      &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(graphql.ID))},
 			"issueTemplate":   &graphql.InputObjectFieldConfig{Type: graphql.String},
 			"parentIssueId":   &graphql.InputObjectFieldConfig{Type: graphql.ID},
@@ -1001,9 +962,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 				issue = s.store.GetIssue(issue.ID)
 			}
 
-			// Honor projectIds: add the new issue to each named ProjectV2 board.
-			// gh sends null unless --project, but a supplied list must not be
-			// silently dropped.
+			// Add the new issue to each named ProjectV2 board.
 			if raw, ok := input["projectIds"].([]interface{}); ok {
 				for _, v := range raw {
 					nodeID, _ := v.(string)
@@ -1018,9 +977,8 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 				}
 			}
 
-			// Parity with the REST create path: deliver the issues/opened
-			// webhook so `on: issues` workflows fire for GraphQL-created issues
-			// (the gh CLI uses GraphQL).
+			// Deliver the issues/opened webhook, matching the REST create path, so
+			// `on: issues` workflows fire for GraphQL-created issues.
 			s.emitWebhookEvent(repo.FullName, "issues", "opened", s.buildIssuesPayload(repo, issue, user, "opened"))
 
 			return map[string]interface{}{
@@ -1188,8 +1146,8 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 			for _, issue := range issues {
 				pinner := s.store.GetUserByID(issue.PinnedByID)
 				if pinner == nil {
-					// The pinner's account can be gone; the issue author keeps
-					// the non-null Actor contract honest.
+					// The pinner's account can be gone; fall back to the author to
+					// keep the non-null Actor contract.
 					pinner = s.store.GetUserByID(issue.AuthorID)
 				}
 				var pinnedBy map[string]interface{}
@@ -1262,7 +1220,6 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 	unpinIssuePayloadType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "UnpinIssuePayload",
 		Fields: graphql.Fields{
-			// The id of the pinned issue that was unpinned (GitHub's payload).
 			"id":    &graphql.Field{Type: graphql.ID},
 			"issue": &graphql.Field{Type: issueType},
 		},
@@ -1343,8 +1300,8 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 			if target.ID == source.ID {
 				return nil, fmt.Errorf("issue is already in %s", target.FullName)
 			}
-			// GitHub's restriction: an issue only transfers between
-			// repositories that belong to the same user or organization.
+			// An issue only transfers between repositories owned by the same
+			// user or organization.
 			if target.OwnerID != source.OwnerID {
 				return nil, fmt.Errorf("issues can only be transferred between repositories owned by the same user or organization")
 			}
@@ -1352,8 +1309,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 			if moved == nil {
 				return nil, gqlMissingNodeType("Issue")
 			}
-			// The webhook fires on the repository the issue left, the way
-			// GitHub delivers issues/transferred.
+			// issues/transferred fires on the repository the issue left.
 			s.emitWebhookEvent(source.FullName, "issues", "transferred", s.buildIssuesPayload(source, moved, user, "transferred"))
 			return map[string]interface{}{
 				"issue": issueToGQL(moved, s.store),
@@ -1390,16 +1346,14 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 				return nil, gqlMissingNodeType("Issue")
 			}
 			repo := s.store.GetRepoByID(issue.RepoID)
-			// Issue deletion is one of the actions an enterprise can forbid
-			// its members outright, whatever standing they hold on the
-			// repository (gh_enterprise_policy.go is the REST half of the
-			// same policy set).
+			// An enterprise can forbid issue deletion outright, whatever repo
+			// standing the member holds.
 			if err := s.enterprisePolicyRefusal(p, repo, func(policy store.EnterprisePolicy) string {
 				return policy.MembersCanDeleteIssues
 			}, "Deleting issues is disabled by an enterprise policy."); err != nil {
 				return nil, err
 			}
-			// The webhook payload has to render before the rows disappear.
+			// Render the payload before the rows disappear.
 			var payload map[string]interface{}
 			if repo != nil {
 				payload = s.buildIssuesPayload(repo, issue, user, "deleted")
@@ -1437,7 +1391,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 		},
 	})
 	// timelineEdge is added later, once the timeline family builds
-	// IssueTimelineItemEdge (see addTimelineFieldsToSchema).
+	// IssueTimelineItemEdge.
 	s.stashNamedObject(addCommentPayloadType)
 
 	s.registerMutation(mutationType, "addComment", &graphql.Field{
@@ -1452,8 +1406,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 			subjectNodeID, _ := input["subjectId"].(string)
 			body, _ := input["body"].(string)
 
-			// On real GitHub a PR is an issue, so addComment's subjectId may be
-			// either; `gh pr comment` passes a PR node id. Resolve both.
+			// A PR is an issue, so subjectId may be either; resolve both.
 			if issue := store.FindIssueByNodeID(s.store, subjectNodeID); issue != nil {
 				comment := s.store.CreateComment(issue.ID, user.ID, body)
 				if comment == nil {
@@ -1478,10 +1431,9 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 		},
 	})
 
-	// The agent-triage input family GitHub added to updateIssue: each of these
-	// mirrors GitHub's SDL exactly. AgentAssignmentInput and AssigneeUpdateInput
-	// are memoized (the assignment mutations name the same two), so building
-	// them here reuses whichever installer ran first.
+	// The agent-triage input family on updateIssue. AgentAssignmentInput and
+	// AssigneeUpdateInput are memoized (the assignment mutations name the same
+	// two), so this reuses whichever installer ran first.
 	confidenceEnum := s.sharedEnum("IssueEventConfidenceLevel", "HIGH", "LOW", "MEDIUM")
 	agentAssignmentInput := s.mutationInput("AgentAssignmentInput", graphql.InputObjectConfigFieldMap{
 		"baseRef":            gqlString(),
@@ -1501,8 +1453,6 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 		"rationale":   gqlString(),
 		"suggest":     gqlBool(),
 	})
-	// Shared with AddLabelsToLabelableInput.labels through the getter so the one
-	// memoized LabelUpdateInput has an identical field set at either call site.
 	labelUpdateInput := s.gqlLabelUpdateInput()
 	issueStateUpdateInput := s.mutationInput("IssueStateUpdateInput", graphql.InputObjectConfigFieldMap{
 		"confidence":       gqlInputOf(confidenceEnum),
@@ -1512,9 +1462,6 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 		"suggest":          gqlBool(),
 		"value":            gqlNonNullInputOf(issueStateEnum),
 	})
-	// IssueFieldUpdateInput names a custom issue field by its user-facing name
-	// and the operation to perform, mirroring GitHub's projects-style field
-	// editing surface on updateIssue.
 	issueFieldUpdateOperationEnum := s.sharedEnum("IssueFieldUpdateOperation", "ADD", "CLEAR", "REMOVE", "SET")
 	issueFieldUpdateInput := s.mutationInput("IssueFieldUpdateInput", graphql.InputObjectConfigFieldMap{
 		"fieldName": gqlNonNullString(),
@@ -1527,9 +1474,8 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 			"id":    &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(graphql.ID)},
 			"title": &graphql.InputObjectFieldConfig{Type: graphql.String},
 			"body":  &graphql.InputObjectFieldConfig{Type: graphql.String},
-			// IssueState, not String: real GitHub types this field with the
-			// enum, and a free-form string was being written into the store
-			// verbatim, so `state: "banana"` became the issue's state.
+			// IssueState enum, not String: a free-form string was written to the
+			// store verbatim, so `state: "banana"` became the issue's state.
 			"state":             &graphql.InputObjectFieldConfig{Type: issueStateEnum},
 			"milestoneId":       &graphql.InputObjectFieldConfig{Type: graphql.ID},
 			"labelIds":          &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(graphql.ID))},
@@ -1584,9 +1530,8 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 					issueTypeID = &cleared
 				}
 			}
-			// Triage — labels, assignees, milestone — is a push-level act even
-			// for the issue's own author, who reaches this mutation to edit
-			// their title and body.
+			// Triage — labels, assignees, milestone — needs push even for the
+			// issue's own author.
 			triage := false
 			for _, key := range []string{"labelIds", "assigneeIds", "milestoneId"} {
 				if _, present := input[key]; present {
@@ -1596,9 +1541,8 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 			if triage && !s.viewerHasRepoPermission(p.Context, repo, store.ScopeIssues, store.PermWrite) {
 				return nil, fmt.Errorf("must have push access to Repository")
 			}
-			// The schema types this as IssueState; the second check catches a
-			// caller that reached the resolver another way rather than letting
-			// an unknown word become the issue's state.
+			// Re-check the enum here to catch a caller that reached the resolver
+			// another way, never letting an unknown word become the state.
 			newState := ""
 			if raw, present := input["state"]; present && raw != nil {
 				v, ok := raw.(string)
@@ -1620,9 +1564,8 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 				return nil, err
 			}
 
-			// The node finders hand back the live row, which UpdateIssue
-			// mutates in place; take a detached snapshot for the before-values
-			// the webhook fan-out diffs against.
+			// FindIssueByNodeID returns the live row that UpdateIssue mutates in
+			// place; snapshot the before-values the webhook fan-out diffs against.
 			before := s.store.GetIssue(issue.ID)
 			if before == nil {
 				return nil, gqlMissingNodeType("Issue")
@@ -1653,8 +1596,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 			})
 
 			updated := s.store.GetIssue(issue.ID)
-			// gh mutates issues over GraphQL, so this mutation has to deliver
-			// the same per-change action fan-out the REST PATCH does.
+			// Deliver the same per-change fan-out the REST PATCH does.
 			change := store.SubjectChange{
 				LabelsFrom:    before.LabelIDs,
 				LabelsTo:      labelIDs,
@@ -1671,18 +1613,16 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 			}
 			user := s.ghUserFromContext(p.Context)
 			if change.TitleFrom != nil && user != nil {
-				// The retitle is github's `renamed` timeline event. gh mutates
-				// titles here rather than over REST, so recording it only on
-				// the REST path would make the history depend on which client
-				// made the edit.
+				// Record the `renamed` timeline event here too, or the history
+				// would depend on whether the edit came via GraphQL or REST.
 				s.store.RecordIssueEvent(repo.ID, issue.ID, user.ID, "renamed", map[string]interface{}{
 					"rename_from": *change.TitleFrom,
 					"rename_to":   updated.Title,
 				})
 			}
 			s.emitIssueChanges(repo, updated, user, change)
-			// The state transition goes through the shared helper so it also
-			// records the timeline event closeIssue/reopenIssue record.
+			// Route through the shared helper so it records the same timeline
+			// event closeIssue/reopenIssue do.
 			switch newState {
 			case "CLOSED":
 				s.emitIssueStateChange(updated, user, previousState, "closed")
@@ -1695,9 +1635,8 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 		},
 	})
 
-	// IssueType's residual members (isEnabled/isPrivate/issues/pinnedFields) are
-	// installed here, after both the IssueType meta object and the IssueFields
-	// union exist, via the single wiring call for gh_field_residue_graphql.go.
+	// IssueType's residual members are installed after both the IssueType meta
+	// object and the IssueFields union exist.
 	s.addIssueTypeResidueFields()
 
 	return issueType, issueMilestoneType
@@ -1706,9 +1645,7 @@ func (s *Resolver) addIssueFieldsToSchema(userType, repoType, mutationType, quer
 // --- GraphQL converter helpers ---
 
 func (s *Resolver) issueFieldValueGraphQLConnectionType() *graphql.Object {
-	// Minted through the shared enum table so the issue-field mutations, which
-	// name the same three enums on their inputs, reuse these rather than
-	// minting a second of each name.
+	// Shared enums: the issue-field mutations name the same three on their inputs.
 	dataTypeEnum := s.sharedEnum("IssueFieldDataType",
 		"DATE", "MULTI_SELECT", "NUMBER", "SINGLE_SELECT", "TEXT")
 	visibilityEnum := s.sharedEnum("IssueFieldVisibility", "ALL", "ORG_ONLY")
@@ -1749,9 +1686,8 @@ func (s *Resolver) issueFieldValueGraphQLConnectionType() *graphql.Object {
 	singleSelectFieldType := graphql.NewObject(graphql.ObjectConfig{Name: "IssueFieldSingleSelect", Fields: commonFieldFields(true)})
 	multiSelectFieldType := graphql.NewObject(graphql.ObjectConfig{Name: "IssueFieldMultiSelect", Fields: commonFieldFields(true)})
 
-	// fieldUnion and valueUnion are memoized on the registry: the issue-field
-	// mutations return them, and graphql-go refuses a schema holding two
-	// unions of one name.
+	// fieldUnion and valueUnion are memoized: the issue-field mutations return
+	// them, and graphql-go refuses two unions of one name.
 	fieldUnion := graphql.NewUnion(graphql.UnionConfig{
 		Name:  "IssueFields",
 		Types: []*graphql.Object{textFieldType, dateFieldType, numberFieldType, singleSelectFieldType, multiSelectFieldType},
@@ -1837,7 +1773,6 @@ func issueToGQL(issue *store.Issue, st *store.Store) map[string]interface{} {
 	st.Mu.RLock()
 	defer st.Mu.RUnlock()
 
-	// Labels
 	labelNodes := make([]map[string]interface{}, 0)
 	for _, lid := range issue.LabelIDs {
 		if l, ok := st.Labels[lid]; ok {
@@ -1845,7 +1780,6 @@ func issueToGQL(issue *store.Issue, st *store.Store) map[string]interface{} {
 		}
 	}
 
-	// Assignees
 	assigneeNodes := make([]map[string]interface{}, 0)
 	for _, aid := range issue.AssigneeIDs {
 		if u, ok := st.Users[aid]; ok {
@@ -1853,7 +1787,6 @@ func issueToGQL(issue *store.Issue, st *store.Store) map[string]interface{} {
 		}
 	}
 
-	// Milestone
 	var milestone map[string]interface{}
 	if issue.MilestoneID > 0 {
 		if ms, ok := st.Milestones[issue.MilestoneID]; ok {
@@ -1874,18 +1807,17 @@ func issueToGQL(issue *store.Issue, st *store.Store) map[string]interface{} {
 		}
 	}
 
-	// Comments — resolved through the by-parent index so rendering a page of
-	// issues no longer scans every comment in the store once per issue.
+	// Resolve comments through the by-parent index to avoid scanning every
+	// comment in the store once per issue.
 	indexed := st.CommentsByParent[store.CommentCountKey("issue", issue.ID)]
 	commentNodes := make([]map[string]interface{}, 0, len(indexed))
 	for _, c := range indexed {
 		commentNodes = append(commentNodes, commentToGQLLocked(c, st))
 	}
-	// The index order is nondeterministic across a reload; sort for stable
-	// cursor pagination (oldest first, like GitHub's comments feed).
+	// Index order is nondeterministic across a reload; sort oldest-first for
+	// stable cursor pagination.
 	sortGQLNodesByCreatedAt(commentNodes)
 
-	// Resolve repo for URL
 	repo := st.Repos[issue.RepoID]
 	url, resourcePath := "", ""
 	if repo != nil {
@@ -1893,8 +1825,7 @@ func issueToGQL(issue *store.Issue, st *store.Store) map[string]interface{} {
 		url = externalURL(resourcePath)
 	}
 
-	// parent/subIssues resolve lazily (their eager maps would recurse
-	// parent↔child); only the summary counts are computed here.
+	// parent/subIssues resolve lazily; only the summary counts are computed here.
 	totalSubIssues := 0
 	completedSubIssues := 0
 	for _, childID := range st.SubIssueLists[issue.ID] {
@@ -2007,9 +1938,8 @@ func (s *Resolver) gqlPageInfoType() *graphql.Object {
 	return s.graphqlTypes.pageInfo
 }
 
-// gqlLabelType returns the shared Label object type (memoized). Both Issue and
-// PullRequest label connections use this single type so the schema matches
-// GitHub's, where PRs and issues share one Label.
+// gqlLabelType returns the shared Label object type (memoized); PRs and issues
+// share one Label, as on GitHub.
 func (s *Resolver) gqlLabelType() *graphql.Object {
 	if s.graphqlTypes.labelType != nil {
 		return s.graphqlTypes.labelType
@@ -2060,8 +1990,6 @@ func (s *Resolver) gqlLabelConnectionType() *graphql.Object {
 }
 
 // gqlUserConnectionType returns the shared UserConnection type (memoized).
-// Used by Issue.assignees, PullRequest.assignees, Repository.assignableUsers,
-// and Repository.watchers — the same single connection type GitHub exposes.
 func (s *Resolver) gqlUserConnectionType(userType *graphql.Object) *graphql.Object {
 	if s.graphqlTypes.userConnection != nil {
 		return s.graphqlTypes.userConnection
@@ -2077,12 +2005,8 @@ func (s *Resolver) gqlUserConnectionType(userType *graphql.Object) *graphql.Obje
 	return s.graphqlTypes.userConnection
 }
 
-// gqlReactionGroupType returns the shared ReactionGroup type (memoized), with
-// GitHub's exact signatures: content is the ReactionContent enum and users is
-// a non-null ReactingUserConnection. Issues, comments, PRs, reviews, and
-// discussions all resolve reactionGroups through this one type; the source
-// maps come from reactionGroupsForGraphQL, which emits enum-shaped content
-// values and always-present users connections.
+// gqlReactionGroupType returns the shared ReactionGroup type (memoized). Source
+// maps come from reactionGroupsForGraphQL.
 func (s *Resolver) gqlReactionGroupType() *graphql.Object {
 	if s.graphqlTypes.reactionGroup != nil {
 		return s.graphqlTypes.reactionGroup
@@ -2092,10 +2016,8 @@ func (s *Resolver) gqlReactionGroupType() *graphql.Object {
 		"CONFUSED", "EYES", "HEART", "HOORAY", "LAUGH", "ROCKET", "THUMBS_DOWN", "THUMBS_UP",
 	)
 	dateTime := s.graphQLStringScalar("DateTime")
-	// The field types name Reactable (subject), the shared User type (reactors /
-	// users) and the connections below. A FieldsThunk defers their resolution
-	// until schema assembly, so this can be built while the Reactable interface
-	// that references it is still under construction.
+	// A FieldsThunk defers field resolution until schema assembly, so this can be
+	// built while the Reactable interface that references it is still assembling.
 	s.graphqlTypes.reactionGroup = graphql.NewObject(graphql.ObjectConfig{
 		Name: "ReactionGroup",
 		Fields: graphql.FieldsThunk(func() graphql.Fields {
@@ -2182,10 +2104,8 @@ func (s *Resolver) gqlReactionGroupType() *graphql.Object {
 }
 
 // gqlIssueCommentType returns the shared IssueComment object type (memoized).
-// Real GitHub stores PR conversation comments in the issue-comment table and
-// serves both through this one type; bleephub mirrors that, so gh CLI's
-// merged Issue|PullRequest `comments` fragments select a single type. The
-// resolvers read the source maps built by commentToGQLLocked.
+// PR conversation comments live in the issue-comment table and serve through
+// this one type, as on GitHub. Resolvers read commentToGQLLocked's source maps.
 func (s *Resolver) gqlIssueCommentType() *graphql.Object {
 	if s.graphqlTypes.issueComment != nil {
 		return s.graphqlTypes.issueComment
@@ -2226,8 +2146,7 @@ func (s *Resolver) gqlIssueCommentType() *graphql.Object {
 				},
 			},
 			"authorAssociation": &graphql.Field{Type: graphql.NewNonNull(commentAuthorAssociationEnum)},
-			// Fields gh CLI's `gh issue view` queries on IssueComment — defaults
-			// fine for bleephub (we don't model edit history or moderation).
+			// Defaults: bleephub models no edit history or moderation.
 			"includesCreatedEdit": &graphql.Field{
 				Type: graphql.NewNonNull(graphql.Boolean),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -2314,8 +2233,6 @@ func (s *Resolver) gqlIssueCommentType() *graphql.Object {
 					return c["reactionGroups"], nil
 				},
 			},
-			// gh's shared comments fragment (issue view + pr view) selects
-			// viewerDidAuthor.
 			"viewerDidAuthor": &graphql.Field{
 				Type: graphql.NewNonNull(graphql.Boolean),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -2334,8 +2251,8 @@ func (s *Resolver) gqlIssueCommentType() *graphql.Object {
 	return s.graphqlTypes.issueComment
 }
 
-// gqlIssueCommentConnectionType returns the shared IssueCommentConnection
-// type (memoized), used by Issue.comments and PullRequest.comments.
+// gqlIssueCommentConnectionType returns the shared IssueCommentConnection type
+// (memoized).
 func (s *Resolver) gqlIssueCommentConnectionType() *graphql.Object {
 	if s.graphqlTypes.issueCommentConnection != nil {
 		return s.graphqlTypes.issueCommentConnection
@@ -2445,9 +2362,8 @@ func (s *Resolver) gqlIssueOrderType(fieldType, directionType graphql.Input) *gr
 	return s.graphqlTypes.issueOrder
 }
 
-// pinnedIssueNodeID renders the PinnedIssue global id for an issue. The pin
-// row has no store identity of its own (pinned state lives on the issue), so
-// the issue's database id is the stable discriminator.
+// pinnedIssueNodeID renders the PinnedIssue global id. The pin row has no store
+// identity of its own, so the issue's database id is the discriminator.
 func pinnedIssueNodeID(issueID int) string {
 	return fmt.Sprintf("PI_kgDO%08d", issueID)
 }
@@ -2481,11 +2397,9 @@ func issueFieldValuesConnectionLocked(st *store.Store, issue *store.Issue) map[s
 		}
 		nodes = append(nodes, issueFieldValueToGQLLocked(field, issue.ID, values[fieldID]))
 	}
-	// Return the full node set with a truthful totalCount; the field resolver
-	// applies the client's page window via repaginateConnection. Pre-paginating
-	// here with paginateGQL clamped the list to 100, so an issue with more than
-	// 100 field values reported totalCount 100 and hid the remainder from
-	// pagination (GQL-022). Match the shape of the sibling connections.
+	// Return the full node set; the field resolver windows it via
+	// repaginateConnection. Pre-paginating here clamped totalCount to 100 and
+	// hid the remainder (GQL-022).
 	return map[string]interface{}{
 		"nodes":      nodes,
 		"totalCount": len(nodes),
@@ -2696,9 +2610,8 @@ func commentToGQLLocked(c *store.Comment, st *store.Store) map[string]interface{
 	}
 }
 
-// commentMinimizePerms reports whether the viewer may hide (minimize) and
-// reveal (unminimize) a comment: a repository maintainer may do both, and an
-// author may additionally hide their own comment — GitHub's moderation model.
+// commentMinimizePerms reports whether the viewer may minimize/unminimize a
+// comment: a maintainer may do both; an author may additionally hide their own.
 func (s *Resolver) commentMinimizePerms(p graphql.ResolveParams, src map[string]interface{}) (canMinimize, canUnminimize bool) {
 	viewer := s.ghUserFromContext(p.Context)
 	if viewer == nil || src == nil {
@@ -2711,8 +2624,8 @@ func (s *Resolver) commentMinimizePerms(p graphql.ResolveParams, src map[string]
 	return canPush || viewer.ID == authorID, canPush
 }
 
-// commentRepoIDLocked resolves the repository a comment belongs to through its
-// parent issue or pull request, for the moderation-permission resolvers.
+// commentRepoIDLocked resolves a comment's repository through its parent issue
+// or pull request.
 func commentRepoIDLocked(comment *store.Comment, st *store.Store) int {
 	switch comment.ParentType {
 	case "pull_request":
@@ -2781,8 +2694,7 @@ func authorAssociationForRepoLocked(st *store.Store, repoID, authorID int) strin
 	return "NONE"
 }
 
-// nilStr returns nil for empty strings (so nullable GraphQL String fields
-// resolve to null rather than ""), or the string itself.
+// nilStr returns nil for an empty string, else the string.
 func nilStr(s string) interface{} {
 	if s == "" {
 		return nil
@@ -2797,10 +2709,8 @@ func nilStrPtr(s *string) interface{} {
 	return *s
 }
 
-// reactionGroupsForGraphQL returns a GraphQL-shaped `[ReactionGroup]` list
-// for the given parent, querying the real ReactionStore so per-content
-// totalCount values reflect actual reactions. Used by Issue, IssueComment,
-// and any other reactable type's `reactionGroups` field.
+// reactionGroupsForGraphQL returns a GraphQL-shaped `[ReactionGroup]` for a
+// parent, with per-content totalCount from the ReactionStore.
 func reactionGroupsForGraphQL(rs *store.ReactionStore, parentType string, parentID int, viewerID int) []map[string]interface{} {
 	counts := map[string]int{
 		"+1": 0, "-1": 0, "laugh": 0, "confused": 0,
@@ -2815,7 +2725,7 @@ func reactionGroupsForGraphQL(rs *store.ReactionStore, parentType string, parent
 			}
 		}
 	}
-	// Order matches real GitHub's GraphQL response.
+	// Order matches GitHub's GraphQL response.
 	mapping := [...]struct{ rest, gql string }{
 		{"+1", "THUMBS_UP"},
 		{"-1", "THUMBS_DOWN"},
@@ -2843,9 +2753,8 @@ func reactionGroupsForGraphQL(rs *store.ReactionStore, parentType string, parent
 // --- Node ID lookup helpers ---
 
 // resolveGQLLabelIDs maps a mutation's labelIds onto store ids. A nil argument
-// — absent, or an explicit null — means "leave the labels alone" and yields a
-// nil result; an id that names no label of repoID is refused rather than
-// dropped, because dropping it reported success for a label never applied.
+// leaves the labels alone; an id naming no label of repoID is refused, not
+// dropped (dropping reported success for a label never applied).
 func resolveGQLLabelIDs(st *store.Store, repoID int, raw interface{}) (*[]int, error) {
 	entries, ok := raw.([]interface{})
 	if !ok {
@@ -2882,7 +2791,7 @@ func resolveGQLAssigneeIDs(st *store.Store, raw interface{}) (*[]int, error) {
 }
 
 // resolveGQLMilestoneID maps a mutation's milestone argument onto a store id.
-// An absent member leaves the milestone alone; an explicit null clears it.
+// Absent leaves the milestone alone; explicit null clears it.
 func resolveGQLMilestoneID(st *store.Store, repoID int, input map[string]interface{}, key string) (*int, error) {
 	raw, present := input[key]
 	if !present {
@@ -2902,7 +2811,7 @@ func resolveGQLMilestoneID(st *store.Store, repoID int, input map[string]interfa
 }
 
 // applyIssueState moves an issue between OPEN and CLOSED, keeping ClosedAt and
-// StateReason consistent with the transition the way the REST handler does.
+// StateReason consistent, as the REST handler does.
 func applyIssueState(i *store.Issue, state string) {
 	if state == "CLOSED" {
 		i.State = "CLOSED"
@@ -2927,18 +2836,9 @@ func paginateIssuesGQL(issues []*store.Issue, st *store.Store, first int, after 
 	}, func(i *store.Issue) string { return i.NodeID })
 }
 
-// Some GraphQL fields queried by gh CLI are not mutable through the REST
-// surfaces Bleephub implements today. Those fields resolve to their persisted
-// value when modeled, or to the GitHub-shaped zero value when the feature is
-// absent.
-// projectV2ItemConnectionType returns a singleton wiring for the
-// ProjectV2 connection on Issue + PullRequest. Real lookups against
-// the ProjectV2Store; resolvers read from the source map populated by
-// projectItemsForGraphQL.
+// graphQLTypeRegistry memoizes every shared GraphQL type: graphql-go refuses a
+// schema holding two types of one name, so each is built once and reused.
 type graphQLTypeRegistry struct {
-	// The issue-type object and the two issue-field unions. The mutation
-	// surface's payloads name all three, so they are memoized where they are
-	// built rather than re-minted (graphql-go refuses two types of one name).
 	issueType            *graphql.Object
 	issueFieldsUnion     *graphql.Union
 	issueFieldValueUnion *graphql.Union
@@ -2997,9 +2897,7 @@ type graphQLTypeRegistry struct {
 	projectV2DateValueMemo           *graphql.Object
 	projectV2IterationValueMemo      *graphql.Object
 	projectV2ItemFieldValueUnionMemo *graphql.Union
-	// The Projects v2 read surface built in gh_projects_v2_types_graphql.go:
-	// the owner interface, the status-update/workflow/draft-issue objects, the
-	// project ordering input, and the connection objects minted per node type.
+	// The Projects v2 read surface (gh_projects_v2_types_graphql.go).
 	projectV2OwnerInterface   *graphql.Interface
 	projectV2StatusUpdateType *graphql.Object
 	projectV2WorkflowType     *graphql.Object
@@ -3011,19 +2909,14 @@ type graphQLTypeRegistry struct {
 	projectV2OrderInputs     map[string]*graphql.InputObject
 	uniformResourceLocatable *graphql.Interface
 	resourceNodeTypes        map[string]*graphql.Object
-	// Shared payload types the Projects v2 field values name: a LABELS value
-	// resolves the content's labels, a MILESTONE value its milestone, and so
-	// on, so each needs the one type the rest of the schema already uses.
+	// Shared types the Projects v2 field values name (LABELS, MILESTONE, ...).
 	milestone              *graphql.Object
 	pullRequestConnection  *graphql.Object
 	requestedReviewerUnion *graphql.Union
-	// The ProjectV2ItemFieldValue union's remaining members and the interface
-	// the stored ones share.
+	// The ProjectV2ItemFieldValue union's remaining members and shared interface.
 	projectV2ValueCommonInterface *graphql.Interface
 	projectV2MultiSelectValueMemo *graphql.Object
-	// The enterprise account family (gh_enterprise_graphql.go): the shared
-	// OrganizationConnection every enterprise policy-override connection
-	// returns, and the enterprise types the mutation payloads name.
+	// The enterprise account family (gh_enterprise_graphql.go).
 	organizationConnection        *graphql.Object
 	enterprise                    *graphql.Object
 	enterpriseUserAccount         *graphql.Object
@@ -3041,23 +2934,16 @@ type graphQLTypeRegistry struct {
 	projectV2MultiSelectOption    *graphql.Object
 	projectV2MultiSelectFieldMemo *graphql.Object
 	projectV2Connections          map[string]*graphql.Object
-	// The shared RepositoryConnection and Team objects. Projects v2 links to
-	// both, and GitHub's schema names one type for each, so they are memoized
-	// where they are built rather than re-minted per consumer.
+	// The shared RepositoryConnection and Team objects.
 	repositoryConnection *graphql.Object
 	team                 *graphql.Object
-	// The git object graph: the Node interface and the Repository object both
-	// git objects and refs point back at, the GitObject interface with its
-	// four implementations, and the connections over them.
 	// The Copilot endpoints object (gh_copilot_graphql.go).
 	copilotEndpoints *graphql.Object
 
 	// The GitHub Marketplace type graph (gh_marketplace_graphql.go).
 	marketplace *marketplaceTypeRegistry
 
-	// The GitHub Sponsors type graph (gh_sponsors_graphql.go): the
-	// Sponsorable interface User and Organization implement, the listing
-	// object graph, and the connections over it.
+	// The GitHub Sponsors type graph (gh_sponsors_graphql.go).
 	sponsors *sponsorsTypeRegistry
 
 	node              *graphql.Interface
@@ -3075,56 +2961,41 @@ type graphQLTypeRegistry struct {
 	blob              *graphql.Object
 	tag               *graphql.Object
 	refConnection     *graphql.Object
-	// The complete BranchProtectionRule object (gh_branch_protection_graphql.go),
-	// memoized because Ref.branchProtectionRule, the pull-request base ref and
-	// the branch-protection mutation payloads all name the one type.
+	// BranchProtectionRule (gh_branch_protection_graphql.go).
 	branchProtectionRule *graphql.Object
-	// The check-rollup members `gh pr checks` asks isRequired of, and the
-	// interface GitHub declares that field on. checkSuite is memoized beside
-	// them because the checks mutation payloads name the same CheckSuite the
-	// rollup embeds.
+	// The check-rollup members and the RequirableByPullRequest interface.
 	statusContext           *graphql.Object
 	checkRun                *graphql.Object
 	checkSuite              *graphql.Object
 	statusCheckRollup       *graphql.Object
 	requirableByPullRequest *graphql.Interface
-	// The Actions run graph: WorkflowRun (a single run) and Workflow (the YAML
-	// file it was produced from). They are minted as minimal stubs where the
-	// CheckSuite rollup references them (gh_pulls_graphql.go) and finished by
-	// addActionsFamilyFields (gh_actions_fields_graphql.go), which hangs the
-	// rest of GitHub's fields off the same registered objects.
+	// The Actions run graph: WorkflowRun and Workflow. Minted as stubs where the
+	// CheckSuite rollup references them, finished by addActionsFamilyFields.
 	workflowRun *graphql.Object
 	workflow    *graphql.Object
-	// The deployment graph built with the account surface
-	// (gh_repos_deployments_graphql.go); the deployments/environments
-	// mutation payloads name the same objects.
+	// The deployment graph (gh_repos_deployments_graphql.go).
 	deployment        *graphql.Object
 	deploymentStatus  *graphql.Object
 	environment       *graphql.Object
 	pinnedEnvironment *graphql.Object
-	// The EnvironmentConnection and DeploymentReviewerConnection the account
-	// deployment surface mints; the Actions run graph's DeploymentReview and
-	// DeploymentRequest reuse the same two objects rather than re-minting them.
+	// EnvironmentConnection and DeploymentReviewerConnection, shared with the
+	// Actions run graph's DeploymentReview/DeploymentRequest.
 	environmentConnection        *graphql.Object
 	deploymentReviewerConnection *graphql.Object
-	// Labelable, the interface the three label mutations return their
-	// subject behind.
-	labelable *graphql.Interface
-	// Gists: the objects, edges and connection `gh gist list` reads.
+	// Labelable, the interface the label mutations return their subject behind.
+	labelable      *graphql.Interface
 	gist           *graphql.Object
 	gistFile       *graphql.Object
 	gistEdge       *graphql.Object
 	gistConnection *graphql.Object
-	// The issue/pull-request timeline family (gh_timeline_types_graphql.go):
-	// its own registry, plus the three shared types its unions name that no
-	// other consumer had to memoize before.
+	// The issue/pull-request timeline family (gh_timeline_types_graphql.go),
+	// plus three shared types its unions name.
 	timeline                *timelineTypeRegistry
 	pullRequestCommit       *graphql.Object
 	pullRequestReviewThread *graphql.Object
 	issueOrPullRequest      *graphql.Union
-	// The Repository / User / Organization account-surface family
-	// (gh_account_surface_graphql.go) keeps its own registry of the types it
-	// mints, so a type two of its installers both name is built once.
+	// The Repository/User/Organization account-surface family
+	// (gh_account_surface_graphql.go), with its own registry.
 	accountSurface *accountSurfaceTypes
 }
 
@@ -3213,13 +3084,10 @@ func (s *Resolver) ensureProjectV2ItemsField() {
 	s.graphqlTypes.projectV2ItemsFieldAdded = true
 }
 
-// projectV2FieldConnectionType builds GitHub's typed field-configuration
-// surface: the ProjectV2FieldCommon interface, the ProjectV2Field /
-// ProjectV2SingleSelectField / ProjectV2IterationField concrete types (the
-// three configurations bleephub's store models — official also has
-// ProjectV2MultiSelectField), the ProjectV2FieldConfiguration union, and its
-// connection. Field source maps come from projectV2FieldToGQL, whose
-// "dataType" key drives ResolveType for both the interface and the union.
+// projectV2FieldConnectionType builds the typed field-configuration surface: the
+// ProjectV2FieldCommon interface, its concrete types, the
+// ProjectV2FieldConfiguration union and its connection. Source maps come from
+// projectV2FieldToGQL, whose "dataType" key drives ResolveType.
 func (s *Resolver) projectV2FieldConnectionType() *graphql.Object {
 	if s.graphqlTypes.projectV2FieldConnectionMemo != nil {
 		return s.graphqlTypes.projectV2FieldConnectionMemo
@@ -3245,8 +3113,7 @@ func (s *Resolver) projectV2FieldConnectionType() *graphql.Object {
 			"description": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
 		},
 	})
-	// Official ProjectV2Iteration is an INPUT_OBJECT; the object flavor is
-	// ProjectV2IterationFieldIteration.
+	// Official ProjectV2Iteration is an INPUT_OBJECT; the object flavor is this.
 	iterationType := graphql.NewObject(graphql.ObjectConfig{
 		Name: "ProjectV2IterationFieldIteration",
 		Fields: graphql.Fields{
@@ -3265,8 +3132,6 @@ func (s *Resolver) projectV2FieldConnectionType() *graphql.Object {
 			"completedIterations": &graphql.Field{Type: graphql.NewNonNull(graphql.NewList(graphql.NewNonNull(iterationType)))},
 		},
 	})
-	// resolveFieldConfigType maps a field source map to its concrete
-	// configuration type via the dataType discriminator.
 	resolveFieldConfigType := func(value interface{}) *graphql.Object {
 		src, _ := value.(map[string]interface{})
 		switch src["dataType"] {
@@ -3408,8 +3273,8 @@ func (s *Resolver) projectV2FieldConnectionType() *graphql.Object {
 	return s.graphqlTypes.projectV2FieldConnectionMemo
 }
 
-// projectV2FieldConfigurationUnion returns the ProjectV2FieldConfiguration
-// union, building the field wiring (which owns the memo) on first use.
+// projectV2FieldConfigurationUnion returns the union, building the field wiring
+// that owns the memo on first use.
 func (s *Resolver) projectV2FieldConfigurationUnion() *graphql.Union {
 	s.projectV2FieldConnectionType()
 	return s.graphqlTypes.projectV2FieldConfigUnionMemo
@@ -3452,10 +3317,8 @@ func (s *Resolver) projectV2ViewConnectionType() *graphql.Object {
 			"filter":    &graphql.Field{Type: graphql.String},
 			"createdAt": &graphql.Field{Type: graphql.NewNonNull(s.graphQLStringScalar("DateTime"))},
 			"updatedAt": &graphql.Field{Type: graphql.NewNonNull(s.graphQLStringScalar("DateTime"))},
-			// GitHub's view field surface: the visible fields resolve as a
-			// ProjectV2FieldConfigurationConnection (the private
-			// visibleFieldIds list only feeds this resolver via the source
-			// map, it is not schema-visible).
+			// visibleFieldIds feeds this resolver via the source map; it is not
+			// schema-visible.
 			"fields": &graphql.Field{
 				Type: s.projectV2FieldConnectionType(),
 				Args: relayConnectionArgs(),
@@ -3489,9 +3352,7 @@ func (s *Resolver) projectV2ViewConnectionType() *graphql.Object {
 }
 
 // projectV2ItemType returns the shared ProjectV2Item object type, building the
-// connection wiring (which owns the memo) on first use. Mutation payloads
-// (addProjectV2ItemById, updateProjectV2ItemFieldValue) reuse this type so
-// their `item` fields match GitHub's ProjectV2Item instead of private forks.
+// connection wiring that owns the memo on first use.
 func (s *Resolver) projectV2ItemType() *graphql.Object {
 	s.projectV2ItemConnectionType()
 	return s.graphqlTypes.projectV2ItemTypeMemo
@@ -3576,11 +3437,8 @@ func (s *Resolver) projectV2ItemConnectionType() *graphql.Object {
 	return s.graphqlTypes.projectV2ItemConnectionTypeMemo
 }
 
-// projectV2ItemToGQL builds the GraphQL source map for a single project
-// item, embedding the parent project's map so ProjectV2Item.project
-// resolves cleanly without a second lookup. Field values are
-// pre-resolved into fieldValuesByName so the fieldValueByName(name:)
-// resolver is a direct map lookup.
+// projectV2ItemToGQL builds a project item's source map, embedding the parent
+// project's map and pre-resolving field values into fieldValuesByName.
 func projectV2ItemToGQL(it *store.ProjectV2Item, st *store.Store) map[string]interface{} {
 	if it == nil {
 		return nil
@@ -3590,12 +3448,9 @@ func projectV2ItemToGQL(it *store.ProjectV2Item, st *store.Store) map[string]int
 		projectMap = projectV2ToGQL(st, p)
 	}
 	byName := map[string]interface{}{}
-	// fieldValues is ordered by field id so the connection is stable across
-	// requests; ranging the value map directly would reorder it every call.
-	// Every field on the project is considered, not only the ones with a
-	// stored value: the built-in columns (labels, assignees, repository,
-	// milestone) have no stored value at all — theirs is read off the content.
-	// Ordering is by field id so the connection is stable across requests.
+	// Consider every field, not only those with a stored value: the built-in
+	// columns (labels, assignees, repository, milestone) are read off the
+	// content. Ordered by field id for a connection stable across requests.
 	values := make([]map[string]interface{}, 0, len(it.FieldValues))
 	for _, field := range st.ProjectsV2.FieldsForProject(it.ProjectID) {
 		var rendered map[string]interface{}
@@ -3609,8 +3464,7 @@ func projectV2ItemToGQL(it *store.ProjectV2Item, st *store.Store) map[string]int
 			continue
 		}
 		rendered["itemNodeID"] = it.NodeID
-		// A field value has no row of its own; its identity is the pair of the
-		// item and the field it belongs to.
+		// A field value has no row of its own; its identity is (item, field).
 		rendered["valueNodeID"] = fmt.Sprintf("PVTFV_kgDO%08d%08d", it.ID, field.ID)
 		rendered["databaseId"] = field.ID
 		rendered["createdAt"] = it.CreatedAt.UTC().Format(time.RFC3339)
@@ -3639,8 +3493,6 @@ func projectV2ItemToGQL(it *store.ProjectV2Item, st *store.Store) map[string]int
 	return out
 }
 
-// projectV2ItemTypeEnum maps the stored content kind onto GitHub's
-// ProjectV2ItemType enum.
 func projectV2ItemTypeEnum(contentType string) string {
 	switch contentType {
 	case "Issue":
@@ -3652,10 +3504,8 @@ func projectV2ItemTypeEnum(contentType string) string {
 	}
 }
 
-// projectV2ItemContentToGQL renders the issue, pull request or draft issue an
-// item points at, as the source map its ProjectV2ItemContent member expects.
-// Content that no longer exists resolves to null rather than a half-built
-// node — GitHub's content field is nullable for exactly this case.
+// projectV2ItemContentToGQL renders the issue, PR or draft issue an item points
+// at. Content that no longer exists resolves to null (the field is nullable).
 func projectV2ItemContentToGQL(st *store.Store, it *store.ProjectV2Item) map[string]interface{} {
 	switch it.ContentType {
 	case "Issue":
@@ -3677,8 +3527,7 @@ func projectV2ItemContentToGQL(st *store.Store, it *store.ProjectV2Item) map[str
 	default:
 		content := map[string]interface{}{
 			"__typename": "DraftIssue",
-			// A draft has no row of its own: it is the item, so the item's
-			// node id identifies it.
+			// A draft has no row of its own; the item's node id identifies it.
 			"nodeID":    it.NodeID,
 			"title":     it.DraftTitle,
 			"body":      it.DraftBody,
@@ -3694,8 +3543,7 @@ func projectV2ItemContentToGQL(st *store.Store, it *store.ProjectV2Item) map[str
 	}
 }
 
-// projectV2FieldValueToGQL renders a persisted ProjectV2 field value as
-// the matching GraphQL union source map.
+// projectV2FieldValueToGQL renders a persisted field value as its union source map.
 func projectV2FieldValueToGQL(v *store.ProjectV2ItemFieldValue, f *store.ProjectV2Field) map[string]interface{} {
 	out := map[string]interface{}{"kind": string(f.DataType)}
 	switch f.DataType {
@@ -3725,8 +3573,7 @@ func projectV2FieldValueToGQL(v *store.ProjectV2ItemFieldValue, f *store.Project
 				name = v.OptionNames[i]
 			}
 			option := map[string]interface{}{"id": id, "name": name, "description": "", "color": "GRAY"}
-			// The colour and description live on the field's option, not on
-			// the item's value, so they are looked up rather than stored twice.
+			// Colour and description live on the field's option, not the value.
 			for _, defined := range f.Options {
 				if defined.ID == id {
 					option["name"] = defined.Name
@@ -3746,13 +3593,9 @@ func projectV2FieldValueToGQL(v *store.ProjectV2ItemFieldValue, f *store.Project
 	return out
 }
 
-// projectV2ToGQL renders a project as a GraphQL source map. The store is not
-// embedded in the map: resolvers reach it through their *Server closure, so a
-// live *Store never flows through the resolver graph as an untyped entry.
-//
-// The whole map is built here rather than per call site, so a project reached
-// through an issue's project items answers the same fields as one reached from
-// its owner.
+// projectV2ToGQL renders a project as a GraphQL source map. No live *Store is
+// embedded; resolvers reach it through their closure. Built once here so a
+// project answers the same fields however it was reached.
 func projectV2ToGQL(st *store.Store, p *store.ProjectV2) map[string]interface{} {
 	return projectV2ToGQLFull(st, p)
 }
@@ -3781,9 +3624,8 @@ func projectV2FieldToGQL(f *store.ProjectV2Field) map[string]interface{} {
 	}
 	var iteration map[string]interface{}
 	if f.Iteration != nil {
-		// GitHub's ProjectV2IterationFieldConfiguration splits past
-		// iterations into completedIterations and reports the configured
-		// start day-of-week (1=Monday … 7=Sunday) rather than a start date.
+		// Split past iterations into completedIterations and report the start
+		// day-of-week (1=Monday … 7=Sunday), as GitHub does.
 		now := time.Now()
 		active := make([]map[string]interface{}, 0, len(f.Iteration.Iterations))
 		completed := make([]map[string]interface{}, 0)
@@ -3852,8 +3694,8 @@ func projectV2ViewToGQL(v *store.ProjectV2View) map[string]interface{} {
 	}
 }
 
-// projectItemsConnectionForIssue returns the source map for the
-// Issue.projectItems / PullRequest.projectItems connection.
+// projectItemsConnectionForIssue returns the source map for the Issue/PullRequest
+// projectItems connection.
 func projectItemsConnectionForIssue(st *store.Store, issueID int, args map[string]interface{}) map[string]interface{} {
 	items := st.ProjectsV2.ListItemsForIssue(issueID)
 	nodes := make([]map[string]interface{}, 0, len(items))
@@ -3863,10 +3705,8 @@ func projectItemsConnectionForIssue(st *store.Store, issueID int, args map[strin
 	return paginateGQLMaps(nodes, args)
 }
 
-// emitIssueStateChange mirrors the REST issue-update path for a GraphQL-driven
-// close/reopen: it records the timeline event and delivers the issues webhook,
-// but only when the state actually transitioned (so `on: issues` workflows fire
-// for the gh CLI, which mutates over GraphQL).
+// emitIssueStateChange records the timeline event and delivers the issues
+// webhook for a GraphQL-driven close/reopen, only when the state transitioned.
 func (s *Resolver) emitIssueStateChange(issue *store.Issue, user *store.User, previousState, action string) {
 	if issue == nil || user == nil {
 		return

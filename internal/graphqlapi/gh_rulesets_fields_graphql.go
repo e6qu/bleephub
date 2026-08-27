@@ -1,17 +1,11 @@
 package graphqlapi
 
 // The RepositoryRule / RepositoryRuleset detail surface: the rule parameter
-// union, the ruleset conditions object and the bypass-actor connection. GitHub
-// exposes a ruleset's rules with their fully typed parameters, the conditions
-// that gate the ruleset and the actors permitted to bypass it; `gh ruleset
-// view` and the web ruleset editor read all three through GraphQL.
-//
-// Every type here is a transcription of GitHub's SDL, rendered from the same
-// stored ruleset the REST ruleset routes serve (store.Ruleset), so a ruleset
-// authored over either surface reads back identically. Rule parameters are
-// stored as the snake_case maps the REST bodies carry; the union renderer
-// lowers each into the camelCase member GitHub's GraphQL declares, and returns
-// a truthful null when a rule carries no parameters of a shape it can name.
+// union, the ruleset conditions object and the bypass-actor connection,
+// rendered from the same store.Ruleset the REST routes serve. Rule parameters
+// are stored as snake_case maps; the union renderer lowers each into the
+// camelCase member GraphQL declares, returning null when a rule carries no
+// parameters of a shape it can name.
 
 import (
 	"fmt"
@@ -27,15 +21,11 @@ func gqlNonNullFieldListOf(t graphql.Output) *graphql.Field {
 	return &graphql.Field{Type: graphql.NewNonNull(graphql.NewList(graphql.NewNonNull(t)))}
 }
 
-// installRuleDetailTypes wires RepositoryRule.parameters,
-// RepositoryRule.repositoryRuleset, RepositoryRuleConnection.edges,
-// RepositoryRuleset.conditions and RepositoryRuleset.bypassActors onto the
-// three ruleset objects the read surface already created. It runs once, after
-// those objects exist; the fields it adds reference types built here, and the
-// cross-references between the rule and ruleset objects are closed with
-// AddFieldConfig so the cycle is legal.
+// installRuleDetailTypes wires parameters, repositoryRuleset, edges, conditions
+// and bypassActors onto the three ruleset objects the read surface created. The
+// rule↔ruleset cross-references are closed with AddFieldConfig so the cycle is
+// legal.
 func (s *Resolver) installRuleDetailTypes(ruleType, ruleConnection, rulesetType *graphql.Object) {
-	// --- RepositoryRuleConnection.edges -------------------------------------
 	ruleEdge := graphql.NewObject(graphql.ObjectConfig{
 		Name: "RepositoryRuleEdge",
 		Fields: graphql.Fields{
@@ -45,7 +35,6 @@ func (s *Resolver) installRuleDetailTypes(ruleType, ruleConnection, rulesetType 
 	})
 	ruleConnection.AddFieldConfig("edges", &graphql.Field{Type: graphql.NewList(ruleEdge)})
 
-	// --- RepositoryRule.parameters (the RuleParameters union) ---------------
 	parametersUnion := s.ruleParametersUnion()
 	ruleType.AddFieldConfig("parameters", &graphql.Field{
 		Type: parametersUnion,
@@ -60,12 +49,10 @@ func (s *Resolver) installRuleDetailTypes(ruleType, ruleConnection, rulesetType 
 		},
 	})
 
-	// --- RepositoryRule.repositoryRuleset -----------------------------------
-	// Each rendered rule carries a back-reference to its ruleset source map
-	// under the private "_ruleset" key (set in rulesetToGraphQL). The map is
-	// self-referential, which the executor bounds by query depth and the
-	// typed-nil source audit bounds by its visited-pointer set; the audit is
-	// keyed by GraphQL field name, so it never follows the private key.
+	// Each rendered rule back-references its ruleset under the private
+	// "_ruleset" key (set in rulesetToGraphQL). The map is self-referential,
+	// bounded by query depth; the typed-nil audit is keyed by field name so it
+	// never follows the private key.
 	ruleType.AddFieldConfig("repositoryRuleset", &graphql.Field{
 		Type: rulesetType,
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -78,7 +65,6 @@ func (s *Resolver) installRuleDetailTypes(ruleType, ruleConnection, rulesetType 
 		},
 	})
 
-	// --- RepositoryRuleset.conditions ---------------------------------------
 	conditionsType := s.repositoryRuleConditionsType()
 	rulesetType.AddFieldConfig("conditions", &graphql.Field{
 		Type: graphql.NewNonNull(conditionsType),
@@ -87,13 +73,11 @@ func (s *Resolver) installRuleDetailTypes(ruleType, ruleConnection, rulesetType 
 			if err != nil {
 				return nil, err
 			}
-			// _conditions is always a non-nil map (rulesetToGraphQL builds it),
-			// so the non-null field never resolves to null.
+			// _conditions is always non-nil (rulesetToGraphQL builds it).
 			return src["_conditions"], nil
 		},
 	})
 
-	// --- RepositoryRuleset.bypassActors -------------------------------------
 	bypassConnection := s.repositoryRulesetBypassActorConnectionType()
 	rulesetType.AddFieldConfig("bypassActors", &graphql.Field{
 		Type: bypassConnection,
@@ -119,11 +103,9 @@ func (s *Resolver) installRuleDetailTypes(ruleType, ruleConnection, rulesetType 
 	})
 }
 
-// repositoryRuleConditionsType is RepositoryRuleConditions. bleephub models the
-// ref_name condition; the organization/repository property and id/name
-// conditions are declared by GitHub but not yet stored, so those members are
-// omitted rather than rendered empty (an absent nullable member is truthful,
-// an invented one is not).
+// repositoryRuleConditionsType is RepositoryRuleConditions. bleephub models only
+// the ref_name condition; the unstored property and id/name conditions are
+// omitted rather than rendered empty.
 func (s *Resolver) repositoryRuleConditionsType() *graphql.Object {
 	refNameTarget := graphql.NewObject(graphql.ObjectConfig{
 		Name: "RefNameConditionTarget",
@@ -138,9 +120,8 @@ func (s *Resolver) repositoryRuleConditionsType() *graphql.Object {
 			"refName": gqlField(refNameTarget),
 		},
 	})
-	// Stashed so addResidueTailFields (which runs after the enterprise family
-	// mints EnterpriseTeam) can hang the organization/repository property and
-	// id/name condition targets off this one instance rather than re-minting it.
+	// Stashed so addResidueTailFields (after the enterprise family mints
+	// EnterpriseTeam) can hang the property and id/name targets off this instance.
 	s.stashNamedObject(conditions)
 	return conditions
 }
@@ -161,9 +142,8 @@ func (s *Resolver) repositoryRulesetBypassActorConnectionType() *graphql.Object 
 			"repositoryRoleName":       gqlField(graphql.String),
 		},
 	})
-	// Stashed so addResidueTailFields can add the `actor` (BypassActor union) and
-	// `repositoryRuleset` back-reference to this one instance once App and
-	// EnterpriseTeam — its union members, minted by later families — exist.
+	// Stashed so addResidueTailFields can add the `actor` union and
+	// `repositoryRuleset` back-reference once App and EnterpriseTeam exist.
 	s.stashNamedObject(actorType)
 	edge := graphql.NewObject(graphql.ObjectConfig{
 		Name: "RepositoryRulesetBypassActorEdge",
@@ -183,9 +163,9 @@ func (s *Resolver) repositoryRulesetBypassActorConnectionType() *graphql.Object 
 	})
 }
 
-// bypassActorSource renders one stored bypass actor as its GraphQL source map.
-// The boolean discriminators are derived from the stored actor type, and the
-// repository-role id is surfaced only for a repository-role actor.
+// bypassActorSource renders one stored bypass actor as its source map. The
+// boolean discriminators derive from the actor type; repositoryRoleDatabaseId is
+// set only for a repository-role actor.
 func bypassActorSource(rulesetNodeID string, index int, actor store.RulesetBypassActor) map[string]interface{} {
 	node := map[string]interface{}{
 		"id":                fmt.Sprintf("%s:bypass:%d", rulesetNodeID, index),
@@ -203,9 +183,8 @@ func bypassActorSource(rulesetNodeID string, index int, actor store.RulesetBypas
 	return node
 }
 
-// ruleParametersUnion is RuleParameters: the discriminated union of every
-// per-rule parameter object GitHub declares. bleephub renders each member from
-// the stored snake_case parameter map.
+// ruleParametersUnion is RuleParameters: the union of every per-rule parameter
+// object, each rendered from the stored snake_case parameter map.
 func (s *Resolver) ruleParametersUnion() *graphql.Union {
 	patternFields := func() graphql.Fields {
 		return graphql.Fields{
@@ -362,10 +341,9 @@ func (s *Resolver) ruleParametersUnion() *graphql.Union {
 	})
 }
 
-// ruleParametersSource lowers a stored rule's snake_case parameter map into the
-// camelCase RuleParameters union member GitHub declares for its type. A rule
-// that carries no parameters — or whose type has no parameter object — yields
-// nil, which the executor renders as a truthful null RepositoryRule.parameters.
+// ruleParametersSource lowers a rule's snake_case parameter map into its
+// camelCase RuleParameters union member. A rule with no parameters — or whose
+// type has no parameter object — yields nil (a null RepositoryRule.parameters).
 func ruleParametersSource(ruleType string, params map[string]interface{}) map[string]interface{} {
 	if len(params) == 0 {
 		return nil
@@ -540,12 +518,10 @@ func pullRequestParametersSource(params map[string]interface{}) map[string]inter
 	return source
 }
 
-// --- stored-parameter accessors ---------------------------------------------
-//
-// Rule parameters round-trip through JSON, so numbers arrive as float64 and
-// every container is []interface{}/map[string]interface{}. These readers hand
-// back the concrete Go types the source maps need, with zero values for absent
-// keys so a non-null scalar field never resolves to null.
+// Stored-parameter accessors. Rule parameters round-trip through JSON, so
+// numbers arrive as float64 and containers as []interface{}/map. These readers
+// return the concrete Go types, with zero values for absent keys so a non-null
+// scalar field never resolves to null.
 
 func rpString(m map[string]interface{}, key string) string {
 	value, _ := m[key].(string)

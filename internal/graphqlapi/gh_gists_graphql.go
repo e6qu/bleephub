@@ -13,30 +13,16 @@ import (
 )
 
 // User.gists and the Gist object graph behind it — the surface `gh gist list`
-// reads. gh asks for it as
-//
-//	viewer{gists(first:$n, after:$c, privacy:$visibility,
-//	             orderBy:{field:CREATED_AT, direction:DESC}){
-//	  nodes{description files{name text} isPublic name updatedAt}
-//	  pageInfo{hasNextPage endCursor}}}
-//
-// so the enum, the ordering input and the connection all have to exist before
-// the command can run at all: without them its document fails validation and
-// `gh gist list` reports a schema error rather than listing anything.
-//
-// The gists themselves are the ones the REST /gists surface already serves —
-// this is a second reading of one store, not a second store.
+// reads. Gists are the same records REST /gists serves.
 
-// gqlGistPrivacyEnum returns GitHub's GistPrivacy enum (memoized).
+// gqlGistPrivacyEnum returns the memoized GistPrivacy enum.
 func (s *Resolver) gqlGistPrivacyEnum() *graphql.Enum {
 	return s.graphQLEnum("GistPrivacy", "ALL", "PUBLIC", "SECRET")
 }
 
-// gqlGistOrderInput returns GitHub's GistOrder input object (memoized through
-// the enum registry it is built from).
+// gqlGistOrderInput returns the GistOrder input, memoized by name (both
+// User.gists and Gist.forks name it).
 func (s *Resolver) gqlGistOrderInput() *graphql.InputObject {
-	// Memoized by name: both User.gists and Gist.forks name this input, and a
-	// schema may contain only one type called "GistOrder".
 	return s.mutationInput("GistOrder", graphql.InputObjectConfigFieldMap{
 		"direction": &graphql.InputObjectFieldConfig{
 			Type: graphql.NewNonNull(s.graphQLEnum("OrderDirection", "ASC", "DESC")),
@@ -47,7 +33,7 @@ func (s *Resolver) gqlGistOrderInput() *graphql.InputObject {
 	})
 }
 
-// gqlGistFileType returns GitHub's GistFile object (memoized).
+// gqlGistFileType returns the memoized GistFile object.
 func (s *Resolver) gqlGistFileType() *graphql.Object {
 	if s.graphqlTypes.gistFile != nil {
 		return s.graphqlTypes.gistFile
@@ -74,8 +60,7 @@ func (s *Resolver) gqlGistFileType() *graphql.Object {
 					}
 					text, present := file["text"].(string)
 					if !present {
-						// A binary file has no UTF-8 text, which GitHub
-						// answers with null rather than mojibake.
+						// A binary file has no UTF-8 text; answer null.
 						return nil, nil
 					}
 					if truncate, ok := intArg(p.Args, "truncate"); ok && truncate >= 0 && truncate < len(text) {
@@ -89,7 +74,7 @@ func (s *Resolver) gqlGistFileType() *graphql.Object {
 	return s.graphqlTypes.gistFile
 }
 
-// gqlGistType returns GitHub's Gist object (memoized).
+// gqlGistType returns the memoized Gist object.
 func (s *Resolver) gqlGistType() *graphql.Object {
 	if s.graphqlTypes.gist != nil {
 		return s.graphqlTypes.gist
@@ -109,8 +94,7 @@ func (s *Resolver) gqlGistType() *graphql.Object {
 					return gist["nodeID"], nil
 				},
 			},
-			// GitHub's Gist.name is the gist's own hash-shaped identifier, not
-			// a file name and not the description.
+			// Gist.name is the gist's hash-shaped id, not a file name or description.
 			"name":         &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
 			"description":  &graphql.Field{Type: graphql.String},
 			"isPublic":     &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
@@ -149,8 +133,7 @@ func (s *Resolver) gqlGistType() *graphql.Object {
 					files, _ := gist["files"].([]interface{})
 					limit, ok := intArg(p.Args, "limit")
 					if !ok {
-						// GitHub's own default for the argument.
-						limit = 10
+						limit = 10 // GitHub's default
 					}
 					if limit >= 0 && limit < len(files) {
 						files = files[:limit]
@@ -163,8 +146,7 @@ func (s *Resolver) gqlGistType() *graphql.Object {
 	return s.graphqlTypes.gist
 }
 
-// gqlGistConnectionType returns GitHub's GistConnection (memoized), with its
-// GistEdge.
+// gqlGistConnectionType returns the memoized GistConnection with its GistEdge.
 func (s *Resolver) gqlGistConnectionType() *graphql.Object {
 	if s.graphqlTypes.gistConnection != nil {
 		return s.graphqlTypes.gistConnection
@@ -189,8 +171,7 @@ func (s *Resolver) gqlGistConnectionType() *graphql.Object {
 	return s.graphqlTypes.gistConnection
 }
 
-// addGistFieldsToSchema hangs User.gists off the shared User type, which is
-// also what `viewer` resolves to — the field `gh gist list` reads.
+// addGistFieldsToSchema hangs User.gists off the shared User type.
 func (s *Resolver) addGistFieldsToSchema(userType *graphql.Object) {
 	userType.AddFieldConfig("gists", &graphql.Field{
 		Type: graphql.NewNonNull(s.gqlGistConnectionType()),
@@ -231,9 +212,7 @@ func (s *Resolver) addGistFieldsToSchema(userType *graphql.Object) {
 }
 
 // visibleGistsFor returns the owner's gists the request may see. A secret gist
-// is readable only by the account that owns it, exactly as the REST /gists
-// surface treats it — listing somebody else's secret gists through GraphQL
-// would be a way around that.
+// is readable only by its owner, matching REST /gists.
 func (s *Resolver) visibleGistsFor(p graphql.ResolveParams, owner *store.User) []*store.Gist {
 	gists := s.store.ListGistsForUser(owner.ID, time.Time{})
 	viewer := s.ghUserFromContext(p.Context)
@@ -249,8 +228,7 @@ func (s *Resolver) visibleGistsFor(p graphql.ResolveParams, owner *store.User) [
 	return visible
 }
 
-// filterGistsByPrivacy applies the GistPrivacy argument. Absent means ALL,
-// which is GitHub's own default for the field.
+// filterGistsByPrivacy applies the GistPrivacy argument (absent means ALL).
 func filterGistsByPrivacy(gists []*store.Gist, privacy interface{}) []*store.Gist {
 	want, _ := privacy.(string)
 	if want != "PUBLIC" && want != "SECRET" {
@@ -266,8 +244,7 @@ func filterGistsByPrivacy(gists []*store.Gist, privacy interface{}) []*store.Gis
 }
 
 // sortGists applies the GistOrder argument. bleephub records no push distinct
-// from an update — a gist's content and its git history are the same write —
-// so PUSHED_AT and UPDATED_AT order by the same instant.
+// from an update, so PUSHED_AT and UPDATED_AT order by the same instant.
 func sortGists(gists []*store.Gist, orderBy interface{}) {
 	field, direction := "CREATED_AT", "DESC"
 	if order, ok := orderBy.(map[string]interface{}); ok {
@@ -287,10 +264,8 @@ func sortGists(gists []*store.Gist, orderBy interface{}) {
 	sort.SliceStable(gists, func(a, b int) bool {
 		left, right := key(gists[a]), key(gists[b])
 		if left.Equal(right) {
-			// Ties would otherwise order by whatever the store's map walk
-			// produced, which moves cursors between identical requests. The
-			// node id carries the creation sequence, so equal timestamps still
-			// order oldest-to-newest rather than by the gist's random name.
+			// Break ties by node id (creation sequence) for stable cursors;
+			// the store's map walk would otherwise be nondeterministic.
 			if direction == "ASC" {
 				return gists[a].NodeID < gists[b].NodeID
 			}
@@ -308,15 +283,12 @@ func emptyGistConnection() map[string]interface{} {
 }
 
 // addGistResidueFields completes the Starrable and comment/fork members of the
-// Gist and GistFile objects. It runs late (from the misc installer, after the
-// account surface has built GistCommentConnection and the star/stargazer
-// connection types), so it reaches those cross-family types read-only rather
-// than re-minting them.
+// Gist and GistFile objects. It must run late (after the account surface builds
+// GistCommentConnection and the stargazer connections) so it reuses those
+// cross-family types read-only rather than re-minting them.
 func (s *Resolver) addGistResidueFields() {
 	gistType := s.gqlGistType()
 
-	// GistCommentConnection is the type User.gistComments already serves; it is
-	// built by the account surface, which runs before this installer.
 	types := s.accountSurfaceRegistry()
 	commentConnection := s.accountConnectionType(types, "GistComment", s.gqlGistCommentType(types), false, nil)
 	gistType.AddFieldConfig("comments", &graphql.Field{
@@ -390,9 +362,8 @@ func (s *Resolver) addGistResidueFields() {
 		Args: s.stargazerConnectionArgs(),
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			gistID := gistSourceString(p.Source, "gistID")
-			// The gist star store records no per-star timestamp; the gist's own
-			// creation instant stands in for starredAt, mirroring how the
-			// repository stargazer connection uses the repository's.
+			// No per-star timestamp is recorded; the gist's creation instant
+			// stands in for starredAt, as the repository stargazer connection does.
 			starredAt := gistSourceString(p.Source, "createdAt")
 			ids := s.store.GistStargazerIDs(gistID)
 			items := make([]gqlConnItem, 0, len(ids))
@@ -415,9 +386,8 @@ func (s *Resolver) addGistResidueFields() {
 		},
 	})
 
-	// GistFile.language is inferred from the file name's extension; bleephub
-	// carries the same small Linguist-style map the repository language fields
-	// use, and returns null for an extension it does not recognise.
+	// GistFile.language is inferred from the file extension via the shared
+	// Linguist-style map; null for an unrecognised extension.
 	s.gqlGistFileType().AddFieldConfig("language", &graphql.Field{
 		Type: s.gqlLanguageType(),
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -435,14 +405,12 @@ func (s *Resolver) addGistResidueFields() {
 	})
 }
 
-// gistSourceString reads a string key off a Gist source map.
 func gistSourceString(source interface{}, key string) string {
 	m, _ := source.(map[string]interface{})
 	v, _ := m[key].(string)
 	return v
 }
 
-// gistToGQL renders one gist as the Gist type's source map.
 func gistToGQL(gist *store.Gist, owner map[string]interface{}) map[string]interface{} {
 	resourcePath := "/gist/" + gist.ID
 	source := map[string]interface{}{
@@ -465,9 +433,8 @@ func gistToGQL(gist *store.Gist, owner map[string]interface{}) map[string]interf
 	return source
 }
 
-// gistFileSources renders a gist's files in name order: the store holds them
-// in a map, and an unordered connection would move a client's cursors between
-// two requests that asked the same question.
+// gistFileSources renders a gist's files in name order (the store holds them in
+// a map) so cursors stay stable across identical requests.
 func gistFileSources(gist *store.Gist) []interface{} {
 	names := make([]string, 0, len(gist.Files))
 	for name := range gist.Files {
@@ -489,9 +456,8 @@ func gistFileSources(gist *store.Gist) []interface{} {
 			"isTruncated": false,
 			"size":        file.Size,
 		}
-		// text is absent rather than empty for a file whose bytes were not
-		// loaded, so GistFile.text answers null instead of claiming the file
-		// is empty.
+		// Omit text when bytes were not loaded, so GistFile.text answers null
+		// rather than claiming the file is empty.
 		if file.Content != "" {
 			source["text"] = file.Content
 		}

@@ -1,13 +1,7 @@
 package graphqlapi
 
-// The Checks mutation family: createCheckRun, createCheckSuite,
-// rerequestCheckSuite, updateCheckRun and updateCheckSuitePreferences.
-//
-// Every mutation writes through the same store primitives the REST checks
-// routes write — CreateCheckRun/UpdateCheckRun, CreateCheckSuite/
-// UpdateCheckSuite and SetCheckSuitePreferences — releases the same armed
-// auto-merges when a run lands completed, and emits the same check_suite
-// "rerequested" webhook, so a check reported over GraphQL is
+// The Checks mutation family. Every mutation writes through the same store
+// primitives the REST checks routes use, so a check reported over GraphQL is
 // indistinguishable from one reported over REST.
 
 import (
@@ -22,15 +16,13 @@ import (
 
 func init() {
 	for name, rule := range map[string]mutationRule{
-		// GitHub gates the checks writes on the Checks permission at write;
-		// reporting a check is a write on the repository, so the standing is
-		// push, exactly as the REST routes' requirePerm(checks, write).
+		// Checks permission at write, matching the REST requirePerm(checks, write).
 		"createCheckRun":      repoRule{scope: store.ScopeChecks, level: mutationPushRepo, target: mutationTargetRepo("repositoryId")},
 		"createCheckSuite":    repoRule{scope: store.ScopeChecks, level: mutationPushRepo, target: mutationTargetRepo("repositoryId")},
 		"rerequestCheckSuite": repoRule{scope: store.ScopeChecks, level: mutationPushRepo, target: mutationTargetRepo("repositoryId")},
 		"updateCheckRun":      repoRule{scope: store.ScopeChecks, level: mutationPushRepo, target: mutationTargetRepo("repositoryId")},
-		// The auto-trigger preferences are a repository setting: the REST
-		// route demands Administration at write, so the GraphQL one does too.
+		// Auto-trigger preferences are a repository setting: Administration at
+		// write, matching the REST route.
 		"updateCheckSuitePreferences": repoRule{scope: store.ScopeAdministration, level: mutationAdminRepo, target: mutationTargetRepo("repositoryId")},
 	} {
 		if _, exists := graphqlMutationAuthz[name]; exists {
@@ -46,8 +38,7 @@ func (s *Resolver) addChecksMutationsToSchema(mutationType *graphql.Object) {
 	gitObjectID := s.graphQLStringScalar("GitObjectID")
 	requestableStatus := s.sharedEnum("RequestableCheckStatusState",
 		"COMPLETED", "IN_PROGRESS", "PENDING", "QUEUED", "WAITING")
-	// CheckConclusionState already exists in the enum memo (the rollup's
-	// CheckRun.conclusion names it); asking with the same values returns it.
+	// CheckConclusionState already exists in the enum memo (the rollup names it).
 	conclusionEnum := s.graphQLEnum(
 		"CheckConclusionState",
 		"ACTION_REQUIRED", "CANCELLED", "FAILURE", "NEUTRAL", "SKIPPED", "STALE",
@@ -128,8 +119,7 @@ func (s *Resolver) addChecksMutationsToSchema(mutationType *graphql.Object) {
 			created := s.store.CreateCheckRun(repo.FullName, headSha, name, 0, 0)
 			s.store.UpdateCheckRun(created.ID, write.apply)
 			run := s.store.GetCheckRun(created.ID)
-			// A check run created already-completed can be the condition an
-			// armed auto-merge was waiting for, exactly as on the REST path.
+			// A run created already-completed can satisfy an armed auto-merge.
 			if run != nil && run.Status == "completed" {
 				s.pulls.MaybeAutoMergeHeadSHA(repo, run.HeadSHA)
 			}
@@ -234,8 +224,7 @@ func (s *Resolver) addChecksMutationsToSchema(mutationType *graphql.Object) {
 			}
 			s.store.UpdateCheckRun(existing.ID, write.apply)
 			run := s.store.GetCheckRun(existing.ID)
-			// A run transitioning to completed can clear the condition an
-			// armed auto-merge was waiting for.
+			// A run transitioning to completed can satisfy an armed auto-merge.
 			if run != nil && run.Status == "completed" {
 				s.pulls.MaybeAutoMergeHeadSHA(repo, run.HeadSHA)
 			}
@@ -297,9 +286,8 @@ func (s *Resolver) appByNodeID(nodeID string) *store.App {
 	return nil
 }
 
-// checkRunWrite is a decoded createCheckRun/updateCheckRun input: only the
-// members the client supplied are applied, which is exactly the REST PATCH
-// semantics (an absent member leaves the field alone).
+// checkRunWrite is a decoded create/update input: only supplied members are
+// applied, matching REST PATCH semantics (absent leaves the field alone).
 type checkRunWrite struct {
 	name        string
 	hasName     bool
@@ -360,8 +348,7 @@ func checkRunWriteFromInput(input map[string]interface{}) (*checkRunWrite, error
 	return write, nil
 }
 
-// apply writes the supplied members onto the store record, inside
-// UpdateCheckRun's lock.
+// apply writes the supplied members onto the record, inside UpdateCheckRun's lock.
 func (w *checkRunWrite) apply(cr *store.CheckRun) {
 	if w.hasName {
 		cr.Name = w.name
@@ -393,7 +380,7 @@ func (w *checkRunWrite) apply(cr *store.CheckRun) {
 }
 
 // checkRunOutputFromInput converts the CheckRunOutput input into the store's
-// output bundle, the same shape the REST create/update bodies decode into.
+// output bundle.
 func checkRunOutputFromInput(input map[string]interface{}) *store.CheckRunOutput {
 	output := &store.CheckRunOutput{
 		Title:       str(input["title"]),
@@ -442,7 +429,7 @@ func checkRunOutputFromInput(input map[string]interface{}) *store.CheckRunOutput
 }
 
 // checkRunMutationSource renders a check run for a mutation payload, through
-// the same source builder the status-check rollup uses.
+// the status-check rollup's source builder.
 func (s *Resolver) checkRunMutationSource(cr *store.CheckRun) map[string]interface{} {
 	var conclusion interface{}
 	if cr.Conclusion != "" {

@@ -1,22 +1,10 @@
 package graphqlapi
 
-// The final residue pass: the members GitHub declares that bleephub already
-// holds the data for but had not yet exposed over GraphQL.
-//
-//   - the Package object graph (repository, statistics, version(s),
-//     latestVersion) and its PackageVersion/PackageFile sub-objects, plus
-//     Repository.packages reusing the one shared PackageConnection;
-//   - the Assignable interface's actor connections (assignedActors /
-//     suggestedActors), which Issue and PullRequest already carry;
-//   - Query.topic; and
-//   - Ref.rules.
-//
-// It is driven by one call at the end of addAccountSurfaceFieldsToSchema
-// (Query.topic is the exception — that one root field is wired from the schema
-// builder because it needs the queryType). Every type it names is already
-// assembled by then: the PackageConnection User/Organization.packages built,
-// the shared AssigneeConnection, the RepositoryRuleConnection, Repository, Ref
-// and Release.
+// The final residue pass: members backed by data already held but not yet
+// exposed over GraphQL — the Package object graph and Repository.packages, the
+// Assignable interface's actor connections, Query.topic and Ref.rules. Driven
+// by one call at the end of addAccountSurfaceFieldsToSchema (Query.topic wired
+// separately, from the schema builder, because it needs the queryType).
 
 import (
 	"sort"
@@ -27,8 +15,7 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// addFinalResidueFields installs the residue members. Wired by a single call
-// at the end of addAccountSurfaceFieldsToSchema.
+// addFinalResidueFields installs the residue members.
 func (s *Resolver) addFinalResidueFields(types *accountSurfaceTypes) {
 	s.addPackageResidueFields(types)
 	s.addRepositoryPackagesField(types)
@@ -38,9 +25,8 @@ func (s *Resolver) addFinalResidueFields(types *accountSurfaceTypes) {
 
 // --- Package ----------------------------------------------------------------
 
-// packageSourceMap renders a store package into the Package source shape. The
-// store id and owner identity are threaded so the residue resolvers can look up
-// the package's versions and, for a repository-owned package, its repository.
+// packageSourceMap renders a store package into the Package source shape,
+// threading the store id and owner identity for version/repository lookups.
 func packageSourceMap(pkg *store.Package, kind string) map[string]interface{} {
 	return map[string]interface{}{
 		"id":          pkg.NodeID,
@@ -53,8 +39,8 @@ func packageSourceMap(pkg *store.Package, kind string) map[string]interface{} {
 }
 
 // packageVersionSourceMap renders a store package version into the
-// PackageVersion source shape. The parent package source is threaded as the
-// back-reference PackageVersion.package returns.
+// PackageVersion source shape, threading the parent package as the
+// PackageVersion.package back-reference.
 func packageVersionSourceMap(v *store.PackageVersion, pkgSource map[string]interface{}) map[string]interface{} {
 	return map[string]interface{}{
 		"id":              v.NodeID,
@@ -65,9 +51,8 @@ func packageVersionSourceMap(v *store.PackageVersion, pkgSource map[string]inter
 }
 
 // packageFileSourceMap renders a store package file into the PackageFile source
-// shape. versionSource is threaded as the PackageFile.packageVersion
-// back-reference. GitHub's md5/sha1/sha256 checksums are unmodeled by the store
-// and render null; updatedAt (DateTime!) is the file's immutable upload time.
+// shape, threading versionSource as the PackageFile.packageVersion
+// back-reference. md5/sha1/sha256 checksums are unmodeled and render null.
 func packageFileSourceMap(f *store.PackageFile, versionSource map[string]interface{}) map[string]interface{} {
 	out := map[string]interface{}{
 		"id":             f.NodeID,
@@ -76,8 +61,7 @@ func packageFileSourceMap(f *store.PackageFile, versionSource map[string]interfa
 		"updatedAt":      f.UpdatedAt.UTC().Format(time.RFC3339),
 		"packageVersion": optionalObject(versionSource),
 	}
-	// url is URI (nullable): prefer the download URL, else the API url; leave it
-	// null when the store recorded neither rather than emit an empty string.
+	// Prefer the download URL, else the API url; leave null when neither exists.
 	switch {
 	case f.DownloadURL != "":
 		out["url"] = f.DownloadURL
@@ -87,10 +71,8 @@ func packageFileSourceMap(f *store.PackageFile, versionSource map[string]interfa
 	return out
 }
 
-// addPackageResidueFields completes GitHub's Package object with the members
-// the account surface had not claimed. The Package type itself is memoized by
-// gqlPackageType(); these fields are hung on it once its version sub-graph is
-// buildable.
+// addPackageResidueFields completes the Package object with the members the
+// account surface had not claimed.
 func (s *Resolver) addPackageResidueFields(types *accountSurfaceTypes) {
 	pkgType := s.gqlPackageType()
 	versionType := s.gqlPackageVersionType()
@@ -105,8 +87,7 @@ func (s *Resolver) addPackageResidueFields(types *accountSurfaceTypes) {
 		return id, ok
 	}
 
-	// repository: Repository — the repository a repository-owned package
-	// belongs to; null for a user- or organization-owned package.
+	// repository is null for a user- or organization-owned package.
 	pkgType.AddFieldConfig("repository", &graphql.Field{
 		Type: s.graphqlTypes.repository,
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -128,8 +109,7 @@ func (s *Resolver) addPackageResidueFields(types *accountSurfaceTypes) {
 		},
 	})
 
-	// statistics: PackageStatistics — bleephub records no package download
-	// counter, so the total is a truthful zero.
+	// No package download counter is recorded (total is zero).
 	pkgType.AddFieldConfig("statistics", &graphql.Field{
 		Type: s.gqlPackageStatisticsType(),
 		Resolve: func(graphql.ResolveParams) (interface{}, error) {
@@ -137,7 +117,6 @@ func (s *Resolver) addPackageResidueFields(types *accountSurfaceTypes) {
 		},
 	})
 
-	// version(version: String!): PackageVersion — the named version, or null.
 	pkgType.AddFieldConfig("version", &graphql.Field{
 		Type: versionType,
 		Args: graphql.FieldConfigArgument{
@@ -159,8 +138,7 @@ func (s *Resolver) addPackageResidueFields(types *accountSurfaceTypes) {
 		},
 	})
 
-	// latestVersion: PackageVersion — the newest version (ListPackageVersions
-	// is newest-first), or null when the package has none.
+	// latestVersion relies on ListPackageVersions returning newest-first.
 	pkgType.AddFieldConfig("latestVersion", &graphql.Field{
 		Type: versionType,
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -177,7 +155,6 @@ func (s *Resolver) addPackageResidueFields(types *accountSurfaceTypes) {
 		},
 	})
 
-	// versions: PackageVersionConnection! — the package's versions.
 	pkgType.AddFieldConfig("versions", &graphql.Field{
 		Type: graphql.NewNonNull(versionConnection),
 		Args: connectionArgs(nil),
@@ -200,13 +177,10 @@ func (s *Resolver) addPackageResidueFields(types *accountSurfaceTypes) {
 	})
 }
 
-// gqlPackageVersionType is GitHub's PackageVersion object. It is minted lazily
-// because it names PackageFile, which names PackageVersion back — a cycle a
-// thunk resolves. bleephub backs id/version from the store row; preRelease is a
-// truthful false, platform/readme/summary are unmodeled (null), release is null
-// (no package-version→release link is recorded), statistics are a truthful zero
-// and the file list is truthful-empty (the store's PackageFile row carries no
-// updatedAt for the non-null field GitHub declares — reported).
+// gqlPackageVersionType is GitHub's PackageVersion object, minted lazily to
+// resolve the PackageFile↔PackageVersion cycle. id/version come from the store
+// row; preRelease is false, platform/readme/summary/release are unmodeled (null)
+// and statistics are zero.
 func (s *Resolver) gqlPackageVersionType() *graphql.Object {
 	return s.mutationObjectLazy("PackageVersion", func() graphql.Fields {
 		return graphql.Fields{
@@ -262,7 +236,7 @@ func (s *Resolver) gqlPackageVersionType() *graphql.Object {
 	})
 }
 
-// gqlPackageStatisticsType / gqlPackageVersionStatisticsType are GitHub's two
+// gqlPackageStatisticsType / gqlPackageVersionStatisticsType are the two
 // download-count statistics objects.
 func (s *Resolver) gqlPackageStatisticsType() *graphql.Object {
 	return s.mutationObject("PackageStatistics", graphql.Fields{
@@ -276,10 +250,8 @@ func (s *Resolver) gqlPackageVersionStatisticsType() *graphql.Object {
 	})
 }
 
-// gqlPackageFileType is GitHub's PackageFile object, nodes of the
-// PackageVersion.files connection. id/name/size/updatedAt/url come from the
-// stored package file; md5/sha1/sha256 are checksums the store does not model
-// and render null.
+// gqlPackageFileType is GitHub's PackageFile object. md5/sha1/sha256 are
+// unmodeled checksums and render null.
 func (s *Resolver) gqlPackageFileType() *graphql.Object {
 	return s.mutationObject("PackageFile", graphql.Fields{
 		"id":             &graphql.Field{Type: graphql.NewNonNull(graphql.ID)},
@@ -294,8 +266,7 @@ func (s *Resolver) gqlPackageFileType() *graphql.Object {
 	})
 }
 
-// addRepositoryPackagesField installs Repository.packages, backed by the store's
-// packages for the repository's owner key and rendered over the one shared
+// addRepositoryPackagesField installs Repository.packages over the shared
 // PackageConnection User/Organization.packages already built.
 func (s *Resolver) addRepositoryPackagesField(types *accountSurfaceTypes) {
 	repoType := types.repository
@@ -322,8 +293,8 @@ func (s *Resolver) addRepositoryPackagesField(types *accountSurfaceTypes) {
 				kind, ok := graphqlPackageTypeName(pkg.PackageType)
 				if !ok {
 					// A container package has no PackageType enum member and is
-					// not representable on this surface (the REST packages API
-					// serves it), matching User/Organization.packages.
+					// not representable here (served only via REST), matching
+					// User/Organization.packages.
 					continue
 				}
 				items = append(items, gqlConnItem{
@@ -338,10 +309,8 @@ func (s *Resolver) addRepositoryPackagesField(types *accountSurfaceTypes) {
 
 // --- Assignable interface ---------------------------------------------------
 
-// addAssignableActorInterfaceFields adds the actor connections GitHub's
-// Assignable interface declares. Issue and PullRequest already carry
-// assignedActors/suggestedActors over the same shared AssigneeConnection, so
-// this only completes the interface itself.
+// addAssignableActorInterfaceFields completes the Assignable interface with the
+// actor connections Issue and PullRequest already carry.
 func (s *Resolver) addAssignableActorInterfaceFields() {
 	iface := s.gqlAssignableInterface()
 	assigneeConnection := s.sharedAssigneeConnectionType(s.graphqlTypes.user)
@@ -358,8 +327,7 @@ func (s *Resolver) addAssignableActorInterfaceFields() {
 // --- Query.topic ------------------------------------------------------------
 
 // addQueryTopicField installs Query.topic(name:), resolving a topic name onto
-// the Topic object; Topic.repositories then resolves from the repositories that
-// actually carry the topic.
+// the Topic object.
 func (s *Resolver) addQueryTopicField(queryType *graphql.Object) {
 	queryType.AddFieldConfig("topic", &graphql.Field{
 		Type: s.gqlTopicType(),
@@ -379,9 +347,8 @@ func (s *Resolver) addQueryTopicField(queryType *graphql.Object) {
 // --- Ref.rules --------------------------------------------------------------
 
 // addRefRulesField installs Ref.rules over the shared RepositoryRuleConnection.
-// Attributing the rules that apply to a ref requires evaluating each ruleset's
-// ref-name conditions against the branch, whose match predicate is unexported,
-// so the connection is truthful-empty rather than a fabricated set (reported).
+// Attributing rules to a ref needs each ruleset's ref-name match predicate,
+// which is unexported, so the connection is empty rather than fabricated.
 func (s *Resolver) addRefRulesField() {
 	refType := s.graphqlTypes.ref
 	ruleConnection := s.namedObject("RepositoryRuleConnection")
@@ -397,6 +364,5 @@ func (s *Resolver) addRefRulesField() {
 	})
 }
 
-// falseFieldResolver answers a truthful false for a non-null Boolean member
-// whose source never carries a value.
+// falseFieldResolver answers false for a non-null Boolean member with no source value.
 func falseFieldResolver(graphql.ResolveParams) (interface{}, error) { return false, nil }

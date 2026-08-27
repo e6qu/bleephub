@@ -1,17 +1,9 @@
 package graphqlapi
 
-// Schema-fidelity shells: the ordering-input cluster. GitHub declares a family
-// of `*Order` input objects (each pairing an `OrderDirection` with a
-// type-specific `*OrderField` enum), plus a handful of standalone enums and the
-// two irregular filter inputs (CheckRunFilter, ProjectV2Filters). bleephub does
-// not expose the paginated fields these order, so no resolver returns them;
-// they exist only so the introspected schema matches GitHub's shape.
-//
-// Every enum and input is built through the memoized constructors
-// (s.sharedEnum / s.mutationInput) so a name any other family already built is
-// reused rather than duplicated, and each is published via
-// registerExtraSchemaType. Signatures are matched exactly against the vendored
-// SDL (third_party/github-graphql-schema.graphql.gz), nullability included.
+// Schema-fidelity shells: the ordering-input cluster (the `*Order` inputs,
+// their `*OrderField` enums, a few standalone enums, and CheckRunFilter /
+// ProjectV2Filters). The fields they order aren't exposed, so no resolver
+// returns them; they exist only so the introspected schema matches GitHub's.
 
 import "github.com/graphql-go/graphql"
 
@@ -163,9 +155,6 @@ func (s *Resolver) addOrderingShells() {
 	})
 
 	// --- irregular filter inputs ------------------------------------------
-	// CheckRunFilter { appId: Int, checkName: String, checkType: CheckRunType,
-	//   conclusions: [CheckConclusionState!], status: CheckStatusState,
-	//   statuses: [CheckStatusState!] }
 	checkConclusionState := s.sharedEnum("CheckConclusionState",
 		"ACTION_REQUIRED", "CANCELLED", "FAILURE", "NEUTRAL", "SKIPPED", "STALE",
 		"STARTUP_FAILURE", "SUCCESS", "TIMED_OUT")
@@ -180,7 +169,6 @@ func (s *Resolver) addOrderingShells() {
 		"statuses":    gqlListOf(checkStatusState),
 	})
 
-	// ProjectV2Filters { state: ProjectV2State }
 	projectV2Filters := s.mutationInput("ProjectV2Filters", graphql.InputObjectConfigFieldMap{
 		"state": gqlInputOf(projectV2State),
 	})

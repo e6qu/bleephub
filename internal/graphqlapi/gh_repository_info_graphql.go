@@ -2,12 +2,11 @@ package graphqlapi
 
 import "github.com/graphql-go/graphql"
 
-// repositoryInfoInterface is GitHub's RepositoryInfo — the shared
-// repository-shape interface a handful of fields (RepositoryInvitation.repository)
-// return in place of the full Repository. Repository is its only implementer on
-// this instance; every member's type is drawn from the same memoized scalar,
-// enum and object instances the Repository object uses, so the interface
-// conformance check sees identical types.
+// repositoryInfoInterface is RepositoryInfo, the shared repository-shape
+// interface some fields (RepositoryInvitation.repository) return in place of
+// Repository. Repository is its only implementer; every member's type is drawn
+// from the same memoized instances Repository uses, so conformance sees
+// identical types.
 func (s *Resolver) repositoryInfoInterface() *graphql.Interface {
 	return s.mutationInterface("RepositoryInfo", func() graphql.Fields {
 		dt := s.graphQLStringScalar("DateTime")

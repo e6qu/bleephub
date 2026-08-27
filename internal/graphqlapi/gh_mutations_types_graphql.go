@@ -1,33 +1,20 @@
 package graphqlapi
 
-// Shared construction machinery for the GitHub mutation surface.
-//
-// GitHub's schema declares one input object and one payload object per
-// mutation, and both routinely name supporting types other families also
-// name: CheckRunOutput belongs to createCheckRun and updateCheckRun,
-// ProjectColumn is returned by six classic-project mutations, RefUpdate is
-// written by updateRefs alone but read by the ref family's payloads.
-// graphql-go refuses a schema holding two objects of the same name, so the
-// helpers here mint each type once, keyed by GitHub's own spelling, and hand
-// the same instance to every family that names it.
-//
-// The families themselves live in gh_mutations_<family>_graphql.go and are
-// assembled by addGitHubMutationSurface, which the schema builder calls once
-// the read surface exists — every payload here returns an object the read
-// surface already defines (Repository, Issue, PullRequest, Label, Team, …).
+// Shared construction machinery for the GitHub mutation surface. Because
+// graphql-go refuses two objects of the same name, the helpers here mint each
+// supporting type once (keyed by GitHub's spelling) and hand the same instance
+// to every family that names it. The families live in
+// gh_mutations_<family>_graphql.go, assembled by addGitHubMutationSurface after
+// the read surface exists.
 
 import (
 	"github.com/graphql-go/graphql"
 )
 
-// mutationObject memoizes an object type by GitHub's name.
-//
-// The field map is eager rather than a thunk because graphql-go's
-// AddFieldConfig silently declines to touch a thunked object, and every
-// payload type registerMutation installs has clientMutationId added to it
-// that way — a thunked payload would be published without the member GitHub
-// declares on it. Types whose members are genuinely cyclic use
-// mutationObjectLazy below, which no payload is.
+// mutationObject memoizes an object type by GitHub's name. The field map is
+// eager, not a thunk: AddFieldConfig silently declines to touch a thunked
+// object, and registerMutation adds clientMutationId to every payload that way.
+// Genuinely cyclic types use mutationObjectLazy instead.
 func (s *Resolver) mutationObject(name string, fields graphql.Fields) *graphql.Object {
 	if existing := s.memoizedMutationObject(name); existing != nil {
 		return existing
@@ -37,11 +24,9 @@ func (s *Resolver) mutationObject(name string, fields graphql.Fields) *graphql.O
 	return object
 }
 
-// mutationPayload is mutationObject for a mutation's payload type. It writes
-// clientMutationId in itself rather than leaving it to registerMutation's
-// fill-in, because graphql-go refuses to construct an object with no fields at
-// all and several of GitHub's payloads — deleteLabel's, deleteRef's — declare
-// nothing else.
+// mutationPayload is mutationObject for a payload type. It writes
+// clientMutationId itself because graphql-go refuses an object with no fields,
+// and some payloads (deleteLabel's, deleteRef's) declare nothing else.
 func (s *Resolver) mutationPayload(name string, fields graphql.Fields) *graphql.Object {
 	if _, declared := fields["clientMutationId"]; !declared {
 		fields["clientMutationId"] = gqlField(graphql.String)
@@ -49,16 +34,15 @@ func (s *Resolver) mutationPayload(name string, fields graphql.Fields) *graphql.
 	return s.mutationObject(name, fields)
 }
 
-// mutationObjectLazy is mutationObject for a type whose members name types
-// that in turn name it — a column holding a card connection whose cards name
-// their column. build is called once, after the whole family is registered,
-// so the cycle resolves; nothing may AddFieldConfig onto the result.
+// mutationObjectLazy is mutationObject for a type whose members cyclically name
+// it. build runs once, after the family is registered; nothing may
+// AddFieldConfig onto the result.
 func (s *Resolver) mutationObjectLazy(name string, build func() graphql.Fields) *graphql.Object {
 	if existing := s.memoizedMutationObject(name); existing != nil {
 		return existing
 	}
-	// The entry is recorded before build runs, so a thunk that names its own
-	// type resolves to the instance being built rather than recursing.
+	// Record the entry before build runs, so a thunk naming its own type
+	// resolves to the instance being built rather than recursing.
 	object := graphql.NewObject(graphql.ObjectConfig{Name: name, Fields: graphql.FieldsThunk(build)})
 	s.mutationObjects[name] = object
 	return object
@@ -72,8 +56,7 @@ func (s *Resolver) memoizedMutationObject(name string) *graphql.Object {
 	return s.mutationObjects[name]
 }
 
-// mutationActorField is a mutation payload's `actor` member — the Actor who
-// performed the mutation, which on bleephub is always the authenticated viewer.
+// mutationActorField is a payload's `actor` member, always the authenticated viewer.
 func (s *Resolver) mutationActorField() *graphql.Field {
 	return &graphql.Field{
 		Type: s.graphqlTypes.actor,
@@ -83,10 +66,9 @@ func (s *Resolver) mutationActorField() *graphql.Field {
 	}
 }
 
-// registerExtraSchemaType makes a type appear in the schema's introspection
-// even when no field returns it — the schema-fidelity shells (audit-entry
-// subtypes, unmodeled timeline events, ordering inputs) GitHub declares for
-// data this instance does not produce. Nil and duplicate entries are ignored.
+// registerExtraSchemaType makes a type appear in introspection even when no
+// field returns it — the schema-fidelity shells for data this instance does not
+// produce. Nil and duplicate entries are ignored.
 func (s *Resolver) registerExtraSchemaType(types ...graphql.Type) {
 	for _, t := range types {
 		if t == nil {
@@ -105,11 +87,10 @@ func (s *Resolver) registerExtraSchemaType(types ...graphql.Type) {
 	}
 }
 
-// stashNamedObject records an object type that one family builds so a
-// later-assembled family can reference the same instance by GitHub name — the
-// discussion, advisory and mannequin connections are built deep inside their
-// own recursive builders, and the account surface (assembled afterwards) needs
-// the very same instances to publish Organization/User connection fields.
+// stashNamedObject records an object one family builds so a later-assembled
+// family can reference the same instance by name (e.g. the account surface
+// reuses the discussion/advisory/mannequin connections built inside their own
+// recursive builders).
 func (s *Resolver) stashNamedObject(o *graphql.Object) {
 	if o == nil {
 		return
@@ -122,16 +103,14 @@ func (s *Resolver) stashNamedObject(o *graphql.Object) {
 	}
 }
 
-// namedObject returns a previously stashed (or memoized) object type by name,
-// or nil when no family has built it yet.
+// namedObject returns a previously stashed or memoized object type by name.
 func (s *Resolver) namedObject(name string) *graphql.Object {
 	return s.memoizedMutationObject(name)
 }
 
-// mutationInput memoizes an input object type by GitHub's name. Like
-// mutationObject the field map is eager: registerMutation adds
-// clientMutationId to every mutation input, and graphql-go records a schema
-// error rather than a field when asked to add one to a thunk.
+// mutationInput memoizes an input object type by GitHub's name. The field map
+// is eager for the same reason as mutationObject: registerMutation adds
+// clientMutationId to every input, and a thunk would record a schema error.
 func (s *Resolver) mutationInput(name string, fields graphql.InputObjectConfigFieldMap) *graphql.InputObject {
 	if s.mutationInputs == nil {
 		s.mutationInputs = map[string]*graphql.InputObject{}
@@ -180,9 +159,8 @@ func (s *Resolver) mutationUnion(name string, types func() []*graphql.Object, re
 
 // --- small field/argument shorthands ---------------------------------------
 //
-// Every input and payload below is a transcription of GitHub's SDL, so the
-// shorthands are named for what the SDL says rather than for graphql-go's
-// constructors: `nonNullID()` reads as `ID!` does.
+// Named for the SDL spelling rather than graphql-go's constructors:
+// nonNullID() reads as ID! does.
 
 func gqlID() *graphql.InputObjectFieldConfig {
 	return &graphql.InputObjectFieldConfig{Type: graphql.ID}
@@ -224,8 +202,7 @@ func gqlNonNullInputOf(t graphql.Input) *graphql.InputObjectFieldConfig {
 	return &graphql.InputObjectFieldConfig{Type: graphql.NewNonNull(t)}
 }
 
-// gqlListOf is `[T!]` — a nullable list of non-null members, which is how
-// GitHub spells nearly every id list in an input object.
+// gqlListOf is `[T!]`, how GitHub spells nearly every id list in an input.
 func gqlListOf(t graphql.Input) *graphql.InputObjectFieldConfig {
 	return &graphql.InputObjectFieldConfig{Type: graphql.NewList(graphql.NewNonNull(t))}
 }
@@ -243,21 +220,16 @@ func gqlFieldListOf(t graphql.Output) *graphql.Field {
 	return &graphql.Field{Type: graphql.NewList(graphql.NewNonNull(t))}
 }
 
-// gqlConnectionSource materialises an already-rendered node list into the
-// connection source shape the rest of the package uses: nodes, edges with
-// cursors, pageInfo and totalCount. A field resolver hands the result to
-// repaginateConnection with its own arguments, so a connection built here
-// pages exactly as every other connection does.
+// gqlConnectionSource materialises a rendered node list into the standard
+// connection source shape (nodes, edges, pageInfo, totalCount).
 func gqlConnectionSource(nodes []map[string]interface{}) map[string]interface{} {
 	return paginateGQLMaps(nodes, nil)
 }
 
 // --- input readers ----------------------------------------------------------
 
-// gqlInputString reads a String member of a mutation input, reporting whether
-// the client supplied it at all. A GitHub update mutation distinguishes "set
-// this to the empty string" from "leave it alone", and every resolver below
-// depends on that distinction.
+// gqlInputString reads a String input member, reporting whether the client
+// supplied it — an update mutation distinguishes "set to empty" from "leave alone".
 func gqlInputString(input map[string]interface{}, key string) (string, bool) {
 	value, present := input[key]
 	if !present || value == nil {
@@ -277,9 +249,8 @@ func gqlInputBool(input map[string]interface{}, key string) (bool, bool) {
 	return flag, ok
 }
 
-// gqlInputInt is gqlInputString for an Int member. graphql-go hands an Int
-// through as a Go int, but a variable that arrived as JSON may still be a
-// float64, so both are accepted.
+// gqlInputInt is gqlInputString for an Int member. A JSON variable may arrive
+// as float64, so both int and float64 are accepted.
 func gqlInputInt(input map[string]interface{}, key string) (int, bool) {
 	switch value := input[key].(type) {
 	case int:
@@ -294,9 +265,8 @@ func gqlInputInt(input map[string]interface{}, key string) (int, bool) {
 	return 0, false
 }
 
-// gqlInputStrings reads a `[String!]` member as a Go slice, reporting whether
-// the client supplied the list at all — an absent list and an empty one mean
-// different things to a replace-the-set mutation.
+// gqlInputStrings reads a `[String!]` member as a slice, reporting whether the
+// client supplied it — an absent and an empty list differ to a replace-the-set mutation.
 func gqlInputStrings(input map[string]interface{}, key string) ([]string, bool) {
 	value, present := input[key]
 	if !present || value == nil {

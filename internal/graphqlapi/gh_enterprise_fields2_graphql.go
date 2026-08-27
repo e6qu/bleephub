@@ -1,18 +1,11 @@
 package graphqlapi
 
 // Second-pass completion of the enterprise identity / team / invitation read
-// surface. These fields are installed after buildEnterpriseExtraTypes because
-// they name types that pass builds (the OrganizationInvitation, ExternalIdentity
-// and EnterpriseServerInstallation nodes) as well as cross-family types
-// (Organization, User) and the OrganizationIdentityProvider the account surface
-// memoizes later.
-//
-// Where bleephub keeps real data the field reads it: an enterprise team's
-// assigned organizations and members are store-backed and rendered live. Where
-// the single-instance broker provisions nothing — SCIM/SAML external identities,
-// GitHub Enterprise Server installations, cross-org invitation aggregation — the
-// field is declared for GitHub parity and answers a truthful-empty connection or
-// null rather than an invented value.
+// surface, installed after buildEnterpriseExtraTypes so the types it names
+// exist. Store-backed fields (an enterprise team's organizations and members)
+// render live; surfaces the single-instance broker provisions nothing for
+// (SCIM/SAML identities, GHES installations, cross-org invitations) are
+// declared for parity and answer an empty connection or null.
 
 import (
 	"strings"
@@ -22,7 +15,7 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// addEnterpriseIdentityCompletionFields installs the remaining missing fields on
+// addEnterpriseIdentityCompletionFields installs the remaining fields on
 // OrganizationInvitation, EnterpriseTeam, ExternalIdentity,
 // OrganizationIdentityProvider, EnterpriseServerInstallation and OIDCProvider.
 func (s *Resolver) addEnterpriseIdentityCompletionFields(
@@ -35,7 +28,7 @@ func (s *Resolver) addEnterpriseIdentityCompletionFields(
 	uri := s.graphQLStringScalar("URI")
 	reg := s.accountSurfaceRegistry()
 
-	// --- attribute sub-objects the external-identity node names --------------
+	// Attribute sub-objects the external-identity node names.
 	userEmailMetadata := graphql.NewObject(graphql.ObjectConfig{
 		Name: "UserEmailMetadata",
 		Fields: graphql.Fields{
@@ -76,10 +69,8 @@ func (s *Resolver) addEnterpriseIdentityCompletionFields(
 		},
 	})
 
-	// --- OrganizationInvitation ---------------------------------------------
-	// The node both enterprise invitation connections carry. No producer on this
-	// instance aggregates cross-org invitations, so the node is never realized;
-	// the fields read the invitation source map by name (default resolver) so a
+	// OrganizationInvitation. No producer aggregates cross-org invitations, so
+	// the node is never realized; fields read the source map by name so a
 	// populated node would render correctly.
 	extras.orgInvitationType.AddFieldConfig("invitationSource", &graphql.Field{
 		Type: graphql.NewNonNull(s.sharedEnum("OrganizationInvitationSource", "MEMBER", "SCIM", "UNKNOWN")),
@@ -96,14 +87,13 @@ func (s *Resolver) addEnterpriseIdentityCompletionFields(
 			"ADMIN", "BILLING_MANAGER", "DIRECT_MEMBER", "REINSTATE")),
 	})
 
-	// --- ExternalIdentity ----------------------------------------------------
-	// SCIM/SAML provisioning is not performed by the single-instance broker, so
-	// each attribute block and the linked invitation are null.
+	// ExternalIdentity. No SCIM/SAML provisioning, so each attribute block and
+	// the linked invitation are null.
 	extras.externalIdentityType.AddFieldConfig("organizationInvitation", &graphql.Field{Type: extras.orgInvitationType})
 	extras.externalIdentityType.AddFieldConfig("samlIdentity", &graphql.Field{Type: samlAttributes})
 	extras.externalIdentityType.AddFieldConfig("scimIdentity", &graphql.Field{Type: scimAttributes})
 
-	// --- EnterpriseTeam ------------------------------------------------------
+	// EnterpriseTeam.
 	assignedOrgConnection := s.enterpriseEdgeAndConnectionTypes(
 		"EnterpriseTeamAssignedOrganizationConnection", "EnterpriseTeamAssignedOrganizationEdge", orgType, nil, nil)
 	teamMemberConnection := s.enterpriseEdgeAndConnectionTypes(
@@ -168,9 +158,8 @@ func (s *Resolver) addEnterpriseIdentityCompletionFields(
 		},
 	})
 
-	// --- EnterpriseServerInstallation ---------------------------------------
-	// No GitHub Enterprise Server installation exists under a single instance, so
-	// both connections are constant-empty; the node types are declared for the
+	// EnterpriseServerInstallation. No GHES installation exists, so both
+	// connections are constant-empty; the node types are declared for the
 	// connection's nodes/edges to name.
 	serverUserAccount := graphql.NewObject(graphql.ObjectConfig{
 		Name:       "EnterpriseServerUserAccount",
@@ -198,11 +187,8 @@ func (s *Resolver) addEnterpriseIdentityCompletionFields(
 				s.sharedEnum("EnterpriseServerUserAccountsUploadSyncState", "FAILURE", "PENDING", "SUCCESS"))},
 		},
 	})
-	// The account's emails, back-references and the upload's enterprise/
-	// installation members. No GHES installation exists under a single
-	// instance, so userAccounts/userAccountsUploads never realize a node and
-	// these resolvers never run; the fields are declared for schema parity, the
-	// non-null back-references reading their (never-produced) source.
+	// Emails, back-references and upload members. No node is ever realized, so
+	// these resolvers never run; declared for parity.
 	serverUserAccountEmail := graphql.NewObject(graphql.ObjectConfig{
 		Name:       "EnterpriseServerUserAccountEmail",
 		Interfaces: []*graphql.Interface{nodeInterface},
@@ -262,8 +248,7 @@ func (s *Resolver) addEnterpriseIdentityCompletionFields(
 		},
 	})
 
-	// --- OIDCProvider --------------------------------------------------------
-	// Authentication is brokered by an external SSO provider, not a
+	// OIDCProvider. Auth is brokered by an external SSO provider, not a
 	// GitHub-managed OIDC tenant, so no external identities are provisioned.
 	extras.oidcProviderType.AddFieldConfig("externalIdentities", &graphql.Field{
 		Type: graphql.NewNonNull(extras.externalIdentityConnection),
@@ -277,12 +262,10 @@ func (s *Resolver) addEnterpriseIdentityCompletionFields(
 		},
 	})
 
-	// --- OrganizationIdentityProvider ---------------------------------------
-	// Pre-register the complete type (memoized by name) before the account
-	// surface builds its subset, so externalIdentities and idpCertificate are
-	// present. SAML binds at the enterprise on this instance, never at the
-	// organization, so no external identities are provisioned and no IdP
-	// certificate is stored.
+	// OrganizationIdentityProvider. Pre-register the complete type before the
+	// account surface builds its subset, so externalIdentities and
+	// idpCertificate are present. SAML binds at the enterprise, never the org,
+	// so no identities are provisioned and no IdP certificate is stored.
 	s.mutationObject("OrganizationIdentityProvider", graphql.Fields{
 		"id":              &graphql.Field{Type: graphql.NewNonNull(graphql.ID)},
 		"issuer":          &graphql.Field{Type: graphql.String},
@@ -305,8 +288,8 @@ func (s *Resolver) addEnterpriseIdentityCompletionFields(
 	})
 }
 
-// enterpriseTeamFromSource re-reads the enterprise team an EnterpriseTeam source
-// map names by its slug, returning nil when the source is not a realized team.
+// enterpriseTeamFromSource re-reads the enterprise team a source map names by
+// slug, returning nil when the source is not a realized team.
 func (s *Resolver) enterpriseTeamFromSource(source interface{}) *store.EnterpriseTeam {
 	m, ok := source.(map[string]interface{})
 	if !ok {

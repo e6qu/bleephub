@@ -1,12 +1,9 @@
 package graphqlapi
 
-// The repository custom-property mutations: the definition CRUD
-// (createRepositoryCustomProperty, updateRepositoryCustomProperty,
-// deleteRepositoryCustomProperty), promoteRepositoryCustomProperty — which
-// lifts an organization's definition into the enterprise schema exactly as
-// PUT /enterprises/{e}/properties/schema/organizations/{org}/{name}/promote
-// does — and setRepositoryCustomPropertyValues, which applies per-repository
-// values through the same validated store write the REST values routes drive.
+// Repository custom-property mutations: the definition CRUD,
+// promoteRepositoryCustomProperty (lifts an org definition into the enterprise
+// schema, mirroring the REST promote route) and setRepositoryCustomPropertyValues
+// (per-repository values through the same validated store write REST drives).
 
 import (
 	"fmt"
@@ -33,9 +30,8 @@ func init() {
 	}
 }
 
-// resolvedCustomProperty is a definition located by node id, with the account
-// context the id named. org is nil for a definition addressed through the
-// enterprise slug.
+// resolvedCustomProperty is a definition located by node id, with its account
+// context. org is nil for a definition addressed through the enterprise slug.
 type resolvedCustomProperty struct {
 	org             *store.Org
 	enterprise      *store.Enterprise
@@ -45,9 +41,8 @@ type resolvedCustomProperty struct {
 }
 
 // customPropertyByNodeID resolves a "RCP_<login>/<name>" definition id. The
-// login half is the organization the definition was listed under — or the
-// enterprise slug for a definition created at enterprise scope. A name the
-// organization does not define itself resolves to the enterprise-level
+// login half is the organization (or enterprise slug) the definition was listed
+// under. A name the org does not define itself falls back to the enterprise-level
 // definition of the same name, which is how the org connection lists both.
 func (s *Resolver) customPropertyByNodeID(nodeID string) (resolvedCustomProperty, error) {
 	missing := gqlMissingNode("RepositoryCustomProperty", nodeID)
@@ -80,8 +75,8 @@ func (s *Resolver) customPropertyByNodeID(nodeID string) (resolvedCustomProperty
 	}, nil
 }
 
-// renderResolvedCustomProperty renders a resolved definition through the
-// account it was addressed by.
+// renderResolvedCustomProperty renders a resolved definition through the account
+// it was addressed by.
 func (s *Resolver) renderResolvedCustomProperty(resolved resolvedCustomProperty, definition *store.CustomProperty) map[string]interface{} {
 	if resolved.org != nil {
 		return s.repositoryCustomPropertySource(resolved.org, definition)
@@ -89,17 +84,16 @@ func (s *Resolver) renderResolvedCustomProperty(resolved resolvedCustomProperty,
 	return s.enterpriseCustomPropertySource(resolved.enterprise, definition)
 }
 
-// customPropertyRule is the policy for the definition mutations. An
-// organization's definitions are its owners' to write; the enterprise-level
-// schema — including promotion into it — is the enterprise owner's, which on
-// this instance is a site administrator.
+// customPropertyRule is the policy for the definition mutations. An org's
+// definitions are its owners' to write; the enterprise schema — and promotion
+// into it — belongs to the enterprise owner (a site admin here).
 type customPropertyRule struct {
-	// sourceKey names the owning account directly; propertyKey names an
-	// existing definition whose owner is looked up. Exactly one is set.
+	// sourceKey names the owning account directly; propertyKey names an existing
+	// definition whose owner is looked up. Exactly one is set.
 	sourceKey   string
 	propertyKey string
-	// promote demands enterprise-owner standing whatever the definition's
-	// current owner, because the write lands in the enterprise schema.
+	// promote demands enterprise-owner standing regardless of current owner,
+	// because the write lands in the enterprise schema.
 	promote bool
 }
 
@@ -135,9 +129,8 @@ func (r customPropertyRule) authorize(s *Resolver, p graphql.ResolveParams, inpu
 	return s.authorizeOrgAdministration(p, resolved.org.Login, store.ScopeOrgAdministration)
 }
 
-// authorizeEnterpriseSchemaOwner is the standing the instance-wide
-// enterprise property schema demands: an owner of the instance's enterprise
-// account, which — as on GitHub Enterprise Server — a site administrator is.
+// authorizeEnterpriseSchemaOwner demands enterprise-account ownership, which —
+// as on GitHub Enterprise Server — a site administrator holds.
 func (s *Resolver) authorizeEnterpriseSchemaOwner(p graphql.ResolveParams) error {
 	viewer := s.ghUserFromContext(p.Context)
 	if e := s.store.GetEnterprise(s.store.PrimaryEnterpriseSlug()); e != nil {
@@ -156,10 +149,9 @@ var graphQLCustomPropertyValueTypes = map[string]bool{
 	"string": true, "single_select": true, "multi_select": true, "true_false": true, "url": true,
 }
 
-// addCustomPropertyMutationsToSchema installs the five custom-property
-// mutations, and completes the RepositoryCustomProperty object with the
-// `source` union the read surface could not mint before the Enterprise type
-// existed.
+// addCustomPropertyMutationsToSchema installs the five custom-property mutations
+// and completes RepositoryCustomProperty with the `source` union the read surface
+// could not mint before the Enterprise type existed.
 func (s *Resolver) addCustomPropertyMutationsToSchema(mutationType *graphql.Object) {
 	propertyType := s.gqlRepositoryCustomPropertyType()
 	propertyType.AddFieldConfig("source", &graphql.Field{
@@ -251,7 +243,7 @@ func (s *Resolver) addCustomPropertyMutationsToSchema(mutationType *graphql.Obje
 }
 
 // gqlCustomPropertySourceUnion is the Enterprise | Organization union a
-// definition's `source` member names.
+// definition's `source` names.
 func (s *Resolver) gqlCustomPropertySourceUnion() *graphql.Union {
 	return s.mutationUnion("CustomPropertySource",
 		func() []*graphql.Object {
@@ -268,9 +260,8 @@ func (s *Resolver) gqlCustomPropertySourceUnion() *graphql.Union {
 
 // --- input assembly ----------------------------------------------------------
 
-// validGraphQLCustomPropertyName mirrors the REST surface's name rule: no
-// surrounding or embedded whitespace, no control characters (the name is a
-// URL path segment on the REST schema endpoints).
+// validGraphQLCustomPropertyName mirrors the REST name rule: no whitespace, no
+// control characters (the name is a URL path segment on the REST schema routes).
 func validGraphQLCustomPropertyName(name string) bool {
 	if name == "" || strings.TrimSpace(name) != name {
 		return false
@@ -283,8 +274,7 @@ func validGraphQLCustomPropertyName(name string) bool {
 	return true
 }
 
-// validateCustomPropertyDefinition applies the same shape rules the REST
-// definition writes enforce.
+// validateCustomPropertyDefinition applies the same shape rules REST enforces.
 func validateCustomPropertyDefinition(def *store.CustomProperty) error {
 	if !validGraphQLCustomPropertyName(def.PropertyName) {
 		return fmt.Errorf("propertyName is invalid")
@@ -310,8 +300,8 @@ func validateCustomPropertyDefinition(def *store.CustomProperty) error {
 	return nil
 }
 
-// applyCustomPropertyDefinitionInput merges the present update members into
-// the definition.
+// applyCustomPropertyDefinitionInput merges the present update members into the
+// definition.
 func applyCustomPropertyDefinitionInput(def *store.CustomProperty, input map[string]interface{}) {
 	if value, ok := gqlInputString(input, "description"); ok {
 		def.Description = &value
@@ -406,8 +396,7 @@ func (s *Resolver) resolveDeleteRepositoryCustomProperty(p graphql.ResolveParams
 	if err != nil {
 		return nil, err
 	}
-	// The payload reports the definition as it was, so it is rendered before
-	// the row is destroyed.
+	// Render the definition before destroying the row; the payload reports it as it was.
 	deleted := s.renderResolvedCustomProperty(resolved, resolved.definition)
 	if resolved.enterpriseOwned {
 		if !s.store.DeleteEnterpriseCustomProperty(resolved.name) {
@@ -433,8 +422,7 @@ func (s *Resolver) resolvePromoteRepositoryCustomProperty(p graphql.ResolveParam
 	if promoted == nil {
 		return nil, gqlMissingNode("RepositoryCustomProperty", nodeID)
 	}
-	// The promoted definition belongs to the enterprise now, so it renders
-	// with the enterprise as its source.
+	// The promoted definition now renders with the enterprise as its source.
 	rendered := s.repositoryCustomPropertySource(resolved.org, promoted)
 	if e := s.store.GetEnterprise(s.store.PrimaryEnterpriseSlug()); e != nil {
 		rendered = s.enterpriseCustomPropertySource(e, promoted)

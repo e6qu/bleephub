@@ -8,10 +8,8 @@ import (
 	"github.com/graphql-go/graphql"
 )
 
-// updateTeamsRepository and deletePackageVersion: administrative writes whose
-// subjects live outside a repository row — a team grant, a package version —
-// but whose authorization is still the plain question of who may administer
-// the thing's owner.
+// Administrative writes whose subjects live outside a repository row, authorized
+// on who may administer the subject's owner.
 
 func init() {
 	for name, rule := range map[string]mutationRule{
@@ -26,10 +24,8 @@ func init() {
 	}
 }
 
-// packageOwnerRule authorizes a package-version mutation against the account
-// that owns the package: deleting a version is package administration, which
-// on github belongs to the owner (or an org's admins), not to anyone who can
-// read the package.
+// packageOwnerRule authorizes a package-version mutation against the account that
+// owns the package; deleting a version is owner-only administration.
 type packageOwnerRule struct {
 	key string
 }
@@ -47,15 +43,15 @@ func (r packageOwnerRule) authorize(s *Resolver, p graphql.ResolveParams, input 
 	if pkg == nil {
 		return gqlMissingNode("PackageVersion", nodeID)
 	}
-	// OwnerKey is a login, or owner/repo for a repository-scoped package;
-	// either way the accountable account is its first segment.
+	// OwnerKey is a login, or owner/repo for a repo-scoped package; the
+	// accountable account is its first segment.
 	owner := pkg.OwnerKey
 	if slash := strings.IndexByte(owner, '/'); slash > 0 {
 		owner = owner[:slash]
 	}
 	if !s.viewerCanAdminAccount(p.Context, owner) {
-		// The same answer as a missing version, so the mutation is not an
-		// existence oracle for another account's packages.
+		// Same answer as a missing version, so the mutation is not an existence
+		// oracle for another account's packages.
 		return gqlMissingNode("PackageVersion", nodeID)
 	}
 	return nil
@@ -92,10 +88,8 @@ func (s *Resolver) addAdminMutationsToSchema(mutationType *graphql.Object) {
 			if repo == nil {
 				return nil, gqlMissingNode("Repository", str(input["repositoryId"]))
 			}
-			// github's five-value permission vocabulary maps onto the team
-			// grant levels the REST team-repository surface stores; MAINTAIN
-			// and TRIAGE fold to their nearest grant the way the REST
-			// permission parameter does.
+			// MAINTAIN and TRIAGE fold to their nearest grant, as the REST
+			// team-repository permission parameter does.
 			var perm store.TeamPermission
 			switch str(input["permission"]) {
 			case "ADMIN":
@@ -188,9 +182,7 @@ func (s *Resolver) addAdminMutationsToSchema(mutationType *graphql.Object) {
 				}
 			} else if owner := s.store.GetUserByID(ownerID); owner != nil {
 				ownerLogin = owner.Login
-				// Generating under a different user's personal account is not
-				// a thing github permits; only the caller's own account or an
-				// organization qualifies.
+				// Only the caller's own account or an organization qualifies.
 				if user == nil || owner.ID != user.ID {
 					return nil, fmt.Errorf("you may only generate repositories for your own account or an organization you are a member of")
 				}

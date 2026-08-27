@@ -2,17 +2,12 @@ package graphqlapi
 
 import "github.com/graphql-go/graphql"
 
-// IssueEventWithRationale is the union GitHub returns from
-// IssueEventRationale.issueEvent — the agent-triage timeline events that carry
-// an update intent. bleephub records no agent-triage rationale events, so the
-// field resolves null; the union and its six field/type events exist for schema
-// fidelity so a client's `... on IssueFieldChangedEvent` fragment validates.
-//
-// The three non-agent members (ClosedEvent, LabeledEvent, UnlabeledEvent) are
-// the timeline objects the registry already built; the six agent events are
-// minted here. Every event names IssueEventRationale (reg.eventRationale),
-// which in turn names this union — a cycle the union's memoized construction
-// and the eventRationale object's post-hoc AddFieldConfig resolve.
+// addIssueEventWithRationaleUnion builds IssueEventWithRationale, the union
+// IssueEventRationale.issueEvent returns. bleephub records no agent-triage
+// rationale events, so the field resolves null; the union and its six agent
+// events exist only for schema fidelity. Each event names IssueEventRationale,
+// which in turn names this union — a cycle the union's memoization and the
+// eventRationale object's post-hoc AddFieldConfig resolve.
 func (s *Resolver) addIssueEventWithRationaleUnion(reg *timelineTypeRegistry, dateTime *graphql.Scalar) {
 	actor := s.graphqlTypes.actor
 	issueFields := s.graphqlTypes.issueFieldsUnion
@@ -82,8 +77,6 @@ func (s *Resolver) addIssueEventWithRationaleUnion(reg *timelineTypeRegistry, da
 		return nil
 	})
 
-	// bleephub models no agent-triage rationale event, so the field is truthfully
-	// null; the union exists purely for schema fidelity.
 	rationale.AddFieldConfig("issueEvent", &graphql.Field{
 		Type:    union,
 		Resolve: func(graphql.ResolveParams) (interface{}, error) { return nil, nil },

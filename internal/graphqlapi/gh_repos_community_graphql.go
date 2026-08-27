@@ -1,14 +1,11 @@
 package graphqlapi
 
-// Repository members backed by files the repository carries in git: the
-// community-health documents (CONTRIBUTING, CODE_OF_CONDUCT, SECURITY,
-// FUNDING, issue and pull-request templates), the CODEOWNERS file, and the
-// submodules recorded in .gitmodules.
+// Repository members backed by files in git: community-health documents
+// (CONTRIBUTING, CODE_OF_CONDUCT, SECURITY, FUNDING, issue/PR templates),
+// CODEOWNERS, and .gitmodules submodules.
 //
-// The file lookup follows GitHub's own search order — `.github/`, the
-// repository root, then `docs/` — and reads the default branch, which is what
-// the REST community-profile and CODEOWNERS-errors endpoints read, so a client
-// cannot see a different set of health files over the two protocols.
+// Lookup follows GitHub's search order (.github/, root, docs/) on the default
+// branch — the same files the REST community-profile and CODEOWNERS endpoints read.
 
 import (
 	"context"
@@ -35,8 +32,7 @@ var (
 	contributingPaths    = []string{"CONTRIBUTING.md", "CONTRIBUTING"}
 	codeOfConductPaths   = []string{"CODE_OF_CONDUCT.md", "CODE_OF_CONDUCT"}
 	pullRequestTemplates = []string{"PULL_REQUEST_TEMPLATE.md", "PULL_REQUEST_TEMPLATE", "pull_request_template.md"}
-	// codeownersSearchPaths are the exact paths GitHub honors for CODEOWNERS,
-	// in precedence order; the first found is the operative file.
+	// codeownersSearchPaths in precedence order; the first found is operative.
 	codeownersSearchPaths = []string{".github/CODEOWNERS", "CODEOWNERS", "docs/CODEOWNERS"}
 	fundingFilePaths      = []string{".github/FUNDING.yml", ".github/FUNDING.yaml", "FUNDING.yml", "FUNDING.yaml"}
 	issueTemplateConfigs  = []string{".github/ISSUE_TEMPLATE/config.yml", ".github/ISSUE_TEMPLATE/config.yaml"}
@@ -44,10 +40,9 @@ var (
 	prTemplateDirs        = []string{".github/PULL_REQUEST_TEMPLATE", "PULL_REQUEST_TEMPLATE", "docs/PULL_REQUEST_TEMPLATE"}
 )
 
-// readableRepoFromSource re-reads the repository a Repository source names and
-// answers nil when the request may not read it. Every git-content field goes
-// through it so a private repository's health files, CODEOWNERS and
-// submodules cannot be read by a stranger who reached the source another way.
+// readableRepoFromSource re-reads the named repository, answering nil when the
+// request may not read it. Every git-content field goes through it so a private
+// repository's files cannot be read by a stranger who reached the source another way.
 func (s *Resolver) readableRepoFromSource(ctx context.Context, source interface{}) (*store.Repo, error) {
 	repo, err := s.repoFromSource(source)
 	if err != nil {
@@ -321,10 +316,7 @@ func (s *Resolver) addRepositoryCommunityFields(types *accountSurfaceTypes) {
 			"filename": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
 			"name":     &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
 			"title":    &graphql.Field{Type: graphql.String},
-			// The issue type a template records, if any. bleephub's templates
-			// (parsed from the repo's .github/ISSUE_TEMPLATE front matter) do not
-			// record an issue-type binding, so the source carries no "type" key
-			// and the nullable field resolves null.
+			// Resolves null: bleephub's templates record no issue-type binding.
 			"type": &graphql.Field{Type: s.graphqlTypes.issueType},
 			"assignees": &graphql.Field{
 				Type: graphql.NewNonNull(types.userConnection),
@@ -515,8 +507,7 @@ func (s *Resolver) addRepositoryCommunityFields(types *accountSurfaceTypes) {
 	})
 }
 
-// gqlCodeOfConductType returns the one CodeOfConduct object type, shared by
-// Query.codeOfConduct/codesOfConduct and Repository.codeOfConduct.
+// gqlCodeOfConductType returns the CodeOfConduct object type (memoized).
 func (s *Resolver) gqlCodeOfConductType() *graphql.Object {
 	types := s.accountSurfaceRegistry()
 	if types.codeOfConduct != nil {
@@ -537,9 +528,8 @@ func (s *Resolver) gqlCodeOfConductType() *graphql.Object {
 	return types.codeOfConduct
 }
 
-// detectCodeOfConduct identifies which catalog document a repository's
-// CODE_OF_CONDUCT file is, by the title each carries. A document outside the
-// catalog is GitHub's "other".
+// detectCodeOfConduct identifies the catalog document by the title it carries;
+// one outside the catalog is GitHub's "other".
 func detectCodeOfConduct(content string) store.CodeOfConduct {
 	for _, entry := range store.CodesOfConductCatalog {
 		if strings.Contains(content, entry.Name) {
@@ -556,8 +546,8 @@ type fundingLink struct {
 	url      string
 }
 
-// fundingPlatforms maps FUNDING.yml's keys onto GitHub's FundingPlatform enum
-// and the sponsor URL each key's handle expands to.
+// fundingPlatforms maps FUNDING.yml keys onto the FundingPlatform enum and the
+// URL prefix each key's handle expands to.
 var fundingPlatforms = []struct {
 	key      string
 	platform string
@@ -577,8 +567,7 @@ var fundingPlatforms = []struct {
 	{"tidelift", "TIDELIFT", "https://tidelift.com/funding/github/"},
 }
 
-// repositoryFundingLinks parses the repository's FUNDING file into the
-// platform/url pairs GitHub's fundingLinks reports.
+// repositoryFundingLinks parses the FUNDING file into platform/url pairs.
 func (s *Resolver) repositoryFundingLinks(repo *store.Repo) []fundingLink {
 	_, content, found := s.repositoryFileAtPaths(repo, fundingFilePaths)
 	if !found {
@@ -601,8 +590,7 @@ func (s *Resolver) repositoryFundingLinks(repo *store.Repo) []fundingLink {
 	return out
 }
 
-// fundingYAMLValues normalizes a FUNDING.yml value, which may be a single
-// handle or a list of them.
+// fundingYAMLValues normalizes a FUNDING.yml value (a single handle or a list).
 func fundingYAMLValues(value interface{}) []string {
 	switch typed := value.(type) {
 	case string:
@@ -646,9 +634,8 @@ func (s *Resolver) repositoryIssueTemplateConfig(repo *store.Repo) (issueTemplat
 	return config, true
 }
 
-// repositoryAllowsBlankIssues reports whether the repository still offers the
-// "open a blank issue" escape hatch: on unless its issue-template config
-// turns it off, which is GitHub's default.
+// repositoryAllowsBlankIssues reports whether the "open a blank issue" escape
+// hatch is offered; on unless the issue-template config turns it off.
 func (s *Resolver) repositoryAllowsBlankIssues(repo *store.Repo) bool {
 	config, found := s.repositoryIssueTemplateConfig(repo)
 	if !found || config.BlankIssuesEnabled == nil {
@@ -676,8 +663,7 @@ type templateFrontMatter struct {
 	Assignees interface{} `yaml:"assignees"`
 }
 
-// parseTemplateFrontMatter splits a template's YAML front matter from its
-// body, exactly as the issue-composer front end does.
+// parseTemplateFrontMatter splits a template's YAML front matter from its body.
 func parseTemplateFrontMatter(filename, content string) templateMetadata {
 	meta := templateMetadata{
 		Name: strings.TrimSuffix(strings.TrimSuffix(filename, ".markdown"), ".md"),
@@ -745,8 +731,7 @@ func splitCommaList(value string) []string {
 
 // --- CODEOWNERS ------------------------------------------------------------
 
-// repositoryCodeownersFile finds the operative CODEOWNERS file, honoring an
-// explicit refName argument.
+// repositoryCodeownersFile finds the operative CODEOWNERS file, honoring refName.
 func (s *Resolver) repositoryCodeownersFile(repo *store.Repo, args map[string]interface{}) (string, []byte, bool) {
 	refName, _ := args["refName"].(string)
 	if refName == "" {
@@ -772,11 +757,9 @@ func (s *Resolver) repositoryCodeownersFile(repo *store.Repo, args map[string]in
 	return "", nil, false
 }
 
-// validateRepositoryCodeowners reports the CODEOWNERS problems GitHub
-// reports: an owner token that is not a well-formed reference ("Invalid
-// owner") and one that names no account or team on this instance ("Unknown
-// owner"). It is the same classification the REST codeowners-errors endpoint
-// serves, so the two cannot disagree about a file's validity.
+// validateRepositoryCodeowners reports "Invalid owner" (malformed reference) and
+// "Unknown owner" (no such account/team), the same classification the REST
+// codeowners-errors endpoint serves.
 func (s *Resolver) validateRepositoryCodeowners(content, path string) []interface{} {
 	out := []interface{}{}
 	for index, line := range strings.Split(content, "\n") {
@@ -833,9 +816,8 @@ func (s *Resolver) classifyCodeownersToken(owner string) string {
 
 // --- .gitmodules -----------------------------------------------------------
 
-// repositorySubmoduleItems reads the repository's .gitmodules and pairs each
-// declared submodule with the commit the default-branch tree records for its
-// path.
+// repositorySubmoduleItems pairs each .gitmodules submodule with the commit the
+// default-branch tree records for its path.
 func (s *Resolver) repositorySubmoduleItems(repo *store.Repo) []gqlConnItem {
 	stor, tree, ok := s.repositoryDefaultTree(repo)
 	if !ok {
@@ -879,7 +861,7 @@ type gitSubmodule struct {
 }
 
 // parseGitmodules reads the git-config subset .gitmodules uses: a
-// `[submodule "name"]` section per entry with path/url/branch keys.
+// [submodule "name"] section per entry with path/url/branch keys.
 func parseGitmodules(content string) []gitSubmodule {
 	var out []gitSubmodule
 	var current *gitSubmodule
@@ -922,8 +904,7 @@ func parseGitmodules(content string) []gitSubmodule {
 		}
 	}
 	flush()
-	// The GraphQL connection's page boundaries must not depend on file order
-	// alone changing between reads of an edited file.
+	// Stable order: page boundaries must not shift with .gitmodules line order.
 	sort.Slice(out, func(i, j int) bool { return out[i].path < out[j].path })
 	return out
 }

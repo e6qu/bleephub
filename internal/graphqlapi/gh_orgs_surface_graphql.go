@@ -15,8 +15,8 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// addOrganizationProfileFields installs the profile and viewer members of
-// Organization.
+// addOrganizationProfileFields installs Organization's profile and viewer
+// members.
 func (s *Resolver) addOrganizationProfileFields(types *accountSurfaceTypes) {
 	orgType := types.organization
 	uri := s.graphQLStringScalar("URI")
@@ -48,8 +48,7 @@ func (s *Resolver) addOrganizationProfileFields(types *accountSurfaceTypes) {
 		},
 	})
 	orgType.AddFieldConfig("descriptionHTML", &graphql.Field{
-		// GitHub types this String (not HTML!) on Organization; the value is
-		// still the description run through the one markdown pipeline.
+		// GitHub types this String (not HTML!) on Organization.
 		Type: graphql.String,
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			org, err := s.orgFromSource(p.Source)
@@ -66,8 +65,7 @@ func (s *Resolver) addOrganizationProfileFields(types *accountSurfaceTypes) {
 			if err != nil {
 				return nil, err
 			}
-			// The billing address is an owner-only member, exactly as the
-			// REST organization shape gates `billing_email`.
+			// Owner-only, like REST's billing_email.
 			if !s.viewerCanAdminAccount(p.Context, org.Login) {
 				return nil, nil
 			}
@@ -102,9 +100,8 @@ func (s *Resolver) addOrganizationProfileFields(types *accountSurfaceTypes) {
 			if err != nil {
 				return nil, err
 			}
-			// The two-factor requirement on an organization is the governing
-			// enterprise's policy, which is exactly what the REST
-			// organization shape reports as two_factor_requirement_enabled.
+			// The org's 2FA requirement is the governing enterprise's policy,
+			// as REST's two_factor_requirement_enabled reports.
 			policy, _ := s.store.EnterprisePolicyForOrg(org.ID)
 			return policy.TwoFactorRequired == store.EnterprisePolicyEnabled, nil
 		},
@@ -112,19 +109,16 @@ func (s *Resolver) addOrganizationProfileFields(types *accountSurfaceTypes) {
 	orgType.AddFieldConfig("isVerified", &graphql.Field{
 		Type: graphql.NewNonNull(graphql.Boolean),
 		Resolve: func(graphql.ResolveParams) (interface{}, error) {
-			// GitHub's verified badge means the organization has verified a
-			// domain it owns. Domain verification on this instance is an
-			// enterprise-level list, never an organization-level one, so no
-			// organization here carries a verified domain of its own.
+			// Domain verification here is enterprise-level only, so no org
+			// carries a verified domain of its own.
 			return false, nil
 		},
 	})
 	orgType.AddFieldConfig("archivedAt", &graphql.Field{
 		Type: dateTime,
 		Resolve: func(graphql.ResolveParams) (interface{}, error) {
-			// bleephub never archives an organization account, so none has an
-			// archived-at instant. (Repository archival, which it does model,
-			// is Repository.archivedAt.)
+			// Org accounts are never archived (repo archival is
+			// Repository.archivedAt).
 			return nil, nil
 		},
 	})
@@ -193,7 +187,7 @@ func (s *Resolver) addOrganizationProfileFields(types *accountSurfaceTypes) {
 		if !s.viewerIsOrgMember(p.Context, org.Login) {
 			return false
 		}
-		// nil is GitHub's default of true for the member-privilege toggles.
+		// nil defaults to GitHub's true for member-privilege toggles.
 		return org.MembersCanCreateTeams == nil || *org.MembersCanCreateTeams
 	}))
 	orgType.AddFieldConfig("viewerCanCreateRepositories", orgBool(func(p graphql.ResolveParams, org *store.Org) bool {
@@ -213,15 +207,11 @@ func (s *Resolver) addOrganizationProfileFields(types *accountSurfaceTypes) {
 		return viewer != nil && s.store.LoginFollows(viewer.Login, org.Login)
 	}))
 
-	// The account-completion members (packages, memberStatuses, issueTypes,
-	// domains, enterpriseOwners, recentProjects and the null-answering
-	// announcementBanner / samlIdentityProvider) live in
-	// gh_users_org_fields_graphql.go.
+	// The account-completion members live in gh_users_org_fields_graphql.go.
 	s.addOrganizationCompletionFields(types)
 }
 
-// addOrganizationPeopleFields installs Organization's membership and team
-// connections.
+// addOrganizationPeopleFields installs the membership and team connections.
 func (s *Resolver) addOrganizationPeopleFields(types *accountSurfaceTypes) {
 	orgType := types.organization
 
@@ -239,9 +229,8 @@ func (s *Resolver) addOrganizationPeopleFields(types *accountSurfaceTypes) {
 			if err != nil {
 				return nil, err
 			}
-			// A non-member sees only the members who publicized their
-			// membership; a member sees the whole roster. Answering the full
-			// list to an outsider would leak private membership.
+			// A non-member sees only publicized memberships; the full roster
+			// would leak private membership.
 			members := s.organizationVisibleMembers(p.Context, org)
 			viewerIsAdmin := s.viewerCanAdminAccount(p.Context, org.Login)
 			items := make([]gqlConnItem, 0, len(members))
@@ -252,9 +241,7 @@ func (s *Resolver) addOrganizationPeopleFields(types *accountSurfaceTypes) {
 					membership.Role == store.OrgRoleAdmin {
 					role = "ADMIN"
 				}
-				// Whether an account has two-factor authentication on is
-				// owner-only information; GitHub types the edge member
-				// nullable for exactly that reason.
+				// 2FA state is owner-only; the edge member is nullable for it.
 				var twoFactor interface{}
 				if viewerIsAdmin {
 					twoFactor = member.TwoFactor != nil
@@ -284,8 +271,7 @@ func (s *Resolver) addOrganizationPeopleFields(types *accountSurfaceTypes) {
 			if err != nil {
 				return nil, err
 			}
-			// Who has been invited but not yet joined is administrative
-			// information.
+			// Pending invitations are owner-only.
 			if !s.viewerCanAdminAccount(p.Context, org.Login) {
 				return paginateGQLItems(nil, p.Args), nil
 			}
@@ -344,9 +330,8 @@ func (s *Resolver) addOrganizationPeopleFields(types *accountSurfaceTypes) {
 	})
 }
 
-// addOrganizationGovernanceFields installs the governance records an
-// organization owns: its IP allow list, rulesets and repository custom
-// properties.
+// addOrganizationGovernanceFields installs the IP allow list, rulesets and
+// repository custom properties.
 func (s *Resolver) addOrganizationGovernanceFields(types *accountSurfaceTypes) {
 	orgType := types.organization
 
@@ -381,10 +366,9 @@ func (s *Resolver) addOrganizationGovernanceFields(types *accountSurfaceTypes) {
 	orgType.AddFieldConfig("notificationDeliveryRestrictionEnabledSetting", &graphql.Field{
 		Type: graphql.NewNonNull(s.sharedEnum("NotificationRestrictionSettingValue", "DISABLED", "ENABLED")),
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			// The enterprise's restriction governs every organization under
-			// it — the same value the notification delivery gate enforces per
-			// address — and an organization may switch its own on
-			// independently, so either being on restricts delivery.
+			// The enterprise restriction governs every org under it, and an
+			// org may switch its own on independently; either being on
+			// restricts delivery.
 			if enabled, _ := s.store.NotificationDeliveryRestriction(); enabled {
 				return "ENABLED", nil
 			}
@@ -413,8 +397,7 @@ func (s *Resolver) addOrganizationGovernanceFields(types *accountSurfaceTypes) {
 				if err != nil {
 					return nil, err
 				}
-				// The allow list is the organization's network policy; only an
-				// owner may read it.
+				// Owner-only network policy.
 				if !s.viewerCanAdminAccount(p.Context, org.Login) {
 					return paginateGQLItems(nil, p.Args), nil
 				}
@@ -461,8 +444,7 @@ func (s *Resolver) addOrganizationGovernanceFields(types *accountSurfaceTypes) {
 				if err != nil {
 					return nil, err
 				}
-				// A ruleset states what the organization enforces on its
-				// repositories; membership is what GitHub requires to read it.
+				// GitHub requires membership to read rulesets.
 				if !s.viewerIsOrgMember(p.Context, org.Login) && !s.viewerCanAdminAccount(p.Context, org.Login) {
 					return nil, nil
 				}
@@ -565,9 +547,8 @@ func (s *Resolver) addOrganizationGovernanceFields(types *accountSurfaceTypes) {
 }
 
 // gqlRepositoryCustomPropertyType returns the shared RepositoryCustomProperty
-// object (memoized): the org read surface lists it and the custom-property
-// mutation payloads return it. Its `source` union member is added by the
-// mutation family, once the Enterprise type it names exists.
+// object (memoized). Its `source` union member is added later by the mutation
+// family, once the Enterprise type it names exists.
 func (s *Resolver) gqlRepositoryCustomPropertyType() *graphql.Object {
 	return s.mutationObject("RepositoryCustomProperty", graphql.Fields{
 		"allowedValues":         &graphql.Field{Type: graphql.NewList(graphql.NewNonNull(graphql.String))},
@@ -585,9 +566,8 @@ func (s *Resolver) gqlRepositoryCustomPropertyType() *graphql.Object {
 	})
 }
 
-// repositoryCustomPropertySource renders a definition reached through an
-// organization, naming the enterprise as its source when the organization
-// merely inherits it.
+// repositoryCustomPropertySource renders a definition reached through an org,
+// naming the enterprise as its source when the org merely inherits it.
 func (s *Resolver) repositoryCustomPropertySource(org *store.Org, property *store.CustomProperty) map[string]interface{} {
 	source := customPropertySource(org, property)
 	if !s.store.OrgOwnsCustomProperty(org.Login, property.PropertyName) {
@@ -600,8 +580,8 @@ func (s *Resolver) repositoryCustomPropertySource(org *store.Org, property *stor
 	return source
 }
 
-// enterpriseCustomPropertySource renders a definition created directly at
-// enterprise scope.
+// enterpriseCustomPropertySource renders a definition created at enterprise
+// scope.
 func (s *Resolver) enterpriseCustomPropertySource(e *store.Enterprise, property *store.CustomProperty) map[string]interface{} {
 	source := customPropertySource(nil, property)
 	source["id"] = "RCP_" + e.Slug + "/" + property.PropertyName
@@ -609,17 +589,15 @@ func (s *Resolver) enterpriseCustomPropertySource(e *store.Enterprise, property 
 	return source
 }
 
-// orgOwnerSource renders the organization as the IpAllowListOwner union
-// member it is.
+// orgOwnerSource renders the org as its IpAllowListOwner union member.
 func orgOwnerSource(org *store.Org) map[string]interface{} {
 	source := orgToGraphQL(org)
 	source["__typename"] = "Organization"
 	return source
 }
 
-// orgRulesetSource renders an organization ruleset with the organization as
-// its `source`, which is how GitHub labels a ruleset configured on the
-// organization rather than on one repository.
+// orgRulesetSource renders an org ruleset with the org as its `source`, GitHub's
+// label for a ruleset configured on the org rather than one repository.
 func (s *Resolver) orgRulesetSource(ruleset *store.Ruleset, org *store.Org) map[string]interface{} {
 	rules := make([]map[string]interface{}, 0, len(ruleset.Rules))
 	for i, rule := range ruleset.Rules {
@@ -642,7 +620,7 @@ func (s *Resolver) orgRulesetSource(ruleset *store.Ruleset, org *store.Org) map[
 	}
 }
 
-// customPropertySource renders one organization custom-property definition.
+// customPropertySource renders one org custom-property definition.
 func customPropertySource(org *store.Org, property *store.CustomProperty) map[string]interface{} {
 	allowed := interface{}(nil)
 	if property.AllowedValues != nil {
@@ -666,14 +644,14 @@ func customPropertySource(org *store.Org, property *store.CustomProperty) map[st
 	}
 }
 
-// customPropertyIdentity is the node id for a property definition, which the
-// store keys by (organization, name) rather than a numeric row id.
+// customPropertyIdentity is the node id for a property definition, keyed by
+// (org, name) since the store has no numeric row id for it.
 func customPropertyIdentity(org *store.Org, property *store.CustomProperty) string {
 	return "RCP_" + org.Login + "/" + property.PropertyName
 }
 
-// customPropertyDefaultValue renders the definition's default, which is a
-// single value for the scalar types and a list for MULTI_SELECT.
+// customPropertyDefaultValue renders the definition's default: a single value
+// for scalar types, a list for MULTI_SELECT.
 func customPropertyDefaultValue(property *store.CustomProperty) interface{} {
 	if property.DefaultValue == nil {
 		return nil
@@ -681,7 +659,7 @@ func customPropertyDefaultValue(property *store.CustomProperty) interface{} {
 	return property.DefaultValue
 }
 
-// customPropertyEditableBy maps the stored editability onto GitHub's enum.
+// customPropertyEditableBy maps stored editability onto GitHub's enum.
 func customPropertyEditableBy(value string) string {
 	if strings.EqualFold(value, "org_actors") {
 		return "ORG_ACTORS"
@@ -690,8 +668,7 @@ func customPropertyEditableBy(value string) string {
 }
 
 // organizationVisibleMembers is the roster the request may see: the whole
-// membership for a member or owner, only the publicized memberships for
-// anyone else.
+// membership for a member or owner, only publicized memberships otherwise.
 func (s *Resolver) organizationVisibleMembers(ctx context.Context, org *store.Org) []*store.User {
 	if s.viewerIsOrgMember(ctx, org.Login) || s.viewerCanAdminAccount(ctx, org.Login) {
 		return sortedUsersByLogin(s.store.ListOrgMembers(org.Login))
@@ -699,9 +676,8 @@ func (s *Resolver) organizationVisibleMembers(ctx context.Context, org *store.Or
 	return sortedUsersByLogin(s.store.ListPublicOrgMembers(org.Login))
 }
 
-// viewerCanSeeTeam reports whether the request may see a team at all. A secret
-// team is invisible outside the organization and outside its own membership,
-// which is what makes it secret.
+// viewerCanSeeTeam reports whether the request may see a team. A secret team is
+// visible only to its own members (and owners).
 func (s *Resolver) viewerCanSeeTeam(ctx context.Context, org *store.Org, team *store.Team) bool {
 	if team.Privacy != store.TeamPrivacySecret {
 		return s.viewerIsOrgMember(ctx, org.Login) || s.viewerCanAdminAccount(ctx, org.Login)
@@ -717,8 +693,7 @@ func (s *Resolver) viewerCanSeeTeam(ctx context.Context, org *store.Org, team *s
 	return member
 }
 
-// organizationVisibleTeams applies GitHub's team filters to the teams the
-// request may see.
+// organizationVisibleTeams applies GitHub's team filters to the visible teams.
 func (s *Resolver) organizationVisibleTeams(ctx context.Context, org *store.Org, args map[string]interface{}) []*store.Team {
 	privacy, _ := args["privacy"].(string)
 	query, _ := args["query"].(string)
@@ -754,7 +729,7 @@ func (s *Resolver) organizationVisibleTeams(ctx context.Context, org *store.Org,
 			if !ok {
 				continue
 			}
-			// GitHub's TeamRole is ADMIN for a maintainer, MEMBER otherwise.
+			// TeamRole is ADMIN for a maintainer, MEMBER otherwise.
 			want := "MEMBER"
 			if memberRole == store.TeamRoleMaintainer {
 				want = "ADMIN"
@@ -771,7 +746,7 @@ func (s *Resolver) organizationVisibleTeams(ctx context.Context, org *store.Org,
 	return out
 }
 
-// teamHasAnyMember reports whether any of the named accounts belongs to team.
+// teamHasAnyMember reports whether any named account belongs to team.
 func teamHasAnyMember(st *store.Store, orgLogin string, team *store.Team, logins []string) bool {
 	for _, login := range logins {
 		user := st.LookupUserByLogin(login)

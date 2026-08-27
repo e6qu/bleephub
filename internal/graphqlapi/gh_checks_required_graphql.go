@@ -8,22 +8,13 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// StatusContext.isRequired and CheckRun.isRequired — the two fields `gh pr
-// checks` selects on every rollup context to decide which line of its table is
-// marked "required". Without them the command's whole document fails
-// validation and the subcommand is unusable.
-//
-// GitHub declares the field on the RequirableByPullRequest interface with two
-// optional arguments, because "required" is not a property of a check: it is a
-// property of a check with respect to one pull request's base branch. Both
-// resolvers therefore answer from the repository's branch protection through
-// the same seam the merge gate reads, so what the table marks required is what
-// the merge would actually block on.
+// StatusContext.isRequired and CheckRun.isRequired back `gh pr checks`'s
+// "required" column. "Required" is a property of a check relative to one pull
+// request's base branch, so both resolvers answer from branch protection
+// through the same seam the merge gate reads.
 
-// requirableByPullRequestArgs is GitHub's argument pair, shared by the
-// interface declaration and both implementations so they cannot drift (an
-// object whose argument types differ from its interface's fails schema
-// assembly).
+// requirableByPullRequestArgs is GitHub's argument pair, shared by the interface
+// and both implementations so they cannot drift.
 func requirableByPullRequestArgs() graphql.FieldConfigArgument {
 	return graphql.FieldConfigArgument{
 		"pullRequestId":     &graphql.ArgumentConfig{Type: graphql.ID},
@@ -31,10 +22,8 @@ func requirableByPullRequestArgs() graphql.FieldConfigArgument {
 	}
 }
 
-// gqlRequirableByPullRequestInterface returns GitHub's
-// RequirableByPullRequest interface (memoized). StatusContext and CheckRun
-// implement it; the registry entries its ResolveType reads are populated by
-// the time any query executes.
+// gqlRequirableByPullRequestInterface returns GitHub's RequirableByPullRequest
+// interface (memoized), implemented by StatusContext and CheckRun.
 func (s *Resolver) gqlRequirableByPullRequestInterface() *graphql.Interface {
 	if s.graphqlTypes.requirableByPullRequest != nil {
 		return s.graphqlTypes.requirableByPullRequest
@@ -58,11 +47,9 @@ func (s *Resolver) gqlRequirableByPullRequestInterface() *graphql.Interface {
 	return s.graphqlTypes.requirableByPullRequest
 }
 
-// gqlIsRequiredField builds the isRequired field for one rollup member.
-// nameKey names the source member carrying the identifier branch protection
-// expresses its requirement in: a status context is required by its `context`,
-// a check run by its `name` — which is the same pair requiredCheckContexts
-// matches when it decides whether a merge may proceed.
+// gqlIsRequiredField builds the isRequired field for one rollup member. nameKey
+// names the source member holding branch protection's identifier: a status
+// context's `context`, a check run's `name`.
 func (s *Resolver) gqlIsRequiredField(nameKey string) *graphql.Field {
 	return &graphql.Field{
 		Type: graphql.NewNonNull(graphql.Boolean),
@@ -92,9 +79,8 @@ func (s *Resolver) gqlIsRequiredField(nameKey string) *graphql.Field {
 }
 
 // requirableSubjectPullRequest resolves the pull request isRequired is asked
-// about. GitHub accepts either the node id or the number, and requires one of
-// them: without a pull request there is no base branch, so there is no answer
-// to give — which is refused rather than reported as "not required".
+// about, by node id or number; one is required, since without a pull request
+// there is no base branch to answer against.
 func (s *Resolver) requirableSubjectPullRequest(p graphql.ResolveParams, repoKey string) (*store.Repo, *store.PullRequest, error) {
 	nodeID, _ := p.Args["pullRequestId"].(string)
 	number, hasNumber := intArg(p.Args, "pullRequestNumber")
@@ -111,8 +97,7 @@ func (s *Resolver) requirableSubjectPullRequest(p graphql.ResolveParams, repoKey
 	}
 	if nodeID != "" {
 		pullRequest := store.FindPullRequestByNodeID(s.store, nodeID)
-		// A pull request in another repository says nothing about this
-		// commit's checks, and answering from it would let one repository's
+		// A pull request in another repository would let one repo's
 		// protection rules describe another's.
 		if pullRequest == nil || pullRequest.RepoID != repo.ID {
 			return nil, nil, nil

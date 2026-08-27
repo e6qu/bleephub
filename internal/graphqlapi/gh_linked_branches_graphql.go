@@ -11,16 +11,9 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// Linked branches: the association between an issue and the branch the work on
-// it happens on. GitHub exposes it as Issue.linkedBranches together with the
-// createLinkedBranch and deleteLinkedBranch mutations, and it is the surface
-// behind the "create a branch" control on an issue.
-//
-// Creating a link creates the branch: a linked branch that names no reference
-// would be a link to nothing, so the reference is written into the repository
-// here exactly as the reference-creation route writes one. Deleting the link
-// leaves the branch alone, which is GitHub's behaviour and the reason the two
-// mutations are not symmetric.
+// Issue.linkedBranches plus the createLinkedBranch and deleteLinkedBranch
+// mutations. Creating a link creates the branch reference; deleting the link
+// leaves the branch alone — GitHub's asymmetry.
 
 // addLinkedBranchFieldsToSchema installs the LinkedBranch type family, the
 // Issue.linkedBranches connection and the two mutations.
@@ -50,8 +43,7 @@ func (s *Resolver) addLinkedBranchFieldsToSchema(issueType, mutationType *graphq
 					}
 					ref, ok := source["ref"].(map[string]interface{})
 					if !ok {
-						// A link whose repository has gone answers null rather
-						// than a Ref pointing at nothing.
+						// A link whose repository has gone answers null.
 						return nil, nil
 					}
 					return ref, nil
@@ -114,8 +106,8 @@ func (s *Resolver) linkedBranchItems(issueID int) []gqlConnItem {
 	return items
 }
 
-// linkedBranchSource renders one link, resolving the reference it names so the
-// Ref it exposes reports the commit the branch actually points at.
+// linkedBranchSource renders one link, resolving its reference so the exposed
+// Ref reports the commit the branch points at.
 func (s *Resolver) linkedBranchSource(issueID int, link store.LinkedBranch) map[string]interface{} {
 	source := map[string]interface{}{
 		"__typename": "LinkedBranch",
@@ -171,9 +163,9 @@ func (s *Resolver) addCreateLinkedBranchMutation(mutationType, issueType, linked
 			if issue == nil {
 				return nil, gqlMissingNode("Issue", issueNodeID)
 			}
-			// The branch defaults to the issue's repository; a named one has to
-			// exist and be one the caller may write to, which the policy row
-			// cannot express because it names a single target.
+			// The branch defaults to the issue's repository; a named one must
+			// exist and be writable by the caller — the policy row names only a
+			// single target and cannot express this.
 			repo := s.store.GetRepoByID(issue.RepoID)
 			if branchRepoID, ok := input["repositoryId"].(string); ok && branchRepoID != "" {
 				named := store.FindRepoByNodeID(s.store, branchRepoID)
@@ -260,8 +252,8 @@ func (s *Resolver) addDeleteLinkedBranchMutation(mutationType, issueType *graphq
 	})
 }
 
-// linkedBranchName is the branch a link creates: the name the caller asked for,
-// or GitHub's default of the issue number and a slug of its title.
+// linkedBranchName is the caller's requested name, or GitHub's default of the
+// issue number and a slug of its title.
 func linkedBranchName(input map[string]interface{}, issue *store.Issue) string {
 	if name, ok := input["name"].(string); ok && strings.TrimSpace(name) != "" {
 		return strings.TrimPrefix(strings.TrimSpace(name), "refs/heads/")

@@ -1,18 +1,12 @@
 package graphqlapi
 
-// The remaining GitHub GraphQL read surface on the enterprise type family:
-// the connection fields Enterprise, EnterpriseOwnerInfo,
-// EnterpriseIdentityProvider, EnterpriseUserAccount and the
-// EnterpriseOutsideCollaboratorEdge publish beyond the members/organizations
-// core the base file builds.
+// The remaining enterprise-family read surface: connection fields on
+// Enterprise, EnterpriseOwnerInfo, EnterpriseIdentityProvider and
+// EnterpriseUserAccount beyond the members/organizations core.
 //
-// Where bleephub keeps a real model the field reads it — enterprise teams,
-// enterprise-level repository custom properties and verifiable domains are all
-// persisted, so their fields return live rows. Where the single-instance
-// simulator has no such data (Enterprise Server installations, SCIM external
-// identities, cross-org failed/pending invitations, user-namespace
-// repositories) the field returns a truthful-empty connection or null rather
-// than an invented value.
+// Store-backed models (enterprise teams, repository custom properties,
+// verifiable domains) return live rows; features this single-instance
+// simulator does not model return truthful-empty connections or null.
 
 import (
 	"strconv"
@@ -25,8 +19,6 @@ import (
 )
 
 // enterpriseExtraTypes collects the connection objects the extra fields name.
-// They are built once, in enterprise-schema-assembly order, and referenced by
-// the field installers.
 type enterpriseExtraTypes struct {
 	enterpriseTeamType                 *graphql.Object
 	enterpriseTeamConnection           *graphql.Object
@@ -46,18 +38,15 @@ type enterpriseExtraTypes struct {
 	oidcProviderType                   *graphql.Object
 	announcementBannerType             *graphql.Object
 	// Node types the second-pass installer (gh_enterprise_fields2_graphql.go)
-	// hangs cross-referencing fields on: the invitation node both enterprise
-	// invitation connections carry, the SCIM/SAML external-identity node and the
-	// Enterprise Server installation node.
+	// hangs cross-referencing fields on.
 	orgInvitationType      *graphql.Object
 	externalIdentityType   *graphql.Object
 	serverInstallationType *graphql.Object
 }
 
 // buildEnterpriseExtraTypes mints the node and connection types the extra
-// enterprise fields return. It runs from addEnterpriseFieldsToSchema, after the
-// Enterprise object exists but before the outside-collaborator connection is
-// built (that edge names EnterpriseRepositoryInfoConnection).
+// enterprise fields return. Runs after the Enterprise object exists but before
+// the outside-collaborator connection (that edge names EnterpriseRepositoryInfoConnection).
 func (s *Resolver) buildEnterpriseExtraTypes(enterpriseType, userType *graphql.Object, nodeInterface *graphql.Interface) *enterpriseExtraTypes {
 	dateTime := s.graphQLStringScalar("DateTime")
 	uri := s.graphQLStringScalar("URI")
@@ -89,15 +78,13 @@ func (s *Resolver) buildEnterpriseExtraTypes(enterpriseType, userType *graphql.O
 		},
 	})
 	extras.enterpriseTeamType = teamType
-	// Stashed by GitHub name so the residual BypassActor and PermissionGranter
-	// unions (addResidueTailFields) reach this one EnterpriseTeam instance rather
-	// than re-minting a duplicate the schema would reject.
+	// Stashed by name so the residual BypassActor/PermissionGranter unions reach
+	// this one EnterpriseTeam instance rather than minting a rejected duplicate.
 	s.stashNamedObject(teamType)
 	extras.enterpriseTeamConnection = advisoryConnectionType("EnterpriseTeam", teamType, pageInfo)
 
 	// --- RepositoryCustomProperty (real: enterprise schema) -----------------
-	// The shared object and connection the organization read surface also names
-	// (memoized, so both consumers get one type).
+	// Shared (memoized) with the organization read surface.
 	extras.repositoryCustomPropertyType = s.gqlRepositoryCustomPropertyType()
 	extras.repositoryCustomPropertyConnection = s.accountConnectionType(
 		s.accountSurfaceRegistry(), "RepositoryCustomProperty", extras.repositoryCustomPropertyType, false, nil)
@@ -120,8 +107,7 @@ func (s *Resolver) buildEnterpriseExtraTypes(enterpriseType, userType *graphql.O
 	extras.rulesetConnection = s.accountSurfaceRegistry().rulesetConnection
 
 	// --- VerifiableDomain (real: store-backed) ------------------------------
-	// The organization surface also lists VerifiableDomain; reuse its memoized
-	// connection so the schema holds one VerifiableDomainConnection.
+	// Reuse the organization surface's memoized VerifiableDomainConnection.
 	extras.domainConnection = s.accountConnectionType(
 		s.accountSurfaceRegistry(), "VerifiableDomain", s.gqlVerifiableDomainType(), false, nil)
 
@@ -141,8 +127,7 @@ func (s *Resolver) buildEnterpriseExtraTypes(enterpriseType, userType *graphql.O
 	extras.serverInstallationType = serverInstallationType
 	extras.serverInstallationConnection = advisoryConnectionType("EnterpriseServerInstallation", serverInstallationType, pageInfo)
 
-	// EnterpriseServerInstallationMembershipConnection: standard nodes over the
-	// installation type, with a membership role on each edge.
+	// EnterpriseServerInstallationMembershipConnection: a membership role on each edge.
 	membershipEdge := graphql.NewObject(graphql.ObjectConfig{
 		Name: "EnterpriseServerInstallationMembershipEdge",
 		Fields: graphql.Fields{
@@ -189,8 +174,6 @@ func (s *Resolver) buildEnterpriseExtraTypes(enterpriseType, userType *graphql.O
 			"permalink": &graphql.Field{Type: graphql.NewNonNull(uri)},
 			"permission": &graphql.Field{Type: graphql.NewNonNull(
 				s.sharedEnum("RepositoryPermission", "ADMIN", "MAINTAIN", "READ", "TRIAGE", "WRITE"))},
-			// The repository the invitation grants access to, as the shared
-			// RepositoryInfo interface (Repository is its implementer).
 			"repository": &graphql.Field{
 				Type: s.repositoryInfoInterface(),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -250,9 +233,8 @@ func (s *Resolver) buildEnterpriseExtraTypes(enterpriseType, userType *graphql.O
 	return extras
 }
 
-// uniqueUserInvitationConnection builds one of the two enterprise invitation
-// connections whose nodes are OrganizationInvitation and which carry a
-// totalUniqueUserCount alongside the standard connection members.
+// uniqueUserInvitationConnection builds an enterprise invitation connection
+// (OrganizationInvitation nodes) with the extra totalUniqueUserCount member.
 func uniqueUserInvitationConnection(name string, nodeType, pageInfo *graphql.Object) *graphql.Object {
 	edge := graphql.NewObject(graphql.ObjectConfig{
 		Name: name + "Edge",
@@ -273,8 +255,7 @@ func uniqueUserInvitationConnection(name string, nodeType, pageInfo *graphql.Obj
 	})
 }
 
-// uniqueUserConnection wraps enterpriseConnection with the totalUniqueUserCount
-// field the two enterprise invitation connections declare.
+// uniqueUserConnection wraps enterpriseConnection with totalUniqueUserCount.
 func uniqueUserConnection(nodes []map[string]interface{}, args map[string]interface{}) map[string]interface{} {
 	conn := enterpriseConnection(nodes, args)
 	conn["totalUniqueUserCount"] = len(nodes)
@@ -296,19 +277,14 @@ func (s *Resolver) addEnterpriseExtraFields(
 			if !s.viewerIsEnterpriseMember(p, e) {
 				return nil, nil
 			}
-			// bleephub's announcement model (message/expiry/dismissible) carries
-			// no creation timestamp, which GitHub's AnnouncementBanner.createdAt
-			// requires non-null; rather than invent one, the banner is not
-			// surfaced through GraphQL.
+			// Not surfaced: bleephub's announcement model has no creation
+			// timestamp, and AnnouncementBanner.createdAt is non-null.
 			return nil, nil
 		},
 	})
 
-	// innersourceVulnerabilities — the vulnerabilities disclosed across the
-	// enterprise's internal-source repositories, over the shared
-	// SecurityVulnerabilityConnection (stashed by the advisory builder).
-	// bleephub runs no cross-repository innersource scan, so the connection is
-	// truthfully empty rather than a fabricated list.
+	// innersourceVulnerabilities — served empty: bleephub runs no
+	// cross-repository innersource scan.
 	if vulnConn := s.namedObject("SecurityVulnerabilityConnection"); vulnConn != nil {
 		enterpriseType.AddFieldConfig("innersourceVulnerabilities", &graphql.Field{
 			Type: graphql.NewNonNull(vulnConn),
@@ -407,10 +383,8 @@ func (s *Resolver) addEnterpriseExtraFields(
 			"databaseId": &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.Int)},
 		},
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			// Enterprise rulesets are created/stored, but the served RuleSource
-			// union carries only Organization and Repository — an
-			// enterprise-sourced ruleset has no expressible `source`, so it is
-			// not rendered rather than crash the RuleSource resolver.
+			// Not rendered: the served RuleSource union carries only Organization
+			// and Repository, so an enterprise-sourced ruleset has no expressible source.
 			e := s.enterpriseFromSource(p.Source)
 			if !s.viewerIsEnterpriseOwner(p, e) {
 				return nil, nil
@@ -423,8 +397,7 @@ func (s *Resolver) addEnterpriseExtraFields(
 		Type: extras.rulesetConnection,
 		Args: relayConnectionArgs(),
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			// See ruleset: no enterprise-source ruleset is expressible through
-			// the served RuleSource union, so the connection is empty.
+			// See ruleset: no enterprise-source ruleset is expressible, so empty.
 			return enterpriseConnection(nil, p.Args), nil
 		},
 	})
@@ -436,8 +409,7 @@ func (s *Resolver) addEnterpriseExtraFields(
 			"query":   &graphql.ArgumentConfig{Type: graphql.String},
 		}),
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			// User-namespace repositories exist only under Enterprise Managed
-			// Users, which this instance does not model.
+			// User-namespace repositories exist only under Enterprise Managed Users.
 			return enterpriseConnection(nil, p.Args), nil
 		},
 	})
@@ -497,7 +469,7 @@ func (s *Resolver) addEnterpriseExtraFields(
 		Type: extras.oidcProviderType,
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			// bleephub authenticates through an external SSO broker, not a
-			// GitHub-managed OIDC tenant, so no OIDCProvider is exposed.
+			// GitHub-managed OIDC tenant.
 			return nil, nil
 		},
 	})
@@ -510,8 +482,8 @@ func (s *Resolver) addEnterpriseExtraFields(
 			"query": &graphql.ArgumentConfig{Type: graphql.String},
 		}),
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-			// No enterprise-wide aggregation of per-repository collaborator
-			// invitations is modeled; the connection is truthfully empty.
+			// Served empty: no enterprise-wide aggregation of per-repository
+			// collaborator invitations is modeled.
 			return enterpriseConnection(nil, p.Args), nil
 		},
 	})
@@ -561,7 +533,7 @@ func (s *Resolver) addEnterpriseExtraFields(
 }
 
 // enterpriseTeamToGraphQL renders one enterprise team, baking the per-viewer
-// membership and administer flags computed from the request context.
+// membership and administer flags.
 func (s *Resolver) enterpriseTeamToGraphQL(p graphql.ResolveParams, e *store.Enterprise, t *store.EnterpriseTeam) map[string]interface{} {
 	isMember := false
 	if viewer := s.ghUserFromContext(p.Context); viewer != nil {
@@ -579,9 +551,8 @@ func (s *Resolver) enterpriseTeamToGraphQL(p graphql.ResolveParams, e *store.Ent
 		"name":                      t.Name,
 		"notificationSetting":       strings.ToUpper(t.NotificationSetting),
 		"organizationSelectionType": strings.ToUpper(t.OrganizationSelectionType),
-		// Enterprise teams carry no per-team privacy in the store; GitHub's
-		// enterprise teams are visible within the enterprise, so the non-null
-		// TeamPrivacy is the constant VISIBLE (reported as constant-not-stored).
+		// Constant: the store has no per-team privacy, and enterprise teams are
+		// visible within the enterprise.
 		"privacy":             "VISIBLE",
 		"slug":                t.Slug,
 		"viewerCanAdminister": s.viewerIsEnterpriseOwner(p, e),

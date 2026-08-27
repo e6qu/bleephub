@@ -1,26 +1,11 @@
 package graphqlapi
 
-// Schema-fidelity shells: the miscellaneous cluster. GitHub declares a scatter
-// of object types this instance never reaches through any resolved field — the
-// commit/pull-request comment-thread objects, the relationship hovercard
-// contexts, the agent-triage "pending suggestion" objects, a package tag, a
-// member-feature-request notification, a pull-request revision marker and the
-// two Projects-v2 issue-field value shells. bleephub produces none of the
-// underlying data, so no query returns them; they exist only so the
-// introspected schema matches GitHub's shape.
-//
-// Every object is built through the memoized constructor (s.mutationObject) so
-// a name any other family already built is reused rather than duplicated, and
-// each is published via registerExtraSchemaType. Field types reference the
-// existing read-surface types read-only (User/Organization/Repository/Actor/
-// PullRequest/Commit and the shared unions/enums), reached through the type
-// registry, the memoized accessors, or — for the two connection objects a
-// pull-request thread names — graphql.GetNamed navigation from the already-built
-// PullRequestReviewThread. Signatures are matched exactly against the vendored
-// SDL (third_party/github-graphql-schema.graphql.gz), nullability and arguments
-// included. The hovercard-context objects carry message/octicon as GitHub's
-// HovercardContext interface declares, built as plain objects (bleephub's
-// HovercardContext interface carries no implementors — see sharedHovercardType).
+// Schema-fidelity shells: object types GitHub declares that no resolved field
+// reaches (comment-thread objects, hovercard contexts, pending-suggestion
+// objects, and assorted standalone types). bleephub produces none of the
+// underlying data; they exist only so the introspected schema matches GitHub.
+// Each is built through the memoized s.mutationObject (reused if another family
+// already minted the name) and published via registerExtraSchemaType.
 
 import "github.com/graphql-go/graphql"
 
@@ -42,9 +27,8 @@ func (s *Resolver) addMiscShells() {
 	repository := s.graphqlTypes.repository
 	pullRequest := s.graphqlTypes.pullRequest
 
-	// PullRequestReviewDecision — built (unmemoized) by the pull-request family;
-	// reach the one instance through PullRequest.reviewDecision rather than
-	// re-minting the enum (a duplicate name would break schema assembly).
+	// Reach PullRequestReviewDecision through PullRequest.reviewDecision; the
+	// pull-request family mints it unmemoized and a duplicate would break assembly.
 	var prReviewDecision *graphql.Enum
 	if pullRequest != nil {
 		if def := pullRequest.Fields()["reviewDecision"]; def != nil {
@@ -62,19 +46,15 @@ func (s *Resolver) addMiscShells() {
 	teamConnection := s.gqlTeamConnectionType()
 	packageVersion := s.namedObject("PackageVersion")
 
-	// OrganizationOrder — the ordering-input shell (a sibling builder) also
-	// names it; mutationInput memoizes by name, so whichever builder runs first
-	// mints it and the other reuses the same instance. The field set matches the
-	// ordering cluster's exactly.
+	// OrganizationOrder — a sibling builder also names it; mutationInput
+	// memoizes by name so the first to run mints it and the other reuses it.
 	organizationOrder := s.mutationInput("OrganizationOrder", graphql.InputObjectConfigFieldMap{
 		"direction": gqlNonNullInputOf(s.sharedEnum("OrderDirection", "ASC", "DESC")),
 		"field":     gqlNonNullInputOf(s.sharedEnum("OrganizationOrderField", "CREATED_AT", "LOGIN")),
 	})
 
-	// CommitCommentConnection — built (unmemoized on the Resolver) by the account
-	// surface, which memoizes it privately; reach the one instance through
-	// User.commitComments rather than re-minting it (a duplicate name would break
-	// schema assembly).
+	// Reach CommitCommentConnection through User.commitComments; re-minting the
+	// name would break assembly.
 	var commitCommentConnection *graphql.Object
 	if user != nil {
 		if def := user.Fields()["commitComments"]; def != nil {
@@ -82,10 +62,8 @@ func (s *Resolver) addMiscShells() {
 		}
 	}
 
-	// PullRequestReviewCommentConnection — built (unmemoized) deep inside the
-	// pull-request family; reach the one instance through the memoized
-	// PullRequestReviewThread's comments field rather than re-minting it (a
-	// duplicate name would break schema assembly).
+	// Reach PullRequestReviewCommentConnection through
+	// PullRequestReviewThread.comments; re-minting the name would break assembly.
 	var prReviewCommentConnection *graphql.Object
 	if prReviewThread := s.graphqlTypes.pullRequestReviewThread; prReviewThread != nil {
 		if def := prReviewThread.Fields()["comments"]; def != nil {
@@ -93,10 +71,8 @@ func (s *Resolver) addMiscShells() {
 		}
 	}
 
-	// ProjectV2IssueFieldValues — a union over the same five IssueField*Value
-	// objects as the existing IssueFieldValue union. Reuse those instances (they
-	// are unmemoized locals of the issues family) via IssueFieldValue.Types() so
-	// no member type is duplicated.
+	// ProjectV2IssueFieldValues — a union over the same members as the existing
+	// IssueFieldValue union, reused via its Types() so none are duplicated.
 	var projectV2IssueFieldValues *graphql.Union
 	if ifv := s.graphqlTypes.issueFieldValueUnion; ifv != nil {
 		members := ifv.Types()

@@ -1,17 +1,10 @@
 package graphqlapi
 
-// Projects classic (v1) — the GraphQL read surface.
-//
-// The Project / ProjectColumn / ProjectCard object family, their connections,
-// the classic-project enums, and GitHub's ProjectOwner interface (implemented
-// by User, Organization and Repository). The store already held repo-scoped
-// classic boards for the REST surface; the GraphQL surface adds account-owned
-// boards (a user's or an organization's), which the store now models with
+// Projects classic (v1) GraphQL read surface: the Project / ProjectColumn /
+// ProjectCard family, their connections and enums, and the ProjectOwner
+// interface (User, Organization, Repository). Alongside the REST surface's
+// repo-scoped boards, this adds account-owned boards, modeled with
 // OwnerType/OwnerLogin on the same record.
-//
-// Every type here is a transcription of GitHub's SDL: the schema-parity
-// ratchet diffs each field, argument and enum value against the official
-// schema, so a shape invented here would grow the compatibility gap set.
 
 import (
 	"context"
@@ -50,12 +43,10 @@ func (s *Resolver) projectColumnPurposeEnum() *graphql.Enum {
 // ---------------------------------------------------------------------------
 // Access predicates
 //
-// A repo-scoped board carries its repository's visibility and is written under
-// the repository's Projects permission — the same pair the REST classic
-// handlers ask, so neither surface can become a way around the other. An
-// account-owned board is readable when public or when the viewer belongs to
-// the owning account, and writable by the owning user or the owning
-// organization's members.
+// A repo-scoped board uses its repository's visibility and Projects permission,
+// matching the REST handlers so neither surface routes around the other. An
+// account-owned board is readable when public or by an account member, and
+// writable by the owning user or the org's members.
 
 func (s *Resolver) canReadProjectClassic(ctx context.Context, p *store.ProjectClassic) bool {
 	if p == nil {
@@ -96,10 +87,9 @@ func (s *Resolver) viewerBelongsToProjectClassicOwner(ctx context.Context, p *st
 // ---------------------------------------------------------------------------
 // Renderers
 
-// projectClassicOwnerSource renders the ProjectOwner member of a project — a
-// Repository, Organization or User source with __typename set for interface
-// dispatch — and the owner's web base path. A nil owner means the owning
-// record no longer resolves and the project cannot be rendered.
+// projectClassicOwnerSource renders a project's ProjectOwner (Repository, Org or
+// User source with __typename set) and the owner's web base path. A nil owner
+// means the owning record no longer resolves.
 func (s *Resolver) projectClassicOwnerSource(p *store.ProjectClassic) (map[string]interface{}, string) {
 	switch {
 	case p.RepoKey != "":
@@ -230,10 +220,9 @@ func (s *Resolver) projectClassicCardToGQL(c *store.ProjectCard) map[string]inte
 // ---------------------------------------------------------------------------
 // Object types
 
-// projectClassicConnectionPair mints (or answers the memoized) Edge and
-// Connection objects for a classic-project node type, under GitHub's exact
-// naming. The edge is memoized separately because the add/move mutation
-// payloads name it directly (cardEdge, columnEdge).
+// projectClassicConnectionPair returns the memoized Edge and Connection objects
+// for a classic-project node type. The edge is memoized separately because the
+// add/move mutation payloads name it directly (cardEdge, columnEdge).
 func (s *Resolver) projectClassicConnectionPair(name string, nodeType *graphql.Object) (*graphql.Object, *graphql.Object) {
 	edge := s.mutationObject(name+"Edge", graphql.Fields{
 		"cursor": gqlNonNull(graphql.String),
@@ -248,8 +237,8 @@ func (s *Resolver) projectClassicConnectionPair(name string, nodeType *graphql.O
 	return connection, edge
 }
 
-// projectClassicBool builds a resolver for the viewerCan* members, deciding
-// from the live project the source names.
+// projectClassicBool builds a viewerCan* resolver deciding from the live project
+// the source names.
 func (s *Resolver) projectClassicBool(decide func(ctx context.Context, p *store.ProjectClassic) bool) graphql.FieldResolveFn {
 	return func(p graphql.ResolveParams) (interface{}, error) {
 		src, ok := p.Source.(map[string]interface{})
@@ -261,10 +250,9 @@ func (s *Resolver) projectClassicBool(decide func(ctx context.Context, p *store.
 	}
 }
 
-// projectClassicType is GitHub's `Project` object (a classic board). Its
-// members are declared through a thunk because columns name cards and cards
-// name their project back; the memo is recorded before the thunk runs so the
-// cycle resolves to this one instance.
+// projectClassicType is the `Project` object (a classic board). Members go
+// through a thunk because columns↔cards↔project form a cycle; the memo is
+// recorded before the thunk runs so the cycle resolves to this instance.
 func (s *Resolver) projectClassicType() *graphql.Object {
 	if memo := s.memoizedMutationObject("Project"); memo != nil {
 		return memo
@@ -343,9 +331,8 @@ func (s *Resolver) projectClassicType() *graphql.Object {
 						return paginateGQLMaps(nodes, p.Args), nil
 					},
 				},
-				// pendingCards lists a classic project's triage cards — cards not
-				// yet placed in a column. bleephub only models cards inside a
-				// column, so this is a truthful empty connection.
+				// pendingCards are cards not yet in a column. bleephub models
+				// only cards inside a column, so this is a truthful empty connection.
 				"pendingCards": &graphql.Field{
 					Type: graphql.NewNonNull(cardConnection),
 					Args: pendingCardsArgs,
@@ -353,9 +340,8 @@ func (s *Resolver) projectClassicType() *graphql.Object {
 						return paginateGQLMaps(nil, p.Args), nil
 					},
 				},
-				// progress reports card-purpose counts. bleephub's classic
-				// columns carry no purpose, so progress tracking is genuinely
-				// disabled: enabled is false and every count/percentage is zero.
+				// progress reports card-purpose counts. bleephub's columns carry
+				// no purpose, so it is disabled: enabled false, every count zero.
 				"progress": &graphql.Field{
 					Type: graphql.NewNonNull(progressType),
 					Resolve: func(graphql.ResolveParams) (interface{}, error) {
@@ -377,7 +363,6 @@ func (s *Resolver) projectClassicType() *graphql.Object {
 	return object
 }
 
-// projectClassicColumnType is GitHub's ProjectColumn object.
 func (s *Resolver) projectClassicColumnType() *graphql.Object {
 	if memo := s.memoizedMutationObject("ProjectColumn"); memo != nil {
 		return memo
@@ -445,8 +430,8 @@ func (s *Resolver) projectClassicColumnType() *graphql.Object {
 	return object
 }
 
-// projectCardArchivedFilter reads the archivedStates argument, whose default
-// admits both archived and active cards.
+// projectCardArchivedFilter reads the archivedStates argument, defaulting to
+// both archived and active cards.
 func projectCardArchivedFilter(args map[string]interface{}) (includeArchived, includeActive bool) {
 	states, ok := args["archivedStates"].([]interface{})
 	if !ok || len(states) == 0 {
@@ -463,8 +448,8 @@ func projectCardArchivedFilter(args map[string]interface{}) (includeArchived, in
 	return includeArchived, includeActive
 }
 
-// projectCardItemUnion is GitHub's ProjectCardItem union: the Issue or
-// PullRequest a content card points at.
+// projectCardItemUnion is ProjectCardItem: the Issue or PullRequest a content
+// card points at.
 func (s *Resolver) projectCardItemUnion() *graphql.Union {
 	return s.mutationUnion("ProjectCardItem",
 		func() []*graphql.Object {
@@ -479,7 +464,6 @@ func (s *Resolver) projectCardItemUnion() *graphql.Union {
 		})
 }
 
-// projectClassicCardType is GitHub's ProjectCard object.
 func (s *Resolver) projectClassicCardType() *graphql.Object {
 	if memo := s.memoizedMutationObject("ProjectCard"); memo != nil {
 		return memo
@@ -534,10 +518,8 @@ func (s *Resolver) projectClassicCardType() *graphql.Object {
 						if !ok {
 							return nil, fmt.Errorf("resolve source: unexpected type %T", p.Source)
 						}
-						// Content the viewer cannot read is answered as absent,
-						// exactly as the Projects v2 item content is: a card in a
-						// shared board must not become a way to read a private
-						// repository's issue titles.
+						// Content the viewer cannot read is absent, so a card in a
+						// shared board can't leak a private repo's issue titles.
 						if issueID, _ := src["_issueID"].(int); issueID != 0 {
 							issue := s.store.GetIssue(issueID)
 							if issue == nil || !s.viewerCanReadProjectContent(p.Context, "Issue", issueID) {
@@ -569,11 +551,10 @@ func (s *Resolver) projectClassicCardType() *graphql.Object {
 // ---------------------------------------------------------------------------
 // ProjectOwner
 
-// projectOwnerInterfaceType is GitHub's ProjectOwner interface — the account
-// or repository a classic board belongs to. It is minted through the memoizing
-// interface table because the User, Organization and Repository objects each
-// declare it at construction, long before the Project family is assembled;
-// its members resolve through a thunk for the same reason.
+// projectOwnerInterfaceType is the ProjectOwner interface — the account or
+// repository a classic board belongs to. Memoized and thunked because User,
+// Organization and Repository each declare it at construction, before the
+// Project family is assembled.
 func (s *Resolver) projectOwnerInterfaceType() *graphql.Interface {
 	return s.mutationInterface("ProjectOwner", func() graphql.Fields {
 		uri := s.graphQLStringScalar("URI")
@@ -607,8 +588,8 @@ func (s *Resolver) projectOwnerInterfaceType() *graphql.Interface {
 	})
 }
 
-// projectClassicProjectsArgs is the argument set a `projects` connection
-// takes: the Relay window plus GitHub's state filter.
+// projectClassicProjectsArgs is a `projects` connection's args: the Relay
+// window plus the state filter.
 func (s *Resolver) projectClassicProjectsArgs() graphql.FieldConfigArgument {
 	args := relayConnectionArgs()
 	args["states"] = &graphql.ArgumentConfig{
@@ -617,8 +598,8 @@ func (s *Resolver) projectClassicProjectsArgs() graphql.FieldConfigArgument {
 	return args
 }
 
-// projectClassicOwnerRef is one ProjectOwner implementor's lens: how to list
-// its boards, where its projects pages live, and who may create boards on it.
+// projectClassicOwnerRef is one ProjectOwner implementor's lens: how to list its
+// boards, where its projects pages live, and who may create boards.
 type projectClassicOwnerRef struct {
 	list      func(src map[string]interface{}) []*store.ProjectClassic
 	basePath  func(src map[string]interface{}) string
@@ -626,9 +607,8 @@ type projectClassicOwnerRef struct {
 }
 
 // addProjectClassicOwnerFields installs the ProjectOwner members on User,
-// Organization and Repository. Organization already carries a
-// viewerCanCreateProjects member (the account surface built it), so only the
-// missing fields are added to each type.
+// Organization and Repository, adding only fields each type lacks (Organization
+// already carries viewerCanCreateProjects from the account surface).
 func (s *Resolver) addProjectClassicOwnerFields(userType, orgType, repoType *graphql.Object) {
 	uri := s.graphQLStringScalar("URI")
 	projectType := s.projectClassicType()
@@ -781,7 +761,7 @@ func (s *Resolver) addProjectClassicOwnerFields(userType, orgType, repoType *gra
 // Node dispatch
 
 // projectClassicNodeByID resolves a classic project, column or card global id
-// for Query.node, applying the same visibility rule the read fields do.
+// for Query.node, applying the read fields' visibility rule.
 func (s *Resolver) projectClassicNodeByID(ctx context.Context, nodeID string) interface{} {
 	if live := store.FindProjectClassicByNodeID(s.store, nodeID); live != nil {
 		project := s.store.GetProjectClassic(live.ID)
@@ -812,8 +792,7 @@ func (s *Resolver) projectClassicNodeByID(ctx context.Context, nodeID string) in
 }
 
 // addProjectsClassicToSchema assembles the classic-projects family: the three
-// node types, the ProjectOwner members on User/Organization/Repository, and
-// the sixteen classic-project mutations.
+// node types, the ProjectOwner members, and the classic-project mutations.
 func (s *Resolver) addProjectsClassicToSchema(userType, orgType, repoType, mutationType *graphql.Object, nodeTypes map[string]*graphql.Object) {
 	nodeTypes["Project"] = s.projectClassicType()
 	nodeTypes["ProjectColumn"] = s.projectClassicColumnType()

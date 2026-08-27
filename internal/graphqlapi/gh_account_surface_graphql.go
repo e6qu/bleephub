@@ -1,20 +1,8 @@
 package graphqlapi
 
-// Account-surface completion for GitHub's three most-queried object types:
-// Repository, User and Organization.
-//
-// The families here are the members of those three types that a real client
-// selects and that bleephub already holds data for: repository settings and
-// the viewer's standing on a repository, the community-health files a
-// repository carries in git, its collaborator / milestone / label / deploy-key
-// / environment graph, a user's profile, follow graph, contribution surfaces
-// and account keys, and an organization's membership, teams, governance and
-// profile.
-//
-// Every field resolves from the same store state the REST surface serves. A
-// field is absent from this package only when the feature behind it does not
-// exist in bleephub at all — never emitted as an empty connection that would
-// tell a client "this instance has none" when the truth is "not implemented".
+// Account-surface fields on Repository, User and Organization. Fields resolve
+// from the same store state REST serves. A field is absent only when the
+// feature does not exist in bleephub — never emitted as an empty connection.
 
 import (
 	"fmt"
@@ -27,44 +15,33 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// accountSurfaceTypes holds the object types this family mints, so a type
-// named by two installers is built once. graphql-go rejects a schema carrying
-// two distinct types with one name, and the registry in gh_issues_graphql.go
-// is shared with every other family; keeping these here keeps the ownership
-// local to the files that create them.
+// accountSurfaceTypes memoizes the object types this family mints so a type
+// named by two installers is built once (graphql-go rejects duplicate names).
 type accountSurfaceTypes struct {
 	user         *graphql.Object
 	organization *graphql.Object
 	repository   *graphql.Object
 
-	// Repository sub-objects.
 	interactionAbility *graphql.Object
 	codeOfConduct      *graphql.Object
 
-	// Types other families mint that the account surface also names. Each is
-	// recorded where it is built, because graphql-go rejects a schema
-	// carrying two distinct types with one name and these families run first.
+	// Types other families mint that the account surface also names.
 	gistComment                *graphql.Object
 	ipAllowListEntryConnection *graphql.Object
 	ruleset                    *graphql.Object
 	rulesetConnection          *graphql.Object
 	pinnableItem               *graphql.Union
 
-	// Shared connections.
 	userConnection *graphql.Object
 	userEdge       *graphql.Object
 
-	// Order inputs minted by gqlOrderInput, keyed by GitHub's input name.
 	orderInputs map[string]*graphql.InputObject
-	// Connection/edge pairs minted by accountConnectionType, keyed by node
-	// type name.
 	connections map[string]*graphql.Object
 }
 
-// accountSurfaceRegistry returns this resolver's account-surface type
-// registry, creating it on first use. Query.codeOfConduct is assembled before
-// the account surface is installed and shares the CodeOfConduct type through
-// it, so the registry has to exist independently of the installer's ordering.
+// accountSurfaceRegistry returns the type registry, creating it on first use.
+// It must exist independently of installer ordering — Query.codeOfConduct is
+// assembled before the account surface and shares CodeOfConduct through it.
 func (s *Resolver) accountSurfaceRegistry() *accountSurfaceTypes {
 	if s.graphqlTypes.accountSurface == nil {
 		s.graphqlTypes.accountSurface = &accountSurfaceTypes{}
@@ -72,18 +49,16 @@ func (s *Resolver) accountSurfaceRegistry() *accountSurfaceTypes {
 	return s.graphqlTypes.accountSurface
 }
 
-// addAccountSurfaceFieldsToSchema installs the completed Repository, User and
-// Organization field sets. It runs last in schema assembly: its fields name
-// the milestone, label, team, ruleset, gist, issue and pull-request types
-// every earlier family builds.
+// addAccountSurfaceFieldsToSchema installs the Repository, User and
+// Organization field sets. It must run last: its fields name the milestone,
+// label, team, ruleset, gist, issue and pull-request types earlier families
+// build.
 func (s *Resolver) addAccountSurfaceFieldsToSchema(userType, orgType, repoType *graphql.Object) {
 	types := s.accountSurfaceRegistry()
 	types.user = userType
 	types.organization = orgType
 	types.repository = repoType
 	types.userConnection = s.gqlUserConnectionType(userType)
-	// The shared UserConnection carries no `edges` yet; GitHub declares one
-	// over the same UserEdge the follow connections use.
 	types.userConnection.AddFieldConfig("edges", &graphql.Field{
 		Type: graphql.NewList(s.gqlUserEdgeType(types)),
 	})
@@ -100,18 +75,13 @@ func (s *Resolver) addAccountSurfaceFieldsToSchema(userType, orgType, repoType *
 	s.addUserConnectionFields(types)
 	s.addPinnedItemFields(types)
 
-	// The final residue: the Package object graph and Repository.packages, the
-	// Assignable interface's actor connections, and Ref.rules. It runs last so
-	// every type it names — the PackageConnection User/Org already built, the
-	// shared AssigneeConnection, the RepositoryRuleConnection, Repository, Ref,
-	// Release — is assembled.
+	// Runs last: names the PackageConnection, AssigneeConnection,
+	// RepositoryRuleConnection, Repository, Ref and Release types built above.
 	s.addFinalResidueFields(types)
 }
 
 // --- source helpers --------------------------------------------------------
 
-// graphQLSourceMap narrows a resolver source to the map every source in this
-// package is.
 func graphQLSourceMap(source interface{}) (map[string]interface{}, error) {
 	src, ok := source.(map[string]interface{})
 	if !ok {
@@ -120,10 +90,8 @@ func graphQLSourceMap(source interface{}) (map[string]interface{}, error) {
 	return src, nil
 }
 
-// repoFromSource re-reads the repository a Repository source names. The
-// source map carries the identity (nameWithOwner); the live row is read back
-// so a field resolves against current state rather than whatever the source
-// was rendered from.
+// repoFromSource re-reads the live repository row a Repository source names, so
+// a field resolves against current state rather than the rendered source.
 func (s *Resolver) repoFromSource(source interface{}) (*store.Repo, error) {
 	src, err := graphQLSourceMap(source)
 	if err != nil {
@@ -171,7 +139,6 @@ func (s *Resolver) orgFromSource(source interface{}) (*store.Org, error) {
 
 // --- field builders --------------------------------------------------------
 
-// repoBoolField is a non-null Boolean on Repository read from the live row.
 func (s *Resolver) repoBoolField(read func(*store.Repo) bool) *graphql.Field {
 	return &graphql.Field{
 		Type: graphql.NewNonNull(graphql.Boolean),
@@ -185,8 +152,6 @@ func (s *Resolver) repoBoolField(read func(*store.Repo) bool) *graphql.Field {
 	}
 }
 
-// repoEnumField is a non-null enum on Repository whose value comes from a
-// stored setting, mapped onto GitHub's enum by the reader.
 func (s *Resolver) repoEnumField(enum *graphql.Enum, read func(*store.Repo) string) *graphql.Field {
 	return &graphql.Field{
 		Type: graphql.NewNonNull(enum),
@@ -200,10 +165,8 @@ func (s *Resolver) repoEnumField(enum *graphql.Enum, read func(*store.Repo) stri
 	}
 }
 
-// gqlOrderInput builds one of GitHub's `<Name>Order` inputs: the two-member
-// {direction, field} shape every ordering argument in the schema uses. The
-// input is memoized by name so two fields naming the same order input share
-// one type, which graphql-go requires.
+// gqlOrderInput builds a `<Name>Order` {direction, field} input, memoized by
+// name so fields naming the same order input share one type.
 func (s *Resolver) gqlOrderInput(types *accountSurfaceTypes, name, fieldEnum string, fieldValues ...string) *graphql.InputObject {
 	if types.orderInputs == nil {
 		types.orderInputs = map[string]*graphql.InputObject{}
@@ -226,13 +189,9 @@ func (s *Resolver) gqlOrderInput(types *accountSurfaceTypes, name, fieldEnum str
 	return input
 }
 
-// accountConnectionType builds GitHub's `<Name>Connection` / `<Name>Edge`
-// pair over a node type: edges, nodes, pageInfo and totalCount, with the
-// edge's own cursor plus any extra edge members GitHub declares.
-//
-// It differs from gqlConnectionType (which the Projects v2 family owns) in
-// carrying `edges` and in letting the caller declare the edge's node non-null
-// — both of which GitHub's account-surface connections need.
+// accountConnectionType builds a `<Name>Connection`/`<Name>Edge` pair over a
+// node type. Unlike gqlConnectionType it carries `edges` and lets the caller
+// mark the edge's node non-null, both of which account-surface connections need.
 func (s *Resolver) accountConnectionType(
 	types *accountSurfaceTypes,
 	name string,
@@ -271,10 +230,8 @@ func (s *Resolver) accountConnectionType(
 	return connection
 }
 
-// gqlUserEdgeType is GitHub's one UserEdge object. Several account
-// connections over users (UserConnection, FollowerConnection,
-// FollowingConnection) all declare their edges as [UserEdge], so the type is
-// minted once here.
+// gqlUserEdgeType mints the one shared UserEdge object (UserConnection,
+// FollowerConnection and FollowingConnection all declare edges as [UserEdge]).
 func (s *Resolver) gqlUserEdgeType(types *accountSurfaceTypes) *graphql.Object {
 	if types.userEdge != nil {
 		return types.userEdge
@@ -289,9 +246,8 @@ func (s *Resolver) gqlUserEdgeType(types *accountSurfaceTypes) *graphql.Object {
 	return types.userEdge
 }
 
-// gqlUserEdgeConnection builds a connection over users whose edges are the
-// shared UserEdge — the shape GitHub gives FollowerConnection,
-// FollowingConnection and UserConnection.
+// gqlUserEdgeConnection builds a user connection whose edges are the shared
+// UserEdge.
 func (s *Resolver) gqlUserEdgeConnection(types *accountSurfaceTypes, name string) *graphql.Object {
 	if types.connections == nil {
 		types.connections = map[string]*graphql.Object{}
@@ -312,8 +268,7 @@ func (s *Resolver) gqlUserEdgeConnection(types *accountSurfaceTypes, name string
 	return connection
 }
 
-// connectionArgs is the four Relay window arguments every connection here
-// accepts, plus any extra arguments the caller names.
+// connectionArgs is the four Relay window arguments plus any extra the caller names.
 func connectionArgs(extra graphql.FieldConfigArgument) graphql.FieldConfigArgument {
 	args := graphql.FieldConfigArgument{
 		"first":  &graphql.ArgumentConfig{Type: graphql.Int},
@@ -328,8 +283,7 @@ func connectionArgs(extra graphql.FieldConfigArgument) graphql.FieldConfigArgume
 }
 
 // orderDirectionDescending reports whether an order-input argument asks for
-// descending order. A missing or malformed argument leaves the caller's
-// default in place.
+// descending order; a missing or malformed argument returns fallback.
 func orderDirectionDescending(args map[string]interface{}, key string, fallback bool) bool {
 	order, ok := args[key].(map[string]interface{})
 	if !ok {
@@ -342,7 +296,6 @@ func orderDirectionDescending(args map[string]interface{}, key string, fallback 
 	return direction == "DESC"
 }
 
-// orderField reads an order-input argument's field selector.
 func orderField(args map[string]interface{}, key, fallback string) string {
 	order, ok := args[key].(map[string]interface{})
 	if !ok {
@@ -357,16 +310,13 @@ func orderField(args map[string]interface{}, key, fallback string) string {
 
 // --- rendering helpers -----------------------------------------------------
 
-// renderAccountMarkdown renders a profile or settings string through the one
-// markdown pipeline the rest of bleephub renders bodies with
-// (store.MarkdownModeRenderer, shared with the discussion and REST markdown
-// surfaces), so a *HTML field is never a second renderer's opinion.
+// renderAccountMarkdown renders a profile/settings string through the shared
+// markdown pipeline so a *HTML field is never a second renderer's opinion.
 func renderAccountMarkdown(text string) string {
 	return discussionBodyToHTML(text)
 }
 
-// truncateRunes shortens text to at most limit runes, appending GitHub's
-// ellipsis when it had to cut.
+// truncateRunes shortens text to at most limit runes, appending an ellipsis.
 func truncateRunes(text string, limit int) string {
 	if limit <= 0 {
 		return ""
@@ -378,7 +328,7 @@ func truncateRunes(text string, limit int) string {
 	return strings.TrimRight(string(runes[:limit]), " ") + "…"
 }
 
-// nullableRFC3339 renders a timestamp as a DateTime, or null when zero.
+// nullableRFC3339 renders a timestamp as DateTime, or null when zero.
 func nullableRFC3339(t time.Time) interface{} {
 	if t.IsZero() {
 		return nil
@@ -386,8 +336,8 @@ func nullableRFC3339(t time.Time) interface{} {
 	return t.UTC().Format(time.RFC3339)
 }
 
-// sortedUsersByLogin orders accounts so a connection's page boundaries are
-// stable across requests (store maps iterate nondeterministically).
+// sortedUsersByLogin orders accounts so connection page boundaries are stable
+// across requests (store maps iterate nondeterministically).
 func sortedUsersByLogin(users []*store.User) []*store.User {
 	out := make([]*store.User, 0, len(users))
 	for _, u := range users {
@@ -399,7 +349,6 @@ func sortedUsersByLogin(users []*store.User) []*store.User {
 	return out
 }
 
-// userConnectionItems renders accounts as lazily-rendered connection items.
 func userConnectionItems(users []*store.User) []gqlConnItem {
 	items := make([]gqlConnItem, 0, len(users))
 	for _, u := range users {
@@ -412,9 +361,8 @@ func userConnectionItems(users []*store.User) []gqlConnItem {
 	return items
 }
 
-// interactionAbilitySource renders GitHub's RepositoryInteractionAbility from
-// a stored limit. An expired restriction is no longer in effect, exactly as
-// the REST interaction-limits endpoint reports it.
+// interactionAbilitySource renders RepositoryInteractionAbility from a stored
+// limit. An expired restriction reads as no longer in effect, matching REST.
 func (s *Resolver) interactionAbilitySource(limit string, expiry *time.Time, origin string) map[string]interface{} {
 	if limit == "" || expiry == nil || s.store.CurrentTime().After(*expiry) {
 		return nil
@@ -426,9 +374,7 @@ func (s *Resolver) interactionAbilitySource(limit string, expiry *time.Time, ori
 	}
 }
 
-// gqlInteractionAbilityType is GitHub's RepositoryInteractionAbility, shared
-// by Repository.interactionAbility, User.interactionAbility and
-// Organization.interactionAbility.
+// gqlInteractionAbilityType is the shared RepositoryInteractionAbility type.
 func (s *Resolver) gqlInteractionAbilityType(types *accountSurfaceTypes) *graphql.Object {
 	if types.interactionAbility != nil {
 		return types.interactionAbility

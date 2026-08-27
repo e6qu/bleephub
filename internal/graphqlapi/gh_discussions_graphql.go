@@ -12,17 +12,16 @@ import (
 	"github.com/graphql-go/graphql"
 )
 
-// addDiscussionFieldsToSchema adds Discussion, DiscussionCategory,
-// DiscussionComment types and their connections/mutations to the GraphQL schema.
+// addDiscussionFieldsToSchema adds the Discussion, DiscussionCategory and
+// DiscussionComment types with their connections and mutations.
 func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType *graphql.Object) {
 	dateTime := s.graphQLStringScalar("DateTime")
 	uri := s.graphQLStringScalar("URI")
 	htmlScalar := s.graphQLStringScalar("HTML")
 
 	// --- Reaction types ---
-	// The shared ReactionGroup, Reaction and ReactionConnection instances come
-	// from the registry (initReactionGraphQLTypes), so every reactable subject
-	// exposes GitHub's one set of reaction types.
+	// Shared reaction types come from the registry so every reactable subject
+	// exposes one set.
 	discussionReactionGroupType := s.gqlReactionGroupType()
 	discussionReactionConnectionType := s.graphqlTypes.reactionConnection
 
@@ -46,9 +45,8 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 			"isAnswerable": &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
 			"createdAt":    &graphql.Field{Type: graphql.NewNonNull(dateTime)},
 			"updatedAt":    &graphql.Field{Type: graphql.NewNonNull(dateTime)},
-			// The category emoji rendered to HTML. bleephub stores the emoji as a
-			// literal (":rocket:" or the glyph); GitHub returns a small HTML span
-			// around it, so a minimal non-null wrapper keeps the HTML! contract.
+			// GitHub returns a small HTML span around the emoji; a minimal
+			// wrapper satisfies the HTML! contract.
 			"emojiHTML": &graphql.Field{
 				Type: graphql.NewNonNull(htmlScalar),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -60,8 +58,6 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 					return "<div>" + emoji + "</div>", nil
 				},
 			},
-			// The repository this category belongs to. Non-null: every stored
-			// category carries a repo id, resolved back to the repository object.
 			"repository": &graphql.Field{
 				Type: graphql.NewNonNull(repoType),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -77,8 +73,6 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 					return repoToGraphQL(s.store, s.store.SnapRepo(repo)), nil
 				},
 			},
-			// A slugified form of the category name (lowercase, non-alphanumeric
-			// runs collapsed to '-'), matching GitHub's category slug.
 			"slug": &graphql.Field{
 				Type: graphql.NewNonNull(graphql.String),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -121,7 +115,6 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 		Interfaces: []*graphql.Interface{s.gqlMinimizableInterface(), s.graphqlTypes.reactable, s.gqlVotableInterface()},
 		Fields: graphql.FieldsThunk(func() graphql.Fields {
 			base := graphql.Fields{
-				// Votable contract.
 				"upvoteCount": &graphql.Field{
 					Type: graphql.NewNonNull(graphql.Int),
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -143,8 +136,8 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 						return viewerHasUpvoted(s.ghUserFromContext(p.Context), c), nil
 					},
 				},
-				// Minimizable contract — bleephub doesn't model discussion
-				// comment moderation, so these resolve GitHub's zero values.
+				// Minimizable — comment moderation is unmodeled, so these
+				// resolve GitHub's zero values.
 				"isMinimized": &graphql.Field{
 					Type: graphql.NewNonNull(graphql.Boolean),
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -246,9 +239,8 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 						return discussionReactionConnection(s.store, "discussion_comment", commentID, p.Args), nil
 					},
 				},
-				// Remaining Reactable interface fields (this type uses a
-				// FieldsThunk, so they are declared here rather than added via
-				// AddFieldConfig).
+				// Remaining Reactable fields, declared here because this type
+				// uses a FieldsThunk (AddFieldConfig cannot extend it).
 				"databaseId": &graphql.Field{
 					Type: graphql.Int,
 					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -286,10 +278,8 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 					},
 				},
 			}
-			// Merge the remaining GitHub fields (authorAssociation, replyTo,
-			// url/resourcePath, viewerCan*, …). DiscussionComment is built from a
-			// FieldsThunk, which AddFieldConfig cannot extend, so the extra fields
-			// join here.
+			// The remaining GitHub fields (authorAssociation, replyTo, url,
+			// viewerCan*, …) join here rather than via AddFieldConfig.
 			for k, v := range s.discussionCommentExtraFields() {
 				base[k] = v
 			}
@@ -323,7 +313,6 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 		Name:       "Discussion",
 		Interfaces: []*graphql.Interface{s.gqlLockableInterface(), s.graphqlTypes.reactable, s.gqlVotableInterface()},
 		Fields: graphql.Fields{
-			// Votable contract.
 			"upvoteCount": &graphql.Field{
 				Type: graphql.NewNonNull(graphql.Int),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -529,8 +518,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 	s.graphqlTypes.discussion = discussionType
 	s.graphqlTypes.discussionComment = discussionCommentType
 	// Discussion uses a literal Fields map, so AddFieldConfig installs the
-	// remaining Reactable fields; DiscussionComment uses a FieldsThunk and
-	// declares them inline above.
+	// remaining Reactable fields (DiscussionComment declared them inline above).
 	s.addReactableFields(discussionType, "discussion")
 
 	discussionEdgeType := graphql.NewObject(graphql.ObjectConfig{
@@ -550,8 +538,8 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 			"pageInfo":   &graphql.Field{Type: graphql.NewNonNull(s.gqlPageInfoType())},
 		},
 	})
-	// The account surface, assembled later, publishes Organization.repositoryDiscussions
-	// and User.repositoryDiscussions over these very connection instances.
+	// The account surface, assembled later, publishes
+	// {Organization,User}.repositoryDiscussions over these instances.
 	s.stashNamedObject(discussionConnectionType)
 	s.stashNamedObject(discussionCommentConnectionType)
 
@@ -994,9 +982,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 			s.store.UpdateDiscussion(d.ID, func(disc *store.Discussion) {
 				disc.Closed = false
 				disc.ClosedAt = nil
-				// REOPENED is the state github reports after a reopen: the
-				// close reason no longer describes the discussion, but the
-				// header still explains why it is in the state it is in.
+				// REOPENED is github's post-reopen state reason.
 				disc.StateReason = "REOPENED"
 			})
 			repo := s.store.GetRepoByID(d.RepoID)
@@ -1040,8 +1026,7 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 				}
 			}
 			c := s.store.CreateDiscussionComment(d.ID, user.ID, body, parentID)
-			// `discussion_comment` (created) fires so `on: discussion_comment`
-			// workflows run (ACT-026).
+			// Fires `on: discussion_comment` workflows (ACT-026).
 			if repo := s.store.GetRepoByID(d.RepoID); repo != nil {
 				s.emitWebhookEvent(repo.FullName, "discussion_comment", "created", map[string]interface{}{
 					"action":     "created",
@@ -1187,9 +1172,8 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 		},
 	})
 
-	// resolveUpvote is the shared body: the subject is any Votable — a
-	// discussion or a discussion comment — and both mutations differ only in
-	// the vote's direction.
+	// resolveUpvote is the shared body over any Votable (discussion or comment);
+	// the two mutations differ only in the vote direction.
 	resolveUpvote := func(up bool) func(graphql.ResolveParams) (interface{}, error) {
 		return func(p graphql.ResolveParams) (interface{}, error) {
 			user := s.ghUserFromContext(p.Context)
@@ -1231,11 +1215,9 @@ func (s *Resolver) addDiscussionFieldsToSchema(userType, repoType, mutationType 
 	})
 }
 
-// gqlVotableInterface returns GitHub's Votable interface (memoized):
-// upvoteCount / viewerCanUpvote / viewerHasUpvoted, exactly the official field
-// set. Discussion and DiscussionComment implement it. ResolveType
-// discriminates on the source map's node id prefix — the registry entries are
-// populated by the time any query executes.
+// gqlVotableInterface returns GitHub's Votable interface (memoized), implemented
+// by Discussion and DiscussionComment. ResolveType discriminates on the source
+// node id prefix.
 func (s *Resolver) gqlVotableInterface() *graphql.Interface {
 	if s.graphqlTypes.votable != nil {
 		return s.graphqlTypes.votable
@@ -1261,9 +1243,8 @@ func (s *Resolver) gqlVotableInterface() *graphql.Interface {
 
 // --- GraphQL converters ---
 
-// slugifyCategoryName lowercases a discussion-category name and collapses each
-// run of non-alphanumeric characters into a single '-', trimming leading and
-// trailing dashes — GitHub's DiscussionCategory.slug shape.
+// slugifyCategoryName renders GitHub's DiscussionCategory.slug: lowercase,
+// non-alphanumeric runs collapsed to '-', dashes trimmed.
 func slugifyCategoryName(name string) string {
 	var b strings.Builder
 	lastDash := false
@@ -1293,10 +1274,8 @@ func discussionCategoryToGQL(cat *store.DiscussionCategory) map[string]interface
 }
 
 func discussionToGQL(d *store.Discussion, st *store.Store) map[string]interface{} {
-	// A comment can outlive its soft-deleted discussion, and several callers pass
-	// a re-fetched GetDiscussion result straight through; guarding here keeps a
-	// nil discussion from panicking on d.RepoID below rather than relying on
-	// every call site to check first.
+	// A comment can outlive its soft-deleted discussion, and callers pass a
+	// re-fetched GetDiscussion straight through; guard against a nil d.
 	if d == nil {
 		return nil
 	}
@@ -1403,9 +1382,8 @@ func discussionCommentToGQL(c *store.DiscussionComment, st *store.Store) map[str
 	}
 }
 
-// viewerHasUpvoted reports whether the viewer's id is in a rendered subject's
-// upvoter set (the "upvoterIDs" key discussionToGQL / discussionCommentToGQL
-// carry).
+// viewerHasUpvoted reports whether the viewer's id is in the subject's
+// "upvoterIDs" set.
 func viewerHasUpvoted(viewer *store.User, source map[string]interface{}) bool {
 	if viewer == nil {
 		return false
@@ -1443,9 +1421,8 @@ func discussionReactionConnection(st *store.Store, parentType string, parentID i
 	return paginateGQLMaps(nodes, args)
 }
 
-// reactionNodeToGraphQL renders a store reaction as the GraphQL Reaction type's
-// source map (id/content/user). Shared by the reaction connections and the
-// addReaction/removeReaction payloads so the node shape stays in one place.
+// reactionNodeToGraphQL renders a store reaction as the Reaction source map,
+// shared by the reaction connections and the add/removeReaction payloads.
 func reactionNodeToGraphQL(st *store.Store, r *store.Reaction) map[string]interface{} {
 	var userMap map[string]interface{}
 	if u := st.GetUserByID(r.UserID); u != nil {
@@ -1484,10 +1461,8 @@ func reactionContentToGraphQL(content string) string {
 	return content
 }
 
-// paginateGQLMaps implements Relay pagination over pre-converted node maps,
-// supporting first/last/after/before.
-// gqlNodeIdentity returns a stable identity for a rendered GraphQL node so its
-// connection cursor survives inserts. Prefer the global node id.
+// gqlNodeIdentity returns a stable identity (preferring the global node id) so a
+// rendered node's connection cursor survives inserts.
 func gqlNodeIdentity(n map[string]interface{}) string {
 	for _, key := range []string{"nodeID", "id", "databaseId"} {
 		switch v := n[key].(type) {
@@ -1502,14 +1477,8 @@ func gqlNodeIdentity(n map[string]interface{}) string {
 	return ""
 }
 
-// resolveConnectionIndex returns the current position of the node a cursor
-// identifies. If the cursor carries an identity that still exists, its live
-// index is used (stable across inserts before it); otherwise the cursor's
-// recorded index is the fallback.
-// paginateGQLMaps windows an already-rendered node slice. It wraps each node
-// in a lazy item whose render is a no-op (the node is already built) and
-// delegates to the shared paginateGQLItems windowing, so eager and lazy callers
-// share one cursor implementation.
+// paginateGQLMaps windows an already-rendered node slice, wrapping each node in
+// a no-op lazy item so eager and lazy callers share one cursor implementation.
 func paginateGQLMaps(nodes []map[string]interface{}, args map[string]interface{}) map[string]interface{} {
 	items := make([]gqlConnItem, len(nodes))
 	for i, n := range nodes {

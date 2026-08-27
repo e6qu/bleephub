@@ -8,16 +8,11 @@ import (
 )
 
 // The content-editing trait shared by every comment and body: the
-// UserContentEdit history and the bodyText/bodyHTML projections of a markdown
-// body. These live in one place so the comment types — issue comments, review
-// comments, commit comments, gist comments, discussion comments, and the issue
-// and pull-request bodies themselves — render them identically.
+// UserContentEdit history and the bodyText/bodyHTML projections of a markdown body.
 
-// gqlUserContentEditType is GitHub's UserContentEdit, memoized. bleephub does
-// not record a per-edit diff history — it keeps only the last-edited instant —
-// so the connection these build is genuinely empty rather than fabricated: an
-// instance with no recorded edit history has none to serve, which is a true
-// answer, not a stub.
+// gqlUserContentEditType returns GitHub's UserContentEdit (memoized). bleephub
+// records no per-edit diff history, so the connection built from it is a true
+// empty rather than a stub.
 func (s *Resolver) gqlUserContentEditType() *graphql.Object {
 	if s.graphqlTypes.userContentEdit != nil {
 		return s.graphqlTypes.userContentEdit
@@ -25,11 +20,8 @@ func (s *Resolver) gqlUserContentEditType() *graphql.Object {
 	dateTime := s.graphQLStringScalar("DateTime")
 	s.graphqlTypes.userContentEdit = graphql.NewObject(graphql.ObjectConfig{
 		Name: "UserContentEdit",
-		// Signatures match GitHub's UserContentEdit exactly (it implements Node
-		// only, carries no databaseId, and its editor/deletedBy are Actor, not
-		// User). These become schema-visible the moment a comment type's
-		// userContentEdits field references the connection, so the ratchet
-		// enforces the exact shape here.
+		// Signature-exact with GitHub's UserContentEdit: Node only, no
+		// databaseId, editor/deletedBy are Actor. The ratchet enforces the shape.
 		Fields: graphql.Fields{
 			"id":        &graphql.Field{Type: graphql.NewNonNull(graphql.ID)},
 			"createdAt": &graphql.Field{Type: graphql.NewNonNull(dateTime)},
@@ -44,8 +36,6 @@ func (s *Resolver) gqlUserContentEditType() *graphql.Object {
 	return s.graphqlTypes.userContentEdit
 }
 
-// gqlUserContentEditConnectionType is the connection the *.userContentEdits
-// fields return.
 func (s *Resolver) gqlUserContentEditConnectionType() *graphql.Object {
 	if s.graphqlTypes.userContentEditConnection != nil {
 		return s.graphqlTypes.userContentEditConnection
@@ -70,10 +60,8 @@ func (s *Resolver) gqlUserContentEditConnectionType() *graphql.Object {
 	return s.graphqlTypes.userContentEditConnection
 }
 
-// emptyUserContentEditConnection is the source a userContentEdits field
-// resolves to. It is a real, well-formed empty connection because this
-// instance records no edit history — never a nil that would break a non-null
-// child, and never invented edits.
+// emptyUserContentEditConnection is the well-formed empty connection a
+// userContentEdits field resolves to — never a nil that would break a non-null child.
 func emptyUserContentEditConnection() map[string]interface{} {
 	return map[string]interface{}{
 		"edges":      []interface{}{},
@@ -90,10 +78,8 @@ func emptyUserContentEditConnection() map[string]interface{} {
 
 var markdownStructureRe = regexp.MustCompile(`(?m)^[#>\-\*\+\s]+|` + "`+")
 
-// bodyText projects a markdown body to the plain text GitHub's bodyText
-// returns: the readable content with the markup structure removed. It is a
-// deliberately light strip — GitHub's own bodyText is the rendered text, not a
-// full markdown parse — matching what a client uses it for (search, previews).
+// bodyText strips markdown structure to the plain text GitHub's bodyText
+// returns — a deliberately light strip, not a full markdown parse.
 func bodyText(markdown string) string {
 	stripped := markdownStructureRe.ReplaceAllString(markdown, "")
 	lines := strings.Split(stripped, "\n")

@@ -2,8 +2,7 @@ package graphqlapi
 
 // The enterprise account family's supporting types: EnterpriseUserAccount,
 // the two invitation types, EnterpriseIdentityProvider, the IP allow list,
-// EnterpriseBillingInfo and EnterpriseOwnerInfo — the owner-only view that
-// carries every enterprise policy setting.
+// EnterpriseBillingInfo and the owner-only EnterpriseOwnerInfo.
 
 import (
 	"sort"
@@ -19,8 +18,7 @@ import (
 
 // enterpriseUserAccountToGraphQL renders one user's membership in one
 // enterprise. The node id carries the membership, not the user, so the same
-// person in two enterprises is two accounts — which is what stops one
-// enterprise's view of a person from being reachable through the other's.
+// person in two enterprises is two distinct accounts.
 func (s *Resolver) enterpriseUserAccountToGraphQL(e *store.Enterprise, user *store.User, role store.EnterpriseRole) map[string]interface{} {
 	if e == nil || user == nil {
 		return nil
@@ -50,7 +48,7 @@ func (s *Resolver) enterpriseUserAccountToGraphQL(e *store.Enterprise, user *sto
 }
 
 // enterpriseNodeSuffix packs an enterprise id and a row id into the node-id
-// digits, so two enterprises never mint the same EnterpriseUserAccount id.
+// digits so two enterprises never mint the same EnterpriseUserAccount id.
 func enterpriseNodeSuffix(enterpriseID, rowID int) string {
 	return padNodeDigits(enterpriseID) + padNodeDigits(rowID)
 }
@@ -155,8 +153,7 @@ func (s *Resolver) addEnterpriseUserAccountType(enterpriseType, userType, orgTyp
 }
 
 // addEnterpriseOrganizationMembershipConnection mints the connection whose
-// edges carry the member's role in each organization (memoized: both
-// EnterpriseUserAccount.organizations and EnterpriseOwnerInfo name it).
+// edges carry the member's role in each organization (memoized).
 func (s *Resolver) addEnterpriseOrganizationMembershipConnection(orgType *graphql.Object) *graphql.Object {
 	if s.enterpriseOrgMembershipConnMemo != nil {
 		return s.enterpriseOrgMembershipConnMemo
@@ -172,7 +169,7 @@ func (s *Resolver) addEnterpriseOrganizationMembershipConnection(orgType *graphq
 
 // --- invitations -----------------------------------------------------------
 
-// enterpriseInvitationToGraphQL renders an invitation of either kind.
+// enterpriseInvitationToGraphQL renders an admin or member invitation.
 func (s *Resolver) enterpriseInvitationToGraphQL(inv *store.EnterpriseInvitation) map[string]interface{} {
 	if inv == nil {
 		return nil
@@ -265,8 +262,7 @@ func (s *Resolver) addEnterpriseMemberInvitationTypes(enterpriseType, userType *
 // --- identity provider -----------------------------------------------------
 
 // enterpriseIdentityProviderToGraphQL renders an enterprise's SAML binding.
-// recoveryCodes are secrets: the caller decides whether the viewer may see
-// them, and passes redacted = true when not.
+// recoveryCodes are secrets; the caller passes redacted = true to withhold them.
 func enterpriseIdentityProviderToGraphQL(e *store.Enterprise, redacted bool) map[string]interface{} {
 	if e == nil || e.IdentityProvider == nil {
 		return nil
@@ -388,9 +384,8 @@ func (s *Resolver) addIPAllowListTypes(enterpriseType, orgType *graphql.Object, 
 		},
 	})
 	connectionType := s.enterpriseEdgeAndConnectionTypes("IpAllowListEntryConnection", "IpAllowListEntryEdge", entryType, nil, nil)
-	// Organization.ipAllowListEntries returns this same connection type, and
-	// the organization surface is assembled after the enterprise family, so
-	// the type is recorded rather than re-minted there.
+	// Organization.ipAllowListEntries reuses this connection type; the org
+	// surface is assembled later, so record it rather than re-mint it.
 	s.accountSurfaceRegistry().ipAllowListEntryConnection = connectionType
 	return entryType, connectionType
 }
@@ -398,8 +393,7 @@ func (s *Resolver) addIPAllowListTypes(enterpriseType, orgType *graphql.Object, 
 // --- billing ---------------------------------------------------------------
 
 // enterpriseBillingInfo measures the enterprise against its provisioned
-// entitlements. Usage is counted from what the instance actually stores, so
-// the report describes this instance rather than a fixed number.
+// entitlements, counting usage from what the instance actually stores.
 func (s *Resolver) enterpriseBillingInfo(e *store.Enterprise) map[string]interface{} {
 	if e == nil {
 		return nil
@@ -432,8 +426,8 @@ func percentageOf(usage, quota float64) int {
 	return int(usage / quota * 100)
 }
 
-// enterpriseLicensableUserCount counts the accounts the enterprise consumes a
-// licence for: its members, suspended accounts excluded.
+// enterpriseLicensableUserCount counts the enterprise's members, excluding
+// suspended accounts.
 func (s *Resolver) enterpriseLicensableUserCount(e *store.Enterprise) int {
 	users, _ := s.enterpriseMemberUsers(e)
 	count := 0
@@ -445,14 +439,14 @@ func (s *Resolver) enterpriseLicensableUserCount(e *store.Enterprise) int {
 	return count
 }
 
-// enterpriseStorageUsageGB reports the enterprise's stored bytes in
-// gigabytes: the release assets and packages its organizations hold.
+// enterpriseStorageUsageGB reports the release assets and packages the
+// enterprise's organizations hold, in gigabytes.
 func (s *Resolver) enterpriseStorageUsageGB(e *store.Enterprise) float64 {
 	return bytesToGB(s.store.EnterpriseStorageBytes(enterpriseOrgIDSet(s, e)))
 }
 
-// enterpriseBandwidthUsageGB reports the enterprise's egress in gigabytes:
-// the release-asset downloads its organizations served.
+// enterpriseBandwidthUsageGB reports the release-asset download egress the
+// enterprise's organizations served, in gigabytes.
 func (s *Resolver) enterpriseBandwidthUsageGB(e *store.Enterprise) float64 {
 	return bytesToGB(s.store.EnterpriseBandwidthBytes(enterpriseOrgIDSet(s, e)))
 }
@@ -466,9 +460,8 @@ func enterpriseOrgIDSet(s *Resolver, e *store.Enterprise) map[int]bool {
 		set[orgID] = true
 	}
 	if s.store.PrimaryEnterpriseSlug() == e.Slug {
-		// The instance's own enterprise owns every organization no other
-		// enterprise has claimed, the way a GHES enterprise owns the whole
-		// appliance.
+		// The primary enterprise owns every organization no other enterprise
+		// has claimed, the way a GHES enterprise owns the whole appliance.
 		for _, org := range s.store.ListOrgsAll(0) {
 			if s.store.EnterpriseIDForOrg(org.ID) == 0 {
 				set[org.ID] = true
@@ -502,8 +495,7 @@ func (s *Resolver) addEnterpriseBillingInfoType() *graphql.Object {
 
 // --- EnterpriseOwnerInfo ---------------------------------------------------
 
-// enterpriseOwnerInfoDeps carries the types EnterpriseOwnerInfo's fields
-// return, so the constructor names each one exactly once.
+// enterpriseOwnerInfoDeps carries the types EnterpriseOwnerInfo's fields return.
 type enterpriseOwnerInfoDeps struct {
 	userType                    *graphql.Object
 	adminConnection             *graphql.Object
@@ -518,8 +510,8 @@ type enterpriseOwnerInfoDeps struct {
 	organizationMembershipConnT *graphql.Object
 }
 
-// enterprisePolicySettingFields is the whole policy surface, each entry
-// naming the enum it serves and the accessor that reads the stored value.
+// enterprisePolicySettingFields maps each policy field to the enum it serves
+// and the accessor that reads its stored value.
 func (s *Resolver) enterprisePolicySettingFields() map[string]struct {
 	enum *graphql.Enum
 	read func(store.EnterprisePolicy) string
@@ -543,21 +535,17 @@ func (s *Resolver) enterprisePolicySettingFields() map[string]struct {
 	}
 }
 
-// enterprisePolicyOverrideConnection is one "…SettingOrganizations" field:
-// the policy it reports on and the type GitHub gives its `value` filter. The
-// filter's type is per-field — a Boolean for an on/off policy, an enum for a
-// policy with more than two states — so it is named here rather than assumed.
+// enterprisePolicyOverrideConnection describes one "…SettingOrganizations"
+// field. The `value` filter's type is per-field: a Boolean for an on/off
+// policy, an enum for a policy with more than two states.
 type enterprisePolicyOverrideConnection struct {
 	read      func(store.EnterprisePolicy) string
 	valueType func(s *Resolver) graphql.Input
-	// matches reports whether the enterprise's stored setting equals the value
-	// the caller filtered on.
-	matches func(setting string, value interface{}) bool
+	matches   func(setting string, value interface{}) bool
 }
 
 // booleanPolicyFilter matches a Boolean `value` against an
-// ENABLED/DISABLED/NO_POLICY setting: true selects the enterprises that
-// enabled it, false the ones that did not.
+// ENABLED/DISABLED/NO_POLICY setting.
 func booleanPolicyFilter(setting string, value interface{}) bool {
 	want, ok := value.(bool)
 	if !ok {
@@ -610,9 +598,8 @@ func enterprisePolicyOverrideConnections() map[string]enterprisePolicyOverrideCo
 		"membersCanCreateRepositoriesSettingOrganizations": enum(
 			func(p store.EnterprisePolicy) string { return p.MembersCanCreateRepositories },
 			"OrganizationMembersCanCreateRepositoriesSettingValue", "ALL", "DISABLED", "INTERNAL", "PRIVATE"),
-		// The identity-provider connection reports which organizations the
-		// enterprise's SAML binding covers, so its filter is the binding's
-		// state rather than a policy value.
+		// The SAML connection reports which organizations the binding covers,
+		// so its filter is the binding's state, not a policy value.
 		"samlIdentityProviderSettingOrganizations": {
 			read: func(store.EnterprisePolicy) string { return "" },
 			valueType: func(s *Resolver) graphql.Input {
@@ -662,8 +649,8 @@ func (s *Resolver) addEnterpriseOwnerInfoType(deps enterpriseOwnerInfoDeps) *gra
 	fields["ipAllowListUserLevelEnforcementEnabledSetting"] = policyField(s.ipAllowListUserLevelEnforcementEnum(),
 		func(p store.EnterprisePolicy) string { return p.IPAllowListUserLevelEnforcementEnabled })
 
-	// membersCanCreateRepositoriesSetting is nullable: GitHub reports null
-	// when the enterprise leaves repository creation to its organizations.
+	// Nullable: GitHub reports null when the enterprise leaves repository
+	// creation to its organizations.
 	fields["membersCanCreateRepositoriesSetting"] = &graphql.Field{
 		Type: s.sharedEnum("EnterpriseMembersCanCreateRepositoriesSettingValue", "ALL", "DISABLED", "NO_POLICY", "PRIVATE", "PUBLIC"),
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -706,8 +693,8 @@ func (s *Resolver) addEnterpriseOwnerInfoType(deps enterpriseOwnerInfoDeps) *gra
 		},
 	}
 
-	// The two roll-out flags. bleephub applies a policy to every organization
-	// inside the mutation that sets it, so no roll-out is ever outstanding.
+	// Roll-out flags. bleephub applies a policy to every organization inside
+	// the mutation that sets it, so no roll-out is ever outstanding.
 	rollout := func(read func(store.EnterprisePolicy) bool) *graphql.Field {
 		return &graphql.Field{
 			Type: graphql.NewNonNull(graphql.Boolean),
@@ -927,9 +914,7 @@ func (s *Resolver) enterpriseInvitationConnectionField(connectionType *graphql.O
 }
 
 // enterprisePolicyOrganizations lists the organizations the enterprise's
-// policy actually governs — the ones it owns — when the enterprise imposes
-// that policy at all. A policy of NO_POLICY governs nothing, so the
-// connection is empty, which is what GitHub reports for an unimposed policy.
+// policy governs. NO_POLICY governs nothing, so the connection is empty.
 func (s *Resolver) enterprisePolicyOrganizations(e *store.Enterprise, override enterprisePolicyOverrideConnection, args map[string]interface{}) []map[string]interface{} {
 	if e == nil {
 		return nil
@@ -944,9 +929,8 @@ func (s *Resolver) enterprisePolicyOrganizations(e *store.Enterprise, override e
 	return s.enterpriseOrganizationNodes(e)
 }
 
-// enterpriseOutsideCollaborators lists the accounts that collaborate on an
-// enterprise organization's repositories without belonging to the
-// organization — GitHub's outside collaborators, computed rather than stored.
+// enterpriseOutsideCollaborators lists accounts collaborating on an enterprise
+// organization's repositories without belonging to it, computed rather than stored.
 func (s *Resolver) enterpriseOutsideCollaborators(e *store.Enterprise) []*store.User {
 	if e == nil {
 		return nil
@@ -971,8 +955,7 @@ func (s *Resolver) enterpriseOutsideCollaborators(e *store.Enterprise) []*store.
 }
 
 // enterpriseUsersWithoutTwoFactor lists the enterprise's members who have not
-// enrolled a second factor — the roll that
-// affiliatedUsersWithTwoFactorDisabled reports.
+// enrolled a second factor.
 func (s *Resolver) enterpriseUsersWithoutTwoFactor(e *store.Enterprise) []*store.User {
 	users, _ := s.enterpriseMemberUsers(e)
 	var out []*store.User

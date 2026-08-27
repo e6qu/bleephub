@@ -17,18 +17,14 @@ import (
 )
 
 // The git object graph: GitObject and its four implementations (Commit, Tree,
-// Blob, Tag), the tree entries that link them, and the Repository fields that
-// enter the graph — object(expression:/oid:), ref(qualifiedName:) and
-// refs(refPrefix:). Everything resolves out of the repository's git storage
-// through the shared helpers in internal/store, so the REST git surface and
-// this one answer the same revisions identically.
+// Blob, Tag), the tree entries linking them, and the Repository entry fields
+// (object, ref, refs). All resolve out of git storage through internal/store,
+// so this surface and the REST one answer the same revisions.
 
 // --- source maps -----------------------------------------------------------
 
-// gitObjectSourceFields are the GitObject members every implementation
-// carries. repoFullName is the identity the field resolvers re-open storage
-// with; the object graph is walked lazily so selecting one blob out of a large
-// tree does not read the whole tree.
+// gitObjectSourceFields are the GitObject members every implementation carries.
+// The graph is walked lazily so selecting one blob does not read the whole tree.
 func gitObjectSourceFields(typename, repoFullName, oid string) map[string]interface{} {
 	return map[string]interface{}{
 		"__typename":   typename,
@@ -37,8 +33,8 @@ func gitObjectSourceFields(typename, repoFullName, oid string) map[string]interf
 	}
 }
 
-// gitObjectSource renders the source map for an object id whose type is read
-// from storage. It returns nil when the object is absent.
+// gitObjectSource renders the source map for an object whose type is read from
+// storage, or nil when the object is absent.
 func gitObjectSource(stor gitStorage.Storer, st *store.Store, repoFullName string, hash plumbing.Hash) map[string]interface{} {
 	objectType, err := store.GitObjectTypeOf(stor, hash)
 	if err != nil {
@@ -76,9 +72,8 @@ func gitObjectSourceOfType(stor gitStorage.Storer, st *store.Store, repoFullName
 	}
 }
 
-// gitCommitSource renders a commit as the shared Commit type's source map. It
-// is the same shape the pull-request commit lists produce, so one Commit type
-// serves both.
+// gitCommitSource renders a commit as the shared Commit source map, the same
+// shape the pull-request commit lists produce.
 func gitCommitSource(commit *object.Commit, st *store.Store, repoFullName string) map[string]interface{} {
 	source := gitObjectSourceFields("Commit", repoFullName, commit.Hash.String())
 	source["message"] = commit.Message
@@ -91,12 +86,9 @@ func gitCommitSource(commit *object.Commit, st *store.Store, repoFullName string
 	return source
 }
 
-// gitActorSource renders a git signature as GitActor, resolving the account
-// that owns the signature's email when one exists.
-//
-// GitActor.user is null for a commit signed by an address no account owns —
-// optionalRendered keeps that an untyped nil rather than a User shell whose
-// non-null id would abort the query (see gql_optional_source.go).
+// gitActorSource renders a git signature as GitActor. GitActor.user must be an
+// untyped nil (not a User shell) when no account owns the email, or its
+// non-null id would abort the query; optionalRendered keeps it so.
 func gitActorSource(st *store.Store, signature object.Signature) map[string]interface{} {
 	actor := map[string]interface{}{
 		"name":  signature.Name,
@@ -121,8 +113,8 @@ func gitRefSource(repoFullName, qualifiedName, targetOID string) map[string]inte
 	}
 }
 
-// splitGitRefName splits a fully qualified reference into the prefix GitHub
-// reports (`refs/heads/`, `refs/tags/`, …) and the short name after it.
+// splitGitRefName splits a qualified reference into its prefix (`refs/heads/`,
+// `refs/tags/`, …) and short name.
 func splitGitRefName(qualifiedName string) (string, string) {
 	if index := strings.LastIndex(qualifiedName, "/"); index >= 0 {
 		for _, prefix := range []string{"refs/heads/", "refs/tags/", "refs/pull/", "refs/remotes/"} {
@@ -137,10 +129,9 @@ func splitGitRefName(qualifiedName string) (string, string) {
 
 // --- storage access --------------------------------------------------------
 
-// gitSourceRepo resolves the repository a git-object source belongs to,
-// applying the same repository-visibility gate every other resolver uses: a
-// private repository the viewer cannot read resolves to nothing rather than
-// leaking its object graph.
+// gitSourceRepo resolves the repository a git-object source belongs to. A
+// private repo the viewer cannot read resolves to nothing rather than leaking
+// its object graph.
 func (s *Resolver) gitSourceRepo(ctx context.Context, source interface{}) (*store.Repo, gitStorage.Storer, error) {
 	src, ok := source.(map[string]interface{})
 	if !ok {
@@ -187,9 +178,7 @@ func (s *Resolver) gitSourceCommit(p graphql.ResolveParams) (*store.Repo, gitSto
 
 // --- shared leaf types -----------------------------------------------------
 
-// gqlGitActorType returns the shared GitActor object type (memoized): the
-// author, committer and tagger of every git object, plus the members of
-// Commit.authors.
+// gqlGitActorType returns the shared GitActor object type (memoized).
 func (s *Resolver) gqlGitActorType() *graphql.Object {
 	if s.graphqlTypes.gitActor != nil {
 		return s.graphqlTypes.gitActor
@@ -233,9 +222,8 @@ func (s *Resolver) gqlGitActorType() *graphql.Object {
 	return s.graphqlTypes.gitActor
 }
 
-// gitActorAvatarKey is the stable per-identity avatar path segment used for a
-// signature with no matching account, mirroring the identicon key GitHub
-// derives from the commit email.
+// gitActorAvatarKey is the avatar path segment for a signature with no
+// matching account, mirroring GitHub's identicon key derived from the email.
 func gitActorAvatarKey(email string) string {
 	if email == "" {
 		return "git"
@@ -243,8 +231,7 @@ func gitActorAvatarKey(email string) string {
 	return base64.RawURLEncoding.EncodeToString([]byte(strings.ToLower(email)))
 }
 
-// gqlLanguageType returns the shared Language object type (memoized), used by
-// Repository.primaryLanguage/languages and TreeEntry.language.
+// gqlLanguageType returns the shared Language object type (memoized).
 func (s *Resolver) gqlLanguageType() *graphql.Object {
 	if s.graphqlTypes.language != nil {
 		return s.graphqlTypes.language
@@ -261,8 +248,7 @@ func (s *Resolver) gqlLanguageType() *graphql.Object {
 					return languageNodeID(name), nil
 				},
 			},
-			// bleephub does not carry Linguist's per-language colors, so color is
-			// a truthful null rather than an invented hex value.
+			// No Linguist color data; color is a truthful null.
 			"color": &graphql.Field{Type: graphql.String, Resolve: nilResolver},
 		},
 	})
@@ -271,9 +257,8 @@ func (s *Resolver) gqlLanguageType() *graphql.Object {
 
 // --- the GitObject interface and its implementations -----------------------
 
-// gqlGitObjectInterface returns the GitObject interface (memoized). Its
-// ResolveType reads the concrete type registry lazily so the four
-// implementations may be built after it.
+// gqlGitObjectInterface returns the GitObject interface (memoized). ResolveType
+// reads the type registry lazily so the four implementations may build after it.
 func (s *Resolver) gqlGitObjectInterface() *graphql.Interface {
 	if s.graphqlTypes.gitObject != nil {
 		return s.graphqlTypes.gitObject
@@ -301,9 +286,8 @@ func (s *Resolver) gqlGitObjectInterface() *graphql.Interface {
 }
 
 // addGitObjectFields installs the six GitObject members on a concrete
-// implementation. Every one of them derives from the object id plus the
-// repository the object was reached through, so one definition serves Commit,
-// Tree, Blob and Tag.
+// implementation. All derive from the oid plus the repository, so one
+// definition serves Commit, Tree, Blob and Tag.
 func (s *Resolver) addGitObjectFields(objectType *graphql.Object, nodeIDPrefix string) {
 	uri := s.graphQLStringScalar("URI")
 	gitObjectID := s.graphQLStringScalar("GitObjectID")
@@ -358,8 +342,6 @@ func (s *Resolver) addGitObjectFields(objectType *graphql.Object, nodeIDPrefix s
 	})
 }
 
-// gitObjectResourcePath is the repository-relative path GitHub serves a git
-// object at.
 func gitObjectResourcePath(source interface{}) (string, error) {
 	fullName, err := gitSourceString(source, "repoFullName")
 	if err != nil {
@@ -372,10 +354,8 @@ func gitObjectResourcePath(source interface{}) (string, error) {
 	return "/" + fullName + "/commit/" + oid, nil
 }
 
-// gqlCommitType returns the shared Commit object type (memoized). It is the
-// one Commit in the schema: the pull-request commit lists add their
-// check-rollup and authors fields to this same type, exactly as GitHub has a
-// single Commit.
+// gqlCommitType returns the one shared Commit object type (memoized); the
+// pull-request commit lists add their check-rollup and authors fields to it.
 func (s *Resolver) gqlCommitType() *graphql.Object {
 	if s.graphqlTypes.commit != nil {
 		return s.graphqlTypes.commit
@@ -525,8 +505,8 @@ func (s *Resolver) gqlCommitType() *graphql.Object {
 	return commitType
 }
 
-// gitCommitArchiveField renders the source-archive download URL for a commit,
-// on the same codeload-style path the REST tarball/zipball redirects target.
+// gitCommitArchiveField renders a commit's source-archive URL, on the same
+// path the REST tarball/zipball redirects target.
 func gitCommitArchiveField(uri *graphql.Scalar, format string) *graphql.Field {
 	return &graphql.Field{
 		Type: graphql.NewNonNull(uri),
@@ -544,8 +524,8 @@ func gitCommitArchiveField(uri *graphql.Scalar, format string) *graphql.Field {
 	}
 }
 
-// addCommitDiffStatFields installs the line and file counts a commit
-// introduced, computed against its first parent.
+// addCommitDiffStatFields installs the line/file counts a commit introduced,
+// computed against its first parent.
 func (s *Resolver) addCommitDiffStatFields(commitType *graphql.Object) {
 	stat := func(pick func(additions, deletions, changedFiles int) int) func(graphql.ResolveParams) (interface{}, error) {
 		return func(p graphql.ResolveParams) (interface{}, error) {
@@ -578,8 +558,7 @@ func (s *Resolver) addCommitDiffStatFields(commitType *graphql.Object) {
 	})
 }
 
-// gitActorField reads an already-rendered GitActor out of a commit or tag
-// source map.
+// gitActorField reads an already-rendered GitActor out of a source map.
 func gitActorField(gitActorType *graphql.Object, key string) *graphql.Field {
 	return &graphql.Field{
 		Type: gitActorType,
@@ -618,7 +597,7 @@ func emptyGitConnection() map[string]interface{} {
 }
 
 // gqlCommitConnectionType builds CommitConnection and CommitHistoryConnection,
-// which have the same shape on GitHub.
+// same-shaped on GitHub.
 func (s *Resolver) gqlCommitConnectionType(name string) *graphql.Object {
 	if s.graphqlTypes.commitConnections == nil {
 		s.graphqlTypes.commitConnections = map[string]*graphql.Object{}
@@ -648,8 +627,8 @@ func (s *Resolver) gqlCommitConnectionType(name string) *graphql.Object {
 	return connection
 }
 
-// addCommitHistoryField installs Commit.history — the linear ancestry walk
-// `git log` produces, with GitHub's path, author, since and until filters.
+// addCommitHistoryField installs Commit.history — the `git log` ancestry walk
+// with GitHub's path, author, since and until filters.
 func (s *Resolver) addCommitHistoryField(commitType *graphql.Object) {
 	gitTimestamp := s.graphQLStringScalar("GitTimestamp")
 	commitAuthorInput := graphql.NewInputObject(graphql.InputObjectConfig{
@@ -696,7 +675,7 @@ func (s *Resolver) addCommitHistoryField(commitType *graphql.Object) {
 	})
 }
 
-// commitHistoryFilter is the resolved form of Commit.history's filters.
+// commitHistoryFilter is the resolved form of Commit.history's arguments.
 type commitHistoryFilter struct {
 	path   string
 	emails []string
@@ -788,9 +767,8 @@ func (f commitHistoryFilter) matchesAuthor(st *store.Store, commit *object.Commi
 	return false
 }
 
-// gitCommitHistory walks the commit's ancestry the way `git log` orders it,
-// keeping the commits the filter accepts. It is the same walk the REST commit
-// listing performs, so the two surfaces answer one history.
+// gitCommitHistory walks the ancestry in `git log` order, keeping commits the
+// filter accepts. Same walk as the REST commit listing.
 func gitCommitHistory(head *object.Commit, st *store.Store, filter commitHistoryFilter) ([]*object.Commit, error) {
 	iter := object.NewCommitPreorderIter(head, nil, nil)
 	defer iter.Close()
@@ -871,8 +849,8 @@ func (s *Resolver) gqlTreeType() *graphql.Object {
 	return treeType
 }
 
-// gitTreeEntrySource renders one tree entry. size and lineCount are resolved
-// lazily so listing a directory does not read every blob in it.
+// gitTreeEntrySource renders one tree entry. size and lineCount resolve lazily
+// so listing a directory does not read every blob.
 func gitTreeEntrySource(stor gitStorage.Storer, repoFullName, path string, entry object.TreeEntry) map[string]interface{} {
 	return map[string]interface{}{
 		"name":         entry.Name,
@@ -965,8 +943,7 @@ func (s *Resolver) gqlTreeEntryType() *graphql.Object {
 		Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 			blob, err := s.gitTreeEntryBlob(p)
 			if err != nil || blob == nil {
-				// A tree or gitlink entry has no byte size of its own, which is
-				// the zero GitHub reports for them.
+				// A tree or gitlink entry has no byte size; GitHub reports 0.
 				return 0, err
 			}
 			return int(blob.Size), nil
@@ -999,13 +976,13 @@ func (s *Resolver) gqlTreeEntryType() *graphql.Object {
 			}
 			source := gitObjectSource(stor, s.store, repo.FullName, plumbing.NewHash(oid))
 			if source == nil {
-				// A gitlink entry names a commit in the submodule's own
-				// repository, which this repository does not contain.
+				// A gitlink names a commit in the submodule's repository,
+				// not contained here.
 				return nil, nil
 			}
 			if source["__typename"] == "Tree" {
-				// Carry the path down so a nested tree's entries keep their
-				// full repository-relative paths.
+				// Carry the path down so nested-tree entries keep their full
+				// repository-relative paths.
 				if path, _ := gitSourceString(p.Source, "path"); path != "" {
 					source["treePath"] = path
 				}
@@ -1016,8 +993,8 @@ func (s *Resolver) gqlTreeEntryType() *graphql.Object {
 	return entryType
 }
 
-// gitTreeEntryBlob reads the blob a tree entry names, or nil when the entry is
-// not a blob.
+// gitTreeEntryBlob reads the blob a tree entry names, or nil when it is not a
+// blob.
 func (s *Resolver) gitTreeEntryBlob(p graphql.ResolveParams) (*object.Blob, error) {
 	repo, stor, err := s.gitSourceRepo(p.Context, p.Source)
 	if err != nil || repo == nil || stor == nil {
@@ -1086,8 +1063,7 @@ func (s *Resolver) gqlBlobType() *graphql.Object {
 		},
 	})
 	blobType.AddFieldConfig("isTruncated", &graphql.Field{
-		// Blob contents are served whole out of git storage, so no read of one
-		// is ever a partial read.
+		// Blobs are served whole, never a partial read.
 		Type:    graphql.NewNonNull(graphql.Boolean),
 		Resolve: func(graphql.ResolveParams) (interface{}, error) { return false, nil },
 	})
@@ -1140,8 +1116,7 @@ func (s *Resolver) gitSourceBlobContent(p graphql.ResolveParams) ([]byte, bool, 
 	return content, true, nil
 }
 
-// gqlTagType returns the Tag object type (memoized): an annotated tag object,
-// whose target chain peels to the commit it names.
+// gqlTagType returns the Tag object type (memoized).
 func (s *Resolver) gqlTagType() *graphql.Object {
 	if s.graphqlTypes.tag != nil {
 		return s.graphqlTypes.tag
@@ -1177,8 +1152,8 @@ func (s *Resolver) gqlTagType() *graphql.Object {
 
 // --- Ref -------------------------------------------------------------------
 
-// addGitRefFields installs the Ref members that reach into the object graph:
-// the id, the repository, and the object the ref points at.
+// addGitRefFields installs the Ref members reaching into the object graph: id,
+// repository, and target.
 func (s *Resolver) addGitRefFields(refType *graphql.Object) {
 	refType.AddFieldConfig("id", &graphql.Field{
 		Type: graphql.NewNonNull(graphql.ID),
@@ -1232,8 +1207,8 @@ func (s *Resolver) addGitRefFields(refType *graphql.Object) {
 	})
 }
 
-// gitRefQualifiedName is the fully qualified reference name of a Ref source,
-// recomposed from prefix and name when the producer did not record it.
+// gitRefQualifiedName is a Ref source's qualified name, recomposed from prefix
+// and name when the producer did not record it.
 func gitRefQualifiedName(source interface{}) (string, error) {
 	src, ok := source.(map[string]interface{})
 	if !ok {
@@ -1273,12 +1248,10 @@ func (s *Resolver) gqlRefConnectionType() *graphql.Object {
 
 // --- Repository entry points ----------------------------------------------
 
-// addGitObjectFieldsToRepository installs Repository.object, .ref and .refs —
-// the three fields a client enters the git object graph through.
+// addGitObjectFieldsToRepository installs Repository.object, .ref and .refs.
 func (s *Resolver) addGitObjectFieldsToRepository(repoType *graphql.Object) {
-	// Build all four GitObject implementations up front: the interface's
-	// ResolveType dispatches through the registry they enter here, and a
-	// client's `... on Blob` fragment only validates once the type is in the
+	// Build all four implementations up front: ResolveType dispatches through
+	// their registry, and `... on Blob` only validates once the type is in the
 	// schema.
 	s.gqlCommitType()
 	s.gqlTreeType()
@@ -1316,14 +1289,13 @@ func (s *Resolver) addGitObjectFieldsToRepository(repoType *graphql.Object) {
 			}
 			revision, err := store.ResolveGitRevision(stor, expression)
 			if err != nil {
-				// An unresolvable revision is plain null on GitHub, not an error.
+				// An unresolvable revision is null on GitHub, not an error.
 				return nil, nil
 			}
 			source := gitObjectSourceOfType(stor, s.store, repo.FullName, revision.Hash, revision.Type)
 			if source != nil && revision.Type == plumbing.TreeObject {
-				// A tree reached through `<rev>:<path>` keeps that path, so its
-				// entries report repository-relative paths rather than names
-				// relative to the subtree.
+				// A tree reached through `<rev>:<path>` keeps that path so its
+				// entries report repository-relative paths.
 				if _, path, hasPath := strings.Cut(expression, ":"); hasPath && path != "" {
 					source["treePath"] = path
 				}
@@ -1401,9 +1373,8 @@ func (s *Resolver) addGitObjectFieldsToRepository(repoType *graphql.Object) {
 	})
 }
 
-// decorateRefSource attaches the branch-protection rule a Ref reports, so a
-// ref reached through refs()/ref() answers branchProtectionRule the way the
-// pull-request base ref does.
+// decorateRefSource attaches a Ref's branch-protection rule, so a ref reached
+// through refs()/ref() answers branchProtectionRule like the PR base ref.
 func (s *Resolver) decorateRefSource(repo *store.Repo, ref map[string]interface{}) map[string]interface{} {
 	prefix, _ := ref["prefix"].(string)
 	name, _ := ref["name"].(string)
@@ -1416,9 +1387,8 @@ func (s *Resolver) decorateRefSource(repo *store.Repo, ref map[string]interface{
 	return ref
 }
 
-// repositorySourceGitStorage resolves the repository a Repository source map
-// describes, together with its git storage, under the same visibility gate the
-// repository lookups apply.
+// repositorySourceGitStorage resolves the repository a Repository source
+// describes plus its git storage, under the usual visibility gate.
 func (s *Resolver) repositorySourceGitStorage(p graphql.ResolveParams) (*store.Repo, gitStorage.Storer, error) {
 	src, ok := p.Source.(map[string]interface{})
 	if !ok {
@@ -1437,7 +1407,7 @@ func (s *Resolver) repositorySourceGitStorage(p graphql.ResolveParams) (*store.R
 }
 
 // lookupGitReference implements Repository.ref(qualifiedName:)'s documented
-// order: a fully qualified match first, then the branch and tag short names.
+// order: a qualified match first, then branch and tag short names.
 func lookupGitReference(stor gitStorage.Storer, qualifiedName string) *plumbing.Reference {
 	if qualifiedName == "" {
 		return nil
@@ -1474,8 +1444,8 @@ func filterGitReferences(refs []*plumbing.Reference, refPrefix, query string) []
 }
 
 // sortGitReferences applies RefOrder (and the deprecated direction argument).
-// ALPHABETICAL is the ordering ListGitReferences already produces;
-// TAG_COMMIT_DATE orders by the commit date each ref peels to.
+// ALPHABETICAL is ListGitReferences' existing order; TAG_COMMIT_DATE orders by
+// the commit date each ref peels to.
 func sortGitReferences(stor gitStorage.Storer, refs []*plumbing.Reference, args map[string]interface{}) {
 	field, direction := "ALPHABETICAL", "ASC"
 	if orderBy, ok := args["orderBy"].(map[string]interface{}); ok {
@@ -1525,8 +1495,8 @@ func gitReferenceCommitDate(stor gitStorage.Storer, ref *plumbing.Reference) tim
 	return commit.Committer.When.UTC()
 }
 
-// gitObjectNodeByID resolves a git object or ref global id back to its source
-// map for Query.node, refusing repositories the viewer cannot read.
+// gitObjectNodeByID resolves a git object or ref global id to its source map
+// for Query.node, refusing repositories the viewer cannot read.
 func (s *Resolver) gitObjectNodeByID(ctx context.Context, nodeID string) interface{} {
 	prefix, repoID, value, ok := store.ParseGitObjectNodeID(nodeID)
 	if !ok {

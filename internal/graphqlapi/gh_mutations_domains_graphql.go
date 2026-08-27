@@ -1,13 +1,9 @@
 package graphqlapi
 
-// The verifiable-domain mutations: addVerifiableDomain,
-// approveVerifiableDomain, deleteVerifiableDomain,
-// regenerateVerifiableDomainToken and verifyVerifiableDomain, plus the
-// VerifiableDomain object their payloads return. A domain belongs to an
-// enterprise or an organization (the VerifiableDomainOwner union); the
-// enterprise half writes through the same store ledger the /ui-data
-// verified-domains surface and the notification-delivery restriction read,
-// so a domain verified here restricts delivery exactly as one written there.
+// The five verifiable-domain mutations and the VerifiableDomain object their
+// payloads return. A domain belongs to an enterprise or an organization (the
+// VerifiableDomainOwner union) and writes through the same store ledger the
+// /ui-data surface and the notification-delivery restriction read.
 
 import (
 	"fmt"
@@ -33,9 +29,8 @@ func init() {
 	}
 }
 
-// verifiableDomainOwnerRule is the policy for the domain mutations. The
-// entitlement is over the domain's owner: an enterprise's domains are its
-// owners' to manage, an organization's are its owners'.
+// verifiableDomainOwnerRule authorizes the domain mutations against the
+// domain's owner (enterprise or organization).
 type verifiableDomainOwnerRule struct {
 	// ownerKey names the owner directly; domainKey names an existing domain
 	// whose owner is looked up. Exactly one is set.
@@ -93,7 +88,7 @@ func (r verifiableDomainOwnerRule) resolveOwner(s *Resolver, input map[string]in
 
 // --- type and rendering ------------------------------------------------------
 
-// gqlVerifiableDomainType is the VerifiableDomain object (memoized).
+// gqlVerifiableDomainType returns the VerifiableDomain object (memoized).
 func (s *Resolver) gqlVerifiableDomainType() *graphql.Object {
 	if existing := s.memoizedMutationObject("VerifiableDomain"); existing != nil {
 		return existing
@@ -125,9 +120,8 @@ func (s *Resolver) gqlVerifiableDomainType() *graphql.Object {
 	return domainType
 }
 
-// verifiableDomainToGQL renders one domain row. The DNS lookup is simulated,
-// so the two hasFound members mirror the verified state: a verified domain
-// is one whose TXT record the simulator "found".
+// verifiableDomainToGQL renders one domain row. DNS lookup is simulated, so the
+// two hasFound members mirror the verified state.
 func (s *Resolver) verifiableDomainToGQL(domain *store.VerifiableDomain) map[string]interface{} {
 	if domain == nil {
 		return nil
@@ -166,8 +160,7 @@ func verifiableDomainOwnerLabel(owner map[string]interface{}) string {
 }
 
 // verifiableDomainRequiredForPolicy reports whether the owner's
-// notification-delivery restriction currently rests on this domain: the
-// restriction is on and the domain counts toward it.
+// notification-delivery restriction is on and this domain counts toward it.
 func (s *Resolver) verifiableDomainRequiredForPolicy(domain *store.VerifiableDomain) bool {
 	if !domain.IsVerified && !domain.IsApproved {
 		return false
@@ -268,8 +261,7 @@ func (s *Resolver) resolveAddVerifiableDomain(p graphql.ResolveParams) (interfac
 	return map[string]interface{}{"domain": optionalObject(s.verifiableDomainToGQL(created))}, nil
 }
 
-// verifiableDomainFromInput resolves the domain row an id-carrying input
-// names; the policy row already authorized its owner.
+// verifiableDomainFromInput resolves the domain an id-carrying input names.
 func (s *Resolver) verifiableDomainFromInput(input map[string]interface{}) (*store.VerifiableDomain, error) {
 	nodeID, _ := gqlInputString(input, "id")
 	domain := store.FindVerifiableDomainByNodeID(s.store, nodeID)

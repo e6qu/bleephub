@@ -6,23 +6,13 @@ import (
 	"github.com/graphql-go/graphql"
 )
 
-// GitHub's issue and pull-request timeline type graph.
+// GitHub's issue and pull-request timeline type graph: the object type per
+// event kind, the two unions and their connections, plus the support types the
+// members name. gh_timeline_graphql.go renders the sources.
 //
-// `Issue.timelineItems` and `PullRequest.timelineItems` return a union whose
-// members are one object type per kind of thing that can happen to an issue or
-// a pull request. This file declares those object types, the two unions and
-// their connections, plus the small support types the members name (the
-// Closable/Assignable/ProjectV2Event interfaces, the Closer/MilestoneItem/
-// RenamedTitleSubject/ReferencedSubject unions and the IssueUpdateIntent /
-// IssueEventRationale objects). gh_timeline_graphql.go renders the sources.
-//
-// Each member is backed by real recorded data — a store issue-event row, a
-// comment, a review, a git commit, a project-item row, or a reference derived
-// from another body. Members whose subject bleephub does not model at all
-// (deployments, merge queues, projects classic, mannequins, duplicate marking)
-// are not declared: a client writing `... on DeployedEvent` would validate and
-// then silently receive nothing, which reads as "this instance has no
-// deployments" rather than "this server does not model them".
+// Members whose subject bleephub does not model (deployments, merge queues,
+// projects classic, mannequins, duplicate marking) are deliberately not
+// declared, so a client cannot select a member that would silently return nothing.
 
 // timelineTypeRegistry memoizes the timeline type graph. It is built once, in
 // addTimelineFieldsToSchema, after every type its members name exists.
@@ -50,9 +40,8 @@ type timelineTypeRegistry struct {
 	pullItemTypeOf  map[string]string
 }
 
-// gqlClosableInterface is GitHub's Closable, carrying the subset of its
-// contract bleephub models on Issue and PullRequest. ClosedEvent.closable and
-// ReopenedEvent.closable return it.
+// gqlClosableInterface is GitHub's Closable, narrowed to the subset bleephub
+// models on Issue and PullRequest.
 func (s *Resolver) gqlClosableInterface() *graphql.Interface {
 	if s.graphqlTypes.timeline == nil {
 		s.graphqlTypes.timeline = &timelineTypeRegistry{}
@@ -76,7 +65,7 @@ func (s *Resolver) gqlClosableInterface() *graphql.Interface {
 }
 
 // gqlAssignableInterface is GitHub's Assignable, narrowed to the assignee
-// connection bleephub models. AssignedEvent.assignable returns it.
+// connection bleephub models.
 func (s *Resolver) gqlAssignableInterface() *graphql.Interface {
 	if s.graphqlTypes.timeline == nil {
 		s.graphqlTypes.timeline = &timelineTypeRegistry{}
@@ -101,8 +90,7 @@ func (s *Resolver) gqlAssignableInterface() *graphql.Interface {
 }
 
 // issueOrPullRequestObject dispatches an Issue/PullRequest source map to its
-// object type. Every source the two carry a global id whose prefix already
-// distinguishes them, so the interfaces above need no extra discriminator.
+// object type by node-id prefix.
 func (s *Resolver) issueOrPullRequestObject(value interface{}) *graphql.Object {
 	source, _ := value.(map[string]interface{})
 	if name, _ := source["__typename"].(string); name == "PullRequest" {
@@ -169,9 +157,8 @@ func (s *Resolver) addTimelineFieldsToSchema(nodeInterface *graphql.Interface, n
 			"rationale": &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
 		},
 	})
-	// Issue.eventRationales (gh_issue_fields_graphql.go) names this same object;
-	// memoize it so that field references the one instance rather than minting a
-	// second type of the same name.
+	// Issue.eventRationales names this same object; memoize it so both reference
+	// one instance rather than minting a duplicate type name.
 	s.graphqlTypes.issueEventRationale = reg.eventRationale
 
 	// The Assignable/Closable interfaces are claimed by Issue and PullRequest
@@ -196,9 +183,8 @@ func (s *Resolver) addTimelineFieldsToSchema(nodeInterface *graphql.Interface, n
 	// --- the event object types -------------------------------------------
 	//
 	// declare() adds id/createdAt/actor, registers the type for union and Node
-	// dispatch, and returns it. `intent` and `rationale` are GitHub fields that
-	// describe a Copilot-suggested update; bleephub records no such suggestion,
-	// so they resolve to null for every event it stores.
+	// dispatch, and returns it. `intent`/`rationale` describe a Copilot-suggested
+	// update bleephub never records, so they resolve to null.
 	node := []*graphql.Interface{nodeInterface}
 	nodeAndURL := []*graphql.Interface{nodeInterface, urlLocatable}
 	intent := &graphql.Field{Type: reg.updateIntent}
@@ -511,11 +497,9 @@ func (s *Resolver) timelineEventObject(name string, interfaces []*graphql.Interf
 	return graphql.NewObject(graphql.ObjectConfig{Name: name, Interfaces: interfaces, Fields: fields})
 }
 
-// timelineConnectionType builds GitHub's IssueTimelineItemsConnection /
-// PullRequestTimelineItemsConnection, which carry two members no other
-// connection in the schema has: filteredCount (the size of the window after
-// `since`/`before`/`after` filtering but before slicing) and updatedAt (when
-// the timeline last changed).
+// timelineConnectionType builds the timeline connections, which carry two
+// members no other connection has: filteredCount (window size after
+// since/before/after filtering, before slicing) and updatedAt.
 func (s *Resolver) timelineConnectionType(prefix string, member *graphql.Union, dateTime *graphql.Scalar) *graphql.Object {
 	edge := graphql.NewObject(graphql.ObjectConfig{
 		Name: prefix + "Edge",

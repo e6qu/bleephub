@@ -1,20 +1,10 @@
 package graphqlapi
 
 // The Actions run graph and the residual members of the Checks family.
-//
-// WorkflowRun (a single run) and Workflow (the YAML file it was produced from)
-// are minted as minimal shells where the CheckSuite rollup references them
-// (gh_pulls_graphql.go); this file finishes them, and hangs GitHub's remaining
-// CheckSuite/CheckRun members off the same registered objects, with the check
-// annotation, workflow-run-file, push and deployment-review/request leaf types
-// GitHub's signatures name.
-//
-// Every field is backed by the real Actions/Checks stores (store.Workflow,
-// store.WorkflowFile, store.CheckSuite, store.CheckRun and the deployment
-// review/pending-deployment records the run carries), or resolves to a
-// truthful null/empty where bleephub genuinely does not model the datum (a
-// GitHub App acting as a suite's creator, a run's git push object, the job
-// steps that live on jobs rather than check runs).
+// WorkflowRun and Workflow are minted as shells by the CheckSuite rollup
+// (gh_pulls_graphql.go); this file finishes them and the remaining
+// CheckSuite/CheckRun members, backed by the Actions/Checks stores or a
+// truthful null/empty where bleephub models nothing.
 
 import (
 	"encoding/base64"
@@ -28,10 +18,8 @@ import (
 	"github.com/graphql-go/graphql"
 )
 
-// addActionsFamilyFields is the late-pass installer initGraphQLSchema calls
-// after every family it depends on (Repository, Commit, Ref, App, Deployment,
-// Environment, User, Team, PullRequestConnection and the CheckSuite/CheckRun/
-// WorkflowRun/Workflow shells) is assembled.
+// addActionsFamilyFields runs after every family it depends on (Repository,
+// Commit, Ref, App, Deployment, Environment, User, Team and the Check shells).
 func (s *Resolver) addActionsFamilyFields() {
 	s.buildActionsSupportTypes()
 	s.addWorkflowRunFields()
@@ -40,8 +28,8 @@ func (s *Resolver) addActionsFamilyFields() {
 	s.addCheckRunResidueFields()
 }
 
-// actionsFamilyTypes memoizes the leaf types and connections built once by
-// buildActionsSupportTypes and consumed by the field installers.
+// actionsFamilyTypes holds the leaf types and connections built once by
+// buildActionsSupportTypes.
 type actionsFamilyTypes struct {
 	checkAnnotationConnection    *graphql.Object
 	checkStepConnection          *graphql.Object
@@ -165,9 +153,8 @@ func (s *Resolver) buildActionsSupportTypes() {
 		},
 	})
 
-	// The DeploymentReviewer connection and Environment connection are the
-	// same objects the account deployment surface already minted; reuse them
-	// so the schema keeps one type of each name.
+	// Reuse the account deployment surface's connection objects; the schema
+	// keeps one type of each name.
 	t.deploymentReviewerConnection = s.graphqlTypes.deploymentReviewerConnection
 	t.environmentConnection = s.graphqlTypes.environmentConnection
 
@@ -296,8 +283,8 @@ func workflowRunResourcePath(source interface{}) string {
 	return "/" + repoFullName + "/actions/runs/" + strconv.Itoa(runID)
 }
 
-// workflowRunGQLSourceLocked renders a run record as the WorkflowRun source
-// map. The caller holds st.Mu (the run graph is read under the store lock).
+// workflowRunGQLSourceLocked renders a run as the WorkflowRun source map.
+// Caller holds st.Mu.
 func workflowRunGQLSourceLocked(st *store.Store, wf *store.Workflow) map[string]interface{} {
 	if wf == nil {
 		return nil
@@ -316,15 +303,12 @@ func workflowRunGQLSourceLocked(st *store.Store, wf *store.Workflow) map[string]
 		"runID":          wf.RunID,
 		"checkSuiteID":   wf.CheckSuiteID,
 		"workflowFileID": wf.WorkflowFileID,
-		// EnvApprovals / PendingDeployments back deploymentReviews /
-		// pendingDeploymentRequests; they travel with the run so those
-		// connections resolve the real review graph.
+		// Back deploymentReviews / pendingDeploymentRequests.
 		"_envApprovals":       wf.EnvApprovals,
 		"_pendingDeployments": wf.PendingDeployments,
 	}
-	// workflow: the WorkflowRun.workflow field the CheckSuite rollup already
-	// selects reads this key. Resolve the backing file source when known,
-	// else synthesize from the run's own name/path.
+	// WorkflowRun.workflow: resolve the backing file, else synthesize from the
+	// run's own name/path.
 	if wf.WorkflowFileID != 0 {
 		if file := st.GetWorkflowFile(wf.RepoFullName, wf.WorkflowFileID); file != nil {
 			source["workflow"] = workflowFileGQLSource(file)
@@ -516,8 +500,8 @@ func (s *Resolver) addCheckSuiteResidueFields() {
 			if commit := s.commitSourceForRepoSHA(p.Context, repoKey, sha); commit != nil {
 				return commit, nil
 			}
-			// CheckSuite.commit is non-null; when the object is unreadable or
-			// gone the minimal git-object source keeps id/oid truthful.
+			// CheckSuite.commit is non-null; keep id/oid truthful when the
+			// object is unreadable or gone.
 			return gitObjectSourceFields("Commit", repoKey, sha), nil
 		},
 	})
@@ -547,7 +531,7 @@ func (s *Resolver) addCheckSuiteResidueFields() {
 	})
 	suiteType.AddFieldConfig("push", &graphql.Field{
 		Type: t.push,
-		// The originating git push is not modeled as an object on this instance.
+		// The originating git push is not modeled.
 		Resolve: func(graphql.ResolveParams) (interface{}, error) { return nil, nil },
 	})
 	suiteType.AddFieldConfig("repository", &graphql.Field{
@@ -606,8 +590,8 @@ func (s *Resolver) addCheckRunResidueFields() {
 	})
 	runType.AddFieldConfig("pendingDeploymentRequest", &graphql.Field{
 		Type: t.deploymentRequest,
-		// A check run does not carry a pending deployment request on this
-		// instance (those live on the workflow run's environments).
+		// Pending requests live on the workflow run's environments, not the
+		// check run.
 		Resolve: func(graphql.ResolveParams) (interface{}, error) { return nil, nil },
 	})
 	runType.AddFieldConfig("permalink", &graphql.Field{
@@ -745,8 +729,8 @@ func (s *Resolver) workflowRunPendingDeployments(source interface{}) []map[strin
 	return nodes
 }
 
-// environmentSourcesForIDs renders the environments named by a review as their
-// GraphQL source maps, filtered to those that still exist.
+// environmentSourcesForIDs renders the environments a review names, skipping
+// any that no longer exist.
 func (s *Resolver) environmentSourcesForIDs(repoFullName string, envIDs []int) []map[string]interface{} {
 	repo := s.store.GetRepoByFullName(repoFullName)
 	if repo == nil {
@@ -822,9 +806,8 @@ func sourceKeyResolverDefault(key string, fallback interface{}) graphql.FieldRes
 	}
 }
 
-// connectionFromSourceKey paginates a slice of already-rendered node maps that
-// travels on the source under key, so a nested connection built eagerly by its
-// parent still pages by the client's own arguments.
+// connectionFromSourceKey paginates a slice of already-rendered node maps
+// carried on the source under key.
 func connectionFromSourceKey(key string) graphql.FieldResolveFn {
 	return func(p graphql.ResolveParams) (interface{}, error) {
 		nodes, _ := sourceMap(p.Source)[key].([]map[string]interface{})

@@ -1,10 +1,7 @@
 package graphqlapi
 
-// Repository settings, metadata and viewer-standing fields.
-//
-// Every member here reads the same repository row the REST repository shape
-// serves, so `gh repo view --json` and a GraphQL selection of the same setting
-// cannot disagree.
+// Repository settings, metadata and viewer-standing fields. Every member reads
+// the same repository row the REST repository shape serves.
 
 import (
 	"strings"
@@ -14,8 +11,8 @@ import (
 	"github.com/e6qu/bleephub/internal/store"
 )
 
-// addRepositorySettingFields installs the merge, branch, description and
-// status members of Repository.
+// addRepositorySettingFields installs the merge, branch, description and status
+// members of Repository.
 func (s *Resolver) addRepositorySettingFields(types *accountSurfaceTypes) {
 	repoType := types.repository
 	uri := s.graphQLStringScalar("URI")
@@ -52,8 +49,8 @@ func (s *Resolver) addRepositorySettingFields(types *accountSurfaceTypes) {
 		s.repoBoolField(func(r *store.Repo) bool { return r.OwnerType == "Organization" }))
 	repoType.AddFieldConfig("isUserConfigurationRepository",
 		s.repoBoolField(func(r *store.Repo) bool {
-			// GitHub's profile-configuration repository is the one whose name
-			// equals its owner's login (the profile README repository).
+			// The profile-configuration repository is the one whose name equals
+			// its owner's login (the profile README repo).
 			owner, name, ok := store.SplitRepoFullName(r.FullName)
 			return ok && r.OwnerType != "Organization" && owner == name
 		}))
@@ -64,11 +61,9 @@ func (s *Resolver) addRepositorySettingFields(types *accountSurfaceTypes) {
 
 	// --- lifecycle state --------------------------------------------------
 	//
-	// bleephub never disables, mirrors or locks a repository: there is no
-	// abuse/billing suspension, no mirror import, and no ownership transfer or
-	// migration that takes a repository read-only. The REST repository shape
-	// reports the same (`disabled: false`, `mirror_url: null`), so these are
-	// the instance's real state rather than an unimplemented feature.
+	// No repository is ever disabled, mirrored or locked here (no
+	// suspension, mirror import or read-only migration); REST reports the same
+	// (`disabled: false`, `mirror_url: null`).
 	repoType.AddFieldConfig("isDisabled",
 		s.repoBoolField(func(*store.Repo) bool { return false }))
 	repoType.AddFieldConfig("isMirror",
@@ -122,8 +117,7 @@ func (s *Resolver) addRepositorySettingFields(types *accountSurfaceTypes) {
 			if err != nil {
 				return nil, err
 			}
-			// GitHub reports diskUsage in kilobytes, which is the unit the
-			// REST repository shape's `size` already carries.
+			// diskUsage is in kilobytes, the unit REST's `size` already carries.
 			return int(s.store.RepoSize(repo.FullName)), nil
 		},
 	})
@@ -136,9 +130,8 @@ func (s *Resolver) addRepositorySettingFields(types *accountSurfaceTypes) {
 			if err != nil {
 				return nil, err
 			}
-			// A repository restriction wins; otherwise the owning
-			// organization's restriction applies to the repository, which is
-			// what GitHub reports as an ORGANIZATION-origin ability.
+			// A repository restriction wins; otherwise the owning org's
+			// restriction applies as an ORGANIZATION-origin ability.
 			if ability := s.interactionAbilitySource(repo.InteractionLimit, repo.InteractionLimitExpiry, "REPOSITORY"); ability != nil {
 				return ability, nil
 			}
@@ -184,8 +177,8 @@ func (s *Resolver) addRepositorySettingFields(types *accountSurfaceTypes) {
 
 	// --- social preview ----------------------------------------------------
 	//
-	// bleephub has no social-preview upload, so every repository uses the
-	// generated card at its avatar path — never a custom image.
+	// No social-preview upload exists, so every repository uses the generated
+	// card at its avatar path.
 	repoType.AddFieldConfig("usesCustomOpenGraphImage",
 		s.repoBoolField(func(*store.Repo) bool { return false }))
 	repoType.AddFieldConfig("openGraphImageUrl", &graphql.Field{
@@ -201,7 +194,7 @@ func (s *Resolver) addRepositorySettingFields(types *accountSurfaceTypes) {
 }
 
 // repoMergeSetting maps a stored merge-commit setting onto GitHub's enum,
-// answering the platform default when the repository never set one.
+// defaulting when the repository never set one.
 func repoMergeSetting(stored, dflt string) string {
 	if stored == "" {
 		return dflt
@@ -209,10 +202,9 @@ func repoMergeSetting(stored, dflt string) string {
 	return strings.ToUpper(stored)
 }
 
-// repositoryForkingAllowed reports whether this instance permits forking the
-// repository. A public repository is always forkable; a private one is
-// forkable only where the governing enterprise policy allows private forking
-// at all, which is the same gate POST /repos/{o}/{r}/forks enforces.
+// repositoryForkingAllowed reports whether the repository may be forked. A
+// public repo always can; a private one only where the enterprise policy allows
+// private forking — the same gate POST /repos/{o}/{r}/forks enforces.
 func (s *Resolver) repositoryForkingAllowed(repo *store.Repo) bool {
 	if !repo.Private {
 		return true
@@ -222,10 +214,9 @@ func (s *Resolver) repositoryForkingAllowed(repo *store.Repo) bool {
 }
 
 // repositoryHasSponsorships reports whether the repository presents a sponsor
-// button. An administrator who set the switch through updateRepository has
-// answered the question outright; otherwise it is derived, as GitHub derives
-// it until the setting is touched: its owner has a Sponsors listing, or it
-// carries a FUNDING file.
+// button. An explicit updateRepository setting wins; otherwise it is derived (as
+// GitHub derives it until touched): the owner has a Sponsors listing, or a
+// FUNDING file is present.
 func (s *Resolver) repositoryHasSponsorships(repo *store.Repo) bool {
 	if repo.HasSponsorships != nil {
 		return *repo.HasSponsorships
@@ -239,10 +230,9 @@ func (s *Resolver) repositoryHasSponsorships(repo *store.Repo) bool {
 
 // --- viewer standing --------------------------------------------------------
 
-// addRepositoryViewerFields installs the viewer* members of Repository. Each
-// answers from the same authorization predicates the REST surface enforces,
-// never from a rendered source map, so a stranger's selection reports a
-// stranger's standing.
+// addRepositoryViewerFields installs the viewer* members of Repository, each
+// answering from the same authorization predicates REST enforces rather than a
+// rendered source map.
 func (s *Resolver) addRepositoryViewerFields(types *accountSurfaceTypes) {
 	repoType := types.repository
 
@@ -265,9 +255,8 @@ func (s *Resolver) addRepositoryViewerFields(types *accountSurfaceTypes) {
 		}))
 	repoType.AddFieldConfig("viewerCanCreateIssues", viewerBool(
 		func(p graphql.ResolveParams, repo *store.Repo) bool {
-			// GitHub gates issue creation on the issues tracker being on, the
-			// repository not being archived, and the viewer being able to
-			// interact with it at all.
+			// Issue creation needs the tracker on, the repo unarchived, and
+			// write access.
 			if !repo.HasIssues || repo.Archived {
 				return false
 			}
@@ -279,7 +268,6 @@ func (s *Resolver) addRepositoryViewerFields(types *accountSurfaceTypes) {
 		}))
 	repoType.AddFieldConfig("viewerCanSubscribe", viewerBool(
 		func(p graphql.ResolveParams, repo *store.Repo) bool {
-			// Watching requires an account and read access.
 			return s.ghUserFromContext(p.Context) != nil && s.viewerCanReadRepo(p.Context, repo)
 		}))
 	repoType.AddFieldConfig("viewerCanCreateProjects", viewerBool(
@@ -289,8 +277,8 @@ func (s *Resolver) addRepositoryViewerFields(types *accountSurfaceTypes) {
 		}))
 	repoType.AddFieldConfig("viewerCanSeeIssueFields", viewerBool(
 		func(p graphql.ResolveParams, repo *store.Repo) bool {
-			// Custom issue fields are an organization feature; a viewer sees
-			// them where the repository is org-owned and readable.
+			// Custom issue fields are an org feature, visible where the repo is
+			// org-owned and readable.
 			return repo.OwnerType == "Organization" && s.viewerCanReadRepo(p.Context, repo)
 		}))
 	repoType.AddFieldConfig("viewerHasStarred", viewerBool(
@@ -336,8 +324,7 @@ func (s *Resolver) addRepositoryViewerFields(types *accountSurfaceTypes) {
 			if err != nil {
 				return nil, err
 			}
-			// The method the merge button offers first: the repository's
-			// enabled methods in GitHub's own precedence.
+			// The method the merge button offers first, in GitHub's precedence.
 			switch {
 			case repo.AllowMergeCommit:
 				return "MERGE", nil
@@ -373,8 +360,7 @@ func (s *Resolver) addRepositoryViewerFields(types *accountSurfaceTypes) {
 			if viewer == nil {
 				return nil, nil
 			}
-			// GitHub offers every verified address on the account as a commit
-			// author identity.
+			// Every verified address is offered as a commit author identity.
 			out := []string{}
 			seen := map[string]bool{}
 			for _, email := range s.store.ListUserEmails(viewer.ID) {
@@ -391,9 +377,8 @@ func (s *Resolver) addRepositoryViewerFields(types *accountSurfaceTypes) {
 		},
 	})
 
-	// bleephub carries no content-warning moderation state, so no repository
-	// bears one. The field is served so a client selecting it is not an
-	// unknown-field validation error.
+	// No content-warning moderation state exists; the field is served only so
+	// selecting it is not an unknown-field validation error.
 	repoType.AddFieldConfig("viewerContentWarning", &graphql.Field{
 		Type: graphql.NewObject(graphql.ObjectConfig{
 			Name: "ContentWarning",

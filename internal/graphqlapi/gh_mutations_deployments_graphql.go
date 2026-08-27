@@ -1,15 +1,8 @@
 package graphqlapi
 
-// The deployments and environments mutation families: createDeployment,
-// createDeploymentStatus, deleteDeployment; approveDeployments and
-// rejectDeployments over a workflow run's pending reviewer-protected
-// environments; and the environment CRUD plus the pinned-environment pair
-// (pinEnvironment, reorderEnvironment).
-//
-// Every mutation writes the same DeploymentStore the REST deployment and
-// environment routes write, emits the same deployment/deployment_status
-// webhooks, and hands deployment reviews to the same actions-engine path the
-// pending_deployments route runs, so the two surfaces cannot diverge.
+// Deployment and environment mutations. Every mutation writes the same
+// DeploymentStore, emits the same webhooks and runs the same actions-engine
+// review path as the REST deployment/environment routes.
 
 import (
 	"encoding/json"
@@ -24,20 +17,16 @@ import (
 
 func init() {
 	for name, rule := range map[string]mutationRule{
-		// Deployments are gated on the Deployments permission at write with
-		// push standing, as POST /deployments' requirePerm is.
+		// Deployments: push standing on the Deployments scope, as POST /deployments.
 		"createDeployment":       repoRule{scope: store.ScopeDeployments, level: mutationPushRepo, target: mutationTargetRepo("repositoryId")},
 		"createDeploymentStatus": repoRule{scope: store.ScopeDeployments, level: mutationPushRepo, target: mutationTargetDeployment("deploymentId")},
 		"deleteDeployment":       repoRule{scope: store.ScopeDeployments, level: mutationPushRepo, target: mutationTargetDeployment("id")},
 
-		// Reviewing a run's pending deployments is the Actions write the
-		// REST pending_deployments route demands.
+		// Reviewing pending deployments is the Actions write pending_deployments demands.
 		"approveDeployments": repoRule{scope: store.ScopeActions, level: mutationPushRepo, target: mutationTargetWorkflowRun("workflowRunId")},
 		"rejectDeployments":  repoRule{scope: store.ScopeActions, level: mutationPushRepo, target: mutationTargetWorkflowRun("workflowRunId")},
 
-		// Environments are repository settings: the REST environment routes
-		// demand Administration at write, and admin standing carries the
-		// pinned-list curation with it.
+		// Environments are repo settings: Administration at write, matching REST.
 		"createEnvironment":  repoRule{scope: store.ScopeAdministration, level: mutationAdminRepo, target: mutationTargetRepo("repositoryId")},
 		"updateEnvironment":  repoRule{scope: store.ScopeAdministration, level: mutationAdminRepo, target: mutationTargetEnvironment("environmentId")},
 		"deleteEnvironment":  repoRule{scope: store.ScopeAdministration, level: mutationAdminRepo, target: mutationTargetEnvironment("id")},
@@ -51,8 +40,7 @@ func init() {
 	}
 }
 
-// mutationTargetDeployment resolves a Deployment global id to the repository
-// it was created on.
+// mutationTargetDeployment resolves a Deployment global id to its repository.
 func mutationTargetDeployment(key string) func(*Resolver, map[string]interface{}) mutationTarget {
 	return func(s *Resolver, input map[string]interface{}) mutationTarget {
 		nodeID, _ := input[key].(string)
@@ -64,8 +52,7 @@ func mutationTargetDeployment(key string) func(*Resolver, map[string]interface{}
 	}
 }
 
-// mutationTargetEnvironment resolves an Environment global id to the
-// repository that configures it.
+// mutationTargetEnvironment resolves an Environment global id to its repository.
 func mutationTargetEnvironment(key string) func(*Resolver, map[string]interface{}) mutationTarget {
 	return func(s *Resolver, input map[string]interface{}) mutationTarget {
 		nodeID, _ := input[key].(string)
@@ -77,8 +64,7 @@ func mutationTargetEnvironment(key string) func(*Resolver, map[string]interface{
 	}
 }
 
-// mutationTargetWorkflowRun resolves a WorkflowRun global id to the
-// repository the run belongs to.
+// mutationTargetWorkflowRun resolves a WorkflowRun global id to its repository.
 func mutationTargetWorkflowRun(key string) func(*Resolver, map[string]interface{}) mutationTarget {
 	return func(s *Resolver, input map[string]interface{}) mutationTarget {
 		nodeID, _ := input[key].(string)
@@ -90,8 +76,8 @@ func mutationTargetWorkflowRun(key string) func(*Resolver, map[string]interface{
 	}
 }
 
-// workflowRunByNodeID resolves the "WFR_"-prefixed global id the REST run
-// shape serves to the live workflow record (the review path mutates it).
+// workflowRunByNodeID resolves a "WFR_"-prefixed global id to the live workflow
+// record (the review path mutates it).
 func (s *Resolver) workflowRunByNodeID(nodeID string) *store.Workflow {
 	id, ok := strings.CutPrefix(nodeID, "WFR_")
 	if !ok || id == "" {
@@ -158,7 +144,7 @@ func (s *Resolver) addDeploymentsMutationsToSchema(mutationType *graphql.Object)
 			if len(envIDs) == 0 {
 				return nil, fmt.Errorf("environmentIds is required")
 			}
-			// The same not-pending refusal the REST route answers with 422.
+			// Not-pending refusal, matching the REST route's 422.
 			s.store.Mu.RLock()
 			pendingByID := map[int]bool{}
 			for _, pending := range wf.PendingDeployments {
@@ -175,8 +161,7 @@ func (s *Resolver) addDeploymentsMutationsToSchema(mutationType *graphql.Object)
 			if err != nil {
 				return nil, err
 			}
-			// Approval creates the deployments the released jobs target,
-			// exactly as the REST route's response returns them.
+			// Approval creates the deployments the released jobs target, as REST does.
 			deployments := []interface{}{}
 			if state == "approved" {
 				repoSource := repoToGraphQL(s.store, s.store.SnapRepo(repo))
@@ -269,9 +254,8 @@ func (s *Resolver) addDeploymentsMutationsToSchema(mutationType *graphql.Object)
 			s.events.EmitDeploymentEvent(repo, d, user, "created")
 			repoSource := repoToGraphQL(s.store, s.store.SnapRepo(repo))
 			return map[string]interface{}{
-				// Bleephub's deployment path never merges the default branch
-				// into the ref (the REST route ignores auto_merge the same
-				// way), so the answer is honestly false.
+				// bleephub never auto-merges the default branch into the ref
+				// (REST ignores auto_merge likewise), so this is honestly false.
 				"autoMerged": false,
 				"deployment": s.deploymentSource(repo, d, repoSource),
 			}, nil
@@ -454,8 +438,7 @@ func (s *Resolver) addDeploymentsMutationsToSchema(mutationType *graphql.Object)
 			if !s.store.Deployments.DeleteEnvironment(repo.ID, env.Name) {
 				return nil, gqlMissingNode("Environment", env.NodeID)
 			}
-			// The branch policies configured on the environment go with it,
-			// exactly as DELETE /environments/{name} prunes them.
+			// Prune the environment's branch policies, as DELETE /environments/{name}.
 			s.store.PruneEnvironmentPolicies(env.ID)
 			return map[string]interface{}{}, nil
 		},
@@ -522,7 +505,7 @@ func (s *Resolver) addDeploymentsMutationsToSchema(mutationType *graphql.Object)
 }
 
 // environmentSubject resolves an Environment input id to the environment and
-// its repository, or the missing-node refusal.
+// its repository, or a missing-node refusal.
 func (s *Resolver) environmentSubject(input map[string]interface{}, key string) (*store.Environment, *store.Repo, error) {
 	nodeID, _ := input[key].(string)
 	env := s.store.Deployments.GetEnvironmentByNodeID(nodeID)
@@ -536,8 +519,6 @@ func (s *Resolver) environmentSubject(input map[string]interface{}, key string) 
 	return env, repo, nil
 }
 
-// pinnedEnvironmentSource renders one pin with the environment and repository
-// it holds.
 func (s *Resolver) pinnedEnvironmentSource(repo *store.Repo, env *store.Environment, pin *store.PinnedEnvironment, repoSource map[string]interface{}) map[string]interface{} {
 	return map[string]interface{}{
 		"id":          pin.NodeID,
